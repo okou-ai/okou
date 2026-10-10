@@ -1,4 +1,3 @@
-import type { SystemSkillStorageResolution } from "../signals/context/system-skill-storage-resolution";
 import type { RouteEntry } from "../signals/route-entry";
 import { setupAppWithRoutes, setupRawAppRequestWithRoutes } from "./test-app";
 import type { TestContext } from "./test-context";
@@ -14,7 +13,6 @@ interface SetupAppOptions extends SetupRawAppOptions {
   readonly isolatePg?: boolean;
   readonly baseUrl?: string;
   readonly rethrowErrors?: boolean;
-  readonly systemSkillStorageResolution?: SystemSkillStorageResolution;
 }
 
 type AppClientFactory = ReturnType<typeof setupAppWithRoutes>;

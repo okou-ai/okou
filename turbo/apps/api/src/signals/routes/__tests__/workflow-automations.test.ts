@@ -1,3 +1,9 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
+import {
+  claimBudgetRun,
+  exerciseAutonomyBudget,
+  startBudgetAutomation,
+} from "./helpers/public-autonomy-budget";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -20,9 +26,7 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import {
-  readRunAutonomyBudgetFixture,
   readWorkflowAutomationAutonomyFixture,
-  setRunAutonomyBudgetFixture,
   setWorkflowAutomationAutonomyBudgetFixture,
 } from "./helpers/runtime-state";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -1357,48 +1361,60 @@ describe("okou workflow automations", () => {
 
   it("uses configured webhook URLs for agent run tokens", async () => {
     mockEnv("OKOU_WEB_URL", "https://api.okou.ai");
-    const { actor, agentId, workflowId } = await setupFixture("team");
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        extraHeaders: { origin: "https://app.okou.ai" },
-        params: { workflowId },
-        body: { kind: "event", eventType: "webhook-received" },
-      }),
-      [201],
-    );
-    if (
-      created.body.kind !== "event" ||
-      created.body.eventType !== "webhook-received" ||
-      !created.body.webhookUrl ||
-      !created.body.webhookSecret
-    ) {
-      throw new Error("Expected a webhook automation with credentials");
-    }
-    const createdUrl = new URL(created.body.webhookUrl);
-    expect(createdUrl.hostname).toBe("api.okou.ai");
+    const owned = await publicChatActor(context, { tier: "team" });
+    const { actor, agentId } = owned;
+    await owned.run(async () => {
+      await runs.updateUserModelPreference(actor, "claude-fable-5-1");
+      const workflowId = await wf.createWorkflow(actor, {
+        agentId,
+        name: WORKFLOW_NAME,
+      });
+      const created = await accept(
+        automationsClient().create({
+          headers: authHeaders(),
+          extraHeaders: { origin: "https://app.okou.ai" },
+          params: { workflowId },
+          body: { kind: "event", eventType: "webhook-received" },
+        }),
+        [201],
+      );
+      if (
+        created.body.kind !== "event" ||
+        created.body.eventType !== "webhook-received" ||
+        !created.body.webhookUrl ||
+        !created.body.webhookSecret
+      ) {
+        throw new Error("Expected a webhook automation with credentials");
+      }
+      const createdUrl = new URL(created.body.webhookUrl);
+      expect(createdUrl.hostname).toBe("api.okou.ai");
 
-    runs.configureRunnerGroup();
-    const sourceRun = await runs.createThreadRun(actor, {
-      agentId,
-      prompt: "read configured webhook credentials",
+      const sourceRun = await owned.sendChatRun(actor, {
+        agentId,
+        prompt: "read configured webhook credentials",
+      });
+
+      const { claim } = await owned.claimChatRun(
+        owned.runnerGroup,
+        sourceRun.runId,
+      );
+      const token = claim.platformEnvironment.OKOU_TOKEN;
+      if (!token) {
+        throw new Error("Expected an authenticated agent token");
+      }
+      const revealed = await accept(
+        automationsClient().revealWebhookSecret({
+          headers: { authorization: `Bearer ${token}` },
+          params: { id: created.body.id },
+          body: undefined,
+        }),
+        [200],
+      );
+      const revealedUrl = new URL(revealed.body.webhookUrl);
+      expect(revealedUrl.hostname).toBe("api.okou.ai");
+      expect(revealedUrl.pathname).toBe(createdUrl.pathname);
+      expect(revealed.body.webhookSecret).toBe(created.body.webhookSecret);
     });
-
-    const token = runs.okouTokenForRunWithCapabilities(actor, sourceRun.runId, [
-      "agent:write",
-    ]);
-    const revealed = await accept(
-      automationsClient().revealWebhookSecret({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-        body: undefined,
-      }),
-      [200],
-    );
-    const revealedUrl = new URL(revealed.body.webhookUrl);
-    expect(revealedUrl.hostname).toBe("api.okou.ai");
-    expect(revealedUrl.pathname).toBe(createdUrl.pathname);
-    expect(revealed.body.webhookSecret).toBe(created.body.webhookSecret);
   });
 
   it("rejects webhook re-enable for Pro", async () => {
@@ -4363,204 +4379,216 @@ describe("okou workflow automations", () => {
   });
 
   it("derives automation budgets and blocks creation from budget zero", async () => {
-    mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
-    const { actor, workflowId } = await setupFixture();
-    const rootAutomation = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          schedule: { type: "loop", intervalSeconds: 3600 },
-        },
-      }),
-      [201],
-    );
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, rootAutomation.body.id),
-    ).resolves.toMatchObject({ autonomyBudget: 32 });
-
-    const rootRun = await runAutomationNow(rootAutomation.body.id);
-    if (!rootRun.runId) {
-      throw new Error("Expected the root automation to start a run");
-    }
-    await expect(
-      readRunAutonomyBudgetFixture(context, rootRun.runId),
-    ).resolves.toBe(32);
-    const rootToken = runs.okouTokenForRunWithCapabilities(
-      actor,
-      rootRun.runId,
-      ["agent:write"],
-    );
-
-    const derivedAutomation = await accept(
-      automationsClient().create({
-        headers: { authorization: `Bearer ${rootToken}` },
-        params: { workflowId },
-        body: {
-          schedule: { type: "loop", intervalSeconds: 3601 },
-        },
-      }),
-      [201],
-    );
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, derivedAutomation.body.id),
-    ).resolves.toMatchObject({ autonomyBudget: 31 });
-
-    await setRunAutonomyBudgetFixture(context, rootRun.runId, 1);
-    const zeroBudgetAutomation = await accept(
-      automationsClient().create({
-        headers: { authorization: `Bearer ${rootToken}` },
-        params: { workflowId },
-        body: {
-          schedule: { type: "loop", intervalSeconds: 3602 },
-        },
-      }),
-      [201],
-    );
-    await expect(
-      readWorkflowAutomationAutonomyFixture(
+    const owned = await publicChatActor(context);
+    const { actor, agentId } = owned;
+    await owned.run(async () => {
+      await runs.updateUserModelPreference(actor, "claude-fable-5-1");
+      const workflowId = await wf.createWorkflow(actor, {
+        agentId,
+        name: WORKFLOW_NAME,
+      });
+      const rootAutomation = await accept(
+        automationsClient().create({
+          headers: authHeaders(),
+          params: { workflowId },
+          body: { schedule: { type: "loop", intervalSeconds: 3600 } },
+        }),
+        [201],
+      );
+      const rootRun = await startBudgetAutomation(
         context,
+        owned,
+        rootAutomation.body.id,
+      );
+      const sources = await exerciseAutonomyBudget(context, owned, rootRun, 32);
+      const one = sources.get(1)!;
+      const two = sources.get(2)!;
+      const five = sources.get(5)!;
+      const derivedAutomation = await accept(
+        automationsClient().create({
+          headers: { authorization: `Bearer ${rootRun.token}` },
+          params: { workflowId },
+          body: { schedule: { type: "loop", intervalSeconds: 3601 } },
+        }),
+        [201],
+      );
+      const zeroBudgetAutomation = await accept(
+        automationsClient().create({
+          headers: { authorization: `Bearer ${one.token}` },
+          params: { workflowId },
+          body: { schedule: { type: "loop", intervalSeconds: 3602 } },
+        }),
+        [201],
+      );
+      const exhaustedRun = await startBudgetAutomation(
+        context,
+        owned,
         zeroBudgetAutomation.body.id,
-      ),
-    ).resolves.toMatchObject({ autonomyBudget: 0 });
-    await runs.requestCancelRun(actor, rootRun.runId, [200]);
-    await flushWaitUntilForTest();
-
-    const exhaustedRun = await runAutomationNow(zeroBudgetAutomation.body.id);
-    if (!exhaustedRun.runId) {
-      throw new Error("Expected the zero-budget automation to start its run");
-    }
-    await expect(
-      readRunAutonomyBudgetFixture(context, exhaustedRun.runId),
-    ).resolves.toBe(0);
-    const exhaustedToken = runs.okouTokenForRunWithCapabilities(
-      actor,
-      exhaustedRun.runId,
-      ["agent:write"],
-    );
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: derivedAutomation.body.id },
-      }),
-      [200],
-    );
-    const blockedEnable = await accept(
-      automationsClient().enable({
-        headers: { authorization: `Bearer ${exhaustedToken}` },
-        params: { id: derivedAutomation.body.id },
-      }),
-      [409],
-    );
-    expect(blockedEnable.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, derivedAutomation.body.id),
-    ).resolves.toMatchObject({ autonomyBudget: 31, enabled: false });
-
-    await setRunAutonomyBudgetFixture(context, exhaustedRun.runId, 2);
-    await accept(
-      automationsClient().enable({
-        headers: { authorization: `Bearer ${exhaustedToken}` },
-        params: { id: derivedAutomation.body.id },
-      }),
-      [200],
-    );
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, derivedAutomation.body.id),
-    ).resolves.toMatchObject({ autonomyBudget: 1, enabled: true });
-
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: derivedAutomation.body.id },
-      }),
-      [200],
-    );
-    await setRunAutonomyBudgetFixture(context, exhaustedRun.runId, 5);
-    await accept(
-      automationsClient().enable({
-        headers: { authorization: `Bearer ${exhaustedToken}` },
-        params: { id: derivedAutomation.body.id },
-      }),
-      [200],
-    );
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, derivedAutomation.body.id),
-    ).resolves.toMatchObject({ autonomyBudget: 4, enabled: true });
-    await setRunAutonomyBudgetFixture(context, exhaustedRun.runId, 0);
-
-    const blocked = await accept(
-      automationsClient().create({
-        headers: { authorization: `Bearer ${exhaustedToken}` },
-        params: { workflowId },
-        body: {
-          schedule: { type: "loop", intervalSeconds: 7200 },
-        },
-      }),
-      [409],
-    );
-    expect(blocked.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
-    await runs.requestCancelRun(actor, exhaustedRun.runId, [200]);
+      );
+      await exerciseAutonomyBudget(context, owned, exhaustedRun, 0);
+      await accept(
+        automationsClient().disable({
+          headers: authHeaders(),
+          params: { id: derivedAutomation.body.id },
+        }),
+        [200],
+      );
+      const blockedEnable = await accept(
+        automationsClient().enable({
+          headers: { authorization: `Bearer ${exhaustedRun.token}` },
+          params: { id: derivedAutomation.body.id },
+        }),
+        [409],
+      );
+      expect(blockedEnable.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
+      await expect(
+        wf.readAutomation(derivedAutomation.body.id),
+      ).resolves.toMatchObject({ enabled: false });
+      // User enable preserves configuration; prove the rejected write left31.
+      await accept(
+        automationsClient().enable({
+          headers: authHeaders(),
+          params: { id: derivedAutomation.body.id },
+        }),
+        [200],
+      );
+      await exerciseAutonomyBudget(
+        context,
+        owned,
+        await startBudgetAutomation(context, owned, derivedAutomation.body.id),
+        31,
+      );
+      await accept(
+        automationsClient().disable({
+          headers: authHeaders(),
+          params: { id: derivedAutomation.body.id },
+        }),
+        [200],
+      );
+      await accept(
+        automationsClient().enable({
+          headers: { authorization: `Bearer ${two.token}` },
+          params: { id: derivedAutomation.body.id },
+        }),
+        [200],
+      );
+      await expect(
+        wf.readAutomation(derivedAutomation.body.id),
+      ).resolves.toMatchObject({ enabled: true });
+      await exerciseAutonomyBudget(
+        context,
+        owned,
+        await startBudgetAutomation(context, owned, derivedAutomation.body.id),
+        1,
+      );
+      await accept(
+        automationsClient().disable({
+          headers: authHeaders(),
+          params: { id: derivedAutomation.body.id },
+        }),
+        [200],
+      );
+      await accept(
+        automationsClient().enable({
+          headers: { authorization: `Bearer ${five.token}` },
+          params: { id: derivedAutomation.body.id },
+        }),
+        [200],
+      );
+      await expect(
+        wf.readAutomation(derivedAutomation.body.id),
+      ).resolves.toMatchObject({ enabled: true });
+      await exerciseAutonomyBudget(
+        context,
+        owned,
+        await startBudgetAutomation(context, owned, derivedAutomation.body.id),
+        4,
+      );
+      const blocked = await accept(
+        automationsClient().create({
+          headers: { authorization: `Bearer ${exhaustedRun.token}` },
+          params: { workflowId },
+          body: { schedule: { type: "loop", intervalSeconds: 7200 } },
+        }),
+        [409],
+      );
+      expect(blocked.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
+    });
   });
 
   it("derives manual run budgets from the source and rejects exhausted agent callers", async () => {
-    mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
-    const { actor, workflowId } = await setupFixture();
-    const automation = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          schedule: { type: "loop", intervalSeconds: 3600 },
-        },
-      }),
-      [201],
-    );
-    await setWorkflowAutomationAutonomyBudgetFixture(
-      context,
-      automation.body.id,
-      0,
-    );
-    const sourceRun = await runAutomationNow(automation.body.id);
-    if (!sourceRun.runId) {
-      throw new Error("Expected the source automation run to start");
-    }
-    const sourceToken = runs.okouTokenForRunWithCapabilities(
-      actor,
-      sourceRun.runId,
-      ["agent:write"],
-    );
-    await runs.requestCancelRun(actor, sourceRun.runId, [200]);
-    await flushWaitUntilForTest();
-
-    await setRunAutonomyBudgetFixture(context, sourceRun.runId, 2);
-    const childRun = await runAutomationNow(automation.body.id, {
-      authorization: `Bearer ${sourceToken}`,
-    });
-    if (!childRun.runId) {
-      throw new Error("Expected a budget-two caller to start a child run");
-    }
-    await expect(
-      readRunAutonomyBudgetFixture(context, childRun.runId),
-    ).resolves.toBe(1);
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, automation.body.id),
-    ).resolves.toMatchObject({ autonomyBudget: 0 });
-    await runs.requestCancelRun(actor, childRun.runId, [200]);
-    await flushWaitUntilForTest();
-
-    await setRunAutonomyBudgetFixture(context, sourceRun.runId, 0);
-    // The exhausted request is accepted; its rejection appears in the thread.
-    const blocked = await runAutomationNow(automation.body.id, {
-      authorization: `Bearer ${sourceToken}`,
-    });
-    await expect(
-      wf.readThreadEvents(blocked.chatThreadId),
-    ).resolves.toContainEqual(
-      expect.objectContaining({
+    const owned = await publicChatActor(context);
+    const { actor, agentId } = owned;
+    await owned.run(async () => {
+      await runs.updateUserModelPreference(actor, "claude-fable-5-1");
+      const workflowId = await wf.createWorkflow(actor, {
+        agentId,
+        name: WORKFLOW_NAME,
+      });
+      const sent = await owned.sendChatRun(actor, {
+        agentId,
+        prompt: "Establish real delegation budgets",
+      });
+      const sources = await exerciseAutonomyBudget(
+        context,
+        owned,
+        await claimBudgetRun(context, owned, sent),
+        32,
+      );
+      const one = sources.get(1)!;
+      const two = sources.get(2)!;
+      const zero = sources.get(0)!;
+      const automation = await accept(
+        automationsClient().create({
+          headers: { authorization: `Bearer ${one.token}` },
+          params: { workflowId },
+          body: { schedule: { type: "loop", intervalSeconds: 3600 } },
+        }),
+        [201],
+      );
+      await exerciseAutonomyBudget(
+        context,
+        owned,
+        await startBudgetAutomation(context, owned, automation.body.id),
+        0,
+      );
+      const childRun = await startBudgetAutomation(
+        context,
+        owned,
+        automation.body.id,
+        two.token,
+      );
+      await exerciseAutonomyBudget(context, owned, childRun, 1);
+      // The manual caller budget must not rewrite the configured target budget.
+      await exerciseAutonomyBudget(
+        context,
+        owned,
+        await startBudgetAutomation(context, owned, automation.body.id),
+        0,
+      );
+      const before = await wf.readThreadEvents(childRun.threadId);
+      const blocked = await runAutomationNow(automation.body.id, {
+        authorization: `Bearer ${zero.token}`,
+      });
+      const after = await wf.readThreadEvents(blocked.chatThreadId);
+      const additions = after.filter((event) => {
+        return !before.some((previous) => {
+          return previous.id === event.id;
+        });
+      });
+      const rejected = additions.filter((event) => {
+        return event.eventType === "input.rejected";
+      });
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0]).toMatchObject({
         eventType: "input.rejected",
         error: "autonomy_budget_exhausted",
-      }),
-    );
+      });
+      expect(
+        additions.filter((event) => {
+          return event.runId !== undefined;
+        }),
+      ).toStrictEqual([]);
+    });
   });
 });

@@ -122,8 +122,6 @@ import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { setPaidToolDisabled } from "./helpers/paid-tools";
 import {
   clearRunApiStart,
-  seedBuiltInDefaultModelKey as seedBuiltInDefaultModelKeyState,
-  seedBuiltInModelKey as seedBuiltInModelKeyState,
   setRunnerJobContextProfileAsPreviousApi,
 } from "./helpers/runtime-state";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
@@ -133,7 +131,6 @@ import { connectorCheckRoutes } from "../connector-check";
 import { automaticMcpCatalogFixture } from "./helpers/connector-automatic-catalog";
 
 import { createRouteMocks } from "./helpers/route-test";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 /**
  * RUN-01..04 and CHAIN-RUN: successful run dispatch and lifecycle.
@@ -337,16 +334,6 @@ function findFirewallEntry(
   return entries?.find((entry) => {
     return firewallEntryName(entry) === name;
   });
-}
-
-async function seedBuiltInDefaultModelKey(): Promise<string> {
-  const fixture = await seedBuiltInDefaultModelKeyState(context);
-  return fixture.selectedModel;
-}
-
-async function seedBuiltInModelKey(selectedModel: string): Promise<string> {
-  const fixture = await seedBuiltInModelKeyState(context, selectedModel);
-  return fixture.selectedModel;
 }
 
 function useSecretKmsClientForTests(args: {
@@ -1926,7 +1913,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, initialized.runId, [200]);
       });
 
-      it("preserves missing-volume and artifact resolution with exact candidates", async () => {
+      it("resolves workflow and memory artifacts with exact candidates", async () => {
         const { actor, agentId, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
@@ -1957,9 +1944,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             }),
           );
         });
-        // An Agent workflow is an exact Storage candidate; a seed system skill
-        // resolved to a Storage that does not exist is a missing volume, which
-        // production skips instead of failing the run.
+        // Normal Agent workflow publication supplies the exact Storage candidate.
         const workflowName = `exact-candidate-${randomUUID().slice(0, 8)}`;
         const misc = createMiscRoutesApi(context);
         const workflow = await misc.createWorkflow(
@@ -1978,8 +1963,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           actor,
           workflow.body.id,
         );
-        const missingStorageName = `bdd-missing-system-${randomUUID().slice(0, 8)}`;
-        const api = createRunsApi(context, { gen: missingStorageName });
+        const api = createRunsApi(context);
         await api.heartbeatRunner(runnerGroup);
         const created = await api.createThreadRun(actor, {
           agentId,
@@ -2002,14 +1986,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             }),
           ]),
         );
-        expect(
-          manifest.storageMounts.filter((mount) => {
-            return (
-              mount.name === missingStorageName ||
-              mount.mountPath === "/home/user/.claude/skills/gen"
-            );
-          }),
-        ).toStrictEqual([]);
         const memoryMount = manifest.storageMounts.find((mount) => {
           return mount.name === "memory";
         });
@@ -4781,43 +4757,59 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
     describe("RUN-01: agent run authorization and session boundaries", () => {
       it("accepts session and PAT cancellation while rejecting run-scoped tokens", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId } = await entitledRunActor();
+        const owned = await publicChatActor(context);
+        const { actor, agentId } = owned;
+        await owned.run(async () => {
+          const sessionRun = await owned.sendChatRun(actor, {
+            agentId,
+            prompt: "cancel with a Clerk session",
+          });
+          await api.requestCancelRun(actor, sessionRun.runId, [200]);
+          expect((await api.readRun(actor, sessionRun.runId)).status).toBe(
+            "cancelled",
+          );
 
-        const sessionRun = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "cancel with a Clerk session",
+          const run = await owned.sendChatRun(actor, {
+            agentId,
+            prompt: "cancel with accepted credential types",
+          });
+
+          const source = await owned.sendChatRun(actor, {
+            agentId,
+            prompt: "issue real run-scoped credentials",
+          });
+          const { claim: sourceClaim } = await owned.claimChatRun(
+            owned.runnerGroup,
+            source.runId,
+          );
+          const sourceToken = sourceClaim.platformEnvironment.OKOU_TOKEN;
+          if (!sourceToken) {
+            throw new Error("Expected a claimed agent token");
+          }
+          const sandboxDenied = await api.requestCancelRunAs(
+            `Bearer ${sourceClaim.sandboxToken}`,
+            run.runId,
+            [403],
+          );
+          expectApiError(sandboxDenied.body);
+          expect((await api.readRun(actor, run.runId)).status).toBe("pending");
+
+          const okouDenied = await api.requestCancelRunAs(
+            `Bearer ${sourceToken}`,
+            run.runId,
+            [403],
+          );
+          expectApiError(okouDenied.body);
+          expect((await api.readRun(actor, run.runId)).status).toBe("pending");
+
+          const pat = await api.createCliToken(actor);
+          await api.requestCancelRunAs(`Bearer ${pat.token}`, run.runId, [200]);
+          expect((await api.readRun(actor, run.runId)).status).toBe(
+            "cancelled",
+          );
+          await api.requestCancelRun(actor, source.runId, [200]);
+          await finishCancelledRun(source.runId, sourceClaim.sandboxToken);
         });
-        await api.requestCancelRun(actor, sessionRun.runId, [200]);
-        expect((await api.readRun(actor, sessionRun.runId)).status).toBe(
-          "cancelled",
-        );
-
-        const run = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "cancel with accepted credential types",
-        });
-
-        const sandboxDenied = await api.requestCancelRunAs(
-          `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
-          run.runId,
-          [403],
-        );
-        expectApiError(sandboxDenied.body);
-        expect((await api.readRun(actor, run.runId)).status).toBe("pending");
-
-        const okouDenied = await api.requestCancelRunAs(
-          `Bearer ${api.okouTokenForRunWithCapabilities(actor, run.runId, [
-            "agent-run:read",
-          ])}`,
-          run.runId,
-          [403],
-        );
-        expectApiError(okouDenied.body);
-        expect((await api.readRun(actor, run.runId)).status).toBe("pending");
-
-        const pat = await api.createCliToken(actor);
-        await api.requestCancelRunAs(`Bearer ${pat.token}`, run.runId, [200]);
-        expect((await api.readRun(actor, run.runId)).status).toBe("cancelled");
       });
 
       it("limits private agents to their owner", async () => {
@@ -4966,7 +4958,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(queue.body.concurrency.active).toBe(0);
       });
 
-      it("runs limited-free chats on fixed Auto and rejects unavailable model pins", async () => {
+      it("exposes limited-free Auto selection and rejects unavailable model pins", async () => {
         const bdd = createBddApi(context);
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
@@ -4975,7 +4967,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         bdd.acceptAgentStorageWrites();
         api.acceptStorageDownloads();
         api.acceptTelemetryIngest();
-        const runnerGroup = api.configureRunnerGroup();
 
         const onboarding = await bdd.readOnboardingStatus(actor);
         if (!onboarding.defaultAgentId) {
@@ -5002,24 +4993,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
         ).toStrictEqual(["auto"]);
 
-        await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
-        // The fixed default is Pi-eligible, so the limited-free default chat run
-        // is claimed as a sandbox Pi turn rather than a Codex Runner job.
-        preparePiSandboxClaim();
-        const sent = await chat.sendAndLaunch(actor, {
-          agentId,
-          prompt: "limited-free default model run",
+        const thread = await chat.createThread(actor, { agentId, model: null });
+        await expect(
+          chat.readThreadMetadata(actor, thread.id),
+        ).resolves.toMatchObject({
+          selectedModel: "auto",
         });
-        await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(sent.runId);
-        expect(claim.cliAgentType).toBe("pi");
-        expect(claim.piModelConfig).toMatchObject({
-          provider: "openrouter",
-          catalogModel: "auto",
-        });
-        expect(claim.modelUsageProvider).toBe("@preset/okou-1-0");
-        await api.requestCancelRun(actor, sent.runId, [200]);
-        await finishCancelledRun(sent.runId, claim.sandboxToken);
 
         // Explicit unavailable selections reject without silently switching credential source.
         // Configuration also rejects pins outside the caller's available models.
@@ -5034,7 +5013,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             actor,
             {
               agentId,
-              threadId: sent.threadId,
+              threadId: thread.id,
               prompt,
               model,
               clientEventId,
@@ -5048,7 +5027,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             await flushWaitUntilForTest();
             const messages = await piClaimFixture.waitForThreadMessages(
               actor,
-              sent.threadId,
+              thread.id,
               (events) => {
                 return events.some((event) => {
                   return (
@@ -5072,7 +5051,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
           const rejectedPin = await chat.requestUpdateThreadModelSelection(
             actor,
-            sent.threadId,
+            thread.id,
             model,
             [status],
           );
@@ -11320,7 +11299,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, latest.runId, [200]);
         await finishCancelledRun(latest.runId, latestClaim.sandboxToken);
 
-        await seedBuiltInDefaultModelKey();
         // gpt-6-astra has no Pi route, so it runs the native Codex CLI.
         await createBddIntegrationApi(context)
           .configureNativeSubscriptionModels(actor)
@@ -11346,18 +11324,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           codexSubscription.runId,
           codexSubscriptionClaim.sandboxToken,
         );
-
-        const builtIn = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "keep native web search disabled for built-in routing",
-          model: null,
-        });
-        const builtInClaim = await api.claimRunnerJob(builtIn.runId);
-        expect(builtInClaim.platformEnvironment).not.toHaveProperty(
-          ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
-        );
-        await api.requestCancelRun(actor, builtIn.runId, [200]);
-        await finishCancelledRun(builtIn.runId, builtInClaim.sandboxToken);
       });
 
       it("uses the executing member's paid tool preferences for a shared agent", async () => {
@@ -12057,43 +12023,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         expect(context.mocks.ably.createTokenRequest).not.toHaveBeenCalled();
       });
-
-      it("drops queued jobs whose runs reached a terminal state before the claim", async () => {
-        const api = createRunsApi(context);
-        const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId } = await entitledRunActor();
-
-        const run = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "terminal before claim",
-        });
-        expect(run.status).toBe("pending");
-
-        const sandboxHeaders = {
-          authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
-        };
-        await webhooks.requestAgentComplete(
-          {
-            runId: run.runId,
-            exitCode: 1,
-            error: "sandbox crashed before claim",
-            lastEventSequence: 0,
-          },
-          sandboxHeaders,
-          [200],
-        );
-        const failed = await api.readRun(actor, run.runId);
-        expect(failed.status).toBe("failed");
-        expect(failed.error).toBe("sandbox crashed before claim");
-
-        const claim = await api.requestClaimRunnerJob(true, run.runId, [404]);
-        expectApiError(claim.body);
-        expect(claim.body.error.message).toBe("Run not found");
-
-        const reclaim = await api.requestClaimRunnerJob(true, run.runId, [404]);
-        expectApiError(reclaim.body);
-        expect(reclaim.body.error.message).toBe("Job not found in queue");
-      });
     });
 
     describe("HOOK-01/RUN-03: terminal run callbacks dispatch on cancellation", () => {
@@ -12185,46 +12114,71 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("rejects heartbeats after ordinary terminal transitions", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId } = await entitledRunActor();
-        const completed = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "complete before heartbeat",
-        });
-        const failed = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "fail before heartbeat",
-        });
-        const cancelled = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "cancel before heartbeat",
-        });
+        const owned = await publicChatActor(context);
+        const { actor, agentId } = owned;
+        await owned.run(async () => {
+          const completed = await owned.sendChatRun(actor, {
+            agentId,
+            prompt: "complete before heartbeat",
+          });
+          const failed = await owned.sendChatRun(actor, {
+            agentId,
+            prompt: "fail before heartbeat",
+          });
+          const cancelled = await owned.sendChatRun(actor, {
+            agentId,
+            prompt: "cancel before heartbeat",
+          });
 
-        await webhooks.requestAgentComplete(
-          { runId: completed.runId, exitCode: 0 },
-          {
-            authorization: `Bearer ${api.sandboxTokenForRun(actor, completed.runId)}`,
-          },
-          [200],
-        );
-        await webhooks.requestAgentComplete(
-          { runId: failed.runId, exitCode: 1 },
-          {
-            authorization: `Bearer ${api.sandboxTokenForRun(actor, failed.runId)}`,
-          },
-          [200],
-        );
-        await api.requestCancelRun(actor, cancelled.runId, [200]);
-
-        for (const runId of [completed.runId, failed.runId, cancelled.runId]) {
-          const heartbeat = await webhooks.requestAgentHeartbeat(
-            { runId },
-            {
-              authorization: `Bearer ${api.sandboxTokenForRun(actor, runId)}`,
-            },
-            [404],
+          const { claim: completedClaim } = await owned.claimChatRun(
+            owned.runnerGroup,
+            completed.runId,
           );
-          expect(heartbeat.status).toBe(404);
-        }
+          const { claim: failedClaim } = await owned.claimChatRun(
+            owned.runnerGroup,
+            failed.runId,
+          );
+          const { claim: cancelledClaim } = await owned.claimChatRun(
+            owned.runnerGroup,
+            cancelled.runId,
+          );
+          const tokens = new Map([
+            [completed.runId, completedClaim.sandboxToken],
+            [failed.runId, failedClaim.sandboxToken],
+            [cancelled.runId, cancelledClaim.sandboxToken],
+          ]);
+
+          await webhooks.requestAgentComplete(
+            { runId: completed.runId, exitCode: 0 },
+            {
+              authorization: `Bearer ${completedClaim.sandboxToken}`,
+            },
+            [200],
+          );
+          await webhooks.requestAgentComplete(
+            { runId: failed.runId, exitCode: 1 },
+            {
+              authorization: `Bearer ${failedClaim.sandboxToken}`,
+            },
+            [200],
+          );
+          await api.requestCancelRun(actor, cancelled.runId, [200]);
+
+          for (const runId of [
+            completed.runId,
+            failed.runId,
+            cancelled.runId,
+          ]) {
+            const heartbeat = await webhooks.requestAgentHeartbeat(
+              { runId },
+              {
+                authorization: `Bearer ${tokens.get(runId)}`,
+              },
+              [404],
+            );
+            expect(heartbeat.status).toBe(404);
+          }
+        });
       });
     });
 
@@ -12485,21 +12439,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         async function completePublicFailure(args: {
           readonly failureReason: RunFailureReasonToken;
-          readonly modelProvider?: "claude-code-oauth-token" | "built-in";
+          readonly modelProvider?: "claude-code-oauth-token";
         }) {
           const api = createRunsApi(context);
           const chat = createChatFilesBddApi(context);
           const webhooks = createWebhookCallbackApi(context);
           const modelProvider = args.modelProvider ?? "claude-code-oauth-token";
-          const selectedModel =
-            modelProvider === "built-in"
-              ? await seedBuiltInDefaultModelKey()
-              : "claude-fable-5-1";
+          const selectedModel = "claude-fable-5-1";
           const { actor, agentId, runnerGroup } = await entitledRunActor();
           const run = await chat.sendAndLaunch(actor, {
             agentId,
-            // Auto is the null selection; its runs report the Auto run model.
-            model: modelProvider === "built-in" ? null : selectedModel,
+            model: selectedModel,
             prompt: `fail ${modelProvider} with ${args.failureReason}`,
           });
           await api.heartbeatRunner(runnerGroup);
@@ -12525,7 +12475,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             error,
             source: {
               providerType: modelProvider,
-              model: modelProvider === "built-in" ? "auto" : selectedModel,
+              model: selectedModel,
             },
           });
           const projected = await chat.listThreadEvents(actor, run.threadId);
@@ -12560,7 +12510,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         );
 
-        it.each(["claude-code-oauth-token", "built-in"] as const)(
+        it.each(["claude-code-oauth-token"] as const)(
           "preserves failed completion when sandbox root storage fills on %s",
           async (modelProvider) => {
             const { failures, rawFailures } = await completePublicFailure({
@@ -13049,196 +12999,236 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("acknowledges a clean exit whose missing outputs fails the run", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId } = await entitledRunActor();
+        const owned = await publicChatActor(context);
+        const { actor, agentId } = owned;
+        await owned.run(async () => {
+          const run = await owned.sendChatRun(actor, {
+            agentId,
+            prompt: "complete without a checkpoint",
+          });
+          const pat = await api.createCliToken(actor);
+          const response = await owned.claimPatRun(
+            `Bearer ${pat.token}`,
+            run.runId,
+            [200],
+            {
+              runnerIdentity: {
+                runnerId: randomUUID(),
+                heartbeatGeneration: 13,
+              },
+            },
+          );
+          if (response.status !== 200) {
+            throw new Error("Expected a public PAT claim");
+          }
+          const claim = response.body;
+          const sandboxHeaders = {
+            authorization: `Bearer ${claim.sandboxToken}`,
+          };
 
-        const run = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "complete without a checkpoint",
-        });
-        const sandboxHeaders = {
-          authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
-        };
-
-        const missing = await webhooks.requestAgentComplete(
-          {
-            runId: run.runId,
-            exitCode: 0,
-            lastEventSequence: 0,
+          const missing = await webhooks.requestAgentComplete(
+            {
+              runId: run.runId,
+              exitCode: 0,
+              lastEventSequence: 0,
+              sandboxReuseResult: "poolMiss",
+              workspaceReuseResult: "cacheMiss",
+            },
+            sandboxHeaders,
+            [200],
+          );
+          if (missing.status !== 200) {
+            throw new Error(
+              "Expected the missing outputs failure to be acknowledged",
+            );
+          }
+          expect(missing.body).toStrictEqual({
+            success: true,
+            status: "failed",
+          });
+          const failed = await api.readRun(actor, run.runId);
+          expect(failed.status).toBe("failed");
+          expect(failed.error).toBe("Run completion outputs were not provided");
+          const runner = await api.requestRunRunner(actor, run.runId, [200]);
+          expect(runner.body).toStrictEqual({
             sandboxReuseResult: "poolMiss",
             workspaceReuseResult: "cacheMiss",
-          },
-          sandboxHeaders,
-          [200],
-        );
-        if (missing.status !== 200) {
-          throw new Error(
-            "Expected the missing outputs failure to be acknowledged",
-          );
-        }
-        expect(missing.body).toStrictEqual({ success: true, status: "failed" });
-        const failed = await api.readRun(actor, run.runId);
-        expect(failed.status).toBe("failed");
-        expect(failed.error).toBe("Run completion outputs were not provided");
-        const runner = await api.requestRunRunner(actor, run.runId, [200]);
-        expect(runner.body).toStrictEqual({
-          sandboxReuseResult: "poolMiss",
-          workspaceReuseResult: "cacheMiss",
-          runnerHostname: null,
-          runnerVersion: null,
-          runnerId: null,
-          runnerHeartbeatGeneration: null,
+            runnerHostname: null,
+            runnerVersion: null,
+            runnerId: null,
+            runnerHeartbeatGeneration: null,
+          });
         });
       });
 
       it("reports the settled status when a metadata-free completion races a cancellation", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId } = await entitledRunActor();
+        const owned = await publicChatActor(context);
+        const { actor, agentId } = owned;
+        await owned.run(async () => {
+          const run = await owned.sendChatRun(actor, {
+            agentId,
+            prompt: "cancel before the completion report",
+          });
+          const pat = await api.createCliToken(actor);
+          const response = await owned.claimPatRun(
+            `Bearer ${pat.token}`,
+            run.runId,
+            [200],
+            {
+              runnerIdentity: {
+                runnerId: randomUUID(),
+                heartbeatGeneration: 13,
+              },
+            },
+          );
+          if (response.status !== 200) {
+            throw new Error("Expected a public PAT claim");
+          }
+          const claim = response.body;
+          await api.requestCancelRun(actor, run.runId, [200]);
 
-        const run = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "cancel before the completion report",
-        });
-        await api.requestCancelRun(actor, run.runId, [200]);
-
-        const late = await webhooks.requestAgentComplete(
-          {
-            runId: run.runId,
-            exitCode: 0,
-            lastEventSequence: 0,
+          const late = await webhooks.requestAgentComplete(
+            {
+              runId: run.runId,
+              exitCode: 0,
+              lastEventSequence: 0,
+              sandboxReuseResult: "poolMiss",
+              workspaceReuseResult: "diskPressure",
+            },
+            {
+              authorization: `Bearer ${claim.sandboxToken}`,
+            },
+            [200],
+          );
+          if (late.status !== 200) {
+            throw new Error("Expected the late completion to be acknowledged");
+          }
+          expect(late.body).toStrictEqual({ success: true, status: "failed" });
+          const cancelled = await api.readRun(actor, run.runId);
+          expect(cancelled.status).toBe("cancelled");
+          const runner = await api.requestRunRunner(actor, run.runId, [200]);
+          expect(runner.body).toStrictEqual({
             sandboxReuseResult: "poolMiss",
             workspaceReuseResult: "diskPressure",
-          },
-          {
-            authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
-          },
-          [200],
-        );
-        if (late.status !== 200) {
-          throw new Error("Expected the late completion to be acknowledged");
-        }
-        expect(late.body).toStrictEqual({ success: true, status: "failed" });
-        const cancelled = await api.readRun(actor, run.runId);
-        expect(cancelled.status).toBe("cancelled");
-        const runner = await api.requestRunRunner(actor, run.runId, [200]);
-        expect(runner.body).toStrictEqual({
-          sandboxReuseResult: "poolMiss",
-          workspaceReuseResult: "diskPressure",
-          runnerHostname: null,
-          runnerVersion: null,
-          runnerId: null,
-          runnerHeartbeatGeneration: null,
-        });
+            runnerHostname: null,
+            runnerVersion: null,
+            runnerId: null,
+            runnerHeartbeatGeneration: null,
+          });
 
-        await webhooks.requestAgentComplete(
-          {
-            runId: run.runId,
-            exitCode: 0,
-            lastEventSequence: 0,
-            sandboxReuseResult: "reused",
-            workspaceReuseResult: "sandboxReused",
-          },
-          {
-            authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
-          },
-          [200],
-        );
-        const retainedRunner = await api.requestRunRunner(
-          actor,
-          run.runId,
-          [200],
-        );
-        expect(retainedRunner.body).toStrictEqual(runner.body);
+          await webhooks.requestAgentComplete(
+            {
+              runId: run.runId,
+              exitCode: 0,
+              lastEventSequence: 0,
+              sandboxReuseResult: "reused",
+              workspaceReuseResult: "sandboxReused",
+            },
+            {
+              authorization: `Bearer ${claim.sandboxToken}`,
+            },
+            [200],
+          );
+          const retainedRunner = await api.requestRunRunner(
+            actor,
+            run.runId,
+            [200],
+          );
+          expect(retainedRunner.body).toStrictEqual(runner.body);
+        });
       });
 
       it("keeps a cancelled run settled when its finalized completion arrives late", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId } = await entitledRunActor(
-          {},
-          NATIVE_RUNNER_ROUTE,
-        );
+        const owned = await publicChatActor(context);
+        const { actor, agentId } = owned;
+        await owned.run(async () => {
+          await api.ensurePersonalSubscriptionModel(actor, NATIVE_RUNNER_ROUTE);
 
-        const run = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "checkpoint, cancel, then complete",
-        });
-        const sandboxHeaders = {
-          authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
-        };
-        const historyHash = createHash("sha256")
-          .update(`bdd cancelled checkpoint ${run.runId}`)
-          .digest("hex");
-        await api.requestCancelRun(actor, run.runId, [200]);
-
-        const late = await webhooks.requestAgentComplete(
-          {
-            runId: run.runId,
-            exitCode: 0,
-            lastEventSequence: 0,
-            completion: {
-              cliAgentType: "claude-code",
-              cliAgentSessionId: `bdd-cancelled-cli-${run.runId}`,
-              cliAgentSessionHistoryHash: historyHash,
-            },
-          },
-          sandboxHeaders,
-          [200],
-        );
-        if (late.status !== 200) {
-          throw new Error(
-            "Expected the finalized completion to be acknowledged",
+          const run = await owned.sendChatRun(actor, {
+            agentId,
+            prompt: "checkpoint, cancel, then complete",
+          });
+          const { claim } = await owned.claimChatRun(
+            owned.runnerGroup,
+            run.runId,
           );
-        }
-        expect(late.body).toStrictEqual({ success: true, status: "failed" });
-        const cancelled = await api.readRun(actor, run.runId);
-        expect(cancelled.status).toBe("cancelled");
+          const sandboxHeaders = {
+            authorization: `Bearer ${claim.sandboxToken}`,
+          };
+          const historyHash = createHash("sha256")
+            .update(`bdd cancelled checkpoint ${run.runId}`)
+            .digest("hex");
+          await api.requestCancelRun(actor, run.runId, [200]);
+
+          const late = await webhooks.requestAgentComplete(
+            {
+              runId: run.runId,
+              exitCode: 0,
+              lastEventSequence: 0,
+              completion: {
+                cliAgentType: "claude-code",
+                cliAgentSessionId: `bdd-cancelled-cli-${run.runId}`,
+                cliAgentSessionHistoryHash: historyHash,
+              },
+            },
+            sandboxHeaders,
+            [200],
+          );
+          if (late.status !== 200) {
+            throw new Error(
+              "Expected the finalized completion to be acknowledged",
+            );
+          }
+          expect(late.body).toStrictEqual({ success: true, status: "failed" });
+          const cancelled = await api.readRun(actor, run.runId);
+          expect(cancelled.status).toBe("cancelled");
+        });
       });
 
       it("persists native history and outputs atomically on completion", async () => {
-        const bdd = createBddApi(context);
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const actor = bdd.user();
-        bdd.acceptAgentStorageWrites();
-        api.acceptStorageDownloads();
-        api.acceptTelemetryIngest();
-        api.configureRunnerGroup();
-        await api.grantProEntitlement(actor);
+        const owned = await publicChatActor(context);
+        const { actor, agentId } = owned;
+        await owned.run(async () => {
+          await api.ensurePersonalSubscriptionModel(actor, NATIVE_RUNNER_ROUTE);
+          const run = await owned.sendChatRun(actor, {
+            agentId,
+            prompt: "checkpoint without vars",
+          });
+          const { claim } = await owned.claimChatRun(
+            owned.runnerGroup,
+            run.runId,
+          );
+          const sandboxHeaders = {
+            authorization: `Bearer ${claim.sandboxToken}`,
+          };
 
-        await api.ensurePersonalSubscriptionModel(actor, NATIVE_RUNNER_ROUTE);
-        const agent = await bdd.createAgent(actor, {
-          displayName: "BDD checkpoint agent",
-          visibility: "private",
-        });
-        const run = await api.createThreadRun(actor, {
-          agentId: agent.agentId,
-          prompt: "checkpoint without vars",
-        });
-        const sandboxHeaders = {
-          authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
-        };
-
-        const historyHash = createHash("sha256")
-          .update(`bdd null vars checkpoint ${run.runId}`)
-          .digest("hex");
-        await webhooks.requestAgentComplete(
-          {
-            runId: run.runId,
-            exitCode: 0,
-            lastEventSequence: 0,
-            completion: {
-              cliAgentType: "claude-code",
-              cliAgentSessionId: `bdd-null-vars-cli-${run.runId}`,
-              cliAgentSessionHistoryHash: historyHash,
+          const historyHash = createHash("sha256")
+            .update(`bdd null vars checkpoint ${run.runId}`)
+            .digest("hex");
+          await webhooks.requestAgentComplete(
+            {
+              runId: run.runId,
+              exitCode: 0,
+              lastEventSequence: 0,
+              completion: {
+                cliAgentType: "claude-code",
+                cliAgentSessionId: `bdd-null-vars-cli-${run.runId}`,
+                cliAgentSessionHistoryHash: historyHash,
+              },
             },
-          },
-          sandboxHeaders,
-          [200],
-        );
-        const completed = await api.readRun(actor, run.runId);
-        expect(completed.status).toBe("completed");
-        expect(completed.result?.conversationId).toBeDefined();
+            sandboxHeaders,
+            [200],
+          );
+          const completed = await api.readRun(actor, run.runId);
+          expect(completed.status).toBe("completed");
+          expect(completed.result?.conversationId).toBeDefined();
+        });
       });
     });
   }

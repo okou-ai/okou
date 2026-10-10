@@ -1,14 +1,9 @@
-import { randomUUID } from "node:crypto";
-
-import {
-  testRuntimeStateContract,
-  type TestRuntimeStateActionBody,
-  type TestRuntimeStateActionResponse,
+import type {
+  TestRuntimeStateActionBody,
+  TestRuntimeStateActionResponse,
 } from "@okouai/api-contracts/contracts/test-runtime-state";
-import { onTestFinished } from "vitest";
 
-import { accept, type TestContext } from "../../../../__tests__/test-context";
-import { setupApp } from "../../../../__tests__/test-helpers";
+import type { TestContext } from "../../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 
 import { testRuntimeStateRoutes } from "../../test-runtime-state";
@@ -53,142 +48,6 @@ async function postAction(
   );
   await expectOk(response, `runtime state action ${body.action}`);
   return await readJson<TestRuntimeStateActionResponse>(response);
-}
-
-interface BuiltInModelKeyFixture {
-  readonly selectedModel: string;
-  release(): Promise<void>;
-}
-
-function registerBuiltInModelKeyCleanup(
-  context: TestContext,
-  fixtureId: string,
-  registerCleanup: (cleanup: () => Promise<void>) => void = onTestFinished,
-): () => Promise<void> {
-  let released = false;
-  const release = async (): Promise<void> => {
-    if (released) {
-      return;
-    }
-    await postAction(context, {
-      action: "delete-built-in-model-key",
-      fixture_id: fixtureId,
-    });
-    released = true;
-  };
-  registerCleanup(release);
-  return release;
-}
-
-function builtInModelKeyFixture(
-  context: TestContext,
-  fixtureId: string,
-  selectedModel: string,
-): BuiltInModelKeyFixture {
-  return {
-    selectedModel,
-    release: registerBuiltInModelKeyCleanup(context, fixtureId),
-  };
-}
-
-export async function seedBuiltInDefaultModelKey(
-  context: TestContext,
-  registerCleanup?: (cleanup: () => Promise<void>) => void,
-): Promise<BuiltInModelKeyFixture> {
-  const fixtureId = randomUUID();
-  // An operation owner can register before the write and join it before release.
-  // Default callers keep their existing post-setup onTestFinished registration.
-  const release = registerCleanup
-    ? registerBuiltInModelKeyCleanup(context, fixtureId, registerCleanup)
-    : undefined;
-  const response = await postAction(context, {
-    action: "seed-built-in-default-model-key",
-    fixture_id: fixtureId,
-  });
-  if (!response.selected_model) {
-    throw new Error("seedBuiltInDefaultModelKey missing selected_model");
-  }
-  return release
-    ? { selectedModel: response.selected_model, release }
-    : builtInModelKeyFixture(context, fixtureId, response.selected_model);
-}
-
-export async function seedBuiltInModelKey(
-  context: TestContext,
-  selectedModel: string,
-  registerCleanup?: (cleanup: () => Promise<void>) => void,
-  options: { readonly isolatePg?: boolean } = {},
-): Promise<BuiltInModelKeyFixture> {
-  const fixtureId = randomUUID();
-  const release = registerCleanup
-    ? registerBuiltInModelKeyCleanup(context, fixtureId, registerCleanup)
-    : undefined;
-  const app = await setupApp({
-    context,
-    routes: testRuntimeStateRoutes,
-    isolatePg: options.isolatePg,
-  });
-  const { body: response } = await accept(
-    app(testRuntimeStateContract).action({
-      body: {
-        action: "seed-built-in-model-key",
-        fixture_id: fixtureId,
-        selected_model: selectedModel,
-      },
-    }),
-    [200],
-  );
-  if (!response.selected_model) {
-    throw new Error("seedBuiltInModelKey missing selected_model");
-  }
-  return release
-    ? { selectedModel: response.selected_model, release }
-    : builtInModelKeyFixture(context, fixtureId, response.selected_model);
-}
-
-export async function readRunAutonomyBudgetFixture(
-  context: TestContext,
-  runId: string,
-): Promise<number | null> {
-  const response = await postAction(context, {
-    action: "read-run-autonomy-budget",
-    run_id: runId,
-  });
-  if (!("autonomy_budget" in response)) {
-    throw new Error("readRunAutonomyBudgetFixture missing autonomy_budget");
-  }
-  return response.autonomy_budget ?? null;
-}
-
-/**
- * Launch snapshots are intentionally writer-only in Stage 2, so persistence
- * cannot be observed through a production API. Keep this test-only exception
- * bounded to snapshot, historical-NULL, and no-row retry assertions.
- */
-export async function readRunLaunchSnapshotFixture(
-  context: TestContext,
-  runId: string,
-): Promise<NonNullable<TestRuntimeStateActionResponse["run_launch_snapshot"]>> {
-  const response = await postAction(context, {
-    action: "read-run-launch-snapshot",
-    run_id: runId,
-  });
-  if (!response.run_launch_snapshot) {
-    throw new Error("readRunLaunchSnapshotFixture missing run_launch_snapshot");
-  }
-  return response.run_launch_snapshot;
-}
-
-export async function setRunAutonomyBudgetFixture(
-  context: TestContext,
-  runId: string,
-  autonomyBudget: number,
-): Promise<void> {
-  await postAction(context, {
-    action: "set-run-autonomy-budget",
-    run_id: runId,
-    autonomy_budget: autonomyBudget,
-  });
 }
 
 export async function readWorkflowAutomationAutonomyFixture(

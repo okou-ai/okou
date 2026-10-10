@@ -12,10 +12,6 @@ import { initHono$ } from "./hono";
 import { requestValidation$ } from "./request";
 import { setRootSignal$ } from "./root";
 import { safeSync } from "../utils";
-import {
-  setSystemSkillStorageResolution$,
-  type SystemSkillStorageResolution,
-} from "./system-skill-storage-resolution";
 
 export type SignalRouteHandler<T> = Computed<T> | Command<T, [AbortSignal]>;
 
@@ -33,7 +29,7 @@ export type JsonResponseObserver = (
 
 interface HonoSignalHandlerOptions {
   readonly initializeServices$: Command<void, []>;
-  readonly systemSkillStorageResolution?: SystemSkillStorageResolution;
+
   readonly observeJsonResponse?: JsonResponseObserver;
 }
 
@@ -122,7 +118,7 @@ export function honoSignalHandler(
   signal: AbortSignal,
   {
     initializeServices$,
-    systemSkillStorageResolution,
+
     observeJsonResponse,
   }: HonoSignalHandlerOptions,
 ): Handler {
@@ -132,9 +128,6 @@ export function honoSignalHandler(
     store.set(setRootSignal$, signal);
     store.set(initHono$, context, contract, apiStartTime);
     store.set(initializeServices$);
-    if (systemSkillStorageResolution) {
-      store.set(setSystemSkillStorageResolution$, systemSkillStorageResolution);
-    }
 
     // Mirror the contract client order: path/query validation
     // precedes auth and downstream services, so a malformed request returns

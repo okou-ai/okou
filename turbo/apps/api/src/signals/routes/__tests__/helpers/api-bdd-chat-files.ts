@@ -1,4 +1,3 @@
-import type { SystemSkillStorageResolution } from "../../../context/system-skill-storage-resolution";
 import { randomUUID } from "node:crypto";
 import {
   chatEventsContract,
@@ -142,7 +141,6 @@ interface RequestSendEventOptions {
   /** Request headers beyond authentication, such as a preview bypass. */
   readonly extraHeaders?: Readonly<Record<string, string>>;
   /** Request-owned system skill storage lookups for the send's pick. */
-  readonly systemSkillStorageResolution?: SystemSkillStorageResolution;
 }
 
 /** Both body fields are optional on the contract, and an omitted
@@ -1600,12 +1598,6 @@ export function createChatFilesBddApi(context: TestContext) {
         context,
         routes: chatEventsRoutes,
         ...(signal === undefined ? {} : { signal }),
-        ...(options.systemSkillStorageResolution === undefined
-          ? {}
-          : {
-              systemSkillStorageResolution:
-                options.systemSkillStorageResolution,
-            }),
       })(chatEventsContract);
       const defaultModel =
         "prompt" in body &&

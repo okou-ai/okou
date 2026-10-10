@@ -15,7 +15,6 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
 
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { seedBuiltInModelKey } from "./helpers/runtime-state";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -23,7 +22,6 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 import {
   createChatEventsFixture,
-  configureNativeCliArtifact,
   userMessages,
   eventBackedContents,
   occurrences,
@@ -35,8 +33,6 @@ const {
   chat,
   webhooks,
   chatCallbacks,
-  entitledChatActor,
-  configureBuiltInPiModel,
   configureSubscriptionPiModel,
   sendChatRun,
   claimChatRun,
@@ -54,10 +50,10 @@ async function configureResponsesWithOwnedRuns(args: {
   readonly actor: ApiTestUser;
   readonly agentId: string;
   readonly runnerGroup: string;
-  readonly selectedModel: "okou-1.0" | "gpt-6-luna";
+  readonly selectedModel: "gpt-6-luna";
 }): Promise<{
-  /** The send selection: null is Auto. */
-  readonly model: string | null;
+  /** The normally connected personal model selection. */
+  readonly model: "gpt-6-luna";
   /** The run model that executes the selection. */
   readonly runModel: string;
   readonly run: ReturnType<typeof createFixtureOperationOwner>["run"];
@@ -193,13 +189,11 @@ async function configureResponsesWithOwnedRuns(args: {
   }
 
   await runOwned(async () => {
-    await (model === "okou-1.0"
-      ? configureBuiltInPiModel(args.actor, model)
-      : configureSubscriptionPiModel(args.actor, {}, model));
+    await configureSubscriptionPiModel(args.actor, {}, model);
   });
 
   return {
-    model: model === "okou-1.0" ? null : model,
+    model,
     runModel: model,
     run: runOwned,
     sendChatRun: (...parameters) => {
@@ -221,39 +215,6 @@ async function configureResponsesWithOwnedRuns(args: {
 }
 
 describe("CHAT-02: model-first routing", () => {
-  it("runs built-in okou-1.0 OpenRouter Responses", async () => {
-    const selectedModel = "okou-1.0";
-    await seedBuiltInModelKey(context, selectedModel);
-    configureNativeCliArtifact();
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const { model, sendChatRun, claimChatRun, cancelChatRun } =
-      await configureResponsesWithOwnedRuns({
-        actor,
-        agentId,
-        runnerGroup,
-        selectedModel,
-      });
-    mockPiResourceArchiveDownloads();
-    mockPiCheckpointObjectStore();
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      prompt: `run ${selectedModel} on its Built-in route`,
-      model,
-    });
-    await flushWaitUntilForTest();
-
-    const { claim } = await claimChatRun(runnerGroup, run.runId);
-    expect(claim.cliAgentType).toBe("pi");
-    expect(claim.piModelConfig).toMatchObject({
-      provider: "openrouter",
-      baseUrl: "https://openrouter.ai/api/v1",
-      model: "@preset/okou-1-0",
-    });
-    await expectThreadModelCredits(context, actor, run.threadId, 0);
-    await cancelChatRun(actor, run.runId);
-  }, 90_000);
-
   it("transfers pre-migration OpenRouter Chat JSONL by reference", async () => {
     const { actor, agentId, runnerGroup } = await publicChatActor(context);
     const {

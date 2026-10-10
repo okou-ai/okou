@@ -24,7 +24,6 @@ const {
   misc,
   entitledChatActor,
 
-  seedBuiltInModelKey,
   configureSubscriptionPiModel,
   sendChatRun,
   requestSendEventRaw,
@@ -539,7 +538,7 @@ describe("CHAT-02: model-first routing", () => {
   it("keeps the enqueued model after thread and member defaults change", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await seedBuiltInModelKey("okou-1.0");
+
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
@@ -636,7 +635,7 @@ describe("CHAT-02: model-first routing", () => {
   it("does not overwrite a concurrent explicit thread model selection", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await seedBuiltInModelKey("okou-1.0");
+
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });

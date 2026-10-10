@@ -1,35 +1,31 @@
-import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 import {
-  clearMockNow,
-  mockNow,
-  now,
-  withNowScopeForTest,
-} from "../../../lib/time";
+  appendTerminalChatEventsFixture,
+  readSeededUnreadThreadIdsFixture,
+} from "../../../test-fixtures/chat-thread-agent-read";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import {
-  updateFeatureSwitchesForUser,
-  deleteFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
+import { createRouteMocks } from "./helpers/route-test";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
-const runReads = createRunReadsApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
 /** The route's notification budget; one more id than this overflows it. */
 const NOTIFIED_THREAD_ID_BUDGET = 100;
@@ -42,59 +38,72 @@ interface AgentReadFixture {
   readonly agentId: string;
   readonly orgId: string;
   readonly threadIds: readonly string[];
-  readonly run: ReturnType<typeof createPublicComputerUseScenario>["run"];
 }
 
-/** Create a shared Agent and actual cancelled Runs for each member-owned thread. */
+/**
+ * One shared Agent owned by another member of the caller's organization, with
+ * `threadCount` threads that belong to the caller. The distinct Agent owner
+ * exists before any request runs, so a test never has to transfer the
+ * Agent first; the test exercises the actor's read cursor for a shared Agent.
+ */
 async function createAgentReadFixture(
   threadCount: number,
 ): Promise<AgentReadFixture> {
-  const lifecycle = createPublicComputerUseScenario(context, {
-    tier: "team",
-    ...(threadCount > 10 ? { additionalConcurrency: 118 } : {}),
-  });
+  const signal = context.signal;
   const orgId = `org_${randomUUID()}`;
-  const owner = lifecycle.user({ orgId });
-  const actor = lifecycle.user({ orgId });
-  lifecycle.beforeWorkspaceCleanup(() => {
-    return deleteFeatureSwitchesForUser(context, { ...actor, orgId });
+  const owner = bdd.user({ orgId });
+  const actor = bdd.user({ orgId });
+  bdd.acceptAgentStorageWrites();
+  const agent = await bdd.createAgent(owner, {
+    displayName: `Shared ${randomUUID().slice(0, 8)}`,
+    visibility: "public",
   });
-  return await lifecycle.run(async () => {
-    prepareChatRuntime();
-    await lifecycle.prepareActor(actor);
-    const agent = await bdd.createAgent(owner, {
-      displayName: `Shared ${randomUUID().slice(0, 8)}`,
-      visibility: "public",
-    });
-    const threadIds: string[] = [];
-    // Team plus its normal paid concurrency add-on admits the largest matrix.
-    // Join every accepted send/cancel before starting the next batch or propagating an error.
-    const batchSize = 128;
-    for (let start = 0; start < threadCount; start += batchSize) {
-      context.signal.throwIfAborted();
-      threadIds.push(
-        ...(await appendCancelledRuns({
-          actor,
-          agentId: agent.agentId,
-          run: lifecycle.run,
-          threads: Array.from(
-            { length: Math.min(batchSize, threadCount - start) },
-            () => {
-              return {};
-            },
-          ),
-        })),
-      );
+  const model = await chat.getDefaultCreateThreadModel(actor);
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  // Reuse the creation route app instead of rebuilding it for every thread.
+  const client = setupApp({ context, signal, routes: chatThreadCreateRoutes })(
+    chatThreadsContract,
+  );
+  const threadIds: string[] = [];
+  // Keep one batch below the ten-connection API pool and drain it before
+  // propagating errors or changing identities. Eight leaves capacity for the
+  // fixture's other database work while keeping high-cardinality cases within
+  // the ordinary test budget under shared-runner load.
+  const batchSize = 8;
+  for (let start = 0; start < threadCount; start += batchSize) {
+    signal.throwIfAborted();
+    const batch = await Promise.allSettled(
+      Array.from(
+        { length: Math.min(batchSize, threadCount - start) },
+        (_, index) => {
+          return accept(
+            client.create({
+              headers: { authorization: "Bearer clerk-session" },
+              body: {
+                agentId: agent.agentId,
+                title: `Bulk ${start + index}`,
+                model,
+              },
+            }),
+            [201],
+          );
+        },
+      ),
+    );
+    for (const result of batch) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+      threadIds.push(result.value.body.id);
     }
-    return {
-      actor,
-      owner,
-      agentId: agent.agentId,
-      orgId,
-      threadIds,
-      run: lifecycle.run,
-    };
-  });
+  }
+  signal.throwIfAborted();
+  await appendTerminalChatEventsFixture({ threadIds });
+  return { actor, owner, agentId: agent.agentId, orgId, threadIds };
 }
 
 function prepareChatRuntime(): void {
@@ -117,173 +126,47 @@ async function appendCancelledRun(args: {
   readonly actor: ApiTestUser;
   readonly agentId: string;
   readonly threadId?: string;
-  readonly run: AgentReadFixture["run"];
 }): Promise<string> {
-  const threadIds = await appendCancelledRuns({
-    ...args,
-    threads: [{ threadId: args.threadId }],
+  const { runId, threadId } = await chat.sendAndLaunch(args.actor, {
+    agentId: args.agentId,
+    prompt: `agent read ${randomUUID()}`,
+    ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
   });
-  const threadId = threadIds[0];
-  if (!threadId) {
-    throw new Error("Expected the accepted chat thread");
-  }
+  await runs.requestCancelRun(args.actor, runId, [200]);
+  await flushWaitUntilForTest();
+
+  await flushWaitUntilForTest();
+  await expect(chat.listUnreadChatThreadIds(args.actor)).resolves.toContain(
+    threadId,
+  );
   return threadId;
 }
 
-/** Join a normally admitted batch, locating each actual Run through public logs. */
-async function appendCancelledRuns(args: {
-  readonly actor: ApiTestUser;
-  readonly agentId: string;
-  readonly threads: readonly { readonly threadId?: string }[];
-  readonly run: AgentReadFixture["run"];
-}): Promise<readonly string[]> {
-  return await args.run(async () => {
-    const sends = await Promise.allSettled(
-      args.threads.map(async (thread) => {
-        const prompt = `agent read ${randomUUID()}`;
-        const sent = await chat.requestSendEvent(
-          args.actor,
-          {
-            agentId: args.agentId,
-            prompt,
-            model: "claude-fable-5-1",
-            ...(thread.threadId === undefined
-              ? {}
-              : { threadId: thread.threadId }),
-          },
-          [201],
-        );
-        if (sent.status !== 201) {
-          throw new Error("Expected the ordinary chat send to be accepted");
-        }
-        return { prompt, threadId: sent.body.threadId };
-      }),
-    );
-    await flushWaitUntilForTest();
-    const accepted = sends.map((result) => {
-      if (result.status === "rejected") {
-        throw result.reason;
-      }
-      return result.value;
-    });
-    const pages = await Promise.allSettled(
-      (["pending", "queued"] as const).map(async (status) => {
-        let page = await runReads.requestListLogs(
-          args.actor,
-          {
-            agentId: args.agentId,
-            status,
-            limit: 100,
-          },
-          [200],
-        );
-        const entries = [...page.body.data];
-        const cursors = new Set<string>();
-        while (page.body.pagination.hasMore) {
-          const cursor = page.body.pagination.nextCursor;
-          if (!cursor || cursors.has(cursor)) {
-            throw new Error("Expected an advancing public Run-list cursor");
-          }
-          cursors.add(cursor);
-          page = await runReads.requestListLogs(
-            args.actor,
-            {
-              agentId: args.agentId,
-              status,
-              limit: 100,
-              cursor,
-            },
-            [200],
-          );
-          entries.push(...page.body.data);
-        }
-        expect(page.body.pagination.hasMore).toBeFalsy();
-        return entries;
-      }),
-    );
-    const active = pages.flatMap((result) => {
-      if (result.status === "rejected") {
-        throw result.reason;
-      }
-      return result.value;
-    });
-    const launched = accepted.map((sent) => {
-      const matches = active.filter((item) => {
-        return item.agentId === args.agentId && item.prompt === sent.prompt;
-      });
-      expect(matches).toHaveLength(1);
-      const match = matches[0];
-      if (!match) {
-        throw new Error(
-          "Expected exactly one actual Run for the unique prompt",
-        );
-      }
-      return { ...sent, runId: match.id };
-    });
-    expect(
-      new Set(
-        launched.map((item) => {
-          return item.runId;
-        }),
-      ).size,
-    ).toBe(accepted.length);
-    const cancellations = await Promise.allSettled(
-      launched.map((item) => {
-        return runs.requestCancelRun(args.actor, item.runId, [200]);
-      }),
-    );
-    await flushWaitUntilForTest();
-    for (const result of cancellations) {
-      if (result.status === "rejected") {
-        throw result.reason;
-      }
-    }
-    const verified = await Promise.allSettled(
-      launched.map(async ({ runId, threadId }) => {
-        const [page, detail] = await readPublicThreadState(
-          args.actor,
-          threadId,
-        );
-        const terminals = page.events.filter((event) => {
-          return (
-            event.runId === runId && isChatRunTerminalEventType(event.eventType)
-          );
-        });
-        expect(terminals).toHaveLength(1);
-        const terminal = terminals[0];
-        if (!terminal) {
-          throw new Error("Expected the actual cancelled Run terminal event");
-        }
-        expect(terminal.eventType).toBe("run.cancelled");
-        expect(
-          detail.lastReadAt === null ||
-            Date.parse(detail.lastReadAt) < Date.parse(terminal.createdAt),
-        ).toBeTruthy();
-        return threadId;
-      }),
-    );
-    return verified.map((result) => {
-      if (result.status === "rejected") {
-        throw result.reason;
-      }
-      return result.value;
-    });
+/**
+ * The same shared-Agent shape as {@link createAgentReadFixture}, built only
+ * through production APIs: each thread is created by a chat send and made
+ * unread by the cancelled Run's terminal event.
+ */
+async function createUnreadAgentThreads(
+  threadCount: number,
+): Promise<AgentReadFixture> {
+  prepareChatRuntime();
+  const orgId = `org_${randomUUID()}`;
+  const owner = bdd.user({ orgId });
+  const actor = bdd.user({ orgId });
+  await runs.grantProEntitlement(actor);
+  await runs.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
   });
-}
-
-/** Join both ordinary reads even when one request fails. */
-async function readPublicThreadState(actor: ApiTestUser, threadId: string) {
-  const [page, detail] = await Promise.allSettled([
-    chat.listThreadEvents(actor, threadId),
-    chat.readThread(actor, threadId),
-  ]);
-  if (page.status === "rejected") {
-    throw page.reason;
+  const agent = await bdd.createAgent(owner, {
+    displayName: `Shared ${randomUUID().slice(0, 8)}`,
+    visibility: "public",
+  });
+  const threadIds: string[] = [];
+  for (let index = 0; index < threadCount; index += 1) {
+    threadIds.push(await appendCancelledRun({ actor, agentId: agent.agentId }));
   }
-  if (detail.status === "rejected") {
-    throw detail.reason;
-  }
-  return [page.value, detail.value] as const;
+  return { actor, owner, agentId: agent.agentId, orgId, threadIds };
 }
 
 /** Each thread's read cursor as the production thread reader returns it. */
@@ -305,52 +188,15 @@ async function visibleUnreadThreadIds(
   return new Set(await chat.listUnreadChatThreadIds(fixture.actor));
 }
 
-/** Compare every known thread's public terminal events and cursor, beyond the sidebar limit. */
+/**
+ * Complete seeded unread state for this bulk-write fixture. The public
+ * indicators return at most 50 unread threads, so they cannot read back the
+ * 100+ thread cases.
+ */
 async function unreadThreadIds(
   fixture: AgentReadFixture,
 ): Promise<ReadonlySet<string>> {
-  return await fixture.run(async () => {
-    return await withNowScopeForTest(async () => {
-      const unread = new Set<string>();
-      const batchSize = 8;
-      for (
-        let start = 0;
-        start < fixture.threadIds.length;
-        start += batchSize
-      ) {
-        const batch = await Promise.allSettled(
-          fixture.threadIds
-            .slice(start, start + batchSize)
-            .map(async (threadId) => {
-              const [page, detail] = await readPublicThreadState(
-                fixture.actor,
-                threadId,
-              );
-              const terminals = page.events.filter((event) => {
-                return isChatRunTerminalEventType(event.eventType);
-              });
-              expect(terminals).not.toHaveLength(0);
-              if (
-                terminals.some((event) => {
-                  return (
-                    detail.lastReadAt === null ||
-                    Date.parse(event.createdAt) > Date.parse(detail.lastReadAt)
-                  );
-                })
-              ) {
-                unread.add(threadId);
-              }
-            }),
-        );
-        for (const result of batch) {
-          if (result.status === "rejected") {
-            throw result.reason;
-          }
-        }
-      }
-      return unread;
-    });
-  });
+  return await readSeededUnreadThreadIdsFixture(fixture.threadIds);
 }
 
 function clearPublishedNotifications(): void {
@@ -379,258 +225,201 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
     const fixture = await createAgentReadFixture(
       NOTIFIED_THREAD_ID_BUDGET + 28,
     );
-    await fixture.run(async () => {
-      return await withNowScopeForTest(async () => {
-        clearPublishedNotifications();
-        await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
-        const overflow = publishedReadCursorPayloads();
-        expect(overflow).toStrictEqual([
-          { agentId: fixture.agentId, threadIds: [], scope: "agent" },
-        ]);
-        expect(JSON.stringify(overflow[0]).length).toBeLessThan(4096);
-        await expect(unreadThreadIds(fixture)).resolves.toStrictEqual(
-          new Set(),
-        );
-      });
-    });
+    clearPublishedNotifications();
+    await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
+    const overflow = publishedReadCursorPayloads();
+    expect(overflow).toStrictEqual([
+      { agentId: fixture.agentId, threadIds: [], scope: "agent" },
+    ]);
+    expect(JSON.stringify(overflow[0]).length).toBeLessThan(4096);
+    await expect(unreadThreadIds(fixture)).resolves.toStrictEqual(new Set());
   });
 
   it("publishes nothing when every Agent thread is already read", async () => {
-    const fixture = await createAgentReadFixture(1);
-    await fixture.run(async () => {
-      return await withNowScopeForTest(async () => {
-        await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
-        clearPublishedNotifications();
-        const marked = await readCursors(fixture);
-        await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
-        expect(publishedReadCursorPayloads()).toStrictEqual([]);
-        await expect(readCursors(fixture)).resolves.toStrictEqual(marked);
-      });
-    });
+    const fixture = await createUnreadAgentThreads(1);
+    await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
+    clearPublishedNotifications();
+    const marked = await readCursors(fixture);
+    await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
+    expect(publishedReadCursorPayloads()).toStrictEqual([]);
+    await expect(readCursors(fixture)).resolves.toStrictEqual(marked);
   });
 
   it("publishes the exact thread ids for 1 unread Agent threads within the budget", async () => {
-    const fixture = await createAgentReadFixture(1);
-    await fixture.run(async () => {
-      return await withNowScopeForTest(async () => {
-        clearPublishedNotifications();
-        await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
-        const payloads = publishedReadCursorPayloads();
-        expect(payloads).toHaveLength(1);
-        const payload = payloads[0];
-        expect(payload).toStrictEqual({
-          agentId: fixture.agentId,
-          threadIds: [...fixture.threadIds],
-        });
-        expect(JSON.stringify(payload).length).toBeLessThan(4096);
-        await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
-          new Set(),
-        );
-      });
+    const fixture = await createUnreadAgentThreads(1);
+    clearPublishedNotifications();
+    await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
+    const payloads = publishedReadCursorPayloads();
+    expect(payloads).toHaveLength(1);
+    const payload = payloads[0];
+    expect(payload).toStrictEqual({
+      agentId: fixture.agentId,
+      threadIds: [...fixture.threadIds],
     });
+    expect(JSON.stringify(payload).length).toBeLessThan(4096);
+    await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
+      new Set(),
+    );
   });
 
   it("publishes the exact thread ids for 100 unread Agent threads within the budget", async () => {
     const threadCount = NOTIFIED_THREAD_ID_BUDGET;
     const fixture = await createAgentReadFixture(threadCount);
-    await fixture.run(async () => {
-      return await withNowScopeForTest(async () => {
-        clearPublishedNotifications();
-        await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
-        const payloads = publishedReadCursorPayloads();
-        expect(payloads).toHaveLength(1);
-        const payload = payloads[0];
-        expect(payload).toStrictEqual({
-          agentId: fixture.agentId,
-          threadIds: expect.arrayContaining([...fixture.threadIds]),
-        });
-        const { threadIds } = readCursorPayloadThreadIdsSchema.parse(payload);
-        expect(threadIds).toHaveLength(threadCount);
-        expect(JSON.stringify(payload).length).toBeLessThan(4096);
-        await expect(unreadThreadIds(fixture)).resolves.toStrictEqual(
-          new Set(),
-        );
-      });
+    clearPublishedNotifications();
+    await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
+    const payloads = publishedReadCursorPayloads();
+    expect(payloads).toHaveLength(1);
+    const payload = payloads[0];
+    expect(payload).toStrictEqual({
+      agentId: fixture.agentId,
+      threadIds: expect.arrayContaining([...fixture.threadIds]),
     });
+    const { threadIds } = readCursorPayloadThreadIdsSchema.parse(payload);
+    expect(threadIds).toHaveLength(threadCount);
+    expect(JSON.stringify(payload).length).toBeLessThan(4096);
+    await expect(unreadThreadIds(fixture)).resolves.toStrictEqual(new Set());
   });
 
   it("publishes Agent scope and updates every row one thread above the notification budget", async () => {
     const fixture = await createAgentReadFixture(NOTIFIED_THREAD_ID_BUDGET + 1);
-    await fixture.run(async () => {
-      return await withNowScopeForTest(async () => {
-        clearPublishedNotifications();
-        await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
-        expect(publishedReadCursorPayloads()).toStrictEqual([
-          { agentId: fixture.agentId, threadIds: [], scope: "agent" },
-        ]);
-        await expect(unreadThreadIds(fixture)).resolves.toStrictEqual(
-          new Set(),
-        );
-      });
-    });
+    clearPublishedNotifications();
+    await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
+    expect(publishedReadCursorPayloads()).toStrictEqual([
+      { agentId: fixture.agentId, threadIds: [], scope: "agent" },
+    ]);
+    await expect(unreadThreadIds(fixture)).resolves.toStrictEqual(new Set());
   });
 
   it("leaves unread threads older than the seven-day window untouched", async () => {
     // The stale thread's last message is written at the real current time;
     // the app clock then moves eight days ahead, so that message falls outside
     // the seven-day window while the recent thread is written inside it.
-    const fixture = await createAgentReadFixture(1);
-    await fixture.run(async () => {
-      return await withNowScopeForTest(async () => {
-        const [stale] = fixture.threadIds;
-        if (!stale) {
-          throw new Error("Expected one stale thread");
-        }
-        const staleCursor = (await chat.readThread(fixture.actor, stale))
-          .lastReadAt;
-        mockNow(now() + 8 * 24 * 60 * 60 * 1000);
-        await appendCancelledRun({
-          actor: fixture.actor,
-          agentId: fixture.agentId,
-          run: fixture.run,
-        });
-        await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
-        await expect(
-          chat.readThread(fixture.actor, stale),
-        ).resolves.toMatchObject({
-          lastReadAt: staleCursor,
-        });
-        // Back at the real time the stale thread is inside the window again and
-        // is still unread, while the recent one was marked read.
-        clearMockNow();
-        await expect(
-          chat.listUnreadChatThreadIds(fixture.actor),
-        ).resolves.toStrictEqual([stale]);
-      });
+    const fixture = await createUnreadAgentThreads(1);
+    const [stale] = fixture.threadIds;
+    if (!stale) {
+      throw new Error("Expected one stale thread");
+    }
+    const staleCursor = (await chat.readThread(fixture.actor, stale))
+      .lastReadAt;
+    mockNow(now() + 8 * 24 * 60 * 60 * 1000);
+    await appendCancelledRun({
+      actor: fixture.actor,
+      agentId: fixture.agentId,
     });
+
+    await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
+
+    await expect(chat.readThread(fixture.actor, stale)).resolves.toMatchObject({
+      lastReadAt: staleCursor,
+    });
+    // Back at the real time the stale thread is inside the window again and
+    // is still unread, while the recent one was marked read.
+    clearMockNow();
+    await expect(
+      chat.listUnreadChatThreadIds(fixture.actor),
+    ).resolves.toStrictEqual([stale]);
   });
 
   it("requires an organization and leaves foreign-user, cross-org and unknown-Agent requests without effects", async () => {
-    const fixture = await createAgentReadFixture(1);
-    await fixture.run(async () => {
-      return await withNowScopeForTest(async () => {
-        const before = await readCursors(fixture);
-        const peer = bdd.user({ orgId: fixture.orgId });
-        const crossOrg = bdd.user({ userId: fixture.actor.userId });
-        const orgless = bdd.user({ userId: fixture.actor.userId, orgId: null });
-        clearPublishedNotifications();
-        await chat.requestMarkAgentThreadsRead(orgless, fixture.agentId, [401]);
-        await chat.requestMarkAgentThreadsRead(peer, fixture.agentId, [204]);
-        await chat.requestMarkAgentThreadsRead(
-          crossOrg,
-          fixture.agentId,
-          [204],
-        );
-        await chat.requestMarkAgentThreadsRead(
-          fixture.actor,
-          randomUUID(),
-          [204],
-        );
-        await expect(readCursors(fixture)).resolves.toStrictEqual(before);
-        await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
-          new Set(fixture.threadIds),
-        );
-        expect(publishedReadCursorPayloads()).toStrictEqual([]);
-      });
-    });
+    const fixture = await createUnreadAgentThreads(1);
+    const before = await readCursors(fixture);
+    const peer = bdd.user({ orgId: fixture.orgId });
+    const crossOrg = bdd.user({ userId: fixture.actor.userId });
+    const orgless = bdd.user({ userId: fixture.actor.userId, orgId: null });
+    clearPublishedNotifications();
+
+    await chat.requestMarkAgentThreadsRead(orgless, fixture.agentId, [401]);
+    await chat.requestMarkAgentThreadsRead(peer, fixture.agentId, [204]);
+    await chat.requestMarkAgentThreadsRead(crossOrg, fixture.agentId, [204]);
+    await chat.requestMarkAgentThreadsRead(fixture.actor, randomUUID(), [204]);
+
+    await expect(readCursors(fixture)).resolves.toStrictEqual(before);
+    await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
+      new Set(fixture.threadIds),
+    );
+    expect(publishedReadCursorPayloads()).toStrictEqual([]);
   });
 
   it("excludes muted threads from bulk marking but permits explicit single-thread marking", async () => {
-    const fixture = await createAgentReadFixture(1);
-    await fixture.run(async () => {
-      return await withNowScopeForTest(async () => {
-        const before = await readCursors(fixture);
-        const [threadId] = fixture.threadIds;
-        if (!threadId) {
-          throw new Error("Expected one unread thread");
-        }
-        await bdd.readOnboardingStatus(fixture.actor);
-        await updateFeatureSwitchesForUser(
-          context,
-          {
-            userId: fixture.actor.userId,
-            orgId: fixture.orgId,
-            orgRole: fixture.actor.orgRole,
-          },
-          { [FeatureSwitchKey.ChatThreadMuting]: true },
-        );
-        await chat.requestSetThreadMuted(fixture.actor, threadId, true, [204]);
-        clearPublishedNotifications();
-        await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
-        await expect(readCursors(fixture)).resolves.toStrictEqual(before);
-        expect(publishedReadCursorPayloads()).toStrictEqual([]);
-        const marked = await chat.markThreadRead(fixture.actor, threadId);
-        expect(marked.lastReadAt).not.toBe(before.get(threadId));
-        await expect(
-          chat.readThreadMetadata(fixture.actor, threadId),
-        ).resolves.toMatchObject({ muted: true });
-        expect(publishedReadCursorPayloads()).toStrictEqual([
-          { threadId, agentId: fixture.agentId, lastReadAt: marked.lastReadAt },
-        ]);
-        await chat.requestSetThreadMuted(fixture.actor, threadId, false, [204]);
-        await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
-          new Set(),
-        );
-      });
-    });
+    const fixture = await createUnreadAgentThreads(1);
+    const before = await readCursors(fixture);
+    const [threadId] = fixture.threadIds;
+    if (!threadId) {
+      throw new Error("Expected one unread thread");
+    }
+    await bdd.readOnboardingStatus(fixture.actor);
+    await updateFeatureSwitchesForUser(
+      context,
+      {
+        userId: fixture.actor.userId,
+        orgId: fixture.orgId,
+        orgRole: fixture.actor.orgRole,
+      },
+      { [FeatureSwitchKey.ChatThreadMuting]: true },
+    );
+    await chat.requestSetThreadMuted(fixture.actor, threadId, true, [204]);
+    clearPublishedNotifications();
+
+    await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
+    await expect(readCursors(fixture)).resolves.toStrictEqual(before);
+    expect(publishedReadCursorPayloads()).toStrictEqual([]);
+
+    const marked = await chat.markThreadRead(fixture.actor, threadId);
+    expect(marked.lastReadAt).not.toBe(before.get(threadId));
+    await expect(
+      chat.readThreadMetadata(fixture.actor, threadId),
+    ).resolves.toMatchObject({ muted: true });
+    expect(publishedReadCursorPayloads()).toStrictEqual([
+      { threadId, agentId: fixture.agentId, lastReadAt: marked.lastReadAt },
+    ]);
+    await chat.requestSetThreadMuted(fixture.actor, threadId, false, [204]);
+    await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
+      new Set(),
+    );
   });
 
   it("leaves another Agent's unread threads untouched", async () => {
-    const fixture = await createAgentReadFixture(1);
-    await fixture.run(async () => {
-      return await withNowScopeForTest(async () => {
-        const other = await createAgentReadFixture(1);
-        await other.run(() => {
-          return withNowScopeForTest(async () => {
-            await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
-            await expect(
-              visibleUnreadThreadIds(fixture),
-            ).resolves.toStrictEqual(new Set());
-            await expect(visibleUnreadThreadIds(other)).resolves.toStrictEqual(
-              new Set(other.threadIds),
-            );
-          });
-        });
-      });
-    });
+    const fixture = await createUnreadAgentThreads(1);
+    const other = await createUnreadAgentThreads(1);
+    await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
+    await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
+      new Set(),
+    );
+    await expect(visibleUnreadThreadIds(other)).resolves.toStrictEqual(
+      new Set(other.threadIds),
+    );
   });
 
   it("keeps the newest terminal event as the cursor and never moves a newer cursor backwards", async () => {
-    const fixture = await createAgentReadFixture(2);
-    await fixture.run(async () => {
-      return await withNowScopeForTest(async () => {
-        await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
-        const firstRead = await readCursors(fixture);
-        // A later terminal event makes the thread unread again and the next write
-        // adopts that newer marker, never an older one and never `now()`.
-        for (const threadId of fixture.threadIds) {
-          await appendCancelledRun({
-            actor: fixture.actor,
-            agentId: fixture.agentId,
-            run: fixture.run,
-            threadId,
-          });
-        }
-        await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
-          new Set(fixture.threadIds),
-        );
-        await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
-        const secondRead = await readCursors(fixture);
-        for (const threadId of fixture.threadIds) {
-          const first = firstRead.get(threadId);
-          const second = secondRead.get(threadId);
-          expect(first).not.toBeNull();
-          expect(second).not.toBeNull();
-          expect(Date.parse(second ?? "")).toBeGreaterThan(
-            Date.parse(first ?? ""),
-          );
-        }
-        const unreads = await chat.listThreadUnreads(
-          fixture.actor,
-          fixture.agentId,
-        );
-        expect(unreads).toStrictEqual([]);
+    const fixture = await createUnreadAgentThreads(2);
+    await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
+    const firstRead = await readCursors(fixture);
+
+    // A later terminal event makes the thread unread again and the next write
+    // adopts that newer marker, never an older one and never `now()`.
+    for (const threadId of fixture.threadIds) {
+      await appendCancelledRun({
+        actor: fixture.actor,
+        agentId: fixture.agentId,
+        threadId,
       });
-    });
+    }
+    await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
+      new Set(fixture.threadIds),
+    );
+    await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
+    const secondRead = await readCursors(fixture);
+    for (const threadId of fixture.threadIds) {
+      const first = firstRead.get(threadId);
+      const second = secondRead.get(threadId);
+      expect(first).not.toBeNull();
+      expect(second).not.toBeNull();
+      expect(Date.parse(second ?? "")).toBeGreaterThan(Date.parse(first ?? ""));
+    }
+    const unreads = await chat.listThreadUnreads(
+      fixture.actor,
+      fixture.agentId,
+    );
+    expect(unreads).toStrictEqual([]);
   });
 });

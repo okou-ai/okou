@@ -35,12 +35,10 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import { seedBuiltInModelKey } from "./helpers/runtime-state";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readGetStartedStatus } from "./helpers/get-started";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 // INT-03 deep AgentPhone flows: linking through the webhook connect prompt,
 // real run dispatch through runner poll/claim, and completion replies through
 // typed internal callback dispatch. All state is constructed through public
@@ -1330,7 +1328,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     ).resolves.toMatchObject({
       selectedModel: "auto",
     });
-    await seedBuiltInModelKey(context, SEEDED_SYSTEM_DEFAULT_MODEL);
+
     await send("use the system default");
     await runs.heartbeatRunner(runnerGroup);
     await flushWaitUntilForTest();

@@ -1,3 +1,4 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { createPublicComputerUseHosts } from "./helpers/public-computer-use-hosts";
 import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
@@ -1946,15 +1947,23 @@ describe("CHAT-01 chat search", () => {
     expectApiError(orgless.body);
     expect(orgless.body.error.code).toBe("UNAUTHORIZED");
 
-    const sandboxBearer = api.sandboxTokenForRun(bdd.user(), randomUUID());
-    const forbidden = await chat.searchChatWithBearer(
-      `Bearer ${sandboxBearer}`,
-      "hello",
-      [403],
-    );
-    expectApiError(forbidden.body);
-    expect(forbidden.body.error.code).toBe("FORBIDDEN");
-    expect(forbidden.body.error.message).toContain("chat-event:read");
+    const owned = await publicChatActor(context);
+    const source = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "check sandbox search authorization",
+    });
+    const { claim } = await owned.claimChatRun(owned.runnerGroup, source.runId);
+    await owned.run(async () => {
+      const sandboxBearer = claim.sandboxToken;
+      const forbidden = await chat.searchChatWithBearer(
+        `Bearer ${sandboxBearer}`,
+        "hello",
+        [403],
+      );
+      expectApiError(forbidden.body);
+      expect(forbidden.body.error.code).toBe("FORBIDDEN");
+      expect(forbidden.body.error.message).toContain("chat-event:read");
+    });
   });
 });
 

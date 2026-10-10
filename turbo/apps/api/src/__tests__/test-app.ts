@@ -8,7 +8,6 @@ import {
 } from "@okouai/api-contracts/contracts/trpc-contract";
 
 import { createAppWithRoutes } from "../app-factory-core";
-import type { SystemSkillStorageResolution } from "../signals/context/system-skill-storage-resolution";
 import type { RouteEntry } from "../signals/route-entry";
 import type { TestContext } from "./test-context";
 
@@ -21,7 +20,6 @@ interface TestAppWithRoutesOptions {
 interface SetupAppWithRoutesOptions extends TestAppWithRoutesOptions {
   readonly baseUrl?: string;
   readonly rethrowErrors?: boolean;
-  readonly systemSkillStorageResolution?: SystemSkillStorageResolution;
 }
 
 function parseResponseBody(response: Response): Promise<unknown> | undefined {
@@ -64,13 +62,11 @@ function createAppFetcher({
   routes,
   signal,
   rethrowErrors,
-  systemSkillStorageResolution,
 }: SetupAppWithRoutesOptions): ApiFetcher {
   return (args) => {
     const app = createAppWithRoutes({
       signal: signal ?? context.signal,
       routes,
-      systemSkillStorageResolution,
     });
     if (rethrowErrors) {
       app.onError((error) => {
@@ -110,14 +106,12 @@ export function setupAppWithRoutes({
   routes,
   signal,
   rethrowErrors,
-  systemSkillStorageResolution,
 }: SetupAppWithRoutesOptions) {
   const app = createAppFetcher({
     context,
     routes,
     signal,
     rethrowErrors,
-    systemSkillStorageResolution,
   });
 
   return <TContract extends AppRouter>(

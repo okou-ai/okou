@@ -1,3 +1,8 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
+import {
+  claimBudgetRun,
+  exerciseAutonomyBudget,
+} from "./helpers/public-autonomy-budget";
 import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 import {
   DeleteObjectsCommand,
@@ -1191,24 +1196,6 @@ function installCatalogStorageFixture() {
   };
 }
 
-function officialQueueHeaders(
-  actor: ApiTestUser,
-  sourceRunId: string,
-  queueCase: {
-    readonly origin: "web" | "agent_run";
-  },
-) {
-  return queueCase.origin === "web"
-    ? authHeaders(actor)
-    : {
-        authorization: `Bearer ${runs.okouTokenForRunWithCapabilities(
-          actor,
-          sourceRunId,
-          ["agent:write"],
-        )}`,
-      };
-}
-
 async function setOfficialWorkflowsEnabled(
   actor: ApiTestUser,
   enabled: boolean,
@@ -1409,75 +1396,31 @@ async function installOfficialWorkflowLifecycleScenario() {
   };
 }
 
-async function installIdleOfficialWorkflowScenario() {
-  const definitionName = `api-test-idle-official-${randomUUID()}`;
-  const sourceDefinitionName = `api-test-idle-source-${randomUUID()}`;
-  installCatalogStorageFixture();
-  await syncCatalog(
-    catalog([
-      activeDefinition(definitionName, []),
-      activeDefinition(sourceDefinitionName, [loopBlueprint()]),
-    ]),
-  );
-  const { actor } = await workflowBdd.setupWorkflowOrg({
-    model: "claude-fable-5-1",
+async function ordinaryDelegationScenario(lastHop: boolean) {
+  const owned = await publicChatActor(context);
+  return await owned.run(async () => {
+    await runs.updateUserModelPreference(owned.actor, "claude-fable-5-1");
+    const workflowId = await workflowBdd.createWorkflow(owned.actor, {
+      agentId: owned.agentId,
+      name: `ordinary-delegation-${randomUUID().slice(0, 8)}`,
+    });
+    const detail = await accept(
+      workflowClient().get({
+        headers: authHeaders(owned.actor),
+        params: { workflowId },
+      }),
+      [200],
+    );
+    const sent = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "Delegate a workflow",
+    });
+    const root = await claimBudgetRun(context, owned, sent);
+    const source = lastHop
+      ? (await exerciseAutonomyBudget(context, owned, root, 32)).get(1)!
+      : root;
+    return { owned, actor: owned.actor, workflow: detail.body, source };
   });
-  const { agentId } = await workflowBdd.createAgent(actor);
-  await setOfficialWorkflowsEnabled(actor, true);
-  const installation = await accept(
-    officialClient().install({
-      headers: authHeaders(actor),
-      params: { definitionName },
-      body: { agentId, blueprints: [] },
-    }),
-    [201],
-  );
-  onTestFinished(async () => {
-    installCatalogStorageFixture();
-    await cancelAgentRunsThroughLogs(actor, agentId);
-    await flushWaitUntilForTest();
-  });
-  runs.configureRunnerGroup();
-  runs.acceptStorageDownloads();
-
-  // The source's public Blueprint grants one delegation hop to the target.
-  const sourceInstallation = await accept(
-    officialClient().install({
-      headers: authHeaders(actor),
-      params: { definitionName: sourceDefinitionName },
-      body: {
-        agentId,
-        blueprints: [
-          {
-            blueprintKey: "pulse",
-            bindings: [
-              { key: "interval-seconds", value: 3600 },
-              { key: "autonomy-budget", value: 1 },
-            ],
-          },
-        ],
-      },
-    }),
-    [201],
-  );
-  const sourceAutomation = sourceInstallation.body.workflow.automations[0];
-  if (!sourceAutomation) {
-    throw new Error("Expected a one-hop Official source Automation");
-  }
-  const source = await accept(
-    automationClient().run({
-      headers: authHeaders(actor),
-      params: { id: sourceAutomation.id },
-    }),
-    [201],
-  );
-  expect(source.body.runId).toBeNull();
-  const sourceThreadId = source.body.chatThreadId;
-  const sourceRunId = await launchedAutomationRunId(actor, sourceThreadId);
-  if (!sourceRunId) {
-    throw new Error("Expected the Official source Automation Run");
-  }
-  return { actor, installation, sourceRunId, sourceThreadId };
 }
 
 beforeEach(() => {
@@ -5309,109 +5252,104 @@ describe("Official Workflow Run admission", () => {
     expect(ordinaryWorkflowId).not.toBe(firstInstallation.body.workflow.id);
   });
 
-  it("launches an idle Official agent-run input with source annotations", async () => {
-    const { actor, installation, sourceRunId, sourceThreadId } =
-      await installIdleOfficialWorkflowScenario();
-    const sourceClaim = await runs.claimRunnerJob(sourceRunId);
-    await webhooks.requestAgentComplete(
-      { runId: sourceRunId, exitCode: 1 },
-      { authorization: `Bearer ${sourceClaim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-
-    const launched = await accept(
-      workflowClient().run({
-        headers: officialQueueHeaders(actor, sourceRunId, {
-          origin: "agent_run",
+  it("launches an idle ordinary workflow input with source annotations", async () => {
+    const { owned, actor, workflow, source } =
+      await ordinaryDelegationScenario(false);
+    const sourceRunId = source.runId;
+    const sourceThreadId = source.threadId;
+    await owned.run(async () => {
+      const launched = await accept(
+        workflowClient().run({
+          headers: { authorization: `Bearer ${source.token}` },
+          extraHeaders: { origin: "https://app.okou.ai" },
+          params: { workflowId: workflow.id },
         }),
-        extraHeaders: { origin: "https://app.okou.ai" },
-        params: { workflowId: installation.body.workflow.id },
-      }),
-      [200],
-    );
-    expect(launched.body.runId).toBeNull();
-    const launchedRunId = await launchedAutomationRunId(
-      actor,
-      launched.body.chatThreadId,
-    );
-    if (!launchedRunId) {
-      throw new Error("Expected the idle Official input to dispatch itself");
-    }
-    expect(launchedRunId).not.toBe(sourceRunId);
-    expect(launched.body.chatThreadId).not.toBe(sourceThreadId);
-    const claim = await runs.claimRunnerJob(launchedRunId);
-    expect(claim.prompt).toBe(`/${installation.body.workflow.name}`);
-    expect(claim.appendSystemPrompt).toContain(`SOURCE_RUN_ID: ${sourceRunId}`);
-    expect(claim.appendSystemPrompt).toContain(
-      `SOURCE_THREAD_ID: ${sourceThreadId}`,
-    );
+        [200],
+      );
+      expect(launched.body.runId).toBeNull();
+      const launchedRunId = await launchedAutomationRunId(
+        actor,
+        launched.body.chatThreadId,
+      );
+      if (!launchedRunId) {
+        throw new Error(
+          "Expected the idle ordinary workflow input to dispatch itself",
+        );
+      }
+      expect(launchedRunId).not.toBe(sourceRunId);
+      expect(launched.body.chatThreadId).not.toBe(sourceThreadId);
+      const { claim } = await owned.claimChatRun(
+        owned.runnerGroup,
+        launchedRunId,
+      );
+      expect(claim.prompt).toBe(`/${workflow.name}`);
+      expect(claim.appendSystemPrompt).toContain(
+        `SOURCE_RUN_ID: ${sourceRunId}`,
+      );
+      expect(claim.appendSystemPrompt).toContain(
+        `SOURCE_THREAD_ID: ${sourceThreadId}`,
+      );
+    });
   });
 
-  it("spends the last inherited hop of an idle Official input and rejects the next hop", async () => {
-    // Configure the source's last hop through a public Blueprint binding instead
-    // of spending 31 prerequisite hops. The target must inherit, not refill it.
-    const { actor, installation, sourceRunId } =
-      await installIdleOfficialWorkflowScenario();
-    const sourceClaim = await runs.claimRunnerJob(sourceRunId);
-    await webhooks.requestAgentComplete(
-      { runId: sourceRunId, exitCode: 1 },
-      { authorization: `Bearer ${sourceClaim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-
-    const launched = await accept(
-      workflowClient().run({
-        headers: officialQueueHeaders(actor, sourceRunId, {
-          origin: "agent_run",
+  it("spends the last inherited hop of an idle ordinary workflow input and rejects the next hop", async () => {
+    const { owned, actor, workflow, source } =
+      await ordinaryDelegationScenario(true);
+    const sourceRunId = source.runId;
+    await owned.run(async () => {
+      const launched = await accept(
+        workflowClient().run({
+          headers: { authorization: `Bearer ${source.token}` },
+          extraHeaders: { origin: "https://app.okou.ai" },
+          params: { workflowId: workflow.id },
         }),
-        extraHeaders: { origin: "https://app.okou.ai" },
-        params: { workflowId: installation.body.workflow.id },
-      }),
-      [200],
-    );
-    expect(launched.body.runId).toBeNull();
-    const launchedRunId = await launchedAutomationRunId(
-      actor,
-      launched.body.chatThreadId,
-    );
-    if (!launchedRunId) {
-      throw new Error("Expected the final inherited hop to launch");
-    }
-    expect(launchedRunId).not.toBe(sourceRunId);
-    const claim = await runs.claimRunnerJob(launchedRunId);
+        [200],
+      );
+      expect(launched.body.runId).toBeNull();
+      const launchedRunId = await launchedAutomationRunId(
+        actor,
+        launched.body.chatThreadId,
+      );
+      if (!launchedRunId) {
+        throw new Error("Expected the final inherited hop to launch");
+      }
+      expect(launchedRunId).not.toBe(sourceRunId);
+      const { claim } = await owned.claimChatRun(
+        owned.runnerGroup,
+        launchedRunId,
+      );
 
-    const denied = await accept(
-      workflowClient().run({
-        headers: officialQueueHeaders(actor, launchedRunId, {
-          origin: "agent_run",
+      const denied = await accept(
+        workflowClient().run({
+          headers: {
+            authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN}`,
+          },
+          extraHeaders: { origin: "https://app.okou.ai" },
+          params: { workflowId: workflow.id },
         }),
-        extraHeaders: { origin: "https://app.okou.ai" },
-        params: { workflowId: installation.body.workflow.id },
-      }),
-      [200],
-    );
-    expect(denied.body.runId).toBeNull();
-    expect(denied.body.chatThreadId).toBe(launched.body.chatThreadId);
-    // The exhausted hop is rejected by the pick once the thread is idle.
-    await webhooks.requestAgentComplete(
-      { runId: launchedRunId, exitCode: 1 },
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    const events = await allThreadEventRows(actor, denied.body.chatThreadId);
-    const rejections = events.filter((event) => {
-      return event.eventType === "input.rejected";
+        [200],
+      );
+      expect(denied.body.runId).toBeNull();
+      expect(denied.body.chatThreadId).toBe(launched.body.chatThreadId);
+      // The exhausted hop is rejected by the pick once the thread is idle.
+      await webhooks.requestAgentComplete(
+        { runId: launchedRunId, exitCode: 1 },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const events = await allThreadEventRows(actor, denied.body.chatThreadId);
+      const rejections = events.filter((event) => {
+        return event.eventType === "input.rejected";
+      });
+      expect(rejections).toHaveLength(1);
+      expect(rejections[0]).toMatchObject({
+        runId: null,
+        payload: { error: "autonomy_budget_exhausted" },
+      });
+      await expect(
+        launchedAutomationRunId(actor, denied.body.chatThreadId),
+      ).resolves.toBe(launchedRunId);
     });
-    expect(rejections).toHaveLength(1);
-    expect(rejections[0]).toMatchObject({
-      runId: null,
-      payload: { error: "autonomy_budget_exhausted" },
-    });
-    await expect(
-      launchedAutomationRunId(actor, denied.body.chatThreadId),
-    ).resolves.toBe(launchedRunId);
   });
 });

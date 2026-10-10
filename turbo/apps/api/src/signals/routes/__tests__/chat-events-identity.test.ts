@@ -193,143 +193,146 @@ describe("CHAT-02: default assistant identity", () => {
 
 describe("CHAT-02: run-scoped agent-token chat launches", () => {
   it("preserves the caller's run annotation on immediate and queued handoffs", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped chat actor");
-    }
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const owned = await publicChatActor(context);
+    const { actor, agentId, runnerGroup } = owned;
+    await owned.run(async () => {
+      await api.updateUserModelPreference(actor, "claude-fable-5-1");
+      if (!actor.orgId) {
+        throw new Error("Expected an organization-scoped chat actor");
+      }
+      chatCallbacks.failIfChatCallbackRouteIsFetched();
 
-    const caller = await sendChatRun(actor, {
-      agentId,
-      prompt: "launch chat work from this run",
-    });
-    const okouToken = api.okouTokenForRunWithCapabilities(actor, caller.runId, [
-      "chat-thread:read",
-      "chat-thread:write",
-      "chat-event:read",
-      "chat-event:write",
-    ]);
-
-    const createdThread = await accept(
-      chatThreadsClient().create({
-        headers: { authorization: `Bearer ${okouToken}` },
-        body: { agentId, title: "Run-scoped handoff" },
-      }),
-      [201],
-    );
-    const immediateEventId = randomUUID();
-    const immediateSend = await requestSendEventWithBearer(
-      okouToken,
-      {
+      const caller = await owned.sendChatRun(actor, {
         agentId,
-        clientEventId: immediateEventId,
-        threadId: createdThread.body.id,
-        prompt: "immediate run-scoped handoff",
-      },
-      [201],
-    );
-    if (immediateSend.status !== 201) {
-      throw new Error("Expected the run-scoped handoff request to succeed");
-    }
-    expect(immediateSend.body.runId).toBeNull();
-    // The idle thread's background pick launches the handoff.
-    await flushWaitUntilForTest();
-    const launchedMessages = await waitForThreadMessages(
-      actor,
-      createdThread.body.id,
-      (items) => {
-        return userMessages(items).some((message) => {
-          return (
-            message.revokesEventId === immediateEventId &&
-            message.runId !== undefined
-          );
-        });
-      },
-    );
-    const immediateRunId = userMessages(launchedMessages.events).find(
-      (message) => {
-        return message.revokesEventId === immediateEventId;
-      },
-    )?.runId;
-    if (immediateRunId === undefined) {
-      throw new Error("Expected the run-scoped handoff to launch");
-    }
+        prompt: "launch chat work from this run",
+      });
+      const callerClaim = await owned.claimChatRun(runnerGroup, caller.runId);
+      const okouToken = callerClaim.claim.platformEnvironment.OKOU_TOKEN;
+      if (!okouToken) {
+        throw new Error("Expected a claimed agent token");
+      }
 
-    await expect(api.readRun(actor, immediateRunId)).resolves.toMatchObject({
-      runId: immediateRunId,
-      prompt: "immediate run-scoped handoff",
-    });
-    expect(userMessages(launchedMessages.events)).toContainEqual(
-      expect.objectContaining({
-        revokesEventId: immediateEventId,
-        userMessage: expect.objectContaining({
-          parts: expect.arrayContaining([
-            expect.objectContaining({
-              type: "source",
-              kind: "agent",
-              runId: caller.runId,
-            }),
-          ]),
+      const createdThread = await accept(
+        chatThreadsClient().create({
+          headers: { authorization: `Bearer ${okouToken}` },
+          body: { agentId, title: "Run-scoped handoff" },
         }),
-      }),
-    );
+        [201],
+      );
+      const immediateEventId = randomUUID();
+      const immediateSend = await requestSendEventWithBearer(
+        okouToken,
+        {
+          agentId,
+          clientEventId: immediateEventId,
+          threadId: createdThread.body.id,
+          prompt: "immediate run-scoped handoff",
+        },
+        [201],
+      );
+      if (immediateSend.status !== 201) {
+        throw new Error("Expected the run-scoped handoff request to succeed");
+      }
+      expect(immediateSend.body.runId).toBeNull();
+      // The idle thread's background pick launches the handoff.
+      await flushWaitUntilForTest();
+      const launchedMessages = await waitForThreadMessages(
+        actor,
+        createdThread.body.id,
+        (items) => {
+          return userMessages(items).some((message) => {
+            return (
+              message.revokesEventId === immediateEventId &&
+              message.runId !== undefined
+            );
+          });
+        },
+      );
+      const immediateRunId = userMessages(launchedMessages.events).find(
+        (message) => {
+          return message.revokesEventId === immediateEventId;
+        },
+      )?.runId;
+      if (immediateRunId === undefined) {
+        throw new Error("Expected the run-scoped handoff to launch");
+      }
 
-    const queuedEventId = randomUUID();
-    const queued = await requestSendEventWithBearer(
-      okouToken,
-      {
-        agentId,
-        clientEventId: queuedEventId,
-        threadId: createdThread.body.id,
-        prompt: "queued run-scoped handoff",
-      },
-      [201],
-    );
-    if (queued.status !== 201) {
-      throw new Error("Expected the queued run-scoped request to succeed");
-    }
-    expect(queued.body.runId).toBeNull();
+      await expect(api.readRun(actor, immediateRunId)).resolves.toMatchObject({
+        runId: immediateRunId,
+        prompt: "immediate run-scoped handoff",
+      });
+      expect(userMessages(launchedMessages.events)).toContainEqual(
+        expect.objectContaining({
+          revokesEventId: immediateEventId,
+          userMessage: expect.objectContaining({
+            parts: expect.arrayContaining([
+              expect.objectContaining({
+                type: "source",
+                kind: "agent",
+                runId: caller.runId,
+              }),
+            ]),
+          }),
+        }),
+      );
 
-    await cancelChatRun(actor, immediateRunId);
-    await flushWaitUntilForTest();
-    const promotedMessages = await waitForThreadMessages(
-      actor,
-      createdThread.body.id,
-      (items) => {
-        return userMessages(items).some((message) => {
+      const queuedEventId = randomUUID();
+      const queued = await requestSendEventWithBearer(
+        okouToken,
+        {
+          agentId,
+          clientEventId: queuedEventId,
+          threadId: createdThread.body.id,
+          prompt: "queued run-scoped handoff",
+        },
+        [201],
+      );
+      if (queued.status !== 201) {
+        throw new Error("Expected the queued run-scoped request to succeed");
+      }
+      expect(queued.body.runId).toBeNull();
+
+      await cancelChatRun(actor, immediateRunId);
+      await flushWaitUntilForTest();
+      const promotedMessages = await waitForThreadMessages(
+        actor,
+        createdThread.body.id,
+        (items) => {
+          return userMessages(items).some((message) => {
+            return (
+              message.revokesEventId === queuedEventId &&
+              message.runId !== undefined
+            );
+          });
+        },
+      );
+      const promoted = userMessages(promotedMessages.events).find(
+        (message): message is PromptMessage => {
           return (
-            message.revokesEventId === queuedEventId &&
-            message.runId !== undefined
+            message.eventType === "input.prompt" &&
+            message.revokesEventId === queuedEventId
           );
-        });
-      },
-    );
-    const promoted = userMessages(promotedMessages.events).find(
-      (message): message is PromptMessage => {
-        return (
-          message.eventType === "input.prompt" &&
-          message.revokesEventId === queuedEventId
-        );
-      },
-    );
-    if (!promoted?.runId) {
-      throw new Error("Expected the queued run-scoped handoff to promote");
-    }
+        },
+      );
+      if (!promoted?.runId) {
+        throw new Error("Expected the queued run-scoped handoff to promote");
+      }
 
-    await expect(api.readRun(actor, promoted.runId)).resolves.toMatchObject({
-      runId: promoted.runId,
-      prompt: "queued run-scoped handoff",
+      await expect(api.readRun(actor, promoted.runId)).resolves.toMatchObject({
+        runId: promoted.runId,
+        prompt: "queued run-scoped handoff",
+      });
+      expect(promoted.userMessage.parts).toContainEqual(
+        expect.objectContaining({
+          type: "source",
+          kind: "agent",
+          runId: caller.runId,
+        }),
+      );
+
+      await cancelChatRun(actor, promoted.runId);
+      await cancelChatRun(actor, caller.runId, callerClaim.sandboxHeaders);
     });
-    expect(promoted.userMessage.parts).toContainEqual(
-      expect.objectContaining({
-        type: "source",
-        kind: "agent",
-        runId: caller.runId,
-      }),
-    );
-
-    await cancelChatRun(actor, promoted.runId);
-    await cancelChatRun(actor, caller.runId);
   }, 90_000);
 });
 

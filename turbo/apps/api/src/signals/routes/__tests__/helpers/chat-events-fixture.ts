@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync, zstdDecompressSync } from "node:zlib";
-import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import {
@@ -20,7 +19,6 @@ import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/wor
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
-import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -57,10 +55,6 @@ import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { chatEventDisplayText } from "./chat-event";
 import { nowDate } from "../../../../lib/time";
 import { createRouteMocks } from "./route-test";
-import {
-  readRunLaunchSnapshotFixture,
-  seedBuiltInModelKey as seedBuiltInModelKeyState,
-} from "./runtime-state";
 const TEST_APP_ROUTES = Object.freeze([
   ...chatEventsRoutes,
   ...chatThreadRoutes,
@@ -372,8 +366,6 @@ export function createChatEventsFixture(context: TestContext) {
 
   const routeMocks = createRouteMocks(context);
 
-  const runStateStore = createStore();
-
   async function entitledChatActor(
     options: ApiTestUserOptions = {},
     tier: "pro" | "team" = "pro",
@@ -427,23 +419,6 @@ export function createChatEventsFixture(context: TestContext) {
     return { ...entitled, providerId };
   }
 
-  async function seedBuiltInModelKey(selectedModel: string): Promise<string> {
-    const fixture = await seedBuiltInModelKeyState(context, selectedModel);
-    return fixture.selectedModel;
-  }
-
-  /**
-   * Platform execution is fixed to Auto: seed its run model's keys and store
-   * the Auto (null) member preference. Personal subscriptions are separate.
-   */
-  async function configureBuiltInPiModel(
-    actor: ApiTestUser,
-    runModel: typeof AUTO_RUN_MODEL = AUTO_RUN_MODEL,
-  ): Promise<void> {
-    await seedBuiltInModelKey(runModel);
-    await api.updateUserModelPreference(actor, null);
-  }
-
   async function configureUserOwnedGptPiModel(
     actor: ApiTestUser,
     route: (typeof USER_OWNED_GPT_FAST_BDD_ROUTES)[number],
@@ -489,15 +464,6 @@ export function createChatEventsFixture(context: TestContext) {
     }
     await api.updateUserModelPreference(actor, selectedModel);
     return { oauth, accountSourceId: completed.body.provider.id };
-  }
-
-  /** Returns the Auto selection (null) a send names to run on OpenRouter. */
-  async function configureBuiltInPiModelOnOpenRouter(
-    actor: ApiTestUser,
-    runModel: typeof AUTO_RUN_MODEL = AUTO_RUN_MODEL,
-  ): Promise<null> {
-    await configureBuiltInPiModel(actor, runModel);
-    return null;
   }
 
   async function sendChatRun(
@@ -988,11 +954,6 @@ export function createChatEventsFixture(context: TestContext) {
   ) {
     await waitForRunStatus(actor, runId, "completed");
     await flushWaitUntilForTest();
-    await expect(
-      readRunLaunchSnapshotFixture(context, runId),
-    ).resolves.toMatchObject({
-      launch_snapshot: { schemaVersion: 3, framework: "pi" },
-    });
     const page = await chat.listThreadEvents(actor, threadId);
     expect(
       page.events
@@ -1236,24 +1197,40 @@ export function createChatEventsFixture(context: TestContext) {
   }
 
   return {
-    bdd,
+    bdd: {
+      acceptAgentStorageWrites: bdd.acceptAgentStorageWrites,
+      completeOnboarding: bdd.completeOnboarding,
+      createAgent: bdd.createAgent,
+      readMe: bdd.readMe,
+      readOnboardingStatus: bdd.readOnboardingStatus,
+      updateAgentMetadata: bdd.updateAgentMetadata,
+      user: bdd.user,
+    },
     api,
     chat,
-    webhooks,
+    webhooks: {
+      configureClerkWebhookSecret: webhooks.configureClerkWebhookSecret,
+      requestAgentComplete: webhooks.requestAgentComplete,
+      requestAgentEvents: webhooks.requestAgentEvents,
+      requestAgentRunOutputs: webhooks.requestAgentRunOutputs,
+      requestAgentSessionHistoryPrepare:
+        webhooks.requestAgentSessionHistoryPrepare,
+      requestAgentStorageCommit: webhooks.requestAgentStorageCommit,
+      requestAgentStoragePrepare: webhooks.requestAgentStoragePrepare,
+      requestAgentUsageEvent: webhooks.requestAgentUsageEvent,
+      requestClerkWebhook: webhooks.requestClerkWebhook,
+      verifyNextClerkWebhook: webhooks.verifyNextClerkWebhook,
+    },
     chatCallbacks,
     connectors,
     misc,
     authDevice,
     authDeviceSupport,
     routeMocks,
-    runStateStore,
     entitledChatActor,
     entitledNativeChatActor,
-    seedBuiltInModelKey,
-    configureBuiltInPiModel,
     configureUserOwnedGptPiModel,
     configureSubscriptionPiModel,
-    configureBuiltInPiModelOnOpenRouter,
     sendChatRun,
     sendChatRunAfterPick,
     sendWaitingChatInput,

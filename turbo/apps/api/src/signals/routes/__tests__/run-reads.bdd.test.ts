@@ -1,3 +1,4 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
 import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import { createHash, randomUUID } from "node:crypto";
@@ -3133,42 +3134,49 @@ describe("RUN-04/OPS-01: agent run logs", () => {
   });
 
   it("returns pending and failed run-log detail residue", async () => {
-    const { actor, agentOne } = await setupRunLogFixture();
-    const pendingRun = await api.createThreadRun(actor, {
-      agentId: agentOne.agentId,
-      prompt: "pending detail run",
-    });
-    const pendingDetail = await reads.requestReadLogById(
-      actor,
-      pendingRun.runId,
-      [200],
-    );
-    expect(pendingDetail.body).toMatchObject({
-      id: pendingRun.runId,
-      status: "pending",
-      sessionId: null,
-      completedAt: null,
-    });
-    await api.requestCancelRun(actor, pendingRun.runId, [200]);
+    const owned = await publicChatActor(context);
+    const { actor, agentId } = owned;
+    await owned.run(async () => {
+      const pendingRun = await owned.sendChatRun(actor, {
+        agentId,
+        prompt: "pending detail run",
+      });
+      const pendingDetail = await reads.requestReadLogById(
+        actor,
+        pendingRun.runId,
+        [200],
+      );
+      expect(pendingDetail.body).toMatchObject({
+        id: pendingRun.runId,
+        status: "pending",
+        sessionId: null,
+        completedAt: null,
+      });
+      await api.requestCancelRun(actor, pendingRun.runId, [200]);
 
-    const failedRun = await api.createThreadRun(actor, {
-      agentId: agentOne.agentId,
-      prompt: "failed detail run",
-    });
-    await webhooks.requestAgentComplete(
-      { runId: failedRun.runId, exitCode: 1, error: "bdd failure" },
-      sandboxHeaders(api.sandboxTokenForRun(actor, failedRun.runId)),
-      [200],
-    );
-    const failedDetail = await reads.requestReadLogById(
-      actor,
-      failedRun.runId,
-      [200],
-    );
-    expect(failedDetail.body).toMatchObject({
-      id: failedRun.runId,
-      status: "failed",
-      error: "bdd failure",
+      const failedRun = await owned.sendChatRun(actor, {
+        agentId,
+        prompt: "failed detail run",
+      });
+      const { claim } = await owned.claimChatRun(
+        owned.runnerGroup,
+        failedRun.runId,
+      );
+      await webhooks.requestAgentComplete(
+        { runId: failedRun.runId, exitCode: 1, error: "bdd failure" },
+        sandboxHeaders(claim.sandboxToken),
+        [200],
+      );
+      const failedDetail = await reads.requestReadLogById(
+        actor,
+        failedRun.runId,
+        [200],
+      );
+      expect(failedDetail.body).toMatchObject({
+        id: failedRun.runId,
+        status: "failed",
+        error: "bdd failure",
+      });
     });
   });
 

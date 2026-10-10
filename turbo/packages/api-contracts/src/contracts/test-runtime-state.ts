@@ -9,28 +9,6 @@ export const testRuntimeStateErrorSchema = z.object({
 });
 
 export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
-  z.object({
-    action: z.literal("seed-built-in-default-model-key"),
-    fixture_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("seed-built-in-model-key"),
-    fixture_id: z.uuid(),
-    selected_model: z.string(),
-  }),
-  z.object({
-    action: z.literal("delete-built-in-model-key"),
-    fixture_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("set-run-autonomy-budget"),
-    run_id: z.uuid(),
-    autonomy_budget: z.int().min(0).max(32),
-  }),
-  z.object({
-    action: z.literal("read-run-autonomy-budget"),
-    run_id: z.uuid(),
-  }),
   // Test-only read boundary for the internal WSS target resolver. The public
   // bootstrap route never exposes a candidate without issuing a ticket.
   z.object({
@@ -67,10 +45,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     run_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("read-run-launch-snapshot"),
-    run_id: z.uuid(),
-  }),
-  z.object({
     action: z.literal("set-official-workflow-automation-admission-state"),
     automation_id: z.uuid(),
     blueprint_key: z.string().min(1).optional(),
@@ -100,8 +74,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
 
 export const testRuntimeStateActionResponseSchema = z.object({
   ok: z.literal(true),
-  selected_model: z.string().optional(),
-  autonomy_budget: z.int().min(0).max(32).nullable().optional(),
   wss_target: z
     .object({
       runId: z.uuid(),
@@ -123,38 +95,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
       official_result_email_enabled: z.boolean().nullable(),
     })
     .nullable()
-    .optional(),
-
-  run_launch_snapshot: z
-    .object({
-      exists: z.boolean(),
-      launch_snapshot: z
-        .discriminatedUnion("schemaVersion", [
-          z
-            .object({
-              schemaVersion: z.literal(1),
-              framework: z.enum(["claude-code", "codex", "pi"]),
-              runnerProfile: z.string().min(1).max(255),
-            })
-            .strict(),
-          z
-            .object({
-              schemaVersion: z.literal(2),
-              framework: z.enum(["claude-code", "codex", "pi"]),
-              runnerProfile: z.string().min(1).max(255),
-              piMemoryGenerationEnabled: z.boolean(),
-            })
-            .strict(),
-          z
-            .object({
-              schemaVersion: z.literal(3),
-              framework: z.enum(["claude-code", "codex", "pi"]),
-              runnerProfile: z.string().min(1).max(255),
-            })
-            .strict(),
-        ])
-        .nullable(),
-    })
     .optional(),
 });
 
