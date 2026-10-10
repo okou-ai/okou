@@ -75,15 +75,17 @@ test.each([false, true])(
         enabled ? "attachment-lightbox" : "artifact-sidebar",
       ),
     ).not.toBeInTheDocument();
-    if (enabled) {
-      click(getButtonByName("Close artifact", preview));
-      await waitFor(() => {
-        expect(
-          screen.queryByTestId("artifact-sidebar"),
-        ).not.toBeInTheDocument();
-      });
-      expect(await findArtifactAction("launch-plan.txt")).toBeInTheDocument();
-    }
+    click(getButtonByName(enabled ? "Close artifact" : "Close", preview));
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId(
+          enabled ? "artifact-sidebar" : "attachment-lightbox",
+        ),
+      ).not.toBeInTheDocument();
+    });
+    await expect(
+      findArtifactAction("launch-plan.txt"),
+    ).resolves.toBeInTheDocument();
   },
 );
 
@@ -124,7 +126,9 @@ test("A routed website preview opens in the sidebar and Close returns to its cat
     expect(window.location.search).toBe("?tab=hosted-site");
     expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
   });
-  expect(await findArtifactAction("Release website")).toBeInTheDocument();
+  await expect(
+    findArtifactAction("Release website"),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Binary artifacts open a download-capable sidebar instead of downloading on click", async () => {
