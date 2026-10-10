@@ -649,19 +649,27 @@ an immutable prefix.
 
 ### Bounded permessage-deflate
 
-When permessage-deflate is negotiated, the framing adapter replaces the
-mitmproxy extension while preserving its negotiated takeover and window
-parameters. It asks zlib for at most one byte beyond the remaining message and
+When permessage-deflate is negotiated, the framing adapter implements the
+public wsproto `Extension` hooks and owns its inbound compression state. It
+copies only public negotiated takeover and window parameters; outbound encoding
+uses a separate `PerMessageDeflate` instance through its public frame hook. The
+adapter neither inherits nor reads/writes upstream private compression state.
+Terminal cleanup replaces that opaque sender through public construction,
+releasing its prior resources while preserving close-frame encoding.
+
+It asks zlib for at most one byte beyond the remaining message and
 aggregate budgets. Extra output or a non-empty zlib unconsumed tail is treated as
 an overflow lower bound, clears the decompressor and message budget, and closes
 the flow with code 1009. A zlib decoding error clears the same state and closes
 with `INVALID_FRAME_PAYLOAD_DATA` (1007).
 
-Compression state belongs to a logical data message, not to each frame. Ping
-and Pong headers retain the inherited reserved-bit validation but cannot
-initialize the next data message's compression marker. Their completion leaves
-an interrupted message's marker, decompressor and cumulative budgets intact;
-only data-message completion or terminal cleanup can end that state.
+Compression state belongs to a logical data message, not to each frame. Only a
+text or binary header starts that state. RSV1-set controls and continuations
+are rejected with code 1002; other reserved-bit and framing checks remain with
+wsproto. Ping and Pong cannot initialize the next data message's compression
+marker. Their completion leaves an interrupted message's marker, decompressor
+and cumulative budgets intact; only data-message completion or terminal cleanup
+can end that state.
 
 RFC 7692 messages omit the final deflate block on the wire. The adapter restores
 the empty-deflate trailer (`00 00 ff ff`) at the end of a compressed message and
@@ -706,7 +714,8 @@ wsproto `1.3.2`; the [runner dependency contract](../../crates/runner/src/deps.r
 and the addon `pyproject.toml`/`uv.lock` keep those pins aligned.
 
 Before either dependency is upgraded, re-audit the private mitmproxy
-connection, extension, frame-buffer, and generator behavior described above and
+connection, frame-buffer and generator integration, plus the public wsproto
+extension contract and negotiated parameter behavior described above, and
 update the compatibility gate, runner artifact metadata, Python dependency
 metadata, and this contract together. The
 [`test_mitmproxy_websocket_framing.py`](../../crates/runner/mitm-addon/tests/test_mitmproxy_websocket_framing.py)

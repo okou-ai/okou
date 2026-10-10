@@ -253,43 +253,62 @@ class _DecodedMessageLimit(Extension):
         self._budget.reset()
 
 
-class _BoundedPerMessageDeflate(PerMessageDeflate):
-    """Apply the shared decoded-message budget while inflating input."""
+class _BoundedPerMessageDeflate(Extension):
+    """Own bounded inbound decoding; compose the public outbound extension."""
+
+    name = PerMessageDeflate.name
 
     def __init__(self, source: PerMessageDeflate, budget: _MessageBudget) -> None:
-        super().__init__(
+        if not source.enabled():
+            raise RuntimeError("mitmproxy passed a disabled permessage-deflate extension")
+        self._outbound = self._negotiated_outbound(source)
+        self._budget = budget
+        self._decoder = None
+        self._data_frame = False
+        self._message_compressed = False
+
+    @staticmethod
+    def _negotiated_outbound(source: PerMessageDeflate) -> PerMessageDeflate:
+        outbound = PerMessageDeflate(
             client_no_context_takeover=source.client_no_context_takeover,
             client_max_window_bits=source.client_max_window_bits,
             server_no_context_takeover=source.server_no_context_takeover,
             server_max_window_bits=source.server_max_window_bits,
         )
-        if not source.enabled():
-            raise RuntimeError("mitmproxy passed a disabled permessage-deflate extension")
-        self.finalize(self.name)
-        self._budget = budget
+        outbound.finalize(outbound.name)
+        return outbound
+
+    def enabled(self) -> bool:
+        return True
+
+    def offer(self) -> bool:
+        # This adapter is installed only after mitmproxy negotiates extensions.
+        return False
 
     def _discard_inbound_state(self) -> None:
-        self._decompressor = None
-        self._inbound_is_compressible = None
-        self._inbound_compressed = None
+        self._decoder = None
+        self._data_frame = False
+        self._message_compressed = False
         self._budget.reset()
 
     def clear(self) -> None:
-        self._compressor = None
+        # Drop the opaque sender's resources through public construction rather
+        # than reaching into its compressor. The clean sender can encode Close.
+        self._outbound = self._negotiated_outbound(self._outbound)
         self._discard_inbound_state()
 
     def _decompress_bounded(self, data: bytes) -> bytes | CloseReason:
-        decompressor = self._decompressor
-        if decompressor is None:
+        decoder = self._decoder
+        if decoder is None:
             raise RuntimeError("compressed WebSocket data arrived without a decompressor")
         remaining = self._budget.remaining_bytes
         try:
-            decoded = decompressor.decompress(data, remaining + 1)
+            decoded = decoder.decompress(data, remaining + 1)
         except zlib.error:
             self._discard_inbound_state()
             return CloseReason.INVALID_FRAME_PAYLOAD_DATA
 
-        if len(decoded) > remaining or decompressor.unconsumed_tail:
+        if len(decoded) > remaining or decoder.unconsumed_tail:
             self._budget.reject_bounded_decode_output(remaining + 1)
             self._discard_inbound_state()
             return CloseReason.MESSAGE_TOO_BIG
@@ -302,20 +321,29 @@ class _BoundedPerMessageDeflate(PerMessageDeflate):
         rsv: RsvBits,
         payload_length: int,
     ) -> RsvBits | CloseReason:
-        inbound_compressed = self._inbound_compressed
-        result = super().frame_inbound_header(proto, opcode, rsv, payload_length)
-        if opcode.iscontrol():
-            # Keep the parent's RSV checks without letting an idle control
-            # header initialize the next data message's compression marker.
-            self._inbound_compressed = inbound_compressed
-        return result
+        # RFC 7692 reserves RSV1 only for the first frame of a data message.
+        if rsv.rsv1 and (opcode.iscontrol() or opcode is Opcode.CONTINUATION):
+            return CloseReason.PROTOCOL_ERROR
+
+        self._data_frame = opcode in (Opcode.TEXT, Opcode.BINARY, Opcode.CONTINUATION)
+        if opcode in (Opcode.TEXT, Opcode.BINARY):
+            self._message_compressed = rsv.rsv1
+            if self._message_compressed and self._decoder is None:
+                bits = (
+                    self._outbound.server_max_window_bits
+                    if proto.client
+                    else self._outbound.client_max_window_bits
+                )
+                self._decoder = zlib.decompressobj(-bits)
+
+        return RsvBits(True, False, False)
 
     def frame_inbound_payload_data(
         self,
         proto: FrameDecoder | FrameProtocol,
         data: bytes,
     ) -> bytes | CloseReason:
-        if not self._inbound_compressed or not self._inbound_is_compressible:
+        if not self._message_compressed or not self._data_frame:
             return data
         return self._decompress_bounded(bytes(data))
 
@@ -325,10 +353,7 @@ class _BoundedPerMessageDeflate(PerMessageDeflate):
         fin: bool,
     ) -> bytes | CloseReason | None:
         # A final control frame does not complete an interrupted data message.
-        if not fin or not self._inbound_is_compressible:
-            return None
-        if not self._inbound_compressed:
-            self._inbound_compressed = None
+        if not fin or not self._data_frame or not self._message_compressed:
             return None
 
         decoded = self._decompress_bounded(_EMPTY_DEFLATE_BLOCK)
@@ -338,15 +363,26 @@ class _BoundedPerMessageDeflate(PerMessageDeflate):
             self._discard_inbound_state()
             return CloseReason.MESSAGE_TOO_BIG
 
-        if proto.client:
-            no_context_takeover = self.server_no_context_takeover
-        else:
-            no_context_takeover = self.client_no_context_takeover
+        no_context_takeover = (
+            self._outbound.server_no_context_takeover
+            if proto.client
+            else self._outbound.client_no_context_takeover
+        )
         if no_context_takeover:
-            self._decompressor = None
+            self._decoder = None
 
-        self._inbound_compressed = None
+        self._message_compressed = False
         return decoded
+
+    def frame_outbound(
+        self,
+        proto: FrameDecoder | FrameProtocol,
+        opcode: Opcode,
+        rsv: RsvBits,
+        data: bytes,
+        fin: bool,
+    ) -> tuple[RsvBits, bytes]:
+        return self._outbound.frame_outbound(proto, opcode, rsv, data, fin)
 
 
 class _BoundedWebsocketConnection(_ORIGINAL_WEBSOCKET_CONNECTION):
