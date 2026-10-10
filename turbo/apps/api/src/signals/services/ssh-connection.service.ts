@@ -1,5 +1,6 @@
 import { command } from "ccstate";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
+import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { isIP } from "node:net";
 import { domainToASCII } from "node:url";
 
@@ -22,13 +23,30 @@ import {
   asc,
   count,
   eq,
+  exists,
   getTableColumns,
-  isNull,
-  lt,
-  ne,
   or,
   sql,
 } from "drizzle-orm";
+import {
+  pgBooleanDecoder,
+  pgIntegerDecoder,
+} from "../../lib/db-structured-result";
+import {
+  createSshCreationReads,
+  createSshUpdateReads,
+  stampedSshTailscaleConfig,
+  stampedSshCredential,
+  ownedSshConnection,
+  visibleSshAccessConfig,
+} from "./ssh-binding-query";
+import {
+  inlineSshCredentialSource,
+  inlineSshAccessSource,
+  inlineSshTailscaleSource,
+  sshConnectionCreationSource,
+  sshBindingUpdateValues,
+} from "./ssh-binding-values";
 
 import {
   SSH_ERROR_CODES,
@@ -40,9 +58,7 @@ import {
   isUniqueViolation,
 } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
-import { alias } from "drizzle-orm/pg-core";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { publishSshRuntimeInvalidation$ } from "./ssh-runtime-wakeup.service";
 import { sshCreationResult, resourceIdConflict } from "./ssh-creation.service";
@@ -51,6 +67,18 @@ import {
   prepareCloudflareAccessConfig,
 } from "./cloudflare-access.service";
 import { publishCloudflareAccessClientInvalidation } from "./cloudflare-access-client-invalidation.service";
+import {
+  prepareTailscaleConfig,
+  requestedTailscaleId,
+  prepareInlineTailscaleConfig,
+} from "./tailscale.service";
+import { canonicalTailscaleDestination } from "./tailscale-destination";
+import {
+  selectedTailscaleBindingId,
+  tailscaleFailure,
+  visibleTailscaleConfig,
+} from "./tailscale-config-model";
+import { publishTailscaleClientInvalidation } from "./tailscale-client-invalidation.service";
 
 const MAX_SSH_GENERATION = 2_147_483_647;
 const credentialSelection = Object.freeze({
@@ -213,20 +241,26 @@ function toSshConnectionResponse(
   }
 
   return {
-    ...(row.needsRebind
-      ? {
-          transport: {
-            type: "cloudflare_access" as const,
-            needsRebind: true as const,
-          },
-        }
-      : row.cloudflareAccessId === null
-        ? {}
+    ...(row.transport === "direct"
+      ? {}
+      : row.transport === "tailscale"
+        ? {
+            transport:
+              row.tailscaleId === null
+                ? { type: "tailscale" as const, needsRebind: true as const }
+                : { type: "tailscale" as const, configId: row.tailscaleId },
+          }
         : {
-            transport: {
-              type: "cloudflare_access" as const,
-              configId: row.cloudflareAccessId,
-            },
+            transport:
+              row.cloudflareAccessId === null
+                ? {
+                    type: "cloudflare_access" as const,
+                    needsRebind: true as const,
+                  }
+                : {
+                    type: "cloudflare_access" as const,
+                    configId: row.cloudflareAccessId,
+                  },
           }),
     id: row.id,
     displayName: row.displayName,
@@ -312,16 +346,87 @@ export const summarizeSshConnections$ = command(
   },
 );
 
-interface PreparedSshConnectionCreation extends CreateSshConnectionArgs {
+export interface PreparedSshConnectionCreation extends CreateSshConnectionArgs {
   readonly canonicalHost: string;
   readonly accessId: string | null;
+  readonly tailscaleId: string | null;
+  readonly preparedTailscale:
+    Awaited<ReturnType<typeof prepareTailscaleConfig>> | undefined;
   readonly preparedAccess: Awaited<ReturnType<typeof prepareAccessCreation>>;
   readonly preparedCredential: Awaited<
     ReturnType<typeof prepareSshCredentialSelection>
   >;
 }
 
-const commitSshConnectionCreation$ = command(
+// Pure sessionless SQL construction; execution remains in the owning command.
+function sshConnectionCreationAdmission(args: PreparedSshConnectionCreation) {
+  const endpointValid =
+    (args.accessId === null && args.preparedAccess === undefined) ||
+    !invalidSshAccessEndpoint(args.canonicalHost, args.body.port);
+  const reads = createSshCreationReads(args, endpointValid);
+  const selectedId = selectedTailscaleBindingId(
+    args.tailscaleId,
+    args.preparedTailscale !== undefined,
+  );
+  const predicate = and(
+    selectedId === null ? sql`false` : visibleTailscaleConfig(args, selectedId),
+    exists(reads.qb.select({ id: reads.admission.id }).from(reads.admission)),
+  );
+  if (predicate === undefined) {
+    throw new Error("SSH Tailscale admission predicate is missing");
+  }
+  const stamp = stampedSshTailscaleConfig(
+    reads.qb,
+    "stamped_ssh_creation_tailscale",
+    predicate,
+  );
+  const networkReady = reads.qb.$with("complete_ssh_creation_admission").as(
+    reads.qb
+      .select({ id: reads.admission.id })
+      .from(reads.admission)
+      .where(
+        selectedId === null
+          ? sql`true`
+          : exists(reads.qb.select({ id: stamp.id }).from(stamp)),
+      ),
+  );
+  const credentialPredicate = and(
+    args.preparedCredential.id === undefined
+      ? sql`false`
+      : ownedSshCredential(args, args.preparedCredential.id),
+    exists(reads.qb.select({ id: networkReady.id }).from(networkReady)),
+  );
+  if (credentialPredicate === undefined) {
+    throw new Error("SSH credential admission predicate is missing");
+  }
+  const credentialStamp = stampedSshCredential(
+    reads.qb,
+    "stamped_ssh_creation_credential",
+    credentialPredicate,
+  );
+  const ready = reads.qb.$with("admitted_ssh_creation_credential").as(
+    reads.qb
+      .select({ id: networkReady.id })
+      .from(networkReady)
+      .where(
+        args.preparedCredential.id === undefined
+          ? sql`true`
+          : exists(
+              reads.qb.select({ id: credentialStamp.id }).from(credentialStamp),
+            ),
+      ),
+  );
+  return {
+    reads,
+    endpointValid,
+    selectedId,
+    stamp,
+    networkReady,
+    credentialStamp,
+    ready,
+  };
+}
+const commitSshConnectionCreationAttempt$ = command(
   async (
     { set },
     args: PreparedSshConnectionCreation,
@@ -329,109 +434,145 @@ const commitSshConnectionCreation$ = command(
     SshConnectionMutationResult<SshConnectionResponse | undefined>
   > => {
     const db = set(writeDb$);
-    const accessId = args.accessId;
-    const transaction = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0250; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        const [existing] = await tx
-          .select({
-            orgId: sshConnections.orgId,
-            userId: sshConnections.userId,
-          })
-          .from(sshConnections)
-          .where(eq(sshConnections.id, args.body.id));
-        const creation = sshCreationResult(args, existing);
-        if (!creation.ok) {
-          return creation;
-        }
-        if (!creation.value) {
-          return {
-            ok: true as const,
-            value: undefined,
-            createdAccess: false,
-          };
-        }
-        if (
-          (accessId !== null || args.preparedAccess !== undefined) &&
-          (isIP(args.canonicalHost) !== 0 ||
-            !args.canonicalHost.includes(".") ||
-            args.body.port !== 443)
-        ) {
-          return failure("invalidHost");
-        }
-        if (accessId !== null) {
-          const [config] = await tx
-            .select({ id: cloudflareAccessConfigs.id })
-            .from(cloudflareAccessConfigs)
-            .where(visibleSshAccessConfig(args, accessId))
-            .for("share");
-          if (!config) {
-            return cloudflareAccessFailure("notFound");
-          }
-        }
-        const [credential] =
-          args.preparedCredential.id !== undefined
-            ? await tx
-                .select(credentialSelection)
-                .from(sshCredentials)
-                .where(ownedSshCredential(args, args.preparedCredential.id))
-            : await tx
-                .insert(sshCredentials)
-                .values({
-                  orgId: args.orgId,
-                  userId: args.userId,
-                  ...args.preparedCredential.create,
-                })
-                .returning(credentialSelection);
-        if (!credential) {
-          return sshCredentialFailure("notFound");
-        }
-        const [createdAccess] =
-          args.preparedAccess === undefined
-            ? []
-            : await tx
-                .insert(cloudflareAccessConfigs)
-                .values({
-                  orgId: args.orgId,
-                  userId: args.userId,
-                  scope: "personal",
-                  ...args.preparedAccess,
-                })
-                .returning({ id: cloudflareAccessConfigs.id });
-        if (args.preparedAccess !== undefined && !createdAccess) {
-          throw new Error("Cloudflare Access insert returned no row");
-        }
-        const [connection] = await tx
-          .insert(sshConnections)
-          .values(
-            sshConnectionCreationValues(
-              args,
-              credential.id,
-              createdAccess?.id ?? accessId,
-            ),
+    const {
+      reads,
+      endpointValid,
+      selectedId,
+      stamp,
+      networkReady,
+      credentialStamp,
+      ready,
+    } = sshConnectionCreationAdmission(args);
+    const prepared = args.preparedCredential;
+    const credential =
+      prepared.id === undefined
+        ? db.$with("inline_ssh_creation_credential").as(
+            db
+              .insert(sshCredentials)
+              .select(inlineSshCredentialSource(args, prepared.create, ready))
+              .returning({
+                id: sshCredentials.id,
+                name: sshCredentials.name,
+                username: sshCredentials.username,
+              }),
           )
-          .returning();
-        if (!connection) {
-          throw new Error("SSH connection insert returned no row");
-        }
-        return {
-          ok: true as const,
-          value: toSshConnectionResponse(connection, credential),
-          createdAccess: createdAccess !== undefined,
-        };
-      }),
+        : credentialStamp;
+    const access =
+      args.preparedAccess === undefined
+        ? undefined
+        : db.$with("inline_ssh_creation_access").as(
+            db
+              .insert(cloudflareAccessConfigs)
+              .select(inlineSshAccessSource(args, args.preparedAccess, ready))
+              .returning({ id: cloudflareAccessConfigs.id }),
+          );
+    const tailscale =
+      args.preparedTailscale === undefined
+        ? undefined
+        : db.$with("inline_ssh_creation_tailscale").as(
+            db
+              .insert(tailscaleConfigs)
+              .select(
+                inlineSshTailscaleSource(args, args.preparedTailscale, ready),
+              )
+              .returning({ id: tailscaleConfigs.id }),
+          );
+    const accessId =
+      access === undefined
+        ? sql`${args.accessId}::uuid`
+        : sql`(${reads.qb.select({ id: access.id }).from(access)})`;
+    const tailscaleId =
+      tailscale === undefined
+        ? sql`${args.tailscaleId}::uuid`
+        : sql`(${reads.qb.select({ id: tailscale.id }).from(tailscale)})`;
+    const written = db.$with("created_ssh_binding_host").as(
+      db
+        .insert(sshConnections)
+        .select(
+          sshConnectionCreationSource(
+            args,
+            ready,
+            sql`(${reads.qb.select({ id: credential.id }).from(credential)})`,
+            accessId,
+            tailscaleId,
+          ),
+        )
+        .returning(),
+    );
+    const complete =
+      sql`1 / CASE WHEN (${db.select({ count: count() }).from(written)}) = (${db.select({ count: count() }).from(ready)}) THEN 1 ELSE 0 END`.mapWith(
+        pgIntegerDecoder,
+      );
+    const [captured] = await db
+      .with(
+        ...reads.ctes,
+        stamp,
+        networkReady,
+        credentialStamp,
+        ready,
+        ...(prepared.id === undefined ? [credential] : []),
+        ...(access === undefined ? [] : [access]),
+        ...(tailscale === undefined ? [] : [tailscale]),
+        written,
+      )
+      .select({
+        existing: { ...reads.current._.selectedFields },
+        credentialAvailable: (prepared.id === undefined
+          ? sql`true`
+          : sql`${exists(reads.qb.select({ id: credential.id }).from(credential))}`
+        ).mapWith(pgBooleanDecoder),
+        changed: { ...written._.selectedFields },
+        credential: { ...credential._.selectedFields },
+        access:
+          sql`${exists(db.select({ id: reads.access.id }).from(reads.access))}`.mapWith(
+            pgBooleanDecoder,
+          ),
+        tailscale:
+          sql`${exists(db.select({ id: stamp.id }).from(stamp))}`.mapWith(
+            pgBooleanDecoder,
+          ),
+        complete,
+      })
+      .from(reads.anchor)
+      .leftJoin(reads.current, eq(reads.current.id, reads.anchor.id))
+      .leftJoin(written, eq(written.id, reads.anchor.id))
+      .leftJoin(credential, eq(credential.id, written.credentialId));
+    return sshCreationOutcome(
+      args,
+      captured,
+      endpointValid,
+      selectedId,
+      access !== undefined,
+    );
+  },
+);
+const commitSshConnectionCreation$ = command(
+  async (
+    { set },
+    args: PreparedSshConnectionCreation,
+  ): Promise<
+    SshConnectionMutationResult<SshConnectionResponse | undefined>
+  > => {
+    const transaction = await settle(
+      set(commitSshConnectionCreationAttempt$, args),
     );
     if (!transaction.ok) {
       if (isSshCredentialReferenceViolation(transaction.error)) {
         return sshCredentialFailure("notFound");
       }
+      if (isTailscaleReferenceViolation(transaction.error)) {
+        return tailscaleFailure("notFound");
+      }
       if (isCloudflareAccessReferenceViolation(transaction.error)) {
         return cloudflareAccessFailure("notFound");
       }
-      if (!isUniqueViolation(transaction.error, "ssh_connections_pkey")) {
+      if (
+        !isUniqueViolation(transaction.error, "ssh_connections_pkey") &&
+        !isUniqueViolation(transaction.error, "uq_ssh_connections_owner_id")
+      ) {
         throw transaction.error;
       }
-      const [existing] = await db
+      const [existing] = await set(writeDb$)
         .select({ orgId: sshConnections.orgId, userId: sshConnections.userId })
         .from(sshConnections)
         .where(eq(sshConnections.id, args.body.id));
@@ -448,7 +589,14 @@ export const createSshConnection$ = command(
     { set },
     args: CreateSshConnectionArgs,
   ): Promise<SshConnectionResult<SshConnectionResponse | undefined>> => {
-    const canonicalHost = canonicalizeSshHost(args.body.host);
+    const tailscaleTransport =
+      args.body.transport?.type === "tailscale"
+        ? args.body.transport
+        : undefined;
+    const canonicalHost = canonicalizeSelectedSshHost(
+      args.body.host,
+      tailscaleTransport !== undefined,
+    );
     if (!canonicalHost.ok) {
       return canonicalHost;
     }
@@ -484,8 +632,19 @@ export const createSshConnection$ = command(
       preparedAccess,
       preparedCredential,
       accessId,
+      tailscaleId: requestedTailscaleId(args.body.transport),
+      preparedTailscale: await prepareInlineTailscaleConfig(
+        args.body.transport,
+        args.featureContext,
+      ),
     });
     if (result.ok && result.value) {
+      if (
+        args.body.transport?.type === "tailscale" &&
+        "create" in args.body.transport
+      ) {
+        await publishTailscaleClientInvalidation(args);
+      }
       await set(publishSshRuntimeInvalidation$, {
         orgId: args.orgId,
         userId: args.userId,
@@ -499,7 +658,10 @@ export const createSshConnection$ = command(
   },
 );
 
-interface PreparedSshConnectionUpdate extends UpdateSshConnectionArgs {
+export interface PreparedSshConnectionUpdate extends UpdateSshConnectionArgs {
+  readonly tailscaleId: string | null;
+  readonly preparedTailscale:
+    Awaited<ReturnType<typeof prepareTailscaleConfig>> | undefined;
   readonly host: string;
   readonly port: number;
   readonly accessId: string | null;
@@ -508,276 +670,210 @@ interface PreparedSshConnectionUpdate extends UpdateSshConnectionArgs {
     Awaited<ReturnType<typeof prepareSshCredentialSelection>> | undefined;
 }
 
-function inlineCredentialFields(
-  owner: Pick<PreparedSshConnectionUpdate, "orgId" | "userId">,
-  newCredential: NonNullable<
-    NonNullable<PreparedSshConnectionUpdate["preparedCredential"]>["create"]
-  >,
-) {
-  return {
-    id: sql`gen_random_uuid()`.mapWith(sshCredentials.id).as("id"),
-    orgId: sql`${owner.orgId}`.mapWith(sshCredentials.orgId).as("org_id"),
-    userId: sql`${owner.userId}`.mapWith(sshCredentials.userId).as("user_id"),
-    name: sql`${newCredential.name}`.mapWith(sshCredentials.name).as("name"),
-    username: sql`${newCredential.username}`
-      .mapWith(sshCredentials.username)
-      .as("username"),
-    authMethod: sql`${newCredential.authMethod}`
-      .mapWith(sshCredentials.authMethod)
-      .as("auth_method"),
-    encryptedPrivateKey: sql`${newCredential.encryptedPrivateKey}`
-      .mapWith(nullableDriverValueDecoder(sshCredentials.encryptedPrivateKey))
-      .as("encrypted_private_key"),
-    encryptedPassphrase: sql`${newCredential.encryptedPassphrase}`
-      .mapWith(nullableDriverValueDecoder(sshCredentials.encryptedPassphrase))
-      .as("encrypted_passphrase"),
-    encryptedPassword: sql`${newCredential.encryptedPassword}`
-      .mapWith(nullableDriverValueDecoder(sshCredentials.encryptedPassword))
-      .as("encrypted_password"),
-    revision: sql`1`.mapWith(sshCredentials.revision).as("revision"),
-    createdAt: sql`now()`.mapWith(sshCredentials.createdAt).as("created_at"),
-    updatedAt: sql`now()`.mapWith(sshCredentials.updatedAt).as("updated_at"),
-  };
-}
-
-function inlineAccessFields(
-  owner: Pick<PreparedSshConnectionUpdate, "orgId" | "userId">,
-  preparedAccess: NonNullable<PreparedSshConnectionUpdate["preparedAccess"]>,
-) {
-  return {
-    id: sql`gen_random_uuid()`.mapWith(cloudflareAccessConfigs.id).as("id"),
-    orgId: sql`${owner.orgId}`
-      .mapWith(cloudflareAccessConfigs.orgId)
-      .as("org_id"),
-    userId: sql`${owner.userId}`
-      .mapWith(nullableDriverValueDecoder(cloudflareAccessConfigs.userId))
-      .as("user_id"),
-    scope: sql`'personal'`.mapWith(cloudflareAccessConfigs.scope).as("scope"),
-    name: sql`${preparedAccess.name}`
-      .mapWith(cloudflareAccessConfigs.name)
-      .as("name"),
-    encryptedClientId: sql`${preparedAccess.encryptedClientId}`
-      .mapWith(cloudflareAccessConfigs.encryptedClientId)
-      .as("encrypted_client_id"),
-    encryptedClientSecret: sql`${preparedAccess.encryptedClientSecret}`
-      .mapWith(cloudflareAccessConfigs.encryptedClientSecret)
-      .as("encrypted_client_secret"),
-    revision: sql`1`.mapWith(cloudflareAccessConfigs.revision).as("revision"),
-    generation: sql`1`
-      .mapWith(cloudflareAccessConfigs.generation)
-      .as("generation"),
-    createdAt: sql`now()`
-      .mapWith(cloudflareAccessConfigs.createdAt)
-      .as("created_at"),
-    updatedAt: sql`now()`
-      .mapWith(cloudflareAccessConfigs.updatedAt)
-      .as("updated_at"),
-  };
-}
-
-function sshEditResult(
-  args: PreparedSshConnectionUpdate,
-  result:
-    | {
-        readonly current: Pick<SshConnectionRow, "generation" | "needsRebind">;
-        readonly authorityId: string | null;
-        readonly credential: {
-          readonly id: string;
-          readonly name: string;
-          readonly username: string;
-        } | null;
-        readonly updated: SshConnectionRow | null;
-      }
-    | undefined,
-): SshConnectionMutationResult<SshConnectionResponse> {
-  if (!result) {
-    return failure("notFound");
-  }
-  const rejected = validateSshHostUpdate(result.current, {
-    body: args.body,
-    host: args.host,
-    port: args.port,
-    accessId: args.accessId,
-    creatingAccess: args.preparedAccess !== undefined,
-  });
-  if (rejected) {
-    return rejected;
-  }
-  if (result.authorityId === null) {
-    return cloudflareAccessFailure("notFound");
-  }
-  if (!result.credential) {
-    return sshCredentialFailure("notFound");
-  }
-  if (!result.updated) {
-    throw new Error("Eligible SSH connection update returned no row");
-  }
-  return {
-    ok: true,
-    value: toSshConnectionResponse(result.updated, result.credential),
-    createdAccess: args.preparedAccess !== undefined,
-  };
-}
-
-function sshHostUpdateValues(args: PreparedSshConnectionUpdate) {
-  const selectedAccessId = sql`${sql.identifier("ssh_edit_access")}.${sql.identifier("selected_access_id")}`;
-  const clearHostKey = and(
-    or(ne(sshConnections.host, args.host), ne(sshConnections.port, args.port)),
-    isNull(sshConnections.cloudflareAccessId),
-    isNull(selectedAccessId),
-  );
-  return {
-    displayName: args.body.displayName,
-    host: args.host,
-    port: args.port,
-    credentialId: alias(sshCredentials, "ssh_edit_credential").id,
-    cloudflareAccessId: selectedAccessId,
-    needsRebind: false,
-    learnedHostKeyAlgorithm: sql`case when ${clearHostKey} then null else ${sshConnections.learnedHostKeyAlgorithm} end`,
-    learnedHostKeyFingerprint: sql`case when ${clearHostKey} then null else ${sshConnections.learnedHostKeyFingerprint} end`,
-    generation: sql`${sshConnections.generation} + 1`,
-    updatedAt: nowDate(),
-  };
-}
-
-function eligibleSshEdit(args: PreparedSshConnectionUpdate) {
-  const current = alias(sshConnections, "ssh_edit_current");
-  return and(
+// Pure SQL/column projections; no database executor is captured or returned.
+function sshConnectionUpdateAdmission(args: PreparedSshConnectionUpdate) {
+  const endpointValid =
     (args.accessId === null && args.preparedAccess === undefined) ||
-      (isIP(args.host) === 0 && args.host.includes(".") && args.port === 443)
-      ? undefined
-      : sql`false`,
-    eq(current.generation, args.body.expectedGeneration),
-    lt(current.generation, MAX_SSH_GENERATION),
-    args.body.transport === undefined
-      ? eq(current.needsRebind, false)
-      : undefined,
+    !invalidSshAccessEndpoint(args.host, args.port);
+  const reads = createSshUpdateReads(args, endpointValid);
+  const selectedId = selectedTailscaleBindingId(
+    args.tailscaleId,
+    args.preparedTailscale !== undefined,
   );
+  const predicate = and(
+    selectedId === null ? sql`false` : visibleTailscaleConfig(args, selectedId),
+    reads.entering,
+  );
+  if (predicate === undefined) {
+    throw new Error("SSH Tailscale admission predicate is missing");
+  }
+  const stamp = stampedSshTailscaleConfig(
+    reads.qb,
+    "stamped_ssh_binding_tailscale",
+    predicate,
+  );
+  const networkReady = reads.qb.$with("complete_ssh_binding_admission").as(
+    reads.qb
+      .select({ id: reads.admission.id })
+      .from(reads.admission)
+      .where(
+        selectedId === null
+          ? sql`true`
+          : or(
+              exists(reads.qb.select({ id: stamp.id }).from(stamp)),
+              exists(
+                reads.qb.select({ id: reads.retained.id }).from(reads.retained),
+              ),
+            ),
+      ),
+  );
+  const selectedCredentialId = args.preparedCredential?.id;
+  const credentialPredicate = and(
+    selectedCredentialId === undefined
+      ? sql`false`
+      : ownedSshCredential(args, selectedCredentialId),
+    exists(reads.qb.select({ id: networkReady.id }).from(networkReady)),
+  );
+  if (credentialPredicate === undefined) {
+    throw new Error("SSH credential admission predicate is missing");
+  }
+  const credentialStamp = stampedSshCredential(
+    reads.qb,
+    "stamped_ssh_binding_credential",
+    credentialPredicate,
+  );
+  const ready = reads.qb.$with("admitted_ssh_binding_credential").as(
+    reads.qb
+      .select({ id: networkReady.id })
+      .from(networkReady)
+      .where(
+        selectedCredentialId === undefined
+          ? sql`true`
+          : exists(
+              reads.qb.select({ id: credentialStamp.id }).from(credentialStamp),
+            ),
+      ),
+  );
+  return { reads, selectedId, stamp, networkReady, credentialStamp, ready };
 }
+const commitSshConnectionUpdateAttempt$ = command(
+  async (
+    { set },
+    args: PreparedSshConnectionUpdate,
+  ): Promise<SshConnectionMutationResult<SshConnectionResponse>> => {
+    const db = set(writeDb$);
+    const { reads, selectedId, stamp, networkReady, credentialStamp, ready } =
+      sshConnectionUpdateAdmission(args);
+    const prepared = args.preparedCredential;
+    const credential =
+      prepared !== undefined && prepared.id === undefined
+        ? db.$with("inline_ssh_binding_credential").as(
+            db
+              .insert(sshCredentials)
+              .select(inlineSshCredentialSource(args, prepared.create, ready))
+              .returning({
+                id: sshCredentials.id,
+                name: sshCredentials.name,
+                username: sshCredentials.username,
+              }),
+          )
+        : prepared === undefined
+          ? reads.credential
+          : credentialStamp;
+    const access =
+      args.preparedAccess === undefined
+        ? undefined
+        : db.$with("inline_ssh_binding_access").as(
+            db
+              .insert(cloudflareAccessConfigs)
+              .select(inlineSshAccessSource(args, args.preparedAccess, ready))
+              .returning({ id: cloudflareAccessConfigs.id }),
+          );
+    const tailscale =
+      args.preparedTailscale === undefined
+        ? undefined
+        : db.$with("inline_ssh_binding_tailscale").as(
+            db
+              .insert(tailscaleConfigs)
+              .select(
+                inlineSshTailscaleSource(args, args.preparedTailscale, ready),
+              )
+              .returning({ id: tailscaleConfigs.id }),
+          );
+    const accessId =
+      access === undefined
+        ? sql`${args.accessId}::uuid`
+        : sql`(${reads.qb.select({ id: access.id }).from(access)})`;
+    const tailscaleId =
+      tailscale === undefined
+        ? sql`${args.tailscaleId}::uuid`
+        : sql`(${reads.qb.select({ id: tailscale.id }).from(tailscale)})`;
+    const written = db.$with("updated_ssh_binding_host").as(
+      db
+        .update(sshConnections)
+        .set(
+          sshBindingUpdateValues(
+            args,
+            reads.current,
+            sql`(${reads.qb.select({ id: credential.id }).from(credential)})`,
+            accessId,
+            tailscaleId,
+          ),
+        )
+        .from(reads.current)
+        .where(
+          and(
+            eq(sshConnections.id, reads.current.id),
+            exists(
+              db
+                .select({ id: ready.id })
+                .from(ready)
+                .where(eq(ready.id, reads.current.id)),
+            ),
+          ),
+        )
+        .returning(getTableColumns(sshConnections)),
+    );
+    const complete =
+      sql`1 / CASE WHEN (${db.select({ count: count() }).from(written)}) = (${db.select({ count: count() }).from(ready)}) THEN 1 ELSE 0 END`.mapWith(
+        pgIntegerDecoder,
+      );
+    const [captured] = await db
+      .with(
+        ...reads.ctes,
+        stamp,
+        networkReady,
+        credentialStamp,
+        ready,
+        ...(prepared !== undefined && prepared.id === undefined
+          ? [credential]
+          : []),
+        ...(access === undefined ? [] : [access]),
+        ...(tailscale === undefined ? [] : [tailscale]),
+        written,
+      )
+      .select({
+        current: { ...reads.current._.selectedFields },
+        credentialAvailable: (prepared !== undefined &&
+        prepared.id === undefined
+          ? sql`true`
+          : sql`${exists(reads.qb.select({ id: credential.id }).from(credential))}`
+        ).mapWith(pgBooleanDecoder),
+        changed: { ...written._.selectedFields },
+        credential: { ...credential._.selectedFields },
+        access:
+          sql`${exists(db.select({ id: reads.access.id }).from(reads.access))}`.mapWith(
+            pgBooleanDecoder,
+          ),
+        tailscale:
+          sql`${or(exists(db.select({ id: stamp.id }).from(stamp)), exists(db.select({ id: reads.retained.id }).from(reads.retained)))}`.mapWith(
+            pgBooleanDecoder,
+          ),
+        complete,
+      })
+      .from(reads.current)
+      .leftJoin(written, eq(written.id, reads.current.id))
+      .leftJoin(credential, eq(credential.id, written.credentialId));
+    return sshUpdateOutcome(args, captured, selectedId, access !== undefined);
+  },
+);
 
 const commitSshConnectionUpdate$ = command(
   async (
     { set },
     args: PreparedSshConnectionUpdate,
   ): Promise<SshConnectionMutationResult<SshConnectionResponse>> => {
-    const db = set(writeDb$);
-    // Lock the owned host before configuration authority, as Runner and
-    // configuration fanout do. Locking reads recheck concurrently changed rows.
-    const current = db
-      .$with("ssh_edit_current")
-      .as(
-        db
-          .select()
-          .from(sshConnections)
-          .where(ownedSshConnection(args))
-          .for("no key update"),
-      );
-    const eligible = db
-      .$with("ssh_edit_eligible")
-      .as(db.select().from(current).where(eligibleSshEdit(args)));
-    const authority =
-      args.accessId === null
-        ? db
-            .$with("ssh_edit_authority")
-            .as(db.select({ id: eligible.id }).from(eligible))
-        : db
-            .$with("ssh_edit_authority")
-            .as(
-              db
-                .select({ id: cloudflareAccessConfigs.id })
-                .from(cloudflareAccessConfigs)
-                .crossJoin(eligible)
-                .where(visibleSshAccessConfig(args, args.accessId))
-                .for("share", { of: cloudflareAccessConfigs }),
-            );
-    const newCredential = args.preparedCredential?.create;
-    const credential = db.$with("ssh_edit_credential").as(
-      newCredential === undefined
-        ? db
-            .select(credentialSelection)
-            .from(sshCredentials)
-            .crossJoin(authority)
-            .crossJoin(eligible)
-            .where(
-              and(
-                eq(
-                  sshCredentials.id,
-                  args.preparedCredential?.id ?? eligible.credentialId,
-                ),
-                eq(sshCredentials.orgId, args.orgId),
-                eq(sshCredentials.userId, args.userId),
-              ),
-            )
-        : db
-            .insert(sshCredentials)
-            .select(
-              db
-                .select(inlineCredentialFields(args, newCredential))
-                .from(authority),
-            )
-            .returning({ ...credentialSelection }),
-    );
-    const access = db.$with("ssh_edit_access").as(
-      args.preparedAccess === undefined
-        ? db
-            .select({
-              id: sql`${args.accessId}::uuid`
-                .mapWith(nullableDriverValueDecoder(cloudflareAccessConfigs.id))
-                .as("selected_access_id"),
-            })
-            .from(credential)
-        : db
-            .insert(cloudflareAccessConfigs)
-            .select(
-              db
-                .select(inlineAccessFields(args, args.preparedAccess))
-                .from(credential),
-            )
-            .returning({
-              id: sql`${cloudflareAccessConfigs.id}`
-                .mapWith(cloudflareAccessConfigs.id)
-                .as("selected_access_id"),
-            }),
-    );
-    // Every INSERT is downstream of all eligibility/authority checks. This
-    // exact host remains locked; there is no later rejectable UPDATE predicate.
-    // Missing selected credentials gate both inserts; any constraint failure
-    // aborts the entire statement. DML results travel through RETURNING,
-    // never a base-table reread.
-    const updated = db.$with("ssh_edit_updated").as(
-      db
-        .update(sshConnections)
-        .set(sshHostUpdateValues(args))
-        .from(sql`${eligible} cross join ${credential} cross join ${access}`)
-        .where(eq(sshConnections.id, eligible.id))
-        .returning({ ...getTableColumns(sshConnections) }),
-    );
     const committed = await settle(
-      db
-        .with(current, eligible, authority, credential, access, updated)
-        .select({
-          current: {
-            generation: current.generation,
-            needsRebind: current.needsRebind,
-          },
-          authorityId: authority.id,
-          credential: {
-            id: credential.id,
-            name: credential.name,
-            username: credential.username,
-          },
-          updated: getTableColumns(alias(sshConnections, "ssh_edit_updated")),
-        })
-        .from(current)
-        .leftJoin(authority, sql`true`)
-        .leftJoin(credential, sql`true`)
-        .leftJoin(updated, eq(updated.id, current.id)),
+      set(commitSshConnectionUpdateAttempt$, args),
     );
     if (committed.ok) {
-      return sshEditResult(args, committed.value[0]);
+      return committed.value;
     }
     if (isSshCredentialReferenceViolation(committed.error)) {
       return sshCredentialFailure("notFound");
+    }
+    if (isTailscaleReferenceViolation(committed.error)) {
+      return tailscaleFailure("notFound");
     }
     if (isCloudflareAccessReferenceViolation(committed.error)) {
       return cloudflareAccessFailure("notFound");
@@ -786,12 +882,12 @@ const commitSshConnectionUpdate$ = command(
   },
 );
 
-export const updateSshConnection$ = command(
+const prepareSshConnectionUpdate$ = command(
   async (
-    { get, set },
+    { set },
     args: UpdateSshConnectionArgs,
-  ): Promise<SshConnectionResult<SshConnectionResponse>> => {
-    const db = get(db$);
+  ): Promise<SshConnectionResult<PreparedSshConnectionUpdate>> => {
+    const db = set(writeDb$);
     const canonicalHost =
       args.body.host === undefined
         ? undefined
@@ -819,7 +915,28 @@ export const updateSshConnection$ = command(
         return cloudflareAccessFailure("notFound");
       }
     }
-    const host = canonicalHost?.value ?? current.host;
+    const tailscaleId = requestedTailscaleId(
+      args.body.transport,
+      current.tailscaleId,
+    );
+    if (tailscaleId !== null) {
+      const [config] = await db
+        .select({ id: tailscaleConfigs.id })
+        .from(tailscaleConfigs)
+        .where(visibleTailscaleConfig(args, tailscaleId));
+      if (!config) {
+        return tailscaleFailure("notFound");
+      }
+    }
+    const selectedHost = canonicalizeUpdatedSshHost(
+      current,
+      args.body,
+      canonicalHost?.value,
+    );
+    if (!selectedHost.ok) {
+      return selectedHost;
+    }
+    const host = selectedHost.value;
     const port = args.body.port ?? current.port;
     const rejected = validateSshHostUpdate(current, {
       body: args.body,
@@ -845,15 +962,41 @@ export const updateSshConnection$ = command(
             args.featureContext,
           );
 
-    const result = await set(commitSshConnectionUpdate$, {
-      ...args,
-      host,
-      port,
-      accessId,
-      preparedAccess,
-      preparedCredential,
-    });
+    return {
+      ok: true,
+      value: {
+        ...args,
+        host,
+        port,
+        accessId,
+        preparedAccess,
+        preparedCredential,
+        tailscaleId,
+        preparedTailscale: await prepareInlineTailscaleConfig(
+          args.body.transport,
+          args.featureContext,
+        ),
+      },
+    };
+  },
+);
+export const updateSshConnection$ = command(
+  async (
+    { set },
+    args: UpdateSshConnectionArgs,
+  ): Promise<SshConnectionResult<SshConnectionResponse>> => {
+    const prepared = await set(prepareSshConnectionUpdate$, args);
+    if (!prepared.ok) {
+      return prepared;
+    }
+    const result = await set(commitSshConnectionUpdate$, prepared.value);
     if (result.ok) {
+      if (
+        args.body.transport?.type === "tailscale" &&
+        "create" in args.body.transport
+      ) {
+        await publishTailscaleClientInvalidation(args);
+      }
       await set(publishSshRuntimeInvalidation$, {
         orgId: args.orgId,
         userId: args.userId,
@@ -879,10 +1022,9 @@ export const deleteSshConnection$ = command(
     const db = set(writeDb$);
     // The RESTRICT VNC FK rejects deleting a host used by a VNC connection.
     const deletion = await settle(
-      db
-        .delete(sshConnections)
-        .where(ownedSshConnection(args))
-        .returning({ id: sshConnections.id }),
+      db.delete(sshConnections).where(ownedSshConnection(args)).returning({
+        id: sshConnections.id,
+      }),
     );
     if (!deletion.ok) {
       if (isVncReferenceRestriction(deletion.error)) {
@@ -942,10 +1084,22 @@ export const resetSshConnectionHostKey$ = command(
         generation: sql`${sshConnections.generation} + 1`,
         updatedAt: nowDate(),
       })
-      .where(ownedSshConnection(args))
+      .where(
+        and(
+          ownedSshConnection(args),
+          eq(sshConnections.generation, args.expectedGeneration),
+        ),
+      )
       .returning();
     if (!updated) {
-      return failure("notFound");
+      // The conditional write lost without changing trust. Distinguish deletion
+      // from a stale generation; never replay the reset against a newer Host.
+      const [remaining] = await db
+        .select({ id: sshConnections.id })
+        .from(sshConnections)
+        .where(ownedSshConnection(args))
+        .limit(1);
+      return failure(remaining ? "generationConflict" : "notFound");
     }
     await set(publishSshRuntimeInvalidation$, {
       orgId: args.orgId,
@@ -955,34 +1109,6 @@ export const resetSshConnectionHostKey$ = command(
     return { ok: true, value: toSshConnectionResponse(updated, credential) };
   },
 );
-
-function visibleSshAccessConfig(
-  owner: { readonly orgId: string; readonly userId: string },
-  id: string,
-) {
-  return and(
-    eq(cloudflareAccessConfigs.orgId, owner.orgId),
-    eq(cloudflareAccessConfigs.id, id),
-    or(
-      eq(cloudflareAccessConfigs.scope, "organization"),
-      and(
-        eq(cloudflareAccessConfigs.scope, "personal"),
-        eq(cloudflareAccessConfigs.userId, owner.userId),
-      ),
-    ),
-  );
-}
-function ownedSshConnection(owner: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly connectionId: string;
-}) {
-  return and(
-    eq(sshConnections.id, owner.connectionId),
-    eq(sshConnections.orgId, owner.orgId),
-    eq(sshConnections.userId, owner.userId),
-  );
-}
 
 function requestedSshAccessId(
   body: UpdateSshConnectionRequest,
@@ -995,8 +1121,11 @@ function requestedSshAccessId(
       ? transport.configId
       : null;
 }
+function invalidSshAccessEndpoint(host: string, port: number) {
+  return isIP(host) !== 0 || !host.includes(".") || port !== 443;
+}
 function validateSshHostUpdate(
-  current: Pick<SshConnectionRow, "generation" | "needsRebind">,
+  current: SshConnectionRow,
   args: {
     readonly body: UpdateSshConnectionRequest;
     readonly host: string;
@@ -1007,14 +1136,20 @@ function validateSshHostUpdate(
 ): (SshConnectionFailure & { readonly ok: false }) | undefined {
   if (
     (args.accessId !== null || args.creatingAccess) &&
-    (isIP(args.host) !== 0 || !args.host.includes(".") || args.port !== 443)
+    invalidSshAccessEndpoint(args.host, args.port)
   ) {
     return failure("invalidHost");
   }
   if (current.generation !== args.body.expectedGeneration) {
     return failure("generationConflict");
   }
-  if (current.needsRebind && args.body.transport === undefined) {
+  if (
+    current.transport !== "direct" &&
+    (current.transport === "tailscale"
+      ? current.tailscaleId === null
+      : current.cloudflareAccessId === null) &&
+    args.body.transport === undefined
+  ) {
     return {
       ok: false,
       kind: "bad_request",
@@ -1027,19 +1162,130 @@ function validateSshHostUpdate(
   }
   return undefined;
 }
-function sshConnectionCreationValues(
+interface SshBindingCapture {
+  readonly credentialAvailable: boolean;
+  readonly changed: SshConnectionRow | null;
+  readonly credential: {
+    readonly name: string;
+    readonly username: string;
+  } | null;
+  readonly access: boolean;
+  readonly tailscale: boolean;
+}
+function sshCreationOutcome(
   args: PreparedSshConnectionCreation,
-  credentialId: string,
-  accessId: string | null,
-) {
+  captured:
+    | (SshBindingCapture & {
+        readonly existing: {
+          readonly orgId: string;
+          readonly userId: string;
+        } | null;
+      })
+    | undefined,
+  endpointValid: boolean,
+  selectedId: string | null,
+  createdAccess: boolean,
+): SshConnectionMutationResult<SshConnectionResponse | undefined> {
+  if (!captured) {
+    throw new Error("SSH creation admission returned no row");
+  }
+  const creation = sshCreationResult(args, captured.existing ?? undefined);
+  if (!creation.ok) {
+    return creation;
+  }
+  if (!creation.value) {
+    return { ok: true, value: undefined, createdAccess: false };
+  }
+  if (!endpointValid) {
+    return failure("invalidHost");
+  }
+  if (!captured.credentialAvailable) {
+    return sshCredentialFailure("notFound");
+  }
+  if (args.accessId !== null && !captured.access) {
+    return cloudflareAccessFailure("notFound");
+  }
+  if (selectedId !== null && !captured.tailscale) {
+    return tailscaleFailure("notFound");
+  }
+  if (!captured.changed || !captured.credential) {
+    throw new Error("SSH connection creation returned no row");
+  }
   return {
-    id: args.body.id,
-    orgId: args.orgId,
-    userId: args.userId,
-    displayName: args.body.displayName,
-    host: args.canonicalHost,
-    port: args.body.port,
-    credentialId,
-    cloudflareAccessId: accessId,
+    ok: true,
+    value: toSshConnectionResponse(captured.changed, captured.credential),
+    createdAccess,
   };
+}
+function sshUpdateOutcome(
+  args: PreparedSshConnectionUpdate,
+  captured:
+    (SshBindingCapture & { readonly current: SshConnectionRow }) | undefined,
+  selectedId: string | null,
+  createdAccess: boolean,
+): SshConnectionMutationResult<SshConnectionResponse> {
+  if (!captured) {
+    return failure("notFound");
+  }
+  const rejected = validateSshHostUpdate(captured.current, {
+    body: args.body,
+    host: args.host,
+    port: args.port,
+    accessId: args.accessId,
+    creatingAccess: args.preparedAccess !== undefined,
+  });
+  if (rejected) {
+    return rejected;
+  }
+  if (!captured.credentialAvailable) {
+    return sshCredentialFailure("notFound");
+  }
+  if (args.accessId !== null && !captured.access) {
+    return cloudflareAccessFailure("notFound");
+  }
+  if (selectedId !== null && !captured.tailscale) {
+    return tailscaleFailure("notFound");
+  }
+  if (!captured.changed || !captured.credential) {
+    throw new Error("SSH connection update returned no row");
+  }
+  return {
+    ok: true,
+    value: toSshConnectionResponse(captured.changed, captured.credential),
+    createdAccess,
+  };
+}
+function canonicalizeSelectedSshHost(
+  host: string,
+  tailscale: boolean,
+): SshConnectionResult<string> {
+  if (!tailscale) {
+    return canonicalizeSshHost(host);
+  }
+  const peer = canonicalTailscaleDestination(host);
+  return peer === null ? failure("invalidHost") : { ok: true, value: peer };
+}
+
+function canonicalizeUpdatedSshHost(
+  current: SshConnectionRow,
+  body: UpdateSshConnectionRequest,
+  canonicalHost: string | undefined,
+): SshConnectionResult<string> {
+  const tailscale =
+    body.transport?.type === "tailscale" ||
+    (body.transport === undefined && current.transport === "tailscale");
+  return tailscale
+    ? canonicalizeSelectedSshHost(body.host ?? current.host, true)
+    : { ok: true, value: canonicalHost ?? current.host };
+}
+
+function isTailscaleReferenceViolation(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    isForeignKeyViolation(error) &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "constraint" in error.cause &&
+    error.cause.constraint === "ssh_connections_tailscale_org_fk"
+  );
 }

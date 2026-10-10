@@ -90,7 +90,18 @@ test.each([
       tags: ["tag:runner"],
     },
   },
-])("Reader preparation rejects Tailscale producer inputs %j", (transport) => {
+])("The backend admits Tailscale producer inputs %j", (transport) => {
+  const input = { ...create, host: "100.100.10.2", transport };
+  expect(createSshConnectionRequestSchema.parse(input)).toStrictEqual(input);
+  const update = { expectedGeneration: 2, transport };
+  expect(updateSshConnectionRequestSchema.parse(update)).toStrictEqual(update);
+});
+
+test.each([
+  { type: "tailscale", configId: "not-a-uuid" },
+  { type: "tailscale", needsRebind: true },
+  { type: "tailscale", configId, create: {} },
+])("The backend rejects invalid Tailscale producer inputs %j", (transport) => {
   expect(
     createSshConnectionRequestSchema.safeParse({ ...create, transport })
       .success,

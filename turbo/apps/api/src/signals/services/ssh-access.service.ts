@@ -2,12 +2,16 @@ import { sshHostSchema } from "@okouai/api-contracts/contracts/ssh-access";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import {
+  sshConnectionNeedsRebind,
+  sshConnections,
+} from "@okouai/db/schema/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
-import { and, asc, eq, or } from "drizzle-orm";
+import { and, asc, eq, or, sql } from "drizzle-orm";
 
 import { command } from "ccstate";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { writeDb$ } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import {
@@ -33,7 +37,9 @@ const loadRunSshHostRows$ = command(
         algorithm: sshConnections.learnedHostKeyAlgorithm,
         fingerprint: sshConnections.learnedHostKeyFingerprint,
         accessId: sshConnections.cloudflareAccessId,
-        needsRebind: sshConnections.needsRebind,
+        needsRebind: sql`${sshConnectionNeedsRebind}`.mapWith(
+          nullableDriverValueDecoder(sshConnections.legacyNeedsRebind),
+        ),
         accessConfigId: cloudflareAccessConfigs.id,
       })
       .from(agentRuns)

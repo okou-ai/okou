@@ -23,6 +23,7 @@ import { billingRedeemCodeRoutes } from "./routes/billing-redeem-code";
 import { billingRestoreRoutes } from "./routes/billing-restore";
 import { billingStatusRoutes } from "./routes/billing-status";
 import { billingUsagePackCreditsRoutes } from "./routes/billing-usage-pack-credits";
+import { tailscaleRoutes } from "./routes/tailscale";
 import { browserRoutes } from "./routes/browser";
 import { browserAuthorizationRoutes } from "./routes/browser-authorization";
 import { browserUserActionRoutes } from "./routes/browser-user-actions";
@@ -362,6 +363,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...runnerVncRoutes,
   ...runnerWssTicketRoutes,
   ...cloudflareAccessRoutes,
+  ...tailscaleRoutes,
   ...sshAccessRoutes,
   ...runnerSshRoutes,
   ...browserRoutes,
