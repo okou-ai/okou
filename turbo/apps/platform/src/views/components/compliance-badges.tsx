@@ -8,7 +8,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { securityPageUrl } from "./security-page.ts";
+
+/**
+ * The compliance section of the public security page. Only the English page
+ * carries it, so every locale links there rather than to a page without it.
+ */
+const COMPLIANCE_STATUS_URL =
+  "https://www.okou.ai/en/security#security-compliance-title";
 
 /** A framework and its status, as the public security page states them. */
 interface ComplianceItem {
@@ -76,13 +82,13 @@ export function useComplianceTitle(): string {
   });
 }
 
-/** Opens the public security page in the language the app is showing. */
+/** Opens the compliance section of the public security page. */
 export function SecurityDetailsLink({ className }: { className: string }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   return (
     <a
       className={className}
-      href={securityPageUrl(i18n.resolvedLanguage ?? i18n.language)}
+      href={COMPLIANCE_STATUS_URL}
       target="_blank"
       rel="noopener noreferrer"
     >
