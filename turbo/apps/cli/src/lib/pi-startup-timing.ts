@@ -22,7 +22,9 @@ function enabled(phase: PiPreparationPhase): boolean {
   return (
     process.env[PI_PREPARATION_TIMING_ENV] === "1" &&
     Boolean(process.env.OKOU_RUN_ID) &&
-    (!ENTRY_PHASES.includes(phase) || process.argv.includes("__agent-loop"))
+    (!ENTRY_PHASES.includes(phase) ||
+      process.argv.includes("__main_loop__") ||
+      process.argv.includes("__agent-loop"))
   );
 }
 

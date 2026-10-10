@@ -29,6 +29,8 @@ import {
   writePiPreparationTiming,
 } from "./pi-startup-timing";
 
+import { PI_EFFECTIVE_THINKING_ENV } from "./pi-session-env";
+
 const RUN_ID_ENV = "OKOU_RUN_ID";
 const PI_SESSION_ID_ENV = "OKOU_PI_SESSION_ID";
 const PI_LAUNCH_PAYLOAD_FILE_ENV = "OKOU_PI_LAUNCH_PAYLOAD_FILE";
@@ -203,9 +205,15 @@ export async function piSandboxAgentConfigFromEnv(
   let configOutcome: "success" | "error" = "error";
   try {
     const runId = requiredEnv(env, RUN_ID_ENV);
-    const parsedModel = piModelConfigSchema.parse(
+    const modelInput = piModelConfigSchema.parse(
       parseJsonEnv(env, PI_MODEL_CONFIG_ENV),
     );
+    const parsedModel = piModelConfigSchema.parse({
+      ...modelInput,
+      ...(env[PI_EFFECTIVE_THINKING_ENV]
+        ? { thinkingLevel: env[PI_EFFECTIVE_THINKING_ENV] }
+        : {}),
+    });
     const config = {
       runId,
       sessionId: requiredEnv(env, PI_SESSION_ID_ENV),
@@ -328,6 +336,7 @@ export async function runPiSandboxAgentLoop(args: {
     cwd,
   });
   return await runPiOfficialRpcMode({
+    sessionRole: "parent",
     sessionId: args.config.sessionId,
     sessionDir,
     cwd,
