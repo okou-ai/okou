@@ -9,6 +9,7 @@ import {
 
 import { imageModelIdSchema } from "@okouai/api-contracts/contracts/image-models";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
 
 import { HttpResponse, http } from "msw";
 import { onTestFinished } from "vitest";
@@ -50,6 +51,7 @@ import { publicRunOwner } from "./helpers/public-run-owner";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { purchaseToolCredits } from "./helpers/public-tool-actor";
+import { chargePublicSeoUsage } from "./helpers/public-seo-charge";
 
 const context = testContext();
 
@@ -357,6 +359,10 @@ function okouToken(args: {
 async function createClaimedImageRun(
   imageModel: string | null,
   credits = 1000,
+  providerCleanupBody: Record<string, unknown> = {
+    status: "ERROR",
+    error: "Image provider request cancelled during cleanup",
+  },
 ) {
   const chat = createChatEventsFixture(context);
   const actor = chat.bdd.user();
@@ -391,6 +397,8 @@ async function createClaimedImageRun(
   function captureExternalState() {
     const restoreCommon = captureConnectorExternalState(context, [
       "OKOU_PRICE_CUSTOM_CREDIT_UNIT",
+      "OKOU_SEO_DATAFORSEO_LOGIN",
+      "OKOU_SEO_DATAFORSEO_PASSWORD",
     ]);
     const checkout =
       context.mocks.stripe.checkout.sessions.create.getMockImplementation();
@@ -473,10 +481,11 @@ async function createClaimedImageRun(
       const results = await Promise.all(
         [...providerRequests].map((requestUrl) => {
           return settleIncludingAbort(() => {
-            return postFalWebhookEnvelope(createImageIoTestApp(), requestUrl, {
-              status: "ERROR",
-              error: "Image provider request cancelled during cleanup",
-            });
+            return postFalWebhookEnvelope(
+              createImageIoTestApp(),
+              requestUrl,
+              providerCleanupBody,
+            );
           });
         }),
       );
@@ -984,6 +993,163 @@ describe("POST /api/image-io/generate", () => {
       await expect(orgCredits(fixture)).resolves.toBe(
         fixture.initialCredits - 50,
       );
+    });
+  });
+
+  it("settles admitted provider work once after public spending exhausts the balance and the run becomes terminal", async () => {
+    const completion = {
+      images: [
+        {
+          url: FAL_GPT_MEDIA_URL,
+          width: 1024,
+          height: 1024,
+          content_type: "image/png",
+        },
+      ],
+      prompt: "An admitted image after public credit exhaustion.",
+    };
+    const fixture = await createClaimedImageRun("gpt-image-1", 1000, {
+      // Cleanup finishes pending work or replays this same success, never a
+      // provider failure after the successful completion under test.
+      status: "COMPLETED",
+      payload: completion,
+    });
+    await fixture.run(async () => {
+      let observedRequestUrl: string | null = null;
+      server.use(
+        http.post(FAL_GPT_IMAGE_1_URL, ({ request }) => {
+          observedRequestUrl = request.url;
+          return HttpResponse.json(
+            falQueueHandle("admitted-terminal-exhausted-image-request"),
+          );
+        }),
+        http.get(FAL_GPT_MEDIA_URL, () => {
+          return new HttpResponse(IMAGE_BYTES, {
+            headers: { "Content-Type": "image/png" },
+          });
+        }),
+      );
+      const app = createImageIoTestApp();
+      const submitted = await fixture.request(app, "/api/image-io/generate", {
+        method: "POST",
+        headers: { authorization: `Bearer ${fixture.token}` },
+        body: JSON.stringify({
+          prompt: "an admitted image after public credit exhaustion",
+        }),
+      });
+      expect(submitted.status).toBe(202);
+      const generationId = readAcceptedGenerationId(
+        await submitted.json(),
+        "image",
+        fixture.userId,
+      );
+
+      const fundedBalance = await orgCredits(fixture);
+      expect(fundedBalance).toBe(fixture.initialCredits);
+      await fixture.run(() => {
+        return chargePublicSeoUsage(context, fixture.actor, fundedBalance);
+      });
+      await expect(orgCredits(fixture)).resolves.toBe(0);
+
+      await fixture.cancelRun();
+      await expect(
+        createRunsApi(context).readRun(fixture.actor, fixture.runId),
+      ).resolves.toMatchObject({ status: "cancelled" });
+      const pending = await fixture.request(
+        app,
+        `/api/built-in-generations/${generationId}`,
+        { headers: authHeaders() },
+      );
+      expect(pending.status).toBe(200);
+      await expect(pending.json()).resolves.toMatchObject({
+        generationId,
+        status: "running",
+      });
+
+      await postFalWebhook(app, observedRequestUrl, completion);
+      await flushWaitUntilForTest();
+      const completed = await fixture.request(
+        app,
+        `/api/built-in-generations/${generationId}`,
+        { headers: authHeaders() },
+      );
+      expect(completed.status).toBe(200);
+      const completedBody: unknown = await completed.json();
+      expect(completedBody).toMatchObject({
+        generationId,
+        status: "completed",
+        result: {
+          creditsCharged: 50,
+          billingCategory: "output_image.medium.standard",
+        },
+      });
+      await expect(orgCredits(fixture)).resolves.toBe(-50);
+      const usageClient = setupApp({ context, routes: usageRecordRoutes })(
+        usageRecordContract,
+      );
+      const usage = await accept(
+        usageClient.get({ headers: authHeaders(), query: {} }),
+        [200],
+      );
+      const usageBody = usage.body;
+      expect(usageBody).toMatchObject({
+        totalCredits: fundedBalance + 50,
+        rows: expect.arrayContaining([
+          expect.objectContaining({
+            credits: 50,
+            breakdown: [
+              {
+                kind: "image",
+                credits: 50,
+                providers: [
+                  {
+                    provider: IMAGE_IO_MODEL,
+                    credits: 50,
+                    usageKinds: [{ kind: "image", credits: 50 }],
+                  },
+                ],
+              },
+            ],
+          }),
+          expect.objectContaining({
+            credits: fundedBalance,
+            threadId: null,
+            breakdown: [
+              {
+                kind: "other",
+                credits: fundedBalance,
+                providers: [
+                  {
+                    provider: "dataforseo",
+                    credits: fundedBalance,
+                    usageKinds: [{ kind: "seo", credits: fundedBalance }],
+                  },
+                ],
+              },
+            ],
+          }),
+        ]),
+      });
+
+      await postFalWebhook(app, observedRequestUrl, completion);
+      await flushWaitUntilForTest();
+      await expect(orgCredits(fixture)).resolves.toBe(-50);
+      const replayed = await fixture.request(
+        app,
+        `/api/built-in-generations/${generationId}`,
+        { headers: authHeaders() },
+      );
+      expect(replayed.status).toBe(200);
+      await expect(replayed.json()).resolves.toStrictEqual(completedBody);
+      const replayedUsage = await accept(
+        usageClient.get({ headers: authHeaders(), query: {} }),
+        [200],
+      );
+      // The report's period end follows the request clock; the settled usage
+      // and its pagination remain identical after provider replay.
+      expect(replayedUsage.body.totalCredits).toBe(usageBody.totalCredits);
+      expect(replayedUsage.body.rows).toStrictEqual(usageBody.rows);
+      expect(replayedUsage.body.pagination).toStrictEqual(usageBody.pagination);
     });
   });
 
