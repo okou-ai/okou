@@ -10,7 +10,6 @@ import {
   eq,
   gt,
   inArray,
-  isNotNull,
   isNull,
   lt,
   notExists,
@@ -93,7 +92,6 @@ export const issueRunnerWssTicket$ = command(
             eq(runnerWssTickets.runId, run.id),
             gt(runnerWssTickets.expiresAt, databaseNow),
             isNull(runnerWssTickets.consumedAt),
-            isNull(runnerWssTickets.revokedAt),
           ),
         )
         .limit(MAX_PENDING_PER_RUN);
@@ -102,7 +100,7 @@ export const issueRunnerWssTicket$ = command(
       }
 
       // Indexed, bounded cleanup. Redemption expiry is NOT stream expiry:
-      // retain non-revoked consumed authority until its Run is retired.
+      // retain consumed authority until its Run is retired.
       await tx.delete(runnerWssTickets).where(
         inArray(
           runnerWssTickets.digest,
@@ -117,7 +115,6 @@ export const issueRunnerWssTicket$ = command(
                 ),
                 or(
                   isNull(runnerWssTickets.consumedAt),
-                  isNotNull(runnerWssTickets.revokedAt),
                   notExists(
                     tx
                       .select({ runId: activeAgentRuns.runId })
@@ -214,7 +211,6 @@ export const consumeRunnerWssTicket$ = command(
             eq(runnerWssTickets.origin, args.origin),
             gt(runnerWssTickets.expiresAt, databaseNow),
             isNull(runnerWssTickets.consumedAt),
-            isNull(runnerWssTickets.revokedAt),
           ),
         );
       if (!stored) {
@@ -247,7 +243,6 @@ export const consumeRunnerWssTicket$ = command(
           and(
             eq(runnerWssTickets.digest, digest),
             isNull(runnerWssTickets.consumedAt),
-            isNull(runnerWssTickets.revokedAt),
             gt(runnerWssTickets.expiresAt, databaseNow),
           ),
         )
@@ -289,53 +284,5 @@ export const checkRunnerWssAuthorizations$ = command(
         ? [{ runId: row.runId, digest: row.digest }]
         : [];
     });
-  },
-);
-
-/** Revoke existing pending AND consumed tickets in one owner-gated statement. */
-export const revokeRunnerWssTickets$ = command(
-  async (
-    { set },
-    args: { readonly runId: string; readonly owner: RunOwner },
-  ): Promise<boolean> => {
-    const db = set(writeDb$);
-    const ownedRun = db.$with("owned_run").as(
-      db
-        .select({ id: agentRuns.id })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.id, args.runId),
-            eq(agentRuns.orgId, args.owner.orgId),
-            eq(agentRuns.userId, args.owner.userId),
-          ),
-        ),
-    );
-    const revokedTickets = db.$with("revoked_tickets").as(
-      db
-        .update(runnerWssTickets)
-        .set({ revokedAt: databaseNow })
-        .where(
-          and(
-            inArray(
-              runnerWssTickets.runId,
-              db.select({ id: ownedRun.id }).from(ownedRun),
-            ),
-            isNull(runnerWssTickets.revokedAt),
-          ),
-        ),
-    );
-    // PostgreSQL's ticket-row UPDATE conflicts arbitrate consume/revoke. Consume
-    // must still require revokedAt IS NULL and never clear it. An overlapping
-    // new owner bootstrap may fall after this statement's snapshot; revocation
-    // invalidates existing access, not future explicit authorization.
-    // The data-modifying CTE executes even when no ticket needs updating. Return
-    // owned identity, not changed row count, for repeat/empty/terminal success.
-    const [run] = await db
-      .with(ownedRun, revokedTickets)
-      .select({ id: ownedRun.id })
-      .from(ownedRun)
-      .limit(1);
-    return Boolean(run);
   },
 );

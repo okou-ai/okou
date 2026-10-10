@@ -1,0 +1,1 @@
+ALTER TABLE "runner_wss_tickets" DROP COLUMN "revoked_at";

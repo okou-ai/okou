@@ -29,7 +29,6 @@ export const runnerWssTickets = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     expiresAt: timestamp("expires_at").notNull(),
     consumedAt: timestamp("consumed_at"),
-    revokedAt: timestamp("revoked_at"),
   },
   (table) => {
     return [

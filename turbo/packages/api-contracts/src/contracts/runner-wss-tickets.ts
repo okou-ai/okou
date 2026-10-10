@@ -83,20 +83,4 @@ export const runnerWssTicketsContract = c.router({
     summary:
       "Check consumed WSS tickets and current Run authority from an official Runner",
   },
-  revoke: {
-    method: "POST",
-    path: "/api/runs/:runId/wss/revoke",
-    headers: authHeadersSchema,
-    pathParams: z.object({ runId: runIdSchema }),
-    body: z.undefined(),
-    responses: {
-      204: z.undefined(),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary:
-      "Revoke pending tickets and established WSS access for an owned run",
-  },
 });

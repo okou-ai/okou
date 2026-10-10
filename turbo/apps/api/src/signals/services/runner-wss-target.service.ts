@@ -2,17 +2,7 @@ import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runnerState } from "@okouai/db/schema/runner-state";
 import { runnerWssTickets } from "@okouai/db/schema/runner-wss-ticket";
-import {
-  and,
-  eq,
-  gt,
-  inArray,
-  isNotNull,
-  isNull,
-  like,
-  lte,
-  or,
-} from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, like, lte, or } from "drizzle-orm";
 
 import { wssOriginFromRunnerHostname } from "../../lib/runner-wss-target-config";
 
@@ -97,7 +87,6 @@ export function buildRunnerWssAuthorizationQuery(args: {
       liveWssConditions(args.now),
       eq(agentRuns.runnerId, args.runnerId),
       isNotNull(runnerWssTickets.consumedAt),
-      isNull(runnerWssTickets.revokedAt),
       or(
         ...args.authorizations.map((entry) => {
           return and(
