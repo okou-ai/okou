@@ -1192,11 +1192,6 @@
       "owner": "persistInvitation$"
     },
     {
-      "id": "TX-0278",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "finalizeRefund$"
-    },
-    {
       "id": "TX-0279",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "refundPurchase$"

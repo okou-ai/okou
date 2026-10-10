@@ -14344,6 +14344,236 @@ describe("usage pack allocation management", () => {
     },
   );
 
+  it("preserves the refund when an earlier revoke completes after stale recovery", async () => {
+    const lifecycle = createPublicBillingScenario(context);
+    const run = lifecycle.run;
+    const {
+      beginInvitationPurchase,
+      purchaseManagedUsagePack,
+      payInvitationPurchase,
+      readPurchasedCreditGrants,
+      readManagedUsagePacks,
+    } = createManagedUsagePackHelpers(lifecycle);
+    return await withNowScopeForTest(() => {
+      return run(async () => {
+        const purchase = await beginInvitationPurchase(
+          lifecycle.own(createOrgFixture()),
+          purchaseManagedUsagePack,
+        );
+        const invitationId = `inv_refund_${randomUUID()}`;
+        await payInvitationPurchase(purchase, invitationId);
+        context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+          { data: [{ id: invitationId }] },
+        );
+        context.mocks.clerk.organizations.revokeOrganizationInvitation.mockResolvedValue(
+          {},
+        );
+        const refund = {
+          id: `re_${randomUUID()}`,
+          status: "succeeded" as const,
+        };
+        const entered = createDeferredPromise<void>(context.signal);
+        const delayed = createDeferredPromise<typeof refund>(context.signal);
+        lifecycle.releaseBeforeDrain(() => {
+          if (!delayed.settled()) {
+            delayed.resolve(refund);
+          }
+        });
+        retainBillingSequence(context.mocks.stripe.refunds.create, [
+          () => {
+            entered.resolve();
+            return delayed.promise;
+          },
+          () => {
+            return Promise.resolve(refund);
+          },
+        ]);
+        lifecycle.captureExternalState();
+        const creditsBefore = await readPurchasedCreditGrants(purchase.fixture);
+        const managementBefore = await readManagedUsagePacks(purchase.fixture);
+        const client = setupApp({ context, routes: orgInviteRoutes })(
+          orgInviteContract,
+        );
+        const revoke = () => {
+          return run(() => {
+            return accept(
+              client.revoke({
+                headers: { authorization: "Bearer clerk-session" },
+                body: { invitationId },
+              }),
+              [200],
+            );
+          });
+        };
+        const first = revoke();
+        await entered.promise;
+        // A real retry after the existing five-minute recovery interval owns completion.
+        mockNow(now() + 5 * 60_000 + 1);
+        context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+          { data: [] },
+        );
+        lifecycle.captureExternalState();
+        const second = await revoke();
+        expect(second.body.message).toBe(
+          "Invitation revoked and refund initiated",
+        );
+        await expect(
+          readPurchasedCreditGrants(purchase.fixture),
+        ).resolves.toStrictEqual(creditsBefore);
+        await expect(
+          readManagedUsagePacks(purchase.fixture),
+        ).resolves.toStrictEqual(managementBefore);
+
+        delayed.resolve(refund);
+        expect((await first).body).toStrictEqual(second.body);
+        await revoke();
+        await expect(
+          readPurchasedCreditGrants(purchase.fixture),
+        ).resolves.toStrictEqual(creditsBefore);
+        await expect(
+          readManagedUsagePacks(purchase.fixture),
+        ).resolves.toStrictEqual(managementBefore);
+        const inactive = await run(() => {
+          return accept(
+            client.confirmPurchase({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { purchaseId: purchase.purchaseId },
+              body: {},
+            }),
+            [409],
+          );
+        });
+        expect(inactive.body.error.code).toBe("INVITATION_PURCHASE_INACTIVE");
+        expect(context.mocks.stripe.refunds.create).toHaveBeenCalledTimes(2);
+        for (const call of context.mocks.stripe.refunds.create.mock.calls) {
+          expect(call).toStrictEqual([
+            expect.objectContaining({
+              payment_intent: purchase.paymentIntentId,
+              amount: 1000,
+            }),
+            {
+              idempotencyKey: `usage-pack-invitation:${purchase.purchaseId}:refund:1`,
+            },
+          ]);
+        }
+      });
+    });
+  });
+
+  it.each(["pending", "failed", "canceled"] as const)(
+    "completes a paid invitation refund after a %s provider response through public revoke",
+    async (status) => {
+      const lifecycle = createPublicBillingScenario(context);
+      const run = lifecycle.run;
+      const {
+        beginInvitationPurchase,
+        purchaseManagedUsagePack,
+        payInvitationPurchase,
+        readPurchasedCreditGrants,
+        readManagedUsagePacks,
+      } = createManagedUsagePackHelpers(lifecycle);
+      return await withNowScopeForTest(() => {
+        return run(async () => {
+          const purchase = await beginInvitationPurchase(
+            lifecycle.own(createOrgFixture()),
+            purchaseManagedUsagePack,
+          );
+          const invitationId = `inv_refund_${randomUUID()}`;
+          await payInvitationPurchase(purchase, invitationId);
+          context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+            { data: [{ id: invitationId }] },
+          );
+          context.mocks.clerk.organizations.revokeOrganizationInvitation.mockResolvedValue(
+            {},
+          );
+          const initialRefundId = `re_${randomUUID()}`;
+          context.mocks.stripe.refunds.create.mockResolvedValue({
+            id: initialRefundId,
+            status,
+          });
+          lifecycle.captureExternalState();
+          const creditsBefore = await readPurchasedCreditGrants(
+            purchase.fixture,
+          );
+          const managementBefore = await readManagedUsagePacks(
+            purchase.fixture,
+          );
+          const client = setupApp({ context, routes: orgInviteRoutes })(
+            orgInviteContract,
+          );
+          const revoke = () => {
+            return run(() => {
+              return accept(
+                client.revoke({
+                  headers: { authorization: "Bearer clerk-session" },
+                  body: { invitationId },
+                }),
+                [200],
+              );
+            });
+          };
+          expect((await revoke()).body.message).toBe(
+            "Invitation revoked and refund initiated",
+          );
+          mockNow(now() + 5 * 60_000 + 1);
+          context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+            { data: [] },
+          );
+          const succeeded = {
+            id: status === "pending" ? initialRefundId : `re_${randomUUID()}`,
+            status: "succeeded",
+          };
+          context.mocks.stripe.refunds.retrieve.mockResolvedValue(succeeded);
+          context.mocks.stripe.refunds.create.mockResolvedValue(succeeded);
+          lifecycle.captureExternalState();
+          expect((await revoke()).body.message).toBe(
+            "Invitation revoked and refund initiated",
+          );
+          await revoke();
+          await expect(
+            readPurchasedCreditGrants(purchase.fixture),
+          ).resolves.toStrictEqual(creditsBefore);
+          await expect(
+            readManagedUsagePacks(purchase.fixture),
+          ).resolves.toStrictEqual(managementBefore);
+          expect(context.mocks.stripe.refunds.create).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({
+              payment_intent: purchase.paymentIntentId,
+              amount: 1000,
+            }),
+            {
+              idempotencyKey: `usage-pack-invitation:${purchase.purchaseId}:refund:1`,
+            },
+          );
+          if (status === "pending") {
+            expect(context.mocks.stripe.refunds.create).toHaveBeenCalledOnce();
+            expect(
+              context.mocks.stripe.refunds.retrieve,
+            ).toHaveBeenCalledExactlyOnceWith(initialRefundId);
+          } else {
+            expect(
+              context.mocks.stripe.refunds.retrieve,
+            ).not.toHaveBeenCalled();
+            expect(context.mocks.stripe.refunds.create).toHaveBeenCalledTimes(
+              2,
+            );
+            expect(context.mocks.stripe.refunds.create).toHaveBeenNthCalledWith(
+              2,
+              expect.objectContaining({
+                payment_intent: purchase.paymentIntentId,
+                amount: 1000,
+              }),
+              {
+                idempotencyKey: `usage-pack-invitation:${purchase.purchaseId}:refund:2`,
+              },
+            );
+          }
+        });
+      });
+    },
+  );
+
   it("revokes and refunds a paid pending invitation exactly once", async () => {
     const lifecycle = createPublicBillingScenario(context);
     const run = lifecycle.run;
