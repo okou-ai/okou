@@ -15,6 +15,8 @@ RUNNER_BINARY_MAX_MANIFEST_ARTIFACT_BYTES=$((1024 * 1024))
 RUNNER_BINARY_MAX_CANDIDATE_INSPECTIONS=8
 RUNNER_BINARY_MAX_TRUSTED_IDENTITIES=2
 RUNNER_BINARY_WORKFLOW_PATH=".github/workflows/runner-image.yml"
+# Main still publishes from Runner Image; PR/queue producers now belong to CI.
+RUNNER_BINARY_WORKFLOW_PATHS='[".github/workflows/runner-image.yml",".github/workflows/ci.yml"]'
 
 emit() {
   local key=$1 value=$2
@@ -125,7 +127,7 @@ validate_reusable_manifest() {
   expected_target="${EXPECTED_TARGET:-}"
   expected_digest="${EXPECTED_BINARY_INPUT_DIGEST:-}"
   expected_repository="${EXPECTED_REPOSITORY:-}"
-  expected_workflow="${EXPECTED_WORKFLOW_PATH:-$RUNNER_BINARY_WORKFLOW_PATH}"
+  expected_workflow="${EXPECTED_WORKFLOW_PATH:-}"
 
   if ! jq -e \
     --arg expected_target "$expected_target" \
@@ -133,6 +135,7 @@ validate_reusable_manifest() {
     --arg expected_toolchain "$RUNNER_BINARY_TOOLCHAIN_IMAGE" \
     --arg expected_repository "$expected_repository" \
     --arg expected_workflow "$expected_workflow" \
+    --argjson workflows "$RUNNER_BINARY_WORKFLOW_PATHS" \
     --argjson guest_keys "$expected_guests" \
     --argjson max_runner_size "$RUNNER_BINARY_MAX_SIZE_BYTES" \
     --argjson max_compressed_size "$RUNNER_BINARY_MAX_COMPRESSED_BYTES" '
@@ -164,7 +167,9 @@ validate_reusable_manifest() {
       ]) and
       (.producer.repository | type == "string" and length > 0) and
       ($expected_repository == "" or .producer.repository == $expected_repository) and
-      .producer.workflowPath == $expected_workflow and
+      (.producer.workflowPath as $path | ($workflows | index($path)) != null) and
+      ($expected_workflow == "" or .producer.workflowPath == $expected_workflow) and
+      (.producer.workflowPath != ".github/workflows/ci.yml" or .producer.event != "push") and
       (.producer.runId | type == "number" and floor == . and . > 0) and
       (.producer.runAttempt | type == "number" and floor == . and . > 0) and
       (.producer.event == "push" or .producer.event == "pull_request" or .producer.event == "merge_group") and
@@ -313,10 +318,19 @@ validate_producer_inputs() {
   require_env PRODUCER_RUN_ATTEMPT
   require_env PRODUCER_EVENT
   require_env PRODUCER_HEAD_SHA
-  if [ "${PRODUCER_WORKFLOW_PATH:-$RUNNER_BINARY_WORKFLOW_PATH}" != "$RUNNER_BINARY_WORKFLOW_PATH" ]; then
-    echo "unsupported producer workflow path: ${PRODUCER_WORKFLOW_PATH}" >&2
-    return 1
-  fi
+  case "${PRODUCER_WORKFLOW_PATH:-$RUNNER_BINARY_WORKFLOW_PATH}" in
+    .github/workflows/runner-image.yml) ;;
+    .github/workflows/ci.yml)
+      if [ "$PRODUCER_EVENT" = push ]; then
+        echo "CI binary producers require a PR or merge-group event" >&2
+        return 1
+      fi
+      ;;
+    *)
+      echo "unsupported producer workflow path: ${PRODUCER_WORKFLOW_PATH}" >&2
+      return 1
+      ;;
+  esac
   if [[ ! "$PRODUCER_RUN_ID" =~ ^[1-9][0-9]*$ ]] || [[ ! "$PRODUCER_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]; then
     echo "invalid producer run identity" >&2
     return 1
@@ -646,12 +660,13 @@ collect_trusted_candidates() {
     fi
     if ! jq -e \
       --arg repo "$REPO" \
-      --arg workflow "$RUNNER_BINARY_WORKFLOW_PATH" \
+      --argjson workflows "$RUNNER_BINARY_WORKFLOW_PATHS" \
       --argjson run_id "$artifact_run_id" \
       --arg artifact_head_sha "$artifact_head_sha" '
         .id == $run_id and
         .repository.full_name == $repo and
-        .path == $workflow and
+        (.path as $path | ($workflows | index($path)) != null) and
+        (.path != ".github/workflows/ci.yml" or .event != "push") and
         .status == "completed" and
         .head_sha == $artifact_head_sha and
         (.run_attempt | type == "number" and . > 0)
@@ -734,7 +749,7 @@ collect_trusted_candidates() {
       EXPECTED_TARGET="$expected_target" \
       EXPECTED_BINARY_INPUT_DIGEST="$expected_digest" \
       EXPECTED_REPOSITORY="$REPO" \
-      EXPECTED_WORKFLOW_PATH="$RUNNER_BINARY_WORKFLOW_PATH" \
+      EXPECTED_WORKFLOW_PATH="$(jq -r '.path' <<<"$run_json")" \
         "$0" manifest-validate >/dev/null 2>&1; then
       continue
     fi

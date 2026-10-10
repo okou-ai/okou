@@ -270,6 +270,7 @@ jobs:
 
       - name: Run workflow static checks
         run: |
+          ruby .github/scripts/compose-ci-workflow.rb --check
           shopt -s nullglob
           script_files=(
             .github/actions/report-memory-peak/*.sh
@@ -299,6 +300,7 @@ jobs:
             .github/scripts/publish-okou-app-assets.sh \
             .github/scripts/reconcile-and-start-runner-groups.sh \
             .github/scripts/prune-runner-idle.sh \
+            .github/scripts/partition-ci-image-matrix.sh \
             .github/scripts/reconcile-runner-binary-groups.sh \
             .github/actions/report-memory-peak/report.sh \
             .github/scripts/report-sccache-stats.sh \
@@ -322,6 +324,8 @@ jobs:
             .github/scripts/tests/check-pr-ci-capacity-test.sh \
             .github/scripts/tests/checkout-depth-test.sh \
             .github/scripts/tests/ci-source-revision-workflow-test.sh \
+            .github/scripts/tests/ci-readiness-workflow-test.sh \
+            .github/scripts/tests/ci-image-current-run-test.sh \
             .github/scripts/tests/cleanup-pr-runner-test.sh \
             .github/scripts/tests/cleanup-stale-runners-test.sh \
             .github/scripts/tests/clerk-test-resource-workflow-test.sh \

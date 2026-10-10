@@ -1,8 +1,7 @@
 name: Turbo
 
+# PR/merge-group jobs are composed into ci.yml; staging calls this module.
 on:
-  pull_request:
-  merge_group:
   # Staging calls the deployment/E2E jobs without repeating code validation.
   workflow_call:
     # Include credentials rendered indirectly by web-api-env for preview API.
@@ -390,7 +389,7 @@ jobs:
             echo "crates-changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-          if printf '%s\n' "$CHANGED_FILES" | grep -qE "^\.github/workflows/(turbo|staging|benchmark|crates|runner-image)\.yml$|^\.github/actions/(setup-r2-sccache|setup-ssh-tunnel|provision)/|^\.github/scripts/|^ansible/"; then
+          if printf '%s\n' "$CHANGED_FILES" | grep -qE "^\.github/workflows/(ci|turbo|staging|benchmark|crates|runner-image)\.yml$|^\.github/actions/(setup-r2-sccache|setup-ssh-tunnel|provision)/|^\.github/scripts/|^ansible/"; then
             echo "CI workflow changes detected"
             echo "ci-changed=true" >> "$GITHUB_OUTPUT"
           else

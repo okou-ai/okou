@@ -6,6 +6,7 @@
 1 changed-test.sh
 1 check-workflow-shell-compatibility-test.sh
 1 ci-source-revision-workflow-test.sh
+1 ci-readiness-workflow-test.sh
 1 cloudflare-ssh-preconnect-test.sh
 1 cloudflare-ssh-proxy-test.sh
 1 crates-runner-image-waiters-test.sh
@@ -93,6 +94,7 @@
 3 turbo-playwright-runner-workflow-test.sh
 3 verify-okou-production-domains-test.sh
 3 wait-runner-image-test.sh
+3 ci-image-current-run-test.sh
 3 workflow-script-test-shards-test.sh
 4 changed-base-ref-test.sh
 4 check-pr-title-test.sh

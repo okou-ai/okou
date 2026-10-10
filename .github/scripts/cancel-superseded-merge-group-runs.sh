@@ -30,17 +30,29 @@ esac
 case "$owner_scope" in
   superseded)
     require_env GITHUB_SHA
-    require_env MERGE_GROUP_HEAD_REF
-    pr_number=$(
-      printf '%s\n' "$MERGE_GROUP_HEAD_REF" |
-        grep -oE 'pr-[0-9]+' |
-        head -1 |
-        sed 's/pr-//' || true
-    )
-    if [ -z "$pr_number" ]; then
-      echo "failed to extract PR number from merge_group head_ref: ${MERGE_GROUP_HEAD_REF}" >&2
-      exit 2
-    fi
+    case "${RUNNER_OWNER_EVENT_NAME:-merge_group}" in
+      pull_request)
+        require_env PR_NUMBER
+        pr_number=${PR_NUMBER:-}
+        ;;
+      merge_group)
+        require_env MERGE_GROUP_HEAD_REF
+        pr_number=$(
+          printf '%s\n' "$MERGE_GROUP_HEAD_REF" |
+            grep -oE 'pr-[0-9]+' |
+            head -1 |
+            sed 's/pr-//' || true
+        )
+        if [ -z "$pr_number" ]; then
+          echo "failed to extract PR number from merge_group head_ref: ${MERGE_GROUP_HEAD_REF}" >&2
+          exit 2
+        fi
+        ;;
+      *)
+        echo "unsupported superseded runner-owner event" >&2
+        exit 2
+        ;;
+    esac
     selected_runs_label="superseded CI runs"
     selected_run_label="superseded run"
     completion_boundary="shared resources were reused"
@@ -144,7 +156,8 @@ discover_selected_runs() {
         | select(
             .path == ".github/workflows/turbo.yml" or
             .path == ".github/workflows/crates.yml" or
-            .path == ".github/workflows/runner-image.yml"
+            .path == ".github/workflows/runner-image.yml" or
+            .path == ".github/workflows/ci.yml"
           )
         | select(
             (

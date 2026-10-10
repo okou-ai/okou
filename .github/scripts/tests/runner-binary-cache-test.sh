@@ -176,10 +176,10 @@ run_publish() {
   EXPECTED_BINARY_INPUT_DIGEST="$input_digest" \
   OUTPUT_DIR="$output_dir" \
   PRODUCER_REPOSITORY=okou-ai/okou \
-  PRODUCER_WORKFLOW_PATH=.github/workflows/runner-image.yml \
+  PRODUCER_WORKFLOW_PATH="${TEST_PRODUCER_WORKFLOW:-.github/workflows/runner-image.yml}" \
   PRODUCER_RUN_ID=10 \
   PRODUCER_RUN_ATTEMPT=1 \
-  PRODUCER_EVENT=pull_request \
+  PRODUCER_EVENT="${TEST_PRODUCER_EVENT:-pull_request}" \
   PRODUCER_HEAD_SHA="$head_sha" \
   PRODUCER_PR_NUMBER=123 \
     "$CACHE" publish
@@ -210,6 +210,28 @@ EXPECTED_BINARY_INPUT_DIGEST="$input_digest" \
 EXPECTED_REPOSITORY=okou-ai/okou \
 EXPECTED_WORKFLOW_PATH=.github/workflows/runner-image.yml \
   "$CACHE" manifest-validate >/dev/null
+
+# Main and composed CI producers are exact identities, not arbitrary aliases.
+TEST_PRODUCER_WORKFLOW=.github/workflows/ci.yml run_publish "${TMPDIR}/published-ci" >/dev/null
+MANIFEST_PATH="${TMPDIR}/published-ci/manifest.json" \
+EXPECTED_TARGET="$target" EXPECTED_BINARY_INPUT_DIGEST="$input_digest" \
+EXPECTED_REPOSITORY=okou-ai/okou EXPECTED_WORKFLOW_PATH=.github/workflows/ci.yml \
+  "$CACHE" manifest-validate >/dev/null
+assert_fails "CI manifest cannot impersonate the original producer" \
+  env MANIFEST_PATH="${TMPDIR}/published-ci/manifest.json" \
+  EXPECTED_WORKFLOW_PATH=.github/workflows/runner-image.yml "$CACHE" manifest-validate
+assert_fails "unrecognized publisher workflow" \
+  env PRODUCER_REPOSITORY=okou-ai/okou PRODUCER_RUN_ID=10 PRODUCER_RUN_ATTEMPT=1 \
+  PRODUCER_EVENT=pull_request PRODUCER_HEAD_SHA="$head_sha" PRODUCER_PR_NUMBER=123 \
+  PRODUCER_WORKFLOW_PATH=.github/workflows/untrusted.yml FRESH_METADATA_PATH="$fresh" \
+  RUNNER_PATH="$runner" EXPECTED_TARGET="$target" EXPECTED_BINARY_INPUT_DIGEST="$input_digest" \
+  OUTPUT_DIR="${TMPDIR}/unknown-publisher" "$CACHE" publish
+if TEST_PRODUCER_WORKFLOW=.github/workflows/ci.yml TEST_PRODUCER_EVENT=push \
+  run_publish "${TMPDIR}/ci-push" >"${TMPDIR}/ci-push.out" 2>"${TMPDIR}/ci-push.err"; then
+  fail "CI cannot publish a main-push identity"
+fi
+grep -q 'CI binary producers require a PR or merge-group event' "${TMPDIR}/ci-push.err" || \
+  fail "expected CI event binding"
 
 assert_reusable_manifest_fails() {
   local name=$1 manifest=$2
@@ -547,5 +569,21 @@ if run_shadow pull_request guest-conflict "${TMPDIR}/shadow-guest-conflict" \
 fi
 grep -q 'equal runner binary input digest produced conflicting output identity' \
   "${TMPDIR}/guest-conflict.err" || fail "expected guest conflict diagnostic"
+
+# Provider-observed CI run metadata and its manifest must agree exactly.
+jq '.path=".github/workflows/ci.yml"' "${TMPDIR}/run-21.json" > "${TMPDIR}/ci-run.json"
+mv "${TMPDIR}/ci-run.json" "${TMPDIR}/run-21.json"
+jq '.producer.workflowPath=".github/workflows/ci.yml"' "$pr_manifest" > "${TMPDIR}/ci-manifest.json"
+mv "${TMPDIR}/ci-manifest.json" "$pr_manifest"
+ci_shadow=$(run_shadow merge_group rank "${TMPDIR}/shadow-ci")
+assert_contains "$ci_shadow" "shadow-producer-run-id=21"
+jq '.producer.workflowPath=".github/workflows/runner-image.yml"' "$pr_manifest" > "${TMPDIR}/mismatch-manifest.json"
+mv "${TMPDIR}/mismatch-manifest.json" "$pr_manifest"
+mismatch_shadow=$(run_shadow merge_group rank "${TMPDIR}/shadow-ci-mismatch")
+assert_contains "$mismatch_shadow" "shadow-producer-run-id=20"
+jq '.path=".github/workflows/untrusted.yml"' "${TMPDIR}/run-21.json" > "${TMPDIR}/unknown-run.json"
+mv "${TMPDIR}/unknown-run.json" "${TMPDIR}/run-21.json"
+unknown_shadow=$(run_shadow merge_group rank "${TMPDIR}/shadow-unknown-path")
+assert_contains "$unknown_shadow" "shadow-producer-run-id=20"
 
 echo "runner-binary-cache-test: ok"

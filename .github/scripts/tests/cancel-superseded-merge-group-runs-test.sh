@@ -77,7 +77,7 @@ JSON
   {"id":100,"name":"Turbo","status":"in_progress","event":"merge_group","head_sha":"old-a","head_branch":"gh-readonly-queue/main/pr-42-old-a","path":".github/workflows/turbo.yml","pull_requests":[],"html_url":"https://example.test/100"},
   {"id":110,"name":"Crates","status":"in_progress","event":"pull_request","head_sha":"old-b","head_branch":"feature/safe-shared-runner","head_repository":{"full_name":"okou-ai/okou"},"path":".github/workflows/crates.yml","pull_requests":[],"html_url":"https://example.test/110"},
   {"id":115,"name":"Turbo","status":"in_progress","event":"pull_request","head_sha":"old-branch-collision","head_branch":"feature/safe-shared-runner","head_repository":{"full_name":"fork/vm0"},"path":".github/workflows/turbo.yml","pull_requests":[],"html_url":"https://example.test/115"},
-  {"id":120,"name":"Runner Image","status":"in_progress","event":"merge_group","head_sha":"old-c","head_branch":"gh-readonly-queue/main/pr-42-old-c","path":".github/workflows/runner-image.yml","pull_requests":[],"html_url":"https://example.test/120"},
+  {"id":120,"name":"CI","status":"in_progress","event":"merge_group","head_sha":"old-c","head_branch":"gh-readonly-queue/main/pr-42-old-c","path":".github/workflows/ci.yml","pull_requests":[],"html_url":"https://example.test/120"},
   {"id":130,"name":"Turbo","status":"in_progress","event":"merge_group","head_sha":"old-d","head_branch":"gh-readonly-queue/main/pr-99-old-d","path":".github/workflows/turbo.yml","pull_requests":[],"html_url":"https://example.test/130"},
   {"id":140,"name":"Security","status":"in_progress","event":"merge_group","head_sha":"old-e","head_branch":"gh-readonly-queue/main/pr-42-old-e","path":".github/workflows/security.yml","pull_requests":[],"html_url":"https://example.test/140"},
   {"id":190,"name":"Turbo","status":"in_progress","event":"merge_group","head_sha":"current-sha","head_branch":"gh-readonly-queue/main/pr-42-current","path":".github/workflows/turbo.yml","pull_requests":[],"html_url":"https://example.test/190"},
@@ -180,6 +180,17 @@ cancelled_runs=$(cat "${tmp_dir}/cancel.log")
   fail "expected only older same-PR consumer runs to be cancelled, got: ${cancelled_runs}"
 [ ! -s "${tmp_dir}/sleep.log" ] ||
   fail "already-completed superseded runs must not poll"
+
+: >"${tmp_dir}/cancel.log"
+output=$(run_cancel RUNNER_OWNER_EVENT_NAME=pull_request PR_NUMBER=42 MERGE_GROUP_HEAD_REF=)
+[ "$(cat "${tmp_dir}/cancel.log")" = $'100\n110\n120' ] ||
+  fail "unified PR CI must hand off exact same-PR owners, including legacy runs"
+if run_cancel RUNNER_OWNER_EVENT_NAME=pull_request PR_NUMBER=invalid >/dev/null 2>&1; then
+  fail "invalid PR owner must fail closed"
+fi
+if run_cancel RUNNER_OWNER_EVENT_NAME=push >/dev/null 2>&1; then
+  fail "unsupported superseded owner event must fail closed"
+fi
 
 : >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"

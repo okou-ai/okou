@@ -132,6 +132,19 @@ selected_artifact=""
 next_run_check=0
 producer_failure_url=""
 
+# Native CI edges guarantee publication before this job is scheduled. Never
+# discover another producer, poll, or fall back to a global artifact lookup.
+if [ "${RUNNER_IMAGE_RUN_ID+x}" = x ]; then
+  if [[ ! "$RUNNER_IMAGE_RUN_ID" =~ ^[1-9][0-9]*$ ]] ||
+    [ "$RUNNER_IMAGE_RUN_ID" != "${GITHUB_RUN_ID:-}" ]; then
+    echo "runner image producer must be the exact current CI run" >&2
+    exit 2
+  fi
+  selected_run_id="$RUNNER_IMAGE_RUN_ID"
+  selected_url="${GITHUB_SERVER_URL:-https://github.com}/${REPO}/actions/runs/${selected_run_id}"
+  rm -rf "${OUTPUT_DIR:?}"/*
+  gh run download "$selected_run_id" -n "$ARTIFACT_NAME" -D "$OUTPUT_DIR"
+else
 while true; do
   artifacts_json=$(api_get "repos/${REPO}/actions/artifacts?name=${ARTIFACT_NAME}&per_page=100")
 
@@ -213,6 +226,7 @@ while true; do
 
   wait_with_deadline "$POLL_SECONDS"
 done
+fi
 
 MANIFEST_PATH="${OUTPUT_DIR}/manifest.json"
 if [ ! -f "$MANIFEST_PATH" ]; then

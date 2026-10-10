@@ -25,6 +25,7 @@ mapfile -t generator_files < <(
 expected_generator_files=(
   .github/actions/neon-branch/action.yml
   .github/actions/production-migration-smoke/action.yml
+  .github/workflows/ci.yml
   .github/workflows/release-please.yml
   .github/workflows/turbo.yml
 )
@@ -61,8 +62,8 @@ mapfile -t script_invocations < <(
     "${generator_files[@]}"
 )
 
-if [[ ${#script_invocations[@]} -ne 2 ]]; then
-  fail "expected two reviewed neon-preview-branch.sh invocations"
+if [[ ${#script_invocations[@]} -ne 4 ]]; then
+  fail "expected four reviewed neon-preview-branch.sh invocations across CI/staging"
 fi
 
 mapfile -t raw_mask_variables <<'VARIABLES'
@@ -104,6 +105,7 @@ mapfile -t raw_database_url_emissions < <(
 mapfile -t expected_raw_database_url_emissions <<'EMISSIONS'
 .github/actions/neon-branch/action.yml:echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
 .github/actions/production-migration-smoke/action.yml:echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
+.github/workflows/ci.yml:echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
 .github/workflows/release-please.yml:echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
 .github/workflows/turbo.yml:echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
 EMISSIONS
@@ -167,6 +169,8 @@ while IFS='|' read -r file boundary variable resolution_pattern consumer_pattern
 done <<'BOUNDARIES'
 .github/actions/neon-branch/action.yml|Neon branch action|DATABASE_URL|DATABASE_URL=$(neonctl connection-string "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --database-name "$INPUT_DATABASE_NAME" --role-name "$INPUT_ROLE_NAME" --ssl verify-full)|echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
 .github/actions/production-migration-smoke/action.yml|Production migration smoke action|DATABASE_URL|DATABASE_URL=$(neonctl connection-string "$BRANCH_ID"|echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
+.github/workflows/ci.yml|CI parent database|PARENT_DATABASE_URL|PARENT_DATABASE_URL=$(.github/scripts/neon-preview-branch.sh parent)|(cd turbo && DATABASE_URL="$PARENT_DATABASE_URL" pnpm -F @okouai/db db:migrate)
+.github/workflows/ci.yml|CI preview database|DATABASE_URL|DATABASE_URL=$(.github/scripts/neon-preview-branch.sh branch|DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db db:migrate
 .github/workflows/turbo.yml|Turbo parent database|PARENT_DATABASE_URL|PARENT_DATABASE_URL=$(.github/scripts/neon-preview-branch.sh parent)|(cd turbo && DATABASE_URL="$PARENT_DATABASE_URL" pnpm -F @okouai/db db:migrate)
 .github/workflows/turbo.yml|Turbo preview database|DATABASE_URL|DATABASE_URL=$(.github/scripts/neon-preview-branch.sh branch|DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db db:migrate
 .github/workflows/release-please.yml|Production release database|DATABASE_URL|DATABASE_URL=$(neonctl connection-string production|echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
@@ -182,4 +186,4 @@ assert_ordered \
   'Production release database shell' \
   "${release_shell_patterns[@]}"
 
-echo "Neon credential masking checks passed (6 invocations, 5 resolved values)"
+echo "Neon credential masking checks passed (8 invocations, 7 resolved values)"

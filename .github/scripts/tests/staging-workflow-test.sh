@@ -116,7 +116,8 @@ def gate(values, expected):
 
 # The shared implementation must have one push owner. The caller's workflow lock
 # remains held until every called job, including both finalizers, has completed.
-assert set(turbo['on']) == {'pull_request', 'merge_group', 'workflow_call'}
+assert set(turbo['on']) == {'workflow_call'}
+assert set(workflow('ci')['on']) == {'pull_request', 'merge_group'}
 assert set(staging['on']) == {'push'}
 assert staging['on']['push']['branches'] == ['main']
 assert staging['concurrency'] == {'group': 'staging', 'cancel-in-progress': False}
