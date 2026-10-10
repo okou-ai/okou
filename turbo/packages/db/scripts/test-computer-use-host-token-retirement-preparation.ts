@@ -12,11 +12,11 @@ import { schema } from "../src/index";
 import { computerUseHosts } from "../src/runtime/computer-use-host";
 import { chatThreads } from "../src/runtime/chat-thread";
 import {
-  computerUseHosts as outgoingHosts,
   computerUseCommands,
   computerUseCommandAuditEvents,
 } from "../src/schema/computer-use-host";
 import { applyPendingMigrations } from "./migration-runner";
+import { outgoingHosts } from "./fixtures/computer-use-host-token-outgoing";
 
 const journal = z
   .object({ entries: z.array(z.object({ tag: z.string(), when: z.number() })) })
@@ -29,8 +29,15 @@ const preparation = journal.entries.find((entry) => {
   return entry.tag.endsWith("_prepare_computer_use_host_token_retirement");
 });
 assert.ok(preparation, "Retain this validator through physical contraction");
+const contraction = journal.entries.find((entry) => {
+  return entry.tag.endsWith("_drop_computer_use_host_token_hash");
+});
+assert.ok(
+  contraction,
+  "The physical contraction must exercise the real migration",
+);
 
-// Only an owned disposable database is changed, including the simulated DROP.
+// Only an owned disposable database is changed, including the actual DROP.
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
 const adminUrl = new URL(databaseUrl);
@@ -175,9 +182,122 @@ try {
 
   for (const shape of ["retained", "contracted"] as const) {
     if (shape === "contracted") {
+      await applyPendingMigrations(migrationSql, {
+        beforeMillis: contraction.when,
+      });
+      const hostsBefore = await db
+        .select()
+        .from(computerUseHosts)
+        .orderBy(computerUseHosts.id);
+      const journalBefore = (
+        await client.query(
+          "SELECT * FROM drizzle.__drizzle_migrations ORDER BY id",
+        )
+      ).rows;
+      // RESTRICT silently drops local indexes/checks and cannot discover
+      // string-bodied SQL routines; the census must refuse all four kinds.
+      for (const dependency of [
+        {
+          create:
+            "CREATE INDEX host_token_unexpected_index ON computer_use_hosts (token_hash)",
+          drop: "DROP INDEX host_token_unexpected_index",
+        },
+        {
+          create:
+            "ALTER TABLE computer_use_hosts ADD CONSTRAINT host_token_unexpected_check CHECK (token_hash IS NULL)",
+          drop: "ALTER TABLE computer_use_hosts DROP CONSTRAINT host_token_unexpected_check",
+        },
+        {
+          create:
+            "CREATE VIEW host_token_unexpected_view AS SELECT token_hash FROM computer_use_hosts",
+          drop: "DROP VIEW host_token_unexpected_view",
+        },
+        {
+          create:
+            "CREATE FUNCTION host_token_unexpected_routine() RETURNS text LANGUAGE sql AS $$ SELECT token_hash FROM computer_use_hosts LIMIT 1 $$",
+          drop: "DROP FUNCTION host_token_unexpected_routine()",
+        },
+      ]) {
+        await client.query(dependency.create);
+        await assert.rejects(
+          applyPendingMigrations(migrationSql, {
+            beforeMillis: contraction.when + 1,
+          }),
+          (error: unknown) => {
+            return (
+              error instanceof Error &&
+              "code" in error &&
+              error.code === "2BP01" &&
+              error.message.includes(
+                "Unexpected Computer Use host token dependencies",
+              )
+            );
+          },
+        );
+        assert.deepEqual(
+          (
+            await client.query(
+              "SELECT * FROM drizzle.__drizzle_migrations ORDER BY id",
+            )
+          ).rows,
+          journalBefore,
+        );
+        assert.ok(
+          (
+            await client.query(
+              "SELECT to_regclass('idx_computer_use_hosts_token_hash') AS name",
+            )
+          ).rows[0]?.name,
+          "Rejected contraction must retain the expected index",
+        );
+        assert.equal(
+          (await db.select().from(outgoingHosts))[0]?.tokenHash,
+          null,
+          "Rejected contraction must retain the column",
+        );
+        await client.query(dependency.drop);
+      }
       await client.query(
-        "ALTER TABLE computer_use_hosts DROP COLUMN token_hash",
+        "UPDATE computer_use_hosts SET token_hash = 'unexpected-writer-hash' WHERE id = $1",
+        [legacyId],
       );
+      await assert.rejects(
+        applyPendingMigrations(migrationSql, {
+          beforeMillis: contraction.when + 1,
+        }),
+        /Host token hashes remain after retirement preparation/,
+      );
+      assert.deepEqual(
+        (
+          await client.query(
+            "SELECT * FROM drizzle.__drizzle_migrations ORDER BY id",
+          )
+        ).rows,
+        journalBefore,
+      );
+      await client.query(
+        "UPDATE computer_use_hosts SET token_hash = NULL WHERE id = $1",
+        [legacyId],
+      );
+      await applyPendingMigrations(migrationSql, {
+        beforeMillis: contraction.when + 1,
+      });
+      assert.deepEqual(
+        await db.select().from(computerUseHosts).orderBy(computerUseHosts.id),
+        hostsBefore,
+        "DROP must preserve every retained host field",
+      );
+      assert.equal(
+        (
+          await client.query(
+            "SELECT to_regclass('idx_computer_use_hosts_token_hash') AS name",
+          )
+        ).rows[0]?.name,
+        null,
+      );
+      await applyPendingMigrations(migrationSql, {
+        beforeMillis: contraction.when + 1,
+      });
     }
     const [native] = await db
       .select()
