@@ -23,6 +23,7 @@ import {
   checkinClaimedOpen$,
   getStartedQuests$,
   questIntroKey$,
+  questIntroLastKey$,
   setCheckinClaimedOpen$,
   setQuestIntroKey$,
 } from "../../signals/okou-page/get-started.ts";
@@ -444,10 +445,15 @@ export function GetStartedQuestIntroDialog({
   onInvite: () => void;
 }) {
   const openKey = useGet(questIntroKey$);
+  const lastOpenKey = useGet(questIntroLastKey$);
   const setOpenKey = useSet(setQuestIntroKey$);
   const setSelectedSlug = useSet(setSelectedBuiltinConnectorSlug$);
+  const isOpen = openKey !== null && isIntroduced(openKey);
+  // While closing, keep rendering the last quest so the exit animation shows
+  // the same content instead of an emptied shell.
+  const shownKey = openKey ?? lastOpenKey;
   const introducedKey =
-    openKey !== null && isIntroduced(openKey) ? openKey : null;
+    shownKey !== null && isIntroduced(shownKey) ? shownKey : null;
 
   const close = () => {
     setOpenKey(null);
@@ -476,7 +482,7 @@ export function GetStartedQuestIntroDialog({
   return (
     <>
       <Dialog
-        open={introducedKey !== null}
+        open={isOpen}
         onOpenChange={(next) => {
           if (!next) {
             close();

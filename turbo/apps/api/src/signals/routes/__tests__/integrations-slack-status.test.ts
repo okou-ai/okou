@@ -2,29 +2,26 @@ import { randomUUID } from "node:crypto";
 
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { slackOauthContract } from "@okouai/api-contracts/contracts/slack-oauth";
-import { createStore } from "ccstate";
 import { beforeEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import {
-  deleteSlackIntegrationFixture$,
-  type SlackIntegrationFixture,
-} from "./helpers/integrations-slack";
 import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { integrationsSlackRoutes } from "../integrations-slack";
 import { slackOauthRoutes } from "../slack-oauth";
 
 const context = testContext();
-const store = createStore();
 const mocks = createRouteMocks(context);
 const slackOrgs = createPublicSlackOrgApi(context);
 
 describe("GET /api/integrations/slack", () => {
-  const track = createFixtureTracker<SlackIntegrationFixture>((fixture) => {
-    return store.set(deleteSlackIntegrationFixture$, fixture, context.signal);
+  const track = createFixtureTracker<{
+    readonly orgId: string;
+    readonly slackWorkspaceId: string;
+  }>((fixture) => {
+    return slackOrgs.uninstallWorkspace(fixture.slackWorkspaceId);
   });
 
   async function installSlackViaOAuth(args: {
@@ -33,7 +30,7 @@ describe("GET /api/integrations/slack", () => {
     readonly installerUserId: string;
     readonly orgId: string;
     readonly slackWorkspaceId: string;
-  }): Promise<SlackIntegrationFixture> {
+  }): Promise<{ readonly orgId: string; readonly slackWorkspaceId: string }> {
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: [
         {

@@ -301,7 +301,7 @@ describe("MISC-04: available run models, personal subscriptions, and logs", () =
         available.models.map((model) => {
           return model.model;
         }),
-      ).toStrictEqual([null]);
+      ).toStrictEqual(["auto"]);
       expect(available.models[0]).toMatchObject({
         memberEffective: expect.objectContaining({
           providerType: "built-in",
@@ -427,6 +427,6 @@ describe("MISC-04: available run models, personal subscriptions, and logs", () =
       disconnectedModels.models.map((model) => {
         return model.model;
       }),
-    ).toStrictEqual([null]);
+    ).toStrictEqual(["auto"]);
   });
 });

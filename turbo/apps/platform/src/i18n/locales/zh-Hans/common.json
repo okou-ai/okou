@@ -4885,24 +4885,6 @@
           "enabled_other": "已对接下来{{count}}次运行启用",
           "title": "抓取网络请求内容"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "活跃等待",
-          "channel": "频道",
-          "clear": "清空",
-          "connection": "连接",
-          "copyJson": "复制JSON",
-          "description": "查看认证和Ably连接信号。",
-          "empty": "没有记录到诊断事件。",
-          "events": "事件",
-          "log": "事件日志",
-          "refresh": "刷新",
-          "title": "实时连接诊断",
-          "unavailable": "不可用",
-          "workerDescription": "查看持有实时连接的共享Worker所记录的抓取内容。",
-          "workerLoading": "加载中",
-          "workerTitle": "共享Worker连接诊断",
-          "workerUnavailable": "不可用"
-        },
         "indexedDb": {
           "countExplanation": "计数使用只读事务，不会读取记录内容。",
           "description": "查看共享Worker持有的本地聊天缓存中的记录数。",
@@ -4922,6 +4904,34 @@
           "stores": "个对象存储",
           "title": "IndexedDB存储",
           "unavailable": "IndexedDB存储不可用。"
+        },
+        "morningBriefEmail": {
+          "checkStatus": "检查投递状态",
+          "description": "使用 Morning Brief 模板向你的账号邮箱发送固定样例。不会运行 Agent，也不会改变早报计划。",
+          "reasons": {
+            "delivery-failed": "投递失败；此前的发送尝试仍可能已被邮件服务接受。",
+            "expired": "投递已过期；此前的发送尝试仍可能已被邮件服务接受。",
+            "no-email": "已跳过：你的账号没有邮箱地址。",
+            "suppressed": "已跳过：你的账号邮箱已被列入投递屏蔽名单。",
+            "unsubscribed": "已跳过：你的账号已退订邮件更新。"
+          },
+          "requestFailed": "请求未完成。重试会复用原请求，避免重复发送。",
+          "retry": "重试测试邮件",
+          "send": "发送测试邮件",
+          "sendAnother": "再发送一封测试邮件",
+          "sending": "正在发送…",
+          "status": {
+            "queued": "已排队。再次发送样例前，请检查投递状态。",
+            "sent": "邮件服务已接受。请检查收件箱和垃圾邮件；尚未确认实际到达。"
+          },
+          "title": "Morning Brief 测试邮件"
+        },
+        "openrouterPreset": {
+          "description": "对整个组织后续新建的 Auto 和 Okou 1.0 内置模型运行生效，不影响已有运行。",
+          "loading": "加载中…",
+          "systemDefault": "系统默认",
+          "title": "OpenRouter 预设",
+          "unavailable": "不可用"
         },
         "welcomeThread": {
           "create": "创建欢迎会话",
@@ -5312,6 +5322,14 @@
     },
     "clearSearch": "清除搜索",
     "custom": "自定义",
+    "delete": {
+      "cancel": "取消",
+      "confirm": "删除模板",
+      "deleting": "正在删除...",
+      "description": "「{{title}}」将对所有可以看到它的人移除。此操作无法撤销。",
+      "failed": "无法删除模板，请重试。",
+      "title": "删除模板？"
+    },
     "detail": {
       "back": "自定义模板",
       "page": "第{{number}}页"
@@ -6293,22 +6311,33 @@
     "connected": "已连接",
     "connectedWithDetail": "已连接（{{detail}}）",
     "discord": {
-      "accountSetup": "你的账号尚未连接。暂时无法连接新的Discord账号。",
-      "adminSetup": "服务器设置功能暂未开放。现有已验证的配置仍可继续使用Discord。",
+      "accountSetup": "通过Discord官方浏览器授权连接你的账号。",
+      "adminSetup": "将Okou安装到你的Discord服务器，再连接账号。",
+      "approvalConfirmed": "已确认浏览器授权。请关闭此标签页，在原先的Works标签页中完成连接。",
+      "approvalFailed": "确认失败。请使用原先的Okou账号和组织登录，或重新发起授权。",
+      "approvalPrompt": "请使用与原先Works标签页相同的Okou账号和组织进行确认。仅确认授权不会连接账号。",
+      "approve": "确认Discord授权",
+      "approving": "正在确认…",
+      "authorizationError": "未能完成Discord授权。请在此卡片重试。",
+      "authorizing": "正在授权…",
+      "browserConsent": "完成Discord授权，并在该标签页使用Okou账号确认。仅关闭标签页不会连接账号。",
       "chooseDmServer": "选择服务器",
       "description": "在服务器中提及Okou，或给机器人发送私信。",
       "disconnect": "断开Discord连接",
       "dmServer": "私信默认服务器",
+      "install": "安装到Discord",
       "limitedContext": "上下文受限：Okou可能无法接收频道中的普通消息。请提及Okou，并提供所需的详细信息。",
       "loadError": "无法加载Discord状态。",
       "loading": "正在加载Discord状态…",
-      "memberSetup": "请向组织管理员了解Discord访问权限。服务器设置功能暂未开放。",
+      "memberSetup": "请组织管理员将Okou安装到你的Discord服务器。",
       "moreOptions": "更多Discord选项",
+      "pendingConsent": "此标签页已无授权凭据。请关闭它，并从原先的Works标签页重新发起授权。",
+      "popupBlocked": "请允许弹出窗口以授权Discord，然后重试。",
       "retry": "重试",
       "server": "服务器：{{name}}",
       "suspended": "Discord暂时不可用。现有连接会保留。",
       "title": "Discord",
-      "unconfigured": "此组织暂时无法使用Discord。",
+      "unconfigured": "此组织尚未配置Discord。",
       "uninstall": "移除Discord",
       "uninstallDescription": "这会断开此组织所有成员与Discord的连接。其他组织的连接会保留。",
       "uninstallTitle": "从此组织移除Discord？"

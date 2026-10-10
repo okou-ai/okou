@@ -210,7 +210,7 @@ export function createPublicAutomationResultEmailApi(context: TestContext) {
       }
       return previousStorage(command);
     });
-    await webhooks.requestAgentCheckpointPrepareHistory(
+    await webhooks.requestAgentSessionHistoryPrepare(
       {
         runId,
         hash,
@@ -226,7 +226,7 @@ export function createPublicAutomationResultEmailApi(context: TestContext) {
         runId,
         exitCode: args.exitCode ?? 0,
         ...(args.output === undefined ? {} : { lastEventSequence: 0 }),
-        checkpoint: {
+        completion: {
           cliAgentType: "claude-code",
           cliAgentSessionId: `official-result-email-${runId}`,
           cliAgentSessionHistoryHash: hash,

@@ -1,15 +1,16 @@
 import { userCache } from "@okouai/db/schema/user-cache";
 import { inArray } from "drizzle-orm";
+import { command } from "ccstate";
 
 import { now, nowDate } from "../../lib/time";
 import {
   clerkRateLimit,
   clerkReadUnavailable,
-  type ClerkClient,
+  clerk$,
   type ClerkReadContext,
   type ClerkUser,
 } from "../external/clerk";
-import type { Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 
 const USER_PROFILE_CACHE_TTL_MS = 15 * 60 * 1000;
@@ -42,104 +43,110 @@ function userPrimaryEmail(user: ClerkUser): string {
  * what an unresolved ID means for them: this is display data, so it never
  * decides access.
  */
-export async function fetchUserProfileMap(
-  db: Db,
-  client: ClerkClient,
-  userIds: readonly string[],
-  context: ClerkReadContext,
-  signal: AbortSignal,
-): Promise<Map<string, ClerkUserProfile>> {
-  const map = new Map<string, ClerkUserProfile>();
-  const uniqueUserIds = [...new Set(userIds)];
-  if (uniqueUserIds.length === 0) {
-    return map;
-  }
-
-  const currentTime = now();
-  const cachedUsers = await db
-    .select({
-      userId: userCache.userId,
-      email: userCache.email,
-      name: userCache.name,
-      imageUrl: userCache.imageUrl,
-      cachedAt: userCache.cachedAt,
-    })
-    .from(userCache)
-    .where(inArray(userCache.userId, uniqueUserIds));
-  signal.throwIfAborted();
-  const missingUserIds = new Set(uniqueUserIds);
-  for (const cached of cachedUsers) {
-    if (currentTime - cached.cachedAt.getTime() >= USER_PROFILE_CACHE_TTL_MS) {
-      continue;
+export const fetchUserProfileMap$ = command(
+  async (
+    { get, set },
+    userIds: readonly string[],
+    context: ClerkReadContext,
+    signal: AbortSignal,
+  ): Promise<Map<string, ClerkUserProfile>> => {
+    const db = set(writeDb$);
+    const client = get(clerk$);
+    const map = new Map<string, ClerkUserProfile>();
+    const uniqueUserIds = [...new Set(userIds)];
+    if (uniqueUserIds.length === 0) {
+      return map;
     }
-    const [firstName = null, ...rest] = (cached.name ?? "").split(/\s+/);
-    map.set(cached.userId, {
-      email: cached.email,
-      firstName: firstName || null,
-      lastName: rest.join(" ") || null,
-      imageUrl: cached.imageUrl ?? "",
-    });
-    missingUserIds.delete(cached.userId);
-  }
 
-  if (missingUserIds.size === 0) {
-    return map;
-  }
-
-  const refreshedAt = nowDate();
-  const userIdsToFetch = [...missingUserIds];
-  for (
-    let offset = 0;
-    offset < userIdsToFetch.length;
-    offset += CLERK_USER_LIST_BATCH_SIZE
-  ) {
-    const users = await client.users.getUserList(
-      {
-        userId: userIdsToFetch.slice(
-          offset,
-          offset + CLERK_USER_LIST_BATCH_SIZE,
-        ),
-        limit: CLERK_USER_LIST_BATCH_SIZE,
-      },
-      context,
-      signal,
-    );
-    for (const user of users.data) {
-      const email = userPrimaryEmail(user);
-      const name =
-        [user.firstName, user.lastName].filter(Boolean).join(" ") || null;
-      const imageUrl = user.imageUrl || null;
-      map.set(user.id, {
-        email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        imageUrl: imageUrl ?? "",
+    const currentTime = now();
+    const cachedUsers = await db
+      .select({
+        userId: userCache.userId,
+        email: userCache.email,
+        name: userCache.name,
+        imageUrl: userCache.imageUrl,
+        cachedAt: userCache.cachedAt,
+      })
+      .from(userCache)
+      .where(inArray(userCache.userId, uniqueUserIds));
+    signal.throwIfAborted();
+    const missingUserIds = new Set(uniqueUserIds);
+    for (const cached of cachedUsers) {
+      if (
+        currentTime - cached.cachedAt.getTime() >=
+        USER_PROFILE_CACHE_TTL_MS
+      ) {
+        continue;
+      }
+      const [firstName = null, ...rest] = (cached.name ?? "").split(/\s+/);
+      map.set(cached.userId, {
+        email: cached.email,
+        firstName: firstName || null,
+        lastName: rest.join(" ") || null,
+        imageUrl: cached.imageUrl ?? "",
       });
-      if (email) {
-        await db
-          .insert(userCache)
-          .values({
-            userId: user.id,
-            email,
-            name,
-            imageUrl,
-            cachedAt: refreshedAt,
-          })
-          .onConflictDoUpdate({
-            target: userCache.userId,
-            set: {
+      missingUserIds.delete(cached.userId);
+    }
+
+    if (missingUserIds.size === 0) {
+      return map;
+    }
+
+    const refreshedAt = nowDate();
+    const userIdsToFetch = [...missingUserIds];
+    for (
+      let offset = 0;
+      offset < userIdsToFetch.length;
+      offset += CLERK_USER_LIST_BATCH_SIZE
+    ) {
+      const users = await client.users.getUserList(
+        {
+          userId: userIdsToFetch.slice(
+            offset,
+            offset + CLERK_USER_LIST_BATCH_SIZE,
+          ),
+          limit: CLERK_USER_LIST_BATCH_SIZE,
+        },
+        context,
+        signal,
+      );
+      for (const user of users.data) {
+        const email = userPrimaryEmail(user);
+        const name =
+          [user.firstName, user.lastName].filter(Boolean).join(" ") || null;
+        const imageUrl = user.imageUrl || null;
+        map.set(user.id, {
+          email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          imageUrl: imageUrl ?? "",
+        });
+        if (email) {
+          await db
+            .insert(userCache)
+            .values({
+              userId: user.id,
               email,
               name,
               imageUrl,
               cachedAt: refreshedAt,
-            },
-          });
-        signal.throwIfAborted();
+            })
+            .onConflictDoUpdate({
+              target: userCache.userId,
+              set: {
+                email,
+                name,
+                imageUrl,
+                cachedAt: refreshedAt,
+              },
+            });
+          signal.throwIfAborted();
+        }
       }
     }
-  }
-  return map;
-}
+    return map;
+  },
+);
 
 /**
  * The one string that names this person to another member.
@@ -170,32 +177,33 @@ function userProfileDisplayName(profile: ClerkUserProfile): string | null {
  * credential, stays an error, because none of those are the provider saying it
  * does not know.
  */
-export async function loadUserDisplayNames(
-  db: Db,
-  client: ClerkClient,
-  userIds: readonly string[],
-  context: ClerkReadContext,
-  signal: AbortSignal,
-): Promise<ReadonlyMap<string, string>> {
-  const names = new Map<string, string>();
-  const profiles = await settle(
-    fetchUserProfileMap(db, client, userIds, context, signal),
-    signal,
-  );
-  if (!profiles.ok) {
-    if (
-      clerkReadUnavailable(profiles.error) === null &&
-      clerkRateLimit(profiles.error) === null
-    ) {
-      throw profiles.error;
+export const loadUserDisplayNames$ = command(
+  async (
+    { set },
+    userIds: readonly string[],
+    context: ClerkReadContext,
+    signal: AbortSignal,
+  ): Promise<ReadonlyMap<string, string>> => {
+    const names = new Map<string, string>();
+    const profiles = await settle(
+      set(fetchUserProfileMap$, userIds, context, signal),
+      signal,
+    );
+    if (!profiles.ok) {
+      if (
+        clerkReadUnavailable(profiles.error) === null &&
+        clerkRateLimit(profiles.error) === null
+      ) {
+        throw profiles.error;
+      }
+      return names;
+    }
+    for (const [userId, profile] of profiles.value) {
+      const displayName = userProfileDisplayName(profile);
+      if (displayName !== null) {
+        names.set(userId, displayName);
+      }
     }
     return names;
-  }
-  for (const [userId, profile] of profiles.value) {
-    const displayName = userProfileDisplayName(profile);
-    if (displayName !== null) {
-      names.set(userId, displayName);
-    }
-  }
-  return names;
-}
+  },
+);

@@ -90,18 +90,22 @@ async function readReceipt() {
   return row.historical_session_blob_reference_audit;
 }
 
-async function runSqlFile(sqlFile: string) {
-  // Execute every shipped statement in a fresh connection. CI already has pg,
-  // but its toolchain does not install the separate psql executable.
+async function runSqlFile(sqlFile: string | readonly string[]) {
+  // Own and dispose one connection. A statement list models psql -f: each
+  // session SET must finish before the audit SELECT starts its implicit transaction.
   const connection = new Client({ connectionString: fixtureUrl.toString() });
   await connection.connect();
   try {
-    const results = z
-      .array(z.object({ command: z.string(), rows: z.array(z.unknown()) }))
-      .parse(await connection.query(sqlFile));
-    const selections = results.filter((result) => {
-      return result.command === "SELECT";
-    });
+    const selections: { rows: unknown[] }[] = [];
+    for (const statement of typeof sqlFile === "string" ? [sqlFile] : sqlFile) {
+      const result = await connection.query(statement);
+      const results = z
+        .array(z.object({ command: z.string(), rows: z.array(z.unknown()) }))
+        .parse(Array.isArray(result) ? result : [result]);
+      for (const selection of results) {
+        if (selection.command === "SELECT") selections.push(selection);
+      }
+    }
     assert.equal(selections.length, 1);
     const selection = selections[0];
     assert.ok(selection);
@@ -128,7 +132,6 @@ async function state() {
     'sessions', (SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM agent_sessions s),
     'storages', (SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM storages s),
     'versions', (SELECT jsonb_agg(to_jsonb(v) ORDER BY id) FROM storage_versions v),
-    'checkpoints', (SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM checkpoints c),
     'selections', (SELECT jsonb_agg(to_jsonb(s) ORDER BY user_id, slot) FROM pi_memory_stage1_selections s),
     'constraints', (SELECT jsonb_agg(to_jsonb(c) ORDER BY oid) FROM pg_constraint c),
     'triggers', (SELECT jsonb_agg(to_jsonb(t) ORDER BY oid) FROM pg_trigger t)
@@ -192,8 +195,6 @@ async function seedScale() {
       SELECT md5('conversation-' || i)::uuid, md5('run-' || i)::uuid, 'pi',
         md5('cli-' || i), lpad(to_hex(i), 64, '0'), '2026-09-10'
       FROM generate_series(1, 277197) i;
-    INSERT INTO checkpoints (run_id, conversation_id, storage_mounts)
-      SELECT run_id, id, '[]'::jsonb FROM conversations;
     UPDATE agent_sessions SET conversation_id = md5('conversation-' || i)::uuid
       FROM generate_series(1, 71876) i WHERE id = md5('session-' || i)::uuid;
     INSERT INTO storages (id, org_id, user_id, name, s3_prefix)
@@ -342,9 +343,7 @@ try {
   await candidate(1);
   await candidate(8, "2026-09-14 01:11:37.999999");
   await candidate(9, "2026-09-14 01:11:38");
-  await writer.query(`INSERT INTO checkpoints (run_id, conversation_id, storage_mounts)
-    SELECT run_id, id, '[]'::jsonb FROM conversations;
-    UPDATE agent_sessions SET conversation_id = (SELECT id FROM conversations LIMIT 1);
+  await writer.query(`    UPDATE agent_sessions SET conversation_id = (SELECT id FROM conversations LIMIT 1);
     INSERT INTO storage_versions (id, storage_id, s3_key, archive_size, created_by)
     VALUES ('${hash(1)}', '${storage}', 'private-path-sentinel', 1, 'audit-user');
     INSERT INTO pi_memory_stage1_days (user_id, day, org_id, trigger_thread_id, requested_at)
@@ -420,20 +419,87 @@ try {
     "PASS full population, shared owners, missing metadata, undercounts, preparation, ambiguity, strict B cutoff and content-free unchanged state",
   );
 
-  // The unchanged candidate tool remains the semantic comparison boundary.
+  // The candidate tool has one statement snapshot. Its settings are sent as
+  // separate messages, just as the documented disposable psql -f session does.
   const candidateFile = await readFile(
     new URL("./audit-pi-memory-candidate-references.sql", import.meta.url),
     "utf8",
   );
+  const candidateQueryStart = candidateFile.indexOf(
+    "  WITH candidate_owners AS MATERIALIZED",
+  );
+  assert.ok(candidateQueryStart > 0);
+  // This preamble contains only the shipped literal SET statements.
+  const candidateSettings = candidateFile
+    .slice(0, candidateQueryStart)
+    .split(/;\s*\n/)
+    .filter((statement) => {
+      return statement.trim().length > 0;
+    });
+  const candidateStatements = [
+    ...candidateSettings,
+    candidateFile.slice(candidateQueryStart),
+  ];
   const candidateReceipt = z
     .object({
-      pi_candidate_reference_audit: z.object({ reconciliation: counts }),
+      pi_candidate_reference_audit: z.strictObject({
+        receipt_version: z.literal(1),
+        transaction_read_only: z.literal("on"),
+        observed_at: z.string(),
+        server_version: z.string(),
+        candidate_integrity: counts,
+        reconciliation: counts,
+        catalog: counts,
+      }),
     })
-    .parse(await runSqlFile(candidateFile)).pi_candidate_reference_audit;
+    .parse(await runSqlFile(candidateStatements)).pi_candidate_reference_audit;
   for (const [key, value] of Object.entries(candidateReceipt.reconciliation)) {
     assert.equal(receipt.candidate_only[key], value, key);
   }
-  console.log("PASS unchanged candidate-only reconciliation equivalence");
+  assert.deepEqual(await state(), before);
+  console.log("PASS candidate-only receipt and reconciliation equivalence");
+
+  const settingsProbe = `SELECT
+    current_setting('transaction_read_only') AS read_only,
+    current_setting('transaction_isolation') AS isolation,
+    current_setting('statement_timeout') AS statement_timeout,
+    current_setting('lock_timeout') AS lock_timeout,
+    current_setting('search_path') AS search_path,
+    current_setting('timezone') AS timezone,
+    current_setting('row_security') AS row_security,
+    current_setting('work_mem') AS work_mem`;
+  const inherited = z
+    .object({
+      timezone: z.string(),
+      row_security: z.string(),
+      work_mem: z.string(),
+    })
+    .parse((await writer.query(settingsProbe)).rows[0]);
+  assert.deepEqual(await runSqlFile([...candidateSettings, settingsProbe]), {
+    read_only: "on",
+    isolation: "repeatable read",
+    statement_timeout: "30s",
+    lock_timeout: "3s",
+    search_path: "public, pg_catalog",
+    ...inherited,
+  });
+  for (const forbidden of [
+    "UPDATE blobs SET ref_count = 0",
+    "DELETE FROM conversations",
+    "CREATE TABLE forbidden_write (id integer)",
+    "SELECT * FROM blobs FOR UPDATE",
+  ]) {
+    await assert.rejects(runSqlFile([...candidateStatements, forbidden]), {
+      code: "25006",
+    });
+  }
+  await assert.rejects(runSqlFile([...candidateSettings, "SELECT 1 / 0"]), {
+    code: "22012",
+  });
+  assert.deepEqual(await state(), before);
+  console.log(
+    "PASS candidate session settings, PostgreSQL write rejection and error propagation with unchanged state",
+  );
 
   for (const forbidden of [
     "UPDATE blobs SET ref_count = 0",
@@ -452,6 +518,7 @@ try {
 
   await auditor.query(preamble);
   const pinned = await readReceipt();
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0389; new non-billing transactions are prohibited.
   await writer.query("BEGIN; SET LOCAL statement_timeout = '2s'");
   await conversation(1);
   await writer.query(
@@ -466,6 +533,7 @@ try {
     "PASS concurrent writer commits without an audit write lock; repeated report reads retain one snapshot",
   );
 
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0390; new non-billing transactions are prohibited.
   await writer.query("BEGIN; LOCK TABLE blobs IN ACCESS EXCLUSIVE MODE");
   try {
     await auditor.query(preamble);
@@ -478,6 +546,7 @@ try {
     "PASS real DDL contention is bounded by the shipped 3-second lock timeout",
   );
 
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0391; new non-billing transactions are prohibited.
   await writer.query(`BEGIN;
     ALTER TABLE pi_memory_stage1_candidates DROP CONSTRAINT pi_memory_stage1_candidates_source_history_hash_blobs_hash_fk;`);
   await candidate(12);

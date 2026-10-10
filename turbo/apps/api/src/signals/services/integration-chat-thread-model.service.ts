@@ -10,12 +10,12 @@ import { updateChatThreadMetadata$ } from "./chat-thread-metadata-update.service
 
 export type IntegrationChatThreadModel =
   | { readonly kind: "no_thread" }
-  /** `selectedModel` is null for Auto. */
+  /** Canonical Auto and retained nullable/legacy selections remain readable. */
   | { readonly kind: "thread"; readonly selectedModel: string | null };
 
 /**
  * The string an integration `/model` picker uses for a run model option.
- * Auto is the empty (null) selection, so pickers carry it as `auto`.
+ * Nullable Auto options and canonical selections both use the picker value `auto`.
  */
 export function integrationModelOptionValue(model: string | null): string {
   return model ?? "auto";

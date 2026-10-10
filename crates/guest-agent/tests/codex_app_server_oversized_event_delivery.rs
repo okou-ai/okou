@@ -15,6 +15,67 @@ const SECRET: &str = "delivery-secret-value";
 const DELIVERY_MARKER: &str = "bytes truncated for delivery";
 const FALLBACK_MARKER: &str = "[event content truncated for delivery]";
 
+#[derive(Clone, Copy, serde::Serialize)]
+#[serde(tag = "type")]
+enum CodexOutput<'a> {
+    #[serde(rename = "input_image")]
+    Image { image_url: &'a str },
+    #[serde(rename = "input_text")]
+    Text { text: &'a str },
+}
+
+fn image(url: &str) -> CodexOutput<'_> {
+    CodexOutput::Image { image_url: url }
+}
+
+fn failed_command_item(output: String) -> Value {
+    Value::Object(serde_json::Map::from_iter([
+        ("type".into(), "commandExecution".into()),
+        ("id".into(), "failed-command".into()),
+        ("command".into(), "false".into()),
+        ("status".into(), "failed".into()),
+        ("exitCode".into(), 7.into()),
+        ("durationMs".into(), 42.into()),
+        ("aggregatedOutput".into(), Value::String(output)),
+    ]))
+}
+
+#[test]
+fn owned_failed_command_fixture_preserves_canonical_bytes() {
+    for output in [String::new(), "你好\"\\\n\0".into(), "x".repeat(4_096)] {
+        let expected = serde_json::json!({
+            "type":"commandExecution", "id":"failed-command", "command":"false",
+            "status":"failed", "exitCode":7, "durationMs":42, "aggregatedOutput":output
+        });
+        assert_eq!(
+            failed_command_item(output).to_string(),
+            expected.to_string()
+        );
+    }
+}
+
+#[test]
+fn borrowed_codex_output_fixtures_preserve_canonical_bytes() {
+    for url in ["", "data:image/png;base64,AA==", "你好\"\\\n\0"] {
+        for count in [0, 1, 11] {
+            let actual = std::iter::once(image(url))
+                .chain(std::iter::repeat_n(CodexOutput::Text { text: url }, count))
+                .collect::<Vec<_>>();
+            let expected =
+                std::iter::once(serde_json::json!({"type":"input_image", "image_url":url}))
+                    .chain(std::iter::repeat_n(
+                        serde_json::json!({"type":"input_text", "text":url}),
+                        count,
+                    ))
+                    .collect::<Vec<_>>();
+            assert_eq!(
+                serde_json::json!(actual).to_string(),
+                serde_json::json!(expected).to_string()
+            );
+        }
+    }
+}
+
 #[tokio::test]
 async fn codex_app_server_reduces_oversized_events_before_delivery()
 -> Result<(), Box<dyn std::error::Error>> {
@@ -59,16 +120,18 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
         "data:image/png;base64,{}",
         delivery_image::png_base64(1024, 1024)?
     );
-    let image = |url: &str| serde_json::json!({"type":"input_image","image_url":url});
     // A few thousand entries still exceed the reducer's candidate bound;
     // long content keeps the event oversized without allocating 100,000 objects.
     let structure_text = "bounded-content".repeat(80);
-    let mut delivery_items = serde_json::json!([
-        {"type":"functionCallOutput","id":"small-image","name":"read","output":[image(&small_image)]},
-        {"type":"functionCallOutput","id":"large-image","name":"read","namespace":"tools","output":[image(&large_image)]},
-        {"type":"functionCallOutput","id":"aggregate-images","name":"read","output":[image(&half_image),image(&half_image),image(&small_image)]},
-        {"type":"functionCallOutput","id":"structure-output","name":"read","namespace":"tools","output":std::iter::once(image(&half_image)).chain(std::iter::repeat_n(serde_json::json!({"type":"input_text","text":structure_text}),4_100)).collect::<Vec<_>>()},
-        {"type":"commandExecution","id":"failed-command","command":"false","status":"failed","exitCode":7,"durationMs":42,"aggregatedOutput":format!("failed-output-head-{}-failed-output-tail", "x".repeat(MAX_REQUEST_BYTES))}
+    let mut delivery_items = Value::Array(vec![
+        serde_json::json!({"type":"functionCallOutput","id":"small-image","name":"read","output":[image(&small_image)]}),
+        serde_json::json!({"type":"functionCallOutput","id":"large-image","name":"read","namespace":"tools","output":[image(&large_image)]}),
+        serde_json::json!({"type":"functionCallOutput","id":"aggregate-images","name":"read","output":[image(&half_image),image(&half_image),image(&small_image)]}),
+        serde_json::json!({"type":"functionCallOutput","id":"structure-output","name":"read","namespace":"tools","output":std::iter::once(image(&half_image)).chain(std::iter::repeat_n(CodexOutput::Text { text: &structure_text },4_100)).collect::<Vec<_>>()}),
+        failed_command_item(format!(
+            "failed-output-head-{}-failed-output-tail",
+            "x".repeat(MAX_REQUEST_BYTES)
+        )),
     ]);
     let collaboration_items = [
         collaboration_item("large-collaboration", 1, 850_000),
@@ -459,11 +522,53 @@ fn collaboration_item(item_id: &str, child_count: usize, repetitions: usize) -> 
         serde_json::json!({"status": "completed", "message": ""}),
     );
     let receivers = states.keys().collect::<Vec<_>>();
-    serde_json::json!({
-        "id": item_id, "type": "collabAgentToolCall", "tool": "wait", "status": "completed",
-        "senderThreadId": "parent", "receiverThreadIds": receivers,
-        "prompt": null, "model": null, "reasoningEffort": null, "agentsStates": states,
-    })
+    Value::Object(serde_json::Map::from_iter([
+        ("id".into(), item_id.into()),
+        ("type".into(), "collabAgentToolCall".into()),
+        ("tool".into(), "wait".into()),
+        ("status".into(), "completed".into()),
+        ("senderThreadId".into(), "parent".into()),
+        ("receiverThreadIds".into(), serde_json::json!(receivers)),
+        ("prompt".into(), Value::Null),
+        ("model".into(), Value::Null),
+        ("reasoningEffort".into(), Value::Null),
+        ("agentsStates".into(), Value::Object(states)),
+    ]))
+}
+
+#[test]
+fn owned_codex_collaboration_fixture_preserves_canonical_bytes() {
+    for (child_count, repetitions) in [(0, 0), (1, 2), (11, 3)] {
+        let message = format!(
+            "child-head-{SECRET}-{}-child-tail",
+            "α\"\\\n".repeat(repetitions)
+        );
+        let mut states = serde_json::Map::new();
+        for index in 0..child_count {
+            states.insert(
+                format!("child-{index:02}"),
+                serde_json::json!({"status":"errored", "message":message}),
+            );
+        }
+        states.insert(
+            "null-child".into(),
+            serde_json::json!({"status":"running", "message":null}),
+        );
+        states.insert(
+            "empty-child".into(),
+            serde_json::json!({"status":"completed", "message":""}),
+        );
+        let receivers = states.keys().collect::<Vec<_>>();
+        let expected = serde_json::json!({
+            "id":"fixture", "type":"collabAgentToolCall", "tool":"wait", "status":"completed",
+            "senderThreadId":"parent", "receiverThreadIds":receivers,
+            "prompt":null, "model":null, "reasoningEffort":null, "agentsStates":states,
+        });
+        assert_eq!(
+            collaboration_item("fixture", child_count, repetitions).to_string(),
+            expected.to_string()
+        );
+    }
 }
 
 fn delivered_item<'a>(events: &'a [Value], item_id: &str) -> Result<&'a Value, String> {

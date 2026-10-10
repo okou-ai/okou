@@ -120,6 +120,7 @@ export const cancelRun$ = command(
     const runId = args.runId.toLowerCase();
     const writeDb = set(writeDb$);
     let releasedSlots: readonly ReleasedRunSlot[] = [];
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0049; new non-billing transactions are prohibited.
     const transition = writeDb.transaction(async (tx) => {
       const [run] = await tx
         .select(lockedCancellationRunFields)

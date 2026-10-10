@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.7.4](https://github.com/okou-ai/okou/compare/ios-v0.7.3...ios-v0.7.4) (2026-10-09)
+
+
+### Refactoring
+
+* **api:** remove unreachable legacy desktop manifest reader ([#38441](https://github.com/okou-ai/okou/issues/38441)) ([b6ce3d8](https://github.com/okou-ai/okou/commit/b6ce3d830f65c026632f5058e514e5653ce90763))
+
+## [0.7.3](https://github.com/okou-ai/okou/compare/ios-v0.7.2...ios-v0.7.3) (2026-10-09)
+
+
+### Refactoring
+
+* **ios:** centralize conversation scroll intent ([#38385](https://github.com/okou-ai/okou/issues/38385)) ([34f6c4c](https://github.com/okou-ai/okou/commit/34f6c4c0e63b72d0f310ba223a0a8c4711bd60f4))
+* **ios:** isolate chat data in a local swift package ([#38409](https://github.com/okou-ai/okou/issues/38409)) ([f66592e](https://github.com/okou-ai/okou/commit/f66592e7aecdb983341d5b8ce9ec25c064dcdb69))
+
+## [0.7.2](https://github.com/okou-ai/okou/compare/ios-v0.7.1...ios-v0.7.2) (2026-10-09)
+
+
+### Bug Fixes
+
+* **ios:** share static artifact storage across release environments ([#38353](https://github.com/okou-ai/okou/issues/38353)) ([608ed35](https://github.com/okou-ai/okou/commit/608ed35b352eb75c233c01c00dd8a211434bc1a1))
+
+
+### Refactoring
+
+* **ios:** extract chat domain into a local swift package ([#38362](https://github.com/okou-ai/okou/issues/38362)) ([9b3fc18](https://github.com/okou-ai/okou/commit/9b3fc18cfb00e31ee8176981f70712d4c34aedc8))
+
+## [0.7.1](https://github.com/okou-ai/okou/compare/ios-v0.7.0...ios-v0.7.1) (2026-10-09)
+
+
+### CI
+
+* **ios:** promote verified immutable archives to testflight ([#38232](https://github.com/okou-ai/okou/issues/38232)) ([e7107ba](https://github.com/okou-ai/okou/commit/e7107ba0aba194ef052ee6a087eeb752959ba01e))
+
 ## [0.7.0](https://github.com/okou-ai/okou/compare/ios-v0.6.8...ios-v0.7.0) (2026-10-09)
 
 

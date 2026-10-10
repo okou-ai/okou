@@ -4974,24 +4974,6 @@
           "enabled_other": "Activado para las próximas {{count}} ejecuciones",
           "title": "Capturar cuerpos de red"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "Esperas activas",
-          "channel": "canal",
-          "clear": "Borrar",
-          "connection": "conexión",
-          "copyJson": "Copiar JSON",
-          "description": "Inspecciona las señales de autenticación y conexión de Ably.",
-          "empty": "No se registraron eventos de diagnóstico.",
-          "events": "eventos",
-          "log": "Registro de eventos",
-          "refresh": "Actualizar",
-          "title": "Diagnóstico de conexión en tiempo real",
-          "unavailable": "no disponible",
-          "workerDescription": "Inspecciona el registro del shared worker que mantiene la conexión en tiempo real.",
-          "workerLoading": "Cargando",
-          "workerTitle": "Diagnóstico de conexión del shared worker",
-          "workerUnavailable": "No disponible"
-        },
         "indexedDb": {
           "countExplanation": "El recuento usa transacciones de solo lectura y no lee el contenido de los registros.",
           "description": "Consulta la cantidad de registros de la caché local de chats administrada por el worker compartido.",
@@ -5011,6 +4993,34 @@
           "stores": "almacenes de objetos",
           "title": "Almacenamiento de IndexedDB",
           "unavailable": "El almacenamiento de IndexedDB no está disponible."
+        },
+        "morningBriefEmail": {
+          "checkStatus": "Comprobar estado de entrega",
+          "description": "Envía un ejemplo fijo al correo de tu cuenta con la plantilla de Morning Brief. No ejecuta un Agent ni cambia tu programación.",
+          "reasons": {
+            "delivery-failed": "La entrega ha fallado. Es posible que el proveedor haya aceptado un intento anterior.",
+            "expired": "La entrega ha caducado. Es posible que el proveedor haya aceptado un intento anterior.",
+            "no-email": "Omitido: tu cuenta no tiene dirección de correo.",
+            "suppressed": "Omitido: la entrega al correo de tu cuenta está bloqueada.",
+            "unsubscribed": "Omitido: tu cuenta canceló la suscripción a las actualizaciones por correo."
+          },
+          "requestFailed": "La solicitud no se completó. El reintento usa la misma solicitud para evitar un correo duplicado.",
+          "retry": "Reintentar correo de prueba",
+          "send": "Enviar correo de prueba",
+          "sendAnother": "Enviar otro correo de prueba",
+          "sending": "Enviando…",
+          "status": {
+            "queued": "En cola de entrega. Comprueba el estado antes de enviar otro ejemplo.",
+            "sent": "El proveedor de correo lo ha aceptado. Revisa la bandeja de entrada y el spam; la llegada a la bandeja de entrada no está confirmada."
+          },
+          "title": "Correo de prueba de Morning Brief"
+        },
+        "openrouterPreset": {
+          "description": "Se aplica a las nuevas ejecuciones de Auto y Okou 1.0 integrado de toda la organización. Las ejecuciones existentes no cambian.",
+          "loading": "Cargando…",
+          "systemDefault": "Predeterminado del sistema",
+          "title": "Preset de OpenRouter",
+          "unavailable": "No disponible"
         },
         "welcomeThread": {
           "create": "Crear chat de bienvenida",
@@ -5408,6 +5418,14 @@
     },
     "clearSearch": "Borrar búsqueda",
     "custom": "Personalizadas",
+    "delete": {
+      "cancel": "Cancelar",
+      "confirm": "Eliminar plantilla",
+      "deleting": "Eliminando...",
+      "description": "\"{{title}}\" se eliminará para todos los que puedan verla. Esta acción no se puede deshacer.",
+      "failed": "No se pudo eliminar la plantilla. Inténtalo de nuevo.",
+      "title": "¿Eliminar plantilla?"
+    },
     "detail": {
       "back": "Plantillas personalizadas",
       "page": "Página {{number}}"
@@ -6401,22 +6419,33 @@
     "connected": "Conectado",
     "connectedWithDetail": "Conectado ({{detail}})",
     "discord": {
-      "accountSetup": "Tu cuenta no está conectada. Aún no es posible conectar una nueva cuenta de Discord.",
-      "adminSetup": "La configuración de servidores aún no está disponible. Las configuraciones existentes verificadas pueden seguir usando Discord.",
+      "accountSetup": "Conecta tu cuenta de Discord mediante el consentimiento oficial en el navegador.",
+      "adminSetup": "Instala Okou en tu servidor de Discord y luego conecta tu cuenta.",
+      "approvalConfirmed": "Consentimiento del navegador confirmado. Cierra esta pestaña para terminar en la pestaña original de Works.",
+      "approvalFailed": "La confirmación falló. Inicia sesión con la cuenta y organización originales de Okou o reinicia la autorización.",
+      "approvalPrompt": "Confirma con la misma cuenta y organización de Okou que en la pestaña original de Works. Confirmar por sí solo no conecta tu cuenta.",
+      "approve": "Confirmar consentimiento de Discord",
+      "approving": "Confirmando…",
+      "authorizationError": "No se pudo completar la autorización de Discord. Vuelve a intentarlo desde esta tarjeta.",
+      "authorizing": "Autorizando…",
+      "browserConsent": "Completa el consentimiento de Discord y confirma allí con tu cuenta de Okou. Cerrar la pestaña por sí solo no conecta tu cuenta.",
       "chooseDmServer": "Elige un servidor",
       "description": "Menciona a Okou en un servidor o envía un mensaje directo al bot.",
       "disconnect": "Desconectar Discord",
       "dmServer": "Servidor predeterminado para mensajes directos",
+      "install": "Instalar en Discord",
       "limitedContext": "Contexto limitado: es posible que Okou no reciba los mensajes normales del canal. Menciona a Okou e incluye los detalles que necesita.",
       "loadError": "No se ha podido cargar el estado de Discord.",
       "loading": "Cargando el estado de Discord…",
-      "memberSetup": "Consulta a un administrador de la organización sobre el acceso a Discord. La configuración de servidores aún no está disponible.",
+      "memberSetup": "Pide a un administrador de la organización que instale Okou en tu servidor de Discord.",
       "moreOptions": "Más opciones de Discord",
+      "pendingConsent": "Esta pestaña no tiene prueba de autorización. Ciérrala y reinicia la autorización desde la pestaña original de Works.",
+      "popupBlocked": "Permite las ventanas emergentes para autorizar Discord y vuelve a intentarlo.",
       "retry": "Reintentar",
       "server": "Servidor: {{name}}",
       "suspended": "Discord no está disponible temporalmente. Las conexiones existentes se conservan.",
       "title": "Discord",
-      "unconfigured": "Discord aún no está disponible para esta organización.",
+      "unconfigured": "Discord aún no está configurado para esta organización.",
       "uninstall": "Eliminar Discord",
       "uninstallDescription": "Esto desconecta de Discord a todas las personas de esta organización. Las demás organizaciones mantienen sus conexiones.",
       "uninstallTitle": "¿Eliminar Discord de esta organización?"

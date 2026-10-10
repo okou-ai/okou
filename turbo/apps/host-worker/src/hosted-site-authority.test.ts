@@ -34,6 +34,7 @@ function environment(
   readFile?: () => Promise<void>,
   segment: "okou" | "vm0" = "okou",
   registered = false,
+  html = "<p>ok</p>",
 ): Env {
   const pointerRoot = segment === "okou" ? "sites/brands/okou" : "sites";
   const storedPrefix = `${pointerRoot}/publications/${deploymentId}`;
@@ -80,7 +81,7 @@ function environment(
       JSON.stringify(pointer),
     ],
     [`${storedPrefix}/manifest.json`, JSON.stringify(manifest)],
-    [`${storedPrefix}/index.html`, "<p>ok</p>"],
+    [`${storedPrefix}/index.html`, html],
     [`${storedPrefix}/style-12345678.css`, "a{color:red}"],
   ]);
   if (registered) {
@@ -291,3 +292,124 @@ it("treats a malformed authority response as unavailable", async () => {
       .status,
   ).toBe(503);
 });
+
+it("serves version-bound OG in the initial HTML while preserving authored metadata", async () => {
+  server.use(
+    http.get(endpoint, () => {
+      return HttpResponse.json({ allowed: true });
+    }),
+    http.get(
+      "https://authority.test/api/artifact-og/metadata",
+      ({ request }) => {
+        expect(new URL(request.url).searchParams.get("id")).toBe(deploymentId);
+        expect(request.headers.get("cookie")).toBeNull();
+        return HttpResponse.json({
+          available: true,
+          title: "Published report",
+          description: "Published summary",
+          url: "https://demo.okou.app/",
+          imageUrl: `https://authority.test/api/artifact-og/image?kind=host&id=${deploymentId}&version=one`,
+        });
+      },
+    ),
+  );
+  const env = {
+    ...environment(
+      true,
+      undefined,
+      "okou",
+      true,
+      '<html><head><title>Authored</title><meta property="og:title" content="Custom title"></head><body>Public report</body></html>',
+    ),
+    ARTIFACT_OG_API_ORIGIN: "https://authority.test",
+  };
+  const response = await fetchWorker(
+    new Request("https://demo.okou.app/?tracking=secret", {
+      headers: { Cookie: "session=owner" },
+    }),
+    env,
+  );
+  const html = await response.text();
+  expect(html).toContain('property="og:title" content="Custom title"');
+  expect(html).toContain(`id=${deploymentId}&amp;version=one`);
+  expect(html).not.toContain("tracking");
+  expect(html.indexOf('property="og:image"')).toBeLessThan(
+    html.indexOf("</head>"),
+  );
+  expect(response.headers.get("ETag")).toBeNull();
+  expect(response.headers.get("Content-Length")).toBeNull();
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+});
+
+it.each(["demo", `dpl-${deploymentId}`])(
+  "normalizes authored image URLs on %s when artifact previews are enabled",
+  async (alias) => {
+    server.use(
+      http.get(endpoint, () => {
+        return HttpResponse.json({ allowed: true });
+      }),
+      http.get("https://authority.test/api/artifact-og/metadata", () => {
+        return HttpResponse.json({
+          available: true,
+          title: "Report",
+          description: "Summary",
+          url: `https://${alias}.okou.app/`,
+          imageUrl: "https://authority.test/platform-cover.png",
+        });
+      }),
+    );
+    const response = await fetchWorker(
+      new Request(`https://${alias}.okou.app/`),
+      {
+        ...environment(
+          true,
+          undefined,
+          "okou",
+          true,
+          '<html><head><meta property="og:image" content="cover.png"><meta property="og:image:width" content="1200"></head><body><img src="cover.png"></body></html>',
+        ),
+        ARTIFACT_OG_API_ORIGIN: "https://authority.test",
+      },
+    );
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain(
+      `property="og:image" content="https://${alias}.okou.app/cover.png"`,
+    );
+    expect(html).toContain('property="og:image:width" content="1200"');
+    expect(html).toContain('<body><img src="cover.png"></body>');
+    expect(html).not.toContain("platform-cover.png");
+    expect(html).toContain('property="og:title" content="Report"');
+    expect(html).toContain(
+      `name="twitter:image" content="https://${alias}.okou.app/cover.png"`,
+    );
+    expect(response.headers.get("ETag")).toBeNull();
+    expect(response.headers.get("Content-Length")).toBeNull();
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  },
+);
+
+it.each(["disabled", "unavailable"])(
+  "keeps public HTML readable when OG is %s",
+  async (state) => {
+    server.use(
+      http.get(endpoint, () => {
+        return HttpResponse.json({ allowed: true });
+      }),
+      http.get("https://authority.test/api/artifact-og/metadata", () => {
+        return state === "disabled"
+          ? HttpResponse.json({ available: false })
+          : new HttpResponse(null, { status: 503 });
+      }),
+    );
+    const original =
+      '<head><meta property="og:image" content="cover.png"></head><body>Report</body>';
+    const response = await fetchWorker(new Request("https://demo.okou.app/"), {
+      ...environment(true, undefined, "okou", true, original),
+      ARTIFACT_OG_API_ORIGIN: "https://authority.test",
+    });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe(original);
+    expect(response.headers.get("ETag")).toBe('"hosted"');
+  },
+);

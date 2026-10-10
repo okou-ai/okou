@@ -141,6 +141,9 @@ const cronSnapshotChatEventsResponseSchema = z.object({
   r2BytesDeleted: z.number().int().nonnegative(),
   r2GcShardsScanned: z.number().int().nonnegative(),
   r2GcSubpartitionedShards: z.number().int().nonnegative(),
+  r2GcPagesScanned: z.number().int().nonnegative(),
+  r2GcDeferred: z.boolean(),
+  r2GcFailed: z.boolean(),
 });
 
 const cronRetainChatEventsResponseSchema = z.object({
@@ -594,24 +597,6 @@ export const cronSyncSkillsContract = c.router({
 });
 
 export const cronConnectorCatalogContract = c.router({
-  seedPreview: {
-    method: "GET",
-    path: "/api/cron/seed-preview-onboarding-catalog",
-    headers: authHeadersSchema,
-    responses: {
-      200: z.object({
-        catalogVersion: z.string(),
-        catalogDigest: z.string(),
-        connectorSlugs: z.array(z.string()),
-      }),
-      401: apiErrorSchema,
-      404: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    // Historical path retained for the CI preview workflow.
-    summary:
-      "Initialize the complete official connector catalog in preview only",
-  },
   sync: {
     method: "GET",
     path: "/api/cron/sync-connector-catalog",

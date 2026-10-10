@@ -336,7 +336,7 @@ export function createHostMapsBddApi(context: TestContext) {
     },
 
     async readHostedSiteDeployments(
-      actor: ApiTestUser,
+      actor: HostActor,
       site: string,
     ): Promise<HostedSiteDeploymentsResponse> {
       const response = await accept(

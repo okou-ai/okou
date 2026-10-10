@@ -83,6 +83,7 @@ async function publishFixtureGeneration<
   readonly hash: string;
   readonly ifAbsent: boolean;
 }): Promise<void> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0350; new non-billing transactions are prohibited.
   await args.database.transaction(async (tx) => {
     // The same entries-then-pointer order as the production writer.
     await tx
@@ -156,57 +157,4 @@ export async function installApiTestConnectorCatalog<
       ...publication,
     });
   }
-}
-
-const UNAVAILABLE_PLATFORM_SECRET = "API_TEST_UNAVAILABLE_PLATFORM_SECRET";
-
-// Requires an undeclared platform secret, so on-demand compatibility reports a
-// provider contract mismatch for exactly these executable methods.
-export function apiTestConnectorCatalogWithUnavailableAuthMethods(
-  catalog: ConnectorCatalogArtifact,
-  methods: readonly {
-    readonly connectorSlug: string;
-    readonly authMethodId: string;
-  }[],
-): ConnectorCatalogArtifact {
-  const remaining = new Set(
-    methods.map((method) => {
-      return `${method.connectorSlug}\0${method.authMethodId}`;
-    }),
-  );
-  const unavailable = {
-    ...catalog,
-    connectors: catalog.connectors.map((connector) => {
-      return {
-        ...connector,
-        authMethods: connector.authMethods.map((method) => {
-          if (!remaining.delete(`${connector.slug}\0${method.id}`)) {
-            return method;
-          }
-          if (
-            method.access.kind !== "static" &&
-            method.access.kind !== "refresh-token"
-          ) {
-            throw new Error(
-              `${connector.slug}/${method.id} has no platform secret contract`,
-            );
-          }
-          return {
-            ...method,
-            access: {
-              ...method.access,
-              platformSecrets: [
-                ...(method.access.platformSecrets ?? []),
-                UNAVAILABLE_PLATFORM_SECRET,
-              ],
-            },
-          };
-        }),
-      };
-    }),
-  };
-  if (remaining.size > 0) {
-    throw new Error(`Unknown auth methods: ${[...remaining].join(", ")}`);
-  }
-  return connectorCatalogArtifactSchema.parse(unavailable);
 }

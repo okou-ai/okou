@@ -12,7 +12,10 @@ import {
   connectorReconnectReasonSchema,
   type ConnectorReconnectReason,
 } from "@okouai/api-contracts/contracts/connector-schemas";
-import { isIntegrationManagedCustomConnectorProviderAdapter } from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  INTEGRATION_MANAGED_CUSTOM_CONNECTOR_PROVIDER_ADAPTERS,
+  isIntegrationManagedCustomConnectorProviderAdapter,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import { connectorAuthMethodHasRequiredScopes } from "@okouai/connectors/connector-auth-method";
 import { connectors } from "@okouai/db/schema/connector";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
@@ -27,12 +30,15 @@ import {
   count,
   desc,
   eq,
+  exists,
   ilike,
   inArray,
   isNotNull,
+  isNull,
   lt,
   lte,
   ne,
+  notInArray,
   or,
   sql,
   type SQL,
@@ -937,75 +943,57 @@ export const renameConnectorAccount$ = command(
       readonly displayName: string | null;
     },
   ): Promise<Date | null> => {
-    return await set(writeDb$).transaction(async (tx) => {
-      if (args.target.kind === "custom") {
-        const [definition] = await tx
-          .select({
-            providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
-          })
-          .from(orgCustomConnectors)
-          .leftJoin(
-            orgCustomConnectorOauthConfigs,
-            and(
-              eq(
-                orgCustomConnectorOauthConfigs.connectorId,
-                orgCustomConnectors.id,
+    const db = set(writeDb$);
+    const eligibleDefinition =
+      args.target.kind === "custom"
+        ? exists(
+            db
+              .select({ id: orgCustomConnectors.id })
+              .from(orgCustomConnectors)
+              .leftJoin(
+                orgCustomConnectorOauthConfigs,
+                and(
+                  eq(
+                    orgCustomConnectorOauthConfigs.connectorId,
+                    orgCustomConnectors.id,
+                  ),
+                  eq(
+                    orgCustomConnectorOauthConfigs.orgId,
+                    orgCustomConnectors.orgId,
+                  ),
+                ),
+              )
+              .where(
+                and(
+                  eq(orgCustomConnectors.id, args.target.customConnectorId),
+                  eq(orgCustomConnectors.orgId, args.orgId),
+                  or(
+                    isNull(orgCustomConnectorOauthConfigs.providerAdapter),
+                    notInArray(orgCustomConnectorOauthConfigs.providerAdapter, [
+                      ...INTEGRATION_MANAGED_CUSTOM_CONNECTOR_PROVIDER_ADAPTERS,
+                    ]),
+                  ),
+                ),
               ),
-              eq(
-                orgCustomConnectorOauthConfigs.orgId,
-                orgCustomConnectors.orgId,
-              ),
-            ),
           )
-          .where(
-            and(
-              eq(orgCustomConnectors.id, args.target.customConnectorId),
-              eq(orgCustomConnectors.orgId, args.orgId),
-            ),
-          )
-          .limit(1);
-        if (
-          definition === undefined ||
-          isIntegrationManagedCustomConnectorProviderAdapter(
-            definition.providerAdapter,
-          )
-        ) {
-          return null;
-        }
-      }
-      const [row] = await tx
-        .select({ id: connectors.id })
-        .from(connectors)
-        .where(
-          and(
-            eq(connectors.id, args.connectionId),
-            eq(connectors.orgId, args.orgId),
-            eq(connectors.userId, args.userId),
-            targetCondition(args.target),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      if (row === undefined) {
-        return null;
-      }
-      const [updated] = await tx
-        .update(connectors)
-        .set({
-          displayName: args.displayName,
-          updatedAt: sql`clock_timestamp()`,
-        })
-        .where(
-          and(
-            eq(connectors.id, args.connectionId),
-            eq(connectors.orgId, args.orgId),
-            eq(connectors.userId, args.userId),
-            targetCondition(args.target),
-          ),
-        )
-        .returning({ updatedAt: connectors.updatedAt });
-      return updated?.updatedAt ?? null;
-    });
+        : undefined;
+    const [updated] = await db
+      .update(connectors)
+      .set({
+        displayName: args.displayName,
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(
+        and(
+          eq(connectors.id, args.connectionId),
+          eq(connectors.orgId, args.orgId),
+          eq(connectors.userId, args.userId),
+          targetCondition(args.target),
+          eligibleDefinition,
+        ),
+      )
+      .returning({ updatedAt: connectors.updatedAt });
+    return updated?.updatedAt ?? null;
   },
 );
 
@@ -1076,6 +1064,7 @@ export const setDefaultGoogleFormsAccount$ = command(
   ): Promise<Date | "conflict" | null> => {
     const db = set(writeDb$);
     return await settleDefaultChange(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0111; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const owner = connectorAccountOwnerCondition({
           orgId: args.orgId,
@@ -1127,6 +1116,7 @@ export const setDefaultConnectorAccount$ = command(
     };
     const db = set(writeDb$);
     return await settleDefaultChange(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0112; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         if (
           args.target.kind === "custom" &&

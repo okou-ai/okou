@@ -13,7 +13,7 @@ import { nowDate } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { clerk$, createClerkReadContext } from "../external/clerk";
+import { createClerkReadContext } from "../external/clerk";
 import { db$, writeDb$ } from "../external/db";
 import {
   publishPresentationTemplatesChangedForOrgSafely,
@@ -40,7 +40,7 @@ import {
   type PresentationTemplatePreviewPresignedUrlRequest,
 } from "../services/system-storage-presigned-url-cache.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import { loadUserDisplayNames } from "../services/user-profile-directory.service";
+import { loadUserDisplayNames$ } from "../services/user-profile-directory.service";
 import type { RouteEntry } from "../route-entry";
 
 const templateReadAuth = {
@@ -223,13 +223,12 @@ function accessibleUserTemplatePreviewAssets(args: {
  */
 const ownerDisplayNames$ = command(
   async (
-    { get, set },
+    { set },
     rows: readonly UserTemplateRow[],
     signal: AbortSignal,
   ): Promise<ReadonlyMap<string, string>> => {
-    return await loadUserDisplayNames(
-      set(writeDb$),
-      get(clerk$),
+    return await set(
+      loadUserDisplayNames$,
       rows.map((row) => {
         return row.ownerUserId;
       }),
@@ -567,6 +566,7 @@ const updateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!bodyResult.ok) {
     return bodyResult.response;
   }
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0042; new non-billing transactions are prohibited.
   const mutation = await set(writeDb$).transaction(async (tx) => {
     const whereOwner = and(
       eq(userTemplates.id, params.templateId),

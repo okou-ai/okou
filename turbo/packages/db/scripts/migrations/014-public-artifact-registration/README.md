@@ -257,7 +257,7 @@ Releasing the Worker configuration attaches `a.okou.io/*` even while
 
 Image Resizing has a separate derivative cache that cannot enforce current
 share permissions. The Worker rejects Image Resizing source requests for
-publication records. The [protected thumbnail and short-file rollout](../../../../../../docs/artifact-preview-rollout.md)
+publication records. The [protected thumbnail and short-file rollout](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/artifact-preview-rollout.md)
 adds binding-based thumbnails with authorization before every cache read and
 requires extending the cache exclusion to ten-character filenames. Follow that
 deployment order before an API emits the shorter Public file links.

@@ -28,9 +28,10 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
-  deleteDiscordFixture,
+  removePublicDiscordBinding,
+  mockDiscordApplication,
   mockDiscordMemberships,
-  seedDiscordFixture,
+  createPublicDiscordBinding,
   uniqueDiscordSnowflake,
 } from "./helpers/discord";
 import {
@@ -53,7 +54,8 @@ import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const runsApi = createRunsApi(context);
 const track = createFixtureTracker<ConnectedDiscordActor>(async (actor) => {
-  await deleteDiscordFixture(context, actor.fixture);
+  mockDiscordMemberships(context, [actor]);
+  await removePublicDiscordBinding(context, actor.fixture);
   await deleteFeatureSwitchesForUser(context, actor);
 });
 
@@ -737,7 +739,8 @@ describe("canonical Discord ingress", () => {
     await expect(discordStatus(actor)).resolves.toMatchObject({
       isInstalled: false,
     });
-    const reinstalled = await seedDiscordFixture(context, {
+    const reinstalled = await createPublicDiscordBinding(context, {
+      flow: "install",
       userId: actor.userId,
       orgId: actor.orgId,
       orgRole: "org:admin",
@@ -800,7 +803,8 @@ describe("canonical Discord ingress", () => {
       }),
       [200],
     );
-    const reinstalled = await seedDiscordFixture(context, {
+    const reinstalled = await createPublicDiscordBinding(context, {
+      flow: "connect",
       userId: actor.userId,
       orgId: actor.orgId,
       orgRole: "org:admin",
@@ -1182,7 +1186,7 @@ describe("canonical Discord ingress", () => {
       { userId: second.userId, orgId: second.orgId, orgRole: "org:admin" },
     ]);
     // DM content never depends on the guild MESSAGE_CONTENT intent.
-    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
+    mockDiscordApplication(1 << 19);
     await selectDmOrganization(first);
     const firstDm = discordMessageForTest(first, {
       channelId: provider.dmChannelId,
@@ -1395,7 +1399,7 @@ describe("canonical Discord ingress", () => {
   it("imports refreshed attachment metadata while keeping context and signed URLs private", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
-    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
+    mockDiscordApplication(1 << 19);
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.DiscordIntegration]: true,
       [FeatureSwitchKey.PrivateArtifacts]: true,
@@ -1638,7 +1642,7 @@ describe("canonical Discord ingress", () => {
       await release.promise;
       return undefined;
     };
-    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
+    mockDiscordApplication(1 << 19);
     const message = discordMessageForTest(actor, {
       channelId: provider.guildChannelId,
       content: `<@${actor.botUserId}> do not launch after disconnect`,

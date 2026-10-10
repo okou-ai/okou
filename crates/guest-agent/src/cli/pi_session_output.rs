@@ -4,6 +4,14 @@
 //! it never allocates a public event sequence, never retries an uncertain HTTP
 //! result, and never reports failure into the Run lifecycle. A failed block is
 //! abandoned until its authoritative `message_end` event reconciles the UI.
+//!
+//! The Pi projection applies the configured normal secret policy after citation
+//! normalization and before admitting chunks here. Each native text source
+//! holds back at most the longest configured variant minus one bytes (plus UTF-8
+//! boundary rounding) so a secret split across provider deltas cannot escape.
+//! Completed messages flush their masked tail; interrupted/abandoned streams
+//! discard it. With no eligible configured secrets, previews remain immediate.
+//! The session-output and durable event wire formats are unchanged.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -42,7 +50,7 @@ pub(super) struct SessionOutputChunk {
 
 /// Boundaries for the run's first published chunk: `pi_first_session_output`
 /// from the Pi startup boundary, and `api_to_first_session_output` from the
-/// API start time. See docs/chat-first-output-latency.md.
+/// API start time.
 #[derive(Default)]
 pub(super) struct FirstSessionOutputTiming {
     pub(super) pi_startup_succeeded_at: Option<Arc<OnceLock<Instant>>>,

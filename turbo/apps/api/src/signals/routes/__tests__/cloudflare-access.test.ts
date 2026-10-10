@@ -15,15 +15,10 @@ import {
   agentsByIdContract,
 } from "@okouai/api-contracts/contracts/agents";
 import { sshHostsContract } from "@okouai/api-contracts/contracts/ssh-access";
-import {
-  testSshConnectionStateContract,
-  type TestSshConnectionStateActionBody,
-} from "@okouai/api-contracts/contracts/test-ssh-connection-state";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { now, nowDate } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+import { nowDate } from "../../../lib/time";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { agentsRoutes } from "../agents";
@@ -31,7 +26,6 @@ import { runnerSshRoutes } from "../runner-ssh";
 import { runnersRoutes } from "../runners";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { sshAccessRoutes } from "../ssh-access";
-import { testSshConnectionStateRoutes } from "../test-ssh-connection-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { createBddApi } from "./helpers/api-bdd";
@@ -54,10 +48,6 @@ const hostKey = Object.freeze({
   fingerprint: `SHA256:${Buffer.alloc(32, 1).toString("base64").replace(/=+$/u, "")}`,
 });
 type Owner = { orgId: string; userId: string };
-type RuntimeBody = Extract<
-  TestSshConnectionStateActionBody,
-  { action: "create-runtime" }
->;
 const configs = () => {
   return setupApp({ context, routes: cloudflareAccessRoutes })(
     cloudflareAccessContract,
@@ -336,11 +326,6 @@ describe("inline SSH resource creation", () => {
 const runner = () => {
   return setupApp({ context, routes: runnerSshRoutes })(runnerSshContract);
 };
-const state = () => {
-  return setupApp({ context, routes: testSshConnectionStateRoutes })(
-    testSshConnectionStateContract,
-  );
-};
 function authenticate(
   owner: Owner,
   role: "org:admin" | "org:member" = "org:member",
@@ -367,38 +352,6 @@ function owner(
   };
   authenticate(result, role);
   return result;
-}
-async function runtime(owner: Owner, overrides: Partial<RuntimeBody> = {}) {
-  // The owned infrastructure fixture supplies Run assignment/heartbeat states
-  // unavailable through owner APIs; configuration and authority use real routes.
-  const runnerIdentity = {
-    runnerId: randomUUID(),
-    heartbeatGeneration: 5_000_000_000,
-  };
-  const result = await accept(
-    state().action({
-      body: {
-        action: "create-runtime",
-        orgId: owner.orgId,
-        userId: owner.userId,
-        ...runnerIdentity,
-        triggerSource: "web",
-        status: "running",
-        chat: true,
-        ...overrides,
-      },
-    }),
-    [200],
-  );
-  const { runId, agentId } = result.body;
-  if (!runId || !agentId) {
-    throw new Error("Missing runtime fixture");
-  }
-  const seconds = Math.floor(now() / 1000);
-  const guestHeaders = {
-    authorization: `Bearer ${signSandboxJwtForTests({ scope: "okou", orgId: owner.orgId, userId: owner.userId, runId, capabilities: ["ssh:read"], iat: seconds, exp: seconds + 3600 })}`,
-  };
-  return { runId, agentId, runnerIdentity, guestHeaders };
 }
 async function config(name = "Service token") {
   return (
@@ -469,21 +422,6 @@ async function enableHostDefault(connectionId: string) {
     [200],
   );
 }
-async function fixture() {
-  const o = owner();
-  const r = await runtime(o, { runnerGroup: `access-${randomUUID()}` });
-  const c = await config();
-  const h = await host(c.id);
-  await enableHostDefault(h.id);
-  return {
-    ...o,
-    ...r,
-    config: c,
-    host: h,
-    body: { connectionId: h.id, runnerIdentity: r.runnerIdentity },
-    params: { runId: r.runId },
-  };
-}
 /** Owner configuration needs no Run or Agent when its case never executes a host. */
 async function configuredOwnerFixture(o = owner()) {
   authenticate(o);
@@ -504,10 +442,8 @@ function useClaimedFixture() {
     }
   });
 
-  /** Ordinary chat Runs use production launch/claim; historical cases keep fixture. */
-  return async function claimedFixture(): Promise<
-    Awaited<ReturnType<typeof fixture>>
-  > {
+  /** Ordinary chat Runs use production launch/claim. */
+  return async function claimedFixture() {
     const o = owner();
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
@@ -602,7 +538,9 @@ async function ordinaryFixture() {
   };
 }
 
-async function resolve(f: Awaited<ReturnType<typeof fixture>>) {
+async function resolve(
+  f: Awaited<ReturnType<ReturnType<typeof useClaimedFixture>>>,
+) {
   return (
     await accept(
       runner().resolve({

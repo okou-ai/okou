@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import StripeSDK from "stripe";
-import { expect } from "vitest";
+import { expect, onTestFinished } from "vitest";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
@@ -34,6 +34,8 @@ export function createPublicBillingZeroFixture(
       readonly priceId: string;
       readonly webhookSecret: string;
     };
+    readonly retainExternalState?: () => () => void;
+    readonly continueAcceptedOperations?: boolean;
     readonly beforeOrganizationCleanup?: () => Promise<void>;
     readonly afterOrganizationCleanup?: () => Promise<void>;
   } = {},
@@ -50,29 +52,38 @@ export function createPublicBillingZeroFixture(
 
   async function readStatus() {
     createRouteMocks(context).clerk.session(actor.userId, orgId, "org:admin");
-    return await accept(
-      setupApp({ context, routes: billingStatusRoutes })(
-        billingStatusContract,
-      ).get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
+    return await run(() => {
+      return accept(
+        setupApp({ context, routes: billingStatusRoutes })(
+          billingStatusContract,
+        ).get({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      );
+    });
   }
 
-  const owner = createFixtureOperationOwner(async () => {
-    const outcome = await settleIncludingAbort(
-      (async () => {
-        mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
-        mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
-        context.mocks.s3.send.mockResolvedValue({
-          Contents: [],
-          IsTruncated: false,
-        });
-        context.mocks.ably.publish.mockResolvedValue(undefined);
-        await flushWaitUntilForTest();
-        const additionalCleanup = await settleIncludingAbort(
-          options.beforeOrganizationCleanup?.() ?? Promise.resolve(),
-        );
-
+  let accepted = options.retainExternalState?.();
+  let previous: (() => void) | undefined;
+  if (options.retainExternalState) {
+    // Registered before the owner: restoration runs after its cleanup.
+    onTestFinished(() => {
+      previous?.();
+    });
+  }
+  const owner = createFixtureOperationOwner(
+    async () => {
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
+      mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
+      context.mocks.s3.send.mockResolvedValue({
+        Contents: [],
+        IsTruncated: false,
+      });
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+      const flushed = await settleIncludingAbort(flushWaitUntilForTest);
+      const additional = await settleIncludingAbort(() => {
+        return options.beforeOrganizationCleanup?.() ?? Promise.resolve();
+      });
+      const deleted = await settleIncludingAbort(async () => {
         const webhooks = createWebhookCallbackApi(context);
         webhooks.configureStripeBillingEnv();
         context.mocks.stripe.subscriptions.list.mockReset().mockResolvedValue({
@@ -118,32 +129,64 @@ export function createPublicBillingZeroFixture(
           data: { id: orgId },
         });
         await webhooks.requestClerkWebhook("{}", {}, [200]);
-        await flushWaitUntilForTest();
-        // Immutable financial and invitation receipts remain under this UUID owner.
-        expect((await readStatus()).body.credits).toBe(0);
-        if (!additionalCleanup.ok) {
-          throw additionalCleanup.error;
+        // Immutable financial receipts remain under this unique owner. Do not
+        // authenticate the deleted identity to observe them after deletion.
+      });
+      const completed = await settleIncludingAbort(flushWaitUntilForTest);
+      const released = await settleIncludingAbort(() => {
+        return options.afterOrganizationCleanup?.() ?? Promise.resolve();
+      });
+      const errors = [
+        flushed,
+        additional,
+        deleted,
+        completed,
+        released,
+      ].flatMap((result) => {
+        return result.ok ? [] : [result.error];
+      });
+      if (errors.length === 1) {
+        throw errors[0];
+      }
+      if (errors.length > 1) {
+        throw new AggregateError(errors, "Billing workspace cleanup failed");
+      }
+    },
+    {
+      continueAcceptedOperations: options.continueAcceptedOperations,
+      beforeDrain() {
+        previous ??= options.retainExternalState?.();
+        accepted?.();
+      },
+    },
+  );
+
+  function run<T>(operation: () => Promise<T>) {
+    return owner.run(() => {
+      const pending = settleIncludingAbort(operation);
+      // Retain handlers installed synchronously by this accepted phase, too.
+      accepted = options.retainExternalState?.();
+      return pending.then((result) => {
+        if (!result.ok) {
+          throw result.error;
         }
-      })(),
-    );
-    const released = await settleIncludingAbort(
-      options.afterOrganizationCleanup?.() ?? Promise.resolve(),
-    );
-    if (!outcome.ok) {
-      throw outcome.error;
-    }
-    if (!released.ok) {
-      throw released.error;
-    }
-  });
+        return result.value;
+      });
+    });
+  }
 
   return {
     customerId,
     subscriptionId,
-    run: owner.run,
+    run,
+    captureExternalState() {
+      accepted = options.retainExternalState?.();
+    },
     async initialize(): Promise<void> {
-      await owner.run(async () => {
-        const completed = await createBddApi(context).completeOnboarding(actor);
+      await run(async () => {
+        const completed = await run(() => {
+          return createBddApi(context).completeOnboarding(actor);
+        });
         expect(completed.status).toBe(200);
         expect((await readStatus()).body).toMatchObject({
           tier: "limited-free-1",
@@ -200,6 +243,7 @@ export function createPublicBillingZeroFixture(
               },
             },
             [200],
+            run,
           );
           await flushWaitUntilForTest();
           expect((await readStatus()).body).toMatchObject({
@@ -245,6 +289,7 @@ export function createPublicBillingZeroFixture(
               data: { object: subscription },
             },
             [200],
+            run,
           );
         }
         await flushWaitUntilForTest();

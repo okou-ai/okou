@@ -1,3 +1,5 @@
+import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { randomUUID } from "node:crypto";
 import {
   STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE,
@@ -54,6 +56,62 @@ async function sendQueuedPrompt(
 }
 
 describe("CHAT-02: steering input prompts into a running run", () => {
+  it("uses the current artifact preview switch for a template steered into an existing run", async () => {
+    const {
+      actor: owner,
+      agentId,
+      runnerGroup,
+    } = await entitledNativeChatActor();
+    if (!owner.orgId) {
+      throw new Error("Expected an organization");
+    }
+    const actor = { ...owner, orgId: owner.orgId };
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const active = await sendChatRun(actor, { agentId, prompt: "Start a run" });
+    const claimed = await claimChatRun(runnerGroup, active.runId);
+    const template = WEBSITE_TEMPLATE_ITEMS[0];
+    if (!template) {
+      throw new Error("Expected a website template");
+    }
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: active.threadId,
+        prompt: "Make a website",
+        clientEventId: randomUUID(),
+        userMessage: {
+          version: 1,
+          parts: [
+            { type: "text", text: "Make a website" },
+            {
+              type: "template",
+              titleSnapshot: "Website",
+              template: {
+                type: "website",
+                selection: { websiteTemplateId: template.id },
+              },
+            },
+          ],
+        },
+      },
+      [201],
+    );
+    for (const enabled of [false, true, false]) {
+      await updateFeatureSwitchesForUser(context, actor, {
+        artifactPreviews: enabled,
+      });
+      const next = await api.nextSteerableInput(
+        claimed.claim.sandboxToken,
+        active.runId,
+      );
+      expect(next.input?.prompt).toContain("Make a website");
+      expect(next.input?.prompt.includes("okou host screenshot")).toBe(enabled);
+      expect(next.input?.prompt.includes(" --preview ")).toBe(enabled);
+    }
+    await cancelChatRun(actor, active.runId);
+  });
+
   it("returns the next prompt after the run's own input and declares it steered once", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();

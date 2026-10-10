@@ -46,6 +46,8 @@ case "${1:-}" in
       [ "${MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "77357abdb29ce96b2caf9ee679299602757844dc" ]; then
       [ "${MOCK_PI_MEMORY_LUNA_ROUTING_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "a635ec3afa20cdb5df9c8125afe6cec24ef53e16" ]; then
+      [ "${MOCK_PI_OPENROUTER_VERSIONED_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "3d93ff8d4b4a07a5888e3030e69b340f40da0ad4" ]; then
       [ "${MOCK_CHAT_THREAD_SNAPSHOT_R2_ONLY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "2222222222222222222222222222222222222222" ]; then
@@ -64,6 +66,8 @@ case "${1:-}" in
       [ "${MOCK_RETIRED_PREFERENCE_COLUMNS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1" ]; then
       [ "${MOCK_CHAT_EVENT_V8_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "4242424242424242424242424242424242424242" ]; then
+      [ "${MOCK_CHECKPOINT_WRITER_PREPARATION_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1414141414141414141414141414141414141414" ]; then
       [ "${MOCK_BROWSER_SESSION_MUTATIONS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1212121212121212121212121212121212121212" ]; then
@@ -137,6 +141,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_USAGE_ALLOWANCE_COMMIT-4141414141414141414141414141414141414141}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
+    elif [[ "$*" == *pi-memory-phase2-input-revision.ts* ]]; then
+      printf '%s\n' "${MOCK_CHECKPOINT_WRITER_PREPARATION_COMMIT-4242424242424242424242424242424242424242}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
       printf '%s\n' "${MOCK_BROWSER_SESSION_MUTATIONS_COMMIT-1414141414141414141414141414141414141414}"
     elif [[ "$*" == *1282_drop_retired_integration_agent_tables.sql* ]]; then
@@ -278,6 +284,17 @@ grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version o
 grep -qx "runner_tag=runner-rs-v1.2.3" "$output_file" || fail "missing retained Runner tag output"
 runner_matrix=$(sed -n 's/^runner_matrix=//p' "$output_file")
 jq -e 'length == 2 and .[0].id == "arm64" and .[1].id == "x86_64"' >/dev/null <<<"$runner_matrix" || fail "unexpected Runner matrix"
+
+grep -Fxq "git merge-base --is-ancestor a635ec3afa20cdb5df9c8125afe6cec24ef53e16 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the versioned Pi OpenRouter writer floor"
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the versioned Pi OpenRouter writer" \
+  run_resolver "${tmp_dir}/pi-openrouter-versioned-writer-floor.output" MOCK_PI_OPENROUTER_VERSIONED_WRITER_FLOOR_VALID=0
+grep -Fq 'a635ec3afa20cdb5df9c8125afe6cec24ef53e16' "${tmp_dir}/failure.err" || fail "Pi writer rejection must identify the permanent versioned writer commit"
+[ ! -s "${tmp_dir}/pi-openrouter-versioned-writer-floor.output" ] || fail "unversioned Pi writer must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "unversioned Pi writer must fail before artifact or host access"
+fi
 
 : >"${tmp_dir}/boundaries.log"
 assert_failure "Rollback target predates Pi memory Luna routing" \
@@ -623,6 +640,20 @@ assert_failure "Rollback target predates the Chat Event V8 migration" \
 [ ! -s "${tmp_dir}/chat-event-v8-floor.output" ] || fail "pre-V8 API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Chat Event V8 floor must fail before artifact or host access"
+fi
+
+for preparation_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged checkpoint writer preparation" \
+    run_resolver "${tmp_dir}/checkpoint-writer-history.output" "MOCK_CHECKPOINT_WRITER_PREPARATION_COMMIT=${preparation_commit}"
+  [ ! -s "${tmp_dir}/checkpoint-writer-history.output" ] || fail "invalid checkpoint preparation history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates checkpoint writer preparation" \
+  run_resolver "${tmp_dir}/checkpoint-writer-floor.output" MOCK_CHECKPOINT_WRITER_PREPARATION_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/checkpoint-writer-floor.output" ] || fail "unprepared checkpoint writer must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "checkpoint writer floor must fail before artifact or host access"
 fi
 
 for mutation_commit in "" invalid; do

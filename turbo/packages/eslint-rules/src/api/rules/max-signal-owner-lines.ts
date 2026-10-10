@@ -5,7 +5,10 @@ import {
 } from "@typescript-eslint/utils";
 
 import { createRule } from "../utils.ts";
-import { createComputedFactoryVerifier } from "../signal-factory-verification.ts";
+import {
+  createComputedFactoryVerifier,
+  type ComputedFactoryArgument,
+} from "../signal-factory-verification.ts";
 
 type FunctionNode =
   | TSESTree.FunctionDeclaration
@@ -47,19 +50,168 @@ export const maxSignalOwnerLines = createRule({
     },
   },
   create(context, [options]) {
-    const verifyComputedFactory = createComputedFactoryVerifier();
+    const verifyComputedFactory = createComputedFactoryVerifier(
+      context.filename,
+    );
 
-    function isComputedFactory(node: TSESTree.CallExpression): boolean {
+    function unwrapValue(node: TSESTree.Node): TSESTree.Node {
+      return node.type === AST_NODE_TYPES.TSAsExpression ||
+        node.type === AST_NODE_TYPES.TSSatisfiesExpression
+        ? unwrapValue(node.expression)
+        : node;
+    }
+
+    function enclosingFunction(node: TSESTree.Node): FunctionNode | undefined {
+      for (let current = node.parent; current; current = current.parent) {
+        if (
+          current.type === AST_NODE_TYPES.FunctionDeclaration ||
+          current.type === AST_NODE_TYPES.FunctionExpression ||
+          current.type === AST_NODE_TYPES.ArrowFunctionExpression
+        ) {
+          return current;
+        }
+      }
+      return undefined;
+    }
+
+    function writesMember(member: TSESTree.MemberExpression): boolean {
+      const owner = enclosingFunction(member);
+      for (
+        let use: TSESTree.Node | undefined = member.parent;
+        use && use !== owner;
+        use = use.parent
+      ) {
+        const target =
+          use.type === AST_NODE_TYPES.AssignmentExpression ||
+          use.type === AST_NODE_TYPES.ForInStatement ||
+          use.type === AST_NODE_TYPES.ForOfStatement
+            ? use.left
+            : use.type === AST_NODE_TYPES.UpdateExpression ||
+                (use.type === AST_NODE_TYPES.UnaryExpression &&
+                  use.operator === "delete")
+              ? use.argument
+              : undefined;
+        if (
+          target &&
+          target.range[0] <= member.range[0] &&
+          target.range[1] >= member.range[1]
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function factoryArgument(
+      node: TSESTree.Node,
+      call: TSESTree.CallExpression,
+    ): ComputedFactoryArgument | null {
+      if (node.type === AST_NODE_TYPES.Literal) {
+        return {};
+      }
+      if (node.type !== AST_NODE_TYPES.Identifier) {
+        return null;
+      }
+      const variable = ASTUtils.findVariable(
+        context.sourceCode.getScope(node),
+        node,
+      );
+      const definition = variable?.defs.find((item) => {
+        return item.type === "Variable";
+      });
       if (
-        node.callee.type !== AST_NODE_TYPES.Identifier ||
-        !node.arguments.every((argument) => {
+        !variable ||
+        definition?.node.type !== AST_NODE_TYPES.VariableDeclarator ||
+        definition.node.parent.kind !== "const" ||
+        !definition.node.init ||
+        enclosingFunction(definition.node) !== enclosingFunction(call) ||
+        variable.references.some((reference) => {
+          if (reference.init) {
+            return false;
+          }
+          const identifier = reference.identifier;
+          // A record cannot escape through an alias or an operational callback.
+          // Other eager calls are independently verified by the owner walk.
+          if (
+            identifier.type === AST_NODE_TYPES.Identifier &&
+            identifier.parent?.type === AST_NODE_TYPES.MemberExpression &&
+            identifier.parent.object === identifier
+          ) {
+            const member = identifier.parent;
+            return member.computed || writesMember(member);
+          }
           return (
-            argument.type === AST_NODE_TYPES.Identifier ||
-            argument.type === AST_NODE_TYPES.Literal
+            identifier.type !== AST_NODE_TYPES.Identifier ||
+            identifier.parent?.type !== AST_NODE_TYPES.CallExpression ||
+            !identifier.parent.arguments.includes(identifier) ||
+            enclosingFunction(identifier) !== enclosingFunction(call)
           );
         })
       ) {
-        return false;
+        return {};
+      }
+      const value = unwrapValue(definition.node.init);
+      if (value.type === AST_NODE_TYPES.CallExpression) {
+        const verified = verifiedComputedFactory(value);
+        return verified?.kind === "computed-record"
+          ? { recordFields: verified.fields }
+          : {};
+      }
+      if (value.type !== AST_NODE_TYPES.ObjectExpression) {
+        return {};
+      }
+      const fields: string[] = [];
+      for (const property of value.properties) {
+        if (
+          property.type !== AST_NODE_TYPES.Property ||
+          property.kind !== "init" ||
+          property.method ||
+          property.computed
+        ) {
+          return {};
+        }
+        const name =
+          property.key.type === AST_NODE_TYPES.Identifier
+            ? property.key.name
+            : property.key.type === AST_NODE_TYPES.Literal &&
+                typeof property.key.value === "string"
+              ? property.key.value
+              : undefined;
+        const field = unwrapValue(property.value);
+        if (
+          name === undefined ||
+          name === "__proto__" ||
+          (field.type !== AST_NODE_TYPES.Identifier &&
+            field.type !== AST_NODE_TYPES.Literal)
+        ) {
+          return {};
+        }
+        fields.push(name);
+      }
+      return { recordFields: fields };
+    }
+
+    const verifying = new Set<TSESTree.CallExpression>();
+
+    function verifiedComputedFactory(node: TSESTree.CallExpression) {
+      if (verifying.has(node)) {
+        return null;
+      }
+      verifying.add(node);
+      const verified = inspectComputedFactory(node);
+      verifying.delete(node);
+      return verified;
+    }
+
+    function inspectComputedFactory(node: TSESTree.CallExpression) {
+      if (node.callee.type !== AST_NODE_TYPES.Identifier) {
+        return null;
+      }
+      const shapes = node.arguments.map((argument) => {
+        return factoryArgument(argument, node);
+      });
+      if (shapes.some((shape) => shape === null)) {
+        return null;
       }
       const variable = ASTUtils.findVariable(
         context.sourceCode.getScope(node),
@@ -74,7 +226,7 @@ export const maxSignalOwnerLines = createRule({
         definition.node.parent.type !== AST_NODE_TYPES.ImportDeclaration ||
         definition.node.parent.importKind === "type"
       ) {
-        return false;
+        return null;
       }
       const imported = definition.node.imported;
       return verifyComputedFactory(
@@ -83,6 +235,7 @@ export const maxSignalOwnerLines = createRule({
         imported.type === AST_NODE_TYPES.Identifier
           ? imported.name
           : imported.value,
+        shapes.filter((shape) => shape !== null),
       );
     }
 
@@ -144,7 +297,10 @@ export const maxSignalOwnerLines = createRule({
         case AST_NODE_TYPES.ObjectExpression:
           return node.properties.every((property) => {
             return property.type === AST_NODE_TYPES.Property
-              ? !property.method && isDeclarationValue(property.value)
+              ? property.kind === "init" &&
+                  !property.method &&
+                  !property.computed &&
+                  isDeclarationValue(property.value)
               : isDeclarationValue(property.argument);
           });
         case AST_NODE_TYPES.ArrayExpression:
@@ -152,7 +308,9 @@ export const maxSignalOwnerLines = createRule({
             return element === null || isDeclarationValue(element);
           });
         case AST_NODE_TYPES.CallExpression:
-          return isSignalConstructor(node) || isComputedFactory(node);
+          return (
+            isSignalConstructor(node) || verifiedComputedFactory(node) !== null
+          );
         default:
           return false;
       }

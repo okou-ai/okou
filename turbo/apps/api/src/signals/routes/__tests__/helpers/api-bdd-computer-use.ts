@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import {
   computerUseAuthorizationRequestsContract,
   computerUseAuditEventsContract,
@@ -22,11 +21,9 @@ import {
   type ComputerUseWriteCommandKind,
 } from "@okouai/api-contracts/contracts/computer-use";
 
-import { now } from "../../../../lib/time";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { createDeferredPromise } from "../../../utils";
 import { setupApp } from "../../../../__tests__/test-helpers";
-import { signSandboxJwtForTests } from "../../../auth/tokens";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 import { computerUseRoutes } from "../../computer-use";
@@ -299,38 +296,12 @@ function controlledBodyStream(
   })();
 }
 
-/**
- * Mint an agent run token directly, the same auth boundary production crosses
- * when agent-runs-create issues a token whose chat thread granted a
- * computer-use host (`generateOkouToken`). Precedent: the run-token helpers
- * in api-bdd-github.ts. Returns the runId so audit events created by the
- * token's commands can be read back through the audit-events list API.
- */
-export function computerUseToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly capabilities: readonly Capability[];
-  readonly runId?: string;
-  readonly computerUseHostId?: string;
-}): { readonly token: string; readonly runId: string } {
-  const seconds = Math.floor(now() / 1000);
-  const runId = args.runId ?? `run_${randomUUID()}`;
-  const token = signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId,
-    capabilities: [...args.capabilities],
-    ...(args.computerUseHostId
-      ? { computerUseHostId: args.computerUseHostId }
-      : {}),
-    iat: seconds,
-    exp: seconds + 3600,
-  });
-  return { token, runId };
-}
-
-export function createComputerUseBddApi(context: TestContext) {
+export function createComputerUseBddApi(
+  context: TestContext,
+  run: <T>(operation: () => Promise<T>) => Promise<T> = (operation) => {
+    return operation();
+  },
+) {
   const mocks = createRouteMocks(context);
 
   function authenticate(auth: ComputerUseAuth): AuthHeaders {
@@ -518,14 +489,16 @@ export function createComputerUseBddApi(context: TestContext) {
       actor: ApiTestUser,
       options: ComputerUseHostStartOptions = {},
     ): Promise<{ readonly hostId: string; readonly hostToken: string }> {
-      const response = await accept(
-        hostsClient().start({
-          headers: authenticate(actor),
-          body: hostRuntimeBody(options),
-        }),
-        [200],
-      );
-      return response.body;
+      return await run(async () => {
+        const response = await accept(
+          hostsClient().start({
+            headers: authenticate(actor),
+            body: hostRuntimeBody(options),
+          }),
+          [200],
+        );
+        return response.body;
+      });
     },
 
     async requestStartComputerUseHost(
@@ -534,13 +507,15 @@ export function createComputerUseBddApi(context: TestContext) {
       options: ComputerUseHostStartOptions = {},
       signal?: AbortSignal,
     ) {
-      return await accept(
-        hostsClient(signal).start({
-          headers: authenticate(actor),
-          body: hostRuntimeBody(options),
-        }),
-        statuses,
-      );
+      return await run(async () => {
+        return await accept(
+          hostsClient(signal).start({
+            headers: authenticate(actor),
+            body: hostRuntimeBody(options),
+          }),
+          statuses,
+        );
+      });
     },
 
     async requestListComputerUseHosts(
@@ -548,74 +523,86 @@ export function createComputerUseBddApi(context: TestContext) {
       statuses: readonly (200 | 401 | 403)[],
       signal?: AbortSignal,
     ) {
-      return await accept(
-        hostsClient(signal).list({ headers: authenticate(actor) }),
-        statuses,
-      );
+      return await run(async () => {
+        return await accept(
+          hostsClient(signal).list({ headers: authenticate(actor) }),
+          statuses,
+        );
+      });
     },
 
     async listComputerUseHosts(
       actor: ComputerUseAuth,
       signal?: AbortSignal,
     ): Promise<ComputerUseHostListResponse> {
-      const response = await accept(
-        hostsClient(signal).list({ headers: authenticate(actor) }),
-        [200],
-      );
-      return response.body;
+      return await run(async () => {
+        const response = await accept(
+          hostsClient(signal).list({ headers: authenticate(actor) }),
+          [200],
+        );
+        return response.body;
+      });
     },
 
     async heartbeatComputerUseHost(
       hostToken: string,
       options: ComputerUseHostStartOptions = {},
     ): Promise<{ readonly ok: true; readonly hostId: string }> {
-      const response = await accept(
-        heartbeatClient().heartbeat({
-          headers: hostHeaders(hostToken),
-          body: hostRuntimeBody(options),
-        }),
-        [200],
-      );
-      return response.body;
+      return await run(async () => {
+        const response = await accept(
+          heartbeatClient().heartbeat({
+            headers: hostHeaders(hostToken),
+            body: hostRuntimeBody(options),
+          }),
+          [200],
+        );
+        return response.body;
+      });
     },
 
     async requestComputerUseHeartbeat(
       hostToken: string | null,
       statuses: readonly (200 | 401 | 409)[],
     ) {
-      return await accept(
-        heartbeatClient().heartbeat({
-          headers: hostTokenHeaders(hostToken),
-          body: hostRuntimeBody(),
-        }),
-        statuses,
-      );
+      return await run(async () => {
+        return await accept(
+          heartbeatClient().heartbeat({
+            headers: hostTokenHeaders(hostToken),
+            body: hostRuntimeBody(),
+          }),
+          statuses,
+        );
+      });
     },
 
     async stopComputerUseHost(
       hostToken: string,
     ): Promise<{ readonly ok: true; readonly hostId: string }> {
-      const response = await accept(
-        heartbeatClient().stop({
-          headers: hostHeaders(hostToken),
-          body: {},
-        }),
-        [200],
-      );
-      return response.body;
+      return await run(async () => {
+        const response = await accept(
+          heartbeatClient().stop({
+            headers: hostHeaders(hostToken),
+            body: {},
+          }),
+          [200],
+        );
+        return response.body;
+      });
     },
 
     async requestStopComputerUseHost(
       hostToken: string | null,
       statuses: readonly (200 | 401)[],
     ) {
-      return await accept(
-        heartbeatClient().stop({
-          headers: hostTokenHeaders(hostToken),
-          body: {},
-        }),
-        statuses,
-      );
+      return await run(async () => {
+        return await accept(
+          heartbeatClient().stop({
+            headers: hostTokenHeaders(hostToken),
+            body: {},
+          }),
+          statuses,
+        );
+      });
     },
 
     async createComputerUseReadCommand(
@@ -623,14 +610,16 @@ export function createComputerUseBddApi(context: TestContext) {
       body: ComputerUseReadCommandBody,
       signal?: AbortSignal,
     ): Promise<ComputerUseCommandCreateResponse> {
-      const response = await accept(
-        commandClient(signal).create({
-          headers: authenticate(auth),
-          body: { timeoutMs: 60_000, ...body },
-        }),
-        [200],
-      );
-      return response.body;
+      return await run(async () => {
+        const response = await accept(
+          commandClient(signal).create({
+            headers: authenticate(auth),
+            body: { timeoutMs: 60_000, ...body },
+          }),
+          [200],
+        );
+        return response.body;
+      });
     },
 
     async requestCreateComputerUseReadCommand(
@@ -639,13 +628,15 @@ export function createComputerUseBddApi(context: TestContext) {
       statuses: readonly (200 | 400 | 401 | 403 | 404 | 409)[],
       signal?: AbortSignal,
     ) {
-      return await accept(
-        commandClient(signal).create({
-          headers: authenticate(auth),
-          body: { timeoutMs: 60_000, ...body },
-        }),
-        statuses,
-      );
+      return await run(async () => {
+        return await accept(
+          commandClient(signal).create({
+            headers: authenticate(auth),
+            body: { timeoutMs: 60_000, ...body },
+          }),
+          statuses,
+        );
+      });
     },
 
     async createComputerUseWriteCommand(
@@ -653,14 +644,16 @@ export function createComputerUseBddApi(context: TestContext) {
       body: ComputerUseWriteCommandBody = DEFAULT_WRITE_COMMAND_BODY,
       signal?: AbortSignal,
     ): Promise<ComputerUseCommandCreateResponse> {
-      const response = await accept(
-        writeCommandClient(signal).create({
-          headers: authenticate(auth),
-          body: { timeoutMs: 60_000, ...body },
-        }),
-        [200],
-      );
-      return response.body;
+      return await run(async () => {
+        const response = await accept(
+          writeCommandClient(signal).create({
+            headers: authenticate(auth),
+            body: { timeoutMs: 60_000, ...body },
+          }),
+          [200],
+        );
+        return response.body;
+      });
     },
 
     async requestCreateComputerUseWriteCommand(
@@ -669,13 +662,15 @@ export function createComputerUseBddApi(context: TestContext) {
       body: ComputerUseWriteCommandBody = DEFAULT_WRITE_COMMAND_BODY,
       signal?: AbortSignal,
     ) {
-      return await accept(
-        writeCommandClient(signal).create({
-          headers: authenticate(auth),
-          body: { timeoutMs: 60_000, ...body },
-        }),
-        statuses,
-      );
+      return await run(async () => {
+        return await accept(
+          writeCommandClient(signal).create({
+            headers: authenticate(auth),
+            body: { timeoutMs: 60_000, ...body },
+          }),
+          statuses,
+        );
+      });
     },
 
     async readComputerUseCommand(
@@ -683,14 +678,16 @@ export function createComputerUseBddApi(context: TestContext) {
       commandId: string,
       signal?: AbortSignal,
     ): Promise<ComputerUseCommandResponse> {
-      const response = await accept(
-        commandClient(signal).get({
-          headers: authenticate(auth),
-          params: { commandId },
-        }),
-        [200],
-      );
-      return response.body;
+      return await run(async () => {
+        const response = await accept(
+          commandClient(signal).get({
+            headers: authenticate(auth),
+            params: { commandId },
+          }),
+          [200],
+        );
+        return response.body;
+      });
     },
 
     async requestReadComputerUseCommand(
@@ -699,13 +696,15 @@ export function createComputerUseBddApi(context: TestContext) {
       statuses: readonly (200 | 401 | 403 | 404)[],
       signal?: AbortSignal,
     ) {
-      return await accept(
-        commandClient(signal).get({
-          headers: authenticate(auth),
-          params: { commandId },
-        }),
-        statuses,
-      );
+      return await run(async () => {
+        return await accept(
+          commandClient(signal).get({
+            headers: authenticate(auth),
+            params: { commandId },
+          }),
+          statuses,
+        );
+      });
     },
 
     async requestComputerUseScreenshot(
@@ -714,13 +713,15 @@ export function createComputerUseBddApi(context: TestContext) {
       statuses: readonly (200 | 401 | 403 | 404)[],
       signal?: AbortSignal,
     ) {
-      return await accept(
-        commandClient(signal).getScreenshot({
-          headers: authenticate(auth),
-          params: { commandId },
-        }),
-        statuses,
-      );
+      return await run(async () => {
+        return await accept(
+          commandClient(signal).getScreenshot({
+            headers: authenticate(auth),
+            params: { commandId },
+          }),
+          statuses,
+        );
+      });
     },
 
     async downloadComputerUseScreenshot(
@@ -734,24 +735,26 @@ export function createComputerUseBddApi(context: TestContext) {
       readonly contentDisposition: string | null;
       readonly bytes: Buffer;
     }> {
-      const response = await accept(
-        commandClient(signal).getScreenshot({
-          headers: authenticate(auth),
-          params: { commandId },
-        }),
-        [200],
-      );
-      const body: unknown = response.body;
-      if (!(body instanceof Blob)) {
-        throw new Error("Expected a binary computer-use screenshot body");
-      }
-      return {
-        contentType: response.headers.get("content-type"),
-        contentLength: response.headers.get("content-length"),
-        cacheControl: response.headers.get("cache-control"),
-        contentDisposition: response.headers.get("content-disposition"),
-        bytes: Buffer.from(await body.arrayBuffer()),
-      };
+      return await run(async () => {
+        const response = await accept(
+          commandClient(signal).getScreenshot({
+            headers: authenticate(auth),
+            params: { commandId },
+          }),
+          [200],
+        );
+        const body: unknown = response.body;
+        if (!(body instanceof Blob)) {
+          throw new Error("Expected a binary computer-use screenshot body");
+        }
+        return {
+          contentType: response.headers.get("content-type"),
+          contentLength: response.headers.get("content-length"),
+          cacheControl: response.headers.get("cache-control"),
+          contentDisposition: response.headers.get("content-disposition"),
+          bytes: Buffer.from(await body.arrayBuffer()),
+        };
+      });
     },
 
     async claimNextComputerUseCommand(
@@ -766,50 +769,56 @@ export function createComputerUseBddApi(context: TestContext) {
           readonly command: ComputerUseCommandResponse;
         }
     > {
-      const response = await accept(
-        hostCommandsClient().next({
-          headers: hostHeaders(hostToken),
-          body: {
-            supportedCapabilities: [...supportedCapabilities],
-          },
-        }),
-        [200],
-      );
-      return response.body;
+      return await run(async () => {
+        const response = await accept(
+          hostCommandsClient().next({
+            headers: hostHeaders(hostToken),
+            body: {
+              supportedCapabilities: [...supportedCapabilities],
+            },
+          }),
+          [200],
+        );
+        return response.body;
+      });
     },
 
     async requestClaimNextComputerUseCommand(
       hostToken: string | null,
       statuses: readonly (200 | 401)[],
     ) {
-      return await accept(
-        hostCommandsClient().next({
-          headers: hostTokenHeaders(hostToken),
-          body: {
-            supportedCapabilities: [
-              ...DEFAULT_SUPPORTED_COMPUTER_USE_CAPABILITIES,
-            ],
-          },
-        }),
-        statuses,
-      );
+      return await run(async () => {
+        return await accept(
+          hostCommandsClient().next({
+            headers: hostTokenHeaders(hostToken),
+            body: {
+              supportedCapabilities: [
+                ...DEFAULT_SUPPORTED_COMPUTER_USE_CAPABILITIES,
+              ],
+            },
+          }),
+          statuses,
+        );
+      });
     },
 
     async completeComputerUseCommand(
       hostToken: string,
       commandId: string,
     ): Promise<void> {
-      await accept(
-        hostCommandsClient().complete({
-          headers: hostHeaders(hostToken),
-          params: { commandId },
-          body: {
-            status: "succeeded",
-            result: { app: "Safari", opened: true },
-          },
-        }),
-        [200],
-      );
+      return await run(async () => {
+        await accept(
+          hostCommandsClient().complete({
+            headers: hostHeaders(hostToken),
+            params: { commandId },
+            body: {
+              status: "succeeded",
+              result: { app: "Safari", opened: true },
+            },
+          }),
+          [200],
+        );
+      });
     },
 
     async completeComputerUseCommandWith(
@@ -817,14 +826,16 @@ export function createComputerUseBddApi(context: TestContext) {
       commandId: string,
       body: ComputerUseCompleteBody,
     ): Promise<void> {
-      await accept(
-        hostCommandsClient().complete({
-          headers: hostHeaders(hostToken),
-          params: { commandId },
-          body,
-        }),
-        [200],
-      );
+      return await run(async () => {
+        await accept(
+          hostCommandsClient().complete({
+            headers: hostHeaders(hostToken),
+            params: { commandId },
+            body,
+          }),
+          [200],
+        );
+      });
     },
 
     async requestCompleteComputerUseCommand(
@@ -833,14 +844,16 @@ export function createComputerUseBddApi(context: TestContext) {
       body: ComputerUseCompleteBody,
       statuses: readonly (200 | 400 | 401 | 404 | 409)[],
     ) {
-      return await accept(
-        hostCommandsClient().complete({
-          headers: hostTokenHeaders(hostToken),
-          params: { commandId },
-          body,
-        }),
-        statuses,
-      );
+      return await run(async () => {
+        return await accept(
+          hostCommandsClient().complete({
+            headers: hostTokenHeaders(hostToken),
+            params: { commandId },
+            body,
+          }),
+          statuses,
+        );
+      });
     },
 
     async requestListComputerUseAuditEvents(
@@ -854,13 +867,15 @@ export function createComputerUseBddApi(context: TestContext) {
       statuses: readonly (200 | 401 | 403)[],
       signal?: AbortSignal,
     ) {
-      return await accept(
-        auditEventsClient(signal).list({
-          headers: authenticate(actor),
-          query,
-        }),
-        statuses,
-      );
+      return await run(async () => {
+        return await accept(
+          auditEventsClient(signal).list({
+            headers: authenticate(actor),
+            query,
+          }),
+          statuses,
+        );
+      });
     },
 
     async listComputerUseAuditEvents(
@@ -873,54 +888,62 @@ export function createComputerUseBddApi(context: TestContext) {
       } = {},
       signal?: AbortSignal,
     ): Promise<ComputerUseAuditEventListResponse> {
-      const response = await accept(
-        auditEventsClient(signal).list({
-          headers: authenticate(actor),
-          query,
-        }),
-        [200],
-      );
-      return response.body;
+      return await run(async () => {
+        const response = await accept(
+          auditEventsClient(signal).list({
+            headers: authenticate(actor),
+            query,
+          }),
+          [200],
+        );
+        return response.body;
+      });
     },
 
     async createComputerUseAuthorizationRequest(
       auth: ComputerUseAuth,
     ): Promise<ComputerUseAuthorizationRequestCreateResponse> {
-      const response = await accept(
-        authorizationRequestsClient().create({
-          headers: authenticate(auth),
-          body: {},
-        }),
-        [200],
-      );
-      return response.body;
+      return await run(async () => {
+        const response = await accept(
+          authorizationRequestsClient().create({
+            headers: authenticate(auth),
+            body: {},
+          }),
+          [200],
+        );
+        return response.body;
+      });
     },
 
     async requestCreateComputerUseAuthorizationRequest(
       auth: ComputerUseAuth,
       statuses: readonly (200 | 400 | 401 | 403 | 404 | 409)[],
     ) {
-      return await accept(
-        authorizationRequestsClient().create({
-          headers: authenticate(auth),
-          body: {},
-        }),
-        statuses,
-      );
+      return await run(async () => {
+        return await accept(
+          authorizationRequestsClient().create({
+            headers: authenticate(auth),
+            body: {},
+          }),
+          statuses,
+        );
+      });
     },
 
     async readComputerUseAuthorizationRequest(
       actor: ApiTestUser,
       requestToken: string,
     ): Promise<ComputerUseAuthorizationRequestResponse> {
-      const response = await accept(
-        authorizationRequestsClient().get({
-          headers: authenticate(actor),
-          params: { requestToken },
-        }),
-        [200],
-      );
-      return response.body;
+      return await run(async () => {
+        const response = await accept(
+          authorizationRequestsClient().get({
+            headers: authenticate(actor),
+            params: { requestToken },
+          }),
+          [200],
+        );
+        return response.body;
+      });
     },
 
     async requestReadComputerUseAuthorizationRequest(
@@ -928,13 +951,15 @@ export function createComputerUseBddApi(context: TestContext) {
       requestToken: string,
       statuses: readonly (200 | 401 | 403 | 404 | 410)[],
     ) {
-      return await accept(
-        authorizationRequestsClient().get({
-          headers: authenticate(actor),
-          params: { requestToken },
-        }),
-        statuses,
-      );
+      return await run(async () => {
+        return await accept(
+          authorizationRequestsClient().get({
+            headers: authenticate(actor),
+            params: { requestToken },
+          }),
+          statuses,
+        );
+      });
     },
 
     async applyComputerUseAuthorizationRequest(
@@ -942,15 +967,17 @@ export function createComputerUseBddApi(context: TestContext) {
       requestToken: string,
       computerUseHostId: string,
     ): Promise<ComputerUseAuthorizationRequestApplyResponse> {
-      const response = await accept(
-        authorizationRequestsClient().apply({
-          headers: authenticate(actor),
-          params: { requestToken },
-          body: { computerUseHostId },
-        }),
-        [200],
-      );
-      return response.body;
+      return await run(async () => {
+        const response = await accept(
+          authorizationRequestsClient().apply({
+            headers: authenticate(actor),
+            params: { requestToken },
+            body: { computerUseHostId },
+          }),
+          [200],
+        );
+        return response.body;
+      });
     },
 
     async requestApplyComputerUseAuthorizationRequest(
@@ -959,14 +986,16 @@ export function createComputerUseBddApi(context: TestContext) {
       computerUseHostId: string,
       statuses: readonly (200 | 401 | 403 | 404 | 410)[],
     ) {
-      return await accept(
-        authorizationRequestsClient().apply({
-          headers: authenticate(actor),
-          params: { requestToken },
-          body: { computerUseHostId },
-        }),
-        statuses,
-      );
+      return await run(async () => {
+        return await accept(
+          authorizationRequestsClient().apply({
+            headers: authenticate(actor),
+            params: { requestToken },
+            body: { computerUseHostId },
+          }),
+          statuses,
+        );
+      });
     },
   };
 }

@@ -1,9 +1,7 @@
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usageEventHourlyRollup } from "@okouai/db/schema/usage-event-hourly-rollup";
-import { command } from "ccstate";
 import { eq } from "drizzle-orm";
-import { writeDb$ } from "../external/db";
 
 export interface UsageCleanupScope {
   readonly scope: "organization" | "user";
@@ -33,25 +31,3 @@ export function usageCleanupTargets({ scope, id }: UsageCleanupScope) {
     },
   ] as const;
 }
-
-export const deleteUsageData$ = command(
-  async (
-    { set },
-    args: UsageCleanupScope,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const db = set(writeDb$);
-    await db.transaction(async (tx) => {
-      const [jobs, ...targets] = usageCleanupTargets(args);
-      await tx.delete(jobs.table).where(jobs.condition);
-      // Actual raw deletion precedes the rollup deletion. If compaction won
-      // those raw rows, this next statement sees and deletes its committed
-      // rollups; if cleanup won, compaction consumes no source facts.
-      for (const target of targets) {
-        await tx.delete(target.table).where(target.condition);
-      }
-      signal.throwIfAborted();
-    });
-    signal.throwIfAborted();
-  },
-);

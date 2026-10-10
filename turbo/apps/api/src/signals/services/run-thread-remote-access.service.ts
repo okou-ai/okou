@@ -5,7 +5,7 @@ import { chatThreadVncAccessOverrides } from "@okouai/db/schema/chat-thread-vnc-
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
-import { and, eq, exists, sql } from "drizzle-orm";
+import { and, eq, exists, sql, type SQLWrapper } from "drizzle-orm";
 
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
@@ -26,7 +26,12 @@ export function runThreadExists() {
 }
 
 /** Correlated to the outer Run, Session and exact SSH host. */
-export function runThreadSshAccess() {
+export function runThreadSshAccess(
+  host: {
+    readonly id: SQLWrapper;
+    readonly defaultEnabledForChats: SQLWrapper;
+  } = sshConnections,
+) {
   return exists(
     new QueryBuilder()
       .select({ id: chatThreads.id })
@@ -35,7 +40,7 @@ export function runThreadSshAccess() {
         chatThreadSshAccessOverrides,
         and(
           eq(chatThreadSshAccessOverrides.chatThreadId, chatThreads.id),
-          eq(chatThreadSshAccessOverrides.connectionId, sshConnections.id),
+          eq(chatThreadSshAccessOverrides.connectionId, host.id),
         ),
       )
       .where(
@@ -43,7 +48,7 @@ export function runThreadSshAccess() {
           eq(chatThreads.id, agentRuns.chatThreadId),
           eq(chatThreads.userId, agentRuns.userId),
           eq(chatThreads.agentId, agentSessions.agentId),
-          sql`coalesce(${chatThreadSshAccessOverrides.enabled}, ${sshConnections.defaultEnabledForChats}) = true`,
+          sql`coalesce(${chatThreadSshAccessOverrides.enabled}, ${host.defaultEnabledForChats}) = true`,
         ),
       ),
   );

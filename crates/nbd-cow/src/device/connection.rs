@@ -90,12 +90,36 @@ pub(super) struct ConnectDeviceOutcome<K: CreateKernel = NativeKernel> {
     runtime: tokio::runtime::Handle,
 }
 
-struct UnobservedConnectCleanup {
+pub(super) struct DeferredCreateCleanup {
     connected: ConnectedDevice,
     lease: DeferredLease,
 }
 
-impl UnobservedConnectCleanup {
+impl DeferredCreateCleanup {
+    pub(super) fn new(
+        connected: ConnectedDevice,
+        pool: pool::DevicePoolHandle,
+        lease: Option<pool::DeviceLease>,
+    ) -> Self {
+        Self {
+            connected,
+            lease: DeferredLease { pool, lease },
+        }
+    }
+
+    pub(super) fn dispatch(self, runtime: &tokio::runtime::Handle, kernel: impl CreateKernel) {
+        // Either incomplete-create owner can be dropped on an async worker or
+        // outside an entered runtime. Keep the lease with the blocking work;
+        // if shutdown discards the closure, its non-blocking drop retires the
+        // lease as uncertain without kernel I/O or recursive dispatch.
+        runtime.spawn_blocking(move || {
+            self.run_with(
+                |index, id| kernel.ownership(index, id),
+                |index| kernel.disconnect(index),
+            );
+        });
+    }
+
     fn run_with(
         self,
         ownership: impl FnOnce(u32, Uuid) -> DeviceOwnership,
@@ -103,7 +127,7 @@ impl UnobservedConnectCleanup {
     ) {
         tracing::warn!(
             device_index = self.connected.index,
-            "NBD connect result dropped before observation; disconnecting owned device"
+            "incomplete NBD create dropped; disconnecting owned device"
         );
         disconnect_connected_if_owned_with(self.connected, ownership, disconnect);
         drop(self.lease);
@@ -180,7 +204,7 @@ impl<K: CreateKernel> ConnectDeviceOutcome<K> {
         }
     }
 
-    fn take_unobserved_cleanup(&mut self) -> Option<UnobservedConnectCleanup> {
+    fn take_unobserved_cleanup(&mut self) -> Option<DeferredCreateCleanup> {
         let result = self.result.take()?;
 
         let connection_id = match result {
@@ -194,16 +218,14 @@ impl<K: CreateKernel> ConnectDeviceOutcome<K> {
             ) => return None,
         };
 
-        Some(UnobservedConnectCleanup {
-            connected: ConnectedDevice {
+        Some(DeferredCreateCleanup::new(
+            ConnectedDevice {
                 index: self.device_index,
                 connection_id,
             },
-            lease: DeferredLease {
-                pool: self.lease.pool.clone(),
-                lease: self.lease.take(),
-            },
-        })
+            self.lease.pool.clone(),
+            self.lease.take(),
+        ))
     }
 }
 
@@ -212,17 +234,7 @@ impl<K: CreateKernel> Drop for ConnectDeviceOutcome<K> {
         let Some(cleanup) = self.take_unobserved_cleanup() else {
             return;
         };
-        let kernel = self.kernel.clone();
-        // Completed JoinHandle output may be dropped on an async worker or
-        // outside an entered runtime. Keep the lease with the blocking work;
-        // if shutdown discards the closure, its non-blocking drop retires the
-        // lease as uncertain without kernel I/O or recursive dispatch.
-        self.runtime.spawn_blocking(move || {
-            cleanup.run_with(
-                |index, id| kernel.ownership(index, id),
-                |index| kernel.disconnect(index),
-            );
-        });
+        cleanup.dispatch(&self.runtime, self.kernel.clone());
     }
 }
 
@@ -412,17 +424,6 @@ fn device_ownership_from_backend_contents(connection_id: Uuid, contents: &str) -
     }
 }
 
-pub(super) fn disconnect_connected_if_owned_with_kernel(
-    connected: ConnectedDevice,
-    kernel: &impl CreateKernel,
-) -> bool {
-    disconnect_connected_if_owned_with(
-        connected,
-        |index, id| kernel.ownership(index, id),
-        |index| kernel.disconnect(index),
-    )
-}
-
 fn disconnect_connected_if_owned_result_with(
     connected: ConnectedDevice,
     ownership: impl FnOnce(u32, Uuid) -> DeviceOwnership,
@@ -503,7 +504,7 @@ mod tests {
     const TEST_DEVICE_INDEX: u32 = 0;
 
     const CONNECT_RESULT_DROPPED_MESSAGE: &str =
-        "NBD connect result dropped before observation; disconnecting owned device";
+        "incomplete NBD create dropped; disconnecting owned device";
 
     fn test_connection_id() -> Uuid {
         Uuid::from_u128(42)

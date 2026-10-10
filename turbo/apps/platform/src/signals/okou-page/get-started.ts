@@ -261,9 +261,20 @@ const internalQuestIntroKey$ = state<GetStartedQuestKey | null>(null);
 export const questIntroKey$ = computed((get) => {
   return get(internalQuestIntroKey$);
 });
+/**
+ * The quest whose intro was last open. It outlives the close so the dialog's
+ * body stays mounted through its exit transition instead of going blank.
+ */
+const internalQuestIntroLastKey$ = state<GetStartedQuestKey | null>(null);
+export const questIntroLastKey$ = computed((get) => {
+  return get(internalQuestIntroLastKey$);
+});
 export const setQuestIntroKey$ = command(
   ({ set }, key: GetStartedQuestKey | null) => {
     set(internalQuestIntroKey$, key);
+    if (key !== null) {
+      set(internalQuestIntroLastKey$, key);
+    }
   },
 );
 

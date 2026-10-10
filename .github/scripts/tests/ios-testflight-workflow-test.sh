@@ -44,7 +44,15 @@ assert 'node ios/scripts/testflight.mjs distribute' in commands
 consume = next(step for step in steps if step.get('name') == 'Resolve and verify exact release archive')
 assert 'archive-promotion.py consume' in consume['run']
 assert steps.index(consume) < steps.index(next(step for step in steps if step.get('id') == 'prepare'))
-assert consume['env']['R2_BUCKET_NAME'] == 'user-artifact-private-dev'
+artifact_env = {
+    'AWS_ACCESS_KEY_ID': '${{ secrets.R2_STATIC_ACCESS_KEY_ID }}',
+    'AWS_SECRET_ACCESS_KEY': '${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}',
+    'AWS_DEFAULT_REGION': 'auto',
+    'R2_ACCOUNT_ID': '${{ vars.R2_ACCOUNT_ID }}',
+    'R2_BUCKET_NAME': '${{ vars.R2_STATIC_BUCKET_NAME }}',
+}
+for key, value in artifact_env.items():
+    assert consume['env'][key] == value
 assert consume['env']['GH_TOKEN'] == '${{ github.token }}'
 assert 'IOS_DISTRIBUTION' not in json.dumps(consume)
 assert job['env']['IOS_TEST_DESTINATION'] == 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2'
@@ -107,6 +115,10 @@ for name in ['build-test', 'build-archive', 'publish-archive']:
     assert 'IOS_DISTRIBUTION' not in json.dumps(ios['jobs'][name])
     assert 'APP_STORE_CONNECT_API' not in json.dumps(ios['jobs'][name])
 native = ios['jobs']['build-test']['steps']
+evidence = next(step for step in native if step.get('name') == 'Resolve exact-input test evidence')
+for env in [evidence['env'], ios['jobs']['publish-archive']['env']]:
+    for key, value in artifact_env.items():
+        assert env[key] == value
 simulator = next(step for step in native if step.get('name') == 'Build app and run isolated simulator tests')
 assert "steps.evidence.outputs.run_tests == 'true'" in simulator['if']
 test_job = ios['jobs']['build-test']

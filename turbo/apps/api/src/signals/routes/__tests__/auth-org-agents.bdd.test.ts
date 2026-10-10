@@ -1,3 +1,4 @@
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { randomUUID } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
@@ -5,7 +6,6 @@ import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import {
   createAuthOrgAgentsBddApi,
   type ApiTestUser,
@@ -289,11 +289,10 @@ describe("AUTH-03", () => {
 describe("ORG-01 and ORG-02", () => {
   it("uses entitlement status for invitations and allows a reactivated workspace", async () => {
     const admin = api.user();
-    await onboardAdmin(admin);
-    await upsertOrgPlanEntitlementFixture({
-      orgId: requiredOrgId(admin),
-      status: "suspended",
-    });
+    api.mockClerkOrg(admin);
+    await api.completeOnboarding(admin);
+    const plan = publicPlanLifecycle(context, admin);
+    await plan.update("canceled");
 
     const invitation = {
       email: `status-${shortId()}@example.test`,
@@ -308,10 +307,7 @@ describe("ORG-01 and ORG-02", () => {
       context.mocks.clerk.organizations.createOrganizationInvitation,
     ).not.toHaveBeenCalled();
 
-    await upsertOrgPlanEntitlementFixture({
-      orgId: requiredOrgId(admin),
-      status: "manual_active",
-    });
+    await plan.update("active");
     const billing = await runsApi.readBillingStatus(admin);
     expect(billing).toMatchObject({
       status: "active",

@@ -1,7 +1,9 @@
 use std::fmt;
 use std::io;
 
+use async_trait::async_trait;
 use futures_util::{FutureExt, future::Shared};
+use sandbox::{BackingProcessIdentity, SandboxBackingProcess};
 use tokio::sync::oneshot;
 
 #[cfg(target_os = "linux")]
@@ -11,6 +13,7 @@ use std::os::fd::OwnedFd;
 /// Clones share the terminal result, including across cancellation and Drop.
 #[derive(Clone)]
 pub(crate) struct ProcessExitCompletion {
+    identity: BackingProcessIdentity,
     completion: Shared<oneshot::Receiver<bool>>,
 }
 
@@ -22,6 +25,7 @@ impl ProcessExitCompletion {
         (
             tx,
             Self {
+                identity: BackingProcessIdentity::new_generation(),
                 completion: rx.shared(),
             },
         )
@@ -30,6 +34,17 @@ impl ProcessExitCompletion {
     pub(crate) async fn confirmed(&self) -> bool {
         // A lost producer (including monitor panic/abort) cannot confirm exit.
         self.completion.clone().await.unwrap_or(false)
+    }
+}
+
+#[async_trait]
+impl SandboxBackingProcess for ProcessExitCompletion {
+    fn identity(&self) -> BackingProcessIdentity {
+        self.identity
+    }
+
+    async fn exit_confirmed(&self) -> bool {
+        self.confirmed().await
     }
 }
 

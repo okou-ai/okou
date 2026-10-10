@@ -11,10 +11,10 @@ import {
 import { pageSignal$ } from "../../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../../signals/utils.ts";
 import { BuildInfoBlock } from "../build-info-block.tsx";
-import { ConnectionDiagnosticsBlock } from "../connection-diagnostics-block.tsx";
+import { OpenrouterPresetSettings } from "../openrouter-preset-settings.tsx";
 import { IndexedDbDiagnosticsBlock } from "../indexeddb-diagnostics-block.tsx";
 import { WelcomeThreadCard } from "../welcome-thread-card.tsx";
-import { WorkerConnectionDiagnosticsBlock } from "../worker-connection-diagnostics-block.tsx";
+import { MorningBriefTestEmailCard } from "../morning-brief-test-email-card.tsx";
 
 const CAPTURE_RUN_COUNT = 3;
 
@@ -80,9 +80,9 @@ export function DebugSection() {
   return (
     <div className="flex flex-col gap-6">
       <BuildInfoBlock />
+      <OpenrouterPresetSettings />
       <WelcomeThreadCard />
-      <ConnectionDiagnosticsBlock />
-      <WorkerConnectionDiagnosticsBlock />
+      <MorningBriefTestEmailCard />
       <IndexedDbDiagnosticsBlock />
       <CaptureNetworkBodiesBlock />
     </div>

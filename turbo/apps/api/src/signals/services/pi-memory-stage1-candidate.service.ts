@@ -1,7 +1,6 @@
 import { command } from "ccstate";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { writeDb$ } from "../external/db";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { piMemoryStage1Watermarks } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import type { PiMemoryStage1Selection } from "./pi-memory-stage1-schedule.service";
 import {
@@ -27,7 +26,9 @@ import { storages } from "@okouai/db/schema/storage";
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 
-import { piMemoryPhase2InputRevisionPlan } from "./pi-memory-phase2-job.service";
+import { piMemoryPhase2InputRevisionSql } from "./pi-memory-phase2-input-revision";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { z } from "zod";
 
 // Stage 1 admission and maintenance completion retain checkpoint blobs. Lock
 // their existing owner first to avoid a parent/blob cycle with cleanup.
@@ -267,7 +268,7 @@ function candidateCommitPlan(args: CommitPiMemoryStage1CandidateArgs) {
           sourceHistoryHash: args.sourceHistoryHash,
         })
       : undefined,
-    revision: piMemoryPhase2InputRevisionPlan({
+    revision: piMemoryPhase2InputRevisionSql({
       memoryStorageId: args.memoryStorageId,
       orgId: args.orgId,
       userId: args.userId,
@@ -284,6 +285,7 @@ export const commitPiMemoryStage1Candidate$ = command(
     selectionToValidate?: PiMemoryStage1Selection,
   ): Promise<boolean> => {
     const plan = candidateCommitPlan(args);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0225; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(async (tx) => {
       if (selectionToValidate) {
         const selection = selectionToValidate;
@@ -389,11 +391,10 @@ export const commitPiMemoryStage1Candidate$ = command(
             .values(plan.watermark.values)
             .onConflictDoUpdate(plan.watermark.conflict);
         }
-        const [advanced] = await tx
-          .insert(piMemoryPhase2Jobs)
-          .values(plan.revision.values)
-          .onConflictDoUpdate(plan.revision.conflict)
-          .returning({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId });
+        const [advanced] = parseRawRows(
+          z.object({ memoryStorageId: z.uuid() }),
+          await tx.execute(plan.revision),
+        );
         if (!advanced) {
           throw new Error("Pi memory Phase 2 input revision did not advance");
         }

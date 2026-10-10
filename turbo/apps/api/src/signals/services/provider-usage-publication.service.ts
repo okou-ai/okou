@@ -1,4 +1,8 @@
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import {
+  AUTO_SELECTED_MODEL,
+  isAutoRunPreset,
+} from "@okouai/core/auto-run-model";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { usageEvent } from "@okouai/db/schema/usage-event";
@@ -44,6 +48,9 @@ function billableRunnerEvents(
   run: {
     readonly triggerSource: string | null;
     readonly modelProvider: string | null;
+    readonly selectedModel: string | null;
+    readonly modelRuntimeModel: string | null;
+    readonly modelUsageProvider: string | null;
   },
 ) {
   return events
@@ -55,6 +62,26 @@ function billableRunnerEvents(
           run.modelProvider === null ||
           isBuiltInModelProviderType(run.modelProvider))
       );
+    })
+    .map((event) => {
+      if (event.kind !== "model") {
+        return event;
+      }
+      if (run.modelUsageProvider !== null) {
+        return { ...event, provider: run.modelUsageProvider };
+      }
+      // Outgoing API captures have no independent usage identity until the operator backfill.
+      if (run.selectedModel !== AUTO_SELECTED_MODEL) {
+        return event;
+      }
+      if (!isAutoRunPreset(run.modelRuntimeModel)) {
+        throw new Error(
+          "Canonical Auto usage requires its captured runtime model",
+        );
+      }
+      // The Run, not an upstream response or the current org preset, owns billing.
+      // Legacy captures below PR2 retain their producer's original billing key.
+      return { ...event, provider: run.modelRuntimeModel };
     })
     .sort((left, right) => {
       return left.idempotencyKey
@@ -73,6 +100,7 @@ export const recordRunnerUsageBatch$ = command(
     const db = set(writeDb$);
     signal.throwIfAborted();
     const outcome = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0234; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const [run] = await tx
           .select({
@@ -83,6 +111,9 @@ export const recordRunnerUsageBatch$ = command(
             triggerSource: agentRuns.triggerSource,
             threadId: agentRuns.chatThreadId,
             modelProvider: agentRuns.modelProvider,
+            selectedModel: agentRuns.selectedModel,
+            modelRuntimeModel: agentRuns.modelRuntimeModel,
+            modelUsageProvider: agentRuns.modelUsageProvider,
           })
           .from(agentRuns)
           .where(
@@ -183,6 +214,7 @@ export const recordProviderUsageBatch$ = command(
     const actor = { orgId: args.orgId, userId: args.userId, runId };
     const db = set(writeDb$);
     signal.throwIfAborted();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0235; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const [run] = runId
         ? await tx.select().from(managedBillingRunQuery(runId))

@@ -30,12 +30,12 @@ import {
   listAllPendingOrganizationInvitations,
   listAllUserOrganizationMemberships,
 } from "../external/clerk-organization-lists";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type ReadonlyDb } from "../external/db";
 import { onRejection, settle } from "../utils";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
 import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
 import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
-import { deleteDiscordOrgData } from "./discord-owner-cleanup.service";
+import { deleteDiscordOrgData$ } from "./discord-owner-cleanup.service";
 import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
 import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
 import {
@@ -44,7 +44,7 @@ import {
   reserveUsagePackMemberRemoval,
 } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
-import { fetchUserProfileMap } from "./user-profile-directory.service";
+import { fetchUserProfileMap$ } from "./user-profile-directory.service";
 
 const clerkOrgIdentitySchema = z.object({
   name: z.string().nullable().optional(),
@@ -663,7 +663,7 @@ export const deleteOrg$ = command(
 
     await client.organizations.deleteOrganization(args.orgId);
     signal.throwIfAborted();
-    await deleteDiscordOrgData(writeDb, args.orgId);
+    await set(deleteDiscordOrgData$, args.orgId, signal);
     signal.throwIfAborted();
 
     return { message: "Organization deleted" };
@@ -732,50 +732,50 @@ async function fetchOrgMemberDirectory(
   return { organization, memberships, invitations };
 }
 
-async function fetchOrgMembershipRequests(
-  db: Db,
-  client: ReturnType<typeof clerk$.read>,
-  orgId: string,
-  context: ClerkReadContext,
-  signal: AbortSignal,
-): Promise<NonNullable<OrgMembersResponse["membershipRequests"]>> {
-  const requestsData = await fetchClerkMembershipRequests(
-    orgId,
-    context,
-    signal,
-  );
-  const requestProfiles = await fetchUserProfileMap(
-    db,
-    client,
-    requestsData.map((request) => {
-      return request.public_user_data.user_id;
-    }),
-    context,
-    signal,
-  );
-  return requestsData.map((request) => {
-    const userId = request.public_user_data.user_id;
-    const profile = requestProfiles.get(userId);
-    return {
-      id: request.id,
-      userId,
-      email: profile?.email ?? "",
-      firstName: profile?.firstName ?? null,
-      lastName: profile?.lastName ?? null,
-      imageUrl: profile?.imageUrl ?? "",
-      createdAt: new Date(request.created_at).toISOString(),
-    };
-  });
-}
+const fetchOrgMembershipRequests$ = command(
+  async (
+    { set },
+    orgId: string,
+    context: ClerkReadContext,
+    signal: AbortSignal,
+  ): Promise<NonNullable<OrgMembersResponse["membershipRequests"]>> => {
+    const requestsData = await fetchClerkMembershipRequests(
+      orgId,
+      context,
+      signal,
+    );
+    const requestProfiles = await set(
+      fetchUserProfileMap$,
+      requestsData.map((request) => {
+        return request.public_user_data.user_id;
+      }),
+      context,
+      signal,
+    );
+    return requestsData.map((request) => {
+      const userId = request.public_user_data.user_id;
+      const profile = requestProfiles.get(userId);
+      return {
+        id: request.id,
+        userId,
+        email: profile?.email ?? "",
+        firstName: profile?.firstName ?? null,
+        lastName: profile?.lastName ?? null,
+        imageUrl: profile?.imageUrl ?? "",
+        createdAt: new Date(request.created_at).toISOString(),
+      };
+    });
+  },
+);
 
 export const orgMembersList$ = command(
   async (
-    { get },
+    { get, set },
     args: OrgMembersListArgs,
     signal: AbortSignal,
   ): Promise<OrgMembersResponse> => {
     const client = get(clerk$);
-    const db = get(db$) as Db;
+    const db = get(db$);
     const readContext = createClerkReadContext(now);
 
     const { organization, memberships, invitations } =
@@ -796,9 +796,8 @@ export const orgMembersList$ = command(
         ),
       };
     });
-    const memberProfiles = await fetchUserProfileMap(
-      db,
-      client,
+    const memberProfiles = await set(
+      fetchUserProfileMap$,
       membersWithUserIds.map((member) => {
         return member.userId;
       }),
@@ -885,9 +884,8 @@ export const orgMembersList$ = command(
 
     const membershipRequests =
       args.callerRole === "admin"
-        ? await fetchOrgMembershipRequests(
-            db,
-            client,
+        ? await set(
+            fetchOrgMembershipRequests$,
             args.orgId,
             readContext,
             signal,

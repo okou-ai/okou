@@ -4,6 +4,7 @@ import {
   userPreferencesContract,
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
+import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { DEFAULT_USER_TIMEZONE, isValidTimeZone } from "@okouai/core/timezone";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { command, computed } from "ccstate";
@@ -149,6 +150,7 @@ async function fillMissingUserPreferenceFields(
     .insert(orgMembersMetadata)
     .values({
       ...identity,
+      selectedModel: AUTO_SELECTED_MODEL,
       timezone: timezoneMissing ? timezone : existingTimezone,
       locale: localeMissing ? locale : existingLocale,
     })

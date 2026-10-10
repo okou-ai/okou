@@ -197,10 +197,10 @@ describe("member source-first onboarding", () => {
       policies.body.models.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([null]);
+    ).toStrictEqual(["auto"]);
   });
 
-  it("does not pull a member who already chats in the workspace into onboarding", async () => {
+  it("does not pull a member with an existing thread in the workspace into onboarding", async () => {
     const admin = bdd.user();
     if (!admin.orgId) {
       throw new Error("Expected the seeded admin to belong to an org");
@@ -219,6 +219,54 @@ describe("member source-first onboarding", () => {
     } as const;
 
     await expect(statusAs(member)).resolves.toMatchObject({
+      needsOnboarding: false,
+      isAdmin: false,
+    });
+  });
+
+  it("only counts the member's own threads in the current workspace", async () => {
+    const member = bdd.user({ orgRole: "org:member" });
+    if (!member.orgId) {
+      throw new Error("Expected the member to belong to an org");
+    }
+    const actor = {
+      userId: member.userId,
+      orgId: member.orgId,
+      role: "org:member",
+    } as const;
+    const peer = bdd.user({
+      orgId: member.orgId,
+      orgRole: "org:member",
+    });
+    const sameUserElsewhere = bdd.user({
+      userId: member.userId,
+      email: member.email,
+      orgRole: "org:member",
+    });
+    bdd.acceptAgentStorageWrites();
+    const peerAgent = await bdd.createAgent(peer, {
+      displayName: "Peer agent",
+      visibility: "private",
+    });
+    await chat.createThread(peer, { agentId: peerAgent.agentId });
+    const otherOrgAgent = await bdd.createAgent(sameUserElsewhere, {
+      displayName: "Other workspace agent",
+      visibility: "private",
+    });
+    await chat.createThread(sameUserElsewhere, {
+      agentId: otherOrgAgent.agentId,
+    });
+    await expect(statusAs(actor)).resolves.toMatchObject({
+      needsOnboarding: true,
+      isAdmin: false,
+    });
+
+    const ownAgent = await bdd.createAgent(member, {
+      displayName: "Member agent",
+      visibility: "private",
+    });
+    await chat.createThread(member, { agentId: ownAgent.agentId });
+    await expect(statusAs(actor)).resolves.toMatchObject({
       needsOnboarding: false,
       isAdmin: false,
     });
@@ -288,7 +336,7 @@ describe("POST /api/onboarding/complete", () => {
       policies.body.models.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([null]);
+    ).toStrictEqual(["auto"]);
   });
 
   it("completes an admin's onboarding with the field the source-first flow answered", async () => {

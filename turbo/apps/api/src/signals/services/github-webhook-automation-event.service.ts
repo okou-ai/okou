@@ -63,7 +63,7 @@ interface GithubWebhookInstallation {
 }
 
 export interface GithubWorkflowJobEventPayload {
-  readonly action: string;
+  readonly action: "completed";
   readonly workflow_job: {
     readonly id: number;
     readonly run_id: number;
@@ -394,10 +394,7 @@ function issueCommentMatchesConfig(
 function eventCanDispatch(event: GithubWebhookAutomationEvent): boolean {
   switch (event.eventType) {
     case "github-workflow-job-completed": {
-      return (
-        event.payload.action === "completed" &&
-        event.payload.workflow_job.conclusion !== null
-      );
+      return event.payload.workflow_job.conclusion !== null;
     }
     case "github-pull-request": {
       return githubPullRequestActionSchema.safeParse(event.payload.action)

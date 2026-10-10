@@ -1766,6 +1766,7 @@ const persistCustomConnectorCreate$ = command(
     | BadRequestResponse
   > => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0144; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       if (args.preparedSkill) {
         const { rowCount: published } = await tx.execute(
@@ -2101,6 +2102,7 @@ const persistCustomConnectorUpdate$ = command(
     | null
   > => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0145; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const [locked] = await tx
         .select({ id: orgCustomConnectors.id })
@@ -2433,6 +2435,7 @@ export const deleteCustomConnector$ = command(
     signal: AbortSignal,
   ): Promise<NotFoundResponse | ForbiddenResponse | undefined> => {
     const writeDb = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0146; new non-billing transactions are prohibited.
     const deletion = writeDb.transaction(async (tx) => {
       const [existing] = await tx
         .select({
@@ -2997,6 +3000,7 @@ export const setCustomConnectorValues$ = command(
       preparationInput,
       signal,
     );
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0147; new non-billing transactions are prohibited.
     const valueWrite = writeDb.transaction(async (tx) => {
       return await persistCustomConnectorValues(
         {
@@ -3068,6 +3072,7 @@ export const deleteCustomConnectorAccount$ = command(
   ) => {
     const writeDb = set(writeDb$);
     let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0148; new non-billing transactions are prohibited.
     const deletion = writeDb.transaction(
       async (tx) => {
         const [connector] = await tx

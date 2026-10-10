@@ -12,7 +12,9 @@
     "tsBuildInfoFile": "./.typecheck/foundation.tsbuildinfo"
   },
   "include": [
+    "src/lib/desktop-compatibility.json",
     "src/lib/desktop-compatibility.ts",
+    "src/lib/desktop-version.ts",
     "src/lib/db-instrumentation.ts",
     "src/lib/db-raw-rows.ts",
     "src/lib/db-structured-result.ts",
@@ -63,6 +65,7 @@
     "src/signals/services/pending-launch-sql.ts",
     "src/signals/services/pending-launch-tail-plan.ts",
     "src/signals/services/pi-memory-phase2-publication.service.ts",
+    "src/signals/services/pi-memory-phase2-input-revision.ts",
     "src/signals/services/pi-memory-phase2-job.service.ts",
     "src/signals/services/pi-memory-phase2-maintenance.service.ts",
     "src/signals/services/pi-memory-stage1-admission-plan.ts",
@@ -160,6 +163,10 @@
     "src/signals/services/agent-run-contracts.ts",
     "src/signals/services/agent-storage-context.service.ts",
     "src/signals/services/authorized-connectors.service.ts",
+    "src/signals/services/connectors-context.service.ts",
+    "src/signals/services/run-prompt-and-skills.ts",
+    "src/signals/services/workflow-skills.service.ts",
+    "src/signals/services/official-workflow-observation.service.ts",
     "src/signals/services/api-dispatch-timing.service.ts",
     "src/signals/services/built-in-model-runtime-route.service.ts",
     "src/signals/services/built-in-route-pricing.ts",
@@ -248,6 +255,7 @@
     "src/signals/services/notion-automation-account.service.ts",
     "src/signals/services/official-automation-result-email-renderer.ts",
     "src/lib/agent-notification-email-renderer.ts",
+    "src/lib/debug-morning-brief-email.ts",
     "src/lib/morning-brief-notification-source.ts",
     "src/signals/services/official-workflow-catalog-read.service.ts",
     "src/signals/services/official-workflow-context.signals.ts",
@@ -331,8 +339,7 @@
     "src/signals/services/ssh-client-invalidation.service.ts",
     "src/signals/services/ssh-creation.service.ts",
     "src/signals/services/ssh-runtime-wakeup.service.ts",
-    "src/signals/services/uploaded-artifact.service.ts",
-    "src/signals/services/retired-morning-brief-email.ts"
+    "src/signals/services/uploaded-artifact.service.ts"
   ],
   "exclude": ["node_modules", "dist"],
   "references": [

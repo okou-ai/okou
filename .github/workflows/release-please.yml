@@ -429,7 +429,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-      - name: Install AWS CLI for private archive consumption
+      - name: Install AWS CLI for archive consumption
         run: |
           if ! command -v aws >/dev/null; then
             HOMEBREW_NO_AUTO_UPDATE=1 brew install awscli
@@ -439,11 +439,11 @@ jobs:
         env:
           IOS_ARCHIVE_DIR: ${{ runner.temp }}/okou-ios-promotion
           GH_TOKEN: ${{ github.token }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
-          R2_BUCKET_NAME: user-artifact-private-dev
+          R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
         run: |
           echo "IOS_ARCHIVE_DIR=$IOS_ARCHIVE_DIR" >> "$GITHUB_ENV"
           mkdir "$IOS_ARCHIVE_DIR"
@@ -982,7 +982,7 @@ jobs:
       group: deploy-host-worker-production
       cancel-in-progress: false
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     permissions:
       contents: read
     environment: production
@@ -1181,7 +1181,7 @@ jobs:
       needs.release-please.outputs.releases_created == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     outputs:
       deployment_url: ${{ steps.deploy.outputs.url }}
       vercel_dashboard_url: ${{ steps.vercel-dashboard.outputs.url }}
@@ -1597,7 +1597,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     defaults:
       run:
         shell: bash
@@ -1981,7 +1981,7 @@ jobs:
     if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
     runs-on: ubuntu-latest-8-cores
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     defaults:
       run:
         shell: bash
@@ -2021,6 +2021,7 @@ jobs:
           echo "sccache_architecture=$sccache_architecture" >> "$GITHUB_OUTPUT"
 
       - name: Setup R2 sccache
+        id: sccache
         uses: ./.github/actions/setup-r2-sccache
         with:
           architecture: ${{ steps.target-metadata.outputs.sccache_architecture }}
@@ -2194,6 +2195,10 @@ jobs:
                   type: mrkdwn
                   text: "*Runner RS* ❌ Release asset publishing failed\n📦 Version: `${{ needs.release-please.outputs.runner_rs_version }}`\n🏗️ Target: `${{ matrix.target }}`\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/releases/tag/runner-rs-v${{ needs.release-please.outputs.runner_rs_version }}|View Release>\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
 
+      - name: Report sccache statistics
+        if: always() && steps.sccache.outputs.started == 'true'
+        run: .github/scripts/report-sccache-stats.sh
+
   runner-production-host-groups:
     needs: release-please
     if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
@@ -2258,7 +2263,7 @@ jobs:
     if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     permissions:
       contents: read
     environment: production
@@ -2508,7 +2513,7 @@ jobs:
        needs.promote-api-production.result == 'success')
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     permissions:
       contents: read
     environment: production
@@ -2697,7 +2702,7 @@ jobs:
     if: ${{ needs.release-please.outputs.releases_created == 'true' }}
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     permissions:
       contents: read
     steps:

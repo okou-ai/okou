@@ -371,7 +371,8 @@ async def test_matching_sni_and_host_allows_connected_firewall_auth_with_early_b
     assert flow.server_conn.address == ("140.82.112.5", 443)
     assert flow.metadata[metadata_keys.FIREWALL_BASE] == "https://api.github.com"
     assert flow.request.headers["Authorization"] == "Bearer x"
-    assert binding_ip_parses == [("140.82.112.5",)]
+    # Admission rechecks the actual endpoint after the credential wait.
+    assert binding_ip_parses == [("140.82.112.5",), ("140.82.112.5",)]
 
 
 async def test_matching_sni_and_host_allows_connected_firewall_auth_after_retargeting(

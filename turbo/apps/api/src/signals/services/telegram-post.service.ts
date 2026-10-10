@@ -11,6 +11,10 @@ import {
   type TelegramMessageEntity,
 } from "@okouai/db/schema/telegram-message";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
+import {
+  AUTO_SELECTED_MODEL,
+  sameSelectedModel,
+} from "@okouai/core/auto-run-model";
 import { command } from "ccstate";
 import { and, desc, eq } from "drizzle-orm";
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -1550,7 +1554,7 @@ const handleModelCommand$ = command(
       return {
         model: runModel.model,
         label: runModel.modelLabel,
-        isDefault: runModel.model === null,
+        isDefault: runModel.model === AUTO_SELECTED_MODEL,
       };
     });
     if (options.length === 0) {
@@ -1685,7 +1689,7 @@ function formatTelegramModelOptionsMessage(
 ): string {
   const optionLines = options.map((option) => {
     const markers = [
-      option.model === currentSelectedModel ? "current" : null,
+      sameSelectedModel(option.model, currentSelectedModel) ? "current" : null,
       option.isDefault ? "default" : null,
     ].filter((marker): marker is string => {
       return marker !== null;
@@ -1698,7 +1702,7 @@ function formatTelegramModelOptionsMessage(
 
   const current =
     options.find((option) => {
-      return option.model === currentSelectedModel;
+      return sameSelectedModel(option.model, currentSelectedModel);
     })?.label ?? integrationModelOptionValue(currentSelectedModel);
   return [
     "<b>Available models</b>",

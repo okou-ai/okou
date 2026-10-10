@@ -4898,24 +4898,6 @@
           "enabled_other": "Enabled for the next {{count}} runs",
           "title": "Capture network bodies"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "Active waits",
-          "channel": "channel",
-          "clear": "Clear",
-          "connection": "connection",
-          "copyJson": "Copy JSON",
-          "description": "Inspect authentication and Ably connection signals.",
-          "empty": "No diagnostic events recorded.",
-          "events": "events",
-          "log": "Event log",
-          "refresh": "Refresh",
-          "title": "Realtime connection diagnostics",
-          "unavailable": "unavailable",
-          "workerDescription": "Inspect the capture recorded by the shared worker that owns the realtime connection.",
-          "workerLoading": "Loading",
-          "workerTitle": "Shared worker connection diagnostics",
-          "workerUnavailable": "Unavailable"
-        },
         "indexedDb": {
           "countExplanation": "Counts use read-only transactions and do not read record bodies.",
           "description": "Inspect record counts in the local chat cache owned by the shared worker.",
@@ -4935,6 +4917,34 @@
           "stores": "object stores",
           "title": "IndexedDB storage",
           "unavailable": "IndexedDB storage is unavailable."
+        },
+        "morningBriefEmail": {
+          "checkStatus": "Check delivery status",
+          "description": "Send a fixed sample to your account email using the Morning Brief template. This does not run an Agent or change your schedule.",
+          "reasons": {
+            "delivery-failed": "Delivery failed. An earlier provider attempt may have been accepted.",
+            "expired": "Delivery expired. An earlier provider attempt may have been accepted.",
+            "no-email": "Skipped: your account has no email address.",
+            "suppressed": "Skipped: delivery to your account email is suppressed.",
+            "unsubscribed": "Skipped: your account is unsubscribed from email updates."
+          },
+          "requestFailed": "The request did not finish. Retry uses the same request to avoid a duplicate email.",
+          "retry": "Retry test email",
+          "send": "Send test email",
+          "sendAnother": "Send another test email",
+          "sending": "Sending…",
+          "status": {
+            "queued": "Queued for delivery. Check its status before sending another sample.",
+            "sent": "Accepted by the email provider. Check your inbox and spam folder; inbox delivery is not confirmed."
+          },
+          "title": "Morning Brief test email"
+        },
+        "openrouterPreset": {
+          "description": "Applies to new Auto and Okou 1.0 Built-in runs for the entire organization. Existing runs are unchanged.",
+          "loading": "Loading…",
+          "systemDefault": "System default",
+          "title": "OpenRouter preset",
+          "unavailable": "Unavailable"
         },
         "welcomeThread": {
           "create": "Create welcome thread",
@@ -5328,6 +5338,14 @@
     },
     "clearSearch": "Clear search",
     "custom": "Custom",
+    "delete": {
+      "cancel": "Cancel",
+      "confirm": "Delete template",
+      "deleting": "Deleting...",
+      "description": "\"{{title}}\" will be removed for everyone who can see it. This action cannot be undone.",
+      "failed": "Couldn't delete the template. Try again.",
+      "title": "Delete template?"
+    },
     "detail": {
       "back": "Custom templates",
       "page": "Page {{number}}"
@@ -6310,22 +6328,33 @@
     "connected": "Connected",
     "connectedWithDetail": "Connected ({{detail}})",
     "discord": {
-      "accountSetup": "Your account is not connected. Connecting a new Discord account is not available yet.",
-      "adminSetup": "Server setup is not available yet. Existing verified configurations can continue to use Discord.",
+      "accountSetup": "Connect your Discord account through official browser consent.",
+      "adminSetup": "Install Okou to your Discord server, then connect your account.",
+      "approvalConfirmed": "Browser consent approved. Close this tab to finish in the original Works tab.",
+      "approvalFailed": "Approval failed. Sign in with the original Okou account and organization, or restart authorization.",
+      "approvalPrompt": "Confirm with the same Okou account and organization as the original Works tab. Approval alone does not connect your account.",
+      "approve": "Confirm Discord consent",
+      "approving": "Approving…",
+      "authorizationError": "Discord authorization could not be completed. Try again from this card.",
+      "authorizing": "Authorizing…",
+      "browserConsent": "Complete Discord consent and confirm with your Okou account in that tab. Closing it alone does not connect your account.",
       "chooseDmServer": "Choose a server",
       "description": "Mention Okou in a server or send the bot a direct message.",
       "disconnect": "Disconnect Discord",
       "dmServer": "Default server for direct messages",
+      "install": "Install to Discord",
       "limitedContext": "Limited context: Okou may not receive ordinary channel messages. Mention Okou and include the details it needs.",
       "loadError": "Unable to load Discord status.",
       "loading": "Loading Discord status…",
-      "memberSetup": "Ask an organization admin about Discord access. Server setup is not available yet.",
+      "memberSetup": "Ask an organization admin to install Okou to your Discord server.",
       "moreOptions": "More Discord options",
+      "pendingConsent": "This tab has no authorization proof. Close it and restart authorization from the original Works tab.",
+      "popupBlocked": "Allow popups to authorize Discord, then try again.",
       "retry": "Retry",
       "server": "Server: {{name}}",
       "suspended": "Discord is temporarily unavailable. Existing connections are kept.",
       "title": "Discord",
-      "unconfigured": "Discord is not available yet for this organization.",
+      "unconfigured": "Discord is not configured for this organization yet.",
       "uninstall": "Remove Discord",
       "uninstallDescription": "This disconnects everyone in this organization from Discord. Other organizations keep their connections.",
       "uninstallTitle": "Remove Discord from this organization?"

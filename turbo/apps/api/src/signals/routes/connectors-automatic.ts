@@ -6,7 +6,6 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { request$, setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
-import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
   badRequestMessage,
@@ -27,7 +26,7 @@ import {
   connectorAgentAuthorizationRequested,
   validateConnectorAuthorizationTarget$,
 } from "../services/connected-connector-authorization.service";
-import { recordConnectorOAuthCompletion } from "../services/connector-oauth-completion.service";
+import { recordConnectorOAuthCompletion$ } from "../services/connector-oauth-completion.service";
 import { publishBuiltinConnectorInvalidationAfterCommit } from "../services/connector-client-invalidation.service";
 import {
   builtinConnectorAutomaticOAuthRedirectUri,
@@ -248,8 +247,8 @@ const completeBuiltinAutomatic$ = command(
         };
       }
     }
-    await recordConnectorOAuthCompletion(
-      set(writeDb$),
+    await set(
+      recordConnectorOAuthCompletion$,
       {
         attemptId: completed.oauthAttemptId,
         connectionId: completed.connectionId,

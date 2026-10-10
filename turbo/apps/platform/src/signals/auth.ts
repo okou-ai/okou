@@ -23,7 +23,6 @@ import {
   onDomEventFn,
   onRejection,
 } from "./utils.ts";
-import { writeConnectionDiagnostic$ } from "./connection-diagnostics.ts";
 import { ROUTES } from "./route-paths.ts";
 
 const reload$ = state(0);
@@ -506,7 +505,6 @@ export const setupClerk$ = command(
       const currentUserId = clerk.user?.id ?? null;
       if (currentUserId !== prevUserId) {
         prevUserId = currentUserId;
-        set(writeConnectionDiagnostic$, { action: "clear" });
         set(reload$, (x) => {
           return x + 1;
         });

@@ -57,7 +57,6 @@ import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now, withNowScopeForTest } from "../../../../lib/time";
-import { listAgentRunsFixture } from "../../../../test-fixtures/agent-runs";
 import {
   generateSandboxToken,
   signSandboxJwtForTests,
@@ -85,19 +84,12 @@ import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 
 type AuthHeaders = { readonly authorization?: string };
-interface RunsListQuery {
-  readonly status?: string;
-  readonly agent?: string;
-  readonly since?: string;
-  readonly until?: string;
-  readonly limit?: number;
-}
 type RunnerJobClaimRequestBody = z.infer<
   (typeof runnersJobClaimContract.claim)["body"]
 >;
 /** Test claims advertise every current Pi model-config generation unless a scenario narrows them. */
 function defaultClaimCapabilities(): RunnerJobClaimRequestBody["capabilities"] {
-  return { piModelConfigGenerations: [1, 2, 3, 5] };
+  return { piModelConfigGenerations: [2, 3, 5] };
 }
 type RunnerJobClaimRequest = Omit<RunnerJobClaimRequestBody, "capabilities"> & {
   readonly capabilities?: RunnerJobClaimRequestBody["capabilities"];
@@ -257,6 +249,8 @@ function runnerHeartbeatBody(
     readonly runningCount?: RunnerHeartbeatBody["runningCount"];
     readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
     readonly heldWorkspaceStates?: RunnerHeartbeatBody["heldWorkspaceStates"];
+    readonly heldHomeStates?: RunnerHeartbeatBody["heldHomeStates"];
+    readonly homeAffinityVersion?: RunnerHeartbeatBody["homeAffinityVersion"];
     readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
     readonly wssIngressServiceActive?: boolean;
     readonly mode?: RunnerHeartbeatBody["mode"];
@@ -276,6 +270,10 @@ function runnerHeartbeatBody(
     admittableProfiles: args.admittableProfiles ?? ["vm0/default"],
     heldSandboxStates: args.heldSandboxStates ?? [],
     heldWorkspaceStates: args.heldWorkspaceStates ?? [],
+    heldHomeStates: args.heldHomeStates ?? [],
+    ...(args.homeAffinityVersion === undefined
+      ? {}
+      : { homeAffinityVersion: args.homeAffinityVersion }),
     activeReuseProducers: args.activeReuseProducers ?? [],
     ...(args.wssIngressServiceActive === undefined
       ? {}
@@ -516,12 +514,19 @@ export function createRunsApi(
         readonly periodEndUnix?: number;
         readonly subscriptionMetadata?: Record<string, string>;
         readonly cancelAtUnix?: number | null;
+        readonly run?: <T>(operation: () => Promise<T>) => Promise<T>;
+        readonly onExternalStateReady?: (restoreWebhook: () => void) => void;
       } = {},
     ): Promise<{
       readonly customerId: string;
       readonly subscriptionId: string;
       readonly invoiceId: string;
     }> {
+      const run =
+        options.run ??
+        (<T>(operation: () => Promise<T>) => {
+          return operation();
+        });
       mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
       mockEnv("OKOU_PRICE_PRO", "price_bdd_pro");
       mockEnv("OKOU_PRICE_TEAM", "price_bdd_team");
@@ -592,20 +597,39 @@ export function createRunsApi(
       context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(
         invoicePaidEvent,
       );
-      await accept(
-        runApp(context)(webhookStripeContract).post({
-          body: JSON.stringify(invoicePaidEvent),
-          extraHeaders: { "stripe-signature": "t=1,v1=bdd" },
-        }),
-        [200],
-      );
+      // An operation owner may need to finish this accepted webhook after
+      // afterEach resets external mocks. Retain this exact provider event.
+      options.onExternalStateReady?.(() => {
+        context.mocks.stripe.webhooks.constructEvent.mockReset();
+        context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+          (payload) => {
+            if (String(payload) !== JSON.stringify(invoicePaidEvent)) {
+              throw new Error(
+                "Unexpected Stripe webhook while draining actor setup",
+              );
+            }
+            return invoicePaidEvent;
+          },
+        );
+      });
+      await run(() => {
+        return accept(
+          runApp(context)(webhookStripeContract).post({
+            body: JSON.stringify(invoicePaidEvent),
+            extraHeaders: { "stripe-signature": "t=1,v1=bdd" },
+          }),
+          [200],
+        );
+      });
 
-      const billingStatus = await accept(
-        runApp(context)(billingStatusContract).get({
-          headers: authenticate(context, actor),
-        }),
-        [200],
-      );
+      const billingStatus = await run(() => {
+        return accept(
+          runApp(context)(billingStatusContract).get({
+            headers: authenticate(context, actor),
+          }),
+          [200],
+        );
+      });
       if (billingStatus.body.tier !== tier) {
         throw new Error(
           `Entitlement grant did not reach ${tier} tier: ${billingStatus.body.tier}`,
@@ -625,11 +649,15 @@ export function createRunsApi(
       // then creates a default agent without granting limited-free credits or
       // replacing metadata on an existing default agent.
       const bdd = createBddApi(context);
-      const onboarding = await bdd.readOnboardingStatus(actor);
+      const onboarding = await run(() => {
+        return bdd.readOnboardingStatus(actor);
+      });
       if (!onboarding.defaultAgentId) {
         throw new Error("Expected paid onboarding to create a default agent");
       }
-      const completed = await bdd.completeOnboarding(actor);
+      const completed = await run(() => {
+        return bdd.completeOnboarding(actor);
+      });
       if (completed.status !== 200) {
         throw new Error(
           `Expected paid onboarding completion, got ${completed.status}`,
@@ -895,25 +923,6 @@ export function createRunsApi(
         iat: seconds,
         exp: seconds + 3600,
       });
-    },
-
-    async listAgentRuns(actor: ApiTestUser, query: RunsListQuery) {
-      if (!actor.orgId) {
-        throw new Error("Agent run list service requires an organization");
-      }
-      const result = await listAgentRunsFixture({
-        userId: actor.userId,
-        orgId: actor.orgId,
-        status: query.status,
-        agent: query.agent,
-        since: query.since,
-        until: query.until,
-        limit: query.limit,
-      });
-      if (result.kind === "bad-request") {
-        throw new Error(result.message);
-      }
-      return result.body;
     },
 
     async applyUserPermissionGrant(
@@ -1239,6 +1248,8 @@ export function createRunsApi(
         readonly runningCount?: RunnerHeartbeatBody["runningCount"];
         readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
         readonly heldWorkspaceStates?: RunnerHeartbeatBody["heldWorkspaceStates"];
+        readonly heldHomeStates?: RunnerHeartbeatBody["heldHomeStates"];
+        readonly homeAffinityVersion?: RunnerHeartbeatBody["homeAffinityVersion"];
         readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
         readonly wssIngressServiceActive?: boolean;
         readonly mode?: RunnerHeartbeatBody["mode"];

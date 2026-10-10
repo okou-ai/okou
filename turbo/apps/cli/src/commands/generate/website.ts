@@ -1,3 +1,4 @@
+import { artifactPreviewsEnabled } from "../../lib/api/domains/artifact-previews";
 import { Command } from "commander";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { createHtmlArtifactAuthoringInstructions } from "../shared/html-artifact-authoring";
@@ -157,6 +158,7 @@ ${formatRegistryListing(templates, "website templates")}`;
           ];
 
       const instructions = createHtmlArtifactAuthoringInstructions({
+        artifactPreviewsEnabled: await artifactPreviewsEnabled(),
         kind: "website",
         prompt,
         slugSource: options.title,

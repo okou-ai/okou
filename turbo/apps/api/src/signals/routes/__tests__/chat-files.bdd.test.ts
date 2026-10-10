@@ -320,7 +320,7 @@ describe("CHAT-01 chat thread lifecycle", () => {
       expect.objectContaining({
         kind: "model_selection_updated",
         chatThreadId: thread.id,
-        selectedModel: null,
+        selectedModel: "auto",
       }),
     );
     expect(detail).not.toHaveProperty("selectedModel");

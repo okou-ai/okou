@@ -4885,24 +4885,6 @@
           "enabled_other": "已對接下來{{count}}次執行啟用",
           "title": "抓取網路請求內容"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "活躍等待",
-          "channel": "頻道",
-          "clear": "清空",
-          "connection": "連線",
-          "copyJson": "複製JSON",
-          "description": "檢視認證和Ably連線訊號。",
-          "empty": "沒有記錄到診斷事件。",
-          "events": "事件",
-          "log": "事件日誌",
-          "refresh": "重新整理",
-          "title": "實時連線診斷",
-          "unavailable": "不可用",
-          "workerDescription": "檢視持有實時連線的共享Worker所記錄的抓取內容。",
-          "workerLoading": "載入中",
-          "workerTitle": "共享Worker連線診斷",
-          "workerUnavailable": "不可用"
-        },
         "indexedDb": {
           "countExplanation": "計數使用只讀事務，不會讀取記錄內容。",
           "description": "檢視共享Worker持有的本地聊天快取中的記錄數。",
@@ -4922,6 +4904,34 @@
           "stores": "個物件儲存",
           "title": "IndexedDB儲存",
           "unavailable": "IndexedDB儲存不可用。"
+        },
+        "morningBriefEmail": {
+          "checkStatus": "檢查投遞狀態",
+          "description": "使用 Morning Brief 範本向你的帳號信箱發送固定範例。不會執行 Agent，也不會變更早報排程。",
+          "reasons": {
+            "delivery-failed": "投遞失敗；先前的發送嘗試仍可能已被郵件服務接受。",
+            "expired": "投遞已過期；先前的發送嘗試仍可能已被郵件服務接受。",
+            "no-email": "已略過：你的帳號沒有信箱地址。",
+            "suppressed": "已略過：你的帳號信箱已列入投遞封鎖名單。",
+            "unsubscribed": "已略過：你的帳號已取消訂閱郵件更新。"
+          },
+          "requestFailed": "請求未完成。重試會重用原請求，避免重複發送。",
+          "retry": "重試測試郵件",
+          "send": "發送測試郵件",
+          "sendAnother": "再發送一封測試郵件",
+          "sending": "正在發送…",
+          "status": {
+            "queued": "已排隊。再次發送範例前，請檢查投遞狀態。",
+            "sent": "郵件服務已接受。請檢查收件匣和垃圾郵件；尚未確認實際送達。"
+          },
+          "title": "Morning Brief 測試郵件"
+        },
+        "openrouterPreset": {
+          "description": "對整個組織後續新建的 Auto 和 Okou 1.0 內建模型執行生效，不影響既有執行。",
+          "loading": "載入中…",
+          "systemDefault": "系統預設",
+          "title": "OpenRouter 預設",
+          "unavailable": "無法使用"
         },
         "welcomeThread": {
           "create": "建立歡迎會話",
@@ -5312,6 +5322,14 @@
     },
     "clearSearch": "清除搜尋",
     "custom": "自定義",
+    "delete": {
+      "cancel": "取消",
+      "confirm": "刪除範本",
+      "deleting": "正在刪除...",
+      "description": "「{{title}}」將對所有可以看到它的人移除。此操作無法復原。",
+      "failed": "無法刪除範本，請再試一次。",
+      "title": "刪除範本？"
+    },
     "detail": {
       "back": "自定義模板",
       "page": "第{{number}}頁"
@@ -6293,22 +6311,33 @@
     "connected": "已連線",
     "connectedWithDetail": "已連線（{{detail}}）",
     "discord": {
-      "accountSetup": "你的帳號尚未連線。暫時無法連接新的Discord帳號。",
-      "adminSetup": "伺服器設定功能尚未開放。現有已驗證的設定仍可繼續使用Discord。",
+      "accountSetup": "透過Discord官方瀏覽器授權連接你的帳號。",
+      "adminSetup": "將Okou安裝到你的Discord伺服器，再連接帳號。",
+      "approvalConfirmed": "已確認瀏覽器授權。請關閉此分頁，在原先的Works分頁中完成連線。",
+      "approvalFailed": "確認失敗。請使用原先的Okou帳號和組織登入，或重新發起授權。",
+      "approvalPrompt": "請使用與原先Works分頁相同的Okou帳號和組織確認。僅確認授權不會連接帳號。",
+      "approve": "確認Discord授權",
+      "approving": "正在確認…",
+      "authorizationError": "未能完成Discord授權。請在此卡片重試。",
+      "authorizing": "正在授權…",
+      "browserConsent": "完成Discord授權，並在該分頁使用Okou帳號確認。僅關閉分頁不會連接帳號。",
       "chooseDmServer": "選擇伺服器",
       "description": "在伺服器中提及Okou，或傳送私人訊息給機器人。",
       "disconnect": "中斷Discord連線",
       "dmServer": "私人訊息預設伺服器",
+      "install": "安裝到Discord",
       "limitedContext": "上下文受限：Okou可能無法接收頻道中的一般訊息。請提及Okou，並提供所需的詳細資訊。",
       "loadError": "無法載入Discord狀態。",
       "loading": "正在載入Discord狀態…",
-      "memberSetup": "請向組織管理員瞭解Discord存取權限。伺服器設定功能尚未開放。",
+      "memberSetup": "請組織管理員將Okou安裝到你的Discord伺服器。",
       "moreOptions": "更多Discord選項",
+      "pendingConsent": "此分頁已無授權憑據。請關閉它，並從原先的Works分頁重新發起授權。",
+      "popupBlocked": "請允許彈出視窗以授權Discord，然後重試。",
       "retry": "重試",
       "server": "伺服器：{{name}}",
       "suspended": "Discord暫時無法使用。現有連線會保留。",
       "title": "Discord",
-      "unconfigured": "此組織暫時無法使用Discord。",
+      "unconfigured": "此組織尚未設定Discord。",
       "uninstall": "移除Discord",
       "uninstallDescription": "這會中斷此組織所有成員與Discord的連線。其他組織的連線會保留。",
       "uninstallTitle": "從此組織移除Discord？"

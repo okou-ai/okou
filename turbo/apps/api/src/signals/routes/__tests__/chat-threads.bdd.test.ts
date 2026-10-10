@@ -1,3 +1,5 @@
+import { createPublicConnectorActor } from "./helpers/public-connector-actor";
+import { createPublicComputerUseHosts } from "./helpers/public-computer-use-hosts";
 import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import AdmZip from "adm-zip";
@@ -33,7 +35,6 @@ import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { readThreadMessagesAfterBackgroundWork } from "./helpers/chat-events-fixture";
-import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import {
   createConnectorBddApi,
   mockGoogleDriveArtifactUpload,
@@ -69,7 +70,6 @@ const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
-const cu = createComputerUseBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
 const authOrg = createAuthOrgAgentsBddApi(context);
 const routeMocks = createRouteMocks(context);
@@ -244,7 +244,7 @@ async function completeChatRunOk(
     {
       runId,
       exitCode: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `bdd-cli-${runId}`,
         cliAgentSessionHistoryHash: historyHash,
@@ -1069,22 +1069,22 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       }),
       [201],
     );
-    expect(created.body.selectedModel).toBeNull();
+    expect(created.body.selectedModel).toBe("auto");
     await expect(
       chat.readThreadMetadata(actor, created.body.id),
-    ).resolves.toMatchObject({ selectedModel: null });
+    ).resolves.toMatchObject({ selectedModel: "auto" });
     await expect(allThreadEvents(actor)).resolves.toContainEqual(
       expect.objectContaining({
         id: eventId,
         kind: "created",
         chatThreadId: created.body.id,
-        selectedModel: null,
+        selectedModel: "auto",
       }),
     );
   });
 
   it.each([null, "auto"])(
-    "stores Auto intent %s as a null thread selection for limited-free-1 workspaces",
+    "stores canonical Auto intent %s for limited-free-1 workspaces",
     async (model) => {
       const fixture = createPublicFirewallFixture(context);
       await fixture.run(async () => {
@@ -1135,48 +1135,73 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         await chat.updateThreadModelSelection(actor, thread.id, model);
         await expect(
           chat.readThreadMetadata(actor, thread.id),
-        ).resolves.toMatchObject({ selectedModel: null });
+        ).resolves.toMatchObject({ selectedModel: "auto" });
       });
     },
     90_000,
   );
 
   it("updates the Computer Use host binding on a chat thread", async () => {
-    const actor = bdd.user();
-    await api.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Computer-use thread agent",
+    const hosts = createPublicComputerUseHosts(context);
+    const owned = createPublicConnectorActor(context, {
+      beforeWorkspaceCleanup: hosts.cleanup,
     });
-    const thread = await chat.createThread(actor, {
-      agentId: agent.agentId,
-      title: "Computer Use",
+    const { actor } = owned;
+    await owned.run(() => {
+      return bdd.completeOnboarding(actor);
+    });
+    await owned.run(() => {
+      return api.ensurePersonalSubscriptionModel(actor);
+    });
+    const agent = await owned.run(() => {
+      return bdd.createAgent(actor, {
+        displayName: "Computer-use thread agent",
+      });
+    });
+    const thread = await owned.run(() => {
+      return chat.createThread(actor, {
+        agentId: agent.agentId,
+        title: "Computer Use",
+      });
     });
 
-    const host = await cu.startComputerUseHost(actor);
-    await chat.updateThreadComputerUseHost(actor, thread.id, host.hostId);
+    const host = await hosts.start(actor, owned.run);
+    await owned.run(() => {
+      return chat.updateThreadComputerUseHost(actor, thread.id, host.hostId);
+    });
 
-    const missingHost = await chat.requestUpdateThreadComputerUseHost(
-      actor,
-      thread.id,
-      randomUUID(),
-      [404],
-    );
+    const missingHost = await owned.run(() => {
+      return chat.requestUpdateThreadComputerUseHost(
+        actor,
+        thread.id,
+        randomUUID(),
+        [404],
+      );
+    });
     expectApiError(missingHost.body);
     expect(missingHost.body.error.message).toBe("Computer-use host not found");
 
     const peer = bdd.user({ orgId: actor.orgId });
-    const peerUpdate = await chat.requestUpdateThreadComputerUseHost(
-      peer,
-      thread.id,
-      host.hostId,
-      [404],
-    );
+    const peerUpdate = await owned.run(() => {
+      return chat.requestUpdateThreadComputerUseHost(
+        peer,
+        thread.id,
+        host.hostId,
+        [404],
+      );
+    });
     expectApiError(peerUpdate.body);
     expect(peerUpdate.body.error.message).toBe("Chat thread not found");
 
-    await chat.updateThreadComputerUseHost(actor, thread.id, null);
+    await owned.run(() => {
+      return chat.updateThreadComputerUseHost(actor, thread.id, null);
+    });
 
-    const hostEvents = (await allThreadEvents(actor)).filter((event) => {
+    const hostEvents = (
+      await owned.run(() => {
+        return allThreadEvents(actor);
+      })
+    ).filter((event) => {
       return (
         event.chatThreadId === thread.id &&
         event.kind === "computer_use_host_updated"
@@ -1189,12 +1214,14 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       }),
     ).toStrictEqual([host.hostId, null]);
 
-    const missingThread = await chat.requestUpdateThreadComputerUseHost(
-      actor,
-      randomUUID(),
-      null,
-      [404],
-    );
+    const missingThread = await owned.run(() => {
+      return chat.requestUpdateThreadComputerUseHost(
+        actor,
+        randomUUID(),
+        null,
+        [404],
+      );
+    });
     expectApiError(missingThread.body);
     expect(missingThread.body.error.message).toBe("Chat thread not found");
   });

@@ -4,6 +4,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { MemoryFS, PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { btree_gin } from "@electric-sql/pglite/contrib/btree_gin";
+import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
 import { Parser } from "tar";
 import { singleton } from "../lib/singleton";
@@ -47,7 +48,7 @@ export async function createPgliteSnapshot(
   seed: (database: PgliteDatabase) => Promise<void>,
 ): Promise<Blob> {
   const engine = new PGlite({
-    extensions: { pgcrypto, btree_gin },
+    extensions: { pgcrypto, btree_gin, btree_gist },
     parsers: driverParsers,
   });
   return await releaseAfter(
@@ -248,7 +249,7 @@ export async function createPgliteDatabase(
   snapshotPath: string,
 ): Promise<PgliteTestDatabase> {
   const engine = new PGlite({
-    extensions: { pgcrypto, btree_gin },
+    extensions: { pgcrypto, btree_gin, btree_gist },
     fs: new SnapshotMemoryFS(await snapshotFiles(snapshotPath)),
     parsers: driverParsers,
   });

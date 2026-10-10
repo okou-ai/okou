@@ -8,6 +8,8 @@ import {
   AUTO_RUN_MODEL,
   AUTO_RUN_PRICING_PROVIDER,
   autoRunBillingProvider,
+  autoRunPricingLongContextMinTotalInputTokens,
+  explicitModelSettings,
   isAutoSelectedModel,
   sameSelectedModel,
   isAutoRunPreset,
@@ -83,6 +85,38 @@ describe("selected and runtime Auto identities", () => {
       expect(isPiExecutionRoute({ ...route, codexServiceTier: "fast" })).toBe(
         false,
       );
+    },
+  );
+  it("copies only explicit effort preferences without mutating retained history", () => {
+    const settings = {
+      auto: { effort: "high" },
+      "okou-1.0": { effort: "max" },
+      "okou-1.0-pro": { effort: "high" },
+      "okou-1.0-max": { effort: "xhigh" },
+      "@preset/okou-1-0": { effort: "high" },
+      "claude-sonnet-5-5": { effort: "extra" },
+      "gpt-6.1-sol": { effort: "medium" },
+    };
+    expect(explicitModelSettings(settings)).toEqual({
+      "claude-sonnet-5-5": { effort: "extra" },
+      "gpt-6.1-sol": { effort: "medium" },
+    });
+    expect(settings.auto).toEqual({ effort: "high" });
+  });
+  it.each([
+    [100000, false, false],
+    [100001, true, false],
+    [272000, true, false],
+    [272001, true, true],
+  ])(
+    "classifies %i input tokens under new Haiku and retained legacy tariffs",
+    (inputTokens, canonicalLong, legacyLong) => {
+      expect(
+        inputTokens >= autoRunPricingLongContextMinTotalInputTokens("auto"),
+      ).toBe(canonicalLong);
+      expect(
+        inputTokens >= autoRunPricingLongContextMinTotalInputTokens("okou-1.0"),
+      ).toBe(legacyLong);
     },
   );
   it("bounds executable runtime identity to the captured SQL column", () => {

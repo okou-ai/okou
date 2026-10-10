@@ -1,10 +1,16 @@
 -- Content-free diagnostic for #33975 / #33748, with no locks or row repair.
--- Run with psql -X --set ON_ERROR_STOP=1 on an authorized read-only connection.
+-- Run with psql -X --set ON_ERROR_STOP=1 --file <this-file> in a fresh,
+-- disposable authorized session, with AUTOCOMMIT=on and without --single-transaction.
+-- Execute each settings statement separately before the audit SELECT. Do not
+-- send this whole file as one driver message or run it in an existing transaction.
+-- Session settings are discarded when that connection closes. Timezone,
+-- row_security and resource settings not listed here retain connection defaults.
 -- Only candidate hashes are reconciled; this is not a global ledger repair.
-BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
-SET LOCAL statement_timeout = '30s';
-SET LOCAL lock_timeout = '3s';
-SET LOCAL search_path = public, pg_catalog;
+SET default_transaction_read_only = on;
+SET default_transaction_isolation = 'repeatable read';
+SET statement_timeout = '30s';
+SET lock_timeout = '3s';
+SET search_path = public, pg_catalog;
 
   WITH candidate_owners AS MATERIALIZED (
     SELECT c.source_history_hash AS hash, b.ref_count,
@@ -89,4 +95,3 @@ SET LOCAL search_path = public, pg_catalog;
   ) AS pi_candidate_reference_audit
   FROM integrity i CROSS JOIN reconciliation r
     CROSS JOIN trigger_state t CROSS JOIN function_state f;
-ROLLBACK;

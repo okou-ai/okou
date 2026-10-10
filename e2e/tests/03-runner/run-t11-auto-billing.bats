@@ -37,7 +37,7 @@ teardown() {
     assert_success
     run jq -e '
         (.models | length == 1) and
-        .models[0].model == null and
+        .models[0].model == "auto" and
         .models[0].memberEffective.providerType == "built-in" and
         .models[0].memberEffective.credentialScope == "org" and
         .models[0].modelProviderId == null
@@ -95,18 +95,21 @@ teardown() {
     echo "$output"
     assert_success
 
+    # This fixture uses the default Auto runtime; selection and billing identity
+    # are distinct. Both public projections must retain its runtime preset.
+    local runtime_model="@preset/okou-1-0"
     run runner_e2e_wait_for_usage_event \
         "$THREAD_ID" \
         "$RUN_ID" \
-        "okou-1.0"
+        "$runtime_model"
     echo "$output"
     assert_success
 
-    run runner_e2e_wait_for_usage_record "$THREAD_ID" "okou-1.0"
+    run runner_e2e_wait_for_usage_record "$THREAD_ID" "$runtime_model"
     echo "$output"
     assert_success
     local usage_record="$output"
-    run jq -e --arg threadId "$THREAD_ID" '
+    run jq -e --arg threadId "$THREAD_ID" --arg provider "$runtime_model" '
         any(.rows[]?;
             .threadId == $threadId and
             .credits > 0 and
@@ -114,7 +117,7 @@ teardown() {
             any(.breakdown[]?;
                 .kind == "model" and
                 any(.providers[]?;
-                    .provider == "okou-1.0" and .credits > 0
+                    .provider == $provider and .credits > 0
                 )
             )
         )

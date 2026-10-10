@@ -1,3 +1,6 @@
+import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
+import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
+import { publicRunOwner } from "./helpers/public-run-owner";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import {
   createHmac,
@@ -28,7 +31,6 @@ import { teamsBotRoutes } from "../teams-bot";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
-import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
@@ -59,7 +61,6 @@ import { teamsConnectRoutes } from "../teams-connect";
 const context = testContext();
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
-const computerUseApi = createComputerUseBddApi(context);
 const runsApi = createRunsApi(context);
 const runReadsApi = createRunReadsApi(context);
 const userConfigApi = createUserConfigBddApi(context);
@@ -2731,7 +2732,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       expect.objectContaining({
         kind: "model_selection_updated",
         chatThreadId: dmThread.chatThreadId,
-        selectedModel: null,
+        selectedModel: "auto",
       }),
     );
   });
@@ -3134,14 +3135,18 @@ describe("POST /api/webhooks/teams/bot", () => {
       authOrgApi.acceptAgentStorageWrites();
       runsApi.acceptStorageDownloads();
       runsApi.acceptTelemetryIngest();
-      const defaultAgent = await authOrgApi.bootstrapLimitedFreeOnboarding(
-        actor,
-        {
-          displayName: "Teams default agent",
-        },
-      );
-      await authOrgApi.updateAgentMetadata(actor, defaultAgent.body.agentId, {
+      await authOrgApi.completeOnboarding(actor);
+      const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
+      if (!defaultAgentId) {
+        throw new Error("Expected the normal onboarding Agent");
+      }
+      await authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
         visibility: "public",
+      });
+      const ownedRuns = publicRunOwner(context, actor, {
+        afterRuns: async () => {
+          await deletePublicWorkspace(context, actor);
+        },
       });
       await runsApi.grantProEntitlement(actor);
       await runsApi.ensurePersonalSubscriptionModel(actor, {
@@ -3357,8 +3362,12 @@ describe("POST /api/webhooks/teams/bot", () => {
         },
       ]);
 
-      const dispatchRuns = await runsApi.listAgentRuns(actor, { limit: 20 });
-      const dispatchRun = dispatchRuns.runs.find((run) => {
+      const dispatchRuns = await createRunReadsApi(context).requestListLogs(
+        actor,
+        { limit: 20 },
+        [200],
+      );
+      const dispatchRun = dispatchRuns.body.data.find((run) => {
         return run.prompt.includes("ship the Teams dispatch");
       });
       if (!dispatchRun) {
@@ -3366,7 +3375,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       }
       const runId = dispatchRun.id;
       await runsApi.heartbeatRunner(runnerGroup);
-      const claim = await runsApi.claimRunnerJob(runId);
+      const claim = await ownedRuns.claim(runId);
       const appendSystemPrompt = claim.appendSystemPrompt ?? "";
       const currentUserPrompt = promptSection(
         appendSystemPrompt,
@@ -3561,78 +3570,175 @@ describe("POST /api/webhooks/teams/bot", () => {
   });
 
   it("includes Teams thread computer use host bindings in queued agent tokens", async () => {
-    const { fixture, actor, runnerGroup } = await setupConnectedTeamsBotActor();
-    const threadId = teamsFixtureExternalId(
-      fixture,
-      "teams-computer-use-thread",
-    );
+    const scenario = createPublicComputerUseScenario(context, {
+      optionalEnvironmentNames: [
+        "MICROSOFT_TEAMS_BOT_APP_ID",
+        "MICROSOFT_TEAMS_APP_TENANT_ID",
+        "MICROSOFT_TEAMS_BOT_APP_PASSWORD",
+        "SECRETS_ENCRYPTION_KEY",
+      ],
+    });
+    const computerUseApi = scenario.computerUse;
 
-    const [host, firstResponse] = await Promise.all([
-      computerUseApi.startComputerUseHost(actor, {
-        hostName: "Teams authorized host",
-      }),
-      postTeamsActivity({
-        activity: teamsPersonalThreadMessageActivity({
-          fixture,
-          id: teamsFixtureExternalId(
-            fixture,
-            "activity-computer-use-authorize",
-          ),
-          threadId,
-          text: "authorize the browser",
+    async function readTeamsBotResponseAndFlush(
+      response: Response,
+    ): Promise<unknown> {
+      expect(response.status).toBe(200);
+      const body: unknown = await scenario.run(() => {
+        return response.json();
+      });
+      await scenario.run(() => {
+        return flushWaitUntilForTest();
+      });
+      return body;
+    }
+
+    async function listActiveRuns(actor: ApiTestUser, limit: 10 | 20) {
+      const response = await scenario.run(() => {
+        return runReadsApi.requestListLogs(actor, { limit }, [200]);
+      });
+      // Keep the complete owner population before applying the active-status filter.
+      expect(response.body.pagination).toMatchObject({ hasMore: false });
+      return {
+        runs: response.body.data.filter((run) => {
+          return run.status === "pending" || run.status === "running";
         }),
-        token: teamsToken(),
-      }),
-    ]);
-    expect(firstResponse.status).toBe(200);
-    const firstBody = await readTeamsBotResponseAndFlush(firstResponse);
-    expect(firstBody).not.toHaveProperty("dispatch");
-
-    const firstRunId = await runIdForPrompt(actor, "authorize the browser");
-    await runsApi.heartbeatRunner(runnerGroup);
-    const firstClaim = await runsApi.claimRunnerJob(firstRunId);
-    const firstOkouToken = firstClaim.platformEnvironment.OKOU_TOKEN;
-    if (!firstOkouToken) {
-      throw new Error("Claimed Teams runner job did not include OKOU_TOKEN");
+      };
     }
-    const created = await computerUseApi.createComputerUseAuthorizationRequest({
-      bearer: firstOkouToken,
-    });
-    const requestToken = requestTokenFromUrl(created.authorizationUrl);
-    await computerUseApi.applyComputerUseAuthorizationRequest(
-      actor,
-      requestToken,
-      host.hostId,
-    );
-    await runsApi.requestCancelRun(actor, firstRunId, [200]);
-    await completeCancelledRun(firstRunId, firstClaim.sandboxToken);
 
-    const secondResponse = await postTeamsActivity({
-      activity: teamsPersonalThreadMessageActivity({
+    async function runIdForPrompt(
+      actor: ReturnType<typeof authOrgApi.user>,
+      prompt: string,
+    ): Promise<string> {
+      const list = await listActiveRuns(actor, 20);
+      const run = list.runs.find((item) => {
+        return item.prompt === prompt;
+      });
+      if (!run) {
+        throw new Error(`Expected Teams run for prompt: ${prompt}`);
+      }
+      return run.id;
+    }
+    return await scenario.run(async () => {
+      const fixture = teamsConnectFixture();
+      const actor = scenario.user({
+        userId: fixture.userId,
+        orgId: fixture.orgId,
+        orgRole: "org:admin",
+      });
+      scenario.beforeWorkspaceCleanup(async () => {
+        await removeTeamsForTest(context.signal, fixture);
+      });
+      const { runnerGroup } = await scenario.prepareActor(actor);
+      const onboarding = await scenario.run(() => {
+        return authOrgApi.readOnboardingStatus(actor);
+      });
+      if (!onboarding.defaultAgentId) {
+        throw new Error("Expected the normal Teams default Agent");
+      }
+      const defaultAgentId = onboarding.defaultAgentId;
+      await scenario.run(() => {
+        return authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
+          visibility: "public",
+        });
+      });
+      botFrameworkHandlers();
+      teamsOutboundHandlers(fixture.serviceUrl);
+      const installResponse = await scenario.run(() => {
+        return postTeamsActivity({
+          activity: teamsMessageActivity(fixture),
+          token: teamsToken(),
+        });
+      });
+      expect(installResponse.status).toBe(200);
+      await scenario.run(() => {
+        return installResponse.json();
+      });
+      await scenario.run(flushWaitUntilForTest);
+      await scenario.run(() => {
+        return connectTeamsFixture(fixture);
+      });
+      const threadId = teamsFixtureExternalId(
         fixture,
-        id: teamsFixtureExternalId(fixture, "activity-computer-use-resume"),
-        threadId,
-        text: "use the browser",
-      }),
-      token: teamsToken(),
+        "teams-computer-use-thread",
+      );
+
+      const [host, firstResponse] = await Promise.all([
+        computerUseApi.startComputerUseHost(actor, {
+          hostName: "Teams authorized host",
+        }),
+        scenario.run(() => {
+          return postTeamsActivity({
+            activity: teamsPersonalThreadMessageActivity({
+              fixture,
+              id: teamsFixtureExternalId(
+                fixture,
+                "activity-computer-use-authorize",
+              ),
+              threadId,
+              text: "authorize the browser",
+            }),
+            token: teamsToken(),
+          });
+        }),
+      ]);
+      expect(firstResponse.status).toBe(200);
+      const firstBody = await readTeamsBotResponseAndFlush(firstResponse);
+      expect(firstBody).not.toHaveProperty("dispatch");
+
+      const firstRunId = await runIdForPrompt(actor, "authorize the browser");
+      await scenario.run(() => {
+        return runsApi.heartbeatRunner(runnerGroup);
+      });
+      const firstClaim = await scenario.claimExisting(actor, firstRunId);
+      const firstOkouToken = firstClaim.platformEnvironment.OKOU_TOKEN;
+      if (!firstOkouToken) {
+        throw new Error("Claimed Teams runner job did not include OKOU_TOKEN");
+      }
+      const created =
+        await computerUseApi.createComputerUseAuthorizationRequest({
+          bearer: firstOkouToken,
+        });
+      const requestToken = requestTokenFromUrl(created.authorizationUrl);
+      await computerUseApi.applyComputerUseAuthorizationRequest(
+        actor,
+        requestToken,
+        host.hostId,
+      );
+      await scenario.cancelRun(actor, firstRunId);
+      await scenario.run(flushWaitUntilForTest);
+
+      const secondResponse = await scenario.run(() => {
+        return postTeamsActivity({
+          activity: teamsPersonalThreadMessageActivity({
+            fixture,
+            id: teamsFixtureExternalId(fixture, "activity-computer-use-resume"),
+            threadId,
+            text: "use the browser",
+          }),
+          token: teamsToken(),
+        });
+      });
+      expect(secondResponse.status).toBe(200);
+      const secondBody = await readTeamsBotResponseAndFlush(secondResponse);
+      expect(secondBody).not.toHaveProperty("dispatch");
+
+      const secondRunId = await runIdForPrompt(actor, "use the browser");
+      await scenario.run(() => {
+        return runsApi.heartbeatRunner(runnerGroup);
+      });
+      const secondClaim = await scenario.claimExisting(actor, secondRunId);
+      const secondOkouToken = secondClaim.platformEnvironment.OKOU_TOKEN;
+      if (!secondOkouToken) {
+        throw new Error("Claimed Teams runner job did not include OKOU_TOKEN");
+      }
+      const okouAuth = verifyOkouToken(secondOkouToken);
+      expect(okouAuth).toMatchObject({ computerUseHostId: host.hostId });
+      expect(okouAuth?.capabilities).toContain("computer-use:write");
+
+      await scenario.cancelRun(actor, secondRunId);
+      await computerUseApi.stopComputerUseHost(host.hostToken);
     });
-    expect(secondResponse.status).toBe(200);
-    const secondBody = await readTeamsBotResponseAndFlush(secondResponse);
-    expect(secondBody).not.toHaveProperty("dispatch");
-
-    const secondRunId = await runIdForPrompt(actor, "use the browser");
-    await runsApi.heartbeatRunner(runnerGroup);
-    const secondClaim = await runsApi.claimRunnerJob(secondRunId);
-    const secondOkouToken = secondClaim.platformEnvironment.OKOU_TOKEN;
-    if (!secondOkouToken) {
-      throw new Error("Claimed Teams runner job did not include OKOU_TOKEN");
-    }
-    const okouAuth = verifyOkouToken(secondOkouToken);
-    expect(okouAuth).toMatchObject({ computerUseHostId: host.hostId });
-    expect(okouAuth?.capabilities).toContain("computer-use:write");
-
-    await runsApi.requestCancelRun(actor, secondRunId, [200]);
-    await computerUseApi.stopComputerUseHost(host.hostToken);
   });
 
   it("asks connected Teams users to configure a default agent", async () => {

@@ -13,8 +13,8 @@ import { projectUserMessage } from "./chat-user-message.service";
 import {
   selectedUserPresentationTemplateIds,
   userPresentationTemplateVolumes,
-  type PresentationTemplateVolume,
 } from "./presentation-template-data.service";
+import type { RunPromptAndSkills } from "./run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 import {
   selectedUserTemplateIds,
@@ -22,10 +22,7 @@ import {
 } from "./user-template-data.service";
 
 export type RunTemplatesResult =
-  | {
-      readonly generationTemplatePrompt: string;
-      readonly presentationTemplateVolumes: readonly PresentationTemplateVolume[];
-    }
+  | RunPromptAndSkills
   | {
       readonly error: {
         readonly code: string;
@@ -123,27 +120,35 @@ export function createRunTemplates(
     });
   });
   return computed(async (get): Promise<RunTemplatesResult> => {
-    const [selection, presentations, mounted] = await Promise.all([
+    const [selection, presentations, mounted, features] = await Promise.all([
       get(selection$),
       get(presentations$),
       get(mounted$),
+      get(features$),
     ]);
     const guidance = buildGenerationTemplatesPrompt(
       selection?.templates ?? [],
       {
         mountedUserPresentationTemplateIds: presentations,
         mountedUserTemplates: mounted,
+        artifactPreviewsEnabled: isFeatureEnabled(
+          FeatureSwitchKey.ArtifactPreviews,
+          features,
+        ),
       },
     );
     if (guidance.status === "invalid") {
       return { error: { code: "BAD_REQUEST", message: guidance.message } };
     }
     return {
-      generationTemplatePrompt: guidance.prompt,
-      presentationTemplateVolumes: [
+      systemPromptVariables: { generationTemplatePrompt: guidance.prompt },
+      userPromptVariables: {},
+      skillVolumes: [
         ...userPresentationTemplateVolumes(presentations),
         ...userTemplateVolumes(mounted),
-      ],
+      ].map((volume) => {
+        return { ...volume, source: "request_additional_volume" as const };
+      }),
     };
   });
 }

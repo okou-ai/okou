@@ -9,7 +9,7 @@ import { command } from "ccstate";
 
 import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
@@ -239,8 +239,7 @@ type AutonomyBudgetFixtureAction = Extract<
     action:
       | "read-run-autonomy-budget"
       | "set-workflow-automation-autonomy-budget"
-      | "read-workflow-automation-autonomy-state"
-      | "read-latest-workflow-automation-run";
+      | "read-workflow-automation-autonomy-state";
   }
 >;
 
@@ -251,7 +250,6 @@ function isAutonomyBudgetFixtureAction(
     "read-run-autonomy-budget",
     "set-workflow-automation-autonomy-budget",
     "read-workflow-automation-autonomy-state",
-    "read-latest-workflow-automation-run",
   ].includes(body.action);
 }
 
@@ -321,66 +319,6 @@ async function autonomyBudgetFixtureActionResponse(
         },
       };
     }
-    case "read-latest-workflow-automation-run": {
-      const [run] = await db
-        .select({
-          runId: agentRuns.id,
-          autonomyBudget: agentRuns.autonomyBudget,
-        })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.workflowAutomationId, body.automation_id),
-            isNotNull(agentRuns.triggerSource),
-          ),
-        )
-        .orderBy(desc(agentRuns.createdAt))
-        .limit(1);
-      signal.throwIfAborted();
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          workflow_automation_run: run
-            ? {
-                run_id: run.runId,
-                autonomy_budget: run.autonomyBudget,
-              }
-            : null,
-        },
-      };
-    }
-  }
-}
-
-type SetRunnerJobPiContextAsVersionedWriterAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "set-runner-job-pi-context-as-versioned-writer" }
->;
-
-async function setRunnerJobPiContextAsVersionedWriter(
-  db: Db,
-  body: SetRunnerJobPiContextAsVersionedWriterAction,
-  signal: AbortSignal,
-): Promise<void> {
-  // This private infrastructure fixture models stored contexts to exercise
-  // the real claim API without changing production admission.
-  const piContext = {
-    cliAgentType: "pi",
-    piSessionId: body.run_id,
-    piLaunchConfig: { schemaVersion: 2 },
-    piModelConfig: body.pi_model_config,
-  };
-  const [updated] = await db
-    .update(runnerJobQueue)
-    .set({
-      executionContext: sql`${runnerJobQueue.executionContext} || ${JSON.stringify(piContext)}::jsonb`,
-    })
-    .where(eq(runnerJobQueue.runId, body.run_id))
-    .returning({ runId: runnerJobQueue.runId });
-  signal.throwIfAborted();
-  if (!updated) {
-    throw new Error("Expected a queued runner job for Pi context update");
   }
 }
 
@@ -485,7 +423,6 @@ function isCompatibilityFixtureAction(
     "read-run-autonomy-budget",
     "set-workflow-automation-autonomy-budget",
     "read-workflow-automation-autonomy-state",
-    "read-latest-workflow-automation-run",
     "set-runner-job-context-profile-as-previous-api",
     "clear-workflow-automation-event-connector-as-previous-api",
   ].includes(body.action);
@@ -640,12 +577,7 @@ const postRuntimeStateAction$ = command(
     if (specializedFixture) {
       return specializedFixture;
     }
-    switch (body.action) {
-      case "set-runner-job-pi-context-as-versioned-writer": {
-        await setRunnerJobPiContextAsVersionedWriter(db, body, signal);
-        return { status: 200 as const, body: { ok: true as const } };
-      }
-    }
+    throw new Error("Unsupported runtime fixture action");
   },
 );
 

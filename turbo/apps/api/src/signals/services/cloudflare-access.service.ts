@@ -16,7 +16,7 @@ import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { and, asc, count, eq, lt, ne, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { settle } from "../utils";
 import { encryptStoredSecretValue } from "./crypto.utils";
@@ -192,7 +192,7 @@ interface CreateCloudflareAccessConfigArgs {
   readonly featureContext: FeatureSwitchContext;
 }
 export const createCloudflareAccessConfig$ = command(
-  async ({ set }, args: CreateCloudflareAccessConfigArgs) => {
+  async ({ get, set }, args: CreateCloudflareAccessConfigArgs) => {
     const db = set(writeDb$);
 
     const scope = args.body.scope ?? "personal";
@@ -207,56 +207,51 @@ export const createCloudflareAccessConfig$ = command(
       orgId: args.owner.orgId,
       userId: scope === "organization" ? null : args.owner.userId,
     };
-    const transaction = await settle(
-      db.transaction(async (tx) => {
-        const [existing] = await tx
-          .select({
-            orgId: cloudflareAccessConfigs.orgId,
-            userId: cloudflareAccessConfigs.userId,
-          })
-          .from(cloudflareAccessConfigs)
-          .where(eq(cloudflareAccessConfigs.id, args.id));
-        const creation = sshCreationResult(owner, existing);
-        if (!creation.ok) {
-          return cloudflareAccessFailure("resourceIdConflict");
-        }
-        if (!creation.value) {
-          return { ok: true as const, value: undefined };
-        }
-        const [created] = await tx
-          .insert(cloudflareAccessConfigs)
-          .values({ id: args.id, ...owner, scope, ...prepared })
-          .returning(metadata);
-        if (!created) {
-          throw new Error("Cloudflare Access insert returned no row");
-        }
-        return { ok: true as const, value: response(created, []) };
-      }),
+    const [existing] = await get(db$)
+      .select({
+        orgId: cloudflareAccessConfigs.orgId,
+        userId: cloudflareAccessConfigs.userId,
+      })
+      .from(cloudflareAccessConfigs)
+      .where(eq(cloudflareAccessConfigs.id, args.id));
+    const creation = sshCreationResult(owner, existing);
+    if (!creation.ok) {
+      return cloudflareAccessFailure("resourceIdConflict");
+    }
+    if (!creation.value) {
+      return { ok: true as const, value: undefined };
+    }
+    // The primary key, not the unlocked preflight, arbitrates concurrent creates.
+    const inserted = await settle(
+      db
+        .insert(cloudflareAccessConfigs)
+        .values({ id: args.id, ...owner, scope, ...prepared })
+        .returning(metadata),
     );
-    if (!transaction.ok) {
+    if (!inserted.ok) {
       if (
-        !isUniqueViolation(transaction.error, "cloudflare_access_configs_pkey")
+        !isUniqueViolation(inserted.error, "cloudflare_access_configs_pkey")
       ) {
-        throw transaction.error;
+        throw inserted.error;
       }
-      const [existing] = await db
+      const [existing] = await get(db$)
         .select({
           orgId: cloudflareAccessConfigs.orgId,
           userId: cloudflareAccessConfigs.userId,
         })
         .from(cloudflareAccessConfigs)
         .where(eq(cloudflareAccessConfigs.id, args.id));
-      return existing &&
-        existing.orgId === owner.orgId &&
-        existing.userId === owner.userId
+      const creation = sshCreationResult(owner, existing);
+      return creation.ok && existing
         ? { ok: true as const, value: undefined }
         : cloudflareAccessFailure("resourceIdConflict");
     }
-    const config = transaction.value;
-    if (config.ok && config.value) {
-      await publishCloudflareAccessClientInvalidation(args.owner, scope);
+    const [created] = inserted.value;
+    if (!created) {
+      throw new Error("Cloudflare Access insert returned no row");
     }
-    return config;
+    await publishCloudflareAccessClientInvalidation(args.owner, scope);
+    return { ok: true as const, value: response(created, []) };
   },
 );
 function referencingHosts(owner: Owner, configId: string) {
@@ -472,6 +467,7 @@ export const updateCloudflareAccessConfig$ = command(
     );
     // Credentials and all bound-host generations must commit together. The
     // reference count needs a fresh statement snapshot after the config fence.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0104; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const hosts = await tx
         .select()
@@ -575,6 +571,7 @@ export const deleteCloudflareAccessConfig$ = command(
 
     // Protected detachment and config deletion must commit together under the
     // restrictive FK, with a fresh reference count after the config fence.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0105; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const hosts = await tx
         .select()
@@ -629,7 +626,8 @@ export const deleteCloudflareAccessConfig$ = command(
           .update(sshConnections)
           .set({
             cloudflareAccessId: null,
-            needsRebind: true,
+            transport: "cloudflare_access",
+            legacyNeedsRebind: true,
             generation: sql`${sshConnections.generation} + 1`,
             updatedAt: nowDate(),
           })
@@ -744,6 +742,7 @@ export const convertCloudflareAccessToOrganization$ = command(
     }
     // Scope/owner and bound-host generations must commit together. Validate
     // the complete reference set in a fresh snapshot after the config fence.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0106; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const hosts = await tx
         .select()
@@ -911,6 +910,7 @@ export const convertCloudflareAccessToPersonal$ = command(
     }
     // Other-owner detachment, own-host generations and adoption must commit
     // together, using a fresh post-fence count for the reviewed impact.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0107; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const hosts = await tx
         .select()
@@ -954,7 +954,8 @@ export const convertCloudflareAccessToPersonal$ = command(
           .update(sshConnections)
           .set({
             cloudflareAccessId: null,
-            needsRebind: true,
+            transport: "cloudflare_access",
+            legacyNeedsRebind: true,
             generation: sql`${sshConnections.generation} + 1`,
             updatedAt: nowDate(),
           })

@@ -12,7 +12,6 @@ import * as agentSchema from "./schema/agent";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
 import * as conversationSchema from "./schema/conversation";
-import * as checkpointSchema from "./schema/checkpoint";
 import * as agentSessionSchema from "./schema/agent-session";
 import * as storageSchema from "./schema/storage";
 import * as storagePublicationFenceSchema from "./schema/storage-publication-fence";
@@ -71,6 +70,8 @@ import * as slackOrgInstallationSchema from "./schema/slack-org-installation";
 import * as slackOrgConnectionSchema from "./schema/slack-org-connection";
 import * as slackChatThreadRouteSchema from "./schema/slack-chat-thread-route";
 import * as slackChatIngressSchema from "./schema/slack-chat-ingress";
+import * as discordOrgGrantSchema from "./schema/discord-org-grant";
+import * as discordOauthStateSchema from "./schema/discord-oauth-state";
 import * as discordOrgInstallationSchema from "./schema/discord-org-installation";
 import * as discordOrgConnectionSchema from "./schema/discord-org-connection";
 import * as discordChatThreadRouteSchema from "./schema/discord-chat-thread-route";
@@ -110,7 +111,7 @@ import * as computerUseHostSchema from "./schema/computer-use-host";
 import * as userFeatureSwitchesSchema from "./schema/user-feature-switches";
 import * as userDisabledPaidToolsSchema from "./schema/user-disabled-paid-tools";
 import * as userBehaviorCountSchema from "./schema/user-behavior-count";
-import * as chatThreadSchema from "./schema/chat-thread";
+import * as chatThreadSchema from "./runtime/chat-thread";
 import * as chatEventSequenceSchema from "./schema/chat-event-sequence";
 import * as chatEventSchema from "./schema/chat-event";
 import * as chatEventSearchSchema from "./schema/chat-event-search";
@@ -158,6 +159,7 @@ import * as sshCredentialSchema from "./schema/ssh-credential";
 import * as vncCredentialSchema from "./schema/vnc-credential";
 import * as vncConnectionSchema from "./schema/vnc-connection";
 import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
+import * as tailscaleConfigSchema from "./schema/tailscale-config";
 
 export const schema = {
   ...mailNotificationSchema,
@@ -173,7 +175,6 @@ export const schema = {
   ...agentRunSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,
   ...conversationSchema,
-  ...checkpointSchema,
   ...agentSessionSchema,
   ...storageSchema,
   ...storagePublicationFenceSchema,
@@ -203,6 +204,8 @@ export const schema = {
   ...slackOrgConnectionSchema,
   ...slackChatThreadRouteSchema,
   ...slackChatIngressSchema,
+  ...discordOrgGrantSchema,
+  ...discordOauthStateSchema,
   ...discordOrgInstallationSchema,
   ...discordOrgConnectionSchema,
   ...discordChatThreadRouteSchema,
@@ -320,6 +323,7 @@ export const schema = {
   ...vncCredentialSchema,
   ...vncConnectionSchema,
   ...cloudflareAccessConfigSchema,
+  ...tailscaleConfigSchema,
 };
 
 export type DatabaseSchema = typeof schema;

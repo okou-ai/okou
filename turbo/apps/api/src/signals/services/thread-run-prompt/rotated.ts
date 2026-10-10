@@ -21,7 +21,7 @@ import {
   isBuiltInModelProviderType,
   modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
+import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
 import { isPiExecutionRoute, piCatalogModel } from "@okouai/core/pi-execution";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -55,6 +55,7 @@ import {
   canReuseSession,
   type SessionExecutionIdentity,
 } from "../session-compatibility";
+import type { RunPromptAndSkills } from "../run-prompt-and-skills";
 import { createIncompletePrompt } from "./incomplete";
 import type { PickedThreadInputEvent } from "./types";
 
@@ -93,10 +94,9 @@ function currentSessionIdentity(
   ) {
     return null;
   }
-  const codexServiceTier =
-    pin.selectedModel === AUTO_RUN_MODEL
-      ? undefined
-      : (selection.codexServiceTier ?? undefined);
+  const codexServiceTier = isAutoSelectedModel(pin.selectedModel)
+    ? undefined
+    : (selection.codexServiceTier ?? undefined);
   const cliAgentType = isPiExecutionRoute({
     catalogModel: piCatalogModel(catalog, pin.selectedModel),
     modelProviderType: providerType.data,
@@ -262,7 +262,7 @@ export function createRotatedPrompt(
   session$: Computed<Promise<SessionExecutionIdentity | null>>,
   memberRoutes$: Computed<Promise<MemberModelRouteContext>>,
   claimCatalog$: Computed<Promise<ModelCatalog>>,
-): Computed<Promise<string>> {
+): Computed<Promise<RunPromptAndSkills>> {
   const prior$ = createPriorRunsPrompt(
     pickedEvent$,
     session$,
@@ -275,6 +275,10 @@ export function createRotatedPrompt(
       get(prior$),
       get(incomplete$),
     ]);
-    return prior || incomplete;
+    return {
+      systemPromptVariables: { continuationContext: prior || incomplete },
+      userPromptVariables: {},
+      skillVolumes: [],
+    };
   });
 }

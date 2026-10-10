@@ -195,7 +195,7 @@ describe("CHAT-02: model-first routing", () => {
     const adHocNoteFilename = "2026-09-05T16-15-00-sandbox-checkpoint.md";
     const adHocNote =
       "# Sandbox checkpoint\n\nPersist this staged sandbox note.\n";
-    const checkpointObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiCheckpointObjectStore();
     const prompt = "use the Okou CLI in the Sandbox";
     const run = await sendChatRunAfterPick(actor, {
       agentId,
@@ -208,7 +208,7 @@ describe("CHAT-02: model-first routing", () => {
     // The first turn has no stored history, so the Sandbox starts fresh.
     expect(claimed.claim.resumeSession).toBeNull();
     const h2Session = MemoryPiSession.fromJsonl(
-      piSandboxBaseSession(claimed.claim, checkpointObjects).toString("utf8"),
+      piSandboxBaseSession(claimed.claim, historyObjects).toString("utf8"),
     );
     expect(claimed.claim.piModelConfig).toMatchObject({
       provider: "openai-codex",
@@ -407,7 +407,7 @@ describe("CHAT-02: model-first routing", () => {
     expect(boundedNative.isSettledCheckpoint()).toBeTruthy();
     expect(boundedNative.getSessionId()).toBe(run.threadId);
     const h2Hash = createHash("sha256").update(h2).digest("hex");
-    const preparedH2 = await webhooks.requestAgentCheckpointPrepareHistory(
+    const preparedH2 = await webhooks.requestAgentSessionHistoryPrepare(
       {
         runId: run.runId,
         hash: h2Hash,
@@ -422,7 +422,7 @@ describe("CHAT-02: model-first routing", () => {
       existing: false,
       encoding: "identity",
     });
-    checkpointObjects.set(
+    historyObjects.set(
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h2Hash}.blob`,
       Buffer.from(h2, "utf8"),
     );
@@ -457,7 +457,7 @@ describe("CHAT-02: model-first routing", () => {
       {
         runId: run.runId,
         exitCode: 0,
-        checkpoint: {
+        completion: {
           cliAgentType: "pi",
           cliAgentSessionId: run.threadId,
           cliAgentSessionHistoryHash: h2Hash,
@@ -535,7 +535,7 @@ describe("CHAT-02: model-first routing", () => {
     const replacementH2Hash = createHash("sha256")
       .update(replacementH2)
       .digest("hex");
-    await webhooks.requestAgentCheckpointPrepareHistory(
+    await webhooks.requestAgentSessionHistoryPrepare(
       {
         runId: run.runId,
         hash: replacementH2Hash,
@@ -546,7 +546,7 @@ describe("CHAT-02: model-first routing", () => {
       claimed.sandboxHeaders,
       [200],
     );
-    checkpointObjects.set(
+    historyObjects.set(
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${replacementH2Hash}.blob`,
       Buffer.from(replacementH2, "utf8"),
     );
@@ -572,7 +572,7 @@ describe("CHAT-02: model-first routing", () => {
     const failedClaim = await claimChatRun(runnerGroup, failedRun.runId);
     const invalidH2 = Buffer.from(`${h2}{malformed\n`, "utf8");
     const invalidH2Hash = createHash("sha256").update(invalidH2).digest("hex");
-    await webhooks.requestAgentCheckpointPrepareHistory(
+    await webhooks.requestAgentSessionHistoryPrepare(
       {
         runId: failedRun.runId,
         hash: invalidH2Hash,
@@ -583,7 +583,7 @@ describe("CHAT-02: model-first routing", () => {
       failedClaim.sandboxHeaders,
       [200],
     );
-    checkpointObjects.set(
+    historyObjects.set(
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${invalidH2Hash}.blob`,
       invalidH2,
     );
@@ -592,7 +592,7 @@ describe("CHAT-02: model-first routing", () => {
         runId: failedRun.runId,
         exitCode: 1,
         error: "reject invalid native checkpoint",
-        checkpoint: {
+        completion: {
           cliAgentType: "pi",
           cliAgentSessionId: run.threadId,
           cliAgentSessionHistoryHash: invalidH2Hash,
@@ -619,7 +619,7 @@ describe("CHAT-02: model-first routing", () => {
       {
         runId: failedRun.runId,
         exitCode: 1,
-        checkpoint: {
+        completion: {
           cliAgentType: "pi",
           cliAgentSessionId: run.threadId,
           cliAgentSessionHistoryHash: h2Hash,
@@ -658,7 +658,7 @@ describe("CHAT-02: model-first routing", () => {
       {
         runId: cancelledRun.runId,
         exitCode: 1,
-        checkpoint: {
+        completion: {
           cliAgentType: "pi",
           cliAgentSessionId: run.threadId,
           cliAgentSessionHistoryHash: h2Hash,
@@ -722,7 +722,7 @@ describe("CHAT-02: model-first routing", () => {
       runId: reportedFailureRun.runId,
       exitCode: 1,
       error: "guest reported Pi failure",
-      checkpoint: {
+      completion: {
         cliAgentType: "pi",
         cliAgentSessionId: run.threadId,
         cliAgentSessionHistoryHash: h2Hash,
@@ -749,7 +749,7 @@ describe("CHAT-02: model-first routing", () => {
       {
         runId: run.runId,
         exitCode: 0,
-        checkpoint: {
+        completion: {
           cliAgentType: "pi",
           cliAgentSessionId: run.threadId,
           cliAgentSessionHistoryHash: h2Hash,
@@ -804,7 +804,7 @@ describe("CHAT-02: model-first routing", () => {
       await createPiUsagePricingResolution("okou-1.0");
     const model = await configureBuiltInPiModelOnOpenRouter(actor, "okou-1.0");
     mockPiResourceArchiveDownloads();
-    const checkpointObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiCheckpointObjectStore();
     const prompt = "retain the built-in model usage receipt";
     const run = await sendChatRunAfterPick(
       actor,
@@ -844,7 +844,7 @@ describe("CHAT-02: model-first routing", () => {
     ).toStrictEqual([{ success: true }, { success: true }]);
 
     const session = MemoryPiSession.fromJsonl(
-      piSandboxBaseSession(claimed.claim, checkpointObjects).toString("utf8"),
+      piSandboxBaseSession(claimed.claim, historyObjects).toString("utf8"),
     );
     session.appendMessage({ role: "user", content: prompt, timestamp: 1 });
     session.appendMessage({
@@ -866,7 +866,7 @@ describe("CHAT-02: model-first routing", () => {
     });
     const h2 = Buffer.from(session.toJsonl(), "utf8");
     const hash = createHash("sha256").update(h2).digest("hex");
-    await webhooks.requestAgentCheckpointPrepareHistory(
+    await webhooks.requestAgentSessionHistoryPrepare(
       {
         runId: run.runId,
         hash,
@@ -877,7 +877,7 @@ describe("CHAT-02: model-first routing", () => {
       claimed.sandboxHeaders,
       [200],
     );
-    checkpointObjects.set(
+    historyObjects.set(
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${hash}.blob`,
       h2,
     );
@@ -906,7 +906,7 @@ describe("CHAT-02: model-first routing", () => {
       runId: run.runId,
       exitCode: 0,
       lastEventSequence: 2,
-      checkpoint: {
+      completion: {
         cliAgentType: "pi",
         cliAgentSessionId: run.threadId,
         cliAgentSessionHistoryHash: hash,

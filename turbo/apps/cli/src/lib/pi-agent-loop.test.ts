@@ -396,8 +396,16 @@ function piEnv(runIdEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
       provider: "openrouter",
       baseUrl: "https://openrouter.ai/api/v1",
       model: "deepseek/deepseek-v4.1-flash",
-      apiKeyEnv: "OPENAI_API_KEY",
-      credentialSecretName: "OPENROUTER_API_KEY",
+      schemaVersion: 2,
+      dialect: "openai-responses",
+      transport: "sse",
+      credentialBindings: [
+        {
+          kind: "api-key",
+          environment: "OPENAI_API_KEY",
+          secretName: "OPENROUTER_API_KEY",
+        },
+      ],
     }),
     OKOU_PI_PREPARATION_TIMING: "1",
     OPENAI_API_KEY: "test-api-key",
@@ -478,8 +486,16 @@ async function startSandboxHost(args: {
                 }
               : {}),
             ...(args.serviceTier ? { serviceTier: args.serviceTier } : {}),
-            apiKeyEnv: "OPENAI_API_KEY",
-            credentialSecretName: "OPENROUTER_API_KEY",
+            schemaVersion: 2,
+            dialect: "openai-responses",
+            transport: "sse",
+            credentialBindings: [
+              {
+                kind: "api-key",
+                environment: "OPENAI_API_KEY",
+                secretName: "OPENROUTER_API_KEY",
+              },
+            ],
           },
     ),
     ...(args.reportPreparationTiming
@@ -965,7 +981,7 @@ describe("sandbox Pi agent loop", () => {
     });
   });
 
-  it("preserves canonical Gen1 request policy at launch", async () => {
+  it("preserves versioned Responses request policy at launch", async () => {
     const env = piEnv({ OKOU_RUN_ID: RUN_ID });
     env.OKOU_PI_MODEL_CONFIG = JSON.stringify({
       provider: "openrouter",
@@ -973,8 +989,16 @@ describe("sandbox Pi agent loop", () => {
       model: "openai/gpt-6-luna",
       thinkingLevel: "low",
       serviceTier: "priority",
-      apiKeyEnv: "OPENAI_API_KEY",
-      credentialSecretName: "OPENROUTER_API_KEY",
+      schemaVersion: 2,
+      dialect: "openai-responses",
+      transport: "sse",
+      credentialBindings: [
+        {
+          kind: "api-key",
+          environment: "OPENAI_API_KEY",
+          secretName: "OPENROUTER_API_KEY",
+        },
+      ],
     });
 
     const resolved = await piSandboxAgentConfigFromEnv(env);
@@ -1032,8 +1056,16 @@ describe("sandbox Pi agent loop", () => {
       provider: "openrouter",
       baseUrl: "https://openrouter.ai/api/v1",
       model: "openai/gpt-6-luna",
-      apiKeyEnv: "OPENAI_API_KEY",
-      credentialSecretName: "OPENROUTER_API_KEY",
+      schemaVersion: 2,
+      dialect: "openai-responses",
+      transport: "sse",
+      credentialBindings: [
+        {
+          kind: "api-key",
+          environment: "OPENAI_API_KEY",
+          secretName: "OPENROUTER_API_KEY",
+        },
+      ],
     });
     const resolved = await piSandboxAgentConfigFromEnv(responses);
     expect(resolved.model).not.toHaveProperty("sessionAffinityKey");
@@ -1176,8 +1208,16 @@ describe("sandbox Pi agent loop", () => {
         baseUrl: "https://openrouter.ai/api/v1",
         model: "openai/gpt-6-luna",
         api,
-        apiKeyEnv: "OPENAI_API_KEY",
-        credentialSecretName: "OPENROUTER_API_KEY",
+        schemaVersion: 2,
+        dialect: "openai-responses",
+        transport: "sse",
+        credentialBindings: [
+          {
+            kind: "api-key",
+            environment: "OPENAI_API_KEY",
+            secretName: "OPENROUTER_API_KEY",
+          },
+        ],
       });
       await expect(piSandboxAgentConfigFromEnv(env)).rejects.toMatchObject({
         issues: [

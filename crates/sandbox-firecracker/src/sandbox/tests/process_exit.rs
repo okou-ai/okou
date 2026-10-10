@@ -25,8 +25,11 @@ async fn sandbox_drop_hands_off_confirmed_process_exit() {
         sandbox.runtime_cancel.clone(),
     );
     sandbox.runtime.set_process(monitor);
+    let retained = sandbox.backing_process().unwrap();
+    let identity = retained.identity();
+    assert_eq!(sandbox.backing_process().unwrap().identity(), identity);
     {
-        let confirmation = sandbox.process_exit_confirmed();
+        let confirmation = retained.exit_confirmed();
         tokio::pin!(confirmation);
         assert!(futures_util::poll!(&mut confirmation).is_pending());
     }
@@ -39,6 +42,8 @@ async fn sandbox_drop_hands_off_confirmed_process_exit() {
             .await
             .unwrap()
     );
+    assert!(retained.exit_confirmed().await);
+    assert_eq!(retained.identity(), identity);
     assert!(!pid_is_running(pid));
 }
 
@@ -61,14 +66,18 @@ async fn process_exit_confirms_nonzero_child_status() {
         sandbox.runtime_cancel.clone(),
     );
     sandbox.runtime.set_process(monitor);
+    let retained = sandbox.backing_process().unwrap();
+    let identity = retained.identity();
 
     assert!(
-        tokio::time::timeout(Duration::from_secs(5), sandbox.process_exit_confirmed())
+        tokio::time::timeout(Duration::from_secs(5), retained.exit_confirmed())
             .await
             .unwrap()
     );
     sandbox.runtime.kill_process().await;
     assert!(sandbox.process_exit_confirmed().await);
+    assert!(retained.exit_confirmed().await);
+    assert_eq!(sandbox.backing_process().unwrap().identity(), identity);
 }
 
 #[tokio::test]
@@ -90,6 +99,8 @@ async fn cancelled_kill_keeps_exit_completion_for_sandbox_drop() {
         exit,
     };
     sandbox.runtime.set_process(monitor);
+    let retained = sandbox.backing_process().unwrap();
+    let identity = retained.identity();
 
     {
         let kill = sandbox.kill();
@@ -108,6 +119,8 @@ async fn cancelled_kill_keeps_exit_completion_for_sandbox_drop() {
     }
     exit_tx.send(true).unwrap();
     assert!(exit.confirmed().await);
+    assert!(retained.exit_confirmed().await);
+    assert_eq!(retained.identity(), identity);
     finish_tx.send(()).unwrap();
     finished_rx.await.unwrap();
 }
@@ -153,8 +166,10 @@ async fn normal_destroy_preserves_resources_after_unconfirmed_process_exit() {
         exit,
     });
 
+    let retained = sandbox.backing_process().unwrap();
     crate::factory::destroy_firecracker_sandbox(sandbox, pool.clone()).await;
 
+    assert!(!retained.exit_confirmed().await);
     assert!(pool.acquire().await.is_err());
     assert!(tmp.path().join("sock").exists());
     assert!(tmp.path().join("workspace").exists());

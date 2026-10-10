@@ -211,7 +211,7 @@ describe("default Agent bootstrap", () => {
     const policies = await accept(api.models.list({ headers }), [200]);
     expect(policies.body.models).toStrictEqual([
       expect.objectContaining({
-        model: null,
+        model: "auto",
         memberEffective: expect.objectContaining({
           providerType: "built-in",
           credentialScope: "org",

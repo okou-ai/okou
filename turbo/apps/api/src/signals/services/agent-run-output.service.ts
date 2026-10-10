@@ -11,7 +11,7 @@ import {
 import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
 import {
   runCompletionMetadataSchema,
-  webhookCheckpointsPrepareHistoryContract,
+  webhookSessionHistoryPrepareContract,
 } from "@okouai/api-contracts/contracts/webhooks";
 import {
   inspectPiSessionJsonl,
@@ -58,7 +58,7 @@ export type AgentRunOutputBody = z.infer<typeof runCompletionMetadataSchema> & {
   readonly runId: string;
 };
 type PrepareHistoryBody = z.infer<
-  typeof webhookCheckpointsPrepareHistoryContract.prepare.body
+  typeof webhookSessionHistoryPrepareContract.prepare.body
 >;
 
 export interface AgentRunOutputInput {
@@ -536,6 +536,7 @@ export const prepareSessionHistoryUpload$ = command(
       );
     }
 
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0048; new non-billing transactions are prohibited.
     const admission = await db.transaction(async (tx) => {
       const [run] = await tx
         .select({ status: agentRuns.status })

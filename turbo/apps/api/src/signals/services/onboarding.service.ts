@@ -1,4 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
+import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { initializeMemberMemory$ } from "./member-memory-initialization.service";
 import type {
   OnboardingIndustry,
@@ -11,7 +12,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { and, eq, isNull, ne, or } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import type { AuthContext } from "../../types/auth";
 import { logger } from "../../lib/log";
@@ -60,6 +61,7 @@ const markMemberOnboardingComplete$ = command(
       .values({
         orgId,
         userId,
+        selectedModel: AUTO_SELECTED_MODEL,
         onboardingCompletedAt: completedAt,
         createdAt: completedAt,
         updatedAt: completedAt,
@@ -102,6 +104,7 @@ const preserveOrStoreTimezoneFallback$ = command(
       .values({
         orgId: args.orgId,
         userId: args.userId,
+        selectedModel: AUTO_SELECTED_MODEL,
         timezone: args.timezone,
         createdAt: updatedAt,
         updatedAt,
@@ -155,10 +158,8 @@ function onboardingComplete(orgId: string): Computed<Promise<boolean>> {
  * Whether a non-admin member still has the source-first onboarding ahead of
  * them. It is personal.
  *
- * Nobody who already uses the workspace is pulled into it: a member who has
- * started an ordinary chat in this org is treated as onboarded, just like one
- * who finished the flow. Morning Brief threads are delivered to a member
- * rather than started by them, so they do not count as use.
+ * A member who has completed their flow or owns any chat thread in this org
+ * is treated as onboarded. Thread origin does not change this eligibility.
  */
 function memberNeedsOnboarding(
   orgId: string,
@@ -184,16 +185,7 @@ function memberNeedsOnboarding(
       .select({ threadId: chatThreads.id })
       .from(chatThreads)
       .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-      .where(
-        and(
-          eq(chatThreads.userId, userId),
-          eq(agents.orgId, orgId),
-          or(
-            isNull(chatThreads.provenance),
-            ne(chatThreads.provenance, "morning_brief"),
-          ),
-        ),
-      )
+      .where(and(eq(chatThreads.userId, userId), eq(agents.orgId, orgId)))
       .limit(1);
     return usage === undefined;
   });

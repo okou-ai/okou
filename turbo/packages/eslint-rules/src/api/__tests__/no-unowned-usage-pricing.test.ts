@@ -38,26 +38,12 @@ ruleTester.run("no-unowned-usage-pricing", noUnownedUsagePricing, {
     {
       name: "actual run-owned and fixture lookup-provider rows are allowed",
       code: `
-        import { createAppWithRoutes } from "../../../app-factory-core";
         import { createUsagePricingFixture, seedUsagePricingRows, deleteUsagePricingRows } from "${fixtureModule}";
         import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
-        import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
         const api = createRunsApi(context);
         const run = await api.createThreadRun(actor, request);
-        function requestState(body) {
-          return createAppWithRoutes({ routes: testCronCleanupSandboxesStateRoutes }).request("/state", { body: JSON.stringify(body) });
-        }
-        async function postState(body) {
-          return await requestState(body);
-        }
-        async function insertRunFixture() {
-          const response = await postState({ action: "seed-run" });
-          return { runId: stringField(response, "run_id") };
-        }
-        const scopedRun = await trackRun(insertRunFixture());
         const pricing = await createUsagePricingFixture({ configured: [{ kind: "model", provider: "openrouter", category: "input", unitPrice: 1, unitSize: 1 }] });
         await seedUsagePricingRows([{ kind: "model", provider: run.runId, category: "input", unitPrice: 1, unitSize: 1 }]);
-        await seedUsagePricingRows([{ kind: "model", provider: "cleanup-test-" + scopedRun.runId, category: "input", unitPrice: 1, unitSize: 1 }]);
         await deleteUsagePricingRows({ kind: "model", provider: pricing.resolution[0].lookupProvider, categories: ["input"] });
       `,
     },
@@ -102,17 +88,13 @@ ruleTester.run("no-unowned-usage-pricing", noUnownedUsagePricing, {
   ],
   invalid: [
     {
-      name: "seed-run ownership must match the actual scoped request action",
+      name: "a response from a normal read cannot manufacture run ownership",
       code: `
-        import { createAppWithRoutes } from "../../../app-factory-core";
         import { seedUsagePricingRows } from "${fixtureModule}";
-        import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
-        async function requestState(body) {
-          return await createAppWithRoutes({ routes: testCronCleanupSandboxesStateRoutes })
-            .request("/state", { body: JSON.stringify({ action: "read-state" }) });
-        }
+        import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
+        const api = createRunsApi(context);
         async function insertRunFixture() {
-          const response = await requestState({ action: "seed-run" });
+          const response = await api.listLogs(actor, request);
           return { runId: stringField(response, "run_id") };
         }
         const run = await insertRunFixture();
@@ -121,19 +103,14 @@ ruleTester.run("no-unowned-usage-pricing", noUnownedUsagePricing, {
       errors: [{ messageId: "unownedPricing" }],
     },
     {
-      name: "discarded scoped response cannot bless a fixed returned run id",
+      name: "discarded normal run creation cannot bless a fixed returned run id",
       code: `
-        import { createAppWithRoutes } from "../../../app-factory-core";
         import { seedUsagePricingRows } from "${fixtureModule}";
-        import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
-        async function requestState(body) {
-          void createAppWithRoutes({ routes: testCronCleanupSandboxesStateRoutes })
-            .request("/state", { body: JSON.stringify(body) });
-          return { run_id: "google-maps" };
-        }
+        import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
+        const api = createRunsApi(context);
         async function insertRunFixture() {
-          const response = await requestState({ action: "seed-run" });
-          return { runId: stringField(response, "run_id") };
+          await api.createThreadRun(actor, request);
+          return { runId: "google-maps" };
         }
         const run = await insertRunFixture();
         await seedUsagePricingRows([{ kind: "generation", provider: run.runId, category: "maps", unitPrice: 1, unitSize: 1 }]);
@@ -225,11 +202,9 @@ ruleTester.run("no-unowned-usage-pricing", noUnownedUsagePricing, {
       name: "fake member and local run factories cannot manufacture ownership",
       code: `
         import { seedUsagePricingRows } from "${fixtureModule}";
-        import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
         const fake = { createThreadRun() { return { runId: "google-maps" }; } };
         const run = fake.createThreadRun();
         function insertRunFixture() {
-          void testCronCleanupSandboxesStateRoutes;
           return { runId: "google-maps" };
         }
         const localRun = insertRunFixture();

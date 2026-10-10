@@ -5,7 +5,6 @@ import {
 } from "@okouai/api-contracts/contracts/orgs";
 import type { OrgPlanEntitlementSourceMetadata } from "@okouai/db/jsonb-contracts/org-plan-entitlement";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { eq } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { ORG_PLAN_ENTITLEMENT_TIER_VALUES } from "./org-plan-entitlement-tier-values";
@@ -145,33 +144,6 @@ export async function ensureOrgMetadataPlanEntitlement(
     .insert(orgPlanEntitlements)
     .values(values)
     .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
-}
-
-/**
- * Preserve the INSERT-only bootstrap effect for metadata upserts. Lock an
- * existing row before the write so an ordinary update cannot silently repair a
- * missing entitlement or race a deletion. Concurrent creators still converge
- * on the organization-key constraints.
- */
-export async function writeOrgMetadataWithDefaultPlanEntitlement<
-  Row extends { readonly orgId: string; readonly tier: string },
->(
-  tx: WriteTx,
-  orgId: string,
-  writeOrgMetadata: (tx: WriteTx) => Promise<Row[]>,
-): Promise<Row[]> {
-  const [existing] = await tx
-    .select({ orgId: orgMetadata.orgId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .for("update");
-  const rows = await writeOrgMetadata(tx);
-  if (!existing) {
-    for (const row of rows) {
-      await ensureOrgMetadataPlanEntitlement(tx, row);
-    }
-  }
-  return rows;
 }
 
 export async function upsertOrgPlanEntitlement(

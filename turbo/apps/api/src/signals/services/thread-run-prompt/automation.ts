@@ -6,15 +6,16 @@ import {
   workflowAutomationAgentPrompt,
   workflowAutomationEventTypeSchema,
 } from "../workflow-automation-context.service";
-import type { IntegrationPromptVariables, ThreadPromptSource } from "./types";
+import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { PickedThreadInputEvent } from "./types";
 
 export function createAutomationThreadPrompt(
-  source$: Computed<Promise<ThreadPromptSource | null>>,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   context$: ReturnType<typeof createThreadAutomationContext>,
-): Computed<Promise<IntegrationPromptVariables | null>> {
+): Computed<Promise<RunPromptAndSkills | null>> {
   return computed(async (get) => {
-    const source = await get(source$);
-    if (source?.event.contextType !== "automation") {
+    const pickedEvent = await get(pickedEvent$);
+    if (pickedEvent?.contextType !== "automation") {
       return null;
     }
     const context = await get(context$);
@@ -46,9 +47,13 @@ export function createAutomationThreadPrompt(
         ),
       },
       systemPromptVariables: {
-        integrationContext: "",
-        channelUserIdentity: "",
+        integrationContext: [
+          "# Integration Note",
+          "",
+          "- Use integration-specific messaging or file commands only when the task names an explicit delivery target or the current surface provides one.",
+        ].join("\n"),
       },
+      skillVolumes: [],
     };
   });
 }

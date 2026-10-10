@@ -37,6 +37,7 @@ interface RecordWebUploadedFileArgs {
 }
 
 interface RecordHostedSiteArtifactArgs {
+  readonly previewImageUrl?: string;
   readonly runId: string | null | undefined;
   readonly userId: string;
   readonly orgId: string;
@@ -108,7 +109,7 @@ interface RecordRunUploadedFileArgs {
     | "sizeBytes"
     | "url"
     | "metadata"
-  >;
+  > & { readonly previewImageUrl?: string };
   readonly resetPreviewForDeploymentId?: string;
 }
 
@@ -122,6 +123,7 @@ const recordRunUploadedFile$ = command(
     // The file identity, captured thread ownership and durable catalog handoff
     // must commit together so a failed projection can be recovered.
     const result = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0237; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const [row] = await tx
           .insert(runUploadedFiles)
@@ -141,7 +143,8 @@ const recordRunUploadedFile$ = command(
               ...args.file,
               // Mutable legacy aliases lose their preview only when a different
               // deployment takes over. Versioned rows preserve their preview.
-              ...(args.resetPreviewForDeploymentId === undefined
+              ...(args.resetPreviewForDeploymentId === undefined ||
+              args.file.previewImageUrl !== undefined
                 ? {}
                 : {
                     previewImageUrl: sql`case
@@ -235,6 +238,9 @@ export const recordHostedSiteArtifact$ = command(
           orgId: args.orgId,
           filename,
           contentType: "text/html",
+          ...(args.previewImageUrl === undefined
+            ? {}
+            : { previewImageUrl: args.previewImageUrl }),
           sizeBytes: args.sizeBytes,
           url: args.url,
           metadata: {

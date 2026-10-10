@@ -17,6 +17,8 @@ type StoredRunMetadataValues = Pick<
   | "selectedModel"
   | "modelRuntimeProvider"
   | "modelRuntimeModel"
+  | "modelUsageProvider"
+  | "modelLongContextMinTotalInputTokens"
   | "builtInModelKeyId"
   | "reasoningEffort"
   | "codexServiceTier"
@@ -70,6 +72,8 @@ function normalizeRunModelMetadata(
   | "selectedModel"
   | "modelRuntimeProvider"
   | "modelRuntimeModel"
+  | "modelUsageProvider"
+  | "modelLongContextMinTotalInputTokens"
   | "builtInModelKeyId"
   | "reasoningEffort"
   | "codexServiceTier"
@@ -83,6 +87,9 @@ function normalizeRunModelMetadata(
     selectedModel: input.selectedModel ?? null,
     modelRuntimeProvider: input.modelRuntimeProvider ?? null,
     modelRuntimeModel: input.modelRuntimeModel ?? null,
+    modelUsageProvider: input.modelUsageProvider ?? null,
+    modelLongContextMinTotalInputTokens:
+      input.modelLongContextMinTotalInputTokens ?? null,
     builtInModelKeyId: input.builtInModelKeyId ?? null,
     reasoningEffort: input.reasoningEffort ?? null,
     codexServiceTier: input.codexServiceTier ?? null,

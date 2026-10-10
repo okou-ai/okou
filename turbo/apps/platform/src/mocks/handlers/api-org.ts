@@ -4,6 +4,7 @@ import {
   orgDeleteContract,
 } from "@okouai/api-contracts/contracts/org-routes";
 import type { OrgResponse } from "@okouai/api-contracts/contracts/orgs";
+import { orgOpenrouterPresetContract } from "@okouai/api-contracts/contracts/org-openrouter-preset";
 import { http, HttpResponse } from "msw";
 import { mockApi } from "../msw-contract.ts";
 
@@ -15,12 +16,14 @@ let mockOrg: OrgResponse = {
 };
 
 let mockLogoUrl: string | null = null;
+let mockOpenrouterPreset: string | null = null;
 
 export function setMockOrg(overrides: Partial<OrgResponse>): void {
   mockOrg = { ...mockOrg, ...overrides };
 }
 
 export function resetMockOrg(): void {
+  mockOpenrouterPreset = null;
   mockOrg = {
     id: "org_1",
     name: "User 12345678",
@@ -33,6 +36,13 @@ export function resetMockOrgLogo(): void {
 }
 
 export const apiOrgHandlers = [
+  mockApi(orgOpenrouterPresetContract.get, ({ respond }) => {
+    return respond(200, { openrouterPreset: mockOpenrouterPreset });
+  }),
+  mockApi(orgOpenrouterPresetContract.update, ({ body, respond }) => {
+    mockOpenrouterPreset = body.openrouterPreset;
+    return respond(200, { openrouterPreset: mockOpenrouterPreset });
+  }),
   mockApi(orgContract.get, ({ respond }) => {
     return respond(200, mockOrg);
   }),

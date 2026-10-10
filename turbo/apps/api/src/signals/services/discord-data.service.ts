@@ -1,5 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
-import { and, eq, or, type SQL } from "drizzle-orm";
+import { and, count, eq, gte, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -13,15 +13,17 @@ import type { ApiOrgRole } from "../../types/auth";
 import { DiscordIngressFailure } from "../../lib/discord-ingress-failure";
 import { nowDate } from "../../lib/time";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { publishDiscordChanged } from "./discord-realtime.service";
+import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import {
   discordIntegrationEnabledForOwner,
   discordIntegrationEnabledForOwner$,
   getDiscordAppConfig,
-  type DiscordAppConfig,
 } from "./discord-config";
+
+import { discordMessageContentCapability } from "./discord-application-capability.service";
 
 import {
   featureSwitchContextFromRows,
@@ -322,70 +324,53 @@ function savedDiscordDmBinding(discordUserId: string) {
   });
 }
 
-async function selectDiscordDmBinding(
-  db: Db,
-  binding: DiscordVerifiedBinding,
-  discordUserId: string,
-  userIds: readonly string[],
-  signal: AbortSignal,
-): Promise<boolean> {
-  const result = await db.transaction(async (tx) => {
-    // Match guild uninstall's installation -> connection lock order.
-    const [installation] = await tx
-      .select({ guildId: discordOrgInstallations.guildId })
-      .from(discordOrgInstallations)
-      .where(eq(discordOrgInstallations.guildId, binding.guildId))
-      .for("share");
+const commitDiscordDmSelection$ = command(
+  async ({ set }, binding: DiscordVerifiedBinding, signal: AbortSignal) => {
+    const db = set(writeDb$);
     signal.throwIfAborted();
-    if (!installation) {
-      return false;
-    }
-    const [current] = await tx
-      .select(bindingColumns)
-      .from(discordOrgConnections)
-      .innerJoin(
-        discordOrgInstallations,
-        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
-      )
-      .where(
-        and(
-          eq(discordOrgConnections.id, binding.connectionId),
-          eq(discordOrgConnections.discordUserId, discordUserId),
-          eq(discordOrgConnections.userId, binding.userId),
-          eq(discordOrgInstallations.orgId, binding.orgId),
-        ),
-      )
-      .for("share");
-    signal.throwIfAborted();
-    if (!current) {
-      return false;
-    }
-    await tx
+    return await db
       .insert(discordUserDmPreferences)
-      .values({
-        discordUserId: discordUserId,
-        connectionId: binding.connectionId,
-        userId: binding.userId,
-        createdAt: nowDate(),
-        updatedAt: nowDate(),
-      })
+      .select(
+        db
+          .select({
+            discordUserId: discordOrgConnections.discordUserId,
+            connectionId: discordOrgConnections.id,
+            userId: discordOrgConnections.userId,
+            createdAt:
+              sql`${sql.param(nowDate(), discordUserDmPreferences.createdAt)}`
+                .mapWith(discordUserDmPreferences.createdAt)
+                .as("created_at"),
+            updatedAt:
+              sql`${sql.param(nowDate(), discordUserDmPreferences.updatedAt)}`
+                .mapWith(discordUserDmPreferences.updatedAt)
+                .as("updated_at"),
+          })
+          .from(discordOrgConnections)
+          .innerJoin(
+            discordOrgInstallations,
+            eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+          )
+          .where(
+            and(
+              eq(discordOrgConnections.id, binding.connectionId),
+              eq(discordOrgConnections.guildId, binding.guildId),
+              eq(discordOrgConnections.discordUserId, binding.discordUserId),
+              eq(discordOrgConnections.userId, binding.userId),
+              eq(discordOrgInstallations.orgId, binding.orgId),
+            ),
+          ),
+      )
       .onConflictDoUpdate({
         target: discordUserDmPreferences.discordUserId,
         set: {
-          connectionId: binding.connectionId,
-          userId: binding.userId,
+          connectionId: sql`excluded.connection_id`,
+          userId: sql`excluded.user_id`,
           updatedAt: nowDate(),
         },
-      });
-    signal.throwIfAborted();
-    return true;
-  });
-  if (result) {
-    await publishDiscordChanged(userIds);
-  }
-  signal.throwIfAborted();
-  return result;
-}
+      })
+      .returning({ userId: discordUserDmPreferences.userId });
+  },
+);
 
 export const selectDiscordDmBinding$ = command(
   async (
@@ -417,70 +402,106 @@ export const selectDiscordDmBinding$ = command(
     if (!enabled) {
       return false;
     }
-    return await selectDiscordDmBinding(
-      set(writeDb$),
-      binding,
-      args.discordUserId,
-      bindings.map((candidate) => {
-        return candidate.userId;
-      }),
-      signal,
-    );
+    const [selected] = await set(commitDiscordDmSelection$, binding, signal);
+    if (selected) {
+      // Committed preferences publish before observing post-commit cancellation.
+      await publishDiscordChanged([
+        selected.userId,
+        ...bindings.map((candidate) => {
+          return candidate.userId;
+        }),
+      ]);
+    }
+    signal.throwIfAborted();
+    return selected !== undefined;
   },
 );
 
-async function deleteDiscordBinding(
-  db: Db,
-  args: {
-    readonly connectionId: string;
-    readonly discordUserId: string;
-    readonly orgId?: string;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const rows = await db.transaction(async (tx) => {
+interface DiscordBindingDisconnect {
+  readonly connectionId: string;
+  readonly discordUserId: string;
+  readonly orgId?: string;
+}
+
+const commitDiscordBindingDisconnect$ = command(
+  async ({ set }, args: DiscordBindingDisconnect, signal: AbortSignal) => {
+    const db = set(writeDb$);
     signal.throwIfAborted();
-    const removed = await tx
+    const candidate = db.$with("disconnect_discord_candidate").as(
+      db
+        .select({
+          guildId: discordOrgConnections.guildId,
+          userId: discordOrgConnections.userId,
+          orgId: discordOrgInstallations.orgId,
+        })
+        .from(discordOrgConnections)
+        .innerJoin(
+          discordOrgInstallations,
+          eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+        )
+        .where(
+          and(
+            eq(discordOrgConnections.id, args.connectionId),
+            eq(discordOrgConnections.discordUserId, args.discordUserId),
+            args.orgId
+              ? eq(discordOrgInstallations.orgId, args.orgId)
+              : undefined,
+          ),
+        ),
+    );
+    const revoked = db.$with("cancelled_discord_disconnect_attempts").as(
+      db
+        .delete(discordOauthStates)
+        .where(
+          and(
+            eq(
+              discordOauthStates.userId,
+              db.select({ userId: candidate.userId }).from(candidate),
+            ),
+            eq(
+              discordOauthStates.orgId,
+              db.select({ orgId: candidate.orgId }).from(candidate),
+            ),
+            isNotNull(discordOauthStates.completionTokenHash),
+          ),
+        )
+        .returning({ id: discordOauthStates.id }),
+    );
+    // Consumed consent receipts are not pending attempts. Revoke only this exact
+    // connection; the exclusion index releases ownership with that same DELETE.
+    return await db
+      .with(candidate, revoked)
       .delete(discordOrgConnections)
       .where(
         and(
           eq(discordOrgConnections.id, args.connectionId),
           eq(discordOrgConnections.discordUserId, args.discordUserId),
-          args.orgId
-            ? eq(
-                discordOrgConnections.guildId,
-                tx
-                  .select({ guildId: discordOrgInstallations.guildId })
-                  .from(discordOrgInstallations)
-                  .where(eq(discordOrgInstallations.orgId, args.orgId)),
-              )
-            : undefined,
+          eq(
+            discordOrgConnections.userId,
+            db.select({ userId: candidate.userId }).from(candidate),
+          ),
+          eq(
+            discordOrgConnections.guildId,
+            db.select({ guildId: candidate.guildId }).from(candidate),
+          ),
+          gte(db.select({ count: count() }).from(revoked), 0),
         ),
       )
       .returning({ userId: discordOrgConnections.userId });
-    signal.throwIfAborted();
-    return removed;
-  });
-  await publishDiscordChanged(
-    rows.map((row) => {
-      return row.userId;
-    }),
-  );
-  signal.throwIfAborted();
-  return rows.length > 0;
-}
+  },
+);
 
 export const disconnectDiscordBinding$ = command(
-  async (
-    { set },
-    args: {
-      readonly connectionId: string;
-      readonly discordUserId: string;
-      readonly orgId?: string;
-    },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    return await deleteDiscordBinding(set(writeDb$), args, signal);
+  async ({ set }, args: DiscordBindingDisconnect, signal: AbortSignal) => {
+    const rows = await set(commitDiscordBindingDisconnect$, args, signal);
+    // Committed changes publish before observing a post-commit cancellation.
+    await publishDiscordChanged(
+      rows.map((row) => {
+        return row.userId;
+      }),
+    );
+    signal.throwIfAborted();
+    return rows.length > 0;
   },
 );
 
@@ -516,20 +537,12 @@ export function discordEffectiveAgent(args: {
   });
 }
 
-function discordContextMode(
-  config: DiscordAppConfig | null,
-): DiscordOrgStatus["contextMode"] {
-  if (!config) {
-    return "unavailable";
-  }
-  return config.messageContentEnabled ? "full" : "mentions_only";
-}
-
 export function discordOrgStatus(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly orgRole?: ApiOrgRole;
 }): Computed<Promise<DiscordOrgStatus>> {
+  const capability$ = discordMessageContentCapability();
   return computed(async (get): Promise<DiscordOrgStatus> => {
     const enabled = await get(
       discordIntegrationEnabledForOwner(args.orgId, args.userId),
@@ -545,8 +558,8 @@ export function discordOrgStatus(args: {
       discordUserId: null,
       defaultAgentId: null,
       defaultAgentName: null,
-      contextMode: discordContextMode(enabled ? config : null),
-      onboarding: "oauth_deferred",
+      contextMode: "unavailable",
+      onboarding: "oauth",
       dmSelectionConnectionId: null,
       dmBindings: [],
     };
@@ -562,12 +575,22 @@ export function discordOrgStatus(args: {
         contextMode: "unavailable",
       };
     }
+    const capability = await get(capability$);
+    const currentStatus: DiscordOrgStatus = {
+      ...status,
+      contextMode:
+        capability.kind === "available"
+          ? capability.enabled
+            ? "full"
+            : "mentions_only"
+          : "unavailable",
+    };
     const [installation] = await get(db$)
       .select()
       .from(discordOrgInstallations)
       .where(eq(discordOrgInstallations.orgId, args.orgId));
     if (!installation) {
-      return { ...status, isAdmin: role === "admin" };
+      return { ...currentStatus, isAdmin: role === "admin" };
     }
     const [connection] = await get(
       bindingRows(
@@ -589,7 +612,7 @@ export function discordOrgStatus(args: {
       ? await get(savedDiscordDmBinding(connection.discordUserId))
       : null;
     return {
-      ...status,
+      ...currentStatus,
       isAdmin: role === "admin",
       isInstalled: true,
       isConnected: connection !== undefined,

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.25.1](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.25.0...guest-storage-apply-v0.25.1) (2026-10-10)
+
+## [0.25.0](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.43...guest-storage-apply-v0.25.0) (2026-10-09)
+
+
+### Features
+
+* **storage:** prepare large decoded storage readers (1/2) ([#38396](https://github.com/okou-ai/okou/issues/38396)) ([fe12503](https://github.com/okou-ai/okou/commit/fe12503564388499b06ba2b42f45b33fe641a032))
+
+## [0.24.43](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.42...guest-storage-apply-v0.24.43) (2026-10-09)
+
+## [0.24.42](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.41...guest-storage-apply-v0.24.42) (2026-10-09)
+
 ## [0.24.41](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.40...guest-storage-apply-v0.24.41) (2026-10-09)
 
 ## [0.24.40](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.39...guest-storage-apply-v0.24.40) (2026-10-08)

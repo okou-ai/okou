@@ -15,6 +15,7 @@ use tracing::Level;
 use tracing_subscriber::prelude::*;
 use tracing_test_support::{CapturedEvent, CapturedEvents};
 
+mod backing_process;
 mod guest_connection_timing;
 mod guest_rpc;
 mod managed_exit;

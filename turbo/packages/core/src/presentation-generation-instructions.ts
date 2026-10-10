@@ -3,3 +3,6 @@ export const PRESENTATION_IMAGE_BATCH_INSTRUCTION =
 
 export const PRESENTATION_STATIC_HTML_INSTRUCTION =
   "- Keep all slides and visible content in index.html; render the first slide without JavaScript, which may only enhance controls, themes, or animation.";
+
+export const PRESENTATION_PREVIEW_INSTRUCTION =
+  "- Before hosting, run `okou host screenshot <output-dir> --out ./generated/previews/cover.png`, then open and inspect the PNG. Keep it and its receipt outside the output directory; fix blank/loading/clipped content and re-capture after any edits. Pass this image with `--preview` when hosting. A user-selected PNG/JPEG cover can replace the screenshot. Do not omit a failed preview to trigger a remote screenshot.";

@@ -419,26 +419,6 @@ pub mod runners {
 pub mod webhooks {
     /// Generated route bindings under `webhooks::agent`.
     pub mod agent {
-        /// Generated route bindings under `webhooks::agent::checkpoints`.
-        pub mod checkpoints {
-            /// Create checkpoint for agent run.
-            /// Route contract: `POST /api/webhooks/agent/checkpoints`.
-            pub const CREATE: crate::Route = crate::Route {
-                method: crate::Method::Post,
-                path: "/api/webhooks/agent/checkpoints",
-            };
-
-            /// Generated route bindings under `webhooks::agent::checkpoints::prepare_history`.
-            pub mod prepare_history {
-                /// Get presigned URL for uploading session history to S3.
-                /// Route contract: `POST /api/webhooks/agent/checkpoints/prepare-history`.
-                pub const PREPARE: crate::Route = crate::Route {
-                    method: crate::Method::Post,
-                    path: "/api/webhooks/agent/checkpoints/prepare-history",
-                };
-            }
-        }
-
         /// Generated route bindings under `webhooks::agent::complete`.
         pub mod complete {
             /// Handle agent run completion.

@@ -3,6 +3,10 @@ import {
   customConnectorSlugSchema,
   type CustomConnectorSlug,
 } from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  getCustomConnectorSkillName,
+  getCustomConnectorSkillStorageName,
+} from "@okouai/core/storage-names";
 import { computed, type Computed } from "ccstate";
 import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
 import {
@@ -12,17 +16,25 @@ import {
 } from "./connector-catalog-runtime.service";
 import type { AgentConnectorSelection } from "./execution-agent-connectors.service";
 
+interface AuthorizedConnectorSkill {
+  readonly storageName: string;
+  readonly versionId: string;
+  readonly skillName: string;
+}
+
 type AuthorizedConnector =
   | {
       readonly kind: "builtin";
       readonly connectorSlug: ConnectorSlug;
       readonly isMcp: boolean;
+      readonly skill: AuthorizedConnectorSkill | null;
     }
   | {
       readonly kind: "custom";
       readonly customConnectorId: string;
       readonly connectorSlug: CustomConnectorSlug;
       readonly isMcp: boolean;
+      readonly skill: AuthorizedConnectorSkill | null;
     };
 
 export type AuthorizedConnectors = readonly AuthorizedConnector[];
@@ -73,9 +85,17 @@ export function createAuthorizedConnectors(
         kind: "builtin",
         connectorSlug,
         isMcp: connector.catalogConnector.mcp !== undefined,
+        skill:
+          connector.skill.kind === "none"
+            ? null
+            : {
+                storageName: connector.skill.storageName,
+                versionId: connector.skill.versionId,
+                skillName: connectorSlug,
+              },
       };
     });
-    for (const connector of selection.customConnectors) {
+    for (const connector of scope.customConnectorDefinitions) {
       const slug = customConnectorSlugSchema.safeParse(connector.connectorSlug);
       if (slug.success) {
         authorized.push({
@@ -83,6 +103,19 @@ export function createAuthorizedConnectors(
           customConnectorId: connector.customConnectorId,
           connectorSlug: slug.data,
           isMcp: connector.isMcp,
+          skill:
+            connector.skillStorageVersionId === null
+              ? null
+              : {
+                  storageName: getCustomConnectorSkillStorageName(
+                    connector.customConnectorId,
+                  ),
+                  versionId: connector.skillStorageVersionId,
+                  skillName: getCustomConnectorSkillName(
+                    slug.data,
+                    connector.customConnectorId,
+                  ),
+                },
         });
       }
     }

@@ -1,5 +1,4 @@
 import { PLAN_UPGRADE_CLI_HINT } from "@okouai/api-contracts/contracts/errors";
-import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
   isFeatureEnabled,
   type FeatureSwitchContext,
@@ -11,8 +10,6 @@ import {
   CANONICAL_WORKING_DIR,
 } from "@okouai/api-contracts/contracts/runners";
 import { presentationTemplateSkillInstruction } from "@okouai/core/presentation-template-skill";
-
-import { hasIntegrationNote } from "./integration-note-prompt.service";
 
 const instructionsAndMemoryGuidance = Object.freeze([
   "- Instructions and memory have different scopes. Agent instructions are team-shared behavior rules for everyone using the same agent. They define responsibilities, common workflows, and default behavior; changes can affect other team members and future runs. Use them for genuinely shared, stable team rules, not as a notebook for personal preferences or one-off task details.",
@@ -29,7 +26,6 @@ const instructionsAndMemoryGuidance = Object.freeze([
  * `# Current Integration` block they describe.
  */
 function buildIntegrationToolsPrompt(
-  triggerSource: TriggerSource,
   deliveryFormatGuidanceEnabled: boolean,
 ): readonly string[] {
   const localFileContext = [
@@ -55,17 +51,10 @@ function buildIntegrationToolsPrompt(
   const localFileContextLines = localFileContext.map((line) => {
     return `- ${line}`;
   });
-  return [
-    ...(hasIntegrationNote(triggerSource)
-      ? []
-      : [
-          "- Use integration-specific messaging or file commands only when the task names an explicit delivery target or the current surface provides one.",
-        ]),
-    ...localFileContextLines,
-  ];
+  return localFileContextLines;
 }
 
-/** Feature and surface inputs that select the agent tools prompt text. */
+/** Feature and browser configuration that select the agent tools prompt text. */
 export interface AgentToolsPromptInputs {
   readonly privateArtifactsEnabled: boolean;
   readonly bankingEnabled: boolean;
@@ -75,15 +64,12 @@ export interface AgentToolsPromptInputs {
   readonly deliveryFormatGuidanceEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
   readonly browserNativeInputEnabled: boolean;
-  readonly customConnectorMcpEnabled: boolean;
-  readonly triggerSource: TriggerSource;
-  readonly cloudBrowserEnabled: boolean | undefined;
+  readonly cloudBrowserEnabled: boolean;
 }
 
 export function buildAgentToolsPromptInputs(args: {
   readonly featureSwitchContext: FeatureSwitchContext;
-  readonly triggerSource: TriggerSource;
-  readonly cloudBrowserEnabled: boolean | undefined;
+  readonly cloudBrowserEnabled: boolean;
 }): AgentToolsPromptInputs {
   const context = args.featureSwitchContext;
   return {
@@ -110,16 +96,13 @@ export function buildAgentToolsPromptInputs(args: {
       FeatureSwitchKey.BrowserNativeInput,
       context,
     ),
-    customConnectorMcpEnabled: true,
-    triggerSource: args.triggerSource,
     cloudBrowserEnabled: args.cloudBrowserEnabled,
   };
 }
 
 export function buildAgentToolsPrompt(args: {
   readonly privateArtifactsEnabled: boolean;
-  readonly triggerSource: TriggerSource;
-  readonly cloudBrowserEnabled: boolean | undefined;
+  readonly cloudBrowserEnabled: boolean;
   readonly browserNativeInputEnabled: boolean;
   readonly bankingEnabled: boolean;
   readonly vncEnabled: boolean;
@@ -192,7 +175,7 @@ export function buildAgentToolsPrompt(args: {
     ...(args.discordEnabled
       ? [
           "- Discord: use `okou discord channel list --help` and `okou discord message history --help` for guild channels and threads shared by the connected user and Okou. `message replies` reads a native thread; a Discord reply reference is not itself a thread. Read one bounded page at a time and continue with `nextBefore`; do not infer unread messages are absent. Ordinary context can be limited by the bot MESSAGE_CONTENT intent. Bot DM history and replies are not readable.",
-          "- When explicitly asked to send to Discord, use `okou discord message send --help` with the destination channel or native thread ID. Bot DM content is not readable; you can only send or upload to your own bot DM. Mentions never notify users or roles. Long text is split without truncation; report partial delivery and already-delivered message links instead of blindly retrying the entire send. OAuth onboarding is deferred; these commands require an existing verified binding.",
+          "- When explicitly asked to send to Discord, use `okou discord message send --help` with the destination channel or native thread ID. Bot DM content is not readable; you can only send or upload to your own bot DM. Mentions never notify users or roles. Long text is split without truncation; report partial delivery and already-delivered message links instead of blindly retrying the entire send. These commands require your own verified Discord binding. Server installation and account linking happen in the authenticated App's Works settings; use `okou discord connect --help` for setup guidance, never collect OAuth codes or provider tokens.",
           "- Discord files: when the task explicitly asks to share a file in Discord, use `okou discord upload-file --help` with the destination channel or native thread ID; publication succeeds before delivery; retry with the printed `--operation-id` only when the JSON output reports the delivery as pending or retryable. Use `okou discord download-file --help` with the channel, message, and attachment IDs to read an attachment in a guild channel or thread the connected user and Okou can both access; bot DM attachments cannot be downloaded.",
         ]
       : []),
@@ -201,10 +184,7 @@ export function buildAgentToolsPrompt(args: {
           "- Lark messages: when the task explicitly asks to send or post to Lark, use `okou lark message send --help` for chats, DMs, and replies.",
         ]
       : []),
-    ...buildIntegrationToolsPrompt(
-      args.triggerSource,
-      args.deliveryFormatGuidanceEnabled,
-    ),
+    ...buildIntegrationToolsPrompt(args.deliveryFormatGuidanceEnabled),
     '- Maps, places, and routing: use `okou maps search "<query>"`. Treat its answer as display-ready: reproduce it without rewriting, with its Google Maps sources immediately following it. Use `--lat` and `--lng` only for a location the user explicitly supplied; never infer location from server IP or untrusted headers.',
     "- Current weather, forecasts, and recent history: use `okou weather --help`.",
     "- Presentation page images: use `okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>` to render any presentation source to ordered `page-001.png` files at one fixed page size. PPT, PPTX, and PDF are rasterised through LibreOffice and Poppler; HTML pages, layout directories, and URLs are captured through a browser, one image per slide. It only writes local image files: it uploads nothing, publishes nothing, and is unrelated to `okou presentation-template publish`, so it is the right tool whenever page images are the goal, including review and analysis. Prefer it over `pdftoppm`, `soffice`, or hand-driven `agent-browser` screenshot calls, because a screenshot of a page the browser never painted looks like a successful screenshot. Run `okou presentation screenshot --help` for the current interface.",

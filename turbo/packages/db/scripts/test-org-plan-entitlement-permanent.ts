@@ -13,6 +13,7 @@ export async function validatePermanentOrgPlanEntitlementState(
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
   try {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0410; new non-billing transactions are prohibited.
     await client.query("BEGIN");
     try {
       const db = drizzle(client);

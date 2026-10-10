@@ -15,7 +15,7 @@ use crate::env;
 use crate::error::AgentError;
 use crate::http::HttpClient;
 use api_contracts::generated::types::{
-    runners::storage::ArtifactEntryMissingRootPolicy, webhooks::agent::checkpoints,
+    runners::storage::ArtifactEntryMissingRootPolicy, webhooks::agent::complete,
 };
 use futures_util::stream::{self, FuturesUnordered, StreamExt};
 use guest_telemetry::log_info;
@@ -135,12 +135,12 @@ fn build_artifact_snapshot_entry(
     version: &str,
     mount_path: &str,
     missing_root_policy: Option<ArtifactEntryMissingRootPolicy>,
-) -> checkpoints::ArtifactSnapshot {
-    checkpoints::ArtifactSnapshot {
+) -> complete::RequestCompletionArtifactSnapshot {
+    complete::RequestCompletionArtifactSnapshot {
         name: name.to_string(),
         version: version.to_string(),
         mount_path: mount_path.to_string(),
-        missing_root_policy,
+        missing_root_policy: missing_root_policy.map(super::completion_missing_root_policy),
     }
 }
 
@@ -203,7 +203,7 @@ async fn snapshot_artifact_plan(
     run_id: &str,
     plan: ArtifactSnapshotPlan<'_>,
     maintenance_attestation: Option<vas::PiMemoryPhase2CheckpointAttestation>,
-) -> Result<checkpoints::ArtifactSnapshot, AgentError> {
+) -> Result<complete::RequestCompletionArtifactSnapshot, AgentError> {
     let (entry, files) = match plan {
         ArtifactSnapshotPlan::Snapshot { entry, files } => (entry, files),
         ArtifactSnapshotPlan::PreserveParentVersion { entry } => {
@@ -320,7 +320,7 @@ pub(super) async fn snapshot_artifact_entries_for_checkpoint(
     mode: FinalizationMode,
     pi_launch_config: &str,
     pi_launch_payload_file: &str,
-) -> Result<Option<Vec<checkpoints::ArtifactSnapshot>>, AgentError> {
+) -> Result<Option<Vec<complete::RequestCompletionArtifactSnapshot>>, AgentError> {
     if entries.is_empty() {
         log_info!(
             LOG_TAG,
@@ -434,7 +434,7 @@ async fn snapshot_artifact_entries(
     http: &HttpClient,
     run_id: &str,
     entries: &[env::ArtifactEnv],
-) -> Result<Option<Vec<checkpoints::ArtifactSnapshot>>, AgentError> {
+) -> Result<Option<Vec<complete::RequestCompletionArtifactSnapshot>>, AgentError> {
     snapshot_artifact_entries_for_checkpoint(
         http,
         run_id,

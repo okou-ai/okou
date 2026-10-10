@@ -784,7 +784,7 @@ assert_preview_job_ref_absent "$production_api_env_file"
 assert_env_key_count "$production_api_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED 1
 assert_env_value "$production_api_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED "false"
 
-discord_vars_json='{"DISCORD_APPLICATION_ID":"123456789012345678","DISCORD_PUBLIC_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","DISCORD_MESSAGE_CONTENT_ENABLED":"true","DISCORD_OAUTH_CLIENT_ID":"github-discord-legacy-client-id","DISCORD_GATEWAY_ENABLED":"true"}'
+discord_vars_json='{"DISCORD_APPLICATION_ID":"123456789012345678","DISCORD_PUBLIC_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","DISCORD_OAUTH_CLIENT_ID":"github-discord-legacy-client-id","DISCORD_GATEWAY_ENABLED":"true"}'
 discord_secrets_json='{"DISCORD_BOT_TOKEN":"github-discord-bot-token","DISCORD_GATEWAY_SECRET":"github-discord-hmac-secret-1234567890","DISCORD_OAUTH_CLIENT_SECRET":"github-discord-legacy-oauth-secret","DISCORD_GATEWAY_CONTROL_SECRET":"github-discord-control-secret"}'
 discord_doppler_json="$(
   jq -c '. + {
@@ -800,7 +800,6 @@ discord_keys=(
   DISCORD_BOT_TOKEN
   DISCORD_GATEWAY_SECRET
   DISCORD_OAUTH_CLIENT_SECRET
-  DISCORD_MESSAGE_CONTENT_ENABLED
 )
 for discord_environment in preview production; do
   for discord_app in api web; do
@@ -830,7 +829,6 @@ for discord_environment in preview production; do
       assert_env_value "$discord_env_file" DISCORD_BOT_TOKEN "github-discord-bot-token"
       assert_env_value "$discord_env_file" DISCORD_GATEWAY_SECRET "github-discord-hmac-secret-1234567890"
       assert_env_value "$discord_env_file" DISCORD_OAUTH_CLIENT_SECRET "doppler-discord-oauth-secret"
-      assert_env_value "$discord_env_file" DISCORD_MESSAGE_CONTENT_ENABLED "true"
       for discord_key in "${discord_keys[@]}"; do
         assert_env_key_count "$discord_env_file" "$discord_key" 1
       done
@@ -864,45 +862,12 @@ for discord_environment in preview production; do
   assert_no_fixture_secret_values "$unconfigured_discord_output"
   for discord_key in "${discord_keys[@]}"; do
     assert_env_key_count "$unconfigured_discord_env_file" "$discord_key" 1
-    if [[ "$discord_key" == "DISCORD_MESSAGE_CONTENT_ENABLED" ]]; then
-      assert_env_value "$unconfigured_discord_env_file" "$discord_key" "false"
-    else
-      assert_env_value "$unconfigured_discord_env_file" "$discord_key" ""
-    fi
+    assert_env_value "$unconfigured_discord_env_file" "$discord_key" ""
   done
   assert_env_key_absent "$unconfigured_discord_env_file" DISCORD_OAUTH_CLIENT_ID
   assert_env_key_absent "$unconfigured_discord_env_file" DISCORD_GATEWAY_ENABLED
   assert_env_key_absent "$unconfigured_discord_env_file" DISCORD_GATEWAY_CONTROL_SECRET
   assert_env_absent_value "$unconfigured_discord_env_file" "github-discord-legacy"
-done
-
-for invalid_discord_vars in \
-  '{"DISCORD_MESSAGE_CONTENT_ENABLED":"enabled"}' \
-  '{"DISCORD_MESSAGE_CONTENT_ENABLED":true}' \
-  '{"DISCORD_MESSAGE_CONTENT_ENABLED":"true\nINJECTED_ENV=true"}'; do
-  invalid_discord_dir="$(mktemp -d)"
-  TEMP_DIRS+=("$invalid_discord_dir")
-  status=0
-  invalid_discord_output="$(
-    run_action \
-      "$discord_doppler_json" \
-      "$invalid_discord_dir" \
-      api \
-      production \
-      "https://static.okou.io/okou-cli/test-sha/package.tgz" \
-      canonical \
-      "$invalid_discord_vars" \
-      "$discord_secrets_json" \
-      2>&1
-  )" || status=$?
-  if [[ "$status" -eq 0 ]]; then
-    fail "expected invalid Discord message-content configuration to fail"
-  fi
-  assert_contains "$invalid_discord_output" "::error::DISCORD_MESSAGE_CONTENT_ENABLED must be true or false when set"
-  assert_no_fixture_secret_values "$invalid_discord_output"
-  if [[ -e "${invalid_discord_dir}/web-api-api-production.env" ]]; then
-    fail "invalid Discord message-content configuration must fail before creating an environment file"
-  fi
 done
 
 for worker_switch_case in \

@@ -18,10 +18,10 @@ interface CatalogRow {
  * (`org_plan_entitlements.restricted_built_in_models`) run only okou-1.0 on
  * Built-in routes; these catalog flags, not code, decide the models.
  */
-const BUILT_IN_ON_RESTRICTED_PLANS: readonly string[] = ["okou-1.0"];
+const BUILT_IN_ON_RESTRICTED_PLANS: readonly string[] = ["auto", "okou-1.0"];
 
 /** The API-owned system default (fixed Auto); the catalog keeps its row. */
-const SYSTEM_DEFAULT_MODEL = "okou-1.0";
+const SYSTEM_DEFAULT_MODEL = "auto";
 
 function modelsWhere(
   rows: readonly CatalogRow[],
@@ -163,7 +163,7 @@ function assertRoutes(
         (route.provider_type === "built-in" &&
           route.concrete_provider_type === "openrouter-codex" &&
           route.subscription_type === null &&
-          ((route.model === "okou-1.0" &&
+          (((route.model === "auto" || route.model === "okou-1.0") &&
             route.upstream_model === "@preset/okou-1-0") ||
             (route.model === "gpt-6-luna" &&
               route.upstream_model === "openai/gpt-6-luna"))),

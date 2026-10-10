@@ -1,3 +1,4 @@
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { computed, type Computed } from "ccstate";
 import {
   buildSlackSystemPrompt,
@@ -6,15 +7,17 @@ import {
 } from "../../../lib/slack-webhook-context";
 import { resolveIntegrationNotePrompt } from "../integration-note-prompt.service";
 import type { SlackThreadContext } from "../thread-run-context.service";
-import type { IntegrationPromptVariables, ThreadPromptSource } from "./types";
+import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { PickedThreadInputEvent } from "./types";
 
 export function createSlackThreadPrompt(
-  source$: Computed<Promise<ThreadPromptSource | null>>,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   context$: Computed<Promise<SlackThreadContext>>,
-): Computed<Promise<IntegrationPromptVariables | null>> {
+  featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
+): Computed<Promise<RunPromptAndSkills | null>> {
   return computed(async (get) => {
-    const source = await get(source$);
-    if (source?.event.contextType !== "slack") {
+    const pickedEvent = await get(pickedEvent$);
+    if (pickedEvent?.contextType !== "slack") {
       return null;
     }
     const context = await get(context$);
@@ -52,12 +55,13 @@ export function createSlackThreadPrompt(
           threadTs: context.threadTs,
           integrationNote: resolveIntegrationNotePrompt({
             triggerSource: "slack",
-            featureSwitchContext: source.featureSwitchContext,
+            featureSwitchContext: await get(featureSwitches$),
           }),
           executionContext: context.conversationContext,
         }),
         channelUserIdentity: identity.join("\n"),
       },
+      skillVolumes: [],
     };
   });
 }

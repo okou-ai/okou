@@ -312,6 +312,37 @@ export const updateCustomTemplate$ = command(
 );
 
 /**
+ * A removal waiting for the member to confirm it. Deleting is not undoable, so
+ * every entry point asks here and the picker confirms once.
+ *
+ * The title is captured with the request rather than looked up when the
+ * question is shown: the template can leave the catalog while it is being
+ * asked about, and the question must still name what it would remove.
+ */
+interface CustomTemplateDeletionRequest {
+  readonly id: string;
+  readonly title: string;
+}
+
+const internalPendingDeletion$ = state<CustomTemplateDeletionRequest | null>(
+  null,
+);
+
+export const pendingCustomTemplateDeletion$ = computed((get) => {
+  return get(internalPendingDeletion$);
+});
+
+export const requestDeleteCustomTemplate$ = command(
+  ({ set }, request: CustomTemplateDeletionRequest) => {
+    set(internalPendingDeletion$, request);
+  },
+);
+
+export const cancelDeleteCustomTemplate$ = command(({ set }) => {
+  set(internalPendingDeletion$, null);
+});
+
+/**
  * Deleting drops the record only. The source file and its page images are
  * ordinary uploads that may be referenced elsewhere, so the API deliberately
  * leaves them in storage.
@@ -334,15 +365,21 @@ export const deleteCustomTemplate$ = command(
     if (get(openCustomTemplateId$) === templateId) {
       set(internalOpenTemplate$, null);
     }
+    set(internalPendingDeletion$, null);
     set(reloadCustomTemplates$);
   },
 );
 
-/** Reopening the current category clears its filters and detail view. */
+/**
+ * Reopening the current category clears its filters, detail view and any
+ * removal still waiting to be confirmed, so a picker torn down mid-question
+ * does not reopen on it.
+ */
 export const resetCustomTemplatePickerView$ = command(({ set }) => {
   set(internalSearchQuery$, "");
   set(internalKindFilter$, null);
   set(internalOpenTemplate$, null);
+  set(internalPendingDeletion$, null);
 });
 
 /** Opening the picker always starts from a clean list and a fresh catalog. */

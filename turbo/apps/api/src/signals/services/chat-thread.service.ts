@@ -51,7 +51,6 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 
 import { settle } from "../utils";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
@@ -831,6 +830,7 @@ export const createChatThread$ = command(
         message: preparedConnectorSelections.message,
       };
     }
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0095; new non-billing transactions are prohibited.
     const thread = await set(writeDb$).transaction(async (tx) => {
       const initialRemoteAccessOverrides =
         args.initialRemoteAccessOverrides ?? [];
@@ -913,6 +913,7 @@ export const createChatThread$ = command(
       );
       for (const statement of initialWrites.connectors) {
         const inserted = await settle(
+          // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0096; new non-billing transactions are prohibited.
           tx.transaction(async (sp) => {
             await sp.execute(statement);
             signal.throwIfAborted();
@@ -983,6 +984,7 @@ const disabledAutomationSelection = Object.freeze({
 const deleteChatThreadContent$ = command(
   async ({ set }, args: DeleteChatThreadArgs, signal: AbortSignal) => {
     signal.throwIfAborted();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0097; new non-billing transactions are prohibited.
     const result = await set(writeDb$).transaction(async (tx) => {
       signal.throwIfAborted();
 
@@ -1081,9 +1083,6 @@ const deleteChatThreadContent$ = command(
       await tx
         .delete(chatEventSearchMessages)
         .where(eq(chatEventSearchMessages.chatThreadId, ownedThread.id));
-      signal.throwIfAborted();
-
-      await tx.execute(purgeRetiredMorningBriefEmailSql());
       signal.throwIfAborted();
 
       // Delete the thread after cleanup under its row lock. Cascades chat_events.

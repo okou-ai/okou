@@ -14,10 +14,17 @@ import {
   User,
 } from "lucide-react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   Button,
   buttonVariants,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -27,8 +34,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   Input,
-  Toggle,
-  ToggleGroup,
+  SegmentControl,
+  SegmentControlItem,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -51,10 +58,13 @@ import {
 } from "./custom-template-preview-dialog.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import {
+  cancelDeleteCustomTemplate$,
   customTemplateSearchQuery$,
   customTemplateCatalog$,
   deleteCustomTemplate$,
   openCustomTemplate$,
+  pendingCustomTemplateDeletion$,
+  requestDeleteCustomTemplate$,
   setCustomTemplateSearchQuery$,
   projectCustomTemplatePicker$,
   setCustomTemplateKindFilter$,
@@ -297,7 +307,7 @@ function CustomTemplateCard({
   const pageSignal = useGet(pageSignal$);
   const openTemplate = useSet(openCustomTemplate$);
   const updateTemplate = useSet(updateCustomTemplate$);
-  const deleteTemplate = useSet(deleteCustomTemplate$);
+  const requestDelete = useSet(requestDeleteCustomTemplate$);
   const open = () => {
     openTemplate({ templateId: template.id, kind: template.kind });
   };
@@ -388,10 +398,7 @@ function CustomTemplateCard({
               );
             }}
             onDelete={() => {
-              detach(
-                deleteTemplate(template.id, pageSignal),
-                Reason.DomCallback,
-              );
+              requestDelete({ id: template.id, title: template.title });
             }}
           />
         ) : null}
@@ -436,8 +443,10 @@ function CustomTemplateImportButton({
         render={
           <label
             className={cn(
-              buttonVariants({ variant: "outline", size: "sm" }),
-              "max-[374px]:px-2 max-[374px]:text-xs has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2",
+              buttonVariants({ variant: "outline" }),
+              // A phone keeps the icon only, so the search beside it keeps
+              // room for its placeholder; the input still carries the name.
+              "max-sm:w-9 max-sm:px-0 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2",
             )}
           >
             <input
@@ -459,7 +468,7 @@ function CustomTemplateImportButton({
               }}
             />
             <Upload aria-hidden />
-            {label}
+            <span className="max-sm:sr-only">{label}</span>
           </label>
         }
       />
@@ -500,31 +509,31 @@ function CustomTemplateKindFilters({
     },
   ] as const;
   return (
-    <ToggleGroup<UserTemplateKind>
-      value={[kind]}
-      onValueChange={(value) => {
-        // Reapplying the projected kind also pins the initial catalog default.
-        setKind(value[0] ?? kind);
+    // Three fixed, mutually exclusive kinds are a segment control: one bounded
+    // control at the band's h-9, whose raised segment says which kind is shown.
+    // A phone gives it the full row, so its segments split the width evenly.
+    <SegmentControl<UserTemplateKind>
+      value={kind}
+      onValueChange={(value: UserTemplateKind) => {
+        setKind(value);
       }}
       aria-label={t(($) => {
         return $.artifacts.templates.categories;
       })}
-      className="w-full gap-1 lg:w-auto"
+      className="max-sm:w-full"
     >
       {options.map(({ value, label }) => {
         return (
-          <Toggle
+          <SegmentControlItem
             key={value}
             value={value}
-            variant="quiet"
-            size="sm"
-            className="flex-1 max-[374px]:px-2 max-[374px]:text-xs lg:flex-none"
+            className="max-sm:flex-1 max-sm:px-2 max-[374px]:text-xs"
           >
             {label}
-          </Toggle>
+          </SegmentControlItem>
         );
       })}
-    </ToggleGroup>
+    </SegmentControl>
   );
 }
 
@@ -532,14 +541,10 @@ function CustomTemplatesEmpty({
   kind,
   isEmptyCatalog,
   hasQuery,
-  signals,
-  onImported,
 }: {
   readonly kind: UserTemplateKind;
   readonly isEmptyCatalog: boolean;
   readonly hasQuery: boolean;
-  readonly signals: ComposerSignals;
-  readonly onImported: () => void;
 }) {
   const { t } = useTranslation();
   const setQuery = useSet(setCustomTemplateSearchQuery$);
@@ -612,15 +617,104 @@ function CustomTemplatesEmpty({
             return $.templates.clearSearch;
           })}
         </Button>
-      ) : !isEmptyCatalog ? (
-        <div className="mt-6">
-          <CustomTemplateImportButton
-            signals={signals}
-            onImported={onImported}
-          />
-        </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Asks once before a template is removed, because removal cannot be undone.
+ *
+ * Both the tile menu and the open template's column request a deletion, so the
+ * confirmation lives beside the picker rather than inside either of them. It
+ * mounts per request, keyed by the template, so one request's failure is never
+ * shown on the next. It stays open while the delete is in flight and closes
+ * only on success.
+ */
+function CustomTemplateDeleteConfirmSlot() {
+  const pending = useGet(pendingCustomTemplateDeletion$);
+  return pending ? (
+    <CustomTemplateDeleteConfirm
+      key={pending.id}
+      templateId={pending.id}
+      title={pending.title}
+    />
+  ) : null;
+}
+
+function CustomTemplateDeleteConfirm({
+  templateId,
+  title,
+}: {
+  readonly templateId: string;
+  readonly title: string;
+}) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const cancel = useSet(cancelDeleteCustomTemplate$);
+  const [deleteLoadable, deleteTemplate] = useLoadableSet(
+    deleteCustomTemplate$,
+  );
+  const deleting = deleteLoadable.state === "loading";
+  return (
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !deleting) {
+          cancel();
+        }
+      }}
+    >
+      <DialogContent smMaxWidth={420}>
+        <DialogHeader className="min-w-0 pr-8">
+          <DialogTitle className="break-words leading-tight">
+            {t(($) => {
+              return $.templates.delete.title;
+            })}
+          </DialogTitle>
+          <DialogDescription className="break-words">
+            {t(
+              ($) => {
+                return $.templates.delete.description;
+              },
+              { title },
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        {deleteLoadable.state === "hasError" ? (
+          <p role="alert" className="text-sm text-destructive">
+            {t(($) => {
+              return $.templates.delete.failed;
+            })}
+          </p>
+        ) : null}
+        <DialogFooter className="min-w-0">
+          <Button variant="outline" disabled={deleting} onClick={cancel}>
+            {t(($) => {
+              return $.templates.delete.cancel;
+            })}
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={deleting}
+            onClick={() => {
+              detach(
+                deleteTemplate(templateId, pageSignal),
+                Reason.DomCallback,
+              );
+            }}
+          >
+            {deleting
+              ? t(($) => {
+                  return $.templates.delete.deleting;
+                })
+              : t(($) => {
+                  return $.templates.delete.confirm;
+                })}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -641,58 +735,58 @@ export function CustomTemplatePickerPane({
   const projectPicker = useGet(projectCustomTemplatePicker$);
   const view = catalog.state === "hasData" ? projectPicker(catalog.data) : null;
   const hasQuery = query.trim().length > 0;
-  const showToolbar = view !== null && (view.templates.length > 0 || hasQuery);
-  const showHeaderImport = showToolbar || view?.isEmptyCatalog === true;
+  // A non-empty catalog always shows its search and kind filters, including
+  // when the selected kind is empty, so neither moves while a member switches
+  // kinds and an empty kind can be left from here.
+  const showFilters = view !== null && !view.isEmptyCatalog;
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      {showHeaderImport ? (
-        <div
-          className={cn(
-            "relative shrink-0 pb-5 sm:pt-[68px] lg:flex lg:items-center lg:gap-4",
-            !showToolbar && "pb-0",
-          )}
-        >
-          {showToolbar && view ? (
-            <>
-              <div className="mb-3.5 w-full min-w-0 lg:mb-0 lg:w-56 lg:shrink">
-                <div className="relative">
-                  <Search
-                    className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                    aria-hidden
-                  />
-                  <Input
-                    aria-label={t(($) => {
-                      return $.artifacts.templates.searchConnectors;
-                    })}
-                    placeholder={t(($) => {
-                      return $.artifacts.templates.searchConnector;
-                    })}
-                    className="h-9 pl-9 text-sm"
-                    value={query}
-                    onChange={(event) => {
-                      setQuery(event.target.value);
-                    }}
-                  />
-                </div>
-              </div>
-              <CustomTemplateKindFilters kind={view.kind} />
-            </>
+      {/* The 68px band the workflow search uses, so the band keeps the same
+          height and axis in both categories and the import clears the
+          dialog's close button. The kind comes first because it scopes what
+          the search looks through; the search and the import are the tools
+          on the right. The band renders before the catalog resolves, so it
+          never collapses while a request is pending. Below lg the tools take
+          a second row instead of overflowing the dialog. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-3 px-6 py-4 sm:pr-14 lg:h-[68px] lg:flex-nowrap lg:py-0">
+        {showFilters ? <CustomTemplateKindFilters kind={view.kind} /> : null}
+        <div className="flex w-full min-w-0 items-center gap-3 lg:ml-auto lg:w-auto">
+          {showFilters ? (
+            <div className="relative min-w-0 flex-1 lg:w-56 lg:flex-none">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                aria-label={t(($) => {
+                  return $.artifacts.templates.searchConnectors;
+                })}
+                placeholder={t(($) => {
+                  return $.artifacts.templates.searchConnector;
+                })}
+                className="h-9 pl-9 text-sm"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                }}
+              />
+            </div>
           ) : null}
-          <div className="absolute -top-[50px] right-0 shrink-0 sm:right-9 sm:top-[18px]">
+          <div className="ml-auto shrink-0">
             <CustomTemplateImportButton
               signals={signals}
               onImported={onImported}
             />
           </div>
         </div>
-      ) : null}
+      </div>
       <div
         role="region"
         aria-label={t(($) => {
           return $.templates.detail.back;
         })}
-        className="relative flex min-h-0 flex-1 flex-col overflow-y-auto"
+        className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6"
       >
         {catalog.state === "hasError" ? (
           <CustomTemplatesLoadError />
@@ -701,8 +795,6 @@ export function CustomTemplatePickerPane({
             kind={view.kind}
             isEmptyCatalog={view.isEmptyCatalog}
             hasQuery={hasQuery}
-            signals={signals}
-            onImported={onImported}
           />
         ) : (
           <div
@@ -725,6 +817,7 @@ export function CustomTemplatePickerPane({
         )}
       </div>
       <CustomTemplatePreviewDialog onSelect={onSelect} />
+      <CustomTemplateDeleteConfirmSlot />
     </div>
   );
 }

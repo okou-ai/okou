@@ -6,9 +6,12 @@ import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import {
+  storagePublicationGenerations,
+  storagePublicationTokens,
+} from "@okouai/db/schema/storage-publication-fence";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import type { Tx } from "../../lib/db-types";
 import { settle } from "../utils";
 import { writeDb$ } from "../external/db";
 import { usageCleanupTargets } from "./usage-event-cleanup.service";
@@ -32,39 +35,6 @@ import {
   type ClerkDeletionScope,
   type ConversationDeletionReceipt,
 } from "./clerk-lifecycle-plan";
-import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
-
-/**
- * Delete one snapshot of target Runs conversation-first, in a single pass.
- *
- * The conversations and their blob references go in one statement, then only
- * conversation-free Runs are deleted. Files and artifacts have independent
- * owners. A Run that gained a conversation in between survives that DELETE;
- * the short count rolls the whole deletion
- * back for the job's existing attempt schedule instead of re-sweeping here.
- */
-async function deleteTargetRunsConversationFirst(
-  tx: Tx,
-  runIds: readonly string[],
-): Promise<ConversationDeletionReceipt> {
-  if (runIds.length === 0) {
-    return emptyConversationDeletionReceipt();
-  }
-  const receipt = requireReleasedConversationReferences(
-    parseRawRows(
-      releasedConversationSweepSchema,
-      await tx.execute(releaseRunConversationsSql(runIds)),
-    ),
-  );
-  const [deleted] = parseRawRows(
-    deletedRunCountSchema,
-    await tx.execute(conversationFreeRunDeleteSql(runIds)),
-  );
-  if (deleted?.deletedRuns !== runIds.length) {
-    throwLateRunConversation();
-  }
-  return receipt;
-}
 
 function idsOf(rows: readonly { readonly id: string }[]) {
   return rows.map((row) => {
@@ -77,6 +47,7 @@ const deleteClerkUserLifecycleData$ = command(
     signal.throwIfAborted();
     const db = set(writeDb$);
     const outcome = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0098; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const [jobs, ...usage] = usageCleanupTargets({
           scope: "user",
@@ -136,7 +107,26 @@ const deleteClerkUserLifecycleData$ = command(
                 .where(inArray(agentRuns.sessionId, userSessions)),
             ),
         );
-        const receipt = await deleteTargetRunsConversationFirst(tx, runIds);
+        // Release this Run snapshot's references before deleting only its
+        // conversation-free Runs; a short count rolls the whole cleanup back.
+        let receipt: ConversationDeletionReceipt;
+        if (runIds.length === 0) {
+          receipt = emptyConversationDeletionReceipt();
+        } else {
+          receipt = requireReleasedConversationReferences(
+            parseRawRows(
+              releasedConversationSweepSchema,
+              await tx.execute(releaseRunConversationsSql(runIds)),
+            ),
+          );
+          const [deleted] = parseRawRows(
+            deletedRunCountSchema,
+            await tx.execute(conversationFreeRunDeleteSql(runIds)),
+          );
+          if (deleted?.deletedRuns !== runIds.length) {
+            throwLateRunConversation();
+          }
+        }
         await tx.execute(runFreeUserSessionDeleteSql(userId));
         const [lateSession] = await tx
           .select({ id: agentSessions.id })
@@ -174,6 +164,7 @@ const deleteClerkOrganizationLifecycleData$ = command(
     signal.throwIfAborted();
     const db = set(writeDb$);
     const outcome = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0099; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         // Match Social settlement's job-before-parent mutations.
         const [jobs, ...usage] = usageCleanupTargets({
@@ -241,7 +232,26 @@ const deleteClerkOrganizationLifecycleData$ = command(
                 .where(inArray(agentRuns.sessionId, ownedSessions)),
             ),
         );
-        const receipt = await deleteTargetRunsConversationFirst(tx, runIds);
+        // Release this Run snapshot's references before deleting only its
+        // conversation-free Runs; a short count rolls the whole cleanup back.
+        let receipt: ConversationDeletionReceipt;
+        if (runIds.length === 0) {
+          receipt = emptyConversationDeletionReceipt();
+        } else {
+          receipt = requireReleasedConversationReferences(
+            parseRawRows(
+              releasedConversationSweepSchema,
+              await tx.execute(releaseRunConversationsSql(runIds)),
+            ),
+          );
+          const [deleted] = parseRawRows(
+            deletedRunCountSchema,
+            await tx.execute(conversationFreeRunDeleteSql(runIds)),
+          );
+          if (deleted?.deletedRuns !== runIds.length) {
+            throwLateRunConversation();
+          }
+        }
         const scope = { kind: "organization", orgId } as const;
         for (const statement of clerkPublicationFenceCleanupSql(
           scope,
@@ -250,7 +260,6 @@ const deleteClerkOrganizationLifecycleData$ = command(
           await tx.execute(statement);
         }
         if (agentIds.length > 0) {
-          await tx.execute(purgeRetiredMorningBriefEmailSql());
           // Only Agents with no Run left under their Sessions; a late Run
           // (and its conversation) is never removed by the Agent cascade.
           await tx.execute(runFreeAgentDeleteSql(orgId, agentIds));
@@ -304,6 +313,31 @@ export const deleteClerkAgentLifecycleData$ = command(
   },
 );
 
+// Once entered, finish both writes before the caller observes cancellation,
+// matching the former transaction callback's cleanup phase.
+const deletePublicationFences$ = command(
+  async ({ set }, scope: ClerkDeletionScope): Promise<void> => {
+    const db = set(writeDb$);
+    await db
+      .delete(storagePublicationGenerations)
+      .where(
+        scope.kind === "organization"
+          ? eq(storagePublicationGenerations.orgId, scope.orgId)
+          : eq(storagePublicationGenerations.subject, scope.userId),
+      );
+    // Use a fresh statement snapshot to see tokens committed while the
+    // generation DELETE waited for an in-flight publisher. Always clear tokens,
+    // even when no generation remains; only both writes complete the cleanup.
+    await db
+      .delete(storagePublicationTokens)
+      .where(
+        scope.kind === "organization"
+          ? eq(storagePublicationTokens.orgId, scope.orgId)
+          : eq(storagePublicationTokens.subject, scope.userId),
+      );
+  },
+);
+
 export const deletePublicationFencesAfterAuthorityRemoval$ = command(
   async (
     { set },
@@ -311,12 +345,7 @@ export const deletePublicationFencesAfterAuthorityRemoval$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();
-    const db = set(writeDb$);
-    await db.transaction(async (tx) => {
-      for (const statement of clerkPublicationFenceCleanupSql(scope, [])) {
-        await tx.execute(statement);
-      }
-    });
+    await set(deletePublicationFences$, scope);
     signal.throwIfAborted();
   },
 );

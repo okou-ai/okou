@@ -1,4 +1,4 @@
-import { createHmac, randomBytes } from "node:crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import {
   DISCORD_GATEWAY_AUTH_TEST_VECTORS,
   DISCORD_GATEWAY_SIGNATURE_HEADER,
@@ -52,19 +52,28 @@ function postRaw(
 function eventBody(
   payload: Record<string, unknown>,
   eventType = "MESSAGE_CREATE",
+  eventId = "synthetic-event",
 ): string {
   return JSON.stringify({
     version: 1,
     applicationId: APPLICATION_ID,
     eventType,
-    eventId: "synthetic-event",
+    eventId,
     payload,
   });
+}
+
+function missingGuildId(): string {
+  return String(
+    100_000_000_000_000_000n + BigInt(`0x${randomBytes(7).toString("hex")}`),
+  );
 }
 
 describe("Discord Gateway authentication and ignored transport events", () => {
   beforeEach(() => {
     configureGateway();
+    // Signing and verification must observe the same clock second.
+    mockNow(new Date("2026-10-01T00:00:00.999Z"));
   });
 
   it.each(DISCORD_GATEWAY_AUTH_TEST_VECTORS)(
@@ -100,6 +109,24 @@ describe("Discord Gateway authentication and ignored transport events", () => {
     );
     expect(response.status).toBe(401);
   });
+
+  it.each([-300, 300])(
+    "accepts a signed timestamp at the past/future window boundary (%s)",
+    async (offset) => {
+      const body = eventBody(
+        { id: "222222222222222222", unavailable: true },
+        "GUILD_DELETE",
+      );
+      const timestamp = String(Math.floor(now() / 1000) + offset);
+      const response = await postRaw(body, timestamp);
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toStrictEqual({
+        ok: true,
+        outcome: "ignored",
+        reason: "guild-unavailable",
+      });
+    },
+  );
 
   it.each([-301, 301])(
     "rejects a signed timestamp outside the past/future window (%s)",
@@ -148,6 +175,62 @@ describe("Discord Gateway authentication and ignored transport events", () => {
       outcome: "ignored",
       reason: "guild-unavailable",
     });
+  });
+
+  it("durably accepts an absent guild removal and deduplicates its signed replay", async () => {
+    const guildId = missingGuildId();
+    const eventId = `GUILD_DELETE:${randomUUID()}:1`;
+    const timestamp = String(Math.floor(now() / 1000));
+    const unavailable = await postRaw(
+      eventBody({ id: guildId, unavailable: true }, "GUILD_DELETE", eventId),
+      timestamp,
+    );
+    expect(unavailable.status).toBe(200);
+    await expect(unavailable.json()).resolves.toStrictEqual({
+      ok: true,
+      outcome: "ignored",
+      reason: "guild-unavailable",
+    });
+
+    const body = eventBody({ id: guildId }, "GUILD_DELETE", eventId);
+    const accepted = await postRaw(body, timestamp);
+    expect(accepted.status).toBe(200);
+    await expect(accepted.json()).resolves.toStrictEqual({
+      ok: true,
+      outcome: "accepted",
+    });
+    const replayed = await postRaw(body, timestamp);
+    expect(replayed.status).toBe(200);
+    await expect(replayed.json()).resolves.toStrictEqual({
+      ok: true,
+      outcome: "duplicate",
+    });
+  });
+
+  it("arbitrates concurrent signed guild removals through one durable receipt", async () => {
+    const body = eventBody(
+      { id: missingGuildId() },
+      "GUILD_DELETE",
+      `GUILD_DELETE:${randomUUID()}:1`,
+    );
+    const timestamp = String(Math.floor(now() / 1000));
+    const responses = await Promise.all([
+      postRaw(body, timestamp),
+      postRaw(body, timestamp),
+    ]);
+    expect(
+      responses.map((response) => {
+        return response.status;
+      }),
+    ).toStrictEqual([200, 200]);
+    const receipts = await Promise.all(
+      responses.map(async (response) => {
+        return await response.json();
+      }),
+    );
+    expect(receipts).toHaveLength(2);
+    expect(receipts).toContainEqual({ ok: true, outcome: "accepted" });
+    expect(receipts).toContainEqual({ ok: true, outcome: "duplicate" });
   });
 
   it.each([

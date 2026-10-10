@@ -93,9 +93,7 @@ export function selectedUserPresentationTemplateIds(
 /**
  * The storage volumes that carry those templates' guidance packages.
  *
- * Mounted under the working directory rather than the skills root because the
- * skills root is chosen per framework inside run creation, while the prompt
- * naming this path is built before a framework exists.
+ * Template guidance uses a fixed working-directory path across runtimes.
  */
 export function userPresentationTemplateVolumes(
   templateIds: readonly string[],
@@ -106,16 +104,6 @@ export function userPresentationTemplateVolumes(
       mountPath: `${CANONICAL_WORKING_DIR}/${userPresentationTemplateDirectory(templateId)}`,
     };
   });
-}
-
-/**
- * Shape the optional run-body field, so a run with no uploaded template keeps
- * the compose-resolved volume list it would otherwise have had.
- */
-export function additionalVolumesForRun(
-  volumes: readonly PresentationTemplateVolume[],
-): { additionalVolumes?: PresentationTemplateVolume[] } {
-  return volumes.length === 0 ? {} : { additionalVolumes: [...volumes] };
 }
 
 export function presentationTemplateSummary(

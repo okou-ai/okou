@@ -111,6 +111,7 @@ export const enqueueIntegrationChatInput$ = command(
     }
     const { createdAt, chatThreadId } = prepared.row;
     const currentTime = nowDate();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0172; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       if (args.ingress?.kind === "discord") {
         const [claimed] = await tx
@@ -172,7 +173,7 @@ export const enqueueIntegrationChatInput$ = command(
       if (event) {
         await applyThreadModelReplacement(tx, args.threadModelReplacement);
         // The queue row is locked last and only advances queuedAt; a live
-        // claim lease stays with its holder (docs/chat-run-pick.md).
+        // claim lease stays with its holder.
         const plan = queuedChatThreadEnqueuePlan({
           chatThreadId,
           orgId: args.orgId,

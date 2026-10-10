@@ -1,17 +1,14 @@
-use std::collections::BTreeMap;
-
 use api_contracts::generated::types::{
     runners::{
         runs::{
-            CodexRuntimeConfig, PiLaunchConfig, PiLaunchConfigMemoryRecall, PiModelConfig,
-            PiModelConfigApiKeyEnv, PiModelConfigProvider, PiModelConfigServiceTier,
-            PiModelConfigV2, PiModelConfigV3, cancellation,
+            CodexRuntimeConfig, PiLaunchConfig, PiLaunchConfigMemoryRecall, PiModelConfigV2,
+            PiModelConfigV3, cancellation,
         },
         storage as runner_storage,
     },
     webhooks::agent::{
-        checkpoints::{self, prepare_history},
         complete,
+        session_history::prepare as prepare_history,
         storages::{FileEntryWithHash, commit, prepare},
     },
 };
@@ -183,80 +180,17 @@ fn generated_codex_runtime_config_omits_absent_options_and_accepts_legacy_null()
 }
 
 #[test]
-fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
+fn generated_pi_launch_config_round_trips_minimal_shape() {
     let launch = PiLaunchConfig {
         schema_version: 2,
         memory_recall: None,
         maintenance: None,
     };
-    let model = PiModelConfig {
-        provider: PiModelConfigProvider::Openrouter,
-        base_url: "https://openrouter.ai/api/v1".to_string(),
-        model: "openai/gpt-6-luna".to_string(),
-        catalog_model: None,
-        thinking_level: None,
-        service_tier: None,
-        api_key_env: PiModelConfigApiKeyEnv::OPENAIAPIKEY,
-        credential_secret_name: "OPENROUTER_API_KEY".to_string(),
-    };
-
     let launch_value = serde_json::to_value(&launch).unwrap();
     assert_eq!(launch_value, json!({ "schemaVersion": 2 }));
     assert_eq!(
         serde_json::from_value::<PiLaunchConfig>(launch_value).unwrap(),
         launch
-    );
-
-    let model_value = serde_json::to_value(&model).unwrap();
-    assert_eq!(
-        model_value,
-        json!({
-            "provider": "openrouter",
-            "baseUrl": "https://openrouter.ai/api/v1",
-            "model": "openai/gpt-6-luna",
-            "apiKeyEnv": "OPENAI_API_KEY",
-            "credentialSecretName": "OPENROUTER_API_KEY",
-        })
-    );
-    assert_eq!(
-        serde_json::from_value::<PiModelConfig>(model_value).unwrap(),
-        model
-    );
-
-    // Unknown wire fields keep serde's existing policy: discard them on decode.
-    for api in [
-        "openai-responses",
-        "openai-completions",
-        "openai-codex-responses",
-    ] {
-        let mut legacy_value = serde_json::to_value(&model).unwrap();
-        legacy_value["api"] = json!(api);
-        let decoded: PiModelConfig = serde_json::from_value(legacy_value).unwrap();
-        assert_eq!(decoded, model);
-        assert_eq!(
-            serde_json::to_value(decoded).unwrap(),
-            serde_json::to_value(&model).unwrap()
-        );
-    }
-
-    let priority_model_value = json!({
-        "provider": "openrouter",
-        "baseUrl": "https://openrouter.ai/api/v1",
-        "model": "openai/gpt-6-luna",
-        "thinkingLevel": "low",
-        "serviceTier": "priority",
-        "apiKeyEnv": "OPENAI_API_KEY",
-        "credentialSecretName": "OPENROUTER_API_KEY",
-    });
-    let priority_model: PiModelConfig =
-        serde_json::from_value(priority_model_value.clone()).unwrap();
-    assert_eq!(
-        priority_model.service_tier,
-        Some(PiModelConfigServiceTier::Priority)
-    );
-    assert_eq!(
-        serde_json::to_value(priority_model).unwrap(),
-        priority_model_value
     );
 }
 
@@ -288,29 +222,6 @@ fn generated_pi_launch_config_round_trips_frozen_memory() {
             && content == "bounded memory"
     ));
     assert_eq!(serde_json::to_value(launch).unwrap(), value);
-}
-
-#[test]
-fn generated_pi_model_config_rejects_unknown_enums() {
-    for (field, value) in [
-        ("provider", "future-provider"),
-        ("apiKeyEnv", "FUTURE_API_KEY"),
-        ("serviceTier", "fast"),
-    ] {
-        let mut config = json!({
-            "provider": "openrouter",
-            "baseUrl": "https://openrouter.ai/api/v1",
-            "model": "openai/gpt-6-luna",
-            "apiKeyEnv": "OPENAI_API_KEY",
-            "credentialSecretName": "OPENROUTER_API_KEY",
-        });
-        config[field] = json!(value);
-
-        assert!(
-            serde_json::from_value::<PiModelConfig>(config).is_err(),
-            "{field} should reject {value}"
-        );
-    }
 }
 
 #[test]
@@ -354,15 +265,13 @@ fn generated_pi_model_config_v2_round_trips_both_dialects() {
     for value in [public_responses, codex_responses] {
         let decoded: PiModelConfigV2 = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(serde_json::to_value(decoded).unwrap(), value);
-        assert!(serde_json::from_value::<PiModelConfig>(value).is_err());
     }
 }
 
 #[test]
-fn generated_checkpoint_request_omits_absent_snapshots() {
+fn generated_completion_metadata_omits_absent_snapshots() {
     let history_hash = "a".repeat(64);
-    let request = checkpoints::Request {
-        run_id: "run-1".to_string(),
+    let request = complete::RequestCompletion {
         cli_agent_type: "claude-code".to_string(),
         cli_agent_session_id: "session-1".to_string(),
         cli_agent_session_history_hash: Some(history_hash.clone()),
@@ -375,7 +284,6 @@ fn generated_checkpoint_request_omits_absent_snapshots() {
     assert_eq!(
         value,
         json!({
-            "runId": "run-1",
             "cliAgentType": "claude-code",
             "cliAgentSessionId": "session-1",
             "cliAgentSessionHistoryHash": history_hash,
@@ -386,19 +294,18 @@ fn generated_checkpoint_request_omits_absent_snapshots() {
 }
 
 #[test]
-fn generated_checkpoint_request_round_trips_preserve_parent_snapshot() {
-    let request = checkpoints::Request {
-        run_id: "run-1".to_string(),
+fn generated_completion_metadata_round_trips_preserve_parent_snapshot() {
+    let request = complete::RequestCompletion {
         cli_agent_type: "codex".to_string(),
         cli_agent_session_id: "session-1".to_string(),
         cli_agent_session_history_hash: Some("b".repeat(64)),
         cli_agent_session_history_disposition: None,
-        artifact_snapshots: Some(vec![checkpoints::ArtifactSnapshot {
+        artifact_snapshots: Some(vec![complete::RequestCompletionArtifactSnapshot {
             name: "memory".to_string(),
             version: "version-1".to_string(),
             mount_path: "/memory".to_string(),
             missing_root_policy: Some(
-                runner_storage::ArtifactEntryMissingRootPolicy::PreserveParentVersion,
+                complete::RequestCompletionArtifactSnapshotMissingRootPolicy::PreserveParentVersion,
             ),
         }]),
         volume_versions_snapshot: None,
@@ -408,7 +315,6 @@ fn generated_checkpoint_request_round_trips_preserve_parent_snapshot() {
     assert_eq!(
         value,
         json!({
-            "runId": "run-1",
             "cliAgentType": "codex",
             "cliAgentSessionId": "session-1",
             "cliAgentSessionHistoryHash": "b".repeat(64),
@@ -421,19 +327,18 @@ fn generated_checkpoint_request_round_trips_preserve_parent_snapshot() {
         })
     );
 
-    let round_trip: checkpoints::Request = serde_json::from_value(value).unwrap();
+    let round_trip: complete::RequestCompletion = serde_json::from_value(value).unwrap();
     assert_eq!(round_trip, request);
 }
 
 #[test]
-fn generated_checkpoint_request_serializes_discarded_oversized_history() {
-    let request = checkpoints::Request {
-        run_id: "run-1".to_string(),
+fn generated_completion_metadata_serializes_discarded_oversized_history() {
+    let request = complete::RequestCompletion {
         cli_agent_type: "codex".to_string(),
         cli_agent_session_id: "session-1".to_string(),
         cli_agent_session_history_hash: None,
         cli_agent_session_history_disposition: Some(
-            checkpoints::RequestCliAgentSessionHistoryDisposition::DiscardedOversized,
+            complete::RequestCompletionCliAgentSessionHistoryDisposition::DiscardedOversized,
         ),
         artifact_snapshots: None,
         volume_versions_snapshot: None,
@@ -442,7 +347,6 @@ fn generated_checkpoint_request_serializes_discarded_oversized_history() {
     assert_eq!(
         serde_json::to_value(request).unwrap(),
         json!({
-            "runId": "run-1",
             "cliAgentType": "codex",
             "cliAgentSessionId": "session-1",
             "cliAgentSessionHistoryDisposition": "discarded_oversized",
@@ -451,14 +355,13 @@ fn generated_checkpoint_request_serializes_discarded_oversized_history() {
 }
 
 #[test]
-fn generated_checkpoint_request_serializes_unavailable_history() {
-    let request = checkpoints::Request {
-        run_id: "run-1".to_string(),
+fn generated_completion_metadata_serializes_unavailable_history() {
+    let request = complete::RequestCompletion {
         cli_agent_type: "claude-code".to_string(),
         cli_agent_session_id: "session-1".to_string(),
         cli_agent_session_history_hash: None,
         cli_agent_session_history_disposition: Some(
-            checkpoints::RequestCliAgentSessionHistoryDisposition::Unavailable,
+            complete::RequestCompletionCliAgentSessionHistoryDisposition::Unavailable,
         ),
         artifact_snapshots: None,
         volume_versions_snapshot: None,
@@ -467,7 +370,6 @@ fn generated_checkpoint_request_serializes_unavailable_history() {
     assert_eq!(
         serde_json::to_value(request).unwrap(),
         json!({
-            "runId": "run-1",
             "cliAgentType": "claude-code",
             "cliAgentSessionId": "session-1",
             "cliAgentSessionHistoryDisposition": "unavailable",
@@ -476,70 +378,7 @@ fn generated_checkpoint_request_serializes_unavailable_history() {
 }
 
 #[test]
-fn generated_checkpoint_response_deserializes_canonical_shapes() {
-    let minimal: checkpoints::Response = serde_json::from_value(json!({
-        "checkpointId": "checkpoint-1",
-        "agentSessionId": "agent-session-1",
-        "conversationId": "conversation-1",
-    }))
-    .unwrap();
-    assert_eq!(minimal.checkpoint_id, "checkpoint-1");
-    assert_eq!(minimal.agent_session_id, "agent-session-1");
-    assert_eq!(minimal.conversation_id, "conversation-1");
-    assert!(minimal.artifacts.is_none());
-    assert!(minimal.volumes.is_none());
-
-    let full: checkpoints::Response = serde_json::from_value(json!({
-        "checkpointId": "checkpoint-2",
-        "agentSessionId": "agent-session-2",
-        "conversationId": "conversation-2",
-        "artifacts": [{
-            "name": "memory",
-            "version": "version-2",
-            "mountPath": "/memory",
-            "missingRootPolicy": "preserveParentVersion",
-        }],
-        "volumes": {
-            "workspace": "volume-version-2",
-        },
-    }))
-    .unwrap();
-    assert_eq!(
-        full.artifacts.unwrap(),
-        vec![checkpoints::ArtifactSnapshot {
-            name: "memory".to_string(),
-            version: "version-2".to_string(),
-            mount_path: "/memory".to_string(),
-            missing_root_policy: Some(
-                runner_storage::ArtifactEntryMissingRootPolicy::PreserveParentVersion,
-            ),
-        }]
-    );
-    assert_eq!(
-        full.volumes.unwrap(),
-        BTreeMap::from([("workspace".to_string(), "volume-version-2".to_string())])
-    );
-}
-
-#[test]
-fn generated_checkpoint_response_rejects_invalid_required_fields() {
-    for response in [
-        json!({
-            "checkpointId": "checkpoint-1",
-            "conversationId": "conversation-1",
-        }),
-        json!({
-            "checkpointId": "checkpoint-1",
-            "agentSessionId": false,
-            "conversationId": "conversation-1",
-        }),
-    ] {
-        assert!(serde_json::from_value::<checkpoints::Response>(response).is_err());
-    }
-}
-
-#[test]
-fn generated_checkpoint_prepare_request_serializes_wire_shape() {
+fn generated_session_history_prepare_request_serializes_wire_shape() {
     let request = prepare_history::Request {
         run_id: "run-1".to_string(),
         hash: "a".repeat(64),
@@ -570,7 +409,7 @@ fn generated_checkpoint_prepare_request_serializes_wire_shape() {
 }
 
 #[test]
-fn generated_checkpoint_prepare_encoding_serializes_wire_values() {
+fn generated_session_history_prepare_encoding_serializes_wire_values() {
     for (encoding, wire_value) in [
         (
             prepare_history::SessionHistoryEncoding::Identity,
@@ -589,7 +428,7 @@ fn generated_checkpoint_prepare_encoding_serializes_wire_values() {
 }
 
 #[test]
-fn generated_checkpoint_prepare_response_deserializes_canonical_shapes() {
+fn generated_session_history_prepare_response_deserializes_canonical_shapes() {
     let existing: prepare_history::Response = serde_json::from_value(json!({
         "existing": true,
         "encoding": "gzip",
@@ -620,7 +459,7 @@ fn generated_checkpoint_prepare_response_deserializes_canonical_shapes() {
 }
 
 #[test]
-fn generated_checkpoint_prepare_response_rejects_invalid_existing() {
+fn generated_session_history_prepare_response_rejects_invalid_existing() {
     for response in [
         json!({"presignedUrl": "https://storage.example.test/session-history"}),
         json!({"existing": "false"}),

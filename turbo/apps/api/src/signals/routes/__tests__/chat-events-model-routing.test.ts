@@ -3,8 +3,6 @@ import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { now } from "../../../lib/time";
 
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
@@ -13,11 +11,11 @@ import {
   createChatEventsFixture,
   CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
   type PromptMessage,
-  requireOrgId,
   claimEnvironment,
   userMessages,
 } from "./helpers/chat-events-fixture";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 
 const context = testContext();
 const {
@@ -284,7 +282,7 @@ describe("CHAT-02: model-first routing", () => {
     ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
   });
 
-  it("stores Auto as a null selection on a new thread and captures the Auto run model", async () => {
+  it("stores canonical Auto on a new thread and captures its runtime billing model", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     // Clears the member preference, so Auto is the default.
     await configureBuiltInPiModel(actor);
@@ -306,8 +304,8 @@ describe("CHAT-02: model-first routing", () => {
     });
     await expect(
       chat.readThreadMetadata(actor, clientThreadId),
-    ).resolves.toMatchObject({ selectedModel: null });
-    await expectThreadCreatedModelEvent(actor, clientThreadId, null);
+    ).resolves.toMatchObject({ selectedModel: "auto" });
+    await expectThreadCreatedModelEvent(actor, clientThreadId, "auto");
 
     const { picked } = await waitForPickedInput(
       actor,
@@ -318,7 +316,7 @@ describe("CHAT-02: model-first routing", () => {
       eventType: "input.prompt",
       userMessage: {
         parts: expect.arrayContaining([
-          expect.objectContaining({ type: "model", selectedModel: "okou-1.0" }),
+          expect.objectContaining({ type: "model", selectedModel: "auto" }),
         ]),
       },
     });
@@ -326,10 +324,20 @@ describe("CHAT-02: model-first routing", () => {
       throw new Error("Expected the Auto input to launch a run");
     }
     const { claim } = await claimChatRun(runnerGroup, picked.runId);
-    expect(claim.modelUsageProvider).toBe("okou-1.0");
+    expect(claim.modelUsageProvider).toBe("@preset/okou-1-0");
+    const captured = await createRunReadsApi(context).requestReadLogById(
+      actor,
+      picked.runId,
+      [200],
+    );
+    expect(captured.body).toMatchObject({
+      selectedModel: "auto",
+      modelRuntimeProvider: "openrouter-codex",
+      modelRuntimeModel: claim.modelUsageProvider,
+    });
     await expect(
       chat.readThreadMetadata(actor, clientThreadId),
-    ).resolves.toMatchObject({ selectedModel: null });
+    ).resolves.toMatchObject({ selectedModel: "auto" });
     await cancelChatRun(actor, picked.runId);
   }, 90_000);
 
@@ -350,7 +358,7 @@ describe("CHAT-02: model-first routing", () => {
     });
     await expect(
       chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({ selectedModel: null });
+    ).resolves.toMatchObject({ selectedModel: "auto" });
     await expect(
       chat.requestThreadEvents(actor, {}, [200]),
     ).resolves.toMatchObject({
@@ -359,13 +367,13 @@ describe("CHAT-02: model-first routing", () => {
           expect.objectContaining({
             kind: "model_selection_updated",
             chatThreadId: thread.id,
-            selectedModel: null,
+            selectedModel: "auto",
           }),
         ]),
       },
     });
     const { claim } = await claimChatRun(runnerGroup, run.runId);
-    expect(claim.modelUsageProvider).toBe("okou-1.0");
+    expect(claim.modelUsageProvider).toBe("@preset/okou-1-0");
     await cancelChatRun(actor, run.runId);
   }, 90_000);
 
@@ -433,13 +441,11 @@ describe("CHAT-02: model-first routing", () => {
       prompt: "continue after explicitly selecting Auto",
     });
     const fallbackClaim = await claimChatRun(runnerGroup, fallback.runId);
-    expect(fallbackClaim.claim.modelUsageProvider).toBe(
-      SEEDED_SYSTEM_DEFAULT_MODEL,
-    );
+    expect(fallbackClaim.claim.modelUsageProvider).toBe("@preset/okou-1-0");
     await expect(
       chat.readThreadMetadata(actor, first.threadId),
     ).resolves.toMatchObject({
-      selectedModel: null,
+      selectedModel: "auto",
     });
     await cancelChatRun(actor, fallback.runId, fallbackClaim.sandboxHeaders);
   }, 90_000);
@@ -528,7 +534,7 @@ describe("CHAT-02: model-first routing", () => {
     await chat.updateThreadModelSelection(actor, first.threadId, null);
     expect(
       (await chat.readThreadMetadata(actor, first.threadId)).selectedModel,
-    ).toBeNull();
+    ).toBe("auto");
 
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     chatCallbacks.mockChatOutputEvents([]);
@@ -563,7 +569,7 @@ describe("CHAT-02: model-first routing", () => {
     );
     expect(
       (await chat.readThreadMetadata(actor, first.threadId)).selectedModel,
-    ).toBeNull();
+    ).toBe("auto");
 
     const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
     if (threadEvents.status !== 200) {
@@ -579,7 +585,7 @@ describe("CHAT-02: model-first routing", () => {
           event.selectedModel !== "claude-fable-5-1"
         );
       }),
-    ).toStrictEqual([expect.objectContaining({ selectedModel: null })]);
+    ).toStrictEqual([expect.objectContaining({ selectedModel: "auto" })]);
 
     await cancelChatRun(actor, promotedRunId, promotedClaim.sandboxHeaders);
   }, 90_000);
@@ -841,30 +847,6 @@ describe("CHAT-02: model-first routing", () => {
     );
     await chat.requestReadThread(actor, rejectedThreadId, [404]);
   }, 90_000);
-
-  it("launches a free-plan okou-1.0 run on its Built-in route", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await seedBuiltInModelKey("okou-1.0");
-    await preparePiResourceHandoff(actor, agentId);
-    await upsertOrgPlanEntitlementFixture({
-      orgId: requireOrgId(actor),
-      status: "active",
-      restrictedBuiltInModels: true,
-    });
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      model: null,
-      prompt: "run the free plan's model",
-    });
-    const { claim } = await claimChatRun(runnerGroup, run.runId);
-    expect(claim.modelUsageProvider).toBe("okou-1.0");
-    expect(claim.piModelConfig).toMatchObject({ catalogModel: "okou-1.0" });
-    expect(claim.billableFirewalls).toContain(
-      "model-provider:openrouter-codex",
-    );
-    await cancelChatRun(actor, run.runId);
-  });
 
   it("routes built-in okou-1.0 through global OpenRouter and resolves its firewall credential", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();

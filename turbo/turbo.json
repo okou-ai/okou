@@ -327,6 +327,7 @@
     },
     "api#test": {
       "dependsOn": ["^build"],
+      "env": ["PGOPTIONS"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/packages/api-contracts/src/contracts/__tests__/fixtures/x-resource-observations.json"

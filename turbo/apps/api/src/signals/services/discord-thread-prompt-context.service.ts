@@ -12,7 +12,7 @@ import {
   discordDeliveryTargetSchema,
   type DiscordDeliveryTarget,
 } from "./discord-chat-callback-payload";
-import type { ThreadPromptSource } from "./thread-run-prompt/types";
+import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
 interface DiscordThreadContext {
   readonly target: DiscordDeliveryTarget;
@@ -42,11 +42,11 @@ function checkedAccess(
 }
 
 function createDiscordStoredContext(
-  source$: Computed<Promise<ThreadPromptSource | null>>,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
 ) {
   return computed(async (get) => {
-    const source = await get(source$);
-    if (source?.event.contextType !== "discord" || !source.event.contextId) {
+    const pickedEvent = await get(pickedEvent$);
+    if (pickedEvent?.contextType !== "discord" || !pickedEvent.contextId) {
       return null;
     }
     const [context] = await get(db$)
@@ -73,8 +73,8 @@ function createDiscordStoredContext(
       )
       .where(
         and(
-          eq(chatDiscordContext.id, source.event.contextId),
-          eq(chatDiscordContext.chatThreadId, source.chatThreadId),
+          eq(chatDiscordContext.id, pickedEvent.contextId),
+          eq(chatDiscordContext.chatThreadId, pickedEvent.chatThreadId),
         ),
       )
       .limit(1);
@@ -83,12 +83,15 @@ function createDiscordStoredContext(
 }
 
 function createDiscordThreadTarget(
-  source$: Computed<Promise<ThreadPromptSource | null>>,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   context$: ReturnType<typeof createDiscordStoredContext>,
 ) {
   return computed(async (get) => {
-    const [source, context] = await Promise.all([get(source$), get(context$)]);
-    if (source?.event.contextType !== "discord") {
+    const [pickedEvent, context] = await Promise.all([
+      get(pickedEvent$),
+      get(context$),
+    ]);
+    if (pickedEvent?.contextType !== "discord") {
       return null;
     }
     const db = get(db$);
@@ -96,7 +99,9 @@ function createDiscordThreadTarget(
       const [route] = await db
         .select({ id: discordChatThreadRoutes.id })
         .from(discordChatThreadRoutes)
-        .where(eq(discordChatThreadRoutes.chatThreadId, source.chatThreadId))
+        .where(
+          eq(discordChatThreadRoutes.chatThreadId, pickedEvent.chatThreadId),
+        )
         .limit(1);
       if (route) {
         throw new Error("Discord queue item is missing its owned context");
@@ -109,12 +114,12 @@ function createDiscordThreadTarget(
       .from(discordChatThreadRoutes)
       .where(
         and(
-          eq(discordChatThreadRoutes.chatThreadId, source.chatThreadId),
+          eq(discordChatThreadRoutes.chatThreadId, pickedEvent.chatThreadId),
           eq(discordChatThreadRoutes.connectionId, target.connectionId),
           eq(discordChatThreadRoutes.id, target.routeId),
           eq(discordChatThreadRoutes.destinationChannelId, target.channelId),
           eq(discordChatThreadRoutes.sessionKey, target.sessionKey),
-          eq(discordChatThreadRoutes.userId, source.event.userId),
+          eq(discordChatThreadRoutes.userId, pickedEvent.userId),
         ),
       )
       .limit(1);
@@ -123,20 +128,21 @@ function createDiscordThreadTarget(
 }
 
 export function createDiscordThreadContext(
-  source$: Computed<Promise<ThreadPromptSource | null>>,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  orgId: string,
 ): Computed<Promise<DiscordThreadContext | null>> {
-  const context$ = createDiscordStoredContext(source$);
-  const target$ = createDiscordThreadTarget(source$, context$);
+  const context$ = createDiscordStoredContext(pickedEvent$);
+  const target$ = createDiscordThreadTarget(pickedEvent$, context$);
   const sourceAccessInput$ = computed(async (get) => {
-    const [source, context, target] = await Promise.all([
-      get(source$),
+    const [pickedEvent, context, target] = await Promise.all([
+      get(pickedEvent$),
       get(context$),
       get(target$),
     ]);
-    return source && context && target
+    return pickedEvent && context && target
       ? {
-          orgId: source.orgId,
-          userId: source.event.userId,
+          orgId,
+          userId: pickedEvent.userId,
           guildId: target.guildId,
           channelId: context.sourceChannelId,
           mode: "view" as const,
@@ -172,13 +178,18 @@ export function createDiscordThreadContext(
       return null;
     }
     // DM history is shared across orgs and must never reach a run.
+    let messageContentEnabled = sourceAccess.messageContentEnabled;
     let conversationContextAllowed =
-      sourceAccess.channel.type !== 1 && sourceAccess.messageContentEnabled;
+      sourceAccess.channel.type !== 1 && messageContentEnabled;
     if (context.conversationContext !== null && conversationContextAllowed) {
+      const historyAccess = checkedAccess(await get(historyAccess$), target);
+      if (historyAccess) {
+        messageContentEnabled = historyAccess.messageContentEnabled;
+      }
       conversationContextAllowed =
-        checkedAccess(await get(historyAccess$), target) !== null;
+        historyAccess !== null && messageContentEnabled;
     }
-    return { conversationContextAllowed };
+    return { conversationContextAllowed, messageContentEnabled };
   });
   const destinationAccessInput$ = computed(async (get) => {
     const conversation = await get(conversationAccess$);
@@ -220,7 +231,7 @@ export function createDiscordThreadContext(
       botUserId: context.botUserId,
       conversationContext: context.conversationContext,
       conversationContextAllowed: conversation.conversationContextAllowed,
-      messageContentEnabled: destinationAccess.messageContentEnabled,
+      messageContentEnabled: conversation.messageContentEnabled,
     };
   });
 }

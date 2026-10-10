@@ -18,7 +18,7 @@ import {
 } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
-import { db$, writeDb$ } from "../external/db";
+import { createReadOnlyQueryCommand, db$ } from "../external/db";
 import { safeJsonParse } from "../utils";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { listAvailableRunModels$ } from "./run-models.service";
@@ -96,9 +96,34 @@ function decodeAgentCursor(
     : null;
 }
 
+const agentDiscoveryRowSchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    display_name: z.string().nullable(),
+    default_agent_id: z.uuid().nullable(),
+    description: z.string().nullable(),
+    description_truncated: z.boolean(),
+  })
+  .transform((row) => {
+    return {
+      agentId: row.id,
+      slug: row.name,
+      displayName: row.display_name,
+      defaultAgentId: row.default_agent_id,
+      description: row.description,
+      descriptionTruncated: row.description_truncated,
+    };
+  });
+
+const readAgentDiscovery$ = createReadOnlyQueryCommand(
+  agentDiscoveryRowSchema,
+  3000,
+);
+
 export const listMcpAgents$ = command(
   async (
-    { set },
+    { get, set },
     principal: Principal,
     input: McpListAgentsInput,
     signal: AbortSignal,
@@ -113,38 +138,34 @@ export const listMcpAgents$ = command(
           "The Agent cursor is invalid, expired, or belongs to another user, organization or limit. Restart without cursor.",
       };
     }
-    // This transaction is only the scope of SET LOCAL for one bounded SELECT.
-    const rows = await set(writeDb$).transaction(
-      async (tx) => {
-        await tx.execute(sql`SET LOCAL statement_timeout = '3s'`);
-        return await tx
-          .select({
-            agentId: agents.id,
-            slug: agents.name,
-            displayName: agents.displayName,
-            defaultAgentId: orgMetadata.defaultAgentId,
-            description: sql`left(${agents.description}, 500)`.mapWith(
-              nullableDriverValueDecoder(agents.description),
-            ),
-            descriptionTruncated:
-              sql`coalesce(length(${agents.description}) > 500, false)`.mapWith(
-                pgBooleanDecoder,
-              ),
-          })
-          .from(agents)
-          .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-          .where(
-            and(
-              eq(agents.orgId, principal.orgId),
-              visibleJoinedAgentCondition(principal.userId),
-              cursor ? gt(agents.id, cursor.agentId) : undefined,
-            ),
-          )
-          .orderBy(asc(agents.id))
-          .limit(input.limit + 1);
-      },
-      { accessMode: "read only" },
-    );
+    // The builder keeps schema encoders; the row schema decodes raw driver fields.
+    const query = get(db$)
+      .select({
+        agentId: agents.id,
+        slug: agents.name,
+        displayName: agents.displayName,
+        defaultAgentId: orgMetadata.defaultAgentId,
+        description: sql`left(${agents.description}, 500)`
+          .mapWith(nullableDriverValueDecoder(agents.description))
+          .as("description"),
+        descriptionTruncated:
+          sql`coalesce(length(${agents.description}) > 500, false)`
+            .mapWith(pgBooleanDecoder)
+            .as("description_truncated"),
+      })
+      .from(agents)
+      .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+      .where(
+        and(
+          eq(agents.orgId, principal.orgId),
+          visibleJoinedAgentCondition(principal.userId),
+          cursor ? gt(agents.id, cursor.agentId) : undefined,
+        ),
+      )
+      .orderBy(asc(agents.id))
+      .limit(input.limit + 1)
+      .getSQL();
+    const rows = await set(readAgentDiscovery$, query, signal);
     signal.throwIfAborted();
     const page: McpListAgentsOutput["agents"] = [];
     let bytes = 4200;

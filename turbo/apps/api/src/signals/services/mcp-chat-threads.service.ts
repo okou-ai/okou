@@ -17,6 +17,7 @@ import { and, desc, eq, gte, ilike, lt, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { command } from "ccstate";
+import { pgTimestampWithoutTimezoneToDateSchema } from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -24,7 +25,7 @@ import {
 } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { createReadOnlyQueryCommand, db$ } from "../external/db";
 import { safeJsonParse } from "../utils";
 import { mcpChatThreadModels$ } from "./mcp-chat-thread-model.service";
 
@@ -123,9 +124,43 @@ function literalTitlePattern(title: string): string {
   return `%${title.replace(/[\\%_]/gu, String.raw`\$&`)}%`;
 }
 
+const threadRowSchema = z
+  .object({
+    thread_id: z.uuid(),
+    title: z.string().nullable(),
+    title_truncated: z.boolean(),
+    agent_id: z.uuid(),
+    name: z.string(),
+    display_name: z.string().nullable(),
+    default_agent_id: z.uuid().nullable(),
+    selected_model: z.string(),
+    created_at: pgTimestampWithoutTimezoneToDateSchema,
+    updated_at: pgTimestampWithoutTimezoneToDateSchema,
+    last_message_at: pgTimestampWithoutTimezoneToDateSchema,
+    cursor_time: z.iso.datetime({ precision: 6 }),
+  })
+  .transform((row) => {
+    return {
+      threadId: row.thread_id,
+      title: row.title,
+      titleTruncated: row.title_truncated,
+      agentId: row.agent_id,
+      agentName: row.name,
+      agentDisplayName: row.display_name,
+      defaultAgentId: row.default_agent_id,
+      selectedModel: row.selected_model,
+      createdAt: row.created_at,
+      metadataUpdatedAt: row.updated_at,
+      lastMessageAt: row.last_message_at,
+      cursorTime: row.cursor_time,
+    };
+  });
+
+const readThreads$ = createReadOnlyQueryCommand(threadRowSchema, 3000);
+
 const threadQuery$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly principal: Principal;
       readonly input: McpListChatThreadsInput;
@@ -135,7 +170,7 @@ const threadQuery$ = command(
     signal: AbortSignal,
   ) => {
     const { principal, input, cursor, threadId } = args;
-    const db = set(writeDb$);
+    const db = get(db$);
     const conditions: (SQL | undefined)[] = [
       eq(chatThreads.userId, principal.userId),
       eq(agents.orgId, principal.orgId),
@@ -156,66 +191,51 @@ const threadQuery$ = command(
         ? undefined
         : sql`(${chatThreads.lastMessageAt}, ${chatThreads.id}) < (${cursor.lastMessageAt}::timestamp, ${cursor.threadId}::uuid)`,
     ];
-    const rows = await db.transaction(
-      async (tx) => {
-        await tx.execute(sql`SET LOCAL statement_timeout = '3s'`);
-        return await tx
-          .select({
-            threadId: chatThreads.id,
-            title:
-              sql`left(${chatThreads.title}, ${TEXT_CHARACTER_LIMIT})`.mapWith(
-                nullableDriverValueDecoder(chatThreads.title),
-              ),
-            titleTruncated:
-              sql`coalesce(length(${chatThreads.title}) > ${TEXT_CHARACTER_LIMIT}, false)`.mapWith(
-                pgBooleanDecoder,
-              ),
-            agentId: agents.id,
-            agentName: agents.name,
-            agentDisplayName: agents.displayName,
-            defaultAgentId: orgMetadata.defaultAgentId,
-            selectedModel: chatThreads.selectedModel,
-            createdAt: chatThreads.createdAt,
-            metadataUpdatedAt: chatThreads.updatedAt,
-            lastMessageAt: chatThreads.lastMessageAt,
-            // Preserve all six stored digits in continuation. The public fields have
-            // fixed six-digit syntax, but JavaScript Date projection has millisecond data.
-            cursorTime:
-              sql`to_char(${chatThreads.lastMessageAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
-                pgTextDecoder,
-              ),
-          })
-          .from(chatThreads)
-          .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-          .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-          .where(and(...conditions))
-          .orderBy(
-            sql`${desc(chatThreads.lastMessageAt)} NULLS LAST`,
-            sql`${desc(chatThreads.id)} NULLS LAST`,
-          )
-          .limit(threadId === undefined ? input.limit + 1 : 1);
-      },
-      { accessMode: "read only" },
-    );
+    // Keep the builder's bindings; the row schema decodes the raw driver fields.
+    const query = db
+      .select({
+        threadId: sql`${chatThreads.id}`
+          .mapWith(chatThreads.id)
+          .as("thread_id"),
+        title: sql`left(${chatThreads.title}, ${TEXT_CHARACTER_LIMIT})`
+          .mapWith(nullableDriverValueDecoder(chatThreads.title))
+          .as("title"),
+        titleTruncated:
+          sql`coalesce(length(${chatThreads.title}) > ${TEXT_CHARACTER_LIMIT}, false)`
+            .mapWith(pgBooleanDecoder)
+            .as("title_truncated"),
+        agentId: sql`${agents.id}`.mapWith(agents.id).as("agent_id"),
+        agentName: agents.name,
+        agentDisplayName: agents.displayName,
+        defaultAgentId: orgMetadata.defaultAgentId,
+        selectedModel: chatThreads.selectedModel,
+        createdAt: chatThreads.createdAt,
+        metadataUpdatedAt: chatThreads.updatedAt,
+        lastMessageAt: chatThreads.lastMessageAt,
+        // Preserve all six stored digits in continuation. The public fields have
+        // fixed six-digit syntax, but JavaScript Date projection has millisecond data.
+        cursorTime:
+          sql`to_char(${chatThreads.lastMessageAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
+            .mapWith(pgTextDecoder)
+            .as("cursor_time"),
+      })
+      .from(chatThreads)
+      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+      .where(and(...conditions))
+      .orderBy(
+        sql`${desc(chatThreads.lastMessageAt)} NULLS LAST`,
+        sql`${desc(chatThreads.id)} NULLS LAST`,
+      )
+      .limit(threadId === undefined ? input.limit + 1 : 1)
+      .getSQL();
+    const rows = await set(readThreads$, query, signal);
     signal.throwIfAborted();
     return rows;
   },
 );
 
-type ThreadRow = {
-  readonly threadId: string;
-  readonly title: string | null;
-  readonly titleTruncated: boolean;
-  readonly agentId: string;
-  readonly agentName: string;
-  readonly agentDisplayName: string | null;
-  readonly defaultAgentId: string | null;
-  readonly selectedModel: string | null;
-  readonly createdAt: Date;
-  readonly metadataUpdatedAt: Date;
-  readonly lastMessageAt: Date;
-  readonly cursorTime: string;
-};
+type ThreadRow = z.output<typeof threadRowSchema>;
 
 const projectThreads$ = command(
   async (

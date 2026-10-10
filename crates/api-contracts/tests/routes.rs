@@ -11,15 +11,12 @@ fn exposes_generated_webhook_route_constants() {
 
 #[test]
 fn exposes_nested_generated_webhook_route_constants() {
-    let checkpoint = routes::webhooks::agent::checkpoints::CREATE;
-    let prepare_history = routes::webhooks::agent::checkpoints::prepare_history::PREPARE;
+    let prepare_history = routes::webhooks::agent::session_history::prepare::PREPARE;
 
-    assert_eq!(checkpoint.method, Method::Post);
-    assert_eq!(checkpoint.path, "/api/webhooks/agent/checkpoints");
     assert_eq!(prepare_history.method, Method::Post);
     assert_eq!(
         prepare_history.path,
-        "/api/webhooks/agent/checkpoints/prepare-history"
+        "/api/webhooks/agent/session-history/prepare"
     );
 }
 

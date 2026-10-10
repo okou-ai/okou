@@ -199,6 +199,94 @@ runner_e2e_wait_for_run_status() {
     return 1
 }
 
+# Completion does not guarantee query visibility of the asynchronously ingested
+# context snapshot. Only the API's specific pending-snapshot response is retryable.
+runner_e2e_wait_for_run_context() {
+    local run_id="$1"
+    local timeout_seconds="${2:-30}"
+    if [[ ! "$timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
+        echo "Run context timeout must be a positive integer" >&2
+        return 1
+    fi
+
+    local started_at=$SECONDS
+    local request_path="/api/runs/${run_id}/context"
+    local base vercel_logs_url_prefix
+    base=$(runner_api_url) || return 1
+    vercel_logs_url_prefix=$(_runner_api_vercel_logs_url_prefix \
+        "$base" "$request_path")
+    local response='' response_body='' http_status='none'
+    local remaining_seconds request_timeout connect_timeout curl_status
+    local failure='' failure_status=1
+
+    while ((SECONDS - started_at < timeout_seconds)); do
+        remaining_seconds=$((timeout_seconds - (SECONDS - started_at)))
+        request_timeout=$(jq -ner \
+            --argjson remaining "$remaining_seconds" \
+            --argjson maximum "${E2E_CURL_MAX_TIME_SECONDS:-30}" \
+            '[$remaining, $maximum] | min | select(. > 0)') || return 1
+        connect_timeout=$(jq -ner \
+            --argjson remaining "$remaining_seconds" \
+            --argjson maximum "${E2E_CURL_CONNECT_TIMEOUT_SECONDS:-10}" \
+            '[$remaining, $maximum] | min | select(. > 0)') || return 1
+
+        # Explicit GET keeps the transport helper from retrying a no-response
+        # failure outside this deadline. HTTP status and JSON stay separate.
+        if response=$(runner_api_curl "$request_path" \
+            --request GET \
+            --no-fail-with-body \
+            --write-out $'\n%{http_code}' \
+            --connect-timeout "$connect_timeout" \
+            --max-time "$request_timeout" 2>&1); then
+            http_status="${response##*$'\n'}"
+            response_body="${response%$'\n'*}"
+        else
+            curl_status=$?
+            printf '%s\nVercel logs: %s&timeline=past12Hours\n' \
+                "$response" "$vercel_logs_url_prefix" >&2
+            return "$curl_status"
+        fi
+
+        if [[ "$http_status" == "200" ]]; then
+            if jq -se --arg runId "$run_id" '
+                length == 1 and
+                (.[0] | type == "object" and .runId == $runId)
+            ' <<<"$response_body" >/dev/null 2>&1; then
+                printf '%s\n' "$response_body"
+                return 0
+            fi
+            failure="Invalid context snapshot for run ${run_id}"
+            break
+        fi
+
+        if [[ "$http_status" != "404" ]] || ! jq -se '
+            . == [{error: {
+                message: "Run context not available",
+                code: "NOT_FOUND"
+            }}]
+        ' <<<"$response_body" >/dev/null 2>&1; then
+            failure="Unexpected context response for run ${run_id}"
+            failure_status=22
+            break
+        fi
+
+        remaining_seconds=$((timeout_seconds - (SECONDS - started_at)))
+        if ((remaining_seconds <= 0)); then
+            break
+        fi
+        sleep "$((remaining_seconds < 2 ? remaining_seconds : 2))"
+    done
+
+    if [[ -z "$failure" ]]; then
+        failure="Timed out waiting for context snapshot for run ${run_id} after ${timeout_seconds}s"
+    fi
+    printf '%s\nLast context response (HTTP %s): %s\n' \
+        "$failure" "$http_status" "$response_body" >&2
+    printf 'Vercel logs: %s+status%%3A%s&timeline=past12Hours\n' \
+        "$vercel_logs_url_prefix" "$http_status" >&2
+    return "$failure_status"
+}
+
 runner_e2e_shell_prompt() {
     local script="$1"
     printf '@shell@\nexport npm_config_audit=false\n%s\n@end-shell@' "$script"

@@ -9,7 +9,6 @@ import { computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 
-import type { ReadonlyDb } from "../external/db";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 
 interface StripeInvoiceFeatureOwner {
@@ -37,20 +36,6 @@ export function stripeInvoicePaidFeatureEnabledFromRows(
     FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations,
     featureSwitchContextFromRows(owner.orgId, owner.userId, rows),
   );
-}
-
-export async function stripeInvoicePaidWorkflowAutomationEnabledForOwnerInDb(
-  db: ReadonlyDb,
-  orgId: string,
-  userId: string,
-): Promise<boolean> {
-  const owner = { orgId, userId };
-  const plan = stripeInvoicePaidFeatureReadPlan(owner);
-  const rows = await db
-    .select(plan.columns)
-    .from(userFeatureSwitches)
-    .where(plan.condition);
-  return stripeInvoicePaidFeatureEnabledFromRows(owner, rows);
 }
 
 export function stripeInvoicePaidWorkflowAutomationEnabledForOwner(

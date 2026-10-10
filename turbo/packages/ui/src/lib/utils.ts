@@ -15,6 +15,7 @@ function isSafeAreaVariant(value: string): boolean {
 const mergeUtilities = extendTailwindMerge({
   extend: {
     theme: {
+      animate: ["skeleton-pulse"],
       radius: ["surface", "surface-compact"],
       shadow: ["surface"],
       spacing: ["safe"],

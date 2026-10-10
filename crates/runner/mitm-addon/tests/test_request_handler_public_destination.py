@@ -302,7 +302,12 @@ async def test_public_destination_upstream_change_during_auth_prevents_credentia
     auth_fetch.assert_awaited_once()
     assert flow.response is not None
     assert flow.response.status_code == 403
-    assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "upstream_destination_unbound"
+    expected_error = (
+        "unsafe_public_destination"
+        if upstream_change == "peer-changed"
+        else "upstream_destination_unbound"
+    )
+    assert flow.metadata[metadata_keys.FIREWALL_ERROR] == expected_error
     assert flow.request.headers.fields == original_headers
     assert flow.request.path == original_path
     binding_snapshot = upstream_destination_binding.binding_snapshot_for_tests()

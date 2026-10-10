@@ -1,29 +1,43 @@
-import { and, eq } from "drizzle-orm";
-import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-
-import type { ReadonlyDb } from "../external/db";
+import { sql, type SQL } from "drizzle-orm";
+import {
+  nullableDriverValueDecoder,
+  pgBooleanDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { publishUserSignal } from "../external/realtime";
 
-/** Capture recipients before deleting a guild's connected-user rows. */
-export async function discordOrgChangedUserIds(
-  db: Pick<ReadonlyDb, "select">,
-  orgId: string,
-  additionalUserIds: readonly string[] = [],
-): Promise<string[]> {
-  const admins = await db
-    .select({ userId: orgMembersCache.userId })
-    .from(orgMembersCache)
-    .where(
-      and(eq(orgMembersCache.orgId, orgId), eq(orgMembersCache.role, "admin")),
-    );
-  return [
-    ...new Set([
-      ...additionalUserIds,
-      ...admins.map((admin) => {
-        return admin.userId;
-      }),
-    ]),
-  ];
+interface DiscordCleanupRecipientFact {
+  readonly removed: boolean;
+  readonly userId: string | null;
+}
+
+/** Derive recipients only from returned committed authorization facts. */
+export function discordCleanupRecipients(
+  rows: readonly DiscordCleanupRecipientFact[],
+  additionalUserIds: readonly string[],
+): { readonly removed: boolean; readonly userIds: string[] } {
+  const recipients = new Set(additionalUserIds);
+  let removed = false;
+  for (const row of rows) {
+    if (!row.removed) {
+      continue;
+    }
+    removed = true;
+    if (row.userId !== null) {
+      recipients.add(row.userId);
+    }
+  }
+  return { removed, userIds: removed ? [...recipients] : [] };
+}
+
+/** Pure union projection; callers gate each branch by real returned removal facts. */
+export function discordRemovalProjection(userId: SQL, removed: boolean) {
+  return {
+    removed: sql`${removed}::boolean`.mapWith(pgBooleanDecoder).as("removed"),
+    userId: userId
+      .mapWith(nullableDriverValueDecoder(pgTextDecoder))
+      .as("user_id"),
+  };
 }
 
 /** Publish after commit; the existing realtime boundary owns best-effort delivery. */

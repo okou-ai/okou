@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.6.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.2...runner-provider-v0.6.3) (2026-10-10)
+
+
+### Refactoring
+
+* **pi:** retire unversioned model config execution ([#38449](https://github.com/okou-ai/okou/issues/38449)) ([c628473](https://github.com/okou-ai/okou/commit/c62847319cb3ebbd41259d662f47905a1cb39863))
+
+## [0.6.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.1...runner-provider-v0.6.2) (2026-10-09)
+
+## [0.6.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.0...runner-provider-v0.6.1) (2026-10-09)
+
+
+### Refactoring
+
+* **runner:** move runtime reactor into runner-supervisor ([#38393](https://github.com/okou-ai/okou/issues/38393)) ([a5a1dd3](https://github.com/okou-ai/okou/commit/a5a1dd3ae25f19d65baed071cb15fa2a456cfb0a))
+
+## [0.6.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.13...runner-provider-v0.6.0) (2026-10-09)
+
+
+### Features
+
+* **api:** prepare home cache affinity and runner state ([#38314](https://github.com/okou-ai/okou/issues/38314)) ([21ce097](https://github.com/okou-ai/okou/commit/21ce0978ad9a5bc7eddb94bc9d2bc25f1897095f))
+
+## [0.5.13](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.12...runner-provider-v0.5.13) (2026-10-09)
+
+
+### Bug Fixes
+
+* **runner:** defer incomplete response alerts until degradation ([#38281](https://github.com/okou-ai/okou/issues/38281)) ([c3e28db](https://github.com/okou-ai/okou/commit/c3e28db3f0d5292c821a496522b854aba4286429))
+
 ## [0.5.12](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.11...runner-provider-v0.5.12) (2026-10-09)
 
 ## [0.5.11](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.10...runner-provider-v0.5.11) (2026-10-08)

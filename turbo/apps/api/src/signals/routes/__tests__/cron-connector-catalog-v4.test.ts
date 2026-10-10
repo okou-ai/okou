@@ -5,8 +5,6 @@ import {
   builtinConnectorAutomaticContract,
   builtinConnectorNoAuthGrantContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -20,7 +18,6 @@ import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { builtinConnectorsRoutes } from "../connectors";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { customConnectorsRoutes } from "../custom-connectors";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
@@ -513,54 +510,6 @@ describe("connector catalog v4 preparation", () => {
     });
   });
 
-  it.each([
-    ["Plaud", "plaud-mcp", FeatureSwitchKey.PlaudConnector],
-    ["Monday.com", "monday-mcp", FeatureSwitchKey.MondayConnector],
-  ] as const)(
-    "uses the %s auth-method switch for discovery while accepting its catalog",
-    async (_label, connectorSlug, featureSwitch) => {
-      serveObjects(release({ mcpSlug: connectorSlug }).objects);
-      expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-      expect(
-        (await publicCatalog()).body.connectors.map((connector) => {
-          return connector.slug;
-        }),
-      ).toStrictEqual(["catalog-service"]);
-      const featuresApp = await setupApp({
-        context,
-        routes: featureSwitchesRoutes,
-        isolatePg: true,
-      });
-      const features = featuresApp(featureSwitchesContract);
-      await accept(
-        features.update({
-          headers: sessionHeaders,
-          body: { switches: { [featureSwitch]: true } },
-        }),
-        [200],
-      );
-      expect((await publicCatalog()).body.connectors).toMatchObject([
-        { slug: "catalog-service" },
-        {
-          slug: connectorSlug,
-          authMethods: [{ id: "automatic", grantKind: "automatic" }],
-        },
-      ]);
-      await accept(
-        features.update({
-          headers: sessionHeaders,
-          body: { switches: { [featureSwitch]: false } },
-        }),
-        [200],
-      );
-      expect(
-        (await publicCatalog()).body.connectors.map((connector) => {
-          return connector.slug;
-        }),
-      ).toStrictEqual(["catalog-service"]);
-    },
-  );
-
   it("keeps serving the current pointer across a rejected-source sync", async () => {
     const serving = release({ label: "Serving" });
     serveObjects(serving.objects);
@@ -569,7 +518,11 @@ describe("connector catalog v4 preparation", () => {
       failureCode: null,
     });
     expect((await publicCatalog()).body.connectors).toMatchObject([
-      { label: "Serving" },
+      { slug: "catalog-service", label: "Serving" },
+      {
+        slug: "plaud-mcp",
+        authMethods: [{ id: "automatic", grantKind: "automatic" }],
+      },
     ]);
 
     serveObjects(new Map());
@@ -578,7 +531,11 @@ describe("connector catalog v4 preparation", () => {
       failureCode: "source-unavailable",
     });
     expect((await publicCatalog()).body.connectors).toMatchObject([
-      { label: "Serving" },
+      { slug: "catalog-service", label: "Serving" },
+      {
+        slug: "plaud-mcp",
+        authMethods: [{ id: "automatic", grantKind: "automatic" }],
+      },
     ]);
 
     // Nothing about the rejection was persisted: the next sync of the serving
@@ -616,7 +573,11 @@ describe("connector catalog v4 preparation", () => {
       failureCode: "invalid-artifact",
     });
     expect((await publicCatalog()).body.connectors).toMatchObject([
-      { label: "Last accepted" },
+      { slug: "catalog-service", label: "Last accepted" },
+      {
+        slug: "plaud-mcp",
+        authMethods: [{ id: "automatic", grantKind: "automatic" }],
+      },
     ]);
   });
 
@@ -675,7 +636,11 @@ describe("connector catalog v4 preparation", () => {
       }),
     ).toStrictEqual(["connectors/v4/active.json"]);
     expect((await publicCatalog()).body.connectors).toMatchObject([
-      { label: "Verified bytes" },
+      { slug: "catalog-service", label: "Verified bytes" },
+      {
+        slug: "plaud-mcp",
+        authMethods: [{ id: "automatic", grantKind: "automatic" }],
+      },
     ]);
   });
 

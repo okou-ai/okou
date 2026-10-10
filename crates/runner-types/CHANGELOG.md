@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.2](https://github.com/okou-ai/okou/compare/runner-types-v0.5.1...runner-types-v0.5.2) (2026-10-10)
+
+
+### Refactoring
+
+* **pi:** retire unversioned model config execution ([#38449](https://github.com/okou-ai/okou/issues/38449)) ([c628473](https://github.com/okou-ai/okou/commit/c62847319cb3ebbd41259d662f47905a1cb39863))
+
+## [0.5.1](https://github.com/okou-ai/okou/compare/runner-types-v0.5.0...runner-types-v0.5.1) (2026-10-09)
+
+## [0.5.0](https://github.com/okou-ai/okou/compare/runner-types-v0.4.7...runner-types-v0.5.0) (2026-10-09)
+
+
+### Features
+
+* **api:** prepare home cache affinity and runner state ([#38314](https://github.com/okou-ai/okou/issues/38314)) ([21ce097](https://github.com/okou-ai/okou/commit/21ce0978ad9a5bc7eddb94bc9d2bc25f1897095f))
+
 ## [0.4.7](https://github.com/okou-ai/okou/compare/runner-types-v0.4.6...runner-types-v0.4.7) (2026-10-09)
 
 ## [0.4.6](https://github.com/okou-ai/okou/compare/runner-types-v0.4.5...runner-types-v0.4.6) (2026-10-08)

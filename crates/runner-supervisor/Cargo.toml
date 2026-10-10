@@ -1,6 +1,6 @@
 [package]
 name = "runner-supervisor"
-version = "0.2.29"
+version = "0.5.0"
 edition.workspace = true
 description = "Runner start-loop idle, finalization, heartbeat, and orphan orchestration"
 
@@ -9,6 +9,9 @@ test-support = []
 
 [dependencies]
 api-contracts.workspace = true
+async-trait.workspace = true
+guest-contracts.workspace = true
+reqwest = { workspace = true, features = ["json", "rustls"] }
 chrono = { workspace = true, features = ["now"] }
 runner-executor.workspace = true
 runner-host.workspace = true
@@ -21,20 +24,25 @@ sandbox.workspace = true
 serde_json = { workspace = true, features = ["std"] }
 futures-util = { workspace = true, features = ["async-await", "std"] }
 thiserror = { workspace = true, features = ["std"] }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-util = { workspace = true, features = ["rt"] }
 tracing = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
-guest-contracts.workspace = true
-hex.workspace = true
+flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }
+libc = { workspace = true, features = ["std"] }
+zstd = { workspace = true, features = ["zstdmt"] }
+hex = { workspace = true, features = ["std"] }
+httpmock = { workspace = true, features = ["cookies"] }
+runner-host = { workspace = true, features = ["test-support"] }
+runner-remote.workspace = true
+serde = { workspace = true, features = ["derive", "std"] }
 runner-executor = { workspace = true, features = ["test-support"] }
 runner-lifecycle = { workspace = true, features = ["test-support"] }
 runner-network = { workspace = true, features = ["test-support"] }
 runner-storage = { workspace = true, features = ["test-support"] }
 sandbox-mock.workspace = true
 sha2 = { workspace = true, features = ["alloc", "oid"] }
-async-trait.workspace = true
 tempfile = { workspace = true, features = ["getrandom"] }
 tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber = { workspace = true, features = ["fmt", "std"] }

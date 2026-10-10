@@ -78,6 +78,23 @@ Unopened conversations catch up when opened. Notifications carry invalidation
 identities only, never authoritative message content. HTTP 426 from navigation,
 indicators, or conversation operations blocks the workspace and closes its work.
 
+The local [ChatData package](Packages/ChatData/Package.swift) owns APIClient and
+wire DTOs, ChatSync, ChatCommands, model selection, and ChatCache. It declares
+ChatDomain as its only package dependency and uses Apple system frameworks for
+HTTP, logging, synchronization, hashing, and SQLite. App code imports ChatData
+through public client/service/cache APIs and the navigation DTOs it consumes;
+other wire types and preparation helpers remain internal. Token provision stays
+an injected closure, so authentication and realtime SDKs remain App adapters.
+
+The local [ChatDomain package](Packages/ChatDomain/Package.swift) owns message
+and thread models, domain event inputs, ChatEventProjection, and ChatThreadReplay.
+Its target has no package dependencies and imports only Foundation. ChatData,
+feature stores, and views explicitly import ChatDomain; the package cannot
+reference App types such as WorkspaceStore or networking/cache implementations.
+The compile-time direction is App/feature stores to ChatData to ChatDomain.
+Public value initializers and replay entry points define this dependency boundary.
+Realtime notification parsing and presentation-window state remain in the App.
+
 Wire rows, snapshot DTOs, raw JSON, and synchronization cursors remain in the
 network/data layer. They convert to ChatEvent, ChatThreadChange, and ChatThread
 before pure domain replay. The raw bytes and existing SQLite schema remain
@@ -122,7 +139,25 @@ the existing bounded Markdown cache. After preparation it expands the current
 projection, so concurrent refreshes and sends cannot be overwritten by a stale
 prepared array. Closing a conversation cancels the task.
 
-ChatDetailView renders the visible suffix. Scrolling near the top loads an
+ChatDetailView renders the visible suffix and forwards lifecycle, message changes,
+and user actions to its ConversationScrollCoordinator. Each detail-view identity
+owns one coordinator. An explicit latest/history intent owns bottom following and
+whether reaching the bottom resets the window. Initial positioning and native
+motion remain separate state: a history intent may coexist with a user drag or an
+ongoing native animation. Native user interaction establishes the viewport when
+initial positioning has not completed; a delayed initial request then yields to
+that interaction. Raw metrics and phases are not observed by the view;
+only intent and bottom-button visibility affect its rendering.
+
+The coordinator binds weak anchor callbacks while mounted and clears them on
+exit. It owns its history-expansion request task; newer user scrolling, a bottom
+request, or disappearance invalidate post-await corrections. ConversationStore
+still owns the expansion operation and its prepared render window, while the
+view's latest-message task retains SwiftUI cancellation ownership. Native sizing,
+reuse, motion completion, and actual offset correction remain with the existing
+collection and anchor.
+
+Scrolling near the top loads an
 earlier page after scrolling settles; the accessible Load earlier messages
 button also works when a short window cannot be scrolled. Initial positioning
 follows the latest message. Reading history pins the window boundary, and
@@ -207,15 +242,23 @@ measured text/block layout, behind the same ChatMessage input. Telegram's
 asynchronous node layout is a useful design reference for that experiment.
 Migrating the whole application to a new UI framework is not needed to try it.
 
-Keep feature state isolated as capabilities grow. A Swift Package boundary can
-be considered separately after measuring remaining coupling. API contract
-generation and CI consumer selection are outside these iOS presentation changes.
+Keep feature state isolated as capabilities grow. ChatDomain establishes the
+first compile-time boundary; additional modules should follow actual ownership
+needs. API contract generation and cross-language CI consumer selection remain
+separate work.
 
 ## Acceptance
 
 Automated checks cover pinned-renderer attribute parity, relative links/images,
 cache eviction, oversized content, source changes, and workspace isolation.
 Existing synchronization, replay, cache, and send-recovery tests remain required.
+Eight domain regressions run independently with `swift test` and exercise the
+package's public API with domain values. Thirty-one data regressions run through ChatData's real HTTP/decoding, commands,
+synchronization, and SQLite boundaries without an App host. The separate
+ChatDataTestSupport target shares the HTTP fixture with App integration tests;
+the production App does not link it. App tests retain store ownership and
+rendering coverage through the real data services. CI runs both package suites
+and the App suite.
 
 The October 7 ownership refactor passed all 57 XCTest cases with zero failures
 and a Debug simulator build on Xcode 26.3. HTTP-boundary regressions cover
@@ -240,6 +283,10 @@ frames. Position assertions remain independent of this setup and retain their
 three-second deadline. Repeated traversal of code and table messages also
 verifies stable content height and allocated cell heights after reuse, including
 width and Dynamic Type changes. Viewport resizing verifies bottom following.
+Coordinator tests with a native collection cover remote updates while reading, viewport changes, bottom requests
+during animated paging with and without Reduce Motion, resuming following, and
+user scrolling that interrupts a bottom request without shrinking history, and
+user interaction preceding deferred initial positioning.
 The collection supports
 native animated accessibility paging as well as touch scrolling.
 These are correctness and rendering-scope checks. A physical-device Release

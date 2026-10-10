@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.21.58](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.57...guest-control-proto-v0.21.58) (2026-10-10)
+
+## [0.21.57](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.56...guest-control-proto-v0.21.57) (2026-10-09)
+
+## [0.21.56](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.55...guest-control-proto-v0.21.56) (2026-10-09)
+
+
+### Documentation
+
+* keep reusable engineering standards and remove feature records ([#38387](https://github.com/okou-ai/okou/issues/38387)) ([6507d86](https://github.com/okou-ai/okou/commit/6507d86c83ca37e7a8790e4efd66eb6a84267295))
+
+## [0.21.55](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.54...guest-control-proto-v0.21.55) (2026-10-09)
+
+## [0.21.54](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.53...guest-control-proto-v0.21.54) (2026-10-09)
+
 ## [0.21.53](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.52...guest-control-proto-v0.21.53) (2026-10-09)
 
 ## [0.21.52](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.51...guest-control-proto-v0.21.52) (2026-10-08)

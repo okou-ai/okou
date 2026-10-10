@@ -649,7 +649,7 @@ const loadAuthorizedExistingSendThread$ = command(
  * enqueue; the pick launches that model after its credit admission.
  */
 interface ThreadRunSettings {
-  readonly selectedModel: string | null;
+  readonly selectedModel: string;
   readonly modelSettings: ModelSettings;
   readonly modelSettingsPatch: ModelSettingsPatch | undefined;
   readonly codexServiceTier: CodexServiceTier | null;
@@ -662,17 +662,18 @@ function requestedThreadRunSettings(
   catalog: ModelCatalog,
   body: NormalSendBody,
   current: {
-    readonly selectedModel: string | null;
+    readonly selectedModel: string;
     readonly modelSettings: ModelSettings;
     readonly codexServiceTier: CodexServiceTier | null;
   },
 ): ThreadRunSettings | ReturnType<typeof badRequestMessage> {
   // An explicit null selects Auto; omission keeps the current selection.
-  const requestedModel =
-    body.model === undefined ? current.selectedModel : body.model;
-  const selectedModel = isAutoSelectedModel(requestedModel)
-    ? null
-    : requestedModel;
+  const selectedModel =
+    body.model === undefined
+      ? current.selectedModel
+      : body.model === null || isAutoSelectedModel(body.model)
+        ? AUTO_SELECTED_MODEL
+        : body.model;
   const effort = resolveChatReasoningEffort({
     catalog,
     selectedModel,
@@ -902,7 +903,7 @@ const resolveSendThread$ = command(
         memberMetadata.preferences?.cloudBrowserEnabledByDefault ?? true,
     };
     const runSettings = requestedThreadRunSettings(args.catalog, args.body, {
-      selectedModel: initialModel?.selectedModel ?? null,
+      selectedModel: initialModel?.selectedModel ?? AUTO_SELECTED_MODEL,
       modelSettings: defaults.modelSettings,
       codexServiceTier:
         initialModel?.serviceTier === "priority" ? "fast" : null,
@@ -1406,6 +1407,7 @@ const appendNormalSendInput$ = command(
     signal: AbortSignal,
   ) => {
     const { thread, event, existingPlan, preferencePlan } = input;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0091; new non-billing transactions are prohibited.
     const inserted = await set(writeDb$).transaction(async (tx) => {
       if (thread.kind === "new") {
         const createdPlan = newSendThreadInsertPlan(args, thread);

@@ -5,6 +5,7 @@ import { browserUserActionRequests } from "@okouai/db/schema/browser-session";
 import { chatAgentRunContext } from "@okouai/db/schema/chat-agent-run-context";
 import { cliTokens } from "@okouai/db/schema/cli-tokens";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
+import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { composeJobs } from "@okouai/db/schema/compose-job";
 import { connectors } from "@okouai/db/schema/connector";
 import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
@@ -40,6 +41,7 @@ import {
   asc,
   count,
   eq,
+  gte,
   inArray,
   isNotNull,
   like,
@@ -75,8 +77,8 @@ import {
 } from "./connector-data.service";
 import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
 import {
-  deleteDiscordOrgData,
-  deleteDiscordUserData,
+  deleteDiscordOrgData$,
+  deleteDiscordUserData$,
 } from "./discord-owner-cleanup.service";
 import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
@@ -91,7 +93,6 @@ import {
 import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
-import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 import { eraseMailNotifications$ } from "./mail-notification.service";
 
 const L = logger("WebhookClerkCleanup");
@@ -153,6 +154,7 @@ async function cancelOrgRuns(
   onSlotsReleased: SlotsReleased,
   scope: OrgRunCancellationScope = {},
 ): Promise<void> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0319; new non-billing transactions are prohibited.
   const { cancelled, releasedSlots } = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
@@ -167,7 +169,6 @@ async function cancelOrgRuns(
         inArray(agentRuns.status, ["pending", "running"]),
       ],
     });
-    await tx.execute(purgeRetiredMorningBriefEmailSql());
     const released = await releaseNeverStartedRunSlots(tx, rows);
     return { cancelled: rows, releasedSlots: released };
   });
@@ -228,6 +229,7 @@ async function cancelUserRuns(
   userId: string,
   onSlotsReleased: SlotsReleased,
 ): Promise<void> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0320; new non-billing transactions are prohibited.
   const { cancelled, releasedSlots } = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
@@ -240,7 +242,6 @@ async function cancelUserRuns(
         inArray(agentRuns.status, ["pending", "running"]),
       ],
     });
-    await tx.execute(purgeRetiredMorningBriefEmailSql());
     const released = await releaseNeverStartedRunSlots(tx, rows);
     return { cancelled: rows, releasedSlots: released };
   });
@@ -587,6 +588,7 @@ async function deleteClerkStorageReferences(
   scope: ClerkStorageCleanupScope,
   signal: AbortSignal,
 ): Promise<string[]> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0321; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const rows = await tx
       .select({
@@ -645,6 +647,7 @@ async function deleteClerkExportReferences(
   scope: ClerkStorageCleanupScope,
   signal: AbortSignal,
 ): Promise<string[]> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0322; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const rows = await tx
       .select({
@@ -695,34 +698,75 @@ async function deleteClerkExportReferences(
   });
 }
 
-async function deleteClerkSshResources(
-  db: Db,
-  scope: ClerkStorageCleanupScope,
-) {
-  await db.transaction(async (tx) => {
-    await tx
-      .delete(sshConnections)
-      .where(
-        scope.kind === "organization"
-          ? eq(sshConnections.orgId, scope.orgId)
-          : eq(sshConnections.userId, scope.userId),
-      );
-    await tx
-      .delete(sshCredentials)
-      .where(
-        scope.kind === "organization"
-          ? eq(sshCredentials.orgId, scope.orgId)
-          : eq(sshCredentials.userId, scope.userId),
-      );
-    await tx
-      .delete(cloudflareAccessConfigs)
-      .where(
-        scope.kind === "organization"
-          ? eq(cloudflareAccessConfigs.orgId, scope.orgId)
-          : eq(cloudflareAccessConfigs.userId, scope.userId),
-      );
-  });
-}
+// Dependent DELETE CTEs preserve Host -> credential -> configuration ordering
+// and RESTRICT atomicity in one statement. User cleanup is Personal-only;
+// shared configurations and surviving members remain outside its predicates.
+const deleteClerkSshResources$ = command(
+  async ({ set }, scope: ClerkStorageCleanupScope, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const removedHosts = db.$with("removed_clerk_ssh_hosts").as(
+      db
+        .delete(sshConnections)
+        .where(
+          scope.kind === "organization"
+            ? eq(sshConnections.orgId, scope.orgId)
+            : eq(sshConnections.userId, scope.userId),
+        )
+        .returning({ id: sshConnections.id }),
+    );
+    const removedCredentials = db.$with("removed_clerk_ssh_credentials").as(
+      db
+        .delete(sshCredentials)
+        .where(
+          and(
+            scope.kind === "organization"
+              ? eq(sshCredentials.orgId, scope.orgId)
+              : eq(sshCredentials.userId, scope.userId),
+            gte(db.select({ count: count() }).from(removedHosts), 0),
+          ),
+        )
+        .returning({ id: sshCredentials.id }),
+    );
+    const removedAccess = db.$with("removed_clerk_access_configs").as(
+      db
+        .delete(cloudflareAccessConfigs)
+        .where(
+          and(
+            scope.kind === "organization"
+              ? eq(cloudflareAccessConfigs.orgId, scope.orgId)
+              : and(
+                  eq(cloudflareAccessConfigs.userId, scope.userId),
+                  eq(cloudflareAccessConfigs.scope, "personal"),
+                ),
+            gte(db.select({ count: count() }).from(removedCredentials), 0),
+          ),
+        )
+        .returning({ id: cloudflareAccessConfigs.id }),
+    );
+    const removedTailscale = db.$with("removed_clerk_tailscale_configs").as(
+      db
+        .delete(tailscaleConfigs)
+        .where(
+          and(
+            scope.kind === "organization"
+              ? eq(tailscaleConfigs.orgId, scope.orgId)
+              : and(
+                  eq(tailscaleConfigs.userId, scope.userId),
+                  eq(tailscaleConfigs.scope, "personal"),
+                ),
+            gte(db.select({ count: count() }).from(removedAccess), 0),
+          ),
+        )
+        .returning({ id: tailscaleConfigs.id }),
+    );
+    await db
+      .with(removedHosts, removedCredentials, removedAccess, removedTailscale)
+      .select({ count: count() })
+      .from(removedTailscale);
+    signal.throwIfAborted();
+    return { outcome: "deleted" as const };
+  },
+);
 
 const deleteOrgData$ = command(
   async (
@@ -739,7 +783,7 @@ const deleteOrgData$ = command(
     signal.throwIfAborted();
     await set(eraseMailNotifications$, { orgId }, signal);
     signal.throwIfAborted();
-    await deleteDiscordOrgData(db, orgId);
+    await set(deleteDiscordOrgData$, orgId, signal);
     signal.throwIfAborted();
 
     const installations = await db
@@ -784,10 +828,13 @@ const deleteOrgData$ = command(
       signal,
     );
     signal.throwIfAborted();
-    // VNC references were removed at the start of organization cleanup. Remove
-    // Access rows before SSH hosts: rotation takes config then host locks.
-    // Delete hosts before credentials and configs for the restrictive FK.
-    await deleteClerkSshResources(db, { kind: "organization", orgId });
+    // VNC references were removed earlier. Preserve the restrictive FK order
+    // inside the owning SSH cleanup command, before organization removal.
+    await set(
+      deleteClerkSshResources$,
+      { kind: "organization", orgId },
+      signal,
+    );
     signal.throwIfAborted();
     await deleteConnectorOwnerState(
       db,
@@ -873,7 +920,7 @@ const deleteUserData$ = command(
     signal.throwIfAborted();
     await set(eraseMailNotifications$, { userId }, signal);
     signal.throwIfAborted();
-    await deleteDiscordUserData(db, userId);
+    await set(deleteDiscordUserData$, userId, signal);
     signal.throwIfAborted();
 
     await db
@@ -896,8 +943,7 @@ const deleteUserData$ = command(
     // VNC references were removed before user cleanup. Delete only this user's
     // SSH resources and personal Access configurations; organization Access
     // configurations have no user owner and must survive creator deletion.
-    // Take config locks first to match token rotation's config-then-host order.
-    await deleteClerkSshResources(db, { kind: "user", userId });
+    await set(deleteClerkSshResources$, { kind: "user", userId }, signal);
     signal.throwIfAborted();
     const cleanupJobIds = await deleteClerkStorageReferences(
       db,

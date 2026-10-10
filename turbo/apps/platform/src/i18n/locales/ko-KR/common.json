@@ -4885,24 +4885,6 @@
           "enabled_other": "다음 {{count}}회 실행 동안 활성화됨",
           "title": "네트워크 본문 캡처"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "활성 대기",
-          "channel": "채널",
-          "clear": "지우기",
-          "connection": "연결",
-          "copyJson": "JSON 복사",
-          "description": "인증 및 Ably 연결 신호를 확인합니다.",
-          "empty": "기록된 진단 이벤트가 없습니다.",
-          "events": "이벤트",
-          "log": "이벤트 로그",
-          "refresh": "새로 고침",
-          "title": "실시간 연결 진단",
-          "unavailable": "사용 불가",
-          "workerDescription": "실시간 연결을 담당하는 공유 워커가 기록한 진단을 확인합니다.",
-          "workerLoading": "로딩 중",
-          "workerTitle": "공유 워커 연결 진단",
-          "workerUnavailable": "사용 불가"
-        },
         "indexedDb": {
           "countExplanation": "읽기 전용 트랜잭션으로 개수를 집계하며 레코드 본문은 읽지 않습니다.",
           "description": "Shared Worker가 관리하는 로컬 채팅 캐시의 레코드 수를 확인합니다.",
@@ -4922,6 +4904,34 @@
           "stores": "객체 저장소",
           "title": "IndexedDB 저장소",
           "unavailable": "IndexedDB 저장소를 사용할 수 없습니다."
+        },
+        "morningBriefEmail": {
+          "checkStatus": "전달 상태 확인",
+          "description": "Morning Brief 템플릿으로 계정 이메일에 고정된 샘플을 보냅니다. Agent를 실행하거나 일정을 변경하지 않습니다.",
+          "reasons": {
+            "delivery-failed": "전달에 실패했습니다. 이전 시도가 이메일 서비스에 접수되었을 수 있습니다.",
+            "expired": "전달 기한이 만료되었습니다. 이전 시도가 이메일 서비스에 접수되었을 수 있습니다.",
+            "no-email": "건너뜀: 계정에 이메일 주소가 없습니다.",
+            "suppressed": "건너뜀: 계정 이메일로의 전달이 차단되어 있습니다.",
+            "unsubscribed": "건너뜀: 계정에서 이메일 업데이트 구독을 취소했습니다."
+          },
+          "requestFailed": "요청이 완료되지 않았습니다. 재시도 시 같은 요청을 사용하여 중복 이메일을 방지합니다.",
+          "retry": "테스트 이메일 재시도",
+          "send": "테스트 이메일 보내기",
+          "sendAnother": "다른 테스트 이메일 보내기",
+          "sending": "보내는 중…",
+          "status": {
+            "queued": "전달 대기 중입니다. 다른 샘플을 보내기 전에 상태를 확인하세요.",
+            "sent": "이메일 서비스가 접수했습니다. 받은편지함과 스팸함을 확인하세요. 실제 도착은 확인되지 않았습니다."
+          },
+          "title": "Morning Brief 테스트 이메일"
+        },
+        "openrouterPreset": {
+          "description": "조직 전체의 새 Auto 및 기본 제공 Okou 1.0 실행에 적용됩니다. 기존 실행은 변경되지 않습니다.",
+          "loading": "불러오는 중…",
+          "systemDefault": "시스템 기본값",
+          "title": "OpenRouter 프리셋",
+          "unavailable": "사용할 수 없음"
         },
         "welcomeThread": {
           "create": "환영 채팅 만들기",
@@ -5312,6 +5322,14 @@
     },
     "clearSearch": "검색 지우기",
     "custom": "커스텀",
+    "delete": {
+      "cancel": "취소",
+      "confirm": "템플릿 삭제",
+      "deleting": "삭제 중...",
+      "description": "\"{{title}}\"이(가) 볼 수 있는 모든 사용자에게서 제거됩니다. 이 작업은 되돌릴 수 없습니다.",
+      "failed": "템플릿을 삭제하지 못했습니다. 다시 시도하세요.",
+      "title": "템플릿을 삭제하시겠습니까?"
+    },
     "detail": {
       "back": "커스텀 템플릿",
       "page": "{{number}}페이지"
@@ -6293,22 +6311,33 @@
     "connected": "연결됨",
     "connectedWithDetail": "연결됨 ({{detail}})",
     "discord": {
-      "accountSetup": "계정이 연결되어 있지 않습니다. 새 Discord 계정을 연결하는 기능은 아직 사용할 수 없습니다.",
-      "adminSetup": "서버 설정 기능은 아직 사용할 수 없습니다. 기존에 검증된 설정에서는 계속 Discord를 사용할 수 있습니다.",
+      "accountSetup": "Discord 공식 브라우저 인증을 통해 계정을 연결하세요.",
+      "adminSetup": "Discord 서버에 Okou를 설치한 다음 계정을 연결하세요.",
+      "approvalConfirmed": "브라우저 동의가 확인되었습니다. 이 탭을 닫고 원래 Works 탭에서 연결을 완료하세요.",
+      "approvalFailed": "확인에 실패했습니다. 원래 Okou 계정과 조직으로 로그인하거나 인증을 다시 시작하세요.",
+      "approvalPrompt": "원래 Works 탭과 동일한 Okou 계정 및 조직으로 확인하세요. 동의 확인만으로는 계정이 연결되지 않습니다.",
+      "approve": "Discord 동의 확인",
+      "approving": "확인 중…",
+      "authorizationError": "Discord 인증을 완료하지 못했습니다. 이 카드에서 다시 시도하세요.",
+      "authorizing": "인증 중…",
+      "browserConsent": "Discord 동의를 완료하고 해당 탭에서 Okou 계정으로 확인하세요. 탭을 닫는 것만으로는 계정이 연결되지 않습니다.",
       "chooseDmServer": "서버 선택",
       "description": "서버에서 Okou를 멘션하거나 봇에게 다이렉트 메시지를 보내세요.",
       "disconnect": "Discord 연결 해제",
       "dmServer": "다이렉트 메시지용 기본 서버",
+      "install": "Discord에 설치",
       "limitedContext": "컨텍스트 제한: Okou가 일반 채널 메시지를 받지 못할 수 있습니다. Okou를 멘션하고 필요한 세부 정보를 함께 알려 주세요.",
       "loadError": "Discord 상태를 불러올 수 없습니다.",
       "loading": "Discord 상태를 불러오는 중…",
-      "memberSetup": "Discord 이용에 관해 조직 관리자에게 문의하세요. 서버 설정 기능은 아직 사용할 수 없습니다.",
+      "memberSetup": "조직 관리자에게 Discord 서버에 Okou를 설치해 달라고 요청하세요.",
       "moreOptions": "Discord 추가 옵션",
+      "pendingConsent": "이 탭에는 인증 증명이 없습니다. 탭을 닫고 원래 Works 탭에서 인증을 다시 시작하세요.",
+      "popupBlocked": "Discord 인증을 위해 팝업을 허용한 다음 다시 시도하세요.",
       "retry": "다시 시도",
       "server": "서버: {{name}}",
       "suspended": "Discord를 일시적으로 사용할 수 없습니다. 기존 연결은 유지됩니다.",
       "title": "Discord",
-      "unconfigured": "이 조직에서는 아직 Discord를 사용할 수 없습니다.",
+      "unconfigured": "이 조직에는 아직 Discord가 구성되지 않았습니다.",
       "uninstall": "Discord 제거",
       "uninstallDescription": "이 조직의 모든 구성원의 Discord 연결이 해제됩니다. 다른 조직의 연결은 유지됩니다.",
       "uninstallTitle": "이 조직에서 Discord를 제거할까요?"

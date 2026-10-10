@@ -645,6 +645,7 @@ const commitBrowserStop$ = command(
     stopProvider: boolean,
   ): Promise<boolean> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0067; new non-billing transactions are prohibited.
     const stopped = await db.transaction(async (tx) => {
       const [instance] = await tx
         .update(browserSessionInstances)
@@ -1346,6 +1347,7 @@ const retireBrowserProfileOwnership$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0068; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const ownedBrowsers = await tx
         .select({
@@ -1552,6 +1554,7 @@ const claimStartedProviderInstance$ = command(
   ) => {
     const db = set(writeDb$);
     const result = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0069; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const [current] = await tx
           .select(BROWSER_SESSION_SELECTION)
@@ -1838,6 +1841,7 @@ const claimFreshBrowser$ = command(
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSessionRow>> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0070; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       signal.throwIfAborted();
       const [owned, run] = await Promise.all([
@@ -2114,6 +2118,7 @@ const claimBrowserForResume$ = command(
   ): Promise<ResumeClaim> => {
     const db = set(writeDb$);
     const result = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0071; new non-billing transactions are prohibited.
       db.transaction(async (tx): Promise<ResumeClaim> => {
         signal.throwIfAborted();
         const [run] = await tx
@@ -2917,6 +2922,7 @@ const releaseStrandedBrowserStarts$ = command(
         browser.suspendedAt <= retentionCutoff
           ? browser.suspendedAt
           : null;
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0072; new non-billing transactions are prohibited.
       await db.transaction(async (tx) => {
         await tx
           .update(browserSessionInstances)
@@ -3008,6 +3014,7 @@ const claimExpiredInactiveBrowser$ = command(
   ): Promise<Date | null> => {
     const db = set(writeDb$);
     const claimedAt = nowDate();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0073; new non-billing transactions are prohibited.
     const claimed = await db.transaction(async (tx) => {
       const [browser] = await tx
         .update(browserSessions)
@@ -3141,6 +3148,7 @@ const retireExpiredInactiveBrowser$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0074; new non-billing transactions are prohibited.
     const retired = await db.transaction(async (tx) => {
       const [[browser], [profile]] = await Promise.all([
         tx

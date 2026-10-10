@@ -563,6 +563,9 @@ pub fn collect_heartbeat_state(
         admittable_profiles,
         held_sandbox_states: idle_pool.held_sandbox_states(),
         held_workspace_states: Vec::new(),
+        // Reader preparation does not establish support for existing workspace images.
+        home_affinity_version: None,
+        held_home_states: Vec::new(),
         active_reuse_producers: Vec::new(),
         wss_ingress_service_active: false,
         mode: match mode {
@@ -575,9 +578,7 @@ pub fn collect_heartbeat_state(
     }
 }
 
-fn duration_ms(duration: Duration) -> u64 {
-    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
-}
+use crate::duration::duration_ms;
 
 #[cfg(test)]
 mod tests {

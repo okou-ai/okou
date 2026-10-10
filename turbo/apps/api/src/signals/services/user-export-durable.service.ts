@@ -147,6 +147,7 @@ const commitCollectedEntries$ = command(
   ): Promise<boolean> => {
     const db = set(writeDb$);
     const { job, entries, next } = args;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0309; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const transition = { job, checkpoint: next };
       // The checkpoint and its byte inventory are one recoverable business write.
@@ -1011,6 +1012,7 @@ const publishStep$ = command(
     }
     const orgIds = await set(currentUserExportMemberships$, job.userId, signal);
     signal.throwIfAborted();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0310; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       for (const check of userExportPublicationChecks({
         jobId: job.id,

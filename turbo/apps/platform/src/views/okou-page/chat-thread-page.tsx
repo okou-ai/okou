@@ -268,7 +268,10 @@ import type {
   ChatEvent,
 } from "../../signals/chat-page/chat-event-types.ts";
 import { optimisticEventIds$ } from "../../signals/chat-page/optimistic-chat-events.ts";
-import { AUTO_RUN_MODEL, sameSelectedModel } from "@okouai/core/auto-run-model";
+import {
+  AUTO_SELECTED_MODEL,
+  sameSelectedModel,
+} from "@okouai/core/auto-run-model";
 import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-state.ts";
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
@@ -277,7 +280,6 @@ import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
 import {
   ChatThreadLinkChip,
   STRUCTURED_INLINE_LINK_REFERENCE_CLASS,
-  STRUCTURED_INLINE_REFERENCE_CLASS,
 } from "../components/chat-thread-link-chip.tsx";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
 import type {
@@ -3329,9 +3331,9 @@ function ChatThreadNextRunModelNotice({
     return withChatScrollLayout(null);
   }
 
-  // Runs record Auto under its internal run model.
+  // Selected identity is separate from a Run's immutable captured runtime.
   const selectedRunSelection: ChatRunModelSelection = {
-    selectedModel: selectedSelection.selectedModel ?? AUTO_RUN_MODEL,
+    selectedModel: selectedSelection.selectedModel ?? AUTO_SELECTED_MODEL,
     ...(selectedSelection.codexServiceTier === "fast"
       ? { serviceTier: "priority" as const }
       : {}),
@@ -3744,7 +3746,7 @@ function ChatThreadSkeletonOverlay({ thread }: { thread: ChatPanelSignals }) {
   return (
     <div
       data-chat-skeleton
-      className="absolute inset-0 z-10 overflow-hidden pointer-events-none"
+      className="absolute inset-0 overflow-hidden pointer-events-none"
     >
       <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
         <div
@@ -3775,6 +3777,10 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
     detach(loadMoreRenderedChatGroups(pageSignal), Reason.DomCallback);
   };
 
+  // This scroll area isolates its local overlays. The masked viewport contains
+  // transcript layers; the later skeleton and locator use DOM paint order.
+  // Raise only scroll-to-bottom above the expanded locator's hit area, which
+  // can overlap the button in narrow split panes.
   return (
     <ScrollArea.Root className="flex-1 min-h-0 isolate">
       <ScrollArea.Viewport
@@ -4235,6 +4241,8 @@ function splitQueuedEventsForThinkingIndicator(groups: ChatEventGroup[]): {
 
 function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
+  const fixedLayout =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatComposerLayout];
   const standalonePwa = isStandalonePwa();
 
   // The pane's canvas runs behind the composer the way it runs behind the
@@ -4245,18 +4253,15 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
     <footer
       data-chat-composer
       ref={composerLayoutRef}
-      className="relative shrink-0 pb-safe-or-2"
+      className={cn("relative shrink-0", !fixedLayout && "pb-safe-or-2")}
     >
-      {/* `overflow-y-auto` clips at this element's padding box. The composer's
-          focus veil is offset down and blurred well past the gap the footer
-          leaves, so it is still painting at that boundary and gets sliced off in
-          a hard line across the card's full width. Pad out far enough for
-          `--okou-composer-focus-veil` to finish and take the same amount back
-          with a negative margin, so the veil fades out instead of ending in a
-          seam while the footer keeps its height. */}
+      {/* The enabled layout keeps the gutter and safe area in one reserve,
+          without a negative margin extending beyond the footer. Keep the
+          original layout while the rollout is disabled. */}
       <div
         className={cn(
-          "-mb-8 overflow-y-auto [scrollbar-gutter:stable] pb-10 pl-4 pr-4 pt-3 sm:pl-6 sm:pr-6",
+          "overflow-y-auto [scrollbar-gutter:stable] pl-4 pr-4 pt-3 sm:pl-6 sm:pr-6",
+          fixedLayout ? "pb-safe-or-4" : "-mb-8 pb-10",
           standalonePwa && "overscroll-contain",
         )}
       >
@@ -4951,7 +4956,7 @@ function InsufficientCreditsCard() {
 
   // Credits arriving while the card is on screen replaces this copy and the
   // action inside the element below, rather than swapping the element itself:
-  // `docs/chat-cards.md` keeps the mounted card's box in layout through every
+  // `docs/chat.md#chat-cards` keeps the mounted card's box in layout through every
   // asynchronous state change.
   const { headline, helper } = hasAvailableCredits
     ? creditsAvailableCopy()
@@ -5287,7 +5292,7 @@ function AssistantRecoveryActions({
 
 /**
  * The contents of one error card, chosen by the caller and handed to the single
- * `AssistantErrorCard` element it keeps mounted. `docs/chat-cards.md` requires
+ * `AssistantErrorCard` element it keeps mounted. `docs/chat.md#chat-cards` requires
  * the sized element itself to survive every asynchronous state change: the
  * failure-recovery classification lands after the transcript has already
  * scrolled, and replacing the card component at that moment removes its box
@@ -7037,6 +7042,11 @@ function AgentRunSourceMessageAnnotation({
 // surrounding sentence than a borderless inline mention does.
 const INLINE_FILE_REFERENCE_SPACING_CLASS = "mx-1";
 
+// Template references are display-only (no link, no hover), so they carry no
+// fill or accent colour: they read as quiet inline text with an icon.
+const STRUCTURED_TEMPLATE_REFERENCE_CLASS =
+  "relative -top-px mx-0.5 inline-flex h-7 max-w-[240px] items-center gap-1.5 align-middle text-[13px] font-medium text-muted-foreground";
+
 function UserMessageTemplateReference({
   part,
 }: {
@@ -7047,7 +7057,7 @@ function UserMessageTemplateReference({
   return (
     <span
       data-structured-template-reference=""
-      className={STRUCTURED_INLINE_REFERENCE_CLASS}
+      className={STRUCTURED_TEMPLATE_REFERENCE_CLASS}
       title={label}
     >
       <SwatchBook size={13} className="shrink-0" />

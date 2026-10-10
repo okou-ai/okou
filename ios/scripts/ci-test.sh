@@ -30,6 +30,14 @@ xcode_args=(
   CLERK_PUBLISHABLE_KEY=
 )
 
+# Core/data tests use real decoding, HTTP and SQLite without booting the App.
+for ios_package in ChatDomain ChatData; do
+  ios_package_path="ios/Packages/$ios_package"
+  xcrun swift-format lint --strict --recursive "$ios_package_path/Package.swift" \
+    "$ios_package_path/Sources" "$ios_package_path/Tests"
+  swift test --package-path "$ios_package_path" --scratch-path "$build_root/$ios_package"
+done
+
 xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
 cmp "$resolved" "$build_root/Package.resolved.before"
 

@@ -28,6 +28,7 @@ export async function purchaseToolCredits(
     readonly credits: number;
     readonly customerId: string;
     readonly invoiceId: string;
+    readonly onExternalStateReady?: (restore: () => void) => void;
   },
 ): Promise<void> {
   const webhooks = createWebhookCallbackApi(context);
@@ -40,12 +41,25 @@ export async function purchaseToolCredits(
   );
   let observed: z.infer<typeof checkoutSchema> | undefined;
   const url = `https://checkout.stripe.test/${randomUUID()}`;
+  const session = { id: `cs_${randomUUID()}`, url };
+  const acceptCheckout = (input: unknown) => {
+    const parsed = checkoutSchema.parse(input);
+    if (observed && JSON.stringify(parsed) !== JSON.stringify(observed)) {
+      throw new Error("Unexpected checkout while draining the credit purchase");
+    }
+    observed = parsed;
+    return Promise.resolve(session);
+  };
+  const restoreCheckout = () => {
+    context.mocks.stripe.checkout.sessions.create.mockReset();
+    context.mocks.stripe.checkout.sessions.create.mockImplementation(
+      acceptCheckout,
+    );
+  };
   context.mocks.stripe.checkout.sessions.create.mockImplementationOnce(
-    (input) => {
-      observed = checkoutSchema.parse(input);
-      return Promise.resolve({ id: `cs_${randomUUID()}`, url });
-    },
+    acceptCheckout,
   );
+  purchase.onExternalStateReady?.(restoreCheckout);
   const origin = new URL(env("APP_URL")).origin;
   const checkout = await accept(
     setupApp({ context, routes: billingCreditCheckoutRoutes })(
@@ -68,25 +82,37 @@ export async function purchaseToolCredits(
   expect(observed.line_items).toMatchObject([
     { quantity: purchase.credits / 1000 },
   ]);
-  await webhooks.postStripeEvent(
-    {
-      id: `evt_${randomUUID()}`,
-      type: "invoice.paid",
-      created: Math.floor(now() / 1000),
-      data: {
-        object: {
-          id: purchase.invoiceId,
-          customer: observed.customer,
-          subtotal: purchase.credits / 10,
-          amount_paid: purchase.credits / 10,
-          metadata: observed.invoice_creation.invoice_data.metadata,
-          parent: null,
-          lines: { has_more: false, data: [] },
-        },
+  const invoicePaid = {
+    id: `evt_${randomUUID()}`,
+    type: "invoice.paid",
+    created: Math.floor(now() / 1000),
+    data: {
+      object: {
+        id: purchase.invoiceId,
+        customer: observed.customer,
+        subtotal: purchase.credits / 10,
+        amount_paid: purchase.credits / 10,
+        metadata: observed.invoice_creation.invoice_data.metadata,
+        parent: null,
+        lines: { has_more: false, data: [] },
       },
     },
-    [200],
-  );
+  };
+  purchase.onExternalStateReady?.(() => {
+    restoreCheckout();
+    context.mocks.stripe.webhooks.constructEvent.mockReset();
+    context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+      (payload) => {
+        if (String(payload) !== JSON.stringify(invoicePaid)) {
+          throw new Error(
+            "Unexpected Stripe webhook while draining the credit purchase",
+          );
+        }
+        return invoicePaid;
+      },
+    );
+  });
+  await webhooks.postStripeEvent(invoicePaid, [200]);
   await flushWaitUntilForTest();
 }
 
@@ -101,7 +127,7 @@ export async function claimPublicToolRun(
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = runs.configureRunnerGroup();
-  await runs.ensurePersonalSubscriptionModel(actor, {
+  const personal = await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
   const agent = await bdd.createAgent(actor, {
@@ -154,6 +180,7 @@ export async function claimPublicToolRun(
   }
   return {
     ...run,
+    providerId: personal.providerId,
     claim,
     cleanup,
     token,

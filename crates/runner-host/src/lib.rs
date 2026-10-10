@@ -9,6 +9,7 @@ pub mod gc;
 pub mod host;
 pub mod host_env;
 pub mod host_file;
+pub mod host_memory;
 pub mod idle_prune_control;
 pub mod live_runner_instances;
 pub mod lock;

@@ -4885,24 +4885,6 @@
           "enabled_other": "Diaktifkan untuk {{count}} eksekusi berikutnya",
           "title": "Tangkap body jaringan"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "Penantian aktif",
-          "channel": "kanal",
-          "clear": "Hapus",
-          "connection": "koneksi",
-          "copyJson": "Salin JSON",
-          "description": "Periksa sinyal autentikasi dan koneksi Ably.",
-          "empty": "Tidak ada peristiwa diagnostik yang direkam.",
-          "events": "peristiwa",
-          "log": "Log peristiwa",
-          "refresh": "Segarkan",
-          "title": "Diagnostik koneksi waktu nyata",
-          "unavailable": "tidak tersedia",
-          "workerDescription": "Periksa rekaman diagnostik dari shared worker yang memegang koneksi realtime.",
-          "workerLoading": "Memuat",
-          "workerTitle": "Diagnostik koneksi shared worker",
-          "workerUnavailable": "Tidak tersedia"
-        },
         "indexedDb": {
           "countExplanation": "Penghitungan menggunakan transaksi hanya-baca dan tidak membaca isi rekaman.",
           "description": "Periksa jumlah rekaman dalam cache chat lokal yang dikelola shared worker.",
@@ -4922,6 +4904,34 @@
           "stores": "penyimpanan objek",
           "title": "Penyimpanan IndexedDB",
           "unavailable": "Penyimpanan IndexedDB tidak tersedia."
+        },
+        "morningBriefEmail": {
+          "checkStatus": "Periksa status pengiriman",
+          "description": "Kirim contoh tetap ke email akun Anda dengan templat Morning Brief. Ini tidak menjalankan Agent atau mengubah jadwal Anda.",
+          "reasons": {
+            "delivery-failed": "Pengiriman gagal. Percobaan sebelumnya mungkin telah diterima penyedia.",
+            "expired": "Pengiriman kedaluwarsa. Percobaan sebelumnya mungkin telah diterima penyedia.",
+            "no-email": "Dilewati: akun Anda tidak memiliki alamat email.",
+            "suppressed": "Dilewati: pengiriman ke email akun Anda diblokir.",
+            "unsubscribed": "Dilewati: akun Anda berhenti berlangganan pembaruan email."
+          },
+          "requestFailed": "Permintaan belum selesai. Percobaan ulang memakai permintaan yang sama untuk mencegah email duplikat.",
+          "retry": "Coba lagi email uji",
+          "send": "Kirim email uji",
+          "sendAnother": "Kirim email uji lain",
+          "sending": "Mengirim…",
+          "status": {
+            "queued": "Dalam antrean pengiriman. Periksa status sebelum mengirim contoh lain.",
+            "sent": "Diterima penyedia email. Periksa kotak masuk dan spam; kedatangan di kotak masuk belum dikonfirmasi."
+          },
+          "title": "Email uji Morning Brief"
+        },
+        "openrouterPreset": {
+          "description": "Berlaku untuk eksekusi Auto dan Okou 1.0 bawaan yang baru di seluruh organisasi. Eksekusi yang sudah ada tidak berubah.",
+          "loading": "Memuat…",
+          "systemDefault": "Default sistem",
+          "title": "Preset OpenRouter",
+          "unavailable": "Tidak tersedia"
         },
         "welcomeThread": {
           "create": "Buat obrolan sambutan",
@@ -5312,6 +5322,14 @@
     },
     "clearSearch": "Hapus pencarian",
     "custom": "Kustom",
+    "delete": {
+      "cancel": "Batal",
+      "confirm": "Hapus templat",
+      "deleting": "Menghapus...",
+      "description": "\"{{title}}\" akan dihapus untuk semua orang yang dapat melihatnya. Tindakan ini tidak dapat dibatalkan.",
+      "failed": "Templat tidak dapat dihapus. Coba lagi.",
+      "title": "Hapus templat?"
+    },
     "detail": {
       "back": "Templat kustom",
       "page": "Halaman {{number}}"
@@ -6293,22 +6311,33 @@
     "connected": "Terhubung",
     "connectedWithDetail": "Terhubung ({{detail}})",
     "discord": {
-      "accountSetup": "Akun Anda belum terhubung. Menghubungkan akun Discord baru belum tersedia.",
-      "adminSetup": "Penyiapan server belum tersedia. Konfigurasi yang sudah terverifikasi dapat terus menggunakan Discord.",
+      "accountSetup": "Hubungkan akun Discord Anda melalui persetujuan resmi di browser.",
+      "adminSetup": "Instal Okou ke server Discord Anda, lalu hubungkan akun Anda.",
+      "approvalConfirmed": "Persetujuan browser dikonfirmasi. Tutup tab ini untuk menyelesaikan di tab Works semula.",
+      "approvalFailed": "Konfirmasi gagal. Masuk dengan akun dan organisasi Okou semula atau mulai ulang otorisasi.",
+      "approvalPrompt": "Konfirmasi dengan akun dan organisasi Okou yang sama seperti tab Works semula. Konfirmasi saja belum menghubungkan akun Anda.",
+      "approve": "Konfirmasi persetujuan Discord",
+      "approving": "Mengonfirmasi…",
+      "authorizationError": "Otorisasi Discord tidak dapat diselesaikan. Coba lagi dari kartu ini.",
+      "authorizing": "Mengotorisasi…",
+      "browserConsent": "Selesaikan persetujuan Discord dan konfirmasi dengan akun Okou di tab tersebut. Menutup tab saja tidak menghubungkan akun Anda.",
       "chooseDmServer": "Pilih server",
       "description": "Tandai Okou di server atau kirim pesan langsung ke bot.",
       "disconnect": "Putuskan koneksi Discord",
       "dmServer": "Server default untuk pesan langsung",
+      "install": "Instal ke Discord",
       "limitedContext": "Konteks terbatas: Okou mungkin tidak menerima pesan biasa di kanal. Tandai Okou dan sertakan detail yang dibutuhkannya.",
       "loadError": "Tidak dapat memuat status Discord.",
       "loading": "Memuat status Discord…",
-      "memberSetup": "Tanyakan akses Discord kepada admin organisasi. Penyiapan server belum tersedia.",
+      "memberSetup": "Minta admin organisasi menginstal Okou ke server Discord Anda.",
       "moreOptions": "Opsi Discord lainnya",
+      "pendingConsent": "Tab ini tidak memiliki bukti otorisasi. Tutup dan mulai ulang otorisasi dari tab Works semula.",
+      "popupBlocked": "Izinkan popup untuk mengotorisasi Discord, lalu coba lagi.",
       "retry": "Coba lagi",
       "server": "Server: {{name}}",
       "suspended": "Discord untuk sementara tidak tersedia. Koneksi yang ada tetap disimpan.",
       "title": "Discord",
-      "unconfigured": "Discord belum tersedia untuk organisasi ini.",
+      "unconfigured": "Discord belum dikonfigurasi untuk organisasi ini.",
       "uninstall": "Hapus Discord",
       "uninstallDescription": "Ini memutuskan koneksi Discord untuk semua orang di organisasi ini. Organisasi lain tetap terhubung.",
       "uninstallTitle": "Hapus Discord dari organisasi ini?"

@@ -301,6 +301,7 @@ jobs:
             .github/scripts/prune-runner-idle.sh \
             .github/scripts/reconcile-runner-binary-groups.sh \
             .github/actions/report-memory-peak/report.sh \
+            .github/scripts/report-sccache-stats.sh \
             .github/scripts/resolve-desktop-version-change.sh \
             .github/scripts/run-semgrep.sh \
             .github/scripts/run-nbd-cow-tests.sh \
@@ -320,6 +321,7 @@ jobs:
             .github/scripts/tests/check-workflow-shell-compatibility-test.sh \
             .github/scripts/tests/check-pr-ci-capacity-test.sh \
             .github/scripts/tests/checkout-depth-test.sh \
+            .github/scripts/tests/ci-source-revision-workflow-test.sh \
             .github/scripts/tests/cleanup-pr-runner-test.sh \
             .github/scripts/tests/cleanup-stale-runners-test.sh \
             .github/scripts/tests/clerk-test-resource-workflow-test.sh \
@@ -347,6 +349,9 @@ jobs:
             .github/scripts/tests/reconcile-and-start-runner-groups-test.sh \
             .github/scripts/tests/prune-runner-idle-test.sh \
             .github/scripts/tests/report-cgroup-memory-peak-test.sh \
+            .github/scripts/tests/report-sccache-stats-test.sh \
+            .github/scripts/tests/setup-r2-sccache-test.sh \
+            .github/scripts/tests/toolchain-image-references-test.sh \
             .github/scripts/tests/runner-lifecycle-lock-test.sh \
             .github/scripts/tests/runner-lifecycle-lock-diagnostics-test.sh \
             .github/scripts/tests/runner-release-build-workflow-test.sh \
@@ -365,6 +370,9 @@ jobs:
           # actionlint assumes Bash when shell is omitted and does not model the
           # sh default used by container jobs.
           .github/scripts/check-workflow-shell-compatibility.sh
+
+      - name: Test owned Runner memory calibration collector
+        run: python3 .github/scripts/tests/runner-memory-calibrate-test.py
 
       - name: Run actionlint
         run: ./actionlint

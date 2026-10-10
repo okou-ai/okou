@@ -7,7 +7,7 @@ opaque deployment names as provider identities.
 
 The DeepSeek V4.1 entry below is historical: its memory execution binding and
 limit override are retired after the
-[production drain gate](../../../../docs/deployment-compatibility.md#deepseek-memory-execution-retirement-2026-10-08).
+[production drain gate](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/deployment-compatibility.md#deepseek-memory-execution-retirement-2026-10-08).
 The Codex correction and installed-CLI parity checks remain active.
 
 ## Meaning of the numbers

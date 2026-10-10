@@ -1,3 +1,5 @@
+import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
+import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { randomUUID } from "node:crypto";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
@@ -64,10 +66,17 @@ function check(
 }
 
 describe("private Runner VNC authority", () => {
+  const selectedRuns = createPublicRemoteAccessRunApi(context);
+  const selectedOwners = new Map<string, { orgId: string; userId: string }>();
   const claimedRunCleanups: (() => Promise<void>)[] = [];
 
   // Cancel owned Runs while the parent context still owns its signal and mocks.
   afterEach(async () => {
+    await selectedRuns.cleanup();
+    for (const owner of selectedOwners.values()) {
+      await deletePublicWorkspace(context, createBddApi(context).user(owner));
+    }
+    selectedOwners.clear();
     for (const cleanup of claimedRunCleanups.splice(0)) {
       await cleanup();
       await flushWaitUntilForTest();
@@ -122,7 +131,7 @@ describe("private Runner VNC authority", () => {
     return { runId, threadId, runnerIdentity, sandboxToken };
   }
 
-  /** Ordinary chat Runs use production launch and claim; historical cases keep api.runtime. */
+  /** Ordinary chat Runs use production launch and claim. */
   async function claimedFixture(
     options: { readonly defaultEnabled?: boolean } = {},
   ): Promise<VncRuntimeFixture> {
@@ -1845,40 +1854,52 @@ describe("private Runner VNC authority", () => {
     ).toStrictEqual({ outcome: "valid" });
   });
 
-  it("rejects inactive and unclaimed Runs without requiring chat provenance", async () => {
-    const f = await api.fixture();
+  it("rejects pending and real terminal Runs before decrypting VNC credentials", async () => {
+    const owner = {
+      orgId: `org_vnc_public_${randomUUID()}`,
+      userId: `user_vnc_public_${randomUUID()}`,
+    };
+    selectedOwners.set(owner.orgId, owner);
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.VncAccess]: true,
+    });
+    const run = await selectedRuns.start(owner);
+    const claimed = await selectedRuns.claim(run, vncRunnerHeaders);
+    api.authenticate(owner);
+    const connection = await accept(
+      api
+        .connections()
+        .create({ headers: vncSessionHeaders, body: vncConnectionBody() }),
+      [201],
+    );
+    await api.enableDefault(owner, "vnc", connection.body.id);
+    const f = {
+      ...claimed,
+      connectionId: connection.body.id,
+      credentialId: requireVncCredentialId(connection.body),
+    };
     const { generation } = await api.resolved(f);
-    const kms = useSecretKmsProbe();
-    for (const runtime of [
-      { status: "pending" as const },
-      { status: "completed" as const },
-      { status: "cancelled" as const },
-      { status: "failed" as const },
-      { runnerId: null, heartbeatGeneration: null },
-    ]) {
-      const other = await api.runtime(f, { agentId: f.agentId, ...runtime });
-      await expect(api.resolve({ ...f, ...other })).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect((await check({ ...f, ...other }, generation)).body).toStrictEqual({
-        outcome: "unavailable",
-      });
-    }
+    const pending = await selectedRuns.start(owner);
+    let kms = useSecretKmsProbe();
+    await expect(
+      api.resolve({ ...f, runId: pending.runId }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
+    expect(
+      (await check({ ...f, runId: pending.runId }, generation)).body,
+    ).toStrictEqual({ outcome: "unavailable" });
     expect(kms.decryptCalls).toBe(0);
-    for (const triggerSource of [
-      "automation-schedule",
-      "automation-event",
-      "webhook",
-      null,
-    ] as const) {
-      const other = await api.runtime(f, {
-        agentId: f.agentId,
-        triggerSource,
-        chat: false,
+    for (const status of ["completed", "cancelled", "failed"] as const) {
+      const next = await selectedRuns.start(owner);
+      const current = await selectedRuns.claim(next, vncRunnerHeaders);
+      await selectedRuns.finish(current, status);
+      kms = useSecretKmsProbe();
+      await expect(api.resolve({ ...f, ...current })).resolves.toStrictEqual({
+        outcome: "unavailable",
       });
-      expect((await api.resolve({ ...f, ...other })).outcome).toBe(
-        "unavailable",
-      );
+      expect(
+        (await check({ ...f, ...current }, generation)).body,
+      ).toStrictEqual({ outcome: "unavailable" });
+      expect(kms.decryptCalls).toBe(0);
     }
   });
 
@@ -1929,9 +1950,30 @@ describe("private Runner VNC authority", () => {
     expect(kms.decryptCalls).toBe(0);
   });
 
-  it("checks the current generation through rotation, deletion and recreation with the same connection UUID", async () => {
+  it("preserves a rejected profile edit and checks generation through rotation, deletion and recreation", async () => {
     const f = await claimedFixture();
     const original = await api.resolved(f);
+    const rejected = await accept(
+      api.credentials().update({
+        headers: vncSessionHeaders,
+        params: { credentialId: f.credentialId },
+        body: {
+          expectedRevision: 1,
+          authentication: {
+            method: "client_certificate_vnc_password",
+            password: "rejected",
+            certificateChain,
+            privateKey,
+          },
+        },
+      }),
+      [400],
+    );
+    expect(rejected.body.error.code).toBe("VNC_PROFILE_MISMATCH");
+    await expect(api.resolved(f)).resolves.toStrictEqual(original);
+    expect((await check(f, original.generation)).body).toStrictEqual({
+      outcome: "valid",
+    });
     await accept(
       api.credentials().update({
         headers: vncSessionHeaders,

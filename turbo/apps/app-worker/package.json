@@ -1,6 +1,6 @@
 {
   "name": "@okouai/app-worker",
-  "version": "1.8.205",
+  "version": "1.9.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@clerk/backend": "^3.13.1",
+    "@okouai/api-contracts": "workspace:*",
     "@okouai/core": "workspace:*"
   },
   "devDependencies": {

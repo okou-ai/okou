@@ -214,6 +214,9 @@ importers:
       resend:
         specifier: ^6.12.4
         version: 6.12.4
+      sharp:
+        specifier: ^0.35.5
+        version: 0.35.5(@types/node@24.3.0)
       signal-timers:
         specifier: ^1.0.4
         version: 1.0.4
@@ -317,6 +320,9 @@ importers:
       '@clerk/backend':
         specifier: ^3.13.1
         version: 3.13.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@okouai/api-contracts':
+        specifier: workspace:*
+        version: link:../../packages/api-contracts
       '@okouai/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -466,6 +472,9 @@ importers:
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
+      '@okouai/eslint-rules':
+        specifier: workspace:*
+        version: link:../../packages/eslint-rules
       '@okouai/typescript-config':
         specifier: workspace:*
         version: link:../../packages/typescript-config
@@ -499,6 +508,9 @@ importers:
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../../packages/api-contracts
+      '@okouai/core':
+        specifier: workspace:*
+        version: link:../../packages/core
     devDependencies:
       '@okouai/eslint-config':
         specifier: workspace:*
@@ -905,9 +917,15 @@ importers:
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../api-contracts
+      entities:
+        specifier: 7.0.1
+        version: 7.0.1
       fractional-indexing:
         specifier: ^3.4.0
         version: 3.4.0
+      htmlparser2:
+        specifier: ^10.1.0
+        version: 10.1.0
       signal-timers:
         specifier: ^1.0.5
         version: 1.0.5
@@ -1088,6 +1106,12 @@ importers:
       typescript:
         specifier: npm:@typescript/typescript6@6.0.2
         version: '@typescript/typescript6@6.0.2'
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript-eslint:
+        specifier: ^8.71.0
+        version: 8.71.0(@typescript/typescript6@6.0.2)(eslint@9.39.4(jiti@2.7.0))
       vitest:
         specifier: ^5.0.3
         version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@24.3.0)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.3)(happy-dom@20.11.6(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.3.0)(@typescript/typescript6@6.0.2))(vite@8.0.16(@types/node@24.3.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -16537,6 +16561,39 @@ snapshots:
       '@img/sharp-win32-ia32': 0.35.5
       '@img/sharp-win32-x64': 0.35.5
       '@types/node': 24.13.4
+
+  sharp@0.35.5(@types/node@24.3.0):
+    dependencies:
+      '@img/colour': 1.1.0
+      detect-libc: 2.1.2
+      semver: 7.8.5
+    optionalDependencies:
+      '@img/sharp-darwin-arm64': 0.35.5
+      '@img/sharp-darwin-x64': 0.35.5
+      '@img/sharp-freebsd-wasm32': 0.35.5
+      '@img/sharp-libvips-darwin-arm64': 1.3.4
+      '@img/sharp-libvips-darwin-x64': 1.3.4
+      '@img/sharp-libvips-linux-arm': 1.3.4
+      '@img/sharp-libvips-linux-arm64': 1.3.4
+      '@img/sharp-libvips-linux-ppc64': 1.3.4
+      '@img/sharp-libvips-linux-riscv64': 1.3.4
+      '@img/sharp-libvips-linux-s390x': 1.3.4
+      '@img/sharp-libvips-linux-x64': 1.3.4
+      '@img/sharp-libvips-linuxmusl-arm64': 1.3.4
+      '@img/sharp-libvips-linuxmusl-x64': 1.3.4
+      '@img/sharp-linux-arm': 0.35.5
+      '@img/sharp-linux-arm64': 0.35.5
+      '@img/sharp-linux-ppc64': 0.35.5
+      '@img/sharp-linux-riscv64': 0.35.5
+      '@img/sharp-linux-s390x': 0.35.5
+      '@img/sharp-linux-x64': 0.35.5
+      '@img/sharp-linuxmusl-arm64': 0.35.5
+      '@img/sharp-linuxmusl-x64': 0.35.5
+      '@img/sharp-webcontainers-wasm32': 0.35.5
+      '@img/sharp-win32-arm64': 0.35.5
+      '@img/sharp-win32-ia32': 0.35.5
+      '@img/sharp-win32-x64': 0.35.5
+      '@types/node': 24.3.0
 
   shebang-command@2.0.0:
     dependencies:

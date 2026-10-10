@@ -30,7 +30,7 @@ import { and, eq, inArray, or } from "drizzle-orm";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { onRejection, settle, throwIfAbort } from "../utils";
 import {
   decryptPersistentSecretValue,
@@ -288,40 +288,6 @@ async function markPendingSessionsSuperseded(
     );
 }
 
-async function loadOwnedSession(
-  args: {
-    readonly writeDb: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorSlug: ConnectorSlug;
-    readonly sessionId: string;
-    readonly sessionToken: string;
-  },
-  signal: AbortSignal,
-): Promise<BuiltinConnectorExternalCodeSessionRow | null> {
-  const [session] = await args.writeDb
-    .select(externalCodeSessionSelection)
-    .from(builtinConnectorExternalCodeSessions)
-    .where(
-      and(
-        eq(builtinConnectorExternalCodeSessions.id, args.sessionId),
-        eq(builtinConnectorExternalCodeSessions.orgId, args.orgId),
-        eq(builtinConnectorExternalCodeSessions.userId, args.userId),
-        eq(
-          builtinConnectorExternalCodeSessions.connectorSlug,
-          args.connectorSlug,
-        ),
-        eq(
-          builtinConnectorExternalCodeSessions.sessionTokenHash,
-          sessionTokenHash(args.sessionToken),
-        ),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return session ?? null;
-}
-
 async function parseEncryptedProviderState(args: {
   readonly session: BuiltinConnectorExternalCodeSessionRow;
   readonly method: ResolvedConnectorActionMethod;
@@ -385,28 +351,6 @@ function isCompletingSessionStale(
     now.getTime() - session.updatedAt.getTime() >
     COMPLETING_SESSION_STALE_AFTER_MS
   );
-}
-
-async function claimSession(
-  args: {
-    readonly writeDb: Db;
-    readonly session: BuiltinConnectorExternalCodeSessionRow;
-    readonly claimStartedAt: Date;
-  },
-  signal: AbortSignal,
-): Promise<BuiltinConnectorExternalCodeSessionRow | null> {
-  const [claimedSession] = await args.writeDb
-    .update(builtinConnectorExternalCodeSessions)
-    .set({ status: "completing", updatedAt: args.claimStartedAt })
-    .where(
-      and(
-        eq(builtinConnectorExternalCodeSessions.id, args.session.id),
-        eq(builtinConnectorExternalCodeSessions.status, "pending"),
-      ),
-    )
-    .returning(externalCodeSessionSelection);
-  signal.throwIfAborted();
-  return claimedSession ?? null;
 }
 
 async function claimStillCurrent(
@@ -842,6 +786,7 @@ async function createExternalCodeSession(
   },
   signal: AbortSignal,
 ) {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0083; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     // The connector_state lock taken by resolveConnectorConnectionMutation
     // serializes session creation for this owner and connector.
@@ -1056,17 +1001,24 @@ export const completeBuiltinConnectorExternalCodeSession$ = command(
     signal: AbortSignal,
   ) => {
     const writeDb = set(writeDb$);
-    const session = await loadOwnedSession(
-      {
-        writeDb,
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorSlug: args.connectorSlug,
-        sessionId: args.sessionId,
-        sessionToken: args.sessionToken,
-      },
-      signal,
-    );
+    const { orgId, userId, connectorSlug, sessionId, sessionToken } = args;
+    const [session] = await get(db$)
+      .select(externalCodeSessionSelection)
+      .from(builtinConnectorExternalCodeSessions)
+      .where(
+        and(
+          eq(builtinConnectorExternalCodeSessions.id, sessionId),
+          eq(builtinConnectorExternalCodeSessions.orgId, orgId),
+          eq(builtinConnectorExternalCodeSessions.userId, userId),
+          eq(builtinConnectorExternalCodeSessions.connectorSlug, connectorSlug),
+          eq(
+            builtinConnectorExternalCodeSessions.sessionTokenHash,
+            sessionTokenHash(sessionToken),
+          ),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
     if (!session) {
       return notFound("External-code authorization session not found");
     }
@@ -1116,14 +1068,17 @@ export const completeBuiltinConnectorExternalCodeSession$ = command(
     }
 
     const claimStartedAt = now;
-    const claimedSession = await claimSession(
-      {
-        writeDb,
-        session,
-        claimStartedAt,
-      },
-      signal,
-    );
+    const [claimedSession] = await writeDb
+      .update(builtinConnectorExternalCodeSessions)
+      .set({ status: "completing", updatedAt: claimStartedAt })
+      .where(
+        and(
+          eq(builtinConnectorExternalCodeSessions.id, session.id),
+          eq(builtinConnectorExternalCodeSessions.status, "pending"),
+        ),
+      )
+      .returning(externalCodeSessionSelection);
+    signal.throwIfAborted();
     if (!claimedSession) {
       return badRequestMessage(
         "External-code authorization session is no longer active",

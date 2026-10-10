@@ -54,14 +54,6 @@ interface MockConnectionStateChange {
 }
 
 type ConnectionEventListener = (stateChange: MockConnectionStateChange) => void;
-type ConnectionOn = {
-  (callback: ConnectionEventListener): void;
-  (event: string, callback: ConnectionEventListener): void;
-};
-type ConnectionOff = {
-  (callback: ConnectionEventListener): void;
-  (event: string, callback: ConnectionEventListener): void;
-};
 type MockChannelState =
   | "attached"
   | "attaching"
@@ -332,8 +324,6 @@ export class Realtime {
   readonly connection: {
     state: MockConnectionState;
     once: (event: string, callback: ConnectionEventListener) => void;
-    on: ConnectionOn;
-    off: ConnectionOff;
   };
   readonly channels: {
     release: (name: string) => void;
@@ -348,34 +338,8 @@ export class Realtime {
 
   private readonly connectedOnceListeners = new Set<ConnectionEventListener>();
   private readonly failedOnceListeners = new Set<ConnectionEventListener>();
-  private readonly connectedListeners = new Set<ConnectionEventListener>();
-  private readonly stateListeners = new Set<ConnectionEventListener>();
 
   constructor(config?: { authCallback?: AuthCallback }) {
-    const on = (
-      eventOrCallback: string | ConnectionEventListener,
-      callback?: ConnectionEventListener,
-    ): void => {
-      if (typeof eventOrCallback === "function") {
-        this.stateListeners.add(eventOrCallback);
-        return;
-      }
-      if (eventOrCallback === "connected" && callback) {
-        this.connectedListeners.add(callback);
-      }
-    };
-    const off = (
-      eventOrCallback: string | ConnectionEventListener,
-      callback?: ConnectionEventListener,
-    ): void => {
-      if (typeof eventOrCallback === "function") {
-        this.stateListeners.delete(eventOrCallback);
-        return;
-      }
-      if (eventOrCallback === "connected" && callback) {
-        this.connectedListeners.delete(callback);
-      }
-    };
     this.connection = {
       state: "connecting",
       once: (event, callback) => {
@@ -403,8 +367,6 @@ export class Realtime {
           }
         }
       },
-      on,
-      off,
     };
     this.channel = this.getChannel("user:test-user-123");
     this.channels = {
@@ -453,8 +415,6 @@ export class Realtime {
     this.transition("closed");
     this.connectedOnceListeners.clear();
     this.failedOnceListeners.clear();
-    this.connectedListeners.clear();
-    this.stateListeners.clear();
     realtimeInstances.delete(this);
   }
 
@@ -538,17 +498,11 @@ export class Realtime {
     const previous = this.connection.state;
     this.connection.state = state;
     const stateChange = { current: state, previous, reason, retryIn };
-    for (const listener of this.stateListeners) {
-      listener(stateChange);
-    }
     if (state === "connected") {
       for (const listener of this.connectedOnceListeners) {
         listener(stateChange);
       }
       this.connectedOnceListeners.clear();
-      for (const listener of this.connectedListeners) {
-        listener(stateChange);
-      }
     }
     if (state === "failed") {
       for (const listener of this.failedOnceListeners) {
