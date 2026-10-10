@@ -15,9 +15,9 @@ export TMPDIR="$output/tmp" ZIG_GLOBAL_CACHE_DIR="$output/zig-cache" ZIG_LOCAL_C
 fetch() {
   local url=$1 sha=$2 file=$3
   if [[ ! -f "$file" ]]; then
-    # DNS failures need --retry-all-errors; keep recovery bounded for native builds.
+    # curl's transient retries include DNS errors; keep build recovery bounded.
     curl --fail --silent --show-error --location --proto '=https' --max-time 120 \
-      --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 60 "$url" -o "$file.part"
+      --retry 3 --retry-delay 2 --retry-max-time 60 "$url" -o "$file.part"
     printf '%s  %s\n' "$sha" "$file.part" | sha256sum --check --status
     mv -- "$file.part" "$file"
   fi
