@@ -1804,6 +1804,118 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(sends.messages).toHaveLength(sendsAfterCompletion);
   });
 
+  it.each(["sms", "imessage"] as const)(
+    "deduplicates concurrent %s ingress by provider message and webhook identities",
+    async (channel) => {
+      const { actor, ap, phone, runnerGroup, sends } =
+        await entitledLinkedActor();
+      const runs = createRunsApi(context);
+      const integrations = createBddIntegrationApi(context);
+      const isGroup = channel === "imessage";
+      const conversationId = uniqueConversationId();
+      const groupId = bddGroupId(conversationId);
+      const messageId = `ap-concurrent-${randomUUID()}`;
+      const webhookId = `evt-concurrent-${randomUUID()}`;
+      const message = {
+        channel,
+        from: phone,
+        body: isGroup
+          ? "@Okou accept this event once"
+          : "accept this event once",
+        messageId,
+        webhookId,
+        conversationId,
+        ...(isGroup
+          ? { isGroup, groupId, participants: [{ identifier: phone }] }
+          : {}),
+      };
+      await Promise.all([
+        ap.postAgentPhoneInboundMessage(message),
+        ap.postAgentPhoneInboundMessage(message),
+      ]);
+      await ap.postAgentPhoneInboundMessage({
+        ...message,
+        webhookId: `${webhookId}-replay`,
+      });
+      await ap.postAgentPhoneInboundMessage({
+        ...message,
+        messageId: `${messageId}-replay`,
+      });
+      const run = await claimDispatchedRun(runnerGroup);
+      expect(run.prompt).toBe(message.body);
+      await runs.heartbeatRunner(runnerGroup);
+      expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+      if (isGroup) {
+        const history = await integrations.requestAgentPhoneGroupHistory(
+          actor,
+          { groupId, limit: 100 },
+          [200],
+        );
+        expect(
+          history.status === 200 ? history.body.messages : [],
+        ).toMatchObject([{ id: messageId, body: message.body }]);
+        expect(
+          history.status === 200 ? history.body.messages : [],
+        ).toHaveLength(1);
+      }
+      const sendCount = sends.messages.length;
+      await completeSandboxRun(run.sandboxToken, run.runId, 0);
+      await waitForSendCount(sends, sendCount + 1);
+      await ap.postAgentPhoneInboundMessage(message);
+      await runs.heartbeatRunner(runnerGroup);
+      expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+      expect(sends.messages).toHaveLength(sendCount + 1);
+    },
+  );
+
+  it("retains an unarchived group receipt across replay and later linking", async () => {
+    const bdd = createBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    integrations.configureAgentPhoneProvider();
+    integrations.configureAgentPhoneWebhook();
+    const sends = ap.captureAgentPhoneSends();
+    const actor = bdd.user();
+    const phone = uniquePhoneHandle();
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+    const message = {
+      channel: "imessage" as const,
+      from: phone,
+      body: "@Okou please connect",
+      messageId: `ap-no-recipients-${randomUUID()}`,
+      webhookId: `evt-no-recipients-${randomUUID()}`,
+      conversationId,
+      groupId,
+      isGroup: true,
+      participants: [{ identifier: phone }],
+      receivedAt: new Date(now()).toISOString(),
+    };
+    await Promise.all([
+      ap.postAgentPhoneInboundMessage(message),
+      ap.postAgentPhoneInboundMessage(message),
+    ]);
+    expect(sends.messages).toHaveLength(1);
+    expect(sends.messages[0]).toMatchObject({
+      toNumber: groupId,
+      replyToMessageId: message.messageId,
+    });
+    await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
+    const sendCount = sends.messages.length;
+    await ap.postAgentPhoneInboundMessage(message);
+    await ap.postAgentPhoneInboundMessage({
+      ...message,
+      messageId: `${message.messageId}-replay`,
+    });
+    expect(sends.messages).toHaveLength(sendCount);
+    const history = await integrations.requestAgentPhoneGroupHistory(
+      actor,
+      { groupId, limit: 100 },
+      [200],
+    );
+    expect(history.status === 200 ? history.body.messages : []).toHaveLength(0);
+  });
+
   it("imports phone media into canonical storage and preserves its message text", async () => {
     const ap = createAgentPhoneBddApi(context);
     const { actor, phone, runnerGroup } = await entitledLinkedActor();
@@ -2139,7 +2251,21 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       mediaUrl: groupMediaUrl,
     });
 
+    const beforeLaterLink = new Date(now()).toISOString();
+    mockNow(now() + 1000);
     await ap.linkViaWebhookConnectPrompt(linkedLater, laterPhone, sends);
+    const delayedMessageId = `ap-group-history-delayed-${randomUUID()}`;
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: firstPhone,
+      body: "delivered after linking but sent before it",
+      messageId: delayedMessageId,
+      webhookId: null,
+      conversationId,
+      isGroup: true,
+      participants,
+      receivedAt: beforeLaterLink,
+    });
     const noMatchHistory = await integrations.requestAgentPhoneGroupHistory(
       linkedLater,
       { groupId: bddGroupId(noMatchConversationId), limit: 100 },
@@ -2184,9 +2310,13 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
 
     await expect(visibleIds(first)).resolves.toStrictEqual([
       firstMessageId,
+      delayedMessageId,
       secondMessageId,
     ]);
-    await expect(visibleIds(second)).resolves.toStrictEqual([firstMessageId]);
+    await expect(visibleIds(second)).resolves.toStrictEqual([
+      firstMessageId,
+      delayedMessageId,
+    ]);
     await expect(visibleIds(linkedLater)).resolves.toStrictEqual([
       secondMessageId,
     ]);
@@ -2241,7 +2371,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
     expect(
       secondPage.status === 200 ? secondPage.body.messages : [],
-    ).toMatchObject([{ id: secondMessageId }]);
+    ).toMatchObject([{ id: delayedMessageId }]);
   });
 
   it("returns 500 and does not dispatch group webhooks without a timestamp", async () => {

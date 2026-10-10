@@ -62,6 +62,7 @@ interface AgentPhoneInboundMessage {
   readonly from: string;
   readonly body: string;
   readonly messageId?: string | null;
+  readonly webhookId?: string | null;
   readonly conversationId?: string;
   readonly isGroup?: boolean;
   readonly groupId?: string | null;
@@ -103,12 +104,12 @@ function stringField(
 
 function agentPhoneWebhookHeaders(
   body: string,
-  webhookId: string,
+  webhookId: string | null,
 ): {
   readonly "x-webhook-signature": string;
   readonly "x-webhook-timestamp": string;
   readonly "x-webhook-event": string;
-  readonly "x-webhook-id": string;
+  readonly "x-webhook-id"?: string;
 } {
   const timestamp = String(Math.floor(now() / 1000));
   return {
@@ -120,7 +121,7 @@ function agentPhoneWebhookHeaders(
       .digest("hex")}`,
     "x-webhook-timestamp": timestamp,
     "x-webhook-event": "agent.message",
-    "x-webhook-id": webhookId,
+    ...(webhookId === null ? {} : { "x-webhook-id": webhookId }),
   };
 }
 
@@ -242,10 +243,11 @@ export function createAgentPhoneBddApi(context: TestContext) {
   async function postRawAgentPhoneInboundWebhook(
     rawBody: string,
     statuses: readonly (200 | 400 | 401 | 404 | 500)[] = [200],
+    webhookId: string | null = `evt-bdd-agentphone-${randomUUID()}`,
   ) {
     const response = await integrations.requestAgentPhoneWebhook(
       rawBody,
-      agentPhoneWebhookHeaders(rawBody, `evt-bdd-agentphone-${randomUUID()}`),
+      agentPhoneWebhookHeaders(rawBody, webhookId),
       statuses,
     );
     if (response.status === 200) {
@@ -287,7 +289,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
       groupId,
       receivedAt,
     });
-    await postRawAgentPhoneInboundWebhook(rawBody, statuses);
+    await postRawAgentPhoneInboundWebhook(rawBody, statuses, message.webhookId);
     return messageId;
   }
 
