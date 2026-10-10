@@ -3794,6 +3794,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "다시 시도"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "요청 실패"

@@ -3813,6 +3813,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "Erneut versuchen"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Die Anfrage ist fehlgeschlagen"

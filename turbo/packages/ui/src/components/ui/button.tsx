@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
+import { Loader2 } from "lucide-react";
 
 import { cn } from "../../lib/utils";
 import {
@@ -75,18 +76,56 @@ const buttonVariants = cva(
 interface StyledButtonProps
   extends
     Omit<ButtonBaseProps, "showTooltip" | "tooltipFullWidth">,
-    VariantProps<typeof buttonVariants> {}
+    VariantProps<typeof buttonVariants> {
+  /**
+   * The action this button started is still running. The label stays in the
+   * layout (transparent) so the button keeps its width, a spinner sits on top,
+   * and the button stays focusable but inert, so a keyboard user who pressed
+   * it is not thrown out of place when it settles.
+   */
+  pending?: boolean;
+}
 
 export type ButtonProps = StyledButtonProps & ButtonTooltipOptions;
 
 const Button = React.forwardRef<HTMLElement, ButtonProps>(
-  ({ className, iconSize, size, variant, ...props }, ref) => {
+  (
+    { children, className, iconSize, pending = false, size, variant, ...props },
+    ref,
+  ) => {
+    if (!pending) {
+      return (
+        <ButtonBase
+          {...props}
+          className={cn(buttonVariants({ variant, size, iconSize, className }))}
+          ref={ref}
+        >
+          {children}
+        </ButtonBase>
+      );
+    }
     return (
       <ButtonBase
         {...props}
-        className={cn(buttonVariants({ variant, size, iconSize, className }))}
+        disabled
+        focusableWhenDisabled
+        aria-busy
+        data-pending=""
+        className={cn(
+          buttonVariants({ variant, size, iconSize, className }),
+          "relative cursor-default",
+        )}
         ref={ref}
-      />
+      >
+        {/* `opacity-0`, not `invisible`: hidden text drops out of the
+            accessible name, and the focused busy button would be unnamed. */}
+        <span className="inline-flex items-center gap-2 opacity-0">
+          {children}
+        </span>
+        <span className="absolute inset-0 flex items-center justify-center">
+          <Loader2 className="animate-spin" aria-hidden />
+        </span>
+      </ButtonBase>
     );
   },
 );

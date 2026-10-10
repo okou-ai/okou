@@ -1,6 +1,7 @@
 import type { UIEvent as ReactUIEvent } from "react";
 import { ArrowLeft, ExternalLink, Maximize, Minimize, X } from "lucide-react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { Button, FullscreenPanel } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -139,7 +140,9 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
   const close = useSet(sidebar.close$);
   const openCatalogArtifact = useSet(sidebar.openCatalogArtifact$);
   const loadMore = useSet(sidebar.artifactCatalog.loadMore$);
-  const reloadCatalog = useSet(sidebar.artifactCatalog.reload$);
+  const [retryLoadable, retryCatalog] = useLoadableSet(
+    sidebar.artifactCatalog.retry$,
+  );
   const pageSignal = useGet(pageSignal$);
 
   // useLastLoadable keeps the previously resolved pages rendered while the
@@ -197,7 +200,16 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
       >
         {artifacts === null ? (
           catalogLoadable.state === "hasError" ? (
-            <ArtifactCatalogError onRetry={reloadCatalog} />
+            <ArtifactCatalogError
+              pending={retryLoadable.state === "loading"}
+              onRetry={() => {
+                detach(
+                  retryCatalog(pageSignal),
+                  Reason.DomCallback,
+                  "thread artifacts sidebar retry",
+                );
+              }}
+            />
           ) : (
             <ArtifactCatalogSkeleton />
           )

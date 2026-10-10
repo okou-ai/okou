@@ -511,7 +511,7 @@
       "description": "Browse everything you have created here.",
       "emptyDescription": "Artifacts will appear here when they are available.",
       "emptyTitle": "No artifacts found",
-      "error": "Could not load artifacts.",
+      "error": "Couldn't load artifacts.",
       "filters": {
         "avatar": "Avatars",
         "avatarAria": "Show avatar artifacts",
@@ -3086,7 +3086,7 @@
         "loading": "Loading connectors…",
         "noCategoryMatches": "No connectors match in this category.",
         "noCustomMatches": "No custom connectors match your search.",
-        "retry": "Retry",
+        "retry": "Try again",
         "searchAll": "Search all connectors"
       },
       "empty": {
@@ -3805,6 +3805,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "Try again"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Request failed"
@@ -5350,7 +5353,7 @@
     "importHint": "Import a document, presentation or image.",
     "loadFailed": "Couldn't load templates.",
     "renameFailed": "Couldn't rename the template.",
-    "retry": "Retry",
+    "retry": "Try again",
     "sharedBy": "Shared by {{owner}}",
     "sharedByMember": "Shared by an organization member",
     "visibility": {

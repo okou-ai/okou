@@ -3794,6 +3794,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "再試行"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "リクエストが失敗しました"

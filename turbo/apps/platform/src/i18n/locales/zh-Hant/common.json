@@ -3794,6 +3794,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "重試"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "請求失敗"
