@@ -40,6 +40,7 @@ import { db$, writeDb$ } from "../external/db";
 import {
   publishUserSignal,
   publishComputerUseCommandsChangedSafely,
+  publishComputerUseResultChangedSafely,
 } from "../external/realtime";
 import { downloadS3Buffer, putS3Object } from "../external/s3";
 import { settle } from "../utils";
@@ -790,6 +791,7 @@ const failTimedOutComputerUseCommand$ = command(
     if (!timedOut) {
       return null;
     }
+    publishComputerUseResultChangedSafely(timedOut);
     await set(
       insertComputerUseCommandAuditEvent$,
       {
@@ -1724,6 +1726,8 @@ export const completeComputerUseHostCommand$ = command(
       signal.throwIfAborted();
       return { status: authorized ? "completed" : "invalid_connection" };
     }
+
+    publishComputerUseResultChangedSafely(updated);
 
     await set(
       insertComputerUseCommandAuditEvent$,

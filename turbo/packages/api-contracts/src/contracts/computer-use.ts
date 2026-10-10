@@ -2,7 +2,10 @@ import { desktopUpgradeRequiredSchema } from "./desktop-updates";
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { computerUseCommandNotificationsSchema } from "./realtime";
+import {
+  computerUseCommandNotificationsSchema,
+  realtimeSubscriptionSchema,
+} from "./realtime";
 
 const c = initContract();
 
@@ -124,6 +127,7 @@ const computerUseHostStartBodySchema = computerUseRuntimeBodySchema.extend({
 
 const computerUseCommandTargetShape = {
   timeoutMs: z.number().int().min(1_000).max(120_000).default(60_000),
+  realtime: z.boolean().optional(),
 } as const;
 
 const computerUseCommandPayloadShape = {
@@ -425,6 +429,7 @@ export const computerUseAuthorizationRequestApplyResponseSchema = z.object({
 export const computerUseCommandCreateResponseSchema = z.object({
   commandId: z.string(),
   status: z.literal("queued"),
+  realtime: realtimeSubscriptionSchema.optional(),
 });
 
 export const computerUseCommandResponseSchema = z.object({
