@@ -34,6 +34,9 @@ const PRE_AUTH_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_FRAME: usize = 64 * 1024;
 const MAX_CONNECTIONS: usize = 32;
 const MAX_HANDSHAKES: usize = 16;
+const MAX_AUTHORITY_RESPONSE_BYTES: usize = 4 * 1024;
+// Each admitted owner snapshot comes from one bounded consumption response.
+const MAX_RENEWAL_RESPONSE_BYTES: usize = MAX_CONNECTIONS * MAX_AUTHORITY_RESPONSE_BYTES;
 
 fn digest_of(ticket: &str) -> String {
     hex::encode(Sha256::digest(ticket.as_bytes()))
@@ -80,7 +83,7 @@ pub(super) trait TicketConsumer: Send + Sync {
         runner_id: Uuid,
         origin: &str,
         ticket: &str,
-    ) -> Option<()>;
+    ) -> Option<Key>;
     async fn authorized(
         &self,
         runner_id: Uuid,
@@ -108,7 +111,7 @@ impl TicketConsumer for ApiTicketConsumer {
         runner_id: Uuid,
         origin: &str,
         ticket: &str,
-    ) -> Option<()> {
+    ) -> Option<Key> {
         let payload = ConsumeRequest {
             run_id,
             runner_id,
@@ -123,14 +126,20 @@ impl TicketConsumer for ApiTicketConsumer {
             .send("runner_wss_ticket_consume")
             .await
             .ok()?;
-        let body: ConsumeResponse = read_authority_result(response).await?;
+        let body: ConsumeResponse =
+            read_authority_result(response, MAX_AUTHORITY_RESPONSE_BYTES).await?;
         (body.run_id.parse::<RunId>().ok() == Some(run_id)
             && body.runner_id.parse::<Uuid>().ok() == Some(runner_id)
             && body.origin == origin
             && !body.org_id.is_empty()
             && !body.user_id.is_empty()
             && body.digest == digest_of(ticket))
-        .then_some(())
+        .then_some(Key {
+            run_id,
+            digest: body.digest,
+            org_id: body.org_id,
+            user_id: body.user_id,
+        })
     }
 
     async fn authorized(
@@ -154,7 +163,8 @@ impl TicketConsumer for ApiTicketConsumer {
             .send("runner_wss_authorizations_check")
             .await
             .ok()?;
-        let body: CheckResponse = read_authority_result(response).await?;
+        let body: CheckResponse =
+            read_authority_result(response, MAX_RENEWAL_RESPONSE_BYTES).await?;
         let unique: std::collections::HashSet<_> = body.authorized.iter().cloned().collect();
         (unique.len() == body.authorized.len()
             && body.authorized.iter().all(|key| requested.contains(key)))
@@ -164,13 +174,14 @@ impl TicketConsumer for ApiTicketConsumer {
 
 async fn read_authority_result<T: serde::de::DeserializeOwned>(
     mut response: reqwest::Response,
+    limit: usize,
 ) -> Option<T> {
     if response.status() != reqwest::StatusCode::OK {
         return None;
     }
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.ok()? {
-        if chunk.len() > 4096 - bytes.len() {
+        if chunk.len() > limit - bytes.len() {
             return None;
         }
         bytes.extend_from_slice(&chunk);
@@ -496,16 +507,11 @@ async fn handle(
         }
         let origin = ctx.origin.as_deref()?;
         let started = tokio::time::Instant::now();
-        ctx.consumer
+        let key = ctx
+            .consumer
             .consume(first.run_id, ctx.runner_id, origin, &first.ticket)
             .await?;
-        let lease = ctx.authorizations.track(
-            Key {
-                run_id: first.run_id,
-                digest: digest_of(&first.ticket),
-            },
-            started + LEASE_WINDOW,
-        )?;
+        let lease = ctx.authorizations.track(key, started + LEASE_WINDOW)?;
         // Lease expiry remains observable even through Guest activation and a
         // status-lock await; a delayed consume never starts a new five seconds.
         let guest = tokio::select! {

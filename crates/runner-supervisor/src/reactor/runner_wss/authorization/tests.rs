@@ -4,6 +4,8 @@ fn key() -> Key {
     Key {
         run_id: RunId::new_v4(),
         digest: "1".repeat(64),
+        org_id: "org".to_owned(),
+        user_id: "user".to_owned(),
     }
 }
 
@@ -108,7 +110,7 @@ async fn coalesces_exact_ticket_keys_and_rejects_unsolicited_or_duplicate_proofs
 }
 
 #[tokio::test(start_paused = true)]
-async fn different_consumed_tickets_on_one_run_have_independent_authority() {
+async fn distinct_sessions_on_one_run_have_independent_terminal_leases() {
     let authorities = Authorizations::default();
     let first = key();
     let second = Key {
@@ -172,7 +174,7 @@ async fn empty_listener_performs_no_reads_and_stop_joins_pending_control_io() {
     }
     #[async_trait::async_trait]
     impl TicketConsumer for PendingReads {
-        async fn consume(&self, _: RunId, _: Uuid, _: &str, _: &str) -> Option<()> {
+        async fn consume(&self, _: RunId, _: Uuid, _: &str, _: &str) -> Option<Key> {
             panic!("refresh cannot consume a ticket")
         }
         async fn authorized(&self, _: Uuid, _: &str, requested: &[Key]) -> Option<Vec<Key>> {

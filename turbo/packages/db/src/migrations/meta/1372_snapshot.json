@@ -1,5 +1,5 @@
 {
-  "id": "c0a5e8bb-93c7-43fc-9d96-639e26afbc5b",
+  "id": "21331474-9199-48db-ad13-a9edd2eba4d0",
   "prevId": "9167265f-86ad-4785-ae34-221e075262c5",
   "version": "7",
   "dialect": "postgresql",
@@ -24634,12 +24634,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "consumed_at": {
-          "name": "consumed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {

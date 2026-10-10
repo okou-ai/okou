@@ -9,7 +9,7 @@ import {
 
 import { agentRuns } from "./agent-run-session-conversation";
 
-/** Redeem within 30s of creation; consumed rows remain authority while the Run is live. */
+/** Pending one-use credentials; redeem by atomic deletion within 30 seconds. */
 export const runnerWssTickets = pgTable(
   "runner_wss_tickets",
   {
@@ -27,7 +27,6 @@ export const runnerWssTickets = pgTable(
     runnerId: uuid("runner_id").notNull(),
     origin: varchar("origin", { length: 300 }).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    consumedAt: timestamp("consumed_at"),
   },
   (table) => {
     return [

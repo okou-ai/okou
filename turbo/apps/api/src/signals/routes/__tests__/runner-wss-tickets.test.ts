@@ -332,11 +332,16 @@ describe("direct Runner WSS ticket boundary", () => {
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
-  it("expires pending tickets without expiring consumed authority", async () => {
+  it("expires pending tickets without expiring established Run authority", async () => {
     const f = await setup();
     const established = await accept(bootstrap(f), [200]);
     const admitted = await accept(consume(f, established.body.ticket), [200]);
-    const key = { runId: f.runId, digest: admitted.body.digest };
+    const key = {
+      runId: f.runId,
+      digest: admitted.body.digest,
+      orgId: admitted.body.orgId,
+      userId: admitted.body.userId,
+    };
     const oldest = await accept(bootstrap(f), [200]);
     await Promise.all(
       Array.from({ length: 15 }, () => {
@@ -384,11 +389,16 @@ describe("direct Runner WSS ticket boundary", () => {
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   }, 45_000);
 
-  it("keeps earlier consumed authority when reconnecting with a fresh ticket", async () => {
+  it("keeps earlier established Run authority when reconnecting with a fresh ticket", async () => {
     const f = await setup();
     const first = await accept(bootstrap(f), [200]);
     const admitted = await accept(consume(f, first.body.ticket), [200]);
-    const old = { runId: f.runId, digest: admitted.body.digest };
+    const old = {
+      runId: f.runId,
+      digest: admitted.body.digest,
+      orgId: admitted.body.orgId,
+      userId: admitted.body.userId,
+    };
     const check = (authorizations: (typeof old)[]) => {
       return client().check({
         headers: officialHeaders,
@@ -401,7 +411,12 @@ describe("direct Runner WSS ticket boundary", () => {
 
     const fresh = await accept(bootstrap(f), [200]);
     const next = await accept(consume(f, fresh.body.ticket), [200]);
-    const newer = { runId: f.runId, digest: next.body.digest };
+    const newer = {
+      runId: f.runId,
+      digest: next.body.digest,
+      orgId: next.body.orgId,
+      userId: next.body.userId,
+    };
     expect(newer.digest).not.toBe(old.digest);
     const authorized = await accept(check([old, newer]), [200]);
     expect(authorized.body.authorized).toHaveLength(2);
@@ -424,6 +439,8 @@ describe("direct Runner WSS ticket boundary", () => {
     const key = {
       runId: f.runId,
       digest: admitted.body.digest,
+      orgId: admitted.body.orgId,
+      userId: admitted.body.userId,
     };
     const body = { runnerId: f.runnerId, origin, authorizations: [key] };
     const missing = await accept(client().check({ headers: {}, body }), [401]);
@@ -442,7 +459,7 @@ describe("direct Runner WSS ticket boundary", () => {
       { ...body, authorizations: [{ ...key, runId: randomUUID() }] },
       {
         ...body,
-        authorizations: [{ ...key, digest: "0".repeat(64) }],
+        authorizations: [{ ...key, orgId: "wrong-org" }],
       },
     ]) {
       expect(
@@ -498,24 +515,29 @@ describe("direct Runner WSS ticket boundary", () => {
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
-  it("requires one-use consumption before a ticket can renew established access", async () => {
+  it("checks admitted owner snapshots independently of pending tickets", async () => {
     const f = await setup();
     const issued = await accept(bootstrap(f), [200]);
-    const key = { runId: f.runId, digest: digestOf(issued.body.ticket) };
-    const check = () => {
+    const consumed = await accept(consume(f, issued.body.ticket), [200]);
+    await accept(consume(f, issued.body.ticket), [404]);
+    const key = {
+      runId: f.runId,
+      digest: consumed.body.digest,
+      orgId: consumed.body.orgId,
+      userId: consumed.body.userId,
+    };
+    const check = (entry: typeof key) => {
       return client().check({
         headers: officialHeaders,
-        body: { runnerId: f.runnerId, origin, authorizations: [key] },
+        body: { runnerId: f.runnerId, origin, authorizations: [entry] },
       });
     };
-    expect((await accept(check(), [200])).body).toStrictEqual({
-      authorized: [],
-    });
-    const consumed = await accept(consume(f, issued.body.ticket), [200]);
-    expect(consumed.body.digest).toBe(key.digest);
-    expect((await accept(check(), [200])).body).toStrictEqual({
+    expect((await accept(check(key), [200])).body).toStrictEqual({
       authorized: [key],
     });
+    expect(
+      (await accept(check({ ...key, userId: "wrong-user" }), [200])).body,
+    ).toStrictEqual({ authorized: [] });
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 

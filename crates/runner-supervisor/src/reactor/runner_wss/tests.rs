@@ -27,7 +27,7 @@ impl TicketConsumer for MockTickets {
         runner_id: Uuid,
         origin: &str,
         ticket: &str,
-    ) -> Option<()> {
+    ) -> Option<Key> {
         if run_id != self.run || runner_id.is_nil() || origin != "wss://runner.okou.ai:443" {
             return None;
         }
@@ -35,7 +35,12 @@ impl TicketConsumer for MockTickets {
             .lock()
             .unwrap()
             .insert(ticket.to_owned())
-            .then_some(())
+            .then_some(Key {
+                run_id,
+                digest: digest_of(ticket),
+                org_id: "org".to_owned(),
+                user_id: "user".to_owned(),
+            })
     }
 
     async fn authorized(
@@ -75,14 +80,20 @@ struct HeldTickets {
 impl TicketConsumer for HeldTickets {
     async fn consume(
         &self,
-        _run_id: RunId,
+        run_id: RunId,
         _runner_id: Uuid,
         _origin: &str,
-        _ticket: &str,
-    ) -> Option<()> {
+        ticket: &str,
+    ) -> Option<Key> {
         let resume = self.resume.lock().unwrap().take().unwrap();
         self.started.notify_one();
-        resume.await.ok()
+        resume.await.ok()?;
+        Some(Key {
+            run_id,
+            digest: digest_of(ticket),
+            org_id: "org".to_owned(),
+            user_id: "user".to_owned(),
+        })
     }
 
     async fn authorized(
@@ -1088,7 +1099,8 @@ async fn http_control_failure_closes_real_guest_wss_without_cancelling_execution
                 .header("authorization", "Bearer official-test-token")
                 .json_body_obj(
                     &serde_json::json!({"runnerId": fixture.runner, "origin": fixture.ctx.origin,
-                "authorizations": [{"runId": fixture.run, "digest": digest}]}),
+                "authorizations": [{"runId": fixture.run, "digest": digest,
+                    "orgId": "org-test", "userId": "owner-test"}]}),
                 );
             then.status(503);
         })
@@ -1147,6 +1159,8 @@ async fn check_uses_official_auth_and_rejects_unsolicited_duplicate_and_malforme
     let key = Key {
         run_id: RunId::new_v4(),
         digest: "1".repeat(64),
+        org_id: "org".to_owned(),
+        user_id: "user".to_owned(),
     };
     let origin = "wss://runner.okou.ai:443";
     let consumer = ApiTicketConsumer::new(
@@ -1164,11 +1178,19 @@ async fn check_uses_official_auth_and_rejects_unsolicited_duplicate_and_malforme
         (serde_json::json!({"authorized": []}), true),
         (serde_json::json!({"authorized": [key, key]}), false),
         (
-            serde_json::json!({"authorized": [{"runId": key.run_id, "digest": "2".repeat(64)}]}),
+            serde_json::json!({"authorized": [Key { digest: "2".repeat(64), ..key.clone() }]}),
             false,
         ),
         (
-            serde_json::json!({"authorized": [{"runId": RunId::new_v4(), "digest": key.digest}]}),
+            serde_json::json!({"authorized": [Key { run_id: RunId::new_v4(), ..key.clone() }]}),
+            false,
+        ),
+        (
+            serde_json::json!({"authorized": [Key { org_id: "other-org".into(), ..key.clone() }]}),
+            false,
+        ),
+        (
+            serde_json::json!({"authorized": [Key { user_id: "other-user".into(), ..key.clone() }]}),
             false,
         ),
         (serde_json::json!({"authorized": "invalid"}), false),
@@ -1209,10 +1231,24 @@ async fn maximum_distinct_ticket_batch_fits_the_bounded_control_response() {
         .map(|index| Key {
             run_id,
             digest: format!("{index:064x}"),
+            org_id: "o".repeat(1700),
+            user_id: "u".repeat(1700),
         })
         .collect();
     let response = serde_json::json!({"authorized": requested});
-    assert!(serde_json::to_vec(&response).unwrap().len() <= 4096);
+    let consume = serde_json::json!({
+        "runId": run_id, "runnerId": runner, "origin": "wss://runner.okou.ai:443",
+        "orgId": requested[0].org_id, "userId": requested[0].user_id,
+        "digest": requested[0].digest,
+    });
+    assert!(serde_json::to_vec(&consume).unwrap().len() <= MAX_AUTHORITY_RESPONSE_BYTES);
+    assert!(serde_json::to_vec(&response).unwrap().len() <= MAX_RENEWAL_RESPONSE_BYTES);
+    // Valid JSON with excessive trailing whitespace must still obey the wire bound.
+    let oversized_response = format!(
+        "{}{}",
+        serde_json::to_string(&response).unwrap(),
+        " ".repeat(MAX_RENEWAL_RESPONSE_BYTES)
+    );
     let request = server
         .mock_async(|when, then| {
             when.method(POST)
@@ -1235,9 +1271,24 @@ async fn maximum_distinct_ticket_batch_fits_the_bounded_control_response() {
         consumer
             .authorized(runner, "wss://runner.okou.ai:443", &requested)
             .await,
-        Some(requested)
+        Some(requested.clone())
     );
     request.assert_async().await;
+    request.delete_async().await;
+    let oversized = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path("/api/runners/wss/authorizations/check");
+            then.status(200).body(oversized_response);
+        })
+        .await;
+    assert!(
+        consumer
+            .authorized(runner, "wss://runner.okou.ai:443", &requested)
+            .await
+            .is_none()
+    );
+    oversized.assert_async().await;
 }
 
 #[tokio::test]

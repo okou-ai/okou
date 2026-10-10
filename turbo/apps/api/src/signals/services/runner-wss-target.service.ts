@@ -1,8 +1,7 @@
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runnerState } from "@okouai/db/schema/runner-state";
-import { runnerWssTickets } from "@okouai/db/schema/runner-wss-ticket";
-import { and, eq, gt, inArray, isNotNull, like, lte, or } from "drizzle-orm";
+import { and, eq, gt, inArray, like, lte, or } from "drizzle-orm";
 
 import { wssOriginFromRunnerHostname } from "../../lib/runner-wss-target-config";
 
@@ -60,38 +59,34 @@ const runnerStateJoin = and(
   eq(runnerState.runnerGroup, agentRuns.runnerGroup),
 );
 
-/** Bounded consumed-ticket lookup joined to current writer-backed Run authority. */
+/** Bounded current Run/owner lookup for already-admitted Runner sessions. */
 export function buildRunnerWssAuthorizationQuery(args: {
   readonly runnerId: string;
   readonly now: Date;
   readonly authorizations: readonly {
     readonly runId: string;
     readonly digest: string;
+    readonly orgId: string;
+    readonly userId: string;
   }[];
 }) {
   return {
     selection: {
       ...targetSelection(),
-      digest: runnerWssTickets.digest,
-      origin: runnerWssTickets.origin,
+      orgId: agentRuns.orgId,
+      userId: agentRuns.userId,
     },
     activeRunJoin,
     runnerStateJoin,
-    ticketJoin: and(
-      eq(runnerWssTickets.runId, agentRuns.id),
-      eq(runnerWssTickets.orgId, agentRuns.orgId),
-      eq(runnerWssTickets.userId, agentRuns.userId),
-      eq(runnerWssTickets.runnerId, agentRuns.runnerId),
-    ),
     where: and(
       liveWssConditions(args.now),
       eq(agentRuns.runnerId, args.runnerId),
-      isNotNull(runnerWssTickets.consumedAt),
       or(
         ...args.authorizations.map((entry) => {
           return and(
             eq(agentRuns.id, entry.runId),
-            eq(runnerWssTickets.digest, entry.digest),
+            eq(agentRuns.orgId, entry.orgId),
+            eq(agentRuns.userId, entry.userId),
           );
         }),
       ),

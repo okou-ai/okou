@@ -54,7 +54,14 @@ describe("WSS ticket authorization-store outage", () => {
         body: {
           runnerId,
           origin: "wss://runner.example.com:443",
-          authorizations: [{ runId, digest: randomBytes(32).toString("hex") }],
+          authorizations: [
+            {
+              runId,
+              digest: randomBytes(32).toString("hex"),
+              orgId: "org_wss_outage",
+              userId: "user_wss_outage",
+            },
+          ],
         },
       }),
     ).rejects.toMatchObject({

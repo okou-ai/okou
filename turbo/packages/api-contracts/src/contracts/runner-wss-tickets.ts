@@ -12,6 +12,8 @@ const authorizationSchema = z
   .object({
     runId: runIdSchema,
     digest: z.string().regex(/^[0-9a-f]{64}$/),
+    orgId: z.string().min(1),
+    userId: z.string().min(1),
   })
   .strict();
 
@@ -81,6 +83,6 @@ export const runnerWssTicketsContract = c.router({
       403: apiErrorSchema,
     },
     summary:
-      "Check consumed WSS tickets and current Run authority from an official Runner",
+      "Check current Run authority for admitted sessions from an official Runner",
   },
 });

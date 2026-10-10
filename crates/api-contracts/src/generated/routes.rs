@@ -416,7 +416,7 @@ pub mod runners {
 
     /// Generated route bindings under `runners::wss`.
     pub mod wss {
-        /// Check consumed WSS tickets and current Run authority from an official Runner.
+        /// Check current Run authority for admitted sessions from an official Runner.
         /// Route contract: `POST /api/runners/wss/authorizations/check`.
         pub const CHECK: crate::Route = crate::Route {
             method: crate::Method::Post,

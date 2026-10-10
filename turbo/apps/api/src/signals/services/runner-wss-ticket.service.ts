@@ -5,17 +5,7 @@ import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { runnerState } from "@okouai/db/schema/runner-state";
 import { runnerWssTickets } from "@okouai/db/schema/runner-wss-ticket";
 import { command } from "ccstate";
-import {
-  and,
-  eq,
-  gt,
-  inArray,
-  isNull,
-  lt,
-  notExists,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, eq, gt, inArray, lte, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -93,7 +83,6 @@ export const issueRunnerWssTicket$ = command(
           and(
             eq(runnerWssTickets.runId, run.id),
             gt(runnerWssTickets.createdAt, oldestRedeemableCreatedAt),
-            isNull(runnerWssTickets.consumedAt),
           ),
         )
         .limit(MAX_PENDING_PER_RUN);
@@ -101,38 +90,22 @@ export const issueRunnerWssTicket$ = command(
         return null;
       }
 
-      // Indexed, bounded cleanup. Redemption expiry is NOT stream expiry:
-      // retain consumed authority until its Run is retired.
-      await tx.delete(runnerWssTickets).where(
-        inArray(
-          runnerWssTickets.digest,
-          tx
-            .select({ digest: runnerWssTickets.digest })
-            .from(runnerWssTickets)
-            .where(
-              and(
-                lt(
-                  runnerWssTickets.createdAt,
-                  sql`${oldestRedeemableCreatedAt} - interval '1 day'`,
-                ),
-                or(
-                  isNull(runnerWssTickets.consumedAt),
-                  notExists(
-                    tx
-                      .select({ runId: activeAgentRuns.runId })
-                      .from(activeAgentRuns)
-                      .where(eq(activeAgentRuns.runId, runnerWssTickets.runId)),
-                  ),
-                ),
-              ),
-            )
-            .orderBy(runnerWssTickets.createdAt)
-            .limit(100)
-            // Retain the existing cleanup lock: never wait on another issuer's
-            // row while holding this Run (cross-run deadlock risk).
-            .for("update", { skipLocked: true }),
-        ),
-      );
+      // Tickets authorize only redemption; expired rows carry no live authority.
+      await tx
+        .delete(runnerWssTickets)
+        .where(
+          inArray(
+            runnerWssTickets.digest,
+            tx
+              .select({ digest: runnerWssTickets.digest })
+              .from(runnerWssTickets)
+              .where(lte(runnerWssTickets.createdAt, oldestRedeemableCreatedAt))
+              .orderBy(runnerWssTickets.createdAt)
+              .limit(100)
+              // Never wait on another issuer's ticket row while holding this Run.
+              .for("update", { skipLocked: true }),
+          ),
+        );
 
       const [issued] = await tx
         .insert(runnerWssTickets)
@@ -213,7 +186,6 @@ export const consumeRunnerWssTicket$ = command(
             eq(runnerWssTickets.runnerId, args.runnerId),
             eq(runnerWssTickets.origin, args.origin),
             gt(runnerWssTickets.createdAt, oldestRedeemableCreatedAt),
-            isNull(runnerWssTickets.consumedAt),
           ),
         );
       if (!stored) {
@@ -240,12 +212,10 @@ export const consumeRunnerWssTicket$ = command(
         return null;
       }
       const [consumed] = await tx
-        .update(runnerWssTickets)
-        .set({ consumedAt: databaseNow })
+        .delete(runnerWssTickets)
         .where(
           and(
             eq(runnerWssTickets.digest, digest),
-            isNull(runnerWssTickets.consumedAt),
             gt(runnerWssTickets.createdAt, oldestRedeemableCreatedAt),
           ),
         )
@@ -255,7 +225,7 @@ export const consumeRunnerWssTicket$ = command(
   },
 );
 
-/** Current consumed-ticket AND Run authority, owned by caller cancellation. */
+/** Current Run authority for sessions already admitted by one-use redemption. */
 export const checkRunnerWssAuthorizations$ = command(
   async (
     { get },
@@ -265,6 +235,8 @@ export const checkRunnerWssAuthorizations$ = command(
       readonly authorizations: readonly {
         readonly runId: string;
         readonly digest: string;
+        readonly orgId: string;
+        readonly userId: string;
       }[];
     },
     signal: AbortSignal,
@@ -278,14 +250,49 @@ export const checkRunnerWssAuthorizations$ = command(
       .from(agentRuns)
       .innerJoin(activeAgentRuns, query.activeRunJoin)
       .innerJoin(runnerState, query.runnerStateJoin)
-      .innerJoin(runnerWssTickets, query.ticketJoin)
       .where(query.where);
     signal.throwIfAborted();
-    return rows.flatMap((row) => {
-      const target = runnerWssTargetFromRow(row);
-      return target?.publicOrigin === args.origin && row.origin === args.origin
-        ? [{ runId: row.runId, digest: row.digest }]
-        : [];
+    return args.authorizations.filter((entry) => {
+      return rows.some((row) => {
+        const target = runnerWssTargetFromRow(row);
+        return (
+          target?.publicOrigin === args.origin &&
+          row.runId === entry.runId &&
+          row.orgId === entry.orgId &&
+          row.userId === entry.userId
+        );
+      });
     });
+  },
+);
+
+/** Existing minute cron owns bounded retirement even without new issuance. */
+export const cleanupRunnerWssTickets$ = command(
+  async ({ set }, signal: AbortSignal): Promise<void> => {
+    const db = set(writeDb$);
+    for (let batch = 0; batch < 10; batch += 1) {
+      signal.throwIfAborted();
+      const expired = db
+        .select({ digest: runnerWssTickets.digest })
+        .from(runnerWssTickets)
+        .where(lte(runnerWssTickets.createdAt, oldestRedeemableCreatedAt))
+        .orderBy(runnerWssTickets.createdAt)
+        .limit(1000);
+      const result = await db
+        .delete(runnerWssTickets)
+        .where(
+          and(
+            inArray(runnerWssTickets.digest, expired),
+            lte(runnerWssTickets.createdAt, oldestRedeemableCreatedAt),
+          ),
+        );
+      signal.throwIfAborted();
+      if (result.rowCount === null) {
+        throw new Error("WSS ticket cleanup returned no deletion count");
+      }
+      if (result.rowCount < 1000) {
+        break;
+      }
+    }
   },
 );

@@ -1,6 +1,6 @@
 //! Current WSS access only. These leases never own or cancel ordinary Runs.
-//! One listener-owned, bounded writer read renews the exact consumed ticket
-//! together with current Run authority; notifications cannot renew access.
+//! One listener-owned, bounded writer read renews current Run/owner authority
+//! for already-admitted sessions; notifications cannot renew access.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -19,6 +19,8 @@ pub(super) const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::fro
 pub(in crate::reactor) struct Key {
     pub run_id: RunId,
     pub digest: String,
+    pub org_id: String,
+    pub user_id: String,
 }
 
 struct Entry {
@@ -35,7 +37,9 @@ pub(super) struct Authorizations {
 
 impl Authorizations {
     pub fn track(&self, key: Key, deadline: Instant) -> Option<Lease> {
-        if key.digest.len() != 64
+        if key.org_id.is_empty()
+            || key.user_id.is_empty()
+            || key.digest.len() != 64
             || !key
                 .digest
                 .bytes()
