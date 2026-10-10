@@ -2,26 +2,12 @@
 set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 ruby "$repo_root/.github/scripts/compose-ci-workflow.rb" --check
-# Run the production insertion guard: independently maintained module IDs must
-# never silently overwrite an existing native job.
-ruby -I "$repo_root/.github/scripts" -e '
-  ARGV << "--check"
-  require "compose-ci-workflow"
-  jobs = {}
-  put_job(jobs, "existing", {"name" => "original"})
-  begin
-    put_job(jobs, "existing", {"name" => "replacement"})
-    raise "duplicate CI job accepted"
-  rescue => error
-    raise unless error.message == "duplicate CI job id: existing"
-  end
-  raise "job was overwritten" unless jobs.fetch("existing").fetch("name") == "original"
-'
 python3 - "$repo_root" <<'PY'
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -29,6 +15,24 @@ import tempfile
 root = Path(sys.argv[1])
 def workflow(name):
     return json.loads(subprocess.check_output(['yq', '-o=json', '.', str(root / f'.github/workflows/{name}.yml')], text=True))
+
+# Exercise the actual composer in an isolated repository-shaped directory.
+# Independently maintained module IDs must not overwrite another native job.
+with tempfile.TemporaryDirectory() as directory:
+    fixture = Path(directory)
+    (fixture / '.github/scripts').mkdir(parents=True)
+    (fixture / '.github/workflows').mkdir(parents=True)
+    composer = fixture / '.github/scripts/compose-ci-workflow.rb'
+    shutil.copyfile(root / '.github/scripts/compose-ci-workflow.rb', composer)
+    for name in ['turbo', 'crates', 'runner-image']:
+        source = workflow(name)
+        if name == 'turbo':
+            source['jobs']['image-prepare'] = source['jobs']['detect-release']
+        (fixture / f'.github/workflows/{name}.yml').write_text(json.dumps(source))
+    result = subprocess.run(['ruby', str(composer)], capture_output=True, text=True)
+    assert result.returncode != 0, 'composer accepted a colliding source job'
+    assert 'duplicate CI job id: image-prepare' in result.stderr, result.stderr
+    assert not (fixture / '.github/workflows/ci.yml').exists()
 
 ci = workflow('ci')
 jobs = ci['jobs']
