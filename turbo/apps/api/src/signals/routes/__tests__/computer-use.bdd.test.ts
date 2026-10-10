@@ -62,7 +62,7 @@ function createScenario() {
     retainProviderState: () => {
       const restores = [
         context.mocks.slack.oauth.v2.access,
-        context.mocks.slack.assistant.threads.setStatus,
+        context.mocks.slack.apiCall,
         context.mocks.slack.chat.postMessage,
         context.mocks.slack.chat.getPermalink,
         context.mocks.slack.chat.postEphemeral,

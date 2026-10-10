@@ -60,6 +60,11 @@ import {
   slackSessionThreadTs,
 } from "./slack-chat-ingress.service";
 import { publishSlackAdminSignal$ } from "./slack-connect.service";
+import {
+  slackSessionStoppedEventSchema,
+  stopSlackSession$,
+  type SlackSessionStoppedEvent,
+} from "./slack-session-stop.service";
 const L = logger("SlackWebhooks");
 const MODEL_PICKER_MAX_OPTIONS = 100;
 
@@ -83,6 +88,7 @@ interface SlackEventCallback {
     | SlackDirectMessageEvent
     | SlackChannelMessageEvent
     | SlackAppHomeOpenedEvent
+    | SlackSessionStoppedEvent
     | SlackAppUninstalledEvent
     | SlackTokensRevokedEvent;
 }
@@ -1443,6 +1449,21 @@ export const handleSlackEvents$ = command(
 
     if (payload.type === "event_callback") {
       const retryNum = request.header("x-slack-retry-num");
+      if (payload.event.type === "agent_session_stopped") {
+        const stopped = slackSessionStoppedEventSchema.safeParse(payload.event);
+        if (!stopped.success || !payload.team_id) {
+          return jsonResponse({ error: "Invalid Slack stop event" }, 400);
+        }
+        // Stop retries repeat the same time-bounded mutation; do not discard them
+        // with the generic non-message retry guard below.
+        await set(
+          stopSlackSession$,
+          { workspaceId: payload.team_id, event: stopped.data },
+          signal,
+        );
+        signal.throwIfAborted();
+        return textResponse("OK");
+      }
       const agentEvent = slackAgentMessageEvent(payload.event);
       if (agentEvent) {
         if (!payload.event_id) {

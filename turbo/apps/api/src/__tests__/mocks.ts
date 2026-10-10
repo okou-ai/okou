@@ -197,11 +197,7 @@ export interface ApiTestMocks {
     readonly createClient: Mock<
       (...args: SlackWebClientConstructorArguments) => void
     >;
-    readonly assistant: {
-      readonly threads: {
-        readonly setStatus: AsyncMock;
-      };
-    };
+    readonly apiCall: AsyncMock;
     readonly chat: {
       readonly getPermalink: AsyncMock;
       readonly postMessage: AsyncMock;
@@ -418,11 +414,7 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
   const slack = {
     createClient:
       vi.fn<(...args: SlackWebClientConstructorArguments) => void>(),
-    assistant: {
-      threads: {
-        setStatus: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
-      },
-    },
+    apiCall: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     chat: {
       getPermalink: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       postMessage: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -1215,11 +1207,7 @@ vi.mock("@slack/web-api", () => {
     >(function (...args) {
       apiTestMocks.slack.createClient(...args);
       const client: SlackWebClientMock = {
-        assistant: {
-          threads: {
-            setStatus: apiTestMocks.slack.assistant.threads.setStatus,
-          },
-        },
+        apiCall: apiTestMocks.slack.apiCall,
         chat: {
           getPermalink: apiTestMocks.slack.chat.getPermalink,
           postMessage: apiTestMocks.slack.chat.postMessage,
@@ -1544,7 +1532,7 @@ export function resetApiTestMocks(): void {
   apiTestMocks.nodeRequest.pinnedAddresses.length = 0;
   apiTestMocks.resend.send.mockReset();
   apiTestMocks.signalTimers.delay.mockReset();
-  apiTestMocks.slack.assistant.threads.setStatus.mockReset();
+  apiTestMocks.slack.apiCall.mockReset();
   apiTestMocks.slack.chat.getPermalink.mockReset();
   apiTestMocks.slack.chat.postMessage.mockReset();
   apiTestMocks.slack.chat.postEphemeral.mockReset();

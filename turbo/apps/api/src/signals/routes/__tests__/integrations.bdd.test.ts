@@ -21,6 +21,7 @@ import { server } from "../../../mocks/server";
 import { seededSystemSkillArchive } from "../../../test-fixtures/seeded-system-skill-archive";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise } from "../../utils";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -2348,16 +2349,15 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const slackRuns = await listSlackRunLogs(actor);
       expect(slackRuns).toHaveLength(1);
       expect(slackRuns[0]?.prompt).toContain("admit this event once");
-      expect(
-        context.mocks.slack.assistant.threads.setStatus,
-      ).toHaveBeenCalledOnce();
-      expect(
-        context.mocks.slack.assistant.threads.setStatus,
-      ).toHaveBeenCalledWith({
-        channel_id: channelId,
-        thread_ts: threadTs,
-        status: "is thinking...",
-      });
+      expect(context.mocks.slack.apiCall).toHaveBeenCalledOnce();
+      expect(context.mocks.slack.apiCall).toHaveBeenCalledWith(
+        "agents.sessions.setStatus",
+        {
+          channel_id: channelId,
+          thread_ts: threadTs,
+          status: "processing",
+        },
+      );
       const run1Id = await pollSlackRun(runnerGroup);
       const claim1 = await runs.claimRunnerJob(run1Id);
 
@@ -3256,6 +3256,436 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
   });
 
+  it("handles native Slack Stop without affecting other threads or newer inputs", async () => {
+    const actor = bdd.user();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const runnerGroup = runs.configureRunnerGroup();
+    integrations.configureSlackAppMocks();
+    await runs.grantProEntitlement(actor);
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
+    const slackUserId = uniqueSlackUserId();
+    const { teamId } = await integrations.installSlackWorkspace(actor, {
+      installerSlackUserId: slackUserId,
+    });
+    cleanUpCanonicalSlackScenario(actor);
+    const channelId = "C_BDD_NATIVE_STOP";
+    const threadTs = "4200.000100";
+    await integrations.postSlackEvent(teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      channel: channelId,
+      text: "stop this task",
+      ts: threadTs,
+    });
+    const stoppedRunId = await pollSlackRun(runnerGroup);
+    const { chatThreadId } = await ownedThreadWhere(
+      actor,
+      launchedBy(stoppedRunId),
+    );
+    await integrations.postSlackEvent(teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      channel: channelId,
+      text: "recall this queued input",
+      ts: "4200.000200",
+      thread_ts: threadTs,
+    });
+    await flushWaitUntilForTest();
+    const before = await chat.listThreadEvents(actor, chatThreadId);
+    const queued = before.events.find((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.runId === undefined &&
+        event.userMessage.parts.some((part) => {
+          return (
+            part.type === "text" && part.text === "recall this queued input"
+          );
+        })
+      );
+    });
+    if (!queued) {
+      throw new Error("Expected a queued Slack input");
+    }
+    await integrations.postSlackEvent(teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      channel: channelId,
+      text: "keep the other thread running",
+      ts: "4200.000300",
+    });
+    await flushWaitUntilForTest();
+    const otherRun = (await listSlackRunLogs(actor)).find((run) => {
+      return run.prompt.includes("keep the other thread running");
+    });
+    if (!otherRun) {
+      throw new Error("Expected the other thread's Slack Run");
+    }
+    const otherRunId = otherRun.id;
+    await runs.claimRunnerJob(otherRunId);
+    const stopEvent = {
+      type: "agent_session_stopped",
+      channel: channelId,
+      user: slackUserId,
+      thread_ts: threadTs,
+      event_ts: "4200.000400",
+      streaming_message_ts: [],
+    };
+    await integrations.postSlackEvent(teamId, stopEvent);
+    await flushWaitUntilForTest();
+    expect((await runs.readRun(actor, stoppedRunId)).status).toBe("cancelled");
+    expect((await runs.readRun(actor, otherRunId)).status).toBe("running");
+    const after = await chat.listThreadEvents(actor, chatThreadId);
+    expect(after.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "control.revoke",
+        revokesEventId: queued.id,
+      }),
+    );
+    expect(context.mocks.slack.apiCall).toHaveBeenCalledWith(
+      "agents.sessions.setStatus",
+      {
+        channel_id: channelId,
+        thread_ts: threadTs,
+        status: "active",
+      },
+    );
+    await integrations.postSlackEvent(teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      channel: channelId,
+      text: "start after Stop",
+      ts: "4200.000500",
+      thread_ts: threadTs,
+    });
+    const freshRunId = await pollSlackRun(runnerGroup);
+    const retryBody = JSON.stringify({
+      type: "event_callback",
+      team_id: teamId,
+      event_id: `EvStopRetry${randomUUID()}`,
+      event: stopEvent,
+    });
+    await integrations.requestSlackEvent(
+      retryBody,
+      {
+        ...integrations.signedSlackIngressHeaders(retryBody),
+        "x-slack-retry-num": "1",
+      },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect((await runs.readRun(actor, freshRunId)).status).toBe("pending");
+    expect((await runs.readRun(actor, otherRunId)).status).toBe("running");
+    expect(context.mocks.slack.apiCall).toHaveBeenLastCalledWith(
+      "agents.sessions.setStatus",
+      {
+        channel_id: channelId,
+        thread_ts: threadTs,
+        status: "processing",
+      },
+    );
+  });
+
+  it("handles native Slack Stop only for the sender's tasks in the signed workspace", async () => {
+    const actor = bdd.user();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const runnerGroup = runs.configureRunnerGroup();
+    integrations.configureSlackAppMocks();
+    await runs.grantProEntitlement(actor);
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
+    const slackUserId = uniqueSlackUserId();
+    const { teamId } = await integrations.installSlackWorkspace(actor, {
+      installerSlackUserId: slackUserId,
+    });
+    cleanUpCanonicalSlackScenario(actor);
+    const channelId = "C_BDD_NATIVE_STOP_OWNER";
+    const threadTs = "4300.000100";
+    await integrations.postSlackEvent(teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      channel: channelId,
+      text: "only the sender can stop this",
+      ts: threadTs,
+    });
+    const runId = await pollSlackRun(runnerGroup);
+    const claim = await runs.claimRunnerJob(runId);
+    const stopEvent = {
+      type: "agent_session_stopped",
+      channel: channelId,
+      user: slackUserId,
+      thread_ts: threadTs,
+      event_ts: "4300.000200",
+      streaming_message_ts: [],
+    };
+    await integrations.postSlackEvent(teamId, {
+      ...stopEvent,
+      user: uniqueSlackUserId(),
+    });
+    await integrations.postSlackEvent(`T_OTHER_${randomUUID()}`, stopEvent);
+    await flushWaitUntilForTest();
+    expect((await runs.readRun(actor, runId)).status).toBe("running");
+    await integrations.postSlackEvent(teamId, stopEvent);
+    await flushWaitUntilForTest();
+    expect((await runs.readRun(actor, runId)).status).toBe("cancelled");
+    expect(
+      await runs.readRunnerCancellation(claim.sandboxToken, runId, runnerGroup),
+    ).toMatchObject({ state: "present", mode: "cooperative" });
+  });
+
+  it("handles native Slack Stop while ingress enrichment is still in flight", async () => {
+    const actor = bdd.user();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    runs.configureRunnerGroup();
+    integrations.configureSlackAppMocks();
+    await runs.grantProEntitlement(actor);
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
+    const slackUserId = uniqueSlackUserId();
+    const { teamId } = await integrations.installSlackWorkspace(actor, {
+      installerSlackUserId: slackUserId,
+    });
+    cleanUpCanonicalSlackScenario(actor);
+    const started = createDeferredPromise<void>(context.signal);
+    const permalink = createDeferredPromise<{
+      ok: boolean;
+      permalink: string;
+    }>(context.signal);
+    context.mocks.slack.chat.getPermalink.mockImplementationOnce(() => {
+      started.resolve(undefined);
+      return permalink.promise;
+    });
+    const channelId = "C_BDD_NATIVE_STOP_INGRESS";
+    const threadTs = "4400.000100";
+    await integrations.postSlackEvent(teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      channel: channelId,
+      text: "stop before enrichment finishes",
+      ts: threadTs,
+    });
+    await started.promise;
+    await integrations
+      .postSlackEvent(teamId, {
+        type: "agent_session_stopped",
+        channel: channelId,
+        user: slackUserId,
+        thread_ts: threadTs,
+        event_ts: "4400.000200",
+        streaming_message_ts: [],
+      })
+      .finally(() => {
+        permalink.resolve({
+          ok: true,
+          permalink: "https://slack.example/stopped-input",
+        });
+      });
+    await flushWaitUntilForTest();
+    expect(await listSlackRunLogs(actor)).toHaveLength(0);
+    expect(context.mocks.slack.apiCall).toHaveBeenLastCalledWith(
+      "agents.sessions.setStatus",
+      {
+        channel_id: channelId,
+        thread_ts: threadTs,
+        status: "active",
+      },
+    );
+  });
+
+  it("handles native Slack Stop per physical thread in the shared main DM session", async () => {
+    const actor = bdd.user();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const runnerGroup = runs.configureRunnerGroup();
+    integrations.configureSlackAppMocks();
+    await runs.grantProEntitlement(actor);
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
+    const slackUserId = uniqueSlackUserId();
+    const { teamId } = await integrations.installSlackWorkspace(actor, {
+      installerSlackUserId: slackUserId,
+    });
+    cleanUpCanonicalSlackScenario(actor);
+    const channelId = "D_BDD_NATIVE_STOP";
+    const firstThreadTs = "4410.000100";
+    const secondThreadTs = "4410.000200";
+    await integrations.postSlackEvent(teamId, {
+      type: "message",
+      channel_type: "im",
+      user: slackUserId,
+      channel: channelId,
+      text: "stop the first DM task",
+      ts: firstThreadTs,
+    });
+    const runId = await pollSlackRun(runnerGroup);
+    await runs.claimRunnerJob(runId);
+    const { chatThreadId } = await ownedThreadWhere(actor, launchedBy(runId));
+    await integrations.postSlackEvent(teamId, {
+      type: "message",
+      channel_type: "im",
+      user: slackUserId,
+      channel: channelId,
+      text: "keep the other DM root queued",
+      ts: secondThreadTs,
+    });
+    await flushWaitUntilForTest();
+    await integrations.postSlackEvent(teamId, {
+      type: "agent_session_stopped",
+      channel: channelId,
+      user: slackUserId,
+      thread_ts: firstThreadTs,
+      event_ts: "4410.000300",
+      streaming_message_ts: [],
+    });
+    await flushWaitUntilForTest();
+    expect((await runs.readRun(actor, runId)).status).toBe("cancelled");
+    const after = await chat.listThreadEvents(actor, chatThreadId);
+    const retained = after.events.find((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.userMessage.parts.some((part) => {
+          return (
+            part.type === "text" &&
+            part.text === "keep the other DM root queued"
+          );
+        })
+      );
+    });
+    if (!retained) {
+      throw new Error("Expected the other DM root's queued input");
+    }
+    expect(
+      after.events.some((event) => {
+        return event.revokesEventId === retained.id;
+      }),
+    ).toBe(false);
+    expect(context.mocks.slack.apiCall).toHaveBeenCalledWith(
+      "agents.sessions.setStatus",
+      {
+        channel_id: channelId,
+        thread_ts: firstThreadTs,
+        status: "active",
+      },
+    );
+    await integrations.postSlackEvent(teamId, {
+      type: "agent_session_stopped",
+      channel: channelId,
+      user: slackUserId,
+      thread_ts: secondThreadTs,
+      event_ts: "4410.000400",
+      streaming_message_ts: [],
+    });
+    await flushWaitUntilForTest();
+  });
+
+  it("handles native Slack Stop without cancelling another sender in the same thread", async () => {
+    const actor = bdd.user();
+    const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const runnerGroup = runs.configureRunnerGroup();
+    integrations.configureSlackAppMocks();
+    await runs.grantProEntitlement(actor);
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
+    await runs.ensurePersonalSubscriptionModel(member, {
+      model: "claude-fable-5-1",
+    });
+    const slackUserId = uniqueSlackUserId();
+    const memberSlackUserId = uniqueSlackUserId();
+    const { teamId } = await integrations.installSlackWorkspace(actor, {
+      installerSlackUserId: slackUserId,
+    });
+    await integrations.connectSlackUser(member, {
+      workspaceId: teamId,
+      slackUserId: memberSlackUserId,
+    });
+    await bdd.completeOnboarding(member);
+    cleanUpCanonicalSlackScenario(actor);
+    const channelId = "C_BDD_NATIVE_STOP_SHARED";
+    const threadTs = "4420.000100";
+    await integrations.postSlackEvent(teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      channel: channelId,
+      text: "stop only my part of the thread",
+      ts: threadTs,
+    });
+    const runId = await pollSlackRun(runnerGroup);
+    await integrations.postSlackEvent(teamId, {
+      type: "app_mention",
+      user: memberSlackUserId,
+      channel: channelId,
+      text: "keep the member's part running",
+      ts: "4420.000200",
+      thread_ts: threadTs,
+    });
+    await flushWaitUntilForTest();
+    const [memberRun] = await listSlackRunLogs(member);
+    if (!memberRun) {
+      throw new Error("Expected the member's Slack Run");
+    }
+    await runs.claimRunnerJob(memberRun.id);
+    const stopEvent = {
+      type: "agent_session_stopped",
+      channel: channelId,
+      thread_ts: threadTs,
+      event_ts: "4420.000300",
+      streaming_message_ts: [],
+    };
+    await integrations.postSlackEvent(teamId, {
+      ...stopEvent,
+      user: slackUserId,
+    });
+    await flushWaitUntilForTest();
+    expect((await runs.readRun(actor, runId)).status).toBe("cancelled");
+    expect((await runs.readRun(member, memberRun.id)).status).toBe("running");
+    expect(context.mocks.slack.apiCall).toHaveBeenLastCalledWith(
+      "agents.sessions.setStatus",
+      {
+        channel_id: channelId,
+        thread_ts: threadTs,
+        status: "processing",
+      },
+    );
+    await integrations.postSlackEvent(teamId, {
+      ...stopEvent,
+      user: memberSlackUserId,
+    });
+    await flushWaitUntilForTest();
+    expect((await runs.readRun(member, memberRun.id)).status).toBe("cancelled");
+  });
+
+  it("rejects malformed native Slack Stop timestamps before applying mutations", async () => {
+    integrations.configureSlackAppMocks();
+    const body = JSON.stringify({
+      type: "event_callback",
+      team_id: "T_BDD_INVALID_STOP",
+      event: {
+        type: "agent_session_stopped",
+        channel: "C_BDD_INVALID_STOP",
+        user: uniqueSlackUserId(),
+        thread_ts: "4500.000100",
+        event_ts: "invalid",
+      },
+    });
+    const result = await integrations.requestSlackEvent(
+      body,
+      integrations.signedSlackIngressHeaders(body),
+      [400],
+    );
+    expect(result.body).toStrictEqual({ error: "Invalid Slack stop event" });
+    expect(context.mocks.slack.apiCall).not.toHaveBeenCalled();
+  });
+
   it("routes retry-only Slack events through canonical ingress", async () => {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
@@ -3328,13 +3758,14 @@ describe("INT-01: Slack app deep webhook flows", () => {
         "retry this route through canonical ingress",
       ),
     });
-    expect(
-      context.mocks.slack.assistant.threads.setStatus,
-    ).toHaveBeenCalledWith({
-      channel_id: channelId,
-      thread_ts: threadTs,
-      status: "is thinking...",
-    });
+    expect(context.mocks.slack.apiCall).toHaveBeenCalledWith(
+      "agents.sessions.setStatus",
+      {
+        channel_id: channelId,
+        thread_ts: threadTs,
+        status: "processing",
+      },
+    );
   });
 
   it("tells the Slack sender when the org is at its concurrent run limit", async () => {
@@ -3383,14 +3814,15 @@ describe("INT-01: Slack app deep webhook flows", () => {
         text: "The workspace has reached its concurrent run limit; this will start automatically when a slot frees up.",
       }),
     );
-    // The waiting thread does not keep the admission "is thinking..." status.
-    expect(
-      context.mocks.slack.assistant.threads.setStatus,
-    ).toHaveBeenLastCalledWith({
-      channel_id: channelId,
-      thread_ts: threadTs,
-      status: "",
-    });
+    // The waiting thread does not keep the admission processing status.
+    expect(context.mocks.slack.apiCall).toHaveBeenLastCalledWith(
+      "agents.sessions.setStatus",
+      {
+        channel_id: channelId,
+        thread_ts: threadTs,
+        status: "active",
+      },
+    );
 
     await runs.requestCancelRun(actor, activeRunId, [200]);
     await flushWaitUntilForTest();
@@ -3496,13 +3928,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
       channel: channelId,
     });
     await flushWaitUntilAndAssert(() => {
-      expect(
-        context.mocks.slack.assistant.threads.setStatus,
-      ).toHaveBeenCalledWith(
+      expect(context.mocks.slack.apiCall).toHaveBeenCalledWith(
+        "agents.sessions.setStatus",
         expect.objectContaining({
           channel_id: channelId,
           thread_ts: threadTs,
-          status: "is thinking...",
+          status: "processing",
         }),
       );
     });
@@ -3815,7 +4246,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const unbound = await integrations.installSlackWorkspace(null);
     context.mocks.slack.chat.postMessage.mockClear();
     context.mocks.slack.chat.postEphemeral.mockClear();
-    context.mocks.slack.assistant.threads.setStatus.mockClear();
+    context.mocks.slack.apiCall.mockClear();
     await integrations.postSlackEvent(
       `T_BDD_MISSING_${randomUUID().slice(0, 6)}`,
       {
@@ -3836,9 +4267,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
     expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
-    expect(
-      context.mocks.slack.assistant.threads.setStatus,
-    ).not.toHaveBeenCalled();
+    expect(context.mocks.slack.apiCall).not.toHaveBeenCalled();
   });
 
   it("notifies connected Slack users when no usable org agent is configured", async () => {
@@ -4363,18 +4792,19 @@ describe("INT-01: Slack app deep webhook flows", () => {
       });
       expect(slackPostMessageCallsJson()).not.toContain("Sent via");
       await flushWaitUntilAndAssert(() => {
-        expect(
-          context.mocks.slack.assistant.threads.setStatus,
-        ).toHaveBeenCalledWith(
+        expect(context.mocks.slack.apiCall).toHaveBeenCalledWith(
+          "agents.sessions.setStatus",
           expect.objectContaining({
             channel_id: "D_BDD_FAIL",
-            status: "is thinking...",
+            status: "processing",
           }),
         );
-        expect(
-          context.mocks.slack.assistant.threads.setStatus,
-        ).toHaveBeenCalledWith(
-          expect.objectContaining({ channel_id: "D_BDD_FAIL", status: "" }),
+        expect(context.mocks.slack.apiCall).toHaveBeenCalledWith(
+          "agents.sessions.setStatus",
+          expect.objectContaining({
+            channel_id: "D_BDD_FAIL",
+            status: "active",
+          }),
         );
       });
     });
@@ -4523,20 +4953,21 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const run1Id = await pollSlackRun(runnerGroup);
     const claim1 = await runs.claimRunnerJob(run1Id);
-    context.mocks.slack.assistant.threads.setStatus.mockClear();
+    context.mocks.slack.apiCall.mockClear();
     await webhooks.requestAgentHeartbeat(
       { runId: run1Id },
       { authorization: `Bearer ${claim1.sandboxToken}` },
       [200],
     );
     await flushWaitUntilAndAssert(() => {
-      expect(
-        context.mocks.slack.assistant.threads.setStatus,
-      ).toHaveBeenCalledWith({
-        channel_id: channelId,
-        thread_ts: threadT1,
-        status: "is thinking...",
-      });
+      expect(context.mocks.slack.apiCall).toHaveBeenCalledWith(
+        "agents.sessions.setStatus",
+        {
+          channel_id: channelId,
+          thread_ts: threadT1,
+          status: "processing",
+        },
+      );
     });
 
     let failedMessagePublishCount = 0;
@@ -4582,13 +5013,14 @@ describe("INT-01: Slack app deep webhook flows", () => {
     context.mocks.ably.publish.mockResolvedValue(undefined);
 
     await flushWaitUntilAndAssert(() => {
-      expect(
-        context.mocks.slack.assistant.threads.setStatus,
-      ).toHaveBeenLastCalledWith({
-        channel_id: channelId,
-        thread_ts: threadT1,
-        status: "",
-      });
+      expect(context.mocks.slack.apiCall).toHaveBeenLastCalledWith(
+        "agents.sessions.setStatus",
+        {
+          channel_id: channelId,
+          thread_ts: threadT1,
+          status: "active",
+        },
+      );
     });
     const run1 = await runs.readRun(actor, run1Id);
     expect(run1.status).toBe("completed");
@@ -4784,22 +5216,21 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ANTHROPIC_MODEL: "claude-fable-5-1",
     });
 
-    context.mocks.slack.assistant.threads.setStatus.mockRejectedValueOnce(
-      new Error("status_boom"),
-    );
+    context.mocks.slack.apiCall.mockRejectedValueOnce(new Error("status_boom"));
     await webhooks.requestAgentHeartbeat(
       { runId: run1Id },
       { authorization: `Bearer ${claim1.sandboxToken}` },
       [200],
     );
     await flushWaitUntilAndAssert(() => {
-      expect(
-        context.mocks.slack.assistant.threads.setStatus,
-      ).toHaveBeenLastCalledWith({
-        channel_id: channelId,
-        thread_ts: threadU1,
-        status: "is thinking...",
-      });
+      expect(context.mocks.slack.apiCall).toHaveBeenLastCalledWith(
+        "agents.sessions.setStatus",
+        {
+          channel_id: channelId,
+          thread_ts: threadU1,
+          status: "processing",
+        },
+      );
     });
 
     await completeSlackTriggeredRun({
@@ -4830,15 +5261,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const run2Id = await pollSlackRun(runnerGroup);
     const claim2 = await runs.claimRunnerJob(run2Id);
     await integrations.postSlackEvent(teamId, { type: "app_uninstalled" });
-    context.mocks.slack.assistant.threads.setStatus.mockClear();
+    context.mocks.slack.apiCall.mockClear();
     await webhooks.requestAgentHeartbeat(
       { runId: run2Id },
       { authorization: `Bearer ${claim2.sandboxToken}` },
       [200],
     );
-    expect(
-      context.mocks.slack.assistant.threads.setStatus,
-    ).not.toHaveBeenCalled();
+    expect(context.mocks.slack.apiCall).not.toHaveBeenCalled();
 
     context.mocks.slack.chat.postMessage.mockClear();
     await completeSlackTriggeredRun({
