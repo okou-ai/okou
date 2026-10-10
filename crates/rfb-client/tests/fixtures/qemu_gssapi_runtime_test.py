@@ -199,6 +199,85 @@ class RuntimeInputs(unittest.TestCase):
         baseline['immutableTree'] = qemu_gssapi.measure_immutable_tree(self.runtime)
         return baseline
 
+    def local_source_inputs(self):
+        # Public non-loadable ELF/header data models preflight only. No source
+        # build, native program, signature, authentication or PNG is invented.
+        baseline = self.full_private_inputs()
+        recipe = qemu_gssapi.REPO / '.github/scripts/prepare-qemu-gssapi-fixture.py'
+        pins = qemu_gssapi.runpy.run_path(str(recipe))
+        binary = self.runtime / 'usr/bin/qemu-system-x86_64'
+        binary.write_bytes((self.runtime / 'usr/bin/public-header.canary').read_bytes())
+        binary.chmod(0o755)
+        digest = hashlib.sha256(binary.read_bytes()).hexdigest()
+        baseline['files'][str(binary.relative_to(self.runtime))] = digest
+        baseline['fullQemuProvider'] = 'source-pinned-private-noble-v2'
+        baseline['snapshot'] = pins['SNAPSHOT']
+        baseline['signedIndexOrigin'] = pins['SNAPSHOT_ORIGIN']
+        baseline['qemuBuild'] = {
+            'version': '9.2.0', 'target': 'x86_64-softmmu', 'nativeArchitecture': 'x86_64',
+            'sourceArchiveSha256': pins['QEMU_SHA256'], 'vncSourceSha256': pins['VNC_SHA256'],
+            'firmware': pins['FIRMWARE'], 'configure': pins['CONFIGURE'],
+            'recipeSha256': hashlib.sha256(recipe.read_bytes()).hexdigest(),
+            'binarySha256': digest, 'secondBuildSha256': digest,
+        }
+        baseline['immutableTree'] = qemu_gssapi.measure_immutable_tree(self.runtime)
+        contract = self.root / 'contract'
+        contract.mkdir(mode=0o700)
+        (contract / 'provider.json').write_text(json.dumps(baseline))
+        return baseline, contract
+
+    def test_local_source_preflight_requires_exact_source_recipe_and_native_output(self):
+        baseline, contract = self.local_source_inputs()
+        def verify():
+            qemu_gssapi.verify_runtime(self.runtime, 'x86_64-linux-gnu', True,
+                                      contract_root=contract, local_source_qemu=True)
+        verify()
+        for field in ('version', 'target', 'nativeArchitecture', 'sourceArchiveSha256',
+                      'vncSourceSha256', 'firmware', 'configure', 'recipeSha256',
+                      'binarySha256', 'secondBuildSha256'):
+            with self.subTest(field=field):
+                original = baseline['qemuBuild'][field]
+                baseline['qemuBuild'][field] = 'substituted public input'
+                (contract / 'provider.json').write_text(json.dumps(baseline))
+                with self.assertRaisesRegex(ValueError, 'local source-built QEMU identity refused'):
+                    verify()
+                baseline['qemuBuild'][field] = original
+        (contract / 'provider.json').write_text(json.dumps(baseline))
+        binary = self.runtime / 'usr/bin/qemu-system-x86_64'
+        binary.write_bytes(b'changed public binary data')
+        with self.assertRaisesRegex(ValueError, 'independent fixture file digest refused'):
+            verify()
+
+    def test_local_source_preflight_does_not_admit_full_private_or_other_profiles(self):
+        baseline, contract = self.local_source_inputs()
+        with self.assertRaisesRegex(ValueError, 'mutually exclusive'):
+            qemu_gssapi.verify_runtime(self.runtime, 'x86_64-linux-gnu', True, True,
+                                      contract, True)
+        with self.assertRaisesRegex(ValueError, 'reviewed native producer pins'):
+            qemu_gssapi.verify_runtime(self.runtime, 'x86_64-linux-gnu', True, True, contract)
+        with self.assertRaisesRegex(ValueError, 'detached local source-built runtime required'):
+            qemu_gssapi.verify_runtime(self.runtime, 'x86_64-linux-gnu', False,
+                                      contract_root=contract, local_source_qemu=True)
+        for field in ('fullQemuProvider', 'snapshot', 'signedIndexOrigin'):
+            with self.subTest(field=field):
+                original = baseline[field]
+                baseline[field] = 'substituted public input'
+                (contract / 'provider.json').write_text(json.dumps(baseline))
+                with self.assertRaisesRegex(ValueError, 'local source-built QEMU identity refused'):
+                    qemu_gssapi.verify_runtime(self.runtime, 'x86_64-linux-gnu', True,
+                                              contract_root=contract, local_source_qemu=True)
+                baseline[field] = original
+
+    def test_local_source_preflight_refuses_missing_or_aliased_detached_contract(self):
+        _, contract = self.local_source_inputs()
+        alias = self.root / 'contract-alias'
+        alias.symlink_to(contract, target_is_directory=True)
+        for path in (None, alias, self.runtime):
+            with self.subTest(path=path):
+                with self.assertRaisesRegex(ValueError, 'detached source-built contract required'):
+                    qemu_gssapi.verify_runtime(self.runtime, 'x86_64-linux-gnu', True,
+                                              contract_root=path, local_source_qemu=True)
+
     def test_full_private_inventory_refuses_actual_program_mode_mutation(self):
         baseline = self.full_private_inputs()
         program = self.runtime / 'usr/bin/public-header.canary'

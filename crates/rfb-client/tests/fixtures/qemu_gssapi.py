@@ -12,6 +12,7 @@ import os
 import pathlib
 import platform
 import json
+import runpy
 import secrets
 import shutil
 import signal
@@ -328,11 +329,43 @@ def full_private_inventory(runtime, baseline):
     return immutable_tree_digest(actual)
 
 
-def verify_runtime(runtime, multiarch, full_qemu, source_pinned_full=False, contract_root=None):
+def verify_local_source_qemu(runtime, baseline, multiarch):
+    # Explicit trusted-host interoperability, not full-private mount/loader
+    # admission. The same repository-owned producer supplies the signed bundle.
+    recipe = REPO / ".github/scripts/prepare-qemu-gssapi-fixture.py"
+    pins = runpy.run_path(str(recipe))
+    native = {"x86_64-linux-gnu": "x86_64", "aarch64-linux-gnu": "aarch64"}[multiarch]
+    build = baseline["qemuBuild"]
+    binary = runtime / "usr/bin/qemu-system-x86_64"
+    if (baseline.get("fullQemuProvider") != "source-pinned-private-noble-v2"
+            or baseline["snapshot"] != pins["SNAPSHOT"]
+            or baseline["signedIndexOrigin"] != pins["SNAPSHOT_ORIGIN"]
+            or build["version"] != "9.2.0" or build["target"] != "x86_64-softmmu"
+            or build["nativeArchitecture"] != native
+            or build["sourceArchiveSha256"] != pins["QEMU_SHA256"]
+            or build["vncSourceSha256"] != pins["VNC_SHA256"]
+            or build["firmware"] != pins["FIRMWARE"]
+            or build["configure"] != pins["CONFIGURE"]
+            or build["recipeSha256"] != hashlib.sha256(recipe.read_bytes()).hexdigest()
+            or binary.is_symlink() or not binary.is_file()
+            or not binary.resolve(strict=True).is_relative_to(runtime)
+            or not os.access(binary, os.X_OK)
+            or build["binarySha256"] != build["secondBuildSha256"]
+            or hashlib.sha256(binary.read_bytes()).hexdigest() != build["binarySha256"]):
+        raise ValueError("local source-built QEMU identity refused")
+    with binary.open("rb") as stream:
+        pins["verify_elf_header"](stream.read(64), native)
+    full_private_inventory(runtime, baseline)
+
+
+def verify_runtime(runtime, multiarch, full_qemu, source_pinned_full=False, contract_root=None,
+                   local_source_qemu=False):
     # The producer must obtain these records from verified signed archives, not
     # hash an arbitrary installed tree. Rechecking bytes does not attest loader
     # resolution, transitive closure, host MIT or a historical runtime result.
     architecture = {"x86_64-linux-gnu": "amd64", "aarch64-linux-gnu": "arm64"}[multiarch]
+    if source_pinned_full and local_source_qemu:
+        raise ValueError("QEMU fixture profiles are mutually exclusive")
     if source_pinned_full:
         pins = json.loads((REPO / "crates/rfb-client/tests/fixtures/qemu_gssapi_full_pins.json").read_text())
         native = {"amd64": "x86_64", "arm64": "aarch64"}[architecture]
@@ -345,6 +378,9 @@ def verify_runtime(runtime, multiarch, full_qemu, source_pinned_full=False, cont
         # Never scan live / without an independently implemented controller.
         if runtime == pathlib.Path("/"):
             raise ValueError("source-built mounted-input controller unavailable")
+    if source_pinned_full or local_source_qemu:
+        if not full_qemu or runtime == pathlib.Path("/"):
+            raise ValueError("detached local source-built runtime required")
         if (contract_root is None or not contract_root.is_absolute() or contract_root.is_symlink()
                 or contract_root.resolve(strict=True) != contract_root.absolute()
                 or contract_root.is_relative_to(runtime)):
@@ -393,6 +429,8 @@ def verify_runtime(runtime, multiarch, full_qemu, source_pinned_full=False, cont
         path = (runtime / name).resolve(strict=True)
         if not path.is_relative_to(runtime) or str(path.relative_to(runtime)) not in baseline["files"]:
             raise ValueError("independent fixture used input has no verified file record")
+    if local_source_qemu:
+        verify_local_source_qemu(runtime, baseline, multiarch)
     if source_pinned_full:
         if not full_qemu or baseline.get("fullQemuProvider") != "source-pinned-private-noble-v2":
             raise ValueError("explicit version2 full-private source provider required")
@@ -427,7 +465,8 @@ def verify_runtime(runtime, multiarch, full_qemu, source_pinned_full=False, cont
         raise ValueError("source-built mounted-input controller unavailable")
 
 
-def fixture(parent, index, runtime, qemu, ports, children, files, multiarch="x86_64-linux-gnu", source_pinned_full=False):
+def fixture(parent, index, runtime, qemu, ports, children, files, multiarch="x86_64-linux-gnu", source_pinned_full=False,
+            local_source_qemu=False):
     work = parent / str(index)
     work.mkdir(mode=0o700)
     realm = f"ISSUE37612{index}.INVALID"
@@ -438,7 +477,7 @@ def fixture(parent, index, runtime, qemu, ports, children, files, multiarch="x86
     ports.extend([kdcp, vncp])
     for name, value in (("realm", realm), ("hostname", host), ("kdc-port", str(kdcp)), ("vnc-port", str(vncp))):
         (work / name).write_text(value)
-    (work / "peer-provider").write_text("source-built-full-private" if source_pinned_full else ("signed-private" if qemu is None else "pinned-host"))
+    (work / "peer-provider").write_text("source-built-full-private" if source_pinned_full else ("signed-private" if qemu is None or local_source_qemu else "pinned-host"))
     password = " fixture-37612-" + secrets.token_hex(24) + " "
     (work / "password").write_text(password)
     env = {"PATH": os.environ["PATH"], "LANG": "C.UTF-8", "HOME": str(work),
@@ -493,7 +532,7 @@ def fixture(parent, index, runtime, qemu, ports, children, files, multiarch="x86
     listing = run([runtime / "usr/bin/klist.mit", "-c", "FILE:" + str(work / "service.ccache")], env)
     assert b"krbtgt/" not in listing
     (work / "sasl").mkdir(mode=0o700);(work / "tls").mkdir(mode=0o700);(work / "private").mkdir(mode=0o700)
-    if qemu is None or source_pinned_full:
+    if qemu is None or source_pinned_full or local_source_qemu:
         (work / "peer-libdir").write_text(str(runtime / f"usr/lib/{multiarch}"))
     if qemu is None:
         # Explicit independent-acceptor mode, never a substituted QEMU server.
@@ -605,6 +644,8 @@ def main():
     mode.add_argument("--qemu", type=pathlib.Path)
     mode.add_argument("--controlled-peer-only", action="store_true")
     mode.add_argument("--source-built-full-private", action="store_true")
+    mode.add_argument("--local-source-qemu", action="store_true",
+                      help="trusted-host QEMU interoperability; not full-private admission")
     mode.add_argument("--inventory-only", action="store_true",
                       help="bounded public staging-tree measurement; not admission or native execution")
     parser.add_argument("--contract-root", type=pathlib.Path)
@@ -624,12 +665,15 @@ def main():
     # Validate the actual private inputs in BOTH modes, before compiling,
     # creating secret trees or starting any KDC/QEMU. Host dpkg metadata is not
     # evidence for the private KDC/Cyrus/GnuTLS files used by the full fixture.
-    verify_runtime(runtime, multiarch, not args.controlled_peer_only, args.source_built_full_private, args.contract_root)
+    verify_runtime(runtime, multiarch, not args.controlled_peer_only, args.source_built_full_private,
+                   args.contract_root, args.local_source_qemu)
     qemu = None
     if args.source_built_full_private:
         # This mode only runs inside the separately selected private-root
         # harness. It never searches for host QEMU/MIT/compiler/interpreter.
         assert runtime == pathlib.Path("/") and os.geteuid() == 0
+        qemu = runtime / "usr/bin/qemu-system-x86_64"
+    elif args.local_source_qemu:
         qemu = runtime / "usr/bin/qemu-system-x86_64"
     elif not args.controlled_peer_only:
         qemu = args.qemu.resolve(strict=True)
@@ -638,7 +682,7 @@ def main():
         assert set(versions.splitlines()) == {name + " 1.20.1-6ubuntu2" for name in ("libgssapi-krb5-2", "libkrb5-3", "libk5crypto3")}
     work_root = REPO / "codex-work/tmp/issue-37612-native-fixture"
     if "KERBEROS_NATIVE_TEST_ROOT" in os.environ:
-        assert (args.controlled_peer_only or args.source_built_full_private) and os.geteuid() == 0
+        assert (args.controlled_peer_only or args.source_built_full_private or args.local_source_qemu) and os.geteuid() == 0
         work_root = pathlib.Path(os.environ["KERBEROS_NATIVE_TEST_ROOT"])
         assert work_root == pathlib.Path("/run/kerberos-native-fixture") and work_root.is_dir() and not work_root.is_symlink()
     else:
@@ -649,7 +693,7 @@ def main():
     cargo = ["cargo", "test", "--manifest-path", str(REPO / "crates/Cargo.toml"), "--profile", "local", "--locked", "-j", "1", "-p", "rfb-client", "--test", "qemu_gssapi"]
     separator = ["--"]
     if args.test_executable:
-        assert (args.controlled_peer_only or args.source_built_full_private) and not args.test_executable.is_symlink()
+        assert (args.controlled_peer_only or args.source_built_full_private or args.local_source_qemu) and not args.test_executable.is_symlink()
         executable = args.test_executable.resolve(strict=True)
         assert executable.parent == REPO / "crates/target/local/deps" and executable.name.startswith("qemu_gssapi-")
         cargo, separator = [str(executable)], []
@@ -658,7 +702,8 @@ def main():
     parent = pathlib.Path(tempfile.mkdtemp(prefix="native-", dir=work_root));parent.chmod(0o700)
     children, ports, files = [], [], []
     try:
-        kdcs = [fixture(parent, index, runtime, qemu, ports, children, files, multiarch, args.source_built_full_private) for index in range(2)]
+        kdcs = [fixture(parent, index, runtime, qemu, ports, children, files, multiarch,
+                       args.source_built_full_private, args.local_source_qemu) for index in range(2)]
         env = os.environ.copy();env["QEMU_GSSAPI_FIXTURE"] = str(parent)
         # Only public fixture paths are environment inputs to tests, never secrets.
         targets = ("pinned_native_acquisition", "pinned_native_renew", "pinned_completed_gss", "pinned_rfb_finality") if args.controlled_peer_only else ("pinned_online_password", "pinned_tls_authority", "pinned_native_acquisition", "pinned_native_renew", "pinned_completed_gss", "pinned_rfb_finality")

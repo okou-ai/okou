@@ -62,6 +62,41 @@ profile, resource budget or existing security assertion is weakened.
 
 ## Optional QEMU reproduction
 
+### Trusted local host
+
+Real QEMU interoperability runs manually on `local-11`, outside CI. Use the
+existing fixed-source/signed-package producer and the explicit
+`--local-source-qemu` profile:
+
+```bash
+runtime=$(python3 -B .github/scripts/prepare-qemu-gssapi-fixture.py)
+mkdir -m 700 codex-work/qemu-captures
+QEMU_GSSAPI_CAPTURE_DIR="$PWD/codex-work/qemu-captures" \
+  python3 -B crates/rfb-client/tests/fixtures/qemu_gssapi.py \
+  --runtime-dir "$runtime" --contract-root "$(dirname "$runtime")/contract" \
+  --local-source-qemu
+```
+
+The profile rechecks the complete runtime inventory, native executable roles,
+signed-package identities, fixed QEMU9.2 source/VNC-source/firmware/configure
+identities, current producer recipe and both actual build hashes. It uses the
+private signed MIT acceptor, not host MIT metadata or an arbitrary executable
+override. The existing ten Rust integration tests and their lifetimes,
+deadlines and security assertions run unchanged, including both credential
+sources, offline service tickets with both KDCs stopped, concurrent realms,
+authority, expiry and checked process/listener/private-material cleanup. The
+capture directory retains only public PNGs; credentials remain disposable.
+
+This profile trusts the local host and checkout, as ordinary integration tests
+do. It does not attest an external-writer barrier, mounted-view/loader custody
+or full-private admission. `--source-built-full-private` remains a separate,
+refusing profile with empty architecture pins. Its missing controller does not
+prevent an explicitly requested local interoperability test from running. A
+native x86 local QEMU result is reported as x86; native ARM worker/independent
+peer CI remains separate and is not relabeled as an ARM QEMU result.
+
+### Historical pinned executable
+
 For a separately requested QEMU interoperability check, use the pinned private QEMU/server-runtime build described above, not a system GSS client or an arbitrary executable override. From the repository root:
 
 ```bash
