@@ -1,17 +1,44 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { eq } from "drizzle-orm";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { pgTable, varchar } from "drizzle-orm/pg-core";
 import { Client } from "pg";
 import postgres from "postgres";
+import { z } from "zod";
 
+import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
+import { chatThreadColumns } from "../src/columns/chat-thread";
 import { schema } from "../src/index";
 import { chatThreads } from "../src/runtime/chat-thread";
-import { chatThreads as outgoingThreads } from "../src/schema/chat-thread";
 import { applyPendingMigrations } from "./migration-runner";
 
+// The preceding physical column list remains only as a transition fixture.
+const outgoingThreads = pgTable("chat_threads", {
+  ...chatThreadColumns(),
+  provenance: varchar("provenance", { length: 32 }),
+});
+const journal = z
+  .object({ entries: z.array(z.object({ tag: z.string(), when: z.number() })) })
+  .parse(
+    JSON.parse(
+      await readFile(`${DRIZZLE_MIGRATE_OUT}/meta/_journal.json`, "utf8"),
+    ),
+  );
+const entry = journal.entries.find((item) => {
+  return item.tag.endsWith("_drop_chat_thread_provenance");
+});
+assert.ok(entry, "Retain this validator through production contraction");
+const contraction = readMigrationFiles({
+  migrationsFolder: DRIZZLE_MIGRATE_OUT,
+}).find((item) => {
+  return item.folderMillis === entry.when;
+});
+assert.ok(contraction);
+
 // The configured connection only creates/drops an owned disposable database.
-// No physical contraction is shipped by this runtime preparation.
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
 const adminUrl = new URL(databaseUrl);
@@ -31,7 +58,9 @@ const db = drizzle(client, { schema });
 
 try {
   await client.connect();
-  await applyPendingMigrations(migrationSql);
+  await applyPendingMigrations(migrationSql, {
+    beforeMillis: contraction.folderMillis,
+  });
 
   // The retained physical mapping still emits the outgoing SQL column lists.
   const historicalId = randomUUID();
@@ -46,10 +75,66 @@ try {
     .returning();
   assert.equal(historical?.provenance, "morning_brief");
 
+  const applyContraction = () => {
+    return applyPendingMigrations(migrationSql, {
+      beforeMillis: contraction.folderMillis + 1,
+    });
+  };
+  const journalBefore = await client.query(
+    "SELECT created_at FROM drizzle.__drizzle_migrations ORDER BY created_at",
+  );
+  // Local indexes would be removed automatically even by DROP ... RESTRICT.
+  // Views are tracked dependents; string-bodied SQL functions are not.
+  for (const dependency of [
+    {
+      create: "CREATE INDEX provenance_dependency ON chat_threads (provenance)",
+      drop: "DROP INDEX provenance_dependency",
+    },
+    {
+      create:
+        "CREATE VIEW provenance_dependency AS SELECT provenance FROM chat_threads",
+      drop: "DROP VIEW provenance_dependency",
+    },
+    {
+      create:
+        "CREATE FUNCTION provenance_dependency() RETURNS text LANGUAGE sql AS 'SELECT provenance FROM chat_threads LIMIT 1'",
+      drop: "DROP FUNCTION provenance_dependency()",
+    },
+  ]) {
+    await client.query(dependency.create);
+    await assert.rejects(
+      applyContraction(),
+      /Unexpected chat thread provenance dependencies/,
+    );
+    assert.deepEqual(
+      (
+        await client.query(
+          "SELECT created_at FROM drizzle.__drizzle_migrations ORDER BY created_at",
+        )
+      ).rows,
+      journalBefore.rows,
+    );
+    const [preserved] = await db
+      .select()
+      .from(outgoingThreads)
+      .where(eq(outgoingThreads.id, historicalId));
+    assert.equal(preserved?.provenance, "morning_brief");
+    await client.query(dependency.drop);
+  }
+
   for (const shape of ["retained", "contracted"] as const) {
     if (shape === "contracted") {
-      // Test-only simulation: the actual DROP requires a separate later release.
-      await client.query("ALTER TABLE chat_threads DROP COLUMN provenance");
+      const before = await db.select().from(chatThreads);
+      await applyContraction();
+      assert.deepEqual(await db.select().from(chatThreads), before);
+      assert.deepEqual(
+        (
+          await client.query(
+            "SELECT attname FROM pg_attribute WHERE attrelid = 'chat_threads'::regclass AND attname = 'provenance' AND NOT attisdropped",
+          )
+        ).rows,
+        [],
+      );
     }
 
     const historicalRead = await db.query.chatThreads.findFirst({
@@ -128,8 +213,21 @@ try {
     );
   }
 
+  const journalAfter = await client.query(
+    "SELECT created_at FROM drizzle.__drizzle_migrations ORDER BY created_at",
+  );
+  await applyContraction();
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT created_at FROM drizzle.__drizzle_migrations ORDER BY created_at",
+      )
+    ).rows,
+    journalAfter.rows,
+  );
+
   console.log(
-    "Thread runtime and root-schema INSERT/UPSERT/SELECT/UPDATE/DELETE with implicit RETURNING work before and after simulated provenance contraction; outgoing SQL and historical values remain valid during preparation.",
+    "Thread SQL and retained history survive provenance contraction; unexpected indexes/views/routine references abort before DROP and journal advancement; completed migration retries are no-ops.",
   );
 } finally {
   await client.end();
