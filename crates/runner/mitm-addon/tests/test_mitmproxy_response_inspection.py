@@ -1,4 +1,4 @@
-"""Real pinned read loop, HTTP stream hooks and TCP backpressure for X inspection."""
+"""Real pinned read loop, HTTP stream hooks and response inspection backpressure."""
 
 import asyncio
 import gzip
@@ -20,6 +20,11 @@ import mitm_addon
 import mitmproxy_compat
 import usage
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
+from tests.model_sse_cooperative_helpers import (
+    make_model_sse_pipeline_flow,
+    model_sse_terminal,
+    model_sse_update,
+)
 from tests.x_flow_helpers import make_x_pipeline_flow
 
 
@@ -48,15 +53,32 @@ class _ResponsePeerLayer(layer.Layer):
                 yield command
 
 
+@pytest.mark.parametrize("response_kind", ["x", "model-sse"])
 @pytest.mark.parametrize("cancel_inspection", [False, True], ids=["complete", "cancel-hook"])
 async def test_native_read_loop_waits_for_inspection_and_hook_completion(
-    real_flow, tmp_path, sync_usage_executor, usage_webhook_api, cancel_inspection
+    real_flow, tmp_path, sync_usage_executor, usage_webhook_api, cancel_inspection, response_kind
 ):
-    flow = make_x_pipeline_flow(
-        real_flow, tmp_path, path="/2/tweets/search/stream", content_encoding="gzip"
-    )
-    first_wire = gzip.compress(b"{}\n" * 100_000)
-    second_wire = gzip.compress(b'{"data":{"id":"1"}}\n')
+    if response_kind == "x":
+        flow = make_x_pipeline_flow(
+            real_flow, tmp_path, path="/2/tweets/search/stream", content_encoding="gzip"
+        )
+        first_wire = gzip.compress(b"{}\n" * 100_000)
+        second_wire = gzip.compress(b'{"data":{"id":"1"}}\n')
+        expected_first_work = 100_000
+    else:
+        flow = make_model_sse_pipeline_flow(real_flow, tmp_path)
+        first_wire = gzip.compress(
+            b"".join(model_sse_update("anthropic", index) for index in range(1, 10_001))
+        )
+        second_wire = gzip.compress(model_sse_terminal("anthropic", 10_001))
+        expected_first_work = 10_000
+    assert len(first_wire) < 65_535
+
+    def observed_work():
+        if response_kind == "x":
+            return flow.metadata[metadata_keys.X_NDJSON_STATE]["lines_parsed"]
+        return flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE].get("tokens.output", 0)
+
     pulse = asyncio.Event()
     loop = asyncio.get_running_loop()
     heartbeat = loop.create_future()
@@ -93,21 +115,19 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
             read_sizes.append(n)
             if len(read_sizes) == 2:
                 # The second chunk is already available; the production read
-                # loop must not request it until every first-chunk row finishes.
+                # loop must not request it until all first-chunk work finishes.
                 if cancel_inspection:
-                    assert flow.metadata[metadata_keys.X_JSON_STATE]["body_parsed"] is False
+                    if response_kind == "x":
+                        assert flow.metadata[metadata_keys.X_JSON_STATE]["body_parsed"] is False
+                    else:
+                        assert observed_work() <= 8
                 else:
-                    assert flow.metadata[metadata_keys.X_NDJSON_STATE]["lines_parsed"] == 100_000
+                    assert observed_work() == expected_first_work
             data = await super().read(n)
             if len(read_sizes) == 1:
 
                 def observe_pulse():
-                    heartbeat.set_result(
-                        (
-                            len(read_sizes),
-                            flow.metadata[metadata_keys.X_NDJSON_STATE]["lines_parsed"],
-                        )
-                    )
+                    heartbeat.set_result((len(read_sizes), observed_work()))
                     pulse.set()
 
                 loop.call_soon(observe_pulse)
@@ -179,14 +199,20 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
     assert received == first_wire + second_wire
     if cancel_inspection:
         assert webhook.usage_events() == []
-        assert flow.metadata[metadata_keys.X_JSON_STATE]["parse_error"] == (
-            "response inspection interrupted"
-        )
+        if response_kind == "x":
+            assert flow.metadata[metadata_keys.X_JSON_STATE]["parse_error"] == (
+                "response inspection interrupted"
+            )
+        else:
+            assert 0 < observed_work() <= 8
         entries = read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")
         assert any(entry.get("reason") == "response_inspection_interrupted" for entry in entries)
-    else:
+    elif response_kind == "x":
         (event,) = webhook.usage_events()
         assert event["quantity"] == 1
         assert event["resources"] == [{"id": "1", "occurrences": 1}]
+    else:
+        assert observed_work() == 10_001
+        assert webhook.usage_events() == []
     assert flow.response is not None
     assert flow.response.stream is False

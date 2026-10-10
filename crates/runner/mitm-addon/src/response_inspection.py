@@ -10,9 +10,9 @@ batch limit; zlib and identity output deliveries are hard chunk-bounded.
 import asyncio
 from collections.abc import Callable, Generator, Iterator
 
-# Each step is at most one already-bounded row (including identity/reporting)
-# or one decoder-chunk-bounded partial/discarded fragment. This is an aggregate
-# quantum across ALL decoded deliveries, not a new allowance for each feed.
+# Each step is at most one bounded row/event (including accounting), or a
+# bounded partial/discarded fragment. This is an aggregate quantum across ALL
+# decoded deliveries, not a new allowance for each feed.
 _STEPS_PER_TURN = 8
 INSPECTION_INTERRUPTED = "response inspection interrupted"
 
