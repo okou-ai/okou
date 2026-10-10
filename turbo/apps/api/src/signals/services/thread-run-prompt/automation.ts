@@ -15,7 +15,10 @@ export function createAutomationThreadPrompt(
 ): Computed<Promise<RunPromptAndSkills | null>> {
   return computed(async (get) => {
     const pickedEvent = await get(pickedEvent$);
-    if (pickedEvent?.contextType !== "automation") {
+    if (
+      pickedEvent?.contextType !== "automation" ||
+      pickedEvent.contextId === null
+    ) {
       return null;
     }
     const context = await get(context$);
@@ -38,13 +41,25 @@ export function createAutomationThreadPrompt(
     }
     return {
       userPromptVariables: {
-        message: workflowAutomationAgentPrompt(
-          storedWorkflowAutomationContext({
-            workflowName: context.workflowName,
-            eventType,
-            eventPayload,
-          }),
-        ),
+        message: [
+          workflowAutomationAgentPrompt(
+            storedWorkflowAutomationContext({
+              workflowName: context.workflowName,
+              eventType,
+              eventPayload,
+            }),
+          ),
+          "",
+          "Automation identity:",
+          JSON.stringify(
+            {
+              automationId: context.automationId,
+              automationEventId: pickedEvent.contextId,
+            },
+            null,
+            2,
+          ),
+        ].join("\n"),
       },
       systemPromptVariables: {
         integrationContext: [

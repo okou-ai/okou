@@ -64,7 +64,7 @@ type MorningBriefInconsistency =
   | "multiple-automations"
   | "unexpected-schedule"
   | "unreconciled-installation"
-  | "result-email-disabled";
+  | "missing-result-email-setting";
 
 interface MorningBriefStateBase {
   readonly owner: MorningBriefMemberIdentity;
@@ -278,8 +278,9 @@ const loadMorningBriefAutomationState$ = command(
     if (automation.reconciliationStatus !== "current") {
       return "unreconciled-installation";
     }
-    if (automation.resultEmailEnabled !== true) {
-      return "result-email-disabled";
+    // The revision may use completion mail or Agent mail; either is ready.
+    if (automation.resultEmailEnabled === null) {
+      return "missing-result-email-setting";
     }
     return {
       id: automation.id,
