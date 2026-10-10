@@ -80,7 +80,10 @@ def test_completed_payloads_are_released_before_worker_idles(
 
             assert logging_utils.flush_log_path(log_path, timeout=2)
             assert idle.wait(timeout=2)
-            gc.collect()
+            # A dead weakref already proves release; collect only when an
+            # outstanding oracle could still be held by a reference cycle.
+            if any(item_ref() is not None for item_ref in item_refs):
+                gc.collect()
             assert all(item_ref() is None for item_ref in item_refs)
             assert jsonl_writer._worker is worker
             assert worker.is_alive()

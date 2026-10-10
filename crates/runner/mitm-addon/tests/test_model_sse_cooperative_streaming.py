@@ -26,6 +26,7 @@ def _inline_delivery(sync_usage_executor):
     pass
 
 
+@pytest.mark.shard_cost(2)
 @pytest.mark.parametrize("protocol", ["anthropic", "responses", "chat"])
 async def test_gzip_callback_and_heartbeat_bound_usage_across_decoder_deliveries(
     real_flow, tmp_path, protocol

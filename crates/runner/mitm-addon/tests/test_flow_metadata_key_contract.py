@@ -94,6 +94,33 @@ def test_registered_flow_metadata_keys_use_registry_constants():
     assert flow_metadata_key_linter.repository_metadata_key_violations() == []
 
 
+@pytest.mark.parametrize(
+    "statement",
+    [
+        'flow.metadata["sandbox_run_id"] = "run-1"',
+        'flow.metadata["sandbox_" + "run_id"] = "run-1"',
+        '''flow.metadata[f"{'sandbox_'}{'run_id'}"] = "run-1"''',
+        'flow.metadata.update(sandbox_run_id="run-1")',
+    ],
+    ids=["literal", "concatenated", "formatted", "keyword"],
+)
+def test_metadata_key_scan_observes_new_registered_key_expressions(tmp_path, statement):
+    source_path = tmp_path / "changing.py"
+    source_path.write_text('flow.metadata[metadata_keys.SANDBOX_RUN_ID] = "run-1"\n')
+    assert flow_metadata_key_linter.metadata_key_violations(source_path) == []
+    source_path.write_text(statement + "\n")
+    assert _normalized_violations(
+        source_path, flow_metadata_key_linter.metadata_key_violations(source_path)
+    ) == ["changing.py:1: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access"]
+
+
+def test_metadata_key_scan_still_rejects_invalid_source_without_registered_keys(tmp_path):
+    source_path = tmp_path / "invalid.py"
+    source_path.write_text("def invalid(:\n")
+    with pytest.raises(SyntaxError):
+        flow_metadata_key_linter.metadata_key_violations(source_path)
+
+
 def test_check_flow_metadata_keys_cli_passes_clean_addon(tmp_path):
     addon_root = tmp_path / "mitm-addon"
     check_script = _copy_linter_scripts(addon_root)

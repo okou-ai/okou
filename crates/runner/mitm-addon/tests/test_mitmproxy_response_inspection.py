@@ -53,8 +53,15 @@ class _ResponsePeerLayer(layer.Layer):
                 yield command
 
 
-@pytest.mark.parametrize("response_kind", ["x", "model-sse"])
-@pytest.mark.parametrize("cancel_inspection", [False, True], ids=["complete", "cancel-hook"])
+@pytest.mark.parametrize(
+    ("cancel_inspection", "response_kind"),
+    [
+        pytest.param(False, "x", id="complete-x", marks=pytest.mark.shard_cost(10)),
+        pytest.param(False, "model-sse", id="complete-model-sse", marks=pytest.mark.shard_cost(2)),
+        pytest.param(True, "x", id="cancel-hook-x"),
+        pytest.param(True, "model-sse", id="cancel-hook-model-sse"),
+    ],
+)
 async def test_native_read_loop_waits_for_inspection_and_hook_completion(
     real_flow, tmp_path, sync_usage_executor, usage_webhook_api, cancel_inspection, response_kind
 ):

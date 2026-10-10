@@ -6,6 +6,7 @@ import ast
 import tokenize
 from pathlib import Path
 
+from flow_metadata_linter.metadata_rules import _is_metadata_attribute, _registered_key_name
 from flow_metadata_linter.paths import METADATA_KEYS_FILE, SRC_ROOT, TESTS_ROOT
 from flow_metadata_linter.visitor import _MetadataKeyVisitor
 
@@ -27,6 +28,13 @@ def metadata_key_violations(path: Path) -> list[str]:
     with tokenize.open(str(path)) as source_file:
         source = source_file.read()
     tree = ast.parse(source, filename=str(path))
+    # Diagnostics require a registered key expression. Check the parsed AST,
+    # including concatenated strings, f-strings and keyword keys, before paying
+    # for alias/control-flow analysis. Parsing still validates every source file.
+    if not any(_is_metadata_attribute(node) for node in ast.walk(tree)) or not any(
+        _registered_key_name(node) is not None for node in ast.walk(tree)
+    ):
+        return []
     visitor = _MetadataKeyVisitor(path)
     visitor.visit(tree)
     return visitor.violations

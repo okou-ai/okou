@@ -64,11 +64,16 @@ uv run --no-sync python -m pytest -v tests/
 
 ### CI shards
 
-CI runs the addon suite in two independent jobs. Both collect `tests/` normally,
-then select complementary partitions using SHA-256 of the node ID. Every case
-runs once across the two jobs; directory-owned fixtures and collection order are
-preserved. Both shards must pass the existing Crates gate, and a failing shard
-does not cancel its sibling.
+CI runs the addon suite in two independent jobs. Both collect `tests/` normally.
+Ordinary cases retain their SHA-256 node-ID partition. Expensive cases marked
+with `@pytest.mark.shard_cost(seconds)` are assigned largest first to the shard
+with the lowest estimated load; node IDs break equal-cost ties deterministically.
+The marker is a positive, finite cost estimate, not a timing assertion or a timeout.
+Unmarked cases contribute a 0.01-second estimate. Use measured slow samples to
+maintain these few estimates instead of reducing payloads or protocol deadlines.
+Every case runs once across the jobs; directory-owned fixtures and collection
+order are preserved. Both shards must pass the existing Crates gate, and a
+failing shard does not cancel its sibling.
 
 ```bash
 uv run --no-sync python -m pytest tests/ -q --test-shard=1/2
