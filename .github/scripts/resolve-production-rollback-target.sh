@@ -66,6 +66,7 @@ readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-even
 readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
 readonly CHECKPOINT_WRITER_PREPARATION_PATH=turbo/apps/api/src/signals/services/pi-memory-phase2-input-revision.ts
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
+readonly DESKTOP_MIGRATION_HOP_PATH=turbo/apps/api/src/signals/services/desktop-electron-migration-release.ts
 readonly COMPUTER_USE_COMMAND_NOTIFICATIONS_PATH=.github/rollback-floors/computer-use-command-notifications
 readonly COMPUTER_USE_HOST_SESSION_ONLY_PATH=turbo/packages/db/src/runtime/computer-use-host.ts
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
@@ -460,6 +461,18 @@ if [[ ! "$computer_use_command_notifications_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$computer_use_command_notifications_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Computer Use command notification contract: ${computer_use_command_notifications_commit}."
+fi
+
+# Bridge-free Native ZIPs are safe only while dormant Squirrel clients receive
+# the retained migration hop. Earlier APIs would restore mutable latest selection.
+# Resolve the merged preparation, never this bridge-removal branch's SHA.
+desktop_migration_hop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$DESKTOP_MIGRATION_HOP_PATH" | sed -n '1p')
+if [[ ! "$desktop_migration_hop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Desktop migration-hop policy on main."
+fi
+if ! git merge-base --is-ancestor "$desktop_migration_hop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the frozen Desktop migration-hop policy: ${desktop_migration_hop_commit}."
 fi
 
 # Generic checkpoint contraction requires the already deployed explicit-column

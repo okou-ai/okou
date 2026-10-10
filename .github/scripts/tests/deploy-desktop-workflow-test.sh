@@ -4,6 +4,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 # Check the artifact trust boundary and release order after the native migration.
 ruby - "$repo_root" <<'RUBY'
 require "yaml"
+require "tmpdir"
+require "open3"
 root = ARGV[0]
 desktop = YAML.safe_load(File.read("#{root}/.github/workflows/desktop.yml"), aliases: true).fetch("jobs")
 release = YAML.safe_load(File.read("#{root}/.github/workflows/release-please.yml"), aliases: true).fetch("jobs")
@@ -52,6 +54,62 @@ raise "promotion must sign the downloaded app without rebuild" unless sign.fetch
 raise "notary credentials must be provided together" unless sign.fetch("env").keys.sort == %w[OKOU_DESKTOP_NOTARIZE_API_ISSUER OKOU_DESKTOP_NOTARIZE_API_KEY_ID OKOU_DESKTOP_NOTARIZE_API_KEY_PATH]
 verify = steps.find { |step| step["name"] == "Verify signed and notarized macOS artifacts" }.fetch("run")
 raise "installation must test mounted app" unless verify.include?('"$mount/Okou.app" --verify-only')
+# Run the actual promotion step against the external GitHub CLI boundary.
+# A retry preserves signed assets already published and fills partial uploads.
+publish_artifacts = steps.find { |step| step["name"] == "Upload Desktop artifacts to GitHub Releases" }.fetch("run")
+Dir.mktmpdir("desktop-publish-contract") do |dir|
+  bin = "#{dir}/bin"
+  Dir.mkdir(bin)
+  File.write("#{bin}/gh", <<~'SH')
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "$1 $2" in
+      "release view")
+        if [[ "$*" == *"--json targetCommitish"* ]]; then
+          printf '%s\n' "$MOCK_RELEASE_TARGET"
+        elif [[ "$*" == *"--json assets"* ]]; then
+          printf '%s\n' "$MOCK_RELEASE_ASSETS"
+        else
+          [ "$MOCK_RELEASE_EXISTS" = 1 ]
+        fi
+        ;;
+      "release create") printf 'create\n' >> "$MOCK_PUBLISH_LOG" ;;
+      "release upload")
+        [[ "$*" != *"--clobber"* ]] || exit 99
+        printf 'upload %s\n' "$(basename "$4")" >> "$MOCK_PUBLISH_LOG"
+        ;;
+      *) exit 98 ;;
+    esac
+  SH
+  File.chmod(0755, "#{bin}/gh")
+  target = "a" * 40
+  zip = "Okou-darwin-arm64-0.53.0.zip"
+  dmg = "Okou-darwin-arm64-0.53.0.dmg"
+  script = publish_artifacts
+    .gsub('${{ github.repository }}', 'okou-ai/okou')
+    .gsub('${{ steps.desktop-artifacts.outputs.okou_zip_path }}', "#{dir}/#{zip}")
+    .gsub('${{ steps.desktop-artifacts.outputs.okou_dmg_path }}', "#{dir}/#{dmg}")
+  [["0", "", ["create", "upload #{zip}", "upload #{dmg}"]],
+   ["1", "#{zip}\n#{dmg}", []],
+   ["1", zip, ["upload #{dmg}"]]].each do |exists, assets, expected|
+    log = "#{dir}/calls"
+    File.write(log, "")
+    env = {"PATH" => "#{bin}:#{ENV.fetch('PATH')}", "RELEASE_TARGET" => target,
+      "OKOU_RELEASE_TAG" => "okou-desktop-v0.53.0", "DESKTOP_VERSION" => "0.53.0",
+      "MOCK_RELEASE_TARGET" => target, "MOCK_RELEASE_EXISTS" => exists,
+      "MOCK_RELEASE_ASSETS" => assets, "MOCK_PUBLISH_LOG" => log}
+    output, status = Open3.capture2e(env, "bash", "-c", script)
+    raise "Desktop publication failed: #{output}" unless status.success?
+    raise "Desktop rerun replaced a published asset" unless File.readlines(log, chomp: true) == expected
+  end
+  log = "#{dir}/calls"
+  File.write(log, "")
+  output, status = Open3.capture2e({"PATH" => "#{bin}:#{ENV.fetch('PATH')}",
+    "RELEASE_TARGET" => target, "OKOU_RELEASE_TAG" => "okou-desktop-v0.53.0",
+    "MOCK_RELEASE_TARGET" => "b" * 40, "MOCK_RELEASE_EXISTS" => "1",
+    "MOCK_RELEASE_ASSETS" => "", "MOCK_PUBLISH_LOG" => log}, "bash", "-c", script)
+  raise "Mismatched Desktop target must stop before upload" if status.success? || !File.read(log).empty?
+end
 publish = release.fetch("publish-desktop-update-manifest")
 raise "feed must wait for notarized release assets" unless publish.fetch("needs").include?("promote-desktop-release") && publish.fetch("if").include?("needs.promote-desktop-release.result == 'success'")
 raise "feed must wait for the API appcast deployment" unless publish.fetch("needs").include?("promote-api-production") && publish.fetch("if").include?("needs.promote-api-production.result == 'success'")
