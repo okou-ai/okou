@@ -26,7 +26,7 @@ packages use `Okou`, `ai.okou.desktop`, and the live Clerk publishable key. Set
 `CLERK_PUBLISHABLE_KEY` when building; the generated runtime configuration is
 ignored and removed from the source tree after packaging. Open the resulting
 app in `desktop/out/` to exercise the real UI. `--smoke-test` verifies packaged
-configuration, helper presence, and the upgrade bridge without signing in or
+configuration, helper presence, and bundled resources without signing in or
 registering a host.
 
 `--auth-smoke-test` separately initializes the real Clerk SDK and reports its
@@ -120,8 +120,9 @@ unsigned app under its exact commit SHA in R2. The production promotion job
 downloads and verifies that artifact, signs and notarizes it without rebuilding,
 publishes `okou-desktop-v*` ZIP/DMG assets, and updates the existing manifest only
 after both Desktop promotion and API deployment succeed. This keeps the first
-native ZIP behind deployment of its appcast route. Both updater formats share
-channel/blocked-version selection in the canonical API service.
+native ZIP behind deployment of its appcast route. Native releases use the
+canonical API's channel/blocked-version selection; the legacy Squirrel feed
+always returns the retained migration hop.
 
 ## Session authentication
 
