@@ -24,7 +24,7 @@ import {
 } from "./gcp-llm-transport";
 
 const L = logger("VertexMaps");
-export const VERTEX_MAPS_MODEL = "gemini-3.1-flash-lite";
+export const VERTEX_MAPS_MODEL = "gemini-3.8-flash";
 export const VERTEX_MAPS_PROVIDER = "google-maps-grounding";
 const LOCATION = "global";
 const INTERACTIONS_API_REVISION = "2026-05-20";
@@ -152,7 +152,7 @@ function providerRequestBody(request: MapsSearchRequest) {
       },
     ],
     generation_config: {
-      thinking_level: "minimal",
+      thinking_level: "low",
       thinking_summaries: "none",
       max_output_tokens: 2048,
     },

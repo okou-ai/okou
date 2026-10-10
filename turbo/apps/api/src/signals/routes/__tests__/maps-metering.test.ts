@@ -36,7 +36,7 @@ describe("Maps Interactions usage and citations", () => {
         // The place exists only in the tool result: annotations have no source
         // identity, and usage has no billable Maps query aggregate.
         return HttpResponse.json({
-          model: "gemini-3.1-flash-lite",
+          model: "gemini-3.8-flash",
           status: "completed",
           steps: [
             { type: "thought", signature: "private-signature" },
@@ -92,9 +92,9 @@ describe("Maps Interactions usage and citations", () => {
   });
 
   it.each([
-    { mapsQueries: 0, providerCost: 100, credits: 1 },
-    { mapsQueries: 3, providerCost: 42_100, credits: 53 },
-    { mapsQueries: 4, providerCost: 56_100, credits: 71 },
+    { mapsQueries: 0, providerCost: 525, credits: 1 },
+    { mapsQueries: 3, providerCost: 42_525, credits: 54 },
+    { mapsQueries: 4, providerCost: 56_525, credits: 71 },
   ])(
     "bills $mapsQueries provider queries even when their cost exceeds the admission estimate",
     async ({ mapsQueries, providerCost, credits }) => {
@@ -147,7 +147,7 @@ describe("Maps Interactions usage and citations", () => {
       answer,
       sources: [],
       citations: [],
-      billingQuantity: 28_100,
+      billingQuantity: 28_525,
       creditsCharged: 36,
       usage: { mapsQueries: 2 },
     });
@@ -169,11 +169,11 @@ describe("Maps Interactions usage and citations", () => {
       { query: "Coffee near Union Square" },
       [200],
     );
-    // 21 * $0.25/M + 79 * $0.025/M + 50 * $1.50/M = 82.225 micro USD.
+    // 21 * $1.50/M + 79 * $0.15/M + 50 * $7.50/M = 418.35 micro USD.
     expect(search.body).toMatchObject({
-      billingQuantity: 14_083,
-      providerCostUsd: 0.014083,
-      creditsCharged: 18,
+      billingQuantity: 14_419,
+      providerCostUsd: 0.014419,
+      creditsCharged: 19,
       usage: { inputTokens: 100, cachedInputTokens: 79, outputTokens: 50 },
     });
   });
