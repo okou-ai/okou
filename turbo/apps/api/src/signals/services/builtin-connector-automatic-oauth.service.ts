@@ -8,6 +8,10 @@ import {
   connectorSlugSchema,
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connector-config";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 import { connectors } from "@okouai/db/schema/connector";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
@@ -21,7 +25,7 @@ import {
   generateConnectorOAuthState,
 } from "../../lib/connector-oauth-state";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { safeJsonParse, safeSync, settle } from "../utils";
 import {
   automaticAccountExists$,
@@ -43,7 +47,11 @@ import {
   type ConnectorRuntimeMethod,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
-import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorRuntimeSlugSelectionFromRows,
+  connectorRuntimeSlugSelectionReadPlan,
+} from "./connector-catalog-slug-source.service";
 import {
   claimBuiltinConnectorOAuthState$,
   insertConnectorOAuthState,
@@ -108,6 +116,9 @@ interface BuiltinAutomaticContract {
   readonly endpoint: string;
   readonly method: BuiltinAutomaticMethod;
 }
+type BuiltinAutomaticOAuthBinding = McpAutomaticOAuthBinding & {
+  readonly endpoint: string;
+};
 type FailureReason =
   | "invalid-account"
   | "stale-contract"
@@ -167,29 +178,26 @@ function currentContractFromSnapshot(
     : null;
 }
 
-async function currentContract(
-  db: Db,
-  connectorSlug: string,
-  authMethodId: string,
-): Promise<BuiltinAutomaticContract | null> {
-  return currentContractFromSnapshot(
-    await loadConnectorRuntimeSlugSelection(db, {
-      connectorSlugs: [connectorSlug],
-    }),
-    connectorSlug,
-    authMethodId,
-  );
-}
-
 const currentBuiltinAutomaticContract$ = command(
   async (
     { set },
     args: { readonly connectorSlug: string; readonly authMethodId: string },
     signal: AbortSignal,
   ): Promise<BuiltinAutomaticContract | null> => {
-    const snapshot = await loadConnectorRuntimeSlugSelection(set(writeDb$), {
+    const db = set(writeDb$);
+    const plan = connectorRuntimeSlugSelectionReadPlan({
       connectorSlugs: [args.connectorSlug],
     });
+    const rows = await db
+      .select(plan.columns)
+      .from(connectorCatalog)
+      .leftJoin(connectorCatalogEntries, plan.join)
+      .where(connectorCatalogCurrentWhere());
+    signal.throwIfAborted();
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      plan.selection,
+      rows,
+    );
     signal.throwIfAborted();
     return currentContractFromSnapshot(
       snapshot,
@@ -756,77 +764,78 @@ export const completeBuiltinConnectorAutomatic$ = command(
   },
 );
 
-async function readBuiltinConnectorAutomaticOAuthBinding(
-  db: Db,
-  connectorId: string,
-): Promise<
-  | (McpAutomaticOAuthBinding & {
-      readonly endpoint: string;
-    })
-  | null
-> {
-  const [row] = await db
-    .select({
-      binding: builtinConnectorAccountOauthBindings,
-    })
-    .from(builtinConnectorAccountOauthBindings)
-    .innerJoin(
-      connectors,
-      and(
-        eq(
-          connectors.id,
-          builtinConnectorAccountOauthBindings.connectorAccountId,
+const readBuiltinConnectorAutomaticOAuthBinding$ = command(
+  async (
+    { set },
+    connectorId: string,
+    signal: AbortSignal,
+  ): Promise<BuiltinAutomaticOAuthBinding | null> => {
+    const db = set(writeDb$);
+    const [row] = await db
+      .select({
+        binding: builtinConnectorAccountOauthBindings,
+      })
+      .from(builtinConnectorAccountOauthBindings)
+      .innerJoin(
+        connectors,
+        and(
+          eq(
+            connectors.id,
+            builtinConnectorAccountOauthBindings.connectorAccountId,
+          ),
+          eq(
+            connectors.connectorSlug,
+            builtinConnectorAccountOauthBindings.connectorSlug,
+          ),
+          eq(connectors.orgId, builtinConnectorAccountOauthBindings.orgId),
+          eq(connectors.userId, builtinConnectorAccountOauthBindings.userId),
         ),
-        eq(
-          connectors.connectorSlug,
-          builtinConnectorAccountOauthBindings.connectorSlug,
+      )
+      .where(eq(connectors.id, connectorId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!row) {
+      return null;
+    }
+    const binding = row.binding;
+    if (binding.registrationMethod === "cimd") {
+      return { ...binding, registrationMethod: "cimd", dcrRegistration: null };
+    }
+    if (binding.dcrRegistrationId === null) {
+      return null;
+    }
+    const [storedRegistration] = await db
+      .select()
+      .from(builtinConnectorDcrRegistrations)
+      .where(
+        and(
+          eq(builtinConnectorDcrRegistrations.id, binding.dcrRegistrationId),
+          eq(builtinConnectorDcrRegistrations.orgId, binding.orgId),
+          eq(
+            builtinConnectorDcrRegistrations.connectorSlug,
+            binding.connectorSlug,
+          ),
+          eq(builtinConnectorDcrRegistrations.authMethod, binding.authMethod),
         ),
-        eq(connectors.orgId, builtinConnectorAccountOauthBindings.orgId),
-        eq(connectors.userId, builtinConnectorAccountOauthBindings.userId),
-      ),
-    )
-    .where(eq(connectors.id, connectorId))
-    .limit(1);
-  if (!row) {
-    return null;
-  }
-  const binding = row.binding;
-  if (binding.registrationMethod === "cimd") {
-    return { ...binding, registrationMethod: "cimd", dcrRegistration: null };
-  }
-  if (binding.dcrRegistrationId === null) {
-    return null;
-  }
-  const [storedRegistration] = await db
-    .select()
-    .from(builtinConnectorDcrRegistrations)
-    .where(
-      and(
-        eq(builtinConnectorDcrRegistrations.id, binding.dcrRegistrationId),
-        eq(builtinConnectorDcrRegistrations.orgId, binding.orgId),
-        eq(
-          builtinConnectorDcrRegistrations.connectorSlug,
-          binding.connectorSlug,
-        ),
-        eq(builtinConnectorDcrRegistrations.authMethod, binding.authMethod),
-      ),
-    )
-    .limit(1);
-  const registration = storedRegistration
-    ? {
-        ...storedRegistration,
-        hasClientSecret: storedRegistration.encryptedClientSecret !== null,
-      }
-    : null;
-  if (!registration) {
-    return null;
-  }
-  return {
-    ...binding,
-    registrationMethod: "dcr",
-    dcrRegistration: registration,
-  };
-}
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    const registration = storedRegistration
+      ? {
+          ...storedRegistration,
+          hasClientSecret: storedRegistration.encryptedClientSecret !== null,
+        }
+      : null;
+    if (!registration) {
+      return null;
+    }
+    return {
+      ...binding,
+      registrationMethod: "dcr",
+      dcrRegistration: registration,
+    };
+  },
+);
 
 type CredentialResult =
   | { readonly kind: "none" }
@@ -968,9 +977,7 @@ const refreshAutomatic = command(
     context: {
       readonly args: ResolveAutomaticCredentialArgs;
       readonly contract: BuiltinAutomaticContract;
-      readonly binding: NonNullable<
-        Awaited<ReturnType<typeof readBuiltinConnectorAutomaticOAuthBinding>>
-      >;
+      readonly binding: BuiltinAutomaticOAuthBinding;
       readonly account: typeof connectors.$inferSelect;
       readonly encryptedRefreshToken: string;
     },
@@ -1059,25 +1066,42 @@ function accessTokenRemainsValid(
   );
 }
 
-async function acceptedCredentialContract(
-  args: ResolveAutomaticCredentialArgs & { readonly db: Db },
-  signal: AbortSignal,
-): Promise<{
-  readonly contract: BuiltinAutomaticContract;
-  readonly accessName: string;
-} | null> {
-  const contract = await currentContract(
-    args.db,
-    args.connectorSlug,
-    args.authMethodId,
-  );
-  const accessName = contract && tokenStorageName(contract, "accessToken");
-  signal.throwIfAborted();
-  if (!contract || !accessName) {
-    return null;
-  }
-  return { contract, accessName };
-}
+const acceptedCredentialContract$ = command(
+  async (
+    { set },
+    args: ResolveAutomaticCredentialArgs,
+    signal: AbortSignal,
+  ): Promise<{
+    readonly contract: BuiltinAutomaticContract;
+    readonly accessName: string;
+  } | null> => {
+    const db = set(writeDb$);
+    const plan = connectorRuntimeSlugSelectionReadPlan({
+      connectorSlugs: [args.connectorSlug],
+    });
+    const rows = await db
+      .select(plan.columns)
+      .from(connectorCatalog)
+      .leftJoin(connectorCatalogEntries, plan.join)
+      .where(connectorCatalogCurrentWhere());
+    signal.throwIfAborted();
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      plan.selection,
+      rows,
+    );
+    const contract = currentContractFromSnapshot(
+      snapshot,
+      args.connectorSlug,
+      args.authMethodId,
+    );
+    const accessName = contract && tokenStorageName(contract, "accessToken");
+    signal.throwIfAborted();
+    if (!contract || !accessName) {
+      return null;
+    }
+    return { contract, accessName };
+  },
+);
 
 export const resolveBuiltinConnectorAutomaticMcpCredential = command(
   async (
@@ -1107,7 +1131,7 @@ export const resolveBuiltinConnectorAutomaticMcpCredential = command(
     if (account.automaticAuthType === "none") {
       return { kind: "none" };
     }
-    const accepted = await acceptedCredentialContract({ ...args, db }, signal);
+    const accepted = await set(acceptedCredentialContract$, args, signal);
     if (!accepted) {
       return { kind: "unavailable", reason: "stale-contract" };
     }
@@ -1115,9 +1139,10 @@ export const resolveBuiltinConnectorAutomaticMcpCredential = command(
     if (account.automaticAuthType !== "oauth" || account.needsReconnect) {
       return { kind: "unavailable", reason: "reconnect" };
     }
-    const binding = await readBuiltinConnectorAutomaticOAuthBinding(
-      db,
+    const binding = await set(
+      readBuiltinConnectorAutomaticOAuthBinding$,
       account.id,
+      signal,
     );
     signal.throwIfAborted();
     if (!binding) {
