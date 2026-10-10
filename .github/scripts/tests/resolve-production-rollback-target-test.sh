@@ -72,6 +72,8 @@ case "${1:-}" in
       [ "${MOCK_CHECKPOINT_WRITER_PREPARATION_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1414141414141414141414141414141414141414" ]; then
       [ "${MOCK_BROWSER_SESSION_MUTATIONS_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "4343434343434343434343434343434343434343" ]; then
+      [ "${MOCK_COMPUTER_USE_COMMAND_NOTIFICATIONS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1212121212121212121212121212121212121212" ]; then
       [ "${MOCK_RETIRED_INTEGRATION_AGENT_TABLES_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ]; then
@@ -147,6 +149,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_CHECKPOINT_WRITER_PREPARATION_COMMIT-4242424242424242424242424242424242424242}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
       printf '%s\n' "${MOCK_BROWSER_SESSION_MUTATIONS_COMMIT-1414141414141414141414141414141414141414}"
+    elif [[ "$*" == *computer-use-command-notifications* ]]; then
+      printf '%s\n' "${MOCK_COMPUTER_USE_COMMAND_NOTIFICATIONS_COMMIT-4343434343434343434343434343434343434343}"
     elif [[ "$*" == *1282_drop_retired_integration_agent_tables.sql* ]]; then
       printf '%s\n' "${MOCK_RETIRED_INTEGRATION_AGENT_TABLES_COMMIT-1212121212121212121212121212121212121212}"
     else
@@ -678,6 +682,20 @@ assert_failure "Rollback target predates the Browser session mutation contract" 
 [ ! -s "${tmp_dir}/browser-session-mutations-floor.output" ] || fail "incompatible Browser mutation API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Browser mutation floor must fail before artifact or host access"
+fi
+
+for notification_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Computer Use command notification contract" \
+    run_resolver "${tmp_dir}/computer-use-notifications-history.output" "MOCK_COMPUTER_USE_COMMAND_NOTIFICATIONS_COMMIT=${notification_commit}"
+  [ ! -s "${tmp_dir}/computer-use-notifications-history.output" ] || fail "invalid Computer Use notification history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Computer Use command notification contract" \
+  run_resolver "${tmp_dir}/computer-use-notifications-floor.output" MOCK_COMPUTER_USE_COMMAND_NOTIFICATIONS_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/computer-use-notifications-floor.output" ] || fail "incompatible Computer Use API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Computer Use notification floor must fail before artifact or host access"
 fi
 
 for drop_commit in "" invalid; do

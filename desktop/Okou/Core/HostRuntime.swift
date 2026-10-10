@@ -32,6 +32,7 @@ public struct RuntimeState: Sendable {
 public actor HostRuntime {
   private let api: APIClient
   private let executor: CommandExecutor
+  private let notifications: any CommandNotifications
   private let installationId: String
   private let hostName: String
   private let version: String
@@ -52,7 +53,12 @@ public actor HostRuntime {
   }
   private var connection: Connection?
   private var heartbeatTask: Task<Void, Never>?
-  private var pollTask: Task<Void, Never>?
+  private var notificationTask: Task<Void, Never>?
+  private var notificationStops = 0
+  private var drainTask: Task<Void, Never>?
+  private var commandRetryTask: Task<Void, Never>?
+  private var pendingRefresh = false
+  private var commandRecoveryAttempt = 0
   private var stopTask: Task<Void, Never>?
   private var registrationTask: (generation: Int, task: Task<Void, Error>)?
   private var state = RuntimeState()
@@ -63,11 +69,13 @@ public actor HostRuntime {
   public init(
     api: APIClient, executor: CommandExecutor, installationId: String, hostName: String,
     version: String,
+    notifications: any CommandNotifications,
     tokenProvider: @escaping @Sendable (Bool) async throws -> String,
     onChange: @escaping @MainActor @Sendable (RuntimeState) -> Void
   ) {
     self.api = api
     self.executor = executor
+    self.notifications = notifications
     self.installationId = installationId
     self.hostName = hostName
     self.version = version
@@ -108,7 +116,7 @@ public actor HostRuntime {
   }
   private func publish() async { await onChange(state) }
   public func start() async {
-    guard !running, stopTask == nil else { return }
+    guard !running, stopTask == nil, notificationStops == 0, drainTask == nil else { return }
     generation += 1
     let current = generation
     running = true
@@ -174,6 +182,24 @@ public actor HostRuntime {
       throw DesktopFailure("invalid_response", "Host registration response is missing its identity")
     }
     self.connection = connection
+    guard let channelName = response.body["commandNotifications"]["channelName"].string,
+      !channelName.isEmpty,
+      let eventName = response.body["commandNotifications"]["eventName"].string,
+      !eventName.isEmpty
+    else {
+      // A new Desktop cannot operate against a pre-notification API. Retire
+      // the registered connection instead of leaving an online, inactive host.
+      _ = try? await api.authenticatedRequest(
+        connection.path("stop"), body: connection.body(.object([:])), timeout: 5,
+        tokenProvider: tokenProvider)
+      self.connection = nil
+      running = false
+      acceptingCommands = false
+      state.status = "error"
+      state.lastError = "Computer Use notifications are unavailable until the service is updated."
+      await publish()
+      return
+    }
     state.hostId = connection.hostId
     state.status = "online"
     state.lastHeartbeat = Date()
@@ -183,7 +209,12 @@ public actor HostRuntime {
     await publish()
     guard running, acceptingCommands, generation == current else { return }
     heartbeatTask = Task { await self.heartbeatLoop(generation: current, connection: connection) }
-    pollTask = Task { await self.commandLoop(generation: current, connection: connection) }
+    let subscription = CommandNotificationSubscription(
+      channelName: channelName, eventName: eventName)
+    notificationTask = Task {
+      await self.notificationLoop(
+        subscription: subscription, generation: current, connection: connection)
+    }
   }
   public func stop() async {
     if let stopTask {
@@ -199,6 +230,7 @@ public actor HostRuntime {
     acceptingCommands = false
     state.status = "stopping"
     await publish()
+    await stopNotifications()
     // Keep heartbeats alive while an existing command drains; its Clerk
     // session must remain available until the completion report has been sent.
     if connection == nil {
@@ -210,9 +242,11 @@ public actor HostRuntime {
     _ = try? await registrationTask?.task.value
     // Let an already claimed command finish and report before stopping its
     // host. A stopped generation cannot claim or dispatch another action.
-    let draining = pollTask
-    pollTask = nil
+    let draining = drainTask
     await draining?.value
+    drainTask = nil
+    pendingRefresh = false
+    commandRecoveryAttempt = 0
     running = false
     generation += 1
     heartbeatTask?.cancel()
@@ -261,6 +295,9 @@ public actor HostRuntime {
         guard (200..<300).contains(response.status) else {
           throw DesktopFailure("network_error", "Heartbeat failed (HTTP \(response.status))")
         }
+        guard let hasPendingCommands = response.body["hasPendingCommands"].bool else {
+          throw DesktopFailure("invalid_response", "Heartbeat is missing its pending-command hint")
+        }
         state.lastHeartbeat = Date()
         if acceptingCommands { state.status = "online" }
         state.lastError = nil
@@ -268,6 +305,9 @@ public actor HostRuntime {
         state.recoveryAttempt = 0
         attempt = 0
         wait = 15
+        if hasPendingCommands {
+          requestCommandRefresh(generation: current, connection: connection)
+        }
         await publish()
       } catch is CancellationError { return } catch {
         guard running, generation == current else { return }
@@ -284,6 +324,7 @@ public actor HostRuntime {
     }
     running = false
     acceptingCommands = false
+    await stopNotifications()
     state.status = "error"
     state.lastError = failure.message
     await publish()
@@ -294,11 +335,14 @@ public actor HostRuntime {
     if response.status == 426 {
       // Close admission without invalidating completion reports for claimed work.
       acceptingCommands = false
+      await stopNotifications()
       recordUpgradeRequirement(response)
       await publish()
       return true
     }
     running = false
+    acceptingCommands = false
+    await stopNotifications()
     state.status = "error"
     state.lastError =
       response.status == 426
@@ -312,10 +356,70 @@ public actor HostRuntime {
     state.minimumSupportedVersion = response.body["minimumSupportedVersion"].string
     state.lastError = "This version of Okou must be updated."
   }
-  private func commandLoop(generation current: Int, connection: Connection) async {
-    var attempt = 0
+  private func stopNotifications() async {
+    notificationStops += 1
+    defer { notificationStops -= 1 }
+    commandRetryTask?.cancel()
+    commandRetryTask = nil
+    notificationTask?.cancel()
+    let task = notificationTask
+    notificationTask = nil
+    await notifications.stop()
+    await task?.value
+  }
+  private func notificationLoop(
+    subscription: CommandNotificationSubscription, generation current: Int, connection: Connection
+  ) async {
+    do {
+      let api = api
+      let provider = tokenProvider
+      let events = try await notifications.start(
+        subscription: subscription,
+        tokenProvider: {
+          let response = try await api.authenticatedRequest(
+            "api/realtime/token", body: .object([:]), timeout: 10,
+            tokenProvider: { forceRefresh in
+              let token = try await provider(forceRefresh)
+              try await self.checkGeneration(current)
+              return token
+            })
+          try await self.checkGeneration(current)
+          guard (200..<300).contains(response.status) else {
+            throw DesktopFailure(
+              "network_error", "Realtime authentication failed (HTTP \(response.status))")
+          }
+          return response.body
+        })
+      for await event in events {
+        guard !Task.isCancelled, running, acceptingCommands, generation == current else { return }
+        switch event {
+        case .refresh:
+          requestCommandRefresh(generation: current, connection: connection)
+        case .unavailable(let message):
+          state.errors.insert(message, at: 0)
+          state.errors = Array(state.errors.prefix(50))
+          await publish()
+        }
+      }
+    } catch is CancellationError {
+    } catch {
+      guard running, acceptingCommands, generation == current else { return }
+      state.errors.insert(error.localizedDescription, at: 0)
+      state.errors = Array(state.errors.prefix(50))
+      await publish()
+    }
+  }
+  private func requestCommandRefresh(generation current: Int, connection: Connection) {
+    guard running, acceptingCommands, generation == current else { return }
+    pendingRefresh = true
+    guard drainTask == nil, commandRetryTask == nil else { return }
+    drainTask = Task { await self.drainCommands(generation: current, connection: connection) }
+  }
+  private func drainCommands(generation current: Int, connection: Connection) async {
+    defer { if generation == current { drainTask = nil } }
     while running && acceptingCommands && generation == current {
       do {
+        pendingRefresh = false
         let claimStarted = ContinuousClock.now
         let response = try await request(
           connection.path("commands/next"), connection: connection,
@@ -323,7 +427,7 @@ public actor HostRuntime {
           timeout: 5, generation: current)
         if await rejectAuthority(response) { return }
         guard (200..<300).contains(response.status) else {
-          throw DesktopFailure("network_error", "Command poll failed (HTTP \(response.status))")
+          throw DesktopFailure("network_error", "Command claim failed (HTTP \(response.status))")
         }
         let body = response.body
         if body["status"].string == "command" {
@@ -354,13 +458,16 @@ public actor HostRuntime {
               ).response
           }
           try await complete(id: id, connection: connection, result: result)
-        } else if body["status"].string != "idle" {
+        } else if body["status"].string == "idle" {
+          commandRecoveryAttempt = 0
+          // No await between checking the sticky flag and retiring this task:
+          // a later actor callback observes nil and starts the next drain.
+          if !pendingRefresh { return }
+        } else {
           throw DesktopFailure("invalid_response", "Unknown command poll response")
         }
         guard running, acceptingCommands, generation == current else { return }
-        attempt = 0
-        let elapsed = state.lastCommand.map { Date().timeIntervalSince($0) } ?? .infinity
-        try await Task.sleep(for: .seconds(elapsed < 10 ? 0.5 : elapsed < 60 ? 1 : 5))
+        commandRecoveryAttempt = 0
       } catch is CancellationError { return } catch {
         guard running, acceptingCommands, generation == current else {
           state.errors.insert(error.localizedDescription, at: 0)
@@ -369,9 +476,18 @@ public actor HostRuntime {
           return
         }
         if await rejectAuthentication(error) { return }
-        attempt += 1
-        await recover(error, attempt: attempt)
-        try? await Task.sleep(for: .seconds(delay(attempt)))
+        commandRecoveryAttempt += 1
+        await recover(error, attempt: commandRecoveryAttempt)
+        pendingRefresh = true
+        let wait = delay(commandRecoveryAttempt)
+        commandRetryTask = Task {
+          do { try await Task.sleep(for: .seconds(wait)) } catch { return }
+          guard !Task.isCancelled, self.running, self.acceptingCommands, self.generation == current
+          else { return }
+          self.commandRetryTask = nil
+          self.requestCommandRefresh(generation: current, connection: connection)
+        }
+        return
       }
     }
   }
