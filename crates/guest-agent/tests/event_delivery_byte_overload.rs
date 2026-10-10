@@ -3,6 +3,7 @@
 
 mod common;
 
+use common::json_fixture::JsonFieldTemplate;
 use guest_agent::masker::SecretMasker;
 use httpmock::prelude::*;
 use serde_json::json;
@@ -17,19 +18,23 @@ async fn claude_code_event_delivery_byte_overload_terminates_promptly()
     let mock_cli = common::build_and_locate_mock()?;
     let tmp = tempfile::tempdir()?;
     let server = MockServer::start();
-    let mut prompt_lines = vec!["@ECHO-HANG@".to_string()];
     // One in-flight payload plus fifteen queued payloads crosses the byte budget;
     // fifteen queued payloads alone do not. This distinguishes queued-plus-in-flight
     // accounting from a queue-only implementation.
-    prompt_lines.extend((0..EVENT_COUNT).map(|index| {
-        json!({
+    let event = JsonFieldTemplate::new(
+        &json!({
             "type": "assistant",
-            "index": index,
+            "index": 0,
             "content": "x".repeat(EVENT_BYTES),
-        })
-        .to_string()
-    }));
-    let prompt = prompt_lines.join("\n");
+        }),
+        "index",
+    )?;
+    let mut prompt = b"@ECHO-HANG@".to_vec();
+    for index in 0..EVENT_COUNT {
+        prompt.push(b'\n');
+        event.write(&mut prompt, &index)?;
+    }
+    let prompt = String::from_utf8(prompt)?;
 
     unsafe {
         common::setup_env(&mock_cli, tmp.path(), &prompt, 1, 1)?;
