@@ -176,6 +176,110 @@ describe("private Runner VNC authority", () => {
     };
   }
 
+  it("negotiates online Kerberos before KMS and independently fences source revision and KDC route", async () => {
+    const f = await claimedFixture();
+    const kms = useSecretKmsProbe();
+    const initiator = { realm: "EXAMPLE.INVALID", components: ["alice"] };
+    const changed = await accept(
+      api.connections().update({
+        headers: vncSessionHeaders,
+        params: { connectionId: f.connectionId },
+        body: {
+          expectedGeneration: 1,
+          security: {
+            type: "qemu_x509_gssapi",
+            trust: { mode: "system" },
+            service: {
+              realm: initiator.realm,
+              components: ["vnc", "desktop.example.com"],
+            },
+            kdc: {
+              host: "kdc.example.com",
+              port: 88,
+              transport: { type: "direct" },
+              ticketLifetimeSeconds: 1200,
+              renewableLifetimeSeconds: 7200,
+            },
+          },
+          credential: {
+            create: {
+              name: "Explicit source",
+              authentication: {
+                method: "qemu_kerberos_password",
+                initiator,
+                password: "synthetic exact source",
+              },
+            },
+          },
+        },
+      }),
+      [200],
+    );
+    await expect(api.resolve(f)).resolves.toStrictEqual({
+      outcome: "unsupported_profile",
+    });
+    expect(kms.decryptCalls).toBe(0);
+    const result = await accept(
+      api.runner().resolve({
+        headers: vncRunnerHeaders,
+        params: { runId: f.runId },
+        body: {
+          connectionId: f.connectionId,
+          runnerIdentity: f.runnerIdentity,
+          supportedProfiles: [
+            {
+              authMethod: "qemu_kerberos_password",
+              securityType: "qemu_x509_gssapi",
+              transportType: "direct",
+              kdcTransportType: "direct",
+            },
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(result.headers.get("X-VNC-Profile-Version")).toBe("kerberos-v1");
+    expect(result.body).toMatchObject({
+      outcome: "resolved_kerberos",
+      generation: 2,
+      credentialRevision: 1,
+      authentication: {
+        method: "qemu_kerberos_password",
+        initiator,
+        password: "synthetic exact source",
+      },
+      security: { kdc: { transport: { type: "direct" } } },
+    });
+    expect(kms.decryptCalls).toBe(1);
+    expect((await check(f, 2)).body).toEqual({
+      outcome: "configuration_changed",
+    });
+    const binding = {
+      expectedCredentialRevision: 1,
+      expectedKdcTransport: { type: "direct" as const },
+    };
+    expect((await check(f, 2, binding)).body).toEqual({ outcome: "valid" });
+    await accept(
+      api.credentials().update({
+        headers: vncSessionHeaders,
+        params: { credentialId: requireVncCredentialId(changed.body) },
+        body: {
+          expectedRevision: 1,
+          authentication: {
+            method: "qemu_kerberos_password",
+            initiator,
+            password: "synthetic rotated source",
+          },
+        },
+      }),
+      [200],
+    );
+    expect((await check(f, 2, binding)).body).toEqual({
+      outcome: "configuration_changed",
+    });
+    expect(kms.decryptCalls).toBe(1);
+  });
+
   it("uses current chat VNC and exact SSH dependency access during an active Run", async () => {
     const f = await claimedFixture({
       defaultEnabled: false,

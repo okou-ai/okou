@@ -22,6 +22,192 @@ import { certificateChain, privateKey } from "./helpers/vnc-synthetic-client";
 const context = testContext();
 const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+
+describe("explicit Owner Kerberos sources", () => {
+  const initiator = { realm: "EXAMPLE.INVALID", components: ["alice"] };
+  const service = {
+    realm: "EXAMPLE.INVALID",
+    components: ["vnc", "desktop.example.com"],
+  };
+  const onlineSecurity = {
+    type: "qemu_x509_gssapi" as const,
+    trust: { mode: "system" as const },
+    service,
+    kdc: {
+      host: "kdc.example.com",
+      port: 88,
+      transport: { type: "direct" as const },
+      ticketLifetimeSeconds: 1200,
+      renewableLifetimeSeconds: 7200,
+    },
+  };
+  const versionHeaders = { ...headers, "X-VNC-Profile-Version": "kerberos-v1" };
+  function onlineBody() {
+    return {
+      ...hostBody(),
+      security: onlineSecurity,
+      credential: {
+        create: {
+          name: "Kerberos password",
+          authentication: {
+            method: "qemu_kerberos_password" as const,
+            initiator,
+            password: "synthetic-kerberos-secret",
+          },
+        },
+      },
+    };
+  }
+  it("keeps public readback metadata-only and hides new profiles from legacy readers", async () => {
+    const kms = useSecretKmsProbe();
+    await owner();
+    const created = await accept(
+      connections().create({ headers: versionHeaders, body: onlineBody() }),
+      [201],
+    );
+    expect(created.body).toMatchObject({
+      kerberosAuthentication: "qemu_kerberos_password",
+      security: onlineSecurity,
+    });
+    const legacy = await accept(connections().list({ headers }), [200]);
+    expect(legacy.body.connections).toStrictEqual([]);
+    const listed = await accept(
+      connections().list({ headers: versionHeaders }),
+      [200],
+    );
+    expect(listed.body.connections).toStrictEqual([created.body]);
+    const source = await accept(
+      credentials().list({ headers: versionHeaders }),
+      [200],
+    );
+    expect(source.body.credentials).toHaveLength(1);
+    expect(source.body.credentials[0]).toMatchObject({
+      authMethod: "qemu_kerberos_password",
+      initiator,
+    });
+    expect(JSON.stringify([created.body, source.body])).not.toContain(
+      "synthetic-kerberos-secret",
+    );
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toStrictEqual([]);
+    expect(kms.generateDataKeyCalls).toBe(1);
+  });
+  it("refuses mismatched realm bindings before encryption or an orphan credential", async () => {
+    const kms = useSecretKmsProbe();
+    await owner();
+    const body = onlineBody();
+    const rejected = await accept(
+      connections().create({
+        headers: versionHeaders,
+        body: {
+          ...body,
+          security: {
+            ...onlineSecurity,
+            service: { ...service, realm: "OTHER.INVALID" },
+          },
+        },
+      }),
+      [400],
+    );
+    expect(rejected.body.error.code).toBe("VNC_PROFILE_MISMATCH");
+    expect(kms.generateDataKeyCalls).toBe(0);
+    expect(
+      (await accept(credentials().list({ headers: versionHeaders }), [200]))
+        .body.credentials,
+    ).toStrictEqual([]);
+  });
+  it("refuses an online source without an independently saved KDC policy", async () => {
+    const kms = useSecretKmsProbe();
+    await owner();
+    const rejected = await accept(
+      connections().create({
+        headers: versionHeaders,
+        body: {
+          ...onlineBody(),
+          security: {
+            type: "qemu_x509_gssapi",
+            trust: { mode: "system" },
+            service,
+          },
+        },
+      }),
+      [400],
+    );
+    expect(rejected.body.error.code).toBe("VNC_PROFILE_MISMATCH");
+    expect(kms.generateDataKeyCalls).toBe(0);
+  });
+  it("rejects malformed FILE material before KMS using a generic credential error", async () => {
+    const kms = useSecretKmsProbe();
+    await owner();
+    const response = await accept(
+      credentials().create({
+        headers: versionHeaders,
+        body: {
+          id: randomUUID(),
+          name: "Invalid service ticket",
+          authentication: {
+            method: "qemu_kerberos_ticket",
+            initiator,
+            service,
+            ticketCache: "AAAA",
+          },
+        },
+      }),
+      [400],
+    );
+    expect(response.body.error.code).toBe("VNC_INVALID_INPUT");
+    expect(JSON.stringify(response.body)).not.toContain("AAAA");
+    expect(kms.generateDataKeyCalls).toBe(0);
+  });
+  it("rotates the same source and fences principal changes without encrypting them", async () => {
+    const kms = useSecretKmsProbe();
+    await owner();
+    const created = await accept(
+      connections().create({ headers: versionHeaders, body: onlineBody() }),
+      [201],
+    );
+    const id = requireVncCredentialId(created.body);
+    const rotated = await accept(
+      credentials().update({
+        headers: versionHeaders,
+        params: { credentialId: id },
+        body: {
+          expectedRevision: 1,
+          authentication: {
+            method: "qemu_kerberos_password",
+            initiator,
+            password: "synthetic-new-secret",
+          },
+        },
+      }),
+      [200],
+    );
+    expect(rotated.body.revision).toBe(2);
+    const bound = (
+      await accept(connections().list({ headers: versionHeaders }), [200])
+    ).body.connections[0]!;
+    expect(bound.generation).toBe(2);
+    const rejected = await accept(
+      credentials().update({
+        headers: versionHeaders,
+        params: { credentialId: id },
+        body: {
+          expectedRevision: 2,
+          authentication: {
+            method: "qemu_kerberos_password",
+            initiator: { ...initiator, components: ["bob"] },
+            password: "synthetic-other-secret",
+          },
+        },
+      }),
+      [400],
+    );
+    expect(rejected.body.error.code).toBe("VNC_PROFILE_MISMATCH");
+    expect(kms.generateDataKeyCalls).toBe(2);
+  });
+});
+
 const security = Object.freeze({
   type: "x509_vnc" as const,
   trust: Object.freeze({ mode: "system" as const }),

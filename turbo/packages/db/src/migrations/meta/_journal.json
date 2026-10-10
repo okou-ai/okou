@@ -2094,6 +2094,13 @@
       "when": 1791779932118,
       "tag": "1376_retire_workspace_runner_state",
       "breakpoints": true
+    },
+    {
+      "idx": 1377,
+      "version": "7",
+      "when": 1791782767867,
+      "tag": "1377_vnc_kerberos_admission",
+      "breakpoints": true
     }
   ]
 }

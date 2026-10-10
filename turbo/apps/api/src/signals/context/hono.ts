@@ -52,6 +52,7 @@ function header(name: string) {
 export const userAgent$ = header("User-Agent");
 export const authorization$ = header("authorization");
 export const cookie$ = header("cookie");
+export const vncProfileVersion$ = header("X-VNC-Profile-Version");
 export const previewAutomationBypass$ = computed((get) => {
   const context = get(innerHonoContext$);
   const secret = previewAutomationBypassSecret();

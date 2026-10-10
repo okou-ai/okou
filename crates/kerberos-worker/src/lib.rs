@@ -8,7 +8,7 @@
 
 mod supervisor;
 
-use std::{fmt, future::Future, path::Path, time::Duration};
+use std::{fmt, future::Future, path::Path, sync::Arc, time::Duration};
 
 use kerberos_credentials::{ClientKeytab, Principal, ServiceTicketCache};
 use tokio::time::Instant;
@@ -99,6 +99,14 @@ pub struct Credentials {
     source: Source,
 }
 impl Credentials {
+    /// Exact saved realm, solely for the caller's independent route check.
+    pub fn realm(&self) -> &str {
+        self.initiator.realm()
+    }
+    /// Source classification only; never grants product authority or network access.
+    pub fn is_online(&self) -> bool {
+        !matches!(self.source, Source::Ticket(_))
+    }
     pub fn new(initiator: Principal, target: Principal, source: Source) -> Result<Self, Error> {
         if initiator.realm() != target.realm()
             || target.components().len() != 2
@@ -153,6 +161,10 @@ impl TicketPolicy {
 /// replay it. The worker supplies only the expected realm and bounded message,
 /// never a destination/route. Offline mode never calls exchange.
 pub trait KdcExchange {
+    /// Retain caller root/capacity until the actual helper is reaped and its tree removed.
+    fn work_owner(&self) -> Option<Arc<dyn WorkOwner>> {
+        None
+    }
     fn authorize(&mut self) -> impl Future<Output = Result<(), Error>>;
     fn exchange(
         &mut self,
@@ -160,6 +172,10 @@ pub trait KdcExchange {
         request: &[u8],
     ) -> impl Future<Output = Result<Zeroizing<Vec<u8>>, Error>>;
 }
+
+/// Opaque resource custody only; never a credential or authority handle.
+pub trait WorkOwner: Send + Sync {}
+impl<T: Send + Sync> WorkOwner for T {}
 
 /// Engine/fixture-only no-network policy. Product callers must supply real authority.
 pub struct NoKdc;
@@ -207,9 +223,47 @@ pub async fn open<K: KdcExchange>(
     let deadline = deadline.min(Instant::now() + Duration::from_secs(30));
     before_deadline(deadline, Error::Deadline, async {
         caller.authorize().await?;
-        let mut context = supervisor::start(root, credentials, policy, deadline).await?;
+        let mut context =
+            supervisor::start_owned(root, credentials, policy, deadline, caller.work_owner())
+                .await?;
         let status = context.initialize(caller).await?;
         Ok((context, status))
+    })
+    .await
+}
+
+/// Secret-free actual helper bootstrap and confirmed teardown, before product KMS.
+/// This public marker is never initialized or sent as a credential/KDC request.
+/// The ordinary caller's UID/kernel policy must support the unchanged containment.
+pub async fn probe(root: &Path, deadline: Instant) -> Result<(), Error> {
+    probe_owned(root, deadline, None).await
+}
+
+/// The same probe with opaque caller resource custody on bootstrap cancellation.
+pub async fn probe_owned(
+    root: &Path,
+    deadline: Instant,
+    owner: Option<Arc<dyn WorkOwner>>,
+) -> Result<(), Error> {
+    native_package()?;
+    let initiator = Principal::new("KERBEROS-PROBE.INVALID".into(), vec!["probe".into()])
+        .map_err(|_| Error::Invalid)?;
+    let target = Principal::new(
+        "KERBEROS-PROBE.INVALID".into(),
+        vec!["vnc".into(), "probe".into()],
+    )
+    .map_err(|_| Error::Invalid)?;
+    let credentials = Credentials::new(
+        initiator,
+        target,
+        Source::Password(Password::new(Zeroizing::new(
+            "public-bootstrap-marker".into(),
+        ))?),
+    )?;
+    let policy = TicketPolicy::new(Duration::from_secs(1), Duration::ZERO)?;
+    before_deadline(deadline, Error::Deadline, async {
+        let context = supervisor::start_owned(root, credentials, policy, deadline, owner).await?;
+        context.close().await
     })
     .await
 }
