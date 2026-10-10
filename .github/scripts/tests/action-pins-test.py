@@ -29,7 +29,7 @@ APPROVED_ACTIONS = {
     "github/codeql-action/init": "2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2",  # v4.38.2
     "github/codeql-action/upload-sarif": "2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2",  # v4.38.2
     "marocchino/sticky-pull-request-comment": "5770ad5eb8f42dd2c4f34da00c94c5381e49af88",  # v3.0.5
-    "okou-ai/release-please-action": "420308b1502ae6728b0654ceb84f863eedf8e621",
+    "okou-ai/release-please-action": "2889bcd0919af5a3f5f0b9d13a61bd7f396088bf",
     "pnpm/action-setup": "ea17c68df8912ef543352723c149a84f56e3d413",  # v6.1.0
     "slackapi/slack-github-action": "dcb1066f776dd043e64d0e8ba94ca15cc7e1875d",  # v4.0.0
     "swatinem/rust-cache": "6323deb102c322ba6fcbdcafc7e3dddab59af2b6",  # v2.9.2
