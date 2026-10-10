@@ -383,12 +383,12 @@ async function completeMaintenance(
       ],
     },
   };
-  const completed = await webhooks.requestAgentComplete(
-    body,
-    run.headers,
-    [200],
-  );
+  const [completed, concurrent] = await Promise.all([
+    webhooks.requestAgentComplete(body, run.headers, [200]),
+    webhooks.requestAgentComplete(body, run.headers, [200]),
+  ]);
   expect(completed.body).toMatchObject({ success: true });
+  expect(concurrent.body).toStrictEqual(completed.body);
   await flushWaitUntilForTest();
   await webhooks.requestAgentComplete(body, run.headers, [200]);
   await flushWaitUntilForTest();

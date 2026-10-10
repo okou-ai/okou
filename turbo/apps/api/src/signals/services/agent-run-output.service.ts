@@ -1246,11 +1246,11 @@ export async function persistAgentRunOutputsInTransaction(
   }
 
   if (isCompletedPrivatePiRun(run)) {
-    // Read completion evidence after acquiring the existing Run lock. Its
-    // locking statement may have waited for a concurrent completion whose
-    // conversation was still invisible to that statement's initial snapshot.
+    // Read the completed Run's output and session pointer together after the
+    // existing Run lock. Both identities must describe the same completion.
     const [existing] = await tx
       .select({
+        agentSessionConversationId: agentSessions.conversationId,
         conversationId: conversations.id,
         historyHash: conversations.cliAgentSessionHistoryHash,
         sessionId: conversations.cliAgentSessionId,
@@ -1259,12 +1259,20 @@ export async function persistAgentRunOutputsInTransaction(
       })
       .from(conversations)
       .innerJoin(agentRuns, eq(agentRuns.id, conversations.runId))
+      .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
       .where(eq(conversations.runId, input.body.runId))
       .limit(1);
     signal.throwIfAborted();
+    if (!existing) {
+      return badRequestMessage(
+        "[RUN_OUTPUT_ALREADY_COMMITTED] Final output does not exactly match the committed Run output",
+      );
+    }
+    const { agentSessionConversationId, ...output } = existing;
     run = {
       ...run,
-      existingOutput: parseExistingRunOutput(existing),
+      agentSessionConversationId,
+      existingOutput: parseExistingRunOutput(output),
     };
   }
 
@@ -1296,11 +1304,7 @@ export async function persistAgentRunOutputsInTransaction(
   if (!piRun && run.status === "timeout") {
     return badRequestMessage(runOutputStateError(run.status));
   }
-  if (
-    run.status === "completed" ||
-    run.status === "failed" ||
-    run.status === "cancelled"
-  ) {
+  if (["completed", "failed", "cancelled"].includes(run.status)) {
     const exactRetry = await exactRunOutputRetryResponse(
       tx,
       run,
