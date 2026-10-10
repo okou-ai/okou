@@ -215,7 +215,7 @@ async function inputRows(fixture: TeamsConnectFixture, threadId: string) {
   // Count each ingested input once: a launched run adds an input.prompt
   // replacement row that revokes the queued input.
   return result.body.rows.filter((row) => {
-    return row.eventType === "input.prompt" && row.revokesEventId === undefined;
+    return row.eventType === "input.prompt" && row.revokesEventId === null;
   });
 }
 
