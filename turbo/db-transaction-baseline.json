@@ -522,11 +522,6 @@
       "owner": "removeOrphanedSkills$"
     },
     {
-      "id": "TX-0136",
-      "file": "turbo/apps/api/src/signals/services/custom-connector-automatic-oauth.service.ts",
-      "owner": "retireCustomDcrRegistration$"
-    },
-    {
       "id": "TX-0137",
       "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
       "owner": "prepareAutomaticOAuthStart$"
