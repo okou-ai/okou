@@ -592,12 +592,10 @@ function createCloudflareDeletionReads(args: DeleteCloudflareAccessConfigArgs) {
   // it does not create a new statement snapshot after a wait.
   const current = qb.$with("current_cloudflare_deletion").as(
     qb
-      .select({ ...metadata })
+      .select({ ...metadata, hostCount: gathered.count })
       .from(cloudflareAccessConfigs)
       .crossJoin(gathered)
-      .where(
-        and(visibleConfig(args.owner, args.configId), gte(gathered.count, 0)),
-      )
+      .where(visibleConfig(args.owner, args.configId))
       .for("update", { of: cloudflareAccessConfigs }),
   );
   const ownHosts = qb
@@ -636,13 +634,10 @@ function createCloudflareDeletionReads(args: DeleteCloudflareAccessConfigArgs) {
           eq(current.revision, args.body.expectedRevision),
           notExists(ownHosts),
           snapshot === undefined
-            ? notExists(qb.select({ id: hosts.id }).from(hosts))
+            ? eq(current.hostCount, 0)
             : and(
                 eq(digest, snapshot),
-                or(
-                  eq(current.scope, "organization"),
-                  notExists(qb.select({ id: hosts.id }).from(hosts)),
-                ),
+                or(eq(current.scope, "organization"), eq(current.hostCount, 0)),
               ),
           notExists(exhaustedHosts),
         ),
