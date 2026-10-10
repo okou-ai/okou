@@ -51,79 +51,41 @@ export type SlackSessionStoppedEvent = z.infer<
   typeof slackSessionStoppedEventSchema
 >;
 
-/** The signed Slack actor can stop only their own inputs in this physical thread. */
-export const stopSlackSession$ = command(
+interface SlackSessionStopScope {
+  readonly event: SlackSessionStoppedEvent;
+  readonly userId: string;
+  readonly orgId: string;
+  readonly encryptedBotToken: string;
+  readonly routes: readonly {
+    readonly routeId: string;
+    readonly routeThreadTs: string;
+    readonly chatThreadId: string;
+  }[];
+}
+
+function stoppedSlackContextScope(scope: SlackSessionStopScope) {
+  return and(
+    eq(chatEvents.contextType, "slack"),
+    inArray(
+      chatEvents.chatThreadId,
+      scope.routes.map((route) => {
+        return route.chatThreadId;
+      }),
+    ),
+    eq(chatSlackContext.channelId, scope.event.channel),
+    eq(chatSlackContext.threadTs, scope.event.thread_ts),
+    sql`${chatSlackContext.messageTs}::numeric <= ${scope.event.event_ts}::numeric`,
+  );
+}
+
+const stopSlackSessionInputs$ = command(
   async (
     { set },
-    args: {
-      readonly workspaceId: string;
-      readonly event: SlackSessionStoppedEvent;
-    },
+    scope: SlackSessionStopScope,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const db = set(writeDb$);
-    const { event } = args;
-    const routes = await db
-      .select({
-        routeId: slackChatThreadRoutes.id,
-        routeThreadTs: slackChatThreadRoutes.threadTs,
-        chatThreadId: slackChatThreadRoutes.chatThreadId,
-        userId: slackChatThreadRoutes.userId,
-        orgId: slackOrgInstallations.orgId,
-        encryptedBotToken: slackOrgInstallations.encryptedBotToken,
-      })
-      .from(slackChatThreadRoutes)
-      .innerJoin(
-        slackOrgConnections,
-        and(
-          eq(slackOrgConnections.id, slackChatThreadRoutes.connectionId),
-          eq(slackOrgConnections.userId, slackChatThreadRoutes.userId),
-        ),
-      )
-      .innerJoin(
-        slackOrgInstallations,
-        eq(
-          slackOrgInstallations.slackWorkspaceId,
-          slackOrgConnections.slackWorkspaceId,
-        ),
-      )
-      .innerJoin(
-        chatThreads,
-        and(
-          eq(chatThreads.id, slackChatThreadRoutes.chatThreadId),
-          eq(chatThreads.userId, slackChatThreadRoutes.userId),
-        ),
-      )
-      .innerJoin(
-        agents,
-        and(
-          eq(agents.id, chatThreads.agentId),
-          eq(agents.orgId, slackOrgInstallations.orgId),
-        ),
-      )
-      .where(
-        and(
-          eq(slackOrgConnections.slackWorkspaceId, args.workspaceId),
-          eq(slackOrgConnections.slackUserId, event.user),
-          eq(slackChatThreadRoutes.channelId, event.channel),
-          or(
-            eq(slackChatThreadRoutes.threadTs, event.thread_ts),
-            eq(slackChatThreadRoutes.threadTs, INTEGRATION_DM_SESSION_KEY),
-          ),
-        ),
-      );
-    signal.throwIfAborted();
-    const binding = routes[0];
-    if (!binding?.orgId) {
-      return;
-    }
-    const routeIds = routes.map((route) => {
-      return route.routeId;
-    });
-    const threadIds = routes.map((route) => {
-      return route.chatThreadId;
-    });
-
+    const { event } = scope;
     // Stop admission first. The enqueue owner conditionally consumes this state,
     // so an enrichment already in flight cannot revive a stopped input.
     const stoppedIngress = await db
@@ -137,7 +99,12 @@ export const stopSlackSession$ = command(
       })
       .where(
         and(
-          inArray(slackChatIngress.routeId, routeIds),
+          inArray(
+            slackChatIngress.routeId,
+            scope.routes.map((route) => {
+              return route.routeId;
+            }),
+          ),
           inArray(slackChatIngress.status, [
             "pending",
             "processing",
@@ -151,16 +118,8 @@ export const stopSlackSession$ = command(
       .returning({ id: slackChatIngress.id });
     signal.throwIfAborted();
     let changed = stoppedIngress.length > 0;
-
     // Use Slack's event time, not delivery time: retries and delayed Stop events
     // must not recall messages the user sent after clicking Stop.
-    const contextScope = and(
-      eq(chatEvents.contextType, "slack"),
-      inArray(chatEvents.chatThreadId, threadIds),
-      eq(chatSlackContext.channelId, event.channel),
-      eq(chatSlackContext.threadTs, event.thread_ts),
-      sql`${chatSlackContext.messageTs}::numeric <= ${event.event_ts}::numeric`,
-    );
     const queued = await db
       .select({ id: chatEvents.id, chatThreadId: chatEvents.chatThreadId })
       .from(chatEvents)
@@ -170,7 +129,7 @@ export const stopSlackSession$ = command(
       )
       .where(
         and(
-          contextScope,
+          stoppedSlackContextScope(scope),
           chatEventTypeIn(["input.prompt"]),
           isNull(chatEvents.runId),
           notExists(
@@ -195,9 +154,19 @@ export const stopSlackSession$ = command(
       signal.throwIfAborted();
       changed ||= recalled.ok;
     }
+    return changed;
+  },
+);
 
-    // Recall before cancellation releases a slot. If a picker won the revoke
-    // edge, its committed Run is included here instead of escaping the Stop.
+const cancelSlackSessionRuns$ = command(
+  async (
+    { set },
+    scope: SlackSessionStopScope,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    // Recall precedes cancellation. If a picker won the revoke edge, its
+    // committed Run is included here instead of escaping the Stop.
     const runs = await db
       .selectDistinct({
         id: agentRuns.id,
@@ -212,15 +181,16 @@ export const stopSlackSession$ = command(
       )
       .where(
         and(
-          contextScope,
+          stoppedSlackContextScope(scope),
           chatEventTypeIn(["input.prompt"]),
-          eq(agentRuns.userId, binding.userId),
-          eq(agentRuns.orgId, binding.orgId),
+          eq(agentRuns.userId, scope.userId),
+          eq(agentRuns.orgId, scope.orgId),
           eq(agentRuns.triggerSource, "slack"),
           inArray(agentRuns.status, ["pending", "running", "cancelled"]),
         ),
       );
     signal.throwIfAborted();
+    let changed = false;
     for (const run of runs) {
       if (run.status !== "cancelled") {
         await set(
@@ -238,8 +208,8 @@ export const stopSlackSession$ = command(
         cancelRun$,
         {
           runId: run.id,
-          userId: binding.userId,
-          orgId: binding.orgId,
+          userId: scope.userId,
+          orgId: scope.orgId,
           runnerCancellationMode: "cooperative",
         },
         signal,
@@ -255,46 +225,127 @@ export const stopSlackSession$ = command(
         signal.throwIfAborted();
       }
     }
+    return changed;
+  },
+);
 
-    if (changed) {
-      for (const route of routes) {
-        await publishChatThreadMessageCreatedSafely({
-          userId: binding.userId,
-          orgId: binding.orgId,
-          threadId: route.chatThreadId,
-        });
-        signal.throwIfAborted();
-      }
-      const featureContext = await set(
-        loadUserFeatureSwitchContext$,
-        binding.orgId,
-        binding.userId,
-        signal,
-      );
-      signal.throwIfAborted();
-      const botToken = await decryptPersistentSecretValue(
-        binding.encryptedBotToken,
-        featureContext,
-      );
-      signal.throwIfAborted();
-      await tapError(
-        (async () => {
-          const posted = await createSlackClient(botToken).postMessage(
-            event.channel,
-            "Stopped your tasks and cleared their queued messages in this thread.",
-            { threadTs: event.thread_ts },
-          );
-          if (posted.kind === "slack_error") {
-            throw new Error(posted.error);
-          }
-        })(),
-        (error) => {
-          L.warn("Failed to confirm Slack session stop", { error });
-        },
-      );
+const confirmStoppedSlackSession$ = command(
+  async (
+    { set },
+    scope: SlackSessionStopScope,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    for (const route of scope.routes) {
+      await publishChatThreadMessageCreatedSafely({
+        userId: scope.userId,
+        orgId: scope.orgId,
+        threadId: route.chatThreadId,
+      });
       signal.throwIfAborted();
     }
+    const featureContext = await set(
+      loadUserFeatureSwitchContext$,
+      scope.orgId,
+      scope.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+    const botToken = await decryptPersistentSecretValue(
+      scope.encryptedBotToken,
+      featureContext,
+    );
+    signal.throwIfAborted();
+    await tapError(
+      (async () => {
+        const posted = await createSlackClient(botToken).postMessage(
+          scope.event.channel,
+          "Stopped your tasks and cleared their queued messages in this thread.",
+          { threadTs: scope.event.thread_ts },
+        );
+        if (posted.kind === "slack_error") {
+          throw new Error(posted.error);
+        }
+      })(),
+      (error) => {
+        L.warn("Failed to confirm Slack session stop", { error });
+      },
+    );
+    signal.throwIfAborted();
+  },
+);
 
+/** The signed Slack actor can stop only their own inputs in this physical thread. */
+export const stopSlackSession$ = command(
+  async (
+    { set },
+    args: {
+      readonly workspaceId: string;
+      readonly event: SlackSessionStoppedEvent;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const { event } = args;
+    const routes = await db
+      .select({
+        routeId: slackChatThreadRoutes.id,
+        routeThreadTs: slackChatThreadRoutes.threadTs,
+        chatThreadId: slackChatThreadRoutes.chatThreadId,
+        userId: slackChatThreadRoutes.userId,
+        orgId: slackOrgInstallations.orgId,
+        encryptedBotToken: slackOrgInstallations.encryptedBotToken,
+      })
+      .from(slackChatThreadRoutes)
+      .innerJoin(
+        slackOrgConnections,
+        eq(slackOrgConnections.id, slackChatThreadRoutes.connectionId),
+      )
+      .innerJoin(
+        slackOrgInstallations,
+        eq(
+          slackOrgInstallations.slackWorkspaceId,
+          slackOrgConnections.slackWorkspaceId,
+        ),
+      )
+      .innerJoin(
+        chatThreads,
+        eq(chatThreads.id, slackChatThreadRoutes.chatThreadId),
+      )
+      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .where(
+        and(
+          eq(slackOrgConnections.userId, slackChatThreadRoutes.userId),
+          eq(chatThreads.userId, slackChatThreadRoutes.userId),
+          eq(agents.orgId, slackOrgInstallations.orgId),
+          eq(slackOrgConnections.slackWorkspaceId, args.workspaceId),
+          eq(slackOrgConnections.slackUserId, event.user),
+          eq(slackChatThreadRoutes.channelId, event.channel),
+          or(
+            eq(slackChatThreadRoutes.threadTs, event.thread_ts),
+            eq(slackChatThreadRoutes.threadTs, INTEGRATION_DM_SESSION_KEY),
+          ),
+        ),
+      );
+    signal.throwIfAborted();
+    const binding = routes[0];
+    if (!binding?.orgId) {
+      return;
+    }
+    const scope: SlackSessionStopScope = {
+      event,
+      routes,
+      userId: binding.userId,
+      orgId: binding.orgId,
+      encryptedBotToken: binding.encryptedBotToken,
+    };
+    const inputsStopped = await set(stopSlackSessionInputs$, scope, signal);
+    signal.throwIfAborted();
+    const runsCancelled = await set(cancelSlackSessionRuns$, scope, signal);
+    signal.throwIfAborted();
+    if (inputsStopped || runsCancelled) {
+      await set(confirmStoppedSlackSession$, scope, signal);
+      signal.throwIfAborted();
+    }
     for (const route of routes) {
       const target = {
         chatThreadId: route.chatThreadId,

@@ -3432,9 +3432,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await integrations.postSlackEvent(teamId, stopEvent);
     await flushWaitUntilForTest();
     expect((await runs.readRun(actor, runId)).status).toBe("cancelled");
-    expect(
-      await runs.readRunnerCancellation(claim.sandboxToken, runId, runnerGroup),
-    ).toMatchObject({ state: "present", mode: "cooperative" });
+    await expect(
+      runs.readRunnerCancellation(claim.sandboxToken, runId, runnerGroup),
+    ).resolves.toMatchObject({ state: "present", mode: "cooperative" });
   });
 
   it("handles native Slack Stop while ingress enrichment is still in flight", async () => {
@@ -3487,7 +3487,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
         });
       });
     await flushWaitUntilForTest();
-    expect(await listSlackRunLogs(actor)).toHaveLength(0);
+    await expect(listSlackRunLogs(actor)).resolves.toHaveLength(0);
     expect(context.mocks.slack.apiCall).toHaveBeenLastCalledWith(
       "agents.sessions.setStatus",
       {
@@ -3565,7 +3565,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       after.events.some((event) => {
         return event.revokesEventId === retained.id;
       }),
-    ).toBe(false);
+    ).toBeFalsy();
     expect(context.mocks.slack.apiCall).toHaveBeenCalledWith(
       "agents.sessions.setStatus",
       {
