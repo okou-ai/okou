@@ -262,21 +262,6 @@ interface DiscordChatIngressAdmission {
   readonly status: DiscordChatIngressStatus;
 }
 
-export async function findCanonicalDiscordIngressByMessage(
-  db: Db,
-  messageId: string,
-) {
-  const [ingress] = await db
-    .select({
-      id: discordChatIngress.id,
-      payload: discordChatIngress.payload,
-    })
-    .from(discordChatIngress)
-    .where(eq(discordChatIngress.messageId, messageId))
-    .limit(1);
-  return ingress;
-}
-
 function discordMessageReceiptDigest(applicationId: string, messageId: string) {
   return createHash("sha256")
     .update(JSON.stringify([applicationId, "MESSAGE_CREATE", messageId]))
