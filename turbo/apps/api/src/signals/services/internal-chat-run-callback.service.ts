@@ -389,7 +389,6 @@ export interface CreateQueuedChatRunInput {
   readonly memberAccountSnapshot?: MemberModelAccountSnapshot | null;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
   readonly featureSwitchContext?: FeatureSwitchContext;
-  readonly expectedThreadAgentId?: string;
   readonly orgId: string;
   readonly userId: string;
   readonly agentId: string;
@@ -632,7 +631,6 @@ export function buildQueuedRunCommand(
     // The time spent waiting in the chat queue is recorded separately.
     apiStartTime: admissionTime,
     chatThreadId: input.threadId,
-    expectedThreadAgentId: input.expectedThreadAgentId,
     ...(input.connectorSourceId
       ? { connectorSourceId: input.connectorSourceId }
       : {}),
@@ -2258,7 +2256,6 @@ export type QueuedMessageModelRouteResolution =
   | { readonly error: QueuedMessageModelRouteError };
 
 export interface QueuedChatPromptData {
-  readonly expectedThreadAgentId?: string;
   readonly threadId: string;
   readonly userId: string;
   readonly agent: AgentForAutoSend;

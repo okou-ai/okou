@@ -97,29 +97,27 @@ function createIntegrationPrompts(
   };
 }
 
-function createExecutionPromptSources(
-  executionBootstrap$: ThreadContext["executionBootstrap$"],
-) {
-  const agent$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).agent$);
+function createExecutionPromptSources(bootstrap: AgentRunContextSignals) {
+  const agent$ = computed((get) => {
+    return get(bootstrap.agent$);
   });
-  const memberMetadata$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).memberMetadata$);
+  const memberMetadata$ = computed((get) => {
+    return get(bootstrap.memberMetadata$);
   });
-  const featureSwitches$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).featureSwitches$);
+  const featureSwitches$ = computed((get) => {
+    return get(bootstrap.featureSwitches$);
   });
-  const memberRoutes$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).memberRoutes$);
+  const memberRoutes$ = computed((get) => {
+    return get(bootstrap.memberRoutes$);
   });
-  const authorizedConnectors$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).authorizedConnectors$);
+  const authorizedConnectors$ = computed((get) => {
+    return get(bootstrap.authorizedConnectors$);
   });
-  const workflowSkills$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).workflowSkills$);
+  const workflowSkills$ = computed((get) => {
+    return get(bootstrap.workflowSkills$);
   });
-  const selectedImageModel$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).selectedImageModel$);
+  const selectedImageModel$ = computed((get) => {
+    return get(bootstrap.selectedImageModel$);
   });
   return {
     agent$,
@@ -138,9 +136,7 @@ export function createPromptAndSkillVolumesSignals(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   threadContext: ThreadContext,
 ): Computed<Promise<PromptAndSkillVolumes>> {
-  const sources = createExecutionPromptSources(
-    threadContext.executionBootstrap$,
-  );
+  const sources = createExecutionPromptSources(bootstrap);
   const {
     agent$,
     memberMetadata$,

@@ -6,7 +6,10 @@ import { expandVariablesInString } from "@okouai/core/variable-expander";
 import { computed } from "ccstate";
 import { badRequestMessage } from "../../lib/error";
 import { settle } from "../utils";
-import { createEagerConnectorCredentialContext } from "./agent-run-context.signals";
+import {
+  type AgentRunContextSignals,
+  createEagerConnectorCredentialContext,
+} from "./agent-run-context.signals";
 import type { PermissionManifest } from "./agent-run-contracts";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
@@ -52,10 +55,12 @@ function isConnectorRuntimeError(
  * Turns the selected connector accounts into runtime environment, credentials
  * and the permission manifest for the execution identity.
  */
-export function createConnectorRuntimeSignals(threadContext: ThreadContext) {
-  const execution$ = threadContext.executionBootstrap$;
+export function createConnectorRuntimeSignals(
+  execution: AgentRunContextSignals,
+  threadContext: ThreadContext,
+) {
   const runtimeInputs = createConnectorRuntimeInputSignals(
-    execution$,
+    execution,
     threadContext.dispatchTiming$,
     threadContext,
   );
@@ -81,16 +86,15 @@ type ConnectorRuntimeInputSignals = ReturnType<
 >;
 
 function createConnectorRuntimeInputSignals(
-  execution$: ThreadContext["executionBootstrap$"],
+  execution: AgentRunContextSignals,
   dispatchTiming$: ThreadContext["dispatchTiming$"],
   threadContext: ThreadContext,
 ) {
   const { connectorCatalog$, connectorScope$, connectorSelection$ } =
     threadContext;
   const { connectorSnapshot$ } = threadContext;
-  const bodyEnvironment$ = createRunBodyEnvironmentSignal(execution$);
+  const bodyEnvironment$ = createRunBodyEnvironmentSignal(execution);
   const permissionPolicies$ = computed(async (get) => {
-    const execution = await get(execution$);
     const [grants, catalog, scope] = await Promise.all([
       get(execution.permissionGrants$),
       get(connectorCatalog$),
@@ -119,7 +123,6 @@ function createConnectorRuntimeInputSignals(
     async (
       get,
     ): Promise<RunPreparedConnectorInputs | ConnectorRuntimeError> => {
-      const execution = await get(execution$);
       const [selection, snapshot, body, policies, features] = await Promise.all(
         [
           get(connectorSelection$),

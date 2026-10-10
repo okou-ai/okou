@@ -166,24 +166,18 @@ type ThreadModelProviderInputSignal = Computed<
 export function createThreadModelSignals(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  selectedBootstrap$: Computed<Promise<AgentRunContextSignals>>,
 ): ThreadModelSignals {
   const dispatchTiming$ = computed(() => {
     return new ApiDispatchTimingCollector();
   });
-  const queuedModel$ = createQueuedModel(
-    bootstrap,
-    pickedEvent$,
-    selectedBootstrap$,
-  );
+  const queuedModel$ = createQueuedModel(bootstrap, pickedEvent$);
   const selection$ = createModelSelection(
     bootstrap,
     pickedEvent$,
-    selectedBootstrap$,
     queuedModel$,
   );
   const subscriptionSelection$ = createSubscriptionSelection(
-    selectedBootstrap$,
+    bootstrap,
     selection$,
     dispatchTiming$,
   );
@@ -193,18 +187,14 @@ export function createThreadModelSignals(
     dispatchTiming$,
   );
   const requestedFramework$ = createRequestedFramework(
-    selectedBootstrap$,
+    bootstrap,
     providerInput$,
   );
   const providerContext$ = createProviderContext(
     providerInput$,
     requestedFramework$,
   );
-  const modelEnvironment$ = createModelEnvironment(
-    bootstrap,
-    selectedBootstrap$,
-    providerContext$,
-  );
+  const modelEnvironment$ = createModelEnvironment(bootstrap, providerContext$);
   const modelRoute$ = createModelRoute(providerContext$, modelEnvironment$);
   const providerFramework$ = computed(
     async (get): Promise<SupportedFramework | ThreadModelError> => {
@@ -229,10 +219,9 @@ export function createThreadModelSignals(
 function createQueuedModel(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  selectedBootstrap$: Computed<Promise<AgentRunContextSignals>>,
 ) {
   const memberSnapshot$ = computed(async (get) => {
-    const selected = await get(selectedBootstrap$);
+    const selected = bootstrap;
     const { accounts, providers } = await get(selected.memberModels$);
     return {
       orgId: selected.orgId,
@@ -241,8 +230,8 @@ function createQueuedModel(
       providers,
     };
   });
-  const memberRoutes$ = computed(async (get) => {
-    return get((await get(selectedBootstrap$)).memberRoutes$);
+  const memberRoutes$ = computed((get) => {
+    return get(bootstrap.memberRoutes$);
   });
   const subscriptionModels$ = computed(async (get) => {
     return memberSubscriptionModelRoutesFromCatalog(
@@ -268,7 +257,6 @@ function createQueuedModel(
   const builtInRuntimeRoute$ = createBuiltInRuntimeRoute(bootstrap, modelPin$);
   const providerAdmission$ = createProviderAdmission(
     bootstrap,
-    selectedBootstrap$,
     memberRoutes$,
     modelPin$,
   );
@@ -370,7 +358,6 @@ function createBuiltInRuntimeRoute(
 
 function createProviderAdmission(
   bootstrap: AgentRunContextSignals,
-  selectedBootstrap$: Computed<Promise<AgentRunContextSignals>>,
   memberRoutes$: AgentRunContextSignals["memberRoutes$"],
   modelPin$: Computed<
     Promise<ModelFirstPin | ReturnType<typeof badRequestMessage>>
@@ -411,7 +398,7 @@ function createProviderAdmission(
         hasSpendableCredits: true,
       };
     }
-    const balance = await get((await get(selectedBootstrap$)).credits$);
+    const balance = await get(bootstrap.credits$);
     return {
       effectiveModelProvider,
       cliAgentType,
@@ -427,7 +414,6 @@ function createProviderAdmission(
 function createModelSelection(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  selectedBootstrap$: Computed<Promise<AgentRunContextSignals>>,
   queuedModel$: ThreadModelSignals["queuedModel$"],
 ) {
   const selection$ = computed(
@@ -460,7 +446,7 @@ function createModelSelection(
         };
       }
       const [selected, catalog] = await Promise.all([
-        get(selectedBootstrap$),
+        bootstrap,
         get(bootstrap.modelCatalog$),
       ]);
       const piExecution = shouldUsePiExecution({
@@ -506,7 +492,7 @@ function createModelSelection(
 }
 
 function createSubscriptionSelection(
-  selectedBootstrap$: Computed<Promise<AgentRunContextSignals>>,
+  bootstrap: AgentRunContextSignals,
   selection$: ThreadModelSelectionSignal,
   dispatchTiming$: ThreadModelSignals["dispatchTiming$"],
 ) {
@@ -532,7 +518,7 @@ function createSubscriptionSelection(
             command: selection,
             providerType,
             modelProviderId: pin.modelProviderId,
-            snapshot: await get((await get(selectedBootstrap$)).memberModels$),
+            snapshot: await get(bootstrap.memberModels$),
           });
           const account =
             candidates.find((candidate) => {
@@ -589,7 +575,7 @@ function createProviderInput(
 }
 
 function createRequestedFramework(
-  selectedBootstrap$: Computed<Promise<AgentRunContextSignals>>,
+  bootstrap: AgentRunContextSignals,
   providerInput$: ThreadModelProviderInputSignal,
 ) {
   const requestedFramework$ = computed(
@@ -606,7 +592,7 @@ function createRequestedFramework(
       if (!args.modelProviderId) {
         return getValidatedFramework(undefined);
       }
-      const member = await get((await get(selectedBootstrap$)).memberModels$);
+      const member = await get(bootstrap.memberModels$);
       const provider =
         member.providers.find((row) => {
           return row.id === args.modelProviderId;
@@ -643,7 +629,6 @@ function createProviderContext(
 
 function createModelEnvironment(
   bootstrap: AgentRunContextSignals,
-  selectedBootstrap$: Computed<Promise<AgentRunContextSignals>>,
   providerContext$: ReturnType<typeof createProviderContext>,
 ) {
   const modelEnvironment$ = computed(
@@ -653,7 +638,7 @@ function createModelEnvironment(
         return null;
       }
       const args = context.environmentArgs;
-      const identity = await get(selectedBootstrap$);
+      const identity = bootstrap;
       if (identity.orgId !== args.orgId || identity.userId !== args.userId) {
         throw new Error("Model source snapshot identity mismatch");
       }

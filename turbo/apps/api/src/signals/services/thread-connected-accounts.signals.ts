@@ -74,10 +74,6 @@ import type {
 } from "./execution-connector-sources.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
-type ExecutionBootstrap$ = Computed<Promise<AgentRunContextSignals>>;
-type ExecutionThread$ = Computed<
-  Promise<PickedThreadInputEvent["thread"] | null>
->;
 /** The integration account that delivered the picked input, if any. */
 type ConnectorSourceId$ = Computed<Promise<string | undefined>>;
 type DispatchTiming$ = Computed<ApiDispatchTimingCollector>;
@@ -113,36 +109,34 @@ export interface ConnectedAccounts {
  * and account defaults, then materializes their runtime snapshot.
  */
 export function createConnectedAccountsSignals(
+  execution: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  execution$: ExecutionBootstrap$,
-  executionThread$: ExecutionThread$,
   connectorSourceId$: ConnectorSourceId$,
   dispatchTiming$: DispatchTiming$,
 ): ConnectedAccounts {
   const inputs = createConnectorInputSignals(
     pickedEvent$,
-    execution$,
-    executionThread$,
+    execution,
     dispatchTiming$,
   );
   const accounts = createThreadAccountSignals(
-    execution$,
+    execution,
     connectorSourceId$,
     inputs,
   );
   const prepared = createConnectorPreparationSignals(inputs, accounts);
   const storedRows = createStoredConnectorRowSignals(
-    execution$,
+    execution,
     accounts,
     prepared,
   );
   const stored = createStoredConnectorSnapshotSignals(
-    execution$,
+    execution,
     inputs,
     storedRows,
   );
   const customStorage = createCustomConnectorStorageSignals(
-    execution$,
+    execution,
     inputs,
     accounts,
   );
@@ -216,15 +210,11 @@ type ConnectorInputSignals = ReturnType<typeof createConnectorInputSignals>;
 
 function createConnectorInputSignals(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  execution$: ExecutionBootstrap$,
-  executionThread$: ExecutionThread$,
+  execution: AgentRunContextSignals,
   dispatchTiming$: DispatchTiming$,
 ) {
   const connectorInput$ = computed(async (get) => {
-    const [event, execution] = await Promise.all([
-      get(pickedEvent$),
-      get(execution$),
-    ]);
+    const event = await get(pickedEvent$);
     if (!event) {
       throw new Error("Connected accounts require a picked event");
     }
@@ -237,7 +227,7 @@ function createConnectorInputSignals(
   });
   const connectorScope$ = computed(
     async (get): Promise<EffectiveConnectorScope> => {
-      const selection = await get((await get(execution$)).connectorSelection$);
+      const selection = await get(execution.connectorSelection$);
       const scope = agentConnectorScopeFromRows({
         connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
           return { connectorSlug };
@@ -255,7 +245,7 @@ function createConnectorInputSignals(
   const connectorCatalog$ = computed(
     async (get): Promise<RunConnectorCatalogSelection> => {
       const [catalog, scope] = await Promise.all([
-        get((await get(execution$)).catalog$),
+        get(execution.catalog$),
         get(connectorScope$),
       ]);
       if (isEmptyRunConnectorScope(scope)) {
@@ -268,7 +258,7 @@ function createConnectorInputSignals(
     },
   );
   const featureSwitchContext$ = computed(async (get) => {
-    return await get((await get(execution$)).featureSwitches$);
+    return await get(execution.featureSwitches$);
   });
   const customConnectorDefinitions$ = computed(async (get) => {
     const { timing } = await get(connectorInput$);
@@ -276,16 +266,15 @@ function createConnectorInputSignals(
       "api_dispatch_prepare_context_load_custom_connector_rows",
       "nested",
       async () => {
-        return await get((await get(execution$)).customConnectorDefinitions$);
+        return await get(execution.customConnectorDefinitions$);
       },
     );
   });
   const ownedThread$ = computed(async (get) => {
-    const thread = await get(executionThread$);
+    const thread = (await get(pickedEvent$))?.thread;
     if (!thread) {
       return null;
     }
-    const execution = await get(execution$);
     const agent = await get(execution.agent$);
     return agent?.orgId === execution.orgId
       ? { agentId: thread.agentId }
@@ -304,7 +293,7 @@ function createConnectorInputSignals(
 type ThreadAccountSignals = ReturnType<typeof createThreadAccountSignals>;
 
 function createThreadAccountSignals(
-  execution$: ExecutionBootstrap$,
+  execution: AgentRunContextSignals,
   connectorSourceId$: ConnectorSourceId$,
   inputs: ConnectorInputSignals,
 ) {
@@ -341,7 +330,7 @@ function createThreadAccountSignals(
     },
   );
   const accountRows$ = computed(async (get) => {
-    return (await get((await get(execution$)).connectors$)).connectorAccounts;
+    return (await get(execution.connectors$)).connectorAccounts;
   });
   const selectionIds$ = computed(
     async (
@@ -496,7 +485,7 @@ type StoredConnectorRowSignals = ReturnType<
 >;
 
 function createStoredConnectorRowSignals(
-  execution$: ExecutionBootstrap$,
+  execution: AgentRunContextSignals,
   accounts: ThreadAccountSignals,
   prepared: ConnectorPreparationSignals,
 ) {
@@ -506,7 +495,7 @@ function createStoredConnectorRowSignals(
     async (
       get,
     ): Promise<readonly StoredConnectorMaterializationSnapshotRow[]> => {
-      const bootstrap = await get((await get(execution$)).connectors$);
+      const bootstrap = await get(execution.connectors$);
       const byId = new Map(
         bootstrap.connectorSources.flatMap((result) => {
           return result.kind === "available"
@@ -577,7 +566,7 @@ function createStoredConnectorRowSignals(
 }
 
 function createStoredConnectorSnapshotSignals(
-  execution$: ExecutionBootstrap$,
+  execution: AgentRunContextSignals,
   inputs: ConnectorInputSignals,
   storedRows: StoredConnectorRowSignals,
 ) {
@@ -593,13 +582,13 @@ function createStoredConnectorSnapshotSignals(
         return row.connectorId;
       }),
     );
-    return (
-      await get((await get(execution$)).connectors$)
-    ).connectorSources.filter((result) => {
-      const source =
-        result.kind === "available" ? result.snapshot.source : result.source;
-      return source.kind === "builtin" && ids.has(source.sourceId);
-    });
+    return (await get(execution.connectors$)).connectorSources.filter(
+      (result) => {
+        const source =
+          result.kind === "available" ? result.snapshot.source : result.source;
+        return source.kind === "builtin" && ids.has(source.sourceId);
+      },
+    );
   });
   const storedConnectorSnapshot$ = computed(
     async (
@@ -656,7 +645,7 @@ type CustomConnectorStorageSignals = ReturnType<
 >;
 
 function createCustomConnectorStorageSignals(
-  execution$: ExecutionBootstrap$,
+  execution: AgentRunContextSignals,
   inputs: ConnectorInputSignals,
   accounts: ThreadAccountSignals,
 ) {
@@ -685,7 +674,7 @@ function createCustomConnectorStorageSignals(
         return source.sourceId;
       }),
     );
-    const context = await get((await get(execution$)).connectors$);
+    const context = await get(execution.connectors$);
     return {
       sources: context.connectorSources.filter((result) => {
         const source =

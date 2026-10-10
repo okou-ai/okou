@@ -3,7 +3,7 @@ import { computed } from "ccstate";
 import type { z } from "zod";
 import { compactRecord } from "./connector-runtime-preparation.service";
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
-import type { ThreadContext } from "./thread-context.signals";
+import type { AgentRunContextSignals } from "./agent-run-context.signals";
 
 export type RunRequestBody = z.infer<typeof unifiedRunRequestSchema>;
 
@@ -89,10 +89,9 @@ export function selectedAgentRunVariables(agentId: string) {
 
 /** The Run body's own variables and secrets for one execution identity. */
 export function createRunBodyEnvironmentSignal(
-  execution$: ThreadContext["executionBootstrap$"],
+  execution: AgentRunContextSignals,
 ) {
   return computed(async (get) => {
-    const execution = await get(execution$);
     const [agent, environment] = await Promise.all([
       get(execution.agent$),
       get(execution.environment$),

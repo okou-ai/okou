@@ -592,7 +592,6 @@ function queuedPromptRunInput(args: {
     orgId: input.agent.orgId,
     userId: input.userId,
     agentId: input.agent.id,
-    expectedThreadAgentId: input.expectedThreadAgentId,
     threadSessionResolution: args.session,
     featureSwitchContext: args.features,
     prompt: args.promptAndSkills.userPrompt,
@@ -668,22 +667,6 @@ function queuedPromptPreparationRejection(
                 : "CONFLICT",
         message: error.message,
       },
-    },
-  };
-}
-
-function missingQueuedAgentRejection(
-  head: ChatQueueHeadContext,
-): ChatQueueRunAssembly {
-  return {
-    kind: "rejected",
-    rejection: {
-      userId: head.userId,
-      error: {
-        code: "BAD_REQUEST",
-        message: "The organization default agent is unavailable",
-      },
-      delivery: { kind: "source", head },
     },
   };
 }
@@ -1134,17 +1117,10 @@ function finalizeClaimRunContext(
   };
 }
 
-type ClaimProducerBinding =
-  | { readonly kind: "automation"; readonly queueEventId: string }
-  | {
-      readonly kind: "reassign-agent";
-      readonly agentId: string;
-      readonly expectedAgentId: string;
-      readonly userId: string;
-      readonly threadId: string;
-      readonly orgId: string;
-    }
-  | null;
+type ClaimProducerBinding = {
+  readonly kind: "automation";
+  readonly queueEventId: string;
+} | null;
 
 type ClaimQueueRunCommandArgs = ThreadRunCommand;
 
@@ -1590,7 +1566,6 @@ export function createThreadClaimRunObjects(
         }
       : null;
   });
-  const queuedIdentityContext$ = threadContext.executionBootstrap$;
   const resolveQueuedModel$ = threadContext.queuedModel$;
   const promptInputInput$ = computed(
     async (get): Promise<QueuedPromptGraphInput> => {
@@ -1695,25 +1670,19 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const promptAgentAgent$ = threadContext.agentSelection$;
-  const promptExecutionContext$ = threadContext.executionBootstrap$;
   const promptArgsArgs$ = computed(
     async (get): Promise<CreateQueuedChatRunInputArgs> => {
       const { head, timing } = await get(promptInputInput$);
       const db = get(db$);
-      const [queuedMessage, agent] = await Promise.all([
-        get(promptQueuedMessageQueuedMessage$),
-        get(promptAgentAgent$),
-      ]);
-      if (!queuedMessage || queuedMessage.id !== head.id || !agent) {
-        throw new Error("Prompt preparation lost its selected head or agent");
+      const queuedMessage = await get(promptQueuedMessageQueuedMessage$);
+      if (!queuedMessage || queuedMessage.id !== head.id) {
+        throw new Error("Prompt preparation lost its selected head");
       }
       return {
         db,
         threadId: head.chatThreadId,
         userId: head.userId,
-        agent: { id: agent.agentId, orgId: head.orgId },
-        expectedThreadAgentId: agent.expectedThreadAgentId,
+        agent: { id: context.agentId, orgId: head.orgId },
         queuedMessage,
         timing,
       };
@@ -1849,13 +1818,13 @@ export function createThreadClaimRunObjects(
         input: args,
         modelRoute: model.route,
       });
-      const thread = await get(threadContext.executionThread$);
+      const thread = (await get(pickedEvent$))?.thread;
       if (!thread) {
         throw new Error(
           "Chat thread not found while resolving session binding",
         );
       }
-      const agent = await get((await get(promptExecutionContext$)).agent$);
+      const agent = await get(context.agent$);
       return resolveChatThreadSessionSnapshot(
         capturedChatThreadSessionSnapshot(
           thread,
@@ -1991,20 +1960,11 @@ export function createThreadClaimRunObjects(
       if (!head) {
         return { kind: "not-ready" };
       }
-      const selected = await settle(
-        Promise.all([
-          get(promptQueuedMessageQueuedMessage$),
-          get(promptAgentAgent$),
-        ]),
-      );
+      const selected = await settle(get(promptQueuedMessageQueuedMessage$));
       if (!selected.ok) {
         return queuedPromptPreparationRejection(selected.error, head);
       }
-      const [queued, agent] = selected.value;
-      if (queued?.id !== head.id) {
-        return { kind: "not-ready" };
-      }
-      return agent ? null : missingQueuedAgentRejection(head);
+      return selected.value?.id === head.id ? null : { kind: "not-ready" };
     },
   );
   const initializeQueuedPrompt$ = command(
@@ -2060,17 +2020,13 @@ export function createThreadClaimRunObjects(
           rejection: queuedMessageRejection(runInput),
         };
       }
-      const agent = await get(promptAgentAgent$);
-      if (!agent) {
-        return missingQueuedAgentRejection(head);
-      }
       return {
         kind: "assembled",
         run: {
           ...buildQueuedRunCommand(runInput, head.apiStartTime),
           timing: input.runTiming,
         },
-        producerBinding: agent.producerBinding ?? null,
+        producerBinding: null,
         rejection: { kind: "prompt", runInput },
         launchRecord: {
           kind: "prompt",
@@ -2108,7 +2064,6 @@ export function createThreadClaimRunObjects(
       apiStartTime: head.apiStartTime,
       agentId: args.agent.id,
       chatThreadId: args.threadId,
-      expectedThreadAgentId: args.expectedThreadAgentId,
       queueFirstAssociation: {
         threadId: args.threadId,
         eventId: args.queuedMessage.id,
@@ -2142,7 +2097,6 @@ export function createThreadClaimRunObjects(
           ...workflowModelProviderBody(routedModel.effectiveModelProvider),
         },
         chatThreadId: args.threadId,
-        expectedThreadAgentId: args.expectedThreadAgentId,
         queueFirstAssociation: identity.queueFirstAssociation,
         agentRunModelPin: {
           modelProvider: routedModel.effectiveModelProvider ?? null,
@@ -2828,7 +2782,6 @@ export function createThreadClaimRunObjects(
           apiStartTime: input.apiStartTime,
           body: { agentId: input.agentId },
           chatThreadId: input.chatThreadId,
-          expectedThreadAgentId: input.expectedThreadAgentId,
           queueFirstAssociation: input.queueFirstAssociation,
         },
       };
@@ -2874,7 +2827,7 @@ export function createThreadClaimRunObjects(
             return observation.agent;
           }
           // Authorization waits only for the context's Agent snapshot.
-          return await get((await get(executionContext$)).agent$);
+          return await get(context.agent$);
         },
         {
           authorized_request_agent_source:
@@ -2883,11 +2836,13 @@ export function createThreadClaimRunObjects(
       );
     },
   );
-  const executionContext$ = threadContext.executionBootstrap$;
-  const connectorRuntime = createConnectorRuntimeSignals(threadContext);
+  const connectorRuntime = createConnectorRuntimeSignals(
+    context,
+    threadContext,
+  );
   const preCreateBootstrapMetadata$ = computed(async (get) => {
     const startedAt = now();
-    const selected = await get(executionContext$);
+    const selected = context;
     const [
       { timing },
       selection,
@@ -3099,7 +3054,7 @@ export function createThreadClaimRunObjects(
   });
   const preCreateExecutionBootstrapMetadata$ = preCreateBootstrapMetadata$;
   const runDisabledPaidToolsSnapshot$ = computed(async (get) => {
-    const selected = await get(executionContext$);
+    const selected = context;
     return {
       orgId: selected.orgId,
       userId: selected.userId,
@@ -3107,7 +3062,7 @@ export function createThreadClaimRunObjects(
     };
   });
   const runMemberSnapshot$ = computed(async (get) => {
-    const selected = await get(executionContext$);
+    const selected = context;
     return {
       orgId: selected.orgId,
       userId: selected.userId,
@@ -3115,7 +3070,7 @@ export function createThreadClaimRunObjects(
     };
   });
   const runEnvironmentSnapshot$ = computed(async (get) => {
-    const selected = await get(executionContext$);
+    const selected = context;
     return {
       orgId: selected.orgId,
       userId: selected.userId,
@@ -3188,6 +3143,7 @@ export function createThreadClaimRunObjects(
     environment$: connectorEnvironment$,
   } = connectorRuntime;
   const environment$ = createEnvironmentSignals(
+    context,
     threadContext,
     connectorEnvironment$,
   );
@@ -3204,7 +3160,11 @@ export function createThreadClaimRunObjects(
     },
   );
   const prepared = { environment$ };
-  const workflow = createOfficialWorkflowSignals(pickedEvent$, threadContext);
+  const workflow = createOfficialWorkflowSignals(
+    context,
+    pickedEvent$,
+    threadContext,
+  );
   const { officialWorkflow$ } = workflow;
   const userTimezone$ = computed(async (get) => {
     return (
@@ -3251,8 +3211,13 @@ export function createThreadClaimRunObjects(
         timing,
         "api_dispatch_pre_create_agent_resolve_thread_session",
         async () => {
-          const thread = await get(threadContext.executionThread$);
-          if (!thread || thread.id !== threadId) {
+          const thread = (await get(pickedEvent$))?.thread;
+          if (
+            !thread ||
+            thread.id !== threadId ||
+            thread.userId !== command.owner.userId ||
+            thread.agentId !== agent.id
+          ) {
             throw new Error(
               "Chat thread not found while resolving session binding",
             );
@@ -3412,7 +3377,7 @@ export function createThreadClaimRunObjects(
       requests: selection.requests,
       timing: selection.args.timing,
     };
-    const prefetched = await get((await get(executionContext$)).storage$);
+    const prefetched = await get(context.storage$);
     const ownedRequests = input.requests.filter((request) => {
       return !prefetched.lookupKeys.has(
         storageIndexKey(
@@ -3588,7 +3553,7 @@ export function createThreadClaimRunObjects(
       selected.plan.requested.input.storageIndex,
       selected.plan.sessionWriteback?.input.storageIndex ?? new Map(),
     );
-    const cache = await get((await get(executionContext$)).storageCache$);
+    const cache = await get(context.storageCache$);
     const versions = exactStorageVersionsFromIndex(mounts, storageIndex);
     const rows = [
       ...cache.rows,
@@ -3867,7 +3832,7 @@ export function createThreadClaimRunObjects(
           serviceTier: (await get(contextInput$)).args.codexServiceTier,
           resolution: get(usagePricingResolution$),
         },
-        await get((await get(executionContext$)).modelPricing$),
+        await get(context.modelPricing$),
       ),
     });
     if ("kind" in usage) {
@@ -3892,8 +3857,8 @@ export function createThreadClaimRunObjects(
       ? get(selectedRunContextShared.userTimezone$)
       : ((await get(runMemberSnapshot$)).member?.timezone ?? undefined);
   });
-  const imageModel$ = computed(async (get) => {
-    return get((await get(executionContext$)).selectedImageModel$);
+  const imageModel$ = computed((get) => {
+    return get(context.selectedImageModel$);
   });
   const disabledPaidTools$ = computed(async (get) => {
     return (await get(selectedRunContextShared.disabledPaidTools$)).toolIds;
@@ -4013,8 +3978,7 @@ export function createThreadClaimRunObjects(
   const runAdmissionCheckCheckAdmission$ = command(
     async ({ get }, input: RunAdmissionInput, signal: AbortSignal) => {
       signal.throwIfAborted();
-      const identity = await get(queuedIdentityContext$);
-      signal.throwIfAborted();
+      const identity = context;
       const [models, memberModels] = await Promise.all([
         get(identity.modelFacts$),
         get(identity.memberModels$),
@@ -5007,7 +4971,7 @@ export function createThreadClaimRunObjects(
         get(storageMounts$),
         // Connector reads start independently of prompt/model material. A
         // prefetch miss joins the same loader once for this selected identity.
-        get((await get(executionContext$)).connectors$),
+        get(context.connectors$),
         get(threadContext.connectorThreadSelections$),
       ]);
       signal.throwIfAborted();
@@ -5061,7 +5025,7 @@ export function createThreadClaimRunObjects(
     },
   );
   const claimAdmissionFacts$ = computed(async (get) => {
-    const selected = await get(executionContext$);
+    const selected = context;
     const [planCapabilities, featureSwitchContext] = await Promise.all([
       get(selected.plan$),
       get(selected.featureSwitches$),
@@ -7985,7 +7949,6 @@ interface ThreadRunCommand {
   readonly connectorSourceId?: string;
   readonly threadSessionRoute?: ChatThreadSessionRoute;
   /** A producer may atomically move an integration thread to this run's agent. */
-  readonly expectedThreadAgentId?: string;
   readonly computerUseHostId?: string;
   readonly modelProviderId?: string;
   readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
@@ -9145,7 +9108,6 @@ interface AgentRunIdentityInput {
   readonly agentId: string;
   readonly apiStartTime: number;
   readonly chatThreadId: string;
-  readonly expectedThreadAgentId?: string;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
 }
 interface AgentRunGraphInput {
@@ -10441,15 +10403,11 @@ function tailFacts(
     requestMemory:
       Boolean(claim) &&
       isFeatureEnabled(FeatureSwitchKey.PiMemory, args.featureSwitchContext),
-    threadAgentId:
-      claim?.producer?.kind === "reassign-agent"
-        ? claim.producer.expectedAgentId
-        : args.context.resolved.agentId,
+    threadAgentId: args.context.resolved.agentId,
     threadBindingFencesOwnership:
       Boolean(admission.validatedThreadSession) &&
       admission.validatedThreadSession?.threadAgentId ===
-        args.context.resolved.agentId &&
-      claim?.producer?.kind !== "reassign-agent",
+        args.context.resolved.agentId,
     needsBinding:
       Boolean(args.createArgs.chatThreadId) &&
       !admission.validatedThreadSession,

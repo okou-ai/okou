@@ -3,10 +3,7 @@ import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { computed, type Computed } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { db$ } from "../external/db";
-import {
-  matchAgentRunContextSignals,
-  type AgentRunContextSignals,
-} from "./agent-run-context.signals";
+import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
   chatThreadSessionIdentity,
@@ -29,19 +26,6 @@ import {
   createTelegramThreadContext,
 } from "./thread-run-context.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
-
-export interface ThreadAgentSelection {
-  readonly agentId: string;
-  readonly expectedThreadAgentId?: string;
-  readonly producerBinding?: {
-    readonly kind: "reassign-agent";
-    readonly agentId: string;
-    readonly expectedAgentId: string;
-    readonly userId: string;
-    readonly threadId: string;
-    readonly orgId: string;
-  };
-}
 
 export interface ThreadAutomationTarget {
   readonly automation: typeof workflowAutomations.$inferSelect;
@@ -67,12 +51,6 @@ export interface ThreadContext {
   readonly discordContext$: ReturnType<typeof createDiscordThreadContext>;
   readonly automationContext$: ReturnType<typeof createThreadAutomationContext>;
   readonly automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>;
-  readonly agentSelection$: Computed<Promise<ThreadAgentSelection | null>>;
-  readonly executionBootstrap$: Computed<Promise<AgentRunContextSignals>>;
-  /** The picked thread, only while it belongs to the execution identity. */
-  readonly executionThread$: Computed<
-    Promise<PickedThreadInputEvent["thread"] | null>
-  >;
   readonly templates$: ReturnType<typeof createRunTemplates>;
   readonly queuedModel$: ThreadModels["queuedModel$"];
   readonly subscriptionSelection$: ThreadModels["subscriptionSelection$"];
@@ -118,46 +96,21 @@ export function createThreadContext(
   const discordContext$ = createDiscordThreadContext(pickedEvent$, orgId);
   const automationContext$ = createThreadAutomationContext(pickedEvent$);
   const automationTarget$ = createAutomationTarget(automationContext$);
-  const agentSelection$ = createThreadAgentSelection(
-    bootstrap,
-    pickedEvent$,
-    orgId,
-  );
-  const executionBootstrap$ = createThreadExecutionBootstrap(
-    bootstrap,
-    pickedEvent$,
-    automationTarget$,
-    agentSelection$,
-    orgId,
-  );
-  const executionThread$ = createExecutionThread(
-    pickedEvent$,
-    executionBootstrap$,
-    agentSelection$,
-  );
   const templates$ = createRunTemplates(
     pickedEvent$,
     orgId,
     sourceFeatureSwitches$,
   );
-  const computerUseHostGrant$ = createThreadHostGrant(
-    thread$,
-    executionBootstrap$,
-  );
-  const model = createThreadModelSignals(
-    bootstrap,
-    pickedEvent$,
-    executionBootstrap$,
-  );
+  const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
+  const model = createThreadModelSignals(bootstrap, pickedEvent$);
   const connectorSourceId$ = createConnectorSourceId(
     pickedEvent$,
     automationContext$,
     feishuContext$,
   );
   const connectedAccounts = createConnectedAccountsSignals(
+    bootstrap,
     pickedEvent$,
-    executionBootstrap$,
-    executionThread$,
     connectorSourceId$,
     model.dispatchTiming$,
   );
@@ -173,9 +126,6 @@ export function createThreadContext(
     discordContext$,
     automationContext$,
     automationTarget$,
-    agentSelection$,
-    executionBootstrap$,
-    executionThread$,
     templates$,
     queuedModel$: model.queuedModel$,
     subscriptionSelection$: model.subscriptionSelection$,
@@ -214,76 +164,6 @@ function createAutomationTarget(
   });
 }
 
-function createThreadAgentSelection(
-  bootstrap: AgentRunContextSignals,
-  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  orgId: string,
-) {
-  return computed(async (get): Promise<ThreadAgentSelection | null> => {
-    const event = await get(pickedEvent$);
-    if (!event?.agentId) {
-      return null;
-    }
-    if (
-      ![
-        "slack",
-        "feishu",
-        "teams",
-        "discord",
-        "telegram",
-        "agentphone",
-      ].includes(event.contextType ?? "")
-    ) {
-      return { agentId: event.agentId };
-    }
-    const agentId = (await get(bootstrap.orgMetadata$))?.defaultAgentId;
-    if (!agentId) {
-      return null;
-    }
-    if (agentId === event.agentId) {
-      return { agentId };
-    }
-    return {
-      agentId,
-      expectedThreadAgentId: event.agentId,
-      producerBinding: {
-        kind: "reassign-agent",
-        agentId,
-        expectedAgentId: event.agentId,
-        userId: event.userId,
-        threadId: event.chatThreadId,
-        orgId,
-      },
-    };
-  });
-}
-
-function createExecutionThread(
-  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  executionBootstrap$: ThreadContext["executionBootstrap$"],
-  agentSelection$: ThreadContext["agentSelection$"],
-) {
-  return computed(
-    async (get): Promise<PickedThreadInputEvent["thread"] | null> => {
-      const event = await get(pickedEvent$);
-      if (!event) {
-        return null;
-      }
-      const [execution, agentSelection] = await Promise.all([
-        get(executionBootstrap$),
-        get(agentSelection$),
-      ]);
-      const { thread } = event;
-      return thread.id === event.chatThreadId &&
-        thread.userId === execution.userId &&
-        thread.agentId ===
-          (agentSelection?.expectedThreadAgentId ?? execution.agentId)
-        ? thread
-        : null;
-    },
-  );
-}
-
 function createConnectorSourceId(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   automationContext$: ThreadContext["automationContext$"],
@@ -306,52 +186,12 @@ function createConnectorSourceId(
   });
 }
 
-function createThreadExecutionBootstrap(
-  bootstrap: AgentRunContextSignals,
-  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  automationTarget$: ThreadContext["automationTarget$"],
-  agentSelection$: ThreadContext["agentSelection$"],
-  orgId: string,
-) {
-  return computed(async (get) => {
-    const event = await get(pickedEvent$);
-    if (!event) {
-      throw new Error("Thread execution requires a picked event");
-    }
-    if (event.contextType === "automation") {
-      const target = await get(automationTarget$);
-      if (!target) {
-        throw new Error("Automation execution requires its captured target");
-      }
-      return matchAgentRunContextSignals(
-        bootstrap,
-        target.automation.ownerUserId,
-        target.automation.orgId,
-        target.agentId,
-      );
-    }
-    const agent = await get(agentSelection$);
-    if (!agent) {
-      throw new Error("Prompt preparation lost its selected Agent");
-    }
-    return matchAgentRunContextSignals(
-      bootstrap,
-      event.userId,
-      orgId,
-      agent.agentId,
-    );
-  });
-}
-
 function createThreadHostGrant(
+  selected: AgentRunContextSignals,
   thread$: Computed<Promise<ChatThreadRequestRow | null>>,
-  executionBootstrap$: ThreadContext["executionBootstrap$"],
 ) {
   return computed(async (get) => {
-    const [thread, selected] = await Promise.all([
-      get(thread$),
-      get(executionBootstrap$),
-    ]);
+    const thread = await get(thread$);
     if (!thread?.computerUseHostId || thread.userId !== selected.userId) {
       return null;
     }

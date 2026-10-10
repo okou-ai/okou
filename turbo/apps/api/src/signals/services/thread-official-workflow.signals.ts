@@ -7,6 +7,7 @@ import {
   type OfficialWorkflowObservation,
   OfficialWorkflowRunAdmissionError,
 } from "./official-workflow-run.service";
+import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type { ThreadContext } from "./thread-context.signals";
 import type { ThreadModelError } from "./thread-model.signals";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
@@ -42,6 +43,7 @@ function createRequiredOfficialWorkflowIds(
 
 /** Admits the picked event's required Official Workflows for its execution. */
 export function createOfficialWorkflowSignals(
+  bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   threadContext: ThreadContext,
 ) {
@@ -63,9 +65,8 @@ export function createOfficialWorkflowSignals(
     if (await get(workflowModelError$)) {
       return undefined;
     }
-    const execution = await get(threadContext.executionBootstrap$);
     const [observation, requiredOfficialWorkflowIds] = await Promise.all([
-      get(execution.officialWorkflowObservation$),
+      get(bootstrap.officialWorkflowObservation$),
       get(requiredOfficialWorkflowIds$),
     ]);
     assertRequiredOfficialWorkflows(observation, requiredOfficialWorkflowIds);
@@ -90,9 +91,7 @@ export function createOfficialWorkflowSignals(
     },
   );
   const officialWorkflowFacts$ = computed(async (get) => {
-    return await get(
-      (await get(threadContext.executionBootstrap$)).officialWorkflows$,
-    );
+    return await get(bootstrap.officialWorkflows$);
   });
   return { officialWorkflow$, officialWorkflowFacts$ };
 }

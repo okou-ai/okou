@@ -11,6 +11,7 @@ import {
   type Environment,
   mergeEnvironments,
 } from "./run-environment";
+import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type { ThreadContext } from "./thread-context.signals";
 import type { ThreadModelError } from "./thread-model.signals";
 
@@ -22,11 +23,10 @@ function isEnvironmentError(value: unknown): value is EnvironmentError {
 
 /** The selected model provider's environment, secrets and firewall. */
 export function createModelProviderEnvironmentSignals(
+  bootstrap: AgentRunContextSignals,
   threadContext: ThreadContext,
 ) {
-  const bodyEnvironment$ = createRunBodyEnvironmentSignal(
-    threadContext.executionBootstrap$,
-  );
+  const bodyEnvironment$ = createRunBodyEnvironmentSignal(bootstrap);
   return computed(async (get): Promise<Environment | EnvironmentError> => {
     const [modelProvider, body] = await Promise.all([
       get(threadContext.modelRoute$),
@@ -78,11 +78,14 @@ export function createModelProviderEnvironmentSignals(
  * override connector ones; its firewall is matched first.
  */
 export function createEnvironmentSignals(
+  bootstrap: AgentRunContextSignals,
   threadContext: ThreadContext,
   connectorEnvironment$: Computed<Promise<Environment | EnvironmentError>>,
 ) {
-  const modelProviderEnvironment$ =
-    createModelProviderEnvironmentSignals(threadContext);
+  const modelProviderEnvironment$ = createModelProviderEnvironmentSignals(
+    bootstrap,
+    threadContext,
+  );
   return computed(async (get): Promise<Environment | EnvironmentError> => {
     const [connector, modelProvider] = await Promise.all([
       get(connectorEnvironment$),
