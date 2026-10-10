@@ -152,6 +152,34 @@ def test_costly_cases_are_balanced_without_losing_order_or_coverage(suite: Path)
         ]
 
 
+@pytest.mark.shard_cost(1)
+def test_mixed_costs_balance_a_reverse_order_workload(suite: Path) -> None:
+    # Equal case counts can hide unequal work. This reverse-cost collection
+    # balances to 20 per shard; ignoring costs or assigning smallest first
+    # leaves a 22/18 split, even though both shards contain three costly cases.
+    costs = (4, 5.0, 6, 7, 8, 10)
+    costly = {
+        f"tests/test_costs.py::test_expensive{index}": cost for index, cost in enumerate(costs)
+    }
+    (suite / "tests/test_costs.py").write_text(
+        "import pytest\n"
+        + "".join(
+            f"@pytest.mark.shard_cost({cost})\ndef test_expensive{index}():\n    assert True\n"
+            for index, cost in enumerate(costs)
+        )
+    )
+    first, first_nodes = _run_suite(suite, ("--test-shard=1/2",))
+    second, second_nodes = _run_suite(suite, ("--test-shard=2/2",), hash_seed="42")
+    for result in (first, second):
+        assert result.returncode == pytest.ExitCode.OK, result.stdout + result.stderr
+    assert first_nodes["collected"] == second_nodes["collected"]
+    assert Counter(first_nodes["selected"] + second_nodes["selected"]) == Counter(
+        first_nodes["collected"]
+    )
+    for report in (first_nodes, second_nodes):
+        assert sum(costly.get(node, 0) for node in report["selected"]) == 20
+
+
 @pytest.mark.parametrize(
     "arguments",
     [
