@@ -629,6 +629,9 @@ export const rustTypeBindings = [
           guest_root_filesystem_full: [
             "The sandbox root filesystem ran out of free blocks or inodes.",
           ],
+          guest_home_filesystem_full: [
+            "The sandbox home filesystem ran out of free blocks or inodes.",
+          ],
           execution_timeout: ["The run reached its execution time limit."],
           insufficient_credits: ["The vm0 workspace lacks credits."],
           provider_insufficient_credits: [

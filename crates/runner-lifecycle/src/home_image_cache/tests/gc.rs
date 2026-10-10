@@ -89,10 +89,35 @@ async fn gc_dry_run_retains_generation_and_uses_actual_allocated_bytes() {
 }
 
 #[test]
+fn budget_preserves_zero_small_and_saturating_arithmetic_boundaries() {
+    for (total_bytes, maximum, target, reserve) in [
+        (0, 0, 0, 50 * GIB),
+        (1, 0, 0, 50 * GIB),
+        (
+            u64::MAX,
+            u64::MAX / 100,
+            (u64::MAX / 100) * 75 / 100,
+            u64::MAX / 100,
+        ),
+    ] {
+        let budget = CacheBudget::from_fs_stats(FsStats {
+            total_bytes,
+            total_inodes: 100,
+            available_inodes: 0,
+            ..FsStats::default()
+        });
+        assert_eq!(budget.max_cache_bytes, maximum);
+        assert_eq!(budget.target_after_gc_bytes, target);
+        assert_eq!(budget.min_free_bytes, reserve);
+    }
+}
+
+#[test]
 fn safe_default_budget_and_gc_target_are_exact_without_host_percentage_entry_cap() {
     let stats = FsStats {
         total_bytes: 400 * GIB,
         available_bytes: 200 * GIB,
+        ..FsStats::default()
     };
     let budget = CacheBudget::from_fs_stats(stats);
     assert_eq!(budget.max_cache_bytes, 200 * GIB);
@@ -101,6 +126,7 @@ fn safe_default_budget_and_gc_target_are_exact_without_host_percentage_entry_cap
     let big = CacheBudget::from_fs_stats(FsStats {
         total_bytes: 2000 * GIB,
         available_bytes: 1000 * GIB,
+        ..FsStats::default()
     });
     assert_eq!(big.min_free_bytes, 200 * GIB);
     assert!(!super::super::gc::gc_budget_satisfied(

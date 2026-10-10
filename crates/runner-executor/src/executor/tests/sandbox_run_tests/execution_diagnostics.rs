@@ -973,7 +973,7 @@ async fn execute_inner_abnormal_exit_collects_guest_diagnostics() {
         pattern: "guest-agent-binary".to_string(),
         exit_code: 0,
         stdout: format!(
-            "/dev/root       7.8G  7.4G   20K 100% /\n/dev/vdb         16G   24K   15G   1% /home/user/workspace\nMem:            3934        3310         255           0         552         624\n{}\n== rootfs-usage ==\n/tmp bytes=4194304 entries=4096 status=partial reason=entries\n== processes ==\n73\n",
+            "/dev/root       7.8G  7.4G   20K 100% /\n/dev/vdb         24G   24K   23G   1% /home/user\nMem:            3934        3310         255           0         552         624\n{}\n== rootfs-usage ==\n/tmp bytes=4194304 entries=4096 status=partial reason=entries\n== processes ==\n73\n",
             "x".repeat(5000)
         ).into_bytes(),
         stderr: Vec::new(),
@@ -1001,10 +1001,7 @@ async fn execute_inner_abnormal_exit_collects_guest_diagnostics() {
     );
     assert_eq!(resource_diagnostics.guest_root_fs_used_percent, Some(100));
     assert_eq!(resource_diagnostics.guest_root_fs_available_kb, Some(20));
-    assert_eq!(
-        resource_diagnostics.guest_workspace_fs_used_percent,
-        Some(1)
-    );
+    assert_eq!(resource_diagnostics.guest_home_fs_used_percent, Some(1));
     assert_eq!(resource_diagnostics.guest_memory_available_mb, Some(624));
     let calls = overrides.exec_calls();
     let diagnostic_calls: Vec<&sandbox_mock::ExecCall> = calls
@@ -1033,8 +1030,8 @@ async fn execute_inner_abnormal_exit_collects_guest_diagnostics() {
             .any(|line| line == "env" || line.starts_with("env ")),
         "diagnostic command must not collect raw environment output"
     );
-    assert!(active_diagnostic_cmd.contains("df -P -k / /home/user/workspace"));
-    assert!(active_diagnostic_cmd.contains("df -P -i / /home/user/workspace"));
+    assert!(active_diagnostic_cmd.contains("df -P -k / /home/user"));
+    assert!(active_diagnostic_cmd.contains("df -P -i / /home/user"));
     for command in ["ls -l", "stat", "file", "sha256sum"] {
         let expected = format!(
             "{command} {} 2>&1",
@@ -1092,7 +1089,7 @@ async fn execute_inner_keeps_partial_resource_output_when_diagnostic_helper_fail
         ExecResult {
             termination: ExecTermination::WaitFailed,
             guest_duration_ms: None,
-            stdout: b"/dev/root       7.8G  7.4G   20K 100% /\n/dev/vdb         16G   24K   15G   1% /home/user/workspace\nMem:            3934        3310         255           0         552         624\n\n== rootfs-usage ==\n/tmp status=started\n".to_vec(),
+            stdout: b"/dev/root       7.8G  7.4G   20K 100% /\n/dev/vdb         24G   24K   23G   1% /home/user\nMem:            3934        3310         255           0         552         624\n\n== rootfs-usage ==\n/tmp status=started\n".to_vec(),
             stderr: b"wait failed".to_vec(),
             diagnostic: String::new(),
             stdout_truncated: false,
@@ -1342,6 +1339,72 @@ async fn execute_inner_codex_enospc_preserves_structured_failure_and_collects_re
             .count(),
         1
     );
+}
+
+#[tokio::test]
+async fn execute_inner_disk_diagnostics_distinguish_home_rootfs_and_missing_evidence() {
+    for (sample, expected) in [
+        (
+            "VM0_DF_BLOCKS_V1\n/dev/root 10000 100 9900 1% /\n/dev/vdb 20000 20000 0 100% /home/user\n",
+            Some(ResourceFailureKind::GuestHomeFilesystemFull),
+        ),
+        (
+            "VM0_DF_BLOCKS_V1\n/dev/root 10000 100 9900 1% /\n/dev/vdb 20000 100 19900 1% /home/user\nVM0_DF_INODES_V1\n/dev/vdb 1000 1000 0 100% /home/user\n",
+            Some(ResourceFailureKind::GuestHomeFilesystemFull),
+        ),
+        (
+            "VM0_DF_BLOCKS_V1\n/dev/root 10000 10000 0 100% /\n/dev/vdb 20000 20000 0 100% /home/user\n",
+            Some(ResourceFailureKind::GuestRootFilesystemFull),
+        ),
+        (
+            "VM0_DF_BLOCKS_V1\n/dev/root 10000 100 9900 1% /\nVM0_DF_INODES_V1\n/dev/root 1000 1000 0 100% /\n",
+            Some(ResourceFailureKind::GuestRootFilesystemFull),
+        ),
+        ("df: unavailable\n", None),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let config = test_executor_config(dir.path()).await;
+        let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+        overrides.push_wait_process_exit(ProcessExit::new(1, 1, Vec::new(), Vec::new()));
+        let diagnostic = FailureDiagnostic::new(
+            FailureClass::CliNonzero,
+            AgentFramework::Codex,
+            PromptMetadata::from_prompt("continue"),
+        )
+        .with_cli_exit_code(1)
+        .with_failure_detail_source(FailureDetailSource::CodexJsonl);
+        overrides.push_read_file_result(Ok(Some(serde_json::to_vec(&diagnostic).unwrap())));
+        overrides
+            .push_read_file_result(Ok(Some(b"No space left on device (os error 28)".to_vec())));
+        overrides.add_exec_matcher(sandbox_mock::ExecMatcher {
+            pattern: "guest-agent-binary".into(),
+            exit_code: 0,
+            stdout: sample.as_bytes().to_vec(),
+            stderr: Vec::new(),
+        });
+        let factory = sandbox_mock::MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+        let outcome =
+            run_new_sandbox_outcome(&factory, &minimal_context(), &config, &default_params())
+                .await
+                .unwrap();
+        let failure = outcome.failure.expect("execution failed");
+        assert_eq!(
+            failure.resource_diagnostics.and_then(|d| d.failure_kind),
+            expected,
+            "{sample}"
+        );
+        assert_eq!(failure.diagnostic, Some(diagnostic));
+        assert_eq!(failure.exit_code, 1);
+        assert_eq!(overrides.start_agent_process_calls().len(), 1);
+        if expected == Some(ResourceFailureKind::GuestHomeFilesystemFull) {
+            let observed = failure.resource_diagnostics.unwrap();
+            assert_eq!(observed.guest_root_fs_used_percent, Some(1));
+            assert!(
+                observed.guest_home_fs_available_kb == Some(0)
+                    || observed.guest_home_fs_available_inodes == Some(0)
+            );
+        }
+    }
 }
 
 #[tokio::test]

@@ -166,8 +166,10 @@ separate. Home persistence does not widen user artifact export: collection stays
 within the declared/cwd artifact boundary, not a full-home export. Explicit npm
 cache settings remain honored, without an out-of-home persistence promise.
 
-Default retention keeps the total allocated-byte maximum at 50% of host capacity,
-the GC target at 75% of that maximum and the free reserve at max(10%, 50 GiB).
+Code-defined retention keeps the total allocated-byte maximum at 50% of the
+cache filesystem's capacity, the GC target at 75% of that maximum and the free
+reserve at max(10%, 50 GiB). There are no host-budget YAML, environment or CLI
+overrides; inode observations do not change this byte-based GC policy.
 Individual eligibility uses the exact configured profile shape, not an unrelated
 percentage-of-host single-image cap. Fresh accounting includes image generations,
 metadata, candidate/orphan staging and cross-device sparse-copy peak headroom.
@@ -176,6 +178,57 @@ locks and routine single-flight GC remain authoritative. Unlink in the Guest is
 not proof that host allocation was reclaimed. Retention controls must not resize
 configured disks or widen thread isolation. These defaults are safety policy,
 not measured fleet sizing.
+
+### Filesystem observation and operator monitoring
+
+Guest periodic telemetry reports independent optional `rootfs` and `home`
+objects with used/total/available bytes and inodes. Legacy `disk_used` and
+`disk_total` still describe rootfs. Missing, unsafe or unmounted home is omitted,
+not substituted with rootfs or a zero measurement. The API accepts legacy
+payloads and discards malformed optional observations without dropping the
+otherwise valid batch. Flat telemetry dimensions use `rootfs_*` and `home_*`.
+
+Failure diagnostics probe `/` and `/home/user` separately. Byte exhaustion or
+zero available inodes on home yields `guest_home_filesystem_full`; rootfs uses
+`guest_root_filesystem_full`, with rootfs precedence when both are full. Missing
+evidence cannot establish either classification. The rootfs usage sampler
+excludes the entire home mount even when it appears on the same device.
+
+`runner home-image-cache info --json` and `list --limit 1024 --json` expose
+canonical `fsStats`, fixed `budget`, and `measurementsComplete` alongside the
+existing summary. `list` also exposes `entriesComplete`: a display limit does
+not truncate summary totals. Locked entry placeholders are unavailable;
+aggregate size/status totals then remain lower bounds, including when the
+locked entry falls outside the displayed list. This non-blocking snapshot is
+best-effort, not an atomic whole-host capacity reservation. Retained/staging
+allocation excludes active/idle home, rootfs COW, shared images/snapshots,
+archives, logs and other consumers; filesystem availability includes their use.
+
+The independent Ansible collector scans the home cache directory directly;
+it does not depend on a Runner executable or release. Provisioning retains its
+Ansible-content hash. The read-only scan counts allocated blocks across each
+cache entry, including retained generations, staging files, metadata and
+directories, without following symlinks or counting hard-linked inodes twice.
+It does not interpret cache metadata, classify reuse eligibility or enforce the
+cache budget. Use the CLI for those details.
+
+The collector atomically replaces `home-image-cache.prom` with fixed-label
+`vm0_home_image_cache_*` metrics. Check `snapshot_available`,
+`measurements_complete`, `entries_complete`, `bucket_measurements_complete` and
+`allocation_lower_bound` before using allocation totals or size buckets.
+The non-atomic scan is bounded to 1,024 entries, 32,768 paths, depth 32 and
+15 seconds; partial totals are lower bounds and buckets include only fully
+measured entries. An absent or unreadable cache
+replaces stale success with availability/completeness signals only, not zero
+allocation. Require a recent `collection_timestamp_seconds` (or exporter
+textfile mtime) and a healthy collector unit: filesystem/publishing failures can
+prevent replacement, and the last textfile must not then imply fresh success.
+No key, profile, project path,
+environment value or file content is published. Provisioning stops/removes old
+workspace collector units and their textfile, never cache entries. Update
+external dashboards/alerts to this namespace and treat absent gauges as
+unavailable; rolling the collector back does not make old-layout metrics valid
+for home generations. No historical query translation is performed.
 
 ## Idle Home Reclamation Concurrency
 

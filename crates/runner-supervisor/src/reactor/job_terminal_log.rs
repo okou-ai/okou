@@ -217,6 +217,9 @@ fn log_job_execution_failed(
                     resource_fields.guest_root_fs_inode_used_percent,
                 guest_root_fs_available_inodes = resource_fields.guest_root_fs_available_inodes,
                 guest_home_fs_used_percent = resource_fields.guest_home_fs_used_percent,
+                guest_home_fs_available_kb = resource_fields.guest_home_fs_available_kb,
+                guest_home_fs_inode_used_percent = resource_fields.guest_home_fs_inode_used_percent,
+                guest_home_fs_available_inodes = resource_fields.guest_home_fs_available_inodes,
                 guest_memory_available_mb = resource_fields.guest_memory_available_mb,
                 $message
             )
@@ -234,7 +237,7 @@ fn log_job_execution_failed(
             if failure
                 .resource_diagnostics
                 .and_then(|diagnostics| diagnostics.failure_kind)
-                == Some(executor::ResourceFailureKind::GuestRootFilesystemFull)
+                .is_some_and(executor::ResourceFailureKind::is_filesystem_full)
                 || diagnostic.is_some_and(is_info_level_job_failure) =>
         {
             emit_job_execution_failed!(tracing::Level::INFO, "job execution failed");
@@ -252,6 +255,9 @@ struct JobResourceLogFields {
     guest_root_fs_inode_used_percent: Option<u64>,
     guest_root_fs_available_inodes: Option<u64>,
     guest_home_fs_used_percent: Option<u64>,
+    guest_home_fs_available_kb: Option<u64>,
+    guest_home_fs_inode_used_percent: Option<u64>,
+    guest_home_fs_available_inodes: Option<u64>,
     guest_memory_available_mb: Option<u64>,
 }
 
@@ -468,11 +474,16 @@ impl From<Option<executor::ResourceFailureDiagnostics>> for JobResourceLogFields
                 .map(u64::from),
             guest_root_fs_available_inodes: diagnostics
                 .and_then(|diagnostics| diagnostics.guest_root_fs_available_inodes),
-            // The fixed cwd probe observes the mounted home filesystem.
-            // Dedicated home byte/inode diagnostics are a separate extension.
             guest_home_fs_used_percent: diagnostics
-                .and_then(|diagnostics| diagnostics.guest_workspace_fs_used_percent)
+                .and_then(|diagnostics| diagnostics.guest_home_fs_used_percent)
                 .map(u64::from),
+            guest_home_fs_available_kb: diagnostics
+                .and_then(|diagnostics| diagnostics.guest_home_fs_available_kb),
+            guest_home_fs_inode_used_percent: diagnostics
+                .and_then(|diagnostics| diagnostics.guest_home_fs_inode_used_percent)
+                .map(u64::from),
+            guest_home_fs_available_inodes: diagnostics
+                .and_then(|diagnostics| diagnostics.guest_home_fs_available_inodes),
             guest_memory_available_mb: diagnostics
                 .and_then(|diagnostics| diagnostics.guest_memory_available_mb),
         }
@@ -1590,7 +1601,10 @@ mod tests {
                 guest_root_fs_available_kb: Some(20),
                 guest_root_fs_inode_used_percent: Some(99),
                 guest_root_fs_available_inodes: Some(42),
-                guest_workspace_fs_used_percent: Some(1),
+                guest_home_fs_used_percent: Some(1),
+                guest_home_fs_available_kb: Some(10240),
+                guest_home_fs_inode_used_percent: Some(2),
+                guest_home_fs_available_inodes: Some(400),
                 guest_memory_available_mb: Some(624),
             }));
 
@@ -1615,6 +1629,38 @@ mod tests {
         assert_field_eq(&event, "guest_root_fs_available_inodes", "42");
         assert_field_eq(&event, "guest_home_fs_used_percent", "1");
         assert_field_eq(&event, "guest_memory_available_mb", "624");
+    }
+
+    #[test]
+    fn home_filesystem_full_logs_and_completes_with_independent_counters() {
+        let failure = executor::ExecutionFailure::new(1, "disk full", None)
+            .with_resource_diagnostics(Some(executor::ResourceFailureDiagnostics {
+                failure_kind: Some(executor::ResourceFailureKind::GuestHomeFilesystemFull),
+                guest_root_fs_used_percent: Some(40),
+                guest_home_fs_used_percent: Some(100),
+                guest_home_fs_available_kb: Some(0),
+                guest_home_fs_inode_used_percent: Some(100),
+                guest_home_fs_available_inodes: Some(0),
+                ..Default::default()
+            }));
+        let event = capture_job_failure_log(&failure);
+        assert_eq!(event.level, Level::INFO);
+        assert_field_eq(
+            &event,
+            "resource_failure_kind",
+            "guest_home_filesystem_full",
+        );
+        assert_field_eq(&event, "guest_root_fs_used_percent", "40");
+        assert_field_eq(&event, "guest_home_fs_used_percent", "100");
+        assert_field_eq(&event, "guest_home_fs_available_kb", "0");
+        assert_field_eq(&event, "guest_home_fs_inode_used_percent", "100");
+        assert_field_eq(&event, "guest_home_fs_available_inodes", "0");
+        assert_eq!(crate::job_lifecycle::completion_failure_reason(1, false, Some(&failure)),
+            Some(api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason::GuestHomeFilesystemFull));
+        assert_eq!(
+            crate::job_lifecycle::completion_failure_reason(1, true, Some(&failure)),
+            None
+        );
     }
 
     #[test]
@@ -1706,7 +1752,10 @@ mod tests {
             guest_root_fs_available_kb: Some(20),
             guest_root_fs_inode_used_percent: Some(99),
             guest_root_fs_available_inodes: Some(42),
-            guest_workspace_fs_used_percent: Some(1),
+            guest_home_fs_used_percent: Some(1),
+            guest_home_fs_available_kb: Some(10240),
+            guest_home_fs_inode_used_percent: Some(2),
+            guest_home_fs_available_inodes: Some(400),
             guest_memory_available_mb: Some(624),
         };
         let generic_failure =

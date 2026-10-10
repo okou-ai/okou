@@ -15,6 +15,9 @@ async fn real_filesystem_stats_use_existing_parent_without_creating_cache_dirs()
     assert_eq!(stats.total_bytes, parent.total_bytes);
     assert!(stats.total_bytes > 0);
     assert!(stats.available_bytes <= stats.total_bytes);
+    assert_eq!(stats.total_inodes, parent.total_inodes);
+    assert!(stats.total_inodes > 0);
+    assert!(stats.available_inodes <= stats.total_inodes);
     assert!(!root.exists());
 }
 

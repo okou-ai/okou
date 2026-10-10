@@ -759,6 +759,29 @@ export const webhookHeartbeatContract = c.router({
   },
 });
 
+const filesystemCounterSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(Number.MAX_SAFE_INTEGER);
+const filesystemObservationSchema = z
+  .object({
+    used_bytes: filesystemCounterSchema,
+    total_bytes: filesystemCounterSchema,
+    available_bytes: filesystemCounterSchema,
+    used_inodes: filesystemCounterSchema,
+    total_inodes: filesystemCounterSchema,
+    available_inodes: filesystemCounterSchema,
+  })
+  .refine((fs) => {
+    return (
+      fs.used_bytes <= fs.total_bytes &&
+      fs.available_bytes <= fs.total_bytes - fs.used_bytes &&
+      fs.used_inodes <= fs.total_inodes &&
+      fs.available_inodes <= fs.total_inodes - fs.used_inodes
+    );
+  });
+
 /**
  * Metric data point schema
  */
@@ -776,6 +799,9 @@ const metricDataSchema = z.object({
   mem_total: z.number(),
   disk_used: z.number(),
   disk_total: z.number(),
+  // A bad optional filesystem sample must not reject the telemetry batch.
+  rootfs: filesystemObservationSchema.optional().catch(undefined),
+  home: filesystemObservationSchema.optional().catch(undefined),
   control_cpu_usage_usec: z.number().optional(),
   control_cpu_nr_throttled: z.number().optional(),
   control_cpu_throttled_usec: z.number().optional(),
