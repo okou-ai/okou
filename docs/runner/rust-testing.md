@@ -175,6 +175,11 @@ Remove redundant setup and observation instead of reducing a slow test's workloa
 A sequential authentication matrix may share freshly generated invariant synthetic
 server material within that test, but each client exchange and session proof must
 remain independent. Do not commit private keys or cache production credentials.
+Batch consecutive fixture filesystem setup in one blocking task only when no
+assertion, peer interaction or scheduling gate lies between the operations.
+Retain every real filesystem operation and await the batch before publishing
+metadata or entering the behavior under test. Immutable descriptor prefixes may
+be reused only while each original on-disk entry and resource state stays independent.
 
 Count recorded events under their owner's lock when waiting for quiescence;
 clone complete bodies only when an owned snapshot is needed. Never hold a
