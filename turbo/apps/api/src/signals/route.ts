@@ -82,7 +82,6 @@ import { cronSteerRunTimeBudgetRoutes } from "./routes/cron-steer-run-time-budge
 import { cronSyncSkillsRoutes } from "./routes/cron-sync-skills";
 import { cronTelegramCleanupRoutes } from "./routes/cron-telegram-cleanup";
 import { customConnectorsRoutes } from "./routes/custom-connectors";
-import { desktopAuthRoutes } from "./routes/desktop-auth";
 import { desktopUpdateRoutes } from "./routes/desktop-updates";
 import { discordGatewayRoutes } from "./routes/discord-gateway";
 import { discordInteractionsRoutes } from "./routes/discord-interactions";
@@ -239,7 +238,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...buildInfoRoutes,
   ...authMeRoutes,
   ...cliAuthRoutes,
-  ...desktopAuthRoutes,
   ...desktopUpdateRoutes,
   ...githubOauthRoutes,
   ...userExportRoutes,

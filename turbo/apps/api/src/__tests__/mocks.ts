@@ -156,9 +156,6 @@ export interface ApiTestMocks {
       readonly getOrganizationMembershipList: AsyncMock;
       readonly updateUserMetadata: AsyncMock;
     };
-    readonly signInTokens: {
-      readonly createSignInToken: AsyncMock;
-    };
     readonly m2m: {
       readonly createToken: AsyncMock;
     };
@@ -412,9 +409,6 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
       getOrganizationMembershipList:
         vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       updateUserMetadata: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
-    },
-    signInTokens: {
-      createSignInToken: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     },
     m2m: {
       createToken: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -1537,7 +1531,6 @@ export function resetApiTestMocks(): void {
   apiTestMocks.clerk.users.getUserList.mockResolvedValue({ data: [] });
   apiTestMocks.clerk.users.getOrganizationMembershipList.mockReset();
   apiTestMocks.clerk.users.updateUserMetadata.mockReset();
-  apiTestMocks.clerk.signInTokens.createSignInToken.mockReset();
   apiTestMocks.clerk.m2m.createToken.mockReset();
   apiTestMocks.s3.send.mockReset();
   apiTestMocks.s3.getSignedUrl.mockReset();

@@ -907,20 +907,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Desktop にサインインしました。このウィンドウを閉じられます。",
-        "connecting": "デスクトップのセッションを接続しています。",
-        "consumed": "Desktop でサインインを完了しています。このウィンドウを開いたままにしてください。",
-        "failed": "サインインを完了できませんでした。Desktop からやり直すか、このブラウザーで再試行してください。",
-        "no-workspaces": "ウェブアプリでワークスペースを作成するか参加してから、Desktop で再度サインインしてください。",
-        "pending": "Desktop を開いてサインインを続けてください。",
-        "selecting": "このコンピューターで使うワークスペースを選んでください。"
-      },
-      "reopen": "Desktop を開く",
-      "retry": "再試行",
-      "title": "Desktop にサインイン"
-    },
     "documentTitles": {
       "signIn": "サインイン",
       "signUp": "サインアップ"
