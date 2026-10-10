@@ -315,10 +315,22 @@ const readCatalogFileRow$ = command(
  * An optional mutation must return id, org_id, user_id, chat_thread_id, run_id
  * and url. Its RETURNING rows supply the handoff's current file values because
  * a sibling CTE cannot see the mutation by rereading the base table.
+ * `if-mutated` also gates ineligible cleanup on a returned row; the default
+ * retains cleanup for a missing file, including an empty mutation result.
  */
 export function queueArtifactCatalogFileSql(
   fileId: string,
   fileMutation?: SQL,
+): SQL;
+export function queueArtifactCatalogFileSql(
+  fileId: string,
+  fileMutation: SQL,
+  handoff: "if-mutated",
+): SQL;
+export function queueArtifactCatalogFileSql(
+  fileId: string,
+  fileMutation?: SQL,
+  handoff?: "if-mutated",
 ): SQL {
   const file = fileMutation
     ? {
@@ -343,6 +355,10 @@ export function queueArtifactCatalogFileSql(
   const nonEmptyOrg = fileMutation
     ? ne(sql`mutated_file.org_id`, "")
     : ne(runUploadedFiles.orgId, "");
+  const cleanupCondition =
+    handoff === "if-mutated"
+      ? sql`${exists(sql`(SELECT 1 FROM mutated_file)`)} AND ${notExists(sql`(SELECT 1 FROM eligible_file)`)}`
+      : notExists(sql`(SELECT 1 FROM eligible_file)`);
   return sql`
     WITH ${mutationCte}eligible_file AS (
       SELECT ${file.id} AS file_id,
@@ -369,11 +385,11 @@ export function queueArtifactCatalogFileSql(
     ), removed_artifacts AS (
       DELETE FROM ${artifacts}
       WHERE ${eq(artifacts.projectionFileId, fileId)}
-        AND ${notExists(sql`(SELECT 1 FROM eligible_file)`)}
+        AND ${cleanupCondition}
     ), removed_pending AS (
       DELETE FROM ${artifactCatalogPendingFiles}
       WHERE ${eq(artifactCatalogPendingFiles.fileId, fileId)}
-        AND ${notExists(sql`(SELECT 1 FROM eligible_file)`)}
+        AND ${cleanupCondition}
     )
     INSERT INTO ${artifactCatalogPendingFiles} (file_id, org_id, author_user_id, queued_at)
     SELECT file_id, org_id, author_user_id, clock_timestamp() FROM eligible_file
