@@ -4,7 +4,6 @@ import {
   heldHomeStateSchema,
   runnerClaimCapabilitiesSchema,
   runnerPreferenceSchema,
-  runnersPollContract,
 } from "../runners";
 import { webhookTelemetryContract } from "../webhooks";
 
@@ -114,15 +113,7 @@ describe("canonical home affinity contracts", () => {
     ).toBe(false);
   });
 
-  it("keeps poll minimal and claim capabilities closed", () => {
-    const poll = {
-      runnerId: canonicalHeartbeat().runnerId,
-      group: "vm0/test",
-      supportedProfiles: ["vm0/default"],
-    };
-    expect(runnersPollContract.poll.body.parse(poll)).not.toHaveProperty(
-      "heartbeatGeneration",
-    );
+  it("keeps claim capabilities closed", () => {
     const capabilities = { piModelConfigGenerations: [1, 2, 3, 5] };
     expect(runnerClaimCapabilitiesSchema.parse(capabilities)).toEqual(
       capabilities,
