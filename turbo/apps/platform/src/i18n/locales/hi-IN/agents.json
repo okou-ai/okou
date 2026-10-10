@@ -444,10 +444,6 @@
           "support-ticket-router": {
             "description": "टिकट Notion पर जाते हैं और अत्यावश्यक टिकट Slack पर पिंग करते हैं",
             "title": "समर्थन टिकट राउटर"
-          },
-          "zendesk-notion-knowledge-base": {
-            "description": "अक्सर पूछे जाने वाले Zendesk प्रश्न निकालें और उन्हें Notion FAQ में स्वतः जोड़ें",
-            "title": "ज़ेंडेस्क → Notion ज्ञानकोष"
           }
         },
         "title": "सहायता"

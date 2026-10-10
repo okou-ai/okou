@@ -136,9 +136,9 @@ const defaultPublicCatalogStatus = [
     authMethods: [authCodeMethod(), manualMethod([tokenField])],
   }),
   defaultPublicCatalogStatusItem({
-    connectorSlug: "zendesk",
-    label: "Zendesk",
-    description: "Manage support data through the Zendesk API.",
+    connectorSlug: "test-subdomain",
+    label: "Test Subdomain",
+    description: "Test manual grants with connector-owned subdomain variables.",
     tags: ["api", "support"],
     authMethods: [
       manualMethod([

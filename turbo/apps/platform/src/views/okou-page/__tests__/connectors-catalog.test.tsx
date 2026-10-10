@@ -336,7 +336,7 @@ function shelfCatalog() {
     "Discord",
     "Telegram",
     "Lark",
-    "Zendesk",
+    "Test Subdomain",
     "Intercom",
     "Mailchimp",
     "Resend",
@@ -395,7 +395,7 @@ test("Browse the catalog as shelves, then enter a category and come back", async
   expect(
     screen.queryByTestId("connector-shelf-communication-collaboration"),
   ).toBeNull();
-  expect(getConnectorCard("Zendesk")).toBeInTheDocument();
+  expect(getConnectorCard("Test Subdomain")).toBeInTheDocument();
 
   // Entering a category asks the API for that category, so the view holds all
   // of it -- the count on the way in is a promise the page has to keep.

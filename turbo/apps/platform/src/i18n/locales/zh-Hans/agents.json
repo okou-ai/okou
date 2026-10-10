@@ -444,10 +444,6 @@
           "support-ticket-router": {
             "description": "工单进Notion，紧急的在Slack提醒",
             "title": "工单分发"
-          },
-          "zendesk-notion-knowledge-base": {
-            "description": "提取Zendesk上的高频问题，自动补进Notion的FAQ",
-            "title": "Zendesk → Notion知识库"
           }
         },
         "title": "客户支持"

@@ -2354,28 +2354,6 @@
     "versionFileCount": 1
   },
   {
-    "url": "https://github.com/okou-ai/okou-skills/tree/main/greenhouse",
-    "name": "greenhouse",
-    "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/greenhouse/a56b42078c11381de4b9d40f506722ddc2054e5c8b3e67fa7147f7bf85131200",
-    "message": "Synced from vm0-ai/vm0-skills@0b6531f",
-    "fullPath": "okou-ai/okou-skills/tree/main/greenhouse",
-    "s3Prefix": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/greenhouse",
-    "commitSha": "0b6531ff69b14542fb7d17a96e6b0a5690665009",
-    "skillSize": 7944,
-    "storageId": "d09ec256-608c-4efe-960e-e2f6962b0311",
-    "frontmatter": {
-      "name": "greenhouse",
-      "description": "Greenhouse Harvest API for applicant tracking and recruiting. Use when user mentions \"Greenhouse\", \"ATS\", \"applicant tracking\", \"candidate\", \"job application\", \"recruiting pipeline\", \"job post\", \"scheduled interview\", or \"offer\"."
-    },
-    "storageName": "agent-skills@vm0-ai/vm0-skills/tree/main/greenhouse",
-    "storageSize": 2696,
-    "versionHash": "a56b42078c11381de4b9d40f506722ddc2054e5c8b3e67fa7147f7bf85131200",
-    "versionSize": 2696,
-    "skillFileCount": 1,
-    "storageFileCount": 1,
-    "versionFileCount": 1
-  },
-  {
     "url": "https://github.com/okou-ai/okou-skills/tree/main/groq",
     "name": "groq",
     "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/groq/8dabb782d2a0ca1a9c449295de85fbb98865e77bfc836345c3bd67657f118203",
@@ -5935,28 +5913,6 @@
     "storageSize": 2416,
     "versionHash": "cc6bfa7e6fe359c66db3cea83a077a5f46b6a7a9e1cab2ba876a9969f33f3cf8",
     "versionSize": 2416,
-    "skillFileCount": 1,
-    "storageFileCount": 1,
-    "versionFileCount": 1
-  },
-  {
-    "url": "https://github.com/okou-ai/okou-skills/tree/main/zendesk",
-    "name": "zendesk",
-    "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/zendesk/65c6c2c9abede8f6bda4381977491b3a2d6edbc8806f0dad0f44df55a21471fe",
-    "message": "Synced from vm0-ai/vm0-skills@0b6531f",
-    "fullPath": "okou-ai/okou-skills/tree/main/zendesk",
-    "s3Prefix": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/zendesk",
-    "commitSha": "0b6531ff69b14542fb7d17a96e6b0a5690665009",
-    "skillSize": 14965,
-    "storageId": "20e0ebc6-942c-43ee-8838-27157212310a",
-    "frontmatter": {
-      "name": "zendesk",
-      "description": "Zendesk API for customer support. Use when user mentions \"Zendesk\", \"support ticket\", \"customer service\", or help desk."
-    },
-    "storageName": "agent-skills@vm0-ai/vm0-skills/tree/main/zendesk",
-    "storageSize": 3569,
-    "versionHash": "65c6c2c9abede8f6bda4381977491b3a2d6edbc8806f0dad0f44df55a21471fe",
-    "versionSize": 3569,
     "skillFileCount": 1,
     "storageFileCount": 1,
     "versionFileCount": 1

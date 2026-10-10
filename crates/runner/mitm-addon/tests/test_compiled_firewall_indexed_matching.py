@@ -573,17 +573,17 @@ def test_indexed_matches_linear_for_specific_malformed_auth_precedence():
 def test_indexed_matches_linear_for_parameterized_base_fallback():
     firewalls = [
         firewall_entry(
-            "zendesk",
+            "test-subdomain",
             firewall_api(
-                "https://{subdomain}.zendesk.com/api",
+                "https://{subdomain}.example.com/api",
                 [firewall_permission("tickets-read", "GET /v2/tickets/{id}")],
             ),
         )
     ]
-    policies = {"zendesk": network_policy(allow=["tickets-read"])}
+    policies = {"test-subdomain": network_policy(allow=["tickets-read"])}
 
     result = _assert_indexed_matches_linear(
-        "https://acme.zendesk.com/api/v2/tickets/123",
+        "https://acme.example.com/api/v2/tickets/123",
         "GET",
         firewalls,
         policies,

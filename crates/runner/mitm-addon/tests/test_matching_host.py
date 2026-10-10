@@ -10,12 +10,12 @@ class TestMatchHost:
         assert matching.match_host("api.github.com", "api.github.com") == {}
 
     def test_single_param(self):
-        result = matching.match_host("acme.zendesk.com", "{subdomain}.zendesk.com")
+        result = matching.match_host("acme.example.com", "{subdomain}.example.com")
         assert result == {"subdomain": "acme"}
 
     def test_single_param_no_match_multi_level(self):
         """Single {param} must not match multiple host segments."""
-        result = matching.match_host("a.b.zendesk.com", "{subdomain}.zendesk.com")
+        result = matching.match_host("a.b.example.com", "{subdomain}.example.com")
         assert result is None
 
     def test_greedy_plus_matches_multi(self):
@@ -61,7 +61,7 @@ class TestMatchHost:
 
     def test_param_name_preserves_case(self):
         """Param names should preserve original case from the pattern."""
-        result = matching.match_host("acme.zendesk.com", "{Subdomain}.zendesk.com")
+        result = matching.match_host("acme.example.com", "{Subdomain}.example.com")
         assert result is not None
         assert "Subdomain" in result
         assert result["Subdomain"] == "acme"
