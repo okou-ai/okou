@@ -42,8 +42,8 @@ export function discordChatThreadRouteWhere(key: DiscordChatThreadRouteKey) {
   );
 }
 
-async function loadDiscordChatThreadRoute(
-  db: Pick<Db, "select" | "update">,
+export async function findDiscordChatThreadRoute(
+  db: Db,
   key: DiscordChatThreadRouteKey,
 ): Promise<DiscordChatThreadRouteBinding | undefined> {
   const [route] = await db
@@ -88,13 +88,6 @@ async function loadDiscordChatThreadRoute(
     throw new Error("Failed to update Discord DM route destination");
   }
   return { ...route, ...updated };
-}
-
-export async function findDiscordChatThreadRoute(
-  db: Db,
-  key: DiscordChatThreadRouteKey,
-): Promise<DiscordChatThreadRouteBinding | undefined> {
-  return await loadDiscordChatThreadRoute(db, key);
 }
 
 /**
