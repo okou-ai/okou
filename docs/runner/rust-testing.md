@@ -104,6 +104,12 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-host -p runner-supervisor -p runner -- --test-threads=1
 
+# Guarded idle terminal phases, physical memory ownership and retained callers.
+# Native packaged-guest saving is a separate opt-in fixture; see below.
+cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
+  -p runner-host -p runner-lifecycle -p runner-supervisor -p runner \
+  -- --test-threads=1
+
 # Complete native Runner and extracted-domain test set, with ordinary Cargo targets
 cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
   -p runner-types -p runner-host -p runner-provider -p runner-storage \
@@ -142,6 +148,15 @@ does not replace required CI.
 Pre-commit hooks run `cargo fmt` and `cargo doc --profile local` on staged Rust
 files. Clippy remains in the Crates CI workflow. To run it locally from `crates/`,
 use `cargo clippy --profile local --all-targets --all-features`.
+
+### Native terminal saving
+
+The [guarded idle fixture](../../crates/runner/tests/guarded_idle_native/README.md)
+defines matching packaged artifacts, disposable workspaces and required supplied
+memory measurements for its root/KVM/NBD test. Ordinary Cargo targets compile it;
+execution requires explicitly selecting the ignored native case. Keep native
+execution separate from ordinary mock-boundary coverage, and report unavailable
+native prerequisites as unverified rather than a passing result.
 
 ## Coverage in CI
 

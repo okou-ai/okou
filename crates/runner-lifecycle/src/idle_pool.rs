@@ -13,8 +13,13 @@ mod entry;
 mod park_transition;
 mod parking_gate;
 mod pressure;
+mod retirement;
 
 pub use pressure::IdlePressureCandidate;
+pub use retirement::{
+    GuardedIdleRetirement, IdleRetirementAdmissionFailure, IdleRetirementEnvelope,
+    IdleRetirementStartFailure,
+};
 
 pub use entry::{
     DestroyOutcome, FinalizingHandoffCandidate, IdleDestroyPayload, IdleDestroyResult,
