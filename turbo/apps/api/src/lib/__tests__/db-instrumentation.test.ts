@@ -438,8 +438,9 @@ describe("instrumentPgPool", () => {
       });
     });
     const uncaptured = pool.query("SELECT 415 AS uncaptured_callback");
-    expect(pool.waitingCount).toBe(3);
+    const waitingCount = pool.waitingCount;
     heldClient.release();
+    expect(waitingCount).toBe(3);
     const results = await Promise.all([first, second, uncaptured]);
     expect(
       results.map((result) => {
