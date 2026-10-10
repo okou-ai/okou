@@ -1382,11 +1382,6 @@
       "owner": "deleteWorkflowRows$"
     },
     {
-      "id": "TX-0343",
-      "file": "turbo/apps/api/src/signals/services/workflow-schedule-expiry.service.ts",
-      "owner": "skipExpiredWorkflowSchedule$"
-    },
-    {
       "id": "TX-0344",
       "file": "turbo/apps/api/src/signals/services/workflow-schedule-failure.service.ts",
       "owner": "recordSelectedMorningBriefPreRunFailure$"

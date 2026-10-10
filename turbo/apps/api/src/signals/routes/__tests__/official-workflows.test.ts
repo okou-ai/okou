@@ -45,7 +45,7 @@ import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now, withMockNowForTest } from "../../../lib/time";
+import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -1246,7 +1246,9 @@ async function connectGoogleMeetForOfficialWorkflow(
   }
 }
 
-async function installOfficialWorkflowLifecycleScenario() {
+async function installOfficialWorkflowLifecycleScenario(
+  onceAtTime = "2099-01-01T00:00:00Z",
+) {
   installCatalogStorageFixture();
   const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
   const definitionName = `api-test-lifecycle-${suffix}`;
@@ -1287,7 +1289,7 @@ async function installOfficialWorkflowLifecycleScenario() {
       {
         blueprintKey: "one-shot",
         bindings: [
-          { key: "at-time", value: "2099-01-01T00:00:00Z" },
+          { key: "at-time", value: onceAtTime },
           { key: "callback-url", value: "https://example.com/callback" },
           {
             key: "correlation-id",
@@ -1874,6 +1876,340 @@ describe("Morning Brief explicit installation", () => {
       [200],
     );
     expect(saved.body.timezone).toBe("Asia/Tokyo");
+  });
+});
+
+describe("Official schedule expiry", () => {
+  function pendingAutomationInputs(
+    events: Awaited<ReturnType<typeof allThreadEventRows>>,
+  ) {
+    return events.filter((event) => {
+      return (
+        event.eventType === "input.automation" &&
+        !events.some((candidate) => {
+          return candidate.revokesEventId === event.id;
+        })
+      );
+    });
+  }
+
+  async function readAutomation(actor: ApiTestUser, id: string) {
+    const response = await accept(
+      automationClient().get({ headers: authHeaders(actor), params: { id } }),
+      [200],
+    );
+    return response.body;
+  }
+
+  it("advances expired cron and loop obligations, disables once, and preserves the result across competing and repeated ticks", async () => {
+    await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+      mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+      const { actor, agentId, installed } =
+        await installOfficialWorkflowLifecycleScenario("2030-01-01T23:00:00Z");
+      const at = new Date("2030-01-01T23:30:00.001Z");
+      mockNow(at);
+      await Promise.all([executeAutomationCron(), executeAutomationCron()]);
+      await flushWaitUntilForTest();
+      const expectedNextRuns = {
+        daily: "2030-01-02T23:00:00.000Z",
+        pulse: "2030-01-02T00:30:00.001Z",
+        "one-shot": null,
+      };
+      const advanced = [];
+      for (const automation of installed.body.workflow.automations) {
+        const current = await readAutomation(actor, automation.id);
+        const key = automation.official?.blueprintKey;
+        if (key !== "daily" && key !== "pulse" && key !== "one-shot") {
+          throw new Error("Expected the installed schedule Blueprint");
+        }
+        expect(current).toMatchObject({
+          nextRunAt: expectedNextRuns[key],
+          enabled: key !== "one-shot",
+          lastRunAt: null,
+        });
+        advanced.push(current);
+      }
+      await expect(listAgentRunLogIds(actor, agentId)).resolves.toStrictEqual(
+        [],
+      );
+      mockNow(at.getTime() + 60_000);
+      await executeAutomationCron();
+      for (const automation of advanced) {
+        await expect(
+          readAutomation(actor, automation.id),
+        ).resolves.toStrictEqual(automation);
+      }
+      await expect(listAgentRunLogIds(actor, agentId)).resolves.toStrictEqual(
+        [],
+      );
+    });
+  });
+
+  it.each(["pulse", "one-shot"] as const)(
+    "claims the %s obligation at exactly thirty minutes instead of expiring it",
+    async (blueprintKey) => {
+      await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+        mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+        const { actor, agentId, installed } =
+          await installOfficialWorkflowLifecycleScenario(
+            "2030-01-01T01:00:00Z",
+          );
+        const target = installed.body.workflow.automations.find(
+          (automation) => {
+            return automation.official?.blueprintKey === blueprintKey;
+          },
+        );
+        if (!target?.nextRunAt) {
+          throw new Error("Expected the installed obligation");
+        }
+        const runnerGroup = runs.configureRunnerGroup();
+        runs.acceptStorageDownloads();
+        await runs.heartbeatRunner(runnerGroup);
+        onTestFinished(async () => {
+          await cancelAgentRunsThroughLogs(actor, agentId);
+          await flushWaitUntilForTest();
+        });
+        const at = new Date(Date.parse(target.nextRunAt) + 30 * 60_000);
+        mockNow(at);
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        await expect(readAutomation(actor, target.id)).resolves.toMatchObject({
+          lastRunAt: at.toISOString(),
+          nextRunAt: null,
+        });
+        const runIds = await listAgentRunLogIds(actor, agentId);
+        expect(runIds).toHaveLength(1);
+        const runId = runIds[0];
+        if (!runId) {
+          throw new Error("Expected the grace-boundary Run");
+        }
+        const claim = await runs.claimRunnerJob(runId);
+        await webhooks.requestAgentComplete(
+          { runId, exitCode: 1, error: "Grace-boundary Run completed" },
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          [200],
+        );
+        await flushWaitUntilForTest();
+        await expect(readAutomation(actor, target.id)).resolves.toMatchObject({
+          enabled: blueprintKey === "pulse",
+          nextRunAt:
+            blueprintKey === "pulse"
+              ? new Date(at.getTime() + 3_600_000).toISOString()
+              : null,
+        });
+      });
+    },
+  );
+
+  it("holds an expired obligation while its manual input is queued behind a real claimed Run", async () => {
+    await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+      mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+      const { actor, agentId, installed, headers } =
+        await installOfficialWorkflowLifecycleScenario();
+      const pulse = installed.body.workflow.automations.find((automation) => {
+        return automation.official?.blueprintKey === "pulse";
+      });
+      if (!pulse?.nextRunAt) {
+        throw new Error("Expected the loop obligation");
+      }
+      const runnerGroup = runs.configureRunnerGroup();
+      runs.acceptStorageDownloads();
+      await runs.heartbeatRunner(runnerGroup);
+      const first = await accept(
+        automationClient().run({ headers, params: { id: pulse.id } }),
+        [201],
+      );
+      const runId = await launchedAutomationRunId(
+        actor,
+        first.body.chatThreadId,
+      );
+      if (!runId) {
+        throw new Error("Expected the manual Run");
+      }
+      const claim = await runs.claimRunnerJob(runId);
+      onTestFinished(async () => {
+        await webhooks.requestAgentComplete(
+          { runId, exitCode: 1, error: "Claimed Run cleanup" },
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          [200],
+        );
+        await flushWaitUntilForTest();
+        await cancelAgentRunsThroughLogs(actor, agentId);
+        await flushWaitUntilForTest();
+      });
+      await accept(
+        automationClient().run({ headers, params: { id: pulse.id } }),
+        [201],
+      );
+      await flushWaitUntilForTest();
+      const pending = pendingAutomationInputs(
+        await allThreadEventRows(actor, first.body.chatThreadId),
+      );
+      expect(pending).toHaveLength(1);
+      mockNow(Date.parse(pulse.nextRunAt) + 30 * 60_000 + 1);
+      await executeAutomationCron();
+      await expect(readAutomation(actor, pulse.id)).resolves.toMatchObject({
+        nextRunAt: pulse.nextRunAt,
+        enabled: true,
+      });
+      mockNow(now() + 60_000);
+      await executeAutomationCron();
+      await expect(readAutomation(actor, pulse.id)).resolves.toMatchObject({
+        nextRunAt: pulse.nextRunAt,
+        enabled: true,
+      });
+      expect(
+        pendingAutomationInputs(
+          await allThreadEventRows(actor, first.body.chatThreadId),
+        ),
+      ).toStrictEqual(pending);
+      await expect(listAgentRunLogIds(actor, agentId)).resolves.toStrictEqual([
+        runId,
+      ]);
+      await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
+        status: "running",
+      });
+      await webhooks.requestAgentComplete(
+        { runId, exitCode: 1, error: "Claimed Run completed" },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      await cancelAgentRunsThroughLogs(actor, agentId);
+      await flushWaitUntilForTest();
+    });
+  });
+
+  it("retains the user's new recurrence when reconfiguration overlaps an expired tick", async () => {
+    await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+      mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+      const { actor, agentId, installed, dailyAutomation, headers } =
+        await installOfficialWorkflowLifecycleScenario();
+      mockNow(new Date("2030-01-01T23:31:00Z"));
+      await Promise.all([
+        executeAutomationCron(),
+        accept(
+          installationClient().reconfigure({
+            headers,
+            params: { workflowId: installed.body.workflow.id },
+            body: {
+              blueprints: [
+                {
+                  blueprintKey: "daily",
+                  bindings: [
+                    { key: "cron-expression", value: "0 10 * * *" },
+                    { key: "include-weekends", value: true },
+                  ],
+                },
+              ],
+            },
+          }),
+          [200],
+        ),
+      ]);
+      await expect(
+        readAutomation(actor, dailyAutomation.id),
+      ).resolves.toMatchObject({
+        enabled: true,
+        nextRunAt: "2030-01-02T02:00:00.000Z",
+        schedule: {
+          type: "cron",
+          cronExpression: "0 10 * * *",
+          timezone: "Asia/Shanghai",
+        },
+      });
+      await executeAutomationCron();
+      await expect(
+        readAutomation(actor, dailyAutomation.id),
+      ).resolves.toMatchObject({
+        nextRunAt: "2030-01-02T02:00:00.000Z",
+      });
+      await expect(listAgentRunLogIds(actor, agentId)).resolves.toStrictEqual(
+        [],
+      );
+    });
+  });
+
+  it("preserves a claimed Morning Brief occurrence across later ticks and duplicate Runner completion", async () => {
+    await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+      installCatalogStorageFixture();
+      await syncDeployedCatalog();
+      const { actor } = await workflowBdd.setupWorkflowOrg({
+        timezone: "Asia/Shanghai",
+      });
+      await connectBriefSource(actor);
+      await accept(
+        morningBriefPreferenceClient().update({
+          headers: authHeaders(actor),
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const [installation] = await listMorningBriefInstallations(actor);
+      if (!installation?.agentId) {
+        throw new Error("Expected the member's Morning Brief Agent");
+      }
+      const [automation] = await readMorningBriefAutomations(
+        actor,
+        installation.id,
+      );
+      if (!automation?.nextRunAt) {
+        throw new Error("Expected the Morning Brief anchor");
+      }
+      const runnerGroup = runs.configureRunnerGroup();
+      runs.acceptStorageDownloads();
+      await runs.heartbeatRunner(runnerGroup);
+      mockNow(Date.parse(automation.nextRunAt) + 30 * 60_000);
+      await executeAutomationCron();
+      await flushWaitUntilForTest();
+      const runIds = await listAgentRunLogIds(actor, installation.agentId);
+      expect(runIds).toHaveLength(1);
+      const runId = runIds[0];
+      if (!runId) {
+        throw new Error("Expected the scheduled Morning Brief Run");
+      }
+      const claim = await runs.claimRunnerJob(runId);
+      const completion = () => {
+        return webhooks.requestAgentComplete(
+          { runId, exitCode: 1, error: "Morning Brief Runner completion" },
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          [200],
+        );
+      };
+      onTestFinished(async () => {
+        await completion();
+      });
+      mockNow(now() + 60 * 60_000);
+      await executeAutomationCron();
+      await expect(readAutomation(actor, automation.id)).resolves.toMatchObject(
+        {
+          enabled: true,
+          nextRunAt: null,
+        },
+      );
+      await expect(
+        listAgentRunLogIds(actor, installation.agentId),
+      ).resolves.toStrictEqual(runIds);
+      await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
+        status: "running",
+      });
+      await completion();
+      await flushWaitUntilForTest();
+      const settled = await readAutomation(actor, automation.id);
+      expect(settled.nextRunAt).not.toBeNull();
+      if (!settled.nextRunAt) {
+        throw new Error("Expected the successor Morning Brief anchor");
+      }
+      expect(Date.parse(settled.nextRunAt)).toBeGreaterThan(now());
+      await completion();
+      await executeAutomationCron();
+      await expect(readAutomation(actor, automation.id)).resolves.toStrictEqual(
+        settled,
+      );
+      await expect(
+        listAgentRunLogIds(actor, installation.agentId),
+      ).resolves.toStrictEqual(runIds);
+    });
   });
 });
 
