@@ -2,7 +2,7 @@
 
 import { pathToFileURL } from "node:url";
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
 import { escapeLiteral } from "pg";
 import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import { MANAGED_SOCIALKIT_BILLING_CATEGORY } from "@okouai/api-contracts/contracts/social";
@@ -20,6 +20,7 @@ import { storages } from "@okouai/db/schema/storage";
 import { createStore } from "ccstate";
 
 import { closeDbPool, db } from "../lib/db";
+import { pgIntegerDecoder } from "../lib/db-structured-result";
 import { optionalEnv } from "../lib/env";
 import { nowDate } from "../lib/time";
 import { immutableCatalogHash$ } from "../signals/services/connector-catalog-immutable.service";
@@ -770,16 +771,34 @@ async function devSeed() {
     });
   writeLine(`Seeded ${pricing.length} usage pricing entries`);
 
-  // --- built_in_model_keys (transactional replace) ---
+  // --- built_in_model_keys (atomic replace) ---
   writeLine("Seeding built_in_model_keys");
   const apiKeys = buildBuiltInModelKeys();
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0005; new non-billing transactions are prohibited.
-  await database.transaction(async (tx) => {
-    await tx.delete(builtInModelKeys);
-    if (apiKeys.length > 0) {
-      await tx.insert(builtInModelKeys).values(apiKeys);
-    }
-  });
+  if (apiKeys.length > 0) {
+    const deletedKeys = database
+      .$with("deleted_keys")
+      .as(
+        database
+          .delete(builtInModelKeys)
+          .returning({ deleted: sql`1`.mapWith(pgIntegerDecoder) }),
+      );
+    await database
+      .with(deletedKeys)
+      .insert(builtInModelKeys)
+      .values(
+        apiKeys.map((key) => {
+          return {
+            ...key,
+            // Consume the complete deletion before checking insert uniqueness.
+            // The aggregate also yields one key when the old pool is empty.
+            apiKey: sql`(select ${sql.param(key.apiKey, builtInModelKeys.apiKey)}
+              from ${deletedKeys} having ${gte(count(), sql`0`)})`,
+          };
+        }),
+      );
+  } else {
+    await database.delete(builtInModelKeys);
+  }
   for (const k of apiKeys) {
     writeLine(`Seeded built-in model key entry: ${k.vendor}`);
   }

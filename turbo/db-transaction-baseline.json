@@ -12,11 +12,6 @@
       "owner": "insertBenchmarkRunBatch$"
     },
     {
-      "id": "TX-0005",
-      "file": "turbo/apps/api/src/scripts/dev-seed.ts",
-      "owner": "devSeed"
-    },
-    {
       "id": "TX-0006",
       "file": "turbo/apps/api/src/scripts/dev-seed.ts",
       "owner": "devSeed"
