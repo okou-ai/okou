@@ -119,6 +119,15 @@ const CHAT_THREAD_ROW_ICON_CLASS = "[&_svg]:size-[17px]";
 const RUNNING_INDICATOR_WAVE_ROWS = 12;
 const CHAT_THREADS_CONTENT_ID = "sidebar-chat-threads-content";
 
+// Labels never wrap: the menu grows past its minimum when a label shares its
+// row with a long shortcut such as Ctrl+Shift+X.
+function chatThreadMenuContentClassName(touch: boolean) {
+  return cn(
+    "min-w-56 whitespace-nowrap",
+    touch && "[&_[role=menuitem]]:min-h-11",
+  );
+}
+
 function ChatThreadMenuShortcut({ shortcut }: { readonly shortcut: string }) {
   return (
     <kbd
@@ -458,10 +467,7 @@ function ChatThreadMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"
-          className={cn(
-            "min-w-56 whitespace-nowrap",
-            touch && "[&_[role=menuitem]]:min-h-11",
-          )}
+          className={chatThreadMenuContentClassName(touch)}
           data-chat-thread-menu-thread-id={signals.threadId}
         >
           <ChatThreadPinMenuItems signals={signals} />
@@ -1207,10 +1213,7 @@ export function ChatThreadsListMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"
-          className={cn(
-            "min-w-56 whitespace-nowrap",
-            touch && "[&_[role=menuitem]]:min-h-11",
-          )}
+          className={chatThreadMenuContentClassName(touch)}
         >
           {markAllReadAction.visible ? (
             <>
