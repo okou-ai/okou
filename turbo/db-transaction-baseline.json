@@ -227,11 +227,6 @@
       "owner": "persistConnectorRefresh$"
     },
     {
-      "id": "TX-0083",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-external-code.service.ts",
-      "owner": "createExternalCodeSession"
-    },
-    {
       "id": "TX-0084",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-oauth-device-auth.service.ts",
       "owner": "completeClaimedSession$"
