@@ -40,7 +40,7 @@ guest binary inventory, so changing it invalidates the rootfs and snapshot hash.
 | DNS `getent ahostsv4`                                                                                | Bounded setup helper selected only by the typed DNS handler                 | Bounded hostname and deadline; no caller-selected program                                                                    | Guest root in an owned process group                                                                | Single-active DNS worker, operation guard, kill, and reap                                                                                                                           | Required for a fresh sandbox; serial before Agent start                                                                       |
 | `guest-state-restore --restore-state`                                                                | Bounded setup helper selected only by the typed guest-state handler         | Typed time, entropy, and timezone request with a deadline                                                                    | Guest root in an owned process group                                                                | Single-active restore worker, operation guard, kill, and reap                                                                                                                       | Required state preparation; serial before Agent start                                                                         |
 | `guest-write-file` single, batch, and private variants                                               | Bounded setup helper selected only by typed file handlers                   | Typed path/content request with handler validation and deadline                                                              | Guest root in an owned process group                                                                | File worker, operation guard, kill, and reap                                                                                                                                        | Required when its prepared input exists; serial before Agent start                                                            |
-| `guest-agent cleanup-codex-session` and its fixed shell helper                                       | Bounded setup helper selected only by `Sandbox::cleanup_codex_session`      | Canonical thread ID and matching relative rollout path; fixed Codex home, 16,384-entry scan budget, program, and environment | Sandbox user in an owned process group                                                              | Exec worker and `ExecProcessContainment`; natural or forced cleanup kills and reaps the complete group                                                                              | Required only for an actually reused Codex sandbox; serial before restored history publication and Agent start                |
+| `guest-agent cleanup-codex-session` and its fixed shell helper                                       | Bounded setup helper selected only by `Sandbox::cleanup_codex_session`      | Canonical thread ID and matching relative rollout path; fixed Codex home, 16,384-entry scan budget, program, and environment | Sandbox user in an owned process group                                                              | Exec worker and `ExecProcessContainment`; natural or forced cleanup kills and reaps the complete group                                                                              | Required for any Codex history replacement, fresh or reused; after storage reconciliation, before publication and Agent start |
 | Home-drive mount and revalidation                                                                    | Bounded setup helper selected only by `Sandbox::mount_home_drive`           | Fixed `home-drive-v1` request; the Guest owns program, paths, device, account/mount identity, deadline and output policy     | Guest root in an owned process group                                                                | Single-active mount worker, operation guard, output drains, kill, and reap                                                                                                          | Required for fresh and current blank/exact/handoff reuse; serial before Agent start                                           |
 | Generic one-shot shell operations, including timezone, cleanup fallbacks, and verification fallbacks | Contained workload selected by `Sandbox::exec`                              | Caller command and environment are untrusted workload input                                                                  | Per-operation `workload` cgroup with the standard CPU, memory, PID, and OOM policy                  | Exec worker and `ExecProcessContainment`; terminal result or forced cleanup removes descendants and hierarchy                                                                       | Required or optional by caller; serial when part of preparation                                                               |
 | `guest-storage-apply --manifest-stdin`                                                               | Contained workload selected only by the typed storage-manifest handler      | User-influenced manifest, download, extraction, cache, and filesystem work                                                   | Per-operation `workload` cgroup with the standard workload policy                                   | Storage worker, operation guard, output drains, and containment cleanup                                                                                                             | Required when storage preparation is requested; serial, with deferred background fill allowed only after Agent readiness      |
@@ -198,8 +198,8 @@ limits, cancellation wakeups and terminal drain deadlines are unchanged.
 Storage remains contained even though it has a typed entry point because its
 download, extraction, cache, and filesystem work is user influenced. The DNS,
 state, file, and fresh workspace-mount helpers use process groups at guest
-root; reused Codex cleanup uses a process group as the sandbox user. Their
-typed handlers select fixed programs, validate bounded inputs before
+root; Codex history-replacement cleanup uses a process group as the sandbox
+user. Their typed handlers select fixed programs, validate bounded inputs before
 containment selection, enforce deadlines, and own kill/reap. The workspace
 mount accepts no input and fixes its device, target, mount-info source, shell
 helper, identity, output policy, and timeout; unlike storage, it cannot select
@@ -208,6 +208,22 @@ the target home, scan budget, environment, and helper script while retaining
 independent Runner validation of its path output. That authority is not
 available through generic exec APIs, and generic cleanup and storage
 operations retain workload cgroups.
+
+Codex cleanup runs before every actual history replacement, independent of
+sandbox provenance: a fresh writable image can retain matching rollout files.
+[Serial restoration](../../crates/runner-executor/src/executor/session_restore/codex.rs)
+and [fresh destination preparation](../../crates/runner-executor/src/executor/session_restore.rs)
+share the same cleanup and validated canonical-target selection. Live destination
+preparation follows storage reconciliation and precedes replacement publication
+and Agent start. [Staged restoration](../../crates/runner-executor/src/executor/agent_run.rs)
+may transfer history to an isolated path concurrently with storage, but performs
+cleanup only when preparing the live destination after storage completes;
+a definitive publication failure uses the same cleanup before a serial fallback
+write.
+
+Cleanup or output-validation failure prevents replacement and Agent start.
+A successful verified-identity restore skip performs no replacement and does not
+require this helper; cleanup is not required for every Codex start.
 
 ## Optional Codex Prefetch Start Failures
 
