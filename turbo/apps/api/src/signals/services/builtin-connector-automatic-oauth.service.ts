@@ -29,7 +29,6 @@ import {
   type AutomaticConnectionPublication,
 } from "./builtin-connector-automatic-connection.service";
 import {
-  builtinConnectorAutomaticDcrStore,
   createBuiltinDcrRegistration$,
   hasBuiltinDcrLinkedAccounts$,
   readBuiltinDcrBoundClient$,
@@ -44,7 +43,6 @@ import {
   type ConnectorRuntimeMethod,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
-import { upsertConnectorOwnedSecret } from "./connector-credential-storage-write.service";
 import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
 import {
   claimBuiltinConnectorOAuthState$,
@@ -212,13 +210,6 @@ function contractOwner(
   };
 }
 
-function dcrStore(db: Db, orgId: string, contract: BuiltinAutomaticContract) {
-  return builtinConnectorAutomaticDcrStore({
-    db,
-    owner: contractOwner(orgId, contract),
-  });
-}
-
 function failure(error: unknown): Failure {
   if (error instanceof McpAutomaticOAuthError) {
     return {
@@ -285,29 +276,6 @@ async function encryptAutomaticTokens(
     signal.throwIfAborted();
   }
   return encrypted;
-}
-
-async function writeEncryptedTokens(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-    readonly contract: BuiltinAutomaticContract;
-    readonly tokens: readonly EncryptedAutomaticToken[];
-  },
-): Promise<void> {
-  for (const token of args.tokens) {
-    await upsertConnectorOwnedSecret(db, {
-      connectorId: args.connectorId,
-      orgId: args.orgId,
-      userId: args.userId,
-      storage: args.contract.method.storage,
-      name: token.name,
-      encryptedValue: token.encryptedValue,
-      description: "Automatic MCP OAuth token",
-    });
-  }
 }
 
 const prepareBuiltinAutomaticAuthorization$ = command(
@@ -881,24 +849,118 @@ interface ResolveAutomaticCredentialArgs {
   readonly forceRefresh?: boolean;
 }
 
-async function markReconnect(
-  db: Db,
-  connectorId: string,
-): Promise<CredentialResult> {
-  await db
-    .update(connectors)
-    .set({
-      needsReconnect: true,
-      reconnectReason: "authorization_expired_or_revoked",
-      updatedAt: sql`clock_timestamp()`,
-    })
-    .where(eq(connectors.id, connectorId));
-  return { kind: "unavailable", reason: "reconnect" };
-}
+const markReconnect$ = command(
+  async (
+    { set },
+    connectorId: string,
+    signal: AbortSignal,
+  ): Promise<CredentialResult> => {
+    signal.throwIfAborted();
+    await set(writeDb$)
+      .update(connectors)
+      .set({
+        needsReconnect: true,
+        reconnectReason: "authorization_expired_or_revoked",
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(eq(connectors.id, connectorId));
+    signal.throwIfAborted();
+    return { kind: "unavailable", reason: "reconnect" };
+  },
+);
+
+const publishRefreshedAutomaticCredential$ = command(
+  async (
+    { set },
+    input: {
+      readonly args: ResolveAutomaticCredentialArgs;
+      readonly account: typeof connectors.$inferSelect;
+      readonly token: McpAutomaticOAuthTokenResult;
+      readonly tokens: readonly EncryptedAutomaticToken[];
+    },
+    signal: AbortSignal,
+  ): Promise<CredentialResult> => {
+    const { args, account, token, tokens } = input;
+    const identity = resolveRefreshedOAuthIdentity(
+      {
+        externalId: account.externalId,
+        externalUsername: account.externalUsername,
+        externalEmail: account.externalEmail,
+      },
+      token.userInfo,
+    );
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    const updatedAccount = db
+      .update(connectors)
+      .set({
+        tokenExpiresAt: token.expiresAt,
+        oauthGrantedScopes:
+          token.scopes === null
+            ? account.oauthGrantedScopes
+            : JSON.stringify(token.scopes),
+        ...(identity.kind === "update"
+          ? {
+              externalId: identity.externalId,
+              externalUsername: identity.externalUsername,
+              externalEmail: identity.externalEmail,
+            }
+          : {}),
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(
+        and(
+          eq(connectors.id, account.id),
+          eq(connectors.orgId, args.orgId),
+          eq(connectors.userId, args.userId),
+          eq(connectors.connectorSlug, args.connectorSlug),
+          eq(connectors.authMethod, args.authMethodId),
+        ),
+      )
+      .returning({
+        id: connectors.id,
+        orgId: connectors.orgId,
+        userId: connectors.userId,
+      });
+    // Output bindings may share a storage name: preserve the ordered loop's last write.
+    const publishedTokens = [
+      ...new Map(
+        tokens.map((token) => {
+          return [token.name, token];
+        }),
+      ).values(),
+    ];
+    const tokenValues = publishedTokens.map((token) => {
+      return sql`(${token.name}::text, ${token.encryptedValue}::text)`;
+    });
+    // The upsert consumes the owned account's RETURNING row. A deleted account
+    // publishes no credentials; any constraint failure rolls back both writes.
+    const { rowCount } = await db.execute(sql`
+      WITH refreshed_account AS (${updatedAccount.getSQL()})
+      INSERT INTO ${secrets}
+        (name, encrypted_value, description, type, connector_id, org_id, user_id)
+      SELECT token.name, token.encrypted_value, 'Automatic MCP OAuth token',
+        'connector', refreshed_account.id, refreshed_account.org_id, refreshed_account.user_id
+      FROM refreshed_account
+      CROSS JOIN (VALUES ${sql.join(tokenValues, sql`, `)}) AS token(name, encrypted_value)
+      ON CONFLICT (connector_id, name) WHERE connector_id IS NOT NULL
+      DO UPDATE SET encrypted_value = EXCLUDED.encrypted_value,
+        updated_at = ${sql.param(nowDate(), secrets.updatedAt)}
+    `);
+    signal.throwIfAborted();
+    if (rowCount === 0) {
+      return { kind: "unavailable", reason: "reconnect" };
+    }
+    return {
+      kind: "oauth",
+      accessToken: token.accessToken,
+      tokenExpiresAt: token.expiresAt,
+    };
+  },
+);
 
 /**
- * Provider refresh runs outside any transaction; one short transaction then
- * writes the refreshed tokens and account metadata.
+ * Provider refresh and encryption finish before atomic token/account publication.
  */
 const refreshAutomatic = command(
   async (
@@ -915,8 +977,7 @@ const refreshAutomatic = command(
     signal: AbortSignal,
   ): Promise<CredentialResult> => {
     const { args, contract, binding, account, encryptedRefreshToken } = context;
-    const db = set(writeDb$);
-    const store = dcrStore(db, args.orgId, contract);
+    const owner = contractOwner(args.orgId, contract);
     const refreshToken = await decryptStoredSecretValue(encryptedRefreshToken);
     signal.throwIfAborted();
     const metadata = configuredOkouMcpOAuthClientMetadata();
@@ -926,10 +987,22 @@ const refreshAutomatic = command(
     if (!redirectUri) {
       throw new Error("Builtin Automatic OAuth redirect URI is unavailable");
     }
+    const client =
+      binding.registrationMethod === "dcr"
+        ? await set(
+            readBuiltinDcrBoundClient$,
+            { owner, id: binding.dcrRegistration.id },
+            signal,
+          )
+        : null;
     const refreshed = await settle(
       refreshMcpAutomaticOAuthToken(
         {
-          dcrStore: store,
+          dcrStore: {
+            readBoundClient: (id) => {
+              return Promise.resolve(client?.id === id ? client : null);
+            },
+          },
           binding,
           endpoint: contract.endpoint,
           redirectUri,
@@ -945,13 +1018,11 @@ const refreshAutomatic = command(
         isAutomaticOAuthInvalidClient(refreshed.error) &&
         binding.registrationMethod === "dcr"
       ) {
-        await db.execute(
-          retireBuiltinDcrRegistrationSql(
-            contractOwner(args.orgId, contract),
-            binding.dcrRegistration.id,
-          ),
+        await set(
+          retireBuiltinDcrRegistration$,
+          { owner, id: binding.dcrRegistration.id },
+          signal,
         );
-        signal.throwIfAborted();
         return { kind: "unavailable", reason: "reconnect" };
       }
       if (
@@ -960,7 +1031,7 @@ const refreshAutomatic = command(
         (refreshed.error instanceof McpAutomaticOAuthError &&
           refreshed.error.kind === "binding-drift")
       ) {
-        return await markReconnect(db, account.id);
+        return await set(markReconnect$, account.id, signal);
       }
       if (
         refreshed.error instanceof McpAutomaticOAuthError &&
@@ -970,52 +1041,15 @@ const refreshAutomatic = command(
       }
       throw refreshed.error;
     }
-    const identity = resolveRefreshedOAuthIdentity(
-      {
-        externalId: account.externalId,
-        externalUsername: account.externalUsername,
-        externalEmail: account.externalEmail,
-      },
-      refreshed.value.userInfo,
-    );
     const tokens = await encryptAutomaticTokens(
       { contract, token: refreshed.value, fallbackRefreshToken: refreshToken },
       signal,
     );
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0080; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      await writeEncryptedTokens(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorId: account.id,
-        contract,
-        tokens,
-      });
-      await tx
-        .update(connectors)
-        .set({
-          tokenExpiresAt: refreshed.value.expiresAt,
-          oauthGrantedScopes:
-            refreshed.value.scopes === null
-              ? account.oauthGrantedScopes
-              : JSON.stringify(refreshed.value.scopes),
-          ...(identity.kind === "update"
-            ? {
-                externalId: identity.externalId,
-                externalUsername: identity.externalUsername,
-                externalEmail: identity.externalEmail,
-              }
-            : {}),
-          updatedAt: sql`clock_timestamp()`,
-        })
-        .where(eq(connectors.id, account.id));
-    });
-    signal.throwIfAborted();
-    return {
-      kind: "oauth",
-      accessToken: refreshed.value.accessToken,
-      tokenExpiresAt: refreshed.value.expiresAt,
-    };
+    return await set(
+      publishRefreshedAutomaticCredential$,
+      { args, account, token: refreshed.value, tokens },
+      signal,
+    );
   },
 );
 
@@ -1091,7 +1125,7 @@ export const resolveBuiltinConnectorAutomaticMcpCredential = command(
     );
     signal.throwIfAborted();
     if (!binding) {
-      return await markReconnect(db, account.id);
+      return await set(markReconnect$, account.id, signal);
     }
     if (
       binding.registrationMethod === "dcr" &&
@@ -1125,7 +1159,7 @@ export const resolveBuiltinConnectorAutomaticMcpCredential = command(
       return token.name === tokenStorageName(contract, "refreshToken");
     });
     if (!access) {
-      return await markReconnect(db, account.id);
+      return await set(markReconnect$, account.id, signal);
     }
     // Providers may omit refresh tokens: use a still-valid access token until expiry.
     if (
@@ -1139,7 +1173,7 @@ export const resolveBuiltinConnectorAutomaticMcpCredential = command(
       };
     }
     if (!refresh) {
-      return await markReconnect(db, account.id);
+      return await set(markReconnect$, account.id, signal);
     }
     return await set(
       refreshAutomatic,
