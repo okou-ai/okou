@@ -146,7 +146,7 @@ pub enum MemoryOperationError {
     PurposeChanged,
     #[error("fresh backing must be captured exactly once, before phase completion")]
     BackingAlreadyCaptured,
-    #[error("fresh preparation has no confirmed captured backing capability")]
+    #[error("preparation or retirement has no captured backing capability")]
     MissingBacking,
     #[error("exact provider backing exit is unconfirmed")]
     UnconfirmedBacking,

@@ -312,6 +312,32 @@ impl Ledger {
         Ok(())
     }
 
+    /// One terminal owner starts both pre-admitted phases or neither. Check all
+    /// fallible conditions before advancing either row; no provider work runs here.
+    pub fn start_retirement(
+        &mut self,
+        live: MemoryOperationId,
+        tail: MemoryOperationId,
+    ) -> Result<()> {
+        if self.closed {
+            return Err(Error::Closed);
+        }
+        let live_plan = self.plan(live, Stage::Granted)?;
+        let tail_plan = self.plan(tail, Stage::Granted)?;
+        if live == tail
+            || !matches!(live_plan.purpose, Purpose::Retirement(_))
+            || tail_plan.class != Class::Cleanup
+            || !matches!(tail_plan.purpose, Purpose::HostIo)
+        {
+            return Err(Error::PurposeChanged);
+        }
+        self.advance()?;
+        // Both exact rows were checked above and no mutation can interleave.
+        self.entry(live, Stage::Granted)?.stage = Stage::Started;
+        self.entry(tail, Stage::Granted)?.stage = Stage::Started;
+        Ok(())
+    }
+
     pub fn bind(&mut self, id: MemoryOperationId, backing: CapturedBacking) -> Result<()> {
         let plan = self.plan(id, Stage::Started)?;
         if !matches!(plan.purpose, Purpose::Preparation(None)) {

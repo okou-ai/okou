@@ -1,6 +1,7 @@
 mod admission;
 mod boundaries;
 mod lifetime;
+mod retirement;
 mod settlement;
 
 use std::path::PathBuf;

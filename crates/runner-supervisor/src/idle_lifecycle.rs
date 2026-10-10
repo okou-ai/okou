@@ -15,10 +15,12 @@ use crate::blank_pool::BlankPoolDiagnostics;
 use runner_executor::executor::{BlankPoolSelection, BlankPoolSelectionReason};
 use runner_host::idle_prune_control::{PruneIdleReport, PruneIdleResponse};
 use runner_host::paths::short_digest;
+use runner_lifecycle::host_memory_operations::MemoryOperationError;
 use runner_lifecycle::idle_pool::{
-    BlankIdleReservationMiss, DestroyOutcome, ExactIdleReservationMiss, IdleDestroyJob,
-    IdleDestroyPayload, IdleDestroyResult, IdlePool, IdlePoolSnapshot, ReservedIdleSandbox,
-    RestoreReservedIdleResult, RetainedIdleDestroyResult,
+    BlankIdleReservationMiss, DestroyOutcome, ExactIdleReservationMiss, GuardedIdleRetirement,
+    IdleDestroyJob, IdleDestroyPayload, IdleDestroyResult, IdlePool, IdlePoolSnapshot,
+    IdleRetirementStartFailure, ReservedIdleSandbox, RestoreReservedIdleResult,
+    RetainedIdleDestroyResult,
 };
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::{StatusResult, StatusTracker};
@@ -32,6 +34,10 @@ pub type SharedIdlePool = Arc<tokio::sync::Mutex<IdlePool>>;
 pub struct IdleCleanupTask<T> {
     completion: oneshot::Receiver<T>,
 }
+
+/// Supervisor observation of the independently owned memory-covered cleanup.
+pub type GuardedIdleCleanupTask =
+    IdleCleanupTask<Result<RetainedIdleDestroyResult, MemoryOperationError>>;
 
 impl<T> IdleCleanupTask<T> {
     /// Wait for one completion. A lost producer is uncertainty, not cleanup proof.
@@ -61,6 +67,32 @@ impl IdleDestroyTracker {
     ) -> IdleCleanupTask<RetainedIdleDestroyResult> {
         let (payload, lease) = job.into_retiring_parts();
         self.spawn_payload_retaining_lease(payload, lease, context)
+    }
+
+    /// Mandatory supplied coverage has already been granted outside pool locks.
+    /// Atomic start rejection returns the original parked owner. P2 owns real
+    /// accepted work; this tracker retains its completion through shutdown and
+    /// publishes reuse notification even if the caller drops its receiver.
+    pub fn spawn_guarded_retirement(
+        &self,
+        retirement: GuardedIdleRetirement,
+        context: &'static str,
+    ) -> Result<GuardedIdleCleanupTask, Box<IdleRetirementStartFailure>> {
+        let task = retirement.start(context)?;
+        let reuse_state_notify = Arc::clone(&self.reuse_state_notify);
+        Ok(self.track(
+            async move {
+                let result = task.join().await;
+                if result
+                    .as_ref()
+                    .is_ok_and(|result| result.home_cache_promoted)
+                {
+                    reuse_state_notify.notify_one();
+                }
+                result
+            },
+            context,
+        ))
     }
 
     pub fn spawn_payload_retaining_lease(
@@ -690,6 +722,7 @@ async fn finish_idle_payload(
 mod tests {
     use super::*;
 
+    mod guarded;
     mod ownership;
 
     fn cleanup_tracker() -> IdleDestroyTracker {
