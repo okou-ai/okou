@@ -1422,12 +1422,6 @@ impl HomeImageLease {
         let Some(cache_key) = self.cache_key.as_deref() else {
             return Ok(false);
         };
-        if self.consumed_cache_hit {
-            return self
-                .cache
-                .invalidate_cache_entry(run_id, cache_key, reason)
-                .await;
-        }
         self.cache
             .invalidate_cache_entry(run_id, cache_key, reason)
             .await
