@@ -59,6 +59,7 @@ interface TiptapInstructionsEditorProps {
 }
 
 const ICON_SIZE = 18;
+const BUBBLE_MENU_PLUGIN_KEY = "instructionsBubbleMenu";
 interface ToolbarLabels {
   bold: string;
   italic: string;
@@ -238,6 +239,20 @@ export function TiptapInstructionsEditor({
     content: initialContent,
     contentType: "markdown",
     editable: !disabled,
+    onCreate: ({ editor }) => {
+      const scrollTarget = editor.view.dom.closest<HTMLElement>(
+        '[data-slot="detail-page-scroll"]',
+      );
+      if (scrollTarget) {
+        // Bind after the editor mounts; Tiptap owns the listener and cleanup.
+        editor.commands.setMeta(BUBBLE_MENU_PLUGIN_KEY, {
+          type: "updateOptions",
+          options: {
+            options: { scrollTarget, hide: { boundary: scrollTarget } },
+          },
+        });
+      }
+    },
     editorProps: {
       attributes: {
         class: editorClassName,
@@ -258,8 +273,10 @@ export function TiptapInstructionsEditor({
       {editor && (
         <BubbleMenu
           editor={editor}
+          pluginKey={BUBBLE_MENU_PLUGIN_KEY}
           updateDelay={0}
-          className="z-50 flex items-center gap-1 rounded-lg border border-surface-border bg-popover px-1.5 py-1 shadow-lg"
+          resizeDelay={0}
+          className="z-50 flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-surface-border bg-popover px-1.5 py-1 shadow-lg"
         >
           <ToolbarButton
             onAction={() => {
