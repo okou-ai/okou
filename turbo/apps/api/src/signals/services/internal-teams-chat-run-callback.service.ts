@@ -67,28 +67,6 @@ interface ClaimedTeamsChatDelivery {
   readonly payload: unknown;
 }
 
-async function claimTeamsChatDelivery(
-  db: Db,
-  callbackId: string,
-): Promise<ClaimedTeamsChatDelivery | undefined> {
-  const [callback] = await db
-    .update(agentRunCallbacks)
-    .set({ attempts: 1, lastAttemptAt: nowDate() })
-    .where(
-      and(
-        eq(agentRunCallbacks.id, callbackId),
-        eq(agentRunCallbacks.internalKind, "teams:chat"),
-        eq(agentRunCallbacks.status, "pending"),
-        eq(agentRunCallbacks.attempts, 0),
-      ),
-    )
-    .returning({
-      runId: agentRunCallbacks.runId,
-      payload: agentRunCallbacks.payload,
-    });
-  return callback;
-}
-
 async function loadTeamsChatDeliveryContext(
   args: {
     readonly db: Db;
@@ -329,7 +307,21 @@ export async function dispatchTeamsChatDeliveryOnce(
 ): Promise<void> {
   const startedAt = now();
   signal.throwIfAborted();
-  const callback = await claimTeamsChatDelivery(db, callbackId);
+  const [callback] = await db
+    .update(agentRunCallbacks)
+    .set({ attempts: 1, lastAttemptAt: nowDate() })
+    .where(
+      and(
+        eq(agentRunCallbacks.id, callbackId),
+        eq(agentRunCallbacks.internalKind, "teams:chat"),
+        eq(agentRunCallbacks.status, "pending"),
+        eq(agentRunCallbacks.attempts, 0),
+      ),
+    )
+    .returning({
+      runId: agentRunCallbacks.runId,
+      payload: agentRunCallbacks.payload,
+    });
   if (!callback) {
     return;
   }
