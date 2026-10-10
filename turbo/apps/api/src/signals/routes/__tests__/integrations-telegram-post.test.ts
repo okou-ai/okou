@@ -11,6 +11,7 @@ import {
   integrationsTelegramContract,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
+import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -647,19 +648,27 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       actor,
       thread.chatThreadId,
     );
-    const inputs = events.filter((event) => {
-      return event.eventType === "input.prompt";
-    });
+    const revokedIds = revokedChatEventIds(events);
+    const inputs = events
+      .filter((event) => {
+        return event.eventType === "input.prompt";
+      })
+      .filter((event) => {
+        return !revokedIds.has(event.id);
+      });
     expect(inputs).toHaveLength(2);
     for (const update of updates) {
+      const input = inputs.find((event) => {
+        return event.userMessage.parts.some((part) => {
+          return part.type === "text" && part.text === update.message.text;
+        });
+      });
+      if (!input) {
+        throw new Error("Expected the current Telegram DM input");
+      }
       await expect(
         threadIdWhere(fixture, (event) => {
-          return (
-            event.eventType === "input.prompt" &&
-            event.userMessage.parts.some((part) => {
-              return part.type === "text" && part.text === update.message.text;
-            })
-          );
+          return event.id === input.id;
         }),
       ).resolves.toBe(thread.chatThreadId);
     }
@@ -680,11 +689,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     }
     expect(repeated.body.events).toStrictEqual(lifecycle.body.events);
     const replayed = await chatApi.listThreadEvents(actor, thread.chatThreadId);
-    expect(
-      replayed.events.filter((event) => {
-        return event.eventType === "input.prompt";
-      }),
-    ).toStrictEqual(inputs);
+    expect(replayed.events).toStrictEqual(events);
     await chatApi.requestReadThreadMetadata(
       actorForFixture(outsider),
       thread.chatThreadId,
