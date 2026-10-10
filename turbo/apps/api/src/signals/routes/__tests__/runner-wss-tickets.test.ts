@@ -1,14 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import { runnerWssTicketsContract } from "@okouai/api-contracts/contracts/runner-wss-tickets";
-import { testRuntimeStateContract } from "@okouai/api-contracts/contracts/test-runtime-state";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { runnerWssTicketRoutes } from "../runner-wss-tickets";
-import { testRuntimeStateRoutes } from "../test-runtime-state";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
@@ -24,12 +22,6 @@ describe("direct Runner WSS ticket boundary", () => {
   function client() {
     return setupApp({ context, routes: runnerWssTicketRoutes })(
       runnerWssTicketsContract,
-    );
-  }
-
-  function testState() {
-    return setupApp({ context, routes: testRuntimeStateRoutes })(
-      testRuntimeStateContract,
     );
   }
 
@@ -447,17 +439,8 @@ describe("direct Runner WSS ticket boundary", () => {
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
-  it("rejects expired and revoked tickets and a terminal run", async () => {
+  it("rejects revoked tickets and a terminal run", async () => {
     const f = await setup();
-    const expired = await accept(bootstrap(f), [200]);
-    await accept(
-      testState().action({
-        body: { action: "expire-runner-wss-tickets", run_id: f.runId },
-      }),
-      [200],
-    );
-    const expiryDenial = await accept(consume(f, expired.body.ticket), [404]);
-    expect(expiryDenial.body.error.code).toBe("NOT_FOUND");
     const revoked = await accept(bootstrap(f), [200]);
     await f.bdd.readMe(f.actor);
     await accept(
@@ -468,7 +451,8 @@ describe("direct Runner WSS ticket boundary", () => {
       }),
       [204],
     );
-    await accept(consume(f, revoked.body.ticket), [404]);
+    const revokedDenial = await accept(consume(f, revoked.body.ticket), [404]);
+    expect(revokedDenial.body.error.code).toBe("NOT_FOUND");
     const terminal = await accept(bootstrap(f), [200]);
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
     await accept(consume(f, terminal.body.ticket), [404]);

@@ -1431,16 +1431,17 @@ const handleEventCallback$ = command(
 const handleSlackSessionStoppedEvent$ = command(
   async (
     { set },
-    payload: SlackEventCallback,
+    args: { readonly payload: SlackEventCallback; readonly isRetry: boolean },
     signal: AbortSignal,
   ): Promise<Response> => {
+    const { payload, isRetry } = args;
     const stopped = slackSessionStoppedEventSchema.safeParse(payload.event);
     if (!stopped.success || !payload.team_id) {
       return jsonResponse({ error: "Invalid Slack stop event" }, 400);
     }
     await set(
       stopSlackSession$,
-      { workspaceId: payload.team_id, event: stopped.data },
+      { workspaceId: payload.team_id, event: stopped.data, isRetry },
       signal,
     );
     signal.throwIfAborted();
@@ -1472,7 +1473,11 @@ export const handleSlackEvents$ = command(
       if (payload.event.type === "agent_session_stopped") {
         // Stop retries repeat the same time-bounded mutation; do not discard them
         // with the generic non-message retry guard below.
-        return await set(handleSlackSessionStoppedEvent$, payload, signal);
+        return await set(
+          handleSlackSessionStoppedEvent$,
+          { payload, isRetry: Boolean(retryNum) },
+          signal,
+        );
       }
       const agentEvent = slackAgentMessageEvent(payload.event);
       if (agentEvent) {

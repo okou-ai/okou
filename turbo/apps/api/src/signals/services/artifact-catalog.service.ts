@@ -332,6 +332,34 @@ export function queueArtifactCatalogFileSql(
   fileMutation?: SQL,
   handoff?: "if-mutated",
 ): SQL {
+  const { ctes, queue } = artifactCatalogFileHandoffSql(
+    fileId,
+    fileMutation,
+    handoff,
+  );
+  return sql`${ctes}${queue}`;
+}
+
+/** Skip all handoff work for an unchanged file and return the mutation outcome. */
+export function queueChangedArtifactCatalogFileSql(
+  fileId: string,
+  fileMutation: SQL,
+): SQL {
+  const { ctes, queue } = artifactCatalogFileHandoffSql(
+    fileId,
+    fileMutation,
+    "if-mutated",
+  );
+  return sql`${ctes}, queued_file AS (${queue})
+    SELECT EXISTS(SELECT 1 FROM mutated_file) AS changed
+  `;
+}
+
+function artifactCatalogFileHandoffSql(
+  fileId: string,
+  fileMutation?: SQL,
+  handoff?: "if-mutated",
+) {
   const file = fileMutation
     ? {
         id: sql`mutated_file.id`,
@@ -359,7 +387,7 @@ export function queueArtifactCatalogFileSql(
     handoff === "if-mutated"
       ? sql`${exists(sql`(SELECT 1 FROM mutated_file)`)} AND ${notExists(sql`(SELECT 1 FROM eligible_file)`)}`
       : notExists(sql`(SELECT 1 FROM eligible_file)`);
-  return sql`
+  const ctes = sql`
     WITH ${mutationCte}eligible_file AS (
       SELECT ${file.id} AS file_id,
              ${file.orgId} AS org_id,
@@ -390,7 +418,8 @@ export function queueArtifactCatalogFileSql(
       DELETE FROM ${artifactCatalogPendingFiles}
       WHERE ${eq(artifactCatalogPendingFiles.fileId, fileId)}
         AND ${cleanupCondition}
-    )
+    )`;
+  const queue = sql`
     INSERT INTO ${artifactCatalogPendingFiles} (file_id, org_id, author_user_id, queued_at)
     SELECT file_id, org_id, author_user_id, clock_timestamp() FROM eligible_file
     ON CONFLICT (file_id) DO UPDATE SET
@@ -398,6 +427,7 @@ export function queueArtifactCatalogFileSql(
       author_user_id = excluded.author_user_id,
       queued_at = clock_timestamp()
   `;
+  return { ctes, queue };
 }
 
 interface UpsertArtifactArgs {

@@ -1,5 +1,3 @@
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import { signSandboxJwtForTests } from "../../../auth/tokens";
 import { randomUUID } from "node:crypto";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
@@ -383,8 +381,8 @@ export function createRunsApi(context: TestContext) {
   }
 
   /**
-   * A Thread send whose pick fails before creating a run: returns the pick's
-   * error message and the error the thread records on the rejected input.
+   * A Thread send whose launch fails before creating a run: observe the error
+   * recorded on its rejected input through the ordinary thread-events route.
    */
   async function readThreadLaunchFailure(
     actor: ApiTestUser,
@@ -396,7 +394,6 @@ export function createRunsApi(context: TestContext) {
       readonly threadId?: string;
     },
   ): Promise<{
-    readonly pickError: string;
     readonly inputError: string | undefined;
   }> {
     const chat = createChatFilesBddApi(context);
@@ -415,14 +412,10 @@ export function createRunsApi(context: TestContext) {
     if (sent.status !== 201 || sent.body.runId !== null) {
       throw new Error("Expected the Thread send to be queued without a run");
     }
-    const pickError = await flushWaitUntilForTest().then(
-      () => {
-        throw new Error("Expected the Thread pick to fail");
-      },
-      (error: unknown) => {
-        return error instanceof Error ? error.message : String(error);
-      },
-    );
+    // Drain the launch task; only the public input rejection is observed below.
+    await flushWaitUntilForTest().catch(() => {
+      return undefined;
+    });
     const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
     const rejection = events.find((event) => {
       return event.revokesEventId === clientEventId;
@@ -431,7 +424,6 @@ export function createRunsApi(context: TestContext) {
       throw new Error("Expected the failed pick to reject the input");
     }
     return {
-      pickError,
       inputError: "error" in rejection ? rejection.error : undefined,
     };
   }
@@ -873,26 +865,6 @@ export function createRunsApi(context: TestContext) {
         }),
         statuses,
       );
-    },
-
-    okouTokenForRunWithCapabilities(
-      actor: ApiTestUser,
-      runId: string,
-      capabilities: readonly Capability[],
-    ): string {
-      if (!actor.orgId) {
-        throw new Error("Agent run tokens require an org-scoped actor");
-      }
-      const seconds = Math.floor(now() / 1000);
-      return signSandboxJwtForTests({
-        scope: "okou",
-        userId: actor.userId,
-        orgId: actor.orgId,
-        runId,
-        capabilities: [...capabilities],
-        iat: seconds,
-        exp: seconds + 3600,
-      });
     },
 
     async applyUserPermissionGrant(

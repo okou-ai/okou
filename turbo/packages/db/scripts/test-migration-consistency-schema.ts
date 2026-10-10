@@ -48,6 +48,8 @@ import { validatePermanentModelCatalogConstraints } from "./test-model-catalog-p
 import { validateModelCatalogSeed } from "./test-model-catalog-seed";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 import { validatePermanentConnectorCatalogColumns } from "./test-connector-catalog-columns-permanent";
+import { validatePermanentChatThreadStorage } from "./test-chat-thread-storage-permanent";
+import { validatePermanentPlatformGenerationReceipts } from "./test-platform-generation-receipts-permanent";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.join(dirname, "..");
@@ -2685,6 +2687,8 @@ async function main(): Promise<void> {
     await validatePermanentDiscordGrants(dbUrl1);
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
     await validatePermanentConnectorCatalogColumns(dbUrl1);
+    await validatePermanentChatThreadStorage(dbUrl1);
+    await validatePermanentPlatformGenerationReceipts(dbUrl1);
     await validatePermanentModelCatalogConstraints(dbUrl1);
     await validateCanonicalModelSelections(dbUrl1);
     await validateModelCatalogSeed(dbUrl1);
@@ -2716,6 +2720,8 @@ async function main(): Promise<void> {
     await validatePermanentDiscordGrants(dbUrl2);
     await validatePermanentOrgPlanEntitlementState(dbUrl2);
     await validatePermanentConnectorCatalogColumns(dbUrl2);
+    await validatePermanentChatThreadStorage(dbUrl2);
+    await validatePermanentPlatformGenerationReceipts(dbUrl2);
     await validatePermanentModelCatalogConstraints(dbUrl2);
     await validateCanonicalModelSelections(dbUrl2);
     await validateXResourceUsageSchema(dbUrl2);

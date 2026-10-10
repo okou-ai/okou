@@ -104,9 +104,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     description:
       "Keep the chat header and input anchored, with a single bottom safe-area reserve.",
-    enabled: false,
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
-    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+    enabled: true,
   },
   [FeatureSwitchKey.BrowserNativeInput]: {
     maintainer: "liangyou@okou.ai",
@@ -288,6 +286,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Send preview chat runs through real agent CLIs instead of preview mock runners.",
+    enabled: false,
+  },
+  [FeatureSwitchKey.CodexExecution]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Codex execution (test only)",
+    description:
+      "Test-only override to use Codex instead of Pi for Auto and supported ChatGPT subscription runs.",
     enabled: false,
   },
   [FeatureSwitchKey.PiMemory]: {

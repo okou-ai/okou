@@ -97,11 +97,6 @@
       "owner": "failPoisonQueuedJob"
     },
     {
-      "id": "TX-0033",
-      "file": "turbo/apps/api/src/signals/routes/test-official-workflow-catalog-state.ts",
-      "owner": "seedPreviousSchemaRelease$"
-    },
-    {
       "id": "TX-0042",
       "file": "turbo/apps/api/src/signals/routes/user-templates.ts",
       "owner": "updateInner$"
@@ -262,11 +257,6 @@
       "owner": "publishAutomaticConnection$"
     },
     {
-      "id": "TX-0079",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-oauth.service.ts",
-      "owner": "refreshAutomatic"
-    },
-    {
       "id": "TX-0080",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-oauth.service.ts",
       "owner": "refreshAutomatic"
@@ -305,11 +295,6 @@
       "id": "TX-0088",
       "file": "turbo/apps/api/src/signals/services/canonical-discord-ingress-processor.service.ts",
       "owner": "recordIngressFailure"
-    },
-    {
-      "id": "TX-0089",
-      "file": "turbo/apps/api/src/signals/services/canonical-slack-thread-status.service.ts",
-      "owner": "canonicalSlackThreadHasOutstandingWork$"
     },
     {
       "id": "TX-0090",
@@ -945,11 +930,6 @@
       "id": "TX-0232",
       "file": "turbo/apps/api/src/signals/services/preview-connector-catalog.service.ts",
       "owner": "seedPreviewConnectorCatalog$"
-    },
-    {
-      "id": "TX-0233",
-      "file": "turbo/apps/api/src/signals/services/private-artifact-storage.service.ts",
-      "owner": "completePrivateArtifact$"
     },
     {
       "id": "TX-0234",
@@ -1679,16 +1659,6 @@
     {
       "id": "TX-0404",
       "file": "turbo/packages/db/scripts/test-morning-brief-enrollment-installation.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0405",
-      "file": "turbo/packages/db/scripts/test-native-morning-brief-storage-retirement.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0406",
-      "file": "turbo/packages/db/scripts/test-native-morning-brief-storage-retirement.ts",
       "owner": "<module>"
     },
     {

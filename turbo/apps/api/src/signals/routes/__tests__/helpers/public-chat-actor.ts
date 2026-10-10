@@ -160,6 +160,15 @@ export async function publicChatActor(
         return fixture.requestSendEventWithBearer(...parameters);
       });
     },
+    claimRunnerRun: (
+      ...parameters: Parameters<typeof fixture.api.claimRunnerJob>
+    ) => {
+      return run(async () => {
+        const claim = await fixture.api.claimRunnerJob(...parameters);
+        owner.rememberClaim(parameters[0], claim.sandboxToken);
+        return claim;
+      });
+    },
     claimPatRun: (
       ...parameters: Parameters<typeof fixture.api.requestClaimRunnerJobAs>
     ) => {

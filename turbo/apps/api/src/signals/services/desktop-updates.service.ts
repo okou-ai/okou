@@ -5,10 +5,7 @@ import {
   type DesktopUpdatePlatform,
   type SquirrelMacReleases,
 } from "@okouai/api-contracts/contracts/desktop-updates";
-import {
-  DESKTOP_PRODUCTS,
-  DESKTOP_PRODUCT_OKOU,
-} from "@okouai/api-contracts/contracts/client-headers";
+import { DESKTOP_PRODUCT_OKOU } from "@okouai/api-contracts/contracts/client-headers";
 import { delay } from "signal-timers";
 import { z } from "zod";
 
@@ -153,7 +150,7 @@ const desktopUpdateChannelSchema = z.object({
 
 const desktopUpdateManifestSchema = z.object({
   schemaVersion: z.literal(1),
-  product: z.enum(DESKTOP_PRODUCTS).optional(),
+  product: z.literal(DESKTOP_PRODUCT_OKOU),
   channels: z.record(z.string(), desktopUpdateChannelSchema),
   releases: z.record(z.string(), desktopUpdateReleaseSchema),
 });
@@ -370,13 +367,6 @@ async function fetchDesktopUpdateManifestOnce(
   }
 
   const manifest = desktopUpdateManifestSchema.parse(body.value);
-  // Fail closed: a manifest that does not declare the Okou product is not
-  // served, including one that omits the field entirely.
-  if (manifest.product !== DESKTOP_PRODUCT_OKOU) {
-    throw new Error(
-      `Desktop update manifest product mismatch: expected ${DESKTOP_PRODUCT_OKOU}, received ${manifest.product ?? "none"}`,
-    );
-  }
   return { ok: true, manifest };
 }
 

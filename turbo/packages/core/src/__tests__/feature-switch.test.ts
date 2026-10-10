@@ -20,6 +20,7 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
+    expect(FeatureSwitchKey.CodexExecution).toBe("_codexExecution");
     expect(FeatureSwitchKey.ChatThreadArchiving).toBe("chatThreadArchiving");
     expect(FeatureSwitchKey.BrowserNativeInput).toBe("browserNativeInput");
   });
@@ -46,6 +47,27 @@ describe("isFeatureEnabled", () => {
       }
     }
     expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("beta");
+  });
+
+  it("keeps Codex execution test-only and off for everyone without an override", () => {
+    const key = FeatureSwitchKey.CodexExecution;
+    expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");
+    for (const context of [
+      {},
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+      { userId: "external-user", orgId: "external-org" },
+      { email: "liangyou@okou.ai", orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    ]) {
+      expect(getAllFeatureStates(context)[key]).toBe(false);
+      for (const enabled of [true, false]) {
+        expect(
+          isFeatureEnabled(key, {
+            ...context,
+            overrides: { [key]: enabled },
+          }),
+        ).toBe(enabled);
+      }
+    }
   });
 
   it("keeps artifact previews off for staff and external users until explicitly enabled", () => {

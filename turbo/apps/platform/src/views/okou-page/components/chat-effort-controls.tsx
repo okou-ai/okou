@@ -3,12 +3,14 @@ import {
   type ReasoningEffort,
   withModelReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Switch } from "@okouai/ui";
-import { useLastResolved } from "ccstate-react";
+import { useGet, useLastResolved } from "ccstate-react";
 import { Zap } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { featureSwitch$ } from "../../../signals/external/feature-switch.ts";
 import { modelCatalog$ } from "../../../signals/external/model-catalog.ts";
 import { availableRunModels$ } from "../../../signals/external/run-models.ts";
 import {
@@ -23,12 +25,24 @@ export function useChatEffort(
 ) {
   const models = useLastResolved(availableRunModels$);
   const catalog = useLastResolved(modelCatalog$);
+  const features = useGet(featureSwitch$);
+  const codexExecution = features[FeatureSwitchKey.CodexExecution];
   const runModel = models?.models.find((entry) => {
     return entry.model === selection?.selectedModel;
   });
   return {
-    efforts: availableChatReasoningEfforts(selection, runModel, catalog),
-    effort: effectiveChatReasoningEffort(selection, runModel, catalog),
+    efforts: availableChatReasoningEfforts(
+      selection,
+      runModel,
+      catalog,
+      codexExecution,
+    ),
+    effort: effectiveChatReasoningEffort(
+      selection,
+      runModel,
+      catalog,
+      codexExecution,
+    ),
   };
 }
 

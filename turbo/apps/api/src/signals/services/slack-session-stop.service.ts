@@ -19,10 +19,7 @@ import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { createSlackClient } from "../external/slack-message-client";
 import { tapError } from "../utils";
 import { cancelRun$ } from "./agent-run-terminal-transition.service";
-import {
-  clearCanonicalSlackThreadStatusIfIdle$,
-  refreshCanonicalSlackThreadStatus$,
-} from "./canonical-slack-thread-status.service";
+import { reconcileCanonicalSlackThreadStatus$ } from "./canonical-slack-thread-status.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import {
   appendInterruptUserMessage$,
@@ -55,7 +52,6 @@ interface SlackSessionStopScope {
   readonly event: SlackSessionStoppedEvent;
   readonly userId: string;
   readonly orgId: string;
-  readonly encryptedBotToken: string;
   readonly routes: readonly {
     readonly routeId: string;
     readonly routeThreadTs: string;
@@ -229,9 +225,9 @@ const cancelSlackSessionRuns$ = command(
   },
 );
 
-const confirmStoppedSlackSession$ = command(
+const publishStoppedSlackSession$ = command(
   async (
-    { set },
+    _,
     scope: SlackSessionStopScope,
     signal: AbortSignal,
   ): Promise<void> => {
@@ -243,34 +239,43 @@ const confirmStoppedSlackSession$ = command(
       });
       signal.throwIfAborted();
     }
+  },
+);
+
+const postSlackSessionStopNotice$ = command(
+  async (
+    { set },
+    args: {
+      readonly event: SlackSessionStoppedEvent;
+      readonly userId: string;
+      readonly orgId: string;
+      readonly encryptedBotToken: string;
+      readonly text: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
     const featureContext = await set(
       loadUserFeatureSwitchContext$,
-      scope.orgId,
-      scope.userId,
+      args.orgId,
+      args.userId,
       signal,
     );
     signal.throwIfAborted();
     const botToken = await decryptPersistentSecretValue(
-      scope.encryptedBotToken,
+      args.encryptedBotToken,
       featureContext,
     );
     signal.throwIfAborted();
-    await tapError(
-      (async () => {
-        const posted = await createSlackClient(botToken).postMessage(
-          scope.event.channel,
-          "Stopped your tasks and cleared their queued messages in this thread.",
-          { threadTs: scope.event.thread_ts },
-        );
-        if (posted.kind === "slack_error") {
-          throw new Error(posted.error);
-        }
-      })(),
-      (error) => {
-        L.warn("Failed to confirm Slack session stop", { error });
-      },
-    );
+    const posted = await createSlackClient(botToken).postEphemeral({
+      channel: args.event.channel,
+      user: args.event.user,
+      threadTs: args.event.thread_ts,
+      text: args.text,
+    });
     signal.throwIfAborted();
+    if (posted.kind === "slack_error") {
+      throw new Error(posted.error);
+    }
   },
 );
 
@@ -281,6 +286,7 @@ export const stopSlackSession$ = command(
     args: {
       readonly workspaceId: string;
       readonly event: SlackSessionStoppedEvent;
+      readonly isRetry: boolean;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -292,6 +298,7 @@ export const stopSlackSession$ = command(
         routeThreadTs: slackChatThreadRoutes.threadTs,
         chatThreadId: slackChatThreadRoutes.chatThreadId,
         userId: slackChatThreadRoutes.userId,
+        slackUserId: slackOrgConnections.slackUserId,
         orgId: slackOrgInstallations.orgId,
         encryptedBotToken: slackOrgInstallations.encryptedBotToken,
       })
@@ -318,7 +325,6 @@ export const stopSlackSession$ = command(
           eq(chatThreads.userId, slackChatThreadRoutes.userId),
           eq(agents.orgId, slackOrgInstallations.orgId),
           eq(slackOrgConnections.slackWorkspaceId, args.workspaceId),
-          eq(slackOrgConnections.slackUserId, event.user),
           eq(slackChatThreadRoutes.channelId, event.channel),
           or(
             eq(slackChatThreadRoutes.threadTs, event.thread_ts),
@@ -331,39 +337,64 @@ export const stopSlackSession$ = command(
     if (!binding?.orgId) {
       return;
     }
-    const scope: SlackSessionStopScope = {
-      event,
-      routes,
-      userId: binding.userId,
-      orgId: binding.orgId,
-      encryptedBotToken: binding.encryptedBotToken,
-    };
-    const inputsStopped = await set(stopSlackSessionInputs$, scope, signal);
-    signal.throwIfAborted();
-    const runsCancelled = await set(cancelSlackSessionRuns$, scope, signal);
-    signal.throwIfAborted();
-    if (inputsStopped || runsCancelled) {
-      await set(confirmStoppedSlackSession$, scope, signal);
-      signal.throwIfAborted();
-    }
-    for (const route of routes) {
-      const target = {
-        chatThreadId: route.chatThreadId,
-        channelId: event.channel,
-        threadTs: event.thread_ts,
-        routeThreadTs: route.routeThreadTs,
+    // Status belongs to the whole physical thread; cancellation stays scoped
+    // to the signed actor even when they do not own a route in this thread.
+    const actorRoutes = routes.filter((route) => {
+      return route.slackUserId === event.user;
+    });
+    const actorBinding = actorRoutes[0];
+    let stopped = false;
+    if (actorBinding) {
+      const scope: SlackSessionStopScope = {
+        event,
+        routes: actorRoutes,
+        userId: actorBinding.userId,
+        orgId: binding.orgId,
       };
-      const cleared = await set(
-        clearCanonicalSlackThreadStatusIfIdle$,
-        target,
-        signal,
-      );
+      const inputsStopped = await set(stopSlackSessionInputs$, scope, signal);
       signal.throwIfAborted();
-      if (!cleared) {
-        // Another sender or a newer input can still own this agent's loading UX.
-        await set(refreshCanonicalSlackThreadStatus$, target, signal);
+      const runsCancelled = await set(cancelSlackSessionRuns$, scope, signal);
+      signal.throwIfAborted();
+      stopped = inputsStopped || runsCancelled;
+      if (stopped) {
+        await set(publishStoppedSlackSession$, scope, signal);
         signal.throwIfAborted();
       }
     }
+    const status = await set(
+      reconcileCanonicalSlackThreadStatus$,
+      {
+        chatThreadId: binding.chatThreadId,
+        channelId: event.channel,
+        threadTs: event.thread_ts,
+        routeThreadTs: binding.routeThreadTs,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    // Retries still reconcile cancellation and status, without repeating a
+    // notice or describing a previously successful Stop as a permission miss.
+    if (args.isRetry || (stopped && status !== "processing")) {
+      return;
+    }
+    await tapError(
+      set(
+        postSlackSessionStopNotice$,
+        {
+          event,
+          userId: binding.userId,
+          orgId: binding.orgId,
+          encryptedBotToken: binding.encryptedBotToken,
+          text: stopped
+            ? "Your tasks have stopped. Other tasks in this thread are still running."
+            : "You have no tasks to stop in this thread. You can only stop tasks you started.",
+        },
+        signal,
+      ),
+      (error) => {
+        L.warn("Failed to post Slack session stop notice", { error });
+      },
+    );
+    signal.throwIfAborted();
   },
 );

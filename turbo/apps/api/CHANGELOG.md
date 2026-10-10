@@ -9,6 +9,34 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.725.0](https://github.com/okou-ai/okou/compare/api-v1.724.0...api-v1.725.0) (2026-10-10)
+
+
+### Features
+
+* **morning-brief:** let agents choose email delivery ([#38612](https://github.com/okou-ai/okou/issues/38612)) ([0f93208](https://github.com/okou-ai/okou/commit/0f93208a3ab70effb1b4bea0a9c3fd8b20dc6ee0))
+
+
+### Bug Fixes
+
+* restore inline artifact previews ([#38579](https://github.com/okou-ai/okou/issues/38579)) ([4b9ce32](https://github.com/okou-ai/okou/commit/4b9ce32d5a84048aba394dd6f4297303002bdf0f))
+
+
+### Refactoring
+
+* **api:** erase vnc owner resources in one atomic statement ([#38625](https://github.com/okou-ai/okou/issues/38625)) ([b630116](https://github.com/okou-ai/okou/commit/b630116f5808cc0b6df6d766970d202e3f8a83b9))
+* **api:** retire builtin dcr registration transaction ([#38640](https://github.com/okou-ai/okou/issues/38640)) ([fe1b76a](https://github.com/okou-ai/okou/commit/fe1b76a3b1696799a6488064437abfe582d50bfd))
+* **api:** retire custom dcr registration in one statement ([#38637](https://github.com/okou-ai/okou/issues/38637)) ([e78027b](https://github.com/okou-ai/okou/commit/e78027b99b18c44fdb52c3c435da489f79b3e067))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.741.0
+    * @okouai/db bumped to 1.330.2
+    * @okouai/pi-agent-runtime bumped to 1.49.5
+
 ## [1.724.0](https://github.com/okou-ai/okou/compare/api-v1.723.0...api-v1.724.0) (2026-10-10)
 
 

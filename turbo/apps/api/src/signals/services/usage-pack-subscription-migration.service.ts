@@ -3049,37 +3049,6 @@ export const confirmUsagePackSubscriptionMigration$ = command(
   },
 );
 
-async function migrationForInvoice(
-  db: Pick<Db, "select">,
-  invoice: Pick<UsagePackInvoiceInput, "id" | "parent">,
-): Promise<MigrationRow | null> {
-  const subscriptionId = stripeObjectId(
-    invoice.parent?.subscription_details?.subscription,
-  );
-  const [migration] = await db
-    .select()
-    .from(usagePackSubscriptionMigrations)
-    .where(
-      or(
-        eq(usagePackSubscriptionMigrations.stripeInvoiceId, invoice.id),
-        subscriptionId
-          ? and(
-              eq(
-                usagePackSubscriptionMigrations.stripeSubscriptionId,
-                subscriptionId,
-              ),
-              inArray(usagePackSubscriptionMigrations.status, [
-                ...RECONCILING_MIGRATION_STATUSES,
-              ]),
-            )
-          : sql`false`,
-      ),
-    )
-    .orderBy(desc(usagePackSubscriptionMigrations.createdAt))
-    .limit(1);
-  return migration ?? null;
-}
-
 export const handleUsagePackMigrationInvoicePaid$ = command(
   async (
     { set },
@@ -3087,7 +3056,30 @@ export const handleUsagePackMigrationInvoicePaid$ = command(
     signal: AbortSignal,
   ): Promise<UsagePackMigrationLifecycleOutcome> => {
     const db = set(writeDb$);
-    const migration = await migrationForInvoice(db, invoice);
+    const subscriptionId = stripeObjectId(
+      invoice.parent?.subscription_details?.subscription,
+    );
+    const [migration] = await db
+      .select()
+      .from(usagePackSubscriptionMigrations)
+      .where(
+        or(
+          eq(usagePackSubscriptionMigrations.stripeInvoiceId, invoice.id),
+          subscriptionId
+            ? and(
+                eq(
+                  usagePackSubscriptionMigrations.stripeSubscriptionId,
+                  subscriptionId,
+                ),
+                inArray(usagePackSubscriptionMigrations.status, [
+                  ...RECONCILING_MIGRATION_STATUSES,
+                ]),
+              )
+            : sql`false`,
+        ),
+      )
+      .orderBy(desc(usagePackSubscriptionMigrations.createdAt))
+      .limit(1);
     signal.throwIfAborted();
     if (!migration) {
       return { handled: false, orgId: null };

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.3.3...runner-storage-v0.4.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
 ## [0.3.3](https://github.com/okou-ai/okou/compare/runner-storage-v0.3.2...runner-storage-v0.3.3) (2026-10-10)
 
 ## [0.3.2](https://github.com/okou-ai/okou/compare/runner-storage-v0.3.1...runner-storage-v0.3.2) (2026-10-10)

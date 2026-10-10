@@ -365,6 +365,7 @@ async function createChatThread(
     readonly modelSelection: ModelProviderSelection;
     readonly models: AvailableRunModelsResponse;
     readonly catalog: ModelCatalog;
+    readonly codexExecution: boolean;
     readonly connectorSelections?: readonly ConnectorAccountSelection[];
     readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
   },
@@ -377,6 +378,7 @@ async function createChatThread(
       return entry.model === selectedModel;
     }),
     args.catalog,
+    args.codexExecution,
   );
   const client = args.createClient(chatThreadsContract);
   await accept(
@@ -463,6 +465,7 @@ const startNewChatThreadCreate$ = command(
           modelSelection,
           models,
           catalog,
+          codexExecution: get(featureSwitch$)[FeatureSwitchKey.CodexExecution],
         },
         signal,
       );
@@ -587,6 +590,7 @@ const sendNewThreadMessage$ = command(
         modelSelection: resolvedModelSelection,
         models: resolved.models,
         catalog: resolved.catalog,
+        codexExecution: features[FeatureSwitchKey.CodexExecution],
         connectorSelections: request.connectorSelections,
         initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
       },

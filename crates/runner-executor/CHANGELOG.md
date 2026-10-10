@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.7.4...runner-executor-v0.8.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+
+### Bug Fixes
+
+* **runner:** bound active-input shutdown under guest backpressure ([#38591](https://github.com/okou-ai/okou/issues/38591)) ([648671b](https://github.com/okou-ai/okou/commit/648671bd07f959e25864029a81dbab13edef83c7))
+
 ## [0.7.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.7.3...runner-executor-v0.7.4) (2026-10-10)
 
 ## [0.7.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.7.2...runner-executor-v0.7.3) (2026-10-10)

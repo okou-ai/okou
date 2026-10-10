@@ -280,6 +280,7 @@ import { localizedRunError } from "../../lib/run-error.ts";
 import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
 import {
   ChatThreadLinkChip,
+  STRUCTURED_INLINE_REFERENCE_CLASS,
   STRUCTURED_INLINE_LINK_REFERENCE_CLASS,
 } from "../components/chat-thread-link-chip.tsx";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
@@ -7062,11 +7063,6 @@ function AgentRunSourceMessageAnnotation({
 // surrounding sentence than a borderless inline mention does.
 const INLINE_FILE_REFERENCE_SPACING_CLASS = "mx-1";
 
-// Template references are display-only (no link, no hover), so they carry no
-// fill or accent colour: they read as quiet inline text with an icon.
-const STRUCTURED_TEMPLATE_REFERENCE_CLASS =
-  "relative -top-px mx-0.5 inline-flex h-7 max-w-[240px] items-center gap-1.5 align-middle text-[13px] font-medium text-muted-foreground";
-
 function UserMessageTemplateReference({
   part,
 }: {
@@ -7077,10 +7073,10 @@ function UserMessageTemplateReference({
   return (
     <span
       data-structured-template-reference=""
-      className={STRUCTURED_TEMPLATE_REFERENCE_CLASS}
+      className={STRUCTURED_INLINE_REFERENCE_CLASS}
       title={label}
     >
-      <SwatchBook size={13} className="shrink-0" />
+      <SwatchBook size={13} className="shrink-0 text-selected-foreground" />
       <span className="min-w-0 truncate">{part.titleSnapshot}</span>
     </span>
   );
