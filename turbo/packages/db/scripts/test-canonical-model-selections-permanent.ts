@@ -193,7 +193,7 @@ export async function validateCanonicalModelSelections(databaseUrl: string) {
       [randomUUID(), run],
     );
     for (const change of [
-      `model_provider_account_identity=NULL`,
+      `model_provider_account_identity=''`,
       `model_provider_id=NULL`,
       `model_runtime_provider='claude-code-oauth-token'`,
       `built_in_model_key_id='${randomUUID()}'`,

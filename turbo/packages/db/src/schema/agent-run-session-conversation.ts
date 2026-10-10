@@ -67,6 +67,8 @@ export const agentRuns = pgTable(
           ${table.modelRuntimeModel} IS NOT NULL AND char_length(${table.modelRuntimeModel}) > 0
         )`,
       ),
+      // The local account binding survives deletion; proven upstream identity
+      // can be unknown and is not required to execute a personal subscription.
       check(
         "agent_runs_personal_capture_check",
         sql`${table.modelProvider} NOT IN ('codex-oauth-token', 'claude-code-oauth-token') OR COALESCE((
@@ -84,9 +86,10 @@ export const agentRuns = pgTable(
                 ${table.modelRuntimeProvider} = 'openai-codex'
               )) AND
               (${table.selectedModel} IS NULL OR ${table.selectedModel} <> 'auto') AND
-              ${table.modelProviderId} IS NOT NULL AND
-              ${table.modelProviderAccountIdentity} IS NOT NULL AND
-              char_length(${table.modelProviderAccountIdentity}) > 0
+              ${table.modelProviderId} IS NOT NULL AND (
+                ${table.modelProviderAccountIdentity} IS NULL OR
+                char_length(${table.modelProviderAccountIdentity}) > 0
+              )
             )
           )
         ), false)`,

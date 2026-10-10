@@ -1,6 +1,6 @@
 {
-  "id": "010f1b72-0c1c-45e4-aa77-2a55ad988a40",
-  "prevId": "99cee87a-61a4-4e89-b261-7710063cbf1b",
+  "id": "40bb3bab-ec40-4fae-bbc4-75e0bd6b6ace",
+  "prevId": "ae0b40ce-7572-4a39-9dae-568efdd9174e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -980,7 +980,7 @@
         },
         "agent_runs_personal_capture_check": {
           "name": "agent_runs_personal_capture_check",
-          "value": "\"agent_runs\".\"model_provider\" NOT IN ('codex-oauth-token', 'claude-code-oauth-token') OR COALESCE((\n          \"agent_runs\".\"built_in_model_key_id\" IS NULL AND \"agent_runs\".\"model_usage_provider\" IS NULL AND\n          \"agent_runs\".\"model_long_context_min_total_input_tokens\" IS NULL AND\n          (NOT (\"agent_runs\".\"launch_snapshot\" IS NOT NULL AND \"agent_runs\".\"status\" IN ('pending', 'running')) OR\n            \"agent_runs\".\"selected_model\" IS NOT NULL) AND\n          (\n            (\"agent_runs\".\"model_runtime_model\" IS NULL AND NOT (\n              \"agent_runs\".\"launch_snapshot\" IS NOT NULL AND \"agent_runs\".\"status\" IN ('pending', 'running')\n            )) OR (\n              \"agent_runs\".\"model_runtime_model\" IS NOT NULL AND\n              (\"agent_runs\".\"model_runtime_provider\" = \"agent_runs\".\"model_provider\" OR (\n                \"agent_runs\".\"model_provider\" = 'codex-oauth-token' AND\n                \"agent_runs\".\"model_runtime_provider\" = 'openai-codex'\n              )) AND\n              (\"agent_runs\".\"selected_model\" IS NULL OR \"agent_runs\".\"selected_model\" <> 'auto') AND\n              \"agent_runs\".\"model_provider_id\" IS NOT NULL AND\n              \"agent_runs\".\"model_provider_account_identity\" IS NOT NULL AND\n              char_length(\"agent_runs\".\"model_provider_account_identity\") > 0\n            )\n          )\n        ), false)"
+          "value": "\"agent_runs\".\"model_provider\" NOT IN ('codex-oauth-token', 'claude-code-oauth-token') OR COALESCE((\n          \"agent_runs\".\"built_in_model_key_id\" IS NULL AND \"agent_runs\".\"model_usage_provider\" IS NULL AND\n          \"agent_runs\".\"model_long_context_min_total_input_tokens\" IS NULL AND\n          (NOT (\"agent_runs\".\"launch_snapshot\" IS NOT NULL AND \"agent_runs\".\"status\" IN ('pending', 'running')) OR\n            \"agent_runs\".\"selected_model\" IS NOT NULL) AND\n          (\n            (\"agent_runs\".\"model_runtime_model\" IS NULL AND NOT (\n              \"agent_runs\".\"launch_snapshot\" IS NOT NULL AND \"agent_runs\".\"status\" IN ('pending', 'running')\n            )) OR (\n              \"agent_runs\".\"model_runtime_model\" IS NOT NULL AND\n              (\"agent_runs\".\"model_runtime_provider\" = \"agent_runs\".\"model_provider\" OR (\n                \"agent_runs\".\"model_provider\" = 'codex-oauth-token' AND\n                \"agent_runs\".\"model_runtime_provider\" = 'openai-codex'\n              )) AND\n              (\"agent_runs\".\"selected_model\" IS NULL OR \"agent_runs\".\"selected_model\" <> 'auto') AND\n              \"agent_runs\".\"model_provider_id\" IS NOT NULL AND (\n                \"agent_runs\".\"model_provider_account_identity\" IS NULL OR\n                char_length(\"agent_runs\".\"model_provider_account_identity\") > 0\n              )\n            )\n          )\n        ), false)"
         },
         "agent_runs_builtin_capture_owner_check": {
           "name": "agent_runs_builtin_capture_owner_check",

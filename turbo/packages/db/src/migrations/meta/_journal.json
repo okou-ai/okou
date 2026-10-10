@@ -2028,14 +2028,14 @@
     {
       "idx": 1367,
       "version": "7",
-      "when": 1791606823496,
+      "when": 1791615175795,
       "tag": "1367_enforce_canonical_model_capture",
       "breakpoints": true
     },
     {
       "idx": 1368,
       "version": "7",
-      "when": 1791606835478,
+      "when": 1791615177394,
       "tag": "1368_validate_canonical_model_capture",
       "breakpoints": true
     }

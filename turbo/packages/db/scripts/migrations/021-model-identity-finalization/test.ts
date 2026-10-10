@@ -394,6 +394,49 @@ try {
     [thread],
   );
   assert.equal(cli("events", ["--migrate"]).updated, 1);
+  // A completed personal execution may outlive the account without ever having
+  // proven upstream identity. Deletion must not force invented capture data.
+  const unknownIdentity = randomUUID();
+  const historicalProvider = randomUUID();
+  const historicalAccount = randomUUID();
+  await db.query(
+    `INSERT INTO model_providers (id,type,user_id,org_id)
+    VALUES ($1,'claude-code-oauth-token','identity-test-owner','identity-test-org')`,
+    [historicalProvider],
+  );
+  await db.query(
+    `INSERT INTO model_provider_accounts (id,model_provider_id,type,user_id,org_id,workspace_name)
+    VALUES ($1,$2,'claude-code-oauth-token','identity-test-owner','identity-test-org','retained workspace')`,
+    [historicalAccount, historicalProvider],
+  );
+  await db.query(
+    `INSERT INTO agent_runs (id,session_id,user_id,org_id,status,prompt,trigger_source,autonomy_budget,
+    model_provider,selected_model,model_runtime_provider,model_runtime_model,model_provider_id,model_provider_credential_scope,created_at)
+    VALUES ($1,$2,'identity-test-owner','identity-test-org','completed','unknown upstream identity','web',0,
+    'claude-code-oauth-token','claude-sonnet-5-5','claude-code-oauth-token','claude-sonnet-5-5',$3,'member','2026-01-01')`,
+    [unknownIdentity, session, historicalAccount],
+  );
+  await db.query("DELETE FROM model_providers WHERE id=$1", [
+    historicalProvider,
+  ]);
+  assert.equal(
+    (
+      await db.query(
+        "SELECT count(*)::int AS n FROM model_provider_accounts WHERE id=$1",
+        [historicalAccount],
+      )
+    ).rows[0].n,
+    0,
+  );
+  const unknownBefore = (
+    await db.query(
+      "SELECT model_provider_id,model_provider_account_identity,model_runtime_provider,model_runtime_model FROM agent_runs WHERE id=$1",
+      [unknownIdentity],
+    )
+  ).rows[0];
+  assert.equal(unknownBefore.model_provider_id, historicalAccount);
+  assert.equal(unknownBefore.model_provider_account_identity, null);
+
   const partial = randomUUID();
   await db.query(
     `INSERT INTO agent_runs (id,session_id,user_id,org_id,status,prompt,trigger_source,autonomy_budget,model_runtime_provider)
@@ -418,6 +461,10 @@ try {
   );
   assert.equal(preflight.status, 2, preflight.stderr);
   assert.equal(JSON.parse(preflight.stdout).agent_runs_runtime_pair_check, 1);
+  assert.equal(
+    JSON.parse(preflight.stdout).agent_runs_personal_capture_check,
+    0,
+  );
   await applyPendingMigrations(sql, { beforeMillis: validation.when });
   assert.equal(
     (
@@ -445,6 +492,58 @@ try {
     ('agent_runs_runtime_pair_check','chat_events_canonical_selection_check')`)
     ).rows[0].ready,
     true,
+  );
+
+  assert.deepEqual(
+    (
+      await db.query(
+        "UPDATE agent_runs SET summary='retained after account deletion' WHERE id=$1 RETURNING model_provider_id,model_provider_account_identity,model_runtime_provider,model_runtime_model",
+        [unknownIdentity],
+      )
+    ).rows[0],
+    unknownBefore,
+  );
+  // Current admission also supports accounts without upstream profile evidence.
+  // Complete executable capture still requires runtime and the local account ID.
+  const currentProvider = randomUUID();
+  const currentAccount = randomUUID();
+  const currentUnknown = randomUUID();
+  await db.query(
+    `INSERT INTO model_providers (id,type,user_id,org_id)
+    VALUES ($1,'claude-code-oauth-token','identity-test-owner','identity-test-org')`,
+    [currentProvider],
+  );
+  await db.query(
+    `INSERT INTO model_provider_accounts (id,model_provider_id,type,user_id,org_id)
+    VALUES ($1,$2,'claude-code-oauth-token','identity-test-owner','identity-test-org')`,
+    [currentAccount, currentProvider],
+  );
+  await db.query(
+    `INSERT INTO agent_runs (id,session_id,user_id,org_id,status,prompt,trigger_source,autonomy_budget,
+    model_provider,selected_model,model_runtime_provider,model_runtime_model,model_provider_id,model_provider_credential_scope,launch_snapshot)
+    VALUES ($1,$2,'identity-test-owner','identity-test-org','pending','current unknown identity','web',0,
+    'claude-code-oauth-token','claude-sonnet-5-5','claude-code-oauth-token','claude-sonnet-5-5',$3,'member','{"schemaVersion":3,"framework":"claude-code","runnerProfile":"test"}')`,
+    [currentUnknown, session, currentAccount],
+  );
+  for (const assignment of [
+    "model_provider_account_identity=''",
+    "model_provider_id=NULL",
+    "selected_model='auto'",
+    "model_runtime_provider='anthropic'",
+  ]) {
+    await assert.rejects(
+      db.query(`UPDATE agent_runs SET ${assignment} WHERE id=$1`, [
+        currentUnknown,
+      ]),
+      /personal_capture_check/,
+    );
+  }
+  await assert.rejects(
+    db.query(
+      "UPDATE agent_runs SET model_runtime_provider=NULL,model_runtime_model=NULL WHERE id=$1",
+      [currentUnknown],
+    ),
+    /personal_capture_check/,
   );
 
   await assert.rejects(

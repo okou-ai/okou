@@ -112,7 +112,7 @@ of compacted rows is not a passed compaction check. Record classified historical
 NULL/partial captures and their accepted lifecycle or evidence dispositions.
 
 Before Release 2: prove outgoing API writers and rollback targets are excluded;
-verify permanent personal/built-in execution/account binding; complete authorized
+verify captured execution and stable local account bindings; complete authorized
 relational pages; reconcile the complete V8 inventory and retained object/consumer
 references; confirm native execution support and unchanged usage interpretation.
 Release 2 installs the checks in `1367_enforce_canonical_model_capture` and
@@ -139,7 +139,14 @@ and compacted usage coverage. Save full-page classifications outside Git.
 
 The lifecycle exception is structural, not a rollout marker: uncaptured runtime
 must be a pair of SQL NULLs; pending/running personal Runs with a launch snapshot
-must have runtime, selected personal identity and permanent account binding.
+must have runtime, selected personal identity and a stable local account ID.
+Proven upstream account identity is optional: older Runs may never have captured
+it, and supported current accounts may lack upstream profile evidence. Retain SQL
+NULL rather than deriving identity from today's account or credentials. Deleting
+an account does not erase the captured local ID or require the account row to
+survive. A present upstream identity must remain non-empty. Unknown upstream
+identity still cannot authorize failed-Run account management; its existing
+fail-closed guard is unchanged.
 Historical completed/failed/cancelled personal records may retain an uncaptured
 pair; absence of evidence is **not** proof of irrecoverability. Pending records
 without an executable launch may also be uncaptured. Complete captures keep their
@@ -153,7 +160,7 @@ Terminal managed history with no runtime, key, usage or category capture may
 retain its original provider ID, but never a personal account identity. Captured
 or active executions do not receive that exception. Personal Codex history may
 retain the native `openai-codex` transport alongside its `codex-oauth-token`
-credential owner, with the same permanent account-binding requirements.
+credential owner, with the same local account-binding requirements.
 
 Managed runtime captures require managed keys, not personal accounts. Captured
 usage and positive optional category thresholds require managed runtime evidence;

@@ -21,9 +21,10 @@ ALTER TABLE "agent_runs" ADD CONSTRAINT "agent_runs_personal_capture_check" CHEC
                 "agent_runs"."model_runtime_provider" = 'openai-codex'
               )) AND
               ("agent_runs"."selected_model" IS NULL OR "agent_runs"."selected_model" <> 'auto') AND
-              "agent_runs"."model_provider_id" IS NOT NULL AND
-              "agent_runs"."model_provider_account_identity" IS NOT NULL AND
-              char_length("agent_runs"."model_provider_account_identity") > 0
+              "agent_runs"."model_provider_id" IS NOT NULL AND (
+                "agent_runs"."model_provider_account_identity" IS NULL OR
+                char_length("agent_runs"."model_provider_account_identity") > 0
+              )
             )
           )
         ), false)) NOT VALID;--> statement-breakpoint
