@@ -15,6 +15,7 @@ import {
   userMessages,
 } from "./helpers/chat-events-fixture";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 
 const context = testContext();
 const {
@@ -324,6 +325,16 @@ describe("CHAT-02: model-first routing", () => {
     }
     const { claim } = await claimChatRun(runnerGroup, picked.runId);
     expect(claim.modelUsageProvider).toBe("@preset/okou-1-0");
+    const captured = await createRunReadsApi(context).requestReadLogById(
+      actor,
+      picked.runId,
+      [200],
+    );
+    expect(captured.body).toMatchObject({
+      selectedModel: "auto",
+      modelRuntimeProvider: "openrouter-codex",
+      modelRuntimeModel: claim.modelUsageProvider,
+    });
     await expect(
       chat.readThreadMetadata(actor, clientThreadId),
     ).resolves.toMatchObject({ selectedModel: "auto" });

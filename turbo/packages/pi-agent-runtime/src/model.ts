@@ -1,12 +1,10 @@
 import {
-  AUTO_RUN_MODEL,
+  AUTO_SELECTED_MODEL,
   isAutoSelectedModel,
   isAutoRunPreset,
 } from "@okouai/core/auto-run-model";
-import {
-  isOkouRunModel,
-  type OkouRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { AUTO_PI_RUNTIME_CAPABILITIES } from "@okouai/core/pi-runtime-capability";
+import { isOkouRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { OKOU_MODEL_METADATA } from "@okouai/api-contracts/contracts/okou-model-metadata";
 import { stream as streamCodexResponses } from "@earendil-works/pi-ai/api/openai-codex-responses";
 import { streamSimple as streamSimpleCompletions } from "@earendil-works/pi-ai/api/openai-completions";
@@ -40,30 +38,23 @@ import {
 
 const PI_AGENT_USER_AGENT = "okou-pi-agent/1.0";
 
-const OKOU_PI_MODEL_COSTS = {
-  "okou-1.0": {
-    cost: {
-      input: 0.2,
-      output: 1.2,
-      cacheRead: 0.02,
-      cacheWrite: 0.25,
-      tiers: [
-        {
-          inputTokensAbove: 272_000,
-          input: 0.4,
-          output: 1.8,
-          cacheRead: 0.04,
-          cacheWrite: 0.5,
-        },
-      ],
-    },
+const AUTO_PI_DISPLAY_ESTIMATE = {
+  cost: {
+    input: 0.2,
+    output: 1.2,
+    cacheRead: 0.02,
+    cacheWrite: 0.25,
+    tiers: [
+      {
+        inputTokensAbove: 272_000,
+        input: 0.4,
+        output: 1.8,
+        cacheRead: 0.04,
+        cacheWrite: 0.5,
+      },
+    ],
   },
-} as const satisfies Record<
-  OkouRunModel,
-  {
-    readonly cost: Model<Api>["cost"];
-  }
->;
+} as const satisfies { readonly cost: Model<Api>["cost"] };
 
 /** Product-owned Pi catalog entries for the independently named Okou models. */
 function okouSourceModel(
@@ -74,7 +65,7 @@ function okouSourceModel(
     return undefined;
   }
   const metadata = OKOU_MODEL_METADATA[model];
-  const pricing = OKOU_PI_MODEL_COSTS[model];
+  const estimate = AUTO_PI_DISPLAY_ESTIMATE;
   return {
     id: model,
     name: metadata.displayName,
@@ -88,7 +79,7 @@ function okouSourceModel(
     input: [...metadata.inputModalities],
     contextWindow: metadata.pi.contextWindow,
     maxTokens: metadata.pi.maxTokens,
-    cost: pricing.cost,
+    cost: estimate.cost,
   };
 }
 
@@ -141,14 +132,24 @@ function catalogSourceModel(
   provider: string,
   model: string,
 ): Model<Api> | undefined {
-  if (provider === "openrouter" && model === PI_MEMORY_STAGE1_BUILT_IN_MODEL) {
-    const source = okouSourceModel(provider, AUTO_RUN_MODEL);
-    if (!source) return undefined;
+  if (
+    provider === "openrouter" &&
+    (model === AUTO_SELECTED_MODEL || model === PI_MEMORY_STAGE1_BUILT_IN_MODEL)
+  ) {
+    // Presets own routing. Pi owns protocol/context capabilities, not catalog alias metadata.
+    // Display estimates are not settlement authority; usage settlement uses the Run capture.
     return {
-      ...source,
       id: model,
-      name: "Memory",
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      name: model === AUTO_SELECTED_MODEL ? "Auto" : "Memory",
+      provider,
+      api: "openai-completions",
+      baseUrl: "https://openrouter.ai/api/v1",
+      ...AUTO_PI_RUNTIME_CAPABILITIES,
+      input: [...AUTO_PI_RUNTIME_CAPABILITIES.input],
+      cost:
+        model === AUTO_SELECTED_MODEL
+          ? AUTO_PI_DISPLAY_ESTIMATE.cost
+          : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     };
   }
   const okouModel = okouSourceModel(provider, model);
@@ -376,7 +377,13 @@ function capturedAutoCatalogIdentity(config: PiAgentModelConfig): string {
       config.dialect === "openai-completions") &&
     isAutoRunPreset(config.model) &&
     (isAutoSelectedModel(identity) || isAutoRunPreset(identity));
-  return autoRuntime ? AUTO_RUN_MODEL : identity;
+  // Retained jobs with legacy/preset-only catalog pins keep their original metadata.
+  // Current writers pin canonical Auto explicitly; installed older resolvers also accept it.
+  return autoRuntime
+    ? identity === AUTO_SELECTED_MODEL
+      ? AUTO_SELECTED_MODEL
+      : "okou-1.0"
+    : identity;
 }
 
 /** Resolve model metadata from Pi's provider catalog. */
