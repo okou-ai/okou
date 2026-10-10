@@ -304,6 +304,38 @@ function DownloadReceiptsDialog({
   );
 }
 
+function InvoiceListHeader() {
+  const { t } = useTranslation();
+  return (
+    <div className="sticky top-0 z-10 bg-card">
+      <div
+        className={cn(
+          ROW_GRID,
+          "px-4 py-3 text-sm font-medium text-foreground",
+        )}
+      >
+        <div className="text-left">
+          {t(($) => {
+            return $.billing.invoices.invoice;
+          })}
+        </div>
+        <div className="text-left">
+          {t(($) => {
+            return $.billing.invoices.date;
+          })}
+        </div>
+        <div className="text-left">
+          {t(($) => {
+            return $.billing.invoices.amount;
+          })}
+        </div>
+        <div />
+      </div>
+      <div className="h-0 border-t border-t-gray-400 mx-4" />
+    </div>
+  );
+}
+
 export function OrgInvoicesTab() {
   const { t } = useTranslation();
   const invoicesLoadable = useLastLoadable(invoicesAsync$);
@@ -326,107 +358,90 @@ export function OrgInvoicesTab() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
       {!loading && (
-        <div className="flex justify-end">
+        <div className="flex shrink-0 justify-end">
           <DownloadReceiptsDialog months={months} />
         </div>
       )}
-      <div className="overflow-hidden rounded-[10px] bg-card border border-surface-border">
-        <div
-          className={cn(
-            ROW_GRID,
-            "sticky top-0 z-10 px-4 py-3 text-sm font-medium text-foreground bg-card",
-          )}
-        >
-          <div className="text-left">
-            {t(($) => {
-              return $.billing.invoices.invoice;
-            })}
-          </div>
-          <div className="text-left">
-            {t(($) => {
-              return $.billing.invoices.date;
-            })}
-          </div>
-          <div className="text-left">
-            {t(($) => {
-              return $.billing.invoices.amount;
-            })}
-          </div>
-          <div />
-        </div>
-        <div className="h-0 border-t border-t-gray-400 mx-4" />
+      {/* Own scrolling and confine the header's overlap to the invoice rows. */}
+      <div className="isolate min-h-0 overflow-auto scroll-pt-12 rounded-[10px] bg-card border border-surface-border">
+        <div className="min-w-[36rem]">
+          <InvoiceListHeader />
 
-        {loading && <InvoiceRowsSkeleton />}
+          {loading && <InvoiceRowsSkeleton />}
 
-        {invoices.map((inv, i) => {
-          const invoiceMonth = formatInvoiceMonth(inv.date);
-          return (
-            <div key={inv.id}>
-              {i > 0 && <div className="h-0 border-t border-t-gray-400 mx-4" />}
-              <div className={cn(ROW_GRID, "px-4 py-3")}>
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="text-sm font-medium text-foreground truncate">
-                    {inv.number ?? inv.id}
-                  </span>
-                  {inv.status && (
-                    <Badge className="text-xs font-medium text-muted-foreground">
-                      <CircleCheck className="text-green-600" />
-                      {inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}
-                    </Badge>
-                  )}
-                </div>
-                <div className="text-left text-sm text-muted-foreground tabular-nums">
-                  {formatDate(inv.date)}
-                </div>
-                <div className="text-left text-sm text-foreground tabular-nums">
-                  {formatAmount(inv.amount)}
-                </div>
-                <div className="flex justify-end">
-                  {inv.hostedInvoiceUrl ? (
-                    <TooltipProvider delay={200}>
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <a
-                              href={inv.hostedInvoiceUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-state-hover transition-colors"
-                              aria-label={t(
+          {invoices.map((inv, i) => {
+            const invoiceMonth = formatInvoiceMonth(inv.date);
+            return (
+              <div key={inv.id}>
+                {i > 0 && (
+                  <div className="h-0 border-t border-t-gray-400 mx-4" />
+                )}
+                <div className={cn(ROW_GRID, "px-4 py-3")}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-sm font-medium text-foreground truncate">
+                      {inv.number ?? inv.id}
+                    </span>
+                    {inv.status && (
+                      <Badge className="text-xs font-medium text-muted-foreground">
+                        <CircleCheck className="text-green-600" />
+                        {inv.status.charAt(0).toUpperCase() +
+                          inv.status.slice(1)}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-left text-sm text-muted-foreground tabular-nums">
+                    {formatDate(inv.date)}
+                  </div>
+                  <div className="text-left text-sm text-foreground tabular-nums">
+                    {formatAmount(inv.amount)}
+                  </div>
+                  <div className="flex justify-end">
+                    {inv.hostedInvoiceUrl ? (
+                      <TooltipProvider delay={200}>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <a
+                                href={inv.hostedInvoiceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-state-hover transition-colors"
+                                aria-label={t(
+                                  ($) => {
+                                    return $.billing.invoices.downloadInvoice;
+                                  },
+                                  { month: invoiceMonth },
+                                )}
+                              >
+                                <Download size={14} />
+                              </a>
+                            }
+                          />
+                          <TooltipContent side="bottom">
+                            <p className="text-xs">
+                              {t(
                                 ($) => {
                                   return $.billing.invoices.downloadInvoice;
                                 },
                                 { month: invoiceMonth },
                               )}
-                            >
-                              <Download size={14} />
-                            </a>
-                          }
-                        />
-                        <TooltipContent side="bottom">
-                          <p className="text-xs">
-                            {t(
-                              ($) => {
-                                return $.billing.invoices.downloadInvoice;
-                              },
-                              { month: invoiceMonth },
-                            )}
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  ) : (
-                    <span className="flex h-7 w-7 items-center justify-center text-muted-foreground/30">
-                      <Download size={14} />
-                    </span>
-                  )}
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : (
+                      <span className="flex h-7 w-7 items-center justify-center text-muted-foreground/30">
+                        <Download size={14} />
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );
