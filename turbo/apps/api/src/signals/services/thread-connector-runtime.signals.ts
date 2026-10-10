@@ -2,27 +2,24 @@ import type { SecretConnectorMetadata } from "@okouai/api-contracts/contracts/ru
 import { permissionGrantsToFirewallPolicies } from "@okouai/connectors/firewall-metadata/policy";
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import { extractAndGroupVariables } from "@okouai/core/variable-expander";
+import { expandVariablesInString } from "@okouai/core/variable-expander";
 import { computed } from "ccstate";
 import { badRequestMessage } from "../../lib/error";
 import { settle } from "../utils";
 import { createEagerConnectorCredentialContext } from "./agent-run-context.signals";
-import type {
-  PermissionManifest,
-  ResolvedModelProviderEnvironment,
-} from "./agent-run-contracts";
+import type { PermissionManifest } from "./agent-run-contracts";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
   compactRecord,
   type CustomConnectorRuntimeContext,
+  mergeRecords,
 } from "./connector-runtime-preparation.service";
 import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
 import { buildPermissionManifest } from "./permission-manifest.service";
+import type { Environment } from "./run-environment";
 import {
-  pendingOkouTokenSecrets,
-  resolveRunBodyEnvironment,
+  createRunBodyEnvironmentSignal,
   type RunRequestBody,
-  selectedAgentRunVariables,
 } from "./run-body-environment";
 import {
   type BuiltinConnectorRuntimeContext,
@@ -64,7 +61,6 @@ export function createConnectorRuntimeSignals(
   const runtimeInputs = createConnectorRuntimeInputSignals(
     execution$,
     threadContext.dispatchTiming$,
-    threadContext.modelRoute$,
     connectedAccounts,
   );
   const secretPlan = createEagerSecretPlanSignals(runtimeInputs);
@@ -77,7 +73,10 @@ export function createConnectorRuntimeSignals(
     permissionPolicies$: runtimeInputs.permissionPolicies$,
     eagerSecretPlan$: secretPlan.eagerSecretPlan$,
     eagerCredentialContext$: connectorSecrets.eagerCredentialContext$,
-    connectorContext$: connectorSecrets.connectorContext$,
+    environment$: createConnectorEnvironmentSignal(
+      connectedAccounts,
+      connectorSecrets,
+    ),
   };
 }
 
@@ -88,28 +87,12 @@ type ConnectorRuntimeInputSignals = ReturnType<
 function createConnectorRuntimeInputSignals(
   execution$: ThreadContext["executionBootstrap$"],
   dispatchTiming$: ThreadContext["dispatchTiming$"],
-  modelRoute$: ThreadContext["modelRoute$"],
   connectedAccounts: ConnectedAccounts,
 ) {
   const { connectorCatalog$, connectorScope$, connectorSelection$ } =
     connectedAccounts;
   const { connectorSnapshot$ } = connectedAccounts;
-  const bodyEnvironment$ = computed(async (get) => {
-    const execution = await get(execution$);
-    const [agent, environment] = await Promise.all([
-      get(execution.agent$),
-      get(execution.environment$),
-    ]);
-    if (!agent) {
-      throw new Error("Agent disappeared after preparation authorization");
-    }
-    return resolveRunBodyEnvironment({
-      runVars: selectedAgentRunVariables(agent.id),
-      runSecrets: pendingOkouTokenSecrets(undefined),
-      persistedEnvironment: environment,
-      canonicalOkouRuntime: true,
-    });
-  });
+  const bodyEnvironment$ = createRunBodyEnvironmentSignal(execution$);
   const permissionPolicies$ = computed(async (get) => {
     const execution = await get(execution$);
     const [grants, catalog, scope] = await Promise.all([
@@ -141,18 +124,15 @@ function createConnectorRuntimeInputSignals(
       get,
     ): Promise<RunPreparedConnectorInputs | ConnectorRuntimeError> => {
       const execution = await get(execution$);
-      const [selection, snapshot, modelProvider, body, policies, features] =
-        await Promise.all([
+      const [selection, snapshot, body, policies, features] = await Promise.all(
+        [
           get(connectorSelection$),
           get(connectorSnapshot$),
-          get(modelRoute$),
           get(bodyEnvironment$),
           get(permissionPolicies$),
           get(execution.featureSwitches$),
-        ]);
-      if (isConnectorRuntimeError(modelProvider)) {
-        return modelProvider;
-      }
+        ],
+      );
       if (isConnectorRuntimeError(selection)) {
         return selection;
       }
@@ -164,7 +144,6 @@ function createConnectorRuntimeInputSignals(
         connectorScope: selection.connectorScope,
         connectorCatalogSelection: selection.connectorCatalogSelection,
         body: { ...body, permissionPolicies: policies ?? undefined },
-        modelProvider,
         ...snapshot,
         featureSwitchContext: features,
       };
@@ -203,23 +182,14 @@ function createEagerSecretPlanSignals(inputs: ConnectorRuntimeInputSignals) {
     const snapshot = input.storedConnectorSnapshot;
     const connectorContext =
       storedConnectorExecutionContextFromSnapshot(snapshot);
-    const eagerInputs = eagerStoredConnectorSecretInputs({
-      modelProvider: input.modelProvider,
-      connectorContext,
-    });
+    // Decrypt every secret the connector environment needs; later sources
+    // override aliases only when environments are merged.
     const names = snapshot
       ? eagerStoredConnectorSecretNames({
           snapshot,
-          referencedEnvironmentSecretAliases:
-            eagerInputs.referencedEnvironmentSecretAliases,
-          storedEnvironment: eagerInputs.eagerStoredEnvironment,
+          storedEnvironment: connectorContext.storedEnvironment,
           environmentSecretPlaceholders:
             permissionManifest?.environmentSecretPlaceholders,
-          overriddenSecretAliases: overriddenRuntimeSecretAliases([
-            input.modelProvider?.secrets,
-            input.modelProvider?.secretConnectorMap,
-            input.body.secrets,
-          ]),
         })
       : new Set<string>();
     return {
@@ -239,6 +209,8 @@ function createEagerSecretPlanSignals(inputs: ConnectorRuntimeInputSignals) {
   });
   return { eagerSecretPlan$ };
 }
+
+type ConnectorSecretSignals = ReturnType<typeof createConnectorSecretSignals>;
 
 function createConnectorSecretSignals(
   connectedAccounts: ConnectedAccounts,
@@ -341,6 +313,55 @@ function createConnectorSecretSignals(
   return { eagerCredentialContext$, connectorContext$ };
 }
 
+/** The connector source's contribution to the Run environment. */
+function createConnectorEnvironmentSignal(
+  connectedAccounts: ConnectedAccounts,
+  connectorSecrets: ConnectorSecretSignals,
+) {
+  const { connectorSnapshot$ } = connectedAccounts;
+  const { connectorContext$ } = connectorSecrets;
+  const environment$ = computed(
+    async (get): Promise<Environment | ConnectorRuntimeError> => {
+      const [prepared, snapshot] = await Promise.all([
+        get(connectorContext$),
+        get(connectorSnapshot$),
+      ]);
+      if (isConnectorRuntimeError(prepared)) {
+        return prepared;
+      }
+      if (isConnectorRuntimeError(snapshot)) {
+        return snapshot;
+      }
+      const builtin = prepared.connectorContext;
+      const manifest = prepared.permissionManifest;
+      const custom = snapshot.customConnectorContext;
+      return {
+        vars: builtin.vars,
+        environment: expandStoredConnectorEnvironment({
+          environment: builtin.storedEnvironment,
+          vars: builtin.vars,
+          secrets: builtin.secrets,
+          environmentSecretPlaceholders:
+            manifest?.environmentSecretPlaceholders,
+        }),
+        secrets: builtin.secrets,
+        secretConnectorMap: builtin.secretConnectorMap,
+        secretConnectorMetadataMap: builtin.secretConnectorMetadataMap,
+        firewalls: manifest?.firewalls ?? [],
+        networkPolicies: manifest?.networkPolicies ?? {},
+        environmentSecretPlaceholders: manifest?.environmentSecretPlaceholders,
+        billableFirewalls: manifest?.billableFirewalls ?? [],
+        runtimeTargets: [
+          ...(manifest?.builtinRuntimeTargets ?? []),
+          ...custom.targets,
+        ],
+        reservedSecretAliases: Object.keys(custom.reservedSecretAliases ?? {}),
+      };
+    },
+  );
+  return environment$;
+}
+
 const CONNECTOR_SECRET_REF_PREFIX = "$secrets.";
 
 const CONNECTOR_VAR_REF_PREFIX = "$vars.";
@@ -367,28 +388,6 @@ function addConnectorEnvironmentTemplate(
     return;
   }
   environment[envName] = connectorEnvironmentTemplate(envName, valueRef);
-}
-
-export function effectiveStoredConnectorEnvironment(args: {
-  readonly additionalEnvironment: Record<string, string> | undefined;
-  readonly storedConnectorEnvironment: Record<string, string> | undefined;
-}): Record<string, string> | undefined {
-  if (!args.storedConnectorEnvironment) {
-    return undefined;
-  }
-
-  const overrides = args.additionalEnvironment;
-  if (!overrides) {
-    return args.storedConnectorEnvironment;
-  }
-
-  const environment: Record<string, string> = {};
-  for (const [key, value] of Object.entries(args.storedConnectorEnvironment)) {
-    if (overrides[key] === undefined) {
-      environment[key] = value;
-    }
-  }
-  return compactRecord(environment);
 }
 
 interface StoredConnectorEncryptedSecretRow extends StoredConnectorSecretRow {
@@ -521,26 +520,11 @@ function storedConnectorExecutionContextFromSnapshot(
   };
 }
 
-function referencedEnvironmentSecretAliases(
-  environment: Record<string, string> | undefined,
-): ReadonlySet<string> {
-  if (!environment) {
-    return new Set();
-  }
-  return new Set(
-    extractAndGroupVariables(environment).secrets.map((ref) => {
-      return ref.name;
-    }),
-  );
-}
-
 function eagerStoredConnectorSecretNames(args: {
   readonly snapshot: StoredConnectorMaterializationSnapshot;
   readonly storedEnvironment: Record<string, string> | undefined;
-  readonly referencedEnvironmentSecretAliases: ReadonlySet<string>;
   readonly environmentSecretPlaceholders:
     Readonly<Record<string, string>> | undefined;
-  readonly overriddenSecretAliases: ReadonlySet<string>;
 }): ReadonlySet<string> {
   const names = new Set<string>();
 
@@ -549,15 +533,10 @@ function eagerStoredConnectorSecretNames(args: {
       continue;
     }
     for (const { envName, source } of runtimeBindings) {
-      const isNeededByStoredEnvironment =
-        args.storedEnvironment?.[envName] !== undefined;
-      const isNeededByExplicitEnvironment =
-        args.referencedEnvironmentSecretAliases.has(envName);
       if (
         source.kind !== "connector-secret" ||
-        (!isNeededByStoredEnvironment && !isNeededByExplicitEnvironment) ||
-        args.environmentSecretPlaceholders?.[envName] !== undefined ||
-        args.overriddenSecretAliases.has(envName)
+        args.storedEnvironment?.[envName] === undefined ||
+        args.environmentSecretPlaceholders?.[envName] !== undefined
       ) {
         continue;
       }
@@ -565,25 +544,6 @@ function eagerStoredConnectorSecretNames(args: {
     }
   }
   return names;
-}
-
-function eagerStoredConnectorSecretInputs(args: {
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-}): {
-  readonly eagerStoredEnvironment: Record<string, string> | undefined;
-  readonly referencedEnvironmentSecretAliases: ReadonlySet<string>;
-} {
-  const additionalEnvironment = args.modelProvider?.environment;
-  return {
-    eagerStoredEnvironment: effectiveStoredConnectorEnvironment({
-      additionalEnvironment,
-      storedConnectorEnvironment: args.connectorContext.storedEnvironment,
-    }),
-    referencedEnvironmentSecretAliases: referencedEnvironmentSecretAliases(
-      additionalEnvironment,
-    ),
-  };
 }
 
 interface PreparedConnectorContext {
@@ -598,24 +558,11 @@ interface RunPreparedConnectorInputs {
     RunRequestBody,
     "permissionPolicies" | "vars" | "secrets"
   >;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly storedConnectorSnapshot: StoredConnectorMaterializationSnapshot | null;
   readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing: ApiDispatchTimingCollector;
-}
-
-function overriddenRuntimeSecretAliases(
-  records: readonly (Record<string, string> | undefined)[],
-): ReadonlySet<string> {
-  const aliases = new Set<string>();
-  for (const record of records) {
-    for (const key of Object.keys(record ?? {})) {
-      aliases.add(key);
-    }
-  }
-  return aliases;
 }
 
 async function buildPreparedPermissionManifest(args: {
@@ -624,7 +571,6 @@ async function buildPreparedPermissionManifest(args: {
     RunRequestBody,
     "permissionPolicies" | "vars" | "secrets"
   >;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly timing: ApiDispatchTimingCollector;
@@ -632,7 +578,7 @@ async function buildPreparedPermissionManifest(args: {
   const result = await settle(
     buildPermissionManifest({
       connectorCatalogSelection: args.connectorCatalogSelection,
-      modelProvider: args.modelProvider,
+      modelProvider: null,
       permissionPolicies: args.body.permissionPolicies,
       vars: args.body.vars,
       connectorVars: args.storedConnectorMetadataContext.vars,
@@ -656,4 +602,45 @@ async function buildPreparedPermissionManifest(args: {
     return badRequestMessage(result.error.message);
   }
   throw result.error;
+}
+
+function expandStoredConnectorEnvironment(args: {
+  readonly environment: Record<string, string> | undefined;
+  readonly vars: Record<string, string> | undefined;
+  readonly secrets: Record<string, string> | undefined;
+  readonly environmentSecretPlaceholders:
+    Readonly<Record<string, string>> | undefined;
+}): Record<string, string> | undefined {
+  if (!args.environment) {
+    return undefined;
+  }
+
+  const expanded: Record<string, string> = {};
+  const secretSources = mergeRecords(
+    args.secrets,
+    args.environmentSecretPlaceholders,
+  );
+  for (const [key, value] of Object.entries(args.environment)) {
+    const expansion = expandVariablesInString(value, {
+      vars: args.vars,
+      secrets: secretSources,
+    });
+    if (expansion.missingVars.length > 0) {
+      throw new Error(
+        `Stored connector environment is missing required values: ${formatMissingReferences(expansion.missingVars)}`,
+      );
+    }
+    expanded[key] = expansion.result;
+  }
+  return compactRecord(expanded);
+}
+
+function formatMissingReferences(
+  refs: readonly { readonly source: string; readonly name: string }[],
+): string {
+  return refs
+    .map((ref) => {
+      return `${ref.source}.${ref.name}`;
+    })
+    .join(", ");
 }

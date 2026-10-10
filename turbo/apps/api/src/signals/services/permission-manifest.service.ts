@@ -218,7 +218,7 @@ function applyConnectorPolicies(
   return { firewalls, networkPolicies };
 }
 
-function modelProviderPermissionManifest(
+export function modelProviderPermissionManifest(
   modelProvider: ResolvedModelProviderEnvironment | null,
   vars: Record<string, string> | undefined,
 ): PermissionManifest | undefined {

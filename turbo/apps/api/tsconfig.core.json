@@ -519,6 +519,8 @@
     "src/signals/services/dispatch-count-bucket.ts",
     "src/signals/services/thread-official-workflow.signals.ts",
     "src/signals/services/run-body-environment.ts",
+    "src/signals/services/run-environment.ts",
+    "src/signals/services/thread-environment.signals.ts",
     "src/signals/services/permission-manifest.service.ts",
     "src/signals/services/thread-connector-runtime.signals.ts",
     "src/signals/services/thread-model.signals.ts",

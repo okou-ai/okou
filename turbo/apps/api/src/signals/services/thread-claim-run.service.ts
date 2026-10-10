@@ -4,7 +4,6 @@ import {
   CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
   CANONICAL_CODEX_HOME_DIR,
   CANONICAL_CODEX_MEMORY_MOUNT_PATH,
-  type ConnectorRuntimeTargetRegistration,
   DEFAULT_PROFILE,
   PI_AGENT_DIR,
   PI_MEMORY_ROOT,
@@ -31,7 +30,6 @@ import {
   createConnectedAccountsSignals,
   type EffectiveConnectorScope,
   isEmptyRunConnectorScope,
-  type BuiltinConnectorRuntimeContext,
   type RunConnectorCatalogSelection,
 } from "./thread-connected-accounts.signals";
 import { countBucket } from "./dispatch-count-bucket";
@@ -44,10 +42,14 @@ import {
   withoutLegacyAgentRunEnvironmentEntries,
 } from "./run-body-environment";
 import { createThreadContext } from "./thread-context.signals";
+import { createEnvironmentSignals } from "./thread-environment.signals";
 import {
-  createConnectorRuntimeSignals,
-  effectiveStoredConnectorEnvironment,
-} from "./thread-connector-runtime.signals";
+  emptyEnvironment,
+  type Environment,
+  environmentPermissionManifest,
+  mergeEnvironments,
+} from "./run-environment";
+import { createConnectorRuntimeSignals } from "./thread-connector-runtime.signals";
 import { createOfficialWorkflowSignals } from "./thread-official-workflow.signals";
 import type {
   QueuedModelContext,
@@ -108,7 +110,6 @@ import type {
   AgentRunModelPin,
   AgentRunPreCreateSource,
   AgentRunRequestAgent,
-  PermissionManifest,
   ResolvedModelProviderEnvironment,
   RunCallback,
 } from "./agent-run-contracts";
@@ -244,11 +245,7 @@ import {
   resolveChatThreadSessionSnapshot,
 } from "./chat-session-continuity.service";
 import { agentRunSourceAnnotation } from "./chat-user-message.service";
-import {
-  compactRecord,
-  mergeRecords,
-  type CustomConnectorRuntimeContext,
-} from "./connector-runtime-preparation.service";
+import { compactRecord } from "./connector-runtime-preparation.service";
 import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
 
 import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
@@ -309,11 +306,6 @@ import {
   SYSTEM_ORG_ID,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
-import {
-  expandVariables,
-  expandVariablesInString,
-  extractAndGroupVariables,
-} from "@okouai/core/variable-expander";
 import {
   isValidVersionPrefix,
   MIN_VERSION_PREFIX_LENGTH,
@@ -3201,8 +3193,12 @@ export function createThreadClaimRunObjects(
     bodyEnvironment$: preCreateBodyEnvironmentEnvironment$,
     eagerSecretPlan$: runConnectorEagerSecretPlan$,
     eagerCredentialContext$,
-    connectorContext$,
+    environment$: connectorEnvironment$,
   } = connectorRuntime;
+  const environment$ = createEnvironmentSignals(
+    threadContext,
+    connectorEnvironment$,
+  );
   // Capture the exact eager plan before preloading its read-only context.
   const preloadEagerCredentials$ = command(
     async ({ get }, signal: AbortSignal): Promise<void> => {
@@ -3215,7 +3211,7 @@ export function createThreadClaimRunObjects(
       waitUntil(settle(get(context.credentials$)));
     },
   );
-  const prepared = { connectorContext$: connectorContext$ };
+  const prepared = { environment$ };
   const workflow = createOfficialWorkflowSignals(pickedEvent$, threadContext);
   const { officialWorkflow$ } = workflow;
   const userTimezone$ = computed(async (get) => {
@@ -3833,8 +3829,7 @@ export function createThreadClaimRunObjects(
     };
   });
   const body = { bodyContext$: runBodyBodyContext$, framework$: runFramework$ };
-  const { connectorContext$: runRuntimeConnectorContext$ } =
-    selectedRunContextShared;
+  const { environment$: runRuntimeEnvironment$ } = selectedRunContextShared;
   const runRuntimeRuntimeContext$ = computed(async (get) => {
     const [
       bodyResult,
@@ -3847,13 +3842,13 @@ export function createThreadClaimRunObjects(
       get(modelRoute$),
       get(connectorSelection$),
       get(connectorSnapshot$),
-      get(runRuntimeConnectorContext$),
+      get(runRuntimeEnvironment$),
     ]);
     const selection = selectionResult;
     const bodyContext = bodyResult;
     const modelProvider = modelResult;
     const snapshot = snapshotResult;
-    const connectors = connectorResult;
+    const environment = connectorResult;
     if (isRouteError(bodyContext)) {
       return bodyContext;
     }
@@ -3866,14 +3861,14 @@ export function createThreadClaimRunObjects(
     if (isRouteError(snapshot)) {
       return snapshot;
     }
-    if (isRouteError(connectors)) {
-      return connectors;
+    if (isRouteError(environment)) {
+      return environment;
     }
     const catalog = await get(claimCatalog$);
     const usage = prepareModelUsageContext({
       catalog,
       modelProvider,
-      permissionManifest: connectors.permissionManifest,
+      permissionManifest: environmentPermissionManifest(environment),
       routePricing: runRoutePricingFromSnapshot(
         {
           modelProvider,
@@ -3891,8 +3886,9 @@ export function createThreadClaimRunObjects(
         ? modelProviderFramework(modelProvider)
         : bodyContext.requestedFramework,
       modelProvider,
-      ...connectors,
-      customConnectorContext: snapshot.customConnectorContext,
+      environment,
+      mcpConnectorSlugs:
+        snapshot.storedConnectorMetadataContext.mcpConnectorSlugs,
       ...usage,
       connectorScope: selection.connectorScope,
       connectorCatalogSelection: selection.connectorCatalogSelection,
@@ -3966,17 +3962,6 @@ export function createThreadClaimRunObjects(
         cliAgentType: piSandbox ? "pi" : framework,
       },
     });
-    const validation = validateRunEnvironmentReferences({
-      body,
-      modelProvider,
-      connectorContext: runtimeContext.connectorContext,
-      customConnectorContext: runtimeContext.customConnectorContext,
-      permissionManifest: runtimeContext.permissionManifest,
-      validateEnvironmentReferences: args.validateEnvironmentReferences,
-    });
-    if (validation) {
-      return validation;
-    }
     const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
     if (isRouteError(promptAndSkills)) {
       return promptAndSkills;
@@ -3996,9 +3981,8 @@ export function createThreadClaimRunObjects(
       framework,
       piSandbox,
       modelProvider,
-      connectorContext: runtimeContext.connectorContext,
-      customConnectorContext: runtimeContext.customConnectorContext,
-      permissionManifest: runtimeContext.permissionManifest,
+      environment: runtimeContext.environment,
+      mcpConnectorSlugs: runtimeContext.mcpConnectorSlugs,
       billableFirewalls: runtimeContext.billableFirewalls,
       modelUsageProvider: runtimeContext.modelUsageProvider,
       modelUsageLongContextMinTotalInputTokens:
@@ -4760,31 +4744,15 @@ export function createThreadClaimRunObjects(
     if (!(await get(selectionInput$))) {
       return null;
     }
-    const [environment, connectors, model, snapshot] = await Promise.all([
+    const [body, environment] = await Promise.all([
       get(preCreateBodyEnvironmentEnvironment$),
-      get(connectorContext$),
-      get(modelRoute$),
-      get(connectorSnapshot$),
+      get(environment$),
     ]);
     if (isRouteError(environment)) {
       return environment;
     }
-    if (isRouteError(connectors)) {
-      return connectors;
-    }
-    if (isRouteError(model)) {
-      return model;
-    }
-    if (isRouteError(snapshot)) {
-      return snapshot;
-    }
     return {
-      secrets: buildStoredExecutionSecrets({
-        connectorContext: connectors.connectorContext,
-        modelProvider: model,
-        bodySecrets: environment.secrets,
-        customConnectorContext: snapshot.customConnectorContext,
-      }).secrets,
+      secrets: buildStoredExecutionSecrets(environment, body.secrets).secrets,
     };
   });
   const prepareEncryptedSecrets$ = command(
@@ -8137,133 +8105,6 @@ type BuiltStoredExecutionContextDraft = Omit<
   readonly context: Omit<StoredExecutionContext, "storageMounts">;
 };
 
-function expandEnvironment(args: {
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly additionalEnvironment: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    Readonly<Record<string, string>> | undefined;
-  readonly storedConnectorEnvironment: Record<string, string> | undefined;
-  readonly connectorVars: Record<string, string> | undefined;
-}): Record<string, string> | null {
-  const storedConnectorEnvironment = expandStoredConnectorEnvironment({
-    environment: effectiveStoredConnectorEnvironment({
-      additionalEnvironment: args.additionalEnvironment,
-      storedConnectorEnvironment: args.storedConnectorEnvironment,
-    }),
-    vars: args.connectorVars,
-    secrets: args.secrets,
-    environmentSecretPlaceholders: args.environmentSecretPlaceholders,
-  });
-  const mergedEnvironment = args.additionalEnvironment;
-  if (!mergedEnvironment) {
-    return storedConnectorEnvironment ?? null;
-  }
-
-  const { result } = expandVariables(mergedEnvironment, {
-    vars: args.vars,
-    secrets: {
-      ...args.secrets,
-      ...args.environmentSecretPlaceholders,
-    },
-  });
-  return mergeRecords(result, storedConnectorEnvironment) ?? null;
-}
-
-function expandStoredConnectorEnvironment(args: {
-  readonly environment: Record<string, string> | undefined;
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    Readonly<Record<string, string>> | undefined;
-}): Record<string, string> | undefined {
-  if (!args.environment) {
-    return undefined;
-  }
-
-  const expanded: Record<string, string> = {};
-  const secretSources = mergeRecords(
-    args.secrets,
-    args.environmentSecretPlaceholders,
-  );
-  for (const [key, value] of Object.entries(args.environment)) {
-    const expansion = expandVariablesInString(value, {
-      vars: args.vars,
-      secrets: secretSources,
-    });
-    if (expansion.missingVars.length > 0) {
-      throw new Error(
-        `Stored connector environment is missing required values: ${formatMissingReferences(expansion.missingVars)}`,
-      );
-    }
-    expanded[key] = expansion.result;
-  }
-  return compactRecord(expanded);
-}
-
-function formatMissingReferences(
-  refs: readonly { readonly source: string; readonly name: string }[],
-): string {
-  return refs
-    .map((ref) => {
-      return `${ref.source}.${ref.name}`;
-    })
-    .join(", ");
-}
-
-function filterSecretConnectorMap(args: {
-  readonly secretConnectorMap: Record<string, string> | undefined;
-  readonly overriddenSecrets: readonly (
-    Readonly<Record<string, unknown>> | undefined
-  )[];
-}): Record<string, string> | undefined {
-  if (!args.secretConnectorMap) {
-    return undefined;
-  }
-
-  const overridden = new Set<string>();
-  for (const secrets of args.overriddenSecrets) {
-    for (const key of Object.keys(secrets ?? {})) {
-      overridden.add(key);
-    }
-  }
-  const filtered = Object.fromEntries(
-    Object.entries(args.secretConnectorMap).filter(([key]) => {
-      return !overridden.has(key);
-    }),
-  );
-  return compactRecord(filtered);
-}
-
-function filterSecretConnectorMetadataMap(args: {
-  readonly secretConnectorMetadataMap:
-    Record<string, SecretConnectorMetadata> | undefined;
-  readonly secretConnectorMap: Record<string, string> | undefined;
-}): Record<string, SecretConnectorMetadata> | undefined {
-  if (!args.secretConnectorMetadataMap || !args.secretConnectorMap) {
-    return undefined;
-  }
-
-  const filtered: Record<string, SecretConnectorMetadata> = {};
-  for (const key of Object.keys(args.secretConnectorMap)) {
-    const metadata = args.secretConnectorMetadataMap[key];
-    if (metadata) {
-      filtered[key] = metadata;
-    }
-  }
-  return compactRecord(filtered);
-}
-
-function storedConnectorRuntimeTargets(args: {
-  readonly permissionManifest: PermissionManifest | undefined;
-  readonly customTargets: readonly ConnectorRuntimeTargetRegistration[];
-}): ConnectorRuntimeTargetRegistration[] {
-  return [
-    ...(args.permissionManifest?.builtinRuntimeTargets ?? []),
-    ...args.customTargets,
-  ];
-}
-
 function buildStoredPlatformEnvironment(args: {
   readonly platformEnvironment: Record<string, string> | undefined;
   readonly canonicalOkouRuntime: boolean;
@@ -8358,9 +8199,7 @@ function buildStoredExecutionContextDraft(
     readonly framework: SupportedFramework;
     readonly piSandbox: PiModelConfig | undefined;
     readonly modelProvider: ResolvedModelProviderEnvironment | null;
-    readonly connectorContext: BuiltinConnectorRuntimeContext;
-    readonly customConnectorContext: CustomConnectorRuntimeContext;
-    readonly permissionManifest: PermissionManifest | undefined;
+    readonly environment: Environment;
     readonly billableFirewalls: readonly string[];
     readonly modelUsageProvider: string | undefined;
     readonly modelUsageLongContextMinTotalInputTokens: number;
@@ -8374,34 +8213,21 @@ function buildStoredExecutionContextDraft(
   },
   encryptedSecrets: BuiltStoredExecutionContextDraft["context"]["encryptedSecrets"],
 ): BuiltStoredExecutionContextDraft {
-  const permissions = args.permissionManifest;
-  const executionSecrets = buildStoredExecutionSecrets({
-    connectorContext: args.connectorContext,
-    modelProvider: args.modelProvider,
-    bodySecrets: args.body.secrets,
-    customConnectorContext: args.customConnectorContext,
-  });
+  const permissions = environmentPermissionManifest(args.environment);
+  const executionSecrets = buildStoredExecutionSecrets(
+    args.environment,
+    args.body.secrets,
+  );
   const secretNames = executionSecrets.secrets
     ? Object.keys(executionSecrets.secrets)
     : [];
   const secretValues = executionSecrets.secrets
     ? Object.values(executionSecrets.secrets)
     : [];
-  const connectorRuntimeTargets = storedConnectorRuntimeTargets({
-    permissionManifest: permissions,
-    customTargets: args.customConnectorContext.targets,
-  });
   // Newly constructed API context: remove the reserved namespace from the
   // fully expanded untrusted environment before the trusted overlay.
   const expandedEnvironment = withoutOkouNamespaceEntries(
-    expandEnvironment({
-      vars: args.body.vars,
-      secrets: executionSecrets.secrets,
-      additionalEnvironment: args.modelProvider?.environment,
-      environmentSecretPlaceholders: permissions?.environmentSecretPlaceholders,
-      storedConnectorEnvironment: args.connectorContext.storedEnvironment,
-      connectorVars: args.connectorContext.vars,
-    }),
+    args.environment.environment ?? null,
   );
   const platformEnvironment = buildStoredPlatformEnvironment({
     platformEnvironment: args.platformEnvironment,
@@ -8433,7 +8259,7 @@ function buildStoredExecutionContextDraft(
       environment,
       platformEnvironment,
       secretValueEnvironmentKeys,
-      vars: args.connectorContext.vars ?? null,
+      vars: args.environment.vars ?? null,
       resumeSession: args.resolved.resumeSession ?? null,
       encryptedSecrets,
       secretConnectorMap: executionSecrets.secretConnectorMap,
@@ -8445,7 +8271,7 @@ function buildStoredExecutionContextDraft(
       userTimezone: args.userTimezone,
       firewalls: permissions?.firewalls,
       networkPolicies: permissions?.networkPolicies,
-      connectorRuntimeTargets,
+      connectorRuntimeTargets: [...args.environment.runtimeTargets],
       disallowedTools: args.body.disallowedTools,
       tools: args.body.tools,
       settings: args.body.settings,
@@ -8473,60 +8299,22 @@ function resolveBuiltStoredExecutionContext(
   };
 }
 
-function buildStoredExecutionSecrets(args: {
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly bodySecrets: Record<string, string> | undefined;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-}): StoredExecutionSecrets {
-  const filteredConnectorMap = filterSecretConnectorMap({
-    secretConnectorMap: args.connectorContext.secretConnectorMap,
-    overriddenSecrets: [
-      args.modelProvider?.secrets,
-      args.modelProvider?.secretConnectorMap,
-      args.bodySecrets,
-      args.customConnectorContext.reservedSecretAliases,
-    ],
-  });
-  const filteredModelProviderMap = filterSecretConnectorMap({
-    secretConnectorMap: args.modelProvider?.secretConnectorMap,
-    overriddenSecrets: [
-      args.bodySecrets,
-      args.customConnectorContext.reservedSecretAliases,
-    ],
-  });
-  const filteredConnectorMetadataMap = filterSecretConnectorMetadataMap({
-    secretConnectorMetadataMap:
-      args.connectorContext.secretConnectorMetadataMap,
-    secretConnectorMap: filteredConnectorMap,
-  });
-  const filteredModelProviderMetadataMap = filterSecretConnectorMetadataMap({
-    secretConnectorMetadataMap: args.modelProvider?.secretConnectorMetadataMap,
-    secretConnectorMap: filteredModelProviderMap,
-  });
-  const secretConnectorMap =
-    mergeRecords(filteredConnectorMap, filteredModelProviderMap) ?? null;
-  const secretConnectorMetadataMap =
-    mergeRecords(
-      filteredConnectorMetadataMap,
-      filteredModelProviderMetadataMap,
-    ) ?? null;
-  const secrets = mergeRecords(
-    args.connectorContext.secrets,
-    args.modelProvider?.secrets,
-    args.bodySecrets,
-  );
-  // The merged map is the runtime `secrets.NAME` namespace consumed by firewall
-  // auth and environment expansion. Stored connectors and model providers enter
-  // this map under env binding aliases; raw DB storage names stay behind the
-  // access metadata used during refresh/lookup.
+/** Final runtime secret namespace: the Run environment plus body secrets. */
+function buildStoredExecutionSecrets(
+  environment: Environment,
+  bodySecrets: Record<string, string> | undefined,
+): StoredExecutionSecrets {
+  const merged = mergeEnvironments([
+    environment,
+    { ...emptyEnvironment(), secrets: bodySecrets },
+  ]);
   return {
     // An explicitly empty namespace still supports dynamic firewall secrets.
     secrets:
-      secrets ??
-      (args.bodySecrets !== undefined || secretConnectorMap ? {} : undefined),
-    secretConnectorMap,
-    secretConnectorMetadataMap,
+      merged.secrets ??
+      (bodySecrets !== undefined || merged.secretConnectorMap ? {} : undefined),
+    secretConnectorMap: merged.secretConnectorMap ?? null,
+    secretConnectorMetadataMap: merged.secretConnectorMetadataMap ?? null,
   };
 }
 
@@ -8544,9 +8332,10 @@ interface BuildRunnerJobPayloadInput {
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly piSandbox: PiModelConfig | undefined;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly permissionManifest: PermissionManifest | undefined;
+  /** Connector and model-provider environment, before the Okou token. */
+  readonly environment: Environment;
+  /** Built-in MCP connectors whose accounts the Okou token carries. */
+  readonly mcpConnectorSlugs: readonly ConnectorSlug[];
   readonly billableFirewalls: readonly string[];
   readonly modelUsageProvider: string | undefined;
   readonly modelUsageLongContextMinTotalInputTokens: number;
@@ -8596,16 +8385,14 @@ function preparedRunnerJobBody(
   if (!args.includeOkouTokenSecret) {
     return args.body;
   }
-  const customConnectorSourceEntries =
-    args.customConnectorContext.targets.flatMap((target) => {
-      return target.kind === "custom" && target.sourceId
-        ? [[target.customConnectorId, target.sourceId] as const]
-        : [];
-    });
-  const builtinMcpSlugs = new Set(args.connectorContext.mcpConnectorSlugs);
-  const builtinConnectorSourceEntries = (
-    args.permissionManifest?.builtinRuntimeTargets ?? []
-  ).flatMap((target) => {
+  const { runtimeTargets } = args.environment;
+  const customConnectorSourceEntries = runtimeTargets.flatMap((target) => {
+    return target.kind === "custom" && target.sourceId
+      ? [[target.customConnectorId, target.sourceId] as const]
+      : [];
+  });
+  const builtinMcpSlugs = new Set(args.mcpConnectorSlugs);
+  const builtinConnectorSourceEntries = runtimeTargets.flatMap((target) => {
     return target.kind === "builtin" &&
       target.sourceId !== undefined &&
       builtinMcpSlugs.has(target.connectorSlug)
@@ -8854,80 +8641,6 @@ function isRouteError(value: unknown): value is CreateRunErrorResult {
     typeof (value as { readonly status: unknown }).status === "number" &&
     (value as { readonly status: number }).status !== 201
   );
-}
-
-function missingEnvironmentReferences(args: {
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    Readonly<Record<string, string>> | undefined;
-  readonly additionalEnvironment: Record<string, string> | undefined;
-  readonly storedConnectorEnvironment: Record<string, string> | undefined;
-  readonly connectorVars: Record<string, string> | undefined;
-}): string[] {
-  assertStoredConnectorEnvironmentReferences({
-    environment: effectiveStoredConnectorEnvironment({
-      additionalEnvironment: args.additionalEnvironment,
-      storedConnectorEnvironment: args.storedConnectorEnvironment,
-    }),
-    vars: args.connectorVars,
-    secrets: args.secrets,
-    environmentSecretPlaceholders: args.environmentSecretPlaceholders,
-  });
-  const environment = args.additionalEnvironment;
-  const environmentMissing = missingReferencesInEnvironment({
-    environment,
-    vars: args.vars,
-    secrets: args.secrets,
-    environmentSecretPlaceholders: args.environmentSecretPlaceholders,
-  });
-  return environmentMissing;
-}
-
-function missingReferencesInEnvironment(args: {
-  readonly environment: Record<string, string> | undefined;
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    Readonly<Record<string, string>> | undefined;
-}): string[] {
-  if (!args.environment) {
-    return [];
-  }
-  const grouped = extractAndGroupVariables(args.environment);
-  const missingVars = grouped.vars
-    .filter((ref) => {
-      return args.vars?.[ref.name] === undefined;
-    })
-    .map((ref) => {
-      return `vars.${ref.name}`;
-    });
-  const missingSecrets = grouped.secrets
-    .filter((ref) => {
-      return (
-        args.secrets?.[ref.name] === undefined &&
-        args.environmentSecretPlaceholders?.[ref.name] === undefined
-      );
-    })
-    .map((ref) => {
-      return `secrets.${ref.name}`;
-    });
-  return [...missingVars, ...missingSecrets];
-}
-
-function assertStoredConnectorEnvironmentReferences(args: {
-  readonly environment: Record<string, string> | undefined;
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    Readonly<Record<string, string>> | undefined;
-}): void {
-  const missing = missingReferencesInEnvironment(args);
-  if (missing.length > 0) {
-    throw new Error(
-      `Stored connector environment is missing required values: ${missing.join(", ")}`,
-    );
-  }
 }
 
 interface RunAgentObservation {
@@ -9353,7 +9066,6 @@ interface ProductRunArgs {
   readonly enforceBuiltInCredits?: boolean;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly connectorScope: ExplicitConnectorScope;
-  readonly validateEnvironmentReferences?: boolean;
   readonly agentRunModelPin?: AgentRunModelPin;
   readonly timing?: ApiDispatchTimingCollector;
   readonly timingDimensions?: ApiDispatchTimingDimensions;
@@ -9409,7 +9121,6 @@ function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
       customConnectorGrants: args.customConnectorGrants,
       source: "stored_agent",
     },
-    validateEnvironmentReferences: false,
     agentRunMetadata: {
       ...command.agentRunMetadata,
       codexServiceTier: command.codexServiceTier,
@@ -9515,37 +9226,6 @@ function artifactsForRun(args: {
       },
     ],
   };
-}
-
-function validateRunEnvironmentReferences(args: {
-  readonly body: CreateRunBody;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly permissionManifest: PermissionManifest | undefined;
-  readonly validateEnvironmentReferences: boolean | undefined;
-}): CreateRunErrorResult | null {
-  const validationSecrets = buildStoredExecutionSecrets({
-    connectorContext: args.connectorContext,
-    modelProvider: args.modelProvider,
-    bodySecrets: args.body.secrets,
-    customConnectorContext: args.customConnectorContext,
-  });
-  if (args.validateEnvironmentReferences === false) {
-    return null;
-  }
-  const missing = missingEnvironmentReferences({
-    vars: args.body.vars,
-    secrets: validationSecrets.secrets,
-    environmentSecretPlaceholders:
-      args.permissionManifest?.environmentSecretPlaceholders,
-    additionalEnvironment: args.modelProvider?.environment,
-    storedConnectorEnvironment: args.connectorContext.storedEnvironment,
-    connectorVars: args.connectorContext.vars,
-  });
-  return missing.length === 0
-    ? null
-    : badRequestMessage(`Missing required values: ${missing.join(", ")}`);
 }
 
 function preparedRunAdditionalVolumes(args: {
