@@ -25,7 +25,7 @@ public final class ChatHTTPFixture: Sendable {
   private let host: String
   private let session: URLSession
 
-  public init(handler: @escaping Handler) {
+  public init(clientVersion: String = "1.2.3", handler: @escaping Handler) {
     let fixtureHost = UUID().uuidString.lowercased() + ".example.invalid"
     host = fixtureHost
     baseURL = URL(string: "https://" + fixtureHost)!
@@ -33,7 +33,9 @@ public final class ChatHTTPFixture: Sendable {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [ChatFixtureURLProtocol.self]
     session = URLSession(configuration: configuration)
-    client = APIClient(baseURL: baseURL, session: session) { "local-test-session" }
+    client = APIClient(baseURL: baseURL, clientVersion: clientVersion, session: session) {
+      "local-test-session"
+    }
   }
 
   deinit {

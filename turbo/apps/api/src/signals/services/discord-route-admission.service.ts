@@ -244,38 +244,6 @@ const resolveDiscordAdmissionSource$ = command(
   },
 );
 
-async function loadAssignedDiscordRoute(
-  db: Db,
-  { ingress, source: { binding, routeChannelId } }: DiscordAdmissionContext,
-  signal: AbortSignal,
-): Promise<DiscordChatThreadRouteBinding | undefined> {
-  if (!ingress.routeId) {
-    return undefined;
-  }
-  const [assignedRoute] = await db
-    .select()
-    .from(discordChatThreadRoutes)
-    .where(
-      and(
-        eq(discordChatThreadRoutes.id, ingress.routeId),
-        eq(discordChatThreadRoutes.connectionId, binding.connectionId),
-        eq(discordChatThreadRoutes.userId, binding.userId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!assignedRoute) {
-    throw new Error("Discord ingress route ownership is inconsistent");
-  }
-  const route = await refreshDiscordDirectMessageRouteDestination(
-    db,
-    assignedRoute,
-    routeChannelId,
-  );
-  signal.throwIfAborted();
-  return route;
-}
-
 const terminalAgentUnavailable$ = command(
   async (
     { set },
@@ -364,7 +332,40 @@ const resolveCanonicalDiscordRoute$ = command(
     const db = set(writeDb$);
     const { ingress, message, source } = context;
     const { binding, channel, isDm, isThread, routeChannelId } = source;
-    const assignedRoute = await loadAssignedDiscordRoute(db, context, signal);
+    const {
+      ingress: assignedIngress,
+      source: {
+        binding: assignedBinding,
+        routeChannelId: assignedRouteChannelId,
+      },
+    } = context;
+    let assignedRoute: DiscordChatThreadRouteBinding | undefined;
+    if (assignedIngress.routeId) {
+      const [selectedAssignedRoute] = await db
+        .select()
+        .from(discordChatThreadRoutes)
+        .where(
+          and(
+            eq(discordChatThreadRoutes.id, assignedIngress.routeId),
+            eq(
+              discordChatThreadRoutes.connectionId,
+              assignedBinding.connectionId,
+            ),
+            eq(discordChatThreadRoutes.userId, assignedBinding.userId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!selectedAssignedRoute) {
+        throw new Error("Discord ingress route ownership is inconsistent");
+      }
+      assignedRoute = await refreshDiscordDirectMessageRouteDestination(
+        db,
+        selectedAssignedRoute,
+        assignedRouteChannelId,
+      );
+      signal.throwIfAborted();
+    }
     signal.throwIfAborted();
     const effectiveAgent =
       isDm && !assignedRoute ? await get(discordEffectiveAgent(binding)) : null;

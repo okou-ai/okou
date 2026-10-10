@@ -9,6 +9,7 @@ import {
   CLIENT_SESSION_ID_HEADER,
   CLIENT_TYPE_APP,
   CLIENT_TYPE_HEADER,
+  CLIENT_TYPE_IOS,
   CLIENT_VERSION_HEADER,
 } from "@okouai/api-contracts/contracts/client-headers";
 import { serializeError } from "@okouai/core/log-utils";
@@ -21,6 +22,11 @@ import { matchedRoutes, routePath } from "hono/route";
 
 import { corsMiddleware } from "./lib/cors";
 import { env } from "./lib/env";
+import {
+  iosMinimumSupportedVersion,
+  iosUpgradeRequired,
+  isSupportedIosClientVersion,
+} from "./lib/ios-client-compatibility";
 import { flushLogs, logger } from "./lib/log";
 import {
   cookieHeaderValue,
@@ -413,7 +419,7 @@ function clientHeaderLogFields(context: Context): ClientHeaderLogFields {
   };
 }
 
-async function webClientCompatibilityMiddleware(
+async function clientCompatibilityMiddleware(
   context: Context,
   next: Next,
 ): Promise<Response | void> {
@@ -431,6 +437,22 @@ async function webClientCompatibilityMiddleware(
         "Cache-Control": "no-store",
       },
     );
+  }
+
+  if (clientType === CLIENT_TYPE_IOS && clientVersion) {
+    const minimumSupportedVersion = iosMinimumSupportedVersion();
+    if (
+      minimumSupportedVersion !== null &&
+      !isSupportedIosClientVersion(clientVersion)
+    ) {
+      return context.json(
+        iosUpgradeRequired(minimumSupportedVersion),
+        CLIENT_FORCE_UPGRADE_STATUS,
+        {
+          "Cache-Control": "no-store",
+        },
+      );
+    }
   }
 
   await next();
@@ -607,7 +629,7 @@ export function createAppWithRoutes({
     waitUntil(flushLogs());
   });
 
-  app.use("*", webClientCompatibilityMiddleware);
+  app.use("*", clientCompatibilityMiddleware);
 
   for (const path of AUTH_PATHS) {
     app.get(path, redirectToApp);

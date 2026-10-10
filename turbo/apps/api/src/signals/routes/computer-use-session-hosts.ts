@@ -1,6 +1,10 @@
 import { desktopUpgradeRequired } from "../../lib/desktop-compatibility";
 import { command, computed, type Command } from "ccstate";
 import { computerUseSessionHostsContract as contract } from "@okouai/api-contracts/contracts/computer-use";
+import {
+  computerUseHostChannelName,
+  computerUseCommandsChangedEvent,
+} from "@okouai/api-contracts/contracts/realtime";
 
 import { conflict, notFound, providerUnavailable } from "../../lib/error";
 import { authRoute } from "../auth/auth-route";
@@ -105,6 +109,15 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
     body: {
       hostId: result.hostId,
       connectionGeneration: result.connectionGeneration,
+      commandNotifications: {
+        channelName: computerUseHostChannelName(
+          identity.userId,
+          identity.orgId,
+          result.hostId,
+          result.connectionGeneration,
+        ),
+        eventName: computerUseCommandsChangedEvent,
+      },
     },
   };
 });
@@ -132,7 +145,11 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   return {
     status: 200 as const,
-    body: { ok: true as const, hostId: result.hostId },
+    body: {
+      ok: true as const,
+      hostId: result.hostId,
+      hasPendingCommands: result.hasPendingCommands,
+    },
   };
 });
 

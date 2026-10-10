@@ -43,15 +43,19 @@ public struct APIResponse: Sendable {
 /// Requests are never automatically resubmitted by this client.
 public struct APIClient: Sendable {
   public let baseURL: URL
+  private let clientVersion: String
+  private let clientSessionId = UUID().uuidString.lowercased()
   private let bearerToken: @Sendable () async throws -> String
   private let session: URLSession
 
   public init(
     baseURL: URL,
+    clientVersion: String,
     session: URLSession = .shared,
     bearerToken: @escaping @Sendable () async throws -> String
   ) {
     self.baseURL = baseURL
+    self.clientVersion = clientVersion
     self.session = session
     self.bearerToken = bearerToken
   }
@@ -118,11 +122,15 @@ public struct APIClient: Sendable {
     request.setValue("application/json", forHTTPHeaderField: "Accept")
     request.setValue(UUID().uuidString, forHTTPHeaderField: "X-Client-Request-Id")
     if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+    // Case-sensitive wire value; the API keys the iOS compatibility floor on it.
+    request.setValue("iOS", forHTTPHeaderField: "X-Client-Type")
+    request.setValue(clientVersion, forHTTPHeaderField: "X-Client-Version")
+    request.setValue(clientSessionId, forHTTPHeaderField: "X-Client-Session-Id")
     for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
     return try await execute(request)
   }
 
-  /// Snapshot URLs are signed separately. Never forward the user's bearer token.
+  /// Snapshot URLs are signed separately. Never forward the user's bearer token or client headers.
   public func downloadSnapshot(_ url: URL) async throws -> Data {
     guard
       url.scheme == "https"

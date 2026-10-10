@@ -95,7 +95,7 @@ synchronization, commands, model selection, and SQLite storage. It depends on
 ChatDomain and Apple system frameworks; authentication/realtime SDK adapters,
 feature stores, Markdown rendering, and native UI remain in the App.
 
-Run the 31 data tests independently:
+Run the 32 data tests independently:
 
 ```sh
 swift test --package-path ios/Packages/ChatData
@@ -132,9 +132,16 @@ production approval. See [TestFlight releases](TESTFLIGHT.md) for the one-time
 App Store Connect group, signing, and credential setup. A successful signed CI
 upload and TestFlight installation have not yet been verified.
 
-This implementation does not add an independent iOS minimum-build gate. Existing
-HTTP 426 responses show a blocking update screen, but enforcing an iOS build
-floor requires the separately planned API middleware change. Old API-version
+Every `/api/` request identifies the app with `X-Client-Type: iOS`, an
+`X-Client-Version` equal to the marketing version (`CFBundleShortVersionString`,
+from `MARKETING_VERSION`), an `X-Client-Session-Id` generated once per API
+client, and a per-request `X-Client-Request-Id`. A bundle without a stable
+`x.y.z` marketing version fails configuration at launch. Signed snapshot
+downloads carry none of these headers. The API logs these values; an API-side
+iOS minimum-version floor is planned in
+[#38584](https://github.com/okou-ai/okou/issues/38584), and the app does not
+enforce one itself. Builds that predate these headers cannot be identified.
+Existing HTTP 426 responses show a blocking update screen. Old API-version
 compatibility and the future OpenAPI v1 migration are outside this MVP.
 
 The iOS icon retains the Desktop flower geometry from

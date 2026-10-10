@@ -21,10 +21,29 @@ index 704476da084be53d6aa194a5f774fa3ad47f5e9a..87a8eea1330f3a7bf98f063045d28d09
  //# sourceMappingURL=openai-codex-responses.d.ts.map
 \ No newline at end of file
 diff --git a/dist/api/openai-codex-responses.js b/dist/api/openai-codex-responses.js
-index 6ee63ec3201e788c1843bb077ae263f91fc671ca..a627d4a51f225dd94c5e794bf5fe58fabf186419 100644
+index 6ee63ec3201e788c1843bb077ae263f91fc671ca..37f3a85837e9825ff405288424ebc871d613c3ae 100644
 --- a/dist/api/openai-codex-responses.js
 +++ b/dist/api/openai-codex-responses.js
-@@ -166,7 +166,10 @@ export const stream = (model, context, options) => {
+@@ -27,6 +27,18 @@ const DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS = 15_000;
+ // endpoint (the same endpoint the official Codex client compresses against).
+ const REQUEST_COMPRESSION_ZSTD_LEVEL = 3;
+ const CODEX_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
++// Keep only the contract's known code vocabulary, never provider payloads or
++// unknown/private codes. The runtime owns classification and retry decisions.
++const OKOU_CODEX_PROVIDER_ERROR_CODES = new Set([
++    "invalid_api_key", "authentication_error",
++    "context_length_exceeded", "context_window_exceeded", "prompt_too_long",
++    "rate_limit_exceeded", "rate_limit_error",
++    "overloaded_error", "server_overloaded", "server_error", "internal_server_error",
++    "usage_limit_reached", "usage_not_included", "content_policy_violation",
++    "model_not_found", "unsupported_model",
++    "billing", "billing_error", "insufficient_quota", "payment_required",
++    "billing_hard_limit_reached", "insufficient_credits",
++]);
+ const WEBSOCKET_MESSAGE_TOO_BIG_CLOSE_CODE = 1009;
+ const WEBSOCKET_CONNECTION_LIMIT_REACHED_CODE = "websocket_connection_limit_reached";
+ const PREVIOUS_RESPONSE_NOT_FOUND_CODE = "previous_response_not_found";
+@@ -166,7 +178,10 @@ export const stream = (model, context, options) => {
              if (!apiKey) {
                  throw new Error(`No API key for provider: ${model.provider}`);
              }
@@ -36,7 +55,22 @@ index 6ee63ec3201e788c1843bb077ae263f91fc671ca..a627d4a51f225dd94c5e794bf5fe58fa
              const grammarToolInputProperties = createGrammarToolInputProperties(getDeclaredTools(normalizedContext.messages), model.compat?.supportsOpenAIGrammarTools ?? false);
              const cacheSessionId = options?.cacheRetention === "none" ? undefined : options?.sessionId;
              const codexSessionId = clampOpenAIPromptCacheKey(cacheSessionId);
-@@ -1318,4 +1321,10 @@ function buildWebSocketHeaders(initHeaders, additionalHeaders, accountId, token,
+@@ -344,6 +359,14 @@ export const stream = (model, context, options) => {
+                 delete block.customInput;
+             }
+             output.stopReason = options?.signal?.aborted ? "aborted" : "error";
++            if (output.stopReason === "error" && error instanceof CodexApiError &&
++                OKOU_CODEX_PROVIDER_ERROR_CODES.has(error.code)) {
++                appendAssistantMessageDiagnostic(output, {
++                    type: "okou_codex_provider_error",
++                    timestamp: Date.now(),
++                    details: { code: error.code },
++                });
++            }
+             output.errorMessage = formatProviderError(normalizeProviderError(error));
+             stream.push({ type: "error", reason: output.stopReason, error: output });
+             stream.end();
+@@ -1318,4 +1341,10 @@ function buildWebSocketHeaders(initHeaders, additionalHeaders, accountId, token,
      headers.set("session-id", requestId);
      return headers;
  }
@@ -175,7 +209,7 @@ index 5960cf7f5e992eef7d1b96530cea66c6f616a6d2..a2f2c47b1cb76f1faac44f80b0e08715
      if (shouldRetry === "true")
          return true;
 diff --git a/dist/utils/retry.js b/dist/utils/retry.js
-index 738a6f0db0ed42d257eefa7a7eb2d355ae784f65..960f21b06cf830ada8266993ebcfffd0aadb06da 100644
+index 738a6f0db0ed42d257eefa7a7eb2d355ae784f65..af2e4b6135d0d4ae02171b7f2986f972689bf16f 100644
 --- a/dist/utils/retry.js
 +++ b/dist/utils/retry.js
 @@ -1,3 +1,4 @@
@@ -183,7 +217,7 @@ index 738a6f0db0ed42d257eefa7a7eb2d355ae784f65..960f21b06cf830ada8266993ebcfffd0
  function buildProviderErrorPattern(patterns) {
      return new RegExp(patterns.join("|"), "i");
  }
-@@ -176,6 +177,52 @@ export async function retryAssistantCall(produce, policy, signal, callbacks) {
+@@ -176,6 +177,59 @@ export async function retryAssistantCall(produce, policy, signal, callbacks) {
          await callbacks?.onRetryAttemptStart?.();
      }
  }
@@ -203,8 +237,15 @@ index 738a6f0db0ed42d257eefa7a7eb2d355ae784f65..960f21b06cf830ada8266993ebcfffd0
 +    "provider_stream_timeout",
 +    "response_connection_lost",
 +]);
++const OKOU_TERMINAL_MODEL_REQUEST_REASONS = new Set([
++    "invalid_api_key", "invalid_credentials", "terms_acceptance_required",
++    "insufficient_credits", "provider_insufficient_credits", "usage_limit",
++    "context_window_exceeded", "input_too_large", "output_token_limit",
++    "provider_queue_timeout", "safety_policy_refusal", "unsupported_model",
++    "reconnect_required", "codex_access_program_unavailable",
++]);
 +/**
-+ * Read the transient verdict or safety veto Okou recorded for the failed request.
++ * Read the transient verdict or terminal veto Okou recorded for the failed request.
 + *
 + * A provider may author an error body carrying none of the text below: the
 + * incident in okou-ai/okou#35577 was an HTTP 503 whose entire body was
@@ -226,8 +267,8 @@ index 738a6f0db0ed42d257eefa7a7eb2d355ae784f65..960f21b06cf830ada8266993ebcfffd0
 +        if (diagnostic?.type !== "okou_model_request")
 +            continue;
 +        const reason = diagnostic.details?.failureReason;
-+        // Incidental text such as a link containing 503 cannot retry a refusal.
-+        if (reason === "safety_policy_refusal")
++        // A known terminal code must outrank incidental retry-looking prose.
++        if (OKOU_TERMINAL_MODEL_REQUEST_REASONS.has(reason))
 +            return false;
 +        return OKOU_RETRYABLE_MODEL_REQUEST_REASONS.has(reason) ? true : undefined;
 +    }
@@ -236,7 +277,7 @@ index 738a6f0db0ed42d257eefa7a7eb2d355ae784f65..960f21b06cf830ada8266993ebcfffd0
  /**
   * Classifies whether a failed assistant message looks like a transient provider
   * or transport error, so callers can decide if the last assistant turn should be
-@@ -189,8 +236,15 @@ export function isRetryableAssistantError(message) {
+@@ -189,8 +243,15 @@ export function isRetryableAssistantError(message) {
      if (message.stopReason !== "error" || !message.errorMessage)
          return false;
      const errorMessage = message.errorMessage;

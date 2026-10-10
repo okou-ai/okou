@@ -37,7 +37,10 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import { publishUserSignal } from "../external/realtime";
+import {
+  publishUserSignal,
+  publishComputerUseCommandsChangedSafely,
+} from "../external/realtime";
 import { downloadS3Buffer, putS3Object } from "../external/s3";
 import { settle } from "../utils";
 import { clerk$ } from "../external/clerk";
@@ -132,7 +135,11 @@ interface StartComputerUseHostResult {
 }
 
 type HeartbeatComputerUseHostResult =
-  | { readonly status: "ok"; readonly hostId: string }
+  | {
+      readonly status: "ok";
+      readonly hostId: string;
+      readonly hasPendingCommands: boolean;
+    }
   | { readonly status: "invalid_connection" };
 
 type StopComputerUseHostResult =
@@ -992,6 +999,31 @@ export const heartbeatComputerUseHost$ = command(
       return { status: "invalid_connection" };
     }
 
+    const claimableKinds = COMPUTER_USE_COMMANDS.filter((kind) => {
+      return (
+        supportedCapabilities.length === 0 ||
+        supportedCapabilities.includes(kind)
+      );
+    });
+    const [pendingCommand] =
+      claimableKinds.length === 0
+        ? []
+        : await db
+            .select({ id: computerUseCommands.id })
+            .from(computerUseCommands)
+            .where(
+              and(
+                eq(computerUseCommands.orgId, host.orgId),
+                eq(computerUseCommands.userId, host.userId),
+                eq(computerUseCommands.hostId, host.id),
+                eq(computerUseCommands.status, "queued"),
+                inArray(computerUseCommands.kind, claimableKinds),
+              ),
+            )
+            .limit(1);
+    signal.throwIfAborted();
+    const hasPendingCommands = pendingCommand !== undefined;
+
     const now = nowDate();
     const stateChanged =
       host.displayName !== displayName ||
@@ -1000,7 +1032,7 @@ export const heartbeatComputerUseHost$ = command(
       !sameStringArray(host.supportedCapabilities, supportedCapabilities) ||
       !samePermissions(host.permissions, params.permissions);
     if (!stateChanged && computerUseHostLivenessIsFresh(host, now)) {
-      return { status: "ok", hostId: host.id };
+      return { status: "ok", hostId: host.id, hasPendingCommands };
     }
 
     const updated = await db
@@ -1030,7 +1062,7 @@ export const heartbeatComputerUseHost$ = command(
       await publishComputerUseHostsChanged(host.userId);
       signal.throwIfAborted();
     }
-    return { status: "ok", hostId: host.id };
+    return { status: "ok", hostId: host.id, hasPendingCommands };
   },
 );
 
@@ -1207,6 +1239,17 @@ export const createComputerUseCommand$ = command(
     if (!row) {
       throw new Error("Failed to create computer-use command");
     }
+    // Schedule only after the INSERT commits. A failed or missed publish is
+    // recovered by the Native heartbeat's pending-work hint.
+    for (const host of target.notifyHosts) {
+      publishComputerUseCommandsChangedSafely({
+        userId: host.userId,
+        orgId: host.orgId,
+        hostId: host.id,
+        connectionGeneration: host.connectionGeneration,
+      });
+    }
+    signal.throwIfAborted();
     return {
       status: "created",
       commandId: row.id,

@@ -2,6 +2,7 @@ import { desktopUpgradeRequiredSchema } from "./desktop-updates";
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { computerUseCommandNotificationsSchema } from "./realtime";
 
 const c = initContract();
 
@@ -708,7 +709,10 @@ export const computerUseSessionHostsContract = c.router({
     headers: authHeadersSchema,
     body: computerUseHostStartBodySchema,
     responses: {
-      200: sessionHostGenerationSchema.extend({ hostId: z.string().uuid() }),
+      200: sessionHostGenerationSchema.extend({
+        hostId: z.string().uuid(),
+        commandNotifications: computerUseCommandNotificationsSchema,
+      }),
       426: desktopUpgradeRequiredSchema,
       ...sessionHostResponses,
     },
@@ -723,7 +727,9 @@ export const computerUseSessionHostsContract = c.router({
       sessionHostGenerationSchema.shape,
     ),
     responses: {
-      200: computerUseHeartbeatResponseSchema,
+      200: computerUseHeartbeatResponseSchema.extend({
+        hasPendingCommands: z.boolean(),
+      }),
       ...sessionHostResponses,
     },
     summary: "Refresh the current session's computer-use host",

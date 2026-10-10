@@ -176,6 +176,10 @@ describe("Native Computer Use session authentication", () => {
     expect(registered.body).toStrictEqual({
       hostId: expect.any(String),
       connectionGeneration: 1,
+      commandNotifications: {
+        channelName: `computer-use-host:${actor.userId}:${actor.orgId}:${registered.body.hostId}:1`,
+        eventName: "commandsChanged",
+      },
     });
     const params = { hostId: registered.body.hostId };
     const body = { connectionGeneration: registered.body.connectionGeneration };
@@ -265,6 +269,10 @@ describe("Native Computer Use session authentication", () => {
     expect(second).toStrictEqual({
       hostId: first.hostId,
       connectionGeneration: 2,
+      commandNotifications: {
+        channelName: `computer-use-host:${owner.userId}:${owner.orgId}:${first.hostId}:2`,
+        eventName: "commandsChanged",
+      },
     });
     await accept(
       client.stop({
@@ -417,7 +425,8 @@ describe("Native Computer Use session authentication", () => {
   it("rejects a connection replaced during screenshot upload without confirming its result", async () => {
     const api = await app();
     const client = api(contract);
-    authenticate(identity());
+    const actor = identity();
+    authenticate(actor);
     const hostBody = { ...runtimeBody, supportedCapabilities: ["app.state"] };
     const first = (
       await accept(client.register({ headers, body: hostBody }), [200])
@@ -449,6 +458,10 @@ describe("Native Computer Use session authentication", () => {
       expect(replacement.body).toStrictEqual({
         hostId: first.hostId,
         connectionGeneration: first.connectionGeneration + 1,
+        commandNotifications: {
+          channelName: `computer-use-host:${actor.userId}:${actor.orgId}:${first.hostId}:${first.connectionGeneration + 1}`,
+          eventName: "commandsChanged",
+        },
       });
       return {};
     });
