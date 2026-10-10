@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use sandbox::{DeviceRateLimits, SandboxId};
 use tokio::sync::watch;
+use uuid::Uuid;
 
 use crate::status::{BlankSandbox, IdleSandbox};
 use runner_types::ids::RunId;
@@ -11,6 +12,9 @@ use runner_types::types::{HeldSandboxState, ReusableSandboxState};
 mod entry;
 mod park_transition;
 mod parking_gate;
+mod pressure;
+
+pub use pressure::IdlePressureCandidate;
 
 pub use entry::{
     DestroyOutcome, FinalizingHandoffCandidate, IdleDestroyPayload, IdleDestroyResult,
@@ -57,6 +61,8 @@ pub struct IdlePoolSnapshot {
 /// can be parked here instead of being destroyed. A subsequent job for the same
 /// reuse key can reuse the parked sandbox, skipping sandbox creation and startup.
 pub struct IdlePool {
+    /// Exact process-local pool identity; snapshots cannot cross pool owners.
+    generation: Uuid,
     exact_entries: HashMap<String, IdleEntry>,
     blank_entries: HashMap<SandboxId, IdleEntry>,
     config: IdlePoolConfig,
@@ -111,6 +117,7 @@ impl IdlePool {
     pub fn new_with_parking_gate(config: IdlePoolConfig, parking_gate: ParkingGate) -> Self {
         let (changes, _changes_rx) = watch::channel(0);
         Self {
+            generation: Uuid::new_v4(),
             exact_entries: HashMap::new(),
             blank_entries: HashMap::new(),
             config,
