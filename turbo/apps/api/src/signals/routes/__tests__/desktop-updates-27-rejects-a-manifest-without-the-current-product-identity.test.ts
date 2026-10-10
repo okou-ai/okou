@@ -1,6 +1,6 @@
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 
 import { createDesktopUpdatePublicApi } from "./helpers/desktop-update-public";
 
@@ -12,7 +12,7 @@ const {
   stableManifest,
   darwinArm64Release,
   okouZipUrl,
-  feedRequest,
+  appcastRequest,
 } = createDesktopUpdatePublicApi(context);
 
 describe("desktop update routes", () => {
@@ -32,7 +32,6 @@ describe("desktop update routes", () => {
         return HttpResponse.json(invalid);
       });
       for (const path of [
-        "http://api.test/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/RELEASES.json",
         "http://api.test/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/appcast.xml",
         "http://api.test/api/desktop/updates/stable/darwin/arm64/dmg",
       ]) {
@@ -42,10 +41,10 @@ describe("desktop update routes", () => {
     }
 
     mockDesktopUpdateManifest(manifest);
-    const recovered = await accept(feedRequest(), [200]);
-    expect(recovered.body).toMatchObject({
-      currentRelease: "1.2.3",
-      releases: [{ updateTo: { url } }],
-    });
+    const recovered = await appcastRequest();
+    expect(recovered.status).toBe(200);
+    const recoveredXml = await recovered.text();
+    expect(recoveredXml).toContain("<sparkle:version>1.2.3</sparkle:version>");
+    expect(recoveredXml).toContain(`<enclosure url="${url}"`);
   });
 });

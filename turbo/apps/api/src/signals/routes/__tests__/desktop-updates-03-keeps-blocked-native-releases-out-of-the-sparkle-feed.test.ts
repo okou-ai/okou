@@ -14,7 +14,7 @@ const {
 
 // Default Vitest file isolation gives this scenario a fresh module cache.
 describe("desktop update routes", () => {
-  it("serves the same blocked-version selection to Sparkle and installed Electron clients", async () => {
+  it("keeps blocked Native releases out of the Sparkle feed", async () => {
     mockDesktopUpdateManifest(
       stableManifest(
         "0.50.1",
@@ -26,11 +26,6 @@ describe("desktop update routes", () => {
       ),
     );
     const path = "/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/";
-    const electron = await appRequest(`${path}RELEASES.json`);
-    expect(electron.status).toBe(200);
-    await expect(electron.json()).resolves.toMatchObject({
-      currentRelease: "0.50.0",
-    });
     const native = await appRequest(`${path}appcast.xml`);
     expect(native.status).toBe(200);
     expect(native.headers.get("content-type")).toContain("application/rss+xml");

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 
 import { createDesktopUpdatePublicApi } from "./helpers/desktop-update-public";
 
 const context = testContext();
 const {
-  client,
+  appcastRequest,
   mockDesktopUpdateManifest,
   stableManifest,
   darwinArm64Release,
@@ -23,18 +23,11 @@ describe("desktop update routes", () => {
       }),
     );
 
-    const response = await accept(
-      client().productFeed({
-        params: {
-          product: "ai-okou-desktop",
-          channel: "stable",
-          platform: "darwin",
-          arch: "arm64",
-        },
-      }),
-      [404],
-    );
+    const response = await appcastRequest();
+    expect(response.status).toBe(404);
 
-    expect(response.body.error.code).toBe("NOT_FOUND");
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "NOT_FOUND" },
+    });
   });
 });

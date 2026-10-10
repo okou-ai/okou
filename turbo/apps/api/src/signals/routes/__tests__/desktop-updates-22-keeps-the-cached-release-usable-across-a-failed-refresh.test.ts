@@ -1,6 +1,6 @@
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 
 import { mockNow, withMockNowForTest } from "../../../lib/time";
 
@@ -12,7 +12,7 @@ const {
   stableManifest,
   darwinArm64Release,
   okouZipUrl,
-  feedRequest,
+  appcastRequest,
   countingManifestHandler,
 } = createDesktopUpdatePublicApi(context);
 
@@ -27,13 +27,13 @@ describe("desktop update routes", () => {
           "1.2.3": darwinArm64Release("1.2.3", okouZipUrl("1.2.3")),
         }),
       );
-      await accept(feedRequest(), [200]);
+      await expect(appcastRequest()).resolves.toMatchObject({ status: 200 });
 
       countingManifestHandler(() => {
         return HttpResponse.error();
       });
       mockNow(initialNow + 5 * 60_000);
-      await accept(feedRequest(), [200]);
+      await expect(appcastRequest()).resolves.toMatchObject({ status: 200 });
 
       // A failed refresh must not evict or age the entry, and a later success
       // must replace it outright rather than merge with it.
@@ -43,9 +43,12 @@ describe("desktop update routes", () => {
         }),
       );
       mockNow(initialNow + 10 * 60_000);
-      const refreshed = await accept(feedRequest(), [200]);
+      const refreshed = await appcastRequest();
+      expect(refreshed.status).toBe(200);
 
-      expect(refreshed.body.currentRelease).toBe("1.2.4");
+      await expect(refreshed.text()).resolves.toContain(
+        "<sparkle:version>1.2.4</sparkle:version>",
+      );
     });
   });
 });
