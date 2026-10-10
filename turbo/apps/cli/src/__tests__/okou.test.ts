@@ -121,14 +121,41 @@ describe("Okou CLI program", () => {
   });
 
   it("should keep internal commands out of the public surface", () => {
+    expect(commandNames).toContain("__main_loop__");
+    expect(commandNames).toContain("__subagent_loop__");
     expect(commandNames).toContain("__agent-loop");
+    expect(canonicalCommandNames).not.toContain("__main_loop__");
     expect(canonicalCommandNames).not.toContain("__agent-loop");
   });
 
-  it("should have exactly 48 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(48);
+  it("should have exactly 49 canonical commands", () => {
+    expect(canonicalCommandNames).toHaveLength(49);
     expect(canonicalCommandNames).toContain("subscription");
   });
+});
+
+describe("Pi-only CLI visibility", () => {
+  afterEach(() => {
+    return vi.unstubAllEnvs();
+  });
+
+  it.each(["parent", "child", ""])(
+    "shows subagent only for a Pi parent (%s)",
+    (role) => {
+      vi.stubEnv("OKOU_PI_SESSION_ROLE", role);
+      vi.stubEnv("OKOU_RUN_ID", "test-run");
+      const cli = new Command("okou");
+      registerCommands(cli);
+      expect(cli.helpInformation().includes("subagent")).toBe(
+        role === "parent",
+      );
+      expect(buildHelpText().includes("okou subagent --help")).toBe(
+        role === "parent",
+      );
+      expect(cli.helpInformation()).not.toContain("__main_loop__");
+      expect(cli.helpInformation()).not.toContain("__subagent_loop__");
+    },
+  );
 });
 
 describe("Okou CLI lazy command loading", () => {

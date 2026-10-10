@@ -16,6 +16,8 @@ import {
   startPiCliObservation,
 } from "./lib/pi-startup-timing.js";
 
+import { isPiParentSession } from "./lib/pi-session-env.js";
+
 observePiCliEntryImports();
 
 interface CommandDefinition {
@@ -36,6 +38,9 @@ const COMMAND_CAPABILITY_MAP: Record<
   string | readonly string[] | null
 > = {
   "__agent-loop": null,
+  __main_loop__: null,
+  __subagent_loop__: null,
+  subagent: null,
   agent: "agent:read",
   workflow: "agent:read",
   connector: ["connector:read", "connector:write"],
@@ -130,8 +135,29 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     },
   },
   {
+    name: "__main_loop__",
+    description: "Internal sandbox Pi main loop",
+    load: async () => {
+      return (await import("./commands/__main_loop__")).mainLoopCommand;
+    },
+  },
+  {
+    name: "__subagent_loop__",
+    description: "Internal child Pi loop",
+    load: async () => {
+      return (await import("./commands/__subagent_loop__")).subagentLoopCommand;
+    },
+  },
+  {
+    name: "subagent",
+    description: "Manage background Pi subagents in the current Run",
+    load: async () => {
+      return (await import("./commands/subagent/index")).subagentCommand;
+    },
+  },
+  {
     name: "__agent-loop",
-    description: "Internal sandbox agent loop",
+    description: "Legacy internal sandbox agent loop",
     load: async () => {
       return (await import("./commands/__agent-loop")).agentLoopCommand;
     },
@@ -467,6 +493,7 @@ function shouldHideCommand(
   payload: SandboxTokenPayload | undefined,
 ): boolean {
   if (name.startsWith("__")) return true;
+  if (name === "subagent") return !isPiParentSession();
   if (!payload) return RUN_ONLY_COMMANDS.has(name);
   const requiredCap = COMMAND_CAPABILITY_MAP[name];
   if (requiredCap === undefined) return true;
@@ -631,6 +658,11 @@ export function buildHelpText(
     ...commandExampleIfVisible(
       "run",
       "  Inspect Run usage?    okou run usage --json",
+      payload,
+    ),
+    ...commandExampleIfVisible(
+      "subagent",
+      "  Delegate Pi work?     okou subagent --help",
       payload,
     ),
     "  Introduce Okou?       okou intro",

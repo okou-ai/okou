@@ -15,11 +15,27 @@ describe("Pi session construction digest", () => {
       document.profiles.map((profile) => {
         return profile.name;
       }),
-    ).toStrictEqual(["no-memory", "memory-tools"]);
+    ).toStrictEqual([
+      "no-memory",
+      "memory-tools",
+      "parent-no-memory",
+      "child-no-memory",
+      "parent-memory-tools",
+      "child-memory-tools",
+    ]);
     const [plain, memory] = document.profiles;
     expect(plain?.systemPrompt).toContain("/home/user/workspace");
     expect(plain?.tools.length).toBeGreaterThan(0);
     expect(memory?.tools.length).toBeGreaterThan(plain?.tools.length ?? 0);
+    const parent = document.profiles.find((profile) => {
+      return profile.name === "parent-no-memory";
+    });
+    const child = document.profiles.find((profile) => {
+      return profile.name === "child-no-memory";
+    });
+    expect(parent?.systemPrompt).toContain("okou subagent start");
+    expect(child?.systemPrompt).not.toContain("okou subagent start");
+    expect(child?.systemPrompt).toContain("Nested delegation is disabled");
   });
 
   it("covers verified limit corrections as well as prompt and tool profiles", async () => {

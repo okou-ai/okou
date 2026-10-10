@@ -132,6 +132,7 @@ interface PiAgentSessionRuntimeArgs {
   readonly onMemoryToolSourceUse?: (sourceUse: PiMemoryToolSourceUse) => void;
   readonly onPreparationTiming?: PiPreparationObserver;
   readonly sessionStartEvent?: CreateAgentSessionFromServicesOptions["sessionStartEvent"];
+  readonly sessionRole?: "parent" | "child";
 }
 
 export async function createPiAgentSessionForRuntime(
@@ -226,6 +227,26 @@ export async function createPiAgentSessionForRuntime(
   // `applyOverrides()` does not reach, so this setter is the effective one; it
   // updates the resolved value without persisting the choice to any disk file.
   services.settingsManager.setCacheWarmingMode("off");
+  let effectiveThinkingLevel = () => {
+    return args.model.thinkingLevel;
+  };
+  const bashOptions = {
+    ...PI_BASH_TOOL_OPTIONS,
+    spawnHook: (context: {
+      command: string;
+      cwd: string;
+      env: NodeJS.ProcessEnv;
+    }) => {
+      return {
+        ...context,
+        env: {
+          ...context.env,
+          OKOU_PI_SESSION_ROLE: args.sessionRole ?? "none",
+          OKOU_PI_EFFECTIVE_THINKING_LEVEL: effectiveThinkingLevel(),
+        },
+      };
+    },
+  };
   const created = await measurePiPreparation(
     args.onPreparationTiming,
     "session_create",
@@ -239,14 +260,14 @@ export async function createPiAgentSessionForRuntime(
           args.sessionManager,
           args.model.thinkingLevel,
         ),
-        customTools: [
-          createBashTool(args.cwd, PI_BASH_TOOL_OPTIONS),
-          ...memoryTools,
-        ],
+        customTools: [createBashTool(args.cwd, bashOptions), ...memoryTools],
       });
     },
     signal,
   );
+  effectiveThinkingLevel = () => {
+    return created.session.thinkingLevel;
+  };
   measurePiPreparationSync(
     args.onPreparationTiming,
     "session_finalize",
@@ -291,6 +312,7 @@ function prepareModelAndPrompt(
   ];
   const systemPrompt = buildOkouHarnessSystemPrompt(
     okouHarnessToolPrompts(args.cwd),
+    args.sessionRole,
   );
   // Passing `appendSystemPrompt` at all replaces the official loader's own
   // append-block discovery, so an empty array must omit the key entirely or a
