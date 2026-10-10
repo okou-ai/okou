@@ -1,4 +1,5 @@
 export { runPiOfficialRpcMode } from "./rpc";
+export { runPiSubagent } from "./subagent";
 export {
   computePiSessionConstructionDigest,
   computePiSessionConstructionDocument,

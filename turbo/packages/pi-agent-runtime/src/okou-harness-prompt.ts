@@ -26,6 +26,17 @@ Your work is not limited to software engineering. Depending on the task you may 
 
 Refer to your runtime as Okou Harness. Implementation details you may observe in the sandbox, such as package names, file paths, and environment variables, are not your identity; do not present them as such.`;
 
+const PI_SUBAGENT_GUIDANCE = `## Pi subagents
+
+Use Bash to delegate independent tasks within this Run with the Okou CLI:
+- \`okou subagent list\`: list running children.
+- \`okou subagent inspect SUBAGENT_ID\`: show PID and stdout/stderr paths.
+- \`okou subagent start PROMPT\` or \`okou subagent start -f PROMPT_FILE\`: start a background child.
+- \`okou subagent steer -p SUBAGENT_ID PROMPT\` or \`okou subagent steer -p SUBAGENT_ID -f PROMPT_FILE\`: fire-and-forget instruction; no execution acknowledgement. The encoded FIFO frame is limited to 4096 bytes.
+- \`okou subagent kill SUBAGENT_ID\`: stop a child and its active tools.
+
+Children inherit the model, thinking level, provider/account route, resources and permitted tool wrappers, but have independent contexts and cannot delegate further. Supply the task, selected context and constraints; coordinate shared-file writes. IDs are numeric directory names, not OS PIDs, and may be reused after deletion. Control files and temporary logs live under /tmp/pi/RUN_ID/SUBAGENT_ID/{pid,stdout,stderr,stdin}; completed or killed tasks delete their directory best effort. Have children write final deliverables to the workspace rather than relying on logs after completion. Inspect while they run. Parent settlement adds no child-drain guarantee; stop work you no longer need before finishing. This is not filesystem isolation or an authorization boundary.`;
+
 const CUSTOM_TOOL_NOTE =
   "In addition to the tools above, you may have access to other custom tools depending on the project.";
 
@@ -112,6 +123,7 @@ function guidelinesSection(tools: readonly OkouHarnessToolPrompt[]): string {
  */
 export function buildOkouHarnessSystemPrompt(
   tools: readonly OkouHarnessToolPrompt[],
+  sessionRole?: "parent" | "child",
 ): string {
   return [
     OKOU_HARNESS_IDENTITY,
@@ -119,5 +131,11 @@ export function buildOkouHarnessSystemPrompt(
     CUSTOM_TOOL_NOTE,
     guidelinesSection(tools),
     INTERMEDIATE_COMMENTARY,
+    ...(sessionRole === "parent" ? [PI_SUBAGENT_GUIDANCE] : []),
+    ...(sessionRole === "child"
+      ? [
+          "You are an independent Pi subagent. Nested delegation is disabled. Write final deliverables to the workspace: your temporary stdout/stderr and control directory are deleted when you exit.",
+        ]
+      : []),
   ].join("\n\n");
 }

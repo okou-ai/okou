@@ -29,6 +29,7 @@ const PI_SESSION_CONSTRUCTION_MODEL: PiAgentModelConfig = {
 
 interface PiSessionConstructionProfile {
   readonly name: string;
+  readonly sessionRole?: "parent" | "child";
   readonly resourceSnapshot: PiPreheatedResourceSnapshot;
 }
 
@@ -82,7 +83,19 @@ export interface PiSessionConstructionDocument {
  */
 export async function computePiSessionConstructionDocument(): Promise<PiSessionConstructionDocument> {
   const profiles: PiSessionConstructionProfileDocument[] = [];
-  for (const profile of PI_SESSION_CONSTRUCTION_PROFILES) {
+  const roleProfiles = PI_SESSION_CONSTRUCTION_PROFILES.flatMap((profile) => {
+    return (["parent", "child"] as const).map((sessionRole) => {
+      return {
+        ...profile,
+        name: `${sessionRole}-${profile.name}`,
+        sessionRole,
+      };
+    });
+  });
+  for (const profile of [
+    ...PI_SESSION_CONSTRUCTION_PROFILES,
+    ...roleProfiles,
+  ]) {
     const created = await createPiAgentSessionForRuntime({
       cwd: PI_SESSION_CONSTRUCTION_CWD,
       agentDir: PI_SESSION_CONSTRUCTION_AGENT_DIR,
@@ -90,6 +103,7 @@ export async function computePiSessionConstructionDocument(): Promise<PiSessionC
         id: randomUUID(),
       }),
       model: PI_SESSION_CONSTRUCTION_MODEL,
+      sessionRole: profile.sessionRole,
       appendSystemPrompt: null,
       resourceSnapshot: profile.resourceSnapshot,
     });
