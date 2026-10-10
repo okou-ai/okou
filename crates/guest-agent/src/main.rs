@@ -434,7 +434,7 @@ async fn execute(
     if let Err(e) = setup_working_dir(paths::CANONICAL_WORKING_DIR) {
         let msg = format!("Working dir setup failed: {e}");
         log_error!(LOG_TAG, "{msg}");
-        failure_diagnostics::write_guest_error_file(runtime_paths.checkpoint_error_file(), &msg);
+        failure_diagnostics::write_guest_error_file(runtime_paths.finalization_error_file(), &msg);
         failure_diagnostics::write_guest_failure_diagnostic(
             runtime_paths.failure_diagnostic_file(),
             &failure_diagnostics::base_failure_diagnostic_for_config(
@@ -463,7 +463,7 @@ async fn execute(
         }
         let msg = format!("Codex setup failed: {}", masker.mask_string(&e.to_string()));
         log_error!(LOG_TAG, "{msg}");
-        failure_diagnostics::write_guest_error_file(runtime_paths.checkpoint_error_file(), &msg);
+        failure_diagnostics::write_guest_error_file(runtime_paths.finalization_error_file(), &msg);
         failure_diagnostics::write_guest_failure_diagnostic(
             runtime_paths.failure_diagnostic_file(),
             &failure_diagnostics::base_failure_diagnostic_for_config(
@@ -762,13 +762,13 @@ fn record_persistence_failure(
         failure.label,
         failure.elapsed.as_secs()
     );
-    failure_diagnostics::write_guest_error_file(runtime_paths.checkpoint_error_file(), &msg);
+    failure_diagnostics::write_guest_error_file(runtime_paths.finalization_error_file(), &msg);
     if failure.wrote_failure_diagnostic {
         return;
     }
     let mut diagnostic = failure_diagnostics::base_failure_diagnostic_for_config(
         config,
-        FailureClass::CheckpointFailed,
+        FailureClass::FinalizationFailed,
     )
     .with_cli_exit_code(failure.cli_exit_code);
     if let Some(reason) = finalization_failure_reason(failure.error) {
@@ -802,7 +802,10 @@ async fn complete_execution(
     let runtime_paths = &runtime.paths;
     let http = &runtime.http;
     if let Some(message) = state.failure_message {
-        failure_diagnostics::write_guest_error_file(runtime_paths.checkpoint_error_file(), message);
+        failure_diagnostics::write_guest_error_file(
+            runtime_paths.finalization_error_file(),
+            message,
+        );
     }
     let mut wrote_failure_diagnostic = false;
     if let Some(diagnostic) = &state.failure_diagnostic {
@@ -1177,7 +1180,7 @@ mod tests {
             cleanup_paths.push(paths.session_id_file().to_string());
         }
         cleanup_paths.extend([
-            paths.checkpoint_error_file().to_string(),
+            paths.finalization_error_file().to_string(),
             paths.failure_diagnostic_file().to_string(),
             paths.sandbox_ops_file().to_string(),
             paths.telemetry_system_log_pos_file().to_string(),
@@ -1767,7 +1770,7 @@ mod tests {
         .await;
         telemetry.shutdown().await;
 
-        let error_path = std::path::Path::new(guest_paths.checkpoint_error_file());
+        let error_path = std::path::Path::new(guest_paths.finalization_error_file());
         let written_error = error_path
             .exists()
             .then(|| std::fs::read_to_string(error_path).unwrap());
@@ -1823,12 +1826,12 @@ mod tests {
         telemetry.shutdown().await;
 
         assert_eq!(exit_code, 1);
-        let error = std::fs::read_to_string(guest_paths.checkpoint_error_file()).unwrap();
+        let error = std::fs::read_to_string(guest_paths.finalization_error_file()).unwrap();
         assert!(error.contains("Finalization failed"), "got: {error}");
         let diagnostic: FailureDiagnostic =
             serde_json::from_slice(&std::fs::read(guest_paths.failure_diagnostic_file()).unwrap())
                 .unwrap();
-        assert_eq!(diagnostic.failure_class, FailureClass::CheckpointFailed);
+        assert_eq!(diagnostic.failure_class, FailureClass::FinalizationFailed);
         assert_eq!(diagnostic.cli_exit_code, Some(0));
         assert_eq!(
             diagnostic.session_history_status,
@@ -1891,7 +1894,7 @@ mod tests {
 
         assert_eq!(exit_code, 1);
         complete_mock.assert_calls_async(3).await;
-        let error = std::fs::read_to_string(guest_paths.checkpoint_error_file()).unwrap();
+        let error = std::fs::read_to_string(guest_paths.finalization_error_file()).unwrap();
         assert!(
             error.contains("POST failed after 3 attempts"),
             "got: {error}"
@@ -1899,7 +1902,7 @@ mod tests {
         let diagnostic: FailureDiagnostic =
             serde_json::from_slice(&std::fs::read(guest_paths.failure_diagnostic_file()).unwrap())
                 .unwrap();
-        assert_eq!(diagnostic.failure_class, FailureClass::CheckpointFailed);
+        assert_eq!(diagnostic.failure_class, FailureClass::FinalizationFailed);
         assert_eq!(diagnostic.cli_exit_code, Some(0));
 
         for path in cleanup_paths {
@@ -2085,7 +2088,7 @@ mod tests {
 
         assert_eq!(exit_code, failure_exit_code);
         assert_eq!(
-            std::fs::read_to_string(guest_paths.checkpoint_error_file()).unwrap(),
+            std::fs::read_to_string(guest_paths.finalization_error_file()).unwrap(),
             failure_message
         );
         let diagnostic: FailureDiagnostic =

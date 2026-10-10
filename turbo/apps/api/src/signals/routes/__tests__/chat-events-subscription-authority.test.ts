@@ -34,7 +34,7 @@ const {
   completeChatRunOk,
   cancelChatRun,
   requestSendEventWithBearer,
-  mockPiCheckpointObjectStore,
+  mockPiObjectStore,
   completeSandboxFirstPiRun,
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
@@ -53,7 +53,7 @@ describe("CHAT-02: run-level model overrides", () => {
       const captured = await configureSubscriptionPiModel(actor, {
         accountId: `preparation-subscription-${randomUUID()}`,
       });
-      mockPiCheckpointObjectStore();
+      mockPiObjectStore();
       mockPiResourceArchiveDownloads();
       const clientEventId = randomUUID();
       const waiting = await sendWaitingChatInput(actor, {
@@ -112,7 +112,7 @@ describe("CHAT-02: run-level model overrides", () => {
       });
       await api.updateUserModelPreference(actor, null);
       mockPiResourceArchiveDownloads();
-      mockPiCheckpointObjectStore();
+      mockPiObjectStore();
       const run = await sendChatRun(actor, {
         agentId,
         model: "gpt-6-luna",
@@ -181,7 +181,7 @@ describe("CHAT-02: run-level model overrides", () => {
       accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
     });
     mockPiResourceArchiveDownloads();
-    mockPiCheckpointObjectStore();
+    mockPiObjectStore();
     const run = await sendChatRun(actor, {
       agentId,
       model: "gpt-6-luna",
@@ -249,7 +249,7 @@ describe("CHAT-02: run-level model overrides", () => {
         return await configureUserOwnedGptPiModel(actor, route);
       });
       mockPiResourceArchiveDownloads();
-      const objects = mockPiCheckpointObjectStore();
+      const objects = mockPiObjectStore();
 
       const first = await sendChatRun(actor, {
         agentId,
@@ -412,7 +412,7 @@ describe("CHAT-02: run-level model overrides", () => {
         }
         await configureUserOwnedGptPiModel(actor, route);
         mockPiResourceArchiveDownloads();
-        mockPiCheckpointObjectStore();
+        mockPiObjectStore();
         const fastTier =
           route.type === "codex-oauth-token" ? "fast" : "priority";
         const queuedId = randomUUID();

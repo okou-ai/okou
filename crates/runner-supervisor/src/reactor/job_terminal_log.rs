@@ -1151,7 +1151,7 @@ mod tests {
             FailureReason::UsageLimit,
         ] {
             let diagnostic = FailureDiagnostic::new(
-                FailureClass::CheckpointFailed,
+                FailureClass::FinalizationFailed,
                 AgentFramework::Codex,
                 PromptMetadata::from_prompt("plain prompt"),
             )

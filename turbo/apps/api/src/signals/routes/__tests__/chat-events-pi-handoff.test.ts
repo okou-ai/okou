@@ -28,7 +28,7 @@ import {
   claimEnvironment,
   modelProviderSecretPlaceholder,
   eventBackedContents,
-  type PiCheckpointS3Command,
+  type PiObjectStoreCommand,
   piS3ObjectKey,
   PI_RESOURCE_ARCHIVE_DOWNLOAD_URL,
 } from "./helpers/chat-events-fixture";
@@ -45,7 +45,7 @@ const {
   waitForRunStatus,
   failChatRun,
   cancelChatRun,
-  mockPiCheckpointObjectStore,
+  mockPiObjectStore,
   piSandboxBaseSession,
   completeSandboxFirstPiRun,
   completeChatRunOk,
@@ -57,7 +57,7 @@ describe("CHAT-02: model-first routing", () => {
     async (encoding) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       await configureSubscriptionPiModel(actor);
-      const historyObjects = mockPiCheckpointObjectStore();
+      const historyObjects = mockPiObjectStore();
       let resourceDownloads = 0;
       server.use(
         http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, () => {
@@ -138,7 +138,7 @@ describe("CHAT-02: model-first routing", () => {
         `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${invalidHash}.${invalidSuffix}`,
         encoded,
       );
-      const invalidCheckpoint = await webhooks.requestAgentComplete(
+      const invalidCompletion = await webhooks.requestAgentComplete(
         {
           runId: run.runId,
           exitCode: 0,
@@ -151,7 +151,7 @@ describe("CHAT-02: model-first routing", () => {
         claimed.sandboxHeaders,
         [400],
       );
-      expect(JSON.stringify(invalidCheckpoint.body)).toContain(
+      expect(JSON.stringify(invalidCompletion.body)).toContain(
         encoding === "identity"
           ? "[PI_H2_HASH_MISMATCH]"
           : "[PI_H2_DECOMPRESSION_FAILED]",
@@ -231,7 +231,7 @@ describe("CHAT-02: model-first routing", () => {
         context.mocks.s3.send.mock.calls
           .slice(callsBeforeResume)
           .some(([command]) => {
-            const candidate = command as PiCheckpointS3Command;
+            const candidate = command as PiObjectStoreCommand;
             return (
               candidate.constructor?.name === "GetObjectCommand" &&
               piS3ObjectKey(candidate) === blobKey
@@ -275,7 +275,7 @@ describe("CHAT-02: model-first routing", () => {
       });
       await own(async () => {
         mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-        const historyObjects = mockPiCheckpointObjectStore();
+        const historyObjects = mockPiObjectStore();
         let resourceDownloads = 0;
         server.use(
           http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, () => {
@@ -335,7 +335,7 @@ describe("CHAT-02: model-first routing", () => {
             expect(claim.claim.resumeSession).toBeNull();
           } else {
             if (!expectedH0) {
-              throw new Error("Expected settled first-turn checkpoint");
+              throw new Error("Expected settled first-turn history");
             }
             const hash = createHash("sha256").update(expectedH0).digest("hex");
             const resumeSession = claim.claim.resumeSession;
@@ -382,7 +382,7 @@ describe("CHAT-02: model-first routing", () => {
             );
           }
           const answer = `native Sandbox answer ${turn}`;
-          // This exercises the external Sandbox checkpoint/completion boundary.
+          // This exercises the external Sandbox output/completion boundary.
           // pi-agent-loop.test.ts separately runs the real official RPC/AgentSession
           // with a mounted skill and checks its actual expanded provider input.
           await completeSandboxFirstPiRun({
@@ -428,14 +428,14 @@ describe("CHAT-02: model-first routing", () => {
             })
             .at(-1);
           if (!blob) {
-            throw new Error("Expected the Sandbox's settled checkpoint");
+            throw new Error("Expected the Sandbox's settled history");
           }
           expectedH0 = blob[1];
           const settled = MemoryPiSession.fromJsonl(
             expectedH0.toString("utf8"),
           );
           expect(settled.getSessionId()).toBe(run.threadId);
-          expect(settled.isSettledCheckpoint()).toBeTruthy();
+          expect(settled.isSettledHistory()).toBeTruthy();
           expect(settled.buildSessionContext().messages).toHaveLength(turn * 2);
         }
       });

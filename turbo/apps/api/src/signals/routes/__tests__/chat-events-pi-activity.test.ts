@@ -40,7 +40,7 @@ const {
   waitForRunStatus,
   cancelChatRun,
   sessionHeaders,
-  mockPiCheckpointObjectStore,
+  mockPiObjectStore,
   mockPiResourceArchiveDownloads,
   piSandboxBaseSession,
 } = createChatEventsFixture(context);
@@ -101,7 +101,7 @@ async function expectPiActivitySummary(
   mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
 }
 
-function boundedPiCheckpointHistory(jsonl: string): {
+function boundedPiSessionHistory(jsonl: string): {
   readonly original: string;
   readonly bounded: string;
 } {
@@ -189,10 +189,9 @@ describe("CHAT-02: model-first routing", () => {
     );
     mockPiResourceArchiveDownloads();
     const okouCliCommand = `npx --yes --package="\${CLI_PKG_URL}" okou --help`;
-    const adHocNoteFilename = "2026-09-05T16-15-00-sandbox-checkpoint.md";
-    const adHocNote =
-      "# Sandbox checkpoint\n\nPersist this staged sandbox note.\n";
-    const historyObjects = mockPiCheckpointObjectStore();
+    const adHocNoteFilename = "2026-09-05T16-15-00-sandbox-note.md";
+    const adHocNote = "# Sandbox note\n\nPersist this staged sandbox note.\n";
+    const historyObjects = mockPiObjectStore();
     const prompt = "use the Okou CLI in the Sandbox";
     const run = await sendChatRunAfterPick(actor, {
       agentId,
@@ -390,7 +389,7 @@ describe("CHAT-02: model-first routing", () => {
     });
     // Exercise the API H2 endpoint with a compacted native candidate; the
     // larger original remains test-owned and is never persisted as H2.
-    const { original: originalH2, bounded: h2 } = boundedPiCheckpointHistory(
+    const { original: originalH2, bounded: h2 } = boundedPiSessionHistory(
       h2Session.toJsonl(),
     );
     expect(Buffer.byteLength(originalH2)).toBeGreaterThan(
@@ -401,7 +400,7 @@ describe("CHAT-02: model-first routing", () => {
     expect(boundedNative.buildSessionContext()).toStrictEqual(
       originalNative.buildSessionContext(),
     );
-    expect(boundedNative.isSettledCheckpoint()).toBeTruthy();
+    expect(boundedNative.isSettledHistory()).toBeTruthy();
     expect(boundedNative.getSessionId()).toBe(run.threadId);
     const h2Hash = createHash("sha256").update(h2).digest("hex");
     const preparedH2 = await webhooks.requestAgentSessionHistoryPrepare(
@@ -423,7 +422,7 @@ describe("CHAT-02: model-first routing", () => {
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h2Hash}.blob`,
       Buffer.from(h2, "utf8"),
     );
-    const checkpointedMemory = await commitMemoryVersion(
+    const publishedMemory = await commitMemoryVersion(
       context,
       {
         runId: run.runId,
@@ -437,11 +436,11 @@ describe("CHAT-02: model-first routing", () => {
         },
       ],
     );
-    expect(checkpointedMemory.storageId).toBe(lunaMemoryMount.storageId);
+    expect(publishedMemory.storageId).toBe(lunaMemoryMount.storageId);
     const memoryArtifactSnapshots = [
       {
         name: lunaMemoryMount.name,
-        version: checkpointedMemory.versionId,
+        version: publishedMemory.versionId,
         mountPath: lunaMemoryMount.mountPath,
         ...(lunaMemoryMount.missingRootPolicy === undefined
           ? {}
@@ -473,7 +472,7 @@ describe("CHAT-02: model-first routing", () => {
     await flushWaitUntilForTest();
     await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
       result: {
-        artifact: { memory: checkpointedMemory.versionId },
+        artifact: { memory: publishedMemory.versionId },
       },
     });
     const committedH2 = await webhooks.requestAgentRunOutputs(
@@ -527,7 +526,7 @@ describe("CHAT-02: model-first routing", () => {
     });
     const replacementH2 = h2Session.toJsonl();
     expect(
-      MemoryPiSession.fromJsonl(replacementH2).isSettledCheckpoint(),
+      MemoryPiSession.fromJsonl(replacementH2).isSettledHistory(),
     ).toBeTruthy();
     const replacementH2Hash = createHash("sha256")
       .update(replacementH2)
@@ -547,7 +546,7 @@ describe("CHAT-02: model-first routing", () => {
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${replacementH2Hash}.blob`,
       Buffer.from(replacementH2, "utf8"),
     );
-    const replacementCheckpoint = await webhooks.requestAgentRunOutputs(
+    const replacementOutputs = await webhooks.requestAgentRunOutputs(
       {
         runId: run.runId,
         cliAgentType: "pi",
@@ -557,7 +556,7 @@ describe("CHAT-02: model-first routing", () => {
       claimed.sandboxHeaders,
       [400],
     );
-    expect(JSON.stringify(replacementCheckpoint.body)).toContain(
+    expect(JSON.stringify(replacementOutputs.body)).toContain(
       "[RUN_OUTPUT_ALREADY_COMMITTED]",
     );
 
@@ -584,11 +583,11 @@ describe("CHAT-02: model-first routing", () => {
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${invalidH2Hash}.blob`,
       invalidH2,
     );
-    const invalidCheckpoint = await webhooks.requestAgentComplete(
+    const invalidCompletion = await webhooks.requestAgentComplete(
       {
         runId: failedRun.runId,
         exitCode: 1,
-        error: "reject invalid native checkpoint",
+        error: "reject invalid native history",
         completion: {
           cliAgentType: "pi",
           cliAgentSessionId: run.threadId,
@@ -598,14 +597,14 @@ describe("CHAT-02: model-first routing", () => {
       failedClaim.sandboxHeaders,
       [400],
     );
-    expect(JSON.stringify(invalidCheckpoint.body)).toContain(
+    expect(JSON.stringify(invalidCompletion.body)).toContain(
       "[PI_H2_JSONL_INVALID]",
     );
     await webhooks.requestAgentComplete(
       {
         runId: failedRun.runId,
         exitCode: 1,
-        error: "[PI_H2_JSONL_INVALID] rejected native checkpoint",
+        error: "[PI_H2_JSONL_INVALID] rejected native history",
       },
       failedClaim.sandboxHeaders,
       [200],
@@ -671,7 +670,7 @@ describe("CHAT-02: model-first routing", () => {
     const retry = await sendChatRunAfterPick(actor, {
       agentId,
       threadId: run.threadId,
-      prompt: "resume only the last completed Pi checkpoint",
+      prompt: "resume only the last completed Pi history",
     });
     const retryClaim = await claimChatRun(runnerGroup, retry.runId);
     expect(retryClaim.claim.resumeSession).toMatchObject({
@@ -682,7 +681,7 @@ describe("CHAT-02: model-first routing", () => {
       {
         runId: retry.runId,
         exitCode: 1,
-        error: "guest reported Pi failure without a new checkpoint",
+        error: "guest reported Pi failure without new native history",
       },
       retryClaim.sandboxHeaders,
       [200],
@@ -760,7 +759,7 @@ describe("CHAT-02: model-first routing", () => {
     const probe = await sendChatRunAfterPick(actor, {
       agentId,
       threadId: run.threadId,
-      prompt: "verify the canonical completed checkpoint after rejected writes",
+      prompt: "verify the canonical completed history after rejected writes",
     });
     const probeClaim = await claimChatRun(runnerGroup, probe.runId);
     expect(probeClaim.claim.resumeSession).toMatchObject({
@@ -770,13 +769,13 @@ describe("CHAT-02: model-first routing", () => {
     await cancelChatRun(actor, probe.runId, probeClaim.sandboxHeaders);
 
     // Switching the thread to the Claude Code route must not resume the Pi
-    // checkpoint; the org keeps the Pi route as its default.
+    // history; the org keeps the Pi route as its default.
 
     await api.updateUserModelPreference(actor, model);
     const explicitResume = await api.createThreadRun(actor, {
       agentId,
       threadId: run.threadId,
-      prompt: "keep an incompatible run off the Pi checkpoint",
+      prompt: "keep an incompatible run off the Pi history",
       model: "claude-fable-5-1",
     });
     const explicitResumeClaim = await api.claimRunnerJob(explicitResume.runId);
@@ -788,7 +787,7 @@ describe("CHAT-02: model-first routing", () => {
   }
 
   it(
-    "launches personal Codex in the Sandbox, captures guest tool activity, and checkpoints Pi memory notes",
+    "launches personal Codex in the Sandbox, captures guest tool activity, and publishes Pi memory notes",
     piActivityScenario,
     150_000,
   );

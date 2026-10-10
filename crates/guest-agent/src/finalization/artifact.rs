@@ -53,7 +53,7 @@ struct MaintenanceValidationMarker {
 
 struct MaintenancePublicationGuard {
     launch: MaintenanceLaunch,
-    attestation: Option<vas::PiMemoryPhase2CheckpointAttestation>,
+    attestation: Option<vas::PiMemoryPhase2PublicationAttestation>,
 }
 
 fn maintenance_publication_error() -> AgentError {
@@ -113,7 +113,7 @@ fn maintenance_publication_guard(
     {
         return Err(maintenance_publication_error());
     }
-    let attestation = vas::PiMemoryPhase2CheckpointAttestation {
+    let attestation = vas::PiMemoryPhase2PublicationAttestation {
         // v2 requires commit receipts; an old API rejects prepare before upload.
         schema_version: 2,
         lease_token: marker.lease_token,
@@ -202,7 +202,7 @@ async fn snapshot_artifact_plan(
     http: &HttpClient,
     run_id: &str,
     plan: ArtifactSnapshotPlan<'_>,
-    maintenance_attestation: Option<vas::PiMemoryPhase2CheckpointAttestation>,
+    maintenance_attestation: Option<vas::PiMemoryPhase2PublicationAttestation>,
 ) -> Result<complete::RequestCompletionArtifactSnapshot, AgentError> {
     let (entry, files) = match plan {
         ArtifactSnapshotPlan::Snapshot { entry, files } => (entry, files),

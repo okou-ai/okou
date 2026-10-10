@@ -396,10 +396,10 @@ function validatePiHistorySession(
       "Pi H2 native session id does not match the launch session",
     );
   }
-  if (!session.isSettledCheckpoint) {
+  if (!session.isSettledHistory) {
     return piHistoryError(
       "PI_H2_NOT_SETTLED",
-      "Pi H2 is not a settled native session checkpoint",
+      "Pi H2 is not a settled native session history",
     );
   }
 }

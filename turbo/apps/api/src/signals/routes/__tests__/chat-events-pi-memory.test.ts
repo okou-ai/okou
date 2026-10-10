@@ -28,7 +28,7 @@ const {
   waitForThreadMessages,
   cancelChatRun,
   requestSendEventWithBearer,
-  mockPiCheckpointObjectStore,
+  mockPiObjectStore,
   completeSandboxFirstPiRun,
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
@@ -145,7 +145,7 @@ describe("CHAT-02: model-first routing", () => {
       );
     });
     mockPiResourceArchiveDownloads();
-    const historyObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiObjectStore();
 
     const firstPrompt = "complete the first Pi turn in the Sandbox";
     const first = await sendChatRun(actor, {
@@ -255,7 +255,7 @@ describe("CHAT-02: model-first routing", () => {
         },
       );
       mockPiResourceArchiveDownloads(true);
-      mockPiCheckpointObjectStore();
+      mockPiObjectStore();
       await api.heartbeatRunner(runnerGroup);
 
       const run = await sendChatRun(actor, {
@@ -307,7 +307,7 @@ describe("CHAT-02: model-first routing", () => {
       },
     );
     mockPiResourceArchiveDownloads();
-    const historyObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiObjectStore();
     const prompt = "publish memory while preserving this Run's recall snapshot";
     const first = await sendChatRun(actor, {
       agentId,
@@ -374,7 +374,7 @@ describe("CHAT-02: model-first routing", () => {
       { [FeatureSwitchKey.PiMemory]: false },
     );
     mockPiResourceArchiveDownloads();
-    mockPiCheckpointObjectStore();
+    mockPiObjectStore();
     const publisher = await sendChatRun(actor, {
       agentId,
       prompt: "write owned memory without recall",
@@ -469,7 +469,7 @@ describe("CHAT-02: model-first routing", () => {
       );
     });
     mockPiResourceArchiveDownloads();
-    const historyObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiObjectStore();
 
     const delegatedEventId = randomUUID();
     const delegatedPrompt = "learn this stable preference from delegated work";

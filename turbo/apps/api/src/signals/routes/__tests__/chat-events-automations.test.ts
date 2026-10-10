@@ -27,7 +27,7 @@ const {
   threadPiAutomationsClient,
   lastThreadPiAutomationRun,
   claimGptPiSandbox,
-  mockPiCheckpointObjectStore,
+  mockPiObjectStore,
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
 
@@ -85,7 +85,7 @@ describe("thread-bound Pi Automation execution", () => {
     await configureSubscriptionPiModel(actor);
     await chat.updateThreadModelSelection(actor, threadId, "gpt-6-luna");
     mockPiResourceArchiveDownloads();
-    const historyObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiObjectStore();
     const event = {
       ...eventRoute,
       payload: "pi-event",
@@ -266,7 +266,7 @@ describe("CHAT effort: automation launches", () => {
         reasoningEffort: route.effort,
       });
       if (route.pi) {
-        mockPiCheckpointObjectStore();
+        mockPiObjectStore();
       }
       const started = await accept(
         threadPiAutomationsClient().run({
@@ -309,7 +309,7 @@ describe("thread-bound Pi terminal failures", () => {
         "gpt-6.1-sol",
       );
       mockPiResourceArchiveDownloads();
-      mockPiCheckpointObjectStore();
+      mockPiObjectStore();
       let run: { readonly runId: string; readonly threadId: string };
       {
         const workflowId = await createWorkflowsBddApi(context).createWorkflow(

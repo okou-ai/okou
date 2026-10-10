@@ -428,8 +428,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
 
     /**
      * Read a run's agent session id through the public activity-detail API
-     * (GET /api/logs/:id) — the only session projection visible without
-     * checkpoints.
+     * (GET /api/logs/:id) — the public session projection for activity details.
      */
     async readRunSessionId(actor: ApiTestUser, runId: string): Promise<string> {
       const client = setupApp({ context, routes: logsRoutes })(
@@ -475,7 +474,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
 
     /**
      * Object-storage fake for AgentPhone chains: session-history blobs
-     * download with deterministic content (so checkpointed sessions resume
+     * download with deterministic content (so persisted sessions resume
      * end to end), registered upload objects appear in prefix listings
      * (phone upload-complete), and every other command acks like the plain
      * storage-write mock.

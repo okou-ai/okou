@@ -174,7 +174,7 @@ pub fn session_id_file(run_dir: impl AsRef<Path>) -> PathBuf {
 /// Return the run-root Guest error file.
 ///
 /// Its historical `checkpoint-error` filename remains stable for Runner readers.
-pub fn checkpoint_error_file(run_dir: impl AsRef<Path>) -> PathBuf {
+pub fn finalization_error_file(run_dir: impl AsRef<Path>) -> PathBuf {
     file(run_dir, "checkpoint-error")
 }
 
@@ -1253,9 +1253,13 @@ mod tests {
     fn canonical_paths_are_not_under_tmp() {
         let run_dir =
             run_dir_for_home("/home/user", "00000000-0000-0000-0000-000000000001").unwrap();
+        assert_eq!(
+            finalization_error_file(&run_dir),
+            run_dir.join("checkpoint-error")
+        );
         let files = [
             session_id_file(&run_dir),
-            checkpoint_error_file(&run_dir),
+            finalization_error_file(&run_dir),
             final_session_history_identity_file(&run_dir),
             failure_diagnostic_file(&run_dir),
             system_log_file(&run_dir),

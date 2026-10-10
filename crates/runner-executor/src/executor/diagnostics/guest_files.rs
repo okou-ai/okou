@@ -13,7 +13,7 @@ pub(in crate::executor) async fn read_guest_error_file(
 ) -> Option<String> {
     let error_path = match guest_runtime_path(
         run_id,
-        guest_contracts::runtime_paths::checkpoint_error_file,
+        guest_contracts::runtime_paths::finalization_error_file,
     ) {
         Ok(path) => path,
         Err(e) => {

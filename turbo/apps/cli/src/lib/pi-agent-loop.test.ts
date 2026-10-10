@@ -1416,7 +1416,7 @@ describe("sandbox Pi agent loop", () => {
           h0 = await readFile(String(state.sessionFile), "utf8");
           const persisted = MemoryPiSession.fromJsonl(h0);
           expect(persisted.getSessionId()).toBe(SESSION_ID);
-          expect(persisted.isSettledCheckpoint()).toBe(true);
+          expect(persisted.isSettledHistory()).toBe(true);
           const messages = persisted.buildSessionContext().messages;
           // 0.86 declares the prompt and tool loadout as one leading transcript
           // system message. It must be written once for the session, not once

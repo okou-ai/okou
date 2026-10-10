@@ -25,7 +25,7 @@ async fn read_guest_error_file_returns_content() {
         calls[0].path,
         guest_runtime_path(
             RunId::from(uuid::Uuid::nil()),
-            guest_contracts::runtime_paths::checkpoint_error_file
+            guest_contracts::runtime_paths::finalization_error_file
         )
         .unwrap()
     );

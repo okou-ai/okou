@@ -13,8 +13,12 @@ import {
 import { agentRuns } from "./agent-run";
 import { storages } from "./storage";
 
-/** Content-free receipt written atomically by the generic artifact commit. */
-export const piMemoryPhase2Checkpoints = pgTable(
+/**
+ * Content-free receipt written atomically by the generic artifact commit.
+ * Keep the physical table and constraint names stable across API versions.
+ * These receipts fence Pi memory publication; they are not Run recovery points.
+ */
+export const piMemoryPhase2PublicationReceipts = pgTable(
   "pi_memory_phase2_checkpoints",
   {
     runId: uuid("run_id")

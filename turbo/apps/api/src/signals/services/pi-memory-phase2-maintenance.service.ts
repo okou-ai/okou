@@ -24,7 +24,7 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
-import { piMemoryPhase2Checkpoints } from "@okouai/db/schema/pi-memory-phase2-checkpoint";
+import { piMemoryPhase2PublicationReceipts } from "@okouai/db/schema/pi-memory-phase2-publication-receipt";
 
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
@@ -287,7 +287,7 @@ function maintenanceFailureValues(args: {
     lastMaintenanceRevision: args.payload.claimedRevision,
     lastMaintenanceBaseVersionId: args.payload.claimedBaseVersionId,
     lastMaintenanceSelectionDigest: args.payload.selectionDigest,
-    lastMaintenanceCheckpointVersionId: null,
+    lastMaintenancePublicationVersionId: null,
     lastMaintenanceOutcome: "failed",
     updatedAt: nowDate(),
   } as const;
@@ -354,7 +354,7 @@ function maintenanceSuccessValues(args: {
     lastMaintenanceRevision: args.payload.claimedRevision,
     lastMaintenanceBaseVersionId: args.payload.claimedBaseVersionId,
     lastMaintenanceSelectionDigest: args.payload.selectionDigest,
-    lastMaintenanceCheckpointVersionId: args.publication.versionId,
+    lastMaintenancePublicationVersionId: args.publication.versionId,
     lastMaintenanceOutcome: published ? "published" : "no_diff",
     updatedAt: completedAt,
   } as const;
@@ -506,7 +506,7 @@ const observeTerminalMaintenance$ = command(
       }
       const [receipt] = await tx
         .select()
-        .from(piMemoryPhase2Checkpoints)
+        .from(piMemoryPhase2PublicationReceipts)
         .where(piMemoryPhase2PublicationCondition(binding))
         .limit(1);
       signal.throwIfAborted();
