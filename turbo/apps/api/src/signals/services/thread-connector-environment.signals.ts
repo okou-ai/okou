@@ -308,6 +308,7 @@ function createConnectorEnvironmentSignal(
           environmentSecretPlaceholders:
             manifest?.environmentSecretPlaceholders,
         }),
+        platformEnvironment: undefined,
         secrets: builtin.secrets,
         secretConnectorMap: builtin.secretConnectorMap,
         secretConnectorMetadataMap: builtin.secretConnectorMetadataMap,

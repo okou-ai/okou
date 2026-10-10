@@ -393,7 +393,6 @@ export interface CreateQueuedChatRunInput {
   readonly userId: string;
   readonly agentId: string;
   readonly prompt: string;
-  readonly appendSystemPrompt: string;
   readonly threadId: string;
   readonly connectorSourceId?: string;
   readonly queuedMessage: QueuedUserMessage;
@@ -644,7 +643,6 @@ export function buildQueuedRunCommand(
     callbacks: queuedChatRunCallbackInputs(input),
     triggerSource: input.triggerSource,
     agentRunPreCreateSource: "chat_callback_auto_send" as const,
-    appendSystemPrompt: input.appendSystemPrompt,
     queueFirstAssociation: {
       threadId: input.threadId,
       eventId: input.queuedMessage.id,
@@ -670,7 +668,6 @@ export function buildQueuedRunCommand(
       cliAgentType: input.cliAgentType,
     },
     body: {
-      prompt: input.prompt,
       agentId: input.agentId,
       ...(input.effectiveModelProvider
         ? {
