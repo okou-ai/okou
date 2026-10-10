@@ -101,6 +101,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
       }
       scheduleMenus()
       model.start()
+      NSWorkspace.shared.notificationCenter.addObserver(
+        self, selector: #selector(workspaceDidWake), name: NSWorkspace.didWakeNotification,
+        object: nil)
     } catch {
       let alert = NSAlert()
       alert.messageText = "Unable to start Okou"
@@ -187,7 +190,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
   }
   func applicationDidBecomeActive(_ notification: Notification) {
     guard model != nil, !terminating, !updateInstalling else { return }
-    Task { await model.checkCompatibility() }
+    Task {
+      await model.checkCompatibility()
+      await model.synchronizeSession()
+    }
+  }
+  @objc private func workspaceDidWake(_ notification: Notification) {
+    guard model != nil, !terminating, !updateInstalling else { return }
+    Task { await model.synchronizeSession() }
   }
   private func checkRequiredUpdate() {
     guard let updater else {

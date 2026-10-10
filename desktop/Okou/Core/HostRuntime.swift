@@ -10,12 +10,17 @@ public struct CommandLog: Identifiable, Sendable {
   public var status: String { response?["status"].string ?? "running" }
 }
 
+public enum HostAuthorityFailure: Sendable {
+  case authentication, permissionDenied, connectionInvalid
+}
+
 public struct RuntimeState: Sendable {
   public var status = "offline"
   public var hostId: String?
   public var lastHeartbeat: Date?
   public var lastCommand: Date?
   public var lastError: String?
+  public var authorityFailure: HostAuthorityFailure?
   public var updateRequired = false
   public var minimumSupportedVersion: String?
   public var recoveryAttempt = 0
@@ -118,6 +123,7 @@ public actor HostRuntime {
   public func start() async {
     guard !running, stopTask == nil, notificationStops == 0, drainTask == nil else { return }
     generation += 1
+    state.authorityFailure = nil
     let current = generation
     running = true
     acceptingCommands = true
@@ -162,6 +168,11 @@ public actor HostRuntime {
       if [401, 403, 404, 409, 426].contains(response.status) {
         running = false
         state.status = response.status == 403 ? "disabled" : "error"
+        state.authorityFailure =
+          response.status == 401
+          ? .authentication
+          : response.status == 403
+            ? .permissionDenied : response.status == 409 ? .connectionInvalid : nil
         state.lastError =
           response.status == 409
           ? "Computer Use is already active in another Desktop session."
@@ -326,6 +337,7 @@ public actor HostRuntime {
     acceptingCommands = false
     await stopNotifications()
     state.status = "error"
+    state.authorityFailure = .authentication
     state.lastError = failure.message
     await publish()
     return true
@@ -344,6 +356,9 @@ public actor HostRuntime {
     acceptingCommands = false
     await stopNotifications()
     state.status = "error"
+    state.authorityFailure =
+      response.status == 401
+      ? .authentication : response.status == 403 ? .permissionDenied : .connectionInvalid
     state.lastError =
       response.status == 426
       ? "This version of Okou must be updated."
