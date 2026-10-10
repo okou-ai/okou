@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import type { OAuthClientMetadata } from "@modelcontextprotocol/client";
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, count, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
@@ -12,7 +12,7 @@ import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom-connector-dcr-registration";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 
-import { nowDate } from "../../lib/time";
+import { nowDate, timestampWithoutTimeZone } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import {
   decryptStoredSecretValue,
@@ -314,47 +314,33 @@ const hasCustomDcrLinkedAccounts$ = command(
   },
 );
 
-async function linkedDcrAccountIds(
-  db: Db,
+export function retireCustomConnectorDcrRegistrationSql(
   registrationId: string,
-): Promise<readonly string[]> {
-  const rows = await db
-    .select({ id: customConnectorAccountOauthBindings.connectorAccountId })
-    .from(customConnectorAccountOauthBindings)
-    .where(
-      eq(customConnectorAccountOauthBindings.dcrRegistrationId, registrationId),
-    );
-  return rows.map((row) => {
-    return row.id;
-  });
-}
-
-export async function retireCustomConnectorDcrRegistration(
-  db: Db,
-  registrationId: string,
-): Promise<void> {
-  const accountIds = await linkedDcrAccountIds(db, registrationId);
-  if (accountIds.length > 0) {
-    await db
-      .update(connectors)
-      .set({
-        needsReconnect: true,
-        reconnectReason: "authorization_expired_or_revoked",
-        updatedAt: nowDate(),
-      })
-      .where(inArray(connectors.id, accountIds));
-    await db
-      .delete(customConnectorAccountOauthBindings)
-      .where(
-        eq(
-          customConnectorAccountOauthBindings.dcrRegistrationId,
-          registrationId,
-        ),
-      );
-  }
-  await db
-    .delete(orgCustomConnectorDcrRegistrations)
-    .where(eq(orgCustomConnectorDcrRegistrations.id, registrationId));
+  updatedAt: Date,
+) {
+  // Consume each preceding write even when it returns no rows, preserving
+  // account -> binding -> registration order and the registration's NO ACTION FK.
+  return sql`WITH reconnected_accounts AS (
+    UPDATE ${connectors}
+    SET ${sql.identifier(connectors.needsReconnect.name)} = true,
+        ${sql.identifier(connectors.reconnectReason.name)} = 'authorization_expired_or_revoked',
+        ${sql.identifier(connectors.updatedAt.name)} = ${timestampWithoutTimeZone(updatedAt)}::timestamp
+    WHERE ${inArray(
+      connectors.id,
+      sql`(SELECT ${customConnectorAccountOauthBindings.connectorAccountId}
+        FROM ${customConnectorAccountOauthBindings}
+        WHERE ${eq(customConnectorAccountOauthBindings.dcrRegistrationId, registrationId)})`,
+    )}
+    RETURNING ${connectors.id}
+  ), deleted_bindings AS (
+    DELETE FROM ${customConnectorAccountOauthBindings}
+    WHERE ${eq(customConnectorAccountOauthBindings.dcrRegistrationId, registrationId)}
+      AND (SELECT ${count()} FROM reconnected_accounts) >= 0
+    RETURNING ${customConnectorAccountOauthBindings.connectorAccountId}
+  )
+  DELETE FROM ${orgCustomConnectorDcrRegistrations}
+  WHERE ${eq(orgCustomConnectorDcrRegistrations.id, registrationId)}
+    AND (SELECT ${count()} FROM deleted_bindings) >= 0`;
 }
 
 function customDcrClientStore(args: {
@@ -397,10 +383,9 @@ function customDcrClientStore(args: {
 const retireCustomDcrRegistration$ = command(
   async ({ set }, registrationId: string, signal: AbortSignal) => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0136; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      await retireCustomConnectorDcrRegistration(tx, registrationId);
-    });
+    await db.execute(
+      retireCustomConnectorDcrRegistrationSql(registrationId, nowDate()),
+    );
     signal.throwIfAborted();
   },
 );

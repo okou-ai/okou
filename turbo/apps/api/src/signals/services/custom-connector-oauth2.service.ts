@@ -89,7 +89,7 @@ import {
   prepareCustomConnectorAutomaticOAuthReauthorization,
   readCustomConnectorAutomaticOAuthBinding,
   refreshCustomConnectorAutomaticOAuthToken,
-  retireCustomConnectorDcrRegistration,
+  retireCustomConnectorDcrRegistrationSql,
   type CustomConnectorAutomaticOAuthBinding,
   type CustomConnectorCanonicalAutomaticOAuthStateContext as PreparedCustomConnectorAutomaticOAuthStateContext,
 } from "./custom-connector-automatic-oauth.service";
@@ -2006,7 +2006,9 @@ async function handleAutomaticOAuthRefreshFailure(args: {
     const registrationId = args.binding.dcrRegistration.id;
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0142; new non-billing transactions are prohibited.
     await args.db.transaction(async (tx) => {
-      await retireCustomConnectorDcrRegistration(tx, registrationId);
+      await tx.execute(
+        retireCustomConnectorDcrRegistrationSql(registrationId, nowDate()),
+      );
     });
     return { kind: "reconnect-required" };
   }
@@ -2084,9 +2086,11 @@ async function refreshAutomaticOAuthAccessToken(
   ) {
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0143; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
-      await retireCustomConnectorDcrRegistration(
-        tx,
-        binding.dcrRegistration.id,
+      await tx.execute(
+        retireCustomConnectorDcrRegistrationSql(
+          binding.dcrRegistration.id,
+          nowDate(),
+        ),
       );
     });
     return { kind: "reconnect-required" };
