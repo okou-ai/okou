@@ -26,6 +26,11 @@ export const runnerWssTickets = pgTable(
     userId: text("user_id").notNull(),
     runnerId: uuid("runner_id").notNull(),
     origin: varchar("origin", { length: 300 }).notNull(),
+    // Capture issuance authority; old/unbound tickets must not acquire a new epoch.
+    // The legacy default is deliberately not the active Run's current epoch.
+    wssAuthorizationEpoch: uuid("wss_authorization_epoch")
+      .notNull()
+      .defaultRandom(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     expiresAt: timestamp("expires_at").notNull(),
     consumedAt: timestamp("consumed_at"),

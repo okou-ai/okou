@@ -400,7 +400,8 @@ describe("direct Runner WSS ticket boundary", () => {
     const consumed = await accept(bootstrap(f), [200]);
     await accept(consume(f, consumed.body.ticket), [200]);
     const pending = [];
-    for (let index = 0; index < 3; index++) {
+    // A full old-epoch quota must not prevent fresh access after owner revoke.
+    for (let index = 0; index < 16; index++) {
       pending.push(await accept(bootstrap(f), [200]));
     }
     await accept(revoke(f), [204]);

@@ -70,7 +70,7 @@ export const issueRunnerWssTicket$ = command(
         .innerJoin(runnerState, query.runnerStateJoin)
         .where(query.where);
       const target = runnerWssTargetFromRow(targetRow);
-      if (!target) {
+      if (!target || !targetRow) {
         return null;
       }
 
@@ -80,6 +80,10 @@ export const issueRunnerWssTicket$ = command(
         .where(
           and(
             eq(runnerWssTickets.runId, run.id),
+            eq(
+              runnerWssTickets.wssAuthorizationEpoch,
+              targetRow.authorizationEpoch,
+            ),
             gt(runnerWssTickets.expiresAt, databaseNow),
             isNull(runnerWssTickets.consumedAt),
             isNull(runnerWssTickets.revokedAt),
@@ -121,6 +125,7 @@ export const issueRunnerWssTicket$ = command(
           userId: args.owner.userId,
           runnerId: target.runnerId,
           origin: target.publicOrigin,
+          wssAuthorizationEpoch: targetRow.authorizationEpoch,
           createdAt: databaseNow,
           expiresAt: sql`${databaseNow} + interval '30 seconds'`,
         })
@@ -186,6 +191,7 @@ export const consumeRunnerWssTicket$ = command(
           userId: runnerWssTickets.userId,
           runnerId: runnerWssTickets.runnerId,
           origin: runnerWssTickets.origin,
+          authorizationEpoch: runnerWssTickets.wssAuthorizationEpoch,
         })
         .from(runnerWssTickets)
         .where(
@@ -215,10 +221,14 @@ export const consumeRunnerWssTicket$ = command(
         .innerJoin(runnerState, query.runnerStateJoin)
         .where(query.where);
       const target = runnerWssTargetFromRow(targetRow);
+      // A revoke statement may miss a ticket committed during its Run-lock wait.
+      // Never let that old issuance adopt the newly rotated current epoch.
       if (
         !target ||
+        !targetRow ||
         target.runnerId !== stored.runnerId ||
-        target.publicOrigin !== stored.origin
+        target.publicOrigin !== stored.origin ||
+        targetRow.authorizationEpoch !== stored.authorizationEpoch
       ) {
         return null;
       }
@@ -228,15 +238,17 @@ export const consumeRunnerWssTicket$ = command(
         .where(
           and(
             eq(runnerWssTickets.digest, digest),
+            eq(
+              runnerWssTickets.wssAuthorizationEpoch,
+              stored.authorizationEpoch,
+            ),
             isNull(runnerWssTickets.consumedAt),
             isNull(runnerWssTickets.revokedAt),
             gt(runnerWssTickets.expiresAt, databaseNow),
           ),
         )
         .returning({ digest: runnerWssTickets.digest });
-      return consumed && targetRow
-        ? { ...stored, authorizationEpoch: targetRow.authorizationEpoch }
-        : null;
+      return consumed ? stored : null;
     });
   },
 );
@@ -329,6 +341,7 @@ export const revokeRunnerWssTickets$ = command(
         .returning({ runId: runnerWssTickets.runId }),
     );
     // Epoch rotation and pending-ticket revocation commit in one statement.
+    // Issuance-epoch binding also fences tickets invisible to this snapshot.
     // Keep success independent of active assignment or pending-ticket counts.
     const [run] = await db
       .with(ownedRun, rotatedRun, revokedTickets)
