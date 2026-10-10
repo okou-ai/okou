@@ -338,7 +338,9 @@ class RuntimeInputs(unittest.TestCase):
         baseline = self.full_private_inputs()
         path = self.runtime / 'usr/sbin/kdb5_util'
         before = path.read_bytes()
-        path.chmod(0o600)
+        before_mode = stat.S_IMODE(path.stat().st_mode)
+        path.chmod(before_mode ^ 0o100)
+        self.assertNotEqual(stat.S_IMODE(path.stat().st_mode), before_mode)
         self.assertEqual(path.read_bytes(), before)
         with self.assertRaisesRegex(ValueError, 'complete input inventory'):
             qemu_gssapi.full_private_inventory(self.runtime, baseline)

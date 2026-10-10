@@ -77,6 +77,16 @@ QEMU_GSSAPI_CAPTURE_DIR="$PWD/codex-work/qemu-captures" \
   --local-source-qemu
 ```
 
+On `local-11`, the host's user-namespace policy can explicitly refuse the
+ordinary caller. Compile the test executable as that caller, then select the
+existing disposable privileged-synthetic mount/PID harness with
+`--test-executable`: its child-only `/run` tmpfs is limited to 64 MiB/256 inodes
+and `KERBEROS_NATIVE_TEST_ROOT=/run/kerberos-native-fixture`. The pattern is in
+[`check-native-gssapi-peer.sh`](../../../.github/scripts/check-native-gssapi-peer.sh).
+This is fixture bootstrap privilege, not a supported non-root result. Keep the
+worker's own capability drop, readonly root, Landlock, seccomp and all original
+assertions. Do not change host policy or private checkout ancestor permissions.
+
 The profile rechecks the complete runtime inventory, native executable roles,
 signed-package identities, fixed QEMU9.2 source/VNC-source/firmware/configure
 identities, current producer recipe and both actual build hashes. It uses the
