@@ -21,7 +21,7 @@
 //! failures to the caller. Metadata-free cancellation fallback remains
 //! fire-and-forget because the runner is its correctness guarantee.
 //!
-//! Trust model: sandbox and workspace metadata are relayed from
+//! Trust model: sandbox and home metadata are relayed from
 //! runner-set env vars and included in the payload for analytics only. The
 //! guest is semi-trusted under the normal threat model, and the runner's
 //! fallback call is idempotency-short-circuited, so a compromised guest
@@ -68,7 +68,7 @@ fn as_optional(value: &str) -> Option<&str> {
 
 /// Atomically persist a prepared finalization and complete the run.
 ///
-/// Sandbox and workspace reuse fields are relayed analytics values;
+/// Sandbox and home reuse fields are relayed analytics values;
 /// empty strings are serialized as absent so an unset env var is equivalent
 /// to omitting the field.
 ///
