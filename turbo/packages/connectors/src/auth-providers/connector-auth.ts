@@ -68,6 +68,7 @@ import { docusignProvider } from "./connectors/docusign/provider";
 import { dropboxProvider } from "./connectors/dropbox/provider";
 import { figmaProvider } from "./connectors/figma/provider";
 import { garminConnectProvider } from "./connectors/garmin-connect/provider";
+import { greenhouseProvider } from "./connectors/greenhouse/provider";
 import { gumroadProvider } from "./connectors/gumroad/provider";
 import { githubProvider } from "./connectors/github/provider";
 import { gmailProvider } from "./connectors/gmail/provider";
@@ -1033,6 +1034,11 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
     googleSearchConsoleProvider,
   ),
   authCodeRefreshProviderEntry("google-sheets", "oauth", googleSheetsProvider),
+  refreshProviderEntry(
+    "greenhouse",
+    "oauth-client-credentials",
+    greenhouseProvider,
+  ),
   authCodeRefreshProviderEntry("gumroad", "oauth", gumroadProvider),
   authCodeRefreshProviderEntry("hubspot", "oauth", hubspotProvider),
   refreshProviderEntry("lark", "api-token", larkProvider),

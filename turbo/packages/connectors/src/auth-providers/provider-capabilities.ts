@@ -922,6 +922,31 @@ export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
     },
   },
   {
+    connectorSlug: "greenhouse",
+    authMethodId: "oauth-client-credentials",
+    contract: {
+      client: {
+        kind: "none",
+      },
+      grant: {
+        kind: "manual",
+        callbackOrigin: null,
+        outputNames: [],
+        startOptionNames: [],
+      },
+      access: {
+        kind: "refresh-token",
+        inputNames: ["clientId", "clientSecret", "userId"],
+        outputNames: ["accessToken"],
+        platformSecrets: [],
+      },
+      revoke: {
+        kind: "none",
+        inputNames: [],
+      },
+    },
+  },
+  {
     connectorSlug: "gumroad",
     authMethodId: "oauth",
     contract: {
