@@ -2218,6 +2218,45 @@ test("Tab return keeps password and code drafts in an active standalone form", a
   expect(screen.getByLabelText("Verification code")).toHaveValue("012345");
 });
 
+test("Leaving and returning to a standalone form clears password and code drafts", async () => {
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, sensitiveAction("pending"));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, sensitiveAction("pending"));
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  await fill(within(form).getByLabelText("Password"), "synthetic-password");
+  await fill(within(form).getByLabelText("Verification code"), "012345");
+  const home = queryAllByRoleFast("link").find((link) => {
+    return link.getAttribute("href") === "/connectors";
+  });
+  if (!home) {
+    throw new Error("Missing product home link");
+  }
+  click(home);
+  await waitFor(() => {
+    expect(window.location.pathname).toBe("/connectors");
+    expect(form).not.toBeInTheDocument();
+  });
+  act(() => {
+    window.history.back();
+  });
+  const returned = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  expect(within(returned).getByLabelText("Password")).toHaveValue("");
+  expect(within(returned).getByLabelText("Verification code")).toHaveValue("");
+});
+
 test("The standalone form records cancellation before notifying the agent", async () => {
   const ordering: string[] = [];
   let state: BrowserUserActionResponse["state"] = "pending";
