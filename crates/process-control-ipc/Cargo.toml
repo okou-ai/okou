@@ -4,6 +4,9 @@ version = "0.4.1"
 edition.workspace = true
 
 [dependencies]
+guest-contracts.workspace = true
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
 libc = { workspace = true, features = ["std"] }
 
 [dev-dependencies]

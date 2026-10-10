@@ -184,6 +184,12 @@ fn current_process_is_runtime() -> io::Result<bool> {
 }
 
 fn is_canonical_runtime_path(path: &Path) -> bool {
+    if path
+        .to_str()
+        .is_some_and(guest_contracts::managed_task::is_task_runtime_path)
+    {
+        return true;
+    }
     let components = path.components().collect::<Vec<_>>();
     let [
         Component::RootDir,
@@ -301,6 +307,20 @@ mod tests {
 
     #[test]
     fn recognizes_only_canonical_runtime_leaf() {
+        let task = "/vm0-exec/exec-12-34/workload/tools/task-00000000-0000-0000-0000-000000000001";
+        assert!(is_canonical_runtime_path(Path::new(&format!(
+            "{task}/runtime"
+        ))));
+        for suffix in [
+            "/tools",
+            "/tools/tool-1",
+            "/runtime/nested",
+            "/tools/tool-1/../runtime",
+        ] {
+            assert!(!is_canonical_runtime_path(Path::new(&format!(
+                "{task}{suffix}"
+            ))));
+        }
         assert!(is_canonical_runtime_path(Path::new(
             "/vm0-exec/exec-12-34/workload/runtime"
         )));

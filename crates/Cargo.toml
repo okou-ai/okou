@@ -8,6 +8,7 @@ members = [
     "session-history-selector",
     "runner-rpc-client",
     "guest-tool-exec",
+    "guest-task-exec",
     "process-control-ipc",
     "process-launch",
     "guest-telemetry",

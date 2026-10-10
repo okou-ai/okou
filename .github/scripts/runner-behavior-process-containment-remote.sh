@@ -219,6 +219,193 @@ for runtime_pid in $(cat "$parent/workload/runtime/cgroup.procs"); do
   test "$(cat "/proc/$runtime_pid/oom_score_adj")" = 0
 done
 
+# The packaged native helper and actual broker are the task boundary. These
+# ordinary processes need no Pi session, provider credential or subagent command.
+python3 - "$parent/workload/runtime" "$relative" <<'MANAGED_TASK_PY'
+import errno
+import json
+import os
+import pathlib
+import select
+import subprocess
+import sys
+import time
+
+helper = "/usr/local/bin/guest-task-exec"
+main_runtime = pathlib.Path(sys.argv[1])
+parent_tool = sys.argv[2]
+main_pids = (main_runtime / "cgroup.procs").read_text()
+main_min = (main_runtime / "memory.min").read_text()
+
+runtime_program = r'''
+import errno, json, os, pathlib, signal, subprocess, sys
+assert os.geteuid() != 0
+assert sys.argv[1:] == ["ordinary task arg", ""]
+assert os.environ["TASK_SENTINEL"] == "preserved"
+assert os.read(int(os.environ["APP_FD"]), 3) == b"ipc"
+os.close(int(os.environ["APP_FD"]))
+try:
+    os.fstat(int(os.environ["REPORT_FD"]))
+except OSError as error:
+    assert error.errno == errno.EBADF
+else:
+    raise AssertionError("private startup FD leaked across exec")
+relative = pathlib.Path("/proc/self/cgroup").read_text().strip().removeprefix("0::")
+assert relative.endswith("/runtime") and "/tools/task-" in relative
+assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "0"
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+detached = subprocess.Popen(["/usr/bin/setsid", "/bin/bash", "-c", "trap '' TERM; while :; do sleep 1; done"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+command = ["/usr/local/bin/guest-tool-exec", "-c", "cat /proc/self/cgroup; cat /proc/self/oom_score_adj"]
+lines = subprocess.check_output(command, text=True, timeout=10).splitlines()
+assert lines[0].startswith("0::" + relative.removesuffix("/runtime") + "/tools/tool-")
+assert lines[1] == "1000"
+print(json.dumps({"runtime": relative, "tool": lines[0][3:], "detached": detached.pid}), flush=True)
+for action in sys.stdin:
+    if action.strip() == "exit":
+        sys.exit(0)
+    if action.strip() == "oom":
+        # Test-only leaf limit: production adds no per-task quota or protection.
+        oom = """leaf=/sys/fs/cgroup$(awk -F: '$1 == "0" {print $3}' /proc/self/cgroup); sudo sh -c 'echo 50331648 > "$1/memory.max"' sh "$leaf"; python3 -c 'a=bytearray(134217728); print(len(a))'"""
+        result = subprocess.run(["/usr/local/bin/guest-tool-exec", "-c", oom], timeout=10)
+        assert result.returncode in (-9, 137), result.returncode
+        print(json.dumps({"tool_oom_survived": True}), flush=True)
+    if action.strip() == "runtime_oom":
+        leaf = "/sys/fs/cgroup" + relative
+        subprocess.run(["sudo", "sh", "-c", 'echo 50331648 > "$1/memory.max"', "sh", leaf], check=True)
+        a = bytearray(134217728)
+        raise AssertionError("task runtime OOM did not occur")
+    if action.strip() == "race":
+        # Publish a real concurrent child start, not a timing-based test delay.
+        subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(json.dumps({"race_started": True}), flush=True)
+        while True:
+            subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+'''
+
+
+def startup(program, extra=(), env=None):
+    report_read, report_write = os.pipe()
+    child_env = dict(os.environ) if env is None else env
+    child_env["REPORT_FD"] = str(report_write)
+    process = subprocess.Popen([helper, "--report-fd", str(report_write), "--", *program], pass_fds=(report_write, *extra), stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=child_env)
+    os.close(report_write)
+    if not select.select([report_read], [], [], 10)[0]:
+        raise AssertionError("task private startup acknowledgement timed out")
+    with os.fdopen(report_read) as report:
+        line = report.readline()
+    if not line:
+        return process, None
+    metadata = json.loads(line)
+    assert metadata["pid"] == process.pid
+    return process, metadata
+
+
+def read_json(process):
+    assert select.select([process.stdout], [], [], 15)[0], "task program response timed out"
+    line = process.stdout.readline()
+    assert line, f"task exited unexpectedly: {process.poll()}"
+    return json.loads(line)
+
+
+def launch():
+    app_read, app_write = os.pipe()
+    os.write(app_write, b"ipc")
+    os.close(app_write)
+    env = dict(os.environ, TASK_SENTINEL="preserved", APP_FD=str(app_read))
+    process, metadata = startup(["python3", "-u", "-c", runtime_program, "ordinary task arg", ""], (app_read,), env)
+    os.close(app_read)
+    assert metadata is not None
+    ready = read_json(process)
+    task = pathlib.Path("/sys/fs/cgroup" + ready["runtime"]).parent
+    assert task.name == "task-" + metadata["handle"]
+    for node, oom_group in [(task, "0"), (task / "runtime", "1"), (task / "tools", "0")]:
+        assert (node / "memory.oom.group").read_text().strip() == oom_group
+        assert (node / "memory.min").read_text().strip() == "0"
+    assert not (task / "cgroup.procs").read_text().strip()
+    assert not (task / "tools/cgroup.procs").read_text().strip()
+    return process, metadata, ready, task
+
+
+def gone(task):
+    deadline = time.monotonic() + 15
+    while task.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not task.exists(), f"owned task subtree leaked: {task}"
+
+
+def stop(task):
+    process, metadata, ready, path = task
+    subprocess.run([helper, "stop", metadata["handle"]], check=True, timeout=20)
+    process.wait(timeout=5)
+    gone(path)
+    stale = subprocess.run([helper, "stop", metadata["handle"]], timeout=10, capture_output=True)
+    assert stale.returncode == 125, "retired handle was accepted"
+
+
+a, b = launch(), launch()  # Deliberately one starter Bash, not two tool owners.
+assert a[1]["handle"] != b[1]["handle"] and a[3] != b[3]
+a[0].stdin.write("oom\n")
+a[0].stdin.flush()
+assert read_json(a[0])["tool_oom_survived"]
+assert a[0].poll() is None and b[0].poll() is None
+stop(a)  # Runtime/descendant ignore TERM: task-only cgroup.kill is required.
+assert b[0].poll() is None
+assert (main_runtime / "cgroup.procs").read_text() == main_pids
+assert (main_runtime / "memory.min").read_text() == main_min
+assert pathlib.Path("/proc/self/cgroup").read_text().strip() == "0::" + parent_tool
+b[0].stdin.write("exit\n")
+b[0].stdin.flush()
+assert b[0].wait(timeout=5) == 0
+gone(b[3])  # The runtime socket is long closed; pidfd lifetime owns descendants.
+
+c = launch()
+c[0].stdin.write("runtime_oom\n")
+c[0].stdin.flush()
+assert c[0].wait(timeout=10) in (-9, 137)
+gone(c[3])
+assert (main_runtime / "cgroup.procs").read_text() == main_pids
+
+for _ in range(3):
+    racing = launch()
+    racing[0].stdin.write("race\n")
+    racing[0].stdin.flush()
+    assert read_json(racing[0])["race_started"]
+    stop(racing)
+
+failed, metadata = startup(["/no/such/managed-task-program"])
+assert metadata is not None and failed.wait(timeout=10) == 126
+failed_task = main_runtime.parent / "tools" / ("task-" + metadata["handle"])
+gone(failed_task)
+
+# An unsupported/stopped broker never runs the target and produces no startup
+# record. No unmanaged or protected-main-runtime fallback is permitted.
+no_cap_env = dict(os.environ)
+no_cap_env["OKOU_TOOL_CGROUP_PROCS_ENDPOINT"] += "-unavailable"
+unsupported, metadata = startup(["/bin/sh", "-c", "echo unsafe-target-ran"], env=no_cap_env)
+assert metadata is None and unsupported.wait(timeout=10) == 125
+assert unsupported.stdout.read() == ""
+
+# Actual expected-UID authentication, not a test role/environment flag.
+root_probe = r'''
+import os, subprocess
+assert os.geteuid() == 0
+r, w = os.pipe()  # Created after sudo, which otherwise closes inherited FDs.
+p = subprocess.Popen(["/usr/local/bin/guest-task-exec", "--report-fd", str(w), "--", "/bin/echo", "unsafe-target-ran"], pass_fds=(w,), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+os.close(w)
+out, err = p.communicate(timeout=10)
+with os.fdopen(r) as report:
+    assert report.read() == ""
+assert p.returncode == 125 and out == ""
+assert "task caller is not in the owning" in err
+'''
+subprocess.run(["sudo", "--preserve-env=OKOU_TOOL_CGROUP_PROCS_ENDPOINT", "python3", "-c", root_probe], check=True, timeout=15)
+
+assert not list((main_runtime.parent / "tools").glob("task-*"))
+assert (main_runtime / "cgroup.procs").read_text() == main_pids
+assert (main_runtime / "memory.min").read_text() == main_min
+print("managed-task-runtime-isolation-passed", flush=True)
+MANAGED_TASK_PY
+
 # A private mount namespace makes only this launcher's real procfs score file
 # read-only. Enter as root for fixture setup, then restore the runtime UID/GID
 # before the production launcher authenticates with the placement broker.
