@@ -164,7 +164,7 @@ jq -e '
   [.jobs | to_entries[] | .value.steps[]? |
     select((.run // "") | startswith(".github/scripts/runner-binary-transport.sh "))
   ] as $transports |
-  ($transports | length) == 3 and
+  ($transports | length) == 2 and
   all($transports[];
     .env.CURRENT_RUN_ID == "${{ github.run_id }}" and
     .env.REPO == "${{ github.repository }}" and
@@ -272,29 +272,41 @@ jq -e '
 ' <<<"$workflow_json" >/dev/null || fail "build must preserve host readiness and republish its verified manifest on retry"
 
 jq -e '
-  (.jobs.asset.needs | sort) == ["compile", "prepare"] and
-  (.jobs.asset.if | contains("runner-binary-miss-count != '\''0'\''")) and
-  .jobs.asset.strategy.matrix.include == "${{ fromJSON(needs.prepare.outputs.runner-binary-compile-matrix) }}" and
-  any(.jobs.asset.steps[];
-    .run == ".github/scripts/runner-binary-transport.sh download" and
-    .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.binary-input.outputs.binary-input-digest }}" and
-    .env.OUTPUT_DIR == "runner-binary-fresh"
+  .jobs.compile.steps as $steps |
+  ($steps | map(.id // "") | index("build")) as $build |
+  ($steps | map(.id // "") | index("fresh")) as $fresh |
+  ($steps | map(.id // "") | index("transport")) as $transport |
+  ($steps | map(.id // "") | index("shadow")) as $shadow |
+  ($steps | map(.id // "") | index("artifact")) as $artifact |
+  ($steps | map(.id // "") | index("manifest-upload")) as $upload |
+  .jobs.compile.needs == ["prepare"] and
+  .jobs.compile.strategy["fail-fast"] == false and
+  .jobs.compile.permissions == {actions: "read", contents: "read"} and
+  ($build < $fresh and $fresh < $transport and $transport < $shadow and $shadow < $artifact and $artifact < $upload) and
+  all([$fresh, $transport, $shadow, $artifact][];
+    . as $index | ($steps[$index] | has("if") | not) and
+    ($steps[$index] | has("continue-on-error") | not)
   ) and
-  any(.jobs.asset.steps[];
-    .name == "Validate fresh runner binary" and
-    (. | has("if") | not) and
-    (. | has("continue-on-error") | not)
-  ) and
-  any(.jobs.asset.steps[];
-    .name == "Resolve reusable candidate in shadow mode" and
-    (. | has("if") | not)
-  ) and
-  any(.jobs.asset.steps[];
-    .name == "Upload reusable runner binary manifest" and
-    .with.path == "runner-binary-fresh/manifest.json" and
-    .with["retention-days"] == 7
-  )
-' <<<"$workflow_json" >/dev/null || fail "reusable publication must run only for compiled misses"
+  ($steps[$fresh].run | contains(".github/scripts/runner-binary-cache.sh fresh-validate")) and
+  $steps[$shadow].env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.build.outputs.binary-input-digest }}" and
+  $steps[$shadow].env.FRESH_METADATA_PATH == "runner-binary-fresh/metadata.json" and
+  $steps[$shadow].env.RUNNER_PATH == "runner-binary-fresh/runner" and
+  $steps[$shadow].env.GH_TOKEN == "${{ github.token }}" and
+  $steps[$shadow].env.CURRENT_RUN_ID == "${{ github.run_id }}" and
+  $steps[$shadow].env.CURRENT_EVENT == "${{ github.event_name }}" and
+  $steps[$shadow].env.CURRENT_PR_HEAD_REF == "${{ needs.prepare.outputs.pr-head-ref }}" and
+  $steps[$shadow].env.CURRENT_PR_NUMBER == "${{ needs.prepare.outputs.pr-number }}" and
+  ($steps[$shadow].run | contains(".github/scripts/runner-binary-cache.sh shadow-resolve")) and
+  $steps[$artifact].env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.build.outputs.binary-input-digest }}" and
+  $steps[$upload]["continue-on-error"] == true and
+  ($steps[$upload] | has("if") | not) and
+  $steps[$upload].with.path == ($steps[$transport].env.OUTPUT_DIR + "/manifest.json") and
+  $steps[$upload].with.name == "${{ steps.artifact.outputs.artifact-name }}" and
+  $steps[$upload].with["if-no-files-found"] == "error" and
+  $steps[$upload].with["retention-days"] == 7 and
+  ($steps[$upload].with | has("overwrite") | not) and
+  all($steps[]; (.name // "") != "Install GitHub CLI")
+' <<<"$workflow_json" >/dev/null || fail "each compiler must authorize its immutable index after verified publication and shadow auditing"
 
 prepare_consumers=$(jq -r '[.jobs | to_entries[] |
   select(any(.value.steps[]?; .run == ".github/scripts/prepare-runner-image.sh")) |

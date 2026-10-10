@@ -34,7 +34,7 @@ jq -e '
   $steps[$plan].env.GUEST_CLI_PATH == "runner-cli-intermediate/package.tgz" and
   $steps[$plan].env.GUEST_CLI_MANIFEST_PATH == "runner-cli-intermediate/manifest.json" and
   $steps[$plan].env.RUNNER_BINARY_GIT_REVISION == "${{ steps.identity.outputs.head-sha }}" and
-  (["compile", "build", "asset", "prewarm-rust-cache"] | all(.[]; . as $job |
+  (["compile", "build", "prewarm-rust-cache"] | all(.[]; . as $job |
     $root.jobs[$job].env.GUEST_CLI_PATH == "runner-cli-intermediate/package.tgz" and
     $root.jobs[$job].env.GUEST_CLI_MANIFEST_PATH == "runner-cli-intermediate/manifest.json" and
     $root.jobs[$job].env.RUNNER_BINARY_GIT_REVISION == "${{ needs.prepare.outputs.head-sha }}" and
