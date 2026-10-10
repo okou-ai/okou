@@ -204,7 +204,7 @@ impl ManagedTasks {
         Ok(())
     }
 
-    fn reap_completed(&self) {
+    fn reap_completed(&self, cancel: &AtomicBool) {
         let scopes = match self.scopes() {
             Ok(scopes) => scopes
                 .iter()
@@ -216,6 +216,11 @@ impl ManagedTasks {
             }
         };
         for (handle, scope) in scopes {
+            // Operation shutdown must not await one grace period per retired
+            // task. The outer owner kills the whole hierarchy after workers join.
+            if cancel.load(Ordering::Acquire) {
+                return;
+            }
             if scope.closing.load(Ordering::Acquire) {
                 continue;
             }
@@ -245,7 +250,7 @@ impl ManagedTasks {
         cancel: Arc<AtomicBool>,
     ) {
         while !cancel.load(Ordering::Acquire) {
-            self.reap_completed();
+            self.reap_completed(&cancel);
             let stream = match process_control_ipc::accept_with_timeout(
                 &listener,
                 Duration::from_millis(100),
@@ -416,6 +421,34 @@ mod tests {
                 .stop(&handle, ProcessContainmentCleanupMode::Forced)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn cancelled_reaper_leaves_tasks_to_bounded_outer_operation_cleanup() {
+        let tasks = ManagedTasks::new(1000, PathBuf::from("/runtime"), PathBuf::from("/tools"));
+        let mut child = std::process::Command::new("/bin/sh")
+            .args(["-c", "read marker"])
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let pidfd = open_pidfd(child.id() as libc::pid_t).unwrap().unwrap();
+        drop(child.stdin.take());
+        child.wait().unwrap();
+        let handle = TaskHandle::generate();
+        let scope = Arc::new(TaskScope {
+            path: PathBuf::from("/must-not-start-per-task-cleanup-after-cancel"),
+            pidfd,
+            admitted: AtomicBool::new(true),
+            closing: AtomicBool::new(false),
+            admission: Mutex::new(()),
+        });
+        tasks
+            .scopes()
+            .unwrap()
+            .insert(handle.clone(), Arc::clone(&scope));
+        tasks.reap_completed(&AtomicBool::new(true));
+        assert!(!scope.closing.load(Ordering::Acquire));
+        assert!(tasks.scopes().unwrap().contains_key(&handle));
     }
 
     #[test]
