@@ -55,12 +55,12 @@ export async function withArtifactOg(
     ? artifactOgHtml(
         normalizeArtifactImageUrls(original, request.url),
         { ...metadata, url: canonical.href },
-        false,
+        "fill-missing",
       )
     : artifactOgHtml(
         original,
         { ...ARTIFACT_OG_BRAND, url: canonical.href },
-        "social",
+        "replace-social",
       );
   const headers = new Headers(response.headers);
   headers.delete("ETag");

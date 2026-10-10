@@ -204,15 +204,13 @@ export function normalizeArtifactImageUrls(
   return edits.length ? applyHtmlEdits(html, edits) : html;
 }
 
-/**
- * Edit only metadata ranges; script, style and authored body bytes stay intact.
- * `true` replaces document and sharing metadata; `"social"` replaces sharing tags only.
- */
+/** Edit only metadata ranges; script, style and authored body bytes stay intact. */
 export function artifactOgHtml(
   html: string,
   metadata: ArtifactOgMetadata,
-  replace: boolean | "social",
+  mode: "fill-missing" | "replace-social" | "replace-all",
 ): string {
+  const replace = mode !== "fill-missing";
   const parsed = inspectHtml(html);
   const authoredImage = !replace
     ? parsed.tags.find((tag) => {
@@ -239,7 +237,7 @@ export function artifactOgHtml(
     if (
       replace &&
       (social ||
-        (replace === true &&
+        (mode === "replace-all" &&
           ["title", "description", "canonical"].includes(tag.name)))
     ) {
       edits.push({ ...tag, text: "" });
@@ -269,7 +267,7 @@ export function artifactOgHtml(
     })
     .join("");
   const extra =
-    replace === true
+    mode === "replace-all"
       ? `<title>${escapeUTF8(metadata.title)}</title><meta name="description" content="${escapeUTF8(metadata.description)}"><link rel="canonical" href="${escapeUTF8(metadata.url)}">`
       : "";
   const at = parsed.headEnd ?? parsed.documentStart;
