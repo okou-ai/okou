@@ -238,7 +238,7 @@ export const settleOrgUsage$ = command(
     signal.throwIfAborted();
     if (!outcome.ok) {
       if (deferredSettlementConflict(outcome.error)) {
-        L.warn("Usage settlement snapshot deferred to the next cycle", {
+        L.debug("Usage settlement snapshot deferred to the next cycle", {
           orgId: args.orgId,
           error: outcome.error,
         });
