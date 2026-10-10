@@ -59,7 +59,6 @@ import {
   deleteChatThread$,
   renameChatThread$,
 } from "../../signals/chat-page/chat-event.ts";
-import { chatThreadContainerElement$ } from "../../signals/chat-page/chat-keyboard.ts";
 import {
   createNewChatThread$,
   newChatThreadDisabled$,
@@ -650,7 +649,6 @@ function ChatThreadRenameDialog() {
   const closeRenameChatThreadDialog = useSet(closeRenameChatThreadDialog$);
   const setRenameDialogInput = useSet(setRenameDialogInput$);
   const renameChatThread = useSet(renameChatThread$);
-  const chatThreadContainerElement = useSet(chatThreadContainerElement$);
   const pageSignal = useGet(pageSignal$);
 
   function closeRenameDialog() {
@@ -682,13 +680,7 @@ function ChatThreadRenameDialog() {
         }
       }}
     >
-      <DialogContent
-        finalFocus={() => {
-          return renameDialogThreadId
-            ? chatThreadContainerElement(renameDialogThreadId)
-            : null;
-        }}
-      >
+      <DialogContent finalFocus={false}>
         <DialogHeader>
           <DialogTitle>
             {t(($) => {
