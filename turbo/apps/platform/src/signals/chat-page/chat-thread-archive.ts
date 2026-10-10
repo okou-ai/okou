@@ -8,6 +8,19 @@ import { onDomEventFn } from "../utils.ts";
 import { setChatThreadArchived$ } from "./chat-event.ts";
 import { chatThreadMetaMap$ } from "./chat-thread-event-sourcing.ts";
 
+// Undo is a quiet text action; the primary fill is reserved for commitments.
+const UNDO_ACTION_CLASS_NAMES = {
+  actionButton: "underline-offset-4 hover:underline active:opacity-80",
+} as const;
+const UNDO_ACTION_STYLE = {
+  background: "transparent",
+  color: "hsl(var(--foreground))",
+  fontSize: "inherit",
+  height: "auto",
+  lineHeight: "1.5",
+  padding: 0,
+} as const;
+
 function archiveToastDescription(archived: boolean, muted: boolean) {
   if (!archived) {
     return undefined;
@@ -72,6 +85,8 @@ export const setChatThreadArchivedWithFeedback$ = command(
           }),
       {
         description: archiveToastDescription(archived, meta?.muted === true),
+        actionButtonStyle: UNDO_ACTION_STYLE,
+        classNames: UNDO_ACTION_CLASS_NAMES,
         action: {
           label: i18n.t(($) => {
             return $.chat.toasts.undo;
