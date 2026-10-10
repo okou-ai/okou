@@ -877,7 +877,10 @@ describe("GET /api/artifacts/catalog", () => {
     const otherOrg = bdd.user({ userId: actor.userId });
     for (const unauthorized of [member, otherOrg]) {
       await host.requestHostedSiteDeployments(unauthorized, site, [404]);
-      await host.requestHostedSiteFiles(unauthorized, site, [404]);
+      // Published website files are public; management and completion are not.
+      await expect(
+        host.readHostedSiteFiles(unauthorized, site),
+      ).resolves.toMatchObject({ deploymentId: third.deploymentId });
       await host.requestCompleteHostedSite(
         unauthorized,
         third.deploymentId,
