@@ -2030,6 +2030,60 @@ describe("Browser user-action route", () => {
     expect(temporaryObjects.has(cancelledKey)).toBeFalsy();
   });
 
+  it.each(["succeeded", "cancelled"] as const)(
+    "rejects resubmitting %s native file actions after upload cleanup",
+    async (terminalState) => {
+      const { create, stageSyntheticFile } = await setupNativeFileScenario();
+      const created = await create();
+      const requestToken = created.body.action.requestToken;
+      const observed = await accept(
+        userActionClient().preflight({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+          body: {},
+        }),
+        [200],
+      );
+      const value = nativeFileValue(
+        observed.body.fields[0]?.control.fileSetFingerprint ?? "",
+      );
+      await stageSyntheticFile(requestToken);
+      const terminal = await accept(
+        terminalState === "succeeded"
+          ? userActionClient().apply({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { requestToken },
+              body: { values: [value] },
+            })
+          : userActionClient().cancel({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { requestToken },
+              body: {},
+            }),
+        [200],
+      );
+      expect(terminal.body.state).toBe(terminalState);
+
+      const retry = await userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken },
+        body: { values: [value] },
+      });
+      expect(retry).toMatchObject({
+        status: 409,
+        body: { error: { code: "BROWSER_USER_ACTION_CONFLICT" } },
+      });
+      const unchanged = await accept(
+        userActionClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+        }),
+        [200],
+      );
+      expect(unchanged.body.state).toBe(terminalState);
+    },
+  );
+
   it("lets apply finish while the preflight provider read is still pending", async () => {
     const { token } = await createNativePasswordActionForPreflightTest();
     const readStarted = createDeferredPromise<void>(context.signal);
