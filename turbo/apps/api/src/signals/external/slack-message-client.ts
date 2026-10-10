@@ -1,7 +1,11 @@
 import { WebClient } from "@slack/web-api";
 
 import type { ChatSlackMessageFile } from "@okouai/db/jsonb-contracts/chat-slack-context";
-import type { SlackAnyBlock, SlackView } from "./slack-block-kit";
+import type {
+  SlackAnyBlock,
+  SlackKnownBlock,
+  SlackView,
+} from "./slack-block-kit";
 import { optionalEnv } from "../../lib/env";
 import { settle } from "../utils";
 
@@ -198,6 +202,31 @@ function buildWebClient(token: string): WebClient {
     retryConfig: { retries: 1 },
     timeout: 5000,
   });
+}
+
+export interface SlackLinkUnfurl {
+  readonly blocks: SlackKnownBlock[];
+}
+
+/** Bound optional previews independently of the longer-lived chat client. */
+export async function unfurlSlackLinks(
+  token: string,
+  args: {
+    readonly channel: string;
+    readonly ts: string;
+    readonly unfurls: Record<string, SlackLinkUnfurl>;
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  const web = new WebClient(token, {
+    slackApiUrl: resolveSlackApiUrl(),
+    timeout: 5000,
+    retryConfig: { retries: 2, minTimeout: 1000, maxTimeout: 2000 },
+    rejectRateLimitedCalls: true,
+  });
+  await web.chat.unfurl(args);
+  signal.throwIfAborted();
 }
 
 function isSlackPlatformError(
