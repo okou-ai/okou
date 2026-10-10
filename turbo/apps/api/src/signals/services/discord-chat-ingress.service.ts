@@ -262,28 +262,13 @@ interface DiscordChatIngressAdmission {
   readonly status: DiscordChatIngressStatus;
 }
 
-function discordMessageReceiptDigest(applicationId: string, messageId: string) {
+export function discordMessageReceiptDigest(
+  applicationId: string,
+  messageId: string,
+) {
   return createHash("sha256")
     .update(JSON.stringify([applicationId, "MESSAGE_CREATE", messageId]))
     .digest("hex");
-}
-
-export async function hasCanonicalDiscordMessageReceipt(
-  db: Db,
-  applicationId: string,
-  messageId: string,
-): Promise<boolean> {
-  const [receipt] = await db
-    .select({ eventDigest: discordGatewayReceipts.eventDigest })
-    .from(discordGatewayReceipts)
-    .where(
-      eq(
-        discordGatewayReceipts.eventDigest,
-        discordMessageReceiptDigest(applicationId, messageId),
-      ),
-    )
-    .limit(1);
-  return Boolean(receipt);
 }
 
 export const admitCanonicalDiscordChatEvent$ = command(
