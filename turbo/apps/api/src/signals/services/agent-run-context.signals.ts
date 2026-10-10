@@ -64,7 +64,10 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import { db$ } from "../external/db";
 
 import { createConnectorRuntimeSelection } from "./connector-catalog-entries.service";
-import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
+import {
+  agentConnectorScopeFromRows,
+  type AgentConnectorScopeSnapshot,
+} from "./agent-connector-scope.service";
 import {
   createAuthorizedConnectors,
   type AuthorizedConnectors,
@@ -144,6 +147,8 @@ export interface AgentRunContextSignals {
   readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
   readonly selectedImageModel$: Computed<Promise<ImageModel>>;
   readonly connectorSelection$: Computed<Promise<AgentConnectorSelection>>;
+  /** Connectors the Agent may use, derived from its connector selection. */
+  readonly connectorScope$: Computed<Promise<AgentConnectorScopeSnapshot>>;
   readonly authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>;
   readonly permissionGrants$: Computed<
     Promise<readonly ConnectorPermissionGrant[]>
@@ -475,7 +480,7 @@ function createIdentityContext(
   orgId: string,
   agentId: string,
   supplied?: AgentRunContextSignals,
-): AgentRunContextSignals {
+): OwnedAgentRunContext {
   const scope = { userId, orgId, agentId };
   const memberContext = createExecutionMemberContext(scope);
   const {
@@ -563,7 +568,7 @@ function createIdentityContext(
     const snapshot = await get(connectorContext.environmentSnapshot$);
     return { variables: snapshot.variables };
   });
-  const context: OwnedAgentRunContext = {
+  return {
     [globalModelOwner]: globalReferences.catalog$,
     ...scope,
     agent$,
@@ -580,6 +585,7 @@ function createIdentityContext(
       sharedMember?.selectedImageModel$ ??
       createSelectedImageModel(memberMetadata$),
     connectorSelection$: connectorContext.connectorSelection$,
+    connectorScope$: connectorContext.connectorScope$,
     authorizedConnectors$: connectorContext.authorizedConnectors$,
     permissionGrants$,
     workflows$,
@@ -596,7 +602,6 @@ function createIdentityContext(
     catalog$: connectorContext.catalog$,
     connectors$: connectorContext.connectors$,
   };
-  return context;
 }
 
 /**
@@ -1043,14 +1048,20 @@ function createConnectorContextGroups(
     ]);
     return bootstrapConnectorSnapshot(userId, orgId, snapshot, definitions);
   });
-  const requested$ = computed(async (get) => {
+  const connectorScope$ = computed(async (get) => {
     const selection = await get(connectorSelection$);
-    const scope = agentConnectorScopeFromRows({
+    return agentConnectorScopeFromRows({
       connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
         return { connectorSlug };
       }),
       customConnectorRows: selection.customConnectors,
     });
+  });
+  const requested$ = computed(async (get) => {
+    const [selection, scope] = await Promise.all([
+      get(connectorSelection$),
+      get(connectorScope$),
+    ]);
     if (
       scope.allowedConnectorSlugs.length === 0 &&
       scope.allowedCustomConnectorIds.length === 0
@@ -1077,6 +1088,7 @@ function createConnectorContextGroups(
   });
   return {
     connectorSelection$,
+    connectorScope$,
     authorizedConnectors$,
     permissionGrants$,
     workflows$,

@@ -87,6 +87,12 @@ no commands, state, database handles or storage materialization. Its constructor
 and nested factories may read bootstrap's plain identity fields and otherwise
 only declare computeds and verified computed bundles.
 
+Keep the three inputs distinct: consumers receive bootstrap, the picked event,
+and ThreadContext directly. Do not re-export bootstrap nodes or picked-event
+fields through ThreadContext; derive any required projections at the consumer.
+ThreadContext exposes facts that require event-specific resolution, such as
+session reads, channel contexts and execution-identity selection.
+
 Build the owning graph before commands execute. Do not call `command()` inside
 another command callback, including indirectly through a factory. Private nodes
 share dependencies through the owning graph's lexical scope or explicitly

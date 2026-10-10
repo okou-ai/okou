@@ -3,10 +3,7 @@ import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { computed, type Computed } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { db$ } from "../external/db";
-import {
-  matchAgentRunContextSignals,
-  type AgentRunContextSignals,
-} from "./agent-run-context.signals";
+import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
   chatThreadSessionIdentity,
@@ -15,6 +12,10 @@ import {
 import type { ChatThreadRequestRow } from "./chat-thread-request-facts";
 import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
 import { createRunTemplates } from "./run-templates.service";
+import {
+  type ConnectedAccounts,
+  createConnectedAccountsSignals,
+} from "./thread-connected-accounts.signals";
 import { createThreadAutomationContext } from "./thread-automation-context.service";
 import { createThreadModelSignals } from "./thread-model.signals";
 import {
@@ -26,19 +27,6 @@ import {
 } from "./thread-run-context.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
-export interface ThreadAgentSelection {
-  readonly agentId: string;
-  readonly expectedThreadAgentId?: string;
-  readonly producerBinding?: {
-    readonly kind: "reassign-agent";
-    readonly agentId: string;
-    readonly expectedAgentId: string;
-    readonly userId: string;
-    readonly threadId: string;
-    readonly orgId: string;
-  };
-}
-
 export interface ThreadAutomationTarget {
   readonly automation: typeof workflowAutomations.$inferSelect;
   readonly agentId: string;
@@ -48,13 +36,10 @@ type ThreadModels = ReturnType<typeof createThreadModelSignals>;
 
 /** Read-only facts for one picked event, shared by admission and prompting. */
 export interface ThreadContext {
-  readonly pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>;
-  readonly thread$: Computed<Promise<ChatThreadRequestRow | null>>;
   readonly sessionRead$: ReturnType<typeof createChatThreadSessionRead>;
   readonly session$: Computed<
     Promise<ReturnType<typeof chatThreadSessionIdentity>>
   >;
-  readonly cloudBrowserEnabled$: Computed<Promise<boolean>>;
   readonly computerUseHostGrant$: Computed<
     Promise<{ readonly hostId: string; readonly displayName: string } | null>
   >;
@@ -66,33 +51,24 @@ export interface ThreadContext {
   readonly discordContext$: ReturnType<typeof createDiscordThreadContext>;
   readonly automationContext$: ReturnType<typeof createThreadAutomationContext>;
   readonly automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>;
-  readonly agentSelection$: Computed<Promise<ThreadAgentSelection | null>>;
-  readonly executionBootstrap$: Computed<Promise<AgentRunContextSignals>>;
-  readonly agent$: AgentRunContextSignals["agent$"];
-  readonly memberMetadata$: AgentRunContextSignals["memberMetadata$"];
-  readonly featureSwitches$: AgentRunContextSignals["featureSwitches$"];
-  readonly memberRoutes$: AgentRunContextSignals["memberRoutes$"];
-  readonly modelCatalog$: AgentRunContextSignals["modelCatalog$"];
-  readonly authorizedConnectors$: AgentRunContextSignals["authorizedConnectors$"];
-  readonly workflowSkills$: AgentRunContextSignals["workflowSkills$"];
-  readonly selectedImageModel$: AgentRunContextSignals["selectedImageModel$"];
   readonly templates$: ReturnType<typeof createRunTemplates>;
   readonly queuedModel$: ThreadModels["queuedModel$"];
   readonly subscriptionSelection$: ThreadModels["subscriptionSelection$"];
   readonly requestedFramework$: ThreadModels["requestedFramework$"];
   readonly modelRoute$: ThreadModels["modelRoute$"];
   readonly providerFramework$: ThreadModels["providerFramework$"];
-  readonly framework$: ThreadModels["framework$"];
   readonly dispatchTiming$: ThreadModels["dispatchTiming$"];
+  /** Connector accounts chosen from thread, source and default selections. */
+  readonly connectorSelection$: ConnectedAccounts["connectorSelection$"];
+  readonly connectorSnapshot$: ConnectedAccounts["connectorSnapshot$"];
+  readonly connectorThreadSelections$: ConnectedAccounts["threadSelections$"];
+  readonly selectedConnectorSources$: ConnectedAccounts["selectedStoredConnectorSources$"];
 }
 
 export function createThreadContext(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
 ): ThreadContext {
-  const event$ = computed((get) => {
-    return get(pickedEvent$);
-  });
   const orgId = bootstrap.orgId;
   const userId = bootstrap.userId;
   const sourceFeatureSwitches$ = computed((get) => {
@@ -104,13 +80,6 @@ export function createThreadContext(
   const sessionRead$ = createChatThreadSessionRead(thread$, orgId, userId);
   const session$ = computed(async (get) => {
     return chatThreadSessionIdentity(await get(sessionRead$));
-  });
-  const cloudBrowserEnabled$ = computed(async (get) => {
-    const thread = await get(thread$);
-    if (!thread) {
-      throw new Error("Agent prompt requires a chat thread");
-    }
-    return thread.cloudBrowserEnabled;
   });
   const slackContext$ = createSlackThreadContext(pickedEvent$, orgId);
   const feishuContext$ = createFeishuThreadContext(
@@ -124,62 +93,27 @@ export function createThreadContext(
   const discordContext$ = createDiscordThreadContext(pickedEvent$, orgId);
   const automationContext$ = createThreadAutomationContext(pickedEvent$);
   const automationTarget$ = createAutomationTarget(automationContext$);
-  const agentSelection$ = createThreadAgentSelection(
-    bootstrap,
-    pickedEvent$,
-    orgId,
-  );
-  const executionBootstrap$ = createThreadExecutionBootstrap(
-    bootstrap,
-    pickedEvent$,
-    automationTarget$,
-    agentSelection$,
-    orgId,
-  );
-  const agent$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).agent$);
-  });
-  const memberMetadata$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).memberMetadata$);
-  });
-  const featureSwitches$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).featureSwitches$);
-  });
-  const memberRoutes$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).memberRoutes$);
-  });
-  const modelCatalog$ = computed((get) => {
-    return get(bootstrap.modelCatalog$);
-  });
-  const authorizedConnectors$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).authorizedConnectors$);
-  });
-  const workflowSkills$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).workflowSkills$);
-  });
-  const selectedImageModel$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).selectedImageModel$);
-  });
   const templates$ = createRunTemplates(
     pickedEvent$,
     orgId,
     sourceFeatureSwitches$,
   );
-  const computerUseHostGrant$ = createThreadHostGrant(
-    thread$,
-    executionBootstrap$,
+  const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
+  const model = createThreadModelSignals(bootstrap, pickedEvent$);
+  const connectorSourceId$ = createConnectorSourceId(
+    pickedEvent$,
+    automationContext$,
+    feishuContext$,
   );
-  const model = createThreadModelSignals(
+  const connectedAccounts = createConnectedAccountsSignals(
     bootstrap,
     pickedEvent$,
-    executionBootstrap$,
+    connectorSourceId$,
+    model.dispatchTiming$,
   );
   return {
-    pickedEvent$: event$,
-    thread$,
     sessionRead$,
     session$,
-    cloudBrowserEnabled$,
     computerUseHostGrant$,
     slackContext$,
     feishuContext$,
@@ -189,24 +123,18 @@ export function createThreadContext(
     discordContext$,
     automationContext$,
     automationTarget$,
-    agentSelection$,
-    executionBootstrap$,
-    agent$,
-    memberMetadata$,
-    featureSwitches$,
-    memberRoutes$,
-    modelCatalog$,
-    authorizedConnectors$,
-    workflowSkills$,
-    selectedImageModel$,
     templates$,
     queuedModel$: model.queuedModel$,
     subscriptionSelection$: model.subscriptionSelection$,
     requestedFramework$: model.requestedFramework$,
     modelRoute$: model.modelRoute$,
     providerFramework$: model.providerFramework$,
-    framework$: model.framework$,
     dispatchTiming$: model.dispatchTiming$,
+    connectorSelection$: connectedAccounts.connectorSelection$,
+    connectorSnapshot$: connectedAccounts.connectorSnapshot$,
+    connectorThreadSelections$: connectedAccounts.threadSelections$,
+    selectedConnectorSources$:
+      connectedAccounts.selectedStoredConnectorSources$,
   };
 }
 
@@ -231,96 +159,34 @@ function createAutomationTarget(
   });
 }
 
-function createThreadAgentSelection(
-  bootstrap: AgentRunContextSignals,
+function createConnectorSourceId(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  orgId: string,
+  automationContext$: ThreadContext["automationContext$"],
+  feishuContext$: ThreadContext["feishuContext$"],
 ) {
-  return computed(async (get): Promise<ThreadAgentSelection | null> => {
+  return computed(async (get): Promise<string | undefined> => {
     const event = await get(pickedEvent$);
-    if (!event?.agentId) {
-      return null;
-    }
-    if (
-      ![
-        "slack",
-        "feishu",
-        "teams",
-        "discord",
-        "telegram",
-        "agentphone",
-      ].includes(event.contextType ?? "")
-    ) {
-      return { agentId: event.agentId };
-    }
-    const agentId = (await get(bootstrap.orgMetadata$))?.defaultAgentId;
-    if (!agentId) {
-      return null;
-    }
-    if (agentId === event.agentId) {
-      return { agentId };
-    }
-    return {
-      agentId,
-      expectedThreadAgentId: event.agentId,
-      producerBinding: {
-        kind: "reassign-agent",
-        agentId,
-        expectedAgentId: event.agentId,
-        userId: event.userId,
-        threadId: event.chatThreadId,
-        orgId,
-      },
-    };
-  });
-}
-
-function createThreadExecutionBootstrap(
-  bootstrap: AgentRunContextSignals,
-  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  automationTarget$: ThreadContext["automationTarget$"],
-  agentSelection$: ThreadContext["agentSelection$"],
-  orgId: string,
-) {
-  return computed(async (get) => {
-    const event = await get(pickedEvent$);
-    if (!event) {
-      throw new Error("Thread execution requires a picked event");
-    }
-    if (event.contextType === "automation") {
-      const target = await get(automationTarget$);
-      if (!target) {
-        throw new Error("Automation execution requires its captured target");
+    // Only these inputs carry the integration account that delivered them.
+    switch (event?.contextType) {
+      case "automation": {
+        return (await get(automationContext$))?.connectorSourceId ?? undefined;
       }
-      return matchAgentRunContextSignals(
-        bootstrap,
-        target.automation.ownerUserId,
-        target.automation.orgId,
-        target.agentId,
-      );
+      case "feishu": {
+        return (await get(feishuContext$))?.connectorSourceId;
+      }
+      default: {
+        return undefined;
+      }
     }
-    const agent = await get(agentSelection$);
-    if (!agent) {
-      throw new Error("Prompt preparation lost its selected Agent");
-    }
-    return matchAgentRunContextSignals(
-      bootstrap,
-      event.userId,
-      orgId,
-      agent.agentId,
-    );
   });
 }
 
 function createThreadHostGrant(
-  thread$: ThreadContext["thread$"],
-  executionBootstrap$: ThreadContext["executionBootstrap$"],
+  selected: AgentRunContextSignals,
+  thread$: Computed<Promise<ChatThreadRequestRow | null>>,
 ) {
   return computed(async (get) => {
-    const [thread, selected] = await Promise.all([
-      get(thread$),
-      get(executionBootstrap$),
-    ]);
+    const thread = await get(thread$);
     if (!thread?.computerUseHostId || thread.userId !== selected.userId) {
       return null;
     }
