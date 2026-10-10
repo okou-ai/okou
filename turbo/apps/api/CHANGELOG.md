@@ -9,6 +9,30 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.723.0](https://github.com/okou-ai/okou/compare/api-v1.722.0...api-v1.723.0) (2026-10-10)
+
+
+### Features
+
+* **notify:** enable mail notifications for everyone ([#38513](https://github.com/okou-ai/okou/issues/38513)) ([90da609](https://github.com/okou-ai/okou/commit/90da609107a1612fa3d9039862f02c09f2ed09d2))
+* **ssh:** add tailscale configuration and current authority ([#37651](https://github.com/okou-ai/okou/issues/37651)) ([00b9386](https://github.com/okou-ai/okou/commit/00b93867968c441677ecb76962c0c251358a15ae))
+
+
+### Refactoring
+
+* **api:** finalize invitation refunds in one atomic statement ([#38501](https://github.com/okou-ai/okou/issues/38501)) ([21a5419](https://github.com/okou-ai/okou/commit/21a5419582f7bf619f60a8a20e9ea668eee78c1c))
+* **api:** own builtin device-auth session claims ([#38495](https://github.com/okou-ai/okou/issues/38495)) ([eac5e80](https://github.com/okou-ai/okou/commit/eac5e80c13cc39576be73eeb88c80b49348908de))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.548.0
+    * @okouai/core bumped to 8.740.0
+    * @okouai/db bumped to 1.330.0
+    * @okouai/pi-agent-runtime bumped to 1.49.3
+
 ## [1.722.0](https://github.com/okou-ai/okou/compare/api-v1.721.1...api-v1.722.0) (2026-10-10)
 
 

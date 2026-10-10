@@ -6,6 +6,7 @@ import {
   it,
   onTestFinished,
 } from "vitest";
+import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import worker from "./index";
@@ -402,14 +403,43 @@ it.each(["disabled", "unavailable"])(
           : new HttpResponse(null, { status: 503 });
       }),
     );
+    const body = '<body><img src="cover.png">Report</body>';
+    const documentMetadata =
+      '<title>Report</title><meta name="description" content="Authored summary"><link rel="canonical" href="https://reports.example/report">';
     const original =
-      '<head><meta property="og:image" content="cover.png"></head><body>Report</body>';
+      "<head>" +
+      documentMetadata +
+      '<meta property="og:image" content="cover.png"><meta property="og:image:width" content="1200"><meta property="og:image:secure_url" content="https://images.example/cover.png"><meta name="twitter:image" content="https://images.example/twitter.png"></head>' +
+      body;
     const response = await fetchWorker(new Request("https://demo.okou.app/"), {
       ...environment(true, undefined, "okou", true, original),
       ARTIFACT_OG_API_ORIGIN: "https://authority.test",
     });
     expect(response.status).toBe(200);
-    expect(await response.text()).toBe(original);
-    expect(response.headers.get("ETag")).toBe('"hosted"');
+    const html = await response.text();
+    if (state === "disabled") {
+      expect(html).toContain(
+        `property="og:image" content="${ARTIFACT_OG_BRAND.imageUrl}"`,
+      );
+      expect(html).toContain(
+        `name="twitter:image" content="${ARTIFACT_OG_BRAND.imageUrl}"`,
+      );
+      expect(html).not.toContain('property="og:image:width"');
+      expect(html).not.toContain('property="og:image:secure_url"');
+      expect(html).not.toContain("images.example");
+      expect(html).toContain(documentMetadata);
+      expect(html).toContain('property="og:title" content="Okou"');
+      expect(html).toContain(body);
+      expect(response.headers.get("ETag")).toBeNull();
+      expect(response.headers.get("Content-Length")).toBeNull();
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(response.headers.get("CDN-Cache-Control")).toBe("no-store");
+      expect(response.headers.get("Cloudflare-CDN-Cache-Control")).toBe(
+        "no-store",
+      );
+    } else {
+      expect(html).toBe(original);
+      expect(response.headers.get("ETag")).toBe('"hosted"');
+    }
   },
 );

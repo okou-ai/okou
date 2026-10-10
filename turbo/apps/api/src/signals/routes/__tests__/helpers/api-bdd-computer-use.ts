@@ -4,8 +4,7 @@ import {
   computerUseAuthorizationRequestsContract,
   computerUseAuditEventsContract,
   computerUseCommandContract,
-  computerUseHeartbeatContract,
-  computerUseHostCommandsContract,
+  computerUseSessionHostsContract,
   computerUseHostsContract,
   computerUseWriteCommandContract,
   type ComputerUseAuthorizationRequestApplyResponse,
@@ -33,16 +32,18 @@ interface AuthHeaders {
   readonly authorization?: string;
 }
 
-interface RequiredAuthHeaders {
-  readonly authorization: string;
-}
-
 /**
  * Computer-use routes accept either a Clerk session actor or a bearer token
  * (agent run tokens for command routes). `null` issues an unauthenticated
  * request.
  */
 type ComputerUseAuth = ApiTestUser | { readonly bearer: string } | null;
+
+export interface ComputerUseTestConnection {
+  readonly actor: ApiTestUser;
+  readonly hostId: string;
+  readonly connectionGeneration: number;
+}
 
 interface ComputerUseHostStartOptions {
   readonly permissions?: {
@@ -139,21 +140,13 @@ const DEFAULT_WRITE_COMMAND_BODY = {
   timeoutMs: 60_000,
 } as const satisfies ComputerUseWriteCommandBody;
 
-function hostHeaders(hostToken: string): RequiredAuthHeaders {
-  return { authorization: `Bearer ${hostToken}` };
-}
-
-function hostTokenHeaders(hostToken: string | null): AuthHeaders {
-  return hostToken === null ? {} : hostHeaders(hostToken);
-}
-
 function hostRuntimeBody(options: ComputerUseHostStartOptions = {}) {
   return {
     // Every Desktop registers with its installation; a new one per start
     // unless the test is exercising reactivation of the same installation.
     installationId: options.installationId ?? randomUUID(),
     hostName: options.hostName ?? "BDD Desktop",
-    appVersion: options.appVersion ?? "0.1.0",
+    appVersion: options.appVersion ?? "0.52.1",
     osVersion: options.osVersion ?? "macOS 15",
     supportedCapabilities: [
       ...(options.supportedCapabilities ??
@@ -318,15 +311,48 @@ export function createComputerUseBddApi(
     return { authorization: "Bearer clerk-session" };
   }
 
+  function authenticateHost(actor: ComputerUseAuth): AuthHeaders {
+    if (!actor || "bearer" in actor) {
+      return authenticate(actor);
+    }
+    const sessionId = `sess_${actor.userId}`;
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: true,
+      toAuth: () => {
+        return { ...actor, sessionId };
+      },
+    });
+    context.mocks.clerk.sessions.getSession.mockResolvedValue({
+      id: sessionId,
+      userId: actor.userId,
+      status: "active",
+    });
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            organization: { id: actor.orgId ?? "" },
+            publicUserData: { userId: actor.userId },
+            role: actor.orgRole ?? "org:admin",
+          },
+        ],
+        totalCount: 1,
+      },
+    );
+    return { authorization: "Bearer clerk-session" };
+  }
+
+  function hostRequest(connection: ComputerUseTestConnection | null) {
+    return {
+      headers: authenticateHost(connection?.actor ?? null),
+      params: { hostId: connection?.hostId ?? randomUUID() },
+      body: { connectionGeneration: connection?.connectionGeneration ?? 1 },
+    };
+  }
+
   function hostsClient(signal?: AbortSignal) {
     return setupApp({ context, routes: computerUseRoutes, signal })(
       computerUseHostsContract,
-    );
-  }
-
-  function heartbeatClient() {
-    return setupApp({ context, routes: computerUseRoutes })(
-      computerUseHeartbeatContract,
     );
   }
 
@@ -342,9 +368,9 @@ export function createComputerUseBddApi(
     );
   }
 
-  function hostCommandsClient() {
-    return setupApp({ context, routes: computerUseRoutes })(
-      computerUseHostCommandsContract,
+  function sessionHostsClient(signal?: AbortSignal) {
+    return setupApp({ context, routes: computerUseRoutes, signal })(
+      computerUseSessionHostsContract,
     );
   }
 
@@ -488,16 +514,16 @@ export function createComputerUseBddApi(
     async startComputerUseHost(
       actor: ApiTestUser,
       options: ComputerUseHostStartOptions = {},
-    ): Promise<{ readonly hostId: string; readonly hostToken: string }> {
+    ) {
       return await run(async () => {
         const response = await accept(
-          hostsClient().start({
-            headers: authenticate(actor),
+          sessionHostsClient().register({
+            headers: authenticateHost(actor),
             body: hostRuntimeBody(options),
           }),
           [200],
         );
-        return response.body;
+        return { ...response.body, connection: { ...response.body, actor } };
       });
     },
 
@@ -508,13 +534,23 @@ export function createComputerUseBddApi(
       signal?: AbortSignal,
     ) {
       return await run(async () => {
-        return await accept(
-          hostsClient(signal).start({
-            headers: authenticate(actor),
+        const response = await accept(
+          sessionHostsClient(signal).register({
+            headers: authenticateHost(actor),
             body: hostRuntimeBody(options),
           }),
           statuses,
         );
+        if (response.status !== 200) {
+          return response;
+        }
+        if (!actor || "bearer" in actor) {
+          throw new Error("Expected a Clerk session host owner");
+        }
+        return {
+          ...response,
+          body: { ...response.body, connection: { ...response.body, actor } },
+        };
       });
     },
 
@@ -545,14 +581,17 @@ export function createComputerUseBddApi(
     },
 
     async heartbeatComputerUseHost(
-      hostToken: string,
+      connection: ComputerUseTestConnection,
       options: ComputerUseHostStartOptions = {},
     ): Promise<{ readonly ok: true; readonly hostId: string }> {
       return await run(async () => {
         const response = await accept(
-          heartbeatClient().heartbeat({
-            headers: hostHeaders(hostToken),
-            body: hostRuntimeBody(options),
+          sessionHostsClient().heartbeat({
+            ...hostRequest(connection),
+            body: {
+              ...hostRuntimeBody(options),
+              connectionGeneration: connection.connectionGeneration,
+            },
           }),
           [200],
         );
@@ -561,14 +600,17 @@ export function createComputerUseBddApi(
     },
 
     async requestComputerUseHeartbeat(
-      hostToken: string | null,
+      connection: ComputerUseTestConnection | null,
       statuses: readonly (200 | 401 | 409)[],
     ) {
       return await run(async () => {
         return await accept(
-          heartbeatClient().heartbeat({
-            headers: hostTokenHeaders(hostToken),
-            body: hostRuntimeBody(),
+          sessionHostsClient().heartbeat({
+            ...hostRequest(connection),
+            body: {
+              ...hostRuntimeBody(),
+              connectionGeneration: connection?.connectionGeneration ?? 1,
+            },
           }),
           statuses,
         );
@@ -576,13 +618,12 @@ export function createComputerUseBddApi(
     },
 
     async stopComputerUseHost(
-      hostToken: string,
+      connection: ComputerUseTestConnection,
     ): Promise<{ readonly ok: true; readonly hostId: string }> {
       return await run(async () => {
         const response = await accept(
-          heartbeatClient().stop({
-            headers: hostHeaders(hostToken),
-            body: {},
+          sessionHostsClient().stop({
+            ...hostRequest(connection),
           }),
           [200],
         );
@@ -591,14 +632,13 @@ export function createComputerUseBddApi(
     },
 
     async requestStopComputerUseHost(
-      hostToken: string | null,
-      statuses: readonly (200 | 401)[],
+      connection: ComputerUseTestConnection | null,
+      statuses: readonly (200 | 401 | 409)[],
     ) {
       return await run(async () => {
         return await accept(
-          heartbeatClient().stop({
-            headers: hostTokenHeaders(hostToken),
-            body: {},
+          sessionHostsClient().stop({
+            ...hostRequest(connection),
           }),
           statuses,
         );
@@ -758,7 +798,7 @@ export function createComputerUseBddApi(
     },
 
     async claimNextComputerUseCommand(
-      hostToken: string,
+      connection: ComputerUseTestConnection,
       supportedCapabilities: readonly string[] = [
         ...DEFAULT_SUPPORTED_COMPUTER_USE_CAPABILITIES,
       ],
@@ -771,9 +811,10 @@ export function createComputerUseBddApi(
     > {
       return await run(async () => {
         const response = await accept(
-          hostCommandsClient().next({
-            headers: hostHeaders(hostToken),
+          sessionHostsClient().next({
+            ...hostRequest(connection),
             body: {
+              connectionGeneration: connection.connectionGeneration,
               supportedCapabilities: [...supportedCapabilities],
             },
           }),
@@ -784,14 +825,15 @@ export function createComputerUseBddApi(
     },
 
     async requestClaimNextComputerUseCommand(
-      hostToken: string | null,
-      statuses: readonly (200 | 401)[],
+      connection: ComputerUseTestConnection | null,
+      statuses: readonly (200 | 401 | 409)[],
     ) {
       return await run(async () => {
         return await accept(
-          hostCommandsClient().next({
-            headers: hostTokenHeaders(hostToken),
+          sessionHostsClient().next({
+            ...hostRequest(connection),
             body: {
+              connectionGeneration: connection?.connectionGeneration ?? 1,
               supportedCapabilities: [
                 ...DEFAULT_SUPPORTED_COMPUTER_USE_CAPABILITIES,
               ],
@@ -803,15 +845,16 @@ export function createComputerUseBddApi(
     },
 
     async completeComputerUseCommand(
-      hostToken: string,
+      connection: ComputerUseTestConnection,
       commandId: string,
     ): Promise<void> {
       return await run(async () => {
         await accept(
-          hostCommandsClient().complete({
-            headers: hostHeaders(hostToken),
-            params: { commandId },
+          sessionHostsClient().complete({
+            ...hostRequest(connection),
+            params: { hostId: connection.hostId, commandId },
             body: {
+              connectionGeneration: connection.connectionGeneration,
               status: "succeeded",
               result: { app: "Safari", opened: true },
             },
@@ -822,16 +865,19 @@ export function createComputerUseBddApi(
     },
 
     async completeComputerUseCommandWith(
-      hostToken: string,
+      connection: ComputerUseTestConnection,
       commandId: string,
       body: ComputerUseCompleteBody,
     ): Promise<void> {
       return await run(async () => {
         await accept(
-          hostCommandsClient().complete({
-            headers: hostHeaders(hostToken),
-            params: { commandId },
-            body,
+          sessionHostsClient().complete({
+            ...hostRequest(connection),
+            params: { hostId: connection.hostId, commandId },
+            body: {
+              ...body,
+              connectionGeneration: connection.connectionGeneration,
+            },
           }),
           [200],
         );
@@ -839,17 +885,20 @@ export function createComputerUseBddApi(
     },
 
     async requestCompleteComputerUseCommand(
-      hostToken: string | null,
+      connection: ComputerUseTestConnection | null,
       commandId: string,
       body: ComputerUseCompleteBody,
       statuses: readonly (200 | 400 | 401 | 404 | 409)[],
     ) {
       return await run(async () => {
         return await accept(
-          hostCommandsClient().complete({
-            headers: hostTokenHeaders(hostToken),
-            params: { commandId },
-            body,
+          sessionHostsClient().complete({
+            ...hostRequest(connection),
+            params: { hostId: connection?.hostId ?? randomUUID(), commandId },
+            body: {
+              ...body,
+              connectionGeneration: connection?.connectionGeneration ?? 1,
+            },
           }),
           statuses,
         );

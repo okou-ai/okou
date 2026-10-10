@@ -220,6 +220,7 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
   },
   safety_policy_refusal: {
     title: "The model couldn't help with this request",
+    action: "Try again",
     picker: true,
   },
   reconnect_required: {

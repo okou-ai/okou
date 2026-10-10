@@ -1,4 +1,5 @@
 import {
+  ARTIFACT_OG_BRAND,
   artifactOgHtml,
   normalizeArtifactImageUrls,
 } from "@okouai/core/artifact-og";
@@ -45,15 +46,22 @@ export async function withArtifactOg(
     console.error("Artifact OG metadata unavailable", error);
     return response;
   }
-  if (!metadata.available) return response;
   const canonical = new URL(request.url);
   canonical.search = "";
   canonical.hash = "";
-  const html = artifactOgHtml(
-    normalizeArtifactImageUrls(await response.text(), request.url),
-    { ...metadata, url: canonical.href },
-    false,
-  );
+  const original = await response.text();
+  // Delivery was authorized before this wrapper; unavailable OG reveals no artifact metadata.
+  const html = metadata.available
+    ? artifactOgHtml(
+        normalizeArtifactImageUrls(original, request.url),
+        { ...metadata, url: canonical.href },
+        "fill-missing",
+      )
+    : artifactOgHtml(
+        original,
+        { ...ARTIFACT_OG_BRAND, url: canonical.href },
+        "replace-social",
+      );
   const headers = new Headers(response.headers);
   headers.delete("ETag");
   headers.delete("Content-Length");

@@ -908,20 +908,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Sie sind bei Desktop angemeldet. Sie können dieses Fenster schließen.",
-        "connecting": "Ihre Desktop-Sitzung wird verbunden.",
-        "consumed": "Die Anmeldung in Desktop wird abgeschlossen. Lassen Sie dieses Fenster geöffnet.",
-        "failed": "Die Anmeldung konnte nicht abgeschlossen werden. Starten Sie erneut über Desktop oder versuchen Sie es in diesem Browser noch einmal.",
-        "no-workspaces": "Erstellen Sie in der Web-App einen Arbeitsbereich oder treten Sie einem bei. Melden Sie sich dann erneut über Desktop an.",
-        "pending": "Öffnen Sie Desktop, um die Anmeldung fortzusetzen.",
-        "selecting": "Wählen Sie einen Arbeitsbereich für diesen Computer."
-      },
-      "reopen": "Desktop öffnen",
-      "retry": "Erneut versuchen",
-      "title": "Bei Desktop anmelden"
-    },
     "documentTitles": {
       "signIn": "Anmelden",
       "signUp": "Registrieren"

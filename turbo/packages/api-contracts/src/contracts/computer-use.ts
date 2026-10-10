@@ -375,17 +375,10 @@ export const computerUseHostSchema = z.object({
   createdAt: z.string(),
 });
 
-export const computerUseHostStartResponseSchema = z.object({
-  hostId: z.string(),
-  hostToken: z.string(),
-});
-
 export const computerUseHeartbeatResponseSchema = z.object({
   ok: z.literal(true),
   hostId: z.string(),
 });
-
-export const computerUseHostStopBodySchema = z.object({});
 
 export const computerUseHostStopResponseSchema = z.object({
   ok: z.literal(true),
@@ -499,20 +492,6 @@ export const computerUseAuditEventListResponseSchema = z.object({
 });
 
 export const computerUseHostsContract = c.router({
-  start: {
-    method: "POST",
-    path: "/api/computer-use/hosts/start",
-    headers: authHeadersSchema,
-    body: computerUseHostStartBodySchema,
-    responses: {
-      426: desktopUpgradeRequiredSchema,
-      200: computerUseHostStartResponseSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      409: apiErrorSchema,
-    },
-    summary: "Start or reactivate a desktop computer-use host",
-  },
   list: {
     method: "GET",
     path: "/api/computer-use/hosts",
@@ -523,32 +502,6 @@ export const computerUseHostsContract = c.router({
       403: apiErrorSchema,
     },
     summary: "List linked desktop computer-use hosts",
-  },
-});
-
-export const computerUseHeartbeatContract = c.router({
-  heartbeat: {
-    method: "POST",
-    path: "/api/computer-use/heartbeat",
-    headers: authHeadersSchema,
-    body: computerUseRuntimeBodySchema,
-    responses: {
-      200: computerUseHeartbeatResponseSchema,
-      401: apiErrorSchema,
-      409: apiErrorSchema,
-    },
-    summary: "Refresh a desktop computer-use host heartbeat",
-  },
-  stop: {
-    method: "POST",
-    path: "/api/computer-use/host/stop",
-    headers: authHeadersSchema,
-    body: computerUseHostStopBodySchema,
-    responses: {
-      200: computerUseHostStopResponseSchema,
-      401: apiErrorSchema,
-    },
-    summary: "Stop a desktop computer-use host",
   },
 });
 
@@ -663,36 +616,6 @@ export const computerUseWriteCommandContract = c.router({
   },
 });
 
-export const computerUseHostCommandsContract = c.router({
-  next: {
-    method: "POST",
-    path: "/api/computer-use/host/commands/next",
-    headers: authHeadersSchema,
-    body: computerUseHostCommandNextBodySchema,
-    responses: {
-      426: desktopUpgradeRequiredSchema,
-      200: computerUseHostCommandNextResponseSchema,
-      401: apiErrorSchema,
-    },
-    summary: "Claim the next approved desktop computer-use command",
-  },
-  complete: {
-    method: "POST",
-    path: "/api/computer-use/host/commands/:commandId/complete",
-    headers: authHeadersSchema,
-    pathParams: commandIdPathParamsSchema,
-    body: computerUseHostCommandCompleteBodySchema,
-    responses: {
-      200: computerUseCommandCompleteResponseSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      404: apiErrorSchema,
-      409: apiErrorSchema,
-    },
-    summary: "Complete a desktop computer-use command",
-  },
-});
-
 export const computerUseAuditEventsContract = c.router({
   list: {
     method: "GET",
@@ -760,17 +683,13 @@ export type ComputerUseWriteCommandKind = z.infer<
 export type ComputerUseAuditEventsContract =
   typeof computerUseAuditEventsContract;
 export type ComputerUseCommandContract = typeof computerUseCommandContract;
-export type ComputerUseHeartbeatContract = typeof computerUseHeartbeatContract;
 export type ComputerUseAuthorizationRequestsContract =
   typeof computerUseAuthorizationRequestsContract;
-export type ComputerUseHostCommandsContract =
-  typeof computerUseHostCommandsContract;
 export type ComputerUseHostsContract = typeof computerUseHostsContract;
 export type ComputerUseWriteCommandContract =
   typeof computerUseWriteCommandContract;
 
-// Session-only Native Desktop protocol. Legacy routes are retained until the
-// installed Desktop version floor and API rollback window exclude them.
+// Native Desktop hosts authenticate with their Clerk session and connection generation.
 const sessionHostPathParamsSchema = z.object({ hostId: z.string().uuid() });
 const sessionHostGenerationSchema = z.object({
   connectionGeneration: z.number().int().positive(),

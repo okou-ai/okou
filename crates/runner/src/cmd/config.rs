@@ -43,7 +43,10 @@ pub struct ConfigArgs {
     #[arg(long, default_value_t = DEFAULT_CONCURRENCY_FACTOR)]
     concurrency_factor: f64,
 
-    /// Okou API URL (`OKOU_API_BACKEND_URL`)
+    /// Okou API URL (`OKOU_API_BACKEND_URL`).
+    /// Must be an absolute URL without credentials, query, or fragment.
+    /// HTTPS is required except for HTTP hosts normalized to localhost, IPv4 loopback
+    /// (127.0.0.0/8), or IPv6 loopback (::1). Private network addresses require HTTPS.
     #[arg(long, env = "OKOU_API_BACKEND_URL", hide_env_values = true)]
     api_url: String,
     /// Runner authentication token (`OKOU_RUNNER_TOKEN`)

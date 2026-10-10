@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import type { TestContext } from "../../../../__tests__/test-context";
 import { settleIncludingAbort } from "../../../utils";
 import type { ApiTestUser } from "./api-bdd";
-import { createComputerUseBddApi } from "./api-bdd-computer-use";
+import {
+  createComputerUseBddApi,
+  type ComputerUseTestConnection,
+} from "./api-bdd-computer-use";
 
 type HostOptions = NonNullable<
   Parameters<
@@ -22,12 +25,12 @@ export function createPublicComputerUseHosts(context: TestContext) {
         readonly installationId: string;
         readonly hostName: string;
       };
-      hostToken?: string;
+      connection?: ComputerUseTestConnection;
       hostId?: string;
       stopped?: boolean;
       pendingStarts: number;
       ambiguousGeneration: boolean;
-      readonly issuedTokens: Set<string>;
+      readonly issuedConnections: Set<ComputerUseTestConnection>;
       readonly requestedNames: Set<string>;
     }
   >();
@@ -36,9 +39,10 @@ export function createPublicComputerUseHosts(context: TestContext) {
       actor: ApiTestUser,
       run: RunOperation,
       options: HostOptions = {},
-      request?: (
-        options: HostOptions,
-      ) => Promise<{ readonly hostId: string; readonly hostToken: string }>,
+      request?: (options: HostOptions) => Promise<{
+        readonly hostId: string;
+        readonly connection: ComputerUseTestConnection;
+      }>,
     ) {
       const installationId = options.installationId ?? randomUUID();
       const key = `${actor.orgId}:${actor.userId}:${installationId}`;
@@ -47,8 +51,8 @@ export function createPublicComputerUseHosts(context: TestContext) {
         hosts.get(key)?.options.hostName ??
         `Owned Desktop ${randomUUID()}`;
       const requested = { ...options, installationId, hostName };
-      // A reconnect may rotate the credential before its response is received.
-      // Do not retain an earlier token as proof of the new connection.
+      // A reconnect may advance the generation before its response is received.
+      // Do not retain an earlier generation as proof of the new connection.
       return await run(async () => {
         let host = hosts.get(key);
         if (!host) {
@@ -57,7 +61,7 @@ export function createPublicComputerUseHosts(context: TestContext) {
             options: requested,
             pendingStarts: 0,
             ambiguousGeneration: false,
-            issuedTokens: new Set(),
+            issuedConnections: new Set(),
             requestedNames: new Set(),
           };
           hosts.set(key, host);
@@ -66,7 +70,7 @@ export function createPublicComputerUseHosts(context: TestContext) {
           host.pendingStarts > 0 || host.ambiguousGeneration;
         host.pendingStarts += 1;
         host.requestedNames.add(hostName);
-        host.hostToken = undefined;
+        host.connection = undefined;
         host.stopped = false;
         const result = await settleIncludingAbort(async () => {
           return request
@@ -78,30 +82,30 @@ export function createPublicComputerUseHosts(context: TestContext) {
           throw result.error;
         }
         const started = await result.value;
-        host.issuedTokens.add(started.hostToken);
+        host.issuedConnections.add(started.connection);
         // Concurrent starts can commit and respond in different orders. Neither
         // response alone identifies the final generation for cleanup.
         if (!host.ambiguousGeneration) {
-          host.hostToken = started.hostToken;
+          host.connection = started.connection;
         }
         host.hostId = started.hostId;
         return started;
       });
     },
     async requestStop(
-      hostToken: string | null,
-      statuses: readonly (200 | 401)[],
+      connection: ComputerUseTestConnection | null,
+      statuses: readonly (200 | 401 | 409)[],
       run: RunOperation,
     ) {
       return await run(async () => {
         const host = [...hosts.values()].find((item) => {
-          return hostToken !== null && item.issuedTokens.has(hostToken);
+          return connection !== null && item.issuedConnections.has(connection);
         });
         if (host) {
-          host.hostToken = undefined;
+          host.connection = undefined;
         }
         const response = await api.requestStopComputerUseHost(
-          hostToken,
+          connection,
           statuses,
         );
         if (host && response.status === 200) {
@@ -111,13 +115,16 @@ export function createPublicComputerUseHosts(context: TestContext) {
       });
     },
     async stop(
-      connection: { readonly hostId: string; readonly hostToken: string },
+      connection: {
+        readonly hostId: string;
+        readonly connection: ComputerUseTestConnection;
+      },
       run: RunOperation,
     ) {
       const host = [...hosts.values()].find((item) => {
         return (
           item.hostId === connection.hostId &&
-          item.issuedTokens.has(connection.hostToken)
+          item.issuedConnections.has(connection.connection)
         );
       });
       if (!host) {
@@ -126,8 +133,8 @@ export function createPublicComputerUseHosts(context: TestContext) {
       return await run(async () => {
         // If this response is lost, cleanup must recover the connection through
         // public discovery; it cannot assume the old generation is still valid.
-        host.hostToken = undefined;
-        const stopped = await api.stopComputerUseHost(connection.hostToken);
+        host.connection = undefined;
+        const stopped = await api.stopComputerUseHost(connection.connection);
         host.stopped = true;
         return stopped;
       });
@@ -139,8 +146,8 @@ export function createPublicComputerUseHosts(context: TestContext) {
           continue;
         }
         const stopped = await settleIncludingAbort(async () => {
-          let token = host.hostToken;
-          if (!token) {
+          let connection = host.connection;
+          if (!connection) {
             const listed = await api.listComputerUseHosts(host.actor);
             const matching = listed.hosts.filter((item) => {
               return host.hostId
@@ -153,10 +160,11 @@ export function createPublicComputerUseHosts(context: TestContext) {
             if (matching.length !== 1) {
               throw new Error("Expected exactly one owned Computer Use host");
             }
-            token = (await api.startComputerUseHost(host.actor, host.options))
-              .hostToken;
+            connection = (
+              await api.startComputerUseHost(host.actor, host.options)
+            ).connection;
           }
-          await api.stopComputerUseHost(token);
+          await api.stopComputerUseHost(connection);
         });
         if (!stopped.ok) {
           errors.push(stopped.error);

@@ -22,7 +22,9 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "febec8a3399be74b0f14a89cb9f42e39dd5ce69f" ]; then
+    if [ "${3:-}" = "9fa8da0d3d25e75e0dcfdd3292e1e2bbe6fe262f" ]; then
+      [ "${MOCK_CHAT_THREAD_PROVENANCE_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "febec8a3399be74b0f14a89cb9f42e39dd5ce69f" ]; then
       [ "${MOCK_BLANK_RUNNER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6" ]; then
       [ "${MOCK_BALANCE_RUNNER_FLOOR_VALID:-1}" = "1" ]
@@ -582,6 +584,14 @@ grep -Fq '3838383838383838383838383838383838383838' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/pi-stable-context-floor.output" ] || fail "pre-retirement API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Pi stable-context retirement floor must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the chat thread provenance runtime removal" \
+  run_resolver "${tmp_dir}/chat-thread-provenance-floor.output" MOCK_CHAT_THREAD_PROVENANCE_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/chat-thread-provenance-floor.output" ] || fail "provenance-dependent API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "chat thread provenance floor must fail before artifact or host access"
 fi
 
 for preparation_commit in "" invalid; do

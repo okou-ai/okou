@@ -23,6 +23,7 @@ import { billingRedeemCodeRoutes } from "./routes/billing-redeem-code";
 import { billingRestoreRoutes } from "./routes/billing-restore";
 import { billingStatusRoutes } from "./routes/billing-status";
 import { billingUsagePackCreditsRoutes } from "./routes/billing-usage-pack-credits";
+import { tailscaleRoutes } from "./routes/tailscale";
 import { browserRoutes } from "./routes/browser";
 import { browserAuthorizationRoutes } from "./routes/browser-authorization";
 import { browserUserActionRoutes } from "./routes/browser-user-actions";
@@ -81,7 +82,6 @@ import { cronSteerRunTimeBudgetRoutes } from "./routes/cron-steer-run-time-budge
 import { cronSyncSkillsRoutes } from "./routes/cron-sync-skills";
 import { cronTelegramCleanupRoutes } from "./routes/cron-telegram-cleanup";
 import { customConnectorsRoutes } from "./routes/custom-connectors";
-import { desktopAuthRoutes } from "./routes/desktop-auth";
 import { desktopUpdateRoutes } from "./routes/desktop-updates";
 import { discordGatewayRoutes } from "./routes/discord-gateway";
 import { discordInteractionsRoutes } from "./routes/discord-interactions";
@@ -238,7 +238,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...buildInfoRoutes,
   ...authMeRoutes,
   ...cliAuthRoutes,
-  ...desktopAuthRoutes,
   ...desktopUpdateRoutes,
   ...githubOauthRoutes,
   ...userExportRoutes,
@@ -362,6 +361,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...runnerVncRoutes,
   ...runnerWssTicketRoutes,
   ...cloudflareAccessRoutes,
+  ...tailscaleRoutes,
   ...sshAccessRoutes,
   ...runnerSshRoutes,
   ...browserRoutes,

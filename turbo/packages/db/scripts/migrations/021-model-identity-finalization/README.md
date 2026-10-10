@@ -50,9 +50,14 @@ Run normalization captures an independent immutable usage identity and category
 boundary **before** replacing a legacy selected projection. It never rewrites
 usage records, categories, native transcripts, execution contexts, or exports.
 Legacy Auto preserves the pre-normalization execution rule. Replacement aliases
-require an original retained usage identity; absent evidence blocks the row.
-Conflicting evidence must be investigated, not overridden. Partial runtime
-captures and missing selected values are classified, not filled.
+require an original retained usage identity. A cancelled legacy Pi execution may
+also recover its producer's selected-alias usage identity when its complete
+managed runtime is `openrouter-codex` and the retained preset exactly matches the
+selected alias. The producer's `modelUsageProviderForContext` contract reported
+that selected alias; it did not substitute the upstream preset. This recovery
+never manufactures a usage observation or consults today's catalog. Completed
+executions, mismatched presets and conflicting observations remain blocked.
+Partial runtime captures and missing selected values are classified, not filled.
 
 Personal runtime recovery requires retained compiled Runner environment, an exact
 member/account binding, permanent account identity, and no conflicting Pi runtime
@@ -110,8 +115,8 @@ Before Release 2: prove outgoing API writers and rollback targets are excluded;
 verify permanent personal/built-in execution/account binding; complete authorized
 relational pages; reconcile the complete V8 inventory and retained object/consumer
 references; confirm native execution support and unchanged usage interpretation.
-Release 2 installs the checks in `1365_enforce_canonical_model_capture` and
-validates them in `1366_validate_canonical_model_capture`. They are separate
+Release 2 installs the checks in `1367_enforce_canonical_model_capture` and
+validates them in `1368_validate_canonical_model_capture`. They are separate
 migration transactions in the same release: ADD CHECK NOT VALID takes brief
 ACCESS EXCLUSIVE locks; VALIDATE takes SHARE UPDATE EXCLUSIVE locks and permits
 ordinary reads/writes. Both retain the runner's normal bounded timeouts. There
@@ -144,6 +149,12 @@ CHECK can enforce OLD/NEW immutability. Current launch writers own capture; the
 ordinary metadata patch type excludes execution/usage/account fields. Arbitrary
 SQL writes remain an operator responsibility.
 
+Terminal managed history with no runtime, key, usage or category capture may
+retain its original provider ID, but never a personal account identity. Captured
+or active executions do not receive that exception. Personal Codex history may
+retain the native `openai-codex` transport alongside its `codex-oauth-token`
+credential owner, with the same permanent account-binding requirements.
+
 Managed runtime captures require managed keys, not personal accounts. Captured
 usage and positive optional category thresholds require managed runtime evidence;
 new executable canonical Auto must capture its usage identity. Personal usage
@@ -156,6 +167,11 @@ The executable production rollback resolver rejects API artifacts before merged
 Release 1 commit `b6919718b6d856dfa3a7c500b6e899dd3fde7674`. Deployment of that
 resolver, actual serving writers, retained targets and all in-flight consumers
 must still be verified; a source change does not execute the floor.
+
+The disposable database regression executes the authenticated Runner usage
+webhook against outgoing-schema historical fixtures. It compares legacy,
+selection-only Auto (a deliberately incompatible control), and operator-captured
+Auto, including expired tokens, unchanged categories and idempotent replay.
 
 Only the temporary selected replacement-lineage projection is retired: migration
 1364 has rebound its relationships. Physical legacy catalog/routes and execution,

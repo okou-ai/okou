@@ -18,6 +18,7 @@ import {
   desc,
   eq,
   gt,
+  getTableColumns,
   inArray,
   isNotNull,
   isNull,
@@ -1290,12 +1291,10 @@ const finalizeRefund$ = command(
   ): Promise<void> => {
     signal?.throwIfAborted();
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0278; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      // Conditional transition first: only the claimed refund attempt that is
-      // still refunding completes; a lost or stale attempt is a no-op.
-      const at = nowDate();
-      const [refunded] = await tx
+    const at = nowDate();
+    // Only the winning refund transition retires its currently stored allocation.
+    const refundedPurchase = db.$with("refunded_purchase").as(
+      db
         .update(usagePackInvitationPurchases)
         .set({
           status: "refunded",
@@ -1315,17 +1314,14 @@ const finalizeRefund$ = command(
         )
         .returning({
           allocationId: usagePackInvitationPurchases.allocationId,
-        });
-      if (!refunded) {
-        return;
-      }
-      if (refunded.allocationId) {
-        await tx
-          .update(usagePackAllocations)
-          .set({ status: "inactive", updatedAt: at })
-          .where(eq(usagePackAllocations.id, refunded.allocationId));
-      }
-    });
+        }),
+    );
+    await db
+      .with(refundedPurchase)
+      .update(usagePackAllocations)
+      .set({ status: "inactive", updatedAt: at })
+      .from(refundedPurchase)
+      .where(eq(usagePackAllocations.id, refundedPurchase.allocationId));
   },
 );
 
@@ -2222,56 +2218,59 @@ const claimAcceptedPurchaseActivation$ = command(
   ): Promise<UsagePackInvitationPurchaseRow | null> => {
     signal?.throwIfAborted();
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0280; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const [identity] = await tx
+    const identity = db.$with("activation_identity").as(
+      db
         .select({
           orgId: usagePackInvitationPurchases.orgId,
           subscriptionId: usagePackInvitationPurchases.usagePackSubscriptionId,
         })
         .from(usagePackInvitationPurchases)
         .where(eq(usagePackInvitationPurchases.id, purchaseId))
-        .limit(1);
-      if (!identity) {
-        return null;
-      }
-      const staleBefore = new Date(
-        nowDate().getTime() - RECONCILIATION_DELAY_MS,
-      );
-      const [claimed] = await tx
-        .update(usagePackInvitationPurchases)
-        .set({ status: "activating", updatedAt: nowDate() })
-        .where(
-          and(
-            eq(usagePackInvitationPurchases.id, purchaseId),
-            eq(usagePackInvitationPurchases.orgId, identity.orgId),
-            eq(
-              usagePackInvitationPurchases.usagePackSubscriptionId,
-              identity.subscriptionId,
-            ),
-            sql`EXISTS (${invitationMutationSubscriptionSql(purchaseId)})`,
-            sql`NOT EXISTS (${conflictingUsagePackMutationSql({ subscriptionId: identity.subscriptionId, invitationPurchaseId: purchaseId })})`,
-            isNotNull(usagePackInvitationPurchases.acceptedUserId),
-            isNotNull(usagePackInvitationPurchases.allocationId),
-            or(
+        .limit(1),
+    );
+    const staleBefore = new Date(nowDate().getTime() - RECONCILIATION_DELAY_MS);
+    // Once claimed, the caller completes activation before observing cancellation.
+    return (
+      (
+        await db
+          .with(identity)
+          .update(usagePackInvitationPurchases)
+          .set({ status: "activating", updatedAt: nowDate() })
+          .from(identity)
+          .where(
+            and(
+              eq(usagePackInvitationPurchases.id, purchaseId),
+              eq(usagePackInvitationPurchases.orgId, identity.orgId),
               eq(
-                usagePackInvitationPurchases.status,
-                "accepted_pending_activation",
+                usagePackInvitationPurchases.usagePackSubscriptionId,
+                identity.subscriptionId,
               ),
-              ...(allowRecovery
-                ? [
-                    and(
-                      eq(usagePackInvitationPurchases.status, "activating"),
-                      lte(usagePackInvitationPurchases.updatedAt, staleBefore),
-                    ),
-                  ]
-                : []),
+              sql`EXISTS (${invitationMutationSubscriptionSql(purchaseId)})`,
+              sql`NOT EXISTS (${conflictingUsagePackMutationSql({ subscriptionSql: sql`${identity.subscriptionId}`, invitationPurchaseId: purchaseId })})`,
+              isNotNull(usagePackInvitationPurchases.acceptedUserId),
+              isNotNull(usagePackInvitationPurchases.allocationId),
+              or(
+                eq(
+                  usagePackInvitationPurchases.status,
+                  "accepted_pending_activation",
+                ),
+                ...(allowRecovery
+                  ? [
+                      and(
+                        eq(usagePackInvitationPurchases.status, "activating"),
+                        lte(
+                          usagePackInvitationPurchases.updatedAt,
+                          staleBefore,
+                        ),
+                      ),
+                    ]
+                  : []),
+              ),
             ),
-          ),
-        )
-        .returning();
-      return claimed ?? null;
-    });
+          )
+          .returning(getTableColumns(usagePackInvitationPurchases))
+      )[0] ?? null
+    );
   },
 );
 

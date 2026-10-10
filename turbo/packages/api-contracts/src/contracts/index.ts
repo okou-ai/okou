@@ -88,12 +88,6 @@ export {
   type RunFailureReasonToken,
 } from "./run-failure-reasons";
 export {
-  desktopAuthConsumeContract,
-  desktopAuthHandoffContract,
-  type DesktopAuthConsumeContract,
-  type DesktopAuthHandoffContract,
-} from "./desktop-auth";
-export {
   CAPABILITIES,
   CAPABILITY_META,
   type Capability,
@@ -1446,8 +1440,6 @@ export {
   computerUseCommandContract,
   computerUseCommandKindSchema,
   computerUseCommandResponseSchema,
-  computerUseHeartbeatContract,
-  computerUseHostCommandsContract,
   computerUseHostSchema,
   computerUseHostsContract,
   computerUseWriteCommandContract,
@@ -1470,9 +1462,7 @@ export {
   type ComputerUseCommandResponse,
   type ComputerUseCommandResult,
   type ComputerUseCommandStatus,
-  type ComputerUseHeartbeatContract,
   type ComputerUseHost,
-  type ComputerUseHostCommandsContract,
   type ComputerUseHostListResponse,
   type ComputerUseHostsContract,
   type ComputerUseReadCommandKind,

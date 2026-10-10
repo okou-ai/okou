@@ -138,7 +138,7 @@ export const fields: readonly Field[] = [
 ];
 
 // Recovery covers retained snapshots from before the SSH credential migration,
-// the Cloudflare Access/VNC rollouts and the builtin MCP DCR table (#35241),
+// the Cloudflare Access/Tailscale/VNC rollouts and the builtin MCP DCR table (#35241),
 // and databases after them, including after migrations 1272 and 1282 dropped
 // agent_run_queue and telegram_installations. Keep the original migration manifest above unchanged; every
 // table added after #32264 belongs here instead. Both SSH tables must be
@@ -178,6 +178,18 @@ export const recoveryFields: readonly Field[] = [
   },
   {
     table: "cloudflare_access_configs",
+    primaryKey: "id",
+    column: "encrypted_client_secret",
+    optional: true,
+  },
+  {
+    table: "tailscale_configs",
+    primaryKey: "id",
+    column: "encrypted_client_id",
+    optional: true,
+  },
+  {
+    table: "tailscale_configs",
     primaryKey: "id",
     column: "encrypted_client_secret",
     optional: true,

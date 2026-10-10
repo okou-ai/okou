@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.740.0](https://github.com/okou-ai/okou/compare/core-v8.739.2...core-v8.740.0) (2026-10-10)
+
+
+### Features
+
+* **notify:** enable mail notifications for everyone ([#38513](https://github.com/okou-ai/okou/issues/38513)) ([90da609](https://github.com/okou-ai/okou/commit/90da609107a1612fa3d9039862f02c09f2ed09d2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.548.0
+
 ## [8.739.2](https://github.com/okou-ai/okou/compare/core-v8.739.1...core-v8.739.2) (2026-10-10)
 
 

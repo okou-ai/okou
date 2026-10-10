@@ -16,15 +16,10 @@ import { userFeatureSwitchContext } from "../services/feature-switches.service";
 const enabled$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const context = await get(userFeatureSwitchContext(auth.orgId, auth.userId));
-  return (
-    isFeatureEnabled(FeatureSwitchKey.OkouDebug, context) &&
-    isFeatureEnabled(FeatureSwitchKey.NotifyMail, context)
-  );
+  return isFeatureEnabled(FeatureSwitchKey.OkouDebug, context);
 });
 const disabled = () => {
-  return resourceUnavailable(
-    "Morning Brief test email requires Okou Debug and notifyMail.",
-  );
+  return resourceUnavailable("Morning Brief test email requires Okou Debug.");
 };
 const body$ = bodyResultOf(debugMorningBriefEmailContract.send);
 const params$ = pathParamsOf(debugMorningBriefEmailContract.get);

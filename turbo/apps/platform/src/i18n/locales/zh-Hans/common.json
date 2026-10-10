@@ -907,20 +907,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Desktop已登录，可以关闭这个窗口了。",
-        "connecting": "正在连接你的Desktop会话。",
-        "consumed": "正在Desktop中完成登录，请保持这个窗口打开。",
-        "failed": "登录没能完成。请从Desktop重新开始，或在这个浏览器里重试。",
-        "no-workspaces": "请先在网页端创建或加入一个工作区，然后从Desktop重新登录。",
-        "pending": "打开Desktop继续登录。",
-        "selecting": "为这台电脑选择一个工作区。"
-      },
-      "reopen": "打开Desktop",
-      "retry": "重试",
-      "title": "登录Desktop"
-    },
     "documentTitles": {
       "signIn": "登录",
       "signUp": "注册"

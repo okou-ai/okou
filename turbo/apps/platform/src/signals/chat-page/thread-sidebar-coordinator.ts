@@ -48,6 +48,11 @@ export const activeThreadSidebar$ = computed(
   },
 );
 
+export const activeThreadSidebarFullscreen$ = computed((get) => {
+  const active = get(activeThreadSidebar$);
+  return active ? get(active.thread.sidebar.fullscreen$) : false;
+});
+
 export const syncActiveBrowserFitAction$ = command(({ get, set }) => {
   const active = get(activeThreadSidebar$);
   if (active?.target.type !== "browser") {

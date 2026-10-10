@@ -212,6 +212,9 @@ Serialize repeated JSONL records directly into their final canonical buffer;
 retain every line, delimiter and independent original-file comparison. Compute
 validation metadata before moving an owned payload into its fixture envelope,
 rather than cloning that payload solely to keep reading its length or hash.
+For length-only observations, count actual serialized bytes without retaining
+throwaway JSON strings. Borrow body text for literal observations while preserving
+the same decoding semantics and complete payload assertions.
 
 Keep real process/socket deadlines, full payload/file/pixel boundaries, key/KDF
 strengths, every assertion and actual retained image buffers. Compare complete

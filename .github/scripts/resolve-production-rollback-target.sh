@@ -54,6 +54,9 @@ readonly PI_OPENROUTER_VERSIONED_WRITER_COMMIT=a635ec3afa20cdb5df9c8125afe6cec24
 # Final capture checks reject earlier personal writers; normalized histories
 # must never regain selected-dependent usage interpretation after rollback.
 readonly MODEL_EXECUTION_CAPTURE_WRITER_COMMIT=b6919718b6d856dfa3a7c500b6e899dd3fde7674
+# #38431 removed chat_threads.provenance from runtime and root-schema SQL.
+# The later physical contraction cannot serve earlier implicit column lists.
+readonly CHAT_THREAD_PROVENANCE_REMOVAL_COMMIT=9fa8da0d3d25e75e0dcfdd3292e1e2bbe6fe262f
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
 readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1260_personal_subscription_account_only.sql
@@ -115,6 +118,10 @@ fi
 release_tags=$(git tag --points-at "$TARGET_COMMIT" | grep -E -- '-v[0-9]' || true)
 if [ -z "$release_tags" ]; then
   fail "Target commit has no release tags: ${TARGET_COMMIT}"
+fi
+
+if ! git merge-base --is-ancestor "$CHAT_THREAD_PROVENANCE_REMOVAL_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the chat thread provenance runtime removal: ${CHAT_THREAD_PROVENANCE_REMOVAL_COMMIT}."
 fi
 
 # The draft contraction requires every draft row to carry its owner and a

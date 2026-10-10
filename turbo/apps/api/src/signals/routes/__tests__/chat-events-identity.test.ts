@@ -346,7 +346,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         return api.updateUserModelPreference(actor, "claude-fable-5-1");
       });
       chatCallbacks.failIfChatCallbackRouteIsFetched();
-      const { hostId, hostToken } = await hosts.start(actor, owned.run, {
+      const { hostId, connection } = await hosts.start(actor, owned.run, {
         hostName: "BDD Desktop",
       });
 
@@ -416,7 +416,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       expect(grantedRun.appendSystemPrompt).not.toContain(hostId);
       const grantedClaim = await owned.claimChatRun(runnerGroup, granted.runId);
       await owned.run(() => {
-        return cu.heartbeatComputerUseHost(hostToken);
+        return cu.heartbeatComputerUseHost(connection);
       });
       await owned.run(() => {
         return cu.requestCreateComputerUseWriteCommand(
@@ -436,7 +436,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       });
       const stickyClaim = await owned.claimChatRun(runnerGroup, sticky.runId);
       await owned.run(() => {
-        return cu.heartbeatComputerUseHost(hostToken);
+        return cu.heartbeatComputerUseHost(connection);
       });
       await owned.run(() => {
         return cu.requestCreateComputerUseWriteCommand(
@@ -458,7 +458,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       });
       const clearedClaim = await owned.claimChatRun(runnerGroup, cleared.runId);
       await owned.run(() => {
-        return cu.heartbeatComputerUseHost(hostToken);
+        return cu.heartbeatComputerUseHost(connection);
       });
       await owned.run(() => {
         return cu.requestCreateComputerUseWriteCommand(
@@ -489,7 +489,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         staleGranted.runId,
       );
       await owned.run(() => {
-        return cu.heartbeatComputerUseHost(hostToken);
+        return cu.heartbeatComputerUseHost(connection);
       });
       await owned.run(() => {
         return cu.requestCreateComputerUseWriteCommand(

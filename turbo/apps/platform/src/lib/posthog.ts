@@ -1,4 +1,3 @@
-import { isDesktopAuthFlow } from "./desktop-auth-flow.ts";
 import { command, state } from "ccstate";
 import { posthog, type CaptureResult } from "posthog-js/dist/module.slim";
 import { isStandalonePwa } from "./keyboard-dismiss-gesture.ts";
@@ -20,7 +19,7 @@ function finiteNonNegativeNumber(value: unknown): number | undefined {
 function sanitizePostHogCaptureResult(
   captureResult: CaptureResult | null,
 ): CaptureResult | null {
-  if (captureResult === null || isDesktopAuthFlow()) {
+  if (captureResult === null) {
     return null;
   }
   if (captureResult.event === APP_FIRST_SKELETON_PAINT_EVENT) {
@@ -55,7 +54,7 @@ function sanitizePostHogCaptureResult(
 }
 
 function runPostHog(action: (key: string, host: string) => void): void {
-  if (!POSTHOG_KEY || !POSTHOG_HOST || isDesktopAuthFlow()) {
+  if (!POSTHOG_KEY || !POSTHOG_HOST) {
     return;
   }
   action(POSTHOG_KEY, POSTHOG_HOST);

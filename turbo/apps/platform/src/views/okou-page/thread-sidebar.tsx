@@ -3,6 +3,8 @@ import { ArrowLeft, ExternalLink, Maximize, Minimize, X } from "lucide-react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { Button, FullscreenPanel } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -131,6 +133,8 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
   const sidebar = thread.sidebar;
   const catalogLoadable = useLastLoadable(sidebar.artifactCatalog.catalog$);
   const fullscreen = useGet(sidebar.fullscreen$);
+  const stableHost =
+    useGet(featureSwitch$)[FeatureSwitchKey.StablePreviewFullscreen];
   const toggleFullscreen = useSet(sidebar.toggleFullscreen$);
   const close = useSet(sidebar.close$);
   const openCatalogArtifact = useSet(sidebar.openCatalogArtifact$);
@@ -168,6 +172,12 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
     <FullscreenPanel
       as="aside"
       fullscreen={fullscreen}
+      relocate={!stableHost}
+      className={
+        stableHost && fullscreen
+          ? "h-viewport max-h-viewport min-h-viewport"
+          : undefined
+      }
       aria-label={t(($) => {
         return $.artifacts.sidebar.panelTitle;
       })}

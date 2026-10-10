@@ -12,7 +12,10 @@ import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createRunsApi } from "./api-bdd-runs";
 import { createRunReadsApi } from "./api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
-import { createComputerUseBddApi } from "./api-bdd-computer-use";
+import {
+  createComputerUseBddApi,
+  type ComputerUseTestConnection,
+} from "./api-bdd-computer-use";
 import { createFixtureOperationOwner } from "./fixture-operation-owner";
 import { createPublicComputerUseHosts } from "./public-computer-use-hosts";
 import { captureConnectorExternalState } from "./public-connector-actor";
@@ -239,7 +242,7 @@ export function createPublicComputerUseScenario(
       const [auth, statuses, options, signal] = args;
       const actor =
         auth && ("bearer" in auth ? personalTokens.get(auth.bearer) : auth);
-      if (!actor?.orgId) {
+      if (!actor?.orgId || (auth && "bearer" in auth)) {
         return await api.requestStartComputerUseHost(...args);
       }
       let response:
@@ -263,13 +266,13 @@ export function createPublicComputerUseScenario(
       return response;
     },
     requestStopComputerUseHost(
-      hostToken: string | null,
-      statuses: readonly (200 | 401)[],
+      connection: ComputerUseTestConnection | null,
+      statuses: readonly (200 | 401 | 409)[],
     ) {
-      return hosts.requestStop(hostToken, statuses, run);
+      return hosts.requestStop(connection, statuses, run);
     },
-    async stopComputerUseHost(hostToken: string) {
-      const response = await hosts.requestStop(hostToken, [200], run);
+    async stopComputerUseHost(connection: ComputerUseTestConnection) {
+      const response = await hosts.requestStop(connection, [200], run);
       return response.body;
     },
     startComputerUseHost(

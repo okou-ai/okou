@@ -4,7 +4,7 @@ import {
   usagePackSubscriptionChanges,
   usagePackSubscriptions,
 } from "@okouai/db/schema/usage-pack-subscription";
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 
 /**
  * Existing business operations retain admission until their provider result is
@@ -13,28 +13,35 @@ import { sql } from "drizzle-orm";
  * paid publication uses receipt identity and conditional source/grant writes.
  * A completed or scheduled result is not an in-flight mutation claim.
  */
-export function conflictingUsagePackMutationSql(input: {
-  readonly subscriptionId: string;
-  readonly planChangeId?: string;
-  readonly allocationChangeId?: string;
-  readonly invitationPurchaseId?: string;
-}) {
+export function conflictingUsagePackMutationSql(
+  input: (
+    { readonly subscriptionId: string } | { readonly subscriptionSql: SQL }
+  ) & {
+    readonly planChangeId?: string;
+    readonly allocationChangeId?: string;
+    readonly invitationPurchaseId?: string;
+  },
+) {
+  const subscriptionSql =
+    "subscriptionId" in input
+      ? sql`${input.subscriptionId}`
+      : input.subscriptionSql;
   return sql`SELECT 1 FROM (
     (SELECT ${usagePackSubscriptionChanges.id} FROM ${usagePackSubscriptionChanges}
-      WHERE ${usagePackSubscriptionChanges.usagePackSubscriptionId} = ${input.subscriptionId}
+      WHERE ${usagePackSubscriptionChanges.usagePackSubscriptionId} = ${subscriptionSql}
         AND ${usagePackSubscriptionChanges.status} IN ('applying', 'pending_payment')
         AND ${usagePackSubscriptionChanges.id} IS DISTINCT FROM ${input.planChangeId ?? null}::uuid
       LIMIT 1)
     UNION ALL
     (SELECT ${usagePackAllocationChanges.id} FROM ${usagePackAllocationChanges}
-      WHERE ${usagePackAllocationChanges.usagePackSubscriptionId} = ${input.subscriptionId}
+      WHERE ${usagePackAllocationChanges.usagePackSubscriptionId} = ${subscriptionSql}
         AND ${usagePackAllocationChanges.subscriptionChangeId} IS NULL
         AND ${usagePackAllocationChanges.status} IN ('applying', 'pending_payment')
         AND ${usagePackAllocationChanges.id} IS DISTINCT FROM ${input.allocationChangeId ?? null}::uuid
       LIMIT 1)
     UNION ALL
     (SELECT ${usagePackInvitationPurchases.id} FROM ${usagePackInvitationPurchases}
-      WHERE ${usagePackInvitationPurchases.usagePackSubscriptionId} = ${input.subscriptionId}
+      WHERE ${usagePackInvitationPurchases.usagePackSubscriptionId} = ${subscriptionSql}
         AND ${usagePackInvitationPurchases.status} IN ('activating', 'refunding')
         AND ${usagePackInvitationPurchases.id} IS DISTINCT FROM ${input.invitationPurchaseId ?? null}::uuid
       LIMIT 1)

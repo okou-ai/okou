@@ -238,9 +238,9 @@ export const revokeRunnerWssTickets$ = command(
     { set },
     args: { readonly runId: string; readonly owner: RunOwner },
   ): Promise<boolean> => {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0242; new non-billing transactions are prohibited.
-    return await set(writeDb$).transaction(async (tx) => {
-      const [run] = await tx
+    const db = set(writeDb$);
+    const ownedRun = db.$with("owned_run").as(
+      db
         .select({ id: agentRuns.id })
         .from(agentRuns)
         .where(
@@ -249,22 +249,32 @@ export const revokeRunnerWssTickets$ = command(
             eq(agentRuns.orgId, args.owner.orgId),
             eq(agentRuns.userId, args.owner.userId),
           ),
-        )
-        .for("update");
-      if (!run) {
-        return false;
-      }
-      await tx
+        ),
+    );
+    const revokedTickets = db.$with("revoked_tickets").as(
+      db
         .update(runnerWssTickets)
         .set({ revokedAt: databaseNow })
         .where(
           and(
-            eq(runnerWssTickets.runId, run.id),
+            inArray(
+              runnerWssTickets.runId,
+              db.select({ id: ownedRun.id }).from(ownedRun),
+            ),
             isNull(runnerWssTickets.consumedAt),
             isNull(runnerWssTickets.revokedAt),
           ),
-        );
-      return true;
-    });
+        )
+        .returning({ runId: runnerWssTickets.runId }),
+    );
+    // Ownership and pending-ticket revocation share one statement snapshot.
+    // Keep success independent of how many pending tickets were revoked.
+    const [run] = await db
+      .with(ownedRun, revokedTickets)
+      .select({ id: ownedRun.id })
+      .from(ownedRun)
+      .leftJoin(revokedTickets, eq(revokedTickets.runId, ownedRun.id))
+      .limit(1);
+    return Boolean(run);
   },
 );

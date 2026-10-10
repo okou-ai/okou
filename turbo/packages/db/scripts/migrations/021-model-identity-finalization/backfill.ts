@@ -16,7 +16,7 @@ const reportSchema = z.object({
 async function finalConstraintPreflight() {
   const migration = await readFile(
     new URL(
-      "../../../src/migrations/1365_enforce_canonical_model_capture.sql",
+      "../../../src/migrations/1367_enforce_canonical_model_capture.sql",
       import.meta.url,
     ),
     "utf8",

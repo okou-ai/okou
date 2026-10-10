@@ -907,20 +907,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Desktop已登入，可以關閉這個視窗了。",
-        "connecting": "正在連線你的Desktop會話。",
-        "consumed": "正在Desktop中完成登入，請保持這個視窗開啟。",
-        "failed": "登入沒能完成。請從Desktop重新開始，或在這個瀏覽器裡重試。",
-        "no-workspaces": "請先在網頁端建立或加入一個工作區，然後從Desktop重新登入。",
-        "pending": "開啟Desktop繼續登入。",
-        "selecting": "為這臺電腦選擇一個工作區。"
-      },
-      "reopen": "開啟Desktop",
-      "retry": "重試",
-      "title": "登入Desktop"
-    },
     "documentTitles": {
       "signIn": "登入",
       "signUp": "註冊"

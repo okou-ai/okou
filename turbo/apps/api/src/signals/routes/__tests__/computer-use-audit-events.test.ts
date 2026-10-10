@@ -1,3 +1,4 @@
+import type { ComputerUseTestConnection } from "./helpers/api-bdd-computer-use";
 import { randomUUID } from "node:crypto";
 
 import type {
@@ -61,7 +62,7 @@ function createScenario() {
   }
 
   async function claimAndComplete(
-    hostToken: string,
+    connection: ComputerUseTestConnection,
     commandId: string,
     body:
       | {
@@ -75,7 +76,7 @@ function createScenario() {
     supportedCapabilities?: readonly string[],
   ): Promise<void> {
     const claimed = await computerUse.claimNextComputerUseCommand(
-      hostToken,
+      connection,
       supportedCapabilities,
     );
     expect(claimed.status).toBe("command");
@@ -84,7 +85,7 @@ function createScenario() {
     }
     expect(claimed.command.id).toBe(commandId);
     await computerUse.completeComputerUseCommandWith(
-      hostToken,
+      connection,
       commandId,
       body,
     );
@@ -96,7 +97,7 @@ function createScenario() {
       kind: "app.open",
       app: label,
     });
-    await claimAndComplete(host.hostToken, created.commandId, {
+    await claimAndComplete(host.connection, created.commandId, {
       status: "succeeded",
       result: { app: label, opened: true },
     });
@@ -222,7 +223,7 @@ describe("Computer Use audit events", () => {
             clickCount: 1,
           },
         );
-        await claimAndComplete(host.hostToken, succeeded.commandId, {
+        await claimAndComplete(host.connection, succeeded.commandId, {
           status: "succeeded",
           result: {
             summary: "Clicked elementIndex=7",
@@ -249,7 +250,7 @@ describe("Computer Use audit events", () => {
           kind: "app.open",
           app: "Finder",
         });
-        await claimAndComplete(host.hostToken, failed.commandId, {
+        await claimAndComplete(host.connection, failed.commandId, {
           status: "failed",
           error: { code: "app_not_found", message: "Finder is unavailable" },
         });
@@ -370,7 +371,7 @@ describe("Computer Use audit events", () => {
               app: `Limit ${index}`,
             },
           );
-          await claimAndComplete(host.hostToken, created.commandId, {
+          await claimAndComplete(host.connection, created.commandId, {
             status: "succeeded",
             result: { app: `Limit ${index}`, opened: true },
           });

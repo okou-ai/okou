@@ -12,6 +12,7 @@ import { agentRuns } from "../../../src/runtime/agent-run";
 import { applyPendingMigrations } from "../../migration-runner";
 import { validateCanonicalModelSelections } from "../../test-canonical-model-selections-permanent";
 import { DRIZZLE_MIGRATE_OUT } from "../../../drizzle.config";
+import { apiTestEnvironment } from "../../../../../apps/api/src/__tests__/test-environment";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert(databaseUrl, "DATABASE_URL_required_for_disposable_test_database");
@@ -67,10 +68,10 @@ const journal = z
     ),
   );
 const addition = journal.entries.find((entry) => {
-  return entry.tag === "1365_enforce_canonical_model_capture";
+  return entry.tag === "1367_enforce_canonical_model_capture";
 });
 const validation = journal.entries.find((entry) => {
-  return entry.tag === "1366_validate_canonical_model_capture";
+  return entry.tag === "1368_validate_canonical_model_capture";
 });
 assert(addition && validation, "final_constraint_migrations_required");
 try {
@@ -241,6 +242,96 @@ try {
     ).rows,
     originalUsage,
   );
+  // The historical Pi producer reported the selected alias. Missing usage
+  // observations must not turn its upstream preset into a new usage identity.
+  const reference = "00000000-0000-4000-8000-000000000006";
+  const cancelledAlias = "00000000-0000-4000-8000-000000000007";
+  const unsafeAuto = "00000000-0000-4000-8000-000000000008";
+  const wrongRuntime = "00000000-0000-4000-8000-000000000009";
+  const completedAlias = "00000000-0000-4000-8000-000000000010";
+  for (const id of [
+    reference,
+    cancelledAlias,
+    unsafeAuto,
+    wrongRuntime,
+    completedAlias,
+  ]) {
+    await db.query(
+      `INSERT INTO agent_runs (id,session_id,user_id,org_id,status,prompt,trigger_source,autonomy_budget,
+      model_provider,selected_model,model_runtime_provider,model_runtime_model,built_in_model_key_id,launch_snapshot,created_at)
+      VALUES ($1,$2,'identity-test-owner','identity-test-org',$3,'alias','web',0,'built-in',$4,'openrouter-codex',$5,$6,'{"schemaVersion":1,"framework":"pi","runnerProfile":"migration-test"}','2026-01-01')`,
+      [
+        id,
+        session,
+        id === completedAlias ? "completed" : "cancelled",
+        id === unsafeAuto ? "auto" : "okou-1.0-max",
+        id === wrongRuntime ? "@preset/unrelated" : "@preset/okou-1-0-max",
+        key,
+      ],
+    );
+  }
+  function runnerUsage(id: string, provider: string) {
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        fileURLToPath(new URL("runner-usage.ts", import.meta.url)),
+        id,
+        provider,
+      ],
+      {
+        env: { ...env, ...apiTestEnvironment, DATABASE_URL: url.toString() },
+        encoding: "utf8",
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+  }
+  runnerUsage(reference, "okou-1.0-max");
+  runnerUsage(unsafeAuto, "@preset/okou-1-0-max");
+  await db.query("DELETE FROM usage_event WHERE run_id=$1", [unsafeAuto]);
+  await db.query("DELETE FROM billing_run_attribution WHERE run_id=$1", [
+    unsafeAuto,
+  ]);
+  await db.query("DELETE FROM agent_runs WHERE id=$1", [unsafeAuto]);
+  assert.equal(cli("runs", ["--after", alias, "--migrate"]).updated, 1);
+  const cancellationPreview = cli("runs", ["--after", reference], true);
+  assert.equal(cancellationPreview.classifications.cancelled_alias, 1);
+  assert.equal(cancellationPreview.updated, 0);
+  assert.equal(cli("runs", ["--after", reference, "--migrate"]).updated, 1);
+  const normalizedCancellation = (
+    await db.query(
+      "SELECT selected_model,model_runtime_model,model_usage_provider FROM agent_runs WHERE id=$1",
+      [cancelledAlias],
+    )
+  ).rows[0];
+  assert.deepEqual(normalizedCancellation, {
+    selected_model: "auto",
+    model_runtime_model: "@preset/okou-1-0-max",
+    model_usage_provider: "okou-1.0-max",
+  });
+  runnerUsage(cancelledAlias, "okou-1.0-max");
+  for (const after of [cancelledAlias, wrongRuntime]) {
+    const rejected = cli("runs", ["--after", after, "--migrate"]);
+    assert.equal(rejected.updated, 0);
+    assert.equal(rejected.classifications.no_original_usage_identity, 1);
+  }
+  await db.query("DELETE FROM agent_runs WHERE id=ANY($1::uuid[])", [
+    [wrongRuntime, completedAlias],
+  ]);
+  const historicalOwner = randomUUID();
+  const nativeCodex = randomUUID();
+  await db.query(
+    `INSERT INTO agent_runs (id,session_id,user_id,org_id,status,prompt,trigger_source,autonomy_budget,model_provider,model_provider_id,selected_model)
+    VALUES ($1,$2,'identity-test-owner','identity-test-org','completed','retained owner','web',0,'built-in',$3,'historical-model')`,
+    [historicalOwner, session, account],
+  );
+  await db.query(
+    `INSERT INTO agent_runs (id,session_id,user_id,org_id,status,prompt,trigger_source,autonomy_budget,
+    model_provider,model_provider_id,model_provider_account_identity,selected_model,model_runtime_provider,model_runtime_model)
+    VALUES ($1,$2,'identity-test-owner','identity-test-org','completed','native Codex','web',0,'codex-oauth-token',$3,'exact-account','historical-model','openai-codex','historical-upstream')`,
+    [nativeCodex, session, account],
+  );
   const thread = randomUUID();
   await db.query(
     "INSERT INTO chat_threads (id,user_id) VALUES ($1,'identity-test-owner')",
@@ -354,6 +445,35 @@ try {
     ('agent_runs_runtime_pair_check','chat_events_canonical_selection_check')`)
     ).rows[0].ready,
     true,
+  );
+
+  await assert.rejects(
+    db.query("UPDATE agent_runs SET status='pending' WHERE id=$1", [
+      historicalOwner,
+    ]),
+    /builtin_capture_owner_check/,
+  );
+  await assert.rejects(
+    db.query(
+      "UPDATE agent_runs SET model_runtime_provider='openrouter-codex',model_runtime_model='unexpected' WHERE id=$1",
+      [historicalOwner],
+    ),
+    /builtin_capture_owner_check/,
+  );
+  await assert.rejects(
+    db.query(
+      "UPDATE agent_runs SET model_runtime_provider='anthropic' WHERE id=$1",
+      [nativeCodex],
+    ),
+    /personal_capture_check/,
+  );
+  assert.equal(
+    (
+      await db.query("SELECT model_provider_id FROM agent_runs WHERE id=$1", [
+        historicalOwner,
+      ])
+    ).rows[0].model_provider_id,
+    account,
   );
 
   // Release 1's runtime mapping/column factory is unchanged: execute its actual

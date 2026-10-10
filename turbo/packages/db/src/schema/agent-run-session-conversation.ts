@@ -79,7 +79,10 @@ export const agentRuns = pgTable(
               ${table.launchSnapshot} IS NOT NULL AND ${table.status} IN ('pending', 'running')
             )) OR (
               ${table.modelRuntimeModel} IS NOT NULL AND
-              ${table.modelRuntimeProvider} = ${table.modelProvider} AND
+              (${table.modelRuntimeProvider} = ${table.modelProvider} OR (
+                ${table.modelProvider} = 'codex-oauth-token' AND
+                ${table.modelRuntimeProvider} = 'openai-codex'
+              )) AND
               (${table.selectedModel} IS NULL OR ${table.selectedModel} <> 'auto') AND
               ${table.modelProviderId} IS NOT NULL AND
               ${table.modelProviderAccountIdentity} IS NOT NULL AND
@@ -91,7 +94,12 @@ export const agentRuns = pgTable(
       check(
         "agent_runs_builtin_capture_owner_check",
         sql`${table.modelProvider} <> 'built-in' OR COALESCE((
-          ${table.modelProviderId} IS NULL AND ${table.modelProviderAccountIdentity} IS NULL AND
+          (${table.modelProviderId} IS NULL OR (
+            ${table.status} IN ('completed', 'failed', 'cancelled', 'timeout') AND
+            ${table.modelRuntimeProvider} IS NULL AND ${table.modelRuntimeModel} IS NULL AND
+            ${table.builtInModelKeyId} IS NULL AND ${table.modelUsageProvider} IS NULL AND
+            ${table.modelLongContextMinTotalInputTokens} IS NULL
+          )) AND ${table.modelProviderAccountIdentity} IS NULL AND
           (${table.modelRuntimeModel} IS NULL OR (
             ${table.builtInModelKeyId} IS NOT NULL AND
             ${table.modelRuntimeProvider} NOT IN ('codex-oauth-token', 'claude-code-oauth-token')

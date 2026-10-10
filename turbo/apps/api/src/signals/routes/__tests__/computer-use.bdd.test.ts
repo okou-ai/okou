@@ -439,7 +439,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
             const expiresAt = base + 60 * 60 * 1000;
             expect(created.expiresAt).toBe(new Date(expiresAt).toISOString());
             mockNow(expiresAt - 1);
-            await api.heartbeatComputerUseHost(host.hostToken);
+            await api.heartbeatComputerUseHost(host.connection);
             const readable = await api.readComputerUseAuthorizationRequest(
               actor,
               requestToken,
@@ -596,7 +596,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
           installationId: randomUUID(),
           hostName: "Closed Mac",
         });
-        await api.stopComputerUseHost(stoppedHost.hostToken);
+        await api.stopComputerUseHost(stoppedHost.connection);
 
         mockNow(base + 120_000);
         const onlineHost = await api.startComputerUseHost(actor, {
@@ -889,7 +889,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         expect(completed.computerUseHostId).toBe(host.hostId);
 
         // Stopping an installation host leaves it offline but still bound.
-        await api.stopComputerUseHost(host.hostToken);
+        await api.stopComputerUseHost(host.connection);
         await expect(
           scenario.run(() => {
             return chat.readThreadMetadata(actor, run.threadId);
@@ -914,7 +914,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
 
         const hostName = "lancy-macbook-pro.local";
         const host = await api.startComputerUseHost(actor, { hostName });
-        expect(host.hostToken).toMatch(/^vm0_computer_use_host_/);
+        expect(host.connection.connectionGeneration).toBe(1);
 
         const hosts = await api.listComputerUseHosts(actor);
         expect(hosts.hosts).toHaveLength(1);
@@ -929,7 +929,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         const createdCommand = await api.createComputerUseWriteCommand(actor);
         expect(createdCommand).toMatchObject({ status: "queued" });
 
-        const claimed = await api.claimNextComputerUseCommand(host.hostToken);
+        const claimed = await api.claimNextComputerUseCommand(host.connection);
         expect(claimed.status).toBe("command");
         if (claimed.status !== "command") {
           throw new Error("Expected queued computer-use command to be claimed");
@@ -938,7 +938,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         expect(claimed.command.kind).toBe("app.open");
 
         await api.completeComputerUseCommand(
-          host.hostToken,
+          host.connection,
           createdCommand.commandId,
         );
 
@@ -978,12 +978,12 @@ describe("FILE-03 desktop computer-use runtime", () => {
           }),
         ).toStrictEqual(expect.arrayContaining(["completed"]));
 
-        await api.stopComputerUseHost(host.hostToken);
+        await api.stopComputerUseHost(host.connection);
         const afterStop = await api.listComputerUseHosts(actor);
         expect(afterStop.hosts).toMatchObject([
           { id: host.hostId, status: "offline" },
         ]);
-        await api.requestComputerUseHeartbeat(host.hostToken, [401]);
+        await api.requestComputerUseHeartbeat(host.connection, [409]);
       });
     });
   });
@@ -1010,13 +1010,13 @@ describe("FILE-03 desktop computer-use runtime", () => {
         // An unchanged heartbeat inside the refresh window writes nothing.
         mockNow(base + 10_000);
         await expect(
-          api.heartbeatComputerUseHost(host.hostToken),
+          api.heartbeatComputerUseHost(host.connection),
         ).resolves.toStrictEqual({ ok: true, hostId: host.hostId });
         await expect(lastSeenAt()).resolves.toBe(new Date(base).toISOString());
 
         // Once the stamp is 30s old it is refreshed, without a broadcast.
         mockNow(base + 30_000);
-        await api.heartbeatComputerUseHost(host.hostToken);
+        await api.heartbeatComputerUseHost(host.connection);
         await expect(lastSeenAt()).resolves.toBe(
           new Date(base + 30_000).toISOString(),
         );
@@ -1024,7 +1024,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
 
         // Changed runtime state is written and broadcast right away.
         mockNow(base + 35_000);
-        await api.heartbeatComputerUseHost(host.hostToken, {
+        await api.heartbeatComputerUseHost(host.connection, {
           hostName: "Renamed Desktop",
         });
         const listed = await api.listComputerUseHosts(actor);
@@ -1061,13 +1061,13 @@ describe("FILE-03 desktop computer-use runtime", () => {
 
         mockNow(base + 10_000);
         await expect(
-          api.claimNextComputerUseCommand(host.hostToken),
+          api.claimNextComputerUseCommand(host.connection),
         ).resolves.toMatchObject({ status: "idle" });
         await expect(lastSeenAt()).resolves.toBe(new Date(base).toISOString());
 
         mockNow(base + 40_000);
         await expect(
-          api.claimNextComputerUseCommand(host.hostToken),
+          api.claimNextComputerUseCommand(host.connection),
         ).resolves.toMatchObject({ status: "idle" });
         await expect(lastSeenAt()).resolves.toBe(
           new Date(base + 40_000).toISOString(),
@@ -1090,7 +1090,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         });
         // Every heartbeat carries the full runtime body, so it also rewrites the
         // host name. Repeat this host's own name to keep its identity stable.
-        const heartbeat = await api.heartbeatComputerUseHost(first.hostToken, {
+        const heartbeat = await api.heartbeatComputerUseHost(first.connection, {
           hostName: "Office Mac",
         });
         expect(heartbeat).toStrictEqual({ ok: true, hostId: first.hostId });
@@ -1102,7 +1102,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         expect(second.hostId).not.toBe(first.hostId);
 
         const staleHeartbeat = await api.heartbeatComputerUseHost(
-          first.hostToken,
+          first.connection,
           {
             hostName: "Office Mac",
           },
@@ -1129,7 +1129,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
           ]),
         );
 
-        const stopped = await api.stopComputerUseHost(second.hostToken);
+        const stopped = await api.stopComputerUseHost(second.connection);
         expect(stopped).toStrictEqual({ ok: true, hostId: second.hostId });
 
         const restarted = await api.startComputerUseHost(actor, {
@@ -1137,7 +1137,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         });
         expect(restarted.hostId).not.toBe(second.hostId);
 
-        await api.stopComputerUseHost(restarted.hostToken);
+        await api.stopComputerUseHost(restarted.connection);
       });
     });
   });
@@ -1155,14 +1155,14 @@ describe("FILE-03 desktop computer-use runtime", () => {
           hostName: "Studio Mac",
         });
 
-        await api.stopComputerUseHost(started.hostToken);
+        await api.stopComputerUseHost(started.connection);
         const stoppedHeartbeat = await api.requestComputerUseHeartbeat(
-          started.hostToken,
-          [401],
+          started.connection,
+          [409],
         );
         expectApiError(stoppedHeartbeat.body);
         expect(stoppedHeartbeat.body.error.message).toBe(
-          "Invalid computer-use host token",
+          "Computer-use host connection is no longer authorized",
         );
 
         const stoppedHosts = await api.listComputerUseHosts(actor);
@@ -1179,7 +1179,9 @@ describe("FILE-03 desktop computer-use runtime", () => {
           hostName: "Renamed Studio Mac",
         });
         expect(restarted.hostId).toBe(started.hostId);
-        expect(restarted.hostToken).not.toBe(started.hostToken);
+        expect(restarted.connection.connectionGeneration).toBeGreaterThan(
+          started.connection.connectionGeneration,
+        );
 
         const restartedHosts = await api.listComputerUseHosts(actor);
         expect(restartedHosts.hosts).toStrictEqual([
@@ -1248,13 +1250,13 @@ describe("FILE-03 desktop computer-use runtime", () => {
         );
 
         context.mocks.ably.publish.mockClear();
-        await api.heartbeatComputerUseHost(host.hostToken, {
+        await api.heartbeatComputerUseHost(host.connection, {
           hostName: "Studio Mac",
         });
         expect(context.mocks.ably.publish).not.toHaveBeenCalled();
 
         mockNow(base + 120_000);
-        await api.heartbeatComputerUseHost(host.hostToken, {
+        await api.heartbeatComputerUseHost(host.connection, {
           hostName: "Studio Mac",
         });
         expect(context.mocks.ably.publish).toHaveBeenCalledTimes(1);
@@ -1264,7 +1266,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         );
 
         context.mocks.ably.publish.mockClear();
-        await api.stopComputerUseHost(host.hostToken);
+        await api.stopComputerUseHost(host.connection);
         expect(context.mocks.ably.publish).toHaveBeenCalledTimes(1);
         expect(context.mocks.ably.publish).toHaveBeenCalledWith(
           "computerUseHostsChanged",
@@ -1276,92 +1278,46 @@ describe("FILE-03 desktop computer-use runtime", () => {
     });
   });
 
-  it("rejects host-token routes with missing or invalid host tokens", async () => {
+  it("rejects host operations without a session or with an unknown connection", async () => {
     const scenario = createScenario();
-    const { api } = scenario;
-    return await withNowScopeForTest(() => {
-      return scenario.run(async () => {
-        const garbageToken = "okou-bdd-garbage-host-token";
-        const commandId = randomUUID();
-        const completeBody = {
-          status: "succeeded" as const,
-          result: { app: "Safari", opened: true },
-        };
-
-        const missingHeartbeat = await api.requestComputerUseHeartbeat(
-          null,
-          [401],
+    const { api, bdd } = scenario;
+    const codes = await scenario.run(async () => {
+      const rejected: string[][] = [];
+      const actor = bdd.user();
+      const unknown = { actor, hostId: randomUUID(), connectionGeneration: 1 };
+      const commandId = randomUUID();
+      const result = { status: "succeeded" as const, result: {} };
+      for (const connection of [null, unknown]) {
+        const statuses =
+          connection === null ? ([401] as const) : ([409] as const);
+        const responses = [
+          await api.requestComputerUseHeartbeat(connection, statuses),
+          await api.requestStopComputerUseHost(connection, statuses),
+          await api.requestClaimNextComputerUseCommand(connection, statuses),
+          await api.requestCompleteComputerUseCommand(
+            connection,
+            commandId,
+            result,
+            statuses,
+          ),
+        ];
+        rejected.push(
+          responses.map((response) => {
+            expectApiError(response.body);
+            return response.body.error.code;
+          }),
         );
-        expectApiError(missingHeartbeat.body);
-        expect(missingHeartbeat.body.error.message).toBe(
-          "Missing computer-use host token",
-        );
-
-        const invalidHeartbeat = await api.requestComputerUseHeartbeat(
-          garbageToken,
-          [401],
-        );
-        expectApiError(invalidHeartbeat.body);
-        expect(invalidHeartbeat.body.error.message).toBe(
-          "Invalid computer-use host token",
-        );
-
-        const missingStop = await api.requestStopComputerUseHost(null, [401]);
-        expectApiError(missingStop.body);
-        expect(missingStop.body.error.message).toBe(
-          "Missing computer-use host token",
-        );
-
-        const invalidStop = await api.requestStopComputerUseHost(
-          garbageToken,
-          [401],
-        );
-        expectApiError(invalidStop.body);
-        expect(invalidStop.body.error.message).toBe(
-          "Invalid computer-use host token",
-        );
-
-        const missingNext = await api.requestClaimNextComputerUseCommand(
-          null,
-          [401],
-        );
-        expectApiError(missingNext.body);
-        expect(missingNext.body.error.message).toBe(
-          "Missing computer-use host token",
-        );
-
-        const invalidNext = await api.requestClaimNextComputerUseCommand(
-          garbageToken,
-          [401],
-        );
-        expectApiError(invalidNext.body);
-        expect(invalidNext.body.error.message).toBe(
-          "Invalid computer-use host token",
-        );
-
-        const missingComplete = await api.requestCompleteComputerUseCommand(
-          null,
-          commandId,
-          completeBody,
-          [401],
-        );
-        expectApiError(missingComplete.body);
-        expect(missingComplete.body.error.message).toBe(
-          "Missing computer-use host token",
-        );
-
-        const invalidComplete = await api.requestCompleteComputerUseCommand(
-          garbageToken,
-          commandId,
-          completeBody,
-          [401],
-        );
-        expectApiError(invalidComplete.body);
-        expect(invalidComplete.body.error.message).toBe(
-          "Invalid computer-use host token",
-        );
-      });
+      }
+      return rejected;
     });
+    expect(codes).toStrictEqual([
+      Array.from({ length: 4 }, () => {
+        return "UNAUTHORIZED";
+      }),
+      Array.from({ length: 4 }, () => {
+        return "HOST_CONNECTION_INVALID";
+      }),
+    ]);
   });
 
   it("routes commands across offline, unsupported, ambiguous, and granted hosts", async () => {
@@ -1414,7 +1370,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
 
         // Claim polls refresh lastSeenAt, so host A's idle poll puts both hosts
         // online again for the ambiguity case.
-        const idleA = await api.claimNextComputerUseCommand(hostA.hostToken);
+        const idleA = await api.claimNextComputerUseCommand(hostA.connection);
         expect(idleA.status).toBe("idle");
 
         const ambiguous = await api.requestCreateComputerUseReadCommand(
@@ -1450,12 +1406,12 @@ describe("FILE-03 desktop computer-use runtime", () => {
         expect(readCreated.status).toBe("queued");
 
         const idleAfterGrant = await api.claimNextComputerUseCommand(
-          hostA.hostToken,
+          hostA.connection,
         );
         expect(idleAfterGrant.status).toBe("idle");
 
         const claimedRead = await api.claimNextComputerUseCommand(
-          hostB.hostToken,
+          hostB.connection,
         );
         expect(claimedRead.status).toBe("command");
         if (claimedRead.status !== "command") {
@@ -1471,7 +1427,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         });
 
         await api.completeComputerUseCommandWith(
-          hostB.hostToken,
+          hostB.connection,
           readCreated.commandId,
           { status: "succeeded", result: { apps: ["Safari"] } },
         );
@@ -1491,7 +1447,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         expect(writeCreated.status).toBe("queued");
 
         const claimedWrite = await api.claimNextComputerUseCommand(
-          hostB.hostToken,
+          hostB.connection,
         );
         expect(claimedWrite.status).toBe("command");
         if (claimedWrite.status !== "command") {
@@ -1514,7 +1470,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         });
 
         await api.completeComputerUseCommandWith(
-          hostB.hostToken,
+          hostB.connection,
           writeCreated.commandId,
           {
             status: "succeeded",
@@ -1575,7 +1531,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
 
         const grantedOffline = await scenario.claim(actor, hostA.hostId);
         mockNow(base + 182_000);
-        const idleB = await api.claimNextComputerUseCommand(hostB.hostToken);
+        const idleB = await api.claimNextComputerUseCommand(hostB.connection);
         expect(idleB.status).toBe("idle");
 
         const offlineGrant = await api.requestCreateComputerUseReadCommand(
@@ -1602,11 +1558,11 @@ describe("FILE-03 desktop computer-use runtime", () => {
         });
         await api.createComputerUseReadCommand(actor, { kind: "apps.list" });
         const withdrawn = await api.claimNextComputerUseCommand(
-          host.hostToken,
+          host.connection,
           ["app.state"],
         );
         expect(withdrawn.status).toBe("idle");
-        await api.heartbeatComputerUseHost(host.hostToken, {
+        await api.heartbeatComputerUseHost(host.connection, {
           supportedCapabilities: ["app.state"],
           permissions: { accessibility: true, screenRecording: true },
         });
@@ -1622,7 +1578,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         });
         // Empty claims retain the last non-empty capability set.
         const claimed = await api.claimNextComputerUseCommand(
-          host.hostToken,
+          host.connection,
           [],
         );
         expect(claimed).toMatchObject({
@@ -1650,7 +1606,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
           kind: "apps.list",
         });
         const claimed = await api.claimNextComputerUseCommand(
-          host.hostToken,
+          host.connection,
           [],
         );
         expect(claimed).toMatchObject({
@@ -1677,7 +1633,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
 
         const succeeded = await api.createComputerUseWriteCommand(actor);
         const claimedSucceeded = await api.claimNextComputerUseCommand(
-          host.hostToken,
+          host.connection,
         );
         expect(claimedSucceeded.status).toBe("command");
         if (claimedSucceeded.status !== "command") {
@@ -1702,12 +1658,12 @@ describe("FILE-03 desktop computer-use runtime", () => {
           },
         };
         await api.completeComputerUseCommandWith(
-          host.hostToken,
+          host.connection,
           succeeded.commandId,
           succeededBody,
         );
         await api.completeComputerUseCommandWith(
-          host.hostToken,
+          host.connection,
           succeeded.commandId,
           succeededBody,
         );
@@ -1748,7 +1704,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
 
         const failed = await api.createComputerUseWriteCommand(actor);
         const claimedFailed = await api.claimNextComputerUseCommand(
-          host.hostToken,
+          host.connection,
         );
         expect(claimedFailed.status).toBe("command");
         if (claimedFailed.status !== "command") {
@@ -1757,7 +1713,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         expect(claimedFailed.command.id).toBe(failed.commandId);
 
         await api.completeComputerUseCommandWith(
-          host.hostToken,
+          host.connection,
           failed.commandId,
           {
             status: "failed",
@@ -1811,7 +1767,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         });
 
         const claimedFirst = await api.claimNextComputerUseCommand(
-          host.hostToken,
+          host.connection,
         );
         expect(claimedFirst.status).toBe("command");
         if (claimedFirst.status !== "command") {
@@ -1820,7 +1776,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         expect(claimedFirst.command.id).toBe(first.commandId);
 
         const idleWhileRunning = await api.claimNextComputerUseCommand(
-          host.hostToken,
+          host.connection,
         );
         expect(idleWhileRunning.status).toBe("idle");
 
@@ -1829,19 +1785,19 @@ describe("FILE-03 desktop computer-use runtime", () => {
         });
 
         const queuedComplete = await api.requestCompleteComputerUseCommand(
-          host.hostToken,
+          host.connection,
           second.commandId,
           { status: "succeeded", result: {} },
-          [409],
+          [404],
         );
         expectApiError(queuedComplete.body);
         expect(queuedComplete.body.error.message).toBe(
-          "Computer-use command is not running",
+          "Computer-use command not found",
         );
 
         mockNow(base + 1500);
         const claimedSecond = await api.claimNextComputerUseCommand(
-          host.hostToken,
+          host.connection,
         );
         expect(claimedSecond.status).toBe("command");
         if (claimedSecond.status !== "command") {
@@ -1865,7 +1821,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         expect(timedOut.completedAt).toBe(new Date(base + 1500).toISOString());
 
         await api.completeComputerUseCommandWith(
-          host.hostToken,
+          host.connection,
           second.commandId,
           {
             status: "failed",
@@ -1885,7 +1841,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         });
 
         const duplicateComplete = await api.requestCompleteComputerUseCommand(
-          host.hostToken,
+          host.connection,
           second.commandId,
           { status: "succeeded", result: {} },
           [200],
@@ -1901,7 +1857,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         });
 
         const unknownComplete = await api.requestCompleteComputerUseCommand(
-          host.hostToken,
+          host.connection,
           randomUUID(),
           { status: "succeeded", result: {} },
           [404],
@@ -1934,14 +1890,14 @@ describe("FILE-03 desktop computer-use runtime", () => {
           app: "Safari",
         });
         const claimedFirst = await api.claimNextComputerUseCommand(
-          host.hostToken,
+          host.connection,
         );
         expect(claimedFirst.status).toBe("command");
 
         const pngBytes = Buffer.from("bdd-screenshot-png-bytes");
         const screenshotBase64 = pngBytes.toString("base64");
         await api.completeComputerUseCommandWith(
-          host.hostToken,
+          host.connection,
           first.commandId,
           {
             status: "succeeded",
@@ -1997,9 +1953,9 @@ describe("FILE-03 desktop computer-use runtime", () => {
           kind: "app.state",
           app: "Safari",
         });
-        await api.claimNextComputerUseCommand(host.hostToken);
+        await api.claimNextComputerUseCommand(host.connection);
         await api.completeComputerUseCommandWith(
-          host.hostToken,
+          host.connection,
           second.commandId,
           {
             status: "succeeded",

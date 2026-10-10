@@ -1,17 +1,20 @@
 -- #35240: preservation preflight observations, never a migration manifest.
--- Run the whole file in a fresh psql -X session with ON_ERROR_STOP=1.
+-- Run the whole file with psql -X -v ON_ERROR_STOP=1 -f in a fresh, disposable
+-- autocommit session; close that session after the report or any failure.
+-- Do not use -1, an existing transaction/session, or one multi-statement driver
+-- message: defaults must take effect before the audit statement starts.
 -- Includes every status and deleted site; an unavailable relation fails the audit.
--- eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0353; new non-billing transactions are prohibited.
-BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
-SET LOCAL statement_timeout = '30s';
-SET LOCAL lock_timeout = '3s';
-SET LOCAL idle_in_transaction_session_timeout = '15s';
-SET LOCAL work_mem = '16MB';
-SET LOCAL max_parallel_workers_per_gather = 0;
-SET LOCAL jit = off;
-SET LOCAL row_security = off;
-SET LOCAL timezone = 'UTC';
-SET LOCAL search_path = pg_catalog, public;
+SET default_transaction_read_only = on;
+SET default_transaction_isolation = 'repeatable read';
+SET statement_timeout = '30s';
+SET lock_timeout = '3s';
+SET idle_in_transaction_session_timeout = '15s';
+SET work_mem = '16MB';
+SET max_parallel_workers_per_gather = 0;
+SET jit = off;
+SET row_security = off;
+SET timezone = 'UTC';
+SET search_path = pg_catalog, public;
 
 WITH deployments AS MATERIALIZED (
   SELECT 'public' AS namespace, id, site_id, org_id, user_id, link_layout_segment,
@@ -120,13 +123,13 @@ WITH deployments AS MATERIALIZED (
   FROM uploaded_references
 )
 SELECT jsonb_build_object(
-  'receipt_version', 'hosted_publication_history_v2',
+  'receipt_version', 'hosted_publication_history_v3',
   'observed_at', statement_timestamp(),
   'finished_at', clock_timestamp(),
   'transaction', jsonb_build_object(
     'read_only', current_setting('transaction_read_only'),
     'isolation', current_setting('transaction_isolation'),
-    'ending', 'rollback',
+    'ending', 'implicit_commit',
     'statement_timeout', current_setting('statement_timeout'),
     'lock_timeout', current_setting('lock_timeout')),
   'coverage', jsonb_build_object(
@@ -140,4 +143,3 @@ SELECT jsonb_build_object(
 ) AS hosted_publication_history_audit
 FROM population p CROSS JOIN multiplicity m CROSS JOIN deployment_integrity d
   CROSS JOIN pointer_integrity i CROSS JOIN shares s CROSS JOIN uploaded_integrity u;
-ROLLBACK;

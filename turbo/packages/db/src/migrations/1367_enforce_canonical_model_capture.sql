@@ -16,7 +16,10 @@ ALTER TABLE "agent_runs" ADD CONSTRAINT "agent_runs_personal_capture_check" CHEC
               "agent_runs"."launch_snapshot" IS NOT NULL AND "agent_runs"."status" IN ('pending', 'running')
             )) OR (
               "agent_runs"."model_runtime_model" IS NOT NULL AND
-              "agent_runs"."model_runtime_provider" = "agent_runs"."model_provider" AND
+              ("agent_runs"."model_runtime_provider" = "agent_runs"."model_provider" OR (
+                "agent_runs"."model_provider" = 'codex-oauth-token' AND
+                "agent_runs"."model_runtime_provider" = 'openai-codex'
+              )) AND
               ("agent_runs"."selected_model" IS NULL OR "agent_runs"."selected_model" <> 'auto') AND
               "agent_runs"."model_provider_id" IS NOT NULL AND
               "agent_runs"."model_provider_account_identity" IS NOT NULL AND
@@ -25,7 +28,12 @@ ALTER TABLE "agent_runs" ADD CONSTRAINT "agent_runs_personal_capture_check" CHEC
           )
         ), false)) NOT VALID;--> statement-breakpoint
 ALTER TABLE "agent_runs" ADD CONSTRAINT "agent_runs_builtin_capture_owner_check" CHECK ("agent_runs"."model_provider" <> 'built-in' OR COALESCE((
-          "agent_runs"."model_provider_id" IS NULL AND "agent_runs"."model_provider_account_identity" IS NULL AND
+          ("agent_runs"."model_provider_id" IS NULL OR (
+            "agent_runs"."status" IN ('completed', 'failed', 'cancelled', 'timeout') AND
+            "agent_runs"."model_runtime_provider" IS NULL AND "agent_runs"."model_runtime_model" IS NULL AND
+            "agent_runs"."built_in_model_key_id" IS NULL AND "agent_runs"."model_usage_provider" IS NULL AND
+            "agent_runs"."model_long_context_min_total_input_tokens" IS NULL
+          )) AND "agent_runs"."model_provider_account_identity" IS NULL AND
           ("agent_runs"."model_runtime_model" IS NULL OR (
             "agent_runs"."built_in_model_key_id" IS NOT NULL AND
             "agent_runs"."model_runtime_provider" NOT IN ('codex-oauth-token', 'claude-code-oauth-token')

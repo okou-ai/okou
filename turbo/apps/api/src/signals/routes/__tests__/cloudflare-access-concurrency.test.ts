@@ -1,12 +1,23 @@
 import { randomUUID } from "node:crypto";
 
-import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
+import {
+  cloudflareAccessContract,
+  type DeleteCloudflareAccessRequest,
+} from "@okouai/api-contracts/contracts/cloudflare-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
 import { createStore, state } from "ccstate";
-import { afterEach, beforeEach, describe, expect, it, test } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  test,
+} from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -19,6 +30,7 @@ import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { joinAll } from "../../utils";
 
 const context = testContext();
 const store = createStore();
@@ -228,10 +240,103 @@ test.each(["user", "organization", "scope"] as const)(
   },
 );
 
+async function cleanupRenameFixtures(
+  owner: Awaited<ReturnType<typeof actor>>,
+  participants: readonly Awaited<ReturnType<typeof actor>>[],
+) {
+  // Finished callbacks run after shared mocks reset, with a live cleanup signal.
+  authenticateSessions();
+  for (const participant of participants) {
+    await store.set(
+      seedOrgMembership$,
+      {
+        ...participant,
+        role: participant.userId === owner.userId ? "admin" : "member",
+      },
+      context.signal,
+    );
+  }
+  // These fresh UUID actors own only this case's resources. Public inventories
+  // also recover committed setup whose response or accept() failed.
+  await joinAll(
+    participants.map(async (participant) => {
+      const connections = await accept(
+        hosts().list({ headers: participant.headers }),
+        [200],
+      );
+      await joinAll(
+        connections.body.connections.map(({ id }) => {
+          return accept(
+            hosts().delete({
+              headers: participant.headers,
+              params: { connectionId: id },
+            }),
+            [204],
+          );
+        }),
+      );
+      const logins = await accept(
+        credentials().list({ headers: participant.headers }),
+        [200],
+      );
+      await joinAll(
+        logins.body.credentials.map(({ id, revision }) => {
+          return accept(
+            credentials().delete({
+              headers: participant.headers,
+              params: { credentialId: id },
+              body: { expectedRevision: revision },
+            }),
+            [204],
+          );
+        }),
+      );
+    }),
+  );
+  const configurations = await accept(
+    configs().list({ headers: owner.headers, query }),
+    [200],
+  );
+  await joinAll(
+    configurations.body.configs.map(async ({ id, scope, revision }) => {
+      let body: DeleteCloudflareAccessRequest = {
+        expectedRevision: revision,
+      };
+      if (scope === "organization") {
+        const preview = await accept(
+          configs().impactPreview({
+            headers: owner.headers,
+            params: { configId: id },
+            query: { operation: "delete" },
+          }),
+          [200],
+        );
+        body = {
+          expectedRevision: preview.body.expectedRevision,
+          impactSnapshot: preview.body.impactSnapshot,
+        };
+      }
+      await accept(
+        configs().delete({
+          headers: owner.headers,
+          params: { configId: id },
+          query,
+          body,
+        }),
+        [204],
+      );
+    }),
+  );
+}
+
 test.each(["personal", "organization"] as const)(
   "accepts exactly one same-revision metadata rename for a %s configuration without changing host authority",
   async (scope) => {
     const owner = await actor();
+    const participants = [owner];
+    onTestFinished(async () => {
+      await cleanupRenameFixtures(owner, participants);
+    });
     const original = (
       await accept(
         configs().create({
@@ -252,6 +357,7 @@ test.each(["personal", "organization"] as const)(
     ).body;
     const own = (await accept(createHost(owner, original.id), [201])).body;
     const member = await actor(owner.orgId, "member");
+    participants.push(member);
     await accept(
       createHost(member, scope === "organization" ? original.id : undefined),
       [201],
@@ -266,7 +372,7 @@ test.each(["personal", "organization"] as const)(
       await accept(credentials().list({ headers: owner.headers }), [200])
     ).body;
 
-    const results = await Promise.all(
+    const results = await joinAll(
       ["First rename", "Second rename"].map((name) => {
         return accept(
           configs().update({

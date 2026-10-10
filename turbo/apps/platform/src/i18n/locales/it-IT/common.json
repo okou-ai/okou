@@ -927,20 +927,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Hai effettuato l’accesso a Desktop. Puoi chiudere questa finestra.",
-        "connecting": "Connessione della sessione desktop in corso.",
-        "consumed": "Accesso a Desktop in fase di completamento. Lascia aperta questa finestra.",
-        "failed": "Impossibile completare l’accesso. Ricomincia da Desktop o riprova in questo browser.",
-        "no-workspaces": "Crea uno spazio di lavoro o unisciti a uno nell’app web, poi accedi di nuovo da Desktop.",
-        "pending": "Apri Desktop per continuare ad accedere.",
-        "selecting": "Scegli uno spazio di lavoro per questo computer."
-      },
-      "reopen": "Apri Desktop",
-      "retry": "Riprova",
-      "title": "Accedi a Desktop"
-    },
     "documentTitles": {
       "signIn": "Accedi",
       "signUp": "Iscriviti"

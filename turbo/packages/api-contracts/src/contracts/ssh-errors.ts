@@ -1,4 +1,5 @@
 import type { CloudflareAccessErrorCode } from "./cloudflare-access-errors";
+import type { TailscaleErrorCode } from "./tailscale-errors";
 
 export const SSH_ERROR_CODES = {
   UNAVAILABLE: "SSH_UNAVAILABLE",
@@ -16,4 +17,5 @@ export const SSH_ERROR_CODES = {
 
 export type SshErrorCode =
   | (typeof SSH_ERROR_CODES)[keyof typeof SSH_ERROR_CODES]
-  | CloudflareAccessErrorCode;
+  | CloudflareAccessErrorCode
+  | TailscaleErrorCode;

@@ -862,6 +862,8 @@ jobs:
             echo "Create a NEW migration instead of modifying existing ones."
             exit 1
           fi
+      - name: Install PostgreSQL client for audit script tests
+        run: apt-get update && apt-get install -y --no-install-recommends postgresql-client
       - name: Test Migration Consistency
         working-directory: turbo/packages/db
         env:
