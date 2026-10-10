@@ -1596,7 +1596,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                         break;
                     }
                 };
-                let result = result.handle(DiscoveredJobContext {
+                let result = match result.handle(DiscoveredJobContext {
                     runner_identity: runner.identity,
                     budget: &capacity.budget,
                     idle_pool: &shared.idle_pool,
@@ -1605,11 +1605,23 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     cancel_tokens: &provider_state.cancel_tokens,
                     spawn_ctx: &spawn_ctx,
                     jobs: &mut jobs,
-                }).await;
-                if let Some(candidate) = result.pending_candidate {
-                    if *mode_rx.borrow() == RunnerMode::Running {
-                        pending_finalizing_candidate.retain(candidate);
+                }).await {
+                    Ok(result) => result,
+                    Err(error) => {
+                        handle_stopping_signal(
+                            "claim result ownership failure",
+                            &provider_state.cancel,
+                            &provider_state.cancel_tokens,
+                            &lifecycle,
+                        ).await;
+                        terminal_error = Some(error);
+                        break;
                     }
+                };
+                if let Some(candidate) = result.pending_candidate
+                    && *mode_rx.borrow() == RunnerMode::Running
+                {
+                    pending_finalizing_candidate.retain(candidate);
                 }
                 let live_mode = *mode_rx.borrow();
                 if result.needs_reuse_state_refresh
@@ -1871,7 +1883,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     while let Some(result) = claim_tasks.next().await {
         match result {
             Ok(result) => {
-                result
+                if let Err(error) = result
                     .handle(DiscoveredJobContext {
                         runner_identity: runner.identity,
                         budget: &capacity.budget,
@@ -1882,7 +1894,17 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                         spawn_ctx: &spawn_ctx,
                         jobs: &mut jobs,
                     })
+                    .await
+                {
+                    handle_stopping_signal(
+                        "claim result ownership failure",
+                        &provider_state.cancel,
+                        &provider_state.cancel_tokens,
+                        &lifecycle,
+                    )
                     .await;
+                    terminal_error.get_or_insert(error);
+                }
             }
             Err(_) => {
                 handle_stopping_signal(

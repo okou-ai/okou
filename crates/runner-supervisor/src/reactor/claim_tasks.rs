@@ -10,6 +10,7 @@ use tokio::task::{JoinError, JoinHandle};
 use tracing::info;
 
 use super::RuntimeProfile;
+use super::error::{ReactorError, ReactorResult};
 use super::job_discovery::{
     AdmissionContext, DiscoveredJob, DiscoveredJobContext, DiscoveredJobProfile,
     DiscoveredJobResult, handle_admitted_job, prepare_discovered_job, recover_unconsumed_admission,
@@ -153,14 +154,17 @@ enum ClaimTaskOutcome {
 }
 
 impl ClaimTaskResult {
-    pub(super) async fn handle(self, context: DiscoveredJobContext<'_>) -> DiscoveredJobResult {
-        match self.outcome {
+    pub(super) async fn handle(
+        self,
+        context: DiscoveredJobContext<'_>,
+    ) -> ReactorResult<DiscoveredJobResult> {
+        Ok(match self.outcome {
             ClaimTaskOutcome::Claimed(claim) => {
-                handle_admitted_job(claim.into_admission(), self.profile, context).await
+                handle_admitted_job(claim.into_admission()?, self.profile, context).await
             }
             ClaimTaskOutcome::Pending(candidate) => DiscoveredJobResult::pending(*candidate),
             ClaimTaskOutcome::Deferred => DiscoveredJobResult::completed(false),
-        }
+        })
     }
 }
 
@@ -171,13 +175,16 @@ struct UnconsumedClaim {
 }
 
 impl UnconsumedClaim {
-    fn into_admission(mut self) -> AdmittedClaim {
+    fn into_admission(mut self) -> ReactorResult<AdmittedClaim> {
         // This guard is consumed by value; only this handoff or Drop can take
-        // the admission, so it remains present until exactly one owner takes it.
-        *self
-            .admission
+        // the admission. Surface a broken invariant rather than fabricating an
+        // unclaimed result or adding a production panic.
+        self.admission
             .take()
-            .expect("claim admission owned until handoff")
+            .map(|admission| *admission)
+            .ok_or_else(|| {
+                ReactorError::Internal("claim result lost its admission before handoff".to_owned())
+            })
     }
 }
 
