@@ -9,6 +9,53 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.724.0](https://github.com/okou-ai/okou/compare/api-v1.723.0...api-v1.724.0) (2026-10-10)
+
+
+### Features
+
+* **api:** add the ios client compatibility floor ([#38609](https://github.com/okou-ai/okou/issues/38609)) ([4c78da8](https://github.com/okou-ai/okou/commit/4c78da863a4546dce0cf69d916c64ae84d4953fb)), closes [#38587](https://github.com/okou-ai/okou/issues/38587)
+* **slack:** adopt agent sessions and native stop ([#38560](https://github.com/okou-ai/okou/issues/38560)) ([efdc848](https://github.com/okou-ai/okou/commit/efdc848c58e111f566aa02d29c705dcb136baa8d))
+
+
+### Bug Fixes
+
+* **api:** retry transient google token acquisition failures ([#38567](https://github.com/okou-ai/okou/issues/38567)) ([74fa095](https://github.com/okou-ai/okou/commit/74fa0950649dbf54b9bc9f7d67b74e2b9cb960ab))
+* use hosted og credentials and restore the okou brand cover ([#38510](https://github.com/okou-ai/okou/issues/38510)) ([2d2ec67](https://github.com/okou-ai/okou/commit/2d2ec676fbf7ab4bc0db3cd5439715869ff2d6b9))
+
+
+### Refactoring
+
+* **api:** claim invitation activation in one atomic statement ([#38574](https://github.com/okou-ai/okou/issues/38574)) ([a06edd7](https://github.com/okou-ai/okou/commit/a06edd77e8b9064577114e42b6a9cf410c6635b5))
+* **api:** keep slack connect status reads in their owning graph ([#38556](https://github.com/okou-ai/okou/issues/38556)) ([8bf148b](https://github.com/okou-ai/okou/commit/8bf148bf9db8c1bf6e4028e703270290a3735458)), closes [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** keep slack route reads in their transaction owner ([#38580](https://github.com/okou-ai/okou/issues/38580)) ([b78baa8](https://github.com/okou-ai/okou/commit/b78baa84b22371e0e8ee983e756adf6c22a19947))
+* **api:** make allocation source predicate a pure builder ([#38606](https://github.com/okou-ai/okou/issues/38606)) ([7d6e9bd](https://github.com/okou-ai/okou/commit/7d6e9bdf0c1d26447c9e33ecca5859444d60a9c2)), closes [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own builtin device-auth session expiration ([#38517](https://github.com/okou-ai/okou/issues/38517)) ([ad1b8d4](https://github.com/okou-ai/okou/commit/ad1b8d498cb3da601a7c583f7e9ac6edea340d56))
+* **api:** own discord assigned route reads ([#38613](https://github.com/okou-ai/okou/issues/38613)) ([1c2cdd6](https://github.com/okou-ai/okou/commit/1c2cdd6c7f44338191a8c3fc607b5e40792b4454)), closes [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own discord route attachment writes ([#38570](https://github.com/okou-ai/okou/issues/38570)) ([9302c1e](https://github.com/okou-ai/okou/commit/9302c1e4d8b540aad9e894e315cbd8b68110484c)), closes [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** publish fresh telegram threads in one statement ([#38598](https://github.com/okou-ai/okou/issues/38598)) ([bcbb100](https://github.com/okou-ai/okou/commit/bcbb100d44de954a374607fb9f7a5ef2383e9945))
+* **api:** publish notion verification tokens atomically ([#38616](https://github.com/okou-ai/okou/issues/38616)) ([922cec1](https://github.com/okou-ai/okou/commit/922cec10600e4be732e549afd7348ff987d9f54a))
+* **api:** remove ordinary billing restore transaction ([#38557](https://github.com/okou-ai/okou/issues/38557)) ([c3996f0](https://github.com/okou-ai/okou/commit/c3996f02c381e07067fb7fad6faac7471d9994d7)), closes [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** remove session history prepare transaction ([#38518](https://github.com/okou-ai/okou/issues/38518)) ([cbb009a](https://github.com/okou-ai/okou/commit/cbb009aaba53a132af79f763df361217626901c5))
+* **api:** retire legacy computer-use host tokens ([#38559](https://github.com/okou-ai/okou/issues/38559)) ([829d10f](https://github.com/okou-ai/okou/commit/829d10ffe05819dca15432cee1d392cf56847cf7))
+* **api:** revoke runner wss tickets in one statement ([#38558](https://github.com/okou-ai/okou/issues/38558)) ([0530733](https://github.com/okou-ai/okou/commit/05307331c91ebae224e2800c1f433965161ef1ab))
+* remove notify mail feature switch ([#38561](https://github.com/okou-ai/okou/issues/38561)) ([7f40f95](https://github.com/okou-ai/okou/commit/7f40f954492838ac72a4d291848b2ef24266a9a7))
+
+
+### Performance Improvements
+
+* **computer-use:** replace desktop command polling with ably wakeups ([#38610](https://github.com/okou-ai/okou/issues/38610)) ([ff8cd53](https://github.com/okou-ai/okou/commit/ff8cd536be6edd610413923204b26c35e76b9ec4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.549.0
+    * @okouai/core bumped to 8.740.1
+    * @okouai/db bumped to 1.330.1
+    * @okouai/pi-agent-runtime bumped to 1.49.4
+
 ## [1.723.0](https://github.com/okou-ai/okou/compare/api-v1.722.0...api-v1.723.0) (2026-10-10)
 
 

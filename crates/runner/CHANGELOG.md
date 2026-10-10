@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.223.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.223.1...runner-rs-v0.223.2) (2026-10-10)
+
+
+### Documentation
+
+* **runner:** document api url transport requirements ([#38565](https://github.com/okou-ai/okou/issues/38565)) ([e62fecc](https://github.com/okou-ai/okou/commit/e62feccc9d2db53682bea05758375690a3152f77))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.223.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.223.0...runner-rs-v0.223.1) (2026-10-10)
 
 ### Release Dependencies
