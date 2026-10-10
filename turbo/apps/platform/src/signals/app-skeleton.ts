@@ -4,6 +4,10 @@ import {
   captureBootstrapPhaseTiming$,
   captureFirstSkeletonHide$,
 } from "../lib/posthog.ts";
+import {
+  recordClientTelemetry,
+  startClientTelemetryMeasurement,
+} from "../lib/client-telemetry.ts";
 
 const APP_BOOTSTRAP_SKELETON_ID = "app-bootstrap-skeleton";
 const APP_BOOTSTRAP_SKELETON_HIDDEN_CLASS = "app-bootstrap-skeleton--hidden";
@@ -19,7 +23,13 @@ export async function hideBootstrapSkeleton(
   if (mainStylesheetLoaded) {
     const mainStylesheetStatus = await mainStylesheetLoaded;
     if (mainStylesheetStatus === "failed") {
-      throw new Error("Failed to load the main application stylesheet");
+      // The skeleton stays visible, as it did when this path threw.
+      recordClientTelemetry(
+        startClientTelemetryMeasurement(),
+        { event_name: "bootstrap.stylesheet" },
+        "error",
+      );
+      return;
     }
   }
   signal?.throwIfAborted();
