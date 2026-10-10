@@ -2242,7 +2242,7 @@ describe("RUN-04: agent run telemetry families", () => {
     }
   });
 
-  it("bounds run context Axiom scans around the run creation time", async () => {
+  it("reads fresh run context within the creation-time window after a cached miss", async () => {
     const actor = await entitledActor();
     await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
@@ -2266,13 +2266,41 @@ describe("RUN-04: agent run telemetry families", () => {
     if (!Number.isFinite(runCreatedAtMs)) {
       throw new Error("Expected the created run to have a valid creation time");
     }
-    dispatchAxiomQueries({
-      [agentRun.runId]: {
-        runContext: [{ runId: agentRun.runId, sessionId: "bdd-bounded" }],
+    let snapshotVisible = false;
+    context.mocks.axiom.query.mockImplementation(
+      (apl: unknown, options: unknown) => {
+        if (
+          typeof apl !== "string" ||
+          !apl.includes("['run-context']") ||
+          !apl.includes(agentRun.runId)
+        ) {
+          return Promise.resolve([]);
+        }
+        // The provider retains its initial cached miss even after ingestion.
+        const freshRead =
+          typeof options === "object" &&
+          options !== null &&
+          "noCache" in options &&
+          options.noCache === true;
+        return Promise.resolve(
+          freshRead && snapshotVisible
+            ? [{ runId: agentRun.runId, sessionId: "bdd-bounded" }]
+            : [],
+        );
       },
-    });
+    );
     const queryStartIndex = axiomCallCount();
 
+    const pendingContext = await api.requestRunContext(
+      actor,
+      agentRun.runId,
+      [404],
+    );
+    expect(pendingContext.body).toStrictEqual({
+      error: { message: "Run context not available", code: "NOT_FOUND" },
+    });
+
+    snapshotVisible = true;
     const contextRead = await api.requestRunContext(
       actor,
       agentRun.runId,
@@ -2292,11 +2320,15 @@ describe("RUN-04: agent run telemetry families", () => {
       .filter(([apl]) => {
         return typeof apl === "string" && apl.includes("['run-context']");
       });
-    expect(runContextQueries).toHaveLength(1);
-    expect(runContextQueries[0]?.[1]).toStrictEqual({
-      startTime: new Date(runCreatedAtMs - HOUR_MS).toISOString(),
-      endTime: new Date(runCreatedAtMs + HOUR_MS).toISOString(),
-    });
+    expect(runContextQueries).toHaveLength(2);
+    for (const [apl, options] of runContextQueries) {
+      expect(apl).toContain(`| where runId == "${agentRun.runId}"`);
+      expect(options).toStrictEqual({
+        noCache: true,
+        startTime: new Date(runCreatedAtMs - HOUR_MS).toISOString(),
+        endTime: new Date(runCreatedAtMs + HOUR_MS).toISOString(),
+      });
+    }
   });
 
   it("maps agent run context, network, and runner metadata from axiom snapshots", async () => {
