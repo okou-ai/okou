@@ -519,6 +519,7 @@
     "src/signals/services/run-body-environment.ts",
     "src/signals/services/run-environment.ts",
     "src/signals/services/thread-environment.signals.ts",
+    "src/signals/services/thread-okou-token.signals.ts",
     "src/signals/services/permission-manifest.service.ts",
     "src/signals/services/thread-connector-environment.signals.ts",
     "src/signals/services/thread-workflow-context.signals.ts",

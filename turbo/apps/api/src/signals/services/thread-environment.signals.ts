@@ -58,6 +58,7 @@ export function createModelProviderEnvironmentSignals(
           },
         }).result,
       ),
+      platformEnvironment: undefined,
       secrets: compactRecord(modelProvider.secrets),
       secretConnectorMap: modelProvider.secretConnectorMap,
       secretConnectorMetadataMap: modelProvider.secretConnectorMetadataMap,

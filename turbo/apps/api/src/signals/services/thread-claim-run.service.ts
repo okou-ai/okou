@@ -42,6 +42,7 @@ import {
   withoutLegacyAgentRunEnvironmentEntries,
 } from "./run-body-environment";
 import { createThreadContext } from "./thread-context.signals";
+import { prepareOkouTokenEnvironment$ } from "./thread-okou-token.signals";
 import { createEnvironmentSignals } from "./thread-environment.signals";
 import {
   emptyEnvironment,
@@ -353,10 +354,8 @@ import {
   type WithSubquery,
 } from "drizzle-orm";
 import { alias, QueryBuilder, unionAll } from "drizzle-orm/pg-core";
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
-import { generateOkouToken } from "../auth/tokens";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import {
   normalizeRunMetadata,
@@ -1513,9 +1512,7 @@ export function createThreadClaimRunObjects(
     return new ChatCallbackPreCreateTimingCollector();
   });
   // Generated once per claim graph; read after authorization admits the head.
-  const runIds$ = computed(() => {
-    return { runId: randomUUID(), newSessionId: randomUUID() };
-  });
+  const runIds$ = threadContext.runIds$;
   const input$ = computed(async (get) => {
     const head = await get(pickedEvent$);
     if (!head) {
@@ -2880,13 +2877,6 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const cloudBrowserEnabled$ = computed(async (get) => {
-    const thread = (await get(pickedEvent$))?.thread;
-    if (!thread) {
-      throw new Error("Agent prompt requires a chat thread");
-    }
-    return thread.cloudBrowserEnabled;
-  });
   const preCreatePreparedInput$ = computed(async (get) => {
     const [input, resolution, fullCommand, catalog] = await Promise.all([
       get(preCreatePostAuthorizationPostAuthorization$),
@@ -2916,7 +2906,6 @@ export function createThreadClaimRunObjects(
         body,
       },
       threadSessionResolution: resolution,
-      cloudBrowserEnabled: await get(cloudBrowserEnabled$),
     };
   });
   const preCreateRunArgsRunArgs$ = computed(async (get) => {
@@ -3660,8 +3649,6 @@ export function createThreadClaimRunObjects(
         : bodyContext.requestedFramework,
       modelProvider,
       environment,
-      mcpConnectorSlugs:
-        snapshot.storedConnectorMetadataContext.mcpConnectorSlugs,
       ...usage,
       connectorScope: selection.connectorScope,
       connectorCatalogSelection: selection.connectorCatalogSelection,
@@ -3755,7 +3742,6 @@ export function createThreadClaimRunObjects(
       piSandbox,
       modelProvider,
       environment: runtimeContext.environment,
-      mcpConnectorSlugs: runtimeContext.mcpConnectorSlugs,
       billableFirewalls: runtimeContext.billableFirewalls,
       modelUsageProvider: runtimeContext.modelUsageProvider,
       modelUsageLongContextMinTotalInputTokens:
@@ -4370,8 +4356,6 @@ export function createThreadClaimRunObjects(
           orgId: args.orgId,
           apiStartTime: args.apiStartTime,
           includeOkouTokenSecret: args.includeOkouTokenSecret,
-          okouTokenComputerUseHostId: args.okouTokenComputerUseHostId,
-          okouTokenCloudBrowserEnabled: args.okouTokenCloudBrowserEnabled,
           chatThreadId: args.chatThreadId,
           platformEnvironment: args.platformEnvironment,
           // Thread launches carry no producer Pi launch options or
@@ -4425,9 +4409,24 @@ export function createThreadClaimRunObjects(
       if (!args || isRouteError(args)) {
         return args;
       }
+      // The signal-owner lint verifies threadContext only when callbacks read
+      // its members; pass the fields the token needs.
+      const okouToken = await set(
+        prepareOkouTokenEnvironment$,
+        bootstrap,
+        pickedEvent$,
+        {
+          computerUseHostGrant$: threadContext.computerUseHostGrant$,
+          connectorSnapshot$: threadContext.connectorSnapshot$,
+          runIds$: threadContext.runIds$,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
       return prepareRunnerStorageInput({
         db: set(writeDb$),
         args,
+        okouToken,
         storageManifestStats: new StorageManifestBuildStats(),
       });
     },
@@ -7797,19 +7796,6 @@ function selectedRunModelProviderArgs(
 }
 // --- Thread-private implementation: Runner payload ---
 
-function withOkouTokenSecret(
-  body: CreateRunBody,
-  okouToken: string,
-): CreateRunBody {
-  return {
-    ...body,
-    secrets: {
-      ...withoutLegacyAgentRunEnvironmentEntries(body.secrets),
-      OKOU_TOKEN: okouToken,
-    },
-  };
-}
-
 interface StoredExecutionSecrets {
   // Runtime secret namespace encrypted into executionContext.encryptedSecrets.
   // Keys are the `NAME` in `${{ secrets.NAME }}`; connector/model-provider
@@ -8058,8 +8044,6 @@ interface BuildRunnerJobPayloadInput {
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   /** Connector and model-provider environment, before the Okou token. */
   readonly environment: Environment;
-  /** Built-in MCP connectors whose accounts the Okou token carries. */
-  readonly mcpConnectorSlugs: readonly ConnectorSlug[];
   readonly billableFirewalls: readonly string[];
   readonly modelUsageProvider: string | undefined;
   readonly modelUsageLongContextMinTotalInputTokens: number;
@@ -8068,8 +8052,6 @@ interface BuildRunnerJobPayloadInput {
     readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly additionalVolumeSources: AdditionalVolumeSources;
   readonly includeOkouTokenSecret: boolean | undefined;
-  readonly okouTokenComputerUseHostId: string | undefined;
-  readonly okouTokenCloudBrowserEnabled: boolean | undefined;
   readonly chatThreadId: string | undefined;
   readonly platformEnvironment: Record<string, string> | undefined;
   readonly userTimezone: string | undefined;
@@ -8101,63 +8083,6 @@ function withPiMemoryRecallEpoch(
 
 function preparedRunnerGroup(): string {
   return officialRunnerGroup(optionalEnv("RUNNER_DEFAULT_GROUP"));
-}
-
-function preparedRunnerJobBody(
-  args: BuildRunnerJobPayloadInput,
-): CreateRunBody {
-  if (!args.includeOkouTokenSecret) {
-    return args.body;
-  }
-  const { runtimeTargets } = args.environment;
-  const customConnectorSourceEntries = runtimeTargets.flatMap((target) => {
-    return target.kind === "custom" && target.sourceId
-      ? [[target.customConnectorId, target.sourceId] as const]
-      : [];
-  });
-  const builtinMcpSlugs = new Set(args.mcpConnectorSlugs);
-  const builtinConnectorSourceEntries = runtimeTargets.flatMap((target) => {
-    return target.kind === "builtin" &&
-      target.sourceId !== undefined &&
-      builtinMcpSlugs.has(target.connectorSlug)
-      ? [[target.connectorSlug, target.sourceId] as const]
-      : [];
-  });
-  const okouToken = generateOkouToken(
-    args.userId,
-    args.run.id,
-    args.orgId,
-    args.featureSwitchContext.overrides,
-    {
-      ...(args.okouTokenComputerUseHostId
-        ? { computerUseHostId: args.okouTokenComputerUseHostId }
-        : {}),
-      cloudBrowserEnabled: args.okouTokenCloudBrowserEnabled === true,
-      ...(customConnectorSourceEntries.length === 0
-        ? {}
-        : {
-            customConnectorSourceIds: Object.fromEntries(
-              customConnectorSourceEntries,
-            ),
-          }),
-      ...(builtinConnectorSourceEntries.length === 0
-        ? {}
-        : {
-            builtinConnectorSourceIds: Object.fromEntries(
-              builtinConnectorSourceEntries,
-            ),
-          }),
-    },
-  );
-  return withOkouTokenSecret(args.body, okouToken);
-}
-
-function okouTokenEnvironment(body: CreateRunBody): Record<string, string> {
-  const okouToken = body.secrets?.OKOU_TOKEN;
-  if (!okouToken) {
-    throw new Error("The Okou run token is missing from the run context");
-  }
-  return { OKOU_TOKEN: okouToken };
 }
 
 function withPaidToolPlatformEnvironment(
@@ -8261,6 +8186,8 @@ function assembleRunnerLaunch(args: {
 interface StorageMaterializationInput {
   readonly db: Db;
   readonly args: BuildRunnerJobPayloadInput;
+  /** The Okou token source, merged last into body secrets and platform env. */
+  readonly okouToken: Environment;
   readonly storageManifestStats: StorageManifestBuildStats;
 }
 
@@ -8276,18 +8203,24 @@ function runnerWritebackArtifacts(args: BuildRunnerJobPayloadInput) {
 }
 
 function prepareRunnerStorageInput(input: StorageMaterializationInput) {
-  const { db, args, storageManifestStats } = input;
-  const body = preparedRunnerJobBody(args);
+  const { db, args, storageManifestStats, okouToken } = input;
   return {
     db,
     args,
     storageManifestStats,
-    body,
+    body: {
+      ...args.body,
+      secrets: {
+        ...withoutLegacyAgentRunEnvironmentEntries(args.body.secrets),
+        ...okouToken.secrets,
+      },
+    },
     writebackArtifacts: runnerWritebackArtifacts(args),
     group: preparedRunnerGroup(),
-    platformEnvironment: args.includeOkouTokenSecret
-      ? { ...args.platformEnvironment, ...okouTokenEnvironment(body) }
-      : args.platformEnvironment,
+    platformEnvironment: {
+      ...args.platformEnvironment,
+      ...okouToken.platformEnvironment,
+    },
   };
 }
 
@@ -8737,7 +8670,6 @@ interface ProductRunArgsInput {
   readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
   readonly timing: ApiDispatchTimingCollector;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
-  readonly cloudBrowserEnabled: boolean;
 }
 
 /**
@@ -8766,8 +8698,6 @@ interface ProductRunArgs {
   readonly callbacks?: readonly RunCallback[];
   readonly includeOkouTokenSecret?: boolean;
   readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
-  readonly okouTokenComputerUseHostId?: string;
-  readonly okouTokenCloudBrowserEnabled?: boolean;
   readonly enforceBuiltInCredits?: boolean;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly connectorScope: ExplicitConnectorScope;
@@ -8819,8 +8749,6 @@ function buildProductRunArgs(
           },
         }
       : {}),
-    okouTokenComputerUseHostId: command.computerUseHostId,
-    okouTokenCloudBrowserEnabled: args.cloudBrowserEnabled,
     enforceBuiltInCredits: true,
     requiredOfficialWorkflowIds: command.requiredOfficialWorkflowIds,
     connectorScope: {

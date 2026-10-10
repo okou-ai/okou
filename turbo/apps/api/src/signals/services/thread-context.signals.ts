@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { computed, type Computed } from "ccstate";
@@ -73,6 +74,11 @@ export interface ThreadContext extends ThreadWorkflowContext {
   readonly modelRoute$: ThreadModels["modelRoute$"];
   readonly providerFramework$: ThreadModels["providerFramework$"];
   readonly dispatchTiming$: ThreadModels["dispatchTiming$"];
+  /** Generated once per picked event's claim graph. */
+  readonly runIds$: Computed<{
+    readonly runId: string;
+    readonly newSessionId: string;
+  }>;
   /** Connector accounts chosen from thread, source and default selections. */
   readonly connectorSelection$: ConnectedAccounts["connectorSelection$"];
   readonly connectorSnapshot$: ConnectedAccounts["connectorSnapshot$"];
@@ -157,6 +163,7 @@ export function createThreadContext(
     modelRoute$: model.modelRoute$,
     providerFramework$: model.providerFramework$,
     dispatchTiming$: model.dispatchTiming$,
+    runIds$: createRunIds(),
     connectorSelection$: connectedAccounts.connectorSelection$,
     connectorSnapshot$: connectedAccounts.connectorSnapshot$,
     connectorThreadSelections$: connectedAccounts.threadSelections$,
@@ -243,5 +250,11 @@ function createThreadHostGrant(
       )
       .limit(1);
     return host ?? null;
+  });
+}
+
+function createRunIds() {
+  return computed(() => {
+    return { runId: randomUUID(), newSessionId: randomUUID() };
   });
 }
