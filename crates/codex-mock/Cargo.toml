@@ -1,6 +1,6 @@
 [package]
 name = "codex-mock"
-version = "0.11.65"
+version = "0.11.66"
 edition.workspace = true
 
 [dependencies]

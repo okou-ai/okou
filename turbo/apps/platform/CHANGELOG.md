@@ -12,6 +12,23 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1009.1](https://github.com/okou-ai/okou/compare/app-v0.1009.0...app-v0.1009.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **app:** unify inline reference chips on the state layer ([#38654](https://github.com/okou-ai/okou/issues/38654)) ([aeb8e59](https://github.com/okou-ai/okou/commit/aeb8e5941491a3d9553333bf1245394385fe198c))
+* **chat:** polish chat thread archiving feedback and copy ([#38571](https://github.com/okou-ai/okou/issues/38571)) ([0e4bcc8](https://github.com/okou-ai/okou/commit/0e4bcc82559c6bc334fcf6269351d95b579d83cf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.549.1
+    * @okouai/core bumped to 8.741.1
+    * @okouai/ui bumped to 1.13.3
+
 ## [0.1009.0](https://github.com/okou-ai/okou/compare/app-v0.1008.2...app-v0.1009.0) (2026-10-10)
 
 
