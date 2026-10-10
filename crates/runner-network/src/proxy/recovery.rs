@@ -227,14 +227,23 @@ mod tests {
     #[tokio::test]
     async fn success_resets_backoff_and_adopts_child() {
         let (mut mitm, _) = MitmProxy::noop();
+        let dir = tempfile::tempdir().unwrap();
         let mut recovery = MitmRecovery::new();
         recovery.backoff = Duration::from_secs(16);
         recovery.consecutive_failures = 5;
-        recovery.task = Some(tokio::spawn(async { Ok(unmanaged_child("true", None)) }));
+        recovery.task = Some(tokio::spawn(async {
+            Ok(unmanaged_child("sleep", Some("60")))
+        }));
         recovery.wait(&mut mitm).await.unwrap();
         assert_eq!(recovery.backoff, BACKOFF_INITIAL);
         assert_eq!(recovery.consecutive_failures, 0);
+        mitm.set_control_directory_for_test(dir.path().to_path_buf());
+        assert!(
+            mitm.usage_flush_target().is_some(),
+            "successful recovery must retain a running child"
+        );
         mitm.stop().await.unwrap();
+        assert!(mitm.usage_flush_target().is_none());
     }
 
     #[tokio::test]
