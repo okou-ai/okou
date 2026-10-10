@@ -758,13 +758,13 @@ const TEMPLATE_RE = /\$\{\{\s*(secrets|vars)\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
 async function measureFirewallAuthStage<T>(
   records: FirewallAuthTimingRecord[],
   actionType: FirewallAuthTimingActionType,
-  operation: () => Promise<T>,
+  operation: Promise<T>,
   isSuccess: (result: T) => boolean,
 ): Promise<T> {
   const startedAt = performance.now();
   let success = false;
   return await (async () => {
-    const result = await operation();
+    const result = await operation;
     success = isSuccess(result);
     return result;
   })().finally(() => {
@@ -5559,108 +5559,120 @@ async function resolveNonCustomFirewallAuthMaterial(args: {
   };
 }
 
-async function resolveFirewallAuthMaterial(args: {
-  readonly db: Db;
-  readonly auth: SandboxAuth;
-  readonly body: FirewallAuthBody;
-  readonly referenced: ReferencedAuthKeys;
-  readonly prepared: PreparedFirewallAuth;
-}): Promise<FirewallAuthMaterialResolution> {
-  if (args.prepared.kind === "connector-automatic") {
-    if (args.prepared.catalogAuth === "none") {
+const resolveFirewallAuthMaterial$ = command(
+  async (
+    { set },
+    args: {
+      readonly auth: SandboxAuth;
+      readonly body: FirewallAuthBody;
+      readonly referenced: ReferencedAuthKeys;
+      readonly prepared: PreparedFirewallAuth;
+    },
+    signal: AbortSignal,
+  ): Promise<FirewallAuthMaterialResolution> => {
+    const db = set(writeDb$);
+    if (args.prepared.kind === "connector-automatic") {
+      if (args.prepared.catalogAuth === "none") {
+        return {
+          ok: true,
+          material: {
+            secrets: {},
+            vars: {},
+            expiresAt: null,
+            refreshedConnectors: [],
+            refreshedSecrets: [],
+            missingSecretFailure: { kind: "connector-not-configured" },
+          },
+        };
+      }
+      const refreshSignal = firewallAuthRefreshTimeoutSignal();
+      const resolved = await settleIncludingAbort(
+        set(
+          resolveBuiltinConnectorAutomaticMcpCredential,
+          {
+            orgId: args.auth.orgId,
+            userId: args.auth.userId,
+            connectorId: args.prepared.connectorId,
+            connectorSlug: args.prepared.connectorSlug,
+            authMethodId: args.prepared.authMethodId,
+            forceRefresh: args.body.forceRefresh,
+          },
+          refreshSignal,
+        ),
+      );
+      signal.throwIfAborted();
+      if (!resolved.ok) {
+        if (isRefreshTimeoutError(resolved.error, refreshSignal)) {
+          return {
+            ok: false,
+            response: tokenRefreshFailed(
+              [args.prepared.connectorSlug],
+              "upstream_provider",
+            ),
+          };
+        }
+        throw resolved.error;
+      }
+      const credential = resolved.value;
+      if (credential.kind === "unavailable") {
+        return {
+          ok: false,
+          response:
+            credential.reason === "temporary"
+              ? tokenRefreshFailed(
+                  [args.prepared.connectorSlug],
+                  "upstream_provider",
+                )
+              : credential.reason === "reconnect"
+                ? connectorReconnectRequired([args.prepared.connectorSlug])
+                : connectorNotConfigured(),
+        };
+      }
       return {
         ok: true,
         material: {
-          secrets: {},
+          secrets:
+            credential.kind === "oauth"
+              ? {
+                  [AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME]:
+                    credential.accessToken,
+                }
+              : {},
           vars: {},
-          expiresAt: null,
+          expiresAt:
+            credential.kind === "oauth"
+              ? mergeExpiresAt(
+                  args.prepared.expiresAt,
+                  credential.tokenExpiresAt === null
+                    ? undefined
+                    : Math.floor(credential.tokenExpiresAt.getTime() / 1000),
+                )
+              : null,
           refreshedConnectors: [],
           refreshedSecrets: [],
           missingSecretFailure: { kind: "connector-not-configured" },
         },
       };
     }
-    const refreshSignal = firewallAuthRefreshTimeoutSignal();
-    const resolved = await settleIncludingAbort(
-      resolveBuiltinConnectorAutomaticMcpCredential(
-        {
-          db: args.db,
-          orgId: args.auth.orgId,
-          userId: args.auth.userId,
-          connectorId: args.prepared.connectorId,
-          connectorSlug: args.prepared.connectorSlug,
-          authMethodId: args.prepared.authMethodId,
-          forceRefresh: args.body.forceRefresh,
-        },
-        refreshSignal,
-      ),
-    );
-    if (!resolved.ok) {
-      if (isRefreshTimeoutError(resolved.error, refreshSignal)) {
-        return {
-          ok: false,
-          response: tokenRefreshFailed(
-            [args.prepared.connectorSlug],
-            "upstream_provider",
-          ),
-        };
-      }
-      throw resolved.error;
+    if (args.prepared.kind === "custom") {
+      const resolution = await resolveCustomFirewallAuthMaterial({
+        ...args,
+        db,
+        prepared: args.prepared,
+      });
+      signal.throwIfAborted();
+      return resolution;
     }
-    const credential = resolved.value;
-    if (credential.kind === "unavailable") {
-      return {
-        ok: false,
-        response:
-          credential.reason === "temporary"
-            ? tokenRefreshFailed(
-                [args.prepared.connectorSlug],
-                "upstream_provider",
-              )
-            : credential.reason === "reconnect"
-              ? connectorReconnectRequired([args.prepared.connectorSlug])
-              : connectorNotConfigured(),
-      };
-    }
-    return {
-      ok: true,
-      material: {
-        secrets:
-          credential.kind === "oauth"
-            ? {
-                [AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME]:
-                  credential.accessToken,
-              }
-            : {},
-        vars: {},
-        expiresAt:
-          credential.kind === "oauth"
-            ? mergeExpiresAt(
-                args.prepared.expiresAt,
-                credential.tokenExpiresAt === null
-                  ? undefined
-                  : Math.floor(credential.tokenExpiresAt.getTime() / 1000),
-              )
-            : null,
-        refreshedConnectors: [],
-        refreshedSecrets: [],
-        missingSecretFailure: { kind: "connector-not-configured" },
-      },
-    };
-  }
-  if (args.prepared.kind === "custom") {
-    return await resolveCustomFirewallAuthMaterial({
-      ...args,
+    const resolution = await resolveNonCustomFirewallAuthMaterial({
+      db,
+      auth: args.auth,
+      body: args.prepared.context.body,
       prepared: args.prepared,
     });
-  }
-  return await resolveNonCustomFirewallAuthMaterial({
-    db: args.db,
-    auth: args.auth,
-    body: args.prepared.context.body,
-    prepared: args.prepared,
-  });
-}
+    signal.throwIfAborted();
+    return resolution;
+  },
+);
 
 function missingResolvedFirewallAuthResponse(args: {
   readonly material: ResolvedFirewallAuthMaterial;
@@ -5810,83 +5822,88 @@ async function prepareFirewallAuthRequest(
   };
 }
 
-async function resolveFirewallAuthWithTimings(
-  db: Db,
-  auth: SandboxAuth,
-  body: FirewallAuthBody,
-  billableCacheExpiry: BillableFirewallCacheExpiry,
-  timingRecords: FirewallAuthTimingRecord[],
-): Promise<ResolveFirewallAuthResult> {
-  const preparation = await measureFirewallAuthStage(
-    timingRecords,
-    "firewall_auth_prepare",
-    async () => {
-      return await prepareFirewallAuthRequest(
-        db,
-        auth,
-        body,
-        billableCacheExpiry,
-      );
-    },
-    (result) => {
-      return result.ok;
-    },
-  );
-  if (!preparation.ok) {
-    return preparation.response;
-  }
-  const resolution = await measureFirewallAuthStage(
-    timingRecords,
-    "firewall_auth_resolve",
-    async () => {
-      return await resolveFirewallAuthMaterial({
-        db,
-        auth,
-        body,
-        referenced: preparation.referenced,
-        prepared: preparation.prepared,
-      });
-    },
-    (result) => {
-      return result.ok;
-    },
-  );
-  if (!resolution.ok) {
-    // A terminal transition can remove the final retained credential while the
-    // complete bundle is reloaded after refresh. Preserve terminal-run guidance.
-    const run = await findFirewallAuthRun(db, auth);
-    return run && !firewallAuthRunIsActive(run.status)
-      ? forbiddenTerminalRun()
-      : resolution.response;
-  }
-  return finalizeFirewallAuth({
-    body,
-    referenced: preparation.referenced,
-    material: resolution.material,
-    billableExpiresAt: preparation.billableExpiresAt,
-  });
-}
+const resolveFirewallAuthWithTimings$ = command(
+  async (
+    { set },
+    auth: SandboxAuth,
+    body: FirewallAuthBody,
+    billableCacheExpiry: BillableFirewallCacheExpiry,
+    timingRecords: FirewallAuthTimingRecord[],
+    signal: AbortSignal,
+  ): Promise<ResolveFirewallAuthResult> => {
+    const db = set(writeDb$);
+    const preparation = await measureFirewallAuthStage(
+      timingRecords,
+      "firewall_auth_prepare",
+      prepareFirewallAuthRequest(db, auth, body, billableCacheExpiry),
+      (result) => {
+        return result.ok;
+      },
+    );
+    signal.throwIfAborted();
+    if (!preparation.ok) {
+      return preparation.response;
+    }
+    const resolution = await measureFirewallAuthStage(
+      timingRecords,
+      "firewall_auth_resolve",
+      set(
+        resolveFirewallAuthMaterial$,
+        {
+          auth,
+          body,
+          referenced: preparation.referenced,
+          prepared: preparation.prepared,
+        },
+        signal,
+      ),
+      (result) => {
+        return result.ok;
+      },
+    );
+    signal.throwIfAborted();
+    if (!resolution.ok) {
+      // A terminal transition can remove the final retained credential while the
+      // complete bundle is reloaded after refresh. Preserve terminal-run guidance.
+      const run = await findFirewallAuthRun(db, auth);
+      signal.throwIfAborted();
+      return run && !firewallAuthRunIsActive(run.status)
+        ? forbiddenTerminalRun()
+        : resolution.response;
+    }
+    return finalizeFirewallAuth({
+      body,
+      referenced: preparation.referenced,
+      material: resolution.material,
+      billableExpiresAt: preparation.billableExpiresAt,
+    });
+  },
+);
 
 /** Produces credential material only. The route must invoke
  * admitPreparedFirewallAuthResponse$ before returning a successful response.
  * Legacy credential preparation still has its separate Db-aware graph. */
-export async function prepareFirewallAuthResponse(
-  db: Db,
-  auth: SandboxAuth,
-  body: FirewallAuthBody,
-  billableCacheExpiry: BillableFirewallCacheExpiry,
-): Promise<ResolveFirewallAuthResult> {
-  const timingRecords: FirewallAuthTimingRecord[] = [];
-  return await resolveFirewallAuthWithTimings(
-    db,
-    auth,
-    body,
-    billableCacheExpiry,
-    timingRecords,
-  ).finally(() => {
-    recordFirewallAuthTimings(auth.runId, timingRecords);
-  });
-}
+export const prepareFirewallAuthResponse$ = command(
+  async (
+    { set },
+    auth: SandboxAuth,
+    body: FirewallAuthBody,
+    billableCacheExpiry: BillableFirewallCacheExpiry,
+    signal: AbortSignal,
+  ): Promise<ResolveFirewallAuthResult> => {
+    const timingRecords: FirewallAuthTimingRecord[] = [];
+    return await set(
+      resolveFirewallAuthWithTimings$,
+      auth,
+      body,
+      billableCacheExpiry,
+      timingRecords,
+      signal,
+    ).finally(() => {
+      recordFirewallAuthTimings(auth.runId, timingRecords);
+    });
+  },
+);
 
 function personalSubscriptionRuntimeGroups(
   args: Parameters<typeof syncModelProviderRuntimeSecrets>[0],
