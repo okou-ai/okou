@@ -262,7 +262,42 @@ after native success restores that prior mask. Isolated real-file/FD/signal test
 cover both acquisition interrupts and an actual-mask-changed failure, checking
 EBADF, unchanged FD counts/input bytes and mask restoration. This does not admit
 arbitrary raising signal handlers, concurrent interpreter/reaper state or an
-external writer/controller seal.
+external writer/controller seal. The same raw-descriptor owner now covers held
+package archives and all five public-retention directory descriptors plus its
+source/output files; buffered readers/writers borrow with `closefd=False`.
+Previously those sites acquired before registering closure or constructing a
+buffered owner, so a handled post-open interrupt could leave a real FD live.
+Thirty-four isolated real-file/directory cases cover SIGINT, raising SIGTERM,
+interrupt/allocation failure after actual native mask mutation at each of the
+eight package/retention acquisition sites, and both buffered-borrower allocation
+failures. They check EBADF for every acquired original, unchanged FD counts and
+public source bytes, no acquisition at the failing mask boundary and exact prior
+mask restoration. Registration is with the caller's already-entered owner before
+opening, not a new descriptor context that later transfers into `enter_context`.
+An owner with live descriptors defers the handled signals before `ExitStack`
+consumes any callback; each raw close also independently guards querying/blocking,
+closes even if that mask call raises, and restores the prior mask only afterward.
+A refused acquisition with no live FD performs no extra mutating retirement call.
+Neither path retries a numeric FD after a native close may have succeeded. Fifty
+more real-signal/mask cases cover registration while prior FDs are live, single
+retirement-entry and final-close SIGINT/raising SIGTERM at all nine
+QEMU/package/retention sites, and actual native retirement-mask mutation followed
+by interruption/allocation failure.
+All 84 cases retain the raised exception/traceback while verifying every original
+is already EBADF, rather than relying on generator garbage collection. Each
+retirement-entry injection identifies the selected descriptor's actual registered
+owner, not an earlier nested owner while that descriptor happens to remain live.
+A concrete `ExitStack` owner now surrounds generator entry and exit as well:
+masking inside the generator would run too late for an interrupt in contextlib's
+pre-resumption exit wrapper. Twelve additional cases inject that exact wrapper
+handoff for package/QEMU/source/output originals and actual retirement query or
+restore failures, retaining tracebacks through EBADF/count/mask/source checks.
+The owner shields generator resumption before consuming callbacks; a failed
+context entry closes originals already registered with that same owner.
+Partial retention remains incomplete data, not a completion record or permission
+to retry/overwrite. These scoped tests do not admit general atomic acquisition,
+arbitrary/repeated cleanup interruptions, constructor/reaper ownership,
+source writers or full-private/controller/TCB interoperability.
 Real path-replacement tests read the original XZ bytes after swapping the named
 file, and a real FIFO with no writer refuses without blocking or creating a
 child. Exact-size wrong-digest, actual-writer and buffered-borrower cases cover

@@ -652,6 +652,374 @@ print('held FIFO refused; no descriptor or decoder child remains')
                 self.assertEqual(digest, hashlib.sha256(b'public original bytes').hexdigest())
             self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
 
+    def test_package_and_retention_acquisition_interrupts_close_actual_fds(self):
+        # Real local descriptors and calling-thread signals, never a signed
+        # package, decoder, controller or native-runtime admission substitute.
+        script = '''
+import errno, hashlib, importlib.util, os, pathlib, signal, sys
+spec = importlib.util.spec_from_file_location('actual_producer', sys.argv[1])
+producer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(producer)
+base, site, case = pathlib.Path(sys.argv[2]), sys.argv[3], sys.argv[4]
+archives = base / 'cache/archives'
+archives.mkdir(parents=True, mode=0o700)
+(base / 'public-evidence').mkdir(mode=0o700)
+archive = archives / 'public_canary.deb'
+public = b'inert public open-only archive bytes'
+archive.write_bytes(public)
+digest = hashlib.sha256(public).hexdigest()
+packages = {'public': {'archiveSha256': digest, 'archiveSizeBytes': len(public)}}
+original_open, original_mask, original_fdopen = os.open, signal.pthread_sigmask, os.fdopen
+mask = original_mask(signal.SIG_BLOCK, set())
+before = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+opened, selected, blocked, terminated = [], [], [], []
+ordinal = {'package': 1, 'base': 1, 'cache': 2, 'archives': 3,
+           'evidence': 4, 'storage': 5, 'source': 6, 'retained': 7}[site]
+mutations = 0
+interrupted = None
+def terminate(signum, frame):
+    terminated.append(signum)
+    raise SystemExit(128 + signum)
+previous_handler = signal.signal(signal.SIGTERM, terminate)
+def is_selected(path, flags):
+    return ((site in ('package', 'base') and pathlib.Path(path) == (archive if site == 'package' else base))
+            or (site in ('cache', 'archives', 'evidence', 'storage')
+                and str(path) == {'cache': 'cache', 'archives': 'archives',
+                                  'evidence': 'public-evidence', 'storage': 'package-archives'}[site])
+            or (site == 'source' and str(path) == archive.name)
+            or (site == 'retained' and str(path) == digest + '.deb' and flags & os.O_CREAT))
+def acquire_then_interrupt(path, flags, *args, **kwargs):
+    descriptor = original_open(path, flags, *args, **kwargs)
+    opened.append(descriptor)
+    if is_selected(path, flags):
+        selected.append(descriptor)
+        if case in ('sigint', 'sigterm'):
+            os.kill(os.getpid(), signal.SIGINT if case == 'sigint' else signal.SIGTERM)
+    return descriptor
+def mutate_then_fail(how, values):
+    global mutations
+    result = original_mask(how, values)
+    if how == signal.SIG_BLOCK and values == {signal.SIGINT, signal.SIGTERM}:
+        mutations += 1
+        if mutations == ordinal:
+            blocked.append(original_mask(signal.SIG_BLOCK, set()))
+            raise (KeyboardInterrupt if case == 'mask-interrupt' else MemoryError)('after actual native mask mutation')
+    return result
+def fail_borrower(descriptor, *args, **kwargs):
+    if selected and descriptor == selected[0]:
+        raise MemoryError('buffered borrower allocation refused after real open')
+    return original_fdopen(descriptor, *args, **kwargs)
+try:
+    os.open = acquire_then_interrupt
+    if case.startswith('mask-'):
+        signal.pthread_sigmask = mutate_then_fail
+    elif case == 'borrower':
+        os.fdopen = fail_borrower
+    try:
+        if site == 'package':
+            with producer.opened_package_archive(archive):
+                raise AssertionError('interrupted acquisition admitted input')
+        else:
+            producer.retain_public_package_archives(base, packages)
+    except KeyboardInterrupt as error:
+        interrupted = error
+        assert case in ('sigint', 'mask-interrupt')
+    except SystemExit as error:
+        interrupted = error
+        assert case == 'sigterm' and error.code == 128 + signal.SIGTERM
+    except MemoryError as error:
+        interrupted = error
+        assert case in ('mask-memory', 'borrower')
+    else:
+        raise AssertionError('interruption did not propagate')
+finally:
+    os.open, signal.pthread_sigmask, os.fdopen = original_open, original_mask, original_fdopen
+    signal.signal(signal.SIGTERM, previous_handler)
+assert interrupted is not None  # Retain its traceback through actual FD checks.
+assert len(selected) == (0 if case.startswith('mask-') else 1)
+if case.startswith('mask-'):
+    assert len(blocked) == 1 and {signal.SIGINT, signal.SIGTERM}.issubset(blocked[0])
+    assert len(opened) == ordinal - 1
+assert terminated == ([signal.SIGTERM] if case == 'sigterm' else [])
+for descriptor in opened:
+    try:
+        os.fstat(descriptor)
+    except OSError as error:
+        assert error.errno == errno.EBADF
+    else:
+        raise AssertionError('real acquired descriptor leaked: ' + str(descriptor))
+assert len(list(pathlib.Path('/proc/self/fd').iterdir())) == before
+assert original_mask(signal.SIG_BLOCK, set()) == mask
+assert archive.read_bytes() == public
+assert hashlib.sha256(archive.read_bytes()).hexdigest() == digest
+print('actual acquisition interrupted; all original FDs closed and caller mask restored')
+'''
+        for site in ('package', 'base', 'cache', 'archives', 'evidence', 'storage', 'source', 'retained'):
+            cases = ('sigint', 'sigterm', 'mask-interrupt', 'mask-memory')
+            if site in ('source', 'retained'):
+                cases += ('borrower',)
+            for case in cases:
+                with self.subTest(site=site, case=case), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                    result = subprocess.run(
+                        [sys.executable, '-I', '-S', '-B', '-c', script,
+                         str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), directory, site, case],
+                        capture_output=True, text=True, timeout=10,
+                        env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn('all original FDs closed and caller mask restored', result.stdout)
+
+    def test_archive_owner_registration_and_final_close_interrupts_preserve_actual_fds(self):
+        # Keep the raised exception/traceback live while checking kernel FD state:
+        # deferred generator garbage collection is not synchronous owner cleanup.
+        script = '''
+import contextlib, errno, hashlib, importlib.util, os, pathlib, signal, sys
+spec = importlib.util.spec_from_file_location('actual_producer', sys.argv[1])
+producer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(producer)
+base, phase, site, case = pathlib.Path(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
+archives = base / 'cache/archives'
+archives.mkdir(parents=True, mode=0o700)
+(base / 'public-evidence').mkdir(mode=0o700)
+archive = archives / 'public_canary.deb'
+public = b'inert public ownership-edge input'
+archive.write_bytes(public)
+digest = hashlib.sha256(public).hexdigest()
+packages = {'public': {'archiveSha256': digest, 'archiveSizeBytes': len(public)}}
+original_open, original_close, original_mask = os.open, os.close, signal.pthread_sigmask
+original_push, original_exit = contextlib.ExitStack._push_exit_callback, contextlib.ExitStack.__exit__
+owner_slots, owner_entries = {}, []
+mask = original_mask(signal.SIG_BLOCK, set())
+before = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+opened, selected, blocked, terminated = [], [], [], []
+sent = False
+mutations = 0
+interrupted = None
+def terminate(signum, frame):
+    terminated.append(signum)
+    raise SystemExit(128 + signum)
+previous_handler = signal.signal(signal.SIGTERM, terminate)
+def selected_path(path, flags):
+    return ((site in ('package', 'qemu', 'base') and pathlib.Path(path) == (base if site == 'base' else archive))
+            or (site in ('cache', 'archives', 'evidence', 'storage')
+                and str(path) == {'cache': 'cache', 'archives': 'archives',
+                                  'evidence': 'public-evidence', 'storage': 'package-archives'}[site])
+            or (site == 'source' and str(path) == archive.name)
+            or (site == 'retained' and str(path) == digest + '.deb' and flags & os.O_CREAT))
+def observe_open(path, flags, *args, **kwargs):
+    descriptor = original_open(path, flags, *args, **kwargs)
+    opened.append(descriptor)
+    if phase != 'registration' and selected_path(path, flags):
+        selected.append(descriptor)
+    return descriptor
+def send_once():
+    global sent
+    sent = True
+    os.kill(os.getpid(), signal.SIGINT if case == 'sigint' else signal.SIGTERM)
+def interrupt_registration(self, callback, *args, **kwargs):
+    # Identify the exact owner of the selected original, not an earlier nested
+    # file owner while a directory/source descriptor merely remains live.
+    original = getattr(callback, '__wrapped__', None)
+    if original is not None and original.__name__ == 'close_original':
+        closure = dict(zip(original.__code__.co_freevars, original.__closure__))
+        owner_slots.setdefault(self, []).append(closure['acquired'].cell_contents)
+    if phase == 'registration' and not sent and len(opened) == int(site):
+        send_once()
+    return original_push(self, callback, *args, **kwargs)
+def interrupt_close(descriptor):
+    if phase == 'close' and not sent and selected and descriptor == selected[0]:
+        send_once()
+    return original_close(descriptor)
+def interrupt_retirement(self, *args):
+    if (phase == 'retire-owner' and not sent and selected
+            and any(slot[0] == selected[0] for slot in owner_slots.get(self, []))):
+        try:
+            os.fstat(selected[0])
+        except OSError as error:
+            assert error.errno == errno.EBADF
+        else:
+            owner_entries.append(self)
+            send_once()
+    return original_exit(self, *args)
+def fail_close_mask(how, values):
+    global mutations
+    result = original_mask(how, values)
+    if how == signal.SIG_BLOCK and values == {signal.SIGINT, signal.SIGTERM}:
+        mutations += 1
+        if phase == 'close-mask' and mutations == 2:
+            blocked.append(original_mask(signal.SIG_BLOCK, set()))
+            raise (KeyboardInterrupt if case == 'mask-interrupt' else MemoryError)('after actual close-mask mutation')
+    return result
+try:
+    os.open, os.close = observe_open, interrupt_close
+    contextlib.ExitStack._push_exit_callback, contextlib.ExitStack.__exit__ = interrupt_registration, interrupt_retirement
+    signal.pthread_sigmask = fail_close_mask
+    try:
+        if site == 'package':
+            with producer.opened_package_archive(archive):
+                pass
+        elif site == 'qemu':
+            # The real opened FD must also close when exact-QEMU metadata refuses;
+            # this public file is deliberately not a pinned source archive.
+            with producer.opened_qemu_archive(archive):
+                raise AssertionError('public bytes admitted as pinned QEMU')
+        else:
+            producer.retain_public_package_archives(base, packages)
+    except (KeyboardInterrupt, SystemExit, MemoryError) as error:
+        interrupted = error
+    else:
+        raise AssertionError('owned-edge interruption did not propagate')
+finally:
+    os.open, os.close, signal.pthread_sigmask = original_open, original_close, original_mask
+    contextlib.ExitStack._push_exit_callback, contextlib.ExitStack.__exit__ = original_push, original_exit
+    signal.signal(signal.SIGTERM, previous_handler)
+assert interrupted is not None
+if phase == 'retire-owner':
+    assert len(owner_entries) == 1, 'selected original owner retirement not reached'
+if case == 'sigint':
+    assert sent and isinstance(interrupted, KeyboardInterrupt)
+elif case == 'sigterm':
+    assert sent and isinstance(interrupted, SystemExit) and interrupted.code == 128 + signal.SIGTERM
+else:
+    assert phase == 'close-mask' and len(blocked) == 1
+    assert {signal.SIGINT, signal.SIGTERM}.issubset(blocked[0])
+    assert isinstance(interrupted, KeyboardInterrupt if case == 'mask-interrupt' else MemoryError)
+assert terminated == ([signal.SIGTERM] if case == 'sigterm' else [])
+assert opened
+for descriptor in opened:
+    try:
+        os.fstat(descriptor)
+    except OSError as error:
+        assert error.errno == errno.EBADF
+    else:
+        raise AssertionError('original FD still live while exception traceback retained')
+assert len(list(pathlib.Path('/proc/self/fd').iterdir())) == before
+assert original_mask(signal.SIG_BLOCK, set()) == mask
+assert archive.read_bytes() == public
+print('actual owner-edge interruption propagated after all original FDs closed')
+'''
+        scenarios = [('registration', str(index), case) for index in range(1, 7) for case in ('sigint', 'sigterm')]
+        scenarios += [(phase, site, case) for phase in ('close', 'retire-owner') for site in
+                      ('package', 'qemu', 'base', 'cache', 'archives', 'evidence', 'storage', 'source', 'retained')
+                      for case in ('sigint', 'sigterm')]
+        scenarios += [('close-mask', 'package', case) for case in ('mask-interrupt', 'mask-memory')]
+        for phase, site, case in scenarios:
+            with self.subTest(phase=phase, site=site, case=case), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                result = subprocess.run(
+                    [sys.executable, '-I', '-S', '-B', '-c', script,
+                     str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), directory, phase, site, case],
+                    capture_output=True, text=True, timeout=10,
+                    env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('all original FDs closed', result.stdout)
+
+    def test_generator_exit_handoff_and_mask_failures_close_actual_archive_fds(self):
+        script = '''
+import contextlib, errno, hashlib, importlib.util, os, pathlib, signal, sys
+spec = importlib.util.spec_from_file_location('actual_producer', sys.argv[1])
+producer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(producer)
+base, phase, site, case = pathlib.Path(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
+archives = base / 'cache/archives'
+archives.mkdir(parents=True, mode=0o700)
+(base / 'public-evidence').mkdir(mode=0o700)
+archive = archives / 'public_canary.deb'
+public = b'public generator-exit boundary canary'
+archive.write_bytes(public)
+digest = hashlib.sha256(public).hexdigest()
+packages = {'public': {'archiveSha256': digest, 'archiveSizeBytes': len(public)}}
+qemu = pathlib.Path(sys.argv[6])
+original_open, original_exit, original_mask = os.open, contextlib._GeneratorContextManager.__exit__, signal.pthread_sigmask
+prior = original_mask(signal.SIG_BLOCK, set())
+before = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+opened, selected, entered, terminated = [], [], [], []
+fired = False
+interrupted = None
+def live(descriptor):
+    try: os.fstat(descriptor)
+    except OSError as error:
+        assert error.errno == errno.EBADF
+        return False
+    return True
+def observe(path, flags, *args, **kwargs):
+    descriptor = original_open(path, flags, *args, **kwargs)
+    opened.append(descriptor)
+    if ((site == 'package' and pathlib.Path(path) == archive)
+            or (site == 'qemu' and pathlib.Path(path) == qemu)
+            or (site == 'source' and str(path) == archive.name)
+            or (site == 'retained' and str(path) == digest + '.deb' and flags & os.O_CREAT)):
+        selected.append(descriptor)
+    return descriptor
+def terminate(signum, frame):
+    terminated.append(signum)
+    raise SystemExit(128 + signum)
+def interrupt_exit(cm, *args):
+    global fired
+    frame = cm.gen.gi_frame
+    if (phase == 'generator' and not fired and selected and frame is not None
+            and frame.f_locals.get('descriptor') == selected[0]):
+        entered.append(cm)
+        fired = True
+        os.kill(os.getpid(), signal.SIGINT if case == 'sigint' else signal.SIGTERM)
+    return original_exit(cm, *args)
+def fail_mask(how, values):
+    global fired
+    result = original_mask(how, values)
+    if not fired and selected:
+        query = phase == 'query' and how == signal.SIG_BLOCK and not values and live(selected[0])
+        restore = phase == 'restore' and how == signal.SIG_SETMASK and not live(selected[0])
+        if query or restore:
+            fired = True
+            raise (KeyboardInterrupt if case == 'mask-interrupt' else MemoryError)('after actual retirement mask operation')
+    return result
+previous_handler = signal.signal(signal.SIGTERM, terminate)
+try:
+    os.open, contextlib._GeneratorContextManager.__exit__, signal.pthread_sigmask = observe, interrupt_exit, fail_mask
+    try:
+        if site == 'package':
+            with producer.opened_package_archive(archive): pass
+        elif site == 'qemu':
+            with producer.opened_qemu_archive(qemu): pass
+        else:
+            producer.retain_public_package_archives(base, packages)
+    except (KeyboardInterrupt, SystemExit, MemoryError) as error:
+        interrupted = error
+    else:
+        raise AssertionError('retirement handoff failure did not propagate')
+finally:
+    os.open, contextlib._GeneratorContextManager.__exit__, signal.pthread_sigmask = original_open, original_exit, original_mask
+    signal.signal(signal.SIGTERM, previous_handler)
+assert fired and interrupted is not None and len(selected) == 1
+if phase == 'generator':
+    assert len(entered) == 1
+    assert isinstance(interrupted, KeyboardInterrupt if case == 'sigint' else SystemExit)
+    assert terminated == ([signal.SIGTERM] if case == 'sigterm' else [])
+else:
+    assert isinstance(interrupted, KeyboardInterrupt if case == 'mask-interrupt' else MemoryError)
+assert opened and all(not live(descriptor) for descriptor in opened), 'original FD remains live with traceback retained'
+assert len(list(pathlib.Path('/proc/self/fd').iterdir())) == before
+assert original_mask(signal.SIG_BLOCK, set()) == prior
+assert archive.read_bytes() == public
+if site == 'qemu':
+    with qemu.open('rb') as source:
+        checked = hashlib.file_digest(source, 'sha256').hexdigest()
+    assert checked == producer.QEMU_SHA256
+print('generator handoff/mask failure propagated after actual original closure')
+'''
+        cases = [('generator', site, case) for site in ('package', 'qemu', 'source', 'retained')
+                 for case in ('sigint', 'sigterm')]
+        cases += [(phase, 'package', case) for phase in ('query', 'restore')
+                  for case in ('mask-interrupt', 'mask-memory')]
+        for phase, site, case in cases:
+            with self.subTest(phase=phase, site=site, case=case), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                result = subprocess.run(
+                    [sys.executable, '-I', '-S', '-B', '-c', script,
+                     str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), directory, phase, site, case,
+                     str(ROOT / 'crates/target/qemu-full-fixture-source/qemu-9.2.0.tar.xz')],
+                    capture_output=True, text=True, timeout=10,
+                    env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('actual original closure', result.stdout)
+
     def test_opened_archive_bounds_reads_closes_fd_and_detects_actual_writer_change(self):
         with tempfile.TemporaryDirectory(dir=self.parent) as directory:
             base = pathlib.Path(directory)

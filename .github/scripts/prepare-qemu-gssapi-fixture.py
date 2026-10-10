@@ -140,6 +140,102 @@ def sha(path):
     return digest.hexdigest()
 
 
+class ArchiveDescriptorOwner(contextlib.ExitStack):
+    def __init__(self):
+        super().__init__()
+        self.descriptors = []
+
+    def __enter__(self):
+        return self, self.descriptors
+
+    def __exit__(self, *exception):
+        previous = None
+        try:
+            # Empty/refused acquisition must not perform another mutating call.
+            if any(slot[0] is not None for slot in self.descriptors):
+                previous = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+                signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
+        finally:
+            try:
+                # Protect generator resumption AND callback consumption. An
+                # owner implemented as a generator masks too late for its own
+                # contextlib exit wrapper's pre-resumption interruption.
+                result = super().__exit__(*exception)
+            finally:
+                if previous is not None:
+                    signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+        return result
+
+
+class ArchiveContext(ArchiveDescriptorOwner):
+    def __init__(self, function, args, kwargs):
+        super().__init__()
+        self.function, self.args, self.kwargs = function, args, kwargs
+
+    def __enter__(self):
+        try:
+            context = contextlib.contextmanager(self.function)(
+                (self, self.descriptors), *self.args, **self.kwargs)
+            return self.enter_context(context)
+        except BaseException:
+            self.close()
+            raise
+
+
+def archive_descriptor_owner():
+    return ArchiveDescriptorOwner()
+
+
+def owned_archive_context(function):
+    def opened(*args, **kwargs):
+        return ArchiveContext(function, args, kwargs)
+    return opened
+
+
+def acquire_archive_descriptor(owned, path, flags, mode=0o777, *, dir_fd=None, open_error=None):
+    # Register directly with the caller's already-entered owner BEFORE opening;
+    # returning a new context manager would leave an interruptible owner-transfer
+    # gap in ExitStack.enter_context. Only the CLI's handled signals are deferred.
+    stack, descriptors = owned
+    acquired = [None]
+    descriptors.append(acquired)
+    def close_original():
+        if acquired[0] is not None:
+            previous = None
+            try:
+                previous = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+                signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
+            finally:
+                try:
+                    # Close even if querying/blocking raises; never retry a
+                    # numeric descriptor after a native close may have succeeded.
+                    os.close(acquired[0])
+                finally:
+                    acquired[0] = None
+                    if previous is not None:
+                        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+    stack.callback(close_original)
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+    try:
+        signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
+        try:
+            acquired[0] = os.open(path, flags, mode, dir_fd=dir_fd)
+        except OSError as error:
+            if open_error is None:
+                raise
+            raise ValueError(open_error) from error
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+    return acquired[0]
+
+
+@owned_archive_context
+def opened_archive_file(owned, path, flags, mode=0o777, *, dir_fd=None, buffered_mode):
+    descriptor = acquire_archive_descriptor(owned, path, flags, mode, dir_fd=dir_fd)
+    with os.fdopen(descriptor, buffered_mode, closefd=False) as stream:
+        yield stream
+
+
 def retain_public_package_archives(base, packages):
     """Bounded original-byte custody only; no signature or runtime admission."""
     if not isinstance(packages, dict) or not 1 <= len(packages) <= 200:
@@ -164,24 +260,19 @@ def retain_public_package_archives(base, packages):
     inode_fields = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
                     "st_size", "st_mtime_ns", "st_ctime_ns")
     try:
-        with contextlib.ExitStack() as opened:
-            base_fd = os.open(base, flags)
-            opened.callback(os.close, base_fd)
+        with archive_descriptor_owner() as opened:
+            base_fd = acquire_archive_descriptor(opened, base, flags)
             if os.fstat(base_fd).st_uid != os.geteuid():
                 raise ValueError("public package archive root owner refused")
-            cache_fd = os.open("cache", flags, dir_fd=base_fd)
-            opened.callback(os.close, cache_fd)
-            archives_fd = os.open("archives", flags, dir_fd=cache_fd)
-            opened.callback(os.close, archives_fd)
-            evidence_fd = os.open("public-evidence", flags, dir_fd=base_fd)
-            opened.callback(os.close, evidence_fd)
+            cache_fd = acquire_archive_descriptor(opened, "cache", flags, dir_fd=base_fd)
+            archives_fd = acquire_archive_descriptor(opened, "archives", flags, dir_fd=cache_fd)
+            evidence_fd = acquire_archive_descriptor(opened, "public-evidence", flags, dir_fd=base_fd)
             if any(os.fstat(fd).st_uid != os.geteuid() for fd in (cache_fd, archives_fd, evidence_fd)):
                 raise ValueError("public package archive directory owner refused")
             # Exactly one new storage view; no following aliases, overwriting,
             # or treating a prior/partial publication as a completed attempt.
             os.mkdir("package-archives", mode=0o700, dir_fd=evidence_fd)
-            storage_fd = os.open("package-archives", flags, dir_fd=evidence_fd)
-            opened.callback(os.close, storage_fd)
+            storage_fd = acquire_archive_descriptor(opened, "package-archives", flags, dir_fd=evidence_fd)
             names = []
             count = 0
             with os.scandir(archives_fd) as entries:
@@ -198,8 +289,8 @@ def retain_public_package_archives(base, packages):
                 raise ValueError("public package archive closure incomplete")
             records = {}
             for filename in sorted(names):
-                with os.fdopen(os.open(filename, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC,
-                                       dir_fd=archives_fd), "rb") as source:
+                with opened_archive_file(filename, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                         dir_fd=archives_fd, buffered_mode="rb") as source:
                     before = os.fstat(source.fileno())
                     if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid()
                             or before.st_nlink != 1 or not 0 < before.st_size <= 128 * 1024 * 1024):
@@ -220,8 +311,8 @@ def retain_public_package_archives(base, packages):
                         raise ValueError("public package archive size refused")
                     source.seek(0)
                     retained_name = archive_hash + ".deb"
-                    with os.fdopen(os.open(retained_name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
-                                           0o600, dir_fd=storage_fd), "w+b") as retained:
+                    with opened_archive_file(retained_name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                             0o600, dir_fd=storage_fd, buffered_mode="w+b") as retained:
                         copied = 0
                         for data in iter(lambda: source.read(1024 * 1024), b""):
                             copied += len(data)
@@ -606,37 +697,35 @@ def collect_package_archives(directory, *, files=200, file_bytes=128 * 1024 * 10
     return sorted(archives)
 
 
-@contextlib.contextmanager
-def opened_package_archive(archive, *, maximum_bytes=128 * 1024 * 1024):
+@owned_archive_context
+def opened_package_archive(owned, archive, *, maximum_bytes=128 * 1024 * 1024):
     if type(maximum_bytes) is not int or not 0 < maximum_bytes <= 128 * 1024 * 1024:
         raise ValueError("package compressed archive budget refused")
     # The held original inode is shared by digest, control and data decoding.
     # Change detection is NOT an external-writer barrier or a source seal.
     fields = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
               "st_size", "st_mtime_ns", "st_ctime_ns")
-    with contextlib.ExitStack() as owned:
-        # A collected pathname can be replaced before acquisition. Nonblocking
-        # open reaches the held-inode checks even for a FIFO with no writer.
-        descriptor = os.open(archive, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC)
-        owned.callback(os.close, descriptor)
-        metadata = os.fstat(descriptor)
-        if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
-                or not 0 < metadata.st_size <= maximum_bytes):
-            raise ValueError("package compressed archive budget refused")
-        identity = tuple(getattr(metadata, field) for field in fields)
-        digest, offset = hashlib.sha256(), 0
-        while offset < metadata.st_size:
-            data = os.pread(descriptor, min(1024 * 1024, metadata.st_size - offset), offset)
-            if not data:
-                raise ValueError("source-pinned fixture archive changed")
-            digest.update(data)
-            offset += len(data)
-        if (os.pread(descriptor, 1, metadata.st_size)
-                or tuple(getattr(os.fstat(descriptor), field) for field in fields) != identity):
+    # A collected pathname can be replaced before acquisition. Nonblocking
+    # open reaches the held-inode checks even for a FIFO with no writer.
+    descriptor = acquire_archive_descriptor(owned, archive, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC)
+    metadata = os.fstat(descriptor)
+    if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
+            or not 0 < metadata.st_size <= maximum_bytes):
+        raise ValueError("package compressed archive budget refused")
+    identity = tuple(getattr(metadata, field) for field in fields)
+    digest, offset = hashlib.sha256(), 0
+    while offset < metadata.st_size:
+        data = os.pread(descriptor, min(1024 * 1024, metadata.st_size - offset), offset)
+        if not data:
             raise ValueError("source-pinned fixture archive changed")
-        yield descriptor, digest.hexdigest(), metadata.st_size, identity
-        if tuple(getattr(os.fstat(descriptor), field) for field in fields) != identity:
-            raise ValueError("source-pinned fixture archive changed")
+        digest.update(data)
+        offset += len(data)
+    if (os.pread(descriptor, 1, metadata.st_size)
+            or tuple(getattr(os.fstat(descriptor), field) for field in fields) != identity):
+        raise ValueError("source-pinned fixture archive changed")
+    yield descriptor, digest.hexdigest(), metadata.st_size, identity
+    if tuple(getattr(os.fstat(descriptor), field) for field in fields) != identity:
+        raise ValueError("source-pinned fixture archive changed")
 
 
 def signed_package_record(archive, base, options, arch, pins, digest, size):
@@ -1028,54 +1117,37 @@ def provision(base, arch, multiarch, origin):
                                  if p.is_file() and not p.is_symlink() and (p.name.endswith("InRelease") or "_Packages" in p.name)}}
 
 
-@contextlib.contextmanager
-def opened_qemu_archive(archive):
+@owned_archive_context
+def opened_qemu_archive(owned, archive):
     # One original inode owns both the exact digest and maintained XZ reads.
     # Stat drift detection is NOT an external-writer barrier or a source seal.
     fields = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
               "st_size", "st_mtime_ns", "st_ctime_ns")
-    with contextlib.ExitStack() as owned:
-        acquired = [None]
-        def close_original():
-            if acquired[0] is not None:
-                os.close(acquired[0])
-        owned.callback(close_original)  # Register the owner BEFORE acquisition.
-        # The CLI's handled interrupts cannot strand a raw FD before assignment.
-        # Query without mutating first: a mutating sigmask call can itself raise
-        # after changing the native mask, so it must be inside this restore guard.
-        previous = signal.pthread_sigmask(signal.SIG_BLOCK, set())
-        try:
-            signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
-            try:
-                acquired[0] = os.open(archive, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC)
-            except OSError as error:
-                raise ValueError("source-pinned QEMU archive input refused") from error
-        finally:
-            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
-        descriptor = acquired[0]
-        metadata = os.fstat(descriptor)
-        if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
-                or metadata.st_size != QEMU_ARCHIVE_BYTES):
-            raise ValueError("source-pinned QEMU archive input refused")
-        identity = tuple(getattr(metadata, field) for field in fields)
-        digest, offset = hashlib.sha256(), 0
-        while offset < QEMU_ARCHIVE_BYTES:
-            data = os.pread(descriptor, min(1024 * 1024, QEMU_ARCHIVE_BYTES - offset), offset)
-            if not data:
-                raise ValueError("source-pinned QEMU archive changed")
-            digest.update(data)
-            offset += len(data)
-        if (os.pread(descriptor, 1, QEMU_ARCHIVE_BYTES)
-                or tuple(getattr(os.fstat(descriptor), field) for field in fields) != identity):
+    descriptor = acquire_archive_descriptor(owned, archive, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                           open_error="source-pinned QEMU archive input refused")
+    metadata = os.fstat(descriptor)
+    if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
+            or metadata.st_size != QEMU_ARCHIVE_BYTES):
+        raise ValueError("source-pinned QEMU archive input refused")
+    identity = tuple(getattr(metadata, field) for field in fields)
+    digest, offset = hashlib.sha256(), 0
+    while offset < QEMU_ARCHIVE_BYTES:
+        data = os.pread(descriptor, min(1024 * 1024, QEMU_ARCHIVE_BYTES - offset), offset)
+        if not data:
             raise ValueError("source-pinned QEMU archive changed")
-        if digest.hexdigest() != QEMU_SHA256:
-            raise ValueError("source-pinned QEMU archive digest refused")
-        # The buffered reader borrows the owned FD; closing the decoder or its
-        # borrower cannot release the original descriptor before this owner.
-        original = owned.enter_context(os.fdopen(descriptor, "rb", closefd=False))
-        yield original
-        if tuple(getattr(os.fstat(descriptor), field) for field in fields) != identity:
-            raise ValueError("source-pinned QEMU archive changed")
+        digest.update(data)
+        offset += len(data)
+    if (os.pread(descriptor, 1, QEMU_ARCHIVE_BYTES)
+            or tuple(getattr(os.fstat(descriptor), field) for field in fields) != identity):
+        raise ValueError("source-pinned QEMU archive changed")
+    if digest.hexdigest() != QEMU_SHA256:
+        raise ValueError("source-pinned QEMU archive digest refused")
+    # The buffered reader borrows the owned FD; closing the decoder or its
+    # borrower cannot release the original descriptor before this owner.
+    original = owned[0].enter_context(os.fdopen(descriptor, "rb", closefd=False))
+    yield original
+    if tuple(getattr(os.fstat(descriptor), field) for field in fields) != identity:
+        raise ValueError("source-pinned QEMU archive changed")
 
 
 def extract_source(archive, source):
