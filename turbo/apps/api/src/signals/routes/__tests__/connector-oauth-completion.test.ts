@@ -4,7 +4,7 @@ import {
   connectorAccountsContract,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -252,6 +252,9 @@ test.each(["http", "mcp"] as const)(
             transport: "streamable-http",
           },
     );
+    onTestFinished(async () => {
+      await connectors.deleteCustomConnector(actor, connector.id);
+    });
     const target = { kind: "custom", customConnectorId: connector.id } as const;
     const started = await connectors.requestStartCustomConnectorOAuth2(
       actor,
@@ -340,6 +343,9 @@ test.each(["http", "mcp"] as const)(
     expect(deleted.headers.get("cache-control")).toBe("no-store");
 
     const removedAgent = await bdd.createAgent(actor);
+    onTestFinished(async () => {
+      await bdd.requestDeleteAgent(actor, removedAgent.agentId, [204, 404]);
+    });
     const rejected = await connectors.requestStartCustomConnectorOAuth2(
       actor,
       connector.id,
@@ -378,6 +384,9 @@ test.each(["http", "mcp"] as const)(
     }
 
     const survivingAgent = await bdd.createAgent(actor);
+    onTestFinished(async () => {
+      await bdd.deleteAgent(actor, survivingAgent.agentId);
+    });
     const retry = await connectors.requestStartCustomConnectorOAuth2(
       actor,
       connector.id,
@@ -417,12 +426,5 @@ test.each(["http", "mcp"] as const)(
     );
     expect(afterRetry.status).toBe(404);
     expect(afterRetry.body).toStrictEqual(rejectedReceipt.body);
-    await connectors.deleteCustomConnectorAccount(
-      actor,
-      connector.id,
-      persistedAccount.id,
-    );
-    await bdd.deleteAgent(actor, survivingAgent.agentId);
-    await connectors.deleteCustomConnector(actor, connector.id);
   },
 );
