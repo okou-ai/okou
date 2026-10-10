@@ -2796,7 +2796,7 @@
       "resize": "Größe der Seitenleiste ändern"
     },
     "toasts": {
-      "archived": "Chat archiviert. Eine neue Antwort bringt ihn zurück in den Posteingang.",
+      "archived": "Chat archiviert.",
       "archivedMuted": "Chat archiviert. Er ist stummgeschaltet, neue Antworten holen ihn nicht zurück.",
       "copied": "Kopiert",
       "deleted": "Chat gelöscht",

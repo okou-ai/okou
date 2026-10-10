@@ -2844,7 +2844,7 @@
       "resize": "Ridimensiona la barra laterale"
     },
     "toasts": {
-      "archived": "Chat archiviata. Una nuova risposta la riporta nella posta in arrivo.",
+      "archived": "Chat archiviata.",
       "archivedMuted": "Chat archiviata. È silenziata, quindi le nuove risposte non la riporteranno indietro.",
       "copied": "Copiato",
       "deleted": "Chat eliminata",

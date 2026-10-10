@@ -2785,7 +2785,7 @@
       "resize": "Ubah ukuran sidebar"
     },
     "toasts": {
-      "archived": "Chat diarsipkan. Balasan baru akan mengembalikannya ke Kotak masuk.",
+      "archived": "Chat diarsipkan.",
       "archivedMuted": "Chat diarsipkan. Chat ini dibisukan, jadi balasan baru tidak akan mengembalikannya.",
       "copied": "Disalin",
       "deleted": "Chat dihapus",
