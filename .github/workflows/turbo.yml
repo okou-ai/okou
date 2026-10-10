@@ -2824,25 +2824,39 @@ jobs:
       - name: Download online runtime API schema
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
           SCHEMA_RELEASE_TAG: runtime-api-schema-prod
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/runtime-api-schema
+          schema_dir=/tmp/runtime-api-schema
+          mkdir -p "$schema_dir"
 
-          if gh release view "$SCHEMA_RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            if gh release download "$SCHEMA_RELEASE_TAG" \
-              --repo "${{ github.repository }}" \
-              --pattern current.json \
-              --dir /tmp/runtime-api-schema \
-              --clobber; then
-              echo "Downloaded online runtime API schema"
-            else
-              echo "::warning::Runtime API schema release exists, but current.json is not available yet."
-            fi
-          else
+          # The toolchain image ships curl and jq but not gh.
+          status=$(curl -sS --retry 3 -o "$schema_dir/release.json" -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/releases/tags/$SCHEMA_RELEASE_TAG")
+          if [ "$status" = "404" ]; then
             echo "::warning::Runtime API schema release $SCHEMA_RELEASE_TAG does not exist yet; compatibility report will be skipped."
+            exit 0
           fi
+          if [ "$status" != "200" ]; then
+            echo "::error::Reading runtime API schema release $SCHEMA_RELEASE_TAG returned HTTP $status."
+            exit 1
+          fi
+
+          asset_url=$(jq -r '.assets[] | select(.name == "current.json") | .url' "$schema_dir/release.json")
+          if [ -z "$asset_url" ]; then
+            echo "::warning::Runtime API schema release exists, but current.json is not available yet."
+            exit 0
+          fi
+          curl -fsSL --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/octet-stream" \
+            -o "$schema_dir/current.json" \
+            "$asset_url"
+          echo "Downloaded online runtime API schema"
 
       - name: Prepare base branch inputs
         env:
