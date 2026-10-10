@@ -45,21 +45,25 @@ export function integrationChatThreadValues(
 export function integrationThreadCreatedEventSql(
   orgId: string,
   thread: ReturnType<typeof integrationChatThreadValues>,
+  source?: Parameters<typeof chatThreadEventInsertSql>[1],
 ) {
-  return chatThreadEventInsertSql({
-    kind: "created",
-    orgId,
-    userId: thread.userId,
-    chatThreadId: thread.id,
-    agentId: thread.agentId,
-    title: thread.title,
-    selectedModel: thread.selectedModel,
-    modelSettings: thread.modelSettings,
-    serviceTier: chatThreadServiceTierFromCodex(thread.codexServiceTier),
-    computerUseHostId: null,
-    cloudBrowserEnabled: thread.cloudBrowserEnabled,
-    createdAt: thread.createdAt,
-  });
+  return chatThreadEventInsertSql(
+    {
+      kind: "created",
+      orgId,
+      userId: thread.userId,
+      chatThreadId: thread.id,
+      agentId: thread.agentId,
+      title: thread.title,
+      selectedModel: thread.selectedModel,
+      modelSettings: thread.modelSettings,
+      serviceTier: chatThreadServiceTierFromCodex(thread.codexServiceTier),
+      computerUseHostId: null,
+      cloudBrowserEnabled: thread.cloudBrowserEnabled,
+      createdAt: thread.createdAt,
+    },
+    source,
+  );
 }
 
 type IntegrationChatThreadValues = ReturnType<
