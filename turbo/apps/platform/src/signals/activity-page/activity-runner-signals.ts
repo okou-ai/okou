@@ -2,7 +2,7 @@ import { computed } from "ccstate";
 import { runRunnerContract } from "@okouai/api-contracts/contracts/run-routes";
 import type {
   SandboxReuseResult,
-  WorkspaceReuseResult,
+  HomeReuseResult,
 } from "@okouai/api-contracts/contracts/runner-primitives";
 import { apiClient$ } from "../api-client.ts";
 import { currentRunId$, activityDetail$ } from "./activity-signals.ts";
@@ -14,7 +14,7 @@ interface ActivityRunner {
   status: LogStatus;
   runner: {
     sandboxReuseResult: SandboxReuseResult | null;
-    workspaceReuseResult: WorkspaceReuseResult | null;
+    homeReuseResult: HomeReuseResult | null;
     runnerHostname: string | null;
     runnerVersion: string | null;
     runnerId: string | null;
@@ -39,7 +39,7 @@ export const activityRunner$ = computed(async (get) => {
     status: detail.status,
     runner: {
       sandboxReuseResult: result.body.sandboxReuseResult,
-      workspaceReuseResult: result.body.workspaceReuseResult ?? null,
+      homeReuseResult: result.body.homeReuseResult ?? null,
       runnerHostname: result.body.runnerHostname ?? null,
       runnerVersion: result.body.runnerVersion ?? null,
       runnerId: result.body.runnerId ?? null,

@@ -19,7 +19,7 @@ import { z } from "zod";
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
 import { runnerState } from "../src/schema/runner-state";
 import { runnerStateBeforeHome } from "./fixtures/runner-state-before-home-affinity";
-import { runnerStateAfterHomeBridge } from "./fixtures/runner-state-after-home-affinity-bridge";
+import { runnerState as canonicalRunnerState } from "../src/runtime/runner-state";
 import { applyPendingMigrations } from "./migration-runner";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -230,10 +230,9 @@ try {
     "Home expansion preserves outgoing/current ORM SELECT/INSERT/UPSERT/RETURNING, empty defaults, data, independent stamps, generation/sequence fences and capable empty state.",
   );
 
-  // Prospective PR5 SQL independence and PR6 physical shape, not deployed floors.
-  // Use a separate canonical mapping; the production mapping must keep its
-  // mixed-version bridge until the supported reader/writer exposure ends.
-  const canonicalColumns = getTableColumns(runnerStateAfterHomeBridge);
+  // Production SQL independence and eventual physical shape, not deployed floors.
+  // The same production mapping executes on retained and absent retirement columns.
+  const canonicalColumns = getTableColumns(canonicalRunnerState);
   const canonicalKeys = Object.keys(canonicalColumns).sort();
   const finalPhysicalColumns = Object.values(canonicalColumns)
     .map((column) => {
@@ -241,13 +240,13 @@ try {
     })
     .sort();
   let retainedCanonicalRow:
-    typeof runnerStateAfterHomeBridge.$inferSelect | undefined;
+    typeof canonicalRunnerState.$inferSelect | undefined;
   const canonicalOrder = (generation: number, sequence: number) => {
     return or(
-      lt(runnerStateAfterHomeBridge.heartbeatGeneration, generation),
+      lt(canonicalRunnerState.heartbeatGeneration, generation),
       and(
-        eq(runnerStateAfterHomeBridge.heartbeatGeneration, generation),
-        lt(runnerStateAfterHomeBridge.heartbeatSequence, sequence),
+        eq(canonicalRunnerState.heartbeatGeneration, generation),
+        lt(canonicalRunnerState.heartbeatSequence, sequence),
       ),
     );
   };
@@ -263,12 +262,9 @@ try {
       assert.deepEqual(
         await db
           .select()
-          .from(runnerStateAfterHomeBridge)
+          .from(canonicalRunnerState)
           .where(
-            eq(
-              runnerStateAfterHomeBridge.runnerId,
-              retainedCanonicalRow.runnerId,
-            ),
+            eq(canonicalRunnerState.runnerId, retainedCanonicalRow.runnerId),
           ),
         [retainedCanonicalRow],
         "Contraction preserves the complete canonical home/sandbox/capacity row",
@@ -316,9 +312,9 @@ try {
       ],
       heldHomeStates: newObservation.heldHomeStates,
       lastSeenAt: outgoing.lastSeenAt,
-    } satisfies typeof runnerStateAfterHomeBridge.$inferInsert;
+    } satisfies typeof canonicalRunnerState.$inferInsert;
     const inserted = await db
-      .insert(runnerStateAfterHomeBridge)
+      .insert(canonicalRunnerState)
       .values(canonicalObservation)
       .returning();
     assert.equal(inserted.length, 1);
@@ -336,37 +332,31 @@ try {
     assert.deepEqual(
       await db
         .select()
-        .from(runnerStateAfterHomeBridge)
+        .from(canonicalRunnerState)
         .where(
-          eq(
-            runnerStateAfterHomeBridge.runnerId,
-            canonicalObservation.runnerId,
-          ),
+          eq(canonicalRunnerState.runnerId, canonicalObservation.runnerId),
         ),
       inserted,
     );
     const canonicalHomeHolder = () => {
       return db
-        .select({ runnerId: runnerStateAfterHomeBridge.runnerId })
-        .from(runnerStateAfterHomeBridge)
+        .select({ runnerId: canonicalRunnerState.runnerId })
+        .from(canonicalRunnerState)
         .where(
           and(
-            eq(
-              runnerStateAfterHomeBridge.runnerId,
-              canonicalObservation.runnerId,
-            ),
-            eq(runnerStateAfterHomeBridge.runnerGroup, outgoing.runnerGroup),
-            eq(runnerStateAfterHomeBridge.mode, "running"),
+            eq(canonicalRunnerState.runnerId, canonicalObservation.runnerId),
+            eq(canonicalRunnerState.runnerGroup, outgoing.runnerGroup),
+            eq(canonicalRunnerState.mode, "running"),
             gt(
-              runnerStateAfterHomeBridge.lastSeenAt,
+              canonicalRunnerState.lastSeenAt,
               new Date("2026-10-08T23:59:30Z"),
             ),
             arrayContains(
-              runnerStateAfterHomeBridge.admittableProfiles,
+              canonicalRunnerState.admittableProfiles,
               sqlExpression`${JSON.stringify(["vm0/default"])}::jsonb`,
             ),
             arrayContains(
-              runnerStateAfterHomeBridge.heldHomeStates,
+              canonicalRunnerState.heldHomeStates,
               sqlExpression`${JSON.stringify([
                 {
                   reuseKey: "thread:retained",
@@ -388,10 +378,10 @@ try {
       };
       assert.deepEqual(
         await db
-          .insert(runnerStateAfterHomeBridge)
+          .insert(canonicalRunnerState)
           .values(stale)
           .onConflictDoUpdate({
-            target: runnerStateAfterHomeBridge.runnerId,
+            target: canonicalRunnerState.runnerId,
             set: stale,
             setWhere: canonicalOrder(9, staleSequence),
           })
@@ -407,10 +397,10 @@ try {
       heldHomeStates: [],
     };
     const cleared = await db
-      .insert(runnerStateAfterHomeBridge)
+      .insert(canonicalRunnerState)
       .values(empty)
       .onConflictDoUpdate({
-        target: runnerStateAfterHomeBridge.runnerId,
+        target: canonicalRunnerState.runnerId,
         set: empty,
         setWhere: canonicalOrder(9, 5),
       })
@@ -425,10 +415,10 @@ try {
       heartbeatSequence: 1,
     };
     const reset = await db
-      .insert(runnerStateAfterHomeBridge)
+      .insert(canonicalRunnerState)
       .values(restarted)
       .onConflictDoUpdate({
-        target: runnerStateAfterHomeBridge.runnerId,
+        target: canonicalRunnerState.runnerId,
         set: restarted,
         setWhere: canonicalOrder(10, 1),
       })
@@ -438,11 +428,9 @@ try {
     assert.deepEqual(reset[0]?.heldHomeStates, newObservation.heldHomeStates);
     assert.equal((await canonicalHomeHolder()).length, 1);
     const updated = await db
-      .update(runnerStateAfterHomeBridge)
+      .update(canonicalRunnerState)
       .set({ allocatedVcpu: 3, runningCount: 2 })
-      .where(
-        eq(runnerStateAfterHomeBridge.runnerId, canonicalObservation.runnerId),
-      )
+      .where(eq(canonicalRunnerState.runnerId, canonicalObservation.runnerId))
       .returning();
     assert.deepEqual(Object.keys(updated[0] ?? {}).sort(), canonicalKeys);
     assert.equal(updated[0]?.allocatedVcpu, 3);
@@ -456,7 +444,7 @@ try {
       retainedCanonicalRow = updated[0];
     }
     console.log(
-      `Prospective canonical home inventory works on ${shape} columns: real INSERT/UPSERT/SELECT/UPDATE/implicit RETURNING, empty state, shared heartbeat fencing, generation reset and preserved data.`,
+      `Production canonical home inventory works on ${shape} columns: real INSERT/UPSERT/SELECT/UPDATE/implicit RETURNING, empty state, shared heartbeat fencing, generation reset and preserved data.`,
     );
   }
 } finally {

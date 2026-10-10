@@ -692,20 +692,20 @@ export const rustTypeBindings = [
         },
       },
       {
-        rustTypeName: "RequestWorkspaceReuseResult",
-        rustDoc: ["Final outcome of workspace reuse preparation."],
+        rustTypeName: "RequestHomeReuseResult",
+        rustDoc: ["Final outcome of home reuse preparation."],
         variants: {
-          reused: ["A cached workspace was reused."],
-          sandboxReused: ["The workspace remained in a reused sandbox."],
-          cacheMiss: ["No matching workspace cache was available."],
-          noReuseKey: ["The run had no workspace reuse key."],
-          invalidWorkingDir: ["The cached workspace directory was invalid."],
-          lockBusy: ["The cached workspace was locked by another run."],
-          invalidMetadata: ["The cached workspace metadata was invalid."],
-          diskPressure: ["Workspace reuse was disabled by disk pressure."],
-          notConfigured: ["Workspace reuse was not configured."],
+          reused: ["A cached home directory was reused."],
+          sandboxReused: ["The home directory remained in a reused sandbox."],
+          cacheMiss: ["No matching home cache was available."],
+          noReuseKey: ["The run had no home reuse key."],
+          invalidWorkingDir: ["The home working directory was invalid."],
+          lockBusy: ["The cached home was locked by another run."],
+          invalidMetadata: ["The cached home metadata was invalid."],
+          diskPressure: ["Home reuse was disabled by disk pressure."],
+          notConfigured: ["Home reuse was not configured."],
           sandboxPrepareFallback: [
-            "Workspace preparation fell back after sandbox setup.",
+            "Home preparation fell back after sandbox setup.",
           ],
         },
       },
@@ -791,9 +791,7 @@ export const rustTypeBindings = [
           sandboxReuseResult: [
             "Optional outcome of the sandbox reuse decision.",
           ],
-          workspaceReuseResult: [
-            "Optional outcome of the workspace reuse decision.",
-          ],
+          homeReuseResult: ["Optional outcome of the home reuse decision."],
           completion: [
             "Native history and published file outputs saved with completion.",
           ],

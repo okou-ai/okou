@@ -1,6 +1,6 @@
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { runnerState } from "@okouai/db/schema/runner-state";
+import { runnerState } from "@okouai/db/runtime/runner-state";
 import { and, eq, gt, inArray, like, lte } from "drizzle-orm";
 
 import { wssOriginFromRunnerHostname } from "../../lib/runner-wss-target-config";

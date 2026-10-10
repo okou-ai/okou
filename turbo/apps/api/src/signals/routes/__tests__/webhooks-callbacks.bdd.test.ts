@@ -2489,7 +2489,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
         runId,
         exitCode: 0,
         sandboxReuseResult: "reused",
-        workspaceReuseResult: "cacheMiss",
+        homeReuseResult: "cacheMiss",
       },
       headers,
       [400],

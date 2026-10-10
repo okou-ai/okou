@@ -46,7 +46,7 @@ async fn same_thread_reuses_idle_sandbox() {
         "reuse_result should be Reused"
     );
     assert_eq!(
-        completion.workspace_reuse_result,
+        completion.home_reuse_result,
         Some(HomeReuseResult::SandboxReused),
     );
     assert_eq!(

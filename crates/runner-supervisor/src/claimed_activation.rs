@@ -284,7 +284,7 @@ async fn recover_claimed_activation_failure(
                 error: Some(execution_failure.error),
                 sandbox_id: None,
                 sandbox_reuse_result: Some(reuse_result),
-                workspace_reuse_result: None,
+                home_reuse_result: None,
             },
             completion_auth,
         )

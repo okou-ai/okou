@@ -458,10 +458,7 @@ async fn home_history_staging_overlaps_storage_and_preserves_restore() {
         let completion = env.handle.wait_completion(run_id, WAIT).await.unwrap();
         assert_eq!(completion.exit_code, 0);
         assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
-        assert_eq!(
-            completion.workspace_reuse_result,
-            Some(HomeReuseResult::Reused)
-        );
+        assert_eq!(completion.home_reuse_result, Some(HomeReuseResult::Reused));
         assert_ne!(completion.sandbox_id, Some(blank_id));
         // The one-response server and successful restore require one download;
         // a second materialization cannot obtain another history response.

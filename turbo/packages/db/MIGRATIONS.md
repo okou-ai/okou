@@ -167,12 +167,12 @@ are enforced by the integration ingress tests.
   capable empty state. Its frozen outgoing mapping is from
   `3dcf096997cdd5448a74df524afba9a2ac46df91`. The three standalone home
   version/order columns are temporary: the final model keeps only
-  `held_home_states` and existing shared heartbeat order. Its test-only
-  prospective canonical mapping executes real INSERT/UPSERT/SELECT/UPDATE and
+  `held_home_states` and existing shared heartbeat order. The production
+  `runtime/runner-state.ts` mapping executes real INSERT/UPSERT/SELECT/UPDATE and
   implicit RETURNING on both retained and simulated contracted shapes, checking
   preserved home/sandbox/capacity data, empty-state replacement, replay/lower
-  sequence and generation reset. That fixture is SQL feasibility evidence, not
-  #38139's actual application integration or a deployed floor.
+  sequence and generation reset. This verifies executing application SQL; it
+  does not establish a deployed writer floor or consumer/rollback drain.
   Retain the validator/fixtures through #38139's deployed application-SQL
   retirement of `held_workspace_states`, `home_affinity_version`,
   `home_affinity_generation`, `home_affinity_sequence` and #38140's **later**
