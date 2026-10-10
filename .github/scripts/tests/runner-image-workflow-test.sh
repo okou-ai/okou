@@ -214,14 +214,46 @@ jq -e '
     .with["r2-bucket-name"] == "${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"
   ) and
   any(.jobs.compile.steps[]; (.uses // "") | startswith("Swatinem/rust-cache@")) and
-  any(.jobs.compile.steps[]; .run == ".github/scripts/runner-binary-build/build.sh build") and
   any(.jobs.compile.steps[];
-    .run == ".github/scripts/runner-binary-transport.sh publish" and
-    .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.build.outputs.binary-input-digest }}" and
+    .id == "build" and
+    .run == ".github/scripts/runner-binary-build/build.sh build\necho \"RUNNER_BINARY_COMPILED=true\" >> \"$GITHUB_ENV\"\n" and
+    .if == "steps.cache-recheck.outputs.reused != '\''true'\''"
+  ) and
+  any(.jobs.compile.steps[];
+    .id == "published" and
+    .run == ".github/scripts/runner-binary-transport.sh ${{ steps.cache-recheck.outputs.reused == '\''true'\'' && '\''publish-cached'\'' || '\''publish'\'' }}" and
+    .env.CACHED_REFERENCE_PATH == "runner-binary-fresh/cached-reference.json" and
+    .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.binary-input.outputs.binary-input-digest }}" and
     .env.PRODUCER_RUN_ATTEMPT == "${{ github.run_attempt }}" and
     (. | has("continue-on-error") | not)
   )
 ' <<<"$workflow_json" >/dev/null || fail "compile must be a required miss-only Rust/cache/build matrix"
+
+jq -e '
+  .jobs.compile.steps as $steps |
+  ($steps | map(.id // "") | index("binary-input")) as $digest |
+  ($steps | map(.uses // "") | index("./.github/actions/setup-aws-cli")) as $aws |
+  ($steps | map(.id // "") | index("cache-recheck")) as $recheck |
+  ($steps | map(.id // "") | index("build")) as $build |
+  ($digest < $recheck and $aws < $recheck and $recheck < $build) and
+  $steps[$digest].run == ".github/scripts/runner-binary-build/digest.sh \"$TARGET_TRIPLE\"" and
+  $steps[$recheck].run == ".github/scripts/runner-binary-cache-recheck.sh" and
+  $steps[$recheck].env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.binary-input.outputs.binary-input-digest }}" and
+  $steps[$recheck].env.EXPECTED_TARGET == "${{ matrix.target }}" and
+  $steps[$recheck].env.CURRENT_RUN_ID == "${{ github.run_id }}" and
+  $steps[$recheck].env.RUNNER_BINARY_CACHE_FORCE_MISS == "${{ vars.RUNNER_BINARY_CACHE_FORCE_MISS }}" and
+  $steps[$recheck].env.GH_TOKEN == "${{ github.token }}" and
+  $steps[$recheck].env.OUTPUT_DIR == "runner-binary-fresh" and
+  ($steps[$recheck] | has("continue-on-error") | not) and
+  any($steps[];
+    .name == "Stage runner binary transport" and
+    .env.REUSED == "${{ steps.cache-recheck.outputs.reused }}" and
+    .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.binary-input.outputs.binary-input-digest }}" and
+    (.run | contains("if [ \"$REUSED\" != true ]; then")) and
+    (.run | contains(".github/scripts/runner-binary-cache.sh fresh-validate")) and
+    (. | has("if") | not)
+  )
+' <<<"$workflow_json" >/dev/null || fail "late cache recheck must precede Cargo and preserve required byte validation"
 
 jq -e '
   ([.jobs | to_entries[] |
@@ -281,16 +313,17 @@ jq -e '
     .env.OUTPUT_DIR == "runner-binary-fresh"
   ) and
   any(.jobs.asset.steps[];
-    .name == "Validate fresh runner binary" and
+    .name == "Validate runner binary bytes" and
     (. | has("if") | not) and
     (. | has("continue-on-error") | not)
   ) and
   any(.jobs.asset.steps[];
     .name == "Resolve reusable candidate in shadow mode" and
-    (. | has("if") | not)
+    .if == "steps.transport.outputs.binary-source == '\''compiled'\''"
   ) and
   any(.jobs.asset.steps[];
     .name == "Upload reusable runner binary manifest" and
+    .if == "steps.transport.outputs.binary-source == '\''compiled'\''" and
     .with.path == "runner-binary-fresh/manifest.json" and
     .with["retention-days"] == 7
   )

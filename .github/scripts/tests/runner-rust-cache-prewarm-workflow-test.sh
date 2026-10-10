@@ -28,11 +28,12 @@ jq -e '
   $warm["continue-on-error"] == true and
   $warm["runs-on"] == $compile["runs-on"] and
   $warm.container == $compile.container and
-  $warm.env == $compile.env and
+  $warm.env == ($compile.env | del(.RUNNER_BINARY_COMPILED)) and
+  $compile.env.RUNNER_BINARY_COMPILED == "false" and
   $warm.permissions == $compile.permissions and
   $warm.strategy.matrix.include == "${{ fromJSON(needs.prepare.outputs.runner-binary-hit-matrix) }}" and
   ($compile | has("continue-on-error") | not) and
-  $cache.with["save-if"] == "${{ github.ref == '\''refs/heads/main'\'' }}" and
+  $cache.with["save-if"] == "${{ github.ref == '\''refs/heads/main'\'' && env.RUNNER_BINARY_COMPILED == '\''true'\'' }}" and
   $lookup.uses == $cache.uses and
   $restore.uses == $cache.uses and
   $lookup.with.workspaces == $cache.with.workspaces and
@@ -42,7 +43,7 @@ jq -e '
   $lookup.with["lookup-only"] == true and
   $lookup.with["save-if"] == false and
   ($restore.with["lookup-only"] // false) == false and
-  $restore.with["save-if"] == $cache.with["save-if"] and
+  $restore.with["save-if"] == "${{ github.ref == '\''refs/heads/main'\'' }}" and
   any($warm.steps[];
     .name == "Configure git safe directory" and .shell == "bash"
   ) and
@@ -79,6 +80,8 @@ const { execFileSync } = require("node:child_process");
 const vm = require("node:vm");
 const workflow = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const warm = workflow.jobs["prewarm-rust-cache"];
+const compilerCache = workflow.jobs.compile.steps.find(step =>
+  (step.uses || "").startsWith("Swatinem/rust-cache@"));
 const steps = Object.fromEntries(warm.steps.map(step => [step.id || step.name, step]));
 const targets = [
   { id: "arm64", target: "aarch64-unknown-linux-musl" },
@@ -89,7 +92,7 @@ const targets = [
 // Resolve hyphenated Actions output names before evaluating that small subset.
 function evaluate(expression, context) {
   const source = expression.trim().replace(/^\$\{\{\s*|\s*\}\}$/g, "")
-    .replace(/\b(?:github|needs|steps)(?:\.[A-Za-z0-9_-]+)+/g, path => {
+    .replace(/\b(?:github|needs|steps|env)(?:\.[A-Za-z0-9_-]+)+/g, path => {
       let value = context;
       for (const key of path.split(".")) value = value?.[key];
       return JSON.stringify(value ?? "");
@@ -107,6 +110,7 @@ function context(overrides = {}) {
     restoreOutcome = "success", buildOutcome = "success" } = overrides;
   return {
     github: { event_name: event, ref },
+    env: { RUNNER_BINARY_COMPILED: buildOutcome === "success" ? "true" : "false" },
     needs: { prepare: { result: prepared, outputs: {
       "current-runner-image-needed": needed,
       "runner-binary-hit-matrix": JSON.stringify(hits),
@@ -115,9 +119,23 @@ function context(overrides = {}) {
       "cache-lookup": { outcome: lookupOutcome, outputs: { "cache-hit": lookup } },
       "cache-restore": { outcome: restoreOutcome, outputs: { "cache-hit": restore } },
       prewarm: { outcome: buildOutcome },
+      build: { outcome: buildOutcome },
     },
     cancelled,
   };
+}
+
+// Restore ignores save-if; the post action reads the successful-build marker.
+// Never label an empty/old restored target directory as a newly built key.
+for (const [label, input, expected] of [
+  ["before build", { buildOutcome: "" }, false],
+  ["main compiled", {}, true],
+  ["late binary hit", { buildOutcome: "skipped" }, false],
+  ["failed build", { buildOutcome: "failure" }, false],
+  ["PR compiled", { ref: "refs/pull/1/merge" }, false],
+  ["queue compiled", { ref: "refs/heads/gh-readonly-queue/main/pr-1" }, false],
+]) {
+  assert.equal(evaluate(compilerCache.with["save-if"], context(input)), expected, label);
 }
 
 for (const [label, input, expectedTargets] of [

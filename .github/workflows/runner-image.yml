@@ -378,6 +378,7 @@ jobs:
       RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.head-sha }}
       GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
       GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
+      RUNNER_BINARY_COMPILED: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -407,30 +408,62 @@ jobs:
         with:
           workspaces: crates -> target
           shared-key: ${{ matrix.cacheSuffix }}-ci
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # The post action reads this after a successful build sets the marker.
+          # A late binary hit must not save an unbuilt dependency key.
+          save-if: ${{ github.ref == 'refs/heads/main' && env.RUNNER_BINARY_COMPILED == 'true' }}
 
-      - name: Build runner binary
-        id: build
-        env:
-          RUNNER_BINARY_METADATA_PATH: runner-binary-fresh/metadata.json
-        run: .github/scripts/runner-binary-build/build.sh build
-
-      - name: Stage runner binary transport
-        env:
-          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.build.outputs.binary-input-digest }}
-          EXPECTED_TARGET: ${{ matrix.target }}
-          FRESH_METADATA_PATH: runner-binary-fresh/metadata.json
-          RUNNER_PATH: runner-binary-fresh/runner
-        run: |
-          install -m 755 \
-            "crates/target/${TARGET_TRIPLE}/ci/runner" \
-            "$RUNNER_PATH"
-          .github/scripts/runner-binary-cache.sh fresh-validate
+      - name: Resolve runner binary input
+        id: binary-input
+        run: .github/scripts/runner-binary-build/digest.sh "$TARGET_TRIPLE"
 
       - name: Install AWS CLI
         uses: ./.github/actions/setup-aws-cli
 
-      - name: Publish compiled runner binary to R2
+      # Prepare's miss can become stale while this compiler job is setting up.
+      # Do one short lookup, not a wait for another submission's producer.
+      - name: Recheck runner binary cache before Cargo
+        id: cache-recheck
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_DEFAULT_REGION: auto
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+          EXPECTED_TARGET: ${{ matrix.target }}
+          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
+          OUTPUT_DIR: runner-binary-fresh
+          RUNNER_BINARY_CACHE_FORCE_MISS: ${{ vars.RUNNER_BINARY_CACHE_FORCE_MISS }}
+        run: .github/scripts/runner-binary-cache-recheck.sh
+
+      - name: Build runner binary
+        id: build
+        if: steps.cache-recheck.outputs.reused != 'true'
+        env:
+          RUNNER_BINARY_METADATA_PATH: runner-binary-fresh/metadata.json
+        run: |
+          .github/scripts/runner-binary-build/build.sh build
+          echo "RUNNER_BINARY_COMPILED=true" >> "$GITHUB_ENV"
+
+      - name: Stage runner binary transport
+        env:
+          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
+          EXPECTED_TARGET: ${{ matrix.target }}
+          FRESH_METADATA_PATH: runner-binary-fresh/metadata.json
+          RUNNER_PATH: runner-binary-fresh/runner
+          REUSED: ${{ steps.cache-recheck.outputs.reused }}
+        run: |
+          if [ "$REUSED" != true ]; then
+            install -m 755 \
+              "crates/target/${TARGET_TRIPLE}/ci/runner" \
+              "$RUNNER_PATH"
+          fi
+          .github/scripts/runner-binary-cache.sh fresh-validate
+
+      - name: Publish runner binary transport to R2
+        id: published
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_DEFAULT_REGION: auto
@@ -439,7 +472,7 @@ jobs:
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
           REPO: ${{ github.repository }}
           CURRENT_RUN_ID: ${{ github.run_id }}
-          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.build.outputs.binary-input-digest }}
+          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
           EXPECTED_TARGET: ${{ matrix.target }}
           FRESH_METADATA_PATH: runner-binary-fresh/metadata.json
           RUNNER_PATH: runner-binary-fresh/runner
@@ -448,7 +481,28 @@ jobs:
           PRODUCER_HEAD_SHA: ${{ needs.prepare.outputs.producer-head-sha }}
           PRODUCER_PR_NUMBER: ${{ needs.prepare.outputs.pr-number }}
           PRODUCER_RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: .github/scripts/runner-binary-transport.sh publish
+          CACHED_REFERENCE_PATH: runner-binary-fresh/cached-reference.json
+        run: .github/scripts/runner-binary-transport.sh ${{ steps.cache-recheck.outputs.reused == 'true' && 'publish-cached' || 'publish' }}
+
+      - name: Summarize compiler-side cache recheck
+        if: always()
+        env:
+          BINARY_SOURCE: ${{ steps.published.outputs.binary-source }}
+          RECHECK_REASON: ${{ steps.cache-recheck.outputs.resolve-reason }}
+          RECHECK_SECONDS: ${{ steps.cache-recheck.outputs.lookup-duration-seconds }}
+          CACHE_INDEX_RUN_ID: ${{ steps.cache-recheck.outputs.cache-index-run-id }}
+          COMPILE_OUTCOME: ${{ steps.build.outcome }}
+        run: |
+          {
+            echo "### Runner binary compiler-side recheck"
+            echo
+            echo "- Target: \`${TARGET_TRIPLE}\`"
+            echo "- Binary source: \`${BINARY_SOURCE:-not-published}\`"
+            echo "- Recheck reason: \`${RECHECK_REASON:-not-run}\`"
+            echo "- Lookup duration: \`${RECHECK_SECONDS:-0}s\`"
+            echo "- Original cache index run (hint): \`${CACHE_INDEX_RUN_ID:-none}\`"
+            echo "- Cargo build step: \`${COMPILE_OUTCOME:-not-run}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report sccache statistics
         if: always() && steps.sccache.outputs.started == 'true'
@@ -634,7 +688,7 @@ jobs:
           RESOLVE_OUTPUT_DIR: runner-binary-transport/${{ matrix.target }}
         run: .github/scripts/runner-binary-cache.sh download-reference
 
-      - name: Download compiled runner binary from R2
+      - name: Download runner binary transport from R2
         if: ${{ !contains(fromJSON(needs.prepare.outputs.runner-binary-hit-targets), matrix.target) }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -780,7 +834,7 @@ jobs:
           TARGET_TRIPLE: ${{ matrix.target }}
         run: .github/scripts/runner-binary-build/digest.sh "$TARGET_TRIPLE"
 
-      - name: Download compiled runner binary from R2
+      - name: Download runner binary transport from R2
         id: transport
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -795,7 +849,7 @@ jobs:
           OUTPUT_DIR: runner-binary-fresh
         run: .github/scripts/runner-binary-transport.sh download
 
-      - name: Validate fresh runner binary
+      - name: Validate runner binary bytes
         id: fresh
         env:
           EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
@@ -806,6 +860,7 @@ jobs:
 
       - name: Resolve reusable candidate in shadow mode
         id: shadow
+        if: steps.transport.outputs.binary-source == 'compiled'
         env:
           CURRENT_EVENT: ${{ github.event_name }}
           CURRENT_PR_HEAD_REF: ${{ needs.prepare.outputs.pr-head-ref }}
@@ -831,8 +886,10 @@ jobs:
           EXPECTED_TARGET: ${{ matrix.target }}
         run: .github/scripts/runner-binary-cache.sh artifact-name
 
+      # A late hit keeps its original index and must not invent fresh provenance.
       - name: Upload reusable runner binary manifest
         id: manifest-upload
+        if: steps.transport.outputs.binary-source == 'compiled'
         continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -845,6 +902,7 @@ jobs:
         if: always()
         env:
           BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
+          BINARY_SOURCE: ${{ steps.transport.outputs.binary-source }}
           FRESH_VALIDATION: ${{ steps.fresh.outcome }}
           MANIFEST_UPLOAD: ${{ steps.manifest-upload.outcome }}
           TRANSPORT_OUTCOME: ${{ steps.transport.outcome }}
@@ -860,8 +918,9 @@ jobs:
             echo
             echo "- Target: \`${TARGET_TRIPLE}\`"
             echo "- Input digest: \`${BINARY_INPUT_DIGEST}\`"
-            echo "- Fresh runner bytes: \`${RUNNER_SIZE_BYTES}\`"
-            echo "- Fresh validation: \`${FRESH_VALIDATION:-not-run}\`"
+            echo "- Binary source: \`${BINARY_SOURCE:-not-downloaded}\`"
+            echo "- Validated runner bytes: \`${RUNNER_SIZE_BYTES}\`"
+            echo "- Byte validation: \`${FRESH_VALIDATION:-not-run}\`"
             echo "- Shadow outcome: \`${SHADOW_OUTCOME:-not-run}\`"
             echo "- Shadow source: \`${SHADOW_SOURCE:-none}\`"
             echo "- Shadow reason: \`${SHADOW_REASON:-not-run}\`"

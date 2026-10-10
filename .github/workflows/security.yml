@@ -306,6 +306,7 @@ jobs:
             .github/scripts/run-semgrep.sh \
             .github/scripts/run-nbd-cow-tests.sh \
             .github/scripts/run-workflow-script-test-shard.sh \
+            .github/scripts/runner-binary-cache-recheck.sh \
             .github/scripts/runner-behavior-*.sh \
             .github/scripts/smoke-okou-cli-artifact.sh \
             .github/scripts/verify-okou-cli-artifact.sh \
@@ -367,6 +368,7 @@ jobs:
             e2e/helpers/browser.bash \
             e2e/helpers/trace-cli.sh \
             e2e/tests/02-browser/brw-t01-platform-e2e.bats
+          shellcheck -x .github/scripts/tests/runner-binary-cache-recheck-test.sh
           # actionlint assumes Bash when shell is omitted and does not model the
           # sh default used by container jobs.
           .github/scripts/check-workflow-shell-compatibility.sh

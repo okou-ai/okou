@@ -49,6 +49,7 @@
 2 release-tool-downloads-test.sh
 2 resolve-desktop-version-change-test.sh
 2 runner-behavior-agent-ready-benchmark-test.sh
+2 runner-binary-cache-recheck-test.sh
 2 runner-binary-transport-test.sh
 2 runner-guest-binaries-test.sh
 2 runner-host-architecture-groups-test.sh

@@ -1033,7 +1033,7 @@ download_reference() {
 
 usage() {
   cat <<'USAGE'
-Usage: runner-binary-cache.sh <fresh-validate|artifact-name|manifest-validate|publish|shadow-resolve|resolve-reference|download-reference>
+Usage: runner-binary-cache.sh <fresh-validate|artifact-name|manifest-validate|publish|shadow-resolve|resolve-reference|reference-validate|download-reference>
 USAGE
 }
 
@@ -1044,6 +1044,11 @@ case "${1:-}" in
   publish) publish ;;
   shadow-resolve) shadow_resolve ;;
   resolve-reference) resolve_reference ;;
+  reference-validate)
+    validate_cache_request
+    require_env CACHE_REFERENCE
+    validate_cache_reference
+    ;;
   download-reference) download_reference ;;
   -h|--help|help) usage ;;
   *) usage >&2; exit 2 ;;

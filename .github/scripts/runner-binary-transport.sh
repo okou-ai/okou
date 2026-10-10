@@ -11,6 +11,13 @@ fail() {
   exit 1
 }
 
+emit_source() {
+  printf 'binary-source=%s\n' "$1"
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    printf 'binary-source=%s\n' "$1" >> "$GITHUB_OUTPUT"
+  fi
+}
+
 for name in REPO CURRENT_RUN_ID EXPECTED_TARGET EXPECTED_BINARY_INPUT_DIGEST \
   OUTPUT_DIR R2_ACCOUNT_ID R2_BUCKET_NAME AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
   [ -n "${!name:-}" ] || fail "missing required env: ${name}"
@@ -41,6 +48,32 @@ r2() {
   fi
 }
 
+load_cached_reference() {
+  local path=$1
+  if [ ! -f "$path" ] || [ -L "$path" ]; then
+    fail "cached reference is not a regular file"
+  fi
+  [ "$(stat -c '%s' "$path")" -le 65536 ] || fail "cached reference exceeds 64 KiB"
+  cached_reference=$(jq -c . "$path")
+  jq -e --arg repo "$REPO" --argjson run "$CURRENT_RUN_ID" \
+    --arg target "$EXPECTED_TARGET" --arg digest "$EXPECTED_BINARY_INPUT_DIGEST" '
+      (keys | sort) == [
+        "cacheIndexRunId", "kind", "metadata", "reference", "repository", "runId", "schemaVersion"
+      ] and
+      .schemaVersion == 1 and .kind == "cached" and
+      .repository == $repo and .runId == $run and
+      (.cacheIndexRunId | type == "number" and floor == . and . > 0) and
+      (.metadata | type == "object") and (.reference | type == "object") and
+      .metadata.target == $target and .metadata.binaryInputDigest == $digest and
+      .reference.target == .metadata.target and
+      .reference.binaryInputDigest == .metadata.binaryInputDigest and
+      .reference.toolchainImage == .metadata.toolchainImage and
+      .reference.guestSha256 == .metadata.guestSha256
+    ' <<<"$cached_reference" >/dev/null || fail "invalid cached reference"
+  env GITHUB_OUTPUT= CACHE_REFERENCE="$(jq -c '.reference' <<<"$cached_reference")" \
+    RESOLVE_OUTPUT_DIR="${transport_tmp}/validation" "$CACHE" reference-validate
+}
+
 case "${1:-}" in
   publish)
     timeout --kill-after=5s 180s env \
@@ -53,31 +86,63 @@ case "${1:-}" in
       --body "${transport_tmp}/published/manifest.json" \
       --content-type application/json --cache-control 'private, no-store'
     mv "${transport_tmp}/published" "$OUTPUT_DIR"
+    emit_source compiled
+    ;;
+  publish-cached)
+    [ -n "${CACHED_REFERENCE_PATH:-}" ] || fail "missing cached reference path"
+    load_cached_reference "$CACHED_REFERENCE_PATH"
+    env GITHUB_OUTPUT= "$CACHE" fresh-validate
+    jq -e --slurpfile metadata "$FRESH_METADATA_PATH" '.metadata == $metadata[0]' \
+      <<<"$cached_reference" >/dev/null || fail "cached publication identity mismatch"
+    mkdir "${transport_tmp}/published"
+    printf '%s\n' "$cached_reference" > "${transport_tmp}/published/cached-reference.json"
+    # Only readiness for this run is published: never mint a fresh producer or
+    # replace the original content-addressed bytes / reusable GitHub index.
+    r2 put-object --key "$reference_key" \
+      --body "${transport_tmp}/published/cached-reference.json" \
+      --content-type application/json --cache-control 'private, no-store'
+    mv "${transport_tmp}/published" "$OUTPUT_DIR"
+    emit_source cached
     ;;
   download)
-    mkdir "${transport_tmp}/download"
-    manifest="${transport_tmp}/download/manifest.json"
+    manifest="${transport_tmp}/reference.json"
     runner_binary_download fresh-manifest "$reference_key" bytes=0-65536 "$manifest" 120 240
     [ "$(stat -c '%s' "$manifest")" -le 65536 ] || fail "manifest exceeds 64 KiB"
-    env GITHUB_OUTPUT= MANIFEST_PATH="$manifest" EXPECTED_REPOSITORY="$REPO" \
-      "$CACHE" manifest-validate
-    jq -e --argjson run_id "$CURRENT_RUN_ID" '.producer.runId == $run_id' \
-      "$manifest" >/dev/null || fail "manifest belongs to a different run"
+    if jq -e 'has("kind")' "$manifest" >/dev/null; then
+      load_cached_reference "$manifest"
+      env GITHUB_OUTPUT= CACHE_REFERENCE="$(jq -c '.reference' <<<"$cached_reference")" \
+        RESOLVE_OUTPUT_DIR="${transport_tmp}/download" "$CACHE" download-reference
+      jq -e --slurpfile metadata "${transport_tmp}/download/metadata.json" \
+        '.metadata == $metadata[0]' <<<"$cached_reference" >/dev/null || \
+        fail "cached download identity mismatch"
+      printf '%s\n' "$cached_reference" > "${transport_tmp}/download/cached-reference.json"
+      binary_source=cached
+    else
+      mkdir "${transport_tmp}/download"
+      mv "$manifest" "${transport_tmp}/download/manifest.json"
+      manifest="${transport_tmp}/download/manifest.json"
+      env GITHUB_OUTPUT= MANIFEST_PATH="$manifest" EXPECTED_REPOSITORY="$REPO" \
+        "$CACHE" manifest-validate
+      jq -e --argjson run_id "$CURRENT_RUN_ID" '.producer.runId == $run_id' \
+        "$manifest" >/dev/null || fail "manifest belongs to a different run"
 
-    compressed="${transport_tmp}/runner.zst"
-    runner_binary_download fresh-binary "$(jq -r '.object.key' "$manifest")" \
-      bytes=0-67108864 "$compressed" 120 240
-    [ "$(stat -c '%s' "$compressed")" = "$(jq -r '.object.sizeBytes' "$manifest")" ] || \
-      fail "compressed binary size mismatch"
-    zstd -q -d -c "$compressed" | head -c 134217729 > "${transport_tmp}/download/runner"
-    jq '{
-      schemaVersion, binaryInputDigest, target, toolchainImage,
-      guestSha256: .guests, runnerSha256: .runner.sha256, runnerSizeBytes: .runner.sizeBytes
-    }' "$manifest" > "${transport_tmp}/download/metadata.json"
+      compressed="${transport_tmp}/runner.zst"
+      runner_binary_download fresh-binary "$(jq -r '.object.key' "$manifest")" \
+        bytes=0-67108864 "$compressed" 120 240
+      [ "$(stat -c '%s' "$compressed")" = "$(jq -r '.object.sizeBytes' "$manifest")" ] || \
+        fail "compressed binary size mismatch"
+      zstd -q -d -c "$compressed" | head -c 134217729 > "${transport_tmp}/download/runner"
+      jq '{
+        schemaVersion, binaryInputDigest, target, toolchainImage,
+        guestSha256: .guests, runnerSha256: .runner.sha256, runnerSizeBytes: .runner.sizeBytes
+      }' "$manifest" > "${transport_tmp}/download/metadata.json"
+      binary_source=compiled
+    fi
     env GITHUB_OUTPUT= FRESH_METADATA_PATH="${transport_tmp}/download/metadata.json" \
       RUNNER_PATH="${transport_tmp}/download/runner" "$CACHE" fresh-validate
     chmod 755 "${transport_tmp}/download/runner"
     mv "${transport_tmp}/download" "$OUTPUT_DIR"
+    emit_source "$binary_source"
     ;;
-  *) fail "usage: runner-binary-transport.sh <publish|download>" ;;
+  *) fail "usage: runner-binary-transport.sh <publish|publish-cached|download>" ;;
 esac
