@@ -392,6 +392,10 @@ real time. `#[tokio::test(start_paused = true)]` and `tokio::time::advance(...)`
 let the test exercise the production timer while keeping the test fast. See
 `crates/runner-rpc-client/tests/helper.rs` and `tests/stream.rs` for examples.
 Advance only after the timed task is armed, then assert its observable result.
+When a timer case also uses real sockets, complete the peer's observable I/O on
+running time before pausing just the timer phase. Keep a deliberately unpolled
+future owned, advance to its unchanged deadline, and resume before polling it or
+performing socket cleanup. Do not auto-advance through real I/O setup.
 For external processes and kernel I/O, wait for the observable completion under
 a bounded deadline; a paused Tokio clock does not control those systems. A
 completed `dd` followed by `sync` already supplies that completion boundary in
