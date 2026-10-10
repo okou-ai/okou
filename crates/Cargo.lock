@@ -1925,6 +1925,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "guest-task-exec"
+version = "0.1.0"
+dependencies = [
+ "guest-contracts",
+ "libc",
+ "process-control-ipc",
+ "serde_json",
+]
+
+[[package]]
 name = "guest-telemetry"
 version = "0.3.132"
 dependencies = [
@@ -3145,8 +3155,11 @@ dependencies = [
 name = "process-control-ipc"
 version = "0.4.1"
 dependencies = [
+ "guest-contracts",
  "libc",
  "proptest",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3610,6 +3623,7 @@ dependencies = [
  "guest-init",
  "guest-state-restore",
  "guest-storage-apply",
+ "guest-task-exec",
  "guest-tool-exec",
  "guest-write-file",
  "hex",

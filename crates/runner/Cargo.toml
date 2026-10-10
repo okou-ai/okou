@@ -95,6 +95,7 @@ claude-mock = { workspace = true }
 codex-mock = { workspace = true }
 guest-state-restore = { workspace = true }
 guest-tool-exec = { workspace = true }
+guest-task-exec = { workspace = true }
 runner-rpc-client = { workspace = true }
 guest-write-file = { workspace = true }
 guest-home-mount = { workspace = true }

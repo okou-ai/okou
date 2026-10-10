@@ -1,5 +1,5 @@
 import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
-import { execFile } from "node:child_process";
+import { execFile, type SpawnOptions } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,11 +14,26 @@ import {
   serveGenerationVisibility,
 } from "./artifact-visibility-fixtures";
 
+const taskHelper = vi.hoisted(() => {
+  return { path: "" };
+});
+
 vi.mock("node:child_process", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:child_process")>();
   const { readFileSync, writeFileSync } = await import("node:fs");
   return {
     ...original,
+    spawn: vi.fn((file: string, args: string[], options: SpawnOptions) => {
+      expect(file).toBe("/usr/local/bin/guest-task-exec");
+      if (taskHelper.path.endsWith("missing-helper")) {
+        return original.spawn(taskHelper.path, args, options);
+      }
+      return original.spawn(
+        process.execPath,
+        [taskHelper.path, ...args],
+        options,
+      );
+    }),
     execFile: vi.fn(
       (
         command: string,
@@ -67,6 +82,48 @@ describe("okou generate image-batch command", () => {
     const path = await mkdtemp(join(tmpdir(), "okou-image-batch-test-"));
     temporaryDirectories.push(path);
     return path;
+  }
+
+  async function installTaskHelper(root: string, mode = "normal") {
+    taskHelper.path = join(root, "task-helper.mjs");
+    await writeFile(
+      taskHelper.path,
+      `import { closeSync, mkdirSync, readFileSync, watch, writeFileSync } from "node:fs";
+import { join } from "node:path";
+const root = ${JSON.stringify(root)};
+const mode = ${JSON.stringify(mode)};
+const handle = "00000000-0000-4000-8000-000000000001";
+const args = process.argv.slice(2);
+if (args[0] === "stop") {
+  if (mode === "cleanup-failure") process.exit(125);
+  if (args[1] !== handle) throw new Error("Wrong task stop handle");
+  const task = JSON.parse(readFileSync(join(root, "admitted-task.json"), "utf8"));
+  writeFileSync(join(root, "stopped-task"), args[1]);
+  process.kill(task.pid, "SIGKILL");
+} else {
+  if (args[0] !== "--report-fd" || args[1] !== "3" || args[2] !== "--") {
+    throw new Error("Invalid private report descriptor");
+  }
+  const task = { handle, pid: process.pid };
+  writeFileSync(join(root, "admitted-task.json"), JSON.stringify(task));
+  const [program, ...targetArgs] = args.slice(3);
+  if (["publication-failure", "cleanup-failure"].includes(mode)) mkdirSync(join(targetArgs[5], "pid"));
+  const record = mode === "missing-report" ? ""
+    : mode === "wrong-pid" ? JSON.stringify({ ...task, pid: task.pid + 1 }) + "\\n"
+    : mode === "oversized-report" ? " ".repeat(4097)
+    : mode === "invalid-handle" ? JSON.stringify({ ...task, handle: "../runtime" }) + "\\n"
+    : JSON.stringify(task) + "\\n";
+  writeFileSync(3, record);
+  closeSync(3);
+  if (mode === "normal") {
+    process.execve(program, [program, ...targetArgs], process.env);
+  } else {
+    watch(root, () => {});
+  }
+}
+`,
+      "utf8",
+    );
   }
 
   beforeEach(() => {
@@ -862,13 +919,14 @@ describe("okou generate image-batch command", () => {
   });
 
   it.each([undefined, "org"] as const)(
-    "starts a detached worker with %s visibility and waits for its result",
+    "starts a managed Guest worker with %s visibility and waits for its result",
     async (visibility) => {
       if (visibility) serveGenerationVisibility("image.png", visibility);
       const root = await makeTemporaryDirectory();
       const manifestPath = join(root, "images.tsv");
       const stateDirectory = join(root, "state");
       const fixturePath = join(root, "batch-worker.mjs");
+      await installTaskHelper(root);
       await writeFile(manifestPath, "hero\tA happy dog\n", "utf8");
       await writeFile(
         fixturePath,
@@ -973,4 +1031,128 @@ await writeFile(join(stateDirectory, "done"), "0\\n", "utf8");
       ).toEqual(visibility ? ["--visibility", visibility] : []);
     },
   );
+
+  it.each([
+    "missing-report",
+    "wrong-pid",
+    "oversized-report",
+    "invalid-handle",
+  ])("fails the start and reaps the launcher for %s", async (mode) => {
+    const root = await makeTemporaryDirectory();
+    const manifestPath = join(root, "images.tsv");
+    const stateDirectory = join(root, "state");
+    await writeFile(manifestPath, "hero\tA happy dog\n", "utf8");
+    await installTaskHelper(root, mode);
+
+    await expect(
+      generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image-batch",
+        "start",
+        manifestPath,
+        stateDirectory,
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "Could not start a managed Guest task",
+    );
+    await expect(readFile(join(stateDirectory, "pid"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    const task: { pid: number } = JSON.parse(
+      await readFile(join(root, "admitted-task.json"), "utf8"),
+    );
+    expect(() => {
+      process.kill(task.pid, 0);
+    }).toThrow();
+  });
+
+  it("reports a missing Guest launcher without starting the batch", async () => {
+    const root = await makeTemporaryDirectory();
+    const manifestPath = join(root, "images.tsv");
+    const stateDirectory = join(root, "state");
+    taskHelper.path = join(root, "missing-helper");
+    await writeFile(manifestPath, "hero\tA happy dog\n", "utf8");
+
+    await expect(
+      generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image-batch",
+        "start",
+        manifestPath,
+        stateDirectory,
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain("ENOENT");
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).not.toContain(
+      "Image batch started",
+    );
+    await expect(readFile(join(stateDirectory, "pid"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("stops the admitted task when publishing its batch state fails", async () => {
+    const root = await makeTemporaryDirectory();
+    const manifestPath = join(root, "images.tsv");
+    const stateDirectory = join(root, "state");
+    await writeFile(manifestPath, "hero\tA happy dog\n", "utf8");
+    await installTaskHelper(root, "publication-failure");
+
+    await expect(
+      generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image-batch",
+        "start",
+        manifestPath,
+        stateDirectory,
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(await readFile(join(root, "stopped-task"), "utf8")).toBe(
+      "00000000-0000-4000-8000-000000000001",
+    );
+    const task: { pid: number } = JSON.parse(
+      await readFile(join(root, "admitted-task.json"), "utf8"),
+    );
+    expect(() => {
+      process.kill(task.pid, 0);
+    }).toThrow();
+    await expect(
+      readFile(join(stateDirectory, "manifest.tsv")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("retains batch state and reports failed native cleanup", async () => {
+    const root = await makeTemporaryDirectory();
+    const manifestPath = join(root, "images.tsv");
+    const stateDirectory = join(root, "state");
+    await writeFile(manifestPath, "hero\tA happy dog\n", "utf8");
+    await installTaskHelper(root, "cleanup-failure");
+
+    await expect(
+      generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image-batch",
+        "start",
+        manifestPath,
+        stateDirectory,
+      ]),
+    ).rejects.toThrow("process.exit called");
+    const stderr = mockConsoleError.mock.calls.flat().join("\n");
+    expect(stderr).toContain(`State retained at ${stateDirectory}`);
+    expect(stderr).toContain("Guest task stop failed");
+    expect(await readFile(join(stateDirectory, "manifest.tsv"), "utf8")).toBe(
+      "hero\tA happy dog\n",
+    );
+    const task: { pid: number } = JSON.parse(
+      await readFile(join(root, "admitted-task.json"), "utf8"),
+    );
+    expect(() => {
+      process.kill(task.pid, 0);
+    }).toThrow();
+  });
 });
