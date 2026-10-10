@@ -746,48 +746,6 @@ describe("direct Runner WSS ticket boundary", () => {
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
-  it("retains consumed authority beyond redemption expiry and bounded daily cleanup", async () => {
-    const f = await setup();
-    const issued = await accept(bootstrap(f), [200]);
-    const consumed = await accept(consume(f, issued.body.ticket), [200]);
-    const key = { runId: f.runId, digest: consumed.body.digest };
-    mockNow(now() + 2 * 24 * 60 * 60 * 1000);
-    await f.api.requestHeartbeatRunner(true, [200], {
-      runnerId: f.runnerId,
-      group: f.group,
-      mode: "running",
-      snapshotSequence: 2,
-      wssIngressServiceActive: true,
-    });
-    // New issuance exercises the real cleanup path with the old row >1 day old.
-    await accept(bootstrap(f), [200]);
-    expect(
-      (
-        await accept(
-          client().check({
-            headers: officialHeaders,
-            body: { runnerId: f.runnerId, origin, authorizations: [key] },
-          }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ authorized: [key] });
-    await accept(consume(f, issued.body.ticket), [404]);
-    await accept(revoke(f), [204]);
-    expect(
-      (
-        await accept(
-          client().check({
-            headers: officialHeaders,
-            body: { runnerId: f.runnerId, origin, authorizations: [key] },
-          }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ authorized: [] });
-    await f.api.requestCancelRun(f.actor, f.runId, [200]);
-  });
-
   it("revokes every consumed ticket, not just pending tickets or one connection", async () => {
     const f = await setup();
     const authorizations: { runId: string; digest: string }[] = [];

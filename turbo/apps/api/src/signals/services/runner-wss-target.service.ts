@@ -2,7 +2,6 @@ import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runnerState } from "@okouai/db/schema/runner-state";
 import { runnerWssTickets } from "@okouai/db/schema/runner-wss-ticket";
-import { command } from "ccstate";
 import {
   and,
   eq,
