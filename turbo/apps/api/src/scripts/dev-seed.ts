@@ -2,7 +2,7 @@
 
 import { pathToFileURL } from "node:url";
 
-import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, sql, type SQL } from "drizzle-orm";
 import { escapeLiteral } from "pg";
 import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import { MANAGED_SOCIALKIT_BILLING_CATEGORY } from "@okouai/api-contracts/contracts/social";
@@ -354,10 +354,9 @@ function buildSkillSeedSql(
 `;
 }
 
-async function seedOfficialSkillVolumes(
-  database: ReturnType<typeof db>,
+function buildOfficialSkillVolumesSeedSql(
   seedSkillVolumes: readonly DevSeedSkillVolume[],
-): Promise<number> {
+): SQL {
   const seedVolumes = escapeLiteral(JSON.stringify(seedSkillVolumes));
   const systemOrgId = escapeLiteral(SYSTEM_ORG_ID);
   const volumeOrgUserId = escapeLiteral(VOLUME_ORG_USER_ID);
@@ -390,9 +389,7 @@ BEGIN
 ${buildStorageSeedSql(systemOrgId, volumeOrgUserId)}
 ${buildSkillSeedSql(systemOrgId, volumeOrgUserId)}
 END`;
-  await database.execute(sql.raw(`DO ${escapeLiteral(body)}`));
-
-  return seedSkillVolumes.length;
+  return sql.raw(`DO ${escapeLiteral(body)}`);
 }
 
 export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
@@ -807,11 +804,8 @@ async function devSeed() {
   // --- skills (published volumes + seed-skill metadata fallback) ---
   const seedSkillVolumes = getDevSeedSkillVolumes();
   writeLine("Seeding official skill volumes");
-  const seededVolumeCount = await seedOfficialSkillVolumes(
-    database,
-    seedSkillVolumes,
-  );
-  writeLine(`Seeded ${seededVolumeCount} official skill volume entries`);
+  await database.execute(buildOfficialSkillVolumesSeedSql(seedSkillVolumes));
+  writeLine(`Seeded ${seedSkillVolumes.length} official skill volume entries`);
 
   const fallbackSkillValues = buildSeedSkillValues(
     getMetadataOnlySeedSkillNames(SEED_SKILLS, seedSkillVolumes),
