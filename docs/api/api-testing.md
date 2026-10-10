@@ -287,7 +287,7 @@ Global setup and workers use the same test database URL helper. It appends a
 final `-c timezone=UTC` startup setting, preserving the effective existing URL
 options or inherited `PGOPTIONS`, unrelated connection parameters, and worker
 application names. Startup configuration applies before the first query on every
-physical connection, including pool replacements. The pricing seed checks
+physical connection, including pool replacements. Global setup checks
 `SHOW TimeZone` before any shared pricing/catalog writes and closes its client if
 the check fails. Production connection configuration is unchanged; isolated
 PGlite sessions already explicitly use UTC.
@@ -368,14 +368,22 @@ catalog just to delete its accounts. Keep business deletion assertions and
 cleanup that stops background work, releases external resources, or restores
 external mocks. Shared PostgreSQL fixtures still own and clean up their rows.
 
-`src/__tests__/global-setup.ts` seeds the shared PostgreSQL pricing and complete
-fixed connector catalog once per run. It also migrates and seeds one PGlite,
+`src/__tests__/global-setup.ts` applies the fixed SQL files listed in
+`src/test-fixtures/database-seeds.ts` to shared PostgreSQL once per run, using
+one short-lived client that closes on success or failure without opening the
+application pool. These test-only files live under `src/test-fixtures/seeds/`,
+outside production migrations and deployment entrypoints. Both database engines
+execute exactly the same files; there are no exported pricing/catalog writers
+or per-case seed options. It also migrates and seeds one PGlite,
 saves a checkpointed immutable snapshot, and provides its path to workers.
 The fixture caches the unpacked files for subsequent cases. Each isolated case
 creates a fresh engine and memory filesystem with its own writable copies; cases do not
-repeat gzip/tar decoding, replay migrations, or reseed their database. Shared
-fixture installation inserts only a missing pointer and must never replace an
-existing catalog pointer. This common application baseline is infrastructure; it does
+repeat gzip/tar decoding, replay migrations, or reseed their database. The catalog seed
+publishes entries and their schema-version pointer in one atomic statement,
+inserting only a missing pointer and never replacing existing catalog authority.
+The pricing seed preserves existing rows on their `(kind, provider, category)`
+key. To update the fixed baseline, review the declarative data alongside its
+source artifact/pricing projection; do not add case-specific variants. This common application baseline is infrastructure; it does
 not authorize changing prices, catalog entries, or business rows to manufacture
 a case's decisive state.
 
