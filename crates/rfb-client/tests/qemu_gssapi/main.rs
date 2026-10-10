@@ -374,7 +374,8 @@ async fn pinned_online_password_eligible_pre_auth_renewal_is_once_and_terminal_o
 
 #[tokio::test]
 #[ignore = "requires independent signed MIT KDC and actual native worker"]
-async fn pinned_native_renew_cancellation_retains_opaque_owner_until_real_reap_and_cleanup() {
+// Keep this in the manual full-QEMU group, outside controlled-peer CI selection.
+async fn pinned_online_password_renew_cancellation_keeps_native_owner_until_reap_and_cleanup() {
     use std::os::unix::fs::PermissionsExt;
     use std::sync::{
         Arc,

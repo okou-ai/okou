@@ -125,44 +125,7 @@ export function KerberosCredentialInputs({
         })}
       </p>
       {method === "qemu_kerberos_ticket" && (
-        <>
-          <label className="grid gap-2 text-sm">
-            <span>
-              {t(($) => {
-                return $.vnc.kerberos.serviceRealm;
-              })}
-            </span>
-            <Input
-              name="kerberosTicketRealm"
-              required
-              maxLength={255}
-              defaultValue={
-                existing?.authMethod === "qemu_kerberos_ticket"
-                  ? existing.service.realm
-                  : ""
-              }
-              readOnly={existing !== null}
-            />
-          </label>
-          <label className="grid gap-2 text-sm">
-            <span>
-              {t(($) => {
-                return $.vnc.kerberos.serviceInstance;
-              })}
-            </span>
-            <Input
-              name="kerberosTicketInstance"
-              required
-              maxLength={255}
-              defaultValue={
-                existing?.authMethod === "qemu_kerberos_ticket"
-                  ? existing.service.components[1]
-                  : ""
-              }
-              readOnly={existing !== null}
-            />
-          </label>
-        </>
+        <KerberosTicketServiceFields credential={existing} />
       )}
       {method !== "qemu_kerberos_password" && (
         <>
@@ -207,6 +170,50 @@ export function KerberosCredentialInputs({
             })}
       </p>
     </div>
+  );
+}
+
+function KerberosTicketServiceFields({
+  credential,
+}: {
+  readonly credential: VncCredentialResponse | null;
+}) {
+  const { t } = useTranslation();
+  const service =
+    credential?.authMethod === "qemu_kerberos_ticket"
+      ? credential.service
+      : null;
+  return (
+    <>
+      <label className="grid gap-2 text-sm">
+        <span>
+          {t(($) => {
+            return $.vnc.kerberos.serviceRealm;
+          })}
+        </span>
+        <Input
+          name="kerberosTicketRealm"
+          required
+          maxLength={255}
+          defaultValue={service?.realm ?? ""}
+          readOnly={credential !== null}
+        />
+      </label>
+      <label className="grid gap-2 text-sm">
+        <span>
+          {t(($) => {
+            return $.vnc.kerberos.serviceInstance;
+          })}
+        </span>
+        <Input
+          name="kerberosTicketInstance"
+          required
+          maxLength={255}
+          defaultValue={service?.components[1] ?? ""}
+          readOnly={credential !== null}
+        />
+      </label>
+    </>
   );
 }
 
@@ -259,13 +266,15 @@ export function KerberosConnectionFields({
   );
 }
 
+type KerberosConnectionSecurity = Extract<
+  VncConnectionResponse["security"],
+  { type: "qemu_x509_gssapi" }
+>;
+
 function KerberosKdcFields({
   saved,
 }: {
-  readonly saved: Extract<
-    VncConnectionResponse["security"],
-    { type: "qemu_x509_gssapi" }
-  > | null;
+  readonly saved: KerberosConnectionSecurity | null;
 }) {
   const { t } = useTranslation();
   const editor = useGet(vncEditor$);
@@ -359,6 +368,19 @@ function KerberosKdcFields({
           defaultValue={saved?.kdc?.port ?? 88}
         />
       </label>
+      <KerberosLifetimeFields saved={saved} />
+    </>
+  );
+}
+
+function KerberosLifetimeFields({
+  saved,
+}: {
+  readonly saved: KerberosConnectionSecurity | null;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
       <label className="grid gap-2 text-sm">
         <span>
           {t(($) => {
