@@ -458,7 +458,7 @@ describe("okou people-search route", () => {
       const afterCredits = await credits(actor);
 
       expect(requestBody).toMatchObject({
-        model: "openai/gpt-5-mini",
+        model: "openai/gpt-5.6-luna",
         reasoning: { effort: "low" },
         tools: [
           {
