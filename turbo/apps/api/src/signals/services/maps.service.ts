@@ -25,11 +25,13 @@ const USAGE_KIND = "maps";
 const BILLING_CATEGORY = "provider_cost_usd_micros";
 const MICRO_USD_PER_USD = 1_000_000;
 // Bill published list cost because Vertex does not identify whether this
-// request consumed the shared daily no-charge allowance.
-const MAPS_GROUNDED_PROMPT_COST_MICROS = 25_000;
-const TOKEN_PRICE_DENOMINATOR = 10n;
-const INPUT_TOKEN_PRICE_TENTHS_OF_MICRO_USD = 3n;
-const OUTPUT_TOKEN_PRICE_TENTHS_OF_MICRO_USD = 25n;
+// request consumed the shared monthly no-charge allowance.
+const MAPS_QUERY_COST_MICROS = 14_000n;
+const TOKEN_PRICE_DENOMINATOR = 100n;
+const INPUT_TOKEN_PRICE_HUNDREDTHS_OF_MICRO_USD = 30n;
+const CACHED_TOKEN_PRICE_HUNDREDTHS_OF_MICRO_USD = 3n;
+const OUTPUT_TOKEN_PRICE_HUNDREDTHS_OF_MICRO_USD = 250n;
+// Admission estimate for three queries plus tokens, not a per-request spend cap.
 const PREFLIGHT_PROVIDER_COST_MICROS = 50_000;
 
 interface AuthedMapsSearchArgs {
@@ -84,11 +86,8 @@ function providerError(error: unknown): MapsErrorResponse {
         "MAPS_RESPONSE_TOO_LARGE",
       );
     }
-    if (error.reason === "blocked") {
-      return badGateway(
-        "Google Maps grounding could not answer this request",
-        "MAPS_GROUNDING_BLOCKED",
-      );
+    if (error.reason === "invalid_usage") {
+      return invalidProviderUsage();
     }
   }
   if (error instanceof GcpLlmAuthError && error.temporary) {
@@ -109,18 +108,28 @@ function runIdForUsage(auth: AuthContext): string | undefined {
     : undefined;
 }
 
-function providerCostMicros(result: VertexMapsResult): number {
-  const tokenCostTenths =
-    BigInt(result.usage.inputTokens) * INPUT_TOKEN_PRICE_TENTHS_OF_MICRO_USD +
-    BigInt(result.usage.outputTokens) * OUTPUT_TOKEN_PRICE_TENTHS_OF_MICRO_USD;
+function invalidProviderUsage(): MapsErrorResponse {
+  return badGateway(
+    "Google Maps grounding did not return valid billing usage",
+    "MAPS_USAGE_UNAVAILABLE",
+  );
+}
+
+function providerCostMicros(result: VertexMapsResult): number | null {
+  const tokenCostHundredths =
+    BigInt(result.usage.inputTokens - result.usage.cachedInputTokens) *
+      INPUT_TOKEN_PRICE_HUNDREDTHS_OF_MICRO_USD +
+    BigInt(result.usage.cachedInputTokens) *
+      CACHED_TOKEN_PRICE_HUNDREDTHS_OF_MICRO_USD +
+    BigInt(result.usage.outputTokens) *
+      OUTPUT_TOKEN_PRICE_HUNDREDTHS_OF_MICRO_USD;
   const tokenCostMicros =
-    (tokenCostTenths + TOKEN_PRICE_DENOMINATOR - 1n) / TOKEN_PRICE_DENOMINATOR;
-  const groundingCostMicros = result.grounded
-    ? MAPS_GROUNDED_PROMPT_COST_MICROS
-    : 0;
-  const total = tokenCostMicros + BigInt(groundingCostMicros);
+    (tokenCostHundredths + TOKEN_PRICE_DENOMINATOR - 1n) /
+    TOKEN_PRICE_DENOMINATOR;
+  const total =
+    tokenCostMicros + BigInt(result.usage.mapsQueries) * MAPS_QUERY_COST_MICROS;
   if (total > BigInt(Number.MAX_SAFE_INTEGER)) {
-    throw new Error("Google Maps grounding provider cost is too large");
+    return null;
   }
   return Number(total);
 }
@@ -206,6 +215,9 @@ export const mapsSearch$ = command(
     // A parsed provider result has incurred billable work. From this point,
     // client disconnect no longer owns settlement; the command owner does.
     const billingQuantity = providerCostMicros(generated.value);
+    if (billingQuantity === null) {
+      return invalidProviderUsage();
+    }
     const creditsCharged =
       billingQuantity === 0
         ? 0

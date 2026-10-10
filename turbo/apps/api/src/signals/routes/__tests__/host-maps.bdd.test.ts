@@ -649,12 +649,14 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
 
     let providerCalls = 0;
     let providerAuthorization: string | null = null;
+    let providerRevision: string | null = null;
     let providerBody: unknown;
     const answer = "Café Central is open nearby.";
     server.use(
       http.post(VERTEX_MAPS_URL, async ({ request }) => {
         providerCalls += 1;
         providerAuthorization = request.headers.get("authorization");
+        providerRevision = request.headers.get("api-revision");
         providerBody = await request.json();
         return vertexMapsResponse({ answer });
       }),
@@ -676,11 +678,11 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       location: { latitude: 48.21, longitude: 16.37 },
       languageCode: "de_AT",
       provider: "google-maps-grounding",
-      model: "gemini-2.5-flash",
+      model: "gemini-3.5-flash-lite",
       billingCategory: "provider_cost_usd_micros",
-      billingQuantity: 25_155,
-      providerCostUsd: 0.025155,
-      creditsCharged: 32,
+      billingQuantity: 14_155,
+      providerCostUsd: 0.014155,
+      creditsCharged: 18,
       answer,
       sources: [
         {
@@ -697,27 +699,33 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
         },
       ],
       attribution: "Google Maps",
-      usage: { inputTokens: 100, outputTokens: 50 },
+      usage: {
+        inputTokens: 100,
+        cachedInputTokens: 0,
+        outputTokens: 50,
+        mapsQueries: 1,
+      },
     });
     expect(providerAuthorization).toBe("Bearer synthetic-google-token");
+    expect(providerRevision).toBe("2026-05-20");
     expect(providerBody).toMatchObject({
-      contents: [{ role: "user", parts: [{ text: "best café near me" }] }],
+      model: "gemini-3.5-flash-lite",
+      input: "best café near me",
+      store: false,
+      background: false,
+      stream: false,
+      service_tier: "standard",
       tools: [
         {
-          googleMaps: {
-            groundingTypes: { places: {}, routing: {} },
-          },
+          type: "google_maps",
+          latitude: 48.21,
+          longitude: 16.37,
         },
       ],
-      toolConfig: {
-        retrievalConfig: {
-          latLng: { latitude: 48.21, longitude: 16.37 },
-          languageCode: "de_AT",
-        },
-      },
-      generationConfig: {
-        thinkingConfig: { thinkingBudget: 0 },
-        maxOutputTokens: 2048,
+      generation_config: {
+        thinking_level: "minimal",
+        thinking_summaries: "none",
+        max_output_tokens: 2048,
       },
     });
     const serializedProviderBody = JSON.stringify(providerBody);
@@ -728,10 +736,11 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     expect(serializedProviderBody).toContain(
       "Do not assist with high-risk uses of maps",
     );
+    expect(serializedProviderBody).toContain("Use language de_AT");
     expect(providerCalls).toBe(1);
 
     const settled = await billing.readBillingStatus(admin);
-    expect(settled.credits).toBe(before.credits - 32);
+    expect(settled.credits).toBe(before.credits - 18);
 
     server.use(
       http.post(VERTEX_MAPS_URL, () => {
@@ -762,8 +771,18 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       http.post(VERTEX_MAPS_URL, () => {
         providerCalls += 1;
         return vertexMapsResponse({
-          sources: [
-            { title: "Untrusted source", uri: "https://example.com/place" },
+          content: [
+            {
+              type: "text",
+              text: answer,
+              annotations: [
+                {
+                  type: "place_citation",
+                  name: "Untrusted source",
+                  url: "https://example.com/place",
+                },
+              ],
+            },
           ],
         });
       }),
@@ -783,8 +802,20 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       http.post(VERTEX_MAPS_URL, () => {
         providerCalls += 1;
         return vertexMapsResponse({
-          answer: "Café",
-          supports: [{ endIndex: 4, sourceIndices: [0] }],
+          content: [
+            {
+              type: "text",
+              text: "Café",
+              annotations: [
+                {
+                  type: "place_citation",
+                  name: "Café Central",
+                  url: "https://maps.google.com/?cid=123",
+                  end_index: 4,
+                },
+              ],
+            },
+          ],
         });
       }),
     );
@@ -803,12 +834,8 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       http.post(VERTEX_MAPS_URL, () => {
         providerCalls += 1;
         return HttpResponse.json({
-          promptFeedback: { blockReason: "SAFETY" },
-          candidates: [],
-          usageMetadata: {
-            promptTokenCount: 10,
-            candidatesTokenCount: 0,
-          },
+          status: "failed",
+          errors: [{ message: "private-provider-safety-detail" }],
         });
       }),
     );
@@ -819,7 +846,8 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     );
     expect(blocked.headers.get("cache-control")).toBe("private, no-store");
     expectApiError(blocked.body);
-    expect(blocked.body.error.code).toBe("MAPS_GROUNDING_BLOCKED");
+    expect(blocked.body.error.code).toBe("MAPS_GROUNDING_ERROR");
+    expect(JSON.stringify(blocked.body)).not.toContain("private-provider");
     expect((await billing.readBillingStatus(admin)).credits).toBe(
       settled.credits,
     );
@@ -917,18 +945,20 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       http.post(VERTEX_MAPS_URL, () => {
         return vertexMapsResponse({
           answer,
-          parts: [
-            { text: "private reasoning", thought: true },
-            { text: prefix },
-            { text: `${citedText} Central.` },
-          ],
-          supports: [
+          content: [
+            { type: "text", text: prefix },
             {
-              partIndex: 2,
-              startIndex: 0,
-              endIndex: Buffer.byteLength(citedText),
-              text: citedText,
-              sourceIndices: [0],
+              type: "text",
+              text: `${citedText} Central.`,
+              annotations: [
+                {
+                  type: "place_citation",
+                  name: "Café Central",
+                  url: "https://maps.google.com/?cid=123",
+                  start_index: 0,
+                  end_index: Buffer.byteLength(citedText),
+                },
+              ],
             },
           ],
         });
@@ -1002,8 +1032,8 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
     expect(mapsSearch.body).toMatchObject({
       provider: "google-maps-grounding",
       billingCategory: "provider_cost_usd_micros",
-      billingQuantity: 25_155,
-      creditsCharged: 32,
+      billingQuantity: 14_155,
+      creditsCharged: 18,
     });
     expect(mapsRequests).toBe(1);
 
@@ -1033,6 +1063,6 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
     expect(recompleted).toStrictEqual(completed);
 
     const settled = await billing.readBillingStatus(actor);
-    expect(settled.credits).toBe(before.credits - 32);
+    expect(settled.credits).toBe(before.credits - 18);
   });
 });
