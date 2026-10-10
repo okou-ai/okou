@@ -5,10 +5,8 @@ import {
   FileText,
   Image as ImageIcon,
   Layers,
-  Lock,
   Presentation,
   Upload,
-  Users,
   Search,
   Trash2,
   User,
@@ -57,6 +55,7 @@ import {
   CustomTemplatesLoadError,
 } from "./custom-template-preview-dialog.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
+import { TEMPLATE_TILE_SCRIM } from "./template-tile.ts";
 import {
   cancelDeleteCustomTemplate$,
   customTemplateSearchQuery$,
@@ -80,8 +79,10 @@ import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
 /** The tile metrics the rest of the picker's grids already use. */
+// `isolate` keeps the shared scrim's z-index inside the cover, so the Use and
+// actions controls beside it still paint over it in tree order.
 const CARD_MEDIA =
-  "relative block aspect-video w-full overflow-hidden rounded-xl border border-border bg-muted";
+  "relative isolate block aspect-video w-full overflow-hidden rounded-xl border border-border bg-muted";
 
 /**
  * One sheet of paper lying in a tile.
@@ -190,29 +191,6 @@ function CustomTemplateMeta({
       <SharedByLabel ownerDisplayName={template.ownerDisplayName} />
     </span>
   );
-  if (template.kind === "illustration") {
-    const Icon = !template.canManage
-      ? User
-      : template.visibility === "private"
-        ? Lock
-        : Users;
-    return (
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <span
-              tabIndex={0}
-              className="shrink-0 rounded-sm text-muted-foreground"
-            >
-              <Icon size={13} aria-hidden />
-              <span className="sr-only">{label}</span>
-            </span>
-          }
-        />
-        <TooltipContent>{label}</TooltipContent>
-      </Tooltip>
-    );
-  }
   return <div className="min-w-0 text-xs text-muted-foreground">{label}</div>;
 }
 
@@ -243,7 +221,11 @@ function CustomTemplateActions({
                 },
                 { title: template.title },
               )}
-              className="bg-background/90 hover:bg-background"
+              // Over cover art, which looks the same in both themes, so the
+              // chip does too: literal white and Ink rather than tokens that
+              // flip, which sank a dark chip into dark covers. The ring and
+              // shadow keep its edge on a white cover.
+              className="bg-[#ffffff]/90 text-[#363534] shadow-[0_1px_2px_rgb(0_0_0/0.12)] ring-1 ring-[rgb(0_0_0/0.06)] hover:bg-[#ffffff] hover:text-[#242321] active:bg-[#f0ecea]"
             />
           }
         >
@@ -366,7 +348,7 @@ function CustomTemplateCard({
               <FilePreviewIcon filename={template.sourceFilename} size="lg" />
             </span>
           )}
-          <span className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-black/45 to-transparent opacity-0 transition-opacity group-hover/tile:opacity-100" />
+          <span className={TEMPLATE_TILE_SCRIM} />
         </button>
         {/* Beside the preview rather than inside it: the tile opens the
             template, and using it is a different decision from looking at
@@ -403,14 +385,7 @@ function CustomTemplateCard({
           />
         ) : null}
       </div>
-      <div
-        className={cn(
-          "flex min-w-0 gap-1 px-0.5 pb-1 pt-2",
-          template.kind === "illustration"
-            ? "items-center justify-between gap-2"
-            : "flex-col",
-        )}
-      >
+      <div className="flex min-w-0 flex-col gap-1 px-0.5 pb-1 pt-2">
         <p
           className="min-w-0 truncate text-sm font-medium leading-5 text-foreground"
           title={template.title}
