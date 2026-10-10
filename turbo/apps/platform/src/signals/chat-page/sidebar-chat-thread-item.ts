@@ -6,7 +6,6 @@ import { threadMeta } from "./chat-thread-event-sourcing.ts";
 import { sidebarActiveThreadIds$ } from "./chat-thread-indicators-from-worker.ts";
 import {
   pinChatThread$,
-  setChatThreadArchived$,
   setChatThreadMuted$,
   unpinChatThread$,
 } from "./chat-event.ts";
@@ -20,6 +19,7 @@ import {
 } from "./chat-thread-panes.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "./chat-thread-rename.ts";
 import { markChatThreadUnread$ } from "./chat-thread-mark-unread.ts";
+import { setChatThreadArchivedWithFeedback$ } from "./chat-thread-archive.ts";
 import { sidebarDraftThreadIds$ } from "./sidebar-draft-threads.ts";
 import { sidebarUnreadThreadIds$ } from "./sidebar-unread-threads.ts";
 
@@ -163,7 +163,7 @@ function createSidebarChatThreadItemSignals(
     }),
     toggleArchived$: command(async ({ get, set }, signal: AbortSignal) => {
       await set(
-        setChatThreadArchived$,
+        setChatThreadArchivedWithFeedback$,
         { threadId, archived: !get(archived$) },
         signal,
       );

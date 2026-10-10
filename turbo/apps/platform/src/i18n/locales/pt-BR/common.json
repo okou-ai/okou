@@ -2164,8 +2164,6 @@
       "number": "número"
     },
     "sidebar": {
-      "allArchived": "Todas as suas conversas estão arquivadas",
-      "allCaughtUp": "Tudo em dia",
       "allChats": "Todas as conversas",
       "archive": "Arquivar conversa",
       "archived": "Arquivadas",
@@ -2176,7 +2174,9 @@
       "deleteTitle": "Excluir conversa?",
       "draft": "Rascunho",
       "empty": "Nenhuma conversa ainda",
+      "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Caixa de entrada",
+      "inboxEmpty": "Sua caixa de entrada está vazia",
       "markUnread": "Marcar como não lida",
       "movePinDown": "Mover para baixo",
       "movePinUp": "Mover para cima",
@@ -2844,8 +2844,12 @@
       "resize": "Redimensionar barra lateral"
     },
     "toasts": {
+      "archived": "Conversa arquivada. Uma nova resposta a traz de volta para a caixa de entrada.",
+      "archivedMuted": "Conversa arquivada. Ela está silenciada, então novas respostas não a trarão de volta.",
       "copied": "Copiado",
-      "deleted": "Conversa excluída"
+      "deleted": "Conversa excluída",
+      "unarchived": "Conversa movida para a caixa de entrada",
+      "undo": "Desfazer"
     },
     "voice": {
       "checkingLimit": "Verificando limite da entrada de voz",

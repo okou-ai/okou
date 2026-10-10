@@ -375,7 +375,16 @@ test("Keep check-mark chats and archive controls unchanged when archiving is dis
   expect(menuItemByText("All chats")).toBeInTheDocument();
   expect(queryMenuItemByText("Inbox")).not.toBeInTheDocument();
   expect(queryMenuItemByText("Archived")).not.toBeInTheDocument();
-  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
+  click(menuItemByText("Unread"));
+  await expect(
+    within(sidebar()).findByText("No unread chats"),
+  ).resolves.toBeInTheDocument();
+  // Without archiving, the filter keeps the plain agent title.
+  expect(within(sidebar()).getByText("Chats with Okou")).toBeInTheDocument();
+  click(buttonByText("Show all chats", sidebar()));
+  await expect(
+    within(sidebar()).findByText("✅ Completed release"),
+  ).resolves.toBeInTheDocument();
 
   openThreadMenu("✅ Completed release");
   expect(menuItemByText("Rename chat")).toBeInTheDocument();
@@ -388,7 +397,7 @@ test("Keep check-mark chats and archive controls unchanged when archiving is dis
     within(sidebar()).findByText("✅ Completed release"),
   ).resolves.toBeInTheDocument();
   expect(
-    within(sidebar()).queryByText("All your chats are archived"),
+    within(sidebar()).queryByText("Your inbox is empty"),
   ).not.toBeInTheDocument();
 });
 
@@ -715,17 +724,24 @@ test("Hide the current chat after archiving it without changing its title", asyn
   click(menuItemByText("Archive chat"));
 
   await waitFor(() => {
-    expect(within(sidebar()).getByText("All caught up")).toBeInTheDocument();
     expect(
-      within(sidebar()).getByText("All your chats are archived"),
+      within(sidebar()).getByText("Your inbox is empty"),
     ).toBeInTheDocument();
     expect(within(sidebar()).queryByText("New chat")).not.toBeInTheDocument();
   });
+  expect(within(sidebar()).queryByText("🎉")).not.toBeInTheDocument();
+  expect(pathname()).toBe(`/chats/${EXISTING_THREAD_ID}`);
+  await expect(
+    screen.findByText("Chat archived. A new reply brings it back to Inbox."),
+  ).resolves.toBeInTheDocument();
   click(buttonByText("Show archived chats", sidebar()));
 
   await waitFor(() => {
     expect(within(sidebar()).getByText("New chat")).toBeInTheDocument();
   });
+  expect(
+    within(sidebar()).getByText("Archived · Chats with Okou"),
+  ).toBeInTheDocument();
   expect(within(sidebar()).queryByText("✅")).not.toBeInTheDocument();
   openThreadMenu("New chat");
   click(menuItemByText("Unarchive chat"));
@@ -772,12 +788,15 @@ test("Archive and unarchive the current chat with the keyboard shortcut", async 
 
   await waitFor(() => {
     expect(
-      within(sidebar()).getByText("All your chats are archived"),
+      within(sidebar()).getByText("Your inbox is empty"),
     ).toBeInTheDocument();
     expect(
       within(sidebar()).queryByText("Release plan"),
     ).not.toBeInTheDocument();
   });
+  await expect(
+    screen.findByText("Chat archived. A new reply brings it back to Inbox."),
+  ).resolves.toBeInTheDocument();
 
   pressArchiveShortcut();
 
@@ -785,8 +804,43 @@ test("Archive and unarchive the current chat with the keyboard shortcut", async 
     within(sidebar()).findByText("Release plan"),
   ).resolves.toBeInTheDocument();
   expect(
-    within(sidebar()).queryByText("All your chats are archived"),
+    within(sidebar()).queryByText("Your inbox is empty"),
   ).not.toBeInTheDocument();
+  await expect(
+    screen.findByText("Chat moved to Inbox"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("Undo an archive from its toast and explain the muted exception", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Release plan"),
+    createThread(INCIDENT_THREAD_ID, "Quiet task", { muted: true }),
+  ]);
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: {
+      [FeatureSwitchKey.ChatThreadArchiving]: true,
+      [FeatureSwitchKey.ChatThreadMuting]: true,
+    },
+  });
+
+  await within(sidebar()).findByText("Quiet task");
+  openThreadMenu("Quiet task");
+  click(menuItemByText("Archive chat"));
+  await expect(
+    screen.findByText(
+      "Chat archived. It's muted, so new replies won't bring it back.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(within(sidebar()).queryByText("Quiet task")).not.toBeInTheDocument();
+
+  click(buttonByText("Undo"));
+  await expect(
+    within(sidebar()).findByText("Quiet task"),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Find archived chats in All and Chats workspace search results", async () => {

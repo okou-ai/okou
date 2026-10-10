@@ -2164,8 +2164,6 @@
       "number": "numéro"
     },
     "sidebar": {
-      "allArchived": "Toutes vos discussions sont archivées",
-      "allCaughtUp": "Tout est à jour",
       "allChats": "Toutes les discussions",
       "archive": "Archiver la discussion",
       "archived": "Archivées",
@@ -2176,7 +2174,9 @@
       "deleteTitle": "Supprimer la discussion ?",
       "draft": "Brouillon",
       "empty": "Commencez une conversation et elle apparaîtra ici",
+      "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Boîte de réception",
+      "inboxEmpty": "Votre boîte de réception est vide",
       "markUnread": "Marquer comme non lu",
       "movePinDown": "Déplacer vers le bas",
       "movePinUp": "Déplacer vers le haut",
@@ -2844,8 +2844,12 @@
       "resize": "Redimensionner la barre latérale"
     },
     "toasts": {
+      "archived": "Discussion archivée. Une nouvelle réponse la ramène dans la boîte de réception.",
+      "archivedMuted": "Discussion archivée. Elle est en sourdine, les nouvelles réponses ne la ramèneront pas.",
       "copied": "Copié",
-      "deleted": "Chat supprimé"
+      "deleted": "Chat supprimé",
+      "unarchived": "Discussion déplacée dans la boîte de réception",
+      "undo": "Annuler"
     },
     "voice": {
       "checkingLimit": "Vérification de la limite d'entrée vocale",
