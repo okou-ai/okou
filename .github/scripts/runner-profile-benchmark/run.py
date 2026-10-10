@@ -76,8 +76,9 @@ def main():
         ],
         cwd=REPO,
     )
-    cli = Path(env["GUEST_CLI_PATH"]).resolve()
-    cli_manifest = Path(env["GUEST_CLI_MANIFEST_PATH"]).resolve()
+    # Preserve symlinks for the canonical digest owner's regular-file guard.
+    cli = Path(env["GUEST_CLI_PATH"]).absolute()
+    cli_manifest = Path(env["GUEST_CLI_MANIFEST_PATH"]).absolute()
     env.update(
         {
             "GUEST_CLI_PATH": str(cli),
