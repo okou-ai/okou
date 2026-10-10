@@ -195,7 +195,7 @@ export function ComputerUseAuthorizationPage() {
 
   if (requestLoadable.state === "loading") {
     return (
-      <div className="fixed inset-0 z-10 flex h-viewport flex-col items-center overflow-y-auto pt-safe-offset-8 pr-safe-offset-4 pb-safe-offset-8 pl-safe-offset-4">
+      <div className="fixed inset-0 flex h-viewport flex-col items-center overflow-y-auto pt-safe-offset-8 pr-safe-offset-4 pb-safe-offset-8 pl-safe-offset-4">
         <Loader2
           size={22}
           className="my-auto shrink-0 animate-spin text-muted-foreground"
@@ -222,7 +222,7 @@ export function ComputerUseAuthorizationPage() {
     applyLoadable.state === "hasData" || Boolean(request.completedAt);
 
   return (
-    <div className="fixed inset-0 z-10 flex h-viewport flex-col items-center overflow-y-auto pt-safe-offset-8 pr-safe-offset-4 pb-safe-offset-8 pl-safe-offset-4">
+    <div className="fixed inset-0 flex h-viewport flex-col items-center overflow-y-auto pt-safe-offset-8 pr-safe-offset-4 pb-safe-offset-8 pl-safe-offset-4">
       <div className="my-auto flex w-[520px] max-w-full shrink-0 flex-col gap-6 rounded-xl border border-border bg-background px-6 py-8">
         <div className="flex flex-col items-center gap-5 text-center">
           <ProductBrandMarkLink />
