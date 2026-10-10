@@ -16,6 +16,7 @@ import {
   projectPiMemoryStage1Evidence as projectEvidence,
   runPiMemoryStage1Extraction,
 } from "./stage1-memory";
+import { MemoryPiSession } from "./session-memory";
 import {
   PI_MEMORY_STAGE1_SYSTEM_PROMPT,
   PI_MEMORY_STAGE1_UPSTREAM_INPUT_TEMPLATE,
@@ -233,6 +234,31 @@ describe("Pi memory Stage 1 runtime", () => {
     expect(first).not.toContain("memories.search");
     expect(first).not.toContain("recalled memory");
     expect(first).not.toContain("/secret/workspace");
+  });
+
+  it("retains completed evidence without promoting a failed assistant leaf", () => {
+    const session = MemoryPiSession.fromJsonl(branchedJsonl());
+    session.appendMessage(
+      fauxAssistantMessage(
+        [
+          { type: "thinking", thinking: "failed private reasoning" },
+          { type: "text", text: "failed partial answer" },
+        ],
+        { stopReason: "error" },
+      ),
+    );
+
+    const projected = projectPiMemoryStage1Evidence({
+      jsonl: session.toJsonl(),
+      expectedSessionId: SESSION_ID,
+    });
+
+    expect(projected).toContain('"content":"root request"');
+    expect(projected).toContain("Tool: read");
+    expect(projected).toContain("useful contents");
+    expect(projected).toContain('"content":"finished"');
+    expect(projected).not.toContain("failed private reasoning");
+    expect(projected).not.toContain("failed partial answer");
   });
 
   it("removes hidden citations from the active assistant branch", () => {

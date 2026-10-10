@@ -1,5 +1,6 @@
 import {
   fauxAssistantMessage,
+  fauxToolCall,
   type AssistantMessage,
 } from "@earendil-works/pi-ai";
 import { CURRENT_SESSION_VERSION } from "@earendil-works/pi-coding-agent";
@@ -138,6 +139,69 @@ describe("Pi API facade", () => {
       pendingToolIds: [],
       isSettledCheckpoint: true,
     });
+  });
+
+  it.each(["empty", "partial"] as const)(
+    "accepts %s error checkpoints without dropping completed work",
+    (content) => {
+      const session = MemoryPiSession.create({
+        cwd: "/home/user/workspace",
+        id: SESSION_ID,
+      });
+      session.appendMessage({ role: "user", content: "read it", timestamp: 1 });
+      const call = fauxToolCall("read", { path: "README.md" });
+      session.appendMessage(
+        fauxAssistantMessage(call, { stopReason: "toolUse", timestamp: 2 }),
+      );
+      session.appendMessage({
+        role: "toolResult",
+        toolCallId: call.id,
+        toolName: call.name,
+        content: [{ type: "text", text: "completed tool work" }],
+        isError: false,
+        timestamp: 3,
+      });
+      session.appendMessage(
+        fauxAssistantMessage(
+          content === "empty"
+            ? []
+            : [
+                { type: "thinking", thinking: "partial reasoning" },
+                { type: "text", text: "partial answer" },
+              ],
+          { stopReason: "error", timestamp: 4 },
+        ),
+      );
+      const jsonl = session.toJsonl();
+
+      expect(inspectPiSessionJsonl(jsonl)).toStrictEqual({
+        sessionId: SESSION_ID,
+        messageCount: 4,
+        hasPendingToolCalls: false,
+        pendingToolIds: [],
+        isSettledCheckpoint: true,
+      });
+      expect(MemoryPiSession.fromJsonl(jsonl).toJsonl()).toBe(jsonl);
+      expect(session.toJsonl()).toBe(jsonl);
+    },
+  );
+
+  it("keeps aborted and unresolved error checkpoints unsettled", () => {
+    for (const message of [
+      fauxAssistantMessage("cancelled", { stopReason: "aborted" }),
+      fauxAssistantMessage(fauxToolCall("read", { path: "README.md" }), {
+        stopReason: "error",
+      }),
+    ]) {
+      const session = MemoryPiSession.create({
+        cwd: "/home/user/workspace",
+        id: SESSION_ID,
+      });
+      session.appendMessage(message);
+      expect(inspectPiSessionJsonl(session.toJsonl()).isSettledCheckpoint).toBe(
+        false,
+      );
+    }
   });
 
   it("preserves the clean entrypoint's unsupported-version error identity", () => {
