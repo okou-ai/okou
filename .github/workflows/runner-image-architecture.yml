@@ -1,0 +1,391 @@
+name: Runner Image Architecture
+
+env:
+  npm_config_audit: "false"
+
+on:
+  workflow_call:
+    inputs:
+      architecture-json:
+        required: true
+        type: string
+      cache-hit:
+        required: true
+        type: boolean
+      cache-reference:
+        required: true
+        type: string
+      head-sha:
+        required: true
+        type: string
+      producer-head-sha:
+        required: true
+        type: string
+      job-ref:
+        required: true
+        type: string
+      pr-number:
+        required: true
+        type: string
+      pr-head-ref:
+        required: true
+        type: string
+    secrets:
+      AWS_METAL_RUNNER_HOSTS:
+        required: true
+      AWS_METAL_RUNNER_SSH_KEY:
+        required: true
+      CF_ACCESS_CLIENT_ID:
+        required: true
+      CF_ACCESS_CLIENT_SECRET:
+        required: true
+      GRAFANA_CLOUD_API_KEY:
+        required: true
+      GRAFANA_CLOUD_PROMETHEUS_URL:
+        required: true
+      GRAFANA_CLOUD_PROMETHEUS_USER:
+        required: true
+      R2_ACCESS_KEY_ID:
+        required: true
+      R2_SECRET_ACCESS_KEY:
+        required: true
+
+jobs:
+  compile:
+    name: Compile runner binary (${{ matrix.label }})
+    runs-on: ubuntu-latest-8-cores
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    permissions:
+      actions: read
+      contents: read
+    if: ${{ !cancelled() && !inputs.cache-hit }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(format('[{0}]', inputs.architecture-json)) }}
+    env:
+      TARGET_TRIPLE: ${{ matrix.target }}
+      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      RUNNER_BINARY_GIT_REVISION: ${{ inputs.head-sha }}
+      GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
+      GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.head-sha }}
+
+      - name: Validate architecture contract
+        env:
+          RUNNER_IMAGE_ARCHITECTURE: ${{ inputs.architecture-json }}
+        run: .github/scripts/runner-image-architecture.sh validate
+
+      - name: Download private CLI build input
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: runner-cli-${{ github.run_id }}
+          path: runner-cli-intermediate
+
+      - name: Configure git safe directory
+        shell: bash
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Setup R2 sccache
+        id: sccache
+        uses: ./.github/actions/setup-r2-sccache
+        with:
+          architecture: ${{ matrix.id }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: crates -> target
+          shared-key: ${{ matrix.cacheSuffix }}-ci
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build runner binary
+        id: build
+        env:
+          RUNNER_BINARY_METADATA_PATH: runner-binary-fresh/metadata.json
+        run: .github/scripts/runner-binary-build/build.sh build
+
+      - name: Stage runner binary transport
+        id: fresh
+        env:
+          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.build.outputs.binary-input-digest }}
+          EXPECTED_TARGET: ${{ matrix.target }}
+          FRESH_METADATA_PATH: runner-binary-fresh/metadata.json
+          RUNNER_PATH: runner-binary-fresh/runner
+        run: |
+          install -m 755 \
+            "crates/target/${TARGET_TRIPLE}/ci/runner" \
+            "$RUNNER_PATH"
+          .github/scripts/runner-binary-cache.sh fresh-validate
+
+      - name: Install AWS CLI
+        uses: ./.github/actions/setup-aws-cli
+
+      - name: Publish compiled runner binary to R2
+        id: transport
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_DEFAULT_REGION: auto
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+          REPO: ${{ github.repository }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.build.outputs.binary-input-digest }}
+          EXPECTED_TARGET: ${{ matrix.target }}
+          FRESH_METADATA_PATH: runner-binary-fresh/metadata.json
+          RUNNER_PATH: runner-binary-fresh/runner
+          OUTPUT_DIR: runner-binary-published
+          PRODUCER_EVENT: ${{ github.event_name }}
+          PRODUCER_HEAD_SHA: ${{ inputs.producer-head-sha }}
+          PRODUCER_PR_NUMBER: ${{ inputs.pr-number }}
+          PRODUCER_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: .github/scripts/runner-binary-transport.sh publish
+
+      # Index this verified target before an unrelated compiler finishes. The
+      # publisher already re-read R2 bytes; image consumers still validate theirs.
+      - name: Resolve reusable candidate in shadow mode
+        id: shadow
+        env:
+          CURRENT_EVENT: ${{ github.event_name }}
+          CURRENT_PR_HEAD_REF: ${{ inputs.pr-head-ref }}
+          CURRENT_PR_NUMBER: ${{ inputs.pr-number }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.build.outputs.binary-input-digest }}
+          EXPECTED_TARGET: ${{ matrix.target }}
+          FRESH_METADATA_PATH: runner-binary-fresh/metadata.json
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUNNER_PATH: runner-binary-fresh/runner
+          SHADOW_OUTPUT_DIR: runner-binary-shadow
+        run: |
+          started_at=$(date +%s)
+          .github/scripts/runner-binary-cache.sh shadow-resolve
+          echo "duration-seconds=$(($(date +%s) - started_at))" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve reusable artifact name
+        id: artifact
+        env:
+          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.build.outputs.binary-input-digest }}
+          EXPECTED_TARGET: ${{ matrix.target }}
+        run: .github/scripts/runner-binary-cache.sh artifact-name
+
+      - name: Upload reusable runner binary manifest
+        id: manifest-upload
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.artifact.outputs.artifact-name }}
+          path: runner-binary-published/manifest.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Summarize runner binary asset
+        if: always()
+        env:
+          BINARY_INPUT_DIGEST: ${{ steps.build.outputs.binary-input-digest }}
+          FRESH_VALIDATION: ${{ steps.fresh.outcome }}
+          MANIFEST_UPLOAD: ${{ steps.manifest-upload.outcome }}
+          TRANSPORT_OUTCOME: ${{ steps.transport.outcome }}
+          RUNNER_SIZE_BYTES: ${{ steps.fresh.outputs.runner-size-bytes }}
+          SHADOW_OUTCOME: ${{ steps.shadow.outputs.shadow-outcome }}
+          SHADOW_REASON: ${{ steps.shadow.outputs.shadow-reason }}
+          SHADOW_SECONDS: ${{ steps.shadow.outputs.duration-seconds }}
+          SHADOW_SOURCE: ${{ steps.shadow.outputs.shadow-source }}
+          TARGET_TRIPLE: ${{ matrix.target }}
+        run: |
+          {
+            echo "### Runner binary asset"
+            echo
+            echo "- Target: \`${TARGET_TRIPLE}\`"
+            echo "- Input digest: \`${BINARY_INPUT_DIGEST}\`"
+            echo "- Fresh runner bytes: \`${RUNNER_SIZE_BYTES}\`"
+            echo "- Fresh validation: \`${FRESH_VALIDATION:-not-run}\`"
+            echo "- Shadow outcome: \`${SHADOW_OUTCOME:-not-run}\`"
+            echo "- Shadow source: \`${SHADOW_SOURCE:-none}\`"
+            echo "- Shadow reason: \`${SHADOW_REASON:-not-run}\`"
+            echo "- Shadow duration: \`${SHADOW_SECONDS:-0}s\`"
+            echo "- R2 transport: \`${TRANSPORT_OUTCOME:-not-run}\`"
+            echo "- Manifest upload: \`${MANIFEST_UPLOAD:-not-run}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report sccache statistics
+        if: always() && steps.sccache.outputs.started == 'true'
+        run: .github/scripts/report-sccache-stats.sh
+
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+
+  build:
+    name: Build runner image (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    needs: [compile]
+    if: ${{ always() && !cancelled() }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(format('[{0}]', inputs.architecture-json)) }}
+    env:
+      TARGET_TRIPLE: ${{ matrix.target }}
+      PROFILE: vm0/default
+      RUNNER_BINARY_GIT_REVISION: ${{ inputs.head-sha }}
+      GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
+      GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.head-sha }}
+
+      # Inspect failed/skipped compilation before any byte reads or host effects.
+      - name: Validate architecture readiness
+        env:
+          RUNNER_IMAGE_ARCHITECTURE: ${{ inputs.architecture-json }}
+          RUNNER_IMAGE_CACHE_HIT: ${{ inputs.cache-hit }}
+          RUNNER_IMAGE_COMPILE_RESULT: ${{ needs.compile.result }}
+        run: .github/scripts/runner-image-architecture.sh build-ready
+
+      - name: Download private CLI build input
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: runner-cli-${{ github.run_id }}
+          path: runner-cli-intermediate
+
+      - name: Resolve runner binary input
+        id: binary-input
+        env:
+          TARGET_TRIPLE: ${{ matrix.target }}
+        run: .github/scripts/runner-binary-build/digest.sh "$TARGET_TRIPLE"
+
+      - name: Download cached runner binary from R2
+        if: inputs.cache-hit
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_DEFAULT_REGION: auto
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+          EXPECTED_TARGET: ${{ matrix.target }}
+          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
+          CACHE_REFERENCE: ${{ inputs.cache-reference }}
+          RESOLVE_OUTPUT_DIR: runner-binary-transport/${{ matrix.target }}
+        run: .github/scripts/runner-binary-cache.sh download-reference
+
+      - name: Download compiled runner binary from R2
+        if: ${{ !inputs.cache-hit }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_DEFAULT_REGION: auto
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+          REPO: ${{ github.repository }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
+          EXPECTED_TARGET: ${{ matrix.target }}
+          OUTPUT_DIR: runner-binary-transport/${{ matrix.target }}
+        run: .github/scripts/runner-binary-transport.sh download
+
+      - name: Validate runner binary transport
+        env:
+          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
+          EXPECTED_TARGET: ${{ matrix.target }}
+          FRESH_METADATA_PATH: runner-binary-transport/${{ matrix.target }}/metadata.json
+          RUNNER_PATH: runner-binary-transport/${{ matrix.target }}/runner
+        run: .github/scripts/runner-binary-cache.sh fresh-validate
+
+      - name: Setup SSH via Cloudflare Tunnel
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ vars.AWS_METAL_RUNNER_USER }}
+          ssh-hosts: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+
+      - name: Resolve metal hosts for architecture
+        id: matrix-hosts
+        shell: bash
+        env:
+          AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+          RUNNER_HOST_GROUP_ID: ${{ matrix.id }}
+        run: |
+          set -euo pipefail
+          hosts=$(.github/scripts/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
+          if [ -z "$hosts" ]; then
+            echo "::error::No metal hosts resolved for ${RUNNER_HOST_GROUP_ID}"
+            exit 1
+          fi
+          echo "hosts=${hosts}" >> "$GITHUB_OUTPUT"
+          host_count=$(printf '%s\n' "$hosts" | tr ',' '\n' | sed '/^$/d' | wc -l | tr -d ' ')
+          echo "Resolved ${host_count} metal host(s) for ${RUNNER_HOST_GROUP_ID}"
+
+      - name: Provision metal hosts
+        uses: ./.github/actions/provision
+        with:
+          hosts: ${{ steps.matrix-hosts.outputs.hosts }}
+          metal-user: ${{ vars.AWS_METAL_RUNNER_USER }}
+          grafana-cloud-prometheus-url: ${{ secrets.GRAFANA_CLOUD_PROMETHEUS_URL }}
+          grafana-cloud-prometheus-user: ${{ secrets.GRAFANA_CLOUD_PROMETHEUS_USER }}
+          grafana-cloud-api-key: ${{ secrets.GRAFANA_CLOUD_API_KEY }}
+          env-label: dev
+
+      - name: Build runner image on all metal hosts
+        env:
+          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
+          JOB_REF: ${{ inputs.job-ref }}
+          HEAD_SHA: ${{ inputs.head-sha }}
+          METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+          METAL_HOSTS: ${{ steps.matrix-hosts.outputs.hosts }}
+          EXPECTED_REMOTE_ARCH: ${{ matrix.unameM }}
+          MANIFEST_PATH: runner-image-manifest/manifest.json
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_USER_STORAGES_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+          FRESH_METADATA_PATH: runner-binary-transport/${{ matrix.target }}/metadata.json
+          RUNNER_PATH: runner-binary-transport/${{ matrix.target }}/runner
+        run: .github/scripts/prepare-runner-image.sh
+
+      - name: Validate manifest
+        env:
+          MANIFEST_PATH: runner-image-manifest/manifest.json
+          HEAD_SHA: ${{ inputs.head-sha }}
+          JOB_REF: ${{ inputs.job-ref }}
+          TARGET: ${{ env.TARGET_TRIPLE }}
+          PROFILE: ${{ env.PROFILE }}
+          METAL_HOSTS: ${{ steps.matrix-hosts.outputs.hosts }}
+        run: .github/scripts/runner-image-manifest.sh validate
+
+      - name: Resolve manifest artifact name
+        id: artifact
+        env:
+          HEAD_SHA: ${{ inputs.head-sha }}
+          JOB_REF: ${{ inputs.job-ref }}
+          TARGET: ${{ matrix.target }}
+        run: .github/scripts/runner-image-context.sh artifact-name
+
+      - name: Upload runner image manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.artifact.outputs.artifact-name }}
+          path: runner-image-manifest/manifest.json
+          # A retried image job rebuilds any collected host files and republishes
+          # this same target/head/namespace identity within the workflow run.
+          overwrite: true
+          retention-days: 7

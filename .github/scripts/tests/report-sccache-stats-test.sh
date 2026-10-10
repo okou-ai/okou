@@ -4,7 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 TEST_ROOT=$(mktemp -d)
 trap 'rm -rf "$TEST_ROOT"' EXIT
-for workflow in crates runner-image release-please; do
+for workflow in crates runner-image runner-image-architecture release-please; do
   yq -o=json '.' "${REPO_ROOT}/.github/workflows/${workflow}.yml" > "${TEST_ROOT}/${workflow}.json"
 done
 
@@ -61,7 +61,7 @@ for mode in ["valid", "human-failure", "json-failure"]:
 
 # Inspect the actual five consumers and evaluate their real Actions conditions below.
 consumers = []
-for name in ["crates", "runner-image", "release-please"]:
+for name in ["crates", "runner-image", "runner-image-architecture", "release-please"]:
     workflow = json.loads((root / (name + ".json")).read_text())
     for job_id, job in workflow["jobs"].items():
         setups = [s for s in job.get("steps", []) if s.get("uses") == "./.github/actions/setup-r2-sccache"]
@@ -80,7 +80,7 @@ for name in ["crates", "runner-image", "release-please"]:
         consumers.append({"workflow": name, "job": job_id, "if": report["if"], "setupIf": setups[0].get("if")})
 assert {(x["workflow"], x["job"]) for x in consumers} == {
     ("crates", "coverage"), ("crates", "runner-rootfs-process-test"),
-    ("runner-image", "compile"), ("runner-image", "prewarm-rust-cache"),
+    ("runner-image-architecture", "compile"), ("runner-image", "prewarm-rust-cache"),
     ("release-please", "build-runner-release-assets"),
 }
 (root / "consumers.json").write_text(json.dumps(consumers))

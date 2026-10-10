@@ -6,11 +6,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 ruby -ryaml -rjson -rtmpdir -rfileutils -ropen3 -rdigest - "$REPO_ROOT" <<'RUBY'
 root = ARGV.fetch(0)
 workflow = YAML.load_file("#{root}/.github/workflows/runner-image.yml")
-compile = workflow.fetch("jobs").fetch("compile")
+architecture = YAML.load_file("#{root}/.github/workflows/runner-image-architecture.yml")
+compile = architecture.fetch("jobs").fetch("compile")
 steps = compile.fetch("steps")
 by_id = steps.filter_map { |step| [step["id"], step] if step["id"] }.to_h
 raise "compiler must own the validated reuse index without an aggregate architecture barrier" unless
-  compile.fetch("needs") == ["prepare"] && by_id.key?("shadow") && by_id.key?("manifest-upload")
+  !compile.key?("needs") && by_id.key?("shadow") && by_id.key?("manifest-upload")
 first = steps.index { |step| step["name"] == "Stage runner binary transport" }
 last = steps.index { |step| step["id"] == "manifest-upload" }
 raise "missing target-local publication sequence" unless first && last && first < last
@@ -186,8 +187,8 @@ Dir.mktmpdir("runner-index-") do |fixture|
     context = {"github.repository" => "okou-ai/okou", "github.run_id" => producer.fetch(:run).to_s,
       "github.run_attempt" => "1", "github.event_name" => "push", "github.token" => "fixture-token",
       "github.event.repository.default_branch" => "main", "matrix.target" => producer.fetch(:target),
-      "needs.prepare.outputs.producer-head-sha" => "b" * 40, "needs.prepare.outputs.pr-number" => "",
-      "needs.prepare.outputs.pr-head-ref" => "", "secrets.R2_ACCESS_KEY_ID" => "fixture-access",
+      "inputs.producer-head-sha" => "b" * 40, "inputs.pr-number" => "",
+      "inputs.pr-head-ref" => "", "secrets.R2_ACCESS_KEY_ID" => "fixture-access",
       "secrets.R2_SECRET_ACCESS_KEY" => "fixture-secret", "vars.R2_ACCOUNT_ID" => "fixture-account",
       "vars.R2_USER_STORAGES_BUCKET_NAME" => "fixture-bucket"}
     producer.fetch(:outputs).each { |id, values| values.each { |key, value| context["steps.#{id}.outputs.#{key}"] = value } }
@@ -238,7 +239,7 @@ Dir.mktmpdir("runner-index-") do |fixture|
   before_upload = publication.take_while { |step| step["id"] != "shadow" }
   index_steps = publication.drop(before_upload.length)
   failed = make_producer.call(30, targets[0])
-  raise "optional upload failure must not fail valid production" unless execute.call(failed, publication, "UPLOAD_FAIL" => "true")
+  raise "optional upload failure must not fail valid production: #{failed[:failure]}" unless execute.call(failed, publication, "UPLOAD_FAIL" => "true")
   raise "failed optional upload advertised an index" unless Dir["#{indices}/30/*/manifest.json"].empty?
   raise "an absent optional index must retain safe compilation planning" unless plan.call("upload-unavailable").fetch("miss-count") == "2"
   arm = make_producer.call(20, targets[0])

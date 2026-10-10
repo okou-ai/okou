@@ -52,6 +52,7 @@
 2 runner-binary-transport-test.sh
 2 runner-guest-binaries-test.sh
 2 runner-host-architecture-groups-test.sh
+2 runner-image-architecture-test.sh
 2 runner-image-workflow-test.sh
 2 runner-rust-cache-prewarm-workflow-test.sh
 2 runner-token-env-alias-test.sh
