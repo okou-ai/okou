@@ -38,6 +38,30 @@ describe("Button", () => {
     expect(button).toBeDisabled();
   });
 
+  it("reports a pending action without changing its width or losing focus", async () => {
+    const user = userEvent.setup();
+    let clicks = 0;
+    render(
+      <Button
+        pending
+        onClick={() => {
+          clicks += 1;
+        }}
+      >
+        Try again
+      </Button>,
+    );
+    const button = screen.getByRole("button", { name: "Try again" });
+    expect(button).toHaveAttribute("aria-busy", "true");
+    // The label stays in the layout so the button keeps its width.
+    expect(screen.getByText("Try again")).toHaveClass("invisible");
+    // Still reachable by keyboard, so focus is not dropped mid-retry.
+    button.focus();
+    expect(button).toHaveFocus();
+    await user.click(button);
+    expect(clicks).toBe(0);
+  });
+
   it("states the neutral fill with overlays so the fill survives", () => {
     // A translucent `bg-state-*` sets `background-color` and would replace
     // `bg-control-surface`, dropping the fill's warm cast on hover.

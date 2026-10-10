@@ -3873,6 +3873,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "Réessayer"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "La requête a échoué"

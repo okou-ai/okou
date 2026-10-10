@@ -3873,6 +3873,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "Tentar novamente"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Falha na solicitação"

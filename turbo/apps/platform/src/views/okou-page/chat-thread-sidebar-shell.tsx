@@ -128,7 +128,7 @@ export function ChatThreadSidebarShell({
         onTransitionEnd={handleSidebarTransitionEnd}
         className={cn(
           "flex min-h-0 min-w-0 overflow-hidden",
-          workspace && "md:rounded-xl xl:rounded-l-none",
+          workspace && "md:rounded-2xl xl:rounded-l-none",
           workspace?.pwaNavigation &&
             !workspace.fullscreen &&
             "[--okou-safe-b:0px]",
@@ -153,7 +153,7 @@ export function ChatThreadSidebarShell({
       className={`${cn(
         "flex flex-1 min-h-0",
         workspace &&
-          "min-w-0 flex-col md:m-2 md:rounded-xl md:border md:border-border [anchor-name:--workspace-canvas]",
+          "min-w-0 flex-col md:m-2 md:rounded-2xl md:border md:border-border [anchor-name:--workspace-canvas]",
         workspace?.beside === "chat-list" && "md:ml-0",
       )} ${
         workspace

@@ -23,6 +23,7 @@ import {
   warmMermaidParser,
 } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   artifactSummary,
@@ -957,6 +958,7 @@ test("Return to the artifact list when a preview is unavailable", async () => {
 test("The artifact sidebar retries its own catalog from the failure message", async () => {
   useWideScreen();
   let attempts = 0;
+  const secondRead = createDeferredPromise<void>(context.signal);
   mockArtifactConversation(context, {
     catalog: [],
     chatEvents: [
@@ -982,13 +984,14 @@ test("The artifact sidebar retries its own catalog from the failure message", as
   });
   // Registered after the conversation helper so this handler owns the catalog
   // response for the sidebar's own instance of the signals.
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+  context.mocks.api(artifactCatalogContract.list, async ({ respond }) => {
     attempts += 1;
     if (attempts === 1) {
       return respond(500, {
         error: { code: "INTERNAL", message: "Catalog unavailable" },
       });
     }
+    await secondRead.promise;
     return respond(200, {
       artifacts: [
         artifactSummary(
@@ -1009,15 +1012,34 @@ test("The artifact sidebar retries its own catalog from the failure message", as
   click(openArtifactsControl());
 
   const panel = await screen.findByTestId("thread-sidebar-artifacts");
-  const alert = await within(panel).findByRole("alert");
-  expect(alert).toHaveTextContent("Could not load artifacts.");
+  const message = await within(panel).findByText("Couldn't load artifacts.");
+  const failure = message.closest<HTMLElement>('[role="status"]');
+  if (!failure) {
+    throw new Error("Expected the catalog failure to be a status region");
+  }
 
   // The sidebar owns a different catalog instance than the artifacts page, so
   // the retry has to refetch the failure the reader is actually looking at.
-  click(buttonNamed("Try again", alert));
+  click(buttonNamed("Try again", failure));
+
+  // While the re-read runs the message stays and the button reports it,
+  // instead of the panel looking exactly as it did before the click.
+  try {
+    await waitFor(() => {
+      expect(buttonNamed("Try again", failure)).toHaveAttribute(
+        "aria-busy",
+        "true",
+      );
+    });
+    expect(failure).toHaveTextContent("Couldn't load artifacts.");
+  } finally {
+    secondRead.resolve();
+  }
 
   await expect(
     within(panel).findByText("sidebar-recovered.pdf"),
   ).resolves.toBeInTheDocument();
-  expect(within(panel).queryByRole("alert")).not.toBeInTheDocument();
+  expect(
+    within(panel).queryByText("Couldn't load artifacts."),
+  ).not.toBeInTheDocument();
 });

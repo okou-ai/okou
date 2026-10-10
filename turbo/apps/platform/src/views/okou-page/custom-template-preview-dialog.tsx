@@ -1,7 +1,7 @@
 import { Loader2 } from "lucide-react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@okouai/ui";
+import { LoadErrorRow } from "@okouai/ui";
 import {
   Dialog,
   DialogContent,
@@ -36,25 +36,17 @@ export function CustomTemplatesLoadError() {
   const { t } = useTranslation();
   const reload = useSet(reloadCustomTemplates$);
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-      <span role="alert">
-        {t(($) => {
-          return $.templates.loadFailed;
-        })}
-      </span>
-      <Button
-        type="button"
-        variant="quiet"
-        size="sm"
-        onClick={() => {
-          reload();
-        }}
-      >
-        {t(($) => {
-          return $.templates.retry;
-        })}
-      </Button>
-    </div>
+    <LoadErrorRow
+      message={t(($) => {
+        return $.templates.loadFailed;
+      })}
+      retryLabel={t(($) => {
+        return $.templates.retry;
+      })}
+      onRetry={() => {
+        reload();
+      }}
+    />
   );
 }
 

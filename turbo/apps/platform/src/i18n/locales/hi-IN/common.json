@@ -3813,6 +3813,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "पुनः प्रयास करें"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "अनुरोध विफल रहा"
