@@ -153,36 +153,75 @@ function postLinks(
 }
 
 describe("Slack artifact link previews", () => {
-  it("adds standalone images to the original message without requiring membership or an Okou user connection", async () => {
+  it("adds linked titles, descriptions, source domains and large images without requiring membership or an Okou user connection", async () => {
     const f = await fixture();
-    const immutable = `https://dpl-${f.prepared.deploymentId}.okou.app/?source=slack#cover`;
+    const immutable = `https://dpl-${f.prepared.deploymentId}.okou.app/?source=slack&view=cover#cover|v1`;
     const alias = `https://${f.prepared.publicSlug}.okou.app/index.html`;
     await accept(postLinks(f.teamId, [immutable, alias, immutable]), [200]);
     await flushWaitUntilForTest();
 
-    const preview = {
-      blocks: [
-        {
-          type: "section",
-          text: { type: "plain_text", text: "Report & <!channel>" },
-        },
-        {
-          type: "section",
-          text: { type: "plain_text", text: "A public report" },
-        },
-        {
-          type: "image",
-          image_url: expect.stringContaining(
-            `/api/artifact-og/image?kind=host&id=${f.prepared.deploymentId}&version=`,
-          ),
-          alt_text: "Report & <!channel>",
-        },
-      ],
+    const description = {
+      type: "section",
+      text: { type: "plain_text", text: "A public report" },
+    };
+    const cover = {
+      type: "image",
+      image_url: expect.stringContaining(
+        `/api/artifact-og/image?kind=host&id=${f.prepared.deploymentId}&version=`,
+      ),
+      alt_text: "Report & <!channel>",
     };
     expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledExactlyOnceWith({
       channel: "C_PREVIEW",
       ts: messageTs,
-      unfurls: { [immutable]: preview, [alias]: preview },
+      unfurls: {
+        [immutable]: {
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `*dpl-${f.prepared.deploymentId}.okou.app*\n*<https://dpl-${f.prepared.deploymentId}.okou.app/?source=slack&amp;view=cover#cover%7Cv1|Report &amp; &lt;!channel&gt;>*`,
+                verbatim: true,
+              },
+            },
+            description,
+            {
+              type: "context",
+              elements: [
+                {
+                  type: "plain_text",
+                  text: `dpl-${f.prepared.deploymentId}.okou.app`,
+                },
+              ],
+            },
+            cover,
+          ],
+        },
+        [alias]: {
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `*${f.prepared.publicSlug}.okou.app*\n*<${alias}|Report &amp; &lt;!channel&gt;>*`,
+                verbatim: true,
+              },
+            },
+            description,
+            {
+              type: "context",
+              elements: [
+                {
+                  type: "plain_text",
+                  text: `${f.prepared.publicSlug}.okou.app`,
+                },
+              ],
+            },
+            cover,
+          ],
+        },
+      },
     });
     expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
     expect(context.mocks.slack.createClient).toHaveBeenCalledWith(

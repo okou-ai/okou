@@ -19,6 +19,7 @@ interface SlackPlainTextObject {
 interface SlackMrkdwnObject {
   readonly type: "mrkdwn";
   readonly text: string;
+  readonly verbatim?: boolean;
 }
 
 type SlackTextObject = SlackPlainTextObject | SlackMrkdwnObject;

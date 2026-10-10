@@ -33,6 +33,13 @@ export const slackLinkSharedEventSchema = z.object({
 
 export type SlackLinkSharedEvent = z.infer<typeof slackLinkSharedEventSchema>;
 
+function escapeSlackLinkText(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 function parseSlackLinkUrl(value: string): URL | null {
   if (!URL.canParse(value)) {
     return null;
@@ -197,9 +204,19 @@ const slackArtifactUnfurl$ = command(
       return null;
     }
     const title = metadata.title.trim().slice(0, 150) || "Okou artifact";
+    const pageUrl = new URL(url);
+    // A pipe in the URL must not become Slack's link-label separator.
+    const href = escapeSlackLinkText(pageUrl.href.replaceAll("|", "%7C"));
     return {
       blocks: [
-        { type: "section", text: { type: "plain_text", text: title } },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*${pageUrl.hostname}*\n*<${href}|${escapeSlackLinkText(title)}>*`,
+            verbatim: true,
+          },
+        },
         ...(metadata.description
           ? [
               {
@@ -211,6 +228,10 @@ const slackArtifactUnfurl$ = command(
               },
             ]
           : []),
+        {
+          type: "context",
+          elements: [{ type: "plain_text", text: pageUrl.hostname }],
+        },
         { type: "image", image_url: metadata.imageUrl, alt_text: title },
       ],
     };
