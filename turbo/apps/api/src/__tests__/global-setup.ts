@@ -26,7 +26,7 @@ export async function setup(project: TestProject) {
     await installSharedApiTestConnectorCatalog();
     const image = await createPgliteSnapshot(async (database) => {
       await seedIsolatedModelPricingForTests(database);
-      await installApiTestConnectorCatalog({ database, ifAbsent: true });
+      await installApiTestConnectorCatalog({ database });
     });
     const path = join(directory, "seeded.tar");
     await writeFile(path, new Uint8Array(await image.arrayBuffer()));

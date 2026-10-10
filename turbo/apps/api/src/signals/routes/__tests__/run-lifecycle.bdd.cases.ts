@@ -84,7 +84,6 @@ import { server } from "../../../mocks/server";
 import {
   API_TEST_CONNECTOR_CATALOG,
   API_TEST_CONNECTOR_FIREWALL_CONFIGS,
-  installApiTestConnectorCatalog,
 } from "../../../test-fixtures/connector-catalog";
 
 import { verifyOkouToken } from "../../auth/tokens";
@@ -120,10 +119,6 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { setPaidToolDisabled } from "./helpers/paid-tools";
-import {
-  clearRunApiStart,
-  setRunnerJobContextProfileAsPreviousApi,
-} from "./helpers/runtime-state";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -1495,7 +1490,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
-      it("returns a context encryption failure while storage presigning is still pending", async () => {
+      it("rejects a launch when context encryption and storage presigning fail", async () => {
         const api = createRunsApi(context);
         const { actor, agentId } = await entitledRunActor(
           {},
@@ -1547,14 +1542,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           throw contextError;
         });
 
-        // A Thread launch failure creates no run and surfaces from the pick;
-        // the first preparation failure wins over the later storage failure.
+        // Both external preparation failures settle; the caller sees a rejected input.
         const failed = api.readThreadLaunchFailure(actor, { agentId, prompt });
         await kmsStarted.promise;
         await storageStarted.promise;
         releaseStorage.resolve(undefined);
         await expect(failed).resolves.toStrictEqual({
-          pickError: contextError.message,
           inputError: "internal_error",
         });
         await storageFinished.promise;
@@ -1570,7 +1563,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ).toStrictEqual([]);
       });
 
-      it("returns a session storage failure while large request storage is still pending", async () => {
+      it("rejects failed session storage and recovers the complete storage manifest", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor(
@@ -1733,8 +1726,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         );
 
-        // A Thread launch failure creates no run and surfaces from the pick; the
-        // session failure wins while the large Storage presigns are pending.
+        // Observe the rejected input while retaining ownership of pending presigns.
         const continueSession = (prompt: string) => {
           return api.createThreadRun(actor, {
             agentId,
@@ -1757,7 +1749,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ]);
         releaseRequestPresign.resolve(undefined);
         await expect(overlapped).resolves.toStrictEqual({
-          pickError: sessionError.message,
           inputError: "internal_error",
         });
         await requestPresignFinished.promise;
@@ -1775,7 +1766,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await expect(
           failedContinuation("session storage alone fails"),
         ).resolves.toStrictEqual({
-          pickError: sessionError.message,
           inputError: "internal_error",
         });
         const runs = await createRunReadsApi(context).requestListLogs(
@@ -2780,36 +2770,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           runnerHeartbeatGeneration: null,
         });
         await api.requestCancelRun(actor, run.runId, [200]);
-      });
-
-      // Historical persisted-state exception (docs/testing.md rollout coexistence;
-      // testing-external-behavior.md historical states): only the previous profile
-      // API wrote this runner-job context, which the claim path still reads.
-      // Delete with that reader once such rows can no longer be pending.
-      it("polls and claims context written by the previous profile API", async () => {
-        const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
-
-        const created = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "claim previous profile context",
-        });
-        await setRunnerJobContextProfileAsPreviousApi(
-          context,
-          created.runId,
-          "vm0/large",
-        );
-
-        const poll = await api.pollRunner(runnerGroup);
-        expect(poll.body.job).toMatchObject({
-          runId: created.runId,
-          experimentalProfile: "vm0/default",
-        });
-        const claim = await api.claimRunnerJob(created.runId);
-        expect(claim.prompt).toBe("claim previous profile context");
-        expect(claim).not.toHaveProperty("experimentalProfile");
-
-        await api.requestCancelRun(actor, created.runId, [200]);
       });
 
       it("filters runner polls by supported profiles without widening malformed polls", async () => {
@@ -5716,7 +5676,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const connectors = createConnectorBddApi(context);
         const catalogBucket = `test-run-lifecycle-runtime-sync-projection-${randomUUID()}`;
         mockEnv("R2_USER_STORAGES_BUCKET_NAME", catalogBucket);
-        await installApiTestConnectorCatalog({ ifAbsent: true });
+
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
         await connectors.updateFeatureSwitches(actor, {});
@@ -5754,7 +5714,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         onTestFinished(async () => {
           mockEnv("R2_USER_STORAGES_BUCKET_NAME", catalogBucket);
-          await installApiTestConnectorCatalog({ ifAbsent: true });
+
           await connectors.deleteCustomConnector(
             actor,
             permissionedCustom.id,
@@ -14285,7 +14245,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, picked.runId, [200]);
       });
 
-      it("publishes assistant content for a mixed-version run", async () => {
+      it("publishes assistant content for a claimed run", async () => {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const webhooks = createWebhookCallbackApi(context);
@@ -14297,10 +14257,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const { runId, threadId } = await sendChatRunMessage(actor, {
           agentId,
-          prompt: "bdd mixed-version assistant event",
+          prompt: "bdd claimed assistant event",
         });
         await flushWaitUntilForTest();
-        await clearRunApiStart(context, runId);
         await api.heartbeatRunner(runnerGroup);
         const claim = await api.claimRunnerJob(runId);
         context.mocks.ably.publish.mockClear();

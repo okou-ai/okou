@@ -154,8 +154,12 @@ callers rely on.
 Delete a case when its decisive state or behavior requires a special test HTTP
 route, direct DB access, a test-only internal worker driver, fabricated legacy
 state, or an internal fault trigger. A production cron protected by
-`CRON_SECRET` is an operator interface, not a user-accessible API. Do not keep
-such a case by moving the driver into a fixture, exporting a private command,
+`CRON_SECRET` is an operator interface. Cover it as a system boundary only when
+that operator interface is explicitly in scope: use its real authentication,
+normal request, isolated database and public observations. The Official catalog
+publisher and automation cron can then exercise publication and reconciliation;
+this does not authorize private state readers, counts, leases or worker commands.
+Do not keep an unsupported case by moving the driver into a fixture, exporting a private command,
 moving the case to a service suite, or adding a product endpoint solely for the
 test. Financial, security, clock, and historical-state labels do not waive this
 construction requirement.
@@ -363,8 +367,8 @@ saves a checkpointed immutable snapshot, and provides its path to workers.
 The fixture caches the unpacked files for subsequent cases. Each isolated case
 creates a fresh engine and memory filesystem with its own writable copies; cases do not
 repeat gzip/tar decoding, replay migrations, or reseed their database. Shared
-fixture installation uses `ifAbsent: true` and must never replace an existing
-catalog pointer. This common application baseline is infrastructure; it does
+fixture installation inserts only a missing pointer and must never replace an
+existing catalog pointer. This common application baseline is infrastructure; it does
 not authorize changing prices, catalog entries, or business rows to manufacture
 a case's decisive state.
 

@@ -1,11 +1,9 @@
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runnerState } from "@okouai/db/schema/runner-state";
-import { command } from "ccstate";
 import { and, eq, gt, inArray, like, lte } from "drizzle-orm";
 
 import { wssOriginFromRunnerHostname } from "../../lib/runner-wss-target-config";
-import { db$ } from "../external/db";
 
 // Three missed 10-second routine heartbeats. Host-local WSS ingress service
 // status filters only new ticket issuance, NOT public WSS health or redemption:
@@ -112,26 +110,3 @@ export function runnerWssTargetFromRow(
     observedAt: row.lastSeenAt,
   };
 }
-
-/**
- * The caller supplies an already authenticated owner. This is deliberately an
- * internal read command, not an HTTP discovery endpoint or ticket issuer.
- * Null includes unauthorized and ineligible runs; DB outages propagate.
- */
-export const resolveRunnerWssTarget$ = command(
-  async (
-    { get },
-    args: RunnerWssTargetQueryArgs,
-    signal: AbortSignal,
-  ): Promise<RunnerWssTarget | null> => {
-    const query = buildRunnerWssTargetQuery(args);
-    const [row] = await get(db$)
-      .select(query.selection)
-      .from(agentRuns)
-      .innerJoin(activeAgentRuns, query.activeRunJoin)
-      .innerJoin(runnerState, query.runnerStateJoin)
-      .where(query.where);
-    signal.throwIfAborted();
-    return runnerWssTargetFromRow(row);
-  },
-);

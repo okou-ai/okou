@@ -1,16 +1,12 @@
 import { mockGoogleText, VERTEX_TEXT_URL } from "./helpers/google-text";
-import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished, beforeEach } from "vitest";
-import { testRuntimeStateContract } from "@okouai/api-contracts/contracts/test-runtime-state";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { testRuntimeStateRoutes } from "../test-runtime-state";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -40,27 +36,6 @@ function completion(content = "A usable summary") {
         },
       },
     ],
-  });
-}
-
-function saveRunSummaryRequest(signal: AbortSignal) {
-  // Infrastructure-only exception: a public callback acknowledges before its
-  // background work finishes and cannot inject an independently owned task
-  // AbortSignal. The existing runtime harness lets cancellation reach the
-  // summary boundary. Every other case below uses the production chat API.
-  return setupApp({
-    context,
-    routes: testRuntimeStateRoutes,
-    signal,
-    rethrowErrors: true,
-  })(testRuntimeStateContract).action({
-    body: {
-      action: "save-run-summary",
-      run_id: randomUUID(),
-      trigger_source: "web",
-      prompt: secret,
-      result_text: secret,
-    },
   });
 }
 
@@ -252,42 +227,6 @@ describe("auxiliary generation outcomes", () => {
     await flushWaitUntilForTest();
     await expect(title.titles()).resolves.toStrictEqual([]);
     expect(requests).toBe(0);
-  });
-
-  it.each([
-    new DOMException("Caller cancelled", "AbortError"),
-    new DOMException("Caller deadline", "TimeoutError"),
-  ])("propagates caller cancellation to the caller ($name)", async (reason) => {
-    const controller = new AbortController();
-    onTestFinished(() => {
-      return controller.abort();
-    });
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!release.settled()) {
-        release.resolve(undefined);
-      }
-    });
-    mockGoogleText();
-    server.use(
-      http.post(endpoint, async () => {
-        entered.resolve(undefined);
-        await release.promise;
-        return completion();
-      }),
-    );
-    const request = saveRunSummaryRequest(controller.signal);
-    // The caller's own reason reaches it unchanged: the boundary neither
-    // swallows the cancellation nor substitutes a failure of its own.
-    const outcome = (async () => {
-      await expect(request).rejects.toBe(reason);
-    })();
-    await entered.promise;
-    controller.abort(reason);
-    release.resolve(undefined);
-    await outcome;
-    await flushWaitUntilForTest();
   });
 
   it("finishes a background title that outlives the response within the request lifetime", async () => {
