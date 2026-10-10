@@ -135,9 +135,11 @@ are enforced by the integration ingress tests.
   ships. `test-canonical-model-selections-permanent.ts` covers current defaults,
   nonempty present selections/annotations, explicit effort keys and conditional
   executable Built-in capture against both replayed and freshly generated
-  schemas. `scripts/migrations/020-canonical-model-selections/test.ts` covers the
-  independent owner-scoped immutable-object/pointer publication contract. The
-  numbered maintenance tool remains a permanent historical record.
+  schemas. The completed numbered backfill operators and their dedicated
+  publication tests are retired after operator acceptance. Recover their exact
+  historical implementation from Git if another operation is required; revalidate
+  its current target and prerequisites before execution. Shipped SQL migrations
+  and permanent schema invariant coverage remain in the repository.
 
 - `scripts/test-pi-memory-phase2-input-revision.ts` executes the production Phase 2
   input-revision SQL before and after the real generic checkpoint contraction. It

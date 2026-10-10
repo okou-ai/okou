@@ -1,5 +1,11 @@
 # Permanent production KMS retirement
 
+The completed migration and recovery-inspection operators are retired from the
+current tree. Their [last retained source](https://github.com/okou-ai/okou/tree/6249c11bb1b9ba8e2f2deb03771b5084fc209abf/.github/scripts)
+and workflows remain in Git history. Revalidate targets and authorization before
+restoring an operator. Removing code does not delete keys, backups or audit logs;
+the independent backup and exit-check tools remain available.
+
 The requested end state is permanent deletion of the old **production** key:
 `arn:aws:kms:us-west-2:072707626411:key/a1b3922b-fab1-4ed3-aa9e-40f86f92a7a8`.
 Its replacement is
@@ -258,8 +264,9 @@ the statement, overall inspection and independent cleanup limits remain enforced
 
 The provider contract is documented in
 [Neon's snapshot restore API](https://neon.com/docs/reference/api/snapshots/restore-snapshot).
-Run `bash .github/scripts/tests/kms-recovery-snapshot-inspect-test.sh` for the
-external-boundary CLI scenarios and real isolated PostgreSQL aggregate tests.
+The retired recovery-inspection tests covered external-boundary CLI scenarios
+and real isolated PostgreSQL aggregates; recover them with the matching operator
+revision from Git history when needed.
 
 ## Resolve recovery paths before scheduling deletion
 
