@@ -982,13 +982,11 @@ test("QEMU SCRAM creates only its explicit X509SASL pair and keeps its password 
 
 test("acknowledged Kerberos password saves independent explicit identities and KDC policy", async () => {
   mockSettings({ connections: [], credentials: [] });
-  context.mocks.http.get("*/api/vnc/connections", () => {
-    return HttpResponse.json(
-      { connections: [] },
-      {
-        headers: { "X-VNC-Profile-Version": "kerberos-v1" },
-      },
-    );
+  context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
+    return {
+      ...respond(200, { connections: [] }),
+      headers: { "X-VNC-Profile-Version": "kerberos-v1" },
+    };
   });
   const initiator = { realm: "EXAMPLE.INVALID", components: ["Alice"] };
   const security = {
@@ -1099,11 +1097,11 @@ function mockKerberosImport(
     "qemu_kerberos_keytab" | "qemu_kerberos_ticket" = "qemu_kerberos_keytab",
 ) {
   mockSettings({ connections: [], credentials: [] });
-  context.mocks.http.get("*/api/vnc/connections", () => {
-    return HttpResponse.json(
-      { connections: [] },
-      { headers: { "X-VNC-Profile-Version": "kerberos-v1" } },
-    );
+  context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
+    return {
+      ...respond(200, { connections: [] }),
+      headers: { "X-VNC-Profile-Version": "kerberos-v1" },
+    };
   });
   const requests: unknown[] = [];
   context.mocks.api(vncCredentialsContract.create, ({ body, respond }) => {
