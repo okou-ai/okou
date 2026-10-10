@@ -18,7 +18,7 @@ export const mainStylesheetLoaded$ = computed(async () => {
 
 export async function hideBootstrapSkeleton(
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<boolean> {
   const mainStylesheetLoaded = window.__mainStylesheetLoaded;
   if (mainStylesheetLoaded) {
     const mainStylesheetStatus = await mainStylesheetLoaded;
@@ -29,14 +29,14 @@ export async function hideBootstrapSkeleton(
         { event_name: "bootstrap.stylesheet" },
         "error",
       );
-      return;
+      return false;
     }
   }
   signal?.throwIfAborted();
 
   const skeleton = document.getElementById(APP_BOOTSTRAP_SKELETON_ID);
   if (!skeleton) {
-    return;
+    return true;
   }
   skeleton.setAttribute("aria-hidden", "true");
   skeleton.addEventListener(
@@ -47,11 +47,14 @@ export async function hideBootstrapSkeleton(
     { once: true },
   );
   skeleton.classList.add(APP_BOOTSTRAP_SKELETON_HIDDEN_CLASS);
+  return true;
 }
 
 export const hideAppSkeleton$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
-    await hideBootstrapSkeleton(signal);
+    if (!(await hideBootstrapSkeleton(signal))) {
+      return;
+    }
     set(captureFirstSkeletonHide$);
     set(captureBootstrapPhaseTiming$);
   },
