@@ -2109,8 +2109,6 @@
       "number": "번호"
     },
     "sidebar": {
-      "allArchived": "모든 채팅이 보관되었습니다",
-      "allCaughtUp": "모두 정리했어요",
       "allChats": "모든 채팅",
       "archive": "채팅 보관",
       "archived": "보관됨",
@@ -2121,7 +2119,9 @@
       "deleteTitle": "채팅을 삭제하시겠습니까?",
       "draft": "초안",
       "empty": "대화를 시작하면 여기에 표시됩니다",
+      "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "받은 편지함",
+      "inboxEmpty": "받은 편지함이 비어 있습니다. 보관된 채팅은 새 답장이 오면 여기로 돌아옵니다.",
       "markUnread": "읽지 않음으로 표시",
       "movePinDown": "아래로 이동",
       "movePinUp": "위로 이동",
@@ -2785,8 +2785,13 @@
       "resize": "사이드바 크기 조절"
     },
     "toasts": {
+      "archived": "채팅 보관됨",
+      "archivedDescription": "새 답장이 오면 받은 편지함으로 돌아옵니다.",
+      "archivedMutedDescription": "알림이 꺼진 채팅은 새 답장이 와도 보관된 상태로 유지됩니다.",
       "copied": "복사됨",
-      "deleted": "채팅 삭제됨"
+      "deleted": "채팅 삭제됨",
+      "unarchived": "채팅을 받은 편지함으로 옮김",
+      "undo": "실행 취소"
     },
     "voice": {
       "checkingLimit": "음성 입력 제한 확인 중",

@@ -2109,8 +2109,6 @@
       "number": "番号"
     },
     "sidebar": {
-      "allArchived": "すべてのチャットがアーカイブされています",
-      "allCaughtUp": "すべて完了しました",
       "allChats": "すべてのチャット",
       "archive": "チャットをアーカイブ",
       "archived": "アーカイブ済み",
@@ -2121,7 +2119,9 @@
       "deleteTitle": "チャットを削除しますか?",
       "draft": "草案",
       "empty": "会話を開始するとここに表示されます",
+      "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "受信トレイ",
+      "inboxEmpty": "受信トレイは空です。アーカイブ済みのチャットは、新しい返信があるとここに戻ります。",
       "markUnread": "未読にする",
       "movePinDown": "下に移動",
       "movePinUp": "上に移動",
@@ -2785,8 +2785,13 @@
       "resize": "サイドバーのサイズを変更する"
     },
     "toasts": {
+      "archived": "チャットをアーカイブしました",
+      "archivedDescription": "新しい返信があると受信トレイに戻ります。",
+      "archivedMutedDescription": "ミュート中のチャットは、新しい返信があってもアーカイブに残ります。",
       "copied": "コピーされました",
-      "deleted": "チャットが削除されました"
+      "deleted": "チャットが削除されました",
+      "unarchived": "チャットを受信トレイに戻しました",
+      "undo": "元に戻す"
     },
     "voice": {
       "checkingLimit": "音声入力制限を確認する",

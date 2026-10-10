@@ -2109,8 +2109,6 @@
       "number": "数字"
     },
     "sidebar": {
-      "allArchived": "你的聊天都已归档",
-      "allCaughtUp": "已全部看完",
       "allChats": "全部聊天",
       "archive": "归档聊天",
       "archived": "已归档",
@@ -2121,7 +2119,9 @@
       "deleteTitle": "删除聊天？",
       "draft": "草稿",
       "empty": "发起对话后，会显示在这里",
+      "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "收件箱",
+      "inboxEmpty": "收件箱是空的。已归档的聊天收到新回复时会回到这里。",
       "markUnread": "标为未读",
       "movePinDown": "下移",
       "movePinUp": "上移",
@@ -2785,8 +2785,13 @@
       "resize": "调整侧边栏宽度"
     },
     "toasts": {
+      "archived": "聊天已归档",
+      "archivedDescription": "有新回复时会回到收件箱。",
+      "archivedMutedDescription": "已静音的聊天有新回复也会留在归档中。",
       "copied": "已复制",
-      "deleted": "聊天已删除"
+      "deleted": "聊天已删除",
+      "unarchived": "聊天已移回收件箱",
+      "undo": "撤销"
     },
     "voice": {
       "checkingLimit": "正在检查语音输入额度",

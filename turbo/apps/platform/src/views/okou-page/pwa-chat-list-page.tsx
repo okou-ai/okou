@@ -134,7 +134,7 @@ function PwaChatListEmpty({
           })
         : hasHiddenArchivedThreads
           ? t(($) => {
-              return $.chat.sidebar.allArchived;
+              return $.chat.sidebar.inboxEmpty;
             })
           : t(($) => {
               return $.chat.sidebar.empty;

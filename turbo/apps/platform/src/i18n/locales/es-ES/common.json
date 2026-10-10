@@ -2164,8 +2164,6 @@
       "number": "Número"
     },
     "sidebar": {
-      "allArchived": "Todos tus chats están archivados",
-      "allCaughtUp": "Todo al día",
       "allChats": "Todas las conversaciones",
       "archive": "Archivar chat",
       "archived": "Archivados",
@@ -2176,7 +2174,9 @@
       "deleteTitle": "¿Eliminar el chat?",
       "draft": "Borrador",
       "empty": "Empieza una conversación y aparecerá aquí",
+      "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Bandeja de entrada",
+      "inboxEmpty": "Tu bandeja de entrada está vacía. Los chats archivados vuelven aquí cuando reciben una respuesta nueva.",
       "markUnread": "Marcar como no leído",
       "movePinDown": "Mover hacia abajo",
       "movePinUp": "Mover hacia arriba",
@@ -2844,8 +2844,13 @@
       "resize": "Cambiar el tamaño de la barra lateral"
     },
     "toasts": {
+      "archived": "Chat archivado",
+      "archivedDescription": "Volverá a la bandeja de entrada cuando haya una respuesta nueva.",
+      "archivedMutedDescription": "Los chats silenciados siguen archivados aunque haya una respuesta nueva.",
       "copied": "Copiado",
-      "deleted": "Chat eliminado"
+      "deleted": "Chat eliminado",
+      "unarchived": "Chat movido a la bandeja de entrada",
+      "undo": "Deshacer"
     },
     "voice": {
       "checkingLimit": "Comprobando el límite de entrada de voz",

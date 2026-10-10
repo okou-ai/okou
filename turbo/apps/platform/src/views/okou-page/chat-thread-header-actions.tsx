@@ -26,7 +26,7 @@ import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.t
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
 import { openThreadAutomations$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
-import { setChatThreadArchivedFromHeader$ } from "../../signals/chat-page/chat-thread-archive.ts";
+import { setChatThreadArchivedWithFeedback$ } from "../../signals/chat-page/chat-thread-archive.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -104,7 +104,7 @@ export function MobileChatThreadMoreMenu({
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const archived = useGet(thread.threadMeta$)?.archived === true;
   const [archiveLoadable, archive] = useLoadableSet(
-    setChatThreadArchivedFromHeader$,
+    setChatThreadArchivedWithFeedback$,
   );
   const archiving = archiveLoadable.state === "loading";
   const automations = useLastResolved(thread.headerAutomations.automations$);
@@ -168,8 +168,8 @@ export function MobileChatThreadMoreMenu({
                 archive(
                   {
                     threadId: thread.threadId,
-                    agentId: thread.agentId,
                     archived: !archived,
+                    leaveToAgentId: thread.agentId,
                   },
                   // Archiving navigates away immediately, which aborts the page signal.
                   rootSignal,

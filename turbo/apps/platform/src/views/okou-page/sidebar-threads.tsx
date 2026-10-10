@@ -829,26 +829,43 @@ function useSelectChatThreadFilter() {
   };
 }
 
-function ShowAllChatsRow() {
-  const { t } = useTranslation();
+function ChatThreadFilterLinkRow({
+  filter,
+  children,
+  testId,
+}: {
+  filter: ChatThreadFilter;
+  children: string;
+  testId?: string;
+}) {
   const selectFilter = useSelectChatThreadFilter();
 
   return (
-    <div data-testid="sidebar-chat-show-all-row" className="pb-1">
+    <div data-testid={testId} className="pb-1">
       <Button
         type="button"
         variant="link"
         size="sm"
         className="w-full justify-start px-2 font-normal leading-5 focus-visible:ring-inset focus-visible:ring-offset-0"
         onClick={() => {
-          selectFilter("all");
+          selectFilter(filter);
         }}
       >
-        {t(($) => {
-          return $.chat.sidebar.showAllChats;
-        })}
+        {children}
       </Button>
     </div>
+  );
+}
+
+function ShowAllChatsRow() {
+  const { t } = useTranslation();
+
+  return (
+    <ChatThreadFilterLinkRow filter="all" testId="sidebar-chat-show-all-row">
+      {t(($) => {
+        return $.chat.sidebar.showAllChats;
+      })}
+    </ChatThreadFilterLinkRow>
   );
 }
 
@@ -915,38 +932,19 @@ function VirtualizedChatThreads({
 
 function ArchivedChatThreadsEmptyState() {
   const { t } = useTranslation();
-  const selectFilter = useSelectChatThreadFilter();
 
   return (
-    <div className="flex flex-col items-center px-2 py-6 text-center">
-      <span
-        aria-hidden="true"
-        className="font-family-emoji text-xl leading-none"
-      >
-        🎉
-      </span>
-      <p className="mt-2 text-xs font-medium text-nav-copy">
+    <div className="w-full">
+      <p className="px-2 py-2 text-xs text-nav-copy-muted leading-relaxed">
         {t(($) => {
-          return $.chat.sidebar.allCaughtUp;
+          return $.chat.sidebar.inboxEmpty;
         })}
       </p>
-      <p className="mt-1 text-xs leading-relaxed text-nav-copy-muted">
-        {t(($) => {
-          return $.chat.sidebar.allArchived;
-        })}
-      </p>
-      <Button
-        type="button"
-        variant="link"
-        className="mt-1 h-auto p-0 text-xs"
-        onClick={() => {
-          selectFilter("archived");
-        }}
-      >
+      <ChatThreadFilterLinkRow filter="archived">
         {t(($) => {
           return $.chat.sidebar.showArchivedChats;
         })}
-      </Button>
+      </ChatThreadFilterLinkRow>
     </div>
   );
 }
@@ -1221,6 +1219,40 @@ export function ChatThreadsListMenu({
   );
 }
 
+// A non-default filter names itself in the title, so the list never looks like
+// the inbox while it shows archived, unread, or muted chats.
+function useChatThreadsFilteredTitleLabel() {
+  const { t } = useTranslation();
+  const { titleLabel } = useChatThreadsTitleLabels();
+  const unreadOnly = useGet(chatThreadOnlyUnread$);
+  const archivedOnly = useGet(chatThreadOnlyArchived$);
+  const mutedOnly = useGet(chatThreadOnlyMuted$);
+  const archiveEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
+  const filterLabel = unreadOnly
+    ? t(($) => {
+        return $.chat.sidebar.unreadOnly;
+      })
+    : archiveEnabled && archivedOnly
+      ? t(($) => {
+          return $.chat.sidebar.archived;
+        })
+      : mutedOnly
+        ? t(($) => {
+            return $.chat.sidebar.muted;
+          })
+        : null;
+  if (filterLabel === null) {
+    return titleLabel;
+  }
+  return t(
+    ($) => {
+      return $.chat.sidebar.filteredTitle;
+    },
+    { filter: filterLabel, title: titleLabel },
+  );
+}
+
 function ChatThreadsTitle({
   showMarkAllRead,
   contentId,
@@ -1231,7 +1263,7 @@ function ChatThreadsTitle({
   collapsible: boolean;
 }) {
   const { t } = useTranslation();
-  const { titleLabel } = useChatThreadsTitleLabels();
+  const titleLabel = useChatThreadsFilteredTitleLabel();
   const newChatAction = useNewChatAction();
   const newChatLabel = t(($) => {
     return $.chat.newChat;

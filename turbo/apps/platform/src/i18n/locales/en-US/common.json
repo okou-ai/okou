@@ -2118,8 +2118,6 @@
       "number": "number"
     },
     "sidebar": {
-      "allArchived": "All your chats are archived",
-      "allCaughtUp": "All caught up",
       "allChats": "All chats",
       "archive": "Archive chat",
       "archived": "Archived",
@@ -2130,7 +2128,9 @@
       "deleteTitle": "Delete chat?",
       "draft": "Draft",
       "empty": "Start a conversation and it'll show up here",
+      "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Inbox",
+      "inboxEmpty": "Your inbox is empty. Archived chats come back here when they get a new reply.",
       "markUnread": "Mark unread",
       "movePinDown": "Move down",
       "movePinUp": "Move up",
@@ -2796,8 +2796,13 @@
       "resize": "Resize sidebar"
     },
     "toasts": {
+      "archived": "Chat archived",
+      "archivedDescription": "It'll move back to Inbox when there's a new reply.",
+      "archivedMutedDescription": "Muted chats stay archived, even when there's a new reply.",
       "copied": "Copied",
-      "deleted": "Chat deleted"
+      "deleted": "Chat deleted",
+      "unarchived": "Chat moved to Inbox",
+      "undo": "Undo"
     },
     "voice": {
       "checkingLimit": "Checking voice input limit",

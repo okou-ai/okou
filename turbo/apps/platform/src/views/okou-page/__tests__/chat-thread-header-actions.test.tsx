@@ -271,6 +271,60 @@ test("Archive from the mobile header and return to the thread's agent before sav
   expect(archiveRequestAborted).toBeFalsy();
 });
 
+test("Undo a header archive from its toast and return to the thread", async () => {
+  context.mocks.browser.matchMedia(false);
+  const events: ChatThreadEvent[] = [];
+  context.mocks.api(
+    chatThreadArchiveContract.archive,
+    ({ params, query, respond }) => {
+      events.push(
+        chatListEvent(951, 1, "archived", params.id, {
+          id: query?.eventId,
+          agentId: AGENT_ID,
+        }),
+      );
+      changeChatThreadList();
+      return respond(204);
+    },
+  );
+  context.mocks.api(
+    chatThreadArchiveContract.unarchive,
+    ({ params, query, respond }) => {
+      events.push(
+        chatListEvent(951, 2, "unarchived", params.id, {
+          id: query?.eventId,
+          agentId: AGENT_ID,
+        }),
+      );
+      changeChatThreadList();
+      return respond(204);
+    },
+  );
+  await setupHeaderPage(events);
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  click(menuItemNamed("Archive chat"));
+
+  await expect(screen.findByText("Chat archived")).resolves.toBeInTheDocument();
+  expect(
+    screen.getByText("It'll move back to Inbox when there's a new reply."),
+  ).toBeInTheDocument();
+  expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+
+  click(buttonNamed("Undo"));
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${THREAD_ID}`);
+  });
+  await expect(
+    screen.findByText("Review the header layout"),
+  ).resolves.toBeInTheDocument();
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  await waitFor(() => {
+    expect(menuItemNames()).toContain("Archive chat");
+  });
+});
+
 test("Show the archive API error after leaving the thread", async () => {
   context.mocks.browser.matchMedia(false);
   context.mocks.api(chatThreadArchiveContract.archive, ({ respond }) => {

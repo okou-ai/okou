@@ -2109,8 +2109,6 @@
       "number": "nomor"
     },
     "sidebar": {
-      "allArchived": "Semua chat Anda telah diarsipkan",
-      "allCaughtUp": "Semua sudah beres",
       "allChats": "Semua chat",
       "archive": "Arsipkan chat",
       "archived": "Diarsipkan",
@@ -2121,7 +2119,9 @@
       "deleteTitle": "Hapus chat?",
       "draft": "Draf",
       "empty": "Mulai percakapan dan percakapan itu akan muncul di sini",
+      "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Kotak masuk",
+      "inboxEmpty": "Kotak masuk Anda kosong. Chat yang diarsipkan kembali ke sini saat ada balasan baru.",
       "markUnread": "Tandai belum dibaca",
       "movePinDown": "Pindahkan ke bawah",
       "movePinUp": "Pindahkan ke atas",
@@ -2785,8 +2785,13 @@
       "resize": "Ubah ukuran sidebar"
     },
     "toasts": {
+      "archived": "Chat diarsipkan",
+      "archivedDescription": "Chat akan kembali ke Kotak masuk saat ada balasan baru.",
+      "archivedMutedDescription": "Chat yang dibisukan tetap diarsipkan meskipun ada balasan baru.",
       "copied": "Disalin",
-      "deleted": "Chat dihapus"
+      "deleted": "Chat dihapus",
+      "unarchived": "Chat dipindahkan ke Kotak masuk",
+      "undo": "Urungkan"
     },
     "voice": {
       "checkingLimit": "Memeriksa batas input suara",

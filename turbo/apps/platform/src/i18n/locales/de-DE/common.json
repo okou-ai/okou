@@ -2118,8 +2118,6 @@
       "number": "Nummer"
     },
     "sidebar": {
-      "allArchived": "Alle deine Chats sind archiviert",
-      "allCaughtUp": "Alles erledigt",
       "allChats": "Alle Chats",
       "archive": "Chat archivieren",
       "archived": "Archiviert",
@@ -2130,7 +2128,9 @@
       "deleteTitle": "Chat löschen?",
       "draft": "Entwurf",
       "empty": "Starten Sie eine Konversation; sie wird dann hier angezeigt",
+      "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Posteingang",
+      "inboxEmpty": "Dein Posteingang ist leer. Archivierte Chats kehren hierher zurück, sobald eine neue Antwort eingeht.",
       "markUnread": "Als ungelesen markieren",
       "movePinDown": "Nach unten verschieben",
       "movePinUp": "Nach oben verschieben",
@@ -2796,8 +2796,13 @@
       "resize": "Größe der Seitenleiste ändern"
     },
     "toasts": {
+      "archived": "Chat archiviert",
+      "archivedDescription": "Er kehrt in den Posteingang zurück, sobald eine neue Antwort eingeht.",
+      "archivedMutedDescription": "Stummgeschaltete Chats bleiben archiviert, auch bei neuen Antworten.",
       "copied": "Kopiert",
-      "deleted": "Chat gelöscht"
+      "deleted": "Chat gelöscht",
+      "unarchived": "Chat in den Posteingang verschoben",
+      "undo": "Rückgängig"
     },
     "voice": {
       "checkingLimit": "Überprüfung des Spracheingabelimits",
