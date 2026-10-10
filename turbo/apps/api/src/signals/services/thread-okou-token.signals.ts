@@ -1,32 +1,31 @@
-import { command, type Computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import { generateOkouToken } from "../auth/tokens";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { emptyEnvironment, type Environment } from "./run-environment";
 import type { ThreadContext } from "./thread-context.signals";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
-/**
- * Issue the Run's Okou token. It is the last environment source: a command,
- * because each call signs a fresh token for the claim's run identity.
- */
-export const prepareOkouTokenEnvironment$ = command(
-  async (
-    { get },
-    bootstrap: AgentRunContextSignals,
-    pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-    threadContext: Pick<
-      ThreadContext,
-      "computerUseHostGrant$" | "connectorSnapshot$" | "runIds$"
-    >,
-    signal: AbortSignal,
-  ): Promise<Environment> => {
+interface OkouTokenInput {
+  readonly userId: string;
+  readonly runId: string;
+  readonly orgId: string;
+  readonly featureOverrides: Parameters<typeof generateOkouToken>[3];
+  readonly options: Parameters<typeof generateOkouToken>[4];
+}
+
+/** Capture token facts from the owning picked-event graph before signing. */
+export function createOkouTokenInputSignals(
+  bootstrap: AgentRunContextSignals,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  threadContext: ThreadContext,
+) {
+  return computed(async (get): Promise<OkouTokenInput> => {
     const [event, features, hostGrant, snapshot] = await Promise.all([
       get(pickedEvent$),
       get(bootstrap.featureSwitches$),
       get(threadContext.computerUseHostGrant$),
       get(threadContext.connectorSnapshot$),
     ]);
-    signal.throwIfAborted();
     if (!event) {
       throw new Error("The Okou run token requires a picked event");
     }
@@ -48,12 +47,12 @@ export const prepareOkouTokenEnvironment$ = command(
         return sourceId === undefined ? [] : [[connectorSlug, sourceId]];
       }),
     );
-    const okouToken = generateOkouToken(
-      bootstrap.userId,
-      get(threadContext.runIds$).runId,
-      bootstrap.orgId,
-      features.overrides,
-      {
+    return {
+      userId: bootstrap.userId,
+      runId: get(threadContext.runIds$).runId,
+      orgId: bootstrap.orgId,
+      featureOverrides: features.overrides,
+      options: {
         ...(hostGrant ? { computerUseHostId: hostGrant.hostId } : {}),
         cloudBrowserEnabled: event.thread.cloudBrowserEnabled,
         ...(Object.keys(customConnectorSourceIds).length === 0
@@ -63,6 +62,20 @@ export const prepareOkouTokenEnvironment$ = command(
           ? {}
           : { builtinConnectorSourceIds }),
       },
+    };
+  });
+}
+
+/** Sign a fresh token as the final environment source using captured facts. */
+export const prepareOkouTokenEnvironment$ = command(
+  (_store, input: OkouTokenInput, signal: AbortSignal): Environment => {
+    signal.throwIfAborted();
+    const okouToken = generateOkouToken(
+      input.userId,
+      input.runId,
+      input.orgId,
+      input.featureOverrides,
+      input.options,
     );
     return {
       ...emptyEnvironment(),

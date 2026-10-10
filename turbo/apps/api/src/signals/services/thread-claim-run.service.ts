@@ -30,7 +30,10 @@ import {
   withoutLegacyAgentRunEnvironmentEntries,
 } from "./run-body-environment";
 import { createThreadContext } from "./thread-context.signals";
-import { prepareOkouTokenEnvironment$ } from "./thread-okou-token.signals";
+import {
+  createOkouTokenInputSignals,
+  prepareOkouTokenEnvironment$,
+} from "./thread-okou-token.signals";
 import { createEnvironmentSignals } from "./thread-environment.signals";
 import {
   emptyEnvironment,
@@ -1444,6 +1447,11 @@ export function createThreadClaimRunObjects(
     },
   );
   const threadContext = createThreadContext(bootstrap, pickedEvent$);
+  const okouTokenInput$ = createOkouTokenInputSignals(
+    bootstrap,
+    pickedEvent$,
+    threadContext,
+  );
   const slackContext$ = threadContext.slackContext$;
   const feishuContext$ = threadContext.feishuContext$;
   const teamsContext$ = threadContext.teamsContext$;
@@ -3808,6 +3816,14 @@ export function createThreadClaimRunObjects(
   // Resource reads do not wait for credit admission: its failure is checked
   // with the prepared resources before anything is committed.
   const resourceAllowed$ = computed(async (get) => {
+    // Eager storage must not evaluate a Run plan for an automation source
+    // whose delegation admission already rejects it.
+    if (
+      (await get(isAutomation$)) &&
+      (await get(autonomyBudget$)).kind === "invalid"
+    ) {
+      return false;
+    }
     const [selection, validSource] = await Promise.all([
       get(selectionInput$),
       (await get(isAutomation$)) ? true : get(resourceValidation$),
@@ -3869,20 +3885,9 @@ export function createThreadClaimRunObjects(
       if (!args || isRouteError(args)) {
         return args;
       }
-      // The signal-owner lint verifies threadContext only when callbacks read
-      // its members; pass the fields the token needs.
-      const okouToken = await set(
-        prepareOkouTokenEnvironment$,
-        bootstrap,
-        pickedEvent$,
-        {
-          computerUseHostGrant$: threadContext.computerUseHostGrant$,
-          connectorSnapshot$: threadContext.connectorSnapshot$,
-          runIds$: threadContext.runIds$,
-        },
-        signal,
-      );
+      const tokenInput = await get(okouTokenInput$);
       signal.throwIfAborted();
+      const okouToken = set(prepareOkouTokenEnvironment$, tokenInput, signal);
       return prepareRunnerStorageInput({
         db: set(writeDb$),
         args,
