@@ -535,7 +535,7 @@ const applyMorningBriefPreference$ = command(
     }
     // The generic automation writer recognizes the selected Morning Brief and
     // commits the Official enabled bit and enrollment choice in one conditional
-    // transaction, so the last toggle to commit leaves both consistent.
+    // statement, so the last toggle to commit leaves both consistent.
     return await set(loadInstalledPreference$, args, signal);
   },
 );

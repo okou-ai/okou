@@ -2,9 +2,9 @@ import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/cont
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
+import { sql } from "drizzle-orm";
 
 import { writeDb$ } from "../external/db";
-import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { officialAutomationLifecycleCondition } from "./workflow-automation-write-condition";
 
@@ -36,8 +36,6 @@ function enrollmentChoice(enabled: boolean, at: Date) {
   };
 }
 
-class StaleMorningBriefToggle extends Error {}
-
 export type MorningBriefAutomationToggleResult =
   | { readonly kind: "not-applicable" }
   | { readonly kind: "applied"; readonly row: AutomationRow }
@@ -55,54 +53,50 @@ export const persistMorningBriefAutomationToggle$ = command(
     }
     const db = set(writeDb$);
     signal.throwIfAborted();
-    const result = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0188; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        const enabled = args.enabled;
-        const [row] = await tx
-          .update(workflowAutomations)
-          .set({
-            enabled,
-            nextRunAt: enabled ? args.nextRunAt : null,
-            consecutiveFailures: enabled
-              ? 0
-              : args.automation.consecutiveFailures,
-            updatedAt: args.now,
-            officialIntendedEnabled: enabled,
-            ...(args.inheritedAutonomyBudget === undefined
-              ? {}
-              : { autonomyBudget: args.inheritedAutonomyBudget }),
-          })
-          .where(officialAutomationLifecycleCondition(args.automation))
-          .returning(workflowAutomationColumns());
-        if (!row) {
-          throw new StaleMorningBriefToggle();
-        }
-        if (!args.reconciliationOwned) {
-          const values = enrollmentChoice(enabled, args.now);
-          await tx
-            .insert(morningBriefEnrollments)
-            .values({ ...owner, ...values })
-            .onConflictDoUpdate({
-              target: [
-                morningBriefEnrollments.orgId,
-                morningBriefEnrollments.userId,
-              ],
-              set: values,
-            });
-        }
-        signal.throwIfAborted();
-        return row;
-      }),
-      signal,
-    );
+    const columns = workflowAutomationColumns();
+    const update = db
+      .update(workflowAutomations)
+      .set({
+        enabled: args.enabled,
+        nextRunAt: args.enabled ? args.nextRunAt : null,
+        consecutiveFailures: args.enabled
+          ? 0
+          : args.automation.consecutiveFailures,
+        updatedAt: args.now,
+        officialIntendedEnabled: args.enabled,
+        ...(args.inheritedAutonomyBudget === undefined
+          ? {}
+          : { autonomyBudget: args.inheritedAutonomyBudget }),
+      })
+      .where(officialAutomationLifecycleCondition(args.automation))
+      .returning({
+        ...columns,
+        observedUpdatedAt: columns.observedUpdatedAt.as("observedUpdatedAt"),
+        observedXmin: columns.observedXmin.as("observedXmin"),
+      });
+    const updated = db.$with("updated_morning_brief_automation").as(update);
+    const values = enrollmentChoice(args.enabled, args.now);
+    // Drizzle INSERT SELECT requires every column. Keep the omitted enrollment
+    // fields on their database defaults, and gate publication on UPDATE RETURNING.
+    const published = db.$with("published_morning_brief_choice", {}).as(sql`
+      INSERT INTO ${morningBriefEnrollments}
+        (org_id, user_id, state, available_at, last_error, updated_at)
+      SELECT ${owner.orgId}, ${owner.userId}, ${values.state},
+        ${sql.param(values.availableAt, morningBriefEnrollments.availableAt)}, NULL,
+        ${sql.param(values.updatedAt, morningBriefEnrollments.updatedAt)}
+      FROM ${updated}
+      ON CONFLICT (org_id, user_id) DO UPDATE SET
+        state = EXCLUDED.state,
+        available_at = EXCLUDED.available_at,
+        last_error = EXCLUDED.last_error,
+        updated_at = EXCLUDED.updated_at
+    `);
+    // A data-modifying CTE executes even without a returned enrollment row.
+    // Read the actual automation RETURNING values with their schema decoders.
+    const [row] = args.reconciliationOwned
+      ? await update
+      : await db.with(updated, published).select().from(updated);
     signal.throwIfAborted();
-    if (!result.ok) {
-      if (result.error instanceof StaleMorningBriefToggle) {
-        return { kind: "conflict" };
-      }
-      throw result.error;
-    }
-    return { kind: "applied", row: result.value };
+    return row ? { kind: "applied", row } : { kind: "conflict" };
   },
 );
