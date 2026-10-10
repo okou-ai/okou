@@ -19,7 +19,7 @@ interface Options {
   readonly controls?: readonly ControlEntry[];
 }
 
-const testControlName = /ForTests?$/;
+const testControlName = /ForTests?\$?$/;
 
 function nameOf(node: TSESTree.Node): string | undefined {
   if (node.type === AST_NODE_TYPES.Identifier) {
@@ -87,7 +87,7 @@ export const testControlAllowlist = createRule<
                   type: "array",
                   minItems: 1,
                   uniqueItems: true,
-                  items: { type: "string", pattern: "ForTests?$" },
+                  items: { type: "string", pattern: "ForTests?\\$?$" },
                 },
                 reason: { type: "string", minLength: 1 },
               },

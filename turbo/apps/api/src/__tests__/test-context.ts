@@ -5,11 +5,13 @@ import {
   expect,
   onTestFinished,
 } from "vitest";
+import { createStore } from "ccstate";
 
 import { closeDbPool } from "../lib/db";
 import desktopCompatibilityConfig from "../lib/desktop-compatibility.json";
 import { clearMockedEnv } from "../lib/env";
 import iosClientCompatibilityConfig from "../lib/ios-client-compatibility.json";
+import { updateMaxAutonomyBudgetForTest$ } from "../signals/autonomy-budget-limit";
 import { clearMockListStripeInvoices } from "../signals/external/stripe-client";
 import { clearAllDetached, settleIncludingAbort } from "../signals/utils";
 import { flushWaitUntilForTest } from "../signals/context/wait-until";
@@ -106,6 +108,7 @@ export function testContext(): TestContext {
     await clearAllDetached();
     context.sessionHistoryBlobs.clear();
     clearMockedEnv();
+    createStore().set(updateMaxAutonomyBudgetForTest$, undefined);
     clearMockListStripeInvoices();
     desktopCompatibility.minimumSupportedVersion = shippedDesktopMinimumVersion;
     iosClientCompatibility.minimumSupportedVersion = shippedIosMinimumVersion;

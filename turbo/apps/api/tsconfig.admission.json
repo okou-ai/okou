@@ -47,7 +47,7 @@
     "src/signals/services/agentphone-shared.service.ts",
     "src/signals/services/api-dispatch-admission-timing.service.ts",
     "src/signals/services/auth.service.ts",
-    "src/signals/services/autonomy-budget.constants.ts",
+    "src/signals/autonomy-budget-limit.ts",
     "src/signals/services/autonomy-budget.service.ts",
     "src/signals/services/auxiliary-generation.service.ts",
     "src/signals/services/browser.service.ts",

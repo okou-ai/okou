@@ -19,7 +19,7 @@ const options = [
     controls: [
       {
         file: "src/lib/time.ts",
-        exports: ["withMockNowForTest"],
+        exports: ["withMockNowForTest", "updateClockForTest$"],
         reason: "Scoped application clock.",
       },
     ],
@@ -28,6 +28,16 @@ const options = [
 
 tester.run("test-control-allowlist", testControlAllowlist, {
   valid: [
+    {
+      filename: timeModule,
+      code: "export const updateClockForTest$ = command(() => {});",
+      options,
+    },
+    {
+      filename: routeTest,
+      code: 'import { updateClockForTest$ } from "../../../lib/time";',
+      options,
+    },
     {
       filename: timeModule,
       code: "export async function withMockNowForTest() {}",
@@ -50,6 +60,20 @@ tester.run("test-control-allowlist", testControlAllowlist, {
     },
   ],
   invalid: [
+    {
+      filename: otherModule,
+      code: "export const seedStateForTest$ = command(() => {});",
+      options,
+      errors: [
+        { messageId: "unlistedExport", data: { name: "seedStateForTest$" } },
+      ],
+    },
+    {
+      filename: routeTest,
+      code: 'import { seedStateForTest$ } from "../../../lib/other";',
+      options,
+      errors: [{ messageId: "unlistedImport" }],
+    },
     {
       filename: timeModule,
       code: "export function freezeClockForTests() {}",
