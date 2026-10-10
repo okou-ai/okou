@@ -26,6 +26,7 @@ use super::api_ably_supervisor::{
 };
 use super::api_cancellation_reconciliation::CancellationReconciliation;
 use super::api_claim_cooldowns::{ClaimCooldownRecord, ClaimCooldowns};
+use super::api_claim_in_flight::InFlightClaims;
 use super::api_direct_candidates::{
     DIRECT_CANDIDATE_STALE_AFTER, DirectCandidateInbox, DirectCandidatePruneSnapshot,
     DirectJobCandidate,
@@ -371,6 +372,8 @@ pub struct ApiProvider {
     direct_candidates: Arc<DirectCandidateInbox>,
     /// Runs temporarily ineligible for this runner after a failed claim.
     claim_cooldowns: ClaimCooldowns,
+    /// Requests whose queued Run may still be visible before claim settlement.
+    in_flight_claims: InFlightClaims,
     /// Background Ably control-plane task.
     ably_supervisor: Mutex<Option<AblySupervisor>>,
     cancel_tokens: RunCancellationRegistry,
@@ -443,6 +446,7 @@ impl ApiProvider {
             poll_wakeups,
             direct_candidates,
             claim_cooldowns: ClaimCooldowns::new(CLAIM_COOLDOWN_CAPACITY),
+            in_flight_claims: InFlightClaims::default(),
             ably_supervisor: Mutex::new(None),
             cancel_tokens,
             cancellation_reconciliation,
@@ -491,9 +495,10 @@ impl ApiProvider {
         let snapshot = self.claim_cooldowns.snapshot().await;
         if let Some(retry_after) = snapshot.retry_after {
             self.poll_wakeups.request_deferred_poll_after(retry_after);
-        } else if polled_with_exclusions {
-            // Every exclusion expired while the HTTP poll was in flight.
-            // Re-poll once without the stale exclusions instead of waiting for the normal cadence.
+        } else if polled_with_exclusions && self.in_flight_claims.is_empty() {
+            // Every exclusion expired or settled while the HTTP poll was in flight.
+            // Pending claims wake polling on settlement; do not spin on an empty
+            // poll that correctly excluded them.
             self.poll_wakeups.request_immediate_poll();
         }
     }
@@ -702,7 +707,8 @@ impl JobProvider for ApiProvider {
             };
             let reason = due.reason();
             let poll_due_started_at = Instant::now();
-            let excluded_run_ids = self.claim_cooldowns.snapshot().await.run_ids;
+            let cooldowns = self.claim_cooldowns.snapshot().await;
+            let excluded_run_ids = self.in_flight_claims.poll_exclusions(&cooldowns.run_ids);
 
             let poll_result = tokio::select! {
                 biased;
@@ -744,6 +750,18 @@ impl JobProvider for ApiProvider {
                     job: Some(job),
                     http_request_elapsed,
                 }) => {
+                    if self.in_flight_claims.contains(job.run_id) {
+                        // Locally reject an outstanding claim even if an API
+                        // ignores exclusions or this poll raced registration.
+                        self.poll_wakeups.record_poll_result(
+                            due,
+                            PollOutcome::Empty,
+                            POLL_WAKEUP_RETRY,
+                        );
+                        self.schedule_claim_retry_after_poll(!excluded_run_ids.is_empty())
+                            .await;
+                        continue;
+                    }
                     if let Some(retry_after) = self.claim_cooldowns.remaining(job.run_id).await {
                         self.poll_wakeups.record_poll_result(
                             due,
@@ -840,6 +858,7 @@ impl JobProvider for ApiProvider {
 
     async fn claim(&self, candidate: JobCandidate) -> Option<ClaimedJob> {
         let run_id = candidate.run_id();
+        let _in_flight = self.in_flight_claims.register(run_id, &self.poll_wakeups);
         let cancellation = self.cancel_tokens.handle(run_id).await;
         // Only an HTTP poll can opt this candidate into the v4 claim protocol.
         // Legacy/notification candidates omit the claim capability, so even a
@@ -2119,6 +2138,8 @@ mod tests {
 
     const TEST_HEARTBEAT_GENERATION: u64 = 7;
 
+    mod parallel_claim;
+
     fn api_client_for_url(api_url: String) -> ApiClient {
         ApiClient::new(
             HttpClient::new(HttpClientConfig {
@@ -2528,6 +2549,7 @@ mod tests {
                 DIRECT_CANDIDATE_STALE_AFTER,
             ),
             claim_cooldowns: ClaimCooldowns::new(claim_cooldown_capacity),
+            in_flight_claims: InFlightClaims::default(),
             ably_supervisor: Mutex::new(Some(AblySupervisor::disabled())),
             active_input_notifications: ActiveInputNotifications::new(),
             poll_degradation_tracker: DegradationEpisodeTracker::new(),

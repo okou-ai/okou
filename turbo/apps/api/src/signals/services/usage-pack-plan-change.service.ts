@@ -791,21 +791,6 @@ function restorableScheduleId(
     : null;
 }
 
-async function scheduledAllocationChanges(
-  db: Pick<Db, "select">,
-  subscriptionId: string,
-): Promise<readonly UsagePackAllocationChangeRow[]> {
-  return await db
-    .select()
-    .from(usagePackAllocationChanges)
-    .where(
-      and(
-        eq(usagePackAllocationChanges.usagePackSubscriptionId, subscriptionId),
-        eq(usagePackAllocationChanges.status, "scheduled"),
-      ),
-    );
-}
-
 function replacementScheduleId(
   changes: readonly UsagePackAllocationChangeRow[],
 ): string | null {
@@ -2050,7 +2035,18 @@ async function persistDeferredSubscriptionChangeSchedule(
     const unrecordedReplacementScheduleId =
       stored.allocationChanges.length === 0
         ? restorableScheduleId(
-            await scheduledAllocationChanges(tx, stored.subscription.id),
+            await tx
+              .select()
+              .from(usagePackAllocationChanges)
+              .where(
+                and(
+                  eq(
+                    usagePackAllocationChanges.usagePackSubscriptionId,
+                    stored.subscription.id,
+                  ),
+                  eq(usagePackAllocationChanges.status, "scheduled"),
+                ),
+              ),
           )
         : null;
     if (
@@ -3227,10 +3223,18 @@ async function restoreScheduledSubscriptionChange(
   subscription: StripeSubscription,
   signal: AbortSignal,
 ): Promise<UsagePackSubscriptionChangeConfirmResult> {
-  const scheduledChanges = await scheduledAllocationChanges(
-    db,
-    stored.subscription.id,
-  );
+  const scheduledChanges = await db
+    .select()
+    .from(usagePackAllocationChanges)
+    .where(
+      and(
+        eq(
+          usagePackAllocationChanges.usagePackSubscriptionId,
+          stored.subscription.id,
+        ),
+        eq(usagePackAllocationChanges.status, "scheduled"),
+      ),
+    );
   signal.throwIfAborted();
   const scheduleId = restorableScheduleId(scheduledChanges);
   const stripeScheduleId = stripeObjectId(subscription.schedule);
@@ -3638,7 +3642,20 @@ async function replacesScheduledPackageChange(
   }
   return (
     stored.allocationChanges.length === 0 &&
-    (await scheduledAllocationChanges(db, stored.subscription.id)).length > 0
+    (
+      await db
+        .select()
+        .from(usagePackAllocationChanges)
+        .where(
+          and(
+            eq(
+              usagePackAllocationChanges.usagePackSubscriptionId,
+              stored.subscription.id,
+            ),
+            eq(usagePackAllocationChanges.status, "scheduled"),
+          ),
+        )
+    ).length > 0
   );
 }
 

@@ -98,6 +98,7 @@ async function connect(
   type: SubscriptionType,
   identity: string,
   expired = false,
+  withUpstreamIdentity = true,
 ) {
   if (type === "claude-code-oauth-token") {
     mockClaudeCodeTokenEndpoint();
@@ -107,10 +108,12 @@ async function connect(
           .get("authorization")
           ?.replace("Bearer sk-ant-oat-", "");
         return HttpResponse.json({
-          account: {
-            uuid: upstreamIdentity,
-            email: `${upstreamIdentity}@example.com`,
-          },
+          account: withUpstreamIdentity
+            ? {
+                uuid: upstreamIdentity,
+                email: `${upstreamIdentity}@example.com`,
+              }
+            : {},
           organization: {
             uuid: `org-${upstreamIdentity}`,
             name: upstreamIdentity,
@@ -150,7 +153,7 @@ async function connect(
   return { id: result.body.provider.id, token };
 }
 
-async function fixture(type: SubscriptionType) {
+async function fixture(type: SubscriptionType, withUpstreamIdentity = true) {
   const bdd = createBddApi(context);
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
@@ -159,7 +162,13 @@ async function fixture(type: SubscriptionType) {
   const runnerGroup = runs.configureRunnerGroup();
   const subscription = await runs.grantProEntitlement(actor);
   mockClaudeCodeTokenEndpoint();
-  const connected = await connect(actor, type, "identity-a");
+  const connected = await connect(
+    actor,
+    type,
+    "identity-a",
+    false,
+    withUpstreamIdentity,
+  );
   const model: "gpt-6-astra" | "claude-sonnet-5-5" =
     type === "codex-oauth-token" ? "gpt-6-astra" : "claude-sonnet-5-5";
   await runs.updateUserModelPreference(actor, model);
@@ -278,6 +287,38 @@ async function finish(
 }
 
 describe("personal subscription run identity", () => {
+  it("executes without proven upstream identity but denies failed-run account management", async () => {
+    const f = await fixture("claude-code-oauth-token", false);
+    const runId = await f.start();
+    const claim = await f.claim(runId);
+    expect(accountId(claim, f.type)).toBe(f.connected.id);
+    expect((await runs.readRun(f.actor, runId)).source?.account).toStrictEqual({
+      status: "unknown",
+    });
+    await finish(f.actor, runId, claim, "failed");
+    expect(
+      (
+        await support.readPersonalModelProviderAccount(
+          f.actor,
+          f.connected.id,
+          runId,
+          [404],
+        )
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await support.resetPersonalModelProviderAccount(
+          f.actor,
+          f.connected.id,
+          randomUUID(),
+          [404],
+          runId,
+        )
+      ).status,
+    ).toBe(404);
+  });
+
   it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
     "preserves proven recovery identity for %s pending admission",
     async (type) => {

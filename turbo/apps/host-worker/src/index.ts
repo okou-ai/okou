@@ -857,7 +857,8 @@ async function authorizeHostedSiteDelivery(
   }).toString();
   const response = await fetch(url, {
     cache: "no-store",
-    redirect: "error",
+    // Workers supports manual redirects; only a direct 200 can authorize delivery.
+    redirect: "manual",
     signal: AbortSignal.any([request.signal, AbortSignal.timeout(3_000)]),
   });
   if (response.status !== 200) {

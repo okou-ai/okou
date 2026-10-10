@@ -25,7 +25,7 @@ interface DesktopUpdateRelease {
 
 interface DesktopUpdateManifest {
   readonly schemaVersion: 1;
-  readonly product?: "okou";
+  readonly product: "okou";
   readonly channels: Record<
     string,
     { readonly latest: string; readonly blocked?: readonly string[] }

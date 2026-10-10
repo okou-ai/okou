@@ -97,11 +97,6 @@
       "owner": "failPoisonQueuedJob"
     },
     {
-      "id": "TX-0033",
-      "file": "turbo/apps/api/src/signals/routes/test-official-workflow-catalog-state.ts",
-      "owner": "seedPreviousSchemaRelease$"
-    },
-    {
       "id": "TX-0042",
       "file": "turbo/apps/api/src/signals/routes/user-templates.ts",
       "owner": "updateInner$"
@@ -267,11 +262,6 @@
       "owner": "refreshAutomatic"
     },
     {
-      "id": "TX-0081",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-oauth.service.ts",
-      "owner": "resolveBuiltinConnectorAutomaticMcpCredential"
-    },
-    {
       "id": "TX-0082",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-credential-runtime.service.ts",
       "owner": "persistConnectorRefresh$"
@@ -300,11 +290,6 @@
       "id": "TX-0088",
       "file": "turbo/apps/api/src/signals/services/canonical-discord-ingress-processor.service.ts",
       "owner": "recordIngressFailure"
-    },
-    {
-      "id": "TX-0089",
-      "file": "turbo/apps/api/src/signals/services/canonical-slack-thread-status.service.ts",
-      "owner": "canonicalSlackThreadHasOutstandingWork$"
     },
     {
       "id": "TX-0090",

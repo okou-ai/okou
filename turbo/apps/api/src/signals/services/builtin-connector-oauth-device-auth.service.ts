@@ -450,36 +450,45 @@ async function markActiveSessionsSuperseded(
     );
 }
 
-async function markClaimAwaiting(
-  args: {
-    readonly writeDb: Db;
-    readonly sessionId: string;
-    readonly claimStartedAt: Date;
-    readonly intervalSeconds: number;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const [session] = await args.writeDb
-    .update(builtinConnectorOauthDeviceAuthorizationSessions)
-    .set({
-      status: "awaiting_user_authorization",
-      intervalSeconds: args.intervalSeconds,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(builtinConnectorOauthDeviceAuthorizationSessions.id, args.sessionId),
-        eq(builtinConnectorOauthDeviceAuthorizationSessions.status, "polling"),
-        eq(
-          builtinConnectorOauthDeviceAuthorizationSessions.updatedAt,
-          args.claimStartedAt,
+const markDeviceAuthClaimAwaiting$ = command(
+  async (
+    { set },
+    args: {
+      readonly sessionId: string;
+      readonly claimStartedAt: Date;
+      readonly intervalSeconds: number;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const writeDb = set(writeDb$);
+    const [session] = await writeDb
+      .update(builtinConnectorOauthDeviceAuthorizationSessions)
+      .set({
+        status: "awaiting_user_authorization",
+        intervalSeconds: args.intervalSeconds,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(
+            builtinConnectorOauthDeviceAuthorizationSessions.id,
+            args.sessionId,
+          ),
+          eq(
+            builtinConnectorOauthDeviceAuthorizationSessions.status,
+            "polling",
+          ),
+          eq(
+            builtinConnectorOauthDeviceAuthorizationSessions.updatedAt,
+            args.claimStartedAt,
+          ),
         ),
-      ),
-    )
-    .returning({ id: builtinConnectorOauthDeviceAuthorizationSessions.id });
-  signal.throwIfAborted();
-  return Boolean(session);
-}
+      )
+      .returning({ id: builtinConnectorOauthDeviceAuthorizationSessions.id });
+    signal.throwIfAborted();
+    return Boolean(session);
+  },
+);
 
 const expireDeviceAuthSession$ = command(
   async (
@@ -943,9 +952,9 @@ const runClaimedSession$ = command(
         pollResult.status === "pending"
           ? (pollResult.interval ?? args.session.intervalSeconds)
           : args.session.intervalSeconds + SLOW_DOWN_INCREMENT_SECONDS;
-      const restored = await markClaimAwaiting(
+      const restored = await set(
+        markDeviceAuthClaimAwaiting$,
         {
-          writeDb: args.writeDb,
           sessionId: args.session.id,
           claimStartedAt: args.claimStartedAt,
           intervalSeconds,
@@ -998,9 +1007,9 @@ const pollClaimedSession$ = command(
       return result.value;
     }
 
-    const restored = await markClaimAwaiting(
+    const restored = await set(
+      markDeviceAuthClaimAwaiting$,
       {
-        writeDb: args.writeDb,
         sessionId: args.session.id,
         claimStartedAt: args.claimStartedAt,
         intervalSeconds: args.session.intervalSeconds,

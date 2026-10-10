@@ -1,4 +1,4 @@
-import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
+import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { computed, type Computed } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";

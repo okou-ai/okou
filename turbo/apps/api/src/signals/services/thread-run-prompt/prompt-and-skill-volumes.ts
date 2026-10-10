@@ -175,6 +175,7 @@ export function createPromptAndSkillVolumesSignals(
     threadContext.session$,
     memberRoutes$,
     modelCatalog$,
+    featureSwitches$,
   );
   const connectors$ = createConnectorsContext(authorizedConnectors$);
   const runtimePrompt$ = createRuntimePrompt(selectedImageModel$);

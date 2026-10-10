@@ -287,6 +287,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Send preview chat runs through real agent CLIs instead of preview mock runners.",
     enabled: false,
   },
+  [FeatureSwitchKey.CodexExecution]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Codex execution (test only)",
+    description:
+      "Test-only override to use Codex instead of Pi for Auto and supported ChatGPT subscription runs.",
+    enabled: false,
+  },
   [FeatureSwitchKey.PiMemory]: {
     maintainer: "lancy@okou.ai",
     description:

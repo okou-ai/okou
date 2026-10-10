@@ -13,12 +13,7 @@ export const CLIENT_TYPE_IOS = "iOS";
 export const CLIENT_TYPE_MITM_ADDON = "MitmAddon";
 export const CLIENT_TYPE_RUNNER = "Runner";
 
-export const DESKTOP_PRODUCT_ZERO = "zero";
 export const DESKTOP_PRODUCT_OKOU = "okou";
-export const DESKTOP_PRODUCTS = [
-  DESKTOP_PRODUCT_ZERO,
-  DESKTOP_PRODUCT_OKOU,
-] as const;
 
 export const CLIENT_HEADER_NAMES = [
   CLIENT_VERSION_HEADER,

@@ -42,12 +42,17 @@ export function UnsavedBar({
   const { t } = useTranslation();
 
   return (
-    <div className={cn("flex justify-center px-4", PINNINGS[pinning])}>
+    <div
+      className={cn(
+        "pointer-events-none flex justify-center px-4",
+        PINNINGS[pinning],
+      )}
+    >
       <div
         data-testid={testId}
         className={surfaceVariants({
           className:
-            "flex max-w-md items-center justify-between gap-4 px-5 py-4",
+            "pointer-events-auto flex max-w-md items-center justify-between gap-4 px-5 py-4",
         })}
       >
         <div className="flex items-center gap-2 text-sm text-foreground">

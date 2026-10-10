@@ -23,6 +23,11 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
 import { isPiExecutionRoute, piCatalogModel } from "@okouai/core/pi-execution";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { db$ } from "../../external/db";
@@ -63,6 +68,7 @@ function currentSessionIdentity(
   selection: NonNullable<PickedThreadInputEvent["canonicalModelSelection"]>,
   memberRoutes: MemberModelRouteContext,
   catalog: ModelCatalog,
+  featureSwitchContext: FeatureSwitchContext,
 ): SessionExecutionIdentity | null {
   const pin = resolveQueuedModelSelectionPinFromSnapshot({
     catalog,
@@ -102,6 +108,10 @@ function currentSessionIdentity(
     modelProviderType: providerType.data,
     runtimeProviderType: providerType.data,
     codexServiceTier,
+    codexExecution: isFeatureEnabled(
+      FeatureSwitchKey.CodexExecution,
+      featureSwitchContext,
+    ),
   })
     ? "pi"
     : getFrameworkForType(providerType.data);
@@ -135,6 +145,7 @@ function createPriorRunsPrompt(
   session$: Computed<Promise<SessionExecutionIdentity | null>>,
   memberRoutes$: Computed<Promise<MemberModelRouteContext>>,
   claimCatalog$: Computed<Promise<ModelCatalog>>,
+  featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
 ): Computed<Promise<string>> {
   return computed(async (get) => {
     const event = await get(pickedEvent$);
@@ -150,14 +161,16 @@ function createPriorRunsPrompt(
     if (!session || !selection) {
       return "";
     }
-    const [memberRoutes, catalog] = await Promise.all([
+    const [memberRoutes, catalog, featureSwitchContext] = await Promise.all([
       get(memberRoutes$),
       get(claimCatalog$),
+      get(featureSwitches$),
     ]);
     const currentSession = currentSessionIdentity(
       selection,
       memberRoutes,
       catalog,
+      featureSwitchContext,
     );
     if (!currentSession || canReuseSession(session, currentSession)) {
       return "";
@@ -262,12 +275,14 @@ export function createRotatedPrompt(
   session$: Computed<Promise<SessionExecutionIdentity | null>>,
   memberRoutes$: Computed<Promise<MemberModelRouteContext>>,
   claimCatalog$: Computed<Promise<ModelCatalog>>,
+  featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
 ): Computed<Promise<RunPromptAndSkills>> {
   const prior$ = createPriorRunsPrompt(
     pickedEvent$,
     session$,
     memberRoutes$,
     claimCatalog$,
+    featureSwitches$,
   );
   const incomplete$ = createIncompletePrompt(pickedEvent$);
   return computed(async (get) => {

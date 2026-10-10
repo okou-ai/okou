@@ -90,6 +90,10 @@ export const orgMembersMetadata = pgTable(
     return [
       primaryKey({ columns: [table.orgId, table.userId] }),
       check(
+        "org_members_metadata_canonical_selection_check",
+        sql`${table.selectedModel} NOT IN ('okou-1.0', 'okou-1.0-pro', 'okou-1.0-max') AND ${table.selectedModel} NOT LIKE '@preset/%'`,
+      ),
+      check(
         "org_members_metadata_selected_model_check",
         sql`char_length(${table.selectedModel}) > 0`,
       ),

@@ -1,6 +1,6 @@
 # Model identity finalization operators
 
-Preparation only. Nothing here runs as part of a release migration. Execute only
+Operator tools only. Nothing here runs as part of a release migration. Execute only
 after explicit operator authorization, Release 1 serves all new writes, outgoing
 writers have drained, and rollback will not expose an API that reinterprets
 normalized historical selections. Refs #38114. No rollout switch is used.
@@ -50,9 +50,14 @@ Run normalization captures an independent immutable usage identity and category
 boundary **before** replacing a legacy selected projection. It never rewrites
 usage records, categories, native transcripts, execution contexts, or exports.
 Legacy Auto preserves the pre-normalization execution rule. Replacement aliases
-require an original retained usage identity; absent evidence blocks the row.
-Conflicting evidence must be investigated, not overridden. Partial runtime
-captures and missing selected values are classified, not filled.
+require an original retained usage identity. A cancelled legacy Pi execution may
+also recover its producer's selected-alias usage identity when its complete
+managed runtime is `openrouter-codex` and the retained preset exactly matches the
+selected alias. The producer's `modelUsageProviderForContext` contract reported
+that selected alias; it did not substitute the upstream preset. This recovery
+never manufactures a usage observation or consults today's catalog. Completed
+executions, mismatched presets and conflicting observations remain blocked.
+Partial runtime captures and missing selected values are classified, not filled.
 
 Personal runtime recovery requires retained compiled Runner environment, an exact
 member/account binding, permanent account identity, and no conflicting Pi runtime
@@ -107,12 +112,82 @@ of compacted rows is not a passed compaction check. Record classified historical
 NULL/partial captures and their accepted lifecycle or evidence dispositions.
 
 Before Release 2: prove outgoing API writers and rollback targets are excluded;
-verify permanent personal/built-in execution/account binding; complete authorized
+verify captured execution and stable local account bindings; complete authorized
 relational pages; reconcile the complete V8 inventory and retained object/consumer
 references; confirm native execution support and unchanged usage interpretation.
-Only then design lifecycle-aware constraints. Do not apply global runtime NOT NULL
-or constrain unrelated optional events. Add CHECK NOT VALID and VALIDATE in
-**different migration files/commits to the database**: addition takes a short strong
-lock and immediately checks new writes; separate validation permits ordinary
-reads/writes. Two commands in one migration transaction retain the strong lock.
-This preparation ships no final lifecycle tightening and promises no zero-lock DDL.
+Release 2 installs the checks in `1367_enforce_canonical_model_capture` and
+validates them in `1368_validate_canonical_model_capture`. They are separate
+migration transactions in the same release: ADD CHECK NOT VALID takes brief
+ACCESS EXCLUSIVE locks; VALIDATE takes SHARE UPDATE EXCLUSIVE locks and permits
+ordinary reads/writes. Both retain the runner's normal bounded timeouts. There
+is no history rewrite or explicit table lock in either file.
+
+Run the executable read-only preflight **before** release, using an explicitly
+read-only connection/session:
+
+```sh
+pnpm exec tsx scripts/migrations/021-model-identity-finalization/backfill.ts --mode preflight --before "$RELEASE1_SERVING_UTC"
+# Render the exact same SELECT without connecting:
+pnpm exec tsx scripts/migrations/021-model-identity-finalization/backfill.ts --mode preflight --before "$RELEASE1_SERVING_UTC" --print-sql
+```
+
+Preflight uses the ten actual migration predicates, covers all rows (the cutoff
+is only a report label), and exits 2 for any violation. All ten counts must be
+zero. A zero report is not writer/rollback drain or snapshot/consumer acceptance.
+`verify` additionally inventories runtime pairs by lifecycle and independent raw
+and compacted usage coverage. Save full-page classifications outside Git.
+
+The lifecycle exception is structural, not a rollout marker: uncaptured runtime
+must be a pair of SQL NULLs; pending/running personal Runs with a launch snapshot
+must have runtime, selected personal identity and a stable local account ID.
+Proven upstream account identity is optional: older Runs may never have captured
+it, and supported current accounts may lack upstream profile evidence. Retain SQL
+NULL rather than deriving identity from today's account or credentials. Deleting
+an account does not erase the captured local ID or require the account row to
+survive. A present upstream identity must remain non-empty. Unknown upstream
+identity still cannot authorize failed-Run account management; its existing
+fail-closed guard is unchanged.
+Historical completed/failed/cancelled personal records may retain an uncaptured
+pair; absence of evidence is **not** proof of irrecoverability. Pending records
+without an executable launch may also be uncaptured. Complete captures keep their
+provider/account ownership on every later update. This intentionally does not
+pretend that a completed snapshot distinguishes old and new captures, nor that a
+CHECK can enforce OLD/NEW immutability. Current launch writers own capture; the
+ordinary metadata patch type excludes execution/usage/account fields. Arbitrary
+SQL writes remain an operator responsibility.
+
+Terminal managed history with no runtime, key, usage or category capture may
+retain its original provider ID, but never a personal account identity. Captured
+or active executions do not receive that exception. Personal Codex history may
+retain the native `openai-codex` transport alongside its `codex-oauth-token`
+credential owner, with the same local account-binding requirements.
+
+Managed runtime captures require managed keys, not personal accounts. Captured
+usage and positive optional category thresholds require managed runtime evidence;
+new executable canonical Auto must capture its usage identity. Personal usage
+remains outside platform model usage. Whole uncaptured Run/event decisions stay
+SQL NULL; unrelated thread events remain optional; created/model-selection events
+require their actual canonical selection. Historical personal IDs are not checked
+against today's changing catalog.
+
+The executable production rollback resolver rejects API artifacts before merged
+Release 1 commit `b6919718b6d856dfa3a7c500b6e899dd3fde7674`. Deployment of that
+resolver, actual serving writers, retained targets and all in-flight consumers
+must still be verified; a source change does not execute the floor.
+
+The disposable database regression owns the historical SQL migration contract:
+bounded cancelled-alias recovery captures the original usage identity, preserves
+compacted usage, and leaves completed aliases and mismatched runtimes blocked.
+It does not establish authenticated Runner lifecycle or webhook acceptance.
+API behavior tests construct accounts and Runs through production interfaces;
+no SQL-seeded Run or locally manufactured Runner credential substitutes for that
+lifecycle.
+
+Only the temporary selected replacement-lineage projection is retired: migration
+1364 has rebound its relationships. Physical legacy catalog/routes and execution,
+native, installed CLI, V8/cache/export readers remain supported. Do not delete a
+catalog primary key while routes/reference ranks still point to it (route foreign
+keys do not cascade updates), or retire readers based solely on canonical current
+heads. Existing usage identity/category interpretation and original histories are
+unchanged. No new format version, progress row, activation switch or extra release
+is introduced by these checks.

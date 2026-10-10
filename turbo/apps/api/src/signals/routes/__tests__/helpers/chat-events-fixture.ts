@@ -51,6 +51,7 @@ import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createConnectorBddApi } from "./api-bdd-connectors";
 import { createMiscRoutesApi } from "./api-bdd-misc";
 import { createRunsApi } from "./api-bdd-runs";
+import { mockPiCheckpointUploads } from "./api-bdd-pi-checkpoint-uploads";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { chatEventDisplayText } from "./chat-event";
 import { nowDate } from "../../../../lib/time";
@@ -991,6 +992,7 @@ export function createChatEventsFixture(context: TestContext) {
 
   function mockPiCheckpointObjectStore(): Map<string, Buffer> {
     const objects = new Map<string, Buffer>();
+    mockPiCheckpointUploads(context, objects);
     const fallback = context.mocks.s3.send.getMockImplementation();
     context.mocks.s3.send.mockImplementation((command: unknown) => {
       const candidate = command as PiCheckpointS3Command;
@@ -1147,7 +1149,7 @@ export function createChatEventsFixture(context: TestContext) {
     });
     const h2 = session.toJsonl();
     const h2Hash = createHash("sha256").update(h2).digest("hex");
-    await webhooks.requestAgentSessionHistoryPrepare(
+    const prepared = await webhooks.requestAgentSessionHistoryPrepare(
       {
         runId: args.run.runId,
         hash: h2Hash,
@@ -1158,10 +1160,24 @@ export function createChatEventsFixture(context: TestContext) {
       args.claim.sandboxHeaders,
       [200],
     );
-    args.historyObjects.set(
-      `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h2Hash}.blob`,
-      Buffer.from(h2, "utf8"),
-    );
+    if (prepared.status !== 200) {
+      throw new Error("Expected checkpoint upload preparation to succeed");
+    }
+    if (!prepared.body.existing) {
+      if (!prepared.body.presignedUrl) {
+        throw new Error("Expected a prepared checkpoint upload URL");
+      }
+      const uploaded = await fetch(prepared.body.presignedUrl, {
+        method: "PUT",
+        headers: { "content-type": "application/octet-stream" },
+        body: h2,
+      });
+      if (!uploaded.ok) {
+        throw new Error(
+          `Expected checkpoint upload success, got ${uploaded.status}`,
+        );
+      }
+    }
     await webhooks.requestAgentEvents(
       {
         runId: args.run.runId,

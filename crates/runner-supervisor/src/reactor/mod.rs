@@ -71,6 +71,7 @@ use runner_provider::{JobProvider, RunCancellationRegistration, RunCancellationR
 #[cfg(test)]
 use runner_types::ids::RunId;
 
+mod claim_tasks;
 pub mod error;
 mod factory_lifecycle;
 mod finalizing_claim;
@@ -92,9 +93,10 @@ use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool}
 use crate::orphan_reap::OrphanReapProcessDiscovery;
 use crate::orphan_reap::{OrphanReapMode, OrphanedActiveRuns};
 use crate::pre_claim_admission::PendingFinalizingCandidate;
+use claim_tasks::ClaimTasks;
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime, start_factories};
 use heartbeat::heartbeat_profiles;
-use job_discovery::{DiscoveredJob, DiscoveredJobContext, handle_discovered_job};
+use job_discovery::{AdmissionContext, DiscoveredJob, DiscoveredJobContext};
 use job_spawn::{SpawnContext, handle_job_result};
 use runner_lifecycle::active_runs::ActiveRuns;
 use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
@@ -1383,6 +1385,12 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         #[cfg(test)]
         test_observer: test_hooks.test_observer.clone(),
     };
+    let mut claim_tasks = ClaimTasks::new(AdmissionContext {
+        runner_identity: runner.identity,
+        mode_rx: mode_rx.clone(),
+        cancel_tokens: provider_state.cancel_tokens.clone(),
+        spawn_ctx: spawn_ctx.clone(),
+    });
     let mut blank_pool_tick = tokio::time::interval_at(
         tokio::time::Instant::now() + Duration::from_secs(1),
         Duration::from_secs(1),
@@ -1404,6 +1412,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let mut status_retry_handle = None;
     let mut draining_idle_pool_drained = false;
     let mut pending_finalizing_candidate = PendingFinalizingCandidate::new();
+    let mut pending_finalizing_retry = false;
+    let mut ready_direct_candidates_left = 0;
     let mut terminal_error = None;
     loop {
         let mode = *mode_rx.borrow_and_update();
@@ -1425,6 +1435,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         }
         if mode != RunnerMode::Running {
             pending_finalizing_candidate.clear();
+            pending_finalizing_retry = false;
         }
         blank_pool.cancel_if_inactive(mode);
         match mode {
@@ -1436,14 +1447,14 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             // to teardown.
             RunnerMode::Stopping => break,
             RunnerMode::Draining => {
-                if !draining_idle_pool_drained {
-                    // Soft drain entry. Destroy the idle pool once (releases
-                    // budget — matches pre-split teardown behavior), then keep
-                    // servicing the shared reactor while jobs finish.
+                if !draining_idle_pool_drained && claim_tasks.is_empty() {
+                    // Settle admission before removing inventory that an
+                    // in-flight claim may return or need for activation. Then
+                    // release idle budget and keep servicing running jobs.
                     drain_idle_pool(&shared.idle_pool, &shared.status, "draining").await;
                     draining_idle_pool_drained = true;
                 }
-                if jobs.is_empty() {
+                if jobs.is_empty() && claim_tasks.is_empty() {
                     // Natural drain complete — commit to Stopping so teardown
                     // is observable to heartbeat and status.json. Guard the
                     // transition on `mode == Draining` so a concurrent SIGUSR2
@@ -1480,6 +1491,14 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         // Spawn background restart task when timer fires
         mitm_recovery.maybe_start(&mut mitm, &mut mitm_crash_rx);
 
+        if pending_finalizing_retry
+            && mode == RunnerMode::Running
+            && claim_tasks.has_capacity()
+            && let Some(candidate) = pending_finalizing_candidate.take()
+        {
+            pending_finalizing_retry = false;
+            claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
+        }
         let can_discover = if matches!(mode, RunnerMode::Running) {
             // A selected finalizing successor can claim against an exact
             // in-process predecessor without reserving fresh capacity.
@@ -1495,6 +1514,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         if matches!(mode, RunnerMode::Running) && !can_discover {
             test_hooks.test_observer.notify_budget_exhausted_reactor();
         }
+        let can_discover = can_discover && claim_tasks.has_capacity();
         let mitm_retry_deadline = mitm_recovery.retry_deadline();
         let heartbeat_sending = heartbeat.is_sending();
         let pending_finalizing_deadline = pending_finalizing_candidate.deadline();
@@ -1545,73 +1565,68 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 // Future completed — create a new one for the next discovery.
                 discover_fut = Box::pin(provider_state.provider.discover());
                 let candidate = pending_finalizing_candidate.for_admission(candidate);
-                let result = handle_discovered_job(
-                    DiscoveredJob { candidate },
-                    DiscoveredJobContext {
-                        runner_identity: runner.identity,
-                        profiles: &runner.profiles,
-                        factories: &factories,
-                        budget: &capacity.budget,
-                        idle_pool: &shared.idle_pool,
-                        status: &shared.status,
-                        mode_rx: &mode_rx,
-                        cancel_tokens: &provider_state.cancel_tokens,
-                        spawn_ctx: &spawn_ctx,
-                        jobs: &mut jobs,
-                    },
-                ).await;
-                let mut needs_reuse_state_refresh =
-                    result.needs_reuse_state_refresh;
-                if let Some(candidate) = result.pending_candidate {
+                claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
+                ready_direct_candidates_left = READY_DIRECT_CANDIDATE_DRAIN_LIMIT;
+            }
+            candidate = provider_state.provider.try_discover_ready(),
+                if can_discover && ready_direct_candidates_left > 0 =>
+            {
+                if let Some(candidate) = candidate {
+                    ready_direct_candidates_left -= 1;
+                    let candidate = pending_finalizing_candidate.for_admission(candidate);
+                    claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
+                } else {
+                    ready_direct_candidates_left = 0;
+                }
+            }
+            result = claim_tasks.progress(),
+                if !claim_tasks.is_empty() || claim_tasks.is_preparing() =>
+            {
+                let Some(result) = result else { continue };
+                let result = match result {
+                    Ok(result) => result,
+                    Err(_) => {
+                        handle_stopping_signal(
+                            "claim admission task failure",
+                            &provider_state.cancel,
+                            &provider_state.cancel_tokens,
+                            &lifecycle,
+                        ).await;
+                        terminal_error = Some(RunnerError::Internal("claim admission task failed".to_owned()));
+                        break;
+                    }
+                };
+                let result = match result.handle(DiscoveredJobContext {
+                    runner_identity: runner.identity,
+                    budget: &capacity.budget,
+                    idle_pool: &shared.idle_pool,
+                    status: &shared.status,
+                    mode_rx: &mode_rx,
+                    cancel_tokens: &provider_state.cancel_tokens,
+                    spawn_ctx: &spawn_ctx,
+                    jobs: &mut jobs,
+                }).await {
+                    Ok(result) => result,
+                    Err(error) => {
+                        handle_stopping_signal(
+                            "claim result ownership failure",
+                            &provider_state.cancel,
+                            &provider_state.cancel_tokens,
+                            &lifecycle,
+                        ).await;
+                        terminal_error = Some(error);
+                        break;
+                    }
+                };
+                if let Some(candidate) = result.pending_candidate
+                    && *mode_rx.borrow() == RunnerMode::Running
+                {
                     pending_finalizing_candidate.retain(candidate);
                 }
-                let mut drained_ready_candidates = 0;
-                while drained_ready_candidates < READY_DIRECT_CANDIDATE_DRAIN_LIMIT {
-                    let live_mode = *mode_rx.borrow();
-                    if !matches!(live_mode, RunnerMode::Running) {
-                        break;
-                    }
-                    if !capacity
-                        .budget
-                        .can_afford(capacity.min_vcpu, capacity.min_memory_mb)
-                        && shared.idle_pool.lock().await.is_empty()
-                    {
-                        break;
-                    }
-                    let Some(candidate) = provider_state.provider.try_discover_ready().await else {
-                        break;
-                    };
-                    drained_ready_candidates += 1;
-                    let candidate = pending_finalizing_candidate.for_admission(candidate);
-                    let result = handle_discovered_job(
-                        DiscoveredJob { candidate },
-                        DiscoveredJobContext {
-                            runner_identity: runner.identity,
-                            profiles: &runner.profiles,
-                            factories: &factories,
-                            budget: &capacity.budget,
-                            idle_pool: &shared.idle_pool,
-                            status: &shared.status,
-                            mode_rx: &mode_rx,
-                            cancel_tokens: &provider_state.cancel_tokens,
-                            spawn_ctx: &spawn_ctx,
-                            jobs: &mut jobs,
-                        },
-                    ).await;
-                    needs_reuse_state_refresh |= result.needs_reuse_state_refresh;
-                    if let Some(candidate) = result.pending_candidate {
-                        pending_finalizing_candidate.retain(candidate);
-                    }
-                }
                 let live_mode = *mode_rx.borrow();
-                if needs_reuse_state_refresh
+                if result.needs_reuse_state_refresh
                     && matches!(live_mode, RunnerMode::Running | RunnerMode::Draining)
                 {
-                    info!(
-                        source = "direct_candidate_batch",
-                        drained_ready_candidates,
-                        "reusable state triggered immediate heartbeat"
-                    );
                     heartbeat.request(live_mode)?;
                 }
             }
@@ -1803,58 +1818,22 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     .notify_routine_heartbeat_requested(live_mode);
             }
             _ = sleep_until_optional_instant(pending_finalizing_deadline),
-                if pending_finalizing_candidate.is_some() && mode == RunnerMode::Running =>
+                if pending_finalizing_candidate.is_some() && mode == RunnerMode::Running
+                    && claim_tasks.has_capacity() =>
             {
                 let Some(candidate) = pending_finalizing_candidate.take_expired() else {
                     continue;
                 };
-                let result = handle_discovered_job(
-                    DiscoveredJob { candidate },
-                    DiscoveredJobContext {
-                        runner_identity: runner.identity,
-                        profiles: &runner.profiles,
-                        factories: &factories,
-                        budget: &capacity.budget,
-                        idle_pool: &shared.idle_pool,
-                        status: &shared.status,
-                        mode_rx: &mode_rx,
-                        cancel_tokens: &provider_state.cancel_tokens,
-                        spawn_ctx: &spawn_ctx,
-                        jobs: &mut jobs,
-                    },
-                ).await;
-                if let Some(candidate) = result.pending_candidate {
-                    pending_finalizing_candidate.retain(candidate);
-                }
-                if result.needs_reuse_state_refresh {
-                    heartbeat.request(*mode_rx.borrow())?;
-                }
+                claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
             }
             // Immediate heartbeat after reusable state changes eliminates the
             // up-to-10s blind spot for reuse-aware routing.
             _ = reuse_state_notify.notified(), if matches!(mode, RunnerMode::Running | RunnerMode::Draining) => {
                 let live_mode = *mode_rx.borrow();
-                if live_mode == RunnerMode::Running
-                    && let Some(candidate) = pending_finalizing_candidate.take()
-                {
-                    let result = handle_discovered_job(
-                        DiscoveredJob { candidate },
-                        DiscoveredJobContext {
-                            runner_identity: runner.identity,
-                            profiles: &runner.profiles,
-                            factories: &factories,
-                            budget: &capacity.budget,
-                            idle_pool: &shared.idle_pool,
-                            status: &shared.status,
-                            mode_rx: &mode_rx,
-                            cancel_tokens: &provider_state.cancel_tokens,
-                            spawn_ctx: &spawn_ctx,
-                            jobs: &mut jobs,
-                        },
-                    ).await;
-                    if let Some(candidate) = result.pending_candidate {
-                        pending_finalizing_candidate.retain(candidate);
-                    }
+                if live_mode == RunnerMode::Running {
+                    // A wakeup observed while all claim slots are occupied must
+                    // survive until a completion opens a slot.
+                    pending_finalizing_retry = true;
                 }
                 let source = match live_mode {
                     RunnerMode::Running if can_discover => "main",
@@ -1894,6 +1873,56 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     }
     teardown.phase_complete("status_stopping", phase);
 
+    // Release retained discovery before settling claims. Admission tasks run
+    // independently and must finish before idle or provider teardown; successful
+    // outcomes still enter the existing activation/executor ownership path.
+    drop(discover_fut);
+    teardown.event("drop_discover_fut");
+    drop(home_cache_change_fut);
+    let phase = teardown.phase_start("claims_drain");
+    while let Some(result) = claim_tasks.next().await {
+        match result {
+            Ok(result) => {
+                if let Err(error) = result
+                    .handle(DiscoveredJobContext {
+                        runner_identity: runner.identity,
+                        budget: &capacity.budget,
+                        idle_pool: &shared.idle_pool,
+                        status: &shared.status,
+                        mode_rx: &mode_rx,
+                        cancel_tokens: &provider_state.cancel_tokens,
+                        spawn_ctx: &spawn_ctx,
+                        jobs: &mut jobs,
+                    })
+                    .await
+                {
+                    handle_stopping_signal(
+                        "claim result ownership failure",
+                        &provider_state.cancel,
+                        &provider_state.cancel_tokens,
+                        &lifecycle,
+                    )
+                    .await;
+                    terminal_error.get_or_insert(error);
+                }
+            }
+            Err(_) => {
+                handle_stopping_signal(
+                    "claim admission task failure",
+                    &provider_state.cancel,
+                    &provider_state.cancel_tokens,
+                    &lifecycle,
+                )
+                .await;
+                terminal_error.get_or_insert_with(|| {
+                    RunnerError::Internal("claim admission task failed".to_owned())
+                });
+            }
+        }
+    }
+    drop(claim_tasks);
+    teardown.phase_complete("claims_drain", phase);
+
     let phase = teardown.phase_start("blank_pool_shutdown");
     blank_pool.shutdown().await;
     teardown.phase_complete("blank_pool_shutdown", phase);
@@ -1924,13 +1953,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         *task = None;
     }
     teardown.phase_complete("maintenance_drain", phase);
-
-    // Drop the pinned discover future before provider shutdown so any
-    // provider-local discovery resources are released first. This also keeps
-    // the historical shutdown-deadlock regression covered by mock providers.
-    drop(discover_fut);
-    teardown.event("drop_discover_fut");
-    drop(home_cache_change_fut);
 
     // Drain idle pool first — these sandboxes hold budget reservations. This
     // also clears `idle_sandboxes` in status.json so the final snapshot is

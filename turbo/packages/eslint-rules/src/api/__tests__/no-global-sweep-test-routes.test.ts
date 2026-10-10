@@ -23,6 +23,13 @@ const routeImport = `
 ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
   valid: [
     {
+      name: "isolated Official system coverage uses the canonical automation cron",
+      filename: "/app/src/signals/routes/__tests__/official-workflows.test.ts",
+      code: `${routeImport}
+        setupApp({ context, routes: cronExecuteWorkflowAutomationsRoutes });
+      `,
+    },
+    {
       name: "production bootstrap keeps global behavior",
       filename: "/app/src/signals/route.ts",
       code: `${routeImport}
@@ -116,6 +123,18 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
     },
   ],
   invalid: [
+    {
+      name: "Official system coverage cannot import an unrelated global sweep",
+      filename: "/app/src/signals/routes/__tests__/official-workflows.test.ts",
+      code: `import { cronCleanupSandboxesRoutes } from "../cron-cleanup-sandboxes";`,
+      errors: [{ messageId: "globalSweep" }],
+    },
+    {
+      name: "Official system coverage cannot alias the approved route",
+      filename: "/app/src/signals/routes/__tests__/official-workflows.test.ts",
+      code: `import { cronExecuteWorkflowAutomationsRoutes as sweep } from "../cron-execute-workflow-automations";`,
+      errors: [{ messageId: "globalSweep" }],
+    },
     {
       name: "defaulted shorthand route destructuring remains rejected",
       filename: behaviorTest,

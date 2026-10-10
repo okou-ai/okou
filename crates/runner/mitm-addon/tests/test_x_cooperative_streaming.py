@@ -65,7 +65,7 @@ async def test_gzip_callback_bounds_real_rows_and_yields_before_reporting_all(
         assert await heartbeat <= 8
         assert state["lines_parsed"] == rows + 1
         assert state["lines_failed"] == 0
-        assert not response_streaming.has_pending_connector_inspection(flow)
+        assert not response_streaming.has_pending_response_inspection(flow)
 
         assert response_stream(flow)(b"") == b""
         assert mitm_addon.response(flow) is None
@@ -133,7 +133,7 @@ async def test_terminal_hooks_join_pending_rows_and_never_rebill(
     with usage_webhook_api() as webhook:
         mitm_addon.responseheaders(flow)
         assert response_stream(flow)(wire) == wire
-        assert response_streaming.has_pending_connector_inspection(flow)
+        assert response_streaming.has_pending_response_inspection(flow)
         if interrupted:
             flow.error = Error("synthetic interrupted stream")
             completion = mitm_addon.error(flow)
@@ -196,7 +196,7 @@ async def test_abandoned_pending_inspection_is_explicit_and_releases_input(
         )
         wire = gzip.compress(prefix + b"{}\n" * 100 + b'{"data":{"id":"uninspected"}}\n')
         assert response_stream(flow)(wire) == wire
-        assert response_streaming.has_pending_connector_inspection(flow)
+        assert response_streaming.has_pending_response_inspection(flow)
         if cancel_terminal:
             completion = mitm_addon.response(flow)
             assert completion is not None
@@ -211,7 +211,7 @@ async def test_abandoned_pending_inspection_is_explicit_and_releases_input(
         response_streaming.release_response_stream_state(flow)
         assert flow.response is not None
         assert flow.response.stream is False
-        assert not response_streaming.has_pending_connector_inspection(flow)
+        assert not response_streaming.has_pending_response_inspection(flow)
         assert metadata_keys.X_NDJSON_STATE not in flow.metadata
         assert flow.metadata[metadata_keys.X_JSON_STATE]["body_parsed"] is False
         assert flow.metadata[metadata_keys.X_JSON_STATE]["parse_error"] == (

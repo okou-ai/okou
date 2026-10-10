@@ -8,6 +8,7 @@ mod api;
 mod api_ably_supervisor;
 mod api_cancellation_reconciliation;
 mod api_claim_cooldowns;
+mod api_claim_in_flight;
 mod api_direct_candidates;
 mod builtin_firewall_catalog;
 mod connector_runtime_sync;

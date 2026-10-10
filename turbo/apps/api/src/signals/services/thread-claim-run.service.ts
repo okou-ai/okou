@@ -818,6 +818,7 @@ function workflowModelContext(
 
   const piExecution = shouldUsePiExecution({
     chatThreadId,
+    featureSwitchContext: threadModelContext.featureSwitchContext,
     modelProviderType: effectiveModelProvider,
     catalogModel: piCatalogModel(catalog, selectedModel),
     codexServiceTier: runCodexServiceTier,
@@ -1938,6 +1939,7 @@ export function createThreadClaimRunObjects(
       }
       return {
         route: {
+          featureSwitchContext: model.featureSwitchContext,
           modelPin: model.pin,
           memberAccountSnapshot: model.memberAccountSnapshot,
           effectiveModelProvider:
