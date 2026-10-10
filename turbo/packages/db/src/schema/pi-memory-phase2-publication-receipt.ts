@@ -14,9 +14,10 @@ import { agentRuns } from "./agent-run";
 import { storages } from "./storage";
 
 /**
- * Content-free receipt written atomically by the generic artifact commit.
- * Keep the physical table and constraint names stable across API versions.
- * These receipts fence Pi memory publication; they are not Run recovery points.
+ * Compatibility output for outgoing API readers; current runtime reads the
+ * Job's latest maintenance result. Keep writes until those APIs drain and are
+ * excluded from rollback, then deploy a writer-free version before dropping
+ * this table in a later release. Follow-up: #37970.
  */
 export const piMemoryPhase2PublicationReceipts = pgTable(
   "pi_memory_phase2_checkpoints",

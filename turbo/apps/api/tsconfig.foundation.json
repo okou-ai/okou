@@ -64,7 +64,6 @@
     "src/signals/services/pending-launch-billing-plan.ts",
     "src/signals/services/pending-launch-sql.ts",
     "src/signals/services/pending-launch-tail-plan.ts",
-    "src/signals/services/pi-memory-phase2-publication.service.ts",
     "src/signals/services/pi-memory-phase2-input-revision.ts",
     "src/signals/services/pi-memory-phase2-job.service.ts",
     "src/signals/services/pi-memory-phase2-maintenance.service.ts",

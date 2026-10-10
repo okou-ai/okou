@@ -19,7 +19,12 @@ import {
 } from "@okouai/pi-agent-runtime/api";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { piMemoryPhase2MaintenanceCallbackPayloadSchema } from "./pi-memory-phase2-maintenance.service";
-import { findPiMemoryPhase2Publication } from "./pi-memory-phase2-publication.service";
+import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
+import {
+  maintenancePublicationResultCondition,
+  maintenancePublicationResultVersion,
+  maintenancePublicationVersion,
+} from "./pi-memory-phase2-result";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
@@ -1011,7 +1016,7 @@ async function exactRunOutputRetryResponse(
 }
 
 // Private maintenance has no public Pi history. Its session is the authenticated
-// run itself, and only an exact validated publication receipt can prove its published version.
+// run itself, and only its latest validated Job result can prove its published version.
 async function privateMaintenanceOutput(
   db: Db | Tx,
   input: AgentRunOutputInput,
@@ -1051,10 +1056,17 @@ async function privateMaintenanceOutput(
     return "[PI_MAINTENANCE_IDENTITY_INVALID] Private output identity does not match its launch";
   }
   const binding = parsed.data;
-  const receipt = await findPiMemoryPhase2Publication(db, {
-    ...binding,
-    runId: input.body.runId,
-  });
+  const [result] = await db
+    .select({ versionId: maintenancePublicationResultVersion() })
+    .from(piMemoryPhase2Jobs)
+    .where(
+      maintenancePublicationResultCondition({
+        ...binding,
+        runId: input.body.runId,
+      }),
+    )
+    .limit(1);
+  const publicationVersionId = maintenancePublicationVersion(result);
   const mount = run.storageMounts?.find((entry) => {
     return entry.storageId === binding.memoryStorageId && entry.writeback;
   });
@@ -1065,13 +1077,13 @@ async function privateMaintenanceOutput(
     !mount ||
     !snapshot ||
     (snapshot.version !== binding.claimedBaseVersionId &&
-      snapshot.version !== receipt?.versionId)
+      snapshot.version !== publicationVersionId)
   ) {
     return "[PI_MAINTENANCE_OUTPUT_INVALID] Private output lacks exact publication or recovery evidence";
   }
   return {
     memoryStorageId: binding.memoryStorageId,
-    versionId: receipt?.versionId ?? binding.claimedBaseVersionId,
+    versionId: publicationVersionId ?? binding.claimedBaseVersionId,
   };
 }
 

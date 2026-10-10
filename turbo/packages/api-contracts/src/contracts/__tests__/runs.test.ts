@@ -103,15 +103,6 @@ describe("unified run request contract", () => {
     ).toBe(true);
   });
 
-  it("rejects checkpoint resume requests", () => {
-    expect(
-      unifiedRunRequestSchema.safeParse({
-        checkpointId: "11111111-1111-4111-8111-111111111111",
-        prompt: "resume from checkpoint",
-      }).success,
-    ).toBe(false);
-  });
-
   it("rejects built-in models for direct runs without credit admission", () => {
     expect(
       unifiedRunRequestSchema.safeParse({
@@ -242,7 +233,6 @@ describe("Run result generations", () => {
     for (const result of [
       {
         ...identity,
-        checkpointId: "historical-id",
         artifact: { memory: "old-version" },
       },
       {

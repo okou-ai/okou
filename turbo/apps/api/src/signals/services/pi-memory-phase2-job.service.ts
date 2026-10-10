@@ -305,6 +305,7 @@ function leasedJobValues(
     claimedRevision: job.inputRevision,
     claimedBaseVersionId: args.baseVersionId,
     leaseToken: args.leaseToken,
+    // Preserve the deployed constraints/outgoing API shape until writer preparation.
     legacyLeaseToken: null,
     sandboxLeaseToken: args.leaseToken,
     leaseExpiresAt: args.leaseExpiresAt,
@@ -500,7 +501,6 @@ function exactLeaseCondition(args: PiMemoryPhase2LeaseFence) {
     eq(piMemoryPhase2Jobs.userId, args.userId),
     eq(piMemoryPhase2Jobs.status, "leased"),
     eq(piMemoryPhase2Jobs.leaseToken, args.leaseToken),
-    eq(piMemoryPhase2Jobs.sandboxLeaseToken, args.leaseToken),
     eq(piMemoryPhase2Jobs.claimedRevision, args.claimedRevision),
     eq(piMemoryPhase2Jobs.claimedBaseVersionId, args.claimedBaseVersionId),
     ...(args.allowExpiredLease

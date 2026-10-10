@@ -6,7 +6,6 @@ import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
-import { piMemoryPhase2PublicationReceipts } from "@okouai/db/schema/pi-memory-phase2-publication-receipt";
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
@@ -27,21 +26,24 @@ import {
 } from "../external/s3";
 import {
   maintenanceCallbackCondition,
-  storageMaintenanceReceiptCondition,
   storageMaintenanceJobCondition,
   storageCommitLineageCondition,
-  type MaintenanceReceiptBinding,
 } from "./storage-write-conditions";
 import {
   storageCommitPublicationPlan,
   sandboxStorageRunIsActive,
   maintenancePublicationBinding,
-  maintenanceReceiptBinding,
   totalSize,
   terminalStorageCommitPersistedStateMatches,
   storageCommitSuccess,
   type MaintenancePublicationInput,
 } from "./storage-write-publication-plan";
+
+import {
+  maintenancePublicationResultCondition,
+  maintenancePublicationResultVersion,
+  maintenancePublicationVersion,
+} from "./pi-memory-phase2-result";
 
 interface StorageChanges {
   readonly deleted?: readonly string[];
@@ -250,13 +252,13 @@ const guardMaintenancePreparation$ = command(
     if (!binding || "status" in binding) {
       return binding;
     }
-    const [receipt] = await db
-      .select()
-      .from(piMemoryPhase2PublicationReceipts)
-      .where(storageMaintenanceReceiptCondition(binding))
+    const [result] = await db
+      .select({ id: piMemoryPhase2Jobs.memoryStorageId })
+      .from(piMemoryPhase2Jobs)
+      .where(maintenancePublicationResultCondition(binding))
       .limit(1);
     signal.throwIfAborted();
-    if (receipt) {
+    if (result) {
       return notFound("Pi memory maintenance publication already committed");
     }
     const [active] = await db
@@ -742,18 +744,6 @@ export const prepareStorageUploadForAuth$ = command(
   },
 );
 
-const readSandboxReceipt$ = command(
-  async ({ get }, binding: MaintenanceReceiptBinding, signal: AbortSignal) => {
-    const [receipt] = await get(db$)
-      .select()
-      .from(piMemoryPhase2PublicationReceipts)
-      .where(storageMaintenanceReceiptCondition(binding))
-      .limit(1);
-    signal.throwIfAborted();
-    return receipt;
-  },
-);
-
 const readSandboxLineage$ = command(
   async (
     { get },
@@ -784,7 +774,7 @@ const readSandboxLineage$ = command(
 
 export const commitSandboxStorageUpload$ = command(
   async (
-    { set },
+    { get, set },
     args: CommitStorageInput,
     signal: AbortSignal,
   ): Promise<CommitStorageResponse> => {
@@ -801,15 +791,40 @@ export const commitSandboxStorageUpload$ = command(
     if ("status" in mounted) {
       return mounted;
     }
-    const binding = maintenanceReceiptBinding(input);
-    const receipt = binding
-      ? await set(readSandboxReceipt$, binding, signal)
-      : undefined;
-    if (receipt) {
+    const db = get(db$);
+    // Only attested retries use this shortcut; the publication plan admits live commits.
+    const [callback] = args.maintenanceAttestation
+      ? await db
+          .select({ payload: agentRunCallbacks.payload })
+          .from(agentRunCallbacks)
+          .where(maintenanceCallbackCondition(args.auth.runId))
+          .limit(1)
+      : [];
+    signal.throwIfAborted();
+    const binding = maintenancePublicationBinding(callback?.payload, {
+      auth: args.auth,
+      storageId: args.storageId,
+      versionId: args.versionId,
+      parentVersionId: args.parentVersionId,
+      attestation: args.maintenanceAttestation,
+    });
+    if (binding && "status" in binding) {
+      return binding;
+    }
+    const [result] = binding
+      ? await db
+          .select({ versionId: maintenancePublicationResultVersion() })
+          .from(piMemoryPhase2Jobs)
+          .where(maintenancePublicationResultCondition(binding))
+          .limit(1)
+      : [];
+    signal.throwIfAborted();
+    const publicationVersionId = maintenancePublicationVersion(result);
+    if (publicationVersionId) {
       if (
-        receipt.versionId !== args.versionId ||
+        publicationVersionId !== args.versionId ||
         computeContentHashFromHashes(args.storageId, args.files) !==
-          receipt.versionId
+          publicationVersionId
       ) {
         return notFound("Pi memory maintenance publication replay mismatch");
       }
