@@ -1,5 +1,7 @@
 """Tests for OpenAI Responses SSE usage extraction."""
 
+import json
+
 import pytest
 
 import usage.openai_responses as openai_responses
@@ -667,6 +669,18 @@ class TestOpenAIResponsesSseUsageExtractor:
                 + b'"}',
                 id="named-prefix-cap",
             ),
+            pytest.param(
+                b"event: vendor.delta\n",
+                b'{"type":"response.output_text.delta","delta":"hello"}',
+                id="named-event-end",
+            ),
+            pytest.param(
+                b"",
+                b'{"type":"response.output_text.delta","padding":"'
+                + b"x" * openai_responses._RESPONSES_EVENT_PREFILTER_MAX_BYTES
+                + b'"}',
+                id="eventless-prefix-cap",
+            ),
         ],
     )
     def test_known_non_usage_prefix_is_probed_once_and_discarded(
@@ -967,6 +981,151 @@ class TestOpenAIResponsesSseUsageExtractor:
         assert usage["model"] == "gpt-5.5"
         assert usage["tokens.input"] == 13
         assert usage["tokens.output"] == 8
+
+    @pytest.mark.parametrize(
+        "event_prefix",
+        [
+            pytest.param(b"", id="eventless"),
+            pytest.param(b"event: response.completed\n", id="named"),
+        ],
+    )
+    @pytest.mark.parametrize("payload_size", [4095, 4096, 4097])
+    @pytest.mark.parametrize(
+        "chunk_size", [pytest.param(1, id="tiny"), pytest.param(16_384, id="whole")]
+    )
+    @pytest.mark.parametrize("zero_usage", [False, True])
+    def test_terminal_usage_at_prefix_boundary(
+        self, event_prefix, payload_size, chunk_size, zero_usage
+    ):
+        terminal_usage: list[dict] = []
+        observations: list[tuple[dict, bool]] = []
+        parse_errors: list[tuple[str, str]] = []
+        parse, usage = create_openai_responses_sse_usage_extractor(
+            on_parse_error=lambda event, error: parse_errors.append((event, error)),
+            on_terminal_usage=terminal_usage.append,
+            on_observation=lambda observed, terminal: observations.append(
+                (dict(observed), terminal)
+            ),
+        )
+        input_tokens, output_tokens = (0, 0) if zero_usage else (8, 3)
+        response = {
+            "id": "resp_boundary",
+            "model": "gpt-5.5",
+            "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens},
+        }
+        prefix = b'{"type":"response.completed","padding":"'
+        suffix = b'","response":' + json.dumps(response, separators=(",", ":")).encode() + b"}"
+        payload = prefix + b"x" * (payload_size - len(prefix) - len(suffix)) + suffix
+        assert len(payload) == payload_size
+        stream = event_prefix + b"data: " + payload + b"\n\n"
+        for offset in range(0, len(stream), chunk_size):
+            parse(stream[offset : offset + chunk_size])
+        parse.finish()
+
+        expected = {
+            "message_id": "resp_boundary",
+            "model": "gpt-5.5",
+            "tokens.input": input_tokens,
+            "tokens.output": output_tokens,
+        }
+        assert usage == expected
+        assert observations == [(expected, True)]
+        assert terminal_usage == ([] if zero_usage else [expected])
+        assert parse_errors == []
+
+    @pytest.mark.parametrize(
+        ("event_prefix", "next_event_prefix"),
+        [
+            pytest.param(b"", b"event: response.completed\n", id="eventless-to-named"),
+            pytest.param(b"event: response.completed\n", b"", id="named-to-eventless"),
+        ],
+    )
+    @pytest.mark.parametrize("payload_size", [4095, 4096, 4097])
+    @pytest.mark.parametrize(
+        "chunk_size", [pytest.param(1, id="tiny"), pytest.param(16_384, id="whole")]
+    )
+    def test_non_usage_prefix_boundary_recovers_for_different_framing(
+        self, event_prefix, next_event_prefix, payload_size, chunk_size
+    ):
+        terminal_usage: list[dict] = []
+        observations: list[tuple[dict, bool]] = []
+        parse_errors: list[tuple[str, str]] = []
+        parse, usage = create_openai_responses_sse_usage_extractor(
+            on_parse_error=lambda event, error: parse_errors.append((event, error)),
+            on_terminal_usage=terminal_usage.append,
+            on_observation=lambda observed, terminal: observations.append(
+                (dict(observed), terminal)
+            ),
+        )
+        prefix = b'{"type":"response.output_text.delta","padding":"'
+        suffix = b'","response":{"model":"ignored","usage":{"output_tokens":99}}}'
+        payload = prefix + b"x" * (payload_size - len(prefix) - len(suffix)) + suffix
+        assert len(payload) == payload_size
+        stream = (
+            event_prefix
+            + b"data: "
+            + payload
+            + b"\n\n"
+            + next_event_prefix
+            + b'data: {"type":"response.completed","response":{"model":"gpt-5.5",'
+            + b'"usage":{"output_tokens":3}}}\n\n'
+        )
+        for offset in range(0, len(stream), chunk_size):
+            parse(stream[offset : offset + chunk_size])
+        parse.finish()
+
+        expected = {"model": "gpt-5.5", "tokens.output": 3}
+        assert usage == expected
+        assert observations == [(expected, True)]
+        assert terminal_usage == [expected]
+        assert parse_errors == []
+
+    @pytest.mark.parametrize(
+        ("event_name", "captured", "terminal"),
+        [
+            pytest.param(b"response.completed", True, True, id="terminal"),
+            pytest.param(b"vendor.usage", True, False, id="unknown"),
+            pytest.param(b"response.output_text.delta", False, False, id="non-usage"),
+        ],
+    )
+    @pytest.mark.parametrize("padding_size", [0, 4096])
+    @pytest.mark.parametrize(
+        "chunk_size", [pytest.param(1, id="tiny"), pytest.param(16_384, id="whole")]
+    )
+    @pytest.mark.parametrize(
+        "ending", [pytest.param(b"\n\n", id="blank-line"), pytest.param(b"", id="finish")]
+    )
+    def test_final_event_name_after_multiline_data_preserves_callbacks(
+        self, event_name, captured, terminal, padding_size, chunk_size, ending
+    ):
+        terminal_usage: list[dict] = []
+        observations: list[tuple[dict, bool]] = []
+        parse_errors: list[tuple[str, str]] = []
+        parse, usage = create_openai_responses_sse_usage_extractor(
+            on_parse_error=lambda event, error: parse_errors.append((event, error)),
+            on_terminal_usage=terminal_usage.append,
+            on_observation=lambda observed, is_terminal: observations.append(
+                (dict(observed), is_terminal)
+            ),
+        )
+        stream = (
+            b'data: {"padding":"'
+            + b"x" * padding_size
+            + b'",\n'
+            + b'data: "response":{"model":"gpt-5.5","usage":{"output_tokens":4}}}\n'
+            + b"event: "
+            + event_name
+            + ending
+        )
+        for offset in range(0, len(stream), chunk_size):
+            parse(stream[offset : offset + chunk_size])
+        parse.finish()
+
+        expected = {"model": "gpt-5.5", "tokens.output": 4}
+        assert usage == (expected if captured else {})
+        assert observations == ([(expected, terminal)] if captured else [])
+        assert terminal_usage == ([expected] if terminal else [])
+        assert parse_errors == []
 
     def test_invalid_usage_quantities_ignored(self):
         parse, usage = create_openai_responses_sse_usage_extractor()
