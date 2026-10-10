@@ -644,7 +644,6 @@ export const resolveArtifactShare$ = command(
         bucket: file.bucket,
         key: policy.target.key,
         signingDate: nowDate(),
-        filename: file.filename,
       },
       signal,
     );
