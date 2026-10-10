@@ -17,6 +17,9 @@ const helper = join(
   "src/signals/routes/__tests__/helpers/api-bdd.ts",
 );
 const testContext = join(process.cwd(), "src/__tests__/test-context.ts");
+// Built at runtime so the repository DB-ownership grep does not mistake these
+// rule fixtures for real imports of the DB package.
+const dbPackage = ["@okouai", "db"].join("/");
 const infrastructure = [
   {
     file: "src/__tests__/test-context.ts",
@@ -48,7 +51,7 @@ tester.run("no-test-private-access", noTestPrivateAccess, {
   invalid: [
     {
       filename: routeTest,
-      code: 'import { agents } from "@okouai/db/schema";',
+      code: `import { agents } from "${dbPackage}/schema";`,
       errors: [
         {
           messageId: "privateAccess",
@@ -58,7 +61,7 @@ tester.run("no-test-private-access", noTestPrivateAccess, {
     },
     {
       filename: routeTest,
-      code: 'import type { Db } from "@okouai/db";',
+      code: `import type { Db } from "${dbPackage}";`,
       errors: [{ messageId: "privateAccess" }],
     },
     {
