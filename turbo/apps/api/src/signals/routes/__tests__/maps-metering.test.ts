@@ -36,7 +36,7 @@ describe("Maps Interactions usage and citations", () => {
         // The place exists only in the tool result: annotations have no source
         // identity, and usage has no billable Maps query aggregate.
         return HttpResponse.json({
-          model: "gemini-3.5-flash-lite",
+          model: "gemini-3.1-flash-lite",
           status: "completed",
           steps: [
             { type: "thought", signature: "private-signature" },
@@ -92,9 +92,9 @@ describe("Maps Interactions usage and citations", () => {
   });
 
   it.each([
-    { mapsQueries: 0, providerCost: 155, credits: 1 },
-    { mapsQueries: 3, providerCost: 42_155, credits: 53 },
-    { mapsQueries: 4, providerCost: 56_155, credits: 71 },
+    { mapsQueries: 0, providerCost: 100, credits: 1 },
+    { mapsQueries: 3, providerCost: 42_100, credits: 53 },
+    { mapsQueries: 4, providerCost: 56_100, credits: 71 },
   ])(
     "bills $mapsQueries provider queries even when their cost exceeds the admission estimate",
     async ({ mapsQueries, providerCost, credits }) => {
@@ -147,7 +147,7 @@ describe("Maps Interactions usage and citations", () => {
       answer,
       sources: [],
       citations: [],
-      billingQuantity: 28_155,
+      billingQuantity: 28_100,
       creditsCharged: 36,
       usage: { mapsQueries: 2 },
     });
@@ -161,7 +161,7 @@ describe("Maps Interactions usage and citations", () => {
     const { billing, actor } = await setupMaps();
     server.use(
       http.post(VERTEX_MAPS_URL, () => {
-        return vertexMapsResponse({ cachedInputTokens: 80 });
+        return vertexMapsResponse({ cachedInputTokens: 79 });
       }),
     );
     const search = await billing.requestMapsSearch(
@@ -169,12 +169,12 @@ describe("Maps Interactions usage and citations", () => {
       { query: "Coffee near Union Square" },
       [200],
     );
-    // 20 * $0.30/M + 80 * $0.03/M + 50 * $2.50/M = 133.4 micro USD.
+    // 21 * $0.25/M + 79 * $0.025/M + 50 * $1.50/M = 82.225 micro USD.
     expect(search.body).toMatchObject({
-      billingQuantity: 14_134,
-      providerCostUsd: 0.014134,
+      billingQuantity: 14_083,
+      providerCostUsd: 0.014083,
       creditsCharged: 18,
-      usage: { inputTokens: 100, cachedInputTokens: 80, outputTokens: 50 },
+      usage: { inputTokens: 100, cachedInputTokens: 79, outputTokens: 50 },
     });
   });
 

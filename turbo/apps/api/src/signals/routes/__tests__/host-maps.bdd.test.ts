@@ -679,10 +679,10 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       location: { latitude: 48.21, longitude: 16.37 },
       languageCode: "de_AT",
       provider: "google-maps-grounding",
-      model: "gemini-3.5-flash-lite",
+      model: "gemini-3.1-flash-lite",
       billingCategory: "provider_cost_usd_micros",
-      billingQuantity: 14_155,
-      providerCostUsd: 0.014155,
+      billingQuantity: 14_100,
+      providerCostUsd: 0.0141,
       creditsCharged: 18,
       answer,
       sources: [
@@ -710,7 +710,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     expect(providerAuthorization).toBe("Bearer synthetic-google-token");
     expect(providerRevision).toBe("2026-05-20");
     expect(providerBody).toMatchObject({
-      model: "gemini-3.5-flash-lite",
+      model: "gemini-3.1-flash-lite",
       input: "best café near me",
       store: false,
       background: false,
@@ -1026,7 +1026,7 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
       expect(mapsSearch.body).toMatchObject({
         provider: "google-maps-grounding",
         billingCategory: "provider_cost_usd_micros",
-        billingQuantity: 14_155,
+        billingQuantity: 14_100,
         creditsCharged: 18,
       });
       expect(mapsRequests).toBe(1);

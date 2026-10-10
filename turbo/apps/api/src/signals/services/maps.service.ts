@@ -27,10 +27,10 @@ const MICRO_USD_PER_USD = 1_000_000;
 // Bill published list cost because Vertex does not identify whether this
 // request consumed the shared monthly no-charge allowance.
 const MAPS_QUERY_COST_MICROS = 14_000n;
-const TOKEN_PRICE_DENOMINATOR = 100n;
-const INPUT_TOKEN_PRICE_HUNDREDTHS_OF_MICRO_USD = 30n;
-const CACHED_TOKEN_PRICE_HUNDREDTHS_OF_MICRO_USD = 3n;
-const OUTPUT_TOKEN_PRICE_HUNDREDTHS_OF_MICRO_USD = 250n;
+const TOKEN_PRICE_DENOMINATOR = 1000n;
+const INPUT_TOKEN_PRICE_THOUSANDTHS_OF_MICRO_USD = 250n;
+const CACHED_TOKEN_PRICE_THOUSANDTHS_OF_MICRO_USD = 25n;
+const OUTPUT_TOKEN_PRICE_THOUSANDTHS_OF_MICRO_USD = 1500n;
 // Admission estimate for three queries plus tokens, not a per-request spend cap.
 const PREFLIGHT_PROVIDER_COST_MICROS = 50_000;
 
@@ -116,15 +116,15 @@ function invalidProviderUsage(): MapsErrorResponse {
 }
 
 function providerCostMicros(result: VertexMapsResult): number | null {
-  const tokenCostHundredths =
+  const tokenCostThousandths =
     BigInt(result.usage.inputTokens - result.usage.cachedInputTokens) *
-      INPUT_TOKEN_PRICE_HUNDREDTHS_OF_MICRO_USD +
+      INPUT_TOKEN_PRICE_THOUSANDTHS_OF_MICRO_USD +
     BigInt(result.usage.cachedInputTokens) *
-      CACHED_TOKEN_PRICE_HUNDREDTHS_OF_MICRO_USD +
+      CACHED_TOKEN_PRICE_THOUSANDTHS_OF_MICRO_USD +
     BigInt(result.usage.outputTokens) *
-      OUTPUT_TOKEN_PRICE_HUNDREDTHS_OF_MICRO_USD;
+      OUTPUT_TOKEN_PRICE_THOUSANDTHS_OF_MICRO_USD;
   const tokenCostMicros =
-    (tokenCostHundredths + TOKEN_PRICE_DENOMINATOR - 1n) /
+    (tokenCostThousandths + TOKEN_PRICE_DENOMINATOR - 1n) /
     TOKEN_PRICE_DENOMINATOR;
   const total =
     tokenCostMicros + BigInt(result.usage.mapsQueries) * MAPS_QUERY_COST_MICROS;

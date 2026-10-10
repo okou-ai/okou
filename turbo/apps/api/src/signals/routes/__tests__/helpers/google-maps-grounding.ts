@@ -34,7 +34,7 @@ export function vertexMapsInteraction(options: VertexMapsResponseOptions = {}) {
   const mapsQueries = options.mapsQueries ?? 1;
   return {
     id: "maps-interaction",
-    model: "gemini-3.5-flash-lite",
+    model: "gemini-3.1-flash-lite",
     status: "completed",
     steps: [
       { type: "thought", signature: "private-reasoning-signature" },
