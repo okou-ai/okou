@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.741.0](https://github.com/okou-ai/okou/compare/core-v8.740.1...core-v8.741.0) (2026-10-10)
+
+
+### Features
+
+* add sidebar-first artifact previews behind a switch ([#38605](https://github.com/okou-ai/okou/issues/38605)) ([81341fb](https://github.com/okou-ai/okou/commit/81341fbbe6bd58b7a0e80823203a429e62e2887a))
+
 ## [8.740.1](https://github.com/okou-ai/okou/compare/core-v8.740.0...core-v8.740.1) (2026-10-10)
 
 

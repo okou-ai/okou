@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.45.1...sandbox-firecracker-v0.46.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
 ## [0.45.1](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.45.0...sandbox-firecracker-v0.45.1) (2026-10-10)
 
 ## [0.45.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.44.16...sandbox-firecracker-v0.45.0) (2026-10-10)

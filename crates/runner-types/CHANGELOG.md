@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/okou-ai/okou/compare/runner-types-v0.5.4...runner-types-v0.6.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
 ## [0.5.4](https://github.com/okou-ai/okou/compare/runner-types-v0.5.3...runner-types-v0.5.4) (2026-10-10)
 
 ## [0.5.3](https://github.com/okou-ai/okou/compare/runner-types-v0.5.2...runner-types-v0.5.3) (2026-10-10)

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.6.5](https://github.com/okou-ai/okou/compare/host-worker-v1.6.4...host-worker-v1.6.5) (2026-10-10)
+
+
+### Bug Fixes
+
+* restore inline artifact previews ([#38579](https://github.com/okou-ai/okou/issues/38579)) ([4b9ce32](https://github.com/okou-ai/okou/commit/4b9ce32d5a84048aba394dd6f4297303002bdf0f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.741.0
+
 ## [1.6.4](https://github.com/okou-ai/okou/compare/host-worker-v1.6.3...host-worker-v1.6.4) (2026-10-10)
 
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.224.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.223.2...runner-rs-v0.224.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.223.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.223.1...runner-rs-v0.223.2) (2026-10-10)
 
 
