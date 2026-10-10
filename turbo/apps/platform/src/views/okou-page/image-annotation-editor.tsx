@@ -1422,7 +1422,7 @@ function EditorStage({
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/30">
       <div
-        className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-5"
+        className="flex min-h-0 flex-1 overflow-auto p-5"
         style={STAGE_QUERY_CONTAINER}
       >
         <div
@@ -1433,7 +1433,7 @@ function EditorStage({
           }}
           onPointerUp={handlers.onPointerUp}
           style={{ touchAction: "none" }}
-          className="relative shrink-0 cursor-crosshair select-none"
+          className="relative m-auto shrink-0 cursor-crosshair select-none"
           data-testid="image-annotation-surface"
         >
           <img
