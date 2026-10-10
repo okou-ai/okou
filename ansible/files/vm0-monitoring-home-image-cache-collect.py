@@ -163,6 +163,7 @@ def read_snapshot(runner):
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
+                # The producer's process group no longer exists.
                 pass
             process.wait()
 
@@ -191,6 +192,7 @@ def publish(directory, text):
         try:
             os.unlink(name, dir_fd=fd)
         except FileNotFoundError:
+            # No temporary file remains, including after atomic replacement.
             pass
         os.close(fd)
 

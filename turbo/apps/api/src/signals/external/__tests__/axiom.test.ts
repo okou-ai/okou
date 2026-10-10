@@ -38,6 +38,114 @@ function sdkClientForDataset(
 }
 
 describe("shared SDK ingestion", () => {
+  it("preserves independent disk samples through the metrics HTTP transport", async () => {
+    // Telemetry-client suite exception: the ingestion payload is the subject,
+    // and no production read endpoint exposes these measurements. Construct
+    // the run through public endpoints and keep route tests on HTTP outcomes.
+    const owned = await publicChatActor(context);
+    const { runId } = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "measure rootfs and home independently",
+    });
+    const { claim } = await owned.claimChatRun(owned.runnerGroup, runId);
+    await owned.run(async () => {
+      const metric = {
+        ts: "2026-10-10T00:00:00Z",
+        cpu: 1,
+        mem_used: 10,
+        mem_total: 100,
+        disk_used: 20,
+        disk_total: 100,
+      };
+      const rootfs = {
+        used_bytes: 20,
+        total_bytes: 100,
+        available_bytes: 70,
+        used_inodes: 4,
+        total_inodes: 10,
+        available_inodes: 5,
+      };
+      const home = {
+        used_bytes: 200,
+        total_bytes: 200,
+        available_bytes: 0,
+        used_inodes: 20,
+        total_inodes: 20,
+        available_inodes: 0,
+      };
+      const receivedMetrics: unknown[] = [];
+      server.use(
+        http.post(
+          "https://api.axiom.co/v1/datasets/sandbox-telemetry-metrics/ingest",
+          async ({ request }) => {
+            const events: unknown = await request.json();
+            if (!Array.isArray(events)) {
+              throw new Error("Expected an Axiom metric array");
+            }
+            receivedMetrics.push(...events);
+            return HttpResponse.json({
+              ingested: events.length,
+              failed: 0,
+              processedBytes: 1,
+              blocksCreated: 1,
+              walLength: 1,
+            });
+          },
+        ),
+      );
+      const response = await accept(
+        setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
+          webhookTelemetryContract,
+        ).send({
+          headers: { authorization: `Bearer ${claim.sandboxToken}` },
+          body: {
+            runId,
+            metrics: [
+              metric,
+              { ...metric, rootfs, home },
+              { ...metric, rootfs },
+              { ...metric, home },
+            ],
+          },
+        }),
+        [200],
+      );
+      expect(response.body).toStrictEqual({ success: true, id: runId });
+      const expected = {
+        _time: metric.ts,
+        runId,
+        userId: owned.actor.userId,
+        cpu: metric.cpu,
+        mem_used: metric.mem_used,
+        mem_total: metric.mem_total,
+        disk_used: metric.disk_used,
+        disk_total: metric.disk_total,
+      };
+      const rootfsDimensions = {
+        rootfs_used_bytes: 20,
+        rootfs_total_bytes: 100,
+        rootfs_available_bytes: 70,
+        rootfs_used_inodes: 4,
+        rootfs_total_inodes: 10,
+        rootfs_available_inodes: 5,
+      };
+      const homeDimensions = {
+        home_used_bytes: 200,
+        home_total_bytes: 200,
+        home_available_bytes: 0,
+        home_used_inodes: 20,
+        home_total_inodes: 20,
+        home_available_inodes: 0,
+      };
+      expect(receivedMetrics).toStrictEqual([
+        expected,
+        { ...expected, ...rootfsDimensions, ...homeDimensions },
+        { ...expected, ...rootfsDimensions },
+        { ...expected, ...homeDimensions },
+      ]);
+    });
+  });
+
   it("records ID-free MCP name-lookup timings through the API operation interface", async () => {
     // Telemetry-client suite exception: this event has no API read endpoint.
     await recordMcpClientNameLookup({
