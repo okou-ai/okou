@@ -472,13 +472,20 @@ function createIndicatorRows(args: IndicatorOwner) {
 }
 
 /**
- * Active and unread indicators for up to 128 visible agents in the current
- * organization. Agent IDs are loaded first and passed to the bounded thread
- * reads, so those reads do not join against or correlate to the agents table.
+ * Bounded, non-atomic presentation indicators, not per-Run lifecycle status.
+ * Active reflects eligible pending/running Runs; unread reflects unread terminal
+ * markers, including failed and cancelled Runs. Independent reads can observe
+ * different states during transitions. Missing entries do not prove inactivity
+ * or completion, and exclusions do not promise eventual appearance.
+ *
+ * Covers up to 128 visible agents in the current organization. Agent IDs are
+ * loaded first and passed to the bounded thread reads, so those reads do not
+ * join against or correlate to the agents table.
  * Each indicator source returns at most 50 rows. Only Run terminal markers
  * contribute unread indicators; they are resolved for at most 128 candidate
- * threads with uncorrelated reads. Unread agent state takes precedence over
- * active state.
+ * threads with uncorrelated reads. Active wins for a thread; unread wins for an
+ * agent, which can still have other active threads. See indicatorsSchema for
+ * the public bounds and outcome-observation contract.
  */
 export function chatIndicators(args: {
   readonly userId: string;
