@@ -38,11 +38,7 @@ import {
   runConnectorCatalogSelection,
 } from "./thread-connected-accounts.signals";
 import {
-  type PersistedRunEnvironmentSnapshot,
   pendingOkouTokenSecrets,
-  resolveRunBodyEnvironment,
-  type RunBodyEnvironment,
-  selectedAgentRunVariables,
   withoutLegacyAgentRunEnvironmentEntries,
 } from "./run-body-environment";
 import { createThreadContext } from "./thread-context.signals";
@@ -584,7 +580,6 @@ function queuedPromptRunInput(args: {
     threadSessionResolution: args.session,
     featureSwitchContext: args.features,
     prompt: args.promptAndSkills.userPrompt,
-    appendSystemPrompt: args.promptAndSkills.appendedSystemPrompt,
     threadId: input.threadId,
     queuedMessage: input.queuedMessage,
     requiredOfficialWorkflowIds:
@@ -1861,6 +1856,14 @@ export function createThreadClaimRunObjects(
       if ("error" in templates) {
         return queuedMessageAdmissionFailure(args, launch, templates.error);
       }
+      const officialWorkflow = await get(officialWorkflow$);
+      if (isRouteError(officialWorkflow)) {
+        return queuedMessageAdmissionFailure(
+          args,
+          launch,
+          officialWorkflow.body.error,
+        );
+      }
       const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
       if (isRouteError(promptAndSkills)) {
         return queuedMessageAdmissionFailure(
@@ -2428,6 +2431,10 @@ export function createThreadClaimRunObjects(
       if (!model.ok) {
         return model.failure;
       }
+      const officialWorkflow = await get(officialWorkflow$);
+      if (isRouteError(officialWorkflow)) {
+        return { kind: "run_error", response: officialWorkflow };
+      }
       const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
       if (isRouteError(promptAndSkills)) {
         return { kind: "run_error", response: promptAndSkills };
@@ -2442,12 +2449,7 @@ export function createThreadClaimRunObjects(
         run: {
           ...selection.command,
           triggerSource: args.triggerSource ?? "automation-schedule",
-          body: {
-            ...selection.command.body,
-            prompt: promptAndSkills.userPrompt,
-          },
           computerUseHostId: computerUseHostGrant?.hostId,
-          appendSystemPrompt: promptAndSkills.appendedSystemPrompt,
           callbacks: args.callbacks,
           agentRunMetadata: workflowAutomationRunMetadata(
             args.due.automation,
@@ -2834,9 +2836,6 @@ export function createThreadClaimRunObjects(
       );
     },
   );
-  const sessionPrompt$ = computed(async (get) => {
-    return (await get(selectedCommand$))?.appendSystemPrompt;
-  });
   const preCreatePostAuthorizationPostAuthorization$ = computed(
     async (get): Promise<AgentRunAfterPreCreate | CreateRunErrorResult> => {
       const { timing } = await get(preCreateInput$);
@@ -2889,14 +2888,12 @@ export function createThreadClaimRunObjects(
     return thread.cloudBrowserEnabled;
   });
   const preCreatePreparedInput$ = computed(async (get) => {
-    const [input, resolution, appendSystemPrompt, fullCommand, catalog] =
-      await Promise.all([
-        get(preCreatePostAuthorizationPostAuthorization$),
-        get(threadSession$),
-        get(sessionPrompt$),
-        get(selectedCommand$),
-        get(claimCatalog$),
-      ]);
+    const [input, resolution, fullCommand, catalog] = await Promise.all([
+      get(preCreatePostAuthorizationPostAuthorization$),
+      get(threadSession$),
+      get(selectedCommand$),
+      get(claimCatalog$),
+    ]);
     if (!fullCommand) {
       return null;
     }
@@ -2917,7 +2914,6 @@ export function createThreadClaimRunObjects(
         modelProviderId: input.command.modelProviderId,
         agentRunModelPin: input.command.agentRunModelPin,
         body,
-        appendSystemPrompt,
       },
       threadSessionResolution: resolution,
       cloudBrowserEnabled: await get(cloudBrowserEnabled$),
@@ -2928,16 +2924,11 @@ export function createThreadClaimRunObjects(
     if (!input || "status" in input) {
       return input;
     }
-    return {
-      input,
-      args: await measureAgentRunPreCreate(
-        input.timing,
-        "api_dispatch_pre_create_agent_build_create_run_args",
-        () => {
-          return buildProductRunArgs(input);
-        },
-      ),
-    };
+    const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
+    if (isRouteError(promptAndSkills)) {
+      return promptAndSkills;
+    }
+    return { input, args: buildProductRunArgs(input, promptAndSkills) };
   });
   const runDisabledPaidToolsSnapshot$ = computed(async (get) => {
     const selected = bootstrap;
@@ -2955,18 +2946,9 @@ export function createThreadClaimRunObjects(
       member: (await get(selected.memberMetadata$)).preferences ?? undefined,
     };
   });
-  const runEnvironmentSnapshot$ = computed(async (get) => {
-    const selected = bootstrap;
-    return {
-      orgId: selected.orgId,
-      userId: selected.userId,
-      variables: (await get(selected.environment$)).variables,
-    };
-  });
   const resources = {
     disabledPaidTools$: runDisabledPaidToolsSnapshot$,
     member$: runMemberSnapshot$,
-    environment$: runEnvironmentSnapshot$,
   };
   const preCreateModelFeatureSwitchContext$ = computed(async (get) => {
     const observed = await get(featureSwitchContext$);
@@ -2983,17 +2965,6 @@ export function createThreadClaimRunObjects(
   );
   const preparedPromptAndSkillVolumes$ = computed(
     async (get): Promise<PromptAndSkillVolumes | CreateRunErrorResult> => {
-      if (!(await get(isAutomation$))) {
-        const templates = await get(runTemplates$);
-        if ("error" in templates) {
-          return badRequestMessage(templates.error.message);
-        }
-      }
-      // Preserve model and official-workflow admission before final rendering.
-      const officialWorkflow = await get(officialWorkflow$);
-      if (isRouteError(officialWorkflow)) {
-        return officialWorkflow;
-      }
       const result = await settle(get(promptAndSkillVolumes$));
       if (!result.ok) {
         if (result.error instanceof PromptAndSkillVolumesError) {
@@ -3592,36 +3563,18 @@ export function createThreadClaimRunObjects(
     );
   });
   const body$ = computed(async (get) => {
-    const [input, resolved, persistedEnvironment, resolvedEnvironment] =
-      await Promise.all([
-        get(contextInput$),
-        get(execution$),
-        get(runEnvironmentSnapshot$),
-        selectedRunContextShared
-          ? get(selectedRunContextShared.bodyEnvironment$)
-          : undefined,
-      ]);
+    const [input, resolved, bodyEnvironment] = await Promise.all([
+      get(contextInput$),
+      get(execution$),
+      get(bootstrap.bodyEnvironment$),
+    ]);
     if (isRouteError(resolved)) {
       return resolved;
-    }
-    if (isRouteError(persistedEnvironment)) {
-      return persistedEnvironment;
     }
     if (resolved.orgId !== input.args.orgId) {
       return notFound("Resource not found");
     }
-    if (
-      resolvedEnvironment !== undefined &&
-      isRouteError(resolvedEnvironment)
-    ) {
-      return resolvedEnvironment;
-    }
-    return buildResolvedRunBody({
-      initialBody: initialRunBody(input.args),
-      persistedEnvironment,
-      canonicalOkouRuntime: input.args.includeOkouTokenSecret === true,
-      resolvedEnvironment,
-    });
+    return { ...initialRunBody(input.args), ...bodyEnvironment };
   });
   const runBodyBodyContext$ = computed(async (get) => {
     const [input, resolved, body, requestedFramework, featureSwitchContext] =
@@ -4371,15 +4324,7 @@ export function createThreadClaimRunObjects(
           context.piSandbox === undefined ? context.framework : ("pi" as const),
         runnerProfile: DEFAULT_PROFILE,
       };
-      const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
-      if (isRouteError(promptAndSkills)) {
-        return promptAndSkills;
-      }
-      const body = {
-        ...context.body,
-        prompt: promptAndSkills.userPrompt,
-        appendSystemPrompt: promptAndSkills.appendedSystemPrompt,
-      };
+      const { body } = context;
       const {
         officialWorkflowRun,
         officialWorkflowFacts,
@@ -4764,7 +4709,7 @@ export function createThreadClaimRunObjects(
         get(runIdentity$),
         get(runMemberSnapshot$),
         get(runDisabledPaidToolsSnapshot$),
-        get(runEnvironmentSnapshot$),
+        get(bootstrap.bodyEnvironment$),
       ]);
       signal.throwIfAborted();
       return {
@@ -7765,11 +7710,7 @@ interface ThreadRunOwner {
 /** The run-request facts Thread sets for a claimed queue head. */
 type ThreadRunBody = Pick<
   AgentRunCreateBody,
-  | "modelProvider"
-  | "prompt"
-  | "realAgentInPreview"
-  | "captureNetworkBodies"
-  | "sessionId"
+  "modelProvider" | "realAgentInPreview" | "captureNetworkBodies" | "sessionId"
 > & {
   /** The queue head's Agent; a Thread run always names it. */
   readonly agentId: string;
@@ -7781,7 +7722,6 @@ interface ThreadRunCommand {
   readonly body: ThreadRunBody;
   readonly apiStartTime: number;
   readonly triggerSource?: TriggerSource;
-  readonly appendSystemPrompt?: string;
   readonly callbacks?: readonly AgentRunsCreateRunCallback[];
   readonly chatThreadId: string;
   readonly connectorSourceId?: string;
@@ -7806,11 +7746,8 @@ interface ThreadRunCommand {
 }
 
 /** The selection-time command: everything but the prompt-time facts. */
-type ThreadRunSelection = Omit<
-  ThreadRunCommand,
-  "body" | "appendSystemPrompt" | "callbacks"
-> & {
-  readonly body: Omit<ThreadRunBody, "prompt">;
+type ThreadRunSelection = Omit<ThreadRunCommand, "body" | "callbacks"> & {
+  readonly body: ThreadRunBody;
 };
 /** The identity read before Pi eligibility is decided. */
 type ThreadRunIdentity = Omit<ThreadRunSelection, "piExecution"> & {
@@ -8634,27 +8571,6 @@ function initialRunBody(args: {
     : args.body;
 }
 
-function buildResolvedRunBody(args: {
-  readonly initialBody: CreateRunBody;
-  readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
-  readonly canonicalOkouRuntime: boolean;
-  readonly resolvedEnvironment?: RunBodyEnvironment;
-}): CreateRunBody {
-  const runVars = args.initialBody.vars;
-  const environment =
-    args.resolvedEnvironment ??
-    resolveRunBodyEnvironment({
-      runVars,
-      runSecrets: args.initialBody.secrets,
-      persistedEnvironment: args.persistedEnvironment,
-      canonicalOkouRuntime: args.canonicalOkouRuntime,
-    });
-  return {
-    ...args.initialBody,
-    ...environment,
-  };
-}
-
 // Emitted as the agent_run_origin observability dimension. The values name what
 // started the run, so the fallback is "direct" (not started by an automation)
 // rather than a restatement that this is an agent run.
@@ -8753,15 +8669,18 @@ function agentRunOrigin(args: {
 }
 
 function createRunBody(args: {
-  readonly body: AgentRunCreateBody;
+  readonly body: Omit<AgentRunCreateBody, "prompt">;
   readonly agent: AgentRunRecord;
   readonly permissionPolicies: FirewallPolicies | null | undefined;
   readonly triggerSource: TriggerSource | undefined;
-  readonly appendSystemPrompt: string | undefined;
+  readonly prompt: Pick<
+    PromptAndSkillVolumes,
+    "userPrompt" | "appendedSystemPrompt"
+  >;
 }) {
   const triggerSource = args.triggerSource ?? "web";
   return {
-    prompt: args.body.prompt,
+    prompt: args.prompt.userPrompt,
     agentId: args.agent.id,
     sessionId: args.body.sessionId,
     conversationId: args.body.conversationId,
@@ -8772,9 +8691,8 @@ function createRunBody(args: {
     settings: args.body.settings,
     permissionPolicies: args.permissionPolicies ?? undefined,
     triggerSource,
-    appendSystemPrompt: args.appendSystemPrompt,
+    appendSystemPrompt: args.prompt.appendedSystemPrompt,
     disallowedTools: [...DISALLOWED_TOOLS],
-    vars: selectedAgentRunVariables(args.agent.id),
   };
 }
 
@@ -8858,7 +8776,10 @@ interface ProductRunArgs {
   readonly timingDimensions?: ApiDispatchTimingDimensions;
 }
 
-function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
+function buildProductRunArgs(
+  args: ProductRunArgsInput,
+  prompt: Pick<PromptAndSkillVolumes, "userPrompt" | "appendedSystemPrompt">,
+): ProductRunArgs {
   const command = args.command;
   return {
     ...selectedRunModelProviderArgs(command),
@@ -8868,7 +8789,7 @@ function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
       agent: args.agent,
       permissionPolicies: args.runPermissionPolicies,
       triggerSource: command.triggerSource,
-      appendSystemPrompt: command.appendSystemPrompt,
+      prompt,
     }),
     apiStartTime: command.apiStartTime,
     chatThreadId: command.chatThreadId,
