@@ -2,6 +2,7 @@
 
 mod common;
 
+use common::json_fixture::{JsonFieldTemplate, serialized_len};
 use guest_agent::masker::SecretMasker;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -48,10 +49,11 @@ fn capture_batch(
                 .ok_or_else(|| io::Error::other("event omitted a u32 sequenceNumber"))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    // A singleton adds only the event's bytes to the empty envelope. Count
+    // each actual parsed event without cloning it into another owned Value.
+    let envelope_bytes = serialized_len(&json!({ "runId": run_id, "events": [] }))?;
     let conservative_bytes = events.iter().try_fold(0usize, |total, event| {
-        let singleton = json!({ "runId": run_id, "events": [event] });
-        let bytes = serde_json::to_vec(&singleton)?.len();
-        Ok::<usize, serde_json::Error>(total + bytes)
+        Ok::<usize, serde_json::Error>(total + envelope_bytes + serialized_len(event)?)
     })?;
 
     Ok(CapturedBatch {
@@ -67,21 +69,33 @@ async fn claude_code_drains_healthy_backlog_in_bounded_fifo_batches()
     let mock_cli = common::build_and_locate_mock()?;
     let tmp = tempfile::tempdir()?;
     let mut server = common::ControlledHttpServer::start().await?;
-    let mut prompt_lines = vec!["@ECHO@".to_string()];
-    prompt_lines.extend((0..SMALL_EVENT_COUNT).map(|index| {
-        json!({ "type": "assistant", "index": index, "content": "small" }).to_string()
-    }));
+    let mut prompt = b"@ECHO@".to_vec();
+    for index in 0..SMALL_EVENT_COUNT {
+        prompt.push(b'\n');
+        serde_json::to_writer(
+            &mut prompt,
+            &json!({ "type": "assistant", "index": index, "content": "small" }),
+        )?;
+    }
     // Hold more than 16 MiB, but less than 32 MiB, behind the first HTTP response.
-    prompt_lines.extend((0..LARGE_EVENT_COUNT).map(|index| {
-        json!({
+    let event = JsonFieldTemplate::new(
+        &json!({
             "type": "assistant",
-            "marker": format!("large-{index}"),
+            "marker": "large-0",
             "content": "x".repeat(LARGE_EVENT_BYTES),
-        })
-        .to_string()
-    }));
-    prompt_lines.push(json!({ "type": "result", "marker": "batching-sentinel" }).to_string());
-    let prompt = prompt_lines.join("\n");
+        }),
+        "marker",
+    )?;
+    for index in 0..LARGE_EVENT_COUNT {
+        prompt.push(b'\n');
+        event.write(&mut prompt, &format!("large-{index}"))?;
+    }
+    prompt.push(b'\n');
+    serde_json::to_writer(
+        &mut prompt,
+        &json!({ "type": "result", "marker": "batching-sentinel" }),
+    )?;
+    let prompt = String::from_utf8(prompt)?;
     let total_events = SMALL_EVENT_COUNT + LARGE_EVENT_COUNT + 1;
 
     unsafe {
