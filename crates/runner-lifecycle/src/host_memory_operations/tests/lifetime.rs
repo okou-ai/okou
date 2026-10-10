@@ -119,6 +119,78 @@ async fn outer_panic_drops_only_receiver_not_the_real_io_owner() {
 }
 
 #[tokio::test]
+async fn producer_panic_keeps_transferred_blocking_io_owned_and_shutdown_joined() {
+    let env = Env::new(14).await;
+    let permit = grant(
+        &env.operations,
+        Plan::HostIo {
+            growth_bytes: 8 * MIB,
+        },
+    )
+    .await;
+    let path = env.dir.path().join("required-after-producer-panic");
+    let saved = path.clone();
+    let (mut writer, mut reader) = UnixStream::pair().unwrap();
+    writer
+        .set_write_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    reader
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    let (panic_now, panicking) = oneshot::channel();
+    let (finished, io_finished) = oneshot::channel();
+    let task: super::super::MemoryOperationTask<()> = permit
+        .spawn(move |operation| async move {
+            let _io = tokio::task::spawn_blocking(move || {
+                writer.write_all(&vec![0x5a; MIB as usize]).unwrap();
+                writer.shutdown(std::net::Shutdown::Write).unwrap();
+                std::fs::write(saved, b"accepted I/O survives its producer").unwrap();
+                // The physical owner finishes independently after its async
+                // waiter panics. No phase completion or capacity is fabricated.
+                drop(operation);
+                finished.send(()).unwrap();
+            });
+            panicking.await.unwrap();
+            panic!("producer panics while accepted blocking I/O is unfinished");
+        })
+        .unwrap();
+    let reader = tokio::task::spawn_blocking(move || {
+        let mut first = [0];
+        reader.read_exact(&mut first).unwrap();
+        assert_eq!(first, [0x5a]);
+        reader
+    })
+    .await
+    .unwrap();
+    assert!(!path.exists());
+    panic_now.send(()).unwrap();
+    assert_eq!(task.join().await.err().unwrap(), Error::ProducerLost);
+    let shutdown = env.operations.close_and_wait();
+    tokio::pin!(shutdown);
+    let early = futures_util::poll!(shutdown.as_mut());
+    let premature = early.is_ready();
+    // Always finish and join the real fixture I/O before a regression assertion,
+    // including on the broken implementation whose shutdown returned early.
+    drain(reader).await;
+    io_finished.await.unwrap();
+    let report = match early {
+        std::task::Poll::Ready(report) => report.unwrap(),
+        std::task::Poll::Pending => shutdown.await.unwrap(),
+    };
+    assert!(
+        !premature,
+        "shutdown must join the physical guard after its async producer panics"
+    );
+    assert_eq!(report.tracked_tasks, 0);
+    assert_eq!(report.uncertain, 1);
+    assert_eq!(report.ordinary_growth_bytes, 8 * MIB);
+    assert_eq!(
+        tokio::fs::read(path).await.unwrap(),
+        b"accepted I/O survives its producer"
+    );
+}
+
+#[tokio::test]
 async fn failed_or_panicked_started_producer_never_returns_unused_capacity() {
     let env = Env::new(14).await;
     let permit = grant(&env.operations, fresh(8)).await;

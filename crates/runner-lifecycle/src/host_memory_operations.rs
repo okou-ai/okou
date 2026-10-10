@@ -166,7 +166,8 @@ pub struct MemoryOperationSnapshot {
     pub uncertain: usize,
     pub ordinary_growth_bytes: u64,
     pub cleanup_growth_bytes: u64,
-    /// May outlive a settled VM phase while required post-exit work completes.
+    /// Tracked owners, not just callback tasks: includes required settled-phase
+    /// tails and physical guards surviving their async producer.
     pub tracked_tasks: usize,
     pub closed: bool,
 }

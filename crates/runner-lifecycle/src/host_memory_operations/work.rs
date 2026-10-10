@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use sandbox::{BackingProcessIdentity, SandboxBackingProcess};
 use tokio::sync::oneshot;
+use tokio_util::task::task_tracker::TaskTrackerToken;
 
 use super::accounting::{CapturedBacking, CapturedPlan, Purpose, Stage};
 use super::{MemoryOperationError as Error, MemoryOperationId, Result, Shared};
@@ -21,13 +22,17 @@ impl<T> MemoryOperationTask<T> {
 }
 
 /// The real started phase owner. Drop/panic retains uncertainty, not capacity
-/// credit. No operation key can be used to mutate another owner's record.
+/// credit. Tracking follows the guard into accepted physical work independently
+/// of its async producer. No key can mutate another owner's record.
 #[must_use]
 pub struct MemoryOperation {
     pub(super) shared: Arc<Shared>,
     pub(super) id: Option<MemoryOperationId>,
     // Retained across row removal so provider Drop cannot run under accounting.
     pub(super) plan: CapturedPlan,
+    // Shared with the callback: one owner count, retained through real I/O even
+    // when the callback panics or a blocking JoinHandle is dropped.
+    pub(super) _tracking: Arc<TaskTrackerToken>,
 }
 
 impl MemoryOperation {

@@ -79,8 +79,10 @@ impl MemoryGrowthPermit {
 
     /// Transfer accepted work to an independently progressing tracked owner.
     /// `work` is invoked inside that task, not before registration. The returned
-    /// receiver cannot abort it. Existing blocking I/O/producer owners must still
-    /// be joined by `work`; dropping their futures does not cancel physical I/O.
+    /// receiver cannot abort it. The guard retains the same tracked owner when
+    /// transferred into blocking I/O, even if its async producer panics. Existing
+    /// I/O/producer owners must still be joined by `work`; dropping their futures
+    /// does not cancel physical I/O.
     /// The real phase owner explicitly calls `complete_phase` after its positive
     /// boundary; merely returning a result never settles the allowance.
     pub fn spawn<F, Fut, T>(mut self, work: F) -> Result<MemoryOperationTask<T>>
@@ -101,18 +103,23 @@ impl MemoryGrowthPermit {
             }
             ledger.start(id)?;
             self.id = None;
+            // One bounded owner spans both the callback (including settled-phase
+            // tails) and its physical guard. A producer panic cannot unregister
+            // unfinished blocking I/O merely by dropping its async waiter.
+            let tracking = Arc::new(self.shared.tasks.token());
             let operation = MemoryOperation {
                 shared: Arc::clone(&self.shared),
                 id: Some(id),
                 plan: self.plan.clone(),
+                _tracking: Arc::clone(&tracking),
             };
-            // Register before shutdown can observe the transfer. Only wrapping
-            // happens here: spawning (including synchronous rejection/drop by a
-            // stopped runtime) must occur outside accounting's mutation lock.
-            self.shared.tasks.track_future(async move {
+            // Registration is serialized with close; runtime spawn/rejection and
+            // destruction of either owner occur outside accounting's lock.
+            async move {
+                let _tracking = tracking;
                 let result = work(operation).await;
                 let _ = sender.send(result);
-            })
+            }
         };
         drop(runtime.spawn(owned));
         Ok(MemoryOperationTask { completion })
