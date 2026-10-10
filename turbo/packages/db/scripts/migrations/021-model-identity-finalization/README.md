@@ -175,10 +175,13 @@ Release 1 commit `b6919718b6d856dfa3a7c500b6e899dd3fde7674`. Deployment of that
 resolver, actual serving writers, retained targets and all in-flight consumers
 must still be verified; a source change does not execute the floor.
 
-The disposable database regression executes the authenticated Runner usage
-webhook against outgoing-schema historical fixtures. It compares legacy,
-selection-only Auto (a deliberately incompatible control), and operator-captured
-Auto, including expired tokens, unchanged categories and idempotent replay.
+The disposable database regression owns the historical SQL migration contract:
+bounded cancelled-alias recovery captures the original usage identity, preserves
+compacted usage, and leaves completed aliases and mismatched runtimes blocked.
+It does not establish authenticated Runner lifecycle or webhook acceptance.
+API behavior tests construct accounts and Runs through production interfaces;
+no SQL-seeded Run or locally manufactured Runner credential substitutes for that
+lifecycle.
 
 Only the temporary selected replacement-lineage projection is retired: migration
 1364 has rebound its relationships. Physical legacy catalog/routes and execution,

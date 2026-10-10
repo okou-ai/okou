@@ -12,7 +12,6 @@ import { agentRuns } from "../../../src/runtime/agent-run";
 import { applyPendingMigrations } from "../../migration-runner";
 import { validateCanonicalModelSelections } from "../../test-canonical-model-selections-permanent";
 import { DRIZZLE_MIGRATE_OUT } from "../../../drizzle.config";
-import { apiTestEnvironment } from "../../../../../apps/api/src/__tests__/test-environment";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert(databaseUrl, "DATABASE_URL_required_for_disposable_test_database");
@@ -244,18 +243,10 @@ try {
   );
   // The historical Pi producer reported the selected alias. Missing usage
   // observations must not turn its upstream preset into a new usage identity.
-  const reference = "00000000-0000-4000-8000-000000000006";
   const cancelledAlias = "00000000-0000-4000-8000-000000000007";
-  const unsafeAuto = "00000000-0000-4000-8000-000000000008";
   const wrongRuntime = "00000000-0000-4000-8000-000000000009";
   const completedAlias = "00000000-0000-4000-8000-000000000010";
-  for (const id of [
-    reference,
-    cancelledAlias,
-    unsafeAuto,
-    wrongRuntime,
-    completedAlias,
-  ]) {
+  for (const id of [cancelledAlias, wrongRuntime, completedAlias]) {
     await db.query(
       `INSERT INTO agent_runs (id,session_id,user_id,org_id,status,prompt,trigger_source,autonomy_budget,
       model_provider,selected_model,model_runtime_provider,model_runtime_model,built_in_model_key_id,launch_snapshot,created_at)
@@ -264,41 +255,16 @@ try {
         id,
         session,
         id === completedAlias ? "completed" : "cancelled",
-        id === unsafeAuto ? "auto" : "okou-1.0-max",
+        "okou-1.0-max",
         id === wrongRuntime ? "@preset/unrelated" : "@preset/okou-1-0-max",
         key,
       ],
     );
   }
-  function runnerUsage(id: string, provider: string) {
-    const result = spawnSync(
-      process.execPath,
-      [
-        "--import",
-        "tsx",
-        fileURLToPath(new URL("runner-usage.ts", import.meta.url)),
-        id,
-        provider,
-      ],
-      {
-        env: { ...env, ...apiTestEnvironment, DATABASE_URL: url.toString() },
-        encoding: "utf8",
-      },
-    );
-    assert.equal(result.status, 0, result.stderr);
-  }
-  runnerUsage(reference, "okou-1.0-max");
-  runnerUsage(unsafeAuto, "@preset/okou-1-0-max");
-  await db.query("DELETE FROM usage_event WHERE run_id=$1", [unsafeAuto]);
-  await db.query("DELETE FROM billing_run_attribution WHERE run_id=$1", [
-    unsafeAuto,
-  ]);
-  await db.query("DELETE FROM agent_runs WHERE id=$1", [unsafeAuto]);
-  assert.equal(cli("runs", ["--after", alias, "--migrate"]).updated, 1);
-  const cancellationPreview = cli("runs", ["--after", reference], true);
+  const cancellationPreview = cli("runs", ["--after", alias], true);
   assert.equal(cancellationPreview.classifications.cancelled_alias, 1);
   assert.equal(cancellationPreview.updated, 0);
-  assert.equal(cli("runs", ["--after", reference, "--migrate"]).updated, 1);
+  assert.equal(cli("runs", ["--after", alias, "--migrate"]).updated, 1);
   const normalizedCancellation = (
     await db.query(
       "SELECT selected_model,model_runtime_model,model_usage_provider FROM agent_runs WHERE id=$1",
@@ -310,7 +276,7 @@ try {
     model_runtime_model: "@preset/okou-1-0-max",
     model_usage_provider: "okou-1.0-max",
   });
-  runnerUsage(cancelledAlias, "okou-1.0-max");
+
   for (const after of [cancelledAlias, wrongRuntime]) {
     const rejected = cli("runs", ["--after", after, "--migrate"]);
     assert.equal(rejected.updated, 0);
