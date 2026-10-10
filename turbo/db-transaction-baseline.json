@@ -262,11 +262,6 @@
       "owner": "refreshAutomatic"
     },
     {
-      "id": "TX-0081",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-oauth.service.ts",
-      "owner": "resolveBuiltinConnectorAutomaticMcpCredential"
-    },
-    {
       "id": "TX-0082",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-credential-runtime.service.ts",
       "owner": "persistConnectorRefresh$"
