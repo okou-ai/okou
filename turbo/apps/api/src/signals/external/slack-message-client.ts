@@ -522,10 +522,10 @@ async function setThreadStatus(
   threadTs: string,
   status: string,
 ): Promise<void> {
-  await web.assistant.threads.setStatus({
+  await web.apiCall("agents.sessions.setStatus", {
     channel_id: channel,
     thread_ts: threadTs,
-    status,
+    status: status ? "processing" : "active",
   });
 }
 
