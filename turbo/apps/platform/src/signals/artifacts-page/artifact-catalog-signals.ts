@@ -1,4 +1,7 @@
 import { command } from "ccstate";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import { createArtifactCatalogSidebarSignals } from "./artifact-catalog-sidebar.ts";
 import {
   artifactCatalogContract,
   type ArtifactCatalogKind,
@@ -29,6 +32,9 @@ import { createArtifactCatalogSignals } from "./create-artifact-catalog-signals.
  * sidebars create their own thread-scoped instances.
  */
 const pageCatalog = createArtifactCatalogSignals();
+
+export const artifactCatalogSidebar =
+  createArtifactCatalogSidebarSignals(pageCatalog);
 
 export const selectedArtifactCatalogKind$ = pageCatalog.selectedKind$;
 
@@ -152,6 +158,7 @@ export const prepareArtifactCatalogPreviewHistory$ = command(
 
 export const closeArtifactCatalogPreview$ = command(
   ({ get, set }, signal: AbortSignal) => {
+    set(artifactCatalogSidebar.close$);
     const artifactId = artifactIdFromCatalogSearchParams(get(searchParams$));
     const previewArtifactId = artifactIdFromHistoryState(
       get(historyState$),
@@ -177,6 +184,10 @@ const resetOpenArtifactSignal$ = resetSignal();
 
 export const openArtifact$ = command(
   async ({ get, set }, artifactId: string, signal: AbortSignal) => {
+    if (get(featureSwitch$)[FeatureSwitchKey.ArtifactSidebarPreview]) {
+      await set(artifactCatalogSidebar.openArtifact$, artifactId, signal);
+      return;
+    }
     const openSignal = set(resetOpenArtifactSignal$, signal);
     set(pageCatalog.selectArtifact$, artifactId);
     const detail = await get(pageCatalog.selectedArtifactDetail$);

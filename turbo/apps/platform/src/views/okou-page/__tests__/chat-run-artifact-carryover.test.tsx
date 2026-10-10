@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
@@ -87,6 +88,7 @@ async function openRelatedArtifacts(): Promise<HTMLElement> {
 
 async function setupArtifactRun(
   outputEvents: ReturnType<typeof assistantEvent>[],
+  sidebarPreviews = false,
 ): Promise<void> {
   installRunChat({
     chatEvents: [
@@ -108,6 +110,9 @@ async function setupArtifactRun(
   await setupPage({
     context,
     path: RUN_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.ArtifactSidebarPreview]: sidebarPreviews,
+    },
   });
   await readyChat();
 }
@@ -217,6 +222,39 @@ test("A carried image keeps its label and opens a lightbox over the dialog", asy
   ).resolves.toHaveAttribute("src", url);
   expect(dialog).toBeVisible();
   await closeRelatedArtifactPreview(dialog);
+});
+
+test("Sidebar-first previews dismiss the related-artifacts dialog rather than stacking a lightbox", async () => {
+  const url = artifactUrl("sidebar-evidence", "evidence.pdf");
+  await setupArtifactRun(
+    [
+      assistantEvent({
+        id: "sidebar-artifact-history",
+        runId: RUN_ID,
+        seqId: 2,
+        text: `Review [Supporting evidence](${url}) before continuing.`,
+      }),
+      assistantEvent({
+        id: "sidebar-artifact-result",
+        runId: RUN_ID,
+        seqId: 3,
+        text: "Final evidence summary",
+      }),
+    ],
+    true,
+  );
+  const dialog = await openRelatedArtifacts();
+  click(relatedArtifactRow(dialog, url));
+  const sidebar = await screen.findByTestId("artifact-sidebar");
+  await expect(
+    within(sidebar).findByTitle("evidence.pdf preview"),
+  ).resolves.toHaveAttribute("src", `${url}#navpanes=0`);
+  await waitFor(() => {
+    expect(
+      screen.queryByTestId("chat-run-related-artifacts-dialog"),
+    ).not.toBeInTheDocument();
+  });
+  expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
 });
 
 async function openRelatedArtifactOverSidebar(filename: string, body?: string) {

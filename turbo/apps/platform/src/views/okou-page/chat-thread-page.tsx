@@ -82,6 +82,7 @@ import {
   ScrollBar,
   Dialog,
   DialogContent,
+  DialogClose,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -6425,9 +6426,11 @@ function isMediaAttachment(attachment: ResolvedMessageAttachment): boolean {
 }
 
 function MessageAttachment({
+  threadId,
   attachment: a,
   onImageClick,
 }: {
+  threadId: string;
   attachment: ResolvedMessageAttachment;
   onImageClick: OpenMessageImagePreview;
 }) {
@@ -6477,6 +6480,7 @@ function MessageAttachment({
         filename={a.filename}
         onPreview={() => {
           openVideoLightbox({
+            threadId,
             url: a.url,
             filename: a.filename,
             preview: a.signals,
@@ -6498,6 +6502,7 @@ function MessageAttachment({
   ) {
     return (
       <PreviewableFileAttachmentChip
+        threadId={threadId}
         filename={a.filename}
         url={a.url}
         kind={a.kind}
@@ -6510,6 +6515,7 @@ function MessageAttachment({
   if (a.kind === "audio") {
     return (
       <PreviewableAudioAttachmentChip
+        threadId={threadId}
         filename={a.filename}
         url={a.url}
         contentType={a.contentType}
@@ -6520,6 +6526,7 @@ function MessageAttachment({
   }
   return (
     <FileAttachmentChip
+      threadId={threadId}
       filename={a.filename}
       url={a.url}
       contentType={a.contentType}
@@ -6530,10 +6537,12 @@ function MessageAttachment({
 }
 
 function UserMessageAttachmentRow({
+  threadId,
   attachments,
   onImageClick,
   testId,
 }: {
+  threadId: string;
   attachments: ResolvedMessageAttachment[];
   onImageClick: OpenMessageImagePreview;
   testId: string;
@@ -6548,6 +6557,7 @@ function UserMessageAttachmentRow({
         return (
           <MessageAttachment
             key={a.id ?? a.url}
+            threadId={threadId}
             attachment={a}
             onImageClick={onImageClick}
           />
@@ -6558,9 +6568,11 @@ function UserMessageAttachmentRow({
 }
 
 function UserMessageAttachments({
+  threadId,
   attachments,
   onImageClick,
 }: {
+  threadId: string;
   attachments: ReturnType<typeof userMessageRenderAttachments>;
   onImageClick: OpenMessageImagePreview;
 }) {
@@ -6571,11 +6583,13 @@ function UserMessageAttachments({
   return (
     <div className="mb-2 flex max-w-[85%] flex-col items-end gap-2 self-end">
       <UserMessageAttachmentRow
+        threadId={threadId}
         attachments={attachments.filter(isMediaAttachment)}
         onImageClick={onImageClick}
         testId="message-media-attachments"
       />
       <UserMessageAttachmentRow
+        threadId={threadId}
         attachments={attachments.filter((a) => {
           return !isMediaAttachment(a);
         })}
@@ -7073,9 +7087,11 @@ function UserMessageTemplateReference({
 }
 
 function UserMessageFileReference({
+  threadId,
   part,
   signals,
 }: {
+  threadId: string;
   part: Extract<UserMessagePart, { type: "file" }>;
   signals: ArtifactSignals;
 }) {
@@ -7100,6 +7116,7 @@ function UserMessageFileReference({
         filename={part.filenameSnapshot}
         onPreview={() => {
           openVideoLightbox({
+            threadId,
             url: signals.url,
             filename: part.filenameSnapshot,
             preview: signals,
@@ -7120,6 +7137,7 @@ function UserMessageFileReference({
   ) {
     reference = (
       <PreviewableFileAttachmentChip
+        threadId={threadId}
         filename={part.filenameSnapshot}
         url={signals.url}
         kind={signals.kind}
@@ -7130,6 +7148,7 @@ function UserMessageFileReference({
   } else if (signals.kind === "audio") {
     reference = (
       <PreviewableAudioAttachmentChip
+        threadId={threadId}
         filename={part.filenameSnapshot}
         url={signals.url}
         contentType={part.contentType}
@@ -7140,6 +7159,7 @@ function UserMessageFileReference({
   } else {
     reference = (
       <FileAttachmentChip
+        threadId={threadId}
         contentType={part.contentType}
         filename={part.filenameSnapshot}
         preview={signals}
@@ -7373,8 +7393,10 @@ type UserMessageStandaloneRenderPart = Exclude<
 >;
 
 function UserMessagePartView({
+  threadId,
   renderPart,
 }: {
+  threadId: string;
   renderPart: UserMessageStandaloneRenderPart;
 }): ReactNode {
   if (renderPart.type === "text") {
@@ -7403,6 +7425,7 @@ function UserMessagePartView({
   if (renderPart.type === "file") {
     return (
       <UserMessageFileReference
+        threadId={threadId}
         part={renderPart.part}
         signals={renderPart.signals}
       />
@@ -7413,9 +7436,11 @@ function UserMessagePartView({
 }
 
 function UserMessageView({
+  threadId,
   document,
   elevatedFileIds,
 }: {
+  threadId: string;
   document: UserMessageRenderDocument;
   elevatedFileIds: ReadonlySet<string>;
 }) {
@@ -7471,6 +7496,7 @@ function UserMessageView({
     renderedParts.push(
       <UserMessagePartView
         key={`${identity}:${String(occurrence)}`}
+        threadId={threadId}
         renderPart={renderPart}
       />,
     );
@@ -7493,11 +7519,13 @@ function isElevatedUserMessagePart(
 }
 
 function UserMessageContent({
+  threadId,
   document,
   attachments,
   onImageClick,
   leading,
 }: {
+  threadId: string;
   document: UserMessageRenderDocument;
   attachments: ReturnType<typeof userMessageRenderAttachments>;
   onImageClick: OpenMessageImagePreview;
@@ -7525,6 +7553,7 @@ function UserMessageContent({
   return (
     <>
       <UserMessageAttachments
+        threadId={threadId}
         attachments={elevatedAttachments}
         onImageClick={onImageClick}
       />
@@ -7537,6 +7566,7 @@ function UserMessageContent({
           <ChatUserMessageBubble>
             <div className="px-4 py-3">
               <UserMessageView
+                threadId={threadId}
                 document={document}
                 elevatedFileIds={elevatedFileIds}
               />
@@ -7770,6 +7800,7 @@ function PagedUserMessage({
           {renderDocument ? (
             <>
               <UserMessageContent
+                threadId={thread.threadId}
                 document={renderDocument}
                 attachments={allAttachments}
                 onImageClick={openLightbox}
@@ -8336,13 +8367,15 @@ function RelatedArtifactIcon({ kind }: { readonly kind: ArtifactKind }) {
 function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
   const { t } = useTranslation();
   const openArtifact = useSet(openMarkdownArtifact$);
+  const sidebarPreview =
+    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactSidebarPreview];
   const name = relatedArtifactDisplayName(card);
   const host = relatedArtifactHost(card.signals.url);
   const kind = artifactFallbackSubtitle(
     card.signals.kind,
     card.signals.filename,
   );
-  return (
+  const row = (
     <Button
       type="button"
       variant="quiet"
@@ -8376,6 +8409,7 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
       />
     </Button>
   );
+  return sidebarPreview ? <DialogClose render={row} /> : row;
 }
 
 function RelatedArtifactsDialog({
