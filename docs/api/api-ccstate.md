@@ -87,6 +87,68 @@ no commands, state, database handles or storage materialization. Its constructor
 and nested factories may read bootstrap's plain identity fields and otherwise
 only declare computeds and verified computed bundles.
 
+**Run material bundles:** Thread run preparation consumes final, persisted
+material, not intermediate selection state. Each bundle is a read-only computed
+factory over bootstrap, the picked event and ThreadContext. It returns one
+computed with the exact data the Run stores, and it reports admission failures
+through a typed error that the owning graph maps to a route result.
+
+- `createPromptAndSkillVolumesSignals(...)` returns `PromptAndSkillVolumes`:
+  `{ appendedSystemPrompt, userPrompt, skillVolumes }`.
+- `createEnvironmentSignals(...)` returns `Environment`. It merges
+  `createConnectorEnvironmentSignals(...)` and
+  `createModelProviderEnvironmentSignals(...)` (and the Run body environment)
+  in one place:
+
+```ts
+interface Environment {
+  readonly vars: Record<string, string> | undefined;
+  readonly environment: Record<string, string> | undefined; // env templates
+  readonly secrets: Record<string, string> | undefined; // decrypted, keyed by env alias
+  // Owner and storage source of each secret alias. Firewall auth uses it to
+  // refresh an expired OAuth token for the exact connector account or personal
+  // model-provider subscription; persisted as secretConnectorMap and
+  // secretConnectorMetadataMap.
+  readonly secretSources: Record<string, SecretSource>;
+  readonly firewalls: ExecutionFirewalls | undefined;
+  readonly networkPolicies: NetworkPolicies | undefined;
+  // Connector and account behind each firewall; persisted as
+  // connectorRuntimeTargets for network-policy refresh and runtime sync.
+  readonly runtimeTargets: readonly ConnectorRuntimeTargetRegistration[];
+  // Merge-only: aliases owned by custom connectors.
+  readonly reservedSecretAliases: readonly string[];
+}
+
+function createEnvironmentSignals(bootstrap, pickedEvent$, threadContext) {
+  const connector$ = createConnectorEnvironmentSignals(
+    pickedEvent$,
+    threadContext,
+  );
+  const modelProvider$ = createModelProviderEnvironmentSignals(
+    bootstrap,
+    pickedEvent$,
+    threadContext,
+  );
+  return computed(async (get) => {
+    const [connector, modelProvider] = await Promise.all([
+      get(connector$),
+      get(modelProvider$),
+    ]);
+    return mergeEnvironment(connector, modelProvider);
+  });
+}
+```
+
+Each source produces only its own contribution: the connector environment does
+not include model-provider firewalls, and it decrypts every non-MCP connector
+secret it needs instead of depending on later overrides. `mergeEnvironment` is
+the single owner of precedence: body secrets override model-provider secrets,
+which override connector secrets; an overridden alias drops its secret source;
+custom-connector reserved aliases remove matching builtin and model-provider
+sources. Values derivable at a consumer stay out of the bundle: Okou token
+connector source ids come from `runtimeTargets`, and MCP status comes from the
+connector catalog.
+
 Build the owning graph before commands execute. Do not call `command()` inside
 another command callback, including indirectly through a factory. Private nodes
 share dependencies through the owning graph's lexical scope or explicitly
