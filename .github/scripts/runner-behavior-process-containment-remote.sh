@@ -274,12 +274,33 @@ for action in sys.stdin:
         subprocess.run(["sudo", "sh", "-c", 'echo 50331648 > "$1/memory.max"', "sh", leaf], check=True)
         a = bytearray(134217728)
         raise AssertionError("task runtime OOM did not occur")
-    if action.strip() == "race":
-        # Publish a real concurrent child start, not a timing-based test delay.
-        subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print(json.dumps({"race_started": True}), flush=True)
-        while True:
-            subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if action.strip() == "pending":
+        # A real protocol peer observes the production broker's FD handoff but
+        # withholds confirmation. Stop must fence and drain this admission;
+        # publishing child spawn alone does not prove a handoff is in flight.
+        pending = """
+import array, json, os, socket, sys
+stream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+stream.settimeout(15)
+stream.connect("\\0" + os.environ["OKOU_TOOL_CGROUP_PROCS_ENDPOINT"])
+fds = array.array("i")
+marker, control, flags, _ = stream.recvmsg(1, socket.CMSG_SPACE(fds.itemsize))
+assert marker == b"T" and not flags & socket.MSG_CTRUNC
+for level, kind, data in control:
+    assert (level, kind) == (socket.SOL_SOCKET, socket.SCM_RIGHTS)
+    fds.frombytes(data)
+assert len(fds) == 1
+assert os.readlink("/proc/self/fd/" + str(fds[0])).endswith("/cgroup.procs")
+print(json.dumps({"placement_pending": True}), flush=True)
+assert stream.recv(1) == b"", "unconfirmed tool received an ACK"
+os.close(fds[0])
+"""
+        peer = subprocess.Popen(["python3", "-u", "-c", pending], stdout=subprocess.PIPE, text=True)
+        observed = peer.stdout.readline()
+        assert observed and json.loads(observed)["placement_pending"]
+        print(json.dumps({"placement_pending": True}), flush=True)
+        assert peer.wait(timeout=10) == 0
+        print(json.dumps({"placement_drained": True}), flush=True)
 '''
 
 
@@ -365,12 +386,12 @@ assert c[0].wait(timeout=10) in (-9, 137)
 gone(c[3])
 assert (main_runtime / "cgroup.procs").read_text() == main_pids
 
-for _ in range(3):
-    racing = launch()
-    racing[0].stdin.write("race\n")
-    racing[0].stdin.flush()
-    assert read_json(racing[0])["race_started"]
-    stop(racing)
+pending = launch()
+pending[0].stdin.write("pending\n")
+pending[0].stdin.flush()
+assert read_json(pending[0])["placement_pending"]
+stop(pending)
+assert read_json(pending[0])["placement_drained"]
 
 failed, metadata = startup(["/no/such/managed-task-program"])
 assert metadata is not None and failed.wait(timeout=10) == 126
