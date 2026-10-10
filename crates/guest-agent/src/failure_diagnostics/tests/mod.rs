@@ -9,7 +9,7 @@ fn provider_failure_contract_is_consistent_across_terminal_frameworks() {
         reason: Option<FailureReason>,
     }
     let cases: Vec<Case> = serde_json::from_str(include_str!(
-        "../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/provider-failures.json"
+        "../../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/provider-failures.json"
     ))
     .unwrap();
     for case in cases {
@@ -34,7 +34,7 @@ fn provider_failure_contract_is_consistent_across_terminal_frameworks() {
 #[test]
 fn new_provider_classification_does_not_match_unowned_output() {
     let cyber_refusal: Value = serde_json::from_str(include_str!(
-        "../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-cyber-safety-refusal.json"
+        "../../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-cyber-safety-refusal.json"
     ))
     .unwrap();
     for framework in [
@@ -1782,7 +1782,7 @@ fn cli_failure_reason_classifies_codex_invalid_api_key_code() {
 #[test]
 fn codex_cyber_refusal_credential_link_preserves_unowned_source_rules() {
     let cyber_refusal: Value = serde_json::from_str(include_str!(
-        "../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-cyber-safety-refusal.json"
+        "../../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-cyber-safety-refusal.json"
     ))
     .unwrap();
     let message = cyber_refusal["errorMessage"].as_str().unwrap().replace(
