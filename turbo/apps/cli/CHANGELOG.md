@@ -1,5 +1,27 @@
 # Changelog
 
+## [9.385.2](https://github.com/okou-ai/okou/compare/cli-v9.385.1...cli-v9.385.2) (2026-10-10)
+
+
+### Bug Fixes
+
+* **maps:** migrate to gemini 3.1 flash-lite on generatecontent ([#38600](https://github.com/okou-ai/okou/issues/38600)) ([58a13b0](https://github.com/okou-ai/okou/commit/58a13b0c511c91c19d1f1105e249b8107087aa32))
+
+
+### Refactoring
+
+* **mcp:** make tools thin adapters over web apis ([#38723](https://github.com/okou-ai/okou/issues/38723)) ([32cd45c](https://github.com/okou-ai/okou/commit/32cd45c2c10f40b50a47239e5dce72ee8a01d4fa))
+* name native history and pi memory publications explicitly ([#38679](https://github.com/okou-ai/okou/issues/38679)) ([e5b1d4e](https://github.com/okou-ai/okou/commit/e5b1d4ed7bd2f8b54e01352e762e1f9eec5c3a39))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.550.0
+    * @okouai/core bumped to 8.742.0
+    * @okouai/pi-agent-runtime bumped to 1.49.7
+
 ## [9.385.1](https://github.com/okou-ai/okou/compare/cli-v9.385.0...cli-v9.385.1) (2026-10-10)
 
 

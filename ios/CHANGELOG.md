@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/okou-ai/okou/compare/ios-v0.8.0...ios-v0.8.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* replace okou branding with final rudy logo assets ([#38732](https://github.com/okou-ai/okou/issues/38732)) ([0207873](https://github.com/okou-ai/okou/commit/020787385355dd03548bda3ea621bf414f159cf5))
+
 ## [0.8.0](https://github.com/okou-ai/okou/compare/ios-v0.7.4...ios-v0.8.0) (2026-10-10)
 
 

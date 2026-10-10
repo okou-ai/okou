@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.22](https://github.com/okou-ai/okou/compare/runner-network-v0.2.21...runner-network-v0.2.22) (2026-10-10)
+
+
+### Performance Improvements
+
+* **test:** serialize invariant fixture fields once ([#38764](https://github.com/okou-ai/okou/issues/38764)) ([c0810bb](https://github.com/okou-ai/okou/commit/c0810bb46375e538ee1ad47dbf887aee494d97d0))
+
 ## [0.2.21](https://github.com/okou-ai/okou/compare/runner-network-v0.2.20...runner-network-v0.2.21) (2026-10-10)
 
 ## [0.2.20](https://github.com/okou-ai/okou/compare/runner-network-v0.2.19...runner-network-v0.2.20) (2026-10-10)

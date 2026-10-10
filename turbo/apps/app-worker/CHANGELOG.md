@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.9.7](https://github.com/okou-ai/okou/compare/app-worker-v1.9.6...app-worker-v1.9.7) (2026-10-10)
+
+
+### Bug Fixes
+
+* replace okou branding with final rudy logo assets ([#38732](https://github.com/okou-ai/okou/issues/38732)) ([0207873](https://github.com/okou-ai/okou/commit/020787385355dd03548bda3ea621bf414f159cf5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.550.0
+    * @okouai/core bumped to 8.742.0
+
 ## [1.9.6](https://github.com/okou-ai/okou/compare/app-worker-v1.9.5...app-worker-v1.9.6) (2026-10-10)
 
 

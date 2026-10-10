@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.4.0...runner-lifecycle-v0.5.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** bound host pressure recovery and idle selection ([#38709](https://github.com/okou-ai/okou/issues/38709)) ([6249c11](https://github.com/okou-ai/okou/commit/6249c11bb1b9ba8e2f2deb03771b5084fc209abf))
+
+
+### Refactoring
+
+* name native history and pi memory publications explicitly ([#38679](https://github.com/okou-ai/okou/issues/38679)) ([e5b1d4e](https://github.com/okou-ai/okou/commit/e5b1d4ed7bd2f8b54e01352e762e1f9eec5c3a39))
+
 ## [0.4.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.3.0...runner-lifecycle-v0.4.0) (2026-10-10)
 
 

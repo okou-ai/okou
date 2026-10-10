@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.20.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.20.1...guest-contracts-v0.20.2) (2026-10-10)
+
+
+### Refactoring
+
+* name native history and pi memory publications explicitly ([#38679](https://github.com/okou-ai/okou/issues/38679)) ([e5b1d4e](https://github.com/okou-ai/okou/commit/e5b1d4ed7bd2f8b54e01352e762e1f9eec5c3a39))
+* simplify pi memory results and finalization diagnostics ([#38765](https://github.com/okou-ai/okou/issues/38765)) ([cdd6a0a](https://github.com/okou-ai/okou/commit/cdd6a0abe3f5880e98a02da8df5143232d7632e1))
+
 ## [0.20.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.20.0...guest-contracts-v0.20.1) (2026-10-10)
 
 ## [0.20.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.19.2...guest-contracts-v0.20.0) (2026-10-10)

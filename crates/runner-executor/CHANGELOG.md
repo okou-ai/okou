@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.8.1...runner-executor-v0.8.2) (2026-10-10)
+
+
+### Refactoring
+
+* name native history and pi memory publications explicitly ([#38679](https://github.com/okou-ai/okou/issues/38679)) ([e5b1d4e](https://github.com/okou-ai/okou/commit/e5b1d4ed7bd2f8b54e01352e762e1f9eec5c3a39))
+* **runner-storage:** centralize bounded object-download retry scheduling ([#38730](https://github.com/okou-ai/okou/issues/38730)) ([1e78c25](https://github.com/okou-ai/okou/commit/1e78c25bde7f27f07c062f28021f8e656d4dfebb))
+
 ## [0.8.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.8.0...runner-executor-v0.8.1) (2026-10-10)
 
 ## [0.8.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.7.4...runner-executor-v0.8.0) (2026-10-10)

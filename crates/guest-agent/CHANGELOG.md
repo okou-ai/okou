@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.105.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.105.1...guest-agent-v0.105.2) (2026-10-10)
+
+
+### Refactoring
+
+* name native history and pi memory publications explicitly ([#38679](https://github.com/okou-ai/okou/issues/38679)) ([e5b1d4e](https://github.com/okou-ai/okou/commit/e5b1d4ed7bd2f8b54e01352e762e1f9eec5c3a39))
+* simplify pi memory results and finalization diagnostics ([#38765](https://github.com/okou-ai/okou/issues/38765)) ([cdd6a0a](https://github.com/okou-ai/okou/commit/cdd6a0abe3f5880e98a02da8df5143232d7632e1))
+
+
+### Performance Improvements
+
+* **test:** serialize invariant fixture fields once ([#38764](https://github.com/okou-ai/okou/issues/38764)) ([c0810bb](https://github.com/okou-ai/okou/commit/c0810bb46375e538ee1ad47dbf887aee494d97d0))
+
 ## [0.105.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.105.0...guest-agent-v0.105.1) (2026-10-10)
 
 ## [0.105.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.15...guest-agent-v0.105.0) (2026-10-10)
