@@ -57,6 +57,11 @@ fn text_failure_reason(message: &str) -> Option<FailureReason> {
         .strip_prefix("unknown: ")
         .or_else(|| semantic_message.strip_prefix("invalid_request_error: "))
         .unwrap_or(normalized);
+    // Verification is unavailable, not an entitlement denial. Require the full
+    // provider retry instruction at this terminal failed-result boundary.
+    if semantic_message == "unable to verify model access right now. please retry." {
+        return Some(FailureReason::ProviderServerError);
+    }
     if semantic_message == "our servers are currently overloaded. please try again later."
         || semantic_message == "selected model is at capacity. please try a different model."
     {
