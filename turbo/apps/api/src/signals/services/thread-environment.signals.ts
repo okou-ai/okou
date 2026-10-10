@@ -1,17 +1,17 @@
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
 import { expandVariables } from "@okouai/core/variable-expander";
-import { computed, type Computed } from "ccstate";
+import { computed } from "ccstate";
 import { badRequestMessage } from "../../lib/error";
 import { safeSync } from "../utils";
 import { compactRecord } from "./connector-runtime-preparation.service";
 import { modelProviderPermissionManifest } from "./permission-manifest.service";
-import { createRunBodyEnvironmentSignal } from "./run-body-environment";
 import {
   emptyEnvironment,
   type Environment,
   mergeEnvironments,
 } from "./run-environment";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
+import { createConnectorEnvironmentSignals } from "./thread-connector-environment.signals";
 import type { ThreadContext } from "./thread-context.signals";
 import type { ThreadModelError } from "./thread-model.signals";
 
@@ -26,11 +26,10 @@ export function createModelProviderEnvironmentSignals(
   bootstrap: AgentRunContextSignals,
   threadContext: ThreadContext,
 ) {
-  const bodyEnvironment$ = createRunBodyEnvironmentSignal(bootstrap);
   return computed(async (get): Promise<Environment | EnvironmentError> => {
     const [modelProvider, body] = await Promise.all([
       get(threadContext.modelRoute$),
-      get(bodyEnvironment$),
+      get(bootstrap.bodyEnvironment$),
     ]);
     if (isEnvironmentError(modelProvider)) {
       return modelProvider;
@@ -80,8 +79,11 @@ export function createModelProviderEnvironmentSignals(
 export function createEnvironmentSignals(
   bootstrap: AgentRunContextSignals,
   threadContext: ThreadContext,
-  connectorEnvironment$: Computed<Promise<Environment | EnvironmentError>>,
 ) {
+  const connectorEnvironment$ = createConnectorEnvironmentSignals(
+    bootstrap,
+    threadContext,
+  );
   const modelProviderEnvironment$ = createModelProviderEnvironmentSignals(
     bootstrap,
     threadContext,

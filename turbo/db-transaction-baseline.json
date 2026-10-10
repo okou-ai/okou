@@ -152,16 +152,6 @@
       "owner": "storeOutboundAgentPhoneMessage"
     },
     {
-      "id": "TX-0054",
-      "file": "turbo/apps/api/src/signals/services/agentphone.service.ts",
-      "owner": "storeInboundAgentPhoneMessage"
-    },
-    {
-      "id": "TX-0055",
-      "file": "turbo/apps/api/src/signals/services/agentphone.service.ts",
-      "owner": "storeInboundAgentPhoneMessage"
-    },
-    {
       "id": "TX-0056",
       "file": "turbo/apps/api/src/signals/services/artifact-catalog.service.ts",
       "owner": "syncHostedArtifact$"
@@ -255,11 +245,6 @@
       "id": "TX-0077",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-connection.service.ts",
       "owner": "publishAutomaticConnection$"
-    },
-    {
-      "id": "TX-0080",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-oauth.service.ts",
-      "owner": "refreshAutomatic"
     },
     {
       "id": "TX-0082",
@@ -1407,11 +1392,6 @@
       "owner": "ingestXResourceUsage$"
     },
     {
-      "id": "TX-0350",
-      "file": "turbo/apps/api/src/test-fixtures/connector-catalog.ts",
-      "owner": "publishFixtureGeneration"
-    },
-    {
       "id": "TX-0355",
       "file": "turbo/packages/db/scripts/billing-attribution.ts",
       "owner": "<module>"
@@ -1425,51 +1405,6 @@
       "id": "TX-0357",
       "file": "turbo/packages/db/scripts/migration-runner.ts",
       "owner": "applyPendingMigrations"
-    },
-    {
-      "id": "TX-0358",
-      "file": "turbo/packages/db/scripts/migrations/008-automation-to-workflow-preseed/preseed.ts",
-      "owner": "preseedAutomationVolume"
-    },
-    {
-      "id": "TX-0359",
-      "file": "turbo/packages/db/scripts/migrations/010-custom-model-gateways/backfill.ts",
-      "owner": "main"
-    },
-    {
-      "id": "TX-0360",
-      "file": "turbo/packages/db/scripts/migrations/012-custom-connector-credentials/backfill.ts",
-      "owner": "migrateCandidate"
-    },
-    {
-      "id": "TX-0361",
-      "file": "turbo/packages/db/scripts/migrations/013-kms-account-rotation/business-canary.ts",
-      "owner": "verifyBusinessCanary/installFixture"
-    },
-    {
-      "id": "TX-0362",
-      "file": "turbo/packages/db/scripts/migrations/014-goal-archive-search/recover.ts",
-      "owner": "recoverGoalArchiveSearch"
-    },
-    {
-      "id": "TX-0363",
-      "file": "turbo/packages/db/scripts/migrations/014-goal-archive-search/recover.ts",
-      "owner": "recoverGoalArchiveSearch"
-    },
-    {
-      "id": "TX-0364",
-      "file": "turbo/packages/db/scripts/migrations/016-okou-attribution/database.ts",
-      "owner": "scanDatabase"
-    },
-    {
-      "id": "TX-0365",
-      "file": "turbo/packages/db/scripts/migrations/018-hosted-publication-pointers/backfill.ts",
-      "owner": "transaction"
-    },
-    {
-      "id": "TX-0366",
-      "file": "turbo/packages/db/scripts/migrations/019-member-memory-initialization/backfill.ts",
-      "owner": "initializeMemory"
     },
     {
       "id": "TX-0367",

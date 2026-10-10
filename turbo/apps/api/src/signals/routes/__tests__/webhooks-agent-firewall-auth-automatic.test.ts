@@ -196,6 +196,499 @@ describe("builtin Automatic firewall credential destinations", () => {
     await bdd.deleteAgent(actor, agent.agentId);
   });
 
+  it("rejects a DCR retired through public reconnect while refresh discovery is pending", async () => {
+    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+    mockEnv("APP_URL", "https://app.okou.ai");
+    mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+    const catalog = automaticMcpCatalogFixture();
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "dcr",
+      initialExpiresIn: 3600,
+      authorizationCodeErrors: [null, "invalid_client"],
+    });
+    // This provider exposes metadata only at the URL in its current challenge.
+    server.use(
+      http.get(
+        new URL("/.well-known/oauth-protected-resource", provider.endpoint)
+          .href,
+        () => {
+          return new HttpResponse(null, { status: 404 });
+        },
+      ),
+    );
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const firewall = createFirewallApi(context);
+    const connectors = createConnectorBddApi(context);
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const runnerGroup = runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "MCP concurrent registration retirement",
+    });
+    const automatic = setupApp({
+      context,
+      routes: builtinConnectorsAutomaticRoutes,
+    })(builtinConnectorAutomaticContract);
+    const accounts = setupApp({ context, routes: connectorAccountRoutes })(
+      connectorAccountsContract,
+    );
+    mocks.clerk.session(actor.userId, actor.orgId);
+    const started = await accept(
+      automatic.start({
+        headers,
+        params: { connectorSlug: catalog.slug },
+        body: {
+          authMethod: catalog.methodId,
+          account: { intent: "add" },
+          agentId: agent.agentId,
+          authorizeAgent: true,
+        },
+      }),
+      [200],
+    );
+    if (started.body.result !== "authorization") {
+      throw new Error("Expected Automatic OAuth authorization");
+    }
+    const state = new URL(started.body.authorizationUrl).searchParams.get(
+      "state",
+    );
+    if (!state) {
+      throw new Error("Expected OAuth state");
+    }
+    expect(
+      (
+        await accept(
+          automatic.callback({
+            query: {
+              state,
+              code: "identity-refresh-code",
+              iss: provider.issuer,
+              responseMode: "json",
+            },
+          }),
+          [200],
+        )
+      ).body.status,
+    ).toBe("success");
+    const connectionId = (
+      await accept(
+        accounts.oauthCompletion({
+          headers,
+          params: { attemptId: started.body.oauthAttemptId },
+          query: catalog.target,
+        }),
+        [200],
+      )
+    ).body.connectionId;
+    const reconnect = await accept(
+      automatic.start({
+        headers,
+        params: { connectorSlug: catalog.slug },
+        body: {
+          authMethod: catalog.methodId,
+          account: { intent: "reconnect", connectionId },
+        },
+      }),
+      [200],
+    );
+    if (reconnect.body.result !== "authorization") {
+      throw new Error("Expected a reconnect authorization");
+    }
+    const reconnectState = new URL(
+      reconnect.body.authorizationUrl,
+    ).searchParams.get("state");
+    if (!reconnectState) {
+      throw new Error("Expected reconnect state");
+    }
+    const run = await runs.createThreadRun(actor, {
+      agentId: agent.agentId,
+      prompt: "Use a live DCR registration",
+    });
+    await runs.heartbeatRunner(runnerGroup);
+    const claim = await runs.claimRunnerJob(run.runId);
+    const builtin = claim.firewalls?.find((entry) => {
+      return entry.kind === "builtin" && entry.name === catalog.slug;
+    });
+    if (builtin?.kind !== "builtin") {
+      throw new Error("Expected the builtin Automatic firewall");
+    }
+    const metadataRequested = createDeferredPromise<void>(context.signal);
+    const finishDiscovery = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!finishDiscovery.settled()) {
+        finishDiscovery.resolve();
+      }
+    });
+    server.use(
+      http.get(new URL("/oauth-resource", provider.endpoint).href, async () => {
+        metadataRequested.resolve();
+        await finishDiscovery.promise;
+        return HttpResponse.json({
+          resource: provider.endpoint,
+          authorization_servers: [provider.issuer],
+          scopes_supported: ["metadata-fallback"],
+        });
+      }),
+    );
+    const refresh = settleIncludingAbort(
+      firewall.requestFirewallAuth(
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        {
+          encryptedSecrets:
+            claim.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
+          authHeaders: catalog.firewallAuthHeaders,
+          forceRefresh: true,
+          matchedFirewall: {
+            name: catalog.slug,
+            apiId: `${catalog.slug}:0`,
+            base: catalog.endpoint,
+            connectorSlug: catalog.slug,
+            sourceId: connectionId,
+            routingVariables: {},
+          },
+        },
+        [200, 502],
+      ),
+    );
+    const observed = await settleIncludingAbort(async () => {
+      await metadataRequested.promise;
+      const rejected = await accept(
+        automatic.callback({
+          query: {
+            state: reconnectState,
+            code: "rejected-registration-code",
+            iss: provider.issuer,
+            responseMode: "json",
+          },
+        }),
+        [200],
+      );
+      expect(rejected.body.status).toBe("error");
+      const retired = await accept(
+        accounts.connection({
+          headers,
+          params: { connectionId },
+          query: catalog.target,
+        }),
+        [200],
+      );
+      expect(retired.body).toMatchObject({
+        connectionStatus: "reconnect-required",
+        reconnectReason: "authorization_expired_or_revoked",
+      });
+      finishDiscovery.resolve();
+      const resolved = await refresh;
+      if (!resolved.ok) {
+        throw resolved.error;
+      }
+      expect(resolved.value.status).toBe(502);
+      if (resolved.value.status !== 502) {
+        throw new Error(
+          "Expected retirement during discovery to reject refresh",
+        );
+      }
+      expect(resolved.value.body.error).toMatchObject({
+        code: "TOKEN_REFRESH_FAILED",
+        failureReason: "reconnect_required",
+        connectors: [catalog.slug],
+      });
+      const account = await accept(
+        accounts.connection({
+          headers,
+          params: { connectionId },
+          query: catalog.target,
+        }),
+        [200],
+      );
+      expect(account.body.connectionStatus).toBe("reconnect-required");
+    });
+    if (!finishDiscovery.settled()) {
+      finishDiscovery.resolve();
+    }
+    await refresh;
+    await runs.requestCancelRun(actor, run.runId, [200]);
+    await flushWaitUntilForTest();
+    await connectors.deleteBuiltinConnectorAccount(
+      actor,
+      catalog.slug,
+      connectionId,
+    );
+    await bdd.deleteAgent(actor, agent.agentId);
+    if (!observed.ok) {
+      throw observed.error;
+    }
+  });
+
+  it.each(["cimd", "dcr"] as const)(
+    "publishes omitted fields and overlapping refreshes without resurrecting deleted %s accounts",
+    async (registration) => {
+      mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+      mockEnv("APP_URL", "https://app.okou.ai");
+      mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+      const catalog = automaticMcpCatalogFixture();
+      const startedAt = now();
+      mockNow(startedAt);
+      const provider = mockAutomaticMcpOAuthProvider(context, {
+        registration,
+        initialExpiresIn: 3600,
+        identity: {
+          subject: "builtin-refresh-user",
+          userInfoUsername: "builtin-before-refresh",
+          userInfoEmail: "builtin-preserved@example.test",
+        },
+        refreshResponse: async (attempt) => {
+          if (attempt === 4) {
+            await connectors.deleteBuiltinConnectorAccount(
+              actor,
+              catalog.slug,
+              connectionId,
+            );
+          }
+          return HttpResponse.json({
+            access_token: `omitted-refresh-token-${attempt}`,
+            token_type: "Bearer",
+            ...(attempt === 1
+              ? {}
+              : { expires_in: attempt * 3600, scope: "read write" }),
+          });
+        },
+      });
+      const bdd = createBddApi(context);
+      const runs = createRunsApi(context);
+      const firewall = createFirewallApi(context);
+      const connectors = createConnectorBddApi(context);
+      const actor = bdd.user();
+      bdd.acceptAgentStorageWrites();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      const runnerGroup = runs.configureRunnerGroup();
+      await runs.grantProEntitlement(actor);
+      await runs.ensurePersonalSubscriptionModel(actor);
+      const agent = await bdd.createAgent(actor, {
+        displayName: "MCP omitted refresh fields",
+      });
+      const automatic = setupApp({
+        context,
+        routes: builtinConnectorsAutomaticRoutes,
+      })(builtinConnectorAutomaticContract);
+      const accounts = setupApp({ context, routes: connectorAccountRoutes })(
+        connectorAccountsContract,
+      );
+      mocks.clerk.session(actor.userId, actor.orgId);
+      const started = await accept(
+        automatic.start({
+          headers,
+          params: { connectorSlug: catalog.slug },
+          body: {
+            authMethod: catalog.methodId,
+            account: { intent: "add" },
+            agentId: agent.agentId,
+            authorizeAgent: true,
+          },
+        }),
+        [200],
+      );
+      if (started.body.result !== "authorization") {
+        throw new Error("Expected Automatic OAuth authorization");
+      }
+      const state = new URL(started.body.authorizationUrl).searchParams.get(
+        "state",
+      );
+      if (!state) {
+        throw new Error("Expected OAuth state");
+      }
+      expect(
+        (
+          await accept(
+            automatic.callback({
+              query: {
+                state,
+                code: "identity-refresh-code",
+                iss: provider.issuer,
+                responseMode: "json",
+              },
+            }),
+            [200],
+          )
+        ).body.status,
+      ).toBe("success");
+      const connectionId = (
+        await accept(
+          accounts.oauthCompletion({
+            headers,
+            params: { attemptId: started.body.oauthAttemptId },
+            query: catalog.target,
+          }),
+          [200],
+        )
+      ).body.connectionId;
+      const run = await runs.createThreadRun(actor, {
+        agentId: agent.agentId,
+        prompt: "Use persisted Automatic refresh tokens",
+      });
+      await runs.heartbeatRunner(runnerGroup);
+      const claim = await runs.claimRunnerJob(run.runId);
+      const builtin = claim.firewalls?.find((entry) => {
+        return entry.kind === "builtin" && entry.name === catalog.slug;
+      });
+      if (builtin?.kind !== "builtin") {
+        throw new Error("Expected the builtin Automatic firewall");
+      }
+      const authHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
+      const authBody = {
+        encryptedSecrets:
+          claim.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
+        authHeaders: catalog.firewallAuthHeaders,
+        matchedFirewall: {
+          name: catalog.slug,
+          apiId: `${catalog.slug}:0`,
+          base: catalog.endpoint,
+          connectorSlug: catalog.slug,
+          sourceId: connectionId,
+          routingVariables: {},
+        },
+      };
+      const refreshed = await firewall.requestFirewallAuth(
+        authHeaders,
+        { ...authBody, forceRefresh: true },
+        [200],
+      );
+      expect(refreshed.body).toMatchObject({
+        headers: { Authorization: "Bearer omitted-refresh-token-1" },
+      });
+      const account = await accept(
+        accounts.connection({
+          headers,
+          params: { connectionId },
+          query: catalog.target,
+        }),
+        [200],
+      );
+      expect(account.body).toMatchObject({
+        externalId: "builtin-refresh-user",
+        externalUsername: "builtin-before-refresh",
+        externalEmail: "builtin-preserved@example.test",
+        connectionStatus: "connected",
+        reconnectReason: null,
+        tokenExpiresAt: null,
+        oauthScopes: ["read", "write"],
+      });
+      const persisted = await firewall.requestFirewallAuth(
+        authHeaders,
+        authBody,
+        [200],
+      );
+      expect(persisted.body).toMatchObject({
+        headers: { Authorization: "Bearer omitted-refresh-token-1" },
+      });
+
+      const overlapping = await Promise.all([
+        firewall.requestFirewallAuth(
+          authHeaders,
+          { ...authBody, forceRefresh: true },
+          [200],
+        ),
+        firewall.requestFirewallAuth(
+          authHeaders,
+          { ...authBody, forceRefresh: true },
+          [200],
+        ),
+      ]);
+      expect(
+        overlapping
+          .map((response) => {
+            if (response.status !== 200) {
+              throw new Error("Expected an overlapping refresh to succeed");
+            }
+            return response.body.headers.Authorization;
+          })
+          .sort(),
+      ).toStrictEqual([
+        "Bearer omitted-refresh-token-2",
+        "Bearer omitted-refresh-token-3",
+      ]);
+      const current = await firewall.requestFirewallAuth(
+        authHeaders,
+        authBody,
+        [200],
+      );
+      if (current.status !== 200) {
+        throw new Error(
+          "Expected the published credential to remain available",
+        );
+      }
+      const currentAccount = await accept(
+        accounts.connection({
+          headers,
+          params: { connectionId },
+          query: catalog.target,
+        }),
+        [200],
+      );
+      const publishedAttempt =
+        current.body.headers.Authorization === "Bearer omitted-refresh-token-2"
+          ? 2
+          : 3;
+      expect(current.body.headers.Authorization).toBe(
+        `Bearer omitted-refresh-token-${publishedAttempt}`,
+      );
+      expect(currentAccount.body).toMatchObject({
+        tokenExpiresAt: new Date(
+          startedAt + publishedAttempt * 3_600_000,
+        ).toISOString(),
+        oauthScopes: ["read", "write"],
+        externalId: "builtin-refresh-user",
+        connectionStatus: "connected",
+      });
+      // These are provider-boundary requests, made with the persisted fallback token.
+      expect(
+        provider.tokenBodies
+          .filter((request) => {
+            return request.get("grant_type") === "refresh_token";
+          })
+          .map((request) => {
+            return request.get("refresh_token");
+          }),
+      ).toStrictEqual([
+        "automatic-refresh-token",
+        "automatic-refresh-token",
+        "automatic-refresh-token",
+      ]);
+
+      const deletedDuringRefresh = await firewall.requestFirewallAuth(
+        authHeaders,
+        { ...authBody, forceRefresh: true },
+        [502],
+      );
+      if (deletedDuringRefresh.status !== 502) {
+        throw new Error("Expected refresh of the deleted account to fail");
+      }
+      expect(deletedDuringRefresh.body.error).toMatchObject({
+        code: "TOKEN_REFRESH_FAILED",
+        failureReason: "reconnect_required",
+        connectors: [catalog.slug],
+      });
+      await accept(
+        accounts.connection({
+          headers,
+          params: { connectionId },
+          query: catalog.target,
+        }),
+        [404],
+      );
+
+      await runs.requestCancelRun(actor, run.runId, [200]);
+      // Cancellation callbacks must release lifecycle locks before deletion.
+      await flushWaitUntilForTest();
+      await bdd.deleteAgent(actor, agent.agentId);
+    },
+  );
+
   it.each([
     "timeout",
     "provider failure",

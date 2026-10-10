@@ -18,10 +18,10 @@ import {
 } from "./morning-brief-enrollment-data.service";
 import {
   loadMorningBriefDefaultAgentId$,
-  loadMorningBriefMigrationState$,
+  loadMorningBriefState$,
   loadMorningBriefOwnership$,
-  type MorningBriefMigrationState,
-} from "./morning-brief-migration-state.service";
+  type MorningBriefState,
+} from "./morning-brief-state.service";
 import { completeMorningBriefEnrollment$ } from "./morning-brief-enrollment-completion.service";
 import { db$ } from "../external/db";
 import {
@@ -154,14 +154,13 @@ const loadPendingPreference$ = command(
 /**
  * Project the member's canonical state onto the Settings response.
  *
- * The migration facts the state also carries — the additional installations it
- * left alone, and the thread the brief delivers into — stay internal.
+ * Additional installations and the thread the brief delivers into stay internal.
  */
 const projectInstalledPreference$ = command(
   async (
     { set },
     args: MorningBriefPreferenceArgs,
-    state: MorningBriefMigrationState,
+    state: MorningBriefState,
     signal: AbortSignal,
   ): Promise<
     MorningBriefPreferenceResult & { readonly workflowId?: string }
@@ -220,7 +219,7 @@ const loadInstalledPreference$ = command(
     return await set(
       projectInstalledPreference$,
       args,
-      await set(loadMorningBriefMigrationState$, owner, signal),
+      await set(loadMorningBriefState$, owner, signal),
       signal,
     );
   },
@@ -235,11 +234,16 @@ export const morningBriefPreference$ = command(
   ): Promise<MorningBriefPreferenceResult> => {
     signal.throwIfAborted();
     const owner = morningBriefOwner(args);
-    const state = await set(loadMorningBriefMigrationState$, owner, signal);
+    const state = await set(loadMorningBriefState$, owner, signal);
     signal.throwIfAborted();
-    const legacy = await set(projectInstalledPreference$, args, state, signal);
+    const preference = await set(
+      projectInstalledPreference$,
+      args,
+      state,
+      signal,
+    );
     signal.throwIfAborted();
-    return legacy;
+    return preference;
   },
 );
 
@@ -315,11 +319,7 @@ const createMorningBriefFromPreference$ = command(
     );
     signal.throwIfAborted();
     if (installed.kind !== "ok") {
-      const state = await set(
-        loadMorningBriefMigrationState$,
-        identity,
-        signal,
-      );
+      const state = await set(loadMorningBriefState$, identity, signal);
       signal.throwIfAborted();
       const raced = await set(projectInstalledPreference$, args, state, signal);
       signal.throwIfAborted();

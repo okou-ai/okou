@@ -242,7 +242,7 @@ function guildSender(scope: Fixture): DiscordSender {
 
 function commandPayload(
   sender: DiscordSender,
-  name: DiscordCommandInteraction["data"]["options"][0]["name"],
+  name: DiscordCommandInteraction["data"]["name"],
 ): DiscordCommandInteraction {
   return {
     id: uniqueDiscordSnowflake(),
@@ -260,8 +260,7 @@ function commandPayload(
     data: {
       id: uniqueDiscordSnowflake(),
       type: 1,
-      name: "okou",
-      options: [{ type: 1, name }],
+      name,
     },
   };
 }
@@ -579,6 +578,26 @@ describe("Discord account preferences through private controls", () => {
     expect((await readStatus(second.owner)).isConnected).toBeTruthy();
   });
 
+  it.each(["server", "DM"])(
+    "shows the account connection status in a %s with one workspace",
+    async (surface) => {
+      const scope = await fixture();
+      const sender = {
+        discordUserId: scope.binding.discordUserId,
+        channelId: scope.channelId,
+        ...(surface === "server" ? { guildId: scope.binding.guildId } : {}),
+      };
+      const discord = discordHttp(
+        [scope],
+        surface === "DM" ? sender : undefined,
+      );
+      const message = await discord.send(commandPayload(sender, "connect"));
+
+      expect(message.content).toContain("already has a verified connection");
+      expect(message.components).toStrictEqual([]);
+    },
+  );
+
   it("requires and saves an explicit workspace choice for a sender with multiple DM bindings", async () => {
     const first = await fixture();
     const second = await fixture(
@@ -592,7 +611,7 @@ describe("Discord account preferences through private controls", () => {
     };
     const discord = discordHttp([first, second], sender);
 
-    const undecided = await discord.send(commandPayload(sender, "org"));
+    const undecided = await discord.send(commandPayload(sender, "connect"));
     const choice = selectMenu(undecided);
     expect(undecided.content).toContain("Choose your workspace for bot DMs");
     expect(
@@ -615,7 +634,7 @@ describe("Discord account preferences through private controls", () => {
       second.binding.connectionId,
     );
     expect(
-      preselected(await discord.send(commandPayload(sender, "org"))),
+      preselected(await discord.send(commandPayload(sender, "connect"))),
     ).toStrictEqual([second.binding.connectionId]);
   });
 
@@ -641,7 +660,7 @@ describe("Discord account preferences through private controls", () => {
       };
       const discord = discordHttp([first, second], sender);
       const menu = selectMenu(
-        await discord.send(commandPayload(sender, "org")),
+        await discord.send(commandPayload(sender, "connect")),
       );
       await discord.send(
         selectPayload(sender, menu.custom_id, first.binding.connectionId),
@@ -688,7 +707,7 @@ describe("Discord account preferences through private controls", () => {
       channelId: uniqueDiscordSnowflake(),
     };
     const discord = discordHttp([first, second], sender);
-    const workspaces = await discord.send(commandPayload(sender, "org"));
+    const workspaces = await discord.send(commandPayload(sender, "connect"));
     expect(preselected(workspaces)).toStrictEqual([]);
     await discord.send(
       selectPayload(
@@ -698,7 +717,7 @@ describe("Discord account preferences through private controls", () => {
       ),
     );
     expect(
-      preselected(await discord.send(commandPayload(sender, "org"))),
+      preselected(await discord.send(commandPayload(sender, "connect"))),
     ).toStrictEqual([first.binding.connectionId]);
 
     const models = await discord.send(commandPayload(sender, "model"));

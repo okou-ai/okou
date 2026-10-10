@@ -44,8 +44,7 @@ function commandPayload() {
     data: {
       id: "523456789012345678",
       type: 1,
-      name: "okou",
-      options: [{ type: 1, name: "help" }],
+      name: "help",
     },
   };
 }
@@ -247,12 +246,12 @@ describe("POST /api/discord/interactions signature and protocol validation", () 
       },
     ],
     [
-      "unknown subcommand",
+      "unknown command",
       {
         ...commandPayload(),
         data: {
           ...commandPayload().data,
-          options: [{ type: 1, name: "unexpected" }],
+          name: "unexpected",
         },
       },
     ],

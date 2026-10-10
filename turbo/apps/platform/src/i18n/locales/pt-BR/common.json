@@ -6425,8 +6425,6 @@
       "dmServer": "Servidor padrão para mensagens diretas",
       "install": "Instalar no Discord",
       "limitedContext": "Contexto limitado: o Okou pode não receber mensagens comuns dos canais. Mencione o Okou e inclua os detalhes de que ele precisa.",
-      "loadError": "Não foi possível carregar o status do Discord.",
-      "loading": "Carregando o status do Discord…",
       "memberSetup": "Peça a um administrador da organização para instalar o Okou no seu servidor do Discord.",
       "moreOptions": "Mais opções do Discord",
       "pendingConsent": "Esta aba não possui comprovante de autorização. Feche-a e reinicie a autorização na aba original do Works.",

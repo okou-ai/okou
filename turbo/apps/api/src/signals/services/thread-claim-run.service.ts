@@ -37,7 +37,6 @@ import {
   type RunConnectorCatalogSelection,
   runConnectorCatalogSelection,
 } from "./thread-connected-accounts.signals";
-import { countBucket } from "./dispatch-count-bucket";
 import {
   type PersistedRunEnvironmentSnapshot,
   pendingOkouTokenSecrets,
@@ -54,7 +53,6 @@ import {
   environmentPermissionManifest,
   mergeEnvironments,
 } from "./run-environment";
-import { createConnectorRuntimeSignals } from "./thread-connector-runtime.signals";
 import { createOfficialWorkflowSignals } from "./thread-official-workflow.signals";
 import type {
   QueuedModelContext,
@@ -247,7 +245,6 @@ import {
 } from "./chat-session-continuity.service";
 import { agentRunSourceAnnotation } from "./chat-user-message.service";
 import { compactRecord } from "./connector-runtime-preparation.service";
-import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
 
 import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
 import { isMemberSubscriptionRoute } from "./effective-model-route.service";
@@ -285,7 +282,6 @@ import {
   type RunStatus,
   unifiedRunRequestSchema,
 } from "@okouai/api-contracts/contracts/runs";
-import type { FirewallPermissionGrant } from "@okouai/connectors/firewall-metadata/policy";
 import type { FirewallPolicies } from "@okouai/connectors/firewall-types";
 import {
   type FeatureSwitchContext,
@@ -444,7 +440,6 @@ import {
   DueWorkflowAutomation,
 } from "./workflow-automation-enqueue.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
-import type { RunWorkflowRef } from "./workflow-data.service";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
 
@@ -1352,12 +1347,11 @@ export interface ThreadClaimRunObjects {
 /** The admission input with the instant its reads are taken. */
 export function createThreadClaimRunObjects(
   claim: ThreadClaim,
-  context: AgentRunContextSignals,
-  prefetchOutcome: "hit" | "not_provided" | "identity_mismatch",
+  bootstrap: AgentRunContextSignals,
   requestFacts?: ChatThreadRequestFacts,
 ): ThreadClaimRunObjects {
   // Re-resolve the queued pin against one current catalog snapshot per claim.
-  const claimCatalog$ = context.modelCatalog$;
+  const claimCatalog$ = bootstrap.modelCatalog$;
   const pickStartedAt$ = computed(() => {
     return now();
   });
@@ -1432,8 +1426,8 @@ export function createThreadClaimRunObjects(
       .where(
         and(
           eq(chatThreads.id, claim.chatThreadId),
-          eq(chatThreads.userId, context.userId),
-          eq(chatThreads.agentId, context.agentId),
+          eq(chatThreads.userId, bootstrap.userId),
+          eq(chatThreads.agentId, bootstrap.agentId),
         ),
       )
       .limit(1);
@@ -1511,7 +1505,7 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const threadContext = createThreadContext(context, pickedEvent$);
+  const threadContext = createThreadContext(bootstrap, pickedEvent$);
   const sessionRead$ = threadContext.sessionRead$;
   const slackContext$ = threadContext.slackContext$;
   const feishuContext$ = threadContext.feishuContext$;
@@ -1683,7 +1677,7 @@ export function createThreadClaimRunObjects(
         db,
         threadId: head.chatThreadId,
         userId: head.userId,
-        agent: { id: context.agentId, orgId: head.orgId },
+        agent: { id: bootstrap.agentId, orgId: head.orgId },
         queuedMessage,
         timing,
       };
@@ -1691,7 +1685,7 @@ export function createThreadClaimRunObjects(
   );
   const promptFeaturesFeatures$ = computed(
     (get): Promise<FeatureSwitchContext> => {
-      return get(context.featureSwitches$);
+      return get(bootstrap.featureSwitches$);
     },
   );
   const promptMaterialMaterial$ = computed(
@@ -1825,7 +1819,7 @@ export function createThreadClaimRunObjects(
           "Chat thread not found while resolving session binding",
         );
       }
-      const agent = await get(context.agent$);
+      const agent = await get(bootstrap.agent$);
       return resolveChatThreadSessionSnapshot(
         capturedChatThreadSessionSnapshot(
           thread,
@@ -2407,9 +2401,9 @@ export function createThreadClaimRunObjects(
       }
       return {
         timing: get(workflowAutomationLaunchReadGraphTiming$),
-        owner: { orgId: context.orgId, userId: context.userId },
+        owner: { orgId: bootstrap.orgId, userId: bootstrap.userId },
         apiStartTime: args.apiStartTime,
-        agentId: context.agentId,
+        agentId: bootstrap.agentId,
         chatThreadId: args.due.chatThreadId,
         queueFirstAssociation: {
           threadId: args.due.chatThreadId,
@@ -2814,94 +2808,11 @@ export function createThreadClaimRunObjects(
         "api_dispatch_pre_create_agent_load_agent",
         async () => {
           // Authorization waits only for the context's Agent snapshot.
-          return await get(context.agent$);
+          return await get(bootstrap.agent$);
         },
       );
     },
   );
-  const connectorRuntime = createConnectorRuntimeSignals(
-    context,
-    threadContext,
-  );
-  const preCreateBootstrapMetadata$ = computed(async (get) => {
-    const startedAt = now();
-    const selected = context;
-    const [
-      { timing },
-      selection,
-      connectorScope,
-      memberMetadata,
-      permissionGrants,
-      workflows,
-      featureSwitchContext,
-    ] = await Promise.all([
-      get(selectedIdentityInputIdentityInput$),
-      get(selected.connectorSelection$),
-      get(selected.connectorScope$),
-      get(selected.memberMetadata$),
-      get(selected.permissionGrants$),
-      get(selected.workflows$),
-      get(selected.featureSwitches$),
-    ]);
-    timing.recordElapsed(
-      "api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows",
-      "nested",
-      startedAt,
-      now(),
-      {
-        bootstrap_prefetch: prefetchOutcome === "hit" ? "hit" : "miss",
-        ...(prefetchOutcome === "hit"
-          ? {}
-          : { bootstrap_prefetch_miss_reason: prefetchOutcome }),
-      },
-    );
-    const metadataSlugs = new Set(
-      selection.customConnectors.flatMap((connector) => {
-        const ref = connector.permissionBundleRef;
-        const dependency =
-          ref === null
-            ? null
-            : customConnectorPermissionBundleDependencySlug(ref);
-        return dependency === null ? [] : [dependency];
-      }),
-    );
-    return {
-      ...connectorScope,
-      userInfo: {
-        name: memberMetadata.profile?.name ?? null,
-        email: memberMetadata.profile?.email ?? null,
-        timezone: memberMetadata.preferences?.timezone ?? null,
-      },
-      featureSwitchContext,
-      workflows,
-      permissionGrants: permissionGrants.map(
-        ({ connectorSlug, permission, action }) => {
-          return {
-            connectorSlug,
-            permission,
-            action,
-          };
-        },
-      ),
-      connectorCatalogMetadataSlugs: [...metadataSlugs].sort(),
-    };
-  });
-  const preCreateBootstrapBootstrap$ = computed(async (get) => {
-    const { timing } = await get(selectedIdentityInputIdentityInput$);
-    const metadata = await get(preCreateBootstrapMetadata$);
-    return await measureAgentRunPreCreate(
-      timing,
-      "api_dispatch_pre_create_agent_materialize_bootstrap_context",
-      () => {
-        return metadata;
-      },
-      {
-        agent_run_bootstrap_workflow_winner_count_bucket: countBucket(
-          metadata.workflows.length,
-        ),
-      },
-    );
-  });
   const preCreateSubscriptionAccountSubscriptionAccount$ = computed(
     async (get) => {
       const { command } = await get(preCreateInput$);
@@ -2921,14 +2832,23 @@ export function createThreadClaimRunObjects(
   const preCreateConnectorCatalogConnectorCatalog$ = computed(
     async (get): Promise<RunConnectorCatalogSelection> => {
       const [scope, catalog] = await Promise.all([
-        get(context.connectorScope$),
-        get(context.catalog$),
+        get(bootstrap.connectorScope$),
+        get(bootstrap.catalog$),
       ]);
       return runConnectorCatalogSelection(scope, catalog);
     },
   );
-  const preCreatePermissionPoliciesPermissionPolicies$ =
-    connectorRuntime.permissionPolicies$;
+  const preCreatePermissionPoliciesPermissionPolicies$ = computed(
+    async (get) => {
+      return await get(threadContext.dispatchTiming$).measure(
+        "api_dispatch_pre_create_agent_resolve_firewall_metadata",
+        "nested",
+        async () => {
+          return await get(bootstrap.permissionPolicies$);
+        },
+      );
+    },
+  );
   const sessionPrompt$ = computed(async (get) => {
     return (await get(selectedCommand$))?.appendSystemPrompt;
   });
@@ -2936,19 +2856,20 @@ export function createThreadClaimRunObjects(
     async (get): Promise<AgentRunAfterPreCreate | CreateRunErrorResult> => {
       const { timing } = await get(preCreateInput$);
       const [
-        bootstrapResult,
+        connectorScope,
+        featureSwitchContext,
         agentResult,
         accountResult,
         catalogResult,
         policiesResult,
       ] = await Promise.all([
-        get(preCreateBootstrapBootstrap$),
+        get(bootstrap.connectorScope$),
+        get(bootstrap.featureSwitches$),
         get(preCreateAgentAgent$),
         get(preCreateSubscriptionAccountSubscriptionAccount$),
         get(preCreateConnectorCatalogConnectorCatalog$),
         get(preCreatePermissionPoliciesPermissionPolicies$),
       ]);
-      const bootstrap = bootstrapResult;
       const agent = agentResult;
       const account = accountResult;
       if ("status" in account) {
@@ -2960,7 +2881,7 @@ export function createThreadClaimRunObjects(
         throw new Error("Agent disappeared after preparation authorization");
       }
       return {
-        ...bootstrap,
+        ...connectorScope,
         ...account,
         agent,
         timing,
@@ -2970,7 +2891,7 @@ export function createThreadClaimRunObjects(
           userId: account.command.owner.userId,
           orgId: account.command.owner.orgId,
           agent,
-          featureSwitchContext: bootstrap.featureSwitchContext,
+          featureSwitchContext,
         },
       };
     },
@@ -3033,9 +2954,8 @@ export function createThreadClaimRunObjects(
       ),
     };
   });
-  const preCreateExecutionBootstrapMetadata$ = preCreateBootstrapMetadata$;
   const runDisabledPaidToolsSnapshot$ = computed(async (get) => {
-    const selected = context;
+    const selected = bootstrap;
     return {
       orgId: selected.orgId,
       userId: selected.userId,
@@ -3043,7 +2963,7 @@ export function createThreadClaimRunObjects(
     };
   });
   const runMemberSnapshot$ = computed(async (get) => {
-    const selected = context;
+    const selected = bootstrap;
     return {
       orgId: selected.orgId,
       userId: selected.userId,
@@ -3051,7 +2971,7 @@ export function createThreadClaimRunObjects(
     };
   });
   const runEnvironmentSnapshot$ = computed(async (get) => {
-    const selected = context;
+    const selected = bootstrap;
     return {
       orgId: selected.orgId,
       userId: selected.userId,
@@ -3066,13 +2986,13 @@ export function createThreadClaimRunObjects(
   const preCreateModelFeatureSwitchContext$ = computed(async (get) => {
     const observed = await get(featureSwitchContext$);
     return observed === undefined
-      ? (await get(preCreateExecutionBootstrapMetadata$)).featureSwitchContext
+      ? await get(bootstrap.featureSwitches$)
       : observed;
   });
   const runFramework$ = threadContext.requestedFramework$;
   const modelRoute$ = threadContext.modelRoute$;
   const promptAndSkillVolumes$ = createPromptAndSkillVolumesSignals(
-    context,
+    bootstrap,
     pickedEvent$,
     threadContext,
   );
@@ -3117,40 +3037,30 @@ export function createThreadClaimRunObjects(
     connectorSelection$,
     connectorSnapshot$,
   };
-  const {
-    bodyEnvironment$: preCreateBodyEnvironmentEnvironment$,
-    eagerSecretPlan$: runConnectorEagerSecretPlan$,
-    eagerCredentialContext$,
-    environment$: connectorEnvironment$,
-  } = connectorRuntime;
-  const environment$ = createEnvironmentSignals(
-    context,
-    threadContext,
-    connectorEnvironment$,
-  );
-  // Capture the exact eager plan before preloading its read-only context.
-  const preloadEagerCredentials$ = command(
+  const preCreateBodyEnvironmentEnvironment$ = bootstrap.bodyEnvironment$;
+  const environment$ = createEnvironmentSignals(bootstrap, threadContext);
+  // Start environment preparation, including credential decryption, before
+  // runner preparation awaits it.
+  const preloadEnvironment$ = command(
     async ({ get }, signal: AbortSignal): Promise<void> => {
       if (!(await get(selectionInput$))) {
         signal.throwIfAborted();
         return;
       }
-      const context = await get(eagerCredentialContext$);
+      waitUntil(settle(get(environment$)));
       signal.throwIfAborted();
-      waitUntil(settle(get(context.credentials$)));
     },
   );
   const prepared = { environment$ };
   const workflow = createOfficialWorkflowSignals(
-    context,
+    bootstrap,
     pickedEvent$,
     threadContext,
   );
   const { officialWorkflow$ } = workflow;
   const userTimezone$ = computed(async (get) => {
     return (
-      (await get(preCreateExecutionBootstrapMetadata$)).userInfo.timezone ??
-      undefined
+      (await get(bootstrap.memberMetadata$)).preferences?.timezone ?? undefined
     );
   });
   const shared = {
@@ -3169,9 +3079,7 @@ export function createThreadClaimRunObjects(
     agent$: preCreateAgentAgent$,
     threadSession$: threadSession$,
     runArgs$: preCreateRunArgsRunArgs$,
-    bootstrap$: preCreateBootstrapBootstrap$,
     shared: shared,
-    bootstrapMetadata$: preCreateBootstrapMetadata$,
   };
   const preCreateThreadSessionThreadSession$ = computed(
     async (get): Promise<ChatThreadSessionResolution | undefined> => {
@@ -3352,7 +3260,7 @@ export function createThreadClaimRunObjects(
       requests: selection.requests,
       timing: selection.args.timing,
     };
-    const prefetched = await get(context.storage$);
+    const prefetched = await get(bootstrap.storage$);
     const ownedRequests = input.requests.filter((request) => {
       return !prefetched.lookupKeys.has(
         storageIndexKey(
@@ -3528,7 +3436,7 @@ export function createThreadClaimRunObjects(
       selected.plan.requested.input.storageIndex,
       selected.plan.sessionWriteback?.input.storageIndex ?? new Map(),
     );
-    const cache = await get(context.storageCache$);
+    const cache = await get(bootstrap.storageCache$);
     const versions = exactStorageVersionsFromIndex(mounts, storageIndex);
     const rows = [
       ...cache.rows,
@@ -3806,7 +3714,7 @@ export function createThreadClaimRunObjects(
           modelProvider,
           serviceTier: (await get(contextInput$)).args.codexServiceTier,
         },
-        await get(context.modelPricing$),
+        await get(bootstrap.modelPricing$),
       ),
     });
     if ("kind" in usage) {
@@ -3832,7 +3740,7 @@ export function createThreadClaimRunObjects(
       : ((await get(runMemberSnapshot$)).member?.timezone ?? undefined);
   });
   const imageModel$ = computed((get) => {
-    return get(context.selectedImageModel$);
+    return get(bootstrap.selectedImageModel$);
   });
   const disabledPaidTools$ = computed(async (get) => {
     return (await get(selectedRunContextShared.disabledPaidTools$)).toolIds;
@@ -3952,7 +3860,7 @@ export function createThreadClaimRunObjects(
   const runAdmissionCheckCheckAdmission$ = command(
     async ({ get }, input: RunAdmissionInput, signal: AbortSignal) => {
       signal.throwIfAborted();
-      const identity = context;
+      const identity = bootstrap;
       const [models, memberModels] = await Promise.all([
         get(identity.modelFacts$),
         get(identity.memberModels$),
@@ -4006,7 +3914,7 @@ export function createThreadClaimRunObjects(
 
   const checkAdmission$ = runAdmissionCheckCheckAdmission$;
   const directSendInsufficientCreditsMessage$ = computed(async (get) => {
-    const capabilities = await get(context.plan$);
+    const capabilities = await get(bootstrap.plan$);
     const appUrl = env("APP_URL");
     return [
       "Insufficient credits. This workspace has no spendable credits right now.",
@@ -4655,7 +4563,7 @@ export function createThreadClaimRunObjects(
   });
   const prepareRunnerStorage$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      await set(preloadEagerCredentials$, signal);
+      await set(preloadEnvironment$, signal);
       const [input, preparedStorage, piResources] = await Promise.all([
         set(prepareRunnerInput$, signal),
         get(preparedStorage$),
@@ -4688,55 +4596,11 @@ export function createThreadClaimRunObjects(
   });
   const prepareEncryptedSecrets$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      await set(preloadEagerCredentials$, signal);
+      await set(preloadEnvironment$, signal);
       const input = await get(storedSecretsInput$);
       signal.throwIfAborted();
       if (!input || isRouteError(input)) {
         return input;
-      }
-      const { observation } = await get(
-        (await get(eagerCredentialContext$)).credentials$,
-      );
-      signal.throwIfAborted();
-      const plan = await get(runConnectorEagerSecretPlan$);
-      signal.throwIfAborted();
-      // One owned consumer records the original completed intervals, never preload.
-      if (observation && !isRouteError(plan)) {
-        bestEffortTelemetry(() => {
-          const dimensions = {
-            ...plan.timingDimensions,
-            connector_context_schema: "selected_eager_v1",
-            connector_context_builtin_decrypt_count:
-              observation.builtinDecryptCount,
-            connector_context_observation:
-              observation.builtinResolve && observation.builtinDecrypt
-                ? "complete"
-                : "partial",
-            connector_context_builtin_decrypt_count_bucket: countBucket(
-              observation.builtinDecryptCount,
-            ),
-          };
-          for (const [actionType, duration] of [
-            [
-              "api_dispatch_prepare_context_connector_context_builtin_resolve",
-              observation.builtinResolve,
-            ],
-            [
-              "api_dispatch_prepare_context_connector_context_builtin_decrypt",
-              observation.builtinDecrypt,
-            ],
-          ] as const) {
-            if (duration) {
-              plan.input.timing.recordDuration(
-                actionType,
-                "nested",
-                duration.durationMs,
-                duration.finishedAt,
-                dimensions,
-              );
-            }
-          }
-        });
       }
       const encryptedSecrets = await set(
         encryptExecutionSecrets$,
@@ -4946,7 +4810,7 @@ export function createThreadClaimRunObjects(
         get(storageMounts$),
         // Connector reads start independently of prompt/model material. A
         // prefetch miss joins the same loader once for this selected identity.
-        get(context.connectors$),
+        get(bootstrap.connectors$),
         get(threadContext.connectorThreadSelections$),
       ]);
       signal.throwIfAborted();
@@ -5000,7 +4864,7 @@ export function createThreadClaimRunObjects(
     },
   );
   const claimAdmissionFacts$ = computed(async (get) => {
-    const selected = context;
+    const selected = bootstrap;
     const [planCapabilities, featureSwitchContext] = await Promise.all([
       get(selected.plan$),
       get(selected.featureSwitches$),
@@ -7960,12 +7824,6 @@ interface ThreadRunCommand {
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
 }
 
-interface UserInfo {
-  readonly name: string | null;
-  readonly email: string | null;
-  readonly timezone: string | null;
-}
-
 /** The selection-time command: everything but the prompt-time facts. */
 type ThreadRunSelection = Omit<
   ThreadRunCommand,
@@ -8954,7 +8812,7 @@ function measureAgentRunPreCreate<T>(
   );
 }
 
-interface AgentRunAfterBootstrap extends RunBootstrapContext {
+interface AgentRunAfterBootstrap extends AgentConnectorScopeSnapshot {
   readonly agent: AgentRunRecord;
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
   readonly timing: ApiDispatchTimingCollector;
@@ -9088,13 +8946,6 @@ function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
   };
 }
 
-interface RunBootstrapContext extends AgentConnectorScopeSnapshot {
-  readonly userInfo: UserInfo;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly workflows: readonly RunWorkflowRef[];
-  readonly permissionGrants: readonly FirewallPermissionGrant[];
-  readonly connectorCatalogMetadataSlugs: readonly ConnectorSlug[];
-}
 interface AgentRunIdentityInput {
   readonly timing: ApiDispatchTimingCollector;
   readonly owner: ThreadRunOwner;

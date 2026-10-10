@@ -4,7 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { modelRoutes } from "@okouai/db/schema/model-route";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
