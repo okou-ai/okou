@@ -47,14 +47,14 @@ records that lack the canonical dimensions from before the cutover. Never
 interpret `runner_name` as a hostname.
 
 Runner Axiom warning/error events similarly include optional
-`runner_hostname` and required `runner_version`. The rollout order is compatible
-API and nullable heartbeat storage, Runner producer cutover, then logical API
-receiver removal, followed by physical state-column removal after pre-cutover
-serving API instances drained. The current schema no longer contains
-`runner_state.runner_name`. Canary each transition and verify claim snapshots,
-telemetry/Axiom dimensions, and distinct hostnames on two hosts running one
-version. Remove any historical query fallback only after its bounded
-observation window expires.
+`runner_hostname` and required `runner_version`. Changes to attribution follow
+[deployment compatibility](../deployment-compatibility.md): deploy compatible
+readers before writer changes, keep outgoing SQL legal, and remove retired
+columns only after incompatible serving readers have drained and incompatible
+rollback targets have been retired.
+Verify claim snapshots, telemetry/Axiom dimensions, and distinct hostnames on
+hosts running the same version. Remove a historical query fallback only after
+its bounded observation window expires.
 
 ## Active and Parked Sandbox Memory
 
