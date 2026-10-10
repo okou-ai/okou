@@ -15,6 +15,7 @@ import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
+import { OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE } from "./official-workflow-constants";
 
 /**
  * Repeated "Run now" clicks are otherwise indistinguishable, so the request time
@@ -54,6 +55,12 @@ export const runOwnedWorkflowAutomationNow$ = command(
       return owned;
     }
     const { automation } = owned;
+    if (automation.officialBlueprintKey !== null) {
+      return {
+        kind: "conflict",
+        message: OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE,
+      };
+    }
     const target = await set(
       loadAutomationWorkflowRunTarget$,
       {

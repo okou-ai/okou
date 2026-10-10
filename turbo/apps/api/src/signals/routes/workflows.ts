@@ -111,7 +111,10 @@ import {
 } from "../services/workflow-data.service";
 import type { RouteEntry } from "../route-entry";
 import { sendNormalEvent$ } from "../services/chat-events.command";
-import { OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE } from "../services/official-workflow-constants";
+import {
+  OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE,
+  OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE,
+} from "../services/official-workflow-constants";
 import {
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
@@ -257,7 +260,7 @@ const listComposerWorkflowsInner$ = computed(async (get) => {
     body: workflows.flatMap((workflow) => {
       // A private override shadows the public workflow of the same name, so
       // only the override is a command the composer can offer.
-      return workflow.shadowedBy
+      return workflow.official || workflow.shadowedBy
         ? []
         : [
             {
@@ -1393,6 +1396,9 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (agent.visibility === "private" && agent.owner !== auth.userId) {
     return forbidden("Only the private agent owner can run this agent");
   }
+  if (workflow.officialDefinitionName !== null) {
+    return conflict(OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE);
+  }
 
   const currentTime = nowDate();
   const apiStartTime = currentTime.getTime();
@@ -1461,9 +1467,6 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       preloadedAgent: agent,
       agentRunPreCreateSource: "workflow_slash_command",
       getStartedWorkflowId: workflow.id,
-      ...(workflow.officialDefinitionName === null
-        ? {}
-        : { requiredOfficialWorkflowIds: [workflow.id] }),
     },
     signal,
   );

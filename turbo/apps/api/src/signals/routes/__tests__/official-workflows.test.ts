@@ -1,5 +1,8 @@
 import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import {
+  createChatEventsFixture,
+  okouTokenFromClaim,
+} from "./helpers/chat-events-fixture";
 import { readPublishedArchive } from "./helpers/published-archive";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { claimBudgetRun } from "./helpers/public-autonomy-budget";
@@ -34,10 +37,14 @@ import {
   workflowsCollectionContract,
   workflowsDetailContract,
   workflowVisibilityContract,
+  type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { getCustomSkillStorageName } from "@okouai/core/storage-names";
+import {
+  getCustomSkillStorageName,
+  getOfficialWorkflowDefinitionStorageName,
+} from "@okouai/core/storage-names";
 
 import { http, HttpResponse } from "msw";
 import { randomUUID } from "node:crypto";
@@ -874,6 +881,38 @@ async function executeAutomationCron() {
     ).execute({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
     [200],
   );
+}
+
+async function fireOfficialSchedule(
+  actor: ApiTestUser,
+  automation: Pick<WorkflowAutomationSummary, "id" | "nextRunAt">,
+) {
+  if (!automation.nextRunAt) {
+    throw new Error("Expected a scheduled Official Automation");
+  }
+  await withMockNowForTest(
+    new Date(automation.nextRunAt).getTime(),
+    async () => {
+      await executeAutomationCron();
+      await flushWaitUntilForTest();
+    },
+  );
+  const current = await accept(
+    automationClient().get({
+      headers: authHeaders(actor),
+      params: { id: automation.id },
+    }),
+    [200],
+  );
+  const chatThreadId = current.body.chatThreadId;
+  if (!chatThreadId) {
+    throw new Error("Expected the Official Automation thread");
+  }
+  const runId = await launchedAutomationRunId(actor, chatThreadId);
+  if (!runId) {
+    throw new Error("Expected the scheduled Official Automation Run");
+  }
+  return { chatThreadId, runId };
 }
 
 function officialClient() {
@@ -2001,7 +2040,7 @@ describe("Official schedule expiry", () => {
     },
   );
 
-  it("holds an expired obligation while its manual input is queued behind a real claimed Run", async () => {
+  it("rejects manual inputs and expires an unclaimed obligation while another Run is active", async () => {
     await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
       mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
       const { actor, agentId, installed, headers } =
@@ -2015,17 +2054,12 @@ describe("Official schedule expiry", () => {
       const runnerGroup = runs.configureRunnerGroup();
       runs.acceptStorageDownloads();
       await runs.heartbeatRunner(runnerGroup);
-      const first = await accept(
-        automationClient().run({ headers, params: { id: pulse.id } }),
-        [201],
-      );
-      const runId = await launchedAutomationRunId(
-        actor,
-        first.body.chatThreadId,
-      );
-      if (!runId) {
-        throw new Error("Expected the manual Run");
-      }
+      const first = await runs.createThreadRun(actor, {
+        agentId,
+        prompt:
+          "Keep the Agent occupied while the scheduled obligation expires.",
+      });
+      const runId = first.runId;
       const claim = await runs.claimRunnerJob(runId);
       onTestFinished(async () => {
         await webhooks.requestAgentComplete(
@@ -2037,30 +2071,34 @@ describe("Official schedule expiry", () => {
         await cancelAgentRunsThroughLogs(actor, agentId);
         await flushWaitUntilForTest();
       });
-      await accept(
+      const denied = await accept(
         automationClient().run({ headers, params: { id: pulse.id } }),
-        [201],
+        [409],
+      );
+      expect(denied.body.error.message).toBe(
+        "Official Workflows can only run through their automatic triggers",
       );
       await flushWaitUntilForTest();
       const pending = pendingAutomationInputs(
-        await allThreadEventRows(actor, first.body.chatThreadId),
+        await allThreadEventRows(actor, first.threadId),
       );
-      expect(pending).toHaveLength(1);
+      expect(pending).toStrictEqual([]);
       mockNow(Date.parse(pulse.nextRunAt) + 30 * 60_000 + 1);
+      const advancedNextRunAt = new Date(now() + 3_600_000).toISOString();
       await executeAutomationCron();
       await expect(readAutomation(actor, pulse.id)).resolves.toMatchObject({
-        nextRunAt: pulse.nextRunAt,
+        nextRunAt: advancedNextRunAt,
         enabled: true,
       });
       mockNow(now() + 60_000);
       await executeAutomationCron();
       await expect(readAutomation(actor, pulse.id)).resolves.toMatchObject({
-        nextRunAt: pulse.nextRunAt,
+        nextRunAt: advancedNextRunAt,
         enabled: true,
       });
       expect(
         pendingAutomationInputs(
-          await allThreadEventRows(actor, first.body.chatThreadId),
+          await allThreadEventRows(actor, first.threadId),
         ),
       ).toStrictEqual(pending);
       await expect(listAgentRunLogIds(actor, agentId)).resolves.toStrictEqual([
@@ -2247,23 +2285,11 @@ describe("Official Workflow installations", () => {
 
     runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
-    const started = await accept(
-      automationClient().run({
-        headers,
-        params: { id: automation.id },
-      }),
-      [201],
-    );
+    const started = await fireOfficialSchedule(actor, automation);
     await expect(
-      chat.readThreadMetadata(actor, started.body.chatThreadId),
+      chat.readThreadMetadata(actor, started.chatThreadId),
     ).resolves.toMatchObject({ title: "Okou Morning Brief" });
-    const startedRunId = await launchedAutomationRunId(
-      actor,
-      started.body.chatThreadId,
-    );
-    if (startedRunId) {
-      await runs.requestCancelRun(actor, startedRunId, [200, 400]);
-    }
+    await runs.requestCancelRun(actor, started.runId, [200, 400]);
   });
 
   it("requires a Preference timezone only when a schedule Blueprint omits one", async () => {
@@ -4497,7 +4523,9 @@ describe("Official Workflow installations", () => {
     const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
     const definitionName = `api-test-materialize-${suffix}`;
     await syncCatalog(
-      catalog([activeDefinition(definitionName, [gmailBlueprint()])]),
+      catalog([
+        activeDefinition(definitionName, [gmailBlueprint(), loopBlueprint()]),
+      ]),
     );
     const setup = await workflowBdd.setupWorkflowOrg();
     const { actor } = setup;
@@ -4533,13 +4561,21 @@ describe("Official Workflow installations", () => {
         params: { definitionName },
         body: {
           agentId,
-          blueprints: [{ blueprintKey: "gmail-trigger", bindings: [] }],
+          blueprints: [
+            { blueprintKey: "gmail-trigger", bindings: [] },
+            {
+              blueprintKey: "pulse",
+              bindings: [{ key: "interval-seconds", value: 3600 }],
+            },
+          ],
         },
       }),
       [201],
     );
     const workflowId = installed.body.workflow.id;
-    const automation = installed.body.workflow.automations[0];
+    const automation = installed.body.workflow.automations.find((candidate) => {
+      return candidate.official?.blueprintKey === "gmail-trigger";
+    });
     if (!automation) {
       throw new Error("Expected Official Gmail Automation");
     }
@@ -4553,20 +4589,14 @@ describe("Official Workflow installations", () => {
 
     runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
-    const historical = await accept(
-      automationClient().run({
-        headers,
-        params: { id: automation.id },
-      }),
-      [201],
-    );
-    const historicalRunId = await launchedAutomationRunId(
-      actor,
-      historical.body.chatThreadId,
-    );
-    if (!historicalRunId) {
-      throw new Error("Expected historical Official Automation Run");
+    const schedule = installed.body.workflow.automations.find((candidate) => {
+      return candidate.official?.blueprintKey === "pulse";
+    });
+    if (!schedule) {
+      throw new Error("Expected the Workflow's scheduled trigger");
     }
+    const historical = await fireOfficialSchedule(actor, schedule);
+    const historicalRunId = historical.runId;
     await runs.requestCancelRun(actor, historicalRunId, [200, 400]);
     const history = await listAgentRunLogIds(actor, agentId);
     expect(history).toContain(historicalRunId);
@@ -4989,17 +5019,8 @@ describe("Official Workflow installations", () => {
 
     runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
-    const historical = await accept(
-      automationClient().run({ headers, params: { id: automationId } }),
-      [201],
-    );
-    const historicalRunId = await launchedAutomationRunId(
-      actor,
-      historical.body.chatThreadId,
-    );
-    if (!historicalRunId) {
-      throw new Error("Expected historical Official Automation Run");
-    }
+    const historical = await fireOfficialSchedule(actor, original);
+    const historicalRunId = historical.runId;
     await runs.requestCancelRun(actor, historicalRunId, [200, 400]);
     const history = await listAgentRunLogIds(actor, agentId);
     expect(history).toContain(historicalRunId);
@@ -5242,6 +5263,217 @@ describe("Official Workflow installations", () => {
 });
 
 describe("Official Workflow Run admission", () => {
+  it("selects the exact official trigger while ordinary Runs retain their same-name Workflow", async () => {
+    const name = `api-test-run-scope-${randomUUID().slice(0, 8)}`;
+    const unrelatedName = `api-test-unrelated-${randomUUID().slice(0, 8)}`;
+    installCatalogStorageFixture();
+    await syncCatalog(
+      catalog([
+        activeDefinition(name, [loopBlueprint()]),
+        activeDefinition(unrelatedName, []),
+      ]),
+    );
+    const owned = await publicChatActor(context);
+    owned.ownsFeatureSwitches();
+    const setup = await owned.run(async () => {
+      await selectPersonalDefaultModel(owned.actor);
+      const ordinaryWorkflowId = await workflowBdd.createWorkflow(owned.actor, {
+        agentId: owned.agentId,
+        name,
+        visibility: "public",
+        instruction: "Use the user's ordinary Workflow instructions.",
+      });
+      await setOfficialWorkflowsEnabled(owned.actor, true);
+      const headers = authHeaders(owned.actor);
+      const installed = await accept(
+        officialClient().install({
+          headers,
+          params: { definitionName: name },
+          body: {
+            agentId: owned.agentId,
+            blueprints: [
+              {
+                blueprintKey: "pulse",
+                bindings: [{ key: "interval-seconds", value: 3600 }],
+              },
+            ],
+          },
+        }),
+        [201],
+      );
+      await accept(
+        officialClient().install({
+          headers,
+          params: { definitionName: unrelatedName },
+          body: { agentId: owned.agentId, blueprints: [] },
+        }),
+        [201],
+      );
+      const automation = installed.body.workflow.automations[0];
+      if (!automation) {
+        throw new Error("Expected the official scheduled trigger");
+      }
+      const composer = await accept(
+        workflowCollectionClient().composer({
+          headers,
+          query: { agentId: owned.agentId },
+        }),
+        [200],
+      );
+      expect(
+        composer.body.map((workflow) => {
+          return workflow.id;
+        }),
+      ).toStrictEqual([ordinaryWorkflowId]);
+      return { ordinaryWorkflowId, installation: installed.body, automation };
+    });
+    const ordinary = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: `/${name}`,
+    });
+    const assertOrdinaryMounts = async (runId: string) => {
+      const { claim } = await owned.claimChatRun(owned.runnerGroup, runId);
+      const mounts = expectCanonicalStorageManifest(
+        claim.storageManifest,
+      )?.storageMounts;
+      expect(mounts).toContainEqual(
+        expect.objectContaining({
+          name: getCustomSkillStorageName(setup.ordinaryWorkflowId),
+        }),
+      );
+      expect(mounts).not.toContainEqual(
+        expect.objectContaining({
+          name: getOfficialWorkflowDefinitionStorageName(name),
+        }),
+      );
+      expect(mounts).not.toContainEqual(
+        expect.objectContaining({
+          name: getOfficialWorkflowDefinitionStorageName(unrelatedName),
+        }),
+      );
+      return claim;
+    };
+    const ordinaryClaim = await assertOrdinaryMounts(ordinary.runId);
+    await owned.run(async () => {
+      const agentToken = okouTokenFromClaim(ordinaryClaim);
+      for (const headers of [
+        authHeaders(owned.actor),
+        { authorization: `Bearer ${agentToken}` },
+      ]) {
+        const workflow = await accept(
+          workflowClient().run({
+            headers,
+            extraHeaders: { origin: "https://app.okou.ai" },
+            params: { workflowId: setup.installation.workflow.id },
+          }),
+          [409],
+        );
+        const automation = await accept(
+          automationClient().run({
+            headers,
+            params: { id: setup.automation.id },
+          }),
+          [409],
+        );
+        for (const response of [workflow, automation]) {
+          expect(response.body.error.message).toBe(
+            "Official Workflows can only run through their automatic triggers",
+          );
+        }
+      }
+      await expect(
+        listAgentRunLogIds(owned.actor, owned.agentId),
+      ).resolves.toStrictEqual([ordinary.runId]);
+      await webhooks.requestAgentComplete(
+        { runId: ordinary.runId, exitCode: 1 },
+        { authorization: `Bearer ${ordinaryClaim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+    });
+    const ordinaryAutomation = await owned.run(async () => {
+      const created = await accept(
+        automationClient().create({
+          headers: authHeaders(owned.actor),
+          params: { workflowId: setup.ordinaryWorkflowId },
+          body: { schedule: { type: "loop", intervalSeconds: 7200 } },
+        }),
+        [201],
+      );
+      const started = await accept(
+        automationClient().run({
+          headers: authHeaders(owned.actor),
+          params: { id: created.body.id },
+        }),
+        [201],
+      );
+      const runId = await launchedAutomationRunId(
+        owned.actor,
+        started.body.chatThreadId,
+      );
+      if (!runId) {
+        throw new Error("Expected the ordinary Automation Run");
+      }
+      return runId;
+    });
+    const ordinaryAutomationClaim =
+      await assertOrdinaryMounts(ordinaryAutomation);
+    await owned.run(async () => {
+      await webhooks.requestAgentComplete(
+        { runId: ordinaryAutomation, exitCode: 1 },
+        { authorization: `Bearer ${ordinaryAutomationClaim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+    });
+    const official = await owned.run(() => {
+      return fireOfficialSchedule(owned.actor, setup.automation);
+    });
+    const { claim } = await owned.claimChatRun(
+      owned.runnerGroup,
+      official.runId,
+    );
+    const mounts = expectCanonicalStorageManifest(
+      claim.storageManifest,
+    )?.storageMounts;
+    expect(
+      mounts?.filter((mount) => {
+        return mount.mountPath.endsWith(`/${name}`);
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        name: getOfficialWorkflowDefinitionStorageName(name),
+        versionId: expect.stringMatching(/^[0-9a-f]{64}$/),
+      }),
+    ]);
+    expect(mounts).not.toContainEqual(
+      expect.objectContaining({
+        name: getCustomSkillStorageName(setup.ordinaryWorkflowId),
+      }),
+    );
+    expect(mounts).not.toContainEqual(
+      expect.objectContaining({
+        name: getOfficialWorkflowDefinitionStorageName(unrelatedName),
+      }),
+    );
+    expect(claim.prompt).toContain(`/${name}`);
+    expect(claim.prompt).toContain('"automationId"');
+    await owned.run(async () => {
+      await webhooks.requestAgentComplete(
+        { runId: official.runId, exitCode: 1 },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+    });
+    const later = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      threadId: ordinary.threadId,
+      prompt: `/${name}`,
+    });
+    await assertOrdinaryMounts(later.runId);
+  });
+
   it("pins ordinary Workflow publications across a normal revision", async () => {
     const owned = await publicChatActor(context);
     const fixture = createChatEventsFixture(context);
