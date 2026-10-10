@@ -1,4 +1,5 @@
 import { getVercelOidcTokenSync } from "@vercel/oidc";
+import { delay } from "signal-timers";
 import { z } from "zod";
 
 import { env, optionalEnv } from "../../lib/env";
@@ -15,6 +16,7 @@ import {
   readBoundedResponseText,
   safeJsonParse,
   safeSync,
+  settle,
   startUntrackedBestEffortCleanup,
 } from "../utils";
 
@@ -25,6 +27,8 @@ const ACCESS_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:access_token";
 const REFRESH_SKEW_MS = 5 * 60_000;
 const CLOCK_SKEW_MS = 5 * 60_000;
 const AUTH_TIMEOUT_MS = 10_000;
+const MAX_TOKEN_ATTEMPTS = 3;
+const INITIAL_BACKOFF_MS = 1000;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 
 const configurationSchema = z.object({
@@ -63,6 +67,7 @@ export class GcpLlmAuthError extends Error {
       | "invalid_response"
       | "missing_identity"
       | "deadline" = "invalid_response",
+    readonly retryAfterMs?: number,
   ) {
     super("Google Cloud LLM authentication failed");
     this.name = "GcpLlmAuthError";
@@ -103,7 +108,18 @@ const impersonationResponseSchema = z.object({
   expireTime: z.iso.datetime({ offset: true }),
 });
 
-async function tokenResponse(
+function retryAfterMs(value: string | null): number | undefined {
+  if (!value?.trim()) {
+    return undefined;
+  }
+  const text = value.trim();
+  const milliseconds = /^\d+(?:\.\d+)?$/u.test(text)
+    ? Number(text) * 1000
+    : Date.parse(text) - now();
+  return Number.isFinite(milliseconds) ? Math.max(0, milliseconds) : undefined;
+}
+
+async function readTokenResponse(
   pending: Promise<Response>,
   stage: "sts" | "impersonation",
   signal: AbortSignal,
@@ -126,6 +142,7 @@ async function tokenResponse(
       response.status,
       response.status === 429 || response.status >= 500,
       "http",
+      retryAfterMs(response.headers.get("Retry-After")),
     );
   }
   const body = await onRejection(
@@ -139,8 +156,56 @@ async function tokenResponse(
   return safeJsonParse(body.text);
 }
 
+/** Recover only the failed token endpoint, within the shared refresh budget. */
+async function tokenResponse(
+  request: () => Promise<Response>,
+  stage: "sts" | "impersonation",
+  deadlineAt: number,
+  signal: AbortSignal,
+): Promise<unknown> {
+  let attempts = 0;
+  while (true) {
+    signal.throwIfAborted();
+    if (now() >= deadlineAt) {
+      throw new GcpLlmAuthError("deadline", 503, true, "deadline");
+    }
+    attempts += 1;
+    const result = await settle(
+      readTokenResponse(request(), stage, signal),
+      signal,
+    );
+    if (result.ok) {
+      return result.value;
+    }
+    const error = result.error;
+    // A locally rejected response can also have status 502. Retry only actual
+    // transient HTTP/transport failures, never validation or identity errors.
+    const retryable =
+      error instanceof GcpLlmAuthError &&
+      (error.reason === "network" ||
+        error.reason === "upstream_timeout" ||
+        (error.reason === "http" &&
+          [429, 500, 502, 503, 504].includes(error.status)));
+    if (!retryable || attempts >= MAX_TOKEN_ATTEMPTS) {
+      throw error;
+    }
+    const wait = Math.max(
+      INITIAL_BACKOFF_MS * 2 ** (attempts - 1) +
+        Math.floor(Math.random() * INITIAL_BACKOFF_MS),
+      error.retryAfterMs ?? 0,
+    );
+    // A provider's minimum delay cannot extend the deadline or permit an
+    // earlier retry. The original signal also bounds I/O and the wait itself.
+    if (wait >= deadlineAt - now()) {
+      throw error;
+    }
+    await delay(wait, { signal });
+  }
+}
+
 async function exchange(
   configuration: Configuration,
+  deadlineAt: number,
   signal: AbortSignal,
 ): Promise<Credential> {
   signal.throwIfAborted();
@@ -149,39 +214,43 @@ async function exchange(
   if (!("ok" in subjectToken) || !subjectToken.ok) {
     throw new GcpLlmAuthError("oidc", 401, false, "missing_identity");
   }
-  const stsResponse = fetch(STS_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
-      audience: `//iam.googleapis.com/${configuration.provider}`,
-      scope: SCOPE,
-      requested_token_type: ACCESS_TOKEN_TYPE,
-      subject_token_type: "urn:ietf:params:oauth:token-type:jwt",
-      subject_token: subjectToken.ok,
-    }),
-    signal,
-  });
+  const stsResponse = () => {
+    return fetch(STS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+        audience: `//iam.googleapis.com/${configuration.provider}`,
+        scope: SCOPE,
+        requested_token_type: ACCESS_TOKEN_TYPE,
+        subject_token_type: "urn:ietf:params:oauth:token-type:jwt",
+        subject_token: subjectToken.ok,
+      }),
+      signal,
+    });
+  };
   const sts = stsResponseSchema.safeParse(
-    await tokenResponse(stsResponse, "sts", signal),
+    await tokenResponse(stsResponse, "sts", deadlineAt, signal),
   );
   if (!sts.success) {
     throw new GcpLlmAuthError("sts", 502);
   }
-  const response = fetch(
-    `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${configuration.serviceAccount}:generateAccessToken`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${sts.data.access_token}`,
-        "Content-Type": "application/json",
+  const response = () => {
+    return fetch(
+      `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${configuration.serviceAccount}:generateAccessToken`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${sts.data.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ scope: [SCOPE], lifetime: "3600s" }),
+        signal,
       },
-      body: JSON.stringify({ scope: [SCOPE], lifetime: "3600s" }),
-      signal,
-    },
-  );
+    );
+  };
   const token = impersonationResponseSchema.safeParse(
-    await tokenResponse(response, "impersonation", signal),
+    await tokenResponse(response, "impersonation", deadlineAt, signal),
   );
   if (!token.success) {
     throw new GcpLlmAuthError("impersonation", 502);
@@ -210,10 +279,11 @@ async function completeRefresh(
   refreshId: symbol,
   ownerSignal: AbortSignal,
 ): Promise<Credential> {
+  const deadlineAt = now() + AUTH_TIMEOUT_MS;
   const deadline = AbortSignal.timeout(AUTH_TIMEOUT_MS);
   const signal = AbortSignal.any([ownerSignal, deadline]);
   const credential = await onRejection(
-    awaitWithSignal(exchange(configuration, signal), signal),
+    awaitWithSignal(exchange(configuration, deadlineAt, signal), signal),
     (error) => {
       ownerSignal.throwIfAborted();
       if (deadline.aborted) {
