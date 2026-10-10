@@ -56,6 +56,11 @@ def current_run_consumer(job)
   end
 end
 
+def put_job(jobs, id, job)
+  raise "duplicate CI job id: #{id}" if jobs.key?(id)
+  jobs[id] = job
+end
+
 def compose
   modules = %w[turbo crates runner-image].to_h do |name|
     [name, YAML.safe_load_file(File.join(ROOT, ".github/workflows/#{name}.yml"))]
@@ -103,14 +108,14 @@ def compose
       next unless step["run"] == ".github/scripts/runner-binary-transport.sh publish"
       step.fetch("env")["PRODUCER_WORKFLOW_PATH"] = ".github/workflows/ci.yml"
     end
-    jobs[image_map.fetch(id)] = job
+    put_job(jobs, image_map.fetch(id), job)
   end
   TARGETS.each_key do |arch|
     job = mapped_job(image.fetch("jobs").fetch("build"), image_map)
     job.fetch("strategy").fetch("matrix")["include"] = "${{ fromJSON(needs.image-prepare.outputs.image-matrix-#{arch} || '[]') }}"
     job["needs"] = dependencies(job) + ["image-cancel-superseded"]
     require_condition(job, "needs.image-prepare.outputs.image-matrix-#{arch} != '[]' && needs.image-cancel-superseded.result == 'success'")
-    jobs["image-build-#{arch}"] = job
+    put_job(jobs, "image-build-#{arch}", job)
   end
 
   turbo.fetch("jobs").each do |id, source|
@@ -123,7 +128,7 @@ def compose
       require_condition(job, "needs.prepare.result == 'success' && needs.image-prepare.result == 'success' && #{ready}")
       current_run_consumer(job)
     end
-    jobs[id] = job
+    put_job(jobs, id, job)
   end
 
   crates.fetch("jobs").each do |id, source|
@@ -137,7 +142,7 @@ def compose
           require_condition(job, "needs.crates-detect.result == 'success' && needs.crates-runner-host-groups.result == 'success' && needs.crates-runner-host-groups.outputs.selected-target #{operator} '#{target}' && needs.image-build-#{arch}.result == 'success'")
           current_run_consumer(job)
         end
-        jobs[mapping.fetch(id)] = job
+        put_job(jobs, mapping.fetch(id), job)
       end
     elsif id == "ci-gate-crates"
       # A gate has both variants as dependencies, but consumes the planned target's
@@ -185,9 +190,9 @@ def compose
         SH
         step["run"] = step.fetch("run").sub("exit $FAILED", "#{validation}\nexit $FAILED")
       end
-      jobs[id] = job
+      put_job(jobs, id, job)
     else
-      jobs[crates_map.fetch(id)] = mapped_job(source, crates_map)
+      put_job(jobs, crates_map.fetch(id), mapped_job(source, crates_map))
     end
   end
 

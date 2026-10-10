@@ -2,6 +2,21 @@
 set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 ruby "$repo_root/.github/scripts/compose-ci-workflow.rb" --check
+# Run the production insertion guard: independently maintained module IDs must
+# never silently overwrite an existing native job.
+ruby -I "$repo_root/.github/scripts" -e '
+  ARGV << "--check"
+  require "compose-ci-workflow"
+  jobs = {}
+  put_job(jobs, "existing", {"name" => "original"})
+  begin
+    put_job(jobs, "existing", {"name" => "replacement"})
+    raise "duplicate CI job accepted"
+  rescue => error
+    raise unless error.message == "duplicate CI job id: existing"
+  end
+  raise "job was overwritten" unless jobs.fetch("existing").fetch("name") == "original"
+'
 python3 - "$repo_root" <<'PY'
 import json
 import os
