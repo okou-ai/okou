@@ -88,7 +88,7 @@ use crate::heartbeat::{
     HeartbeatSnapshotMetadata, WssIngressServiceProbe, collect_heartbeat_state,
     refresh_initial_home_cache_snapshot,
 };
-use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
+use crate::idle_lifecycle::{IdleCleanupTask, IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
 #[cfg(test)]
 use crate::orphan_reap::OrphanReapProcessDiscovery;
 use crate::orphan_reap::{OrphanReapMode, OrphanedActiveRuns};
@@ -1411,6 +1411,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let mut home_cache_gc_handle = None;
     let mut status_retry_handle = None;
     let mut draining_idle_pool_drained = false;
+    let mut idle_drain_task: Option<IdleCleanupTask<()>> = None;
+    let mut idle_drain_current = false;
     let mut pending_finalizing_candidate = PendingFinalizingCandidate::new();
     let mut pending_finalizing_retry = false;
     let mut ready_direct_candidates_left = 0;
@@ -1447,20 +1449,40 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             // to teardown.
             RunnerMode::Stopping => break,
             RunnerMode::Draining => {
-                if !draining_idle_pool_drained && claim_tasks.is_empty() {
+                if !draining_idle_pool_drained
+                    && idle_drain_task.is_none()
+                    && claim_tasks.is_empty()
+                {
                     // Settle admission before removing inventory that an
                     // in-flight claim may return or need for activation. Then
                     // release idle budget and keep servicing running jobs.
-                    drain_idle_pool(&shared.idle_pool, &shared.status, "draining").await;
-                    draining_idle_pool_drained = true;
+                    idle_drain_task = Some(
+                        idle_destroy_tracker
+                            .start_drain(
+                                Arc::clone(&shared.idle_pool),
+                                Arc::clone(&shared.status),
+                                "draining",
+                            )
+                            .await,
+                    );
+                    idle_drain_current = true;
                 }
-                if jobs.is_empty() && claim_tasks.is_empty() {
+                if draining_idle_pool_drained && jobs.is_empty() && claim_tasks.is_empty() {
+                    // Watch updates can coalesce a resume and renewed drain.
+                    // Recheck inventory under the same exclusive access that
+                    // commits natural stop so a prior batch cannot skip it.
+                    let pool = shared.idle_pool.lock().await;
+                    if !pool.is_empty() {
+                        draining_idle_pool_drained = false;
+                        continue;
+                    }
                     // Natural drain complete — commit to Stopping so teardown
                     // is observable to heartbeat and status.json. Guard the
                     // transition on `mode == Draining` so a concurrent SIGUSR2
                     // resume wins instead of being overwritten.
                     info!("draining: jobs drained, transitioning to Stopping");
                     let transitioned = lifecycle.stop_after_natural_drain();
+                    drop(pool);
                     if transitioned {
                         // Live observability: fire an immediate "stopping"
                         // heartbeat before teardown removes the runner.
@@ -1474,6 +1496,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             }
             RunnerMode::Running => {
                 draining_idle_pool_drained = false;
+                idle_drain_current = false;
             }
         }
 
@@ -1519,6 +1542,31 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         let heartbeat_sending = heartbeat.is_sending();
         let pending_finalizing_deadline = pending_finalizing_candidate.deadline();
         tokio::select! {
+            result = async {
+                match idle_drain_task.as_mut() {
+                    Some(task) => task.join().await,
+                    None => std::future::pending().await,
+                }
+            }, if idle_drain_task.is_some() => {
+                idle_drain_task = None;
+                match result {
+                    Ok(()) => {
+                        draining_idle_pool_drained = idle_drain_current && lifecycle.current_mode() == RunnerMode::Draining;
+                    }
+                    Err(error) => {
+                        warn!(%error, "idle drain cleanup producer lost");
+                        handle_stopping_signal(
+                            "idle drain cleanup producer lost",
+                            &provider_state.cancel,
+                            &provider_state.cancel_tokens,
+                            &lifecycle,
+                        ).await;
+                        terminal_error.get_or_insert_with(|| {
+                            RunnerError::Internal("idle drain cleanup producer lost".to_owned())
+                        });
+                    }
+                }
+            }
             connection = prune_listener.accept() => {
                 match connection {
                     Ok(stream) => {
@@ -1924,7 +1972,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     teardown.phase_complete("claims_drain", phase);
 
     let phase = teardown.phase_start("blank_pool_shutdown");
-    blank_pool.shutdown().await;
+    blank_pool.shutdown(&idle_destroy_tracker).await;
     teardown.phase_complete("blank_pool_shutdown", phase);
 
     let phase = teardown.phase_start("heartbeat_drain");
@@ -1959,7 +2007,13 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // consistent with the empty pool.
     lifecycle.close_parking();
     let phase = teardown.phase_start("drain_idle_pool");
-    drain_idle_pool(&shared.idle_pool, &shared.status, "shutdown").await;
+    drain_idle_pool(
+        &shared.idle_pool,
+        &shared.status,
+        &idle_destroy_tracker,
+        "shutdown",
+    )
+    .await;
     teardown.phase_complete("drain_idle_pool", phase);
 
     let phase = teardown.phase_start("provider_shutdown");

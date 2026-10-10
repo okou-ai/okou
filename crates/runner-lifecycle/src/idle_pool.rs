@@ -18,6 +18,7 @@ pub use pressure::IdlePressureCandidate;
 
 pub use entry::{
     DestroyOutcome, FinalizingHandoffCandidate, IdleDestroyPayload, IdleDestroyResult,
+    RetainedIdleDestroyResult,
 };
 pub use entry::{
     IdleDestroyJob, IdleEntry, IdleSandboxIdentity, IdleSandboxKind, IdleUnparkResult,
