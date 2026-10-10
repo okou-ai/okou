@@ -1,7 +1,13 @@
+import {
+  agentsMainContract,
+  type AgentRequest,
+} from "@okouai/api-contracts/contracts/agents";
 import { describe, expect, it } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
-import { createBddApi } from "./helpers/api-bdd";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { agentsRoutes } from "../agents";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 
@@ -9,6 +15,23 @@ const context = testContext();
 const bdd = createBddApi(context);
 const agentsApi = createAuthOrgAgentsBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
+
+async function createIsolatedAgent(actor: ApiTestUser, body: AgentRequest) {
+  // The first real request owns the case database even if response validation fails.
+  const app = await setupApp({
+    context,
+    routes: agentsRoutes,
+    isolatePg: true,
+  });
+  const response = await accept(
+    app(agentsMainContract).create({
+      headers: agentsApi.authenticate(actor),
+      body: { visibility: "public", ...body },
+    }),
+    [201],
+  );
+  return response.body;
+}
 
 function agentNotFoundBody(agentId: string) {
   return {
@@ -21,7 +44,7 @@ describe("Connector authorization-target validation", () => {
     const owner = bdd.user();
     const member = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
     const foreignOwner = bdd.user();
-    const privateAgent = await agentsApi.createAgent(owner, {
+    const privateAgent = await createIsolatedAgent(owner, {
       displayName: "Private Authorization Target",
       visibility: "private",
     });
@@ -83,16 +106,12 @@ describe("Connector authorization-target validation", () => {
     await expect(
       agentsApi.readEnabledConnectorSlugs(owner, publicAgent.agentId),
     ).resolves.toStrictEqual(publicGrants);
-
-    await bdd.deleteAgent(owner, privateAgent.agentId);
-    await bdd.deleteAgent(owner, publicAgent.agentId);
-    await bdd.deleteAgent(foreignOwner, foreignAgent.agentId);
   });
 
   it("authorizes an owned private target and another member's public target without substituting agents", async () => {
     const owner = bdd.user();
     const member = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
-    const privateAgent = await agentsApi.createAgent(owner, {
+    const privateAgent = await createIsolatedAgent(owner, {
       displayName: "Owned Private Authorization Target",
       visibility: "private",
     });
@@ -145,24 +164,11 @@ describe("Connector authorization-target validation", () => {
     expect(JSON.stringify(privateAccount)).not.toContain(
       "private-target-token",
     );
-
-    await connectorsApi.deleteBuiltinConnectorAccount(
-      owner,
-      "openai",
-      privateAccount.id,
-    );
-    await connectorsApi.deleteBuiltinConnectorAccount(
-      member,
-      "openai",
-      publicAccount.id,
-    );
-    await bdd.deleteAgent(owner, privateAgent.agentId);
-    await bdd.deleteAgent(owner, publicAgent.agentId);
   });
 
   it("allows an absent target but never falls back from an explicit deleted target", async () => {
     const actor = bdd.user();
-    const deletedAgent = await agentsApi.createAgent(actor, {
+    const deletedAgent = await createIsolatedAgent(actor, {
       displayName: "Removed Explicit Authorization Target",
     });
     await bdd.deleteAgent(actor, deletedAgent.agentId);
@@ -195,10 +201,5 @@ describe("Connector authorization-target validation", () => {
     const account = await connectorsApi.readConnectorBySlug(actor, "openai");
     expect(connected.body).toMatchObject({ id: account.id });
     expect(JSON.stringify(connected.body)).not.toContain("absent-target-token");
-    await connectorsApi.deleteBuiltinConnectorAccount(
-      actor,
-      "openai",
-      account.id,
-    );
   });
 });
