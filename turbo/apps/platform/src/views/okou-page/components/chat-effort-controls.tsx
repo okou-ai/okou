@@ -5,7 +5,7 @@ import {
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Switch } from "@okouai/ui";
-import { useLastResolved } from "ccstate-react";
+import { useGet, useLastResolved } from "ccstate-react";
 import { Zap } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -25,8 +25,8 @@ export function useChatEffort(
 ) {
   const models = useLastResolved(availableRunModels$);
   const catalog = useLastResolved(modelCatalog$);
-  const features = useLastResolved(featureSwitch$);
-  const codexExecution = features?.[FeatureSwitchKey.CodexExecution] ?? false;
+  const features = useGet(featureSwitch$);
+  const codexExecution = features[FeatureSwitchKey.CodexExecution];
   const runModel = models?.models.find((entry) => {
     return entry.model === selection?.selectedModel;
   });

@@ -45,7 +45,7 @@ export function availableChatReasoningEfforts(
   selection: ModelProviderSelection | null | undefined,
   runModel: AvailableRunModel | undefined,
   catalog: ModelCatalog | null | undefined,
-  codexExecution = false,
+  codexExecution: boolean,
 ): readonly ReasoningEffort[] {
   const model = selection?.selectedModel;
   if (
@@ -93,7 +93,7 @@ export function effectiveChatReasoningEffort(
   selection: ModelProviderSelection | null | undefined,
   runModel: AvailableRunModel | undefined,
   catalog: ModelCatalog | null | undefined,
-  codexExecution = false,
+  codexExecution: boolean,
 ): ReasoningEffort | undefined {
   const model = selection?.selectedModel;
   if (!selection || !model || !runModel || !catalog) {
@@ -127,7 +127,7 @@ export function requestedNewThreadReasoningEffort(
   selection: ModelProviderSelection | null | undefined,
   runModel: AvailableRunModel | undefined,
   catalog: ModelCatalog | null | undefined,
-  codexExecution = false,
+  codexExecution: boolean,
 ): ReasoningEffort | undefined {
   const model = selection?.selectedModel;
   const saved = model ? selection.modelSettings?.[model]?.effort : undefined;

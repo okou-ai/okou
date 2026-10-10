@@ -465,8 +465,7 @@ const startNewChatThreadCreate$ = command(
           modelSelection,
           models,
           catalog,
-          codexExecution:
-            get(featureSwitch$)[FeatureSwitchKey.CodexExecution] ?? false,
+          codexExecution: get(featureSwitch$)[FeatureSwitchKey.CodexExecution],
         },
         signal,
       );
@@ -591,7 +590,7 @@ const sendNewThreadMessage$ = command(
         modelSelection: resolvedModelSelection,
         models: resolved.models,
         catalog: resolved.catalog,
-        codexExecution: features[FeatureSwitchKey.CodexExecution] ?? false,
+        codexExecution: features[FeatureSwitchKey.CodexExecution],
         connectorSelections: request.connectorSelections,
         initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
       },
