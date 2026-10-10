@@ -89,7 +89,8 @@ def load(root, family):
 
 if __name__ == "__main__":
     import tempfile
-    path = Path(sys.argv[-1]).resolve()
+    read_stdin = sys.argv[1:] == ['--stdin']
+    path = Path(sys.stdin.read() if read_stdin else sys.argv[-1]).resolve()
     data = json.dumps(load(path.parents[2], path.stem))
     if len(sys.argv) == 2:
         print(data)

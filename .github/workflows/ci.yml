@@ -709,7 +709,7 @@ jobs:
       - deploy-runner-prepare
       - prepare
     if: |-
-      ${{ ((inputs.surface == '' || inputs.surface == 'all') || inputs.surface == 'turbo') && (needs.prepare.outputs.job-ref != '' &&
+      ${{ !cancelled() && needs.prepare.result == 'success' && needs.deploy-api.result == 'success' && needs.deploy-runner-prepare.result == 'success' && ((inputs.surface == '' || inputs.surface == 'all') || inputs.surface == 'turbo') && (needs.prepare.outputs.job-ref != '' &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
       (
         needs.prepare.outputs.turbo-runner-consumer-needed == 'true' ||

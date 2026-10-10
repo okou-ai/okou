@@ -4,7 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 TEST_ROOT=$(mktemp -d)
 trap 'rm -rf "$TEST_ROOT"' EXIT
-for workflow in crates runner-image release-please; do
+for workflow in ci-crates-checks ci-crates-host-tests ci-runner-image-compile ci-runner-image-prewarm-rust-cache release-please; do
   yq -o=json '.' "${REPO_ROOT}/.github/workflows/${workflow}.yml" > "${TEST_ROOT}/${workflow}.json"
 done
 
@@ -61,7 +61,7 @@ for mode in ["valid", "human-failure", "json-failure"]:
 
 # Inspect the actual five consumers and evaluate their real Actions conditions below.
 consumers = []
-for name in ["crates", "runner-image", "release-please"]:
+for name in ["ci-crates-checks", "ci-crates-host-tests", "ci-runner-image-compile", "ci-runner-image-prewarm-rust-cache", "release-please"]:
     workflow = json.loads((root / (name + ".json")).read_text())
     for job_id, job in workflow["jobs"].items():
         setups = [s for s in job.get("steps", []) if s.get("uses") == "./.github/actions/setup-r2-sccache"]
@@ -79,8 +79,8 @@ for name in ["crates", "runner-image", "release-please"]:
         assert compilers and max(compilers) < job["steps"].index(report)
         consumers.append({"workflow": name, "job": job_id, "if": report["if"], "setupIf": setups[0].get("if")})
 assert {(x["workflow"], x["job"]) for x in consumers} == {
-    ("crates", "coverage"), ("crates", "runner-rootfs-process-test"),
-    ("runner-image", "compile"), ("runner-image", "prewarm-rust-cache"),
+    ("ci-crates-checks", "coverage"), ("ci-crates-host-tests", "runner-rootfs-process-test"),
+    ("ci-runner-image-compile", "compile"), ("ci-runner-image-prewarm-rust-cache", "prewarm-rust-cache"),
     ("release-please", "build-runner-release-assets"),
 }
 (root / "consumers.json").write_text(json.dumps(consumers))
@@ -110,7 +110,7 @@ for (const consumer of consumers) {
     }
   }
 }
-const coverage = consumers.find(x => x.workflow === "crates" && x.job === "coverage");
+const coverage = consumers.find(x => x.workflow === "ci-crates-checks" && x.job === "coverage");
 for (const [event, author, sourceRepo, expected] of [
   ["push", "seven332", "okou-ai/okou", true],
   ["merge_group", "seven332", "okou-ai/okou", true],

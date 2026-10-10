@@ -96,6 +96,7 @@ jobs:
           RUNNER_PATH: runner-binary-fresh/runner
           OUTPUT_DIR: runner-binary-published
           PRODUCER_EVENT: ${{ github.event_name }}
+          PRODUCER_WORKFLOW_PATH: ${{ inputs.producer-workflow-path }}
           PRODUCER_HEAD_SHA: ${{ fromJSON(inputs.dependencies).image-prepare.outputs.producer-head-sha }}
           PRODUCER_PR_NUMBER: ${{ fromJSON(inputs.dependencies).image-prepare.outputs.pr-number }}
           PRODUCER_RUN_ATTEMPT: ${{ github.run_attempt }}

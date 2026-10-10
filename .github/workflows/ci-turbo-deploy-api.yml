@@ -201,6 +201,7 @@ jobs:
       - name: Create Neon Branch
         id: neon
         env:
+          JOB_REF: ${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
           WEB_API_ENV_FILE: ${{ steps.api-seed-env.outputs.file }}
@@ -246,7 +247,7 @@ jobs:
             (cd turbo && DATABASE_URL="$PARENT_DATABASE_URL" pnpm -F @okouai/db db:migrate)
           fi
 
-          DATABASE_URL=$(.github/scripts/neon-preview-branch.sh branch "preview/${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}")
+          DATABASE_URL=$(.github/scripts/neon-preview-branch.sh branch "preview/$JOB_REF")
           WORKFLOW_COMMAND_DATA="${DATABASE_URL//%/%25}"
           WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\r'/%0D}"
           WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\n'/%0A}"

@@ -18,8 +18,6 @@ workflow = lambda name: x.workflow(root, name)
 ci = workflow('ci')
 jobs = ci['jobs']
 assert set(ci['on']) == {'pull_request', 'merge_group', 'workflow_call'}
-assert not (root / '.github/scripts/compose-ci-workflow.rb').exists()
-assert not any('Generated' in line for line in (root / '.github/workflows/ci.yml').read_text().splitlines())
 
 # Verify real local calls, interfaces, unique ownership and GitHub call limits.
 owners = {}
@@ -51,6 +49,11 @@ for identifier, job in jobs.items():
         assert call['outputs']['results']['value'] == '${{ toJSON(jobs) }}'
 
 assert jobs['image-build-arm64']['uses'] == jobs['image-build-x86_64']['uses']
+compiler = workflow('ci-runner-image-compile')['jobs']['compile']
+publisher = next(step for step in compiler['steps'] if step.get('id') == 'transport')
+assert publisher['env']['PRODUCER_WORKFLOW_PATH'] == '${{ inputs.producer-workflow-path }}'
+for surface, expected in [('', 'ci'), ('all', 'ci'), ('images', 'runner-image')]:
+    assert x.expression(jobs['image-compile']['with']['producer-workflow-path'], {'inputs.surface': surface}) == f'.github/workflows/{expected}.yml'
 for logical in ['crates-runner-test-prepare', 'crates-behavior', 'crates-host-cpu-fairness-test', 'crates-guest-rpc-firecracker-test']:
     assert jobs[logical + '-arm64']['uses'] == jobs[logical + '-x86_64']['uses']
 
@@ -123,6 +126,35 @@ assert 'github.event.pull_request.head.repo.full_name == github.repository' in j
 for identifier, job in jobs.items():
     if identifier != 'image-cancel-superseded' and 'uses' not in job:
         assert job['permissions']['actions'] == 'read', identifier
+
+# A skipped compiler (cache hit) or absent architecture must not propagate past
+# successful image readiness into Runner start. GitHub's implicit success()
+# considers the skipped ancestor; the caller must declare its intended status.
+start = jobs['deploy-runner-start']
+for event, surface in [('pull_request', ''), ('merge_group', ''), ('push', 'turbo')]:
+    values = {f'needs.{name}.result': 'success' for name in jobs} | {
+        'inputs.surface': surface, 'github.event_name': event, 'github.repository': 'test/repo',
+        'github.event.pull_request.head.repo.full_name': 'test/repo',
+        'needs.prepare.outputs.job-ref': 'pr-42-test',
+        'needs.prepare.outputs.turbo-runner-consumer-needed': 'true',
+        'needs.prepare.outputs.playwright-runner-consumer-needed': 'false',
+        'needs.image-compile.result': 'skipped', 'needs.image-build-x86_64.result': 'skipped',
+    }
+    assert x.condition(start, values, ancestors_succeeded=False), event
+    assert x.condition(jobs['cli-e2e-03-runner'], values, ancestors_succeeded=False), event
+    assert not x.condition(start, values, cancelled=True, ancestors_succeeded=False), event
+    for dependency in x.needs(start):
+        for status in ['failure', 'cancelled', 'skipped']:
+            assert not x.condition(start, values | {f'needs.{dependency}.result': status}, ancestors_succeeded=False), (event, dependency, status)
+
+# The bounded fixture interpreter must reject executable Python syntax.
+for source in ["__import__('os').getcwd()", "(lambda: true)()", "fromJSON.__globals__", "[true for x in []]"]:
+    try:
+        x.expression(source, {})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('executable fixture syntax accepted: ' + source)
 
 targets = {'arm64': 'aarch64-unknown-linux-musl', 'x86_64': 'x86_64-unknown-linux-musl'}
 selected = ['crates-runner-test-prepare', 'crates-behavior', 'crates-host-cpu-fairness-test', 'crates-guest-rpc-firecracker-test']

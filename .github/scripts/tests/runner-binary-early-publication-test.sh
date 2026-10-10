@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export RUBYOPT="${RUBYOPT:-} -r$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/workflow-test-owners.rb"
+RUBYOPT="${RUBYOPT:-} -r$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/workflow-test-owners.rb"
+export RUBYOPT
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
@@ -164,7 +165,7 @@ Dir.mktmpdir("runner-index-") do |fixture|
      unameM: i.zero? ? "aarch64" : "x86_64", cacheSuffix: i.zero? ? "arm64" : "x86_64",
      assetSuffix: i.zero? ? "arm64" : "x86_64"}
   end
-  make_producer = lambda do |run, target, bytes = "fresh #{target}\n"|
+  make_producer = lambda do |run, target, bytes = "fresh #{target}\n", workflow_path: ".github/workflows/runner-image.yml"|
     cwd = "#{fixture}/producer-#{run}-#{target}"
     FileUtils.mkdir_p(["#{cwd}/.github/scripts/runner-binary-build", "#{cwd}/crates/runner",
       "#{cwd}/crates/target/#{target}/ci", "#{cwd}/runner-binary-fresh"])
@@ -179,19 +180,22 @@ Dir.mktmpdir("runner-index-") do |fixture|
     File.write("#{cwd}/runner-binary-fresh/metadata.json", JSON.generate(metadata))
     run_dir = "#{indices}/#{run}"
     FileUtils.mkdir_p(run_dir)
+    event = workflow_path == ".github/workflows/ci.yml" ? "merge_group" : "push"
     File.write("#{run_dir}/run.json", JSON.generate({id: run, status: "in_progress", run_attempt: 1,
-      head_sha: "b" * 40, head_branch: "main", event: "push", path: ".github/workflows/runner-image.yml",
+      head_sha: "b" * 40, head_branch: event == "push" ? "main" : "gh-readonly-queue/main/pr-42-test", event: event, path: workflow_path,
       repository: {full_name: "okou-ai/okou"}, pull_requests: []}))
-    {run: run, target: target, cwd: cwd, outputs: {"build" => {"binary-input-digest" => digests.fetch(target)}}}
+    {run: run, target: target, cwd: cwd, event: event, workflow_path: workflow_path,
+     outputs: {"build" => {"binary-input-digest" => digests.fetch(target)}}}
   end
   execute = lambda do |producer, selected, extra = {}|
     context = {"github.repository" => "okou-ai/okou", "github.run_id" => producer.fetch(:run).to_s,
-      "github.run_attempt" => "1", "github.event_name" => "push", "github.token" => "fixture-token",
+      "github.run_attempt" => "1", "github.event_name" => producer.fetch(:event), "github.token" => "fixture-token",
       "github.event.repository.default_branch" => "main", "matrix.target" => producer.fetch(:target),
-      "needs.prepare.outputs.producer-head-sha" => "b" * 40, "needs.prepare.outputs.pr-number" => "",
+      "needs.prepare.outputs.producer-head-sha" => "b" * 40, "needs.prepare.outputs.pr-number" => producer.fetch(:event) == "push" ? "" : "42",
       "needs.prepare.outputs.pr-head-ref" => "", "secrets.R2_ACCESS_KEY_ID" => "fixture-access",
       "secrets.R2_SECRET_ACCESS_KEY" => "fixture-secret", "vars.R2_ACCOUNT_ID" => "fixture-account",
-      "vars.R2_USER_STORAGES_BUCKET_NAME" => "fixture-bucket"}
+      "vars.R2_USER_STORAGES_BUCKET_NAME" => "fixture-bucket",
+      "inputs.surface == 'images' && '.github/workflows/runner-image.yml' || '.github/workflows/ci.yml'" => producer.fetch(:workflow_path)}
     producer.fetch(:outputs).each { |id, values| values.each { |key, value| context["steps.#{id}.outputs.#{key}"] = value } }
     selected.each do |step|
       # External AWS provisioning is supplied by the closed provider shim.
@@ -217,6 +221,8 @@ Dir.mktmpdir("runner-index-") do |fixture|
         path = File.join(producer.fetch(:cwd), resolve.call(settings.fetch("path")))
         manifest = JSON.parse(File.read(path))
         raise "wrong producer index identity" unless manifest.fetch("producer").fetch("runId") == producer.fetch(:run) &&
+          manifest.fetch("producer").fetch("workflowPath") == producer.fetch(:workflow_path) &&
+          manifest.fetch("producer").fetch("event") == producer.fetch(:event) &&
           manifest.fetch("target") == producer.fetch(:target) && manifest.fetch("binaryInputDigest") == digests.fetch(producer.fetch(:target))
         dest = "#{indices}/#{producer.fetch(:run)}/#{resolve.call(settings.fetch('name'))}"
         if extra["UPLOAD_FAIL"] != "true" && !File.exist?("#{dest}/manifest.json")
@@ -263,6 +269,8 @@ Dir.mktmpdir("runner-index-") do |fixture|
       root, "#{root}/.github/scripts/runner-binary-cache.sh", "download-reference")
     raise "cached bytes differ from the verified producer" unless File.read("#{destination}/runner") == "fresh #{target}\n"
   end
+  ci_producer = make_producer.call(600, targets[0], workflow_path: ".github/workflows/ci.yml")
+  raise "CI publication did not preserve its actual producer identity: #{ci_producer[:failure]}" unless execute.call(ci_producer, publication)
   # The same current-run transport remains readable by a later consumer attempt.
   command!(environment.merge("CURRENT_RUN_ID" => "20", "EXPECTED_TARGET" => targets[0],
     "EXPECTED_BINARY_INPUT_DIGEST" => digests.fetch(targets[0]), "GITHUB_RUN_ATTEMPT" => "2",

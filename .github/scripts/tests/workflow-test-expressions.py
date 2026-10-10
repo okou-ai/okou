@@ -1,4 +1,5 @@
 """Bounded GitHub expression/step fixture helpers; never execute a workflow."""
+import ast
 import json
 import os
 import re
@@ -35,20 +36,48 @@ def expression(source, values, job=None, cancelled=False):
         for key in path.split('.'):
             value = value.get(key, '') if isinstance(value, dict) else ''
         return value
-    return eval('(' + source + ')', {'__builtins__': {}}, {
+    functions = {
         'true': True, 'false': False, 'fromJSON': json.loads, 'get': get,
         'startsWith': lambda value, prefix: value.startswith(prefix),
         'contains': lambda value, part: part in value,
         'format': lambda template, *args: template.format(*args),
-    })
+    }
+    def interpret(node):
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, ast.Name) and node.id in {'true', 'false'}:
+            return functions[node.id]
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            return not interpret(node.operand)
+        if isinstance(node, ast.BoolOp):
+            value = interpret(node.values[0])
+            for operand in node.values[1:]:
+                if isinstance(node.op, ast.And) and not value:
+                    return value
+                if isinstance(node.op, ast.Or) and value:
+                    return value
+                value = interpret(operand)
+            return value
+        if isinstance(node, ast.Compare) and len(node.ops) == 1:
+            left, right = interpret(node.left), interpret(node.comparators[0])
+            if isinstance(node.ops[0], ast.Eq):
+                return left == right
+            if isinstance(node.ops[0], ast.NotEq):
+                return left != right
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id in functions and callable(functions[node.func.id])
+                and not node.keywords):
+            return functions[node.func.id](*(interpret(arg) for arg in node.args))
+        raise ValueError(f'unsupported fixture expression: {ast.dump(node)}')
+    return interpret(ast.parse('(' + source + ')', mode='eval').body)
 
 
-def condition(job, values, cancelled=False):
+def condition(job, values, cancelled=False, ancestors_succeeded=True):
     if any(values.get(f'needs.{d}.result', '') not in ['success', 'failure', 'cancelled', 'skipped'] for d in needs(job)):
         return False
     source = job.get('if', 'true')
     if not any(f'{f}(' in source for f in ['success', 'failure', 'cancelled', 'always']):
-        if any(values.get(f'needs.{d}.result', '') != 'success' for d in needs(job)):
+        if not ancestors_succeeded or any(values.get(f'needs.{d}.result', '') != 'success' for d in needs(job)):
             return False
     return bool(expression(source, values, job, cancelled))
 

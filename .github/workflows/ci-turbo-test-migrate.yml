@@ -25,8 +25,9 @@ jobs:
           fetch-depth: 2
       - uses: ./.github/actions/toolchain-init
       - name: Prompt for JSONB Contract Changes
+        env:
+          BASE_REF: ${{ fromJSON(inputs.dependencies).prepare.outputs.base-ref }}
         run: |
-          BASE_REF="${{ fromJSON(inputs.dependencies).prepare.outputs.base-ref }}"
           CHANGED=$(git diff --name-only "$BASE_REF" -- \
             'turbo/packages/db/src/jsonb-contracts/**')
 
@@ -47,8 +48,9 @@ jobs:
         run: pnpm lint:jsonb-contracts
       - name: Check Migration Immutability
         if: vars.CI_CHECK_IMMUTABLE_MIGRATE != '0'
+        env:
+          BASE_REF: ${{ fromJSON(inputs.dependencies).prepare.outputs.base-ref }}
         run: |
-          BASE_REF="${{ fromJSON(inputs.dependencies).prepare.outputs.base-ref }}"
           MIGRATION_BASELINE=1078
           # The squashed baseline and its history may be removed. Migrations after
           # the baseline must not be deleted once they land on main.

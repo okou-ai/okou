@@ -4,8 +4,10 @@ require "json"
 require "open3"
 
 def load_workflow_test_owners(path)
-  reader = File.join(__dir__, "load-workflow-test-owners.py")
-  stdout, stderr, status = Open3.capture3("python3", reader, path)
+  stdout, stderr, status = Open3.capture3(
+    "python3", ".github/scripts/tests/load-workflow-test-owners.py", "--stdin",
+    chdir: File.expand_path("../../..", __dir__), stdin_data: path
+  )
   raise "owner context reader failed: #{stderr}" unless status.success?
   JSON.parse(stdout)
 end
