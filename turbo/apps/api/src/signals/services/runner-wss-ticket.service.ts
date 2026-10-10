@@ -263,34 +263,3 @@ export const checkRunnerWssAuthorizations$ = command(
     });
   },
 );
-
-/** Existing minute cron owns bounded retirement even without new issuance. */
-export const cleanupRunnerWssTickets$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
-    const db = set(writeDb$);
-    for (let batch = 0; batch < 10; batch += 1) {
-      signal.throwIfAborted();
-      const expired = db
-        .select({ digest: runnerWssTickets.digest })
-        .from(runnerWssTickets)
-        .where(lte(runnerWssTickets.createdAt, oldestRedeemableCreatedAt))
-        .orderBy(runnerWssTickets.createdAt)
-        .limit(1000);
-      const result = await db
-        .delete(runnerWssTickets)
-        .where(
-          and(
-            inArray(runnerWssTickets.digest, expired),
-            lte(runnerWssTickets.createdAt, oldestRedeemableCreatedAt),
-          ),
-        );
-      signal.throwIfAborted();
-      if (result.rowCount === null) {
-        throw new Error("WSS ticket cleanup returned no deletion count");
-      }
-      if (result.rowCount < 1000) {
-        break;
-      }
-    }
-  },
-);

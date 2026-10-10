@@ -2,7 +2,6 @@ import { cronCleanupSandboxesContract } from "@okouai/api-contracts/contracts/cr
 import { command } from "ccstate";
 
 import type { RouteEntry } from "../route-entry";
-import { cleanupRunnerWssTickets$ } from "../services/runner-wss-ticket.service";
 import { cleanupSandboxes$ } from "../services/cron-cleanup-sandboxes.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
@@ -12,7 +11,6 @@ const cleanupSandboxesRoute$ = command(
       return cronUnauthorized();
     }
 
-    await set(cleanupRunnerWssTickets$, signal);
     const body = await set(cleanupSandboxes$, signal);
     signal.throwIfAborted();
     return { status: 200 as const, body };
