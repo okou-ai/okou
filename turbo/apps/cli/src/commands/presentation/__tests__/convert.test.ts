@@ -284,7 +284,7 @@ vi.mock("child_process", () => {
         }
         if (command === process.execPath) {
           if (state.snapshotFailure)
-            throw new Error("ws://private-layout-endpoint?secret=secret-value");
+            throw new Error("wss://private-layout-endpoint?secret=secret-value");
           return "[]";
         }
         if (command === "npm") {
