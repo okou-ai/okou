@@ -1,6 +1,8 @@
 //! Bounded version-one managed task protocol on a separate placement endpoint.
 
 use std::io::{self, Read, Write};
+use std::os::unix::net::UnixStream;
+use std::time::{Duration, Instant};
 
 use guest_contracts::managed_task::{TaskHandle, TaskStartup};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -54,6 +56,15 @@ pub fn read_request(stream: &mut impl Read) -> io::Result<TaskRequest> {
     read_frame(stream)
 }
 
+/// Read a request within one frame budget, including fragmented input.
+/// Restore the stream's original read timeout before returning.
+pub fn read_request_with_timeout(
+    stream: &UnixStream,
+    timeout: Duration,
+) -> io::Result<TaskRequest> {
+    read_stream_frame(stream, timeout)
+}
+
 /// Write a bounded task response.
 pub fn write_reply(stream: &mut impl Write, reply: &TaskReply) -> io::Result<()> {
     write_frame(stream, reply)
@@ -62,6 +73,63 @@ pub fn write_reply(stream: &mut impl Write, reply: &TaskReply) -> io::Result<()>
 /// Read and validate a bounded task response.
 pub fn read_reply(stream: &mut impl Read) -> io::Result<TaskReply> {
     read_frame(stream)
+}
+
+/// Read a reply within one frame budget, including fragmented input.
+/// Restore the stream's original read timeout before returning.
+pub fn read_reply_with_timeout(stream: &UnixStream, timeout: Duration) -> io::Result<TaskReply> {
+    read_stream_frame(stream, timeout)
+}
+
+fn frame_timed_out() -> io::Error {
+    io::Error::new(io::ErrorKind::TimedOut, "managed task frame timed out")
+}
+
+struct DeadlineReader<'a> {
+    stream: &'a UnixStream,
+    deadline: Instant,
+}
+
+impl Read for DeadlineReader<'_> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if buffer.is_empty() {
+            return Ok(0);
+        }
+        let remaining = self
+            .deadline
+            .checked_duration_since(Instant::now())
+            .filter(|remaining| !remaining.is_zero())
+            .ok_or_else(frame_timed_out)?;
+        // SO_RCVTIMEO alone bounds each recv, not a sequence of partial reads.
+        // Every read uses only the remainder of the original frame budget.
+        self.stream.set_read_timeout(Some(remaining))?;
+        self.stream.read(buffer).map_err(|error| {
+            if matches!(
+                error.kind(),
+                io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+            ) {
+                frame_timed_out()
+            } else {
+                error
+            }
+        })
+    }
+}
+
+fn read_stream_frame<T: DeserializeOwned>(stream: &UnixStream, timeout: Duration) -> io::Result<T> {
+    let deadline = Instant::now().checked_add(timeout).ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "task frame timeout overflowed")
+    })?;
+    let original = stream.read_timeout()?;
+    let result = read_frame(&mut DeadlineReader { stream, deadline });
+    let restored = stream.set_read_timeout(original);
+    match result {
+        Ok(frame) => {
+            restored?;
+            Ok(frame)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn write_frame(stream: &mut impl Write, value: &impl Serialize) -> io::Result<()> {

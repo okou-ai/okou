@@ -144,7 +144,9 @@ Nested task OOM paths remain evidence, never main agent-domain attribution.
 Placement does not move memory already charged to the starting tool.
 
 The task protocol is a separate bounded version-one endpoint derived from the
-existing canonical tool endpoint. Old CLI/tool consumers on a new Guest retain
+existing canonical tool endpoint. Each task request/reply frame uses one overall
+read deadline; partial input cannot renew the budget or hold the task broker
+indefinitely. Old CLI/tool consumers on a new Guest retain
 the unchanged tool wire ABI. On an old Guest, the new binary/endpoint is missing:
 new consumers must report unsupported managed tasks before executing the target,
 never fall back to unmanaged spawn or the protected main runtime. The normal

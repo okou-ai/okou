@@ -3623,6 +3623,7 @@ dependencies = [
  "guest-init",
  "guest-state-restore",
  "guest-storage-apply",
+ "guest-task-exec",
  "guest-tool-exec",
  "guest-write-file",
  "hex",

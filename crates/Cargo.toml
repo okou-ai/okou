@@ -59,6 +59,7 @@ guest-contracts = { path = "guest-contracts" }
 session-history-selector = { path = "session-history-selector" }
 runner-rpc-client = { path = "runner-rpc-client" }
 guest-tool-exec = { path = "guest-tool-exec" }
+guest-task-exec = { path = "guest-task-exec" }
 process-control-ipc = { path = "process-control-ipc" }
 process-launch = { path = "process-launch" }
 guest-telemetry = { path = "guest-telemetry" }

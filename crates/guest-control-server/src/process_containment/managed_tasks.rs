@@ -280,7 +280,7 @@ impl ManagedTasks {
                         "task caller is not in the owning main runtime/tools domain",
                     ));
                 }
-                match ipc::read_request(&mut &*stream)? {
+                match ipc::read_request_with_timeout(stream, TOOL_PLACEMENT_IO_TIMEOUT)? {
                     TaskRequest::Launch {} => self.launch(stream),
                     TaskRequest::Stop { handle } => {
                         self.stop(&handle, ProcessContainmentCleanupMode::Graceful)?;
