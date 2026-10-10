@@ -80,12 +80,38 @@ async fn equal_sandbox_labels_do_not_share_backing_generations_or_exit() {
 #[tokio::test]
 async fn simultaneous_backing_observers_share_one_terminal_result() {
     let (completion, backing) = MockBackingProcess::channel();
-    let first = backing.clone();
-    let second = backing.clone();
-    let first = tokio::spawn(async move { first.exit_confirmed().await });
-    let second = tokio::spawn(async move { second.exit_confirmed().await });
+    let spawn_observer = || {
+        let backing = backing.clone();
+        let (pending_tx, pending_rx) = tokio::sync::oneshot::channel();
+        let observer = tokio::spawn(async move {
+            let confirmation = backing.exit_confirmed();
+            tokio::pin!(confirmation);
+            std::future::poll_fn(|cx| {
+                assert!(std::future::Future::poll(confirmation.as_mut(), cx).is_pending());
+                std::task::Poll::Ready(())
+            })
+            .await;
+            pending_tx.send(()).unwrap();
+            confirmation.await
+        });
+        (observer, pending_rx)
+    };
+    let (first, first_pending) = spawn_observer();
+    let (second, second_pending) = spawn_observer();
+    // Each caller must have polled Pending before the producer publishes;
+    // spawning alone can otherwise test only an already-terminal result.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        first_pending.await.unwrap();
+        second_pending.await.unwrap();
+    })
+    .await
+    .unwrap();
     completion.confirm_exit();
-    assert!(first.await.unwrap());
-    assert!(second.await.unwrap());
+    tokio::time::timeout(Duration::from_secs(5), async {
+        assert!(first.await.unwrap());
+        assert!(second.await.unwrap());
+    })
+    .await
+    .unwrap();
     assert!(backing.exit_confirmed().await);
 }
