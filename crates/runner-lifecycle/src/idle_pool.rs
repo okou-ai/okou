@@ -10,11 +10,15 @@ use runner_types::ids::RunId;
 use runner_types::types::{HeldSandboxState, ReusableSandboxState};
 
 mod entry;
+mod inventory_retirement;
 mod park_transition;
 mod parking_gate;
 mod pressure;
 mod retirement;
 
+pub use inventory_retirement::{
+    IdlePoolRetirement, IdlePoolRetirementStartFailure, IdleRetirementCandidate,
+};
 pub use pressure::IdlePressureCandidate;
 pub use retirement::{
     GuardedIdleRetirement, IdleRetirementAdmissionFailure, IdleRetirementEnvelope,
@@ -574,7 +578,10 @@ impl IdlePool {
         }
     }
 
-    fn insert_entry(&mut self, entry: IdleEntry) -> Option<IdleEntry> {
+    fn insert_entry(&mut self, mut entry: IdleEntry) -> Option<IdleEntry> {
+        // Reservation/restore can preserve every visible field and parked age.
+        // A new insertion must nevertheless invalidate an earlier cleanup claim.
+        entry.insertion_epoch = Uuid::new_v4();
         match &entry.metadata.identity {
             IdleSandboxIdentity::Exact(reuse_key) => {
                 self.exact_entries.insert(reuse_key.clone(), entry)

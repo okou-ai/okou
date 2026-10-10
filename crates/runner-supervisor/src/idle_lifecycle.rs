@@ -15,12 +15,12 @@ use crate::blank_pool::BlankPoolDiagnostics;
 use runner_executor::executor::{BlankPoolSelection, BlankPoolSelectionReason};
 use runner_host::idle_prune_control::{PruneIdleReport, PruneIdleResponse};
 use runner_host::paths::short_digest;
-use runner_lifecycle::host_memory_operations::MemoryOperationError;
+use runner_lifecycle::host_memory_operations::{HostMemoryOperations, MemoryOperationError};
 use runner_lifecycle::idle_pool::{
     BlankIdleReservationMiss, DestroyOutcome, ExactIdleReservationMiss, GuardedIdleRetirement,
-    IdleDestroyJob, IdleDestroyPayload, IdleDestroyResult, IdlePool, IdlePoolSnapshot,
-    IdleRetirementStartFailure, ReservedIdleSandbox, RestoreReservedIdleResult,
-    RetainedIdleDestroyResult,
+    IdleDestroyJob, IdleDestroyPayload, IdleDestroyResult, IdlePool, IdlePoolRetirement,
+    IdlePoolSnapshot, IdleRetirementCandidate, IdleRetirementEnvelope, IdleRetirementStartFailure,
+    ReservedIdleSandbox, RestoreReservedIdleResult, RetainedIdleDestroyResult,
 };
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::{StatusResult, StatusTracker};
@@ -38,6 +38,20 @@ pub struct IdleCleanupTask<T> {
 /// Supervisor observation of the independently owned memory-covered cleanup.
 pub type GuardedIdleCleanupTask =
     IdleCleanupTask<Result<RetainedIdleDestroyResult, MemoryOperationError>>;
+
+/// Required coverage and exact resource candidate, supplied by the caller.
+pub struct IdlePoolRetirementRequest {
+    pub candidate: IdleRetirementCandidate,
+    pub envelope: IdleRetirementEnvelope,
+    pub context: &'static str,
+}
+
+/// Inventory snapshot committed with acceptance. Status publication may happen
+/// afterward without owning or cancelling the physical cleanup.
+pub struct IdlePoolRetirementStarted {
+    pub task: GuardedIdleCleanupTask,
+    pub snapshot: IdlePoolSnapshot,
+}
 
 impl<T> IdleCleanupTask<T> {
     /// Wait for one completion. A lost producer is uncertainty, not cleanup proof.
@@ -58,6 +72,51 @@ impl IdleDestroyTracker {
             tasks: TaskTracker::new(),
             reuse_state_notify,
         }
+    }
+
+    /// Keep inventory owned through admission waits, then fence/accept physical
+    /// retirement and its shutdown observer before yielding to status/callers.
+    pub async fn retire_pool_entry(
+        &self,
+        pool: &SharedIdlePool,
+        operations: &HostMemoryOperations,
+        request: IdlePoolRetirementRequest,
+    ) -> Result<IdlePoolRetirementStarted, MemoryOperationError> {
+        let mut retirement =
+            IdlePoolRetirement::new(request.candidate, operations, request.envelope)?;
+        retirement.try_grant().await?;
+        let mut pool = pool.lock().await;
+        // A token registered before acceptance bridges the gap to installation
+        // of the completion observer. close_and_wait cannot miss accepted work.
+        let token = self.tasks.token();
+        if self.tasks.is_closed() {
+            drop(pool);
+            return Err(MemoryOperationError::Closed);
+        }
+        let task = match retirement.start(&mut pool, request.context) {
+            Ok(task) => task,
+            Err(failure) => {
+                drop(pool);
+                return Err(failure.into_error());
+            }
+        };
+        let snapshot = pool.status_snapshot();
+        let reuse_state_notify = Arc::clone(&self.reuse_state_notify);
+        let task = self.track(
+            async move {
+                let _token = token;
+                let result = task.join().await;
+                if result
+                    .as_ref()
+                    .is_ok_and(|result| result.home_cache_promoted)
+                {
+                    reuse_state_notify.notify_one();
+                }
+                result
+            },
+            request.context,
+        );
+        Ok(IdlePoolRetirementStarted { task, snapshot })
     }
 
     pub fn spawn_job(

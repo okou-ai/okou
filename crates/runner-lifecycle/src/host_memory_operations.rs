@@ -140,6 +140,8 @@ pub enum MemoryOperationError {
     AccountingPoisoned,
     #[error("memory operation ownership invariant failed")]
     OwnershipInvariant,
+    #[error("selected resource changed; capture a fresh candidate before retrying")]
+    ResourceChanged,
     #[error("operation has already transferred or settled")]
     Consumed,
     #[error("rebind must preserve the operation's purpose and priority class")]
