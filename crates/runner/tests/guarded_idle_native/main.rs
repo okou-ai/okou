@@ -1,8 +1,7 @@
 #![cfg(target_os = "linux")]
 
-//! Opt-in packaged-guest terminal saving fixture; see guarded_idle_native/README.md.
+//! Opt-in packaged-guest terminal saving fixture; see README.md in this directory.
 
-#[path = "guarded_idle_native/fixture.rs"]
 mod fixture;
 
 use std::{error::Error, io, path::PathBuf, sync::Arc};
