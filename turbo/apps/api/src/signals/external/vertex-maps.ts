@@ -294,6 +294,9 @@ function parseMapsCitations(
   answer: ParsedAnswer,
   sourceCount: number,
 ): MapsSearchCitation[] {
+  if (sourceCount > 0 && !supports?.length) {
+    throw new VertexMapsError(502, "invalid_citation");
+  }
   return (supports ?? []).map((support) => {
     const partIndex = support.segment.partIndex ?? 0;
     const part = answer.parts[partIndex];
@@ -408,6 +411,9 @@ function parseVertexMapsResponse(body: string): VertexMapsResult {
     grounding === undefined ? [] : grounding.retrievalQueries,
     sources.length > 0,
   );
+  if (usage.mapsQueries > 0 && sources.length === 0) {
+    throw new VertexMapsError(502, "invalid_citation");
+  }
   return {
     answer: answer.text,
     sources,

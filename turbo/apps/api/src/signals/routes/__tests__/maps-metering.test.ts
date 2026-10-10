@@ -64,13 +64,9 @@ describe("Maps generateContent usage and citations", () => {
     },
   );
 
-  it("counts repeated executed queries even when they produce no cited places", async () => {
+  it("counts repeated executed queries independently of the cited place count", async () => {
     const { billing, actor } = await setupMaps();
-    const response = vertexMapsContent({
-      answer: "No matching places were found.",
-      sources: [],
-      supports: [],
-    });
+    const response = vertexMapsContent();
     server.use(
       http.post(VERTEX_MAPS_URL, () => {
         return HttpResponse.json({
@@ -79,6 +75,7 @@ describe("Maps generateContent usage and citations", () => {
             {
               ...response.candidates[0],
               groundingMetadata: {
+                ...response.candidates[0]!.groundingMetadata,
                 retrievalQueries: [
                   "cafe in a small town",
                   "cafe in a small town",
@@ -96,17 +93,45 @@ describe("Maps generateContent usage and citations", () => {
       [200],
     );
     expect(search.body).toMatchObject({
-      sources: [],
-      citations: [],
+      sources: [{ title: "Café Central" }],
       billingQuantity: 28_100,
       creditsCharged: 36,
       usage: { mapsQueries: 2 },
     });
-    expect(search.body).not.toHaveProperty("attribution");
+    expect(search.body).toHaveProperty("attribution", "Google Maps");
     expect((await billing.readBillingStatus(actor)).credits).toBe(
       before.credits - 36,
     );
   });
+
+  it.each(["sources and citations", "citations"])(
+    "rejects executed Maps queries missing %s without charging",
+    async (missing) => {
+      const { billing, actor } = await setupMaps();
+      server.use(
+        http.post(VERTEX_MAPS_URL, () => {
+          return vertexMapsResponse({
+            answer: "推荐 Café Central：https://maps.google.com/maps?cid=123",
+            ...(missing === "sources and citations" ? { sources: [] } : {}),
+            supports: [],
+          });
+        }),
+      );
+      const before = await billing.readBillingStatus(actor);
+      const search = await billing.requestMapsSearch(
+        actor,
+        { query: "推荐附近的咖啡店", languageCode: "zh_CN" },
+        [502],
+      );
+      expect(search.body).toMatchObject({
+        error: { code: "MAPS_GROUNDING_ERROR" },
+      });
+      expect(search.body).not.toHaveProperty("answer");
+      expect((await billing.readBillingStatus(actor)).credits).toBe(
+        before.credits,
+      );
+    },
+  );
 
   it("prices cached prompt tokens separately and rounds combined token cost once", async () => {
     const { billing, actor } = await setupMaps();
