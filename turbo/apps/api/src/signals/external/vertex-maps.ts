@@ -67,7 +67,7 @@ const usageSchema = z.object({
 });
 const responseSchema = z.object({
   promptFeedback: z.object({ blockReason: z.string().optional() }).optional(),
-  modelVersion: z.string(),
+  modelVersion: z.string().optional(),
   usageMetadata: z.unknown().optional(),
   candidates: z
     .array(
@@ -366,7 +366,7 @@ function parseUsage(
 
 function parseVertexMapsResponse(body: string): VertexMapsResult {
   const parsed = responseSchema.safeParse(safeJsonParse(body));
-  if (!parsed.success || parsed.data.modelVersion !== VERTEX_MAPS_MODEL) {
+  if (!parsed.success) {
     throw new VertexMapsError(502, "invalid_response");
   }
   if (parsed.data.promptFeedback?.blockReason) {
@@ -379,6 +379,9 @@ function parseVertexMapsResponse(body: string): VertexMapsResult {
   const finishReason = finishFailureReason(candidate.finishReason);
   if (finishReason) {
     throw new VertexMapsError(502, finishReason);
+  }
+  if (parsed.data.modelVersion !== VERTEX_MAPS_MODEL) {
+    throw new VertexMapsError(502, "invalid_response");
   }
   const answer = parseAnswer(candidate.content?.parts ?? []);
   if (
