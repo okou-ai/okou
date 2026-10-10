@@ -332,6 +332,58 @@ describe("direct Runner WSS ticket boundary", () => {
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
+  it("expires pending tickets without expiring consumed authority", async () => {
+    const f = await setup();
+    const established = await accept(bootstrap(f), [200]);
+    const admitted = await accept(consume(f, established.body.ticket), [200]);
+    const key = { runId: f.runId, digest: admitted.body.digest };
+    const oldest = await accept(bootstrap(f), [200]);
+    await Promise.all(
+      Array.from({ length: 15 }, () => {
+        return accept(bootstrap(f), [200]);
+      }),
+    );
+    let fresh = await bootstrap(f);
+    expect(fresh.status).toBe(404);
+
+    // Observe quota reopening through the API, with real database time. Keep
+    // Runner freshness independent of the ticket's redemption deadline.
+    let sequence = 1;
+    await expect
+      .poll(
+        async () => {
+          await f.api.requestHeartbeatRunner(true, [200], {
+            runnerId: f.runnerId,
+            group: f.group,
+            snapshotSequence: ++sequence,
+            wssIngressServiceActive: true,
+          });
+          fresh = await bootstrap(f);
+          return fresh.status;
+        },
+        { timeout: 40_000, interval: 1000 },
+      )
+      .toBe(200);
+
+    const expired = await accept(consume(f, oldest.body.ticket), [404]);
+    expect(expired.body.error.code).toBe("NOT_FOUND");
+    const current = await accept(
+      client().check({
+        headers: officialHeaders,
+        body: { runnerId: f.runnerId, origin, authorizations: [key] },
+      }),
+      [200],
+    );
+    expect(current.body).toStrictEqual({ authorized: [key] });
+    if (fresh.status !== 200) {
+      throw new Error(
+        "Expected a fresh ticket after the pending quota reopened",
+      );
+    }
+    await accept(consume(f, fresh.body.ticket), [200]);
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  }, 45_000);
+
   it("keeps earlier consumed authority when reconnecting with a fresh ticket", async () => {
     const f = await setup();
     const first = await accept(bootstrap(f), [200]);

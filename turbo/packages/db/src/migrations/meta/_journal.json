@@ -2063,8 +2063,8 @@
     {
       "idx": 1372,
       "version": "7",
-      "when": 1791645921240,
-      "tag": "1372_drop_runner_wss_ticket_revocation",
+      "when": 1791648654765,
+      "tag": "1372_trim_runner_wss_ticket_columns",
       "breakpoints": true
     }
   ]

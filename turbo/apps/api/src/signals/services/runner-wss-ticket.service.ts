@@ -26,10 +26,12 @@ import {
 } from "./runner-wss-target.service";
 
 const MAX_PENDING_PER_RUN = 16;
+const TICKET_TTL_SECONDS = 30;
 // PostgreSQL now() is fixed at transaction start. A Run-row lock can delay
 // issuance or redemption past a short ticket's deadline, so use the actual
 // database wall clock in the UTC convention of the stored timestamp columns.
 const databaseNow = sql`timezone('UTC', clock_timestamp())`;
+const oldestRedeemableCreatedAt = sql`${databaseNow} - ${TICKET_TTL_SECONDS} * interval '1 second'`;
 
 function digestOf(ticket: string): string {
   return createHash("sha256").update(ticket, "utf8").digest("hex");
@@ -90,7 +92,7 @@ export const issueRunnerWssTicket$ = command(
         .where(
           and(
             eq(runnerWssTickets.runId, run.id),
-            gt(runnerWssTickets.expiresAt, databaseNow),
+            gt(runnerWssTickets.createdAt, oldestRedeemableCreatedAt),
             isNull(runnerWssTickets.consumedAt),
           ),
         )
@@ -110,8 +112,8 @@ export const issueRunnerWssTicket$ = command(
             .where(
               and(
                 lt(
-                  runnerWssTickets.expiresAt,
-                  sql`${databaseNow} - interval '1 day'`,
+                  runnerWssTickets.createdAt,
+                  sql`${oldestRedeemableCreatedAt} - interval '1 day'`,
                 ),
                 or(
                   isNull(runnerWssTickets.consumedAt),
@@ -124,7 +126,7 @@ export const issueRunnerWssTicket$ = command(
                 ),
               ),
             )
-            .orderBy(runnerWssTickets.expiresAt)
+            .orderBy(runnerWssTickets.createdAt)
             .limit(100)
             // Retain the existing cleanup lock: never wait on another issuer's
             // row while holding this Run (cross-run deadlock risk).
@@ -142,16 +144,17 @@ export const issueRunnerWssTicket$ = command(
           runnerId: target.runnerId,
           origin: target.publicOrigin,
           createdAt: databaseNow,
-          expiresAt: sql`${databaseNow} + interval '30 seconds'`,
         })
-        .returning({ expiresAt: runnerWssTickets.expiresAt });
+        .returning({ createdAt: runnerWssTickets.createdAt });
       if (!issued) {
         throw new Error("WSS ticket insert returned no row");
       }
       return {
         wssUrl: `${target.publicOrigin}/ws/${target.runnerId}`,
         ticket,
-        expiresAt: issued.expiresAt.toISOString(),
+        expiresAt: new Date(
+          issued.createdAt.getTime() + TICKET_TTL_SECONDS * 1000,
+        ).toISOString(),
       };
     });
   },
@@ -209,7 +212,7 @@ export const consumeRunnerWssTicket$ = command(
             eq(runnerWssTickets.runId, args.runId),
             eq(runnerWssTickets.runnerId, args.runnerId),
             eq(runnerWssTickets.origin, args.origin),
-            gt(runnerWssTickets.expiresAt, databaseNow),
+            gt(runnerWssTickets.createdAt, oldestRedeemableCreatedAt),
             isNull(runnerWssTickets.consumedAt),
           ),
         );
@@ -243,7 +246,7 @@ export const consumeRunnerWssTicket$ = command(
           and(
             eq(runnerWssTickets.digest, digest),
             isNull(runnerWssTickets.consumedAt),
-            gt(runnerWssTickets.expiresAt, databaseNow),
+            gt(runnerWssTickets.createdAt, oldestRedeemableCreatedAt),
           ),
         )
         .returning({ digest: runnerWssTickets.digest });

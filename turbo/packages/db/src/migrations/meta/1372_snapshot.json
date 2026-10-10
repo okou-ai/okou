@@ -1,5 +1,5 @@
 {
-  "id": "e6b20d3e-8c0e-4e01-b062-132a60765ae0",
+  "id": "c0a5e8bb-93c7-43fc-9d96-639e26afbc5b",
   "prevId": "9167265f-86ad-4785-ae34-221e075262c5",
   "version": "7",
   "dialect": "postgresql",
@@ -24635,12 +24635,6 @@
           "notNull": true,
           "default": "now()"
         },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
         "consumed_at": {
           "name": "consumed_at",
           "type": "timestamp",
@@ -24649,8 +24643,8 @@
         }
       },
       "indexes": {
-        "runner_wss_tickets_run_expires_idx": {
-          "name": "runner_wss_tickets_run_expires_idx",
+        "runner_wss_tickets_run_created_idx": {
+          "name": "runner_wss_tickets_run_created_idx",
           "columns": [
             {
               "expression": "run_id",
@@ -24659,7 +24653,7 @@
               "nulls": "last"
             },
             {
-              "expression": "expires_at",
+              "expression": "created_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -24670,11 +24664,11 @@
           "method": "btree",
           "with": {}
         },
-        "runner_wss_tickets_expires_idx": {
-          "name": "runner_wss_tickets_expires_idx",
+        "runner_wss_tickets_created_idx": {
+          "name": "runner_wss_tickets_created_idx",
           "columns": [
             {
-              "expression": "expires_at",
+              "expression": "created_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
