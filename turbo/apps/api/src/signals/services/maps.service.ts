@@ -116,10 +116,6 @@ function invalidProviderUsage(): MapsErrorResponse {
 }
 
 function providerCostMicros(result: VertexMapsResult): number | null {
-  // The generateContent compatibility probe must not estimate missing usage.
-  if (result.usage.mapsQueries === undefined) {
-    return null;
-  }
   const tokenCostThousandths =
     BigInt(result.usage.inputTokens - result.usage.cachedInputTokens) *
       INPUT_TOKEN_PRICE_THOUSANDTHS_OF_MICRO_USD +

@@ -8,7 +8,7 @@ import { createMapsBillingApi } from "./helpers/api-bdd-maps-billing";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import {
   VERTEX_MAPS_URL,
-  vertexMapsInteraction,
+  vertexMapsContent,
   vertexMapsResponse,
 } from "./helpers/google-maps-grounding";
 
@@ -25,78 +25,16 @@ async function setupMaps() {
   return { billing, actor };
 }
 
-const validUsage = vertexMapsInteraction().usage;
+const validResponse = vertexMapsContent();
+const validCandidate = validResponse.candidates[0]!;
 
-describe("Maps Interactions usage and citations", () => {
-  it("does not charge for the incomplete citation and usage shape returned by live Vertex", async () => {
-    const { billing, actor } = await setupMaps();
-    server.use(
-      http.post(VERTEX_MAPS_URL, () => {
-        // Reduced, anonymized response observed on the pinned Vertex revision.
-        // The place exists only in the tool result: annotations have no source
-        // identity, and usage has no billable Maps query aggregate.
-        return HttpResponse.json({
-          model: "gemini-3.5-flash-lite",
-          status: "completed",
-          steps: [
-            { type: "thought", signature: "private-signature" },
-            {
-              type: "model_output",
-              content: [
-                {
-                  type: "text",
-                  text: "Example Cafe is open nearby.",
-                  annotations: [{ start_index: 0, end_index: 18 }],
-                },
-              ],
-            },
-            { type: "google_maps_call", id: "maps-call" },
-            {
-              type: "google_maps_result",
-              call_id: "maps-call",
-              result: [
-                {
-                  places: [
-                    {
-                      place_id: "places/123",
-                      name: "Example Cafe",
-                      url: "https://maps.google.com/?cid=123",
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-          usage: {
-            total_input_tokens: 199,
-            total_output_tokens: 228,
-            total_thought_tokens: 0,
-            total_tool_use_tokens: 0,
-            total_tokens: 427,
-          },
-        });
-      }),
-    );
-    const before = await billing.readBillingStatus(actor);
-    const search = await billing.requestMapsSearch(
-      actor,
-      { query: "Find one cafe near the Ferry Building in San Francisco" },
-      [502],
-    );
-    expect(search.body).toMatchObject({
-      error: { code: "MAPS_GROUNDING_ERROR" },
-    });
-    expect((await billing.readBillingStatus(actor)).credits).toBe(
-      before.credits,
-    );
-  });
-
+describe("Maps generateContent usage and citations", () => {
   it.each([
-    { mapsQueries: 0, providerCost: 155, credits: 1 },
-    { mapsQueries: 3, providerCost: 42_155, credits: 53 },
-    { mapsQueries: 4, providerCost: 56_155, credits: 71 },
+    { mapsQueries: 0, providerCost: 100, credits: 1 },
+    { mapsQueries: 3, providerCost: 42_100, credits: 53 },
+    { mapsQueries: 4, providerCost: 56_100, credits: 71 },
   ])(
-    "bills $mapsQueries provider queries even when their cost exceeds the admission estimate",
+    "bills $mapsQueries executed queries independently of source count and admission estimate",
     async ({ mapsQueries, providerCost, credits }) => {
       const { billing, actor } = await setupMaps();
       server.use(
@@ -126,14 +64,28 @@ describe("Maps Interactions usage and citations", () => {
     },
   );
 
-  it("charges executed Maps queries even when the answer has no place citations", async () => {
+  it("counts repeated executed queries even when they produce no cited places", async () => {
     const { billing, actor } = await setupMaps();
-    const answer = "No matching places were found.";
+    const response = vertexMapsContent({
+      answer: "No matching places were found.",
+      sources: [],
+      supports: [],
+    });
     server.use(
       http.post(VERTEX_MAPS_URL, () => {
-        return vertexMapsResponse({
-          mapsQueries: 2,
-          content: [{ type: "text", text: answer }],
+        return HttpResponse.json({
+          ...response,
+          candidates: [
+            {
+              ...response.candidates[0],
+              groundingMetadata: {
+                retrievalQueries: [
+                  "cafe in a small town",
+                  "cafe in a small town",
+                ],
+              },
+            },
+          ],
         });
       }),
     );
@@ -144,10 +96,9 @@ describe("Maps Interactions usage and citations", () => {
       [200],
     );
     expect(search.body).toMatchObject({
-      answer,
       sources: [],
       citations: [],
-      billingQuantity: 28_155,
+      billingQuantity: 28_100,
       creditsCharged: 36,
       usage: { mapsQueries: 2 },
     });
@@ -157,11 +108,11 @@ describe("Maps Interactions usage and citations", () => {
     );
   });
 
-  it("prices cached prompt tokens separately and rounds the combined token cost once", async () => {
+  it("prices cached prompt tokens separately and rounds combined token cost once", async () => {
     const { billing, actor } = await setupMaps();
     server.use(
       http.post(VERTEX_MAPS_URL, () => {
-        return vertexMapsResponse({ cachedInputTokens: 80 });
+        return vertexMapsResponse({ inputTokens: 101, cachedInputTokens: 81 });
       }),
     );
     const search = await billing.requestMapsSearch(
@@ -169,117 +120,114 @@ describe("Maps Interactions usage and citations", () => {
       { query: "Coffee near Union Square" },
       [200],
     );
-    // 20 * $0.30/M + 80 * $0.03/M + 50 * $2.50/M = 133.4 micro USD.
+    // 20 * $0.25/M + 81 * $0.025/M + 50 * $1.50/M = 82.025 micro USD.
     expect(search.body).toMatchObject({
-      billingQuantity: 14_134,
-      providerCostUsd: 0.014134,
+      billingQuantity: 14_083,
+      providerCostUsd: 0.014083,
       creditsCharged: 18,
-      usage: { inputTokens: 100, cachedInputTokens: 80, outputTokens: 50 },
+      usage: { inputTokens: 101, cachedInputTokens: 81, outputTokens: 50 },
     });
   });
 
   it.each([
-    { name: "missing usage", usage: undefined },
-    {
-      name: "missing query telemetry",
-      usage: { ...validUsage, grounding_tool_count: undefined },
-    },
-    {
-      name: "missing Maps entry",
-      usage: { ...validUsage, grounding_tool_count: [] },
-    },
-    {
-      name: "duplicate Maps counts",
-      usage: {
-        ...validUsage,
-        grounding_tool_count: [
-          { type: "google_maps", count: 1 },
-          { type: "google_maps", count: 2 },
-        ],
-      },
-    },
-    {
-      name: "negative count",
-      usage: {
-        ...validUsage,
-        grounding_tool_count: [{ type: "google_maps", count: -1 }],
-      },
-    },
-    {
-      name: "fractional count",
-      usage: {
-        ...validUsage,
-        grounding_tool_count: [{ type: "google_maps", count: 1.5 }],
-      },
-    },
-    {
-      name: "zero count despite Maps activity",
-      usage: {
-        ...validUsage,
-        grounding_tool_count: [{ type: "google_maps", count: 0 }],
-      },
-    },
-    {
-      name: "unexpected billed tool",
-      usage: {
-        ...validUsage,
-        grounding_tool_count: [
-          { type: "google_maps", count: 1 },
-          { type: "google_search", count: 2 },
-        ],
-      },
-    },
-    {
-      name: "cached count larger than the prompt",
-      usage: { ...validUsage, total_cached_tokens: 101 },
-    },
-    {
-      name: "unrepresentable output token total",
-      usage: { ...validUsage, total_output_tokens: Number.MAX_SAFE_INTEGER },
-    },
-    {
-      name: "unrepresentable provider cost",
-      usage: {
-        ...validUsage,
-        grounding_tool_count: [
-          { type: "google_maps", count: Number.MAX_SAFE_INTEGER },
-        ],
-      },
-    },
-  ])(
-    "rejects $name without settling an estimated charge",
-    async ({ usage }) => {
-      const { billing, actor } = await setupMaps();
-      server.use(
-        http.post(VERTEX_MAPS_URL, () => {
-          return HttpResponse.json({ ...vertexMapsInteraction(), usage });
-        }),
-      );
-      const before = await billing.readBillingStatus(actor);
-      const search = await billing.requestMapsSearch(
-        actor,
-        { query: "Coffee near Union Square" },
-        [502],
-      );
-      expect(search.body).toStrictEqual({
-        error: {
-          code: "MAPS_USAGE_UNAVAILABLE",
-          message: "Google Maps grounding did not return valid billing usage",
-        },
-      });
-      expect((await billing.readBillingStatus(actor)).credits).toBe(
-        before.credits,
-      );
-    },
-  );
+    { name: "missing query list with sources", queries: undefined },
+    { name: "null query list", queries: null },
+    { name: "zero queries despite sources", queries: [] },
+    { name: "non-string query", queries: [1] },
+    { name: "blank query", queries: ["  "] },
+  ])("does not charge for $name", async ({ queries }) => {
+    const { billing, actor } = await setupMaps();
+    server.use(
+      http.post(VERTEX_MAPS_URL, () => {
+        return HttpResponse.json({
+          ...validResponse,
+          candidates: [
+            {
+              ...validCandidate,
+              groundingMetadata: {
+                ...validCandidate.groundingMetadata,
+                retrievalQueries: queries,
+              },
+            },
+          ],
+        });
+      }),
+    );
+    const before = await billing.readBillingStatus(actor);
+    const search = await billing.requestMapsSearch(
+      actor,
+      { query: "Coffee near Union Square" },
+      [502],
+    );
+    expect(search.body).toMatchObject({
+      error: { code: "MAPS_USAGE_UNAVAILABLE" },
+    });
+    expect((await billing.readBillingStatus(actor)).credits).toBe(
+      before.credits,
+    );
+  });
 
-  it.each(["failed", "incomplete", "requires_action", "in_progress"])(
-    "rejects a %s interaction instead of returning partial output",
-    async (status) => {
+  it.each([
+    { name: "missing token usage", usage: undefined },
+    {
+      name: "negative tokens",
+      usage: { ...validResponse.usageMetadata, promptTokenCount: -1 },
+    },
+    {
+      name: "fractional tokens",
+      usage: { ...validResponse.usageMetadata, candidatesTokenCount: 1.5 },
+    },
+    {
+      name: "cached tokens exceeding input",
+      usage: { ...validResponse.usageMetadata, cachedContentTokenCount: 101 },
+    },
+    {
+      name: "output count overflow",
+      usage: {
+        ...validResponse.usageMetadata,
+        candidatesTokenCount: Number.MAX_SAFE_INTEGER,
+        thoughtsTokenCount: 1,
+      },
+    },
+    {
+      name: "cost overflow",
+      usage: {
+        ...validResponse.usageMetadata,
+        candidatesTokenCount: Number.MAX_SAFE_INTEGER,
+        thoughtsTokenCount: 0,
+      },
+    },
+  ])("does not charge for $name", async ({ usage }) => {
+    const { billing, actor } = await setupMaps();
+    server.use(
+      http.post(VERTEX_MAPS_URL, () => {
+        return HttpResponse.json({ ...validResponse, usageMetadata: usage });
+      }),
+    );
+    const before = await billing.readBillingStatus(actor);
+    const search = await billing.requestMapsSearch(
+      actor,
+      { query: "Coffee near Union Square" },
+      [502],
+    );
+    expect(search.body).toMatchObject({
+      error: { code: "MAPS_USAGE_UNAVAILABLE" },
+    });
+    expect((await billing.readBillingStatus(actor)).credits).toBe(
+      before.credits,
+    );
+  });
+
+  it.each(["MAX_TOKENS", "SAFETY", "RECITATION", "OTHER"])(
+    "rejects %s output without charging",
+    async (finishReason) => {
       const { billing, actor } = await setupMaps();
       server.use(
         http.post(VERTEX_MAPS_URL, () => {
-          return HttpResponse.json({ ...vertexMapsInteraction(), status });
+          return HttpResponse.json({
+            ...validResponse,
+            candidates: [{ ...validCandidate, finishReason }],
+          });
         }),
       );
       const before = await billing.readBillingStatus(actor);
@@ -297,14 +245,35 @@ describe("Maps Interactions usage and citations", () => {
     },
   );
 
-  it("rejects reported provider errors even alongside completed output", async () => {
+  it("rejects an unexecuted native route function call observed in the live preview", async () => {
     const { billing, actor } = await setupMaps();
     server.use(
       http.post(VERTEX_MAPS_URL, () => {
         return HttpResponse.json({
-          ...vertexMapsInteraction(),
-          errors: [
-            { code: "provider-fault", message: "private-provider-detail" },
+          ...validResponse,
+          candidates: [
+            {
+              finishReason: "STOP",
+              content: {
+                role: "model",
+                parts: [
+                  {
+                    functionCall: {
+                      name: "route_lookup",
+                      args: {
+                        routes: [
+                          {
+                            travel_mode: "TRANSIT",
+                            waypoints: ["Airport", "Station"],
+                          },
+                        ],
+                      },
+                    },
+                    thoughtSignature: "private-signature",
+                  },
+                ],
+              },
+            },
           ],
         });
       }),
@@ -312,92 +281,72 @@ describe("Maps Interactions usage and citations", () => {
     const before = await billing.readBillingStatus(actor);
     const search = await billing.requestMapsSearch(
       actor,
-      { query: "Coffee near Union Square" },
+      { query: "Find a public transit route from the airport to the station" },
       [502],
     );
     expect(search.body).toMatchObject({
       error: { code: "MAPS_GROUNDING_ERROR" },
     });
-    expect(JSON.stringify(search.body)).not.toContain(
-      "private-provider-detail",
-    );
+    expect(JSON.stringify(search.body)).not.toContain("private-signature");
     expect((await billing.readBillingStatus(actor)).credits).toBe(
       before.credits,
     );
   });
 
-  it("rejects a different provider model instead of applying Flash-Lite prices to it", async () => {
+  it("rejects another model instead of applying Flash-Lite prices", async () => {
     const { billing, actor } = await setupMaps();
     server.use(
       http.post(VERTEX_MAPS_URL, () => {
         return HttpResponse.json({
-          ...vertexMapsInteraction(),
-          model: "gemini-3.8-flash",
+          ...validResponse,
+          modelVersion: "gemini-3.8-flash",
         });
       }),
     );
     const before = await billing.readBillingStatus(actor);
-    const search = await billing.requestMapsSearch(
+    await billing.requestMapsSearch(
       actor,
       { query: "Coffee near Union Square" },
       [502],
     );
-    expect(search.body).toMatchObject({
-      error: { code: "MAPS_GROUNDING_ERROR" },
-    });
     expect((await billing.readBillingStatus(actor)).credits).toBe(
       before.credits,
     );
   });
 
-  it("preserves source order and UTF-8 spans across output steps without exposing thoughts", async () => {
+  it("preserves provider source order and UTF-8 spans across parts without exposing thoughts", async () => {
     const { billing, actor } = await setupMaps();
     const prefix = "推荐：";
     const first = "北京咖啡";
     const second = "Café";
-    const firstSource = {
-      type: "place_citation" as const,
-      name: "北京咖啡",
-      url: "https://maps.google.com/?cid=456",
-      end_index: Buffer.byteLength(first),
-    };
     server.use(
       http.post(VERTEX_MAPS_URL, () => {
-        return HttpResponse.json({
-          ...vertexMapsInteraction({ mapsQueries: 3 }),
-          steps: [
+        return vertexMapsResponse({
+          parts: [
+            { text: "private reasoning", thought: true },
+            { text: prefix },
+            { text: first },
+            { text: second },
+          ],
+          sources: [
+            { title: "Café Central", uri: "https://maps.google.com/?cid=123" },
+            { title: "北京咖啡", uri: "https://maps.google.com/?cid=456" },
+          ],
+          supports: [
             {
-              type: "thought",
-              signature: "private-signature",
-              summary: [{ type: "text", text: "private reasoning" }],
+              partIndex: 2,
+              endIndex: Buffer.byteLength(first),
+              text: first,
+              sourceIndices: [1],
             },
             {
-              type: "model_output",
-              content: [
-                { type: "text", text: prefix },
-                { type: "text", text: first, annotations: [firstSource] },
-              ],
-            },
-            {
-              type: "model_output",
-              content: [
-                {
-                  type: "text",
-                  text: second,
-                  annotations: [
-                    {
-                      type: "place_citation",
-                      name: "Café Central",
-                      url: "https://maps.google.com/?cid=123",
-                      start_index: 0,
-                      end_index: Buffer.byteLength(second),
-                    },
-                  ],
-                },
-                { type: "text", text: first, annotations: [firstSource] },
-              ],
+              partIndex: 3,
+              endIndex: Buffer.byteLength(second),
+              text: second,
+              sourceIndices: [0, 1],
             },
           ],
+          mapsQueries: 3,
         });
       }),
     );
@@ -407,44 +356,46 @@ describe("Maps Interactions usage and citations", () => {
       [200],
     );
     expect(search.body).toMatchObject({
-      answer: prefix + first + second + first,
+      answer: prefix + first + second,
       sources: [
-        { title: "北京咖啡", uri: "https://maps.google.com/?cid=456" },
         { title: "Café Central", uri: "https://maps.google.com/?cid=123" },
+        { title: "北京咖啡", uri: "https://maps.google.com/?cid=456" },
       ],
       citations: [
         {
           startByte: Buffer.byteLength(prefix),
           endByte: Buffer.byteLength(prefix + first),
           text: first,
-          sourceIndices: [0],
+          sourceIndices: [1],
         },
         {
           startByte: Buffer.byteLength(prefix + first),
           endByte: Buffer.byteLength(prefix + first + second),
           text: second,
-          sourceIndices: [1],
-        },
-        {
-          startByte: Buffer.byteLength(prefix + first + second),
-          endByte: Buffer.byteLength(prefix + first + second + first),
-          text: first,
-          sourceIndices: [0],
+          sourceIndices: [0, 1],
         },
       ],
     });
     expect(JSON.stringify(search.body)).not.toContain("private");
   });
 
-  it("sends no implicit location when only the query was supplied", async () => {
+  it("charges only tokens for a clarification with no grounding metadata and sends no implicit location", async () => {
     const { billing, actor } = await setupMaps();
     let body: unknown;
     server.use(
       http.post(VERTEX_MAPS_URL, async ({ request }) => {
         body = await request.json();
-        return vertexMapsResponse({
-          mapsQueries: 0,
-          answer: "Please provide a city or location.",
+        return HttpResponse.json({
+          ...validResponse,
+          candidates: [
+            {
+              finishReason: "STOP",
+              content: {
+                role: "model",
+                parts: [{ text: "Please provide a city or location." }],
+              },
+            },
+          ],
         });
       }),
     );
@@ -453,12 +404,17 @@ describe("Maps Interactions usage and citations", () => {
       { query: "Coffee near me" },
       [200],
     );
-    expect(body).toMatchObject({ tools: [{ type: "google_maps" }] });
+    expect(body).toMatchObject({
+      tools: [{ googleMaps: { groundingTypes: { places: {}, routing: {} } } }],
+    });
     expect(JSON.stringify(body)).not.toMatch(/latitude|longitude/u);
     expect(search.body).toMatchObject({
       answer: "Please provide a city or location.",
       sources: [],
+      citations: [],
       usage: { mapsQueries: 0 },
+      billingQuantity: 100,
+      creditsCharged: 1,
     });
   });
 });

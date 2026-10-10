@@ -5,7 +5,7 @@ import { HttpResponse, http } from "msw";
 import { server } from "../../../mocks/server";
 import { mapsCommand } from "../index";
 
-function groundedResponse(model = "gemini-3.5-flash-lite") {
+function groundedResponse(model = "gemini-3.1-flash-lite") {
   const answer = "Café Central is open nearby.";
   return {
     query: "best café near me",
@@ -14,8 +14,8 @@ function groundedResponse(model = "gemini-3.5-flash-lite") {
     provider: "google-maps-grounding" as const,
     model,
     billingCategory: "provider_cost_usd_micros" as const,
-    billingQuantity: 14_155,
-    providerCostUsd: 0.014155,
+    billingQuantity: 14_100,
+    providerCostUsd: 0.0141,
     creditsCharged: 18,
     answer,
     sources: [
@@ -117,11 +117,11 @@ describe("okou maps command", () => {
     expect(lines[answerIndex + 1]).toBe("Google Maps sources:");
     expect(lines[answerIndex + 2]).toBe("1. Café Central");
     expect(lines[answerIndex + 3]).toBe("   https://maps.google.com/?cid=123");
-    expect(lines.join("\n")).toContain("Provider cost: $0.014155");
+    expect(lines.join("\n")).toContain("Provider cost: $0.0141");
     expect(lines.join("\n")).toContain("Credits charged: 18");
   });
 
-  it.each(["gemini-2.5-flash", "gemini-3.5-flash-lite"])(
+  it.each(["gemini-2.5-flash", "gemini-3.1-flash-lite"])(
     "renders the server's %s model during API and CLI version overlap",
     async (model) => {
       server.use(
