@@ -48,13 +48,10 @@ type ThreadModels = ReturnType<typeof createThreadModelSignals>;
 
 /** Read-only facts for one picked event, shared by admission and prompting. */
 export interface ThreadContext {
-  readonly pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>;
-  readonly thread$: Computed<Promise<ChatThreadRequestRow | null>>;
   readonly sessionRead$: ReturnType<typeof createChatThreadSessionRead>;
   readonly session$: Computed<
     Promise<ReturnType<typeof chatThreadSessionIdentity>>
   >;
-  readonly cloudBrowserEnabled$: Computed<Promise<boolean>>;
   readonly computerUseHostGrant$: Computed<
     Promise<{ readonly hostId: string; readonly displayName: string } | null>
   >;
@@ -68,21 +65,12 @@ export interface ThreadContext {
   readonly automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>;
   readonly agentSelection$: Computed<Promise<ThreadAgentSelection | null>>;
   readonly executionBootstrap$: Computed<Promise<AgentRunContextSignals>>;
-  readonly agent$: AgentRunContextSignals["agent$"];
-  readonly memberMetadata$: AgentRunContextSignals["memberMetadata$"];
-  readonly featureSwitches$: AgentRunContextSignals["featureSwitches$"];
-  readonly memberRoutes$: AgentRunContextSignals["memberRoutes$"];
-  readonly modelCatalog$: AgentRunContextSignals["modelCatalog$"];
-  readonly authorizedConnectors$: AgentRunContextSignals["authorizedConnectors$"];
-  readonly workflowSkills$: AgentRunContextSignals["workflowSkills$"];
-  readonly selectedImageModel$: AgentRunContextSignals["selectedImageModel$"];
   readonly templates$: ReturnType<typeof createRunTemplates>;
   readonly queuedModel$: ThreadModels["queuedModel$"];
   readonly subscriptionSelection$: ThreadModels["subscriptionSelection$"];
   readonly requestedFramework$: ThreadModels["requestedFramework$"];
   readonly modelRoute$: ThreadModels["modelRoute$"];
   readonly providerFramework$: ThreadModels["providerFramework$"];
-  readonly framework$: ThreadModels["framework$"];
   readonly dispatchTiming$: ThreadModels["dispatchTiming$"];
 }
 
@@ -90,9 +78,6 @@ export function createThreadContext(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
 ): ThreadContext {
-  const event$ = computed((get) => {
-    return get(pickedEvent$);
-  });
   const orgId = bootstrap.orgId;
   const userId = bootstrap.userId;
   const sourceFeatureSwitches$ = computed((get) => {
@@ -104,13 +89,6 @@ export function createThreadContext(
   const sessionRead$ = createChatThreadSessionRead(thread$, orgId, userId);
   const session$ = computed(async (get) => {
     return chatThreadSessionIdentity(await get(sessionRead$));
-  });
-  const cloudBrowserEnabled$ = computed(async (get) => {
-    const thread = await get(thread$);
-    if (!thread) {
-      throw new Error("Agent prompt requires a chat thread");
-    }
-    return thread.cloudBrowserEnabled;
   });
   const slackContext$ = createSlackThreadContext(pickedEvent$, orgId);
   const feishuContext$ = createFeishuThreadContext(
@@ -136,30 +114,6 @@ export function createThreadContext(
     agentSelection$,
     orgId,
   );
-  const agent$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).agent$);
-  });
-  const memberMetadata$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).memberMetadata$);
-  });
-  const featureSwitches$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).featureSwitches$);
-  });
-  const memberRoutes$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).memberRoutes$);
-  });
-  const modelCatalog$ = computed((get) => {
-    return get(bootstrap.modelCatalog$);
-  });
-  const authorizedConnectors$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).authorizedConnectors$);
-  });
-  const workflowSkills$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).workflowSkills$);
-  });
-  const selectedImageModel$ = computed(async (get) => {
-    return get((await get(executionBootstrap$)).selectedImageModel$);
-  });
   const templates$ = createRunTemplates(
     pickedEvent$,
     orgId,
@@ -175,11 +129,8 @@ export function createThreadContext(
     executionBootstrap$,
   );
   return {
-    pickedEvent$: event$,
-    thread$,
     sessionRead$,
     session$,
-    cloudBrowserEnabled$,
     computerUseHostGrant$,
     slackContext$,
     feishuContext$,
@@ -191,21 +142,12 @@ export function createThreadContext(
     automationTarget$,
     agentSelection$,
     executionBootstrap$,
-    agent$,
-    memberMetadata$,
-    featureSwitches$,
-    memberRoutes$,
-    modelCatalog$,
-    authorizedConnectors$,
-    workflowSkills$,
-    selectedImageModel$,
     templates$,
     queuedModel$: model.queuedModel$,
     subscriptionSelection$: model.subscriptionSelection$,
     requestedFramework$: model.requestedFramework$,
     modelRoute$: model.modelRoute$,
     providerFramework$: model.providerFramework$,
-    framework$: model.framework$,
     dispatchTiming$: model.dispatchTiming$,
   };
 }
@@ -313,7 +255,7 @@ function createThreadExecutionBootstrap(
 }
 
 function createThreadHostGrant(
-  thread$: ThreadContext["thread$"],
+  thread$: Computed<Promise<ChatThreadRequestRow | null>>,
   executionBootstrap$: ThreadContext["executionBootstrap$"],
 ) {
   return computed(async (get) => {

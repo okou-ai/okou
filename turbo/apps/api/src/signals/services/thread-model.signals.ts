@@ -153,10 +153,6 @@ export interface ThreadModelSignals {
   readonly providerFramework$: Computed<
     Promise<SupportedFramework | ThreadModelError>
   >;
-  /** Actual execution framework, including a successfully materialized Pi route. */
-  readonly framework$: Computed<
-    Promise<SupportedFramework | "pi" | ThreadModelError>
-  >;
 }
 
 type ThreadModelSelectionSignal = Computed<
@@ -220,14 +216,6 @@ export function createThreadModelSignals(
           : getFrameworkForType(model.type);
     },
   );
-  const framework$ = computed(
-    async (get): Promise<SupportedFramework | "pi" | ThreadModelError> => {
-      const model = await get(modelRoute$);
-      return model && !("status" in model) && model.piModelConfig
-        ? "pi"
-        : get(providerFramework$);
-    },
-  );
   return {
     dispatchTiming$,
     queuedModel$,
@@ -235,7 +223,6 @@ export function createThreadModelSignals(
     requestedFramework$,
     modelRoute$,
     providerFramework$,
-    framework$,
   };
 }
 

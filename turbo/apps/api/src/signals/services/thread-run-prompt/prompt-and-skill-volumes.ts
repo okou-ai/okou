@@ -1,5 +1,6 @@
 import { computed, type Computed } from "ccstate";
 import { systemSkillStorageResolution$ } from "../../context/system-skill-storage-resolution";
+import type { AgentRunContextSignals } from "../agent-run-context.signals";
 import { createConnectorsContext } from "../connectors-context.service";
 import {
   mergeRunPromptAndSkills,
@@ -19,33 +20,9 @@ import { createRuntimePrompt } from "./runtime";
 import { createSlackThreadPrompt } from "./slack";
 import { createTeamsThreadPrompt } from "./teams";
 import { createTelegramThreadPrompt } from "./telegram";
+import type { PickedThreadInputEvent } from "./types";
 import { createUserPrompt } from "./user";
 import { createWebThreadPrompt } from "./web";
-
-export type PromptAndSkillVolumesInputs = Pick<
-  ThreadContext,
-  | "pickedEvent$"
-  | "agent$"
-  | "memberMetadata$"
-  | "featureSwitches$"
-  | "cloudBrowserEnabled$"
-  | "slackContext$"
-  | "feishuContext$"
-  | "teamsContext$"
-  | "telegramContext$"
-  | "agentPhoneContext$"
-  | "discordContext$"
-  | "automationContext$"
-  | "session$"
-  | "memberRoutes$"
-  | "modelCatalog$"
-  | "templates$"
-  | "authorizedConnectors$"
-  | "workflowSkills$"
-  | "selectedImageModel$"
-  | "providerFramework$"
-  | "computerUseHostGrant$"
->;
 
 export interface PromptAndSkillVolumes {
   readonly appendedSystemPrompt: string;
@@ -63,10 +40,13 @@ export class PromptAndSkillVolumesError extends Error {
   }
 }
 
-function createIntegrationPrompts(inputs: PromptAndSkillVolumesInputs) {
-  const { pickedEvent$, featureSwitches$ } = inputs;
+function createIntegrationPrompts(
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  featureSwitches$: AgentRunContextSignals["featureSwitches$"],
+  threadContext: ThreadContext,
+) {
   const framework$ = computed(async (get) => {
-    const framework = await get(inputs.providerFramework$);
+    const framework = await get(threadContext.providerFramework$);
     if (typeof framework !== "string") {
       throw new Error("Runtime prompt requires a valid run model route");
     }
@@ -82,65 +62,127 @@ function createIntegrationPrompts(inputs: PromptAndSkillVolumesInputs) {
     agent_run: webPrompt$,
     slack: createSlackThreadPrompt(
       pickedEvent$,
-      inputs.slackContext$,
+      threadContext.slackContext$,
       featureSwitches$,
     ),
     feishu: createFeishuThreadPrompt(
       pickedEvent$,
-      inputs.feishuContext$,
+      threadContext.feishuContext$,
       featureSwitches$,
     ),
     teams: createTeamsThreadPrompt(
       pickedEvent$,
-      inputs.teamsContext$,
+      threadContext.teamsContext$,
       featureSwitches$,
     ),
     telegram: createTelegramThreadPrompt(
       pickedEvent$,
-      inputs.telegramContext$,
+      threadContext.telegramContext$,
       featureSwitches$,
     ),
     agentphone: createAgentPhoneThreadPrompt(
       pickedEvent$,
-      inputs.agentPhoneContext$,
+      threadContext.agentPhoneContext$,
       featureSwitches$,
     ),
     discord: createDiscordThreadPrompt(
       pickedEvent$,
-      inputs.discordContext$,
+      threadContext.discordContext$,
       featureSwitches$,
     ),
     automation: createAutomationThreadPrompt(
       pickedEvent$,
-      inputs.automationContext$,
+      threadContext.automationContext$,
     ),
+  };
+}
+
+function createExecutionPromptSources(
+  executionBootstrap$: ThreadContext["executionBootstrap$"],
+) {
+  const agent$ = computed(async (get) => {
+    return get((await get(executionBootstrap$)).agent$);
+  });
+  const memberMetadata$ = computed(async (get) => {
+    return get((await get(executionBootstrap$)).memberMetadata$);
+  });
+  const featureSwitches$ = computed(async (get) => {
+    return get((await get(executionBootstrap$)).featureSwitches$);
+  });
+  const memberRoutes$ = computed(async (get) => {
+    return get((await get(executionBootstrap$)).memberRoutes$);
+  });
+  const authorizedConnectors$ = computed(async (get) => {
+    return get((await get(executionBootstrap$)).authorizedConnectors$);
+  });
+  const workflowSkills$ = computed(async (get) => {
+    return get((await get(executionBootstrap$)).workflowSkills$);
+  });
+  const selectedImageModel$ = computed(async (get) => {
+    return get((await get(executionBootstrap$)).selectedImageModel$);
+  });
+  return {
+    agent$,
+    memberMetadata$,
+    featureSwitches$,
+    memberRoutes$,
+    authorizedConnectors$,
+    workflowSkills$,
+    selectedImageModel$,
   };
 }
 
 /** Render prompt contributions once; storage preparation binds skill paths. */
 export function createPromptAndSkillVolumesSignals(
-  inputs: PromptAndSkillVolumesInputs,
+  bootstrap: AgentRunContextSignals,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  threadContext: ThreadContext,
 ): Computed<Promise<PromptAndSkillVolumes>> {
-  const pickedEvent$ = inputs.pickedEvent$;
-  const integrationPrompts = createIntegrationPrompts(inputs);
-  const agentPrompt$ = createAgentPrompt(
-    inputs.agent$,
-    inputs.featureSwitches$,
-    inputs.cloudBrowserEnabled$,
+  const sources = createExecutionPromptSources(
+    threadContext.executionBootstrap$,
   );
-  const userPrompt$ = createUserPrompt(inputs.memberMetadata$);
+  const {
+    agent$,
+    memberMetadata$,
+    featureSwitches$,
+    memberRoutes$,
+    authorizedConnectors$,
+    workflowSkills$,
+    selectedImageModel$,
+  } = sources;
+  const modelCatalog$ = computed((get) => {
+    return get(bootstrap.modelCatalog$);
+  });
+  const cloudBrowserEnabled$ = computed(async (get) => {
+    const thread = (await get(pickedEvent$))?.thread;
+    if (!thread) {
+      throw new Error("Agent prompt requires a chat thread");
+    }
+    return thread.cloudBrowserEnabled;
+  });
+  const integrationPrompts = createIntegrationPrompts(
+    pickedEvent$,
+    featureSwitches$,
+    threadContext,
+  );
+  const agentPrompt$ = createAgentPrompt(
+    agent$,
+    featureSwitches$,
+    cloudBrowserEnabled$,
+  );
+  const userPrompt$ = createUserPrompt(memberMetadata$);
   const computerUsePrompt$ = createComputerUsePrompt(
     pickedEvent$,
-    inputs.computerUseHostGrant$,
+    threadContext.computerUseHostGrant$,
   );
   const rotatedPrompt$ = createRotatedPrompt(
     pickedEvent$,
-    inputs.session$,
-    inputs.memberRoutes$,
-    inputs.modelCatalog$,
+    threadContext.session$,
+    memberRoutes$,
+    modelCatalog$,
   );
-  const connectors$ = createConnectorsContext(inputs.authorizedConnectors$);
-  const runtimePrompt$ = createRuntimePrompt(inputs.selectedImageModel$);
+  const connectors$ = createConnectorsContext(authorizedConnectors$);
+  const runtimePrompt$ = createRuntimePrompt(selectedImageModel$);
   const systemSkills$ = createSystemSkillsContext(
     systemSkillStorageResolution$,
   );
@@ -168,12 +210,12 @@ export function createPromptAndSkillVolumesSignals(
     ] = await Promise.all([
       get(integrationPrompts[contextType]),
       automation ? null : get(rotatedPrompt$),
-      automation ? null : get(inputs.templates$),
+      automation ? null : get(threadContext.templates$),
       get(agentPrompt$),
       get(userPrompt$),
       get(computerUsePrompt$),
       get(connectors$),
-      get(inputs.workflowSkills$),
+      get(workflowSkills$),
       get(systemSkills$),
       get(runtimePrompt$),
     ]);

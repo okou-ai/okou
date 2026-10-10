@@ -3235,7 +3235,13 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const cloudBrowserEnabled$ = threadContext.cloudBrowserEnabled$;
+  const cloudBrowserEnabled$ = computed(async (get) => {
+    const thread = (await get(pickedEvent$))?.thread;
+    if (!thread) {
+      throw new Error("Agent prompt requires a chat thread");
+    }
+    return thread.cloudBrowserEnabled;
+  });
   const preCreatePreparedInput$ = computed(async (get) => {
     const [input, resolution, appendSystemPrompt, fullCommand, catalog] =
       await Promise.all([
@@ -3332,8 +3338,11 @@ export function createThreadClaimRunObjects(
   });
   const runFramework$ = threadContext.requestedFramework$;
   const modelRoute$ = threadContext.modelRoute$;
-  const promptAndSkillVolumes$ =
-    createPromptAndSkillVolumesSignals(threadContext);
+  const promptAndSkillVolumes$ = createPromptAndSkillVolumesSignals(
+    context,
+    pickedEvent$,
+    threadContext,
+  );
   const preparedPromptAndSkillVolumes$ = computed(
     async (get): Promise<PromptAndSkillVolumes | CreateRunErrorResult> => {
       if (!(await get(isAutomation$))) {
@@ -4976,8 +4985,9 @@ export function createThreadClaimRunObjects(
       ? get(selectedRunContextShared.userTimezone$)
       : ((await get(runMemberSnapshot$)).member?.timezone ?? undefined);
   });
-  const runMemberImageModel$ = threadContext.selectedImageModel$;
-  const imageModel$ = runMemberImageModel$;
+  const imageModel$ = computed(async (get) => {
+    return get((await get(executionContext$)).selectedImageModel$);
+  });
   const disabledPaidTools$ = computed(async (get) => {
     return (await get(selectedRunContextShared.disabledPaidTools$)).toolIds;
   });
