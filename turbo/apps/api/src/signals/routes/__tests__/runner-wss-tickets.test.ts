@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { runnerWssTicketsContract } from "@okouai/api-contracts/contracts/runner-wss-tickets";
 import { describe, expect, it } from "vitest";
@@ -18,6 +18,10 @@ describe("direct Runner WSS ticket boundary", () => {
     authorization:
       "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
   };
+
+  function digestOf(ticket: string) {
+    return createHash("sha256").update(ticket, "utf8").digest("hex");
+  }
 
   function client() {
     return setupApp({ context, routes: runnerWssTicketRoutes })(
@@ -76,15 +80,6 @@ describe("direct Runner WSS ticket boundary", () => {
     await f.bdd.readMe(actor);
     return client().bootstrap({
       params: { runId: f.runId },
-      headers: { authorization: "Bearer clerk-session" },
-      body: undefined,
-    });
-  }
-
-  async function revoke(f: Fixture, actor = f.actor, runId = f.runId) {
-    await f.bdd.readMe(actor);
-    return client().revoke({
-      params: { runId },
       headers: { authorization: "Bearer clerk-session" },
       body: undefined,
     });
@@ -181,6 +176,7 @@ describe("direct Runner WSS ticket boundary", () => {
       origin,
       orgId: f.actor.orgId,
       userId: f.actor.userId,
+      digest: digestOf(issued.body.ticket),
     });
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
@@ -249,6 +245,7 @@ describe("direct Runner WSS ticket boundary", () => {
       origin,
       orgId: f.actor.orgId,
       userId: f.actor.userId,
+      digest: digestOf(issued.body.ticket),
     });
     await accept(consume(f, issued.body.ticket), [404]);
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
@@ -335,127 +332,221 @@ describe("direct Runner WSS ticket boundary", () => {
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
-  it("accepts repeated owned-run revocation with no pending tickets, including a terminal run", async () => {
+  it("expires pending tickets without expiring established Run authority", async () => {
     const f = await setup();
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const response = await accept(revoke(f), [204]);
-      expect(response.headers.get("Cache-Control")).toBe("no-store");
+    const established = await accept(bootstrap(f), [200]);
+    const admitted = await accept(consume(f, established.body.ticket), [200]);
+    const key = {
+      runId: f.runId,
+      digest: admitted.body.digest,
+      orgId: admitted.body.orgId,
+      userId: admitted.body.userId,
+    };
+    const oldest = await accept(bootstrap(f), [200]);
+    await Promise.all(
+      Array.from({ length: 15 }, () => {
+        return accept(bootstrap(f), [200]);
+      }),
+    );
+    let fresh = await bootstrap(f);
+    expect(fresh.status).toBe(404);
+
+    // Observe quota reopening through the API, with real database time. Keep
+    // Runner freshness independent of the ticket's redemption deadline.
+    let sequence = 1;
+    await expect
+      .poll(
+        async () => {
+          await f.api.requestHeartbeatRunner(true, [200], {
+            runnerId: f.runnerId,
+            group: f.group,
+            snapshotSequence: ++sequence,
+            wssIngressServiceActive: true,
+          });
+          fresh = await bootstrap(f);
+          return fresh.status;
+        },
+        { timeout: 40_000, interval: 1000 },
+      )
+      .toBe(200);
+
+    const expired = await accept(consume(f, oldest.body.ticket), [404]);
+    expect(expired.body.error.code).toBe("NOT_FOUND");
+    const current = await accept(
+      client().check({
+        headers: officialHeaders,
+        body: { runnerId: f.runnerId, origin, authorizations: [key] },
+      }),
+      [200],
+    );
+    expect(current.body).toStrictEqual({ authorized: [key] });
+    if (fresh.status !== 200) {
+      throw new Error(
+        "Expected a fresh ticket after the pending quota reopened",
+      );
     }
+    await accept(consume(f, fresh.body.ticket), [200]);
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
-    await accept(revoke(f), [204]);
-    await accept(revoke(f), [204]);
-    await accept(bootstrap(f), [404]);
+  }, 45_000);
+
+  it("keeps earlier established Run authority when reconnecting with a fresh ticket", async () => {
+    const f = await setup();
+    const first = await accept(bootstrap(f), [200]);
+    const admitted = await accept(consume(f, first.body.ticket), [200]);
+    const old = {
+      runId: f.runId,
+      digest: admitted.body.digest,
+      orgId: admitted.body.orgId,
+      userId: admitted.body.userId,
+    };
+    const check = (authorizations: (typeof old)[]) => {
+      return client().check({
+        headers: officialHeaders,
+        body: { runnerId: f.runnerId, origin, authorizations },
+      });
+    };
+    const current = await accept(check([old]), [200]);
+    expect(current.body).toStrictEqual({ authorized: [old] });
+    expect(current.headers.get("Cache-Control")).toBe("no-store");
+
+    const fresh = await accept(bootstrap(f), [200]);
+    const next = await accept(consume(f, fresh.body.ticket), [200]);
+    const newer = {
+      runId: f.runId,
+      digest: next.body.digest,
+      orgId: next.body.orgId,
+      userId: next.body.userId,
+    };
+    expect(newer.digest).not.toBe(old.digest);
+    const authorized = await accept(check([old, newer]), [200]);
+    expect(authorized.body.authorized).toHaveLength(2);
+    expect(authorized.body.authorized).toStrictEqual(
+      expect.arrayContaining([old, newer]),
+    );
+    await accept(consume(f, first.body.ticket), [404]);
+    await accept(consume(f, fresh.body.ticket), [404]);
+
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+    expect((await accept(check([old, newer]), [200])).body).toStrictEqual({
+      authorized: [],
+    });
   });
 
-  it("rejects unauthorized and unavailable revocation without invalidating the owner's ticket", async () => {
+  it("checks only the exact official audience and bounds current-state reads", async () => {
     const f = await setup();
     const issued = await accept(bootstrap(f), [200]);
-    const unauthenticated = await accept(
-      client().revoke({
-        params: { runId: f.runId },
-        headers: {},
-        body: undefined,
-      }),
-      [401],
-    );
-    expect(unauthenticated.headers.get("Cache-Control")).toBe("no-store");
+    const admitted = await accept(consume(f, issued.body.ticket), [200]);
+    const key = {
+      runId: f.runId,
+      digest: admitted.body.digest,
+      orgId: admitted.body.orgId,
+      userId: admitted.body.userId,
+    };
+    const body = { runnerId: f.runnerId, origin, authorizations: [key] };
+    const missing = await accept(client().check({ headers: {}, body }), [401]);
+    expect(missing.headers.get("Cache-Control")).toBe("no-store");
     const pat = await f.api.createCliToken(f.actor);
-    const forbidden = await accept(
-      client().revoke({
-        params: { runId: f.runId },
+    await accept(
+      client().check({
         headers: { authorization: `Bearer ${pat.token}` },
-        body: undefined,
+        body,
       }),
       [403],
     );
-    expect(forbidden.headers.get("Cache-Control")).toBe("no-store");
-    const foreignUser = f.bdd.user({ orgId: f.actor.orgId });
-    const otherOrg = f.bdd.user({ userId: f.actor.userId });
-    const unavailable = [
-      await accept(revoke(f, foreignUser), [404]),
-      await accept(revoke(f, otherOrg), [404]),
-      await accept(revoke(f, f.actor, randomUUID()), [404]),
-    ];
-    for (const response of unavailable) {
-      expect(response.body.error).toStrictEqual({
-        code: "NOT_FOUND",
-        message: "WSS connection unavailable",
-      });
-      expect(response.headers.get("Cache-Control")).toBe("no-store");
+    for (const wrong of [
+      { ...body, runnerId: randomUUID() },
+      { ...body, origin: "wss://wrong.example.com:443" },
+      { ...body, authorizations: [{ ...key, runId: randomUUID() }] },
+      {
+        ...body,
+        authorizations: [{ ...key, orgId: "wrong-org" }],
+      },
+    ]) {
+      expect(
+        (
+          await accept(
+            client().check({ headers: officialHeaders, body: wrong }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual({ authorized: [] });
     }
-    const accepted = await accept(consume(f, issued.body.ticket), [200]);
-    expect(accepted.body.userId).toBe(f.actor.userId);
-    expect(accepted.body.orgId).toBe(f.actor.orgId);
-    await f.api.requestCancelRun(f.actor, f.runId, [200]);
-  });
-
-  it("revokes every pending ticket while preserving one-use consumption and later issuance", async () => {
-    const f = await setup();
-    const consumed = await accept(bootstrap(f), [200]);
-    await accept(consume(f, consumed.body.ticket), [200]);
-    const pending = [];
-    for (let index = 0; index < 3; index++) {
-      pending.push(await accept(bootstrap(f), [200]));
-    }
-    await accept(revoke(f), [204]);
-    await accept(revoke(f), [204]);
-    await accept(consume(f, consumed.body.ticket), [404]);
-    for (const issued of pending) {
-      const denied = await accept(consume(f, issued.body.ticket), [404]);
-      expect(denied.body.error.code).toBe("NOT_FOUND");
-    }
-    const fresh = await accept(bootstrap(f), [200]);
-    await accept(consume(f, fresh.body.ticket), [200]);
-    await f.api.requestCancelRun(f.actor, f.runId, [200]);
-  });
-
-  it("revokes pending tickets when revocation races consumption", async () => {
-    const f = await setup();
-    const first = await accept(bootstrap(f), [200]);
-    const second = await accept(bootstrap(f), [200]);
-    await f.bdd.readMe(f.actor);
-    await Promise.all([
-      accept(consume(f, first.body.ticket), [200, 404]),
-      accept(
-        client().revoke({
-          params: { runId: f.runId },
-          headers: { authorization: "Bearer clerk-session" },
-          body: undefined,
-        }),
-        [204],
-      ),
-    ]);
-    await accept(consume(f, first.body.ticket), [404]);
-    await accept(consume(f, second.body.ticket), [404]);
-    const fresh = await accept(bootstrap(f), [200]);
-    const accepted = await accept(consume(f, fresh.body.ticket), [200]);
-    expect(accepted.body).toStrictEqual({
-      runId: f.runId,
-      runnerId: f.runnerId,
-      origin,
-      orgId: f.actor.orgId,
-      userId: f.actor.userId,
-    });
-    await f.api.requestCancelRun(f.actor, f.runId, [200]);
-  });
-
-  it("rejects revoked tickets and a terminal run", async () => {
-    const f = await setup();
-    const revoked = await accept(bootstrap(f), [200]);
-    await f.bdd.readMe(f.actor);
     await accept(
-      client().revoke({
-        params: { runId: f.runId },
-        headers: { authorization: "Bearer clerk-session" },
-        body: undefined,
+      client().check({
+        headers: officialHeaders,
+        body: { ...body, authorizations: [] },
       }),
-      [204],
+      [400],
     );
-    const revokedDenial = await accept(consume(f, revoked.body.ticket), [404]);
-    expect(revokedDenial.body.error.code).toBe("NOT_FOUND");
+    await accept(
+      client().check({
+        headers: officialHeaders,
+        body: {
+          ...body,
+          authorizations: Array.from({ length: 33 }, () => {
+            return key;
+          }),
+        },
+      }),
+      [400],
+    );
+    await accept(
+      client().check({
+        headers: officialHeaders,
+        body: {
+          ...body,
+          authorizations: [{ ...key, digest: "invalid" }],
+        },
+      }),
+      [400],
+    );
+    // Ingress down suppresses issuance, not live authorization or ordinary work.
+    await f.api.requestHeartbeatRunner(true, [200], {
+      runnerId: f.runnerId,
+      group: f.group,
+      mode: "draining",
+      snapshotSequence: 2,
+      wssIngressServiceActive: false,
+    });
+    expect(
+      (await accept(client().check({ headers: officialHeaders, body }), [200]))
+        .body,
+    ).toStrictEqual({ authorized: [key] });
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  });
+
+  it("checks admitted owner snapshots independently of pending tickets", async () => {
+    const f = await setup();
+    const issued = await accept(bootstrap(f), [200]);
+    const consumed = await accept(consume(f, issued.body.ticket), [200]);
+    await accept(consume(f, issued.body.ticket), [404]);
+    const key = {
+      runId: f.runId,
+      digest: consumed.body.digest,
+      orgId: consumed.body.orgId,
+      userId: consumed.body.userId,
+    };
+    const check = (entry: typeof key) => {
+      return client().check({
+        headers: officialHeaders,
+        body: { runnerId: f.runnerId, origin, authorizations: [entry] },
+      });
+    };
+    expect((await accept(check(key), [200])).body).toStrictEqual({
+      authorized: [key],
+    });
+    expect(
+      (await accept(check({ ...key, userId: "wrong-user" }), [200])).body,
+    ).toStrictEqual({ authorized: [] });
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  });
+
+  it("rejects tickets for a terminal Run", async () => {
+    const f = await setup();
     const terminal = await accept(bootstrap(f), [200]);
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
-    await accept(consume(f, terminal.body.ticket), [404]);
+    const denied = await accept(consume(f, terminal.body.ticket), [404]);
+    expect(denied.body.error.code).toBe("NOT_FOUND");
     await accept(bootstrap(f), [404]);
   });
 });

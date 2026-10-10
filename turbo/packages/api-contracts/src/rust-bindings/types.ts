@@ -13,6 +13,7 @@ import {
 } from "../contracts/runners";
 import { sshTypeBindings } from "./ssh-types";
 import { vncTypeBindings } from "./vnc-types";
+import { runnerWssTicketsContract } from "../contracts/runner-wss-tickets";
 import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
 import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
 import { fileEntryWithHashSchema } from "../contracts/storages";
@@ -53,6 +54,12 @@ export const rustTypeRootDoc = [
 ] as const;
 
 export const rustTypeModuleDocs = [
+  {
+    rustModulePath: ["runners", "wss"],
+    rustDoc: [
+      "Official Runner ticket redemption and current WSS access authority.",
+    ],
+  },
   {
     rustModulePath: ["runners", "runs", "cancellation"],
     rustDoc: ["Authenticated Run cancellation reconciliation DTOs."],
@@ -134,6 +141,30 @@ export const rustTypeModuleDocs = [
 ] satisfies readonly RustTypeModuleDoc[];
 
 export const rustTypeBindings = [
+  {
+    schema: runnerWssTicketsContract.consume.responses[200],
+    rustModulePath: ["runners", "wss"],
+    rustTypeName: "ConsumeResponse",
+    direction: "response",
+    declarations: [
+      {
+        rustTypeName: "ConsumeResponse",
+        rustDoc: [
+          "Exact redeemed ticket digest, audience and owner; not Run cancellation.",
+        ],
+        fields: {
+          runId: ["Exact redeemed Run."],
+          runnerId: ["Exact destination Runner."],
+          orgId: ["Verified owning organization."],
+          userId: ["Verified owning user."],
+          origin: ["Exact canonical WSS origin."],
+          digest: [
+            "SHA-256 of the one-use redeemed ticket; never the credential.",
+          ],
+        },
+      },
+    ],
+  },
   {
     schema: runnerCancellationResponseSchema,
     rustModulePath: ["runners", "runs", "cancellation"],

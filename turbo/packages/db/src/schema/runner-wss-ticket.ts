@@ -9,7 +9,7 @@ import {
 
 import { agentRuns } from "./agent-run-session-conversation";
 
-/** One-use bearer ticket: only its digest is persisted, never the credential. */
+/** Pending one-use credentials; redeem by atomic deletion within 30 seconds. */
 export const runnerWssTickets = pgTable(
   "runner_wss_tickets",
   {
@@ -27,17 +27,14 @@ export const runnerWssTickets = pgTable(
     runnerId: uuid("runner_id").notNull(),
     origin: varchar("origin", { length: 300 }).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    expiresAt: timestamp("expires_at").notNull(),
-    consumedAt: timestamp("consumed_at"),
-    revokedAt: timestamp("revoked_at"),
   },
   (table) => {
     return [
-      index("runner_wss_tickets_run_expires_idx").on(
+      index("runner_wss_tickets_run_created_idx").on(
         table.runId,
-        table.expiresAt,
+        table.createdAt,
       ),
-      index("runner_wss_tickets_expires_idx").on(table.expiresAt),
+      index("runner_wss_tickets_created_idx").on(table.createdAt),
     ];
   },
 );

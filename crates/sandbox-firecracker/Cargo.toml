@@ -35,6 +35,8 @@ rustix = { workspace = true, features = ["fs", "linux_4_11", "process", "std"] }
 [dev-dependencies]
 clap = { workspace = true, features = ["color", "derive", "error-context", "help", "std", "suggestions", "usage"] }
 proptest = { workspace = true, features = ["std"] }
+runner-remote.workspace = true
+runner-types.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tracing-test-support.workspace = true
 tracing-subscriber = { workspace = true, features = ["ansi", "fmt", "smallvec", "std", "tracing-log"] }

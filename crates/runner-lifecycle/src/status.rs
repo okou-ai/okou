@@ -465,6 +465,17 @@ impl StatusTracker {
         self.state.lock().await
     }
 
+    /// Resolve only a *current in-memory* running Run-to-sandbox assignment.
+    /// Persisted status.json can lag or survive a crashed Runner and must never
+    /// be used as WSS admission authority.
+    pub async fn running_sandbox(&self, run_id: RunId) -> Option<SandboxId> {
+        let state = self.state.lock().await;
+        state
+            .active_runs
+            .get(&run_id)
+            .and_then(|run| (run.phase == ActiveRunPhase::Running).then_some(run.sandbox_id))
+    }
+
     /// Transition the reported lifecycle mode and flush the status file.
     pub async fn set_mode(&self, mode: RunnerMode) -> StatusResult<()> {
         let snapshot = {
