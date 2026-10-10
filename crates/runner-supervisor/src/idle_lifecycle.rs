@@ -7,8 +7,7 @@ use std::{future::Future, panic::AssertUnwindSafe};
 use futures_util::FutureExt;
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use sandbox::{DeviceRateLimits, SandboxId};
-use tokio::sync::Notify;
-use tokio::task::JoinSet;
+use tokio::sync::{Notify, oneshot};
 use tokio_util::task::TaskTracker;
 use tracing::{info, warn};
 
@@ -19,7 +18,7 @@ use runner_host::paths::short_digest;
 use runner_lifecycle::idle_pool::{
     BlankIdleReservationMiss, DestroyOutcome, ExactIdleReservationMiss, IdleDestroyJob,
     IdleDestroyPayload, IdleDestroyResult, IdlePool, IdlePoolSnapshot, ReservedIdleSandbox,
-    RestoreReservedIdleResult,
+    RestoreReservedIdleResult, RetainedIdleDestroyResult,
 };
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::{StatusResult, StatusTracker};
@@ -27,6 +26,19 @@ use runner_types::ids::RunId;
 use runner_types::types::reuse_key_kind;
 
 pub type SharedIdlePool = Arc<tokio::sync::Mutex<IdlePool>>;
+
+/// Observes accepted cleanup without exposing an abort handle. Dropping this
+/// receiver cannot cancel the work registered with `IdleDestroyTracker`.
+pub struct IdleCleanupTask<T> {
+    completion: oneshot::Receiver<T>,
+}
+
+impl<T> IdleCleanupTask<T> {
+    /// Wait for one completion. A lost producer is uncertainty, not cleanup proof.
+    pub async fn join(&mut self) -> Result<T, oneshot::error::RecvError> {
+        (&mut self.completion).await
+    }
+}
 
 #[derive(Clone)]
 pub struct IdleDestroyTracker {
@@ -42,25 +54,54 @@ impl IdleDestroyTracker {
         }
     }
 
-    fn spawn_job(&self, job: IdleDestroyJob, context: &'static str) {
-        let reuse_state_notify = Arc::clone(&self.reuse_state_notify);
-        drop(self.tasks.spawn(async move {
-            match tokio::spawn(destroy_idle_job(job, context)).await {
-                Ok(true) => reuse_state_notify.notify_one(),
-                Ok(false) => {}
-                Err(error) => warn!(context, %error, "idle entry destroy task panicked"),
-            }
-        }));
+    pub fn spawn_job(
+        &self,
+        job: IdleDestroyJob,
+        context: &'static str,
+    ) -> IdleCleanupTask<RetainedIdleDestroyResult> {
+        let (payload, lease) = job.into_retiring_parts();
+        self.spawn_payload_retaining_lease(payload, lease, context)
     }
 
-    fn spawn_payload(&self, payload: IdleDestroyPayload, context: &'static str) {
+    pub fn spawn_payload_retaining_lease(
+        &self,
+        payload: IdleDestroyPayload,
+        budget_lease: BudgetLease,
+        context: &'static str,
+    ) -> IdleCleanupTask<RetainedIdleDestroyResult> {
         let reuse_state_notify = Arc::clone(&self.reuse_state_notify);
-        drop(self.tasks.spawn(async move {
-            let result = destroy_idle_payload_and_wait(payload, context).await;
-            if result.home_cache_promoted {
-                reuse_state_notify.notify_one();
-            }
-        }));
+        self.track(
+            async move {
+                let result = finish_idle_payload(payload, context).await;
+                if result.home_cache_promoted {
+                    reuse_state_notify.notify_one();
+                }
+                RetainedIdleDestroyResult {
+                    outcome: result.outcome,
+                    home_cache_promoted: result.home_cache_promoted,
+                    budget_lease,
+                }
+            },
+            context,
+        )
+    }
+
+    fn spawn_payload(
+        &self,
+        payload: IdleDestroyPayload,
+        context: &'static str,
+    ) -> IdleCleanupTask<IdleDestroyResult> {
+        let reuse_state_notify = Arc::clone(&self.reuse_state_notify);
+        self.track(
+            async move {
+                let result = finish_idle_payload(payload, context).await;
+                if result.home_cache_promoted {
+                    reuse_state_notify.notify_one();
+                }
+                result
+            },
+            context,
+        )
     }
 
     pub fn spawn_cleanup(
@@ -68,11 +109,49 @@ impl IdleDestroyTracker {
         cleanup: impl Future<Output = ()> + Send + 'static,
         context: &'static str,
     ) {
+        drop(self.track(cleanup, context));
+    }
+
+    fn track<T: Send + 'static>(
+        &self,
+        cleanup: impl Future<Output = T> + Send + 'static,
+        context: &'static str,
+    ) -> IdleCleanupTask<T> {
+        let (sender, completion) = oneshot::channel();
         drop(self.tasks.spawn(async move {
-            if AssertUnwindSafe(cleanup).catch_unwind().await.is_err() {
-                warn!(context, "tracked activation cleanup panicked");
+            match AssertUnwindSafe(cleanup).catch_unwind().await {
+                Ok(result) => {
+                    let _ = sender.send(result);
+                }
+                Err(_) => warn!(context, "tracked idle cleanup producer panicked"),
             }
         }));
+        IdleCleanupTask { completion }
+    }
+
+    /// Capture and accept the current batch under the short pool lock, then
+    /// run cleanup/status independently. A later resume can park new inventory.
+    pub async fn start_drain(
+        &self,
+        idle_pool: SharedIdlePool,
+        status: Arc<StatusTracker>,
+        context: &'static str,
+    ) -> IdleCleanupTask<()> {
+        let mut tasks = {
+            let mut pool = idle_pool.lock().await;
+            pool.drain()
+                .into_iter()
+                .map(|job| self.spawn_job(job, context))
+                .collect::<Vec<_>>()
+        };
+        self.track(
+            async move {
+                wait_idle_destroy_tasks(&mut tasks, context).await;
+                let snapshot = idle_pool.lock().await.status_snapshot();
+                set_idle_status_snapshot(&status, snapshot).await;
+            },
+            context,
+        )
     }
 
     pub fn notify_reuse_state(&self) {
@@ -95,22 +174,21 @@ pub async fn prune_exact_idle_pool(
     status: &StatusTracker,
     tracker: &IdleDestroyTracker,
 ) -> PruneIdleResponse {
-    let (jobs, snapshot) = {
+    let (mut tasks, snapshot) = {
         let mut pool = idle_pool.lock().await;
-        let jobs = pool.drain_exact();
-        (jobs, pool.status_snapshot())
+        let tasks = pool
+            .drain_exact()
+            .into_iter()
+            .map(|job| tracker.spawn_job(job, "operator_prune_idle"))
+            .collect::<Vec<_>>();
+        (tasks, pool.status_snapshot())
     };
     let mut report = PruneIdleReport {
-        selected: jobs.len(),
+        selected: tasks.len(),
         completed: 0,
         uncertain: 0,
     };
-    let mut tasks: FuturesUnordered<_> = jobs
-        .into_iter()
-        .map(|job| {
-            tokio::spawn(async move { job.run_retaining_lease("operator_prune_idle").await })
-        })
-        .collect();
+    let mut tasks: FuturesUnordered<_> = tasks.iter_mut().map(IdleCleanupTask::join).collect();
     tracker.notify_reuse_state();
     let status_result = status.set_idle_snapshot(snapshot).await;
     while let Some(result) = tasks.next().await {
@@ -119,9 +197,6 @@ pub async fn prune_exact_idle_pool(
                 match result.outcome {
                     DestroyOutcome::Completed => report.completed += 1,
                     DestroyOutcome::Uncertain => report.uncertain += 1,
-                }
-                if result.home_cache_promoted {
-                    tracker.notify_reuse_state();
                 }
                 drop(result.budget_lease);
             }
@@ -144,7 +219,8 @@ pub async fn prune_exact_idle_pool(
 
 /// Drain the idle pool: destroy every entry captured at drain start in parallel
 /// and wait for all destroys to complete before returning (budgets released).
-/// Called from both Draining mode (soft-drain entry) and teardown.
+/// Used for a directly awaited batch during teardown. Soft drain captures its
+/// independently scheduled batch with [`IdleDestroyTracker::start_drain`].
 ///
 /// A SIGUSR2 resume can reopen parking while a soft-drain destroy is still in
 /// progress, so write the current post-destroy pool snapshot rather than
@@ -155,12 +231,19 @@ pub async fn prune_exact_idle_pool(
 pub async fn drain_idle_pool(
     idle_pool: &SharedIdlePool,
     status: &StatusTracker,
+    tracker: &IdleDestroyTracker,
     context: &'static str,
 ) {
-    let jobs = idle_pool.lock().await.drain();
-    if !jobs.is_empty() {
-        info!(count = jobs.len(), context, "destroying idle sandboxes");
-        destroy_idle_jobs_and_wait(jobs, context).await;
+    let mut tasks = {
+        let mut pool = idle_pool.lock().await;
+        pool.drain()
+            .into_iter()
+            .map(|job| tracker.spawn_job(job, context))
+            .collect::<Vec<_>>()
+    };
+    if !tasks.is_empty() {
+        info!(count = tasks.len(), context, "destroying idle sandboxes");
+        wait_idle_destroy_tasks(&mut tasks, context).await;
     }
     let snapshot = idle_pool.lock().await.status_snapshot();
     set_idle_status_snapshot(status, snapshot).await;
@@ -277,23 +360,26 @@ pub async fn rollback_reserved_idle_for_spawn(
     idle_pool: &SharedIdlePool,
     status: &StatusTracker,
     reuse_state_notify: &Notify,
+    tracker: &IdleDestroyTracker,
 ) {
     let (reservation, _) = reservation.into_parts();
-    let (restore_result, snapshot) = {
+    let (destroy_task, snapshot) = {
         let mut pool = idle_pool.lock().await;
         let restore_result = pool.restore_reserved(reservation);
         let snapshot = pool.status_snapshot();
-        (restore_result, snapshot)
+        let destroy_task = match restore_result {
+            RestoreReservedIdleResult::Restored => None,
+            RestoreReservedIdleResult::Replaced(job) | RestoreReservedIdleResult::Rejected(job) => {
+                Some(tracker.spawn_job(*job, "finalizing_claim_reserved_idle_rollback"))
+            }
+        };
+        (destroy_task, snapshot)
     };
     set_idle_status_snapshot(status, snapshot).await;
-    if let RestoreReservedIdleResult::Replaced(destroy_job)
-    | RestoreReservedIdleResult::Rejected(destroy_job) = restore_result
-    {
-        destroy_idle_jobs_and_wait(
-            vec![*destroy_job],
-            "finalizing_claim_reserved_idle_rollback",
-        )
-        .await;
+    if let Some(mut task) = destroy_task {
+        if let Err(error) = task.join().await {
+            warn!(%error, "reserved idle rollback cleanup producer lost");
+        }
         reuse_state_notify.notify_one();
     }
 }
@@ -522,7 +608,7 @@ pub fn spawn_idle_destroy_job(
     job: IdleDestroyJob,
     context: &'static str,
 ) {
-    tracker.spawn_job(job, context);
+    drop(tracker.spawn_job(job, context));
 }
 
 fn retire_idle_destroy_job(
@@ -533,7 +619,7 @@ fn retire_idle_destroy_job(
     let reuse_key = job.reuse_key().map(str::to_owned);
     let profile_name = job.profile_name().to_owned();
     let (payload, budget_lease) = job.into_retiring_parts();
-    tracker.spawn_payload(payload, context);
+    drop(tracker.spawn_payload(payload, context));
     tracker.reuse_state_notify.notify_one();
     RetiringIdleEntry {
         budget_lease,
@@ -543,38 +629,55 @@ fn retire_idle_destroy_job(
 }
 
 /// Destroy idle entries in parallel and wait until their leases are dropped.
-pub async fn destroy_idle_jobs_and_wait(jobs: Vec<IdleDestroyJob>, context: &'static str) -> bool {
-    // Destroy in parallel -- cgroup/NBD/netns teardown can still make serial
-    // cleanup exceed shutdown and budget-pressure recovery budgets when many
-    // sandboxes are idle.
-    let mut set = JoinSet::new();
-    for job in jobs {
-        set.spawn(destroy_idle_job(job, context));
-    }
+#[cfg(test)]
+pub async fn destroy_idle_jobs_and_wait(
+    tracker: &IdleDestroyTracker,
+    jobs: Vec<IdleDestroyJob>,
+    context: &'static str,
+) -> bool {
+    let mut tasks = jobs
+        .into_iter()
+        .map(|job| tracker.spawn_job(job, context))
+        .collect::<Vec<_>>();
+    wait_idle_destroy_tasks(&mut tasks, context).await
+}
+
+async fn wait_idle_destroy_tasks(
+    tasks: &mut [IdleCleanupTask<RetainedIdleDestroyResult>],
+    context: &'static str,
+) -> bool {
+    let mut pending: FuturesUnordered<_> = tasks.iter_mut().map(IdleCleanupTask::join).collect();
     let mut home_cache_promoted = false;
-    while let Some(result) = set.join_next().await {
+    while let Some(result) = pending.next().await {
         match result {
-            Ok(promoted) => home_cache_promoted |= promoted,
-            Err(e) => warn!(context, error = %e, "idle entry destroy task panicked"),
+            Ok(result) => home_cache_promoted |= result.home_cache_promoted,
+            Err(error) => warn!(context, %error, "idle entry destroy producer lost"),
         }
     }
     home_cache_promoted
 }
 
-/// Destroy an idle sandbox entry. Its budget lease is released by Drop.
-async fn destroy_idle_job(job: IdleDestroyJob, context: &'static str) -> bool {
-    job.run_with_context(context).await
+pub async fn destroy_idle_payload_and_wait(
+    tracker: &IdleDestroyTracker,
+    payload: IdleDestroyPayload,
+    budget_lease: BudgetLease,
+    context: &'static str,
+) -> Result<RetainedIdleDestroyResult, oneshot::error::RecvError> {
+    let mut task = tracker.spawn_payload_retaining_lease(payload, budget_lease, context);
+    task.join().await
 }
 
-pub async fn destroy_idle_payload_and_wait(
+async fn finish_idle_payload(
     payload: IdleDestroyPayload,
     context: &'static str,
 ) -> IdleDestroyResult {
-    let handle = tokio::spawn(payload.finalize_home_and_destroy(context));
-    match handle.await {
+    match AssertUnwindSafe(payload.finalize_home_and_destroy(context))
+        .catch_unwind()
+        .await
+    {
         Ok(outcome) => outcome,
-        Err(e) => {
-            warn!(context, error = %e, "idle payload destroy task panicked");
+        Err(_) => {
+            warn!(context, "idle payload destroy task panicked");
             IdleDestroyResult {
                 outcome: DestroyOutcome::Uncertain,
                 home_cache_promoted: false,
@@ -586,6 +689,12 @@ pub async fn destroy_idle_payload_and_wait(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod ownership;
+
+    fn cleanup_tracker() -> IdleDestroyTracker {
+        IdleDestroyTracker::new(Arc::new(Notify::new()))
+    }
 
     use sandbox::{ResourceLimits, SandboxConfig, SandboxFactory};
     use sandbox_mock::MockSandboxFactory;
@@ -648,8 +757,14 @@ mod tests {
             .await
             .unwrap();
         let reuse_state_notify = Notify::new();
-        rollback_reserved_idle_for_spawn(reservation, &idle_pool, &status, &reuse_state_notify)
-            .await;
+        rollback_reserved_idle_for_spawn(
+            reservation,
+            &idle_pool,
+            &status,
+            &reuse_state_notify,
+            &cleanup_tracker(),
+        )
+        .await;
 
         let restored = idle_pool.lock().await.status_snapshot();
         assert_eq!(restored.revision, initial.revision + 2);
@@ -663,7 +778,12 @@ mod tests {
         );
         assert!(reuse_state_notify.notified().now_or_never().is_none());
         assert_eq!(budget.allocated(), (2, 2048, 1));
-        destroy_idle_jobs_and_wait(idle_pool.lock().await.drain(), "claimed_idle_test").await;
+        destroy_idle_jobs_and_wait(
+            &cleanup_tracker(),
+            idle_pool.lock().await.drain(),
+            "claimed_idle_test",
+        )
+        .await;
         assert_eq!(budget.allocated(), (0, 0, 0));
     }
 
@@ -739,8 +859,20 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let status = StatusTracker::new(dir.path().join("status.json"), 4, None, None);
         status.write_initial().await.unwrap();
-        rollback_reserved_idle_for_spawn(reservation, &idle_pool, &status, &Notify::new()).await;
-        destroy_idle_jobs_and_wait(idle_pool.lock().await.drain(), "claimed_exact_test").await;
+        rollback_reserved_idle_for_spawn(
+            reservation,
+            &idle_pool,
+            &status,
+            &Notify::new(),
+            &cleanup_tracker(),
+        )
+        .await;
+        destroy_idle_jobs_and_wait(
+            &cleanup_tracker(),
+            idle_pool.lock().await.drain(),
+            "claimed_exact_test",
+        )
+        .await;
         assert_eq!(budget.allocated(), (0, 0, 0));
     }
 
@@ -769,8 +901,14 @@ mod tests {
             .unwrap();
         gate.close();
         let reuse_state_notify = Notify::new();
-        rollback_reserved_idle_for_spawn(reservation, &idle_pool, &status, &reuse_state_notify)
-            .await;
+        rollback_reserved_idle_for_spawn(
+            reservation,
+            &idle_pool,
+            &status,
+            &reuse_state_notify,
+            &cleanup_tracker(),
+        )
+        .await;
 
         assert_eq!(idle_pool.lock().await.len(), 0);
         assert_eq!(budget.allocated(), (0, 0, 0));
@@ -815,7 +953,12 @@ mod tests {
             idle_pool.lock().await.restore_reserved(reservation),
             RestoreReservedIdleResult::Restored
         ));
-        destroy_idle_jobs_and_wait(idle_pool.lock().await.drain(), "exact_prune_test").await;
+        destroy_idle_jobs_and_wait(
+            &cleanup_tracker(),
+            idle_pool.lock().await.drain(),
+            "exact_prune_test",
+        )
+        .await;
         assert_eq!(budget.allocated(), (0, 0, 0));
     }
 
@@ -866,8 +1009,9 @@ mod tests {
             let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
             let pool_for_task = Arc::clone(&idle_pool);
             let status_for_task = Arc::clone(&status);
+            let task_tracker = tracker.clone();
             let task = tokio::spawn(async move {
-                prune_exact_idle_pool(&pool_for_task, &status_for_task, &tracker).await
+                prune_exact_idle_pool(&pool_for_task, &status_for_task, &task_tracker).await
             });
             gate.wait_entered(1, std::time::Duration::from_secs(5))
                 .await
@@ -877,25 +1021,29 @@ mod tests {
             if cancel_caller {
                 task.abort();
                 assert!(task.await.unwrap_err().is_cancelled());
+                let shutdown = tracker.close_and_wait();
+                tokio::pin!(shutdown);
+                assert!(
+                    shutdown.as_mut().now_or_never().is_none(),
+                    "shutdown must retain accepted prune cleanup"
+                );
                 gate.release_one();
+                tokio::time::timeout(std::time::Duration::from_secs(5), shutdown)
+                    .await
+                    .unwrap();
             } else {
                 gate.release_one();
                 let error = task.await.unwrap().unwrap_err();
                 assert!(error.contains("status publication failed"), "{error}");
             }
-            tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                while budget.allocated().2 != 0 {
-                    tokio::task::yield_now().await;
-                }
-            })
-            .await
-            .expect("detached destruction must complete after release");
+            tracker.close_and_wait().await;
+            assert_eq!(budget.allocated(), (0, 0, 0));
         }
     }
 
     #[tokio::test]
     async fn destroy_idle_jobs_and_wait_empty_returns_false() {
-        assert!(!destroy_idle_jobs_and_wait(Vec::new(), "test_empty").await);
+        assert!(!destroy_idle_jobs_and_wait(&cleanup_tracker(), Vec::new(), "test_empty").await);
     }
 
     #[tokio::test]
@@ -951,7 +1099,9 @@ mod tests {
         let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 0 });
         assert!(matches!(pool.park(candidate), ParkResult::Parked));
 
-        let promoted = destroy_idle_jobs_and_wait(pool.drain(), "test_idle_destroy_cache").await;
+        let promoted =
+            destroy_idle_jobs_and_wait(&cleanup_tracker(), pool.drain(), "test_idle_destroy_cache")
+                .await;
 
         assert!(promoted);
         assert_eq!(budget.allocated(), (0, 0, 0));

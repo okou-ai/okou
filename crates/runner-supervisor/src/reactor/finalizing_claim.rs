@@ -195,6 +195,7 @@ async fn run_finalizing_claim(
                     &ctx.idle_pool,
                     &ctx.status,
                     &ctx.reuse_state_notify,
+                    &ctx.idle_destroy_tracker,
                 )
                 .await;
             }
@@ -215,6 +216,7 @@ async fn run_finalizing_claim(
                     &ctx.idle_pool,
                     &ctx.status,
                     &ctx.reuse_state_notify,
+                    &ctx.idle_destroy_tracker,
                 )
                 .await;
             }
@@ -303,6 +305,7 @@ async fn run_finalizing_claim(
                     &ctx.idle_pool,
                     &ctx.status,
                     &ctx.reuse_state_notify,
+                    &ctx.idle_destroy_tracker,
                 )
                 .await;
                 pre_spawn_timing.record_finalizing_handoff(

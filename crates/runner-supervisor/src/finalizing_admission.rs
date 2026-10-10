@@ -366,6 +366,7 @@ async fn wait_for_finalizing_resource(
                         ctx.idle_pool,
                         ctx.status,
                         ctx.reuse_state_notify,
+                        ctx.idle_destroy_tracker,
                     )
                     .await;
                     ctx.reuse_state_notify.notify_one();
@@ -680,6 +681,7 @@ async fn accept_fallback_exact(
             ctx.idle_pool,
             ctx.status,
             ctx.reuse_state_notify,
+            ctx.idle_destroy_tracker,
         )
         .await;
         ctx.reuse_state_notify.notify_one();

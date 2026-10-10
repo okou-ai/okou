@@ -44,6 +44,26 @@ teardown path and are returned as terminal errors. Ordinary optional GC or statu
 retry errors remain warnings. Runtime task ownership does not make an individual
 filesystem or network operation infinitely fast or cancellation-safe.
 
+## Idle cleanup handoff
+
+After removing or rejecting idle inventory, synchronously register each cleanup
+with the shared `IdleDestroyTracker` before status publication or another await.
+Its receiver observes completion and cannot abort accepted work. A dropped or
+cancelled caller leaves cleanup independently scheduled; common teardown joins
+the tracker before cache and factory shutdown. Keep each logical budget lease
+with its payload through completion, except where admission deliberately performs
+an atomic logical resource substitution.
+
+Soft drain captures its current idle batch and runs cleanup and the final status
+snapshot independently. The reactor continues handling job completion, resume,
+and stopping while that batch waits. A resume invalidates the old batch's right
+to satisfy a later drain; newly parked inventory needs its own batch. Lost drain
+producers stop the reactor through common teardown rather than proving drain
+completion. Provider panic remains an uncertain destroy result, not confirmed
+physical memory relief. Process/runtime termination is an abnormal boundary;
+tracked async ownership alone does not prove completion of a detached physical
+I/O operation.
+
 ## Routine GC and promotion capacity
 
 Updated runners serialize routine maintenance with

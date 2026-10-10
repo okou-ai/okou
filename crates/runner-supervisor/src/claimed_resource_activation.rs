@@ -804,6 +804,7 @@ async fn recover_failed_parked_activation_status(
         ctx.idle_pool,
         ctx.status,
         ctx.reuse_state_notify,
+        ctx.idle_destroy_tracker,
     )
     .await;
 }
@@ -1016,6 +1017,7 @@ pub async fn try_reuse_from_pool(
                     ctx.idle_pool,
                     ctx.status,
                     ctx.reuse_state_notify,
+                    ctx.idle_destroy_tracker,
                 )
                 .await;
                 return Ok(ReuseFromPoolReady {

@@ -18,9 +18,7 @@ use sandbox::{
 };
 use tracing::{info, warn};
 
-use crate::idle_lifecycle::{
-    SharedIdlePool, destroy_idle_jobs_and_wait, destroy_idle_payload_and_wait,
-};
+use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, destroy_idle_payload_and_wait};
 use crate::job_lifecycle::{
     ActiveBudgetLease, BudgetOwnership, FinalizationReady, RunCleanupDisposition, RunCleanupState,
 };
@@ -275,6 +273,7 @@ pub struct FinalizeContext {
     pub guest_timezone_intent: GuestTimezoneIntent,
     pub factory: Arc<Box<dyn SandboxFactory>>,
     pub idle_pool: SharedIdlePool,
+    pub idle_destroy_tracker: IdleDestroyTracker,
     pub status: Arc<StatusTracker>,
     pub reuse_state_notify: Arc<tokio::sync::Notify>,
     pub active_run_reuse: ActiveRunReusePublisher,
@@ -527,6 +526,7 @@ async fn finalize_sandbox_for_completion_inner(
         guest_timezone_intent,
         factory,
         idle_pool,
+        idle_destroy_tracker,
         status,
         reuse_state_notify,
         active_run_reuse,
@@ -541,6 +541,7 @@ async fn finalize_sandbox_for_completion_inner(
 
     let destroy_bookkeeping = DestroyBookkeepingContext {
         cleanup_state: &cleanup_state,
+        idle_destroy_tracker: &idle_destroy_tracker,
         #[cfg(any(test, feature = "test-support"))]
         run_id,
         #[cfg(any(test, feature = "test-support"))]
@@ -1109,6 +1110,8 @@ async fn finalize_sandbox_for_completion_inner(
                         BudgetOwnership::idle_owned()
                     }
                     ParkResult::Replaced(evicted) => {
+                        let mut destroy_task =
+                            idle_destroy_tracker.spawn_job(evicted, "park_replaced");
                         info!(
                             run_id = %run_id,
                             reuse_key_fingerprint = %reuse_key_fingerprint,
@@ -1131,12 +1134,8 @@ async fn finalize_sandbox_for_completion_inner(
                         reuse_state_changed = true;
                         telemetry.record_idle_publication(true, None);
                         reuse_state_notify.notify_one();
-                        // The replaced sandbox was park()ed when it entered the
-                        // pool; destroying a parked sandbox is safe — Drop
-                        // aborts any leftover handles and the FC process is
-                        // killed regardless of balloon state.
-                        if destroy_idle_jobs_and_wait(vec![evicted], "park_replaced").await {
-                            reuse_state_notify.notify_one();
+                        if let Err(error) = destroy_task.join().await {
+                            warn!(%error, "replaced idle cleanup producer lost");
                         }
                         BudgetOwnership::idle_owned()
                     }
@@ -1213,6 +1212,7 @@ async fn finalize_sandbox_for_completion_inner(
 #[derive(Clone, Copy)]
 struct DestroyBookkeepingContext<'a> {
     cleanup_state: &'a RunCleanupState,
+    idle_destroy_tracker: &'a IdleDestroyTracker,
     #[cfg(any(test, feature = "test-support"))]
     run_id: RunId,
     #[cfg(any(test, feature = "test-support"))]
@@ -1247,10 +1247,24 @@ async fn destroy_active_owned_idle_payload(
     reason: &'static str,
     bookkeeping: DestroyBookkeepingContext<'_>,
 ) -> ActiveOwnedIdleDestroyResult {
-    let destroy_result = destroy_idle_payload_and_wait(payload, reason).await;
+    let destroy_result = match destroy_idle_payload_and_wait(
+        bookkeeping.idle_destroy_tracker,
+        payload,
+        budget_lease,
+        reason,
+    )
+    .await
+    {
+        Ok(result) => result,
+        // Escalate lost ownership to the outer job's existing panic recovery;
+        // normal status/lease settlement cannot claim this cleanup completed.
+        Err(error) => std::panic::resume_unwind(Box::new(error)),
+    };
     record_destroy_result(destroy_result.outcome, bookkeeping);
     ActiveOwnedIdleDestroyResult {
-        budget: BudgetOwnership::active(ActiveBudgetLease::from_idle_park_lease(budget_lease)),
+        budget: BudgetOwnership::active(ActiveBudgetLease::from_idle_park_lease(
+            destroy_result.budget_lease,
+        )),
         home_cache_promoted: destroy_result.home_cache_promoted,
     }
 }
@@ -1642,6 +1656,7 @@ mod tests {
                 guest_timezone_intent: GuestTimezoneIntent::Unknown,
                 factory: Arc::new(Box::new(MockSandboxFactory::new()) as Box<dyn SandboxFactory>),
                 idle_pool: Arc::clone(&self.idle_pool),
+                idle_destroy_tracker: IdleDestroyTracker::new(Arc::new(tokio::sync::Notify::new())),
                 status: Arc::clone(&self.status),
                 reuse_state_notify: Arc::new(tokio::sync::Notify::new()),
                 active_run_reuse: ActiveRunReusePublisher::detached(),
@@ -3264,6 +3279,8 @@ mod tests {
             RunCancellationHandle::new(),
         );
         context.reuse_state_notify = Arc::clone(&reuse_state_notify);
+        context.idle_destroy_tracker = IdleDestroyTracker::new(Arc::clone(&reuse_state_notify));
+        let held_status = fixture.status.hold_state_for_test().await;
 
         let finalize_task = tokio::spawn(finalize_sandbox_for_completion(
             Some(Box::new(mock_sandbox_ready_for_idle_reuse(
@@ -3277,10 +3294,10 @@ mod tests {
             .wait_entered(1, Duration::from_secs(5))
             .await
             .expect("replaced idle destroy should reach destroy gate");
-        assert!(
-            reuse_state_notify.notified().now_or_never().is_some(),
-            "newly parked replacement should notify before replaced destroy finishes"
-        );
+        drop(held_status);
+        tokio::time::timeout(Duration::from_secs(5), reuse_state_notify.notified())
+            .await
+            .expect("new replacement status must publish while old cleanup remains blocked");
 
         destroy_gate.release_one();
         let _finalization_ready = finalize_task.await.expect("finalizer task should join");
