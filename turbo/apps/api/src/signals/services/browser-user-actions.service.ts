@@ -25,7 +25,6 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import {
   browserSessionInstances,
   browserSessions,
-  browserUserActionFileUploads,
   browserUserActionRequests,
 } from "@okouai/db/schema/browser-session";
 import {
@@ -44,12 +43,11 @@ import { command } from "ccstate";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import {
   deleteS3Objects,
   downloadS3BufferWithMaxBytes,
   generatePresignedPutUrl,
-  listS3ObjectsPage,
 } from "../external/s3";
 import { safeSync, settle, settleIncludingAbort } from "../utils";
 import {
@@ -131,9 +129,6 @@ function hash(value: string): string {
 
 const FILE_UPLOAD_PREFIX = "browser-native-input/";
 const FILE_UPLOAD_CONTENT_TYPE = "application/octet-stream";
-const FILE_UPLOAD_NAMESPACE = "browser-native-input-v2/";
-const FILE_UPLOAD_CLEANUP_LIMIT = 1000;
-const FILE_UPLOAD_RETENTION_GRACE_MS = 2 * IDLE_LEASE_MS;
 
 function temporaryFileKey(
   row: Pick<RequestRow, "requestTokenHash">,
@@ -142,93 +137,14 @@ function temporaryFileKey(
   return `${FILE_UPLOAD_PREFIX}${row.requestTokenHash}/${index.toString()}`;
 }
 
-function temporaryBrowserFileKeys(requestTokenHash: string): readonly string[] {
+export function temporaryBrowserFileKeys(
+  requestTokenHash: string,
+): readonly string[] {
   const row = { requestTokenHash };
   return Array.from({ length: BROWSER_USER_ACTION_MAX_FILES }, (_, index) => {
     return temporaryFileKey(row, index);
   });
 }
-
-export const cleanupTemporaryBrowserFiles$ = command(
-  async (
-    { get },
-    requestTokenHash: string,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const db = get(db$);
-    const uploads = await db
-      .select({ objectKey: browserUserActionFileUploads.objectKey })
-      .from(browserUserActionFileUploads)
-      .where(
-        eq(browserUserActionFileUploads.requestTokenHash, requestTokenHash),
-      )
-      .limit(FILE_UPLOAD_CLEANUP_LIMIT);
-    signal.throwIfAborted();
-    await get(
-      deleteS3Objects(
-        env("R2_USER_STORAGES_BUCKET_NAME"),
-        [
-          ...temporaryBrowserFileKeys(requestTokenHash),
-          ...uploads.map((upload) => {
-            return upload.objectKey;
-          }),
-        ],
-        signal,
-      ),
-    );
-    signal.throwIfAborted();
-  },
-);
-
-export const reconcileTemporaryBrowserFiles$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const page = await get(
-      listS3ObjectsPage(
-        bucket,
-        FILE_UPLOAD_NAMESPACE,
-        FILE_UPLOAD_CLEANUP_LIMIT,
-        undefined,
-        signal,
-      ),
-    );
-    signal.throwIfAborted();
-    const cutoff = new Date(
-      nowDate().getTime() - FILE_UPLOAD_RETENTION_GRACE_MS,
-    );
-    const keys = page.objects.flatMap((object) => {
-      const matched =
-        /^browser-native-input-v2\/(\d{13})\/[0-9a-f]{64}\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.exec(
-          object.key,
-        );
-      if (!matched) {
-        throw new Error(
-          "Temporary Browser upload namespace contains an invalid key",
-        );
-      }
-      return Number(matched[1]) <= cutoff.getTime() ? [object.key] : [];
-    });
-    // Expiry is part of the immutable key, not LastModified or a surviving DB
-    // row. Even a PUT finishing after an earlier deletion remains eligible.
-    // Oldest-expiry-first keys let each bounded sweep drain without a cursor.
-    await get(deleteS3Objects(bucket, keys, signal));
-    signal.throwIfAborted();
-    const db = set(writeDb$);
-    const expiredUploads = db
-      .select({ id: browserUserActionFileUploads.id })
-      .from(browserUserActionFileUploads)
-      .where(lte(browserUserActionFileUploads.expiresAt, cutoff))
-      .orderBy(
-        asc(browserUserActionFileUploads.expiresAt),
-        asc(browserUserActionFileUploads.id),
-      )
-      .limit(FILE_UPLOAD_CLEANUP_LIMIT);
-    await db
-      .delete(browserUserActionFileUploads)
-      .where(inArray(browserUserActionFileUploads.id, expiredUploads));
-    signal.throwIfAborted();
-  },
-);
 
 export const prepareBrowserUserFileUpload$ = command(
   async (
@@ -240,9 +156,7 @@ export const prepareBrowserUserFileUpload$ = command(
       readonly input: BrowserUserActionPrepareFileUploadRequest;
     },
     signal: AbortSignal,
-  ): Promise<
-    ServiceResult<{ readonly uploadUrl: string; readonly uploadId: string }>
-  > => {
+  ): Promise<ServiceResult<{ readonly uploadUrl: string }>> => {
     const db = set(writeDb$);
     const row = await loadOwnedRequest(db, args);
     signal.throwIfAborted();
@@ -259,77 +173,13 @@ export const prepareBrowserUserFileUpload$ = command(
     ) {
       return conflict("Browser file upload is not available");
     }
-    if (
-      !validBrowserFileName(args.input.name) ||
-      /[^\x20-\x7e]/u.test(args.input.type) ||
-      args.input.type !== args.input.type.toLowerCase()
-    ) {
-      return failure(
-        400,
-        "BROWSER_USER_ACTION_INVALID_VALUES",
-        "Invalid Browser file metadata",
-      );
-    }
     if (!(await requestHasLiveBrowser(db, row))) {
       return expired();
-    }
-    const uploadId = randomUUID();
-    const expiresAt = new Date(nowDate().getTime() + IDLE_LEASE_MS);
-    const objectKey = `${FILE_UPLOAD_NAMESPACE}${expiresAt.getTime().toString().padStart(13, "0")}/${row.requestTokenHash}/${uploadId}`;
-    const [prepared] = await db
-      .insert(browserUserActionFileUploads)
-      .select(
-        db
-          .select({
-            id: sql`${uploadId}::uuid`
-              .mapWith(browserUserActionFileUploads.id)
-              .as("id"),
-            requestTokenHash: browserUserActionRequests.requestTokenHash,
-            index: sql`${args.input.index}::integer`
-              .mapWith(browserUserActionFileUploads.index)
-              .as("index"),
-            name: sql`${args.input.name}::text`
-              .mapWith(browserUserActionFileUploads.name)
-              .as("name"),
-            type: sql`${args.input.type}::text`
-              .mapWith(browserUserActionFileUploads.type)
-              .as("type"),
-            size: sql`${args.input.size}::integer`
-              .mapWith(browserUserActionFileUploads.size)
-              .as("size"),
-            sha256: sql`${args.input.sha256}::text`
-              .mapWith(browserUserActionFileUploads.sha256)
-              .as("sha256"),
-            objectKey: sql`${objectKey}::text`
-              .mapWith(browserUserActionFileUploads.objectKey)
-              .as("object_key"),
-            expiresAt:
-              sql`${sql.param(expiresAt, browserUserActionFileUploads.expiresAt)}::timestamp`
-                .mapWith(browserUserActionFileUploads.expiresAt)
-                .as("expires_at"),
-          })
-          .from(browserUserActionRequests)
-          .where(
-            and(
-              eq(
-                browserUserActionRequests.requestTokenHash,
-                row.requestTokenHash,
-              ),
-              eq(browserUserActionRequests.orgId, args.orgId),
-              eq(browserUserActionRequests.userId, args.userId),
-              eq(browserUserActionRequests.status, "pending"),
-            ),
-          ),
-      )
-      .returning({ id: browserUserActionFileUploads.id });
-    signal.throwIfAborted();
-    if (!prepared) {
-      return conflict("Browser file upload is no longer available");
     }
     const uploadUrl = await get(
       generatePresignedPutUrl(
         env("R2_USER_STORAGES_BUCKET_NAME"),
-        objectKey,
+        temporaryFileKey(row, args.input.index),
         FILE_UPLOAD_CONTENT_TYPE,
         {
           usePublicEndpoint: true,
@@ -346,12 +196,7 @@ export const prepareBrowserUserFileUpload$ = command(
       return expired();
     }
     signal.throwIfAborted();
-    const current = await loadExactRequest(db, row);
-    signal.throwIfAborted();
-    if (!current || current.status !== "pending") {
-      return conflict("Browser file upload is no longer available");
-    }
-    return { kind: "ok", value: { uploadUrl, uploadId } };
+    return { kind: "ok", value: { uploadUrl } };
   },
 );
 
@@ -1363,50 +1208,17 @@ const materializeBrowserFileChoice$ = command(
       size: number;
       contentBase64: string;
     }[] = [];
-    const db = get(db$);
     for (const [index, file] of entry.files.entries()) {
-      const [upload] = await db
-        .select()
-        .from(browserUserActionFileUploads)
-        .where(
-          and(
-            eq(browserUserActionFileUploads.id, file.uploadId),
-            eq(
-              browserUserActionFileUploads.requestTokenHash,
-              row.requestTokenHash,
-            ),
-            eq(browserUserActionFileUploads.index, index),
-            eq(browserUserActionFileUploads.name, file.name),
-            eq(browserUserActionFileUploads.type, file.type),
-            eq(browserUserActionFileUploads.size, file.size),
-            gt(browserUserActionFileUploads.expiresAt, nowDate()),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (!upload) {
-        return null;
-      }
-      const downloaded = await settle(
-        get(
-          downloadS3BufferWithMaxBytes(
-            env("R2_USER_STORAGES_BUCKET_NAME"),
-            upload.objectKey,
-            BROWSER_USER_ACTION_MAX_FILE_BYTES,
-            signal,
-          ),
+      const buffer = await get(
+        downloadS3BufferWithMaxBytes(
+          env("R2_USER_STORAGES_BUCKET_NAME"),
+          temporaryFileKey(row, index),
+          BROWSER_USER_ACTION_MAX_FILE_BYTES,
+          signal,
         ),
       );
       signal.throwIfAborted();
-      if (!downloaded.ok) {
-        return null;
-      }
-      const buffer = downloaded.value;
-      if (
-        upload.expiresAt <= nowDate() ||
-        buffer.length !== upload.size ||
-        createHash("sha256").update(buffer).digest("hex") !== upload.sha256
-      ) {
+      if (buffer.length !== file.size) {
         return null;
       }
       files.push({
@@ -1614,7 +1426,7 @@ async function inspectPendingBrowserUserAction(
 
 export const preflightBrowserUserAction$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1676,7 +1488,12 @@ export const preflightBrowserUserAction$ = command(
       }
       if (payload.target.fields[0]?.fieldKind === "file") {
         const cleanup = await settle(
-          set(cleanupTemporaryBrowserFiles$, stale.requestTokenHash, signal),
+          get(
+            deleteS3Objects(
+              env("R2_USER_STORAGES_BUCKET_NAME"),
+              temporaryBrowserFileKeys(stale.requestTokenHash),
+            ),
+          ),
         );
         signal.throwIfAborted();
         if (!cleanup.ok) {
@@ -1866,7 +1683,7 @@ async function applyClaimedBrowserUserAction(
 
 export const applyBrowserUserAction$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1907,20 +1724,17 @@ export const applyBrowserUserAction$ = command(
       | BrowserUseUserActionExactTarget["fields"][number]["fileChoice"]
       | undefined;
     if (submittedFile && "files" in submittedFile) {
-      const materialized = await set(
-        materializeBrowserFileChoice$,
-        located,
-        submittedFile,
-        signal,
+      const materialized = await settle(
+        set(materializeBrowserFileChoice$, located, submittedFile, signal),
       );
       signal.throwIfAborted();
-      if (!materialized) {
+      if (!materialized.ok || !materialized.value) {
         return conflict(
           "Temporary Browser file is missing or invalid",
           "BROWSER_USER_ACTION_INVALID_VALUE",
         );
       }
-      fileContents = materialized;
+      fileContents = materialized.value;
     }
 
     const claimed = await claimBrowserUserAction(db, located);
@@ -1943,10 +1757,11 @@ export const applyBrowserUserAction$ = command(
       payload.target.fields[0]?.fieldKind === "file"
     ) {
       const cleanup = await settle(
-        set(
-          cleanupTemporaryBrowserFiles$,
-          applied.value.requestTokenHash,
-          signal,
+        get(
+          deleteS3Objects(
+            env("R2_USER_STORAGES_BUCKET_NAME"),
+            temporaryBrowserFileKeys(applied.value.requestTokenHash),
+          ),
         ),
       );
       signal.throwIfAborted();
@@ -2017,7 +1832,7 @@ async function mutatePendingRequest(
 
 export const cancelBrowserUserAction$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -2041,7 +1856,12 @@ export const cancelBrowserUserAction$ = command(
       decodePayload(row)?.target.fields[0]?.fieldKind === "file"
     ) {
       const cleanup = await settle(
-        set(cleanupTemporaryBrowserFiles$, row.requestTokenHash, signal),
+        get(
+          deleteS3Objects(
+            env("R2_USER_STORAGES_BUCKET_NAME"),
+            temporaryBrowserFileKeys(row.requestTokenHash),
+          ),
+        ),
       );
       signal.throwIfAborted();
       if (!cleanup.ok) {

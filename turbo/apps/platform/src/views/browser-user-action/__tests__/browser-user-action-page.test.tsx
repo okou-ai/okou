@@ -14,7 +14,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 
 import {
   click,
@@ -711,24 +711,18 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
   let uploaded = false;
   let directPut = false;
   const uploadUrl = "https://uploads.example.test/browser-input-test";
-  const uploadId = crypto.randomUUID();
   context.mocks.api(
     browserUserActionsContract.prepareFileUpload,
     ({ body, respond }) => {
       expect(body).toStrictEqual({
         key: "document",
         index: 0,
-        name: "note.txt",
-        type: "text/plain",
         size: 4,
-        sha256:
-          "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
       });
-      return respond(200, { uploadUrl, uploadId });
+      return respond(200, { uploadUrl });
     },
   );
-  context.mocks.http.put(uploadUrl, async ({ request }) => {
-    await expect(request.text()).resolves.toBe("test");
+  context.mocks.http.put(uploadUrl, ({ request }) => {
     expect(request.credentials).toBe("omit");
     expect(request.headers.get("content-type")).toBe(
       "application/octet-stream",
@@ -763,7 +757,6 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
             name: "note.txt",
             type: "text/plain",
             size: 4,
-            uploadId,
           },
         ],
       },
@@ -807,17 +800,12 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
   });
 });
 
-test("A rejected authorization and PUT require a manual retry with a fresh upload identity", async () => {
+test("A rejected Browser file authorization and PUT leave the selection retryable without applying", async () => {
   let prepares = 0;
-  let attemptedPuts = 0;
-  let state: BrowserUserActionResponse["state"] = "pending";
-  let sent: unknown = null;
-  const issued: string[] = [];
+  let attemptedPut = false;
+  const uploadUrl = "https://uploads.example.test/rejected-browser-file";
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, {
-      ...fileAction({ required: true, preflight: false }),
-      state,
-    });
+    return respond(200, fileAction({ required: true, preflight: false }));
   });
   context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
     return respond(200, fileAction({ required: true, preflight: true }));
@@ -834,34 +822,12 @@ test("A rejected authorization and PUT require a manual retry with a fresh uploa
           },
         });
       }
-      const uploadId = crypto.randomUUID();
-      issued.push(uploadId);
-      return respond(200, {
-        uploadUrl: `https://uploads.example.test/rejected-browser-file/${uploadId}`,
-        uploadId,
-      });
+      return respond(200, { uploadUrl });
     },
   );
-  context.mocks.http.put(
-    "https://uploads.example.test/rejected-browser-file/:uploadId",
-    async ({ request }) => {
-      attemptedPuts += 1;
-      await expect(request.text()).resolves.toBe("test");
-      return new HttpResponse(null, {
-        status: attemptedPuts === 1 ? 403 : 200,
-      });
-    },
-  );
-  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
-    sent = body.values;
-    state = "succeeded";
-    return respond(200, {
-      ...fileAction({ required: true, preflight: false }),
-      state,
-    });
-  });
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(204, null);
+  context.mocks.http.put(uploadUrl, () => {
+    attemptedPut = true;
+    return new HttpResponse(null, { status: 403 });
   });
   await setupPage({
     context,
@@ -885,216 +851,17 @@ test("A rejected authorization and PUT require a manual retry with a fresh uploa
   await expect(
     screen.findByText("Synthetic upload authorization temporarily unavailable"),
   ).resolves.toBeInTheDocument();
-  expect(attemptedPuts).toBe(0);
-  expect(sent).toBeNull();
-  await waitFor(() => {
-    return expect(button("Add to browser")).toBeEnabled();
-  });
-  click(button("Add to browser"));
-  await expect(
-    screen.findByText(
-      "Couldn't add the information. Your entries are still here. Try again.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(attemptedPuts).toBe(1);
-  expect(sent).toBeNull();
+  expect(attemptedPut).toBeFalsy();
   await waitFor(() => {
     return expect(button("Add to browser")).toBeEnabled();
   });
   click(button("Add to browser"));
   await waitFor(() => {
-    return expect(sent).toStrictEqual([
-      {
-        key: "document",
-        operation: "replace",
-        observedFingerprint: FILE_FINGERPRINT,
-        files: [
-          {
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            uploadId: issued[1],
-          },
-        ],
-      },
-    ]);
+    return expect(attemptedPut).toBeTruthy();
   });
-  expect(prepares).toBe(3);
-  expect(attemptedPuts).toBe(2);
-  expect(issued).toHaveLength(2);
-  expect(issued[0]).not.toBe(issued[1]);
-});
-
-test("Multiple confirmed files preserve selection order when upload authorizations finish out of order", async () => {
-  let state: BrowserUserActionResponse["state"] = "pending";
-  let sent: unknown = null;
-  const uploadIds = [crypto.randomUUID(), crypto.randomUUID()];
-  const prepared: number[] = [];
-  const transfers = new Map<string, string>();
-  const releaseFirst = createDeferredPromise<void>(context.signal);
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, {
-      ...fileAction({ required: true, preflight: false }),
-      state,
-    });
-  });
-  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-    return respond(200, fileAction({ required: true, preflight: true }));
-  });
-  context.mocks.api(
-    browserUserActionsContract.prepareFileUpload,
-    async ({ body, respond }) => {
-      expect(body).toStrictEqual({
-        key: "document",
-        index: body.index,
-        name: body.index === 0 ? "one.txt" : "two.txt",
-        type: "text/plain",
-        size: 4,
-        sha256:
-          "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-      });
-      if (body.index === 0) {
-        await releaseFirst.promise;
-      } else {
-        releaseFirst.resolve();
-      }
-      prepared.push(body.index);
-      const uploadId = uploadIds[body.index];
-      if (!uploadId) {
-        throw new Error("Expected a selected upload index");
-      }
-      return respond(200, {
-        uploadId,
-        uploadUrl: `https://uploads.example.test/multi/${uploadId}`,
-      });
-    },
-  );
-  context.mocks.http.put(
-    "https://uploads.example.test/multi/:uploadId",
-    async ({ request, params }) => {
-      expect(request.headers.get("authorization")).toBeNull();
-      expect(request.credentials).toBe("omit");
-      transfers.set(String(params.uploadId), await request.text());
-      return new HttpResponse(null, { status: 200 });
-    },
-  );
-  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
-    sent = body.values;
-    state = "succeeded";
-    return respond(200, {
-      ...fileAction({ required: true, preflight: false }),
-      state,
-    });
-  });
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(204, null);
-  });
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
-  });
-  const input = within(form).getByLabelText(/Document/u);
-  await waitFor(() => {
-    return expect(input).toBeEnabled();
-  });
-  const files = [
-    new File(["test"], "one.txt", { type: "text/plain" }),
-    new File(["test"], "two.txt", { type: "text/plain" }),
-  ];
-  fireEvent.change(input, { target: { files } });
   await waitFor(() => {
     return expect(button("Add to browser")).toBeEnabled();
   });
-  expect(prepared).toStrictEqual([]);
-  expect(transfers.size).toBe(0);
-  click(button("Add to browser"));
-  await waitFor(() => {
-    return expect(sent).toStrictEqual([
-      {
-        key: "document",
-        operation: "replace",
-        observedFingerprint: FILE_FINGERPRINT,
-        files: files.map((file, index) => {
-          return {
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            uploadId: uploadIds[index],
-          };
-        }),
-      },
-    ]);
-  });
-  expect(prepared).toStrictEqual([1, 0]);
-  expect(transfers).toStrictEqual(
-    new Map(
-      uploadIds.map((uploadId) => {
-        return [uploadId, "test"];
-      }),
-    ),
-  );
-});
-
-test("A failed confirmed File read neither prepares an upload nor applies Browser input", async () => {
-  let prepared = false;
-  let applied = false;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, fileAction({ required: true, preflight: false }));
-  });
-  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-    return respond(200, fileAction({ required: true, preflight: true }));
-  });
-  context.mocks.api(
-    browserUserActionsContract.prepareFileUpload,
-    ({ respond }) => {
-      prepared = true;
-      return respond(200, {
-        uploadId: crypto.randomUUID(),
-        uploadUrl: "https://uploads.example.test/unreadable",
-      });
-    },
-  );
-  context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
-    applied = true;
-    return respond(200, {
-      ...fileAction({ required: true, preflight: false }),
-      state: "succeeded",
-    });
-  });
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
-  });
-  const input = within(form).getByLabelText(/Document/u);
-  await waitFor(() => {
-    return expect(input).toBeEnabled();
-  });
-  const file = new File(["test"], "unreadable.txt", { type: "text/plain" });
-  vi.spyOn(file, "arrayBuffer").mockRejectedValue(
-    new Error("Synthetic File read failure"),
-  );
-  fireEvent.change(input, { target: { files: [file] } });
-  await waitFor(() => {
-    return expect(button("Add to browser")).toBeEnabled();
-  });
-  click(button("Add to browser"));
-  await expect(
-    screen.findByText(
-      "Couldn't add the information. Your entries are still here. Try again.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(prepared).toBeFalsy();
-  expect(applied).toBeFalsy();
 });
 
 test("An optional file selection leaves existing website files untouched without auxiliary buttons", async () => {

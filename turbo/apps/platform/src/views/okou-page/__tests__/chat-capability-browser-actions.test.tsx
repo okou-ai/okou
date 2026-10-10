@@ -1019,7 +1019,6 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
     return respond(200, fileAction(true));
   });
   const uploadUrl = "https://uploads.example.test/inline-browser-file";
-  const uploadId = crypto.randomUUID();
   context.mocks.api(
     browserUserActionsContract.prepareFileUpload,
     ({ body, respond }) => {
@@ -1027,19 +1026,13 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
         key: "document",
         index: 0,
         size: 4,
-        name: "note.txt",
-        type: "text/plain",
-        sha256:
-          "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
       });
-      return respond(200, { uploadUrl, uploadId });
+      return respond(200, { uploadUrl });
     },
   );
   let directlyUploaded = false;
-  context.mocks.http.put(uploadUrl, async ({ request }) => {
+  context.mocks.http.put(uploadUrl, ({ request }) => {
     expect(request.credentials).toBe("omit");
-    expect(request.headers.get("authorization")).toBeNull();
-    await expect(request.text()).resolves.toBe("test");
     directlyUploaded = true;
     return new HttpResponse(null, { status: 200 });
   });
@@ -1054,7 +1047,6 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
             name: "note.txt",
             type: "text/plain",
             size: 4,
-            uploadId,
           },
         ],
       },
@@ -1096,6 +1088,11 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
   }
   expect(submit).toBeDisabled();
   const file = new File(["test"], "note.txt", { type: "text/plain" });
+  Object.defineProperty(file, "arrayBuffer", {
+    value: () => {
+      return Promise.resolve(new Uint8Array([116, 101, 115, 116]).buffer);
+    },
+  });
   fireEvent.change(input, { target: { files: [file] } });
   expect(uploaded).toBeFalsy();
   await waitFor(() => {

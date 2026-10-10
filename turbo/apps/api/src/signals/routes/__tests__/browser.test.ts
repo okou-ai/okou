@@ -2,10 +2,7 @@ import { createPublicComputerUseHosts } from "./helpers/public-computer-use-host
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  deleteFeatureSwitchesForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
@@ -29,7 +26,7 @@ import {
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { HttpResponse, http } from "msw";
-import { aroundEach, describe, expect, it, onTestFinished } from "vitest";
+import { aroundEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { createApp } from "../../../app-factory";
@@ -1417,12 +1414,7 @@ function mockNativeFileTarget(state: {
   readonly accept: () => string;
   readonly multiple: () => boolean;
   readonly write: (
-    files: readonly {
-      name: string;
-      size: number;
-      type: string;
-      contentBase64: string;
-    }[],
+    files: readonly { name: string; size: number; type: string }[],
   ) => void;
 }): void {
   context.mocks.browserUseCdp.command.mockImplementation((command) => {
@@ -1467,17 +1459,18 @@ function mockNativeFileTarget(state: {
         const declaration = String(command.params.functionDeclaration);
         if (declaration.includes("const transfer = new DataTransfer")) {
           const args = command.params.arguments as { value?: unknown }[];
-          const files = z
-            .array(
-              z.object({
-                name: z.string(),
-                size: z.number(),
-                type: z.string(),
-                contentBase64: z.string(),
-              }),
-            )
-            .parse(args[2]?.value);
-          state.write(args[1]?.value === "clear" ? [] : files);
+          const files = args[2]?.value as readonly {
+            name: string;
+            size: number;
+            type: string;
+          }[];
+          state.write(
+            args[1]?.value === "clear"
+              ? []
+              : files.map(({ name, size, type }) => {
+                  return { name, size, type };
+                }),
+          );
           return { result: { value: true } };
         }
         if (declaration.includes("function (original, expected)")) {
@@ -1508,6 +1501,10 @@ function mockNativeFileTarget(state: {
   });
 }
 
+function browserUserActionTokenHash(requestToken: string): string {
+  return createHash("sha256").update(requestToken).digest("hex");
+}
+
 async function setupNativeFileScenario() {
   const { routeMocks, runs, chat, actor, agent } = await setupBrowserScenario();
   const current = await createClaimedChatRun(
@@ -1524,28 +1521,6 @@ async function setupNativeFileScenario() {
   acceptBrowserUseCdpSessions([providerId]);
   const temporaryObjects = new Map<string, Buffer>();
   const deletedKeys: string[] = [];
-  context.mocks.s3.getSignedUrl.mockImplementation(
-    (_client: unknown, command: unknown) => {
-      if (!(command instanceof PutObjectCommand)) {
-        throw new Error("Expected a synthetic signed file upload");
-      }
-      return Promise.resolve(
-        `https://native-file-storage.example.test/${encodeURIComponent(String(command.input.Key))}`,
-      );
-    },
-  );
-  server.use(
-    http.put(
-      "https://native-file-storage.example.test/:key",
-      async ({ params, request }) => {
-        temporaryObjects.set(
-          String(params.key),
-          Buffer.from(await request.arrayBuffer()),
-        );
-        return new HttpResponse(null, { status: 200 });
-      },
-    ),
-  );
   context.mocks.s3.send.mockImplementation((command: unknown) => {
     if (command instanceof GetObjectCommand) {
       const bytes = temporaryObjects.get(String(command.input.Key));
@@ -1569,12 +1544,6 @@ async function setupNativeFileScenario() {
   });
   const state = {
     files: [] as readonly { name: string; size: number; type: string }[],
-    receivedFiles: [] as readonly {
-      name: string;
-      size: number;
-      type: string;
-      contentBase64: string;
-    }[],
     siteAccept: ".txt",
     multiple: true,
     writable: true,
@@ -1605,10 +1574,7 @@ async function setupNativeFileScenario() {
       return state.multiple;
     },
     write: (next) => {
-      state.receivedFiles = next;
-      state.files = next.map(({ name, size, type }) => {
-        return { name, size, type };
-      });
+      state.files = next;
     },
   });
   server.use(
@@ -1658,8 +1624,6 @@ async function setupNativeFileScenario() {
     requestToken: string,
     bytes = Buffer.from("test"),
     index = 0,
-    name = "note.txt",
-    type = "text/plain",
   ) => {
     const prepared = await accept(
       userActionClient().prepareFileUpload({
@@ -1668,24 +1632,13 @@ async function setupNativeFileScenario() {
         body: {
           key: "document",
           index,
-          name,
-          type,
           size: bytes.length,
-          sha256: createHash("sha256").update(bytes).digest("hex"),
         },
       }),
       [200],
     );
     expect(prepared.body.uploadUrl).toMatch(/^https?:\/\//u);
-    const objectKey = decodeURIComponent(
-      new URL(prepared.body.uploadUrl).pathname.slice(1),
-    );
-    const signing = context.mocks.s3.getSignedUrl.mock.calls.find((call) => {
-      const command = call[1];
-      return (
-        command instanceof PutObjectCommand && command.input.Key === objectKey
-      );
-    });
+    const signing = context.mocks.s3.getSignedUrl.mock.lastCall;
     const signedCommand = signing?.[1];
     if (!(signedCommand instanceof PutObjectCommand)) {
       throw new Error("Expected a synthetic signed PUT command");
@@ -1699,32 +1652,15 @@ async function setupNativeFileScenario() {
     expect(signedCommand.input.ChecksumSHA256).toBeUndefined();
     expect(prepared.body).toStrictEqual({
       uploadUrl: expect.stringMatching(/^https?:\/\//u),
-      uploadId: expect.any(String),
     });
     expect(JSON.stringify(prepared.body)).not.toContain("note.txt");
-    const uploaded = await fetch(prepared.body.uploadUrl, {
-      method: "PUT",
-      body: new Uint8Array(bytes),
-      headers: { "content-type": "application/octet-stream" },
-      signal: context.signal,
-    });
-    expect(uploaded.status).toBe(200);
-    return {
-      key: objectKey,
-      file: {
-        name,
-        type,
-        size: bytes.length,
-        uploadId: prepared.body.uploadId,
-      },
-      uploadUrl: prepared.body.uploadUrl,
-    };
+    const key = `browser-native-input/${browserUserActionTokenHash(requestToken)}/${index.toString()}`;
+    temporaryObjects.set(key, bytes);
+    return key;
   };
   return {
     state,
     current,
-    actor,
-    routeMocks,
     create,
     stageSyntheticFile,
     temporaryObjects,
@@ -1732,15 +1668,12 @@ async function setupNativeFileScenario() {
   };
 }
 
-function nativeFileValue(
-  fingerprint: string,
-  file: { name: string; size: number; type: string; uploadId: string },
-) {
+function nativeFileValue(fingerprint: string) {
   return {
     key: "document",
     observedFingerprint: fingerprint,
     operation: "replace" as const,
-    files: [file],
+    files: [{ name: "note.txt", size: 4, type: "text/plain" }],
   };
 }
 
@@ -1749,54 +1682,6 @@ aroundEach(async (runTest) => {
 });
 
 describe("Browser user-action route", () => {
-  it("applies the confirmed file bytes despite another same-length selection for the same action", async () => {
-    const { state, create, stageSyntheticFile } =
-      await setupNativeFileScenario();
-    const created = await create();
-    const token = created.body.action.requestToken;
-    const observed = await accept(
-      userActionClient().preflight({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: token },
-        body: {},
-      }),
-      [200],
-    );
-    const first = await stageSyntheticFile(token, Buffer.from("AAAA"));
-    const second = await stageSyntheticFile(
-      token,
-      Buffer.from("BBBB"),
-      0,
-      "other.txt",
-    );
-    expect(first.file.uploadId).not.toBe(second.file.uploadId);
-    expect(first.key).not.toBe(second.key);
-    const applied = await accept(
-      userActionClient().apply({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: token },
-        body: {
-          values: [
-            nativeFileValue(
-              observed.body.fields[0]?.control.fileSetFingerprint ?? "",
-              first.file,
-            ),
-          ],
-        },
-      }),
-      [200],
-    );
-    expect(applied.body.state).toBe("succeeded");
-    expect(
-      state.receivedFiles.map((file) => {
-        return Buffer.from(file.contentBase64, "base64").toString();
-      }),
-    ).toStrictEqual(["AAAA"]);
-    expect(state.files).toStrictEqual([
-      { name: "note.txt", type: "text/plain", size: 4 },
-    ]);
-  });
-
   it("bounds native file input and cleans staged files when target observation becomes stale", async () => {
     const { state, create, stageSyntheticFile, temporaryObjects, deletedKeys } =
       await setupNativeFileScenario();
@@ -1837,9 +1722,8 @@ describe("Browser user-action route", () => {
     });
     const fingerprint = observed.body.fields[0]?.control.fileSetFingerprint;
     expect(fingerprint).toMatch(/^[0-9a-f]{64}$/u);
-    const first = await stageSyntheticFile(token);
-    const value = nativeFileValue(fingerprint ?? "", first.file);
-    const firstKey = first.key;
+    const value = nativeFileValue(fingerprint ?? "");
+    const firstKey = await stageSyntheticFile(token);
     const invalidMime = await userActionClient().apply({
       headers: { authorization: "Bearer clerk-session" },
       params: { requestToken: token },
@@ -1864,9 +1748,9 @@ describe("Browser user-action route", () => {
     expect(state.files).toHaveLength(0);
     state.siteAccept = ".txt";
     const preflightCandidate = await create();
-    const preflightKey = (
-      await stageSyntheticFile(preflightCandidate.body.action.requestToken)
-    ).key;
+    const preflightKey = await stageSyntheticFile(
+      preflightCandidate.body.action.requestToken,
+    );
     state.missingNode = true;
     const preflightStale = await accept(
       userActionClient().preflight({
@@ -1886,13 +1770,12 @@ describe("Browser user-action route", () => {
     state.files = [];
     const next = await create();
     const nextToken = next.body.action.requestToken;
-    const nextFile = await stageSyntheticFile(nextToken);
-    const nextKey = nextFile.key;
+    const nextKey = await stageSyntheticFile(nextToken);
     const applied = await accept(
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
         params: { requestToken: nextToken },
-        body: { values: [{ ...value, files: [nextFile.file] }] },
+        body: { values: [value] },
       }),
       [200],
     );
@@ -1916,6 +1799,7 @@ describe("Browser user-action route", () => {
     // Model an existing user selection at the provider boundary. This scenario
     // verifies it survives an unavailable/replaced control without another upload.
     state.files = [{ name: "note.txt", size: 4, type: "text/plain" }];
+    const value = nativeFileValue("");
     state.writable = false;
     const unavailable = await userActionClient().create({
       headers: current.claim.browserHeaders,
@@ -1997,15 +1881,13 @@ describe("Browser user-action route", () => {
         )
       ).body.fields[0]?.control.fileSetFingerprint ?? "";
     state.readback = false;
-    const noReadbackFile = await stageSyntheticFile(
-      noReadback.body.action.requestToken,
-    );
+    await stageSyntheticFile(noReadback.body.action.requestToken);
     const uncertain = await accept(
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
         params: { requestToken: noReadback.body.action.requestToken },
         body: {
-          values: [nativeFileValue(changedFingerprint, noReadbackFile.file)],
+          values: [{ ...value, observedFingerprint: changedFingerprint }],
         },
       }),
       [200],
@@ -2025,14 +1907,12 @@ describe("Browser user-action route", () => {
       }),
       [200],
     );
-    const tamperedFile = await stageSyntheticFile(
-      tampered.body.action.requestToken,
-    );
     const value = nativeFileValue(
       observed.body.fields[0]?.control.fileSetFingerprint ?? "",
-      tamperedFile.file,
     );
-    const tamperedKey = tamperedFile.key;
+    const tamperedKey = await stageSyntheticFile(
+      tampered.body.action.requestToken,
+    );
     const writesBeforeTamper = browserInputWrites().length;
     temporaryObjects.delete(tamperedKey);
     const missingObject = await userActionClient().apply({
@@ -2054,30 +1934,9 @@ describe("Browser user-action route", () => {
     });
     expect(oversizedObject.status).toBe(409);
     expect(browserInputWrites()).toHaveLength(writesBeforeTamper);
+    // A same-size replacement is now accepted: only size, not SHA, is checked.
     temporaryObjects.set(tamperedKey, Buffer.from("bad!"));
-    const changedBytes = await userActionClient().apply({
-      headers: { authorization: "Bearer clerk-session" },
-      params: { requestToken: tampered.body.action.requestToken },
-      body: { values: [value] },
-    });
-    expect(changedBytes).toMatchObject({
-      status: 409,
-      body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUE" } },
-    });
-    expect(state.receivedFiles).toHaveLength(0);
-    expect(
-      (
-        await accept(
-          userActionClient().get({
-            headers: { authorization: "Bearer clerk-session" },
-            params: { requestToken: tampered.body.action.requestToken },
-          }),
-          [200],
-        )
-      ).body.state,
-    ).toBe("pending");
-    temporaryObjects.set(tamperedKey, Buffer.from("test"));
-    const retried = await accept(
+    const acceptedChangedBytes = await accept(
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
         params: { requestToken: tampered.body.action.requestToken },
@@ -2085,18 +1944,13 @@ describe("Browser user-action route", () => {
       }),
       [200],
     );
-    expect(retried.body.state).toBe("succeeded");
-    expect(state.receivedFiles[0]?.contentBase64).toBe(
-      Buffer.from("test").toString("base64"),
-    );
+    expect(acceptedChangedBytes.body.state).toBe("succeeded");
+    expect(browserInputWrites()).toHaveLength(writesBeforeTamper + 1);
     state.files = [];
 
     const maxBytes = Buffer.alloc(10 * 1024 * 1024, 0x61);
     const maxAction = await create();
-    const maxFile = await stageSyntheticFile(
-      maxAction.body.action.requestToken,
-      maxBytes,
-    );
+    await stageSyntheticFile(maxAction.body.action.requestToken, maxBytes);
     const maxApplied = await accept(
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
@@ -2105,7 +1959,12 @@ describe("Browser user-action route", () => {
           values: [
             {
               ...value,
-              files: [maxFile.file],
+              files: [
+                {
+                  ...value.files[0]!,
+                  size: maxBytes.length,
+                },
+              ],
             },
           ],
         },
@@ -2125,21 +1984,16 @@ describe("Browser user-action route", () => {
       Buffer.from("third"),
     ];
     const multiToken = multiAction.body.action.requestToken;
-    const multiFiles = await Promise.all(
-      parts.map((bytes, index) => {
-        return stageSyntheticFile(
-          multiToken,
-          bytes,
-          index,
-          `part-${index.toString()}.txt`,
-        );
-      }),
-    );
-    const multiKeys = multiFiles.map((file) => {
-      return file.key;
-    });
-    const multiValues = multiFiles.map((file) => {
-      return file.file;
+    const multiKeys: string[] = [];
+    for (const [index, bytes] of parts.entries()) {
+      multiKeys.push(await stageSyntheticFile(multiToken, bytes, index));
+    }
+    const multiValues = parts.map((bytes, index) => {
+      return {
+        name: `part-${index.toString()}.txt`,
+        type: "text/plain",
+        size: bytes.length,
+      };
     });
     const multiApplied = await accept(
       userActionClient().apply({
@@ -2155,11 +2009,6 @@ describe("Browser user-action route", () => {
         return { name, size, type };
       }),
     );
-    expect(
-      state.receivedFiles.map((file) => {
-        return Buffer.from(file.contentBase64, "base64").toString();
-      }),
-    ).toStrictEqual(["first", "second", "third"]);
     for (const key of multiKeys) {
       expect(deletedKeys).toContain(key);
       expect(temporaryObjects.has(key)).toBeFalsy();
@@ -2167,7 +2016,7 @@ describe("Browser user-action route", () => {
 
     const cancelled = await create();
     const cancelToken = cancelled.body.action.requestToken;
-    const cancelledKey = (await stageSyntheticFile(cancelToken)).key;
+    const cancelledKey = await stageSyntheticFile(cancelToken);
     const cancelledResponse = await accept(
       userActionClient().cancel({
         headers: { authorization: "Bearer clerk-session" },
@@ -2181,550 +2030,59 @@ describe("Browser user-action route", () => {
     expect(temporaryObjects.has(cancelledKey)).toBeFalsy();
   });
 
-  it("rejects missing, unknown, foreign and relabeled upload identities before Browser mutation", async () => {
-    const { state, create, stageSyntheticFile } =
-      await setupNativeFileScenario();
-    const created = await create();
-    const token = created.body.action.requestToken;
-    const observed = await accept(
-      userActionClient().preflight({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: token },
-        body: {},
-      }),
-      [200],
-    );
-    const selected = await stageSyntheticFile(token);
-    const otherAction = await create();
-    const foreign = await stageSyntheticFile(
-      otherAction.body.action.requestToken,
-    );
-    const value = nativeFileValue(
-      observed.body.fields[0]?.control.fileSetFingerprint ?? "",
-      selected.file,
-    );
-    const raw = setupRawAppRequest({
-      context,
-      routes: browserUserActionRoutes,
-    });
-    const invalid = [
-      { name: "note.txt", type: "text/plain", size: 4 },
-      { ...selected.file, uploadId: randomUUID() },
-      { ...selected.file, uploadId: foreign.file.uploadId },
-      { ...selected.file, name: "renamed.txt" },
-      { ...selected.file, type: "application/pdf" },
-      { ...selected.file, size: 3 },
-    ];
-    for (const file of invalid) {
-      const result = await raw(`/api/browser/user-actions/${token}/apply`, {
-        method: "POST",
-        headers: {
-          authorization: "Bearer clerk-session",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ values: [{ ...value, files: [file] }] }),
-      });
-      expect(result.status).toBe("uploadId" in file ? 409 : 400);
-      expect(state.receivedFiles).toHaveLength(0);
-      const pending = await accept(
-        userActionClient().get({
+  it.each(["succeeded", "cancelled"] as const)(
+    "rejects resubmitting %s native file actions after upload cleanup",
+    async (terminalState) => {
+      const { create, stageSyntheticFile } = await setupNativeFileScenario();
+      const created = await create();
+      const requestToken = created.body.action.requestToken;
+      const observed = await accept(
+        userActionClient().preflight({
           headers: { authorization: "Bearer clerk-session" },
-          params: { requestToken: token },
-        }),
-        [200],
-      );
-      expect(pending.body).toMatchObject({
-        state: "pending",
-        callbackDelivered: false,
-      });
-    }
-    const applied = await accept(
-      userActionClient().apply({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: token },
-        body: { values: [value] },
-      }),
-      [200],
-    );
-    expect(applied.body.state).toBe("succeeded");
-    expect(state.receivedFiles[0]).toStrictEqual({
-      name: "note.txt",
-      type: "text/plain",
-      size: 4,
-      contentBase64: Buffer.from("test").toString("base64"),
-    });
-  });
-
-  it("binds each file identity to its confirmed selection index and permits a fresh manual retry", async () => {
-    const { state, create, stageSyntheticFile } =
-      await setupNativeFileScenario();
-    const created = await create();
-    const token = created.body.action.requestToken;
-    const observed = await accept(
-      userActionClient().preflight({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: token },
-        body: {},
-      }),
-      [200],
-    );
-    const first = await stageSyntheticFile(
-      token,
-      Buffer.from("AAAA"),
-      0,
-      "first.txt",
-    );
-    const second = await stageSyntheticFile(
-      token,
-      Buffer.from("BBBB"),
-      1,
-      "second.txt",
-    );
-    const value = nativeFileValue(
-      observed.body.fields[0]?.control.fileSetFingerprint ?? "",
-      first.file,
-    );
-    for (const files of [
-      [second.file, first.file],
-      [first.file, first.file],
-    ]) {
-      const rejected = await userActionClient().apply({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: token },
-        body: { values: [{ ...value, files }] },
-      });
-      expect(rejected.status).toBe(409);
-      expect(state.receivedFiles).toHaveLength(0);
-    }
-    const replacement = await stageSyntheticFile(
-      token,
-      Buffer.from("CCCC"),
-      0,
-      "replacement.txt",
-    );
-    const applied = await accept(
-      userActionClient().apply({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: token },
-        body: {
-          values: [{ ...value, files: [replacement.file, second.file] }],
-        },
-      }),
-      [200],
-    );
-    expect(applied.body.state).toBe("succeeded");
-    expect(
-      state.receivedFiles.map((file) => {
-        return {
-          name: file.name,
-          bytes: Buffer.from(file.contentBase64, "base64").toString(),
-        };
-      }),
-    ).toStrictEqual([
-      { name: "replacement.txt", bytes: "CCCC" },
-      { name: "second.txt", bytes: "BBBB" },
-    ]);
-    const replay = await userActionClient().apply({
-      headers: { authorization: "Bearer clerk-session" },
-      params: { requestToken: token },
-      body: { values: [{ ...value, files: [first.file, second.file] }] },
-    });
-    expect(replay.status).toBe(409);
-    expect(
-      state.receivedFiles.map((file) => {
-        return Buffer.from(file.contentBase64, "base64").toString();
-      }),
-    ).toStrictEqual(["CCCC", "BBBB"]);
-  });
-
-  it("rejects expired upload identities while the exact Browser action is still live", async () => {
-    const { state, create, stageSyntheticFile } =
-      await setupNativeFileScenario();
-    const created = await create();
-    const token = created.body.action.requestToken;
-    const selected = await stageSyntheticFile(token);
-    mockNow(STARTED_AT_MS + 9 * MINUTE_MS);
-    const observed = await accept(
-      userActionClient().preflight({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: token },
-        body: {},
-      }),
-      [200],
-    );
-    mockNow(STARTED_AT_MS + 11 * MINUTE_MS);
-    const rejected = await userActionClient().apply({
-      headers: { authorization: "Bearer clerk-session" },
-      params: { requestToken: token },
-      body: {
-        values: [
-          nativeFileValue(
-            observed.body.fields[0]?.control.fileSetFingerprint ?? "",
-            selected.file,
-          ),
-        ],
-      },
-    });
-    expect(rejected).toMatchObject({
-      status: 409,
-      body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUE" } },
-    });
-    expect(state.receivedFiles).toHaveLength(0);
-    expect(
-      (
-        await accept(
-          userActionClient().get({
-            headers: { authorization: "Bearer clerk-session" },
-            params: { requestToken: token },
-          }),
-          [200],
-        )
-      ).body.state,
-    ).toBe("pending");
-    const retry = await stageSyntheticFile(token);
-    const applied = await accept(
-      userActionClient().apply({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: token },
-        body: {
-          values: [
-            nativeFileValue(
-              observed.body.fields[0]?.control.fileSetFingerprint ?? "",
-              retry.file,
-            ),
-          ],
-        },
-      }),
-      [200],
-    );
-    expect(applied.body.state).toBe("succeeded");
-    expect(state.receivedFiles[0]?.contentBase64).toBe(
-      Buffer.from("test").toString("base64"),
-    );
-  });
-
-  it("cleans every prepared attempt on cancellation and can remove a late PUT without reapplying", async () => {
-    const { state, create, stageSyntheticFile, temporaryObjects } =
-      await setupNativeFileScenario();
-    const created = await create();
-    const token = created.body.action.requestToken;
-    const [first, second] = await Promise.all([
-      stageSyntheticFile(token, Buffer.from("AAAA")),
-      stageSyntheticFile(token, Buffer.from("BBBB")),
-    ]);
-    const cancelled = await accept(
-      userActionClient().cancel({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: token },
-        body: {},
-      }),
-      [200],
-    );
-    expect(cancelled.body.state).toBe("cancelled");
-    expect(temporaryObjects.has(first.key)).toBeFalsy();
-    expect(temporaryObjects.has(second.key)).toBeFalsy();
-    const late = await fetch(first.uploadUrl, {
-      method: "PUT",
-      body: new Uint8Array(Buffer.from("AAAA")),
-      signal: context.signal,
-    });
-    expect(late.status).toBe(200);
-    expect(temporaryObjects.has(first.key)).toBeTruthy();
-    const repeated = await accept(
-      userActionClient().cancel({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: token },
-        body: {},
-      }),
-      [200],
-    );
-    expect(repeated.body).toStrictEqual(cancelled.body);
-    expect(temporaryObjects.has(first.key)).toBeFalsy();
-    expect(state.receivedFiles).toHaveLength(0);
-    const unavailable = await userActionClient().prepareFileUpload({
-      headers: { authorization: "Bearer clerk-session" },
-      params: { requestToken: token },
-      body: {
-        key: "document",
-        index: 0,
-        name: "note.txt",
-        type: "text/plain",
-        size: 4,
-        sha256: createHash("sha256").update("AAAA").digest("hex"),
-      },
-    });
-    expect(unavailable.status).toBe(409);
-  });
-
-  it("rejects an absent prepared object before Browser mutation and permits only a manual upload retry", async () => {
-    const { create, state } = await setupNativeFileScenario();
-    const action = await create();
-    const requestToken = action.body.action.requestToken;
-    const headers = { authorization: "Bearer clerk-session" };
-    const observed = await accept(
-      userActionClient().preflight({
-        headers,
-        params: { requestToken },
-        body: {},
-      }),
-      [200],
-    );
-    const bytes = Buffer.from("AAAA");
-    const file = {
-      name: "missing.txt",
-      type: "text/plain",
-      size: bytes.length,
-    };
-    const prepared = await accept(
-      userActionClient().prepareFileUpload({
-        headers,
-        params: { requestToken },
-        body: {
-          key: "document",
-          index: 0,
-          ...file,
-          sha256: createHash("sha256").update(bytes).digest("hex"),
-        },
-      }),
-      [200],
-    );
-    const apply = () => {
-      return userActionClient().apply({
-        headers,
-        params: { requestToken },
-        body: {
-          values: [
-            nativeFileValue(
-              observed.body.fields[0]?.control.fileSetFingerprint ?? "",
-              { ...file, uploadId: prepared.body.uploadId },
-            ),
-          ],
-        },
-      });
-    };
-    await expect(apply()).resolves.toMatchObject({
-      status: 409,
-      body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUE" } },
-    });
-    expect(state.receivedFiles).toStrictEqual([]);
-    const uploaded = await fetch(prepared.body.uploadUrl, {
-      method: "PUT",
-      headers: { "content-type": "application/octet-stream" },
-      body: new Uint8Array(bytes),
-      signal: context.signal,
-    });
-    expect(uploaded.status).toBe(200);
-    const retried = await accept(apply(), [200]);
-    expect(retried.body.state).toBe("succeeded");
-    expect(
-      state.receivedFiles.map((received) => {
-        return Buffer.from(received.contentBase64, "base64").toString();
-      }),
-    ).toStrictEqual(["AAAA"]);
-  });
-
-  it("does not return a usable upload identity after cancellation races a pending presigner", async () => {
-    const { create, state } = await setupNativeFileScenario();
-    const action = await create();
-    const requestToken = action.body.action.requestToken;
-    const headers = { authorization: "Bearer clerk-session" };
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    const signing = context.mocks.s3.getSignedUrl.getMockImplementation();
-    if (!signing) {
-      throw new Error("Expected a controlled storage signing boundary");
-    }
-    context.mocks.s3.getSignedUrl.mockImplementationOnce(
-      async (client, command, options) => {
-        entered.resolve();
-        await release.promise;
-        return signing(client, command, options);
-      },
-    );
-    const pending = settleIncludingAbort(
-      userActionClient().prepareFileUpload({
-        headers,
-        params: { requestToken },
-        body: {
-          key: "document",
-          index: 0,
-          name: "cancelled.txt",
-          type: "text/plain",
-          size: 4,
-          sha256: createHash("sha256").update("AAAA").digest("hex"),
-        },
-      }),
-    );
-    await entered.promise;
-    const cancelled = await settleIncludingAbort(
-      accept(
-        userActionClient().cancel({
-          headers,
           params: { requestToken },
           body: {},
         }),
         [200],
-      ),
-    );
-    release.resolve();
-    const completed = await pending;
-    if (!cancelled.ok) {
-      throw cancelled.error;
-    }
-    expect(cancelled.value.body.state).toBe("cancelled");
-    expect(completed.ok).toBeTruthy();
-    if (!completed.ok) {
-      throw completed.error;
-    }
-    expect(completed.value).toMatchObject({ status: 409 });
-    expect(state.receivedFiles).toStrictEqual([]);
-    const refreshed = await accept(
-      userActionClient().get({
-        headers,
+      );
+      const value = nativeFileValue(
+        observed.body.fields[0]?.control.fileSetFingerprint ?? "",
+      );
+      await stageSyntheticFile(requestToken);
+      const terminal = await accept(
+        terminalState === "succeeded"
+          ? userActionClient().apply({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { requestToken },
+              body: { values: [value] },
+            })
+          : userActionClient().cancel({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { requestToken },
+              body: {},
+            }),
+        [200],
+      );
+      expect(terminal.body.state).toBe(terminalState);
+
+      const retry = await userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
         params: { requestToken },
-      }),
-      [200],
-    );
-    expect(refreshed.body.state).toBe("cancelled");
-  });
-
-  it("keeps file identity and upload endpoints isolated from another owner", async () => {
-    const { actor, routeMocks, state, create, stageSyntheticFile } =
-      await setupNativeFileScenario();
-    const created = await create();
-    const token = created.body.action.requestToken;
-    const observed = await accept(
-      userActionClient().preflight({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: token },
-        body: {},
-      }),
-      [200],
-    );
-    const selected = await stageSyntheticFile(token);
-    const other = {
-      ...actor,
-      userId: `foreign_native_file_owner_${randomUUID()}`,
-    };
-    onTestFinished(async () => {
-      await deleteFeatureSwitchesForUser(context, other);
-    });
-    await updateFeatureSwitchesForUser(context, other, {
-      [FeatureSwitchKey.BrowserNativeInput]: true,
-    });
-    routeMocks.clerk.session(other.userId, other.orgId, other.orgRole);
-    const preparation = await userActionClient().prepareFileUpload({
-      headers: { authorization: "Bearer clerk-session" },
-      params: { requestToken: token },
-      body: {
-        key: "document",
-        index: 0,
-        name: "note.txt",
-        type: "text/plain",
-        size: 4,
-        sha256: createHash("sha256").update("test").digest("hex"),
-      },
-    });
-    expect(preparation.status).toBe(404);
-    const application = await userActionClient().apply({
-      headers: { authorization: "Bearer clerk-session" },
-      params: { requestToken: token },
-      body: {
-        values: [
-          nativeFileValue(
-            observed.body.fields[0]?.control.fileSetFingerprint ?? "",
-            selected.file,
-          ),
-        ],
-      },
-    });
-    expect(application.status).toBe(404);
-    expect(state.receivedFiles).toHaveLength(0);
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    expect(
-      (
-        await accept(
-          userActionClient().get({
-            headers: { authorization: "Bearer clerk-session" },
-            params: { requestToken: token },
-          }),
-          [200],
-        )
-      ).body.state,
-    ).toBe("pending");
-  });
-
-  it("applies zero-byte selections and preserves keep/clear operations without upload identities", async () => {
-    const { state, create, stageSyntheticFile } =
-      await setupNativeFileScenario();
-    const created = await create();
-    const token = created.body.action.requestToken;
-    const selected = await stageSyntheticFile(
-      token,
-      Buffer.alloc(0),
-      0,
-      "empty.txt",
-    );
-    const observed = await accept(
-      userActionClient().preflight({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: token },
-        body: {},
-      }),
-      [200],
-    );
-    const applied = await accept(
-      userActionClient().apply({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: token },
-        body: {
-          values: [
-            nativeFileValue(
-              observed.body.fields[0]?.control.fileSetFingerprint ?? "",
-              selected.file,
-            ),
-          ],
-        },
-      }),
-      [200],
-    );
-    expect(applied.body.state).toBe("succeeded");
-    expect(state.receivedFiles).toStrictEqual([
-      { name: "empty.txt", type: "text/plain", size: 0, contentBase64: "" },
-    ]);
-    for (const operation of ["keep", "clear"] as const) {
-      const next = await create();
-      const nextToken = next.body.action.requestToken;
-      const inspected = await accept(
-        userActionClient().preflight({
+        body: { values: [value] },
+      });
+      expect(retry).toMatchObject({
+        status: 409,
+        body: { error: { code: "BROWSER_USER_ACTION_CONFLICT" } },
+      });
+      const unchanged = await accept(
+        userActionClient().get({
           headers: { authorization: "Bearer clerk-session" },
-          params: { requestToken: nextToken },
-          body: {},
+          params: { requestToken },
         }),
         [200],
       );
-      const done = await accept(
-        userActionClient().apply({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { requestToken: nextToken },
-          body: {
-            values: [
-              {
-                key: "document",
-                operation,
-                files: [],
-                observedFingerprint:
-                  inspected.body.fields[0]?.control.fileSetFingerprint ?? "",
-              },
-            ],
-          },
-        }),
-        [200],
-      );
-      expect(done.body.state).toBe("succeeded");
-      expect(state.files).toHaveLength(operation === "keep" ? 1 : 0);
-    }
-  });
+      expect(unchanged.body.state).toBe(terminalState);
+    },
+  );
 
   it("lets apply finish while the preflight provider read is still pending", async () => {
     const { token } = await createNativePasswordActionForPreflightTest();

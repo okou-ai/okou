@@ -207,7 +207,6 @@ const browserUserActionFileValueSchema = z
               .int()
               .min(0)
               .max(BROWSER_USER_ACTION_MAX_FILE_BYTES),
-            uploadId: z.uuid(),
           })
           .strict(),
       )
@@ -467,9 +466,6 @@ const browserFileUploadPrepareSchema = z
       .min(0)
       .max(BROWSER_USER_ACTION_MAX_FILES - 1),
     size: z.number().int().min(0).max(BROWSER_USER_ACTION_MAX_FILE_BYTES),
-    name: z.string().min(1).max(BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH),
-    type: z.string().max(BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH),
-    sha256: z.string().regex(/^[0-9a-f]{64}$/u),
   })
   .strict();
 const emptyBodySchema = z.object({}).strict();
@@ -520,7 +516,6 @@ export const browserUserActionsContract = c.router({
       200: z
         .object({
           uploadUrl: z.url(),
-          uploadId: z.uuid(),
         })
         .strict(),
       ...commonErrors,
