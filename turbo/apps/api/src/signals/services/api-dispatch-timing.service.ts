@@ -76,8 +76,6 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_pre_create_agent_entrypoint_gap"
   | "api_dispatch_pre_create_agent_resolve_agent_id"
   | "api_dispatch_pre_create_agent_load_agent"
-  | "api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows"
-  | "api_dispatch_pre_create_agent_materialize_bootstrap_context"
   | "api_dispatch_pre_create_agent_resolve_firewall_metadata"
   | "api_dispatch_pre_create_agent_capture_subscription_account"
   | "api_dispatch_pre_create_agent_resolve_thread_session"
