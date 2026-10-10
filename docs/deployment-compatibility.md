@@ -191,11 +191,11 @@ Test each transform by copying
 Assert its output against an explicit JSON Schema of the old shape, taken from
 the route's `responses["<status>"].schema` in the production runtime API schema
 snapshot (`current.json` in the `runtime-api-schema-prod` release), and assert
-that the current body no longer satisfies it. The runtime selection and
-serialization are covered by
-[the API fixture test](../turbo/apps/api/src/signals/context/__tests__/client-response-transforms.test.ts),
-which injects a fixture registry through `createAppWithRoutes`; tests never
-edit the real registry.
+that the current body no longer satisfies it. The API runtime's selection and
+serialization path (2xx-only application, Desktop version gating,
+validate-before-transform, the server error on transform failure and size
+observation) has no API test: its synthetic-route fixture test was deleted as a
+framework self-test in #37440. Tests never edit the real registry.
 
 ### Coupled Guest Disk and Retained-Image Contracts
 
