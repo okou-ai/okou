@@ -24,6 +24,7 @@ import { useTranslation } from "react-i18next";
 
 import {
   artifactCatalog$,
+  artifactCatalogSidebar,
   loadMoreArtifactCatalog$,
   openArtifact$,
   reloadArtifactCatalog$,
@@ -33,6 +34,9 @@ import {
 } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
+import { ChatThreadSidebarShell } from "../okou-page/chat-thread-sidebar-shell.tsx";
+import { ArtifactCatalogSidebar } from "./artifact-catalog-sidebar.tsx";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ArtifactThumbnailImage } from "../okou-page/artifact-thumbnail.tsx";
 import { emptyArtifactImg } from "../okou-page/platform-assets.ts";
@@ -581,6 +585,7 @@ export function ArtifactCatalogPage({
   readonly scrollToArtifactId: string | null;
 }) {
   const { t } = useTranslation();
+  const sidebarOpen = useGet(artifactCatalogSidebar.open$);
   const selectedKind = useGet(selectedArtifactCatalogKind$);
   const setKind = useSet(setArtifactCatalogKind$);
   const openArtifact = useSet(openArtifact$);
@@ -608,70 +613,77 @@ export function ArtifactCatalogPage({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* The header sits outside the scroll container so the kind filter stays
+    <ChatThreadSidebarShell
+      layout={chatLayout}
+      animateEntry
+      open={sidebarOpen}
+      sidebar={<ArtifactCatalogSidebar />}
+    >
+      <div className="flex min-h-0 flex-1 flex-col">
+        {/* The header sits outside the scroll container so the kind filter stays
           pinned to the top while the catalog scrolls under it. */}
-      <header className="shrink-0 bg-transparent px-4 pb-3 pt-3 sm:px-6 md:pt-10">
-        <div className="mx-auto flex w-full max-w-[900px] flex-col gap-3">
-          <div className="hidden min-w-0 md:block">
-            <h1 className="text-lg font-semibold tracking-tight text-foreground">
-              {t(($) => {
-                return $.artifacts.title;
-              })}
-            </h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {t(($) => {
-                return $.artifacts.catalog.description;
-              })}
-            </p>
+        <header className="shrink-0 bg-transparent px-4 pb-3 pt-3 sm:px-6 md:pt-10">
+          <div className="mx-auto flex w-full max-w-[900px] flex-col gap-3">
+            <div className="hidden min-w-0 md:block">
+              <h1 className="text-lg font-semibold tracking-tight text-foreground">
+                {t(($) => {
+                  return $.artifacts.title;
+                })}
+              </h1>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {t(($) => {
+                  return $.artifacts.catalog.description;
+                })}
+              </p>
+            </div>
+            <ArtifactCatalogKindFilter
+              selectedKind={selectedKind}
+              onKindChange={setKind}
+            />
           </div>
-          <ArtifactCatalogKindFilter
-            selectedKind={selectedKind}
-            onKindChange={setKind}
-          />
-        </div>
-      </header>
+        </header>
 
-      <main
-        onScroll={handleScroll}
-        className="flex-1 overflow-auto px-4 pb-safe-or-8 pt-1 sm:px-6 [scrollbar-gutter:stable]"
-      >
-        <div className="mx-auto flex w-full max-w-[900px] flex-col gap-4">
-          {catalog.state === "loading" ? (
-            <ArtifactCatalogSkeleton
-              layout={sharedConversationLayout ? "list" : "grid"}
-            />
-          ) : catalog.state === "hasError" ? (
-            <ArtifactCatalogError onRetry={reloadCatalog} />
-          ) : artifacts.length === 0 ? (
-            <ArtifactCatalogEmpty />
-          ) : sharedConversationLayout ? (
-            <ArtifactSharedConversationList
-              artifacts={artifacts}
-              scrollToArtifactId={scrollToArtifactId}
-              onOpen={(artifactId) => {
-                detach(
-                  openArtifact(artifactId, pageSignal),
-                  Reason.DomCallback,
-                  "artifact catalog open",
-                );
-              }}
-            />
-          ) : (
-            <ArtifactCatalogGrid
-              artifacts={artifacts}
-              scrollToArtifactId={scrollToArtifactId}
-              onOpen={(artifactId) => {
-                detach(
-                  openArtifact(artifactId, pageSignal),
-                  Reason.DomCallback,
-                  "artifact catalog open",
-                );
-              }}
-            />
-          )}
-        </div>
-      </main>
-    </div>
+        <main
+          onScroll={handleScroll}
+          className="flex-1 overflow-auto px-4 pb-safe-or-8 pt-1 sm:px-6 [scrollbar-gutter:stable]"
+        >
+          <div className="mx-auto flex w-full max-w-[900px] flex-col gap-4">
+            {catalog.state === "loading" ? (
+              <ArtifactCatalogSkeleton
+                layout={sharedConversationLayout ? "list" : "grid"}
+              />
+            ) : catalog.state === "hasError" ? (
+              <ArtifactCatalogError onRetry={reloadCatalog} />
+            ) : artifacts.length === 0 ? (
+              <ArtifactCatalogEmpty />
+            ) : sharedConversationLayout ? (
+              <ArtifactSharedConversationList
+                artifacts={artifacts}
+                scrollToArtifactId={scrollToArtifactId}
+                onOpen={(artifactId) => {
+                  detach(
+                    openArtifact(artifactId, pageSignal),
+                    Reason.DomCallback,
+                    "artifact catalog open",
+                  );
+                }}
+              />
+            ) : (
+              <ArtifactCatalogGrid
+                artifacts={artifacts}
+                scrollToArtifactId={scrollToArtifactId}
+                onOpen={(artifactId) => {
+                  detach(
+                    openArtifact(artifactId, pageSignal),
+                    Reason.DomCallback,
+                    "artifact catalog open",
+                  );
+                }}
+              />
+            )}
+          </div>
+        </main>
+      </div>
+    </ChatThreadSidebarShell>
   );
 }

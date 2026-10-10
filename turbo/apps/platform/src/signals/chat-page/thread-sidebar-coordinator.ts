@@ -161,6 +161,24 @@ export const openThreadArtifactSplitView$ = command(
   },
 );
 
+/** Open directly on the initiating thread, replacing any utility sidebar. */
+export const openArtifactSidebar$ = command(
+  ({ get, set }, input: ArtifactRefInput, threadId?: string): boolean => {
+    const left = get(currentLeftThread$);
+    const right = get(currentRightThread$);
+    const thread = threadId
+      ? [left, right].find((candidate) => {
+          return candidate?.threadId === threadId;
+        })
+      : (get(activeThreadSidebar$)?.thread ?? left ?? right);
+    if (!thread) {
+      return false;
+    }
+    set(openAttachmentOnThread$, thread, input, get(pageSignal$));
+    return true;
+  },
+);
+
 /**
  * Route an artifact click into an artifact sidebar the page already has open,
  * replacing its content in place. Returns false when the page has no artifact

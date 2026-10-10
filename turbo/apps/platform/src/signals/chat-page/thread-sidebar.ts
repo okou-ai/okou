@@ -9,10 +9,9 @@ import {
   createArtifactCatalogSignals,
   type ArtifactCatalogSignals,
 } from "../artifacts-page/create-artifact-catalog-signals.ts";
-import { artifactDetailPreview } from "../artifacts-page/artifact-catalog-preview.ts";
+import { createCatalogArtifactPreviewSignals } from "../artifacts-page/artifact-catalog-preview.ts";
 import {
   createTextPreviewComputed,
-  fetchPreviewText,
   isTextPreviewKind,
   type TextPreviewComputed,
 } from "../text-preview.ts";
@@ -222,47 +221,6 @@ export interface ThreadSidebarSignals {
   readonly artifactCatalog: ArtifactCatalogSignals;
   readonly selectedArtifactText$: Computed<Promise<string>>;
   readonly selectedArtifactMarkdownTree$: MarkdownPreviewTreeComputed;
-}
-
-function createCatalogArtifactPreviewSignals(
-  artifactCatalog: ArtifactCatalogSignals,
-  openDiagram$: MermaidDiagramPreviewCommand,
-) {
-  const resourceUrl$ = computed(async (get) => {
-    const preview = await get(artifactCatalog.selectedArtifactPreview$);
-    return preview ? await get(preview.resourceUrl$) : null;
-  });
-  const shareUrl$ = computed(async (get) => {
-    const preview = await get(artifactCatalog.selectedArtifactPreview$);
-    return preview ? await get(preview.shareUrl$) : null;
-  });
-
-  const selectedArtifactText$ = computed(async (get): Promise<string> => {
-    const detail = await get(artifactCatalog.selectedArtifactDetail$);
-    if (!detail) {
-      throw new Error("Selected artifact is unavailable");
-    }
-    const preview = artifactDetailPreview(detail);
-    if (!isTextPreviewKind(preview.kind)) {
-      throw new Error("Selected artifact is not a text preview");
-    }
-    const resourceUrl = await get(resourceUrl$);
-    if (!resourceUrl) {
-      throw new Error("Selected artifact preview is unavailable");
-    }
-    return fetchPreviewText(resourceUrl);
-  });
-  const selectedArtifactMarkdownTree$ = createMarkdownPreviewTree(
-    selectedArtifactText$,
-    openDiagram$,
-  );
-
-  return {
-    resourceUrl$,
-    shareUrl$,
-    text$: selectedArtifactText$,
-    markdownTree$: selectedArtifactMarkdownTree$,
-  };
 }
 
 export function createThreadSidebarSignals(

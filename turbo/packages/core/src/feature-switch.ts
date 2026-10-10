@@ -51,6 +51,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Keep thread sidebars in a shell-owned host and expand artifact previews without moving DOM nodes.",
     enabled: false,
   },
+  [FeatureSwitchKey.ArtifactSidebarPreview]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Artifact sidebar preview",
+    description:
+      "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ArtifactPreviews]: {
     maintainer: "bingjie@okou.ai",
     description: "Capture and publish sandbox covers for HTML artifacts.",
