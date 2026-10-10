@@ -7,7 +7,6 @@ import { writeDb$ } from "../external/db";
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
-import type { Tx } from "../../lib/db-types";
 import {
   integrationChatThreadInsertFromRouteSql,
   integrationChatThreadValues,
@@ -65,29 +64,6 @@ const ROUTE_COLUMNS = {
   chatThreadId: teamsChatThreadRoutes.chatThreadId,
 } as const;
 
-/** A DM route follows the latest destination through one conditional update. */
-async function adoptTeamsChatThreadRoute(
-  tx: Tx,
-  existing: TeamsChatThreadRouteBinding,
-  key: TeamsChatThreadRouteKey,
-): Promise<TeamsChatThreadRouteBinding> {
-  if (
-    key.threadId !== INTEGRATION_DM_SESSION_KEY ||
-    existing.conversationId === key.conversationId
-  ) {
-    return existing;
-  }
-  const [updated] = await tx
-    .update(teamsChatThreadRoutes)
-    .set({ conversationId: key.conversationId })
-    .where(and(eq(teamsChatThreadRoutes.id, existing.id), routeWhere(key)))
-    .returning({ conversationId: teamsChatThreadRoutes.conversationId });
-  if (!updated) {
-    throw new Error("Failed to update Teams DM route destination");
-  }
-  return { ...existing, ...updated };
-}
-
 /**
  * The unique route and its new thread/event commit in this command alone.
  * One `INSERT … ON CONFLICT DO NOTHING` decides a concurrent create; the loser
@@ -119,7 +95,23 @@ export const ensureTeamsChatThreadRoute$ = command(
         .where(routeWhere(args))
         .limit(1);
       if (existing) {
-        return await adoptTeamsChatThreadRoute(tx, existing, args);
+        if (
+          args.threadId !== INTEGRATION_DM_SESSION_KEY ||
+          existing.conversationId === args.conversationId
+        ) {
+          return existing;
+        }
+        const [updated] = await tx
+          .update(teamsChatThreadRoutes)
+          .set({ conversationId: args.conversationId })
+          .where(
+            and(eq(teamsChatThreadRoutes.id, existing.id), routeWhere(args)),
+          )
+          .returning({ conversationId: teamsChatThreadRoutes.conversationId });
+        if (!updated) {
+          throw new Error("Failed to update Teams DM route destination");
+        }
+        return { ...existing, ...updated };
       }
       const thread = integrationChatThreadValues(args, candidateId, defaults);
       const insertedRoute = tx.$with("inserted_teams_route").as(
@@ -170,7 +162,21 @@ export const ensureTeamsChatThreadRoute$ = command(
           "Failed to resolve Teams chat thread route after conflict",
         );
       }
-      return await adoptTeamsChatThreadRoute(tx, winner, args);
+      if (
+        args.threadId !== INTEGRATION_DM_SESSION_KEY ||
+        winner.conversationId === args.conversationId
+      ) {
+        return winner;
+      }
+      const [updated] = await tx
+        .update(teamsChatThreadRoutes)
+        .set({ conversationId: args.conversationId })
+        .where(and(eq(teamsChatThreadRoutes.id, winner.id), routeWhere(args)))
+        .returning({ conversationId: teamsChatThreadRoutes.conversationId });
+      if (!updated) {
+        throw new Error("Failed to update Teams DM route destination");
+      }
+      return { ...winner, ...updated };
     });
     signal.throwIfAborted();
     return result;
