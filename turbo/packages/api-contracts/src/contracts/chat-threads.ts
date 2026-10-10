@@ -1859,6 +1859,17 @@ const chatSearchResponseSchema = z.object({
  * Chat search contract (GET /api/chat/search)
  * Searches chat messages within the caller's own threads in the caller's org.
  * Authorization is enforced at the DB query level via userId + orgId filters.
+ *
+ * The search index is updated asynchronously. Recent messages can be available
+ * in event history before search, including after their Run completes. Empty
+ * results do not prove absence. The response provides no index freshness signal
+ * or lag bound; candidate/result limits do not imply a complete or current view.
+ *
+ * Confirm recent sends using the known thread's chatThreadEventsContract
+ * snapshot and rows operations. Read the snapshot when present, then follow
+ * raw-row pages using their paired sequence/event cursor while hasMore is true.
+ * On 410, rebuild from a fresh snapshot. Do not resend solely because search
+ * returns no matches.
  */
 export const chatSearchContract = c.router({
   search: {
