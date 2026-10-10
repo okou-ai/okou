@@ -222,11 +222,6 @@
       "owner": "persistConnectorRefresh$"
     },
     {
-      "id": "TX-0083",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-external-code.service.ts",
-      "owner": "createExternalCodeSession"
-    },
-    {
       "id": "TX-0084",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-oauth-device-auth.service.ts",
       "owner": "completeClaimedSession$"
@@ -870,11 +865,6 @@
       "id": "TX-0236",
       "file": "turbo/apps/api/src/signals/services/run-built-in-admission.service.ts",
       "owner": "startRunBuiltInAdmission$"
-    },
-    {
-      "id": "TX-0237",
-      "file": "turbo/apps/api/src/signals/services/run-uploaded-files.service.ts",
-      "owner": "recordRunUploadedFile$"
     },
     {
       "id": "TX-0240",

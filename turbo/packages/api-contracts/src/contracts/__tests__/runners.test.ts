@@ -638,8 +638,8 @@ describe("connector runtime synchronization contract", () => {
     );
     const target = {
       kind: "builtin" as const,
-      connectorSlug: "zendesk",
-      baseUrlVars: { ZENDESK_SUBDOMAIN: "xn--mnich-kva" },
+      connectorSlug: "test-subdomain",
+      baseUrlVars: { SUBDOMAIN_TEST_SUBDOMAIN: "xn--mnich-kva" },
       sourceId: "10000000-0000-4000-8000-000000000001",
     };
 
@@ -1939,8 +1939,8 @@ describe("runner firewall entry contract", () => {
     const firewalls = [
       {
         kind: "builtin",
-        name: "zendesk",
-        baseUrlVars: { ZENDESK_SUBDOMAIN: "acme" },
+        name: "test-subdomain",
+        baseUrlVars: { SUBDOMAIN_TEST_SUBDOMAIN: "acme" },
         sourceId: "10000000-0000-4000-8000-000000000001",
       },
     ];

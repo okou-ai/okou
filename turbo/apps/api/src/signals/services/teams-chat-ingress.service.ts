@@ -65,22 +65,6 @@ const ROUTE_COLUMNS = {
   chatThreadId: teamsChatThreadRoutes.chatThreadId,
 } as const;
 
-async function loadTeamsChatThreadRoute(
-  tx: Tx,
-  key: TeamsChatThreadRouteKey,
-): Promise<TeamsChatThreadRouteBinding | undefined> {
-  const [route] = await tx
-    .select(ROUTE_COLUMNS)
-    .from(teamsChatThreadRoutes)
-    .innerJoin(
-      chatThreads,
-      eq(chatThreads.id, teamsChatThreadRoutes.chatThreadId),
-    )
-    .where(routeWhere(key))
-    .limit(1);
-  return route;
-}
-
 /** A DM route follows the latest destination through one conditional update. */
 async function adoptTeamsChatThreadRoute(
   tx: Tx,
@@ -125,7 +109,15 @@ export const ensureTeamsChatThreadRoute$ = command(
     const db = set(writeDb$);
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0258; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
-      const existing = await loadTeamsChatThreadRoute(tx, args);
+      const [existing] = await tx
+        .select(ROUTE_COLUMNS)
+        .from(teamsChatThreadRoutes)
+        .innerJoin(
+          chatThreads,
+          eq(chatThreads.id, teamsChatThreadRoutes.chatThreadId),
+        )
+        .where(routeWhere(args))
+        .limit(1);
       if (existing) {
         return await adoptTeamsChatThreadRoute(tx, existing, args);
       }
@@ -164,7 +156,15 @@ export const ensureTeamsChatThreadRoute$ = command(
         return route;
       }
       // ON CONFLICT waited for the winner's commit; read it once.
-      const winner = await loadTeamsChatThreadRoute(tx, args);
+      const [winner] = await tx
+        .select(ROUTE_COLUMNS)
+        .from(teamsChatThreadRoutes)
+        .innerJoin(
+          chatThreads,
+          eq(chatThreads.id, teamsChatThreadRoutes.chatThreadId),
+        )
+        .where(routeWhere(args))
+        .limit(1);
       if (!winner) {
         throw new Error(
           "Failed to resolve Teams chat thread route after conflict",

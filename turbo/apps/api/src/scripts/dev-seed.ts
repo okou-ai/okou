@@ -84,7 +84,6 @@ const PREVIEW_E2E_VOLUME_SKILL_NAMES: readonly string[] = [
   "github",
   "slack",
   "discord-webhook",
-  "zendesk",
   "serpapi",
   "replicate",
 ];

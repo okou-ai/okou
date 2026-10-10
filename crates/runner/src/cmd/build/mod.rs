@@ -125,6 +125,15 @@ pub struct BuildArgs {
     guest_tool_exec: Option<PathBuf>,
     #[cfg_attr(
         bundled_guests,
+        arg(long, help = "Path to guest-task-exec binary [default: bundled]")
+    )]
+    #[cfg_attr(
+        not(bundled_guests),
+        arg(long, help = "Path to guest-task-exec binary (required)")
+    )]
+    guest_task_exec: Option<PathBuf>,
+    #[cfg_attr(
+        bundled_guests,
         arg(long, help = "Path to runner-rpc-client binary [default: bundled]")
     )]
     #[cfg_attr(
@@ -155,6 +164,7 @@ impl BuildArgs {
             "guest-write-file" => self.guest_write_file.take(),
             "guest-home-mount" => self.guest_home_mount.take(),
             "guest-tool-exec" => self.guest_tool_exec.take(),
+            "guest-task-exec" => self.guest_task_exec.take(),
             "runner-rpc-client" => self.runner_rpc_client.take(),
             _ => None,
         }

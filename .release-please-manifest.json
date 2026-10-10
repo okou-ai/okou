@@ -19,6 +19,7 @@
   "crates/guest-contracts": "0.20.2",
   "crates/session-history-selector": "0.3.146",
   "crates/guest-tool-exec": "0.1.121",
+  "crates/guest-task-exec": "0.1.0",
   "crates/guest-telemetry": "0.3.132",
   "crates/guest-storage-apply": "0.25.5",
   "crates/guest-init": "0.18.2",

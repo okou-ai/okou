@@ -28,18 +28,6 @@ import { userFeatureSwitchContext } from "./feature-switches.service";
 
 type SlackInstallation = typeof slackOrgInstallations.$inferSelect;
 
-async function getWorkspaceAgentName(
-  db: Db,
-  composeId: string,
-): Promise<string | undefined> {
-  const [agent] = await db
-    .select({ name: agents.name, displayName: agents.displayName })
-    .from(agents)
-    .where(eq(agents.id, composeId))
-    .limit(1);
-  return agent?.displayName ?? agent?.name;
-}
-
 async function getPrimaryUserEmail(
   clerkClient: ReturnType<typeof clerk$.read>,
   userId: string,
@@ -106,7 +94,12 @@ async function refreshSlackAppHome(args: {
       .limit(1);
     const defaultAgentId = metadata?.defaultAgentId ?? null;
     if (defaultAgentId) {
-      agentName = await getWorkspaceAgentName(args.db, defaultAgentId);
+      const [agent] = await args.db
+        .select({ name: agents.name, displayName: agents.displayName })
+        .from(agents)
+        .where(eq(agents.id, defaultAgentId))
+        .limit(1);
+      agentName = agent?.displayName ?? agent?.name;
     }
   }
 
@@ -369,10 +362,15 @@ export const notifySlackConnect$ = command(
       .limit(1);
     signal.throwIfAborted();
     const defaultAgentId = metadata?.defaultAgentId ?? null;
-    const agentName = defaultAgentId
-      ? await getWorkspaceAgentName(writeDb, defaultAgentId)
-      : undefined;
+    const [agent] = defaultAgentId
+      ? await writeDb
+          .select({ name: agents.name, displayName: agents.displayName })
+          .from(agents)
+          .where(eq(agents.id, defaultAgentId))
+          .limit(1)
+      : [];
     signal.throwIfAborted();
+    const agentName = agent?.displayName ?? agent?.name;
     const { assistantName } = BRAND_PRESENTATION;
 
     const blocks = buildSuccessMessage(

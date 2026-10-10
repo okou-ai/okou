@@ -10141,12 +10141,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const connectors = createConnectorBddApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-        await connectors.connectManualGrant(actor, "zendesk", "api-token", {
-          apiToken: "zendesk-token-bdd",
-          email: "connector@example.com",
-          subdomain: "münich",
-        });
-        await api.enableAgentConnectors(actor, agentId, ["zendesk"]);
+        await connectors.connectManualGrant(
+          actor,
+          "test-subdomain",
+          "api-token",
+          {
+            apiToken: "test-subdomain-token-bdd",
+            email: "connector@example.com",
+            subdomain: "münich",
+          },
+        );
+        await api.enableAgentConnectors(actor, agentId, ["test-subdomain"]);
 
         // Built-in connector-owned vars must not leak into custom connector bases.
         const slug = `_bdd-vars-${randomUUID().slice(0, 8)}`;
@@ -10180,17 +10185,19 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           claim.firewalls?.map((firewall) => {
             return firewallEntryName(firewall);
           }),
-        ).toContain("zendesk");
-        expect(findFirewallEntry(claim.firewalls, "zendesk")).toStrictEqual({
+        ).toContain("test-subdomain");
+        expect(
+          findFirewallEntry(claim.firewalls, "test-subdomain"),
+        ).toStrictEqual({
           kind: "builtin",
-          name: "zendesk",
-          baseUrlVars: { ZENDESK_SUBDOMAIN: "xn--mnich-kva" },
+          name: "test-subdomain",
+          baseUrlVars: { SUBDOMAIN_TEST_SUBDOMAIN: "xn--mnich-kva" },
           sourceId: expect.any(String),
         });
         expect(claim.connectorRuntimeTargets).toContainEqual({
           kind: "builtin",
-          connectorSlug: "zendesk",
-          baseUrlVars: { ZENDESK_SUBDOMAIN: "xn--mnich-kva" },
+          connectorSlug: "test-subdomain",
+          baseUrlVars: { SUBDOMAIN_TEST_SUBDOMAIN: "xn--mnich-kva" },
           sourceId: expect.any(String),
         });
         expect(customApis[0]?.base).toBe("https://internal.example.com/api/");

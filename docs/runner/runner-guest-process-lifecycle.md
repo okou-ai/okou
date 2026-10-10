@@ -48,6 +48,7 @@ guest binary inventory, so changing it invalidates the rootfs and snapshot hash.
 | `guest-agent` (direct launch)                                                                        | Controlled Agent requested only by `Sandbox::start_agent_process`           | Guest selects the fixed executable; Runner supplies bootstrap environment; Agent handles user-controlled work                | Per-operation `control` cgroup; the outer containment owns the standard workload resource hierarchy | Runner owns the typed process handle, readiness timing, and mandatory control capability; guest control registry, placement brokers, exec worker, and containment own guest cleanup | Required final pre-spawn operation; `exec_started` records controlled-process launch and `exec_agent_ready` completes the typed Agent start |
 | Agent CLI or Codex app server                                                                        | Controlled Agent child selected by the Guest Agent's typed CLI startup path | Framework-specific Agent input and user session data                                                                         | `workload/runtime`, entered through an authenticated pre-exec placement descriptor                  | Guest Agent CLI owner plus outer Agent containment                                                                                                                                  | Required after Guest Agent startup; serial with CLI launch, then concurrent with supervision                                                |
 | `guest-tool-exec` and its requested shell command                                                    | Controlled Agent child selected by the managed tool envelope                | Tool request and shell command are user/Agent influenced                                                                     | A unique `workload/tools/tool-N` leaf obtained from the authenticated placement broker              | Tool wrapper/process group plus tool-placement broker and outer Agent containment                                                                                                   | Optional, concurrent after Agent readiness, and independently completed                                                                     |
+| `guest-task-exec` and its arbitrary task runtime                                                     | Controlled Agent descendant selected by a managed caller                    | Target argv/env/cwd and application pipes are user input; placement is authenticated by the operation broker                 | Independent `workload/tools/task-<opaque UUID>/runtime` with its own `tools/tool-N` leaves          | Operation task registry retains runtime pidfd; scoped admission and stop fence, empty and remove the task subtree                                                                   | Optional after Agent readiness; independent of the starting Bash lifetime                                                                   |
 
 Read, copy, and other protocol handlers that do not spawn a process are
 not child-process rows. They still participate in their normal sandbox
@@ -102,6 +103,65 @@ runtime reservation is added. Privileged or deliberately reconfigured tools,
 restricted victim eligibility, and pressure after tools are gone can still
 leave the runtime as a victim. A tool OOM remains distinct from genuine
 agent-domain OOM failure.
+
+### Tools-owned task runtimes
+
+A managed main runtime or its top-level tool may launch an arbitrary sandbox-user
+program through `/usr/local/bin/guest-task-exec --report-fd <fd> -- <program>
+[args...]`. The broker allocates a fresh opaque UUID domain directly below
+`workload/tools`, separate from the starting Bash's populated `tool-N` leaf. Each
+empty `task-<UUID>` contains `runtime` and an empty `tools` distribution node;
+managed shell tools from that registered runtime enter only its `tools/tool-N`.
+Tasks cannot recursively create tasks or request caller-selected cgroup paths,
+quotas, protection or root execution. This is not a session, prompt, model,
+steering or child Run contract.
+
+The selected report FD must be a writable private pipe/socket numbered at least 3. The launcher consumes it, sends one newline-delimited JSON `{handle,pid}`
+record after broker placement ACK and OOM-priority setup, then closes it before
+exec. Standard IO, argv, cwd, environment and other explicitly inherited
+application pipes survive. Placement/socket descriptors do not. The PID remains
+the launcher's PID; metadata proves containment, not successful exec/application
+readiness. Invalid admission/reporting exits before target code; failed target
+exec exits 126 and the lifetime owner cleans up. Consumers own application
+readiness and normal child reaping. When a background CLI returns after admission,
+Guest-init (PID 1) adopts and reaps its orphaned runtime; task pidfd cleanup remains
+separate from this waitpid owner.
+
+The existing `okou generate image-batch start` launches its worker through this
+helper and returns after publishing PID state. Its log and completion files remain
+the application boundary for `image-batch wait`. Failed startup publication stops
+the opaque task and collects the owned child; failed native cleanup retains the
+state directory and reports an error.
+
+`guest-task-exec stop <handle>` is authenticated from the owning main
+runtime/top-level tools domain. Handles are operation-owned identities, not
+subagent numbers or killable bare PIDs. Stop fences scoped admission, waits for
+bounded pending placement, sends graceful termination, then uses task-only
+`cgroup.kill` if needed. Success requires an empty, recursively removed subtree.
+Failed cleanup remains closed/owned and is never a successful stop. Unknown or
+retired handles fail explicitly; they cannot address a replacement task. A
+retained runtime pidfd also drives cleanup after natural exit, exec failure,
+crash or OOM, including detached/reparented descendants. It does not transfer
+waitpid ownership. Operation teardown cancels and joins brokers before its
+existing recursive outer cleanup.
+
+Task parent/tools aggregates use `memory.oom.group=0`; task runtime/tool leaves
+use 1. Runtime launch resets the inherited tool score to 0, while its tools retain 1000. Tasks receive no protected-memory floor or additional quota; the main
+runtime's 384 MiB protection and inclusive workload limits are unchanged.
+Nested task OOM paths remain evidence, never main agent-domain attribution.
+Placement does not move memory already charged to the starting tool.
+
+The task protocol is a separate bounded version-one endpoint derived from the
+existing canonical tool endpoint. Each task request/reply frame uses one overall
+read deadline; partial input cannot renew the budget or hold the task broker
+indefinitely. Runner and its bundled Guest share one deployment artifact, so
+their internal task protocol needs no cross-version compatibility path. CLI
+packages are selected separately; consumers require the task helper and active
+operation and fail explicitly when unavailable, without unmanaged spawn or
+protected-main-runtime fallback. Ordinary tools keep their separate placement
+contract. The normal Guest inventory includes this helper in image/source
+fingerprints. Real Guest behavior coverage uses ordinary Python/Bash processes and the packaged helper;
+unit/fake-file tests do not prove native cgroup or sandbox-UID OOM behavior.
 
 Guest-init mounts cgroup v2 with `favordynmods` before creating the containment
 hierarchy. This guest-only policy reduces dynamic placement latency for CLI

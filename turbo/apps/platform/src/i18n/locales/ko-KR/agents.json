@@ -444,10 +444,6 @@
           "support-ticket-router": {
             "description": "티켓을 Notion으로 보내고 긴급한 것은 Slack 알림",
             "title": "지원 티켓 라우터"
-          },
-          "zendesk-notion-knowledge-base": {
-            "description": "자주 묻는 Zendesk 질문을 추출해 Notion FAQ에 자동 추가",
-            "title": "Zendesk → Notion 지식 베이스"
           }
         },
         "title": "지원"

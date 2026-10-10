@@ -23,13 +23,16 @@ import {
 } from "@okouai/connectors/auth-providers";
 import { isOAuthProviderHttpError } from "@okouai/connectors/auth-providers/oauth/error";
 import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
+import { connectors } from "@okouai/db/schema/connector";
 import { command } from "ccstate";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { z } from "zod";
 
+import { executeRawRows } from "../../lib/db-raw-rows";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { onRejection, settle, throwIfAbort } from "../utils";
 import {
   decryptPersistentSecretValue,
@@ -57,7 +60,6 @@ import {
   validateConnectorAuthorizationTarget$,
 } from "./connected-connector-authorization.service";
 import { storedConnectorAccountMutationSelection } from "./connector-account-mutation.service";
-import { resolveConnectorConnectionMutation } from "./connector-connection-write.service";
 
 const SUPERSEDABLE_EXTERNAL_CODE_SESSION_STATUSES = ["pending"] as const;
 const SUPERSEDED_SESSION_ERROR_CODE = "session_superseded";
@@ -65,6 +67,7 @@ const SUPERSEDED_SESSION_ERROR_MESSAGE =
   "External-code authorization session was superseded";
 const PROVIDER_STATE_MAX_BYTES = 16 * 1024;
 const COMPLETING_SESSION_STALE_AFTER_MS = 30 * 60 * 1000;
+const createdExternalCodeSessionSchema = z.object({ id: z.uuid() });
 
 const externalCodeSessionSelection = Object.freeze({
   id: builtinConnectorExternalCodeSessions.id,
@@ -106,13 +109,6 @@ function externalCodeRequestedOauthScopes(
     connectorGrantScopes(resolvedMethod.method.grant),
   );
 }
-
-type BuiltinConnectorExternalCodeSessionOwner = {
-  readonly connectorSlug: ConnectorSlug;
-  readonly authMethod: ConnectorAuthMethodId;
-  readonly orgId: string;
-  readonly userId: string;
-};
 
 type ResolvedBuiltinConnectorExternalCodeClient = {
   readonly resolvedMethod: ResolvedConnectorActionMethod;
@@ -254,37 +250,6 @@ async function resolveStoredExternalCodeMethod(args: {
     return connectorExternalCodeUnavailable(args.connectorSlug);
   }
   return resolved;
-}
-
-async function markPendingSessionsSuperseded(
-  args: BuiltinConnectorExternalCodeSessionOwner & {
-    readonly writeDb: Db;
-    readonly now: Date;
-  },
-): Promise<void> {
-  await args.writeDb
-    .update(builtinConnectorExternalCodeSessions)
-    .set({
-      status: "error",
-      errorCode: SUPERSEDED_SESSION_ERROR_CODE,
-      errorMessage: SUPERSEDED_SESSION_ERROR_MESSAGE,
-      updatedAt: args.now,
-      completedAt: args.now,
-    })
-    .where(
-      and(
-        eq(builtinConnectorExternalCodeSessions.orgId, args.orgId),
-        eq(builtinConnectorExternalCodeSessions.userId, args.userId),
-        eq(
-          builtinConnectorExternalCodeSessions.connectorSlug,
-          args.connectorSlug,
-        ),
-        eq(builtinConnectorExternalCodeSessions.authMethod, args.authMethod),
-        inArray(builtinConnectorExternalCodeSessions.status, [
-          ...SUPERSEDABLE_EXTERNAL_CODE_SESSION_STATUSES,
-        ]),
-      ),
-    );
 }
 
 async function parseEncryptedProviderState(args: {
@@ -714,49 +679,47 @@ function errorMessage(error: unknown): string {
     : "External-code completion failed";
 }
 
-async function createExternalCodeSession(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly agentId: string | undefined;
-    readonly authorizeAgent: true | undefined;
-    readonly connectorSlug: ConnectorSlug;
-    readonly authMethod: ConnectorAuthMethodId;
-    readonly account: ConnectorAccountMutationIntent;
-    readonly sessionToken: string;
-    readonly encryptedProviderState: string;
-    readonly authorizationUrl: string;
-    readonly oauthRequestedScopes: readonly string[];
-    readonly now: Date;
-    readonly expiresAt: Date;
-  },
-  signal: AbortSignal,
-) {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0083; new non-billing transactions are prohibited.
-  return await db.transaction(async (tx) => {
-    // The connector_state lock taken by resolveConnectorConnectionMutation
-    // serializes session creation for this owner and connector.
-    const mutationResolution = await resolveConnectorConnectionMutation(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      target: { kind: "builtin", connectorSlug: args.connectorSlug },
-      mutation: args.account,
-      allowSiblings: true,
-    });
-    signal.throwIfAborted();
-    if (mutationResolution.kind !== "ready") {
-      return mutationResolution;
+const createExternalCodeSession$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly agentId: string | undefined;
+      readonly authorizeAgent: true | undefined;
+      readonly connectorSlug: ConnectorSlug;
+      readonly authMethod: ConnectorAuthMethodId;
+      readonly account: ConnectorAccountMutationIntent;
+      readonly sessionToken: string;
+      readonly encryptedProviderState: string;
+      readonly authorizationUrl: string;
+      readonly oauthRequestedScopes: readonly string[];
+      readonly now: Date;
+      readonly expiresAt: Date;
+    },
+    signal: AbortSignal,
+  ) => {
+    const writeDb = set(writeDb$);
+    if (args.account.intent === "reconnect") {
+      const [existing] = await writeDb
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(
+          and(
+            eq(connectors.id, args.account.connectionId),
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            eq(connectors.connectorSlug, args.connectorSlug),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!existing) {
+        return { kind: "missing" as const };
+      }
     }
-    await markPendingSessionsSuperseded({
-      connectorSlug: args.connectorSlug,
-      authMethod: args.authMethod,
-      writeDb: tx,
-      orgId: args.orgId,
-      userId: args.userId,
-      now: args.now,
-    });
-    const [session] = await tx
+
+    const createSession = writeDb
       .insert(builtinConnectorExternalCodeSessions)
       .values({
         orgId: args.orgId,
@@ -776,12 +739,52 @@ async function createExternalCodeSession(
         expiresAt: args.expiresAt,
       })
       .returning({ id: builtinConnectorExternalCodeSessions.id });
+    const supersedePendingSessions = writeDb
+      .update(builtinConnectorExternalCodeSessions)
+      .set({
+        status: "error",
+        errorCode: SUPERSEDED_SESSION_ERROR_CODE,
+        errorMessage: SUPERSEDED_SESSION_ERROR_MESSAGE,
+        updatedAt: args.now,
+        completedAt: args.now,
+      })
+      .where(
+        and(
+          eq(builtinConnectorExternalCodeSessions.orgId, args.orgId),
+          eq(builtinConnectorExternalCodeSessions.userId, args.userId),
+          eq(
+            builtinConnectorExternalCodeSessions.connectorSlug,
+            args.connectorSlug,
+          ),
+          eq(builtinConnectorExternalCodeSessions.authMethod, args.authMethod),
+          inArray(builtinConnectorExternalCodeSessions.status, [
+            ...SUPERSEDABLE_EXTERNAL_CODE_SESSION_STATUSES,
+          ]),
+          ne(
+            builtinConnectorExternalCodeSessions.id,
+            sql`(SELECT id FROM created_external_code_session)`,
+          ),
+        ),
+      );
+    const [session] = await executeRawRows(
+      writeDb,
+      sql`
+        WITH created_external_code_session AS (
+          ${createSession.getSQL()}
+        ), superseded_external_code_sessions AS (
+          ${supersedePendingSessions.getSQL()}
+        )
+        SELECT id FROM created_external_code_session
+      `,
+      createdExternalCodeSessionSchema,
+    );
+    signal.throwIfAborted();
     if (!session) {
       throw new Error("Failed to create external-code authorization session");
     }
     return { kind: "created" as const, session };
-  });
-}
+  },
+);
 
 export const startBuiltinConnectorExternalCodeSession$ = command(
   async (
@@ -851,15 +854,15 @@ export const startBuiltinConnectorExternalCodeSession$ = command(
     );
     signal.throwIfAborted();
 
-    const sessionResult = await createExternalCodeSession(
-      set(writeDb$),
+    const sessionResult = await set(
+      createExternalCodeSession$,
       {
         orgId: args.orgId,
         userId: args.userId,
-        connectorSlug: resolved.connectorSlug,
-        authMethod: resolved.authMethodId,
         agentId: args.agentId,
         authorizeAgent: args.authorizeAgent,
+        connectorSlug: resolved.connectorSlug,
+        authMethod: resolved.authMethodId,
         account: args.account,
         sessionToken,
         encryptedProviderState,
@@ -871,15 +874,8 @@ export const startBuiltinConnectorExternalCodeSession$ = command(
       signal,
     );
     signal.throwIfAborted();
-
-    if (sessionResult.kind !== "created") {
-      return sessionResult.kind === "missing"
-        ? notFound("Connector account not found")
-        : conflict(
-            sessionResult.kind === "ambiguous"
-              ? "Multiple connector accounts require an exact choice"
-              : "This connector does not support additional accounts",
-          );
+    if (sessionResult.kind === "missing") {
+      return notFound("Connector account not found");
     }
 
     const body: BuiltinConnectorExternalCodeSessionStartResponse = {

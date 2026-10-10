@@ -444,10 +444,6 @@
           "support-ticket-router": {
             "description": "Tickets vão para o Notion e os urgentes geram avisos no Slack",
             "title": "Roteador de tickets de suporte"
-          },
-          "zendesk-notion-knowledge-base": {
-            "description": "Extraia perguntas frequentes do Zendesk e adicione-as automaticamente a uma FAQ no Notion",
-            "title": "Base de conhecimento do Zendesk no Notion"
           }
         },
         "title": "Suporte"

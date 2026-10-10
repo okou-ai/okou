@@ -29,8 +29,10 @@ use guest_control_proto::ExecProcessRole;
 
 use crate::log::log;
 
+mod managed_tasks;
 mod storage_resources;
 
+use managed_tasks::ManagedTasks;
 use storage_resources::{StorageOperation, read_resource_file};
 
 const CGROUP_EVENTS_FILE: &str = "cgroup.events";
@@ -109,6 +111,7 @@ pub(crate) struct WorkloadPlacementBootstrap {
     cancel: Arc<AtomicBool>,
     cancel_wake_writer: Option<OwnedFd>,
     active_tool_placement: Arc<ActiveToolPlacement>,
+    active_task_placement: Arc<ActiveToolPlacement>,
     workers: Vec<JoinHandle<()>>,
 }
 
@@ -214,6 +217,12 @@ impl Drop for WorkloadPlacementBootstrap {
             log(
                 "WARN",
                 &format!("active tool placement shutdown failed: {error}"),
+            );
+        }
+        if let Err(error) = self.active_task_placement.shutdown() {
+            log(
+                "WARN",
+                &format!("active task placement shutdown failed: {error}"),
             );
         }
         for worker in self.workers.drain(..) {
@@ -625,6 +634,9 @@ impl CgroupGuard {
         let tool_endpoint = format!("{control_endpoint}{TOOL_PLACEMENT_ENDPOINT_SUFFIX}");
         let tool_listener = process_control_ipc::bind_abstract_listener(&tool_endpoint)
             .map_err(|error| ProcessContainmentError::new("bind tool placement endpoint", error))?;
+        let task_endpoint = process_control_ipc::managed_task::endpoint(&tool_endpoint);
+        let task_listener = process_control_ipc::bind_abstract_listener(&task_endpoint)
+            .map_err(|error| ProcessContainmentError::new("bind task placement endpoint", error))?;
         let expected_cgroup = self.group_path.join(CONTROL_CGROUP_NAME);
         let expected_runtime_cgroup = self
             .group_path
@@ -636,6 +648,14 @@ impl CgroupGuard {
                 io::Error::other("trusted control cgroup has no tools domain"),
             )
         })?;
+        let tasks = Arc::new(ManagedTasks::new(
+            expected_uid,
+            expected_runtime_cgroup,
+            tools_path,
+        ));
+        let tool_tasks = Arc::clone(&tasks);
+        let active_task_placement = Arc::new(ActiveToolPlacement::default());
+        let worker_active_task_placement = Arc::clone(&active_task_placement);
         let (cancel_reader, cancel_wake_writer) = placement_cancel_pipe().map_err(|error| {
             ProcessContainmentError::new("prepare placement cancellation", error)
         })?;
@@ -688,9 +708,7 @@ impl CgroupGuard {
             .spawn(move || {
                 serve_tool_placement(
                     tool_listener,
-                    expected_uid,
-                    &expected_runtime_cgroup,
-                    &tools_path,
+                    &tool_tasks,
                     &worker_active_tool_placement,
                     &tool_cancel,
                     tool_cancel_reader.as_raw_fd(),
@@ -707,6 +725,24 @@ impl CgroupGuard {
                 ));
             }
         };
+        let task_cancel = Arc::clone(&cancel);
+        let task_worker = match thread::Builder::new()
+            .name("gctl-task-place".to_owned())
+            .spawn(move || tasks.serve(task_listener, worker_active_task_placement, task_cancel))
+        {
+            Ok(worker) => worker,
+            Err(error) => {
+                cancel.store(true, Ordering::Release);
+                drop(cancel_wake_writer.take());
+                let _ = active_tool_placement.shutdown();
+                let _ = workload_worker.join();
+                let _ = tool_worker.join();
+                return Err(ProcessContainmentError::new(
+                    "start task placement worker",
+                    error,
+                ));
+            }
+        };
         Ok(WorkloadPlacementBootstrap {
             endpoint,
             tool_endpoint,
@@ -715,7 +751,8 @@ impl CgroupGuard {
             cancel,
             cancel_wake_writer,
             active_tool_placement,
-            workers: vec![workload_worker, tool_worker],
+            active_task_placement,
+            workers: vec![workload_worker, tool_worker, task_worker],
         })
     }
 
@@ -1453,9 +1490,7 @@ fn workload_bootstrap_cancelled() -> io::Error {
 
 fn serve_tool_placement(
     listener: UnixListener,
-    expected_uid: libc::uid_t,
-    expected_runtime_cgroup: &Path,
-    tools_path: &Path,
+    tasks: &ManagedTasks,
     active_tool_placement: &Arc<ActiveToolPlacement>,
     cancel: &AtomicBool,
     cancel_fd: RawFd,
@@ -1502,13 +1537,7 @@ fn serve_tool_placement(
             continue;
         }
 
-        let placement = place_tool_peer(
-            stream.as_ref(),
-            expected_uid,
-            expected_runtime_cgroup,
-            tools_path,
-            next_tool_id,
-        );
+        let placement = tasks.place_tool(stream.as_ref(), next_tool_id);
         next_tool_id = next_tool_id.saturating_add(1);
         if let Err(error) = placement {
             if cancel.load(Ordering::Acquire) {
@@ -1526,6 +1555,30 @@ fn place_tool_peer(
     tools_path: &Path,
     tool_id: u64,
 ) -> io::Result<()> {
+    place_tool_peer_in_scope(
+        stream,
+        expected_uid,
+        expected_runtime_cgroup,
+        tools_path,
+        tool_id,
+        None,
+    )
+}
+
+fn place_tool_peer_in_scope(
+    stream: &UnixStream,
+    expected_uid: libc::uid_t,
+    expected_runtime_cgroup: &Path,
+    tools_path: &Path,
+    tool_id: u64,
+    closing: Option<&AtomicBool>,
+) -> io::Result<()> {
+    if closing.is_some_and(|closing| closing.load(Ordering::Acquire)) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "task is closing",
+        ));
+    }
     if !peer_matches(stream, expected_uid, expected_runtime_cgroup)? {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
@@ -1549,6 +1602,12 @@ fn place_tool_peer(
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "peer did not enter the assigned tool cgroup",
+            ));
+        }
+        if closing.is_some_and(|closing| closing.load(Ordering::Acquire)) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "task closed during tool placement",
             ));
         }
         process_control_ipc::write_tool_placement_ack(stream)
@@ -1586,11 +1645,7 @@ fn workload_bootstrap_peer_matches(
     peer_matches(stream, expected_uid, expected_cgroup)
 }
 
-fn peer_matches(
-    stream: &std::os::unix::net::UnixStream,
-    expected_uid: libc::uid_t,
-    expected_cgroup: &Path,
-) -> io::Result<bool> {
+fn peer_credentials(stream: &UnixStream) -> io::Result<libc::ucred> {
     // SAFETY: zeroed ucred is a valid output buffer for SO_PEERCRED.
     let mut credentials = unsafe { std::mem::zeroed::<libc::ucred>() };
     let mut credentials_len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
@@ -1608,13 +1663,24 @@ fn peer_matches(
     if result != 0 {
         return Err(io::Error::last_os_error());
     }
-    if credentials_len as usize != std::mem::size_of::<libc::ucred>()
-        || credentials.pid <= 0
-        || credentials.uid != expected_uid
-    {
+    if credentials_len as usize != std::mem::size_of::<libc::ucred>() || credentials.pid <= 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid placement peer identity",
+        ));
+    }
+    Ok(credentials)
+}
+
+fn peer_matches(
+    stream: &UnixStream,
+    expected_uid: libc::uid_t,
+    expected_cgroup: &Path,
+) -> io::Result<bool> {
+    let credentials = peer_credentials(stream)?;
+    if credentials.uid != expected_uid {
         return Ok(false);
     }
-
     let cgroup = fs::read_to_string(format!("/proc/{}/cgroup", credentials.pid));
     let cgroup = match cgroup {
         Ok(cgroup) => cgroup,
@@ -2289,6 +2355,7 @@ mod tests {
             cancel,
             cancel_wake_writer: Some(cancel_writer),
             active_tool_placement: Arc::new(ActiveToolPlacement::default()),
+            active_task_placement: Arc::new(ActiveToolPlacement::default()),
             workers: vec![workload_worker, tool_worker],
         };
 
@@ -2449,6 +2516,7 @@ mod tests {
             cancel,
             cancel_wake_writer: Some(cancel_writer),
             active_tool_placement,
+            active_task_placement: Arc::new(ActiveToolPlacement::default()),
             workers: vec![workload_worker, tool_worker],
         };
 
