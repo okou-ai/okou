@@ -10,7 +10,8 @@ import { chatThreadMetaMap$ } from "./chat-thread-event-sourcing.ts";
 
 // Undo is a quiet text action; the primary fill is reserved for commitments.
 const UNDO_ACTION_CLASS_NAMES = {
-  actionButton: "underline-offset-4 hover:underline active:opacity-80",
+  // A one-line toast sizes to its content, so the action needs its own gap.
+  actionButton: "!ml-4 underline-offset-4 hover:underline active:opacity-80",
 } as const;
 const UNDO_ACTION_STYLE = {
   background: "transparent",
