@@ -13,7 +13,12 @@ import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { command } from "ccstate";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, exists, inArray, sql } from "drizzle-orm";
+import {
+  pgBooleanDecoder,
+  pgIntegerDecoder,
+} from "../../lib/db-structured-result";
+import { createSshCredentialUpdateReads } from "./ssh-credential-update-query";
 import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -256,7 +261,7 @@ export const createSshCredential$ = command(
     return { ok: true, value: response(created, []) };
   },
 );
-interface UpdateSshCredentialArgs {
+export interface UpdateSshCredentialArgs {
   readonly owner: Owner;
   readonly credentialId: string;
   readonly body: UpdateSshCredentialRequest;
@@ -278,7 +283,11 @@ const prepareSshCredentialUpdate$ = command(
     { set },
     args: UpdateSshCredentialArgs,
   ): Promise<
-    SshResult<Awaited<ReturnType<typeof encryptAuthentication>> | undefined>
+    SshResult<{
+      readonly encrypted:
+        Awaited<ReturnType<typeof encryptAuthentication>> | undefined;
+      readonly hosts: SshCredentialResponse["hosts"];
+    }>
   > => {
     const db = set(writeDb$);
     const [initial] = await db
@@ -322,7 +331,137 @@ const prepareSshCredentialUpdate$ = command(
             args.body.authentication,
             args.featureContext,
           );
-    return { ok: true, value: encrypted };
+    return {
+      ok: true,
+      value: {
+        encrypted,
+        // This public projection remains the preparation-time observation.
+        // The atomic statement independently retains its current write set.
+        hosts: hosts.map(({ id, displayName }) => {
+          return { id, displayName };
+        }),
+      },
+    };
+  },
+);
+
+const commitSshCredentialUpdate$ = command(
+  async (
+    { set },
+    args: UpdateSshCredentialArgs,
+    encrypted: Awaited<ReturnType<typeof encryptAuthentication>> | undefined,
+    clocks: {
+      readonly hostUpdatedAt: Date;
+      readonly credentialUpdatedAt: Date;
+    },
+  ) => {
+    const db = set(writeDb$);
+    const reads = createSshCredentialUpdateReads(args);
+    const rotated = db.$with("rotated_ssh_credential_hosts").as(
+      db
+        .update(sshConnections)
+        .set({
+          generation: sql`${sshConnections.generation} + 1`,
+          updatedAt: clocks.hostUpdatedAt,
+        })
+        .where(
+          and(
+            ownerHostsUsingCredential(args.owner, args.credentialId),
+            inArray(
+              sshConnections.id,
+              db.select({ id: reads.hosts.id }).from(reads.hosts),
+            ),
+            exists(
+              db
+                .select({ id: reads.eligible.id })
+                .from(reads.eligible)
+                .innerJoin(
+                  reads.current,
+                  eq(reads.current.id, reads.eligible.id),
+                )
+                .where(reads.effective),
+            ),
+          ),
+        )
+        .returning({ id: sshConnections.id }),
+    );
+    // A mismatch aborts the whole statement, including any Host writes.
+    const complete =
+      sql`1 / CASE WHEN NOT ${exists(db.select({ id: reads.eligible.id }).from(reads.eligible))} OR NOT ${reads.effective} OR (${db.select({ count: count() }).from(rotated)}) = (${db.select({ count: count() }).from(reads.hosts)}) THEN 1 ELSE 0 END`.mapWith(
+        pgIntegerDecoder,
+      );
+    const changed = db.$with("updated_ssh_credential").as(
+      db
+        .update(sshCredentials)
+        .set({
+          name: args.body.name,
+          username: args.body.username,
+          ...encrypted,
+          revision: sql`${sshCredentials.revision} + 1`,
+          updatedAt: clocks.credentialUpdatedAt,
+        })
+        .from(reads.current)
+        .where(
+          and(
+            ownedSshCredential(args.owner, args.credentialId),
+            eq(sshCredentials.id, reads.current.id),
+            exists(db.select({ id: reads.eligible.id }).from(reads.eligible)),
+            eq(complete, 1),
+          ),
+        )
+        .returning({ ...sshCredentialMetadata }),
+    );
+    const captures = await db
+      .with(...reads.ctes, rotated, changed)
+      .select({
+        current: { ...reads.current._.selectedFields },
+        changed: { ...changed._.selectedFields },
+        host: { ...reads.hosts._.selectedFields },
+        effective: reads.effective.mapWith(pgBooleanDecoder),
+        drift:
+          sql`${reads.current.version} <> (${db.select({ version: reads.observed.version }).from(reads.observed)})`.mapWith(
+            pgBooleanDecoder,
+          ),
+      })
+      .from(reads.current)
+      .leftJoin(changed, eq(changed.id, reads.current.id))
+      .leftJoin(reads.hosts, sql`true`)
+      .orderBy(asc(reads.hosts.id));
+    const [captured] = captures;
+    if (!captured) {
+      return sshCredentialFailure("notFound");
+    }
+    if (!captured.changed) {
+      if (captured.drift) {
+        return {
+          ...sshCredentialFailure("conflict"),
+          retryBindings: true as const,
+        };
+      }
+      if (
+        captured.current.revision === MAX_SSH_REVISION ||
+        (captured.effective &&
+          captures.some(({ host }) => {
+            return host?.generation === MAX_SSH_REVISION;
+          }))
+      ) {
+        return sshCredentialFailure("exhausted");
+      }
+      throw new Error("Locked SSH credential update returned no row");
+    }
+    const hosts = captures.flatMap(({ host }) => {
+      return host === null
+        ? []
+        : [{ id: host.id, displayName: host.displayName }];
+    });
+    return {
+      ok: true as const,
+      value: {
+        row: captured.changed,
+        hosts,
+        invalidate: captured.effective && hosts.length > 0,
+      },
+    };
   },
 );
 
@@ -335,96 +474,25 @@ export const updateSshCredential$ = command(
     if (!prepared.ok) {
       return prepared;
     }
-    const db = set(writeDb$);
-    // This remains main's existing login/Host rotation operation, in its original
-    // owning command. It opens once; no new helper or retry expands this boundary.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0252; new non-billing transactions are prohibited.
-    const updated = await db.transaction(async (tx) => {
-      // Serialize Host edits without blocking RESTRICT's FK key-share check.
-      const lockedHosts = await tx
-        .select({ id: sshConnections.id })
-        .from(sshConnections)
-        .where(ownerHostsUsingCredential(args.owner, args.credentialId))
-        .orderBy(asc(sshConnections.id))
-        .for("no key update");
-      const [credential] = await tx
-        .select(sshCredentialMetadata)
-        .from(sshCredentials)
-        .where(ownedSshCredential(args.owner, args.credentialId))
-        .for("update");
-      if (!credential) {
-        return sshCredentialFailure("notFound");
-      }
-      if (credential.revision === MAX_SSH_REVISION) {
-        return sshCredentialFailure("exhausted");
-      }
-      // New FK bindings are fenced now. Reject expansion before any writes;
-      // never acquire new Host locks behind the credential fence or replay.
-      const currentHosts = await tx
-        .select({
-          id: sshConnections.id,
-          displayName: sshConnections.displayName,
-          generation: sshConnections.generation,
-        })
-        .from(sshConnections)
-        .where(ownerHostsUsingCredential(args.owner, args.credentialId))
-        .orderBy(asc(sshConnections.id));
-      const lockedIds = new Set(
-        lockedHosts.map(({ id }) => {
-          return id;
-        }),
+    // Preserve low-frequency edit reconciliation: the initial revision is a
+    // preflight check, while publication uses the current locked credential.
+    const clocks = { hostUpdatedAt: nowDate(), credentialUpdatedAt: nowDate() };
+    let updated = await set(
+      commitSshCredentialUpdate$,
+      args,
+      prepared.value.encrypted,
+      clocks,
+    );
+    if (!updated.ok && "retryBindings" in updated && updated.retryBindings) {
+      // This outcome is proved unwritten by the statement's eligibility gate.
+      // No exception, uncertain commit or prepared encryption is replayed.
+      updated = await set(
+        commitSshCredentialUpdate$,
+        args,
+        prepared.value.encrypted,
+        clocks,
       );
-      if (
-        currentHosts.some(({ id }) => {
-          return !lockedIds.has(id);
-        })
-      ) {
-        return sshCredentialFailure("conflict");
-      }
-      const currentEffectiveChange =
-        args.body.authentication !== undefined ||
-        (args.body.username !== undefined &&
-          args.body.username !== credential.username);
-      if (
-        currentEffectiveChange &&
-        currentHosts.some(({ generation }) => {
-          return generation === MAX_SSH_REVISION;
-        })
-      ) {
-        return sshCredentialFailure("exhausted");
-      }
-      if (currentEffectiveChange) {
-        await tx
-          .update(sshConnections)
-          .set({
-            generation: sql`${sshConnections.generation} + 1`,
-            updatedAt: nowDate(),
-          })
-          .where(ownerHostsUsingCredential(args.owner, args.credentialId));
-      }
-      const [row] = await tx
-        .update(sshCredentials)
-        .set({
-          name: args.body.name,
-          username: args.body.username,
-          ...prepared.value,
-          revision: sql`${sshCredentials.revision} + 1`,
-          updatedAt: nowDate(),
-        })
-        .where(ownedSshCredential(args.owner, args.credentialId))
-        .returning(sshCredentialMetadata);
-      if (!row) {
-        throw new Error("Locked SSH credential update returned no row");
-      }
-      return {
-        ok: true as const,
-        value: {
-          row,
-          hosts: currentHosts,
-          invalidate: currentEffectiveChange && currentHosts.length > 0,
-        },
-      };
-    });
+    }
     if (!updated.ok) {
       return updated;
     }
@@ -438,12 +506,7 @@ export const updateSshCredential$ = command(
     }
     return {
       ok: true,
-      value: response(
-        updated.value.row,
-        updated.value.hosts.map(({ id, displayName }) => {
-          return { id, displayName };
-        }),
-      ),
+      value: response(updated.value.row, prepared.value.hosts),
     };
   },
 );

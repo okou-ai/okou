@@ -36,6 +36,7 @@ import {
   createSshCreationReads,
   createSshUpdateReads,
   stampedSshTailscaleConfig,
+  stampedSshCredential,
   ownedSshConnection,
   visibleSshAccessConfig,
 } from "./ssh-binding-query";
@@ -379,7 +380,7 @@ function sshConnectionCreationAdmission(args: PreparedSshConnectionCreation) {
     "stamped_ssh_creation_tailscale",
     predicate,
   );
-  const ready = reads.qb.$with("complete_ssh_creation_admission").as(
+  const networkReady = reads.qb.$with("complete_ssh_creation_admission").as(
     reads.qb
       .select({ id: reads.admission.id })
       .from(reads.admission)
@@ -389,7 +390,41 @@ function sshConnectionCreationAdmission(args: PreparedSshConnectionCreation) {
           : exists(reads.qb.select({ id: stamp.id }).from(stamp)),
       ),
   );
-  return { reads, endpointValid, selectedId, stamp, ready };
+  const credentialPredicate = and(
+    args.preparedCredential.id === undefined
+      ? sql`false`
+      : ownedSshCredential(args, args.preparedCredential.id),
+    exists(reads.qb.select({ id: networkReady.id }).from(networkReady)),
+  );
+  if (credentialPredicate === undefined) {
+    throw new Error("SSH credential admission predicate is missing");
+  }
+  const credentialStamp = stampedSshCredential(
+    reads.qb,
+    "stamped_ssh_creation_credential",
+    credentialPredicate,
+  );
+  const ready = reads.qb.$with("admitted_ssh_creation_credential").as(
+    reads.qb
+      .select({ id: networkReady.id })
+      .from(networkReady)
+      .where(
+        args.preparedCredential.id === undefined
+          ? sql`true`
+          : exists(
+              reads.qb.select({ id: credentialStamp.id }).from(credentialStamp),
+            ),
+      ),
+  );
+  return {
+    reads,
+    endpointValid,
+    selectedId,
+    stamp,
+    networkReady,
+    credentialStamp,
+    ready,
+  };
 }
 const commitSshConnectionCreationAttempt$ = command(
   async (
@@ -399,8 +434,15 @@ const commitSshConnectionCreationAttempt$ = command(
     SshConnectionMutationResult<SshConnectionResponse | undefined>
   > => {
     const db = set(writeDb$);
-    const { reads, endpointValid, selectedId, stamp, ready } =
-      sshConnectionCreationAdmission(args);
+    const {
+      reads,
+      endpointValid,
+      selectedId,
+      stamp,
+      networkReady,
+      credentialStamp,
+      ready,
+    } = sshConnectionCreationAdmission(args);
     const prepared = args.preparedCredential;
     const credential =
       prepared.id === undefined
@@ -414,7 +456,7 @@ const commitSshConnectionCreationAttempt$ = command(
                 username: sshCredentials.username,
               }),
           )
-        : reads.credential;
+        : credentialStamp;
     const access =
       args.preparedAccess === undefined
         ? undefined
@@ -465,6 +507,8 @@ const commitSshConnectionCreationAttempt$ = command(
       .with(
         ...reads.ctes,
         stamp,
+        networkReady,
+        credentialStamp,
         ready,
         ...(prepared.id === undefined ? [credential] : []),
         ...(access === undefined ? [] : [access]),
@@ -475,7 +519,7 @@ const commitSshConnectionCreationAttempt$ = command(
         existing: { ...reads.current._.selectedFields },
         credentialAvailable: (prepared.id === undefined
           ? sql`true`
-          : sql`${exists(reads.qb.select({ id: reads.credential.id }).from(reads.credential))}`
+          : sql`${exists(reads.qb.select({ id: credential.id }).from(credential))}`
         ).mapWith(pgBooleanDecoder),
         changed: { ...written._.selectedFields },
         credential: { ...credential._.selectedFields },
@@ -648,7 +692,7 @@ function sshConnectionUpdateAdmission(args: PreparedSshConnectionUpdate) {
     "stamped_ssh_binding_tailscale",
     predicate,
   );
-  const ready = reads.qb.$with("complete_ssh_binding_admission").as(
+  const networkReady = reads.qb.$with("complete_ssh_binding_admission").as(
     reads.qb
       .select({ id: reads.admission.id })
       .from(reads.admission)
@@ -663,7 +707,34 @@ function sshConnectionUpdateAdmission(args: PreparedSshConnectionUpdate) {
             ),
       ),
   );
-  return { reads, selectedId, stamp, ready };
+  const selectedCredentialId = args.preparedCredential?.id;
+  const credentialPredicate = and(
+    selectedCredentialId === undefined
+      ? sql`false`
+      : ownedSshCredential(args, selectedCredentialId),
+    exists(reads.qb.select({ id: networkReady.id }).from(networkReady)),
+  );
+  if (credentialPredicate === undefined) {
+    throw new Error("SSH credential admission predicate is missing");
+  }
+  const credentialStamp = stampedSshCredential(
+    reads.qb,
+    "stamped_ssh_binding_credential",
+    credentialPredicate,
+  );
+  const ready = reads.qb.$with("admitted_ssh_binding_credential").as(
+    reads.qb
+      .select({ id: networkReady.id })
+      .from(networkReady)
+      .where(
+        selectedCredentialId === undefined
+          ? sql`true`
+          : exists(
+              reads.qb.select({ id: credentialStamp.id }).from(credentialStamp),
+            ),
+      ),
+  );
+  return { reads, selectedId, stamp, networkReady, credentialStamp, ready };
 }
 const commitSshConnectionUpdateAttempt$ = command(
   async (
@@ -671,7 +742,7 @@ const commitSshConnectionUpdateAttempt$ = command(
     args: PreparedSshConnectionUpdate,
   ): Promise<SshConnectionMutationResult<SshConnectionResponse>> => {
     const db = set(writeDb$);
-    const { reads, selectedId, stamp, ready } =
+    const { reads, selectedId, stamp, networkReady, credentialStamp, ready } =
       sshConnectionUpdateAdmission(args);
     const prepared = args.preparedCredential;
     const credential =
@@ -686,7 +757,9 @@ const commitSshConnectionUpdateAttempt$ = command(
                 username: sshCredentials.username,
               }),
           )
-        : reads.credential;
+        : prepared === undefined
+          ? reads.credential
+          : credentialStamp;
     const access =
       args.preparedAccess === undefined
         ? undefined
@@ -749,6 +822,8 @@ const commitSshConnectionUpdateAttempt$ = command(
       .with(
         ...reads.ctes,
         stamp,
+        networkReady,
+        credentialStamp,
         ready,
         ...(prepared !== undefined && prepared.id === undefined
           ? [credential]
@@ -762,7 +837,7 @@ const commitSshConnectionUpdateAttempt$ = command(
         credentialAvailable: (prepared !== undefined &&
         prepared.id === undefined
           ? sql`true`
-          : sql`${exists(reads.qb.select({ id: reads.credential.id }).from(reads.credential))}`
+          : sql`${exists(reads.qb.select({ id: credential.id }).from(credential))}`
         ).mapWith(pgBooleanDecoder),
         changed: { ...written._.selectedFields },
         credential: { ...credential._.selectedFields },

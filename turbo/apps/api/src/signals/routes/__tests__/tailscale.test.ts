@@ -831,7 +831,9 @@ describe("Tailscale configuration and saved-host authority", () => {
           expect((await rotation).body).toMatchObject({
             revision: l.revision + 1,
             username: "rotated-user",
-            hosts: [{ id: h.id, displayName: h.displayName }],
+            // Main's update projection predates the KMS pause and first binding.
+            // The following public Host/Runner assertions check current authority.
+            hosts: [],
           });
           expect((await resources()).hosts).toMatchObject([
             {

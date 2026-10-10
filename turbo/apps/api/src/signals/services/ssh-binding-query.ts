@@ -58,6 +58,22 @@ export function ownedSshConnection(
   );
 }
 
+export function stampedSshCredential(
+  qb: QueryBuilder,
+  alias: string,
+  predicate: SQL,
+) {
+  return qb
+    .$with(alias, {
+      id: sshCredentials.id,
+      name: sshCredentials.name,
+      username: sshCredentials.username,
+    })
+    .as(
+      sql`UPDATE ${sshCredentials} SET ${sql.identifier(sshCredentials.name.name)} = ${sshCredentials.name} WHERE ${predicate} RETURNING ${sshCredentials.id}, ${sshCredentials.name}, ${sshCredentials.username}`,
+    );
+}
+
 // Sessionless reads only. Every dependent write belongs to the calling command.
 export function createSshCreationReads(
   args: PreparedSshConnectionCreation,
