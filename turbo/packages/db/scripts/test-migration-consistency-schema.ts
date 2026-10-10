@@ -1225,18 +1225,7 @@ type PermanentFunction = {
 // pgcrypto and vector functions are deliberately absent from the function list.
 const EXPECTED_PERMANENT_TRIGGERS: readonly PermanentTrigger[] = [];
 
-// One explicitly owned atomic WSS transition, not a business trigger or
-// transaction-opening application helper. Keep exact signature/body inventory.
-const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
-  {
-    schemaName: "public",
-    functionName: "revoke_runner_wss_tickets",
-    identityArguments:
-      "owner_run_id uuid, owner_org_id text, owner_user_id text",
-    kind: "f",
-    bodyHash: "f010ba201cdb307a00e0d1ce25a46d53",
-  },
-];
+const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [];
 
 function assertPermanentInventory(args: {
   readonly actual: readonly string[];

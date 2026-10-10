@@ -18,7 +18,6 @@ import {
   sql,
 } from "drizzle-orm";
 
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import {
@@ -52,7 +51,7 @@ export const issueRunnerWssTicket$ = command(
     const digest = digestOf(ticket);
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0240; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(async (tx) => {
-      // Preserve the existing Run-row authority shared with consume/revoke.
+      // Preserve inherited issuance serialization with terminal transitions.
       const [run] = await tx
         .select({ id: agentRuns.id })
         .from(agentRuns)
@@ -293,30 +292,50 @@ export const checkRunnerWssAuthorizations$ = command(
   },
 );
 
-/** One atomic call revokes pending AND consumed tickets without cancelling work. */
+/** Revoke existing pending AND consumed tickets in one owner-gated statement. */
 export const revokeRunnerWssTickets$ = command(
   async (
     { set },
     args: { readonly runId: string; readonly owner: RunOwner },
   ): Promise<boolean> => {
-    // The routine retains this operation's existing Run-row lock, then takes
-    // a fresh UPDATE snapshot. A CTE's pre-lock snapshot can miss a concurrent
-    // issuer's commit. No new application transaction or coordination field.
-    const [result] = await set(writeDb$)
-      .select({
-        revoked: sql`public.revoke_runner_wss_tickets(
-          ${args.runId}::uuid, ${args.owner.orgId}, ${args.owner.userId}
-        )`.mapWith(pgBooleanDecoder),
-      })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.id, args.runId),
-          eq(agentRuns.orgId, args.owner.orgId),
-          eq(agentRuns.userId, args.owner.userId),
+    const db = set(writeDb$);
+    const ownedRun = db.$with("owned_run").as(
+      db
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, args.runId),
+            eq(agentRuns.orgId, args.owner.orgId),
+            eq(agentRuns.userId, args.owner.userId),
+          ),
         ),
-      )
+    );
+    const revokedTickets = db.$with("revoked_tickets").as(
+      db
+        .update(runnerWssTickets)
+        .set({ revokedAt: databaseNow })
+        .where(
+          and(
+            inArray(
+              runnerWssTickets.runId,
+              db.select({ id: ownedRun.id }).from(ownedRun),
+            ),
+            isNull(runnerWssTickets.revokedAt),
+          ),
+        ),
+    );
+    // PostgreSQL's ticket-row UPDATE conflicts arbitrate consume/revoke. Consume
+    // must still require revokedAt IS NULL and never clear it. An overlapping
+    // new owner bootstrap may fall after this statement's snapshot; revocation
+    // invalidates existing access, not future explicit authorization.
+    // The data-modifying CTE executes even when no ticket needs updating. Return
+    // owned identity, not changed row count, for repeat/empty/terminal success.
+    const [run] = await db
+      .with(ownedRun, revokedTickets)
+      .select({ id: ownedRun.id })
+      .from(ownedRun)
       .limit(1);
-    return result?.revoked ?? false;
+    return Boolean(run);
   },
 );
