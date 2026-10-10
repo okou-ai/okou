@@ -2214,29 +2214,6 @@ async function boundUsagePackSubscriptionId(
   return subscription?.id ?? null;
 }
 
-async function activeMetadataUsagePackSubscriptionId(
-  db: Pick<Db, "select">,
-  metadata: readonly (Readonly<Record<string, string>> | null | undefined)[],
-): Promise<string | null> {
-  const metadataId = oneUsagePackSubscriptionId(...metadata);
-  if (!metadataId) {
-    return null;
-  }
-  const [subscription] = await db
-    .select({ id: usagePackSubscriptions.id })
-    .from(usagePackSubscriptions)
-    .where(
-      and(
-        eq(usagePackSubscriptions.id, metadataId),
-        notInArray(usagePackSubscriptions.subscriptionStatus, [
-          ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
-        ]),
-      ),
-    )
-    .limit(1);
-  return subscription?.id ?? null;
-}
-
 export async function stripeSubscriptionUsesMemberUsagePacks(
   db: Pick<Db, "select">,
   args: {
@@ -2291,7 +2268,23 @@ async function resolveUsagePackSubscriptionId(
   if (boundId) {
     return boundId;
   }
-  return await activeMetadataUsagePackSubscriptionId(db, args.metadata);
+  const metadataId = oneUsagePackSubscriptionId(...args.metadata);
+  if (!metadataId) {
+    return null;
+  }
+  const [subscription] = await db
+    .select({ id: usagePackSubscriptions.id })
+    .from(usagePackSubscriptions)
+    .where(
+      and(
+        eq(usagePackSubscriptions.id, metadataId),
+        notInArray(usagePackSubscriptions.subscriptionStatus, [
+          ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
+        ]),
+      ),
+    )
+    .limit(1);
+  return subscription?.id ?? null;
 }
 
 function stripeObjectId(value: StripeObjectReference | null | undefined) {
