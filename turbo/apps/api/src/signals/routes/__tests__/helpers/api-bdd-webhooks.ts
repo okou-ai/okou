@@ -273,24 +273,44 @@ export function createWebhookCallbackApi(context: TestContext) {
     async postStripeEvent(
       event: unknown,
       statuses: readonly (200 | 500)[],
+      run?: <T>(operation: () => Promise<T>) => Promise<T>,
     ): Promise<StripeWebhookResponse> {
-      context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
-      const response = await createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      }).request("/api/webhooks/stripe", {
-        method: "POST",
-        headers: { "stripe-signature": "t=1,v1=bdd" },
-        body: serializedContractBody(event),
-      });
-      const body = await parseRawResponseBody(response);
-      const status = response.status;
-      if ((status !== 200 && status !== 500) || !statuses.includes(status)) {
-        throw new Error(
-          `Expected Stripe webhook status in [${statuses.join(", ")}], received ${status}: ${JSON.stringify(body)}`,
+      const bodyText = serializedContractBody(event);
+      if (run) {
+        let consumed = false;
+        context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+          (payload) => {
+            if (consumed || String(payload) !== bodyText) {
+              throw new Error(
+                "Unexpected owned Stripe webhook body or duplicate verification",
+              );
+            }
+            consumed = true;
+            return event;
+          },
         );
+      } else {
+        context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
       }
-      return { status, body };
+      const execute = async (): Promise<StripeWebhookResponse> => {
+        const response = await createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        }).request("/api/webhooks/stripe", {
+          method: "POST",
+          headers: { "stripe-signature": "t=1,v1=bdd" },
+          body: bodyText,
+        });
+        const body = await parseRawResponseBody(response);
+        const status = response.status;
+        if ((status !== 200 && status !== 500) || !statuses.includes(status)) {
+          throw new Error(
+            `Expected Stripe webhook status in [${statuses.join(", ")}], received ${status}: ${JSON.stringify(body)}`,
+          );
+        }
+        return { status, body };
+      };
+      return await (run ? run(execute) : execute());
     },
 
     acceptNextStripeWebhookEvent(event: unknown): void {
