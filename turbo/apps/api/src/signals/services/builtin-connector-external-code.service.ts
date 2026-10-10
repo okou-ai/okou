@@ -4,7 +4,6 @@ import { createHash, randomBytes } from "node:crypto";
 import type {
   BuiltinConnectorExternalCodeSessionCompleteResponse,
   BuiltinConnectorExternalCodeSessionStartResponse,
-  BuiltinConnectorResponse,
 } from "@okouai/api-contracts/contracts/connector-schemas";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
@@ -506,20 +505,6 @@ function terminalErrorResponse(
   }
 }
 
-async function completeSessionResponse(
-  args: {
-    readonly connectorLoader: () => Promise<BuiltinConnectorResponse | null>;
-  },
-  signal: AbortSignal,
-): Promise<CompleteSuccess> {
-  const connector = await args.connectorLoader();
-  signal.throwIfAborted();
-  if (!connector) {
-    throw new Error("Completed external-code connector not found");
-  }
-  return { status: 200, body: { status: "complete", connector } };
-}
-
 const authorizeExternalCodeSessionConnector$ = command(
   async (
     { set },
@@ -560,34 +545,31 @@ const completedExternalCodeSessionResponse$ = command(
       readonly method: ResolvedConnectorActionMethod;
     },
     signal: AbortSignal,
-  ) => {
-    const response = await completeSessionResponse(
-      {
-        connectorLoader: () => {
-          if (!args.session.completedConnectorId) {
-            throw new Error(
-              "Completed external-code session is missing its connector ID",
-            );
-          }
-          return get(
-            builtinConnectorById({
-              orgId: args.orgId,
-              userId: args.userId,
-              connectorSlug: args.method.connectorSlug,
-              connectorId: args.session.completedConnectorId,
-              snapshot: args.method.snapshot,
-            }),
-          );
-        },
-      },
-      signal,
+  ): Promise<CompleteSuccess | ReturnType<typeof badRequestMessage>> => {
+    if (!args.session.completedConnectorId) {
+      throw new Error(
+        "Completed external-code session is missing its connector ID",
+      );
+    }
+    const connector = await get(
+      builtinConnectorById({
+        orgId: args.orgId,
+        userId: args.userId,
+        connectorSlug: args.method.connectorSlug,
+        connectorId: args.session.completedConnectorId,
+        snapshot: args.method.snapshot,
+      }),
     );
+    signal.throwIfAborted();
+    if (!connector) {
+      throw new Error("Completed external-code connector not found");
+    }
     const error = await set(
       authorizeExternalCodeSessionConnector$,
       { ...args, connectorSlug: args.method.connectorSlug },
       signal,
     );
-    return error ?? response;
+    return error ?? { status: 200, body: { status: "complete", connector } };
   },
 );
 
