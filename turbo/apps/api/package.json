@@ -58,6 +58,7 @@
     "ccstate": "^6.0.0",
     "croner": "^9.1.0",
     "drizzle-orm": "^0.45.2",
+    "entities": "7.0.1",
     "google-auth-library": "^10.9.0",
     "gpt-tokenizer": "^3.4.0",
     "hash-wasm": "4.12.0",

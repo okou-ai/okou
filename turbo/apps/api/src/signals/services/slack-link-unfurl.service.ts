@@ -1,5 +1,6 @@
 import { command, computed } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
+import { escapeText } from "entities/escape";
 import { z } from "zod";
 import type { ArtifactDeliveryRecord } from "@okouai/api-contracts/contracts/artifact-delivery";
 import type { ArtifactOgTarget } from "@okouai/api-contracts/contracts/artifact-og";
@@ -34,10 +35,8 @@ export const slackLinkSharedEventSchema = z.object({
 export type SlackLinkSharedEvent = z.infer<typeof slackLinkSharedEventSchema>;
 
 function escapeSlackLinkText(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+  // Slack decodes only amp/lt/gt; retain non-breaking spaces as Unicode.
+  return escapeText(value).replaceAll("&nbsp;", "\u00a0");
 }
 
 function parseSlackLinkUrl(value: string): URL | null {
@@ -209,28 +208,14 @@ const slackArtifactUnfurl$ = command(
     const href = escapeSlackLinkText(pageUrl.href.replaceAll("|", "%7C"));
     return {
       blocks: [
+        { type: "divider" },
         {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*${pageUrl.hostname}*\n*<${href}|${escapeSlackLinkText(title)}>*`,
+            text: `*<${href}|${escapeSlackLinkText(title)}>*`,
             verbatim: true,
           },
-        },
-        ...(metadata.description
-          ? [
-              {
-                type: "section" as const,
-                text: {
-                  type: "plain_text" as const,
-                  text: metadata.description.slice(0, 3000),
-                },
-              },
-            ]
-          : []),
-        {
-          type: "context",
-          elements: [{ type: "plain_text", text: pageUrl.hostname }],
         },
         { type: "image", image_url: metadata.imageUrl, alt_text: title },
       ],
