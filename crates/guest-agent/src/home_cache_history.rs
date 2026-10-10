@@ -177,9 +177,17 @@ mod tests {
         SessionHistoryRefKind, SessionHistorySourceRef,
     };
 
+    fn owned_home_fixture() -> tempfile::TempDir {
+        // The canonical Guest home need not exist in a host/CI test container.
+        // Only the UUID-owned child is removed; concurrent tests never remove
+        // the shared parent. Canonical history files are separately UUID-owned.
+        std::fs::create_dir_all("/home/user").unwrap();
+        tempfile::tempdir_in("/home/user").unwrap()
+    }
+
     #[test]
     fn retained_codex_raw_and_zstd_use_real_bytes_and_reject_ambiguity_or_corruption() {
-        let dir = tempfile::tempdir_in("/home/user").unwrap();
+        let dir = owned_home_fixture();
         let runtime = dir.path().join("runtime/current");
         let proof_path = dir.path().join("cache/proof.json");
         let thread = uuid::Uuid::new_v4().to_string();
@@ -276,7 +284,7 @@ mod tests {
     #[test]
     fn captured_live_bytes_and_surviving_proof_are_both_required() {
         // A real home-contained temp tree, not an overridden source reader.
-        let dir = tempfile::tempdir_in("/home/user").unwrap();
+        let dir = owned_home_fixture();
         let config = dir.path().join("claude");
         let history = config.join("projects/-home-user-workspace/session-1.jsonl");
         std::fs::create_dir_all(history.parent().unwrap()).unwrap();

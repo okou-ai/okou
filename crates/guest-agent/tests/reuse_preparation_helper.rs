@@ -905,6 +905,9 @@ async fn terminal_history_proof_survives_real_cleanup_and_verifies_only_current_
         SessionHistoryRefKind, SessionHistorySourceRef,
     };
     use sha2::{Digest, Sha256};
+    // Host/CI containers may not have the fixed Guest home. Keep the shared
+    // parent and remove only this test's isolated child via TempDir ownership.
+    std::fs::create_dir_all("/home/user")?;
     let home = tempfile::tempdir_in("/home/user")?;
     let runs = guest_contracts::runtime_paths::runtime_parent_for_home(home.path());
     let current = runs.join("current");
