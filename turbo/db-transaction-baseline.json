@@ -697,11 +697,6 @@
       "owner": "commitMailNotification$"
     },
     {
-      "id": "TX-0177",
-      "file": "turbo/apps/api/src/signals/services/mail-notification.service.ts",
-      "owner": "eraseMailNotifications$"
-    },
-    {
       "id": "TX-0178",
       "file": "turbo/apps/api/src/signals/services/managed-usage.service.ts",
       "owner": "recordManagedUsage$"

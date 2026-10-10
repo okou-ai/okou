@@ -6,11 +6,12 @@ import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/wor
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { notificationsRoutes } from "../notifications";
 import { emailSubscriptionRoutes } from "../email-subscription";
 import { workflowAutomationsRoutes } from "../workflow-automations";
-import { createBddApi } from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUserOptions } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { mockClerkUsers } from "./helpers/clerk-users";
@@ -33,12 +34,12 @@ const preferences = () => {
   );
 };
 
-async function runningAgent() {
+async function runningAgent(options: ApiTestUserOptions = {}) {
   mockEnv("RESEND_API_KEY", "test-key");
   mockEnv("RESEND_FROM_DOMAIN", "okou.io");
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
-  const actor = bdd.user();
+  const actor = bdd.user(options);
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
@@ -456,13 +457,109 @@ describe("agent mail notifications", () => {
       client().mail({ headers: fixture.headers, body: body() }),
       [400],
     );
+  });
+
+  it("erases queued and skipped receipts on departure, preserves other owners, and permits a living member to rejoin", async () => {
+    const fixture = await runningAgent();
+    const queued = await accept(
+      client().mail({ headers: fixture.headers, body: body() }),
+      [200],
+    );
     mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
     await accept(
-      client().get({
+      preferences().update({
         headers: humanHeaders,
-        params: { id: result.body.notificationId },
+        body: { subscribed: false },
       }),
-      [404],
+      [200],
     );
+    const skipped = await accept(
+      client().mail({ headers: fixture.headers, body: body() }),
+      [200],
+    );
+    expect(skipped.body).toMatchObject({
+      status: "skipped",
+      reason: "unsubscribed",
+    });
+    await accept(
+      preferences().update({
+        headers: humanHeaders,
+        body: { subscribed: true },
+      }),
+      [200],
+    );
+
+    const elsewhere = await runningAgent({
+      userId: fixture.actor.userId,
+      email: fixture.actor.email,
+    });
+    const elsewhereReceipt = await accept(
+      client().mail({ headers: elsewhere.headers, body: body() }),
+      [200],
+    );
+    const peer = await runningAgent({ orgId: fixture.actor.orgId });
+    const peerReceipt = await accept(
+      client().mail({ headers: peer.headers, body: body() }),
+      [200],
+    );
+    const webhooks = createWebhookCallbackApi(context);
+    webhooks.configureClerkWebhookSecret();
+    const departure = {
+      type: "organizationMembership.deleted",
+      data: {
+        id: `orgmem_${randomUUID()}`,
+        organization_id: fixture.actor.orgId,
+        user_id: fixture.actor.userId,
+      },
+    };
+    for (let delivery = 0; delivery < 2; delivery++) {
+      webhooks.verifyNextClerkWebhook(departure);
+      await webhooks.requestClerkWebhook("{}", {}, [200]);
+      await flushWaitUntilForTest();
+    }
+
+    // Clerk reports a new membership for this still-living user, not a revived account.
+    webhooks.verifyNextClerkWebhook({
+      type: "organizationMembership.created",
+      data: {
+        id: `orgmem_${randomUUID()}`,
+        organization_id: fixture.actor.orgId,
+        user_id: fixture.actor.userId,
+        role: "org:member",
+        created_at: now(),
+      },
+    });
+    await webhooks.requestClerkWebhook("{}", {}, [200]);
+    await flushWaitUntilForTest();
+    mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
+    for (const receipt of [queued, skipped]) {
+      await accept(
+        client().get({
+          headers: humanHeaders,
+          params: { id: receipt.body.notificationId },
+        }),
+        [404],
+      );
+    }
+    for (const { actor, receipt } of [
+      { actor: elsewhere.actor, receipt: elsewhereReceipt },
+      { actor: peer.actor, receipt: peerReceipt },
+    ]) {
+      mocks.clerk.session(actor.userId, actor.orgId);
+      expect(
+        (
+          await accept(
+            client().get({
+              headers: humanHeaders,
+              params: { id: receipt.body.notificationId },
+            }),
+            [200],
+          )
+        ).body,
+      ).toMatchObject({
+        notificationId: receipt.body.notificationId,
+        status: "queued",
+      });
+    }
   });
 });
