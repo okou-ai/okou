@@ -15,7 +15,7 @@ export function AuthorizationErrorState({
   description: string;
 }) {
   return (
-    <div className="fixed inset-0 z-10 flex h-viewport flex-col items-center overflow-y-auto pt-safe-offset-8 pr-safe-offset-4 pb-safe-offset-8 pl-safe-offset-4">
+    <div className="fixed inset-0 flex h-viewport flex-col items-center overflow-y-auto pt-safe-offset-8 pr-safe-offset-4 pb-safe-offset-8 pl-safe-offset-4">
       <div className="my-auto flex w-[430px] max-w-full shrink-0 flex-col items-center gap-6 rounded-xl border border-border bg-background px-6 py-10 text-center">
         <ProductBrandMarkLink />
         <div className="flex flex-col gap-2">
