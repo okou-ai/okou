@@ -248,6 +248,7 @@ const internalWorkflowCopyForm$ = state<WorkflowCopyFormState>(
   defaultWorkflowCopyForm(),
 );
 const internalWorkflowFileDraft$ = state<WorkflowDetailFileDraft | null>(null);
+const internalWorkflowFileEditorRevision$ = state(0);
 const internalEditingWorkflowAutomationId$ = state<string | null>(null);
 const internalEditingGoogleCalendarId$ = state("");
 const internalWorkflowMetadataPatch$ = state<WorkflowMetadataPatch | null>(
@@ -421,6 +422,17 @@ export const setWorkflowFileDraft$ = command(
   },
 );
 
+export const workflowFileEditorRevision$ = computed((get) => {
+  return get(internalWorkflowFileEditorRevision$);
+});
+
+export const discardWorkflowFileDraft$ = command(({ set }) => {
+  set(internalWorkflowFileDraft$, null);
+  set(internalWorkflowFileEditorRevision$, (revision) => {
+    return revision + 1;
+  });
+});
+
 export const workflowMetadataPatch$ = computed((get) => {
   return get(internalWorkflowMetadataPatch$);
 });
@@ -452,6 +464,7 @@ export const resetWorkflowDetailUiState$ = command(({ set }) => {
   set(internalWorkflowActionDialog$, null);
   set(internalWorkflowCopyForm$, defaultWorkflowCopyForm());
   set(internalWorkflowFileDraft$, null);
+  set(internalWorkflowFileEditorRevision$, 0);
   set(internalEditingWorkflowAutomationId$, null);
   set(internalEditingGoogleCalendarId$, "");
   set(internalWorkflowMetadataPatch$, null);
