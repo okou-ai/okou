@@ -60,7 +60,7 @@ export async function withArtifactOg(
     : artifactOgHtml(
         original,
         { ...ARTIFACT_OG_BRAND, url: canonical.href },
-        true,
+        "social",
       );
   const headers = new Headers(response.headers);
   headers.delete("ETag");

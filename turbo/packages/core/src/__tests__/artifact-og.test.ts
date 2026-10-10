@@ -93,6 +93,42 @@ describe("artifact sharing HTML", () => {
       expect(result).toMatch(/^<!doctype html><html><head>/u);
   });
 
+  it.each([true, false])(
+    "replaces sharing metadata without changing the authored document (explicit head=%s)",
+    (explicitHead) => {
+      const documentMetadata =
+        '<title>Authored report</title><meta name="description" content="Authored summary"><link rel="canonical" href="https://reports.example/report">';
+      const executable =
+        '<style>body { color: blue }</style><script>const title = "Authored report";</script>';
+      const head =
+        documentMetadata +
+        executable +
+        '<meta property="og:title" content="Authored sharing"><meta property="og:site_name" content="Authored site"><meta property="og:image" content="https://images.example/cover.png"><meta property="og:image:width" content="1200"><meta property="og:image:secure_url" content="https://images.example/secure.png"><meta name="twitter:creator" content="@author"><meta name="twitter:image" content="https://images.example/twitter.png">';
+      const body = '<body><img src="cover.png">Report</body>';
+      const html = `<!doctype html><html>${explicitHead ? `<head>${head}</head>` : head}${body}</html>`;
+      const result = artifactOgHtml(html, metadata, "social");
+      expect(result).toContain(documentMetadata);
+      expect(result).toContain(executable);
+      expect(result).toContain(body);
+      expect(result).not.toContain("Authored sharing");
+      expect(result).not.toContain("Authored site");
+      expect(result).not.toContain("images.example");
+      expect(result).not.toContain("og:image:width");
+      expect(result).not.toContain("@author");
+      expect(result).toContain(
+        'property="og:title" content="Report &lt;draft&gt; &amp; &quot;review&quot;"',
+      );
+      expect(result).toContain(
+        `name="twitter:image" content="${metadata.imageUrl.replaceAll("&", "&amp;")}"`,
+      );
+      expect(result.match(/<title>/gu)).toHaveLength(1);
+      expect(result.match(/name="description"/gu)).toHaveLength(1);
+      expect(result.match(/rel="canonical"/gu)).toHaveLength(1);
+      expect(result.match(/property="og:image"/gu)).toHaveLength(1);
+      expect(artifactOgHtml(result, metadata, "social")).toBe(result);
+    },
+  );
+
   it("removes all marketing metadata from the artifact shell and safely escapes public text", () => {
     const html =
       '<html><head><title>Marketing</title><meta name="description" content="Marketing copy"><meta property="og:site_name" content="Marketing"><meta property="og:image" content="https://example.com/ad.png"><meta name="twitter:creator" content="@marketing"><link rel="canonical" href="https://example.com"></head><body><script src="/app.js"></script></body></html>';

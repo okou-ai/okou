@@ -404,8 +404,12 @@ it.each(["disabled", "unavailable"])(
       }),
     );
     const body = '<body><img src="cover.png">Report</body>';
+    const documentMetadata =
+      '<title>Report</title><meta name="description" content="Authored summary"><link rel="canonical" href="https://reports.example/report">';
     const original =
-      '<head><title>Report</title><meta property="og:image" content="cover.png"><meta property="og:image:width" content="1200"><meta property="og:image:secure_url" content="https://images.example/cover.png"><meta name="twitter:image" content="https://images.example/twitter.png"></head>' +
+      "<head>" +
+      documentMetadata +
+      '<meta property="og:image" content="cover.png"><meta property="og:image:width" content="1200"><meta property="og:image:secure_url" content="https://images.example/cover.png"><meta name="twitter:image" content="https://images.example/twitter.png"></head>' +
       body;
     const response = await fetchWorker(new Request("https://demo.okou.app/"), {
       ...environment(true, undefined, "okou", true, original),
@@ -423,6 +427,8 @@ it.each(["disabled", "unavailable"])(
       expect(html).not.toContain('property="og:image:width"');
       expect(html).not.toContain('property="og:image:secure_url"');
       expect(html).not.toContain("images.example");
+      expect(html).toContain(documentMetadata);
+      expect(html).toContain('property="og:title" content="Okou"');
       expect(html).toContain(body);
       expect(response.headers.get("ETag")).toBeNull();
       expect(response.headers.get("Content-Length")).toBeNull();

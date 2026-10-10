@@ -204,11 +204,14 @@ export function normalizeArtifactImageUrls(
   return edits.length ? applyHtmlEdits(html, edits) : html;
 }
 
-/** Edit only metadata ranges; script, style and authored body bytes stay intact. */
+/**
+ * Edit only metadata ranges; script, style and authored body bytes stay intact.
+ * `true` replaces document and sharing metadata; `"social"` replaces sharing tags only.
+ */
 export function artifactOgHtml(
   html: string,
   metadata: ArtifactOgMetadata,
-  replace: boolean,
+  replace: boolean | "social",
 ): string {
   const parsed = inspectHtml(html);
   const authoredImage = !replace
@@ -235,7 +238,9 @@ export function artifactOgHtml(
       tag.name.startsWith("og:") || tag.name.startsWith("twitter:");
     if (
       replace &&
-      (social || ["title", "description", "canonical"].includes(tag.name))
+      (social ||
+        (replace === true &&
+          ["title", "description", "canonical"].includes(tag.name)))
     ) {
       edits.push({ ...tag, text: "" });
     } else if (!replace && supported.has(tag.name)) {
@@ -263,9 +268,10 @@ export function artifactOgHtml(
       return `<meta ${name.startsWith("og:") ? "property" : "name"}="${name}" content="${escapeUTF8(content)}">`;
     })
     .join("");
-  const extra = replace
-    ? `<title>${escapeUTF8(metadata.title)}</title><meta name="description" content="${escapeUTF8(metadata.description)}"><link rel="canonical" href="${escapeUTF8(metadata.url)}">`
-    : "";
+  const extra =
+    replace === true
+      ? `<title>${escapeUTF8(metadata.title)}</title><meta name="description" content="${escapeUTF8(metadata.description)}"><link rel="canonical" href="${escapeUTF8(metadata.url)}">`
+      : "";
   const at = parsed.headEnd ?? parsed.documentStart;
   edits.push({
     start: at,

@@ -290,8 +290,9 @@ test("rechecks OG metadata on cached HTML and denies revoked shares before readi
 
 test("rechecks the preview switch for relative images on cached HTML and denies revoked shares", async () => {
   const f = fixture(true);
-  const original =
-    '<head><meta property="og:image" content="image.png"></head><body>Report</body>';
+  const documentMetadata =
+    '<title>Original report</title><meta name="description" content="Original summary"><link rel="canonical" href="https://reports.example/report">';
+  const original = `<head>${documentMetadata}<meta property="og:image" content="image.png"></head><body>Report</body>`;
   f.objects.set(
     `shared-artifacts/okou/${snapshotId}/${fileId}/index.html`,
     original,
@@ -329,6 +330,8 @@ test("rechecks the preview switch for relative images on cached HTML and denies 
   expect(html).toContain(
     `name="twitter:image" content="${ARTIFACT_OG_BRAND.imageUrl}"`,
   );
+  expect(html).toContain(documentMetadata);
+  expect(html).toContain('property="og:title" content="Okou"');
   expect(html).toContain("<body>Report</body>");
   expect(disabled.headers.get("ETag")).toBeNull();
   expect(disabled.headers.get("Cache-Control")).toBe("private, no-store");
