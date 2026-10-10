@@ -22,6 +22,11 @@ import {
   type PiCatalogModel,
   type PiRouteClass,
 } from "@okouai/core/pi-execution";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isPiAgentModelSupported } from "@okouai/pi-agent-runtime";
 import { PI_MEMORY_STAGE1_BUILT_IN_MODEL } from "@okouai/pi-agent-runtime/api";
 
@@ -56,6 +61,7 @@ function piProvider(concreteType: ModelProviderType): "openrouter" | null {
  */
 export function shouldUsePiExecution(args: {
   readonly chatThreadId: string | undefined;
+  readonly featureSwitchContext: FeatureSwitchContext;
   readonly modelProviderType: string | null | undefined;
   /** The selected model's catalog projection (`piCatalogModel`). */
   readonly catalogModel: PiCatalogModel | null;
@@ -70,6 +76,10 @@ export function shouldUsePiExecution(args: {
       runtimeProviderType:
         args.builtInModelRuntimeRoute?.providerType ?? args.modelProviderType,
       codexServiceTier: args.codexServiceTier,
+      codexExecution: isFeatureEnabled(
+        FeatureSwitchKey.CodexExecution,
+        args.featureSwitchContext,
+      ),
     })
   );
 }
