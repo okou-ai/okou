@@ -9,6 +9,12 @@ export const testRuntimeStateErrorSchema = z.object({
 });
 
 export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("set-run-autonomy-budget"),
+    run_id: z.uuid(),
+    autonomy_budget: z.int().min(0).max(32),
+  }),
+  z.object({ action: z.literal("read-run-autonomy-budget"), run_id: z.uuid() }),
   // Test-only read boundary for the internal WSS target resolver. The public
   // bootstrap route never exposes a candidate without issuing a ticket.
   z.object({
@@ -74,6 +80,7 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
 
 export const testRuntimeStateActionResponseSchema = z.object({
   ok: z.literal(true),
+  autonomy_budget: z.int().min(0).max(32).nullable().optional(),
   wss_target: z
     .object({
       runId: z.uuid(),

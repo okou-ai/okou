@@ -139,3 +139,29 @@ export async function setRunnerJobContextProfileAsPreviousApi(
     profile,
   });
 }
+
+export async function readRunAutonomyBudgetFixture(
+  context: TestContext,
+  runId: string,
+): Promise<number | null> {
+  const response = await postAction(context, {
+    action: "read-run-autonomy-budget",
+    run_id: runId,
+  });
+  if (!("autonomy_budget" in response)) {
+    throw new Error("readRunAutonomyBudgetFixture missing autonomy_budget");
+  }
+  return response.autonomy_budget ?? null;
+}
+
+export async function setRunAutonomyBudgetFixture(
+  context: TestContext,
+  runId: string,
+  autonomyBudget: number,
+): Promise<void> {
+  await postAction(context, {
+    action: "set-run-autonomy-budget",
+    run_id: runId,
+    autonomy_budget: autonomyBudget,
+  });
+}

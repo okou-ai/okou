@@ -1,3 +1,5 @@
+import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
+import { signSandboxJwtForTests } from "../../../auth/tokens";
 import { randomUUID } from "node:crypto";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
@@ -52,7 +54,6 @@ import type { z } from "zod";
 
 import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
-import { setupApp } from "../../../../__tests__/test-helpers";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
@@ -490,7 +491,6 @@ export function createRunsApi(context: TestContext) {
     async grantProEntitlement(
       actor: ApiTestUser,
       options: {
-        readonly isolatePg?: boolean;
         readonly customerId?: string;
         readonly subscriptionId?: string;
         readonly tier?: "pro" | "team";
@@ -595,16 +595,9 @@ export function createRunsApi(context: TestContext) {
           },
         );
       });
-      await run(async () => {
-        const app = options.isolatePg
-          ? await setupApp({
-              context,
-              routes: webhooksStripeRoutes,
-              isolatePg: true,
-            })
-          : runApp(context);
-        return await accept(
-          app(webhookStripeContract).post({
+      await run(() => {
+        return accept(
+          runApp(context)(webhookStripeContract).post({
             body: JSON.stringify(invoicePaidEvent),
             extraHeaders: { "stripe-signature": "t=1,v1=bdd" },
           }),
@@ -880,6 +873,26 @@ export function createRunsApi(context: TestContext) {
         }),
         statuses,
       );
+    },
+
+    okouTokenForRunWithCapabilities(
+      actor: ApiTestUser,
+      runId: string,
+      capabilities: readonly Capability[],
+    ): string {
+      if (!actor.orgId) {
+        throw new Error("Agent run tokens require an org-scoped actor");
+      }
+      const seconds = Math.floor(now() / 1000);
+      return signSandboxJwtForTests({
+        scope: "okou",
+        userId: actor.userId,
+        orgId: actor.orgId,
+        runId,
+        capabilities: [...capabilities],
+        iat: seconds,
+        exp: seconds + 3600,
+      });
     },
 
     async applyUserPermissionGrant(

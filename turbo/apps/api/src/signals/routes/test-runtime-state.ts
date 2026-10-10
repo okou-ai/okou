@@ -59,20 +59,27 @@ const runMetadataFixtureAction$ = command(
     { set },
     body: Extract<
       TestRuntimeStateActionBody,
-      { action: "clear-run-api-start" }
+      { action: "clear-run-api-start" | "set-run-autonomy-budget" }
     >,
     signal: AbortSignal,
   ) => {
     const rows = await set(
       writeRunMetadata$,
       {
-        patch: { apiStartedAt: null },
+        patch:
+          body.action === "clear-run-api-start"
+            ? { apiStartedAt: null }
+            : { autonomyBudget: body.autonomy_budget },
         where: eq(agentRuns.id, body.run_id),
       },
       signal,
     );
     if (rows.length === 0) {
-      throw new Error("Expected an agent run timing row");
+      throw new Error(
+        body.action === "clear-run-api-start"
+          ? "Expected an agent run timing row"
+          : "Expected the autonomy-budget run fixture",
+      );
     }
     return { status: 200 as const, body: { ok: true as const } };
   },
@@ -82,6 +89,7 @@ type AutonomyBudgetFixtureAction = Extract<
   TestRuntimeStateActionBody,
   {
     action:
+      | "read-run-autonomy-budget"
       | "set-workflow-automation-autonomy-budget"
       | "read-workflow-automation-autonomy-state";
   }
@@ -91,6 +99,7 @@ function isAutonomyBudgetFixtureAction(
   body: TestRuntimeStateActionBody,
 ): body is AutonomyBudgetFixtureAction {
   return [
+    "read-run-autonomy-budget",
     "set-workflow-automation-autonomy-budget",
     "read-workflow-automation-autonomy-state",
   ].includes(body.action);
@@ -102,6 +111,21 @@ async function autonomyBudgetFixtureActionResponse(
   signal: AbortSignal,
 ) {
   switch (body.action) {
+    case "read-run-autonomy-budget": {
+      const [run] = await db
+        .select({ autonomyBudget: agentRuns.autonomyBudget })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, body.run_id))
+        .limit(1);
+      signal.throwIfAborted();
+      return {
+        status: 200 as const,
+        body: {
+          ok: true as const,
+          autonomy_budget: run?.autonomyBudget ?? null,
+        },
+      };
+    }
     case "set-workflow-automation-autonomy-budget": {
       const [automation] = await db
         .update(workflowAutomations)
@@ -214,6 +238,7 @@ function isCompatibilityFixtureAction(
   body: TestRuntimeStateActionBody,
 ): body is CompatibilityFixtureAction {
   return [
+    "read-run-autonomy-budget",
     "set-workflow-automation-autonomy-budget",
     "read-workflow-automation-autonomy-state",
     "set-runner-job-context-profile-as-previous-api",
@@ -338,7 +363,10 @@ const postRuntimeStateAction$ = command(
     }
 
     const body = bodyResult.data;
-    if (body.action === "clear-run-api-start") {
+    if (
+      body.action === "clear-run-api-start" ||
+      body.action === "set-run-autonomy-budget"
+    ) {
       return await set(runMetadataFixtureAction$, body, signal);
     }
     const db = set(writeDb$);
