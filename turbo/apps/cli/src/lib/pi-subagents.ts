@@ -41,7 +41,7 @@ function environmentRunDirectory(): string {
   const runId = process.env.OKOU_RUN_ID;
   if (!runId || !/^[a-zA-Z0-9-]+$/u.test(runId))
     throw new Error("Invalid Pi Run ID.");
-  return join(process.env.OKOU_PI_RUNTIME_ROOT ?? "/var/run/pi", runId);
+  return join(process.env.OKOU_PI_RUNTIME_ROOT ?? "/tmp/pi", runId);
 }
 
 function runDirectory(): string {
