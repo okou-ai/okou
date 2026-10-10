@@ -1,4 +1,4 @@
-import { FeatureSwitchKey } from "@okouai/core";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useLastResolved } from "ccstate-react";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
