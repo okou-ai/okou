@@ -1412,51 +1412,6 @@
       "owner": "applyPendingMigrations"
     },
     {
-      "id": "TX-0358",
-      "file": "turbo/packages/db/scripts/migrations/008-automation-to-workflow-preseed/preseed.ts",
-      "owner": "preseedAutomationVolume"
-    },
-    {
-      "id": "TX-0359",
-      "file": "turbo/packages/db/scripts/migrations/010-custom-model-gateways/backfill.ts",
-      "owner": "main"
-    },
-    {
-      "id": "TX-0360",
-      "file": "turbo/packages/db/scripts/migrations/012-custom-connector-credentials/backfill.ts",
-      "owner": "migrateCandidate"
-    },
-    {
-      "id": "TX-0361",
-      "file": "turbo/packages/db/scripts/migrations/013-kms-account-rotation/business-canary.ts",
-      "owner": "verifyBusinessCanary/installFixture"
-    },
-    {
-      "id": "TX-0362",
-      "file": "turbo/packages/db/scripts/migrations/014-goal-archive-search/recover.ts",
-      "owner": "recoverGoalArchiveSearch"
-    },
-    {
-      "id": "TX-0363",
-      "file": "turbo/packages/db/scripts/migrations/014-goal-archive-search/recover.ts",
-      "owner": "recoverGoalArchiveSearch"
-    },
-    {
-      "id": "TX-0364",
-      "file": "turbo/packages/db/scripts/migrations/016-okou-attribution/database.ts",
-      "owner": "scanDatabase"
-    },
-    {
-      "id": "TX-0365",
-      "file": "turbo/packages/db/scripts/migrations/018-hosted-publication-pointers/backfill.ts",
-      "owner": "transaction"
-    },
-    {
-      "id": "TX-0366",
-      "file": "turbo/packages/db/scripts/migrations/019-member-memory-initialization/backfill.ts",
-      "owner": "initializeMemory"
-    },
-    {
       "id": "TX-0367",
       "file": "turbo/packages/db/scripts/pi-memory-stage1-cost.ts",
       "owner": "<module>"

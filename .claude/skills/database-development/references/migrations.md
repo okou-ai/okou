@@ -54,12 +54,15 @@ Pure data transforms that only touch the database should use regular SQL migrati
 ### Convention
 
 - **Numbered sequentially**: `001-`, `002-`, etc. — never reuse numbers
-- **Permanent**: these scripts are historical records and MUST NOT be deleted,
-  even after the migration is complete and the referenced tables/schemas no longer exist
+- **Retire completed operators**: remove one-time scripts, their dedicated tests,
+  dispatch workflows and configuration entries after operator acceptance. Recover
+  an exact historical version from Git when needed and revalidate its targets and
+  prerequisites before use. Shipped SQL migrations, generated migration metadata
+  and permanent schema invariant tests remain immutable or maintained.
 - **Default dry-run**: use `parseArgs` with `--migrate` flag; default mode is dry-run
 - **Self-contained**: each directory has its own README with usage instructions
-- **Excluded from CI**: completed scripts that reference deleted schemas are excluded
-  from `tsconfig.json` and `eslint.config.js` to avoid build errors
+- **Current checks**: maintained operator scripts must pass the affected package's
+  type and lint checks; do not retain stale exclusions for retired tools.
 
 Validate schema exports and generated migration metadata, run the local
 migration and affected checks when applicable, and follow the repository's
