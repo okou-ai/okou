@@ -1,29 +1,29 @@
 import type { SecretConnectorMetadata } from "@okouai/api-contracts/contracts/runners";
-import { permissionGrantsToFirewallPolicies } from "@okouai/connectors/firewall-metadata/policy";
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { expandVariablesInString } from "@okouai/core/variable-expander";
 import { computed } from "ccstate";
 import { badRequestMessage } from "../../lib/error";
-import { settle } from "../utils";
+import { safeSync, settle } from "../utils";
 import {
   type AgentRunContextSignals,
   createEagerConnectorCredentialContext,
+  type EagerConnectorCredentialObservation,
 } from "./agent-run-context.signals";
 import type { PermissionManifest } from "./agent-run-contracts";
-import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
+import type {
+  ApiDispatchTimingCollector,
+  ApiDispatchTimingDimensions,
+} from "./api-dispatch-timing.service";
 import {
   compactRecord,
   type CustomConnectorRuntimeContext,
   mergeRecords,
 } from "./connector-runtime-preparation.service";
-import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
+import { countBucket } from "./dispatch-count-bucket";
 import { buildPermissionManifest } from "./permission-manifest.service";
 import type { Environment } from "./run-environment";
-import {
-  createRunBodyEnvironmentSignal,
-  type RunRequestBody,
-} from "./run-body-environment";
+import type { RunRequestBody } from "./run-body-environment";
 import {
   type BuiltinConnectorRuntimeContext,
   type ConnectorEnvBindingSet,
@@ -32,7 +32,6 @@ import {
   emptyBuiltinConnectorRuntimeContext,
   storedConnectorContextFromSnapshot,
   type RunConnectorCatalogSelection,
-  runConnectorCatalogSelection,
   storedConnectorCredentialNames,
   type StoredConnectorMaterializationSnapshot,
   type StoredConnectorSecretRow,
@@ -53,16 +52,15 @@ function isConnectorRuntimeError(
 }
 
 /**
- * Turns the selected connector accounts into runtime environment, credentials
- * and the permission manifest for the execution identity.
+ * The connector source of the Run environment: selected accounts become
+ * environment entries, decrypted secrets, firewalls and runtime targets.
  */
-export function createConnectorRuntimeSignals(
-  execution: AgentRunContextSignals,
+export function createConnectorEnvironmentSignals(
+  bootstrap: AgentRunContextSignals,
   threadContext: ThreadContext,
 ) {
   const runtimeInputs = createConnectorRuntimeInputSignals(
-    execution,
-    threadContext.dispatchTiming$,
+    bootstrap,
     threadContext,
   );
   const secretPlan = createEagerSecretPlanSignals(runtimeInputs);
@@ -70,16 +68,7 @@ export function createConnectorRuntimeSignals(
     threadContext,
     secretPlan,
   );
-  return {
-    bodyEnvironment$: runtimeInputs.bodyEnvironment$,
-    permissionPolicies$: runtimeInputs.permissionPolicies$,
-    eagerSecretPlan$: secretPlan.eagerSecretPlan$,
-    eagerCredentialContext$: connectorSecrets.eagerCredentialContext$,
-    environment$: createConnectorEnvironmentSignal(
-      threadContext,
-      connectorSecrets,
-    ),
-  };
+  return createConnectorEnvironmentSignal(threadContext, connectorSecrets);
 }
 
 type ConnectorRuntimeInputSignals = ReturnType<
@@ -88,37 +77,10 @@ type ConnectorRuntimeInputSignals = ReturnType<
 
 function createConnectorRuntimeInputSignals(
   execution: AgentRunContextSignals,
-  dispatchTiming$: ThreadContext["dispatchTiming$"],
   threadContext: ThreadContext,
 ) {
-  const { connectorSelection$, connectorSnapshot$ } = threadContext;
-  const bodyEnvironment$ = createRunBodyEnvironmentSignal(execution);
-  const permissionPolicies$ = computed(async (get) => {
-    const [grants, scope, bootstrapCatalog] = await Promise.all([
-      get(execution.permissionGrants$),
-      get(execution.connectorScope$),
-      get(execution.catalog$),
-    ]);
-    const catalog = runConnectorCatalogSelection(scope, bootstrapCatalog);
-    return await get(dispatchTiming$).measure(
-      "api_dispatch_pre_create_agent_resolve_firewall_metadata",
-      "nested",
-      async () => {
-        const stored = permissionGrantsToFirewallPolicies(
-          grants.map(({ connectorSlug, permission, action }) => {
-            return { connectorSlug, permission, action };
-          }),
-        );
-        return catalog.kind === "empty"
-          ? stored
-          : await expandConnectorServerFirewallPolicies({
-              catalog: catalog.selection.serverFirewalls,
-              stored,
-              connectorSlugs: [...scope.allowedConnectorSlugs],
-            });
-      },
-    );
-  });
+  const { connectorSelection$, connectorSnapshot$, dispatchTiming$ } =
+    threadContext;
   const inputs$ = computed(
     async (
       get,
@@ -127,8 +89,8 @@ function createConnectorRuntimeInputSignals(
         [
           get(connectorSelection$),
           get(connectorSnapshot$),
-          get(bodyEnvironment$),
-          get(permissionPolicies$),
+          get(execution.bodyEnvironment$),
+          get(execution.permissionPolicies$),
           get(execution.featureSwitches$),
         ],
       );
@@ -148,7 +110,7 @@ function createConnectorRuntimeInputSignals(
       };
     },
   );
-  return { bodyEnvironment$, permissionPolicies$, inputs$ };
+  return { inputs$ };
 }
 
 type EagerSecretPlanSignals = ReturnType<typeof createEagerSecretPlanSignals>;
@@ -270,9 +232,12 @@ function createConnectorSecretSignals(
     if (isConnectorRuntimeError(plan)) {
       return {};
     }
-    const { credentials: decrypted } = await get(
+    const { credentials: decrypted, observation } = await get(
       (await get(eagerCredentialContext$)).credentials$,
     );
+    if (observation) {
+      recordEagerDecryptObservation(plan, observation);
+    }
     return Object.fromEntries(
       rows.map((row) => {
         const result = decrypted.get(row.id);
@@ -309,7 +274,7 @@ function createConnectorSecretSignals(
       };
     },
   );
-  return { eagerCredentialContext$, connectorContext$ };
+  return { connectorContext$ };
 }
 
 /** The connector source's contribution to the Run environment. */
@@ -359,6 +324,50 @@ function createConnectorEnvironmentSignal(
     },
   );
   return environment$;
+}
+
+/** Record the completed eager resolve and decrypt intervals once. */
+function recordEagerDecryptObservation(
+  plan: {
+    readonly input: { readonly timing: ApiDispatchTimingCollector };
+    readonly timingDimensions: ApiDispatchTimingDimensions;
+  },
+  observation: EagerConnectorCredentialObservation,
+): void {
+  safeSync(() => {
+    const dimensions = {
+      ...plan.timingDimensions,
+      connector_context_schema: "selected_eager_v1",
+      connector_context_builtin_decrypt_count: observation.builtinDecryptCount,
+      connector_context_observation:
+        observation.builtinResolve && observation.builtinDecrypt
+          ? "complete"
+          : "partial",
+      connector_context_builtin_decrypt_count_bucket: countBucket(
+        observation.builtinDecryptCount,
+      ),
+    };
+    for (const [actionType, duration] of [
+      [
+        "api_dispatch_prepare_context_connector_context_builtin_resolve",
+        observation.builtinResolve,
+      ],
+      [
+        "api_dispatch_prepare_context_connector_context_builtin_decrypt",
+        observation.builtinDecrypt,
+      ],
+    ] as const) {
+      if (duration) {
+        plan.input.timing.recordDuration(
+          actionType,
+          "nested",
+          duration.durationMs,
+          duration.finishedAt,
+          dimensions,
+        );
+      }
+    }
+  });
 }
 
 const CONNECTOR_SECRET_REF_PREFIX = "$secrets.";
