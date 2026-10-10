@@ -34,7 +34,7 @@ export const discordOrgData$ = computed(async (get) => {
   return result.body;
 });
 
-export const reloadDiscordOrg$ = command(({ set }) => {
+const reloadDiscordOrg$ = command(({ set }) => {
   set(reloadVersion$, (version) => {
     return version + 1;
   });

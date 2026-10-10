@@ -6334,8 +6334,6 @@
       "dmServer": "Default server for direct messages",
       "install": "Install to Discord",
       "limitedContext": "Limited context: Okou may not receive ordinary channel messages. Mention Okou and include the details it needs.",
-      "loadError": "Unable to load Discord status.",
-      "loading": "Loading Discord status…",
       "memberSetup": "Ask an organization admin to install Okou to your Discord server.",
       "moreOptions": "More Discord options",
       "pendingConsent": "This tab has no authorization proof. Close it and restart authorization from the original Works tab.",

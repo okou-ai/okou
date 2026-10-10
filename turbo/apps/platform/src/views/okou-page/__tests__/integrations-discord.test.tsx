@@ -6,7 +6,11 @@ import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oa
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   getAction,
@@ -872,8 +876,33 @@ test("Discord status converges after a connection change from another surface", 
   ).toBeNull();
 });
 
-test("A status error is visible and retry recovers the card", async () => {
-  let denied = true;
+test("Discord keeps its setup description until status is available", async () => {
+  const statusReady = context.mocks.deferred<void>();
+  context.mocks.api(
+    integrationsDiscordContract.getStatus,
+    async ({ respond, withSignal }) => {
+      await withSignal(statusReady.promise);
+      return respond(200, status());
+    },
+  );
+  await setupDiscordPage();
+  const card = getIntegrationCard("Discord");
+  expect(
+    within(card).getByText(
+      "Ask an organization admin to install Okou to your Discord server.",
+    ),
+  ).toBeInTheDocument();
+  expect(queryAllByRoleFast("button", card)).toHaveLength(0);
+
+  statusReady.resolve();
+  await expect(
+    within(card).findByText("Server: Design team"),
+  ).resolves.toBeInTheDocument();
+  expect(within(card).getByText("Connected")).toBeInTheDocument();
+});
+
+test("A status error shows the setup description until a connection update recovers the card", async () => {
+  let denied = false;
   context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
     if (denied) {
       return respond(403, {
@@ -884,15 +913,25 @@ test("A status error is visible and retry recovers the card", async () => {
   });
   await setupDiscordPage();
   await expect(
-    screen.findByText("Unable to load Discord status."),
-  ).resolves.toBeInTheDocument();
-  const card = getIntegrationCard("Discord");
-  expect(queryAction("button", "More Discord options", card)).toBeNull();
-  denied = false;
-  click(getAction("button", "Retry", card));
-  await expect(
     screen.findByText("Server: Design team"),
   ).resolves.toBeInTheDocument();
+  const card = getIntegrationCard("Discord");
+  denied = true;
+  context.mocks.ably.trigger("discord:changed");
+  await expect(
+    within(card).findByText(
+      "Ask an organization admin to install Okou to your Discord server.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(queryAllByRoleFast("button", card)).toHaveLength(0);
+  expect(within(card).queryByText("Connected")).not.toBeInTheDocument();
+
+  denied = false;
+  context.mocks.ably.trigger("discord:changed");
+  await expect(
+    within(card).findByText("Server: Design team"),
+  ).resolves.toBeInTheDocument();
+  expect(within(card).getByText("Connected")).toBeInTheDocument();
 });
 
 test("Direct messages require an explicit server choice and a failed save keeps the prior choice", async () => {
@@ -972,9 +1011,10 @@ test.each([
     refreshMessage: "Server: Updated team",
   },
   {
-    name: "failed refresh and retry",
+    name: "failed refresh and recovery",
     refreshError: true,
-    refreshMessage: "Unable to load Discord status.",
+    refreshMessage:
+      "Ask an organization admin to install Okou to your Discord server.",
   },
 ])(
   "A pending DM choice remains disabled through a $name",
@@ -1051,7 +1091,7 @@ test.each([
     ).resolves.toBeInTheDocument();
     if (denyRefresh) {
       denyRefresh = false;
-      click(getAction("button", "Retry", getIntegrationCard("Discord")));
+      context.mocks.ably.trigger("discord:changed");
     }
     await expect(
       screen.findByText("Server: Updated team"),

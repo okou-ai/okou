@@ -6317,8 +6317,6 @@
       "dmServer": "私信默认服务器",
       "install": "安装到Discord",
       "limitedContext": "上下文受限：Okou可能无法接收频道中的普通消息。请提及Okou，并提供所需的详细信息。",
-      "loadError": "无法加载Discord状态。",
-      "loading": "正在加载Discord状态…",
       "memberSetup": "请组织管理员将Okou安装到你的Discord服务器。",
       "moreOptions": "更多Discord选项",
       "pendingConsent": "此标签页已无授权凭据。请关闭它，并从原先的Works标签页重新发起授权。",
