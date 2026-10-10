@@ -22,17 +22,20 @@ const UNDO_ACTION_STYLE = {
   padding: 0,
 } as const;
 
-function archiveToastDescription(archived: boolean, muted: boolean) {
+// One line says what happened and when the chat comes back. The API brings an
+// archived chat back on a new reply unless it is muted.
+function archiveToastMessage(archived: boolean, muted: boolean) {
   if (!archived) {
-    return undefined;
+    return i18n.t(($) => {
+      return $.chat.toasts.unarchived;
+    });
   }
-  // The API brings an archived chat back on a new reply unless it is muted.
   return muted
     ? i18n.t(($) => {
-        return $.chat.toasts.archivedMutedDescription;
+        return $.chat.toasts.archivedMuted;
       })
     : i18n.t(($) => {
-        return $.chat.toasts.archivedDescription;
+        return $.chat.toasts.archived;
       });
 }
 
@@ -76,34 +79,24 @@ export const setChatThreadArchivedWithFeedback$ = command(
     ]);
     signal.throwIfAborted();
 
-    toast.success(
-      archived
-        ? i18n.t(($) => {
-            return $.chat.toasts.archived;
-          })
-        : i18n.t(($) => {
-            return $.chat.toasts.unarchived;
-          }),
-      {
-        description: archiveToastDescription(archived, meta?.muted === true),
-        actionButtonStyle: UNDO_ACTION_STYLE,
-        classNames: UNDO_ACTION_CLASS_NAMES,
-        action: {
-          label: i18n.t(($) => {
-            return $.chat.toasts.undo;
-          }),
-          onClick: onDomEventFn(async () => {
-            await set(
-              setChatThreadArchived$,
-              { threadId, archived: !archived },
-              get(rootSignal$),
-            );
-            if (leaving) {
-              set(navigateToChat$, threadId);
-            }
-          }),
-        },
+    toast.success(archiveToastMessage(archived, meta?.muted === true), {
+      actionButtonStyle: UNDO_ACTION_STYLE,
+      classNames: UNDO_ACTION_CLASS_NAMES,
+      action: {
+        label: i18n.t(($) => {
+          return $.chat.toasts.undo;
+        }),
+        onClick: onDomEventFn(async () => {
+          await set(
+            setChatThreadArchived$,
+            { threadId, archived: !archived },
+            get(rootSignal$),
+          );
+          if (leaving) {
+            set(navigateToChat$, threadId);
+          }
+        }),
       },
-    );
+    });
   },
 );

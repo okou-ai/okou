@@ -458,7 +458,10 @@ function ChatThreadMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"
-          className={cn("w-56", touch && "[&_[role=menuitem]]:min-h-11")}
+          className={cn(
+            "min-w-56 whitespace-nowrap",
+            touch && "[&_[role=menuitem]]:min-h-11",
+          )}
           data-chat-thread-menu-thread-id={signals.threadId}
         >
           <ChatThreadPinMenuItems signals={signals} />
@@ -1204,7 +1207,10 @@ export function ChatThreadsListMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"
-          className={cn("w-56", touch && "[&_[role=menuitem]]:min-h-11")}
+          className={cn(
+            "min-w-56 whitespace-nowrap",
+            touch && "[&_[role=menuitem]]:min-h-11",
+          )}
         >
           {markAllReadAction.visible ? (
             <>

@@ -2796,9 +2796,8 @@
       "resize": "Resize sidebar"
     },
     "toasts": {
-      "archived": "Chat archived",
-      "archivedDescription": "It'll move back to Inbox when there's a new reply.",
-      "archivedMutedDescription": "Muted chats stay archived, even when there's a new reply.",
+      "archived": "Chat archived. A new reply brings it back to Inbox.",
+      "archivedMuted": "Chat archived. It's muted, so new replies won't bring it back.",
       "copied": "Copied",
       "deleted": "Chat deleted",
       "unarchived": "Chat moved to Inbox",

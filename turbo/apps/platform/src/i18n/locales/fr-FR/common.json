@@ -2844,9 +2844,8 @@
       "resize": "Redimensionner la barre latérale"
     },
     "toasts": {
-      "archived": "Discussion archivée",
-      "archivedDescription": "Elle reviendra dans la boîte de réception dès qu'il y aura une nouvelle réponse.",
-      "archivedMutedDescription": "Les discussions en sourdine restent archivées, même en cas de nouvelle réponse.",
+      "archived": "Discussion archivée. Une nouvelle réponse la ramène dans la boîte de réception.",
+      "archivedMuted": "Discussion archivée. Elle est en sourdine, les nouvelles réponses ne la ramèneront pas.",
       "copied": "Copié",
       "deleted": "Chat supprimé",
       "unarchived": "Discussion déplacée dans la boîte de réception",

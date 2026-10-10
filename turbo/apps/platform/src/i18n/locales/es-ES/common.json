@@ -2844,9 +2844,8 @@
       "resize": "Cambiar el tamaño de la barra lateral"
     },
     "toasts": {
-      "archived": "Chat archivado",
-      "archivedDescription": "Volverá a la bandeja de entrada cuando haya una respuesta nueva.",
-      "archivedMutedDescription": "Los chats silenciados siguen archivados aunque haya una respuesta nueva.",
+      "archived": "Chat archivado. Una respuesta nueva lo devuelve a la bandeja de entrada.",
+      "archivedMuted": "Chat archivado. Está silenciado, así que las respuestas nuevas no lo devolverán.",
       "copied": "Copiado",
       "deleted": "Chat eliminado",
       "unarchived": "Chat movido a la bandeja de entrada",

@@ -2785,9 +2785,8 @@
       "resize": "调整侧边栏宽度"
     },
     "toasts": {
-      "archived": "聊天已归档",
-      "archivedDescription": "有新回复时会回到收件箱。",
-      "archivedMutedDescription": "已静音的聊天有新回复也会留在归档中。",
+      "archived": "聊天已归档，有新回复时会回到收件箱",
+      "archivedMuted": "聊天已归档，已静音的聊天有新回复也不会回来",
       "copied": "已复制",
       "deleted": "聊天已删除",
       "unarchived": "聊天已移回收件箱",

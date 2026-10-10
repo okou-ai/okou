@@ -2785,9 +2785,8 @@
       "resize": "사이드바 크기 조절"
     },
     "toasts": {
-      "archived": "채팅 보관됨",
-      "archivedDescription": "새 답장이 오면 받은 편지함으로 돌아옵니다.",
-      "archivedMutedDescription": "알림이 꺼진 채팅은 새 답장이 와도 보관된 상태로 유지됩니다.",
+      "archived": "채팅을 보관했습니다. 새 답장이 오면 받은 편지함으로 돌아옵니다.",
+      "archivedMuted": "채팅을 보관했습니다. 알림이 꺼져 있어 새 답장이 와도 돌아오지 않습니다.",
       "copied": "복사됨",
       "deleted": "채팅 삭제됨",
       "unarchived": "채팅을 받은 편지함으로 옮김",

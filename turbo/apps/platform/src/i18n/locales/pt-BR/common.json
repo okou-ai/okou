@@ -2844,9 +2844,8 @@
       "resize": "Redimensionar barra lateral"
     },
     "toasts": {
-      "archived": "Conversa arquivada",
-      "archivedDescription": "Ela voltará para a caixa de entrada quando houver uma nova resposta.",
-      "archivedMutedDescription": "Conversas silenciadas continuam arquivadas, mesmo com uma nova resposta.",
+      "archived": "Conversa arquivada. Uma nova resposta a traz de volta para a caixa de entrada.",
+      "archivedMuted": "Conversa arquivada. Ela está silenciada, então novas respostas não a trarão de volta.",
       "copied": "Copiado",
       "deleted": "Conversa excluída",
       "unarchived": "Conversa movida para a caixa de entrada",

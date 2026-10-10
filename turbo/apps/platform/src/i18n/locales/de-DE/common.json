@@ -2796,9 +2796,8 @@
       "resize": "Größe der Seitenleiste ändern"
     },
     "toasts": {
-      "archived": "Chat archiviert",
-      "archivedDescription": "Er kehrt in den Posteingang zurück, sobald eine neue Antwort eingeht.",
-      "archivedMutedDescription": "Stummgeschaltete Chats bleiben archiviert, auch bei neuen Antworten.",
+      "archived": "Chat archiviert. Eine neue Antwort bringt ihn zurück in den Posteingang.",
+      "archivedMuted": "Chat archiviert. Er ist stummgeschaltet, neue Antworten holen ihn nicht zurück.",
       "copied": "Kopiert",
       "deleted": "Chat gelöscht",
       "unarchived": "Chat in den Posteingang verschoben",
