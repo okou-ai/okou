@@ -186,7 +186,7 @@ async def test_rejected_input_and_bounded_redacted_entry_outcomes(tmp_path, cont
         assert "private" not in json.dumps(partial)
 
 
-@pytest.mark.parametrize("disconnect", [False, True])
+@pytest.mark.parametrize("disconnect", [pytest.param(False, marks=pytest.mark.shard_cost(4)), True])
 async def test_stalled_application_retains_admission_and_allows_status_and_logs(
     tmp_path, control, mitm_ctx, monkeypatch, disconnect
 ):
@@ -236,7 +236,9 @@ async def test_stalled_application_retains_admission_and_allows_status_and_logs(
         assert (await apply(tmp_path, expected))["state"] == "applied"
 
 
-@pytest.mark.parametrize("after_deadline", [False, True])
+@pytest.mark.parametrize(
+    "after_deadline", [False, pytest.param(True, marks=pytest.mark.shard_cost(4))]
+)
 async def test_internal_failure_remains_owned_and_redacted_after_waiter_deadline(
     tmp_path, control, mitm_ctx, monkeypatch, caplog, after_deadline
 ):

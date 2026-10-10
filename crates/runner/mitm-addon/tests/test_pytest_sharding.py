@@ -122,6 +122,75 @@ def test_shards_are_complete_disjoint_and_stable(suite: Path) -> None:
         ]
 
 
+@pytest.mark.shard_cost(1)
+def test_costly_cases_are_balanced_without_losing_order_or_coverage(suite: Path) -> None:
+    # These two cases previously shared the same hash partition. Each is much
+    # more expensive than the rest of this fixture-owned suite combined.
+    costly = ["tests/test_costs.py::test_expensive0", "tests/test_costs.py::test_expensive2"]
+    (suite / "tests/test_costs.py").write_text(
+        "import pytest\n"
+        "@pytest.mark.shard_cost(10)\ndef test_expensive0():\n    assert True\n"
+        "@pytest.mark.shard_cost(10)\ndef test_expensive2():\n    assert True\n"
+    )
+    full, all_nodes = _run_suite(suite)
+    first, first_nodes = _run_suite(suite, ("--test-shard=1/2",))
+    second, second_nodes = _run_suite(suite, ("--test-shard=2/2",), hash_seed="42")
+    repeated, repeated_nodes = _run_suite(suite, ("--test-shard=1/2",), hash_seed="123")
+    for result in (full, first, second, repeated):
+        assert result.returncode == pytest.ExitCode.OK, result.stdout + result.stderr
+    assert all_nodes["selected"] == all_nodes["collected"]
+    assert first_nodes["collected"] == second_nodes["collected"] == all_nodes["collected"]
+    assert set(first_nodes["selected"]).isdisjoint(second_nodes["selected"])
+    assert Counter(first_nodes["selected"] + second_nodes["selected"]) == Counter(
+        all_nodes["selected"]
+    )
+    assert repeated_nodes == first_nodes
+    for report in (first_nodes, second_nodes):
+        assert sum(node in report["selected"] for node in costly) == 1
+        assert report["selected"] == [
+            node for node in all_nodes["selected"] if node in report["selected"]
+        ]
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        "",
+        "0",
+        "-1",
+        "True",
+        "'slow'",
+        "float('nan')",
+        "float('inf')",
+        "10**1000",
+        "1, 2",
+        "seconds=1",
+    ],
+    ids=[
+        "missing",
+        "zero",
+        "negative",
+        "boolean",
+        "string",
+        "nan",
+        "infinite",
+        "overflow",
+        "extra",
+        "keyword",
+    ],
+)
+def test_invalid_shard_cost_fails_before_execution(suite: Path, arguments: str) -> None:
+    (suite / "tests/test_costs.py").write_text(
+        "import pytest\n"
+        f"@pytest.mark.shard_cost({arguments})\n"
+        "def test_invalid_cost():\n    pytest.fail('invalid cost was executed')\n"
+    )
+    result, _report = _run_suite(suite, ("--test-shard=1/2",))
+    assert result.returncode == pytest.ExitCode.USAGE_ERROR
+    assert "shard_cost requires one finite positive number" in result.stderr
+    assert "invalid cost was executed" not in result.stdout
+
+
 @pytest.mark.parametrize(
     "paths",
     [
