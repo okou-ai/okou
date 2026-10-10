@@ -24,6 +24,7 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
+import { mockNow } from "../../../lib/time.ts";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -1093,7 +1094,10 @@ function keytabBytes(lastKeyByte = 0x53) {
 function keytabFile(name: string, lastKeyByte = 0x53) {
   return new File([keytabBytes(lastKeyByte).buffer], name);
 }
-function mockKerberosImport() {
+function mockKerberosImport(
+  method:
+    "qemu_kerberos_keytab" | "qemu_kerberos_ticket" = "qemu_kerberos_keytab",
+) {
   mockSettings({ connections: [], credentials: [] });
   context.mocks.http.get("*/api/vnc/connections", () => {
     return HttpResponse.json(
@@ -1104,13 +1108,23 @@ function mockKerberosImport() {
   const requests: unknown[] = [];
   context.mocks.api(vncCredentialsContract.create, ({ body, respond }) => {
     requests.push(body);
-    return respond(201, {
+    const metadata = {
       ...credential,
       name: body.name,
-      authMethod: "qemu_kerberos_keytab",
       initiator: { realm: "EXAMPLE.INVALID", components: ["alice"] },
       hosts: [],
-    });
+    };
+    return method === "qemu_kerberos_ticket"
+      ? respond(201, {
+          ...metadata,
+          authMethod: method,
+          service: {
+            realm: "EXAMPLE.INVALID",
+            components: ["vnc", "host.example.invalid"],
+          },
+          declaredExpiresAt: 1000,
+        })
+      : respond(201, { ...metadata, authMethod: method });
   });
   return requests;
 }
@@ -1137,6 +1151,105 @@ function pendingFileRead(file: File) {
   });
   return { started, read };
 }
+
+// Public K1 service vector; its ticket bytes are synthetic, not a real credential.
+const ticketHex =
+  "0504000000000001000000010000000f4558414d504c452e494e56414c494400000005616c69636500000001000000010000000f4558414d504c452e494e56414c494400000005616c69636500000002000000020000000f4558414d504c452e494e56414c494400000003766e6300000014686f73742e6578616d706c652e696e76616c696400120000002037373737373737373737373737373737373737373737373737373737373737370000006400000064000003e800000000004000000000000000000000000000001b53594e5448455449435f4e4f545f415f5245414c5f5449434b455400000000";
+function ticketFile(name: string) {
+  const bytes = Uint8Array.from(ticketHex.match(/../gu) ?? [], (pair) => {
+    return Number.parseInt(pair, 16);
+  });
+  return new File([bytes.buffer], name);
+}
+async function openTicketDialog() {
+  const dialog = await addCredential();
+  await choose(dialog, "Authentication method", "Kerberos · service ticket");
+  await fill(
+    within(dialog).getByLabelText("Credential name"),
+    "Offline ticket",
+  );
+  await fill(
+    within(dialog).getByLabelText("Initiator realm"),
+    "EXAMPLE.INVALID",
+  );
+  await fill(within(dialog).getByLabelText("Initiator components"), "alice");
+  await fill(
+    within(dialog).getByLabelText("VNC service realm"),
+    "EXAMPLE.INVALID",
+  );
+  await fill(
+    within(dialog).getByLabelText("VNC service instance"),
+    "host.example.invalid",
+  );
+  return dialog;
+}
+
+test("A supplied service ticket is imported without saving and retains its exact service on Save", async () => {
+  mockNow(200_000, context.signal);
+  const requests = mockKerberosImport("qemu_kerberos_ticket");
+  await page();
+  const dialog = await openTicketDialog();
+  await userEvent.upload(
+    within(dialog).getByLabelText("Service ticket file (.ccache)"),
+    ticketFile("service.ccache"),
+  );
+  expect(requests).toStrictEqual([]);
+  expect(within(dialog).queryByLabelText("KDC host")).toBeNull();
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      name: "Offline ticket",
+      authentication: {
+        method: "qemu_kerberos_ticket",
+        initiator: { realm: "EXAMPLE.INVALID", components: ["alice"] },
+        service: {
+          realm: "EXAMPLE.INVALID",
+          components: ["vnc", "host.example.invalid"],
+        },
+        ticketCache: btoa(
+          String.fromCharCode(
+            ...new Uint8Array(
+              await ticketFile("expected.ccache").arrayBuffer(),
+            ),
+          ),
+        ),
+      },
+    },
+  ]);
+});
+
+test("Changing a ticket's service away and back invalidates its pending import", async () => {
+  mockNow(200_000, context.signal);
+  const requests = mockKerberosImport("qemu_kerberos_ticket");
+  await page();
+  const dialog = await openTicketDialog();
+  const file = ticketFile("prior-service.ccache");
+  const pending = pendingFileRead(file);
+  const input = within(dialog).getByLabelText("Service ticket file (.ccache)");
+  await userEvent.upload(input, file);
+  await pending.started.promise;
+  const instance = within(dialog).getByLabelText("VNC service instance");
+  await fill(instance, "other.example.invalid");
+  await fill(instance, "host.example.invalid");
+  await act(async () => {
+    pending.read.resolve(await ticketFile("late.ccache").arrayBuffer());
+    await pending.read.promise;
+  });
+  click(getAction("button", "Save", dialog));
+  await within(dialog).findByRole("alert");
+  expect(requests).toStrictEqual([]);
+  expect(dialog).toBeInTheDocument();
+  await userEvent.upload(input, ticketFile("current-service.ccache"));
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toHaveLength(1);
+});
 
 test("A replacement keytab is saved without a late file overwriting it", async () => {
   const requests = mockKerberosImport();
