@@ -192,6 +192,41 @@ export const browserUserActionRequests = pgTable(
   },
 );
 
+/**
+ * Immutable preparation identity and confirmed metadata for one native File.
+ * The expiring storage namespace owns orphan/late bytes independently of this
+ * action-scoped metadata, so owner erasure can cascade without losing cleanup.
+ */
+export const browserUserActionFileUploads = pgTable(
+  "browser_user_action_file_uploads",
+  {
+    id: uuid("id").primaryKey(),
+    requestTokenHash: text("request_token_hash")
+      .notNull()
+      .references(
+        () => {
+          return browserUserActionRequests.requestTokenHash;
+        },
+        { onDelete: "cascade" },
+      ),
+    index: integer("index").notNull(),
+    name: varchar("name", { length: 128 }).notNull(),
+    type: varchar("type", { length: 128 }).notNull(),
+    size: integer("size").notNull(),
+    sha256: varchar("sha256", { length: 64 }).notNull(),
+    objectKey: text("object_key").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+  },
+  (table) => {
+    return [
+      index("idx_browser_user_action_file_uploads_action").on(
+        table.requestTokenHash,
+      ),
+      index("idx_browser_user_action_file_uploads_expiry").on(table.expiresAt),
+    ];
+  },
+);
+
 export const browserSessionInstances = pgTable(
   "browser_session_instances",
   {

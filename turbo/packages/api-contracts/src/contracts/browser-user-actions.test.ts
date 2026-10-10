@@ -157,6 +157,7 @@ describe("Browser user-action contracts", () => {
       name: "note.txt",
       type: "text/plain",
       size: 4,
+      uploadId: uuid("7"),
     };
     for (const entry of [
       { ...base, operation: "replace", files: [file] },
@@ -216,12 +217,32 @@ describe("Browser user-action contracts", () => {
     }
   });
 
-  it("accepts a checksum-free Browser file prepare request and response", () => {
+  it("binds a Browser file preparation to bounded metadata, SHA-256 and an issued upload UUID", () => {
     const endpoint = browserUserActionsContract.prepareFileUpload;
-    const input = { key: "document", index: 0, size: 4 };
+    const input = {
+      key: "document",
+      index: 0,
+      name: "note.txt",
+      type: "text/plain",
+      size: 4,
+      sha256:
+        "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    };
     expect(endpoint.body.parse(input)).toStrictEqual(input);
-    const output = { uploadUrl: "https://uploads.example.test/file" };
+    const output = {
+      uploadUrl: "https://uploads.example.test/file",
+      uploadId: uuid("7"),
+    };
     expect(endpoint.responses[200].parse(output)).toStrictEqual(output);
+    for (const invalid of [
+      { ...input, sha256: "a".repeat(63) },
+      { ...input, sha256: "A".repeat(64) },
+      { ...input, name: "" },
+      { ...input, index: 3 },
+      { ...input, size: 10 * 1024 * 1024 + 1 },
+    ]) {
+      expect(endpoint.body.safeParse(invalid).success).toBe(false);
+    }
   });
 
   it("accepts a bounded radio index including explicit clear and rejects ambiguous scalar values", () => {

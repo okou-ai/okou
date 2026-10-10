@@ -1011,7 +1011,7 @@ export function fileDraftIsValid(
 async function browserFileSubmissionValue(
   field: BrowserInputAction["fields"][number],
   draft: BrowserFileDraft | undefined,
-  upload: (fieldKey: string, file: File, index: number) => Promise<void>,
+  upload: (fieldKey: string, file: File, index: number) => Promise<string>,
 ): Promise<
   | Extract<BrowserUserActionApplyRequest["values"][number], { files: unknown }>
   | null
@@ -1037,8 +1037,13 @@ async function browserFileSubmissionValue(
       draft.operation === "replace"
         ? await Promise.all(
             draft.files.map(async (file, index) => {
-              await upload(field.key, file, index);
-              return { name: file.name, type: file.type, size: file.size };
+              const uploadId = await upload(field.key, file, index);
+              return {
+                name: file.name,
+                type: file.type,
+                size: file.size,
+                uploadId,
+              };
             }),
           )
         : [],
@@ -1131,10 +1136,25 @@ async function uploadBrowserInputFile(
   index: number,
   prepare: (body: BrowserUserActionPrepareFileUploadRequest) => Promise<{
     readonly uploadUrl: string;
+    readonly uploadId: string;
   }>,
   signal: AbortSignal,
-): Promise<void> {
-  const signed = await prepare({ key: fieldKey, index, size: file.size });
+): Promise<string> {
+  const bytes = await file.arrayBuffer();
+  signal.throwIfAborted();
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  signal.throwIfAborted();
+  const sha256 = Array.from(new Uint8Array(digest), (byte) => {
+    return byte.toString(16).padStart(2, "0");
+  }).join("");
+  const signed = await prepare({
+    key: fieldKey,
+    index,
+    name: file.name,
+    type: file.type,
+    size: file.size,
+    sha256,
+  });
   signal.throwIfAborted();
   const uploaded = await fetchResource(
     signed.uploadUrl,
@@ -1149,13 +1169,14 @@ async function uploadBrowserInputFile(
   if (!uploaded.ok) {
     throw new Error("Browser file upload failed");
   }
+  return signed.uploadId;
 }
 
 function browserFileUploader(
   clientFactory: ApiClientFactory,
   requestToken: string,
   signal: AbortSignal,
-): (fieldKey: string, file: File, index: number) => Promise<void> {
+): (fieldKey: string, file: File, index: number) => Promise<string> {
   const client = clientFactory(browserUserActionsContract);
   return (fieldKey, file, index) => {
     return uploadBrowserInputFile(
@@ -1181,7 +1202,7 @@ function browserFileUploader(
 
 async function browserInputSubmissionValues(
   action: BrowserInputAction,
-  upload: (fieldKey: string, file: File, index: number) => Promise<void>,
+  upload: (fieldKey: string, file: File, index: number) => Promise<string>,
   drafts: {
     readonly draft: ReadonlyMap<string, string>;
     readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
