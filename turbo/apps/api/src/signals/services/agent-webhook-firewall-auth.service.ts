@@ -5825,12 +5825,15 @@ async function prepareFirewallAuthRequest(
 const resolveFirewallAuthWithTimings$ = command(
   async (
     { set },
-    auth: SandboxAuth,
-    body: FirewallAuthBody,
-    billableCacheExpiry: BillableFirewallCacheExpiry,
-    timingRecords: FirewallAuthTimingRecord[],
+    args: {
+      readonly auth: SandboxAuth;
+      readonly body: FirewallAuthBody;
+      readonly billableCacheExpiry: BillableFirewallCacheExpiry;
+      readonly timingRecords: FirewallAuthTimingRecord[];
+    },
     signal: AbortSignal,
   ): Promise<ResolveFirewallAuthResult> => {
+    const { auth, body, billableCacheExpiry, timingRecords } = args;
     const db = set(writeDb$);
     const preparation = await measureFirewallAuthStage(
       timingRecords,
@@ -5894,10 +5897,7 @@ export const prepareFirewallAuthResponse$ = command(
     const timingRecords: FirewallAuthTimingRecord[] = [];
     return await set(
       resolveFirewallAuthWithTimings$,
-      auth,
-      body,
-      billableCacheExpiry,
-      timingRecords,
+      { auth, body, billableCacheExpiry, timingRecords },
       signal,
     ).finally(() => {
       recordFirewallAuthTimings(auth.runId, timingRecords);
