@@ -104,6 +104,16 @@ end
 RUBY
 }
 
+# A recheck-only edit changes image binary sourcing, even with no Rust edits.
+base_ref=$(fixture_git rev-parse HEAD)
+cp "${SCRIPT_DIR}/runner-binary-cache-recheck.sh" "${test_root}/.github/scripts/"
+fixture_git add .github/scripts/runner-binary-cache-recheck.sh
+fixture_git commit --quiet -m recheck
+image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c "$image_input_step")
+grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
+  fail "recheck-only changes must be recognized as runner image inputs"
+check_ci_detectors "$base_ref" "cache recheck" true
+
 # An installer-only edit must still select its image and native test consumers.
 base_ref=$(fixture_git rev-parse HEAD)
 mkdir -p "${test_root}/.github/actions/setup-aws-cli"
