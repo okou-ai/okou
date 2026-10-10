@@ -366,12 +366,42 @@ fn cleanup_script_fails_when_scan_budget_exceeded_without_deleting_sessions() {
     let restore_dir = restore_path.parent().unwrap();
     fs::create_dir_all(restore_dir).unwrap();
     let matching_jsonl = restore_dir.join(format!("rollout-a-{SESSION_ID}.jsonl"));
-    create_file(&matching_jsonl).unwrap();
+    let original_contents = "existing session history\n";
+    fs::write(&matching_jsonl, original_contents).unwrap();
+    let overflow_entry = restore_dir.join("unrelated.jsonl");
+    create_file(&overflow_entry).unwrap();
 
-    let output = run_cleanup_with_budget(&codex_home, &restore_path, "1").unwrap();
+    // Collect a real match before overflow, independent of filesystem enumeration order.
+    let fake_bin = temp.path().join("fake-bin");
+    fs::create_dir(&fake_bin).unwrap();
+    let fake_find = fake_bin.join("find");
+    fs::write(
+        &fake_find,
+        format!(
+            "#!/bin/sh\nprintf 'f%s\\000f%s\\000' {} {}\n",
+            quote_shell_arg(matching_jsonl.to_str().unwrap()),
+            quote_shell_arg(overflow_entry.to_str().unwrap()),
+        ),
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&fake_find).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&fake_find, permissions).unwrap();
+    let path = format!("{}:{}", fake_bin.display(), std::env::var("PATH").unwrap());
+
+    let output = cleanup_command(&codex_home, &restore_path, SESSION_ID, SESSION_ID_NO_DASHES)
+        .env("PATH", path)
+        .env("OKOU_CODEX_SESSION_CLEANUP_SCAN_BUDGET", "1")
+        .output()
+        .unwrap();
 
     assert_failure_contains(&output, "codex session cleanup exceeded scan budget");
+    assert!(output.stdout.is_empty());
     assert!(matching_jsonl.exists());
+    assert_eq!(
+        fs::read_to_string(&matching_jsonl).unwrap(),
+        original_contents
+    );
 }
 
 #[test]
