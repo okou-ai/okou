@@ -9,6 +9,35 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.726.1](https://github.com/okou-ai/okou/compare/api-v1.726.0...api-v1.726.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* remove retired connector references from app and tests ([#38802](https://github.com/okou-ai/okou/issues/38802)) ([63a43d9](https://github.com/okou-ai/okou/commit/63a43d9219560c0dfe29048b023c7910417a9c50))
+
+
+### Refactoring
+
+* **api:** archive outbound phone messages atomically ([#38792](https://github.com/okou-ai/okou/issues/38792)) ([bc08695](https://github.com/okou-ai/okou/commit/bc08695a68a3a2e34898cd6c0bfc4c9ac3b01976))
+* **api:** inline telegram callback route checks ([#38791](https://github.com/okou-ai/okou/issues/38791)) ([5d1a627](https://github.com/okou-ai/okou/commit/5d1a6273363e75adfc084394f0f53126d54289c6)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** keep slack agent name reads in their existing owners ([#38804](https://github.com/okou-ai/okou/issues/38804)) ([3148222](https://github.com/okou-ai/okou/commit/314822284ab77f15956850b82c4d0b56426c197c)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** keep teams route reads in their transaction owner ([#38776](https://github.com/okou-ai/okou/issues/38776)) ([463d1f9](https://github.com/okou-ai/okou/commit/463d1f94cf10a9b8006c72dd25c56687a386a1f8)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own discord model route reads in interactions ([#38787](https://github.com/okou-ai/okou/issues/38787)) ([74b17ae](https://github.com/okou-ai/okou/commit/74b17ae17f8285a95456829f813d2b1379b8b717)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** publish uploaded files with an atomic catalog handoff ([#38808](https://github.com/okou-ai/okou/issues/38808)) ([872c9d9](https://github.com/okou-ai/okou/commit/872c9d9de98bfe05cf6d007236ae938c3a4a2c91))
+* **api:** retire clerk export cleanup transaction ([#38801](https://github.com/okou-ai/okou/issues/38801)) ([2184da3](https://github.com/okou-ai/okou/commit/2184da3821b4295d9e4c131a2c85f2f74f2310b2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.551.0
+    * @okouai/connectors bumped to 3.16.8
+    * @okouai/core bumped to 8.742.1
+    * @okouai/db bumped to 1.330.5
+    * @okouai/pi-agent-runtime bumped to 1.49.8
+
 ## [1.726.0](https://github.com/okou-ai/okou/compare/api-v1.725.1...api-v1.726.0) (2026-10-10)
 
 

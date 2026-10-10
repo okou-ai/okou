@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.6.2...runner-supervisor-v0.6.3) (2026-10-10)
+
+
+### Bug Fixes
+
+* **runner:** retain accepted idle cleanup through caller cancellation ([#38770](https://github.com/okou-ai/okou/issues/38770)) ([5feb5d6](https://github.com/okou-ai/okou/commit/5feb5d66c39f43d06d05c6f087c54bd6c4e8e658))
+
 ## [0.6.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.6.1...runner-supervisor-v0.6.2) (2026-10-10)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.5](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.4...nbd-cow-v0.5.5) (2026-10-10)
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+
 ## [0.5.4](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.3...nbd-cow-v0.5.4) (2026-10-09)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.6](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.25.5...guest-storage-apply-v0.25.6) (2026-10-10)
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+
 ## [0.25.5](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.25.4...guest-storage-apply-v0.25.5) (2026-10-10)
 
 ## [0.25.4](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.25.3...guest-storage-apply-v0.25.4) (2026-10-10)

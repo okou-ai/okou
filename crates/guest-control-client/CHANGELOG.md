@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.3](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.2...guest-control-client-v0.23.3) (2026-10-10)
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+
 ## [0.23.2](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.1...guest-control-client-v0.23.2) (2026-10-10)
 
 ## [0.23.1](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.0...guest-control-client-v0.23.1) (2026-10-10)
