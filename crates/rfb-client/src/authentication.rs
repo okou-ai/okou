@@ -65,7 +65,7 @@ where
 }
 
 async fn authenticate_with_config<S>(
-    mut stream: S,
+    stream: S,
     server_name: &str,
     authentication: X509Authentication,
     config: Arc<ClientConfig>,
@@ -75,28 +75,13 @@ async fn authenticate_with_config<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let server_name = ServerName::try_from(server_name)
-        .map_err(|_| Error::InvalidServerName)?
-        .to_owned();
-    phase(
-        AuthenticationStage::RfbVersion,
+    let mut stream = verified_tls(
+        stream,
+        server_name,
+        authentication.subtype(),
+        config,
         deadline,
-        exchange_version(&mut stream),
     )
-    .await?;
-    let subtype = authentication.subtype();
-    phase(
-        AuthenticationStage::SecurityNegotiation,
-        deadline,
-        negotiate_security(&mut stream, subtype),
-    )
-    .await?;
-    let mut stream = phase(AuthenticationStage::TlsHandshake, deadline, async {
-        TlsConnector::from(config)
-            .connect(server_name, stream)
-            .await
-            .map_err(Error::Tls)
-    })
     .await?;
     // No password or SecurityResult may be processed for a required-client-cert
     // profile unless this *handshake* received a request and selected the key.
@@ -116,17 +101,60 @@ where
     })
 }
 
+pub(crate) async fn verified_tls<S>(
+    mut stream: S,
+    server_name: &str,
+    subtype: u32,
+    config: Arc<ClientConfig>,
+    deadline: Instant,
+) -> Result<tokio_rustls::client::TlsStream<S>, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let server_name = ServerName::try_from(server_name)
+        .map_err(|_| Error::InvalidServerName)?
+        .to_owned();
+    phase(
+        AuthenticationStage::RfbVersion,
+        deadline,
+        exchange_version(&mut stream),
+    )
+    .await?;
+    phase(
+        AuthenticationStage::SecurityNegotiation,
+        deadline,
+        negotiate_security(&mut stream, subtype),
+    )
+    .await?;
+    phase(AuthenticationStage::TlsHandshake, deadline, async {
+        TlsConnector::from(config)
+            .connect(server_name, stream)
+            .await
+            .map_err(Error::Tls)
+    })
+    .await
+}
+
 pub(crate) async fn phase<T>(
     stage: AuthenticationStage,
     deadline: Instant,
     future: impl Future<Output = Result<T, Error>>,
 ) -> Result<T, Error> {
     let expired = || Error::AuthenticationDeadlineExceeded { stage };
-    // timeout_at polls a ready future before its timer, so check both boundaries.
+    // timeout_at polls a ready future before its timer. Guard EVERY poll, not
+    // just entry/result: a pending authority/IO gate can become ready at expiry
+    // and otherwise send credential bytes before the final check rejects it.
     if deadline <= Instant::now() {
         return Err(expired());
     }
-    let value = tokio::time::timeout_at(deadline, future)
+    let mut future = std::pin::pin!(future);
+    let guarded = std::future::poll_fn(|cx| {
+        if deadline <= Instant::now() {
+            return std::task::Poll::Ready(Err(expired()));
+        }
+        future.as_mut().poll(cx)
+    });
+    let value = tokio::time::timeout_at(deadline, guarded)
         .await
         .map_err(|_| expired())??;
     if deadline <= Instant::now() {
@@ -328,6 +356,44 @@ fn challenge_response(password: VncPassword, challenge: [u8; 16]) -> Zeroizing<[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn a_pending_phase_never_repolls_ready_secret_output_at_its_deadline() {
+        use std::{task::Poll, time::Duration};
+        let (mut output, mut peer) = tokio::io::duplex(16);
+        let (released, gate) = tokio::sync::oneshot::channel();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let mut authentication = Box::pin(phase(
+            AuthenticationStage::QemuGssapiAuthentication,
+            deadline,
+            async move {
+                gate.await.unwrap();
+                output.write_u8(1).await?;
+                Ok(())
+            },
+        ));
+        // Arm both the real phase timer and the external authority/IO gate.
+        std::future::poll_fn(|cx| {
+            assert!(authentication.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        tokio::time::advance(Duration::from_secs(1)).await;
+        released.send(()).unwrap();
+        let result = authentication.as_mut().await;
+        drop(authentication);
+        assert!(matches!(
+            result,
+            Err(Error::AuthenticationDeadlineExceeded {
+                stage: AuthenticationStage::QemuGssapiAuthentication
+            })
+        ));
+        // An error returned after sending the byte would not enforce expiry.
+        assert_eq!(
+            peer.read_u8().await.unwrap_err().kind(),
+            std::io::ErrorKind::UnexpectedEof
+        );
+    }
 
     #[tokio::test]
     async fn standard_result_never_reinterprets_apple_classic_failure() {

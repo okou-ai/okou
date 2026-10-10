@@ -49,6 +49,7 @@
   "crates/runner-rpc-proto": "0.4.0",
   "crates/guest-home-mount": "0.2.1",
   "crates/linux-mountinfo": "0.2.0",
+  "crates/kerberos-worker": "0.1.0",
   "crates/rfb-client": "0.21.5",
   "ios": "0.8.0",
   "crates/kerberos-credentials": "0.2.0",

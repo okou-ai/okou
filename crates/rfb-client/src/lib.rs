@@ -21,6 +21,7 @@ mod framebuffer;
 mod input;
 mod memory;
 mod pixels;
+mod qemu_gssapi;
 mod qemu_sasl;
 mod rsa_aes;
 mod session;
@@ -41,6 +42,7 @@ use zeroize::Zeroizing;
 pub use capture::{Capture, CaptureMetadata};
 pub use framebuffer::{Cursor, FramebufferConnection};
 pub use input::{Input, InputOutcome, Key, MouseButton, ScrollAxis};
+pub use qemu_gssapi::{QemuGssapiAuthentication, authenticate_qemu_gssapi};
 pub use rsa_aes::{RsaAesCredentials, RsaAesSecurity, RsaServerKeyPin};
 pub use session::{Geometry, Session};
 pub use transport::AuthenticatedStream;
@@ -81,6 +83,8 @@ pub enum AuthenticationStage {
     X509PlainAuthentication,
     /// Completing pinned QEMU X509SASL/SCRAM and verifying the server proof.
     QemuScramAuthentication,
+    /// Completing isolated MIT GSS/RFC4752 inside exact verified QEMU263 TLS.
+    QemuGssapiAuthentication,
     /// Completing Apple DH security type 30 and SecurityResult.
     AppleDhAuthentication,
     /// Completing Apple Direct SRP security type 36 and SecurityResult.
@@ -102,6 +106,7 @@ impl AuthenticationStage {
             Self::VncAuthentication => "vnc_authentication",
             Self::X509PlainAuthentication => "x509_plain_authentication",
             Self::QemuScramAuthentication => "qemu_scram_authentication",
+            Self::QemuGssapiAuthentication => "qemu_gssapi_authentication",
             Self::AppleDhAuthentication => "apple_dh_authentication",
             Self::AppleSrpAuthentication => "apple_srp_authentication",
             Self::AppleRsaSrpAuthentication => "apple_rsa_srp_authentication",
@@ -686,6 +691,10 @@ pub enum Error {
     UnsupportedScramMechanism,
     #[error("invalid or over-budget QEMU SCRAM exchange")]
     InvalidScramExchange,
+    #[error("invalid or over-budget QEMU GSSAPI exchange")]
+    InvalidKerberosExchange,
+    #[error("Kerberos engine refused: {0}")]
+    Kerberos(kerberos_worker::Error),
     #[error("Apple DH username must contain 1-63 UTF-8 bytes without NUL")]
     InvalidAppleDhUsername,
     #[error("Apple DH password must contain 1-63 UTF-8 bytes without NUL")]

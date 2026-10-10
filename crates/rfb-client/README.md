@@ -29,6 +29,22 @@ product authorization remain for [#37375](https://github.com/okou-ai/okou/issues
 Do not pass a TLS trust root as a substitute for the client's key or reverse the
 original target name merely because an SSH tunnel carries the supplied stream.
 
+`authenticate_qemu_gssapi` is a separate **engine-only** verified-X509263
+entry point with explicit same-realm Kerberos identities and ticket/password/keytab
+sources. TLS must verify before native credential delivery or GSS tokens. The
+sealed MIT worker cannot discover destinations/ambient credentials; explicit online
+KDC traffic requires separate current caller authority. Imported tickets never
+fall back online. RFC4752 selects no inner security layer over verified TLS, and
+ticket/GSS/Run/session expiry clamps the original stream and two-hour session cap.
+Renewal cannot extend established authentication; the outer owner must close idle
+sessions. Neither this engine nor its fixtures add a saved capability or enable VNC.
+Routine CI exercises Rust protocol tests, native containment and an independent
+MIT/KDC acceptor with a controlled RFB peer on both native targets. It does not
+build QEMU or require VM firmware/screenshots. This entry point retains its
+explicit 263 compatibility profile; it does not claim generic standards
+X509SASL264 support. Optional external-server checks are separate from protocol CI.
+See [`tests/QEMU_GSSAPI.md`](tests/QEMU_GSSAPI.md) for exact evidence and limits.
+
 `authenticate_apple_dh` is a separate entry point for Apple's legacy ARD
 security type 30. `authenticate_apple_vnc_password` separately selects the
 optional classic password/type-2 branch observed on macOS 26.6.2 Remote
