@@ -23,13 +23,12 @@ export async function validateOfficialAutomationResultEmailSchema(
 ): Promise<void> {
   console.log("=== Validate Official Automation result-email schema ===\n");
   const client = new Client({ connectionString: databaseUrl });
-  await client.connect();
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0409; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
+  const identity = randomUUID();
+  const agentId = randomUUID();
+  let agentCreated = false;
 
   try {
-    const identity = randomUUID();
-    const agentId = randomUUID();
+    await client.connect();
     const workflowId = randomUUID();
     const officialAutomationId = randomUUID();
     const ordinaryAutomationId = randomUUID();
@@ -44,6 +43,7 @@ export async function validateOfficialAutomationResultEmailSchema(
       `,
       [agentId, orgId, userId, definitionName],
     );
+    agentCreated = true;
     await client.query(
       `
         INSERT INTO "workflows" (
@@ -144,7 +144,13 @@ export async function validateOfficialAutomationResultEmailSchema(
     console.log("   ✅ ordinary Automations retain a null projection");
     console.log("   ✅ Official Automations retain an explicit boolean\n");
   } finally {
-    await client.query("ROLLBACK");
-    await client.end();
+    try {
+      if (agentCreated) {
+        // Existing foreign keys cascade to this agent's workflow and automations.
+        await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
+      }
+    } finally {
+      await client.end();
+    }
   }
 }

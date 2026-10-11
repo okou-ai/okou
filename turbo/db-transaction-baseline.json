@@ -1442,11 +1442,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0409",
-      "file": "turbo/packages/db/scripts/test-official-automation-result-email-schema.ts",
-      "owner": "validateOfficialAutomationResultEmailSchema"
-    },
-    {
       "id": "TX-0411",
       "file": "turbo/packages/db/scripts/test-pi-candidate-trigger-retirement.ts",
       "owner": "<module>"
