@@ -3,6 +3,7 @@
 //! Opt-in packaged-guest terminal saving fixture; see README.md in this directory.
 
 mod fixture;
+mod transitions;
 
 use std::{error::Error, io, path::PathBuf, sync::Arc};
 
@@ -37,6 +38,9 @@ type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 enum NativeScope {
     Batch(IdleRetirementBatchScope),
     Logical,
+    Replacement,
+    Restore,
+    Aged,
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -68,6 +72,9 @@ async fn exercise_factories(
         NativeScope::Batch(IdleRetirementBatchScope::Exact),
         NativeScope::Batch(IdleRetirementBatchScope::All),
         NativeScope::Logical,
+        NativeScope::Replacement,
+        NativeScope::Restore,
+        NativeScope::Aged,
     ] {
         for restored in [false, true] {
             // Never share a production Runner directory or another invocation's cache.
@@ -134,7 +141,12 @@ async fn exercise_retirement(
         factory.destroy(sandbox).await;
         return Err(error);
     }
-    let budget = Arc::new(ResourceBudget::new(2, 4096, 1.0, 0));
+    let (vcpu, memory) = match scope {
+        NativeScope::Replacement | NativeScope::Restore => (4, 8192),
+        NativeScope::Aged => (12, 24576),
+        _ => (2, 4096),
+    };
+    let budget = Arc::new(ResourceBudget::new(vcpu, memory, 1.0, 0));
     let parked: TestResult<_> = async {
         let backing = sandbox
             .backing_process()
@@ -185,10 +197,36 @@ async fn exercise_retirement(
             .await?;
         return Err(error.into());
     }
-    assert!(matches!(pool.park(candidate), ParkResult::Parked));
+    let parked = if matches!(scope, NativeScope::Aged) {
+        pool.park_at_for_test(
+            candidate,
+            std::time::Instant::now() - std::time::Duration::from_secs(40 * 60),
+        )
+    } else {
+        pool.park(candidate)
+    };
+    assert!(matches!(parked, ParkResult::Parked));
     let pool = Arc::new(tokio::sync::Mutex::new(pool));
     let retirement: TestResult<_> = async {
         match scope {
+            NativeScope::Replacement | NativeScope::Restore | NativeScope::Aged => {
+                transitions::exercise(
+                    transitions::Context {
+                        factory: factory.clone(),
+                        pool: pool.clone(),
+                        status: status.clone(),
+                        operations: operations.clone(),
+                        budget: budget.clone(),
+                        tracker: tracker.clone(),
+                        rootfs_hash: rootfs_hash.clone(),
+                        reuse_key: reuse_key.clone(),
+                    },
+                    inputs,
+                    scope,
+                )
+                .await?;
+                Ok(None)
+            }
             NativeScope::Batch(scope) => {
                 let mut task = tracker
                     .start_pool_retirement_batch(

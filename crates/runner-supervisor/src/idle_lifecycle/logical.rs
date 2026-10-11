@@ -104,19 +104,9 @@ pub async fn select_idle_entries_for_guarded_pressure(
                 continue;
             }
         };
-        let notify = tracker.reuse_state_notify.clone();
-        retirements.push(tracker.track(
-            async move {
-                let _token = token;
-                let result = started.task.join().await;
-                if result
-                    .as_ref()
-                    .is_ok_and(|result| result.home_cache_promoted)
-                {
-                    notify.notify_one();
-                }
-                result
-            },
+        retirements.push(tracker.adopt_pool_substitution(
+            started.task,
+            token,
             request.selection.context,
         ));
         tracker.notify_reuse_state();
@@ -154,6 +144,31 @@ pub async fn select_idle_entries_for_guarded_pressure(
         retirements,
         not_started,
         status_error,
+    }
+}
+
+impl IdleDestroyTracker {
+    pub(crate) fn adopt_pool_substitution(
+        &self,
+        task: runner_lifecycle::host_memory_operations::MemoryOperationTask<IdleDestroyResult>,
+        token: tokio_util::task::task_tracker::TaskTrackerToken,
+        context: &'static str,
+    ) -> GuardedLogicalCleanupTask {
+        let notify = self.reuse_state_notify.clone();
+        self.track(
+            async move {
+                let _token = token;
+                let result = task.join().await;
+                if result
+                    .as_ref()
+                    .is_ok_and(|result| result.home_cache_promoted)
+                {
+                    notify.notify_one();
+                }
+                result
+            },
+            context,
+        )
     }
 }
 

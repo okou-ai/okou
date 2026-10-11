@@ -106,6 +106,17 @@ impl IdlePool {
     }
 }
 
+impl IdleRetirementCandidate {
+    /// Compare exact captured insertions, never just a reuse key or PID.
+    pub fn same_insertion(&self, other: &Self) -> bool {
+        self.pool == other.pool
+            && self.epoch == other.epoch
+            && self.sandbox_id == other.sandbox_id
+            && self.backing.identity == other.backing.identity
+            && Arc::ptr_eq(&self.backing.process, &other.backing.process)
+    }
+}
+
 /// Unused allowances only: the real sandbox/data/lease stay in the pool through
 /// every registration or grant wait. Dropping this admission cannot destroy them.
 #[must_use]
@@ -131,6 +142,10 @@ impl IdlePoolRetirementStartFailure {
 
     pub fn into_retirement(self) -> IdlePoolRetirement {
         self.retirement
+    }
+
+    pub(super) fn into_parts(self) -> (MemoryOperationError, IdlePoolRetirement) {
+        (self.error, self.retirement)
     }
 
     /// Call outside inventory locks: releasing unused claims can drop the last

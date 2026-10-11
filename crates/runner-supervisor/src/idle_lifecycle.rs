@@ -1,11 +1,13 @@
 //! Idle-pool lifecycle and status helpers for `runner start`.
 
 mod batch;
+mod insertion;
 mod logical;
 
 pub use batch::{
     IdlePoolBatchRetirementRequest, IdlePoolRetirementBatchReport, IdlePoolRetirementRefusal,
 };
+pub use insertion::IdlePoolInsertionResult;
 pub use logical::{
     GuardedIdlePressureRequest, GuardedIdlePressureResult, GuardedLogicalCleanupTask,
     select_idle_entries_for_guarded_pressure,
@@ -112,21 +114,7 @@ impl IdleDestroyTracker {
             }
         };
         let snapshot = pool.status_snapshot();
-        let reuse_state_notify = Arc::clone(&self.reuse_state_notify);
-        let task = self.track(
-            async move {
-                let _token = token;
-                let result = task.join().await;
-                if result
-                    .as_ref()
-                    .is_ok_and(|result| result.home_cache_promoted)
-                {
-                    reuse_state_notify.notify_one();
-                }
-                result
-            },
-            request.context,
-        );
+        let task = self.adopt_pool_retirement(task, token, request.context);
         Ok(IdlePoolRetirementStarted { task, snapshot })
     }
 

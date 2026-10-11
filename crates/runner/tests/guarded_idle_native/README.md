@@ -22,7 +22,9 @@ preparation and freeze, waits for exact backing exit, publishes home, tears down
 the factory-owned sandbox, and restores the saved home into another sandbox.
 It verifies ordinary bytes survive and the previous private runtime directory
 does not. It repeats exact-prune, all-inventory drain/shutdown batches and logical
-substitution with fresh boot and the matching prepared snapshot (six owned cases).
+substitution, atomic park replacement, reserved restore over blank inventory and
+aged exact-to-blank replenishment with fresh boot and the matching prepared
+snapshot (twelve owned cases).
 
 The fixture captures backing while the parked candidate is exclusively owned,
 then enters the real Lifecycle inventory and tracked Supervisor batch API. Both
@@ -38,6 +40,22 @@ and a different guest is prepared before joining old cleanup. The original
 required export is then checked through restored home bytes. Ordinary gated
 owner tests establish live overlap; the native seam does not impose an old-exit
 startup barrier or use logical removal as physical credit.
+
+Replacement and restore enter the concrete borrowed incoming-owner transaction;
+both original and incoming physical guests exist under the same host authority.
+The replacement's prior exact owner requires real home export. Restore displaces
+a tenant-free blank and then retires the restored exact owner through a guarded
+batch, verifying its required home too. Aged replenishment drives the real
+background component with an explicitly aged insertion and wraps new blank
+preparation in a supplied Fresh operation. Its final park uses guarded acceptance.
+Each scenario finishes its remaining pool inventory through the guarded batch.
+These component seams do not activate the production composition root.
+
+An accepted aged conversion transfers its full logical lease separately from
+physical cleanup. Before blank creation it joins old cleanup; foreground
+preemption releases that lease and the background CPU permit immediately even
+when status or old teardown is held. Physical coverage and shutdown ownership
+remain with the tracker, so logical release never predicts memory relief.
 
 Supply `OKOU_TEST_RPC_BASE_DIR` as a disposable directory, plus
 `OKOU_TEST_RPC_FIRECRACKER`, `OKOU_TEST_RPC_KERNEL`, `OKOU_TEST_RPC_ROOTFS`,
