@@ -403,7 +403,10 @@ const applyChatAuthorizationScope$ = command(
       ),
     );
     signal.throwIfAborted();
-    return result?.applied === true;
+    if (!result) {
+      throw new Error("Chat authorization statement returned no outcome");
+    }
+    return result.applied;
   },
 );
 
