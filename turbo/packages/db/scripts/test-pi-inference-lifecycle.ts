@@ -13,6 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import postgres from "postgres";
+import { z } from "zod";
 import { applyPendingMigrations } from "./migration-runner";
 
 // Infrastructure boundary: an isolated database exercises the actual generated
@@ -163,9 +164,22 @@ try {
     before,
   );
   // Even NOT VALID enforces both old writers and the strict new shape on writes.
-  const run = (
-    await client.query<{ id: string }>("SELECT id FROM agent_runs LIMIT 1")
-  ).rows[0]!.id;
+  const [original] = z
+    .tuple([
+      z.object({
+        id: z.uuid(),
+        launch_snapshot: z.json(),
+        snapshot_is_null: z.boolean(),
+      }),
+    ])
+    .parse(
+      (
+        await client.query(
+          "SELECT id, launch_snapshot, launch_snapshot IS NULL AS snapshot_is_null FROM agent_runs LIMIT 1",
+        )
+      ).rows,
+    );
+  const run = original.id;
   await assert.rejects(
     client.query("UPDATE agent_runs SET launch_snapshot = $1 WHERE id = $2", [
       JSON.stringify({ schemaVersion: 4, framework: "pi" }),
@@ -173,21 +187,76 @@ try {
     ]),
     /agent_runs_launch_snapshot_check/,
   );
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0414; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
-  await client.query(
-    "UPDATE agent_runs SET launch_snapshot = $1 WHERE id = $2",
+  assert.equal(
+    (
+      await client.query(
+        "UPDATE agent_runs SET launch_snapshot = $1 WHERE id = $2",
+        [
+          JSON.stringify({
+            schemaVersion: 4,
+            framework: "pi",
+            executionMode: "api-inference",
+            inferenceContractVersion: 1,
+          }),
+          run,
+        ],
+      )
+    ).rowCount,
+    1,
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT launch_snapshot FROM agent_runs WHERE id = $1",
+        [run],
+      )
+    ).rows,
     [
-      JSON.stringify({
-        schemaVersion: 4,
-        framework: "pi",
-        executionMode: "api-inference",
-        inferenceContractVersion: 1,
-      }),
-      run,
+      {
+        launch_snapshot: {
+          schemaVersion: 4,
+          framework: "pi",
+          executionMode: "api-inference",
+          inferenceContractVersion: 1,
+        },
+      },
     ],
   );
-  await client.query("ROLLBACK");
+  // This historical row is reused by the later census and capacity probes.
+  assert.equal(
+    (
+      await client.query(
+        "UPDATE agent_runs SET launch_snapshot = $1 WHERE id = $2",
+        [
+          original.snapshot_is_null
+            ? null
+            : JSON.stringify(original.launch_snapshot),
+          run,
+        ],
+      )
+    ).rowCount,
+    1,
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT id, launch_snapshot, launch_snapshot IS NULL AS snapshot_is_null FROM agent_runs WHERE id = $1",
+        [run],
+      )
+    ).rows,
+    [original],
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        `SELECT launch_snapshot, count(*)::int AS count FROM agent_runs GROUP BY launch_snapshot ORDER BY launch_snapshot::text`,
+      )
+    ).rows,
+    before,
+  );
+  console.log(
+    "PASS valid launch snapshot write restores exact historical JSON/null and census",
+  );
   await client.query(
     "ALTER TABLE drizzle.__drizzle_migrations DROP CONSTRAINT foundation_inject_failure",
   );
