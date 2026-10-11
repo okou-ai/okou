@@ -1,6 +1,11 @@
-//! Runner-ID WSS endpoint. The host owns directory provisioning; the Runner
-//! does not create it. A locked durable inode record permits crash recovery
-//! only of a proven owned, dead endpoint; unknown or live endpoints are preserved.
+//! Runner-ID WSS endpoint. Host provisioning owns the dedicated group; Runner
+//! binding safely creates a missing namespace. Durable inode evidence permits
+//! recovery only of a proven owned, dead endpoint; unknown or live endpoints
+//! are preserved.
+//! The persistent directory comes from `HomePaths::wss_dir()` and survives host
+//! restarts independently of Caddy. Normal teardown retires owned links and
+//! records; existing Runner GC caps reclamation of crash/retired IDs. A directory
+//! flock coordinates lock creation/deletion, while ID locks fence live listeners.
 
 use std::fs::{File, Metadata};
 use std::io;
@@ -10,11 +15,12 @@ use std::path::{Path, PathBuf};
 use tokio::net::{UnixListener, UnixStream};
 use uuid::Uuid;
 
+#[cfg(test)]
 use crate::host_file::{DirMode, open_dir};
 
+pub(crate) mod gc;
+mod namespace;
 mod owner;
-
-pub const HOST_SOCKET_DIR: &str = "/run/okou-ws";
 
 pub struct RunnerWssSocket {
     listener: UnixListener,
@@ -26,34 +32,16 @@ pub struct RunnerWssSocket {
 }
 
 impl RunnerWssSocket {
-    /// `dir` must already exist with a trusted owner and no writable parent.
+    /// Create a missing WSS child under an existing trusted, non-writable parent.
+    /// Host provisioning supplies the dedicated group; existing state is validated.
     /// The caller holds the exclusive runner base-dir lock while binding.
     pub fn bind(dir: &Path, runner_id: Uuid) -> io::Result<Self> {
-        let parent = open_dir(dir, DirMode::TrustedParent, "runner WSS socket directory")?;
-        let directory = parent.metadata()?;
-        // Caddy may traverse this directory but must not list the socket names;
-        // other users must have no access. Do not silently accept a looser
-        // host configuration just because it is not group/other writable.
-        if directory.mode() & 0o7777 != 0o710 {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "runner WSS socket directory must have mode 0710",
-            ));
-        }
-        let group = nix::unistd::Gid::from_raw(directory.gid());
-        if dir == Path::new(HOST_SOCKET_DIR) {
-            let expected = nix::unistd::Group::from_name("okou-wss-caddy")?.ok_or_else(|| {
-                io::Error::new(io::ErrorKind::NotFound, "WSS Caddy group missing")
-            })?;
-            if directory.uid() != 0 || expected.gid != group {
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "WSS socket directory owner/group mismatch",
-                ));
-            }
-        }
+        let (parent, group) = namespace::ensure(dir)?;
         let name = format!("{runner_id}.sock");
-        let owner = owner::Owner::acquire(&parent, dir, runner_id)?;
+        let namespace_lock = namespace::NamespaceLock::acquire(&parent)?;
+        let owner = owner::Owner::acquire(&namespace_lock, dir, runner_id)?;
+        // The lifetime ID lock now protects all endpoint/journal operations.
+        drop(namespace_lock);
         owner.recover(&name, group)?;
         // Publish only after durable ownership evidence exists. A crash before
         // this point cannot strand an unrecorded runner-ID endpoint. The global
@@ -70,7 +58,7 @@ impl RunnerWssSocket {
             anchor_path: temporary,
             owner,
         };
-        // #38073 provisions root:okou-wss-caddy 0710 without setgid.
+        // Startup supplies root:okou-wss-caddy 0710 without setgid.
         // Linux's listener FD refers to a different inode from the pathname
         // socket. Set permissions on the filesystem inode, not that FD.
         socket.set_pathname_permissions(&parent, &temporary_name, group)?;
@@ -102,6 +90,7 @@ impl RunnerWssSocket {
         // Retain this private inode anchor until teardown. After SIGKILL it
         // prevents inode reuse from making a replacement look like our socket;
         // recovery requires it as well as the journal and exclusive flock.
+        parent.sync_all()?;
         Ok(socket)
     }
 
@@ -215,6 +204,9 @@ impl Drop for RunnerWssSocket {
                 tracing::warn!(%error, "failed to remove owned runner WSS endpoint");
             }
         }
+        if let Err(error) = self.owner.retire_metadata() {
+            tracing::warn!(%error, "failed to retire runner WSS ownership metadata");
+        }
     }
 }
 
@@ -226,7 +218,7 @@ mod tests {
 
     const CRASH_CHILD: &str = "runner_wss_socket::tests::crash_owned_socket_child";
 
-    async fn crash_fixture(window: &str) {
+    async fn crash_fixture(window: &str, reclaim: bool) {
         use std::process::Stdio;
         use std::time::Duration;
         use tokio::io::{AsyncBufReadExt, BufReader};
@@ -276,6 +268,15 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(!status.success());
+        if reclaim {
+            let home = crate::paths::HomePaths::with_root(root.path().to_owned());
+            let count_before = std::fs::read_dir(&dir).unwrap().count();
+            assert_eq!(gc::gc_wss_sockets(&home, true).unwrap(), 1);
+            assert_eq!(std::fs::read_dir(&dir).unwrap().count(), count_before);
+            assert_eq!(gc::gc_wss_sockets(&home, false).unwrap(), 1);
+            assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+            return;
+        }
         let socket = RunnerWssSocket::bind(&dir, id)
             .expect("proven owned dead inode must recover after SIGKILL");
         assert_eq!(socket.path, dir.join(format!("{id}.sock")));
@@ -287,6 +288,8 @@ mod tests {
         accepted.read_exact(&mut bytes).await.unwrap();
         assert_eq!(&bytes, b"ok");
         drop(socket);
+        assert!(!dir.join(format!("{id}.lock")).exists());
+        assert!(!dir.join(format!("{id}.owner")).exists());
         assert!(!dir.join(format!("{id}.sock")).exists());
         assert!(!std::fs::read_dir(&dir).unwrap().any(|e| {
             e.unwrap()
@@ -298,16 +301,26 @@ mod tests {
 
     #[tokio::test]
     async fn sigkill_recovers_published_owned_socket() {
-        crash_fixture("published").await;
+        crash_fixture("published", false).await;
     }
 
     #[tokio::test]
     async fn sigkill_recovers_recorded_anchor_before_publication() {
-        crash_fixture("anchor").await;
+        crash_fixture("anchor", false).await;
     }
 
     #[tokio::test]
-    #[ignore = "subprocess fixture; both SIGKILL parent tests invoke it explicitly"]
+    async fn sigkill_gc_reclaims_published_records_and_socket() {
+        crash_fixture("published", true).await;
+    }
+
+    #[tokio::test]
+    async fn sigkill_gc_reclaims_recorded_unpublished_anchor() {
+        crash_fixture("anchor", true).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "subprocess fixture; SIGKILL parent tests invoke it explicitly"]
     async fn crash_owned_socket_child() {
         use std::io::Write;
         assert!(
@@ -318,7 +331,9 @@ mod tests {
         let id = Uuid::parse_str(&std::env::var("VM0_WSS_CRASH_ID").unwrap()).unwrap();
         if std::env::var("VM0_WSS_CRASH_WINDOW").unwrap() == "anchor" {
             let parent = open_dir(&directory, DirMode::TrustedParent, "WSS crash fixture").unwrap();
-            let mut owner = owner::Owner::acquire(&parent, &directory, id).unwrap();
+            let namespace_lock = namespace::NamespaceLock::acquire(&parent).unwrap();
+            let mut owner = owner::Owner::acquire(&namespace_lock, &directory, id).unwrap();
+            drop(namespace_lock);
             let name = format!(".wss-{}", Uuid::new_v4().simple());
             let path = directory.join(&name);
             let _listener = UnixListener::bind(&path).unwrap();
@@ -425,11 +440,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_missing_unsafe_and_colliding_endpoints() {
+    async fn rejects_unsafe_and_colliding_endpoints() {
         let root = tempfile::tempdir().unwrap();
         let dir = root.path().join("wss");
         let id = Uuid::new_v4();
-        assert!(RunnerWssSocket::bind(&dir, id).is_err());
         std::fs::create_dir(&dir).unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
         assert!(RunnerWssSocket::bind(&dir, id).is_err());
