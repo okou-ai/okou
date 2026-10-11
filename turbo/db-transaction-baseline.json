@@ -127,11 +127,6 @@
       "owner": "restoreSubscription$"
     },
     {
-      "id": "TX-0065",
-      "file": "turbo/apps/api/src/signals/services/browser-authorization.service.ts",
-      "owner": "applyBrowserAuthorizationRequest$"
-    },
-    {
       "id": "TX-0066",
       "file": "turbo/apps/api/src/signals/services/browser-user-actions.service.ts",
       "owner": "persistBrowserUserAction"
