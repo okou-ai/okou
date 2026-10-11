@@ -1230,36 +1230,6 @@ export const createComputerUseCommand$ = command(
   },
 );
 
-async function selectComputerUseCommandContent(
-  db: Db,
-  params: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly commandId: string;
-    readonly hostId?: string;
-  },
-): Promise<Pick<ComputerUseCommandRow, "status" | "result"> | undefined> {
-  const [row] = await db
-    .select({
-      status: computerUseCommands.status,
-      result: computerUseCommands.result,
-    })
-    .from(computerUseCommands)
-    .where(
-      and(
-        eq(computerUseCommands.orgId, params.orgId),
-        eq(computerUseCommands.userId, params.userId),
-        eq(computerUseCommands.id, params.commandId),
-        inArray(computerUseCommands.kind, COMPUTER_USE_COMMANDS),
-        ...(params.hostId
-          ? [eq(computerUseCommands.hostId, params.hostId)]
-          : []),
-      ),
-    )
-    .limit(1);
-  return row;
-}
-
 /**
  * Command status reads are polled while an agent waits for a result, so they
  * run without a transaction or locks: one bounded read of the command, a
@@ -1319,7 +1289,7 @@ export const getComputerUseCommand$ = command(
 
 export const getComputerUseCommandScreenshot$ = command(
   async (
-    { get, set },
+    { get },
     params: {
       readonly orgId: string;
       readonly userId: string;
@@ -1332,7 +1302,24 @@ export const getComputerUseCommandScreenshot$ = command(
     readonly contentType: string;
   } | null> => {
     signal.throwIfAborted();
-    const row = await selectComputerUseCommandContent(set(writeDb$), params);
+    const [row] = await get(db$)
+      .select({
+        status: computerUseCommands.status,
+        result: computerUseCommands.result,
+      })
+      .from(computerUseCommands)
+      .where(
+        and(
+          eq(computerUseCommands.orgId, params.orgId),
+          eq(computerUseCommands.userId, params.userId),
+          eq(computerUseCommands.id, params.commandId),
+          inArray(computerUseCommands.kind, COMPUTER_USE_COMMANDS),
+          ...(params.hostId
+            ? [eq(computerUseCommands.hostId, params.hostId)]
+            : []),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
     if (row?.status !== "succeeded" || !row.result) {
       return null;
