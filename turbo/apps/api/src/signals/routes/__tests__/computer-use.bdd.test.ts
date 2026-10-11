@@ -217,7 +217,7 @@ function createScenario() {
 }
 
 describe("FILE-03 desktop computer-use runtime", () => {
-  it("creates a delegated authorization link and applies the selected host to the chat thread", async () => {
+  it("creates a delegated authorization link and keeps its host directory fresh across heartbeat and stop", async () => {
     const scenario = createScenario();
     const { bdd, api, createAuthorizationScenario } = scenario;
     return await withNowScopeForTest(() => {
@@ -248,6 +248,8 @@ describe("FILE-03 desktop computer-use runtime", () => {
           computerUseHostId: null,
           hosts: [expect.objectContaining({ id: host.hostId })],
         });
+        const initialDirectory = await api.listComputerUseHosts(actor);
+        expect(readable.hosts).toStrictEqual(initialDirectory.hosts);
 
         const applied = await api.applyComputerUseAuthorizationRequest(
           actor,
@@ -272,6 +274,46 @@ describe("FILE-03 desktop computer-use runtime", () => {
         );
         expect(completed.completedAt).not.toBeNull();
         expect(completed.computerUseHostId).toBe(host.hostId);
+
+        await api.heartbeatComputerUseHost(host.connection, {
+          hostName: "Renamed Studio Mac",
+          supportedCapabilities: ["apps.list"],
+          permissions: { accessibility: false, screenRecording: true },
+        });
+        const refreshedDirectory = await api.listComputerUseHosts(actor);
+        expect(refreshedDirectory.hosts).toStrictEqual([
+          expect.objectContaining({
+            id: host.hostId,
+            hostName: "Renamed Studio Mac",
+            displayName: "Renamed Studio Mac",
+            supportedCapabilities: ["apps.list"],
+            permissions: expect.objectContaining({
+              accessibility: false,
+              screenRecording: true,
+            }),
+            status: "online",
+          }),
+        ]);
+        const refreshed = await api.readComputerUseAuthorizationRequest(
+          actor,
+          requestToken,
+        );
+        expect(refreshed.hosts).toStrictEqual(refreshedDirectory.hosts);
+        expect(refreshed.computerUseHostId).toBe(host.hostId);
+        expect(refreshed.completedAt).toBe(completed.completedAt);
+
+        await api.stopComputerUseHost(host.connection);
+        const stoppedDirectory = await api.listComputerUseHosts(actor);
+        expect(stoppedDirectory.hosts).toStrictEqual(
+          refreshedDirectory.hosts.map((item) => {
+            return { ...item, status: "offline" };
+          }),
+        );
+        const stopped = await api.readComputerUseAuthorizationRequest(
+          actor,
+          requestToken,
+        );
+        expect(stopped).toStrictEqual({ ...refreshed, hosts: [] });
       });
     });
   });

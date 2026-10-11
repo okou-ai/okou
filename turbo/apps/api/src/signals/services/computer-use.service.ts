@@ -1114,48 +1114,31 @@ export const stopComputerUseHost$ = command(
   },
 );
 
-export async function projectComputerUseHosts(
-  args: {
-    readonly db: Pick<Db, "select">;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly now: Date;
-  },
-  signal: AbortSignal,
-): Promise<{ readonly hosts: readonly ComputerUseHost[] }> {
-  const hosts = await args.db
-    .select()
-    .from(computerUseHosts)
-    .where(
-      and(
-        eq(computerUseHosts.orgId, args.orgId),
-        eq(computerUseHosts.userId, args.userId),
-        isNull(computerUseHosts.revokedAt),
-      ),
-    )
-    .orderBy(desc(computerUseHosts.lastSeenAt));
-  signal.throwIfAborted();
-  return {
-    hosts: hosts.map((host) => {
-      return serializeHost(host, args.now);
-    }),
-  };
-}
-
 export const listComputerUseHosts$ = command(
   async (
-    { set },
+    { get },
     params: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
-  ) => {
-    return await projectComputerUseHosts(
-      {
-        db: set(writeDb$),
-        ...params,
-        now: nowDate(),
-      },
-      signal,
-    );
+  ): Promise<{ readonly hosts: readonly ComputerUseHost[] }> => {
+    const db = get(db$);
+    const now = nowDate();
+    const hosts = await db
+      .select()
+      .from(computerUseHosts)
+      .where(
+        and(
+          eq(computerUseHosts.orgId, params.orgId),
+          eq(computerUseHosts.userId, params.userId),
+          isNull(computerUseHosts.revokedAt),
+        ),
+      )
+      .orderBy(desc(computerUseHosts.lastSeenAt));
+    signal.throwIfAborted();
+    return {
+      hosts: hosts.map((host) => {
+        return serializeHost(host, now);
+      }),
+    };
   },
 );
 
