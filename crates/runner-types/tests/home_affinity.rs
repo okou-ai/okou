@@ -27,10 +27,10 @@ fn heartbeat() -> HeartbeatState {
 }
 
 #[test]
-fn preparation_does_not_advertise_home_support_from_outgoing_heartbeat() {
+fn empty_heartbeat_keeps_inventory_explicit_without_home_capability() {
     let body = serde_json::to_value(heartbeat()).unwrap();
     assert!(body.get("homeAffinityVersion").is_none());
-    assert!(body.get("heldHomeStates").is_none());
+    assert_eq!(body["heldHomeStates"], json!([]));
     assert_eq!(body["heldWorkspaceStates"], json!([]));
 }
 
@@ -40,7 +40,7 @@ fn capable_empty_heartbeat_keeps_capability_independent_of_held_images() {
     state.home_affinity_version = Some(HOME_AFFINITY_VERSION);
     let body = serde_json::to_value(&state).unwrap();
     assert_eq!(body["homeAffinityVersion"], 1);
-    assert!(body.get("heldHomeStates").is_none());
+    assert_eq!(body["heldHomeStates"], json!([]));
     state.held_home_states.push(HeldHomeState {
         reuse_key: "thread:thread-a".into(),
         last_completed_at: "2026-10-09T00:00:00.000Z".into(),
@@ -49,7 +49,7 @@ fn capable_empty_heartbeat_keeps_capability_independent_of_held_images() {
             home_affinity_version: HOME_AFFINITY_VERSION,
         }],
     });
-    let body = serde_json::to_value(state).unwrap();
+    let body = serde_json::to_value(&state).unwrap();
     assert_eq!(
         body["heldHomeStates"],
         json!([{
@@ -59,4 +59,9 @@ fn capable_empty_heartbeat_keeps_capability_independent_of_held_images() {
         }])
     );
     assert_eq!(body["heldWorkspaceStates"], json!([]));
+
+    state.held_home_states.clear();
+    let body = serde_json::to_value(state).unwrap();
+    assert_eq!(body["heldHomeStates"], json!([]));
+    assert_eq!(body["homeAffinityVersion"], 1);
 }
