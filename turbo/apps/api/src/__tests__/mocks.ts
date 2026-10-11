@@ -130,6 +130,7 @@ export interface ApiTestMocks {
     readonly channelGet: Mock<(channelName: string) => void>;
     readonly batchPublish: Mock<AblyBatchPublish>;
     readonly useRealBatchPublish: Mock<() => boolean>;
+    readonly useRealPublish: Mock<() => boolean>;
     readonly publish: AsyncMock;
     readonly presenceGet: AsyncMock;
     readonly createTokenRequest: AsyncMock;
@@ -565,6 +566,7 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
       channelGet: vi.fn<(channelName: string) => void>(),
       batchPublish: vi.fn<AblyBatchPublish>(),
       useRealBatchPublish: vi.fn<() => boolean>(),
+      useRealPublish: vi.fn<() => boolean>(),
       publish: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       presenceGet: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       createTokenRequest: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -1055,6 +1057,8 @@ vi.mock("signal-timers", async (importOriginal) => {
 vi.mock("ably", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ably")>();
   class MockRest {
+    private realPublishClient: InstanceType<typeof actual.Rest> | undefined;
+
     constructor(private readonly options: ClientOptions) {}
 
     readonly batchPublish: AblyBatchPublish = async (spec) => {
@@ -1082,6 +1086,10 @@ vi.mock("ably", async (importOriginal) => {
     readonly channels = {
       get: (channelName: string) => {
         apiTestMocks.ably.channelGet(channelName);
+        if (apiTestMocks.ably.useRealPublish()) {
+          this.realPublishClient ??= new actual.Rest(this.options);
+          return this.realPublishClient.channels.get(channelName);
+        }
         return {
           publish: apiTestMocks.ably.publish,
           presence: {
@@ -1486,6 +1494,8 @@ export function resetApiTestMocks(): void {
   apiTestMocks.ably.channelGet.mockReset();
   apiTestMocks.ably.batchPublish.mockReset();
   apiTestMocks.ably.useRealBatchPublish.mockReset();
+  apiTestMocks.ably.useRealPublish.mockReset();
+  apiTestMocks.ably.useRealPublish.mockReturnValue(false);
   apiTestMocks.ably.publish.mockReset();
   apiTestMocks.ably.publish.mockResolvedValue(undefined);
   apiTestMocks.ably.presenceGet.mockReset();
