@@ -869,9 +869,9 @@ const publishGoogleFormsActivation$ = command(
       return GOOGLE_FORMS_WATCH_CHANGED;
     }
     const currentTime = nowDate();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0168; new non-billing transactions are prohibited.
-    const enabledAutomation = await db.transaction(async (tx) => {
-      const [enabled] = await tx
+    const columns = workflowAutomationColumns();
+    const enabled = db.$with("enabled_google_forms_automation").as(
+      db
         .update(workflowAutomations)
         .set({
           eventConnectorId: args.connectorId,
@@ -897,20 +897,39 @@ const publishGoogleFormsActivation$ = command(
             isNull(workflowAutomations.officialBlueprintKey),
           ),
         )
-        .returning(workflowAutomationColumns());
-      if (!enabled) {
-        return undefined;
-      }
-      // Explicit activation starts from the prepared baseline.
-      await tx
+        .returning({
+          ...columns,
+          observedUpdatedAt: columns.observedUpdatedAt.as("observedUpdatedAt"),
+          observedXmin: columns.observedXmin.as("observedXmin"),
+        }),
+    );
+    // Only the actual UPDATE row starts from the prepared activation baseline.
+    const seededCursor = db.$with("seeded_google_forms_cursor").as(
+      db
         .insert(googleFormsAutomationCursors)
-        .values({
-          automationId: activation.automationId,
-          watchStateId: state.id,
-          lastSeenSubmittedTime: cursor,
-          createdAt: currentTime,
-          updatedAt: currentTime,
-        })
+        .select(
+          db
+            .select({
+              automationId: enabled.id,
+              watchStateId:
+                sql`${sql.param(state.id, googleFormsAutomationCursors.watchStateId)}`
+                  .mapWith(googleFormsAutomationCursors.watchStateId)
+                  .as("watch_state_id"),
+              lastSeenSubmittedTime:
+                sql`${sql.param(cursor, googleFormsAutomationCursors.lastSeenSubmittedTime)}`
+                  .mapWith(googleFormsAutomationCursors.lastSeenSubmittedTime)
+                  .as("last_seen_submitted_time"),
+              createdAt:
+                sql`${sql.param(currentTime, googleFormsAutomationCursors.createdAt)}`
+                  .mapWith(googleFormsAutomationCursors.createdAt)
+                  .as("created_at"),
+              updatedAt:
+                sql`${sql.param(currentTime, googleFormsAutomationCursors.updatedAt)}`
+                  .mapWith(googleFormsAutomationCursors.updatedAt)
+                  .as("updated_at"),
+            })
+            .from(enabled),
+        )
         .onConflictDoUpdate({
           target: googleFormsAutomationCursors.automationId,
           set: {
@@ -918,9 +937,13 @@ const publishGoogleFormsActivation$ = command(
             lastSeenSubmittedTime: cursor,
             updatedAt: currentTime,
           },
-        });
-      return enabled;
-    });
+        }),
+    );
+    // The cursor DML completes even though the result selects the enabled row.
+    const [enabledAutomation] = await db
+      .with(enabled, seededCursor)
+      .select()
+      .from(enabled);
     signal.throwIfAborted();
     return enabledAutomation
       ? { kind: "ok", watchStateId: state.id, enabledAutomation }
