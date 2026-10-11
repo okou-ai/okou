@@ -538,10 +538,9 @@ export function discordOrgStatus(args: {
   const capability$ = discordMessageContentCapability();
   const role$ = discordMemberRole(args);
   const agent$ = discordEffectiveAgent(args);
+  const enabled$ = discordIntegrationEnabledForOwner(args.orgId, args.userId);
   return computed(async (get): Promise<DiscordOrgStatus> => {
-    const enabled = await get(
-      discordIntegrationEnabledForOwner(args.orgId, args.userId),
-    );
+    const enabled = await get(enabled$);
     const config = getDiscordAppConfig();
     const status: DiscordOrgStatus = {
       isAvailable: enabled && config !== null,
