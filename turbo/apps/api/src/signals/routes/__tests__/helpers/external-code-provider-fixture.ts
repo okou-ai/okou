@@ -169,6 +169,7 @@ export function createExternalCodeProviderFixture(
       if (!deleted.ok) {
         throw deleted.error;
       }
+      expect(invalidRequests).toStrictEqual([]);
     },
   };
 }
