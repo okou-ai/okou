@@ -1,7 +1,5 @@
 """Exercise generated Caddy routes and the real Unix permission boundary."""
 
-import base64
-import hashlib
 import importlib.util
 import json
 import os
@@ -19,6 +17,10 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from socketserver import ThreadingUnixStreamServer
 
+# RFC 6455 section 1.3 challenge/response for the synthetic WebSocket peer.
+WEBSOCKET_KEY = "dGhlIHNhbXBsZSBub25jZQ=="
+WEBSOCKET_ACCEPT = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+
 
 class EchoHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -27,16 +29,11 @@ class EchoHandler(BaseHTTPRequestHandler):
         if self.headers.get("Upgrade", "").lower() != "websocket":
             self.send_error(400)
             return
-        key = self.headers["Sec-WebSocket-Key"]
-        accept = base64.b64encode(
-            hashlib.sha1(
-                (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()
-            ).digest()
-        ).decode()
+        assert self.headers["Sec-WebSocket-Key"] == WEBSOCKET_KEY
         self.send_response(101)
         self.send_header("Upgrade", "websocket")
         self.send_header("Connection", "Upgrade")
-        self.send_header("Sec-WebSocket-Accept", accept)
+        self.send_header("Sec-WebSocket-Accept", WEBSOCKET_ACCEPT)
         self.end_headers()
         header = self.rfile.read(2)
         assert header[0] == 0x81 and header[1] & 0x80
@@ -57,10 +54,9 @@ class EchoHandler(BaseHTTPRequestHandler):
 def response(context, port, path, websocket=False):
     with socket.create_connection(("127.0.0.1", port), timeout=5) as raw:
         with context.wrap_socket(raw, server_hostname="runner-wss.example.org") as peer:
-            key = base64.b64encode(os.urandom(16)).decode()
             upgrade = (
                 "Upgrade: websocket\r\nConnection: Upgrade\r\n"
-                f"Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: {key}\r\n"
+                f"Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: {WEBSOCKET_KEY}\r\n"
                 if websocket
                 else "Connection: close\r\n"
             )
@@ -77,14 +73,7 @@ def response(context, port, path, websocket=False):
                 name, value = line.decode().split(":", 1)
                 headers[name.lower()] = value.strip()
             if status == 101:
-                assert (
-                    headers["sec-websocket-accept"]
-                    == base64.b64encode(
-                        hashlib.sha1(
-                            (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()
-                        ).digest()
-                    ).decode()
-                )
+                assert headers["sec-websocket-accept"] == WEBSOCKET_ACCEPT
                 peer.sendall(
                     b"\x81\x84mask"
                     + bytes(v ^ b"mask"[i % 4] for i, v in enumerate(b"ping"))
