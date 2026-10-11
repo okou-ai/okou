@@ -56,9 +56,7 @@ export const rustTypeRootDoc = [
 export const rustTypeModuleDocs = [
   {
     rustModulePath: ["runners", "wss"],
-    rustDoc: [
-      "Official Runner ticket redemption and current WSS access authority.",
-    ],
+    rustDoc: ["Official Runner one-use WSS ticket redemption."],
   },
   {
     rustModulePath: ["runners", "runs", "cancellation"],

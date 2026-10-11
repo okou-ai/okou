@@ -15,8 +15,6 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 struct MockTickets {
     run: RunId,
     seen: Mutex<HashSet<String>>,
-    available: std::sync::atomic::AtomicBool,
-    checks: std::sync::atomic::AtomicUsize,
 }
 
 #[async_trait]
@@ -27,7 +25,7 @@ impl TicketConsumer for MockTickets {
         runner_id: Uuid,
         origin: &str,
         ticket: &str,
-    ) -> Option<Key> {
+    ) -> Option<()> {
         if run_id != self.run || runner_id.is_nil() || origin != "wss://runner.okou.ai:443" {
             return None;
         }
@@ -35,39 +33,7 @@ impl TicketConsumer for MockTickets {
             .lock()
             .unwrap()
             .insert(ticket.to_owned())
-            .then_some(Key {
-                run_id,
-                digest: digest_of(ticket),
-                org_id: "org".to_owned(),
-                user_id: "user".to_owned(),
-            })
-    }
-
-    async fn authorized(
-        &self,
-        runner_id: Uuid,
-        origin: &str,
-        requested: &[Key],
-    ) -> Option<Vec<Key>> {
-        self.checks
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        if !self.available.load(std::sync::atomic::Ordering::SeqCst)
-            || runner_id.is_nil()
-            || origin != "wss://runner.okou.ai:443"
-        {
-            return None;
-        }
-        let seen = self.seen.lock().unwrap();
-        Some(
-            requested
-                .iter()
-                .filter(|key| {
-                    key.run_id == self.run
-                        && seen.iter().any(|ticket| digest_of(ticket) == key.digest)
-                })
-                .cloned()
-                .collect(),
-        )
+            .then_some(())
     }
 }
 
@@ -80,29 +46,15 @@ struct HeldTickets {
 impl TicketConsumer for HeldTickets {
     async fn consume(
         &self,
-        run_id: RunId,
+        _run_id: RunId,
         _runner_id: Uuid,
         _origin: &str,
-        ticket: &str,
-    ) -> Option<Key> {
+        _ticket: &str,
+    ) -> Option<()> {
         let resume = self.resume.lock().unwrap().take().unwrap();
         self.started.notify_one();
         resume.await.ok()?;
-        Some(Key {
-            run_id,
-            digest: digest_of(ticket),
-            org_id: "org".to_owned(),
-            user_id: "user".to_owned(),
-        })
-    }
-
-    async fn authorized(
-        &self,
-        _runner_id: Uuid,
-        _origin: &str,
-        requested: &[Key],
-    ) -> Option<Vec<Key>> {
-        Some(requested.to_vec())
+        Some(())
     }
 }
 
@@ -162,8 +114,6 @@ struct Fixture {
     assignment_cancelled: CancellationToken,
     peers: tokio::sync::Mutex<mpsc::Receiver<DuplexStream>>,
     ctx: ConnectionContext,
-    tickets: Arc<MockTickets>,
-    _refresh: RefreshTask,
 }
 
 impl Fixture {
@@ -197,12 +147,7 @@ impl Fixture {
         let tickets = Arc::new(MockTickets {
             run,
             seen: Mutex::new(HashSet::new()),
-            available: std::sync::atomic::AtomicBool::new(true),
-            checks: std::sync::atomic::AtomicUsize::new(0),
         });
-        let authorizations = Authorizations::default();
-        let refresh =
-            authorizations.start(runner, canonical_origin("runner.okou.ai"), tickets.clone());
         let ctx = ConnectionContext {
             runner_id: runner,
             origin: canonical_origin("runner.okou.ai"),
@@ -210,7 +155,6 @@ impl Fixture {
             guest,
             active_runs,
             status,
-            authorizations,
         };
         Self {
             dir,
@@ -222,8 +166,6 @@ impl Fixture {
             assignment_cancelled,
             peers: tokio::sync::Mutex::new(peers_rx),
             ctx,
-            tickets,
-            _refresh: refresh,
         }
     }
 
@@ -246,7 +188,6 @@ impl Fixture {
             guest: self.ctx.guest.clone(),
             active_runs: self.ctx.active_runs.clone(),
             status: Arc::clone(&self.ctx.status),
-            authorizations: self.ctx.authorizations.clone(),
         };
         let task = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
@@ -1024,62 +965,7 @@ async fn disconnect_preserves_run_and_requires_a_fresh_ticket_to_reconnect() {
 }
 
 #[tokio::test]
-async fn api_outage_expires_idle_and_blocked_guest_wss_only() {
-    for blocked in [false, true] {
-        let fixture = Fixture::with_echo(!blocked).await;
-        let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
-        let mut ws = client.unwrap();
-        ws.send(first(fixture.run, &"A".repeat(43))).await.unwrap();
-        assert_eq!(
-            ws.next().await.unwrap().unwrap().into_text().unwrap(),
-            r#"{"type":"auth.ok"}"#
-        );
-        let held_peer = if blocked {
-            let peer = fixture.peers.lock().await.recv().await.unwrap();
-            ws.send(Message::Binary(vec![7; MAX_FRAME].into()))
-                .await
-                .unwrap();
-            Some(peer) // One-byte native capacity keeps the real Guest write blocked.
-        } else {
-            None
-        };
-        fixture
-            .tickets
-            .available
-            .store(false, std::sync::atomic::Ordering::SeqCst);
-        let closed = tokio::time::timeout(LEASE_WINDOW + Duration::from_secs(1), ws.next())
-            .await
-            .unwrap();
-        assert!(matches!(
-            closed,
-            None | Some(Err(_)) | Some(Ok(Message::Close(_)))
-        ));
-        task.await.unwrap();
-        assert_eq!(
-            fixture.ctx.status.running_sandbox(fixture.run).await,
-            Some(fixture.sandbox)
-        );
-        assert!(
-            fixture
-                .ctx
-                .active_runs
-                .watch_live_run(fixture.run)
-                .is_some()
-        );
-        assert!(!fixture.assignment_cancelled.is_cancelled());
-        assert!(
-            fixture
-                .tickets
-                .checks
-                .load(std::sync::atomic::Ordering::SeqCst)
-                <= 4
-        );
-        drop(held_peer);
-    }
-}
-
-#[tokio::test]
-async fn http_control_failure_closes_real_guest_wss_without_cancelling_execution() {
+async fn admitted_duplex_survives_api_outage_while_new_admission_fails() {
     use httpmock::prelude::*;
     let server = MockServer::start_async().await;
     let mut fixture = Fixture::new().await;
@@ -1092,34 +978,16 @@ async fn http_control_failure_closes_real_guest_wss_without_cancelling_execution
         then.status(200).json_body(serde_json::json!({"runId": fixture.run, "runnerId": fixture.runner,
             "origin": fixture.ctx.origin, "orgId": "org-test", "userId": "owner-test", "digest": digest}));
     }).await;
-    let check = server
-        .mock_async(|when, then| {
-            when.method(POST)
-                .path("/api/runners/wss/authorizations/check")
-                .header("authorization", "Bearer official-test-token")
-                .json_body_obj(
-                    &serde_json::json!({"runnerId": fixture.runner, "origin": fixture.ctx.origin,
-                "authorizations": [{"runId": fixture.run, "digest": digest,
-                    "orgId": "org-test", "userId": "owner-test"}]}),
-                );
-            then.status(503);
-        })
-        .await;
     fixture.ctx.consumer = Arc::new(ApiTicketConsumer::new(
         HttpClient::new(runner_provider::http::HttpClientConfig {
             api_url: server.base_url(),
             vercel_bypass: None,
-            client_session_id: "wss-control-test".into(),
+            client_session_id: "wss-outage-test".into(),
             runner_version: env!("CARGO_PKG_VERSION"),
         })
         .unwrap(),
         "official-test-token".into(),
     ));
-    fixture._refresh = fixture.ctx.authorizations.start(
-        fixture.runner,
-        fixture.ctx.origin.clone(),
-        fixture.ctx.consumer.clone(),
-    );
     let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
     let mut ws = client.unwrap();
     ws.send(first(fixture.run, &"A".repeat(43))).await.unwrap();
@@ -1127,16 +995,42 @@ async fn http_control_failure_closes_real_guest_wss_without_cancelling_execution
         ws.next().await.unwrap().unwrap().into_text().unwrap(),
         r#"{"type":"auth.ok"}"#
     );
-    let closed = tokio::time::timeout(LEASE_WINDOW + Duration::from_secs(1), ws.next())
+    consume.assert_async().await;
+    consume.delete_async().await;
+    let unavailable = server
+        .mock_async(|when, then| {
+            when.method(POST);
+            then.status(503);
+        })
+        .await;
+
+    // Complete real socket admission before advancing the idle timer phase.
+    // Existing access follows the live Guest, even beyond ticket redemption TTL.
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(60)).await;
+    tokio::time::resume();
+    ws.send(Message::Binary(b"still running".to_vec().into()))
         .await
         .unwrap();
-    assert!(matches!(
-        closed,
-        None | Some(Err(_)) | Some(Ok(Message::Close(_)))
-    ));
-    task.await.unwrap();
-    consume.assert_async().await;
-    assert!((1..=3).contains(&check.calls_async().await));
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(2), ws.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .into_data(),
+        b"still running".as_slice()
+    );
+
+    let (client, rejected_task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
+    let mut rejected = client.unwrap();
+    rejected
+        .send(first(fixture.run, &"B".repeat(43)))
+        .await
+        .unwrap();
+    denied(&mut rejected).await;
+    rejected_task.await.unwrap();
+    unavailable.assert_async().await;
     assert_eq!(
         fixture.ctx.status.running_sandbox(fixture.run).await,
         Some(fixture.sandbox)
@@ -1149,146 +1043,14 @@ async fn http_control_failure_closes_real_guest_wss_without_cancelling_execution
             .is_some()
     );
     assert!(!fixture.assignment_cancelled.is_cancelled());
-}
 
-#[tokio::test]
-async fn check_uses_official_auth_and_rejects_unsolicited_duplicate_and_malformed_results() {
-    use httpmock::prelude::*;
-    let server = MockServer::start_async().await;
-    let runner = Uuid::new_v4();
-    let key = Key {
-        run_id: RunId::new_v4(),
-        digest: "1".repeat(64),
-        org_id: "org".to_owned(),
-        user_id: "user".to_owned(),
-    };
-    let origin = "wss://runner.okou.ai:443";
-    let consumer = ApiTicketConsumer::new(
-        HttpClient::new(runner_provider::http::HttpClientConfig {
-            api_url: server.base_url(),
-            vercel_bypass: None,
-            client_session_id: "wss-check-test".into(),
-            runner_version: env!("CARGO_PKG_VERSION"),
-        })
-        .unwrap(),
-        "official-test-token".into(),
-    );
-    for (response, valid) in [
-        (serde_json::json!({"authorized": [key]}), true),
-        (serde_json::json!({"authorized": []}), true),
-        (serde_json::json!({"authorized": [key, key]}), false),
-        (
-            serde_json::json!({"authorized": [Key { digest: "2".repeat(64), ..key.clone() }]}),
-            false,
-        ),
-        (
-            serde_json::json!({"authorized": [Key { run_id: RunId::new_v4(), ..key.clone() }]}),
-            false,
-        ),
-        (
-            serde_json::json!({"authorized": [Key { org_id: "other-org".into(), ..key.clone() }]}),
-            false,
-        ),
-        (
-            serde_json::json!({"authorized": [Key { user_id: "other-user".into(), ..key.clone() }]}),
-            false,
-        ),
-        (serde_json::json!({"authorized": "invalid"}), false),
-        (serde_json::json!({}), false),
-    ] {
-        let request = server.mock_async(|when, then| {
-            when.method(POST).path("/api/runners/wss/authorizations/check")
-                .header("authorization", "Bearer official-test-token")
-                .json_body_obj(&serde_json::json!({"runnerId": runner, "origin": origin, "authorizations": [key]}));
-            then.status(200).json_body(response);
-        }).await;
-        assert_eq!(
-            consumer
-                .authorized(runner, origin, std::slice::from_ref(&key))
-                .await
-                .is_some(),
-            valid
-        );
-        request.assert_async().await;
-        request.delete_async().await;
-    }
-    assert!(consumer.authorized(runner, origin, &[]).await.is_none());
-    assert!(
-        consumer
-            .authorized(runner, origin, &vec![key; MAX_CONNECTIONS + 1])
-            .await
-            .is_none()
-    );
-}
-
-#[tokio::test]
-async fn maximum_distinct_ticket_batch_fits_the_bounded_control_response() {
-    use httpmock::prelude::*;
-    let server = MockServer::start_async().await;
-    let runner = Uuid::new_v4();
-    let run_id = RunId::new_v4();
-    let requested: Vec<_> = (0..MAX_CONNECTIONS)
-        .map(|index| Key {
-            run_id,
-            digest: format!("{index:064x}"),
-            org_id: "o".repeat(1700),
-            user_id: "u".repeat(1700),
-        })
-        .collect();
-    let response = serde_json::json!({"authorized": requested});
-    let consume = serde_json::json!({
-        "runId": run_id, "runnerId": runner, "origin": "wss://runner.okou.ai:443",
-        "orgId": requested[0].org_id, "userId": requested[0].user_id,
-        "digest": requested[0].digest,
-    });
-    assert!(serde_json::to_vec(&consume).unwrap().len() <= MAX_AUTHORITY_RESPONSE_BYTES);
-    assert!(serde_json::to_vec(&response).unwrap().len() <= MAX_RENEWAL_RESPONSE_BYTES);
-    // Valid JSON with excessive trailing whitespace must still obey the wire bound.
-    let oversized_response = format!(
-        "{}{}",
-        serde_json::to_string(&response).unwrap(),
-        " ".repeat(MAX_RENEWAL_RESPONSE_BYTES)
-    );
-    let request = server
-        .mock_async(|when, then| {
-            when.method(POST)
-                .path("/api/runners/wss/authorizations/check")
-                .header("authorization", "Bearer official-test-token");
-            then.status(200).json_body(response);
-        })
-        .await;
-    let consumer = ApiTicketConsumer::new(
-        HttpClient::new(runner_provider::http::HttpClientConfig {
-            api_url: server.base_url(),
-            vercel_bypass: None,
-            client_session_id: "wss-max-batch-test".into(),
-            runner_version: env!("CARGO_PKG_VERSION"),
-        })
-        .unwrap(),
-        "official-test-token".into(),
-    );
-    assert_eq!(
-        consumer
-            .authorized(runner, "wss://runner.okou.ai:443", &requested)
-            .await,
-        Some(requested.clone())
-    );
-    request.assert_async().await;
-    request.delete_async().await;
-    let oversized = server
-        .mock_async(|when, then| {
-            when.method(POST)
-                .path("/api/runners/wss/authorizations/check");
-            then.status(200).body(oversized_response);
-        })
-        .await;
-    assert!(
-        consumer
-            .authorized(runner, "wss://runner.okou.ai:443", &requested)
-            .await
-            .is_none()
-    );
-    oversized.assert_async().await;
+    // The same admitted transport still closes on local Guest cancellation.
+    fixture.assignment_cancelled.cancel();
+    denied(&mut ws).await;
+    tokio::time::timeout(Duration::from_secs(2), task)
+        .await
+        .unwrap()
+        .unwrap();
 }
 
 #[tokio::test]

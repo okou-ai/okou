@@ -2494,7 +2494,7 @@ pub mod runners {
         }
     }
 
-    /// Official Runner ticket redemption and current WSS access authority.
+    /// Official Runner one-use WSS ticket redemption.
     pub mod wss {
         /// Exact redeemed ticket digest, audience and owner; not Run cancellation.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

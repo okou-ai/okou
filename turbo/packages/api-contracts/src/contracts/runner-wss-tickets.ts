@@ -8,14 +8,6 @@ const c = initContract();
 // A 256-bit base64url credential. A run/runner/hostname alone is never a ticket.
 const ticketSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const runIdSchema = z.uuid("Run ID must be a valid UUID").toLowerCase();
-const authorizationSchema = z
-  .object({
-    runId: runIdSchema,
-    digest: z.string().regex(/^[0-9a-f]{64}$/),
-    orgId: z.string().min(1),
-    userId: z.string().min(1),
-  })
-  .strict();
 
 export const runnerWssTicketsContract = c.router({
   bootstrap: {
@@ -64,25 +56,5 @@ export const runnerWssTicketsContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Atomically redeem a WSS ticket from an official Runner",
-  },
-  check: {
-    method: "POST",
-    path: "/api/runners/wss/authorizations/check",
-    headers: authHeadersSchema,
-    body: z
-      .object({
-        runnerId: z.uuid().toLowerCase(),
-        origin: z.string().max(300),
-        authorizations: z.array(authorizationSchema).min(1).max(32),
-      })
-      .strict(),
-    responses: {
-      200: z.object({ authorized: z.array(authorizationSchema).max(32) }),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-    },
-    summary:
-      "Check current Run authority for admitted sessions from an official Runner",
   },
 });

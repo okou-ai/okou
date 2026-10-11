@@ -35,13 +35,11 @@ export interface RustRouteBinding {
 }
 
 export const rustRouteBindings = [
-  ...(["consume", "check"] as const).map((action) => {
-    return {
-      route: runnerWssTicketsContract[action],
-      rustModulePath: ["runners", "wss"],
-      rustConstName: action.toUpperCase(),
-    };
-  }),
+  {
+    route: runnerWssTicketsContract.consume,
+    rustModulePath: ["runners", "wss"],
+    rustConstName: "CONSUME",
+  },
   ...(["resolve", "check"] as const).map((action) => {
     return {
       route: runnerVncContract[action],

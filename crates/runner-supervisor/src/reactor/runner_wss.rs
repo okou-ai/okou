@@ -35,15 +35,10 @@ const MAX_FRAME: usize = 64 * 1024;
 const MAX_CONNECTIONS: usize = 32;
 const MAX_HANDSHAKES: usize = 16;
 const MAX_AUTHORITY_RESPONSE_BYTES: usize = 4 * 1024;
-// Each admitted owner snapshot comes from one bounded consumption response.
-const MAX_RENEWAL_RESPONSE_BYTES: usize = MAX_CONNECTIONS * MAX_AUTHORITY_RESPONSE_BYTES;
 
 fn digest_of(ticket: &str) -> String {
     hex::encode(Sha256::digest(ticket.as_bytes()))
 }
-
-mod authorization;
-use authorization::{Authorizations, Key, LEASE_WINDOW, RefreshTask};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -61,20 +56,6 @@ struct ConsumeRequest<'a> {
     ticket: &'a str,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CheckRequest<'a> {
-    runner_id: Uuid,
-    origin: &'a str,
-    authorizations: &'a [Key],
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CheckResponse {
-    authorized: Vec<Key>,
-}
-
 #[async_trait]
 pub(super) trait TicketConsumer: Send + Sync {
     async fn consume(
@@ -83,13 +64,7 @@ pub(super) trait TicketConsumer: Send + Sync {
         runner_id: Uuid,
         origin: &str,
         ticket: &str,
-    ) -> Option<Key>;
-    async fn authorized(
-        &self,
-        runner_id: Uuid,
-        origin: &str,
-        requested: &[Key],
-    ) -> Option<Vec<Key>>;
+    ) -> Option<()>;
 }
 
 pub(super) struct ApiTicketConsumer {
@@ -111,7 +86,7 @@ impl TicketConsumer for ApiTicketConsumer {
         runner_id: Uuid,
         origin: &str,
         ticket: &str,
-    ) -> Option<Key> {
+    ) -> Option<()> {
         let payload = ConsumeRequest {
             run_id,
             runner_id,
@@ -134,41 +109,7 @@ impl TicketConsumer for ApiTicketConsumer {
             && !body.org_id.is_empty()
             && !body.user_id.is_empty()
             && body.digest == digest_of(ticket))
-        .then_some(Key {
-            run_id,
-            digest: body.digest,
-            org_id: body.org_id,
-            user_id: body.user_id,
-        })
-    }
-
-    async fn authorized(
-        &self,
-        runner_id: Uuid,
-        origin: &str,
-        requested: &[Key],
-    ) -> Option<Vec<Key>> {
-        if requested.is_empty() || requested.len() > MAX_CONNECTIONS {
-            return None;
-        }
-        let response = self
-            .http
-            .request_route(routes::CHECK, &self.token)
-            .json(&CheckRequest {
-                runner_id,
-                origin,
-                authorizations: requested,
-            })
-            .timeout(authorization::REQUEST_TIMEOUT)
-            .send("runner_wss_authorizations_check")
-            .await
-            .ok()?;
-        let body: CheckResponse =
-            read_authority_result(response, MAX_RENEWAL_RESPONSE_BYTES).await?;
-        let unique: std::collections::HashSet<_> = body.authorized.iter().cloned().collect();
-        (unique.len() == body.authorized.len()
-            && body.authorized.iter().all(|key| requested.contains(key)))
-        .then_some(body.authorized)
+        .then_some(())
     }
 }
 
@@ -199,8 +140,6 @@ pub(super) struct Admission {
     connections: Arc<Semaphore>,
     handshakes: Arc<Semaphore>,
     tasks: JoinSet<()>,
-    authorizations: Authorizations,
-    refresh: Option<RefreshTask>,
 }
 
 impl Admission {
@@ -213,8 +152,6 @@ impl Admission {
         status: Arc<StatusTracker>,
     ) -> Self {
         let origin = hostname.and_then(canonical_origin);
-        let authorizations = Authorizations::default();
-        let refresh = authorizations.start(runner_id, origin.clone(), Arc::clone(&consumer));
         Self {
             runner_id,
             origin,
@@ -225,8 +162,6 @@ impl Admission {
             connections: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
             handshakes: Arc::new(Semaphore::new(MAX_HANDSHAKES)),
             tasks: JoinSet::new(),
-            authorizations,
-            refresh: Some(refresh),
         }
     }
 
@@ -248,7 +183,6 @@ impl Admission {
             guest: self.guest.clone(),
             active_runs: self.active_runs.clone(),
             status: Arc::clone(&self.status),
-            authorizations: self.authorizations.clone(),
         };
         self.tasks.spawn(async move {
             let _connection = connection;
@@ -268,9 +202,6 @@ impl Admission {
 
     pub async fn stop(&mut self) {
         self.tasks.shutdown().await;
-        if let Some(refresh) = self.refresh.take() {
-            refresh.stop().await;
-        }
     }
 }
 
@@ -426,7 +357,6 @@ struct ConnectionContext {
     guest: RunGuestChannels,
     active_runs: ActiveRuns,
     status: Arc<StatusTracker>,
-    authorizations: Authorizations,
 }
 
 fn canonical_origin(hostname: &str) -> Option<String> {
@@ -506,17 +436,20 @@ async fn handle(
             return None;
         }
         let origin = ctx.origin.as_deref()?;
-        let started = tokio::time::Instant::now();
-        let key = ctx
-            .consumer
+        ctx.consumer
             .consume(first.run_id, ctx.runner_id, origin, &first.ticket)
             .await?;
-        let lease = ctx.authorizations.track(key, started + LEASE_WINDOW)?;
-        // Lease expiry remains observable even through Guest activation and a
-        // status-lock await; a delayed consume never starts a new five seconds.
+        // The pre-auth timeout bounds all activation. Run release and Guest
+        // cancellation remain observable through activation and blocked writes.
+        let mut admission_live = live.clone();
         let guest = tokio::select! {
             biased;
-            () = lease.closed() => return None,
+            () = async {
+                loop {
+                    let released = *admission_live.borrow_and_update() == ActiveRunReuseState::Released;
+                    if released || admission_live.changed().await.is_err() { return; }
+                }
+            } => return None,
             result = async {
                 if *live.borrow() == ActiveRunReuseState::Released
                     || ctx.status.running_sandbox(first.run_id).await != Some(sandbox_id) {
@@ -539,21 +472,15 @@ async fn handle(
                 Some(guest)
             } => result?,
         };
-        Some((ws, first.run_id, sandbox_id, live, guest, lease))
+        Some((ws, first.run_id, sandbox_id, live, guest))
     })
     .await;
-    let Ok(Some((mut ws, run_id, sandbox_id, mut live, guest, lease))) = admitted else {
+    let Ok(Some((mut ws, run_id, sandbox_id, mut live, guest))) = admitted else {
         return;
     };
     drop(handshake);
     let observer = guest.cancellation();
-    let mut guest_cancelled = Box::pin(async {
-        tokio::select! {
-            biased;
-            () = lease.closed() => (),
-            () = observer.cancelled() => (),
-        }
-    });
+    let mut guest_cancelled = Box::pin(observer.cancelled());
     let (mut incoming, outgoing) = guest.split();
     // Native frame reads are not cancellation-safe partway through a header.
     // Unfold owns the in-flight receive across next() cancellations caused by

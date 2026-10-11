@@ -8,10 +8,9 @@ import { command } from "ccstate";
 import { and, eq, gt, inArray, lte, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   buildRunnerWssTargetQuery,
-  buildRunnerWssAuthorizationQuery,
   runnerWssTargetFromRow,
 } from "./runner-wss-target.service";
 
@@ -219,47 +218,6 @@ export const consumeRunnerWssTicket$ = command(
         )
         .returning({ digest: runnerWssTickets.digest });
       return consumed ? stored : null;
-    });
-  },
-);
-
-/** Current Run authority for sessions already admitted by one-use redemption. */
-export const checkRunnerWssAuthorizations$ = command(
-  async (
-    { get },
-    args: {
-      readonly runnerId: string;
-      readonly origin: string;
-      readonly authorizations: readonly {
-        readonly runId: string;
-        readonly digest: string;
-        readonly orgId: string;
-        readonly userId: string;
-      }[];
-    },
-    signal: AbortSignal,
-  ) => {
-    signal.throwIfAborted();
-    const query = buildRunnerWssAuthorizationQuery({ ...args, now: nowDate() });
-    // db$ reads the same DATABASE_URL writer, never a replica. Initial one-use
-    // consumption and the local live Guest assignment remain mandatory.
-    const rows = await get(db$)
-      .select(query.selection)
-      .from(agentRuns)
-      .innerJoin(activeAgentRuns, query.activeRunJoin)
-      .innerJoin(runnerState, query.runnerStateJoin)
-      .where(query.where);
-    signal.throwIfAborted();
-    return args.authorizations.filter((entry) => {
-      return rows.some((row) => {
-        const target = runnerWssTargetFromRow(row);
-        return (
-          target?.publicOrigin === args.origin &&
-          row.runId === entry.runId &&
-          row.orgId === entry.orgId &&
-          row.userId === entry.userId
-        );
-      });
     });
   },
 );

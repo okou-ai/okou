@@ -17,7 +17,7 @@ describe("WSS ticket authorization-store outage", () => {
   const context = testContext();
   const mocks = createRouteMocks(context);
 
-  it("fails closed on bootstrap, consume and authorization checks without database authority", async () => {
+  it("fails closed on bootstrap and consume without database authority", async () => {
     // Isolated test module: its first DB access is deliberately unavailable.
     mockEnv("DATABASE_URL", "postgresql://postgres@127.0.0.1:1/unavailable");
     mockEnv("DB_POOL_CONNECT_TIMEOUT_MS", 200);
@@ -48,24 +48,5 @@ describe("WSS ticket authorization-store outage", () => {
         },
       }),
     ).rejects.toThrow(/ECONNREFUSED/);
-    await expect(
-      client.check({
-        headers: officialHeaders,
-        body: {
-          runnerId,
-          origin: "wss://runner.example.com:443",
-          authorizations: [
-            {
-              runId,
-              digest: randomBytes(32).toString("hex"),
-              orgId: "org_wss_outage",
-              userId: "user_wss_outage",
-            },
-          ],
-        },
-      }),
-    ).rejects.toMatchObject({
-      cause: expect.objectContaining({ code: "ECONNREFUSED" }),
-    });
   });
 });
