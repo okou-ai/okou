@@ -263,7 +263,7 @@ exec /usr/bin/flock "$@"
         for name in ("configure.env", "make.env"):
             observed = dict(line.split("=", 1) for line in
                             (self.root / "context-1/build" / name).read_text().splitlines())
-            self.assertTrue(overrides.keys().isdisjoint(observed), observed)
+            self.assertTrue(overrides.keys().isdisjoint(observed), sorted(overrides.keys() & observed.keys()))
         self.assertEqual(self.run_build(True), entry)
 
     def test_failed_build_never_publishes_completion(self):
