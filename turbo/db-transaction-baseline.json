@@ -1557,11 +1557,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0427",
-      "file": "turbo/packages/db/scripts/test-show-usage-pack-migration.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0428",
       "file": "turbo/packages/db/scripts/test-slack-ingress-failed-status-retirement.ts",
       "owner": "expectCheckViolation"
