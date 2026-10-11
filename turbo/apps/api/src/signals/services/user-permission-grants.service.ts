@@ -10,6 +10,10 @@ import {
 
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { agents } from "@okouai/db/schema/agent";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 import { and, asc, eq, gt, inArray, isNull, or, type SQL } from "drizzle-orm";
 import type {
   ApplyUserPermissionGrantsRequest,
@@ -34,9 +38,11 @@ import type {
 } from "./connector-server-firewall-catalog.service";
 import { commitConnectorRuntimeMutation } from "./connector-runtime-wakeup.service";
 import {
+  connectorCatalogCurrentWhere,
+  connectorCatalogSlugJoin,
   loadConnectorRuntimeSlugSelection,
-  loadCurrentConnectorCatalogSlugs,
 } from "./connector-catalog-slug-source.service";
+import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
 
 const userPermissionGrantSelection = Object.freeze({
   id: userPermissionGrants.id,
@@ -687,6 +693,21 @@ async function applyRowsAndPublishNetworkPolicyRefreshes(
   );
 }
 
+function permissionGrantCatalogSlugsFromRows(
+  rows: readonly { readonly slug: string | null }[],
+): ReadonlySet<string> {
+  if (rows.length === 0) {
+    throw new ExternalConnectorCatalogUnavailableError(
+      "missing_current_identity",
+    );
+  }
+  return new Set(
+    rows.flatMap((row) => {
+      return row.slug === null ? [] : [row.slug];
+    }),
+  );
+}
+
 export const listUserPermissionGrants$ = command(
   async (
     { get },
@@ -730,11 +751,22 @@ export const listUserPermissionGrants$ = command(
     const catalogSlugs =
       grants.length === 0
         ? undefined
-        : await loadCurrentConnectorCatalogSlugs(
-            db,
-            grants.map((grant) => {
-              return grant.connectorSlug;
-            }),
+        : permissionGrantCatalogSlugsFromRows(
+            await db
+              .select({
+                current: { schemaVersion: connectorCatalog.schemaVersion },
+                slug: connectorCatalogEntries.slug,
+              })
+              .from(connectorCatalog)
+              .leftJoin(
+                connectorCatalogEntries,
+                connectorCatalogSlugJoin(
+                  grants.map((grant) => {
+                    return grant.connectorSlug;
+                  }),
+                ),
+              )
+              .where(connectorCatalogCurrentWhere()),
           );
     signal.throwIfAborted();
     const responseScope = permissionGrantResponseScope(scope);
