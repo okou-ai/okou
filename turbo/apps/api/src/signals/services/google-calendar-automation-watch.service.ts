@@ -1089,35 +1089,50 @@ const publishGoogleCalendarWatch$ = command(
       actionRequiredAt: null,
       updatedAt: currentTime,
     };
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0166; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const [state] = await tx
-        .insert(googleCalendarWatchStates)
-        .values({
-          ...watchState,
-          connectorId: args.connectorId,
-          calendarId: args.calendarId,
-          createdAt: currentTime,
-        })
-        .onConflictDoUpdate({
-          target: [
-            googleCalendarWatchStates.connectorId,
-            googleCalendarWatchStates.calendarId,
-          ],
-          set: watchState,
-        })
-        .returning();
-      if (!state) {
-        throw new Error("Failed to persist Google Calendar watch state");
-      }
-      if (args.resetBaseline) {
-        await tx
-          .delete(googleCalendarEventSnapshots)
-          .where(eq(googleCalendarEventSnapshots.watchStateId, state.id));
-      }
-      signal.throwIfAborted();
-      return state;
-    });
+    const upsert = db
+      .insert(googleCalendarWatchStates)
+      .values({
+        ...watchState,
+        connectorId: args.connectorId,
+        calendarId: args.calendarId,
+        createdAt: currentTime,
+      })
+      .onConflictDoUpdate({
+        target: [
+          googleCalendarWatchStates.connectorId,
+          googleCalendarWatchStates.calendarId,
+        ],
+        set: watchState,
+      })
+      .returning();
+    let states: GoogleCalendarWatchStateRow[];
+    if (args.resetBaseline) {
+      const savedState = db.$with("saved_watch_state").as(upsert);
+      const deletedSnapshots = db
+        .$with("deleted_watch_snapshots")
+        .as(
+          db
+            .delete(googleCalendarEventSnapshots)
+            .where(
+              inArray(
+                googleCalendarEventSnapshots.watchStateId,
+                db.select({ id: savedState.id }).from(savedState),
+              ),
+            ),
+        );
+      states = await db
+        .with(savedState, deletedSnapshots)
+        .select()
+        .from(savedState);
+    } else {
+      states = await upsert;
+    }
+    const [state] = states;
+    if (!state) {
+      throw new Error("Failed to persist Google Calendar watch state");
+    }
+    signal.throwIfAborted();
+    return state;
   },
 );
 

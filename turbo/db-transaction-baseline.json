@@ -507,11 +507,6 @@
       "owner": "publishGmailWatch$"
     },
     {
-      "id": "TX-0166",
-      "file": "turbo/apps/api/src/signals/services/google-calendar-automation-watch.service.ts",
-      "owner": "publishGoogleCalendarWatch$"
-    },
-    {
       "id": "TX-0167",
       "file": "turbo/apps/api/src/signals/services/google-calendar-automation-watch.service.ts",
       "owner": "persistLegacyPrimaryCalendarMigration$"
