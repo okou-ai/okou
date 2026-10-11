@@ -147,11 +147,6 @@
       "owner": "persistBrowserUserAction"
     },
     {
-      "id": "TX-0067",
-      "file": "turbo/apps/api/src/signals/services/browser.service.ts",
-      "owner": "commitBrowserStop$"
-    },
-    {
       "id": "TX-0068",
       "file": "turbo/apps/api/src/signals/services/browser.service.ts",
       "owner": "retireBrowserProfileOwnership$"
