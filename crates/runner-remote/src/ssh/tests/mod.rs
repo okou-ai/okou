@@ -2,10 +2,10 @@ mod access;
 mod admission;
 mod cache;
 mod credentials;
-mod files;
+pub(super) mod files;
 mod forwarding;
 mod framing;
-mod harness;
+pub(super) mod harness;
 mod key_wait;
 mod lifecycle;
 mod notifications;
@@ -14,7 +14,7 @@ mod passwords;
 mod pooling;
 mod proof;
 mod reading;
-mod sessions;
+pub(super) mod sessions;
 mod telemetry;
 mod vnc_classic_password;
 mod vnc_forwarding;
@@ -134,17 +134,17 @@ async fn unavailable_old_api_and_malformed_credentials_fail_before_network() {
 }
 
 #[tokio::test]
-async fn tailscale_foundation_denies_before_dns_tcp_and_ssh_without_secret_output() {
+async fn malformed_native_authority_denies_before_provider_dns_tcp_or_secret_output() {
     let h = Harness::new(Reply::default()).await;
     let resolve = h.resolve(json!({
         "outcome": "resolved_tailscale", "host": "peer.tail-test.ts.net", "port": 2222,
         "username": "test-user", "generation": 7, "learnedHostKey": null,
         "authentication": {"method": "password", "password": "ssh-password-canary"},
-        "tailscale": {"configId": "a10df3be-c1cd-4d62-b180-4462679acf63", "generation": 1,
+        "tailscale": {"configId": "00000000-0000-0000-0000-000000000000", "generation": 1,
             "tags": ["tag:okou"], "clientId": "oauth-client-canary", "clientSecret": "oauth-secret-canary"}
     })).await;
     let frames = h.request(params()).await;
-    assert_eq!(terminal(&frames)["failure_reason"], "unavailable");
+    assert_eq!(terminal(&frames)["failure_reason"], "authority_failure");
     assert_eq!(terminal(&frames)["effects"], "not_started");
     resolve.assert_calls_async(1).await;
     assert!(h.observed.queries.lock().unwrap().is_empty());
@@ -331,7 +331,7 @@ async fn cancelled_dns_does_not_block_guest_park_or_the_next_runs_quota() {
             Some(guest_control_client::NormalOperationFenceRejection::Busy)
         );
         // Shutdown delivers terminal+EOF while its DNS task is still held.
-        dispatcher.shutdown().await;
+        dispatcher.shutdown().await.unwrap();
     });
     assert_eq!(terminal(&frames)["failure_reason"], "cancelled");
     assert_eq!(terminal(&frames)["effects"], "not_started");

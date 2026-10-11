@@ -3,6 +3,8 @@ mod cmd;
 mod config;
 mod deps;
 mod error;
+#[cfg(test)]
+mod native_privacy;
 use runner_executor::executor;
 mod group;
 use runner_host::idle_prune_control;
@@ -173,7 +175,13 @@ fn init_tracing_with_file(
     axiom_layer: Option<axiom_layer::AxiomLayer>,
 ) -> Result<tracing_appender::non_blocking::WorkerGuard, Box<dyn std::error::Error>> {
     let home = runner_host::paths::HomePaths::new()?;
-    let log_dir = home.logs_dir();
+    init_tracing_at(home.logs_dir(), axiom_layer)
+}
+
+fn init_tracing_at(
+    log_dir: std::path::PathBuf,
+    axiom_layer: Option<axiom_layer::AxiomLayer>,
+) -> Result<tracing_appender::non_blocking::WorkerGuard, Box<dyn std::error::Error>> {
     runner_host::log_file::ensure_log_dir(&log_dir)
         .map_err(|e| format!("create {}: {e}", log_dir.display()))?;
 
@@ -226,6 +234,19 @@ fn init_tracing_stderr(axiom_layer: Option<axiom_layer::AxiomLayer>) {
         .init();
 }
 
+fn install_native_panic_hook() {
+    let prior_panic = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if ssh::in_native_domain() {
+            // Stop the raw payload before stderr and Sentry's panic integration.
+            eprintln!("native SSH resource domain failed");
+            sentry::capture_message("native SSH resource domain failed", sentry::Level::Error);
+        } else {
+            prior_panic(info);
+        }
+    }));
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     // Initialize Sentry panic reporting before anything else.
@@ -237,6 +258,8 @@ async fn main() -> ExitCode {
             .default_integrations(false)
             .add_integration(sentry::integrations::panic::PanicIntegration::default()),
     ));
+
+    install_native_panic_hook();
 
     if !nix::unistd::getuid().is_root() {
         eprintln!("error: runner must be run as root");

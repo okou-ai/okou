@@ -17,6 +17,7 @@ const CAPACITY: usize = 256;
 pub(super) struct Cache {
     state: Arc<Mutex<State>>,
     capacity: Arc<Semaphore>,
+    native: Arc<super::tailscale::Pool>,
 }
 
 #[derive(Default)]
@@ -28,10 +29,12 @@ struct RunEntries {
     identity: Arc<()>,
     entries: HashMap<uuid::Uuid, Arc<Entry>>,
     sessions: Vec<(uuid::Uuid, Weak<Entry>)>,
+    native: Arc<super::tailscale::Registry>,
 }
 
 struct Entry {
     value: OnceCell<Arc<PreparedCredential>>,
+    native: Mutex<Option<Arc<super::tailscale::Node>>>,
     cancelled: CancellationToken,
     // Retain the slot even when eviction leaves an in-flight reader owning the entry.
     _slot: Option<OwnedSemaphorePermit>,
@@ -55,6 +58,7 @@ impl RunEntries {
                 entry.cancelled.cancel();
             }
         } else {
+            self.native.invalidate();
             for (_, entry) in self.entries.drain() {
                 entry.cancelled.cancel();
             }
@@ -65,6 +69,7 @@ impl RunEntries {
 impl Drop for RunEntries {
     fn drop(&mut self) {
         self.invalidate(None);
+        self.native.close();
     }
 }
 
@@ -72,6 +77,7 @@ pub(super) struct Registration {
     cache: Cache,
     run: RunId,
     identity: Arc<()>,
+    native: Arc<super::tailscale::Registry>,
 }
 
 #[derive(Clone)]
@@ -87,27 +93,36 @@ impl Cache {
         Self {
             state: Arc::new(Mutex::new(State::default())),
             capacity: Arc::new(Semaphore::new(CAPACITY)),
+            native: Arc::new(super::tailscale::Pool::new()),
         }
     }
 
     pub(super) fn register(&self, run: RunId) -> Arc<Registration> {
         let identity = Arc::new(());
-        self.state
+        let mut state = self
+            .state
             .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .runs
-            .insert(
-                run,
-                RunEntries {
-                    identity: Arc::clone(&identity),
-                    entries: HashMap::new(),
-                    sessions: Vec::new(),
-                },
-            );
+            .unwrap_or_else(|poison| poison.into_inner());
+        let native = Arc::new(match state.runs.get(&run) {
+            Some(previous) => {
+                super::tailscale::Registry::replacement(Arc::clone(&self.native), &previous.native)
+            }
+            None => super::tailscale::Registry::new(Arc::clone(&self.native)),
+        });
+        state.runs.insert(
+            run,
+            RunEntries {
+                identity: Arc::clone(&identity),
+                entries: HashMap::new(),
+                sessions: Vec::new(),
+                native: Arc::clone(&native),
+            },
+        );
         Arc::new(Registration {
             cache: self.clone(),
             run,
             identity,
+            native,
         })
     }
 
@@ -143,6 +158,7 @@ impl Registration {
         } else if let Ok(slot) = Arc::clone(&self.cache.capacity).try_acquire_owned() {
             let entry = Arc::new(Entry {
                 value: OnceCell::new(),
+                native: Mutex::new(None),
                 cancelled: CancellationToken::new(),
                 _slot: Some(slot),
             });
@@ -155,6 +171,7 @@ impl Registration {
         let entry = entry.unwrap_or_else(|| {
             let entry = Arc::new(Entry {
                 value: OnceCell::new(),
+                native: Mutex::new(None),
                 cancelled: CancellationToken::new(),
                 _slot: None,
             });
@@ -186,6 +203,17 @@ impl Registration {
             state.runs.remove(&self.run);
         }
     }
+
+    pub(super) async fn shutdown_native(&self) -> Result<(), super::tailscale::Failure> {
+        self.native.shutdown().await
+    }
+
+    pub(super) fn retain_cleanup(
+        &self,
+        task: tokio::task::JoinHandle<()>,
+    ) -> tokio::sync::oneshot::Receiver<bool> {
+        self.cache.native.retain_cleanup(task)
+    }
 }
 
 impl Drop for Registration {
@@ -195,6 +223,57 @@ impl Drop for Registration {
 }
 
 impl Access {
+    pub(super) fn native_configured(
+        &self,
+        configuration: super::tailscale::Configuration,
+        factory: impl FnOnce(
+            super::tailscale::Configuration,
+            Arc<super::tailscale::Journal>,
+        ) -> super::tailscale::Work,
+    ) -> Result<Arc<super::tailscale::Node>, FailureReason> {
+        self.check()?;
+        let node = self
+            .registration
+            .native
+            .acquire_configured(configuration, factory)
+            .map_err(|failure| match failure {
+                super::tailscale::Failure::ResourceExhausted => FailureReason::ResourceExhausted,
+                super::tailscale::Failure::Cancelled => FailureReason::Cancelled,
+                _ => FailureReason::AuthorityFailure,
+            })?;
+        self.check()?;
+        // The exact cached authority, rather than one transient SSH waiter,
+        // owns the configuration node between physical connections. Other
+        // host entries can share it without targeted invalidation retiring B.
+        *self.entry.native.lock().unwrap_or_else(|p| p.into_inner()) = Some(Arc::clone(&node));
+        node.start();
+        Ok(node)
+    }
+
+    #[cfg(test)]
+    pub(super) fn native_node(
+        &self,
+        key: super::tailscale::Key,
+        work: super::tailscale::Work,
+    ) -> Result<Arc<super::tailscale::Node>, FailureReason> {
+        self.check()?;
+        let node =
+            self.registration
+                .native
+                .acquire(key, work)
+                .map_err(|failure| match failure {
+                    super::tailscale::Failure::ResourceExhausted => {
+                        FailureReason::ResourceExhausted
+                    }
+                    super::tailscale::Failure::Cancelled => FailureReason::Cancelled,
+                    _ => FailureReason::AuthorityFailure,
+                })?;
+        self.check()?;
+        // No registration or registry lock is held across the first SDK await.
+        node.start();
+        Ok(node)
+    }
+
     pub(super) fn cancelled(&self) -> CancellationToken {
         self.entry.cancelled.clone()
     }

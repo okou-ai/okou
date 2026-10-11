@@ -199,6 +199,12 @@ setup budget; validated SSH file methods retain their longer method-owned budget
 SSH authorization, session pruning, retained host-work capacity, and diagnostic
 reporting remain with SSH. Run cancellation/Drop synchronously closes its SSH
 registration; normal shutdown joins dispatched requests before session cleanup.
+Required native SSH cleanup also joins its owned SDK resources, control and relay
+IO, runtime and worker thread. Its capacity remains reserved until physical
+retirement completes. A five-second cleanup deadline reports failure while the
+independent cleanup owner retains unfinished work. The dispatcher propagates
+that failure to the executor, which denies sandbox reuse with
+`PostJobCleanupFailure`; closing a guest stream is not cleanup confirmation.
 The current-run usage consumer described below shares this owner without
 changing helper framing, version or retry behavior.
 
@@ -365,6 +371,16 @@ dynamic JIT authorization, credentials, TOFU and execution. Generic events wrap 
 accepted/stdout/stderr data; a generic result wraps SSH finished/error data.
 Exec acceptance, remote exit/signal, base64 decoding, independent 1 MiB output
 caps, truncation and execution effects are SSH semantics, not transport types.
+
+The native Tailscale carrier uses the private JIT response for one exact Run
+registration and configuration generation. It retains unmodified official SDK
+components behind bounded control HTTP and one private TCP stack per physical
+SSH connection. Only an authenticated map's exact peer name or assigned address
+can become that connection's destination. The carrier enters the same russh
+server-proof, TOFU, independent login and connection-pool path as ordinary SSH;
+exec, Sessions, file transfers and forwarding keep their existing contracts.
+Targeted host invalidation retires that host's connections while another host
+sharing the native configuration retains its original live connection.
 
 The CLI adapter owns strict SSH event/result ordering and exit-code
 mapping. Both streams' full output, encoded in bounded chunks, must fit the

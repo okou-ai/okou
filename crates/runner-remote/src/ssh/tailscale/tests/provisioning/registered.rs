@@ -1,0 +1,352 @@
+//! Real TLS/OAuth/key/Noise/map/DERP composition under an exact Run registration.
+//! Only synthetic external services and their explicit certificate roots differ.
+
+use std::sync::{Arc, Mutex};
+
+use runner_types::ids::RunId;
+
+use super::regional_fixture::{Relay, map};
+use super::{configuration, fixture::Service as Api};
+use crate::ssh::{
+    FailureReason,
+    cache::Cache,
+    tailscale::{
+        Failure,
+        tests::{
+            derp::fixture::{Server, WriteGate},
+            fixture::bounded,
+            startup::secure::{KeyReply, Service as Control},
+        },
+    },
+};
+
+const ACCEPTED: &[u8] = br#"{"User":{"ID":1},"Login":{"ID":1,"Provider":"synthetic","LoginName":"synthetic"},"MachineAuthorized":true,"NodeKeyExpired":false,"Error":"","AuthURL":""}"#;
+
+#[tokio::test]
+async fn configured_tls_oauth_noise_error_and_auth_url_remain_private_through_actual_root() {
+    const CANARY: &str = "CONFIGURED-TLS-NOISE-PRIVATE-CANARY-37639";
+    #[derive(Clone)]
+    struct Capture(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let bytes = Arc::new(Mutex::new(Vec::new()));
+    let writer = Capture(Arc::clone(&bytes));
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .without_time()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    let dispatch = tracing::Dispatch::new(subscriber);
+    let _parent = tracing::dispatcher::set_default(&dispatch);
+    tracing::warn!(target: "hyper", "ordinary parent HTTP diagnostic");
+    let api = Api::secure(None).await;
+    let relay = Server::secure().await;
+    let body = serde_json::to_vec(&serde_json::json!({
+        "MachineAuthorized": true, "Error": CANARY,
+        "AuthURL": format!("https://synthetic.invalid/{CANARY}"),
+    }))
+    .unwrap();
+    let control = Control::new(body, map(&relay), KeyReply::Valid, false).await;
+    let descriptors = Arc::new(Mutex::new(Vec::new()));
+    let cache = Cache::new();
+    let run = cache.register(RunId::new_v4());
+    let access = run.lookup(uuid::Uuid::new_v4()).unwrap();
+    let dial = api.secure.as_ref().unwrap().clone();
+    let node = access
+        .native_configured(
+            configuration(uuid::Uuid::new_v4()),
+            control.provisioned_root_factory(
+                dial.clone(),
+                Relay::new(&relay, WriteGate::new(), Arc::clone(&descriptors)),
+            ),
+        )
+        .unwrap();
+    control.allow_all();
+    assert_eq!(bounded(node.ready()).await, Err(Failure::DomainFailed));
+    bounded(node.physical()).await.unwrap();
+    bounded(run.shutdown_native()).await.unwrap();
+    dial.assert_closed(2);
+    control.assert_control_closed();
+    api.assert_contract(1, 0);
+    assert!(descriptors.lock().unwrap().is_empty());
+    relay.task.abort();
+    let Err(error) = bounded(relay.task).await else {
+        panic!("unused external DERP fixture ran");
+    };
+    assert!(error.is_cancelled());
+    api.finish().await;
+    control.finish().await;
+    tracing::warn!(target: "hyper", "ordinary parent HTTP diagnostic after cleanup");
+    let log = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+    assert!(log.contains("ordinary parent HTTP diagnostic after cleanup"));
+    assert!(log.contains("native SSH startup"));
+    assert!(log.contains("noise") && log.contains("registration"));
+    for private in [
+        CANARY,
+        "synthetic-secret",
+        "synthetic-access-token",
+        "tskey-auth-synthetic-one-use",
+    ] {
+        assert!(
+            !log.contains(private),
+            "configured private diagnostic escaped"
+        );
+    }
+}
+
+#[tokio::test]
+async fn configured_tls_oauth_key_and_authenticated_root_share_one_physical_run_owner() {
+    let api = Api::secure(None).await;
+    let relay = Server::secure().await;
+    let control = Control::new(ACCEPTED.to_vec(), map(&relay), KeyReply::Valid, false).await;
+    let gate = WriteGate::new();
+    let descriptors = Arc::new(Mutex::new(Vec::new()));
+    let cache = Cache::new();
+    let run = cache.register(RunId::new_v4());
+    let access = run.lookup(uuid::Uuid::new_v4()).unwrap();
+    let dial = api.secure.as_ref().unwrap().clone();
+    let node = access
+        .native_configured(
+            configuration(uuid::Uuid::new_v4()),
+            control.provisioned_root_factory(
+                dial.clone(),
+                Relay::new(&relay, Arc::clone(&gate), Arc::clone(&descriptors)),
+            ),
+        )
+        .unwrap();
+    control.allow_all();
+    bounded(node.ready()).await.unwrap();
+    assert_eq!(control.announced_home(), vec![1]);
+    let (mut frames, _) = bounded(relay.task).await.unwrap();
+    run.close();
+    bounded(node.physical()).await.unwrap();
+    assert!(matches!(
+        node.dial("100.64.0.2", 22).await,
+        Err(Failure::Cancelled)
+    ));
+    bounded(run.shutdown_native()).await.unwrap();
+    bounded(gate.destroyed()).await;
+    crate::ssh::tailscale::tests::peers::relay::closed(frames.get_mut(), true).await;
+    assert_eq!(descriptors.lock().unwrap().len(), 1);
+    control.assert_control_closed();
+    dial.assert_closed(2);
+    // A possibly consumed key is never deleted as an unused key. Validated
+    // registration + map + relay readiness allows later legitimate lifetimes.
+    api.assert_contract(1, 0);
+    api.finish().await;
+    control.finish().await;
+}
+
+#[tokio::test]
+async fn cancelling_a_received_registration_or_unready_map_never_deletes_or_recreates_its_key() {
+    for before_map in [true, false] {
+        let api = Api::secure(None).await;
+        let relay = Server::secure().await;
+        let control = Control::new(ACCEPTED.to_vec(), map(&relay), KeyReply::Valid, false).await;
+        let descriptors = Arc::new(Mutex::new(Vec::new()));
+        let cache = Cache::new();
+        let run_id = RunId::new_v4();
+        let run = cache.register(run_id);
+        let access = run.lookup(uuid::Uuid::new_v4()).unwrap();
+        let id = uuid::Uuid::new_v4();
+        let dial = api.secure.as_ref().unwrap().clone();
+        let node = access
+            .native_configured(
+                configuration(id),
+                control.provisioned_root_factory(
+                    dial.clone(),
+                    Relay::new(&relay, WriteGate::new(), Arc::clone(&descriptors)),
+                ),
+            )
+            .unwrap();
+        control.key_response.cancel();
+        control.registration_requested().await;
+        if !before_map {
+            control.allow_registration();
+            control.map_requested().await;
+        }
+        let replacement = cache.register(run_id);
+        assert_eq!(bounded(node.ready()).await, Err(Failure::Cancelled));
+        bounded(node.physical()).await.unwrap();
+        drop(node);
+        let fresh = replacement.lookup(uuid::Uuid::new_v4()).unwrap();
+        assert!(matches!(
+            fresh.native_configured(
+                configuration(id),
+                control.provisioned_root_factory(
+                    dial.clone(),
+                    Relay::new(&relay, WriteGate::new(), Arc::clone(&descriptors))
+                )
+            ),
+            Err(FailureReason::AuthorityFailure)
+        ));
+        bounded(run.shutdown_native()).await.unwrap();
+        replacement.close();
+        bounded(replacement.shutdown_native()).await.unwrap();
+        assert!(descriptors.lock().unwrap().is_empty());
+        control.assert_control_closed();
+        dial.assert_closed(2);
+        api.assert_contract(1, 0);
+        relay.task.abort();
+        let Err(error) = bounded(relay.task).await else {
+            panic!("unused relay fixture ran")
+        };
+        assert!(error.is_cancelled());
+        api.finish().await;
+        control.finish().await;
+    }
+}
+
+#[tokio::test]
+async fn rejected_authenticated_registration_is_not_proof_that_the_key_remained_unused() {
+    let api = Api::secure(None).await;
+    let mut response: serde_json::Value = serde_json::from_slice(ACCEPTED).unwrap();
+    response["Error"] = "synthetic-rejection".into();
+    let relay = Server::secure().await;
+    let control = Control::new(
+        serde_json::to_vec(&response).unwrap(),
+        map(&relay),
+        KeyReply::Valid,
+        false,
+    )
+    .await;
+    let descriptors = Arc::new(Mutex::new(Vec::new()));
+    let cache = Cache::new();
+    let run_id = RunId::new_v4();
+    let run = cache.register(run_id);
+    let access = run.lookup(uuid::Uuid::new_v4()).unwrap();
+    let id = uuid::Uuid::new_v4();
+    let dial = api.secure.as_ref().unwrap().clone();
+    let node = access
+        .native_configured(
+            configuration(id),
+            control.provisioned_root_factory(
+                dial.clone(),
+                Relay::new(&relay, WriteGate::new(), Arc::clone(&descriptors)),
+            ),
+        )
+        .unwrap();
+    control.allow_all();
+    assert_eq!(bounded(node.ready()).await, Err(Failure::DomainFailed));
+    bounded(node.physical()).await.unwrap();
+    drop(node);
+    cache.invalidate(run_id, None);
+    let fresh = run.lookup(uuid::Uuid::new_v4()).unwrap();
+    assert!(matches!(
+        fresh.native_configured(
+            configuration(id),
+            control.provisioned_root_factory(
+                dial.clone(),
+                Relay::new(&relay, WriteGate::new(), Arc::clone(&descriptors))
+            )
+        ),
+        Err(FailureReason::AuthorityFailure)
+    ));
+    bounded(run.shutdown_native()).await.unwrap();
+    dial.assert_closed(2);
+    control.assert_control_closed();
+    api.assert_contract(1, 0);
+    assert!(descriptors.lock().unwrap().is_empty());
+    relay.task.abort();
+    let Err(error) = bounded(relay.task).await else {
+        panic!("unused relay fixture ran")
+    };
+    assert!(error.is_cancelled());
+    api.finish().await;
+    control.finish().await;
+}
+
+#[tokio::test]
+async fn unsafe_or_oversized_regional_map_metadata_never_reaches_a_relay_socket() {
+    for case in [
+        "wrong-region",
+        "bad-pin",
+        "test-tls",
+        "too-many-nodes",
+        "too-many-regions",
+        "no-home",
+        "disabled",
+        "missing-map",
+    ] {
+        let api = Api::secure(None).await;
+        let relay = Server::secure().await;
+        let mut value: serde_json::Value = serde_json::from_slice(&map(&relay)).unwrap();
+        match case {
+            "wrong-region" => value["DERPMap"]["Regions"]["1"]["Nodes"][0]["RegionID"] = 2.into(),
+            "bad-pin" => {
+                value["DERPMap"]["Regions"]["1"]["Nodes"][0]["CertName"] = "sha256-raw:bad".into()
+            }
+            "test-tls" => {
+                value["DERPMap"]["Regions"]["1"]["Nodes"][0]["InsecureForTests"] = true.into()
+            }
+            "too-many-nodes" => {
+                let node = value["DERPMap"]["Regions"]["1"]["Nodes"][0].clone();
+                value["DERPMap"]["Regions"]["1"]["Nodes"] = vec![node; 9].into();
+            }
+            "too-many-regions" => {
+                let region = value["DERPMap"]["Regions"]["1"].clone();
+                for id in 2..=129 {
+                    let mut extra = region.clone();
+                    extra["RegionID"] = id.into();
+                    extra["Nodes"][0]["RegionID"] = id.into();
+                    extra["Nodes"][0]["Name"] = format!("{id}a").into();
+                    value["DERPMap"]["Regions"][id.to_string()] = extra;
+                }
+            }
+            "no-home" => value["DERPMap"]["Regions"]["1"]["NoMeasureNoHome"] = true.into(),
+            "disabled" => value["DERPMap"]["Regions"]["1"]["Nodes"][0]["IPv4"] = "none".into(),
+            _ => {
+                value.as_object_mut().unwrap().remove("DERPMap");
+            }
+        }
+        let control = Control::new(
+            ACCEPTED.to_vec(),
+            serde_json::to_vec(&value).unwrap(),
+            KeyReply::Valid,
+            false,
+        )
+        .await;
+        let descriptors = Arc::new(Mutex::new(Vec::new()));
+        let cache = Cache::new();
+        let run = cache.register(RunId::new_v4());
+        let access = run.lookup(uuid::Uuid::new_v4()).unwrap();
+        let dial = api.secure.as_ref().unwrap().clone();
+        let node = access
+            .native_configured(
+                configuration(uuid::Uuid::new_v4()),
+                control.provisioned_root_factory(
+                    dial.clone(),
+                    Relay::new(&relay, WriteGate::new(), Arc::clone(&descriptors)),
+                ),
+            )
+            .unwrap();
+        control.allow_all();
+        assert_eq!(
+            bounded(node.ready()).await,
+            Err(Failure::DomainFailed),
+            "{case}"
+        );
+        bounded(node.physical()).await.unwrap();
+        bounded(run.shutdown_native()).await.unwrap();
+        assert!(descriptors.lock().unwrap().is_empty(), "{case}");
+        assert!(control.announced_home().is_empty(), "{case}");
+        control.assert_control_closed();
+        dial.assert_closed(2);
+        api.assert_contract(1, 0);
+        relay.task.abort();
+        let Err(error) = bounded(relay.task).await else {
+            panic!("unused relay ran: {case}")
+        };
+        assert!(error.is_cancelled());
+        api.finish().await;
+        control.finish().await;
+    }
+}

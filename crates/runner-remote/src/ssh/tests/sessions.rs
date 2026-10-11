@@ -152,14 +152,14 @@ pub(super) fn envelope(method: &str, mut params: Value) -> String {
     json!({"version":1,"method":format!("ssh.session.{method}"),"remaining_ms":60000,"params":params}).to_string()
 }
 
-pub(super) async fn rpc(h: &Harness, method: &str, params: Value) -> Value {
+pub(in crate::ssh) async fn rpc(h: &Harness, method: &str, params: Value) -> Value {
     let frames = h.raw(envelope(method, params)).await;
     assert_eq!(frames.len(), 1, "{frames:?}");
     assert_eq!(frames[0]["type"], "result", "{frames:?}");
     frames[0]["data"].clone()
 }
 
-pub(super) async fn start(h: &Harness, program: Value, pty: bool) -> Value {
+pub(in crate::ssh) async fn start(h: &Harness, program: Value, pty: bool) -> Value {
     let result = rpc(
         h,
         "start",
@@ -170,7 +170,7 @@ pub(super) async fn start(h: &Harness, program: Value, pty: bool) -> Value {
     result["session_id"].clone()
 }
 
-pub(super) async fn state(h: &Harness, id: &Value, expected: &str) -> Value {
+pub(in crate::ssh) async fn state(h: &Harness, id: &Value, expected: &str) -> Value {
     timeout(Duration::from_secs(10), async {
         loop {
             let result = rpc(h, "status", json!({"sessionId":id})).await;
@@ -186,13 +186,13 @@ pub(super) async fn state(h: &Harness, id: &Value, expected: &str) -> Value {
     .unwrap()
 }
 
-pub(super) async fn write(h: &Harness, id: &Value, text: &str, eof: bool) {
+pub(in crate::ssh) async fn write(h: &Harness, id: &Value, text: &str, eof: bool) {
     let result = rpc(h, "write", json!({"sessionId":id,"dataBase64":base64::engine::general_purpose::STANDARD.encode(text),"eof":eof})).await;
     assert_eq!(result["type"], "submitted", "{result}");
     assert_eq!(result["effects"], "unknown");
 }
 
-pub(super) fn bytes(read: &Value) -> Vec<u8> {
+pub(in crate::ssh) fn bytes(read: &Value) -> Vec<u8> {
     read["chunks"]
         .as_array()
         .unwrap()

@@ -35,6 +35,7 @@ pub(super) struct Credential {
 pub(super) enum Transport {
     Direct,
     CloudflareAccess(ResolveResponseResolvedAccessAccess),
+    Tailscale(super::tailscale::Configuration),
 }
 
 impl Transport {
@@ -44,6 +45,7 @@ impl Transport {
             (Self::CloudflareAccess(a), Self::CloudflareAccess(b)) => {
                 a.config_id == b.config_id && a.generation == b.generation
             }
+            (Self::Tailscale(a), Self::Tailscale(b)) => a.key() == b.key(),
             _ => false,
         }
     }
@@ -194,9 +196,41 @@ impl Authority {
             )
             .await?;
         let (host, port, username, generation, learned_host_key, auth, transport) = match response {
-            ResolveResponse::Unavailable | ResolveResponse::ResolvedTailscale { .. } => {
-                // No qualified private carrier in this foundation PR. Never infer Direct.
+            ResolveResponse::Unavailable => {
                 return Err(FailureReason::Unavailable);
+            }
+            ResolveResponse::ResolvedTailscale {
+                host,
+                port,
+                username,
+                generation,
+                learned_host_key,
+                authentication,
+                tailscale,
+            } => {
+                let configuration = super::tailscale::Configuration::new(tailscale)
+                    .map_err(|_| FailureReason::AuthorityFailure)?;
+                let auth = match authentication {
+                    ResolveResponseResolvedAccessAuthentication::PrivateKey {
+                        private_key,
+                        passphrase,
+                    } => CredentialAuth::PrivateKey {
+                        private_key,
+                        passphrase,
+                    },
+                    ResolveResponseResolvedAccessAuthentication::Password { password } => {
+                        CredentialAuth::Password(password)
+                    }
+                };
+                (
+                    host,
+                    port,
+                    username,
+                    generation,
+                    learned_host_key,
+                    auth,
+                    Transport::Tailscale(configuration),
+                )
             }
             ResolveResponse::ResolvedAccess {
                 host,

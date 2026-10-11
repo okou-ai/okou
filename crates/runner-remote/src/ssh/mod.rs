@@ -13,6 +13,7 @@ mod observation;
 mod output;
 mod pool;
 mod sessions;
+mod tailscale;
 #[cfg(test)]
 mod tests;
 
@@ -84,6 +85,8 @@ pub struct SshRuntime {
     reports: Arc<Semaphore>,
     cache: cache::Cache,
     access_tls: Arc<rustls::ClientConfig>,
+    #[cfg(test)]
+    native_services: Mutex<Option<tailscale::TestServices>>,
 }
 
 impl SshRuntime {
@@ -135,6 +138,8 @@ impl SshRuntime {
             reports: Arc::new(Semaphore::new(4)),
             cache: cache::Cache::new(),
             access_tls: access::tls_config().map_err(|_| RemoteInitError::SshAccessTls)?,
+            #[cfg(test)]
+            native_services: Mutex::new(None),
         })))
     }
 
@@ -408,10 +413,40 @@ impl SshRuntime {
     async fn open_socket(
         &self,
         lease: Arc<io::HostLease>,
-        host: &str,
-        port: u16,
+        credential: &PreparedCredential,
+        access: &cache::Access,
         scope: &Scope,
-    ) -> Result<tokio::net::TcpStream, FailureReason> {
+    ) -> Result<io::Carrier, FailureReason> {
+        if let authority::Transport::Tailscale(configuration) = &credential.transport {
+            let node =
+                access.native_configured(configuration.clone(), |configuration, journal| {
+                    #[cfg(test)]
+                    if let Some(services) = self
+                        .native_services
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .as_ref()
+                    {
+                        return services.work(configuration, journal);
+                    }
+                    tailscale::work(configuration, journal)
+                })?;
+            let stream = scope
+                .wait(node.dial_retained(&credential.host, credential.port, lease))
+                .await?
+                .map_err(|failure| match failure {
+                    tailscale::Failure::ResourceExhausted => FailureReason::ResourceExhausted,
+                    tailscale::Failure::Cancelled => FailureReason::Cancelled,
+                    _ => FailureReason::NetworkFailure,
+                })?;
+            access.check()?;
+            return Ok(io::Carrier::Native {
+                stream,
+                _node: node,
+            });
+        }
+        let host = &credential.host;
+        let port = credential.port;
         // System DNS can own blocking resolver work after its waiter is dropped.
         // Retain host capacity until resolution completes, independently of
         // the guest stream and its park reservation.
@@ -430,6 +465,7 @@ impl SshRuntime {
             .wait(self.network.connect(address))
             .await?
             .map_err(|_| FailureReason::NetworkFailure)
+            .map(io::Carrier::Public)
     }
 }
 
@@ -512,6 +548,21 @@ impl Run {
         self.sessions.shutdown().await;
     }
 
+    pub(crate) async fn shutdown_native(&self) -> Result<(), crate::guest_rpc::CleanupError> {
+        self.sessions
+            .registration
+            .shutdown_native()
+            .await
+            .map_err(|_| crate::guest_rpc::CleanupError::Native)
+    }
+
+    pub(crate) fn retain_cleanup(
+        &self,
+        task: tokio::task::JoinHandle<()>,
+    ) -> tokio::sync::oneshot::Receiver<bool> {
+        self.sessions.registration.retain_cleanup(task)
+    }
+
     pub(crate) async fn dispatch(&self, request: crate::guest_rpc::Request) {
         Arc::clone(&self.runtime)
             .dispatch(request, Arc::clone(&self.sessions))
@@ -534,6 +585,17 @@ pub fn safe_log_metadata(metadata: &tracing::Metadata<'_>) -> bool {
         "tokio_tungstenite",
         "rustls",
         "tokio_rustls",
+        "ts_control",
+        "ts_http_util",
+        "ts_derp",
+        "ts_actor",
+        "ts_device",
+        "ts_tunnel",
+        "ts_dataplane",
+        "ts_transport",
+        "ts_dns",
+        "ts_netstack_smoltcp_core",
+        "ts_netstack_smoltcp_socket",
     ]
     .iter()
     .any(|prefix| {
@@ -543,4 +605,18 @@ pub fn safe_log_metadata(metadata: &tracing::Metadata<'_>) -> bool {
                 .strip_prefix(prefix)
                 .is_some_and(|suffix| suffix.starts_with("::"))
     })
+}
+
+/// Used by the Runner's process panic hook before it invokes raw-payload integrations.
+pub fn in_native_domain() -> bool {
+    tailscale::in_domain()
+}
+
+#[cfg(feature = "test-support")]
+pub async fn native_diagnostic_fixture(
+    address: std::net::SocketAddr,
+    blocking: bool,
+    canary: &'static str,
+) -> Result<(), crate::guest_rpc::CleanupError> {
+    tailscale::diagnostic_fixture(address, blocking, canary).await
 }

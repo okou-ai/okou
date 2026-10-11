@@ -201,7 +201,7 @@ async fn gateway_failures_are_structured_without_leaking_or_ssh_fallback() {
         assert!(!serde_json::to_string(&frames).unwrap().contains("canary"));
         assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
         assert_eq!(h.observed.attempts.lock().unwrap().len(), 1);
-        dispatcher.shutdown().await;
+        dispatcher.shutdown().await.unwrap();
         report.assert_calls_async(1).await;
     }
 }
