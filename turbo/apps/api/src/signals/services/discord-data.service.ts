@@ -262,6 +262,7 @@ export function discordSenderBindings(discordUserId: string) {
 
 /** Ingress treats missing app configuration as an outage, never as revocation. */
 export function discordIngressSenderBindings(discordUserId: string) {
+  const bindings$ = discordSenderBindings(discordUserId);
   return computed(async (get) => {
     if (!getDiscordAppConfig()) {
       throw new DiscordIngressFailure(
@@ -271,7 +272,7 @@ export function discordIngressSenderBindings(discordUserId: string) {
         "Discord is temporarily unavailable",
       );
     }
-    return await get(discordSenderBindings(discordUserId));
+    return await get(bindings$);
   });
 }
 
