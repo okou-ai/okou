@@ -67,26 +67,26 @@ def prepare(root="/", group_id=None):
         validate_parent(var, "/var")
         lib = open_directory(stack, "lib", var)
         validate_parent(lib, "/var/lib")
-        # Serialize cooperating creators before any initially private directory
-        # becomes traversable. The parent inode remains stable across runs.
+        # Serialize cooperating creators. Only root can write these directories,
+        # including the interval before a new namespace receives its group.
         fcntl.flock(lib, fcntl.LOCK_EX)
         created = False
         try:
             home = open_directory(stack, "vm0-runner", lib)
         except FileNotFoundError:
-            os.mkdir("vm0-runner", 0o700, dir_fd=lib)
+            os.mkdir("vm0-runner", 0o755, dir_fd=lib)
             home = open_directory(stack, "vm0-runner", lib)
             os.fchown(home, 0, 0)
-            os.fchmod(home, 0o755)
+            if stat.S_IMODE(os.fstat(home).st_mode) != 0o755:
+                raise RuntimeError("new Runner home must have mode 0755 without inherited special bits")
             created = True
         validate_parent(home, "/var/lib/vm0-runner")
         try:
             namespace = open_directory(stack, "wss", home)
         except FileNotFoundError:
-            os.mkdir("wss", 0o700, dir_fd=home)
+            os.mkdir("wss", 0o710, dir_fd=home)
             namespace = open_directory(stack, "wss", home)
             os.fchown(namespace, 0, group_id)
-            os.fchmod(namespace, 0o710)
             created = True
         if {"system.posix_acl_access", "system.posix_acl_default"}.intersection(
             os.listxattr(namespace)
@@ -108,6 +108,9 @@ def prepare(root="/", group_id=None):
 
 
 if __name__ == "__main__":
+    # This dedicated process owns its mask before creating any directories or
+    # starting concurrent work. Both final directory modes survive mask 022.
+    os.umask(0o022)
     try:
         if prepare():
             print("created")

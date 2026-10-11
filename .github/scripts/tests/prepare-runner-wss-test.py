@@ -26,6 +26,8 @@ SPEC.loader.exec_module(PREPARE)
 class PreparationTests(unittest.TestCase):
     def setUp(self):
         self.assertEqual(os.geteuid(), 0, "native ownership fixtures require root")
+        # Match the dedicated CLI entry before any fixture worker is started.
+        self.addCleanup(os.umask, os.umask(0o022))
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -53,8 +55,10 @@ class PreparationTests(unittest.TestCase):
         accepted, _ = server.accept()
         self.addCleanup(accepted.close)
         before = endpoint.stat()
+        descriptors_before = len(os.listdir("/proc/self/fd"))
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             self.assertEqual(list(pool.map(lambda _: self.prepare(), range(16))), [False] * 16)
+        self.assertEqual(len(os.listdir("/proc/self/fd")), descriptors_before)
         client.sendall(b"healthy")
         self.assertEqual(accepted.recv(7), b"healthy")
         self.assertEqual(endpoint.stat().st_ino, before.st_ino)
@@ -87,8 +91,10 @@ class PreparationTests(unittest.TestCase):
         for mode in [0o755, 0o711, 0o770, 0o2710]:
             with self.subTest(mode=mode):
                 self.namespace.chmod(mode)
+                descriptors_before = len(os.listdir("/proc/self/fd"))
                 with self.assertRaises(RuntimeError):
                     self.prepare()
+                self.assertEqual(len(os.listdir("/proc/self/fd")), descriptors_before)
                 self.assertEqual(stat.S_IMODE(self.namespace.stat().st_mode), mode)
         self.namespace.chmod(0o710)
         for uid, gid in [(1, 1), (0, 2)]:
