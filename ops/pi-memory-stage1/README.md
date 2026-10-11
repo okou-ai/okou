@@ -271,8 +271,10 @@ pnpm -F @okouai/db billing:pi-memory-stage1 --day 2026-09-15
 pnpm -F @okouai/db billing:pi-memory-stage1 --day 2026-09-15 --org-id ORG --user-id USER
 ```
 
-The CLI enforces one valid UTC date, read-only repeatable-read, UTC timezone,
-1s lock and 5s statement limits. There is no pagination loop. `$4` in the SQL is
+The CLI enforces one valid UTC date, session-default read-only transactions,
+UTC timezone, and 1s lock and 5s statement limits. The report uses one statement
+snapshot; `snapshot_at` samples that report's implicit transaction start rather
+than an earlier explicit BEGIN. There is no pagination loop. `$4` in the SQL is
 the canonical provider-to-lookup alias map; production CLI uses `{}`, matching
 the production resolver's identity mapping. Tests may supply exact owned aliases.
 
