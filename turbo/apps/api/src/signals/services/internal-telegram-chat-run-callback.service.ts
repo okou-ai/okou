@@ -56,24 +56,6 @@ interface TelegramOwnerBinding {
   readonly ownerLink: TelegramOwnerLink;
 }
 
-async function markDelivered(db: Db, callbackId: string): Promise<void> {
-  await db
-    .update(agentRunCallbacks)
-    .set({ status: "delivered", deliveredAt: nowDate() })
-    .where(eq(agentRunCallbacks.id, callbackId));
-}
-
-async function markFailed(
-  db: Db,
-  callbackId: string,
-  error: string,
-): Promise<void> {
-  await db
-    .update(agentRunCallbacks)
-    .set({ status: "failed", lastError: error.slice(0, 4000) })
-    .where(eq(agentRunCallbacks.id, callbackId));
-}
-
 function recordDelivery(args: {
   readonly runId: string;
   readonly startedAt: number;
@@ -495,7 +477,10 @@ export async function dispatchTelegramChatDeliveryOnce(
       delivery.error instanceof Error
         ? delivery.error.message
         : "Unknown error";
-    await markFailed(db, callbackId, message);
+    await db
+      .update(agentRunCallbacks)
+      .set({ status: "failed", lastError: message.slice(0, 4000) })
+      .where(eq(agentRunCallbacks.id, callbackId));
     recordDelivery({
       runId: callback.runId,
       startedAt,
@@ -509,7 +494,10 @@ export async function dispatchTelegramChatDeliveryOnce(
     });
     return;
   }
-  await markDelivered(db, callbackId);
+  await db
+    .update(agentRunCallbacks)
+    .set({ status: "delivered", deliveredAt: nowDate() })
+    .where(eq(agentRunCallbacks.id, callbackId));
   recordDelivery({
     runId: callback.runId,
     startedAt,

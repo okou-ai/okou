@@ -1506,6 +1506,77 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     await runCanonicalTelegramForumScenario("callback");
   });
 
+  it("keeps Telegram completion terminal after provider delivery fails", async () => {
+    const runnerGroup = configureCanonicalTelegramRunner();
+    const fixture = await createTelegramPostFixture({ linkOfficial: true });
+    telegramApiMocks();
+    const attemptedMessages: TelegramSendMessageBody[] = [];
+    server.use(
+      http.post(
+        `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/sendMessage`,
+        async ({ request }) => {
+          attemptedMessages.push(
+            (await request.json()) as TelegramSendMessageBody,
+          );
+          return HttpResponse.json(
+            { ok: false, description: "Telegram temporarily unavailable" },
+            { status: 503 },
+          );
+        },
+      ),
+    );
+    const chatId = -77_202;
+    const prompt = `@${OFFICIAL_BOT_USERNAME} complete despite delivery failure`;
+    expect(
+      (
+        await postWebhook({
+          telegramBotId: fixture.telegramBotId,
+          secret: fixture.webhookSecret,
+          body: {
+            update_id: 204,
+            message: {
+              message_id: 2206,
+              chat: { id: chatId, type: "supergroup" },
+              from: { id: Number(fixture.telegramUserId), first_name: "Alice" },
+              text: prompt,
+              entities: [mentionEntity(OFFICIAL_BOT_USERNAME)],
+            },
+          },
+        })
+      ).status,
+    ).toBe(200);
+    await flushWaitUntilForTest();
+    const run = await runForPrompt(fixture, prompt);
+    if (!run) {
+      throw new Error("Expected the Telegram provider-failure run");
+    }
+    const claim = await claimTelegramRun(run.id, runnerGroup, fixture);
+    await completeCanonicalChatRun({
+      runId: run.id,
+      sandboxToken: claim.sandboxToken,
+    });
+    expect(attemptedMessages).toHaveLength(1);
+    expect(attemptedMessages[0]).toMatchObject({
+      chat_id: String(chatId),
+      text: expect.stringContaining("Task completed successfully."),
+    });
+    await expect(runForPrompt(fixture, prompt)).resolves.toMatchObject({
+      id: run.id,
+      status: "completed",
+    });
+    await webhooksApi.requestAgentComplete(
+      { runId: run.id, exitCode: 1, error: "late duplicate completion" },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(attemptedMessages).toHaveLength(1);
+    await expect(runForPrompt(fixture, prompt)).resolves.toMatchObject({
+      id: run.id,
+      status: "completed",
+    });
+  });
+
   it("preserves Telegram group reply chains and duplicate updates", async () => {
     expect.hasAssertions();
     await runCanonicalTelegramForumScenario("reply-chain");
