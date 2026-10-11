@@ -387,11 +387,6 @@
       "owner": "cleanupOrphanedSearchProjection"
     },
     {
-      "id": "TX-0132",
-      "file": "turbo/apps/api/src/signals/services/cron-snapshot-chat-events.service.ts",
-      "owner": "publishSnapshotVersion"
-    },
-    {
       "id": "TX-0133",
       "file": "turbo/apps/api/src/signals/services/cron-steer-run-time-budget.service.ts",
       "owner": "persistRunTimeBudgetInput$"
