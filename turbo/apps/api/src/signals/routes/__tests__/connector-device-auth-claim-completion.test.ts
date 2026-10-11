@@ -1,6 +1,6 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
@@ -12,6 +12,7 @@ import {
   mockTestOAuthDeviceConnectorProvider,
 } from "./helpers/api-bdd-connectors";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
+import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 const connectors = createConnectorBddApi(context);
@@ -127,6 +128,10 @@ const superseded = {
 } as const;
 
 describe("Builtin device-auth retained-claim completion", () => {
+  beforeEach(() => {
+    mockSecretKmsHttp();
+  });
+
   it("preserves the replacement's exact non-default account and scopes after an obsolete successful reconnect", async () => {
     let release: (() => void) | undefined;
     const owned = createPublicConnectorActor(context, {
