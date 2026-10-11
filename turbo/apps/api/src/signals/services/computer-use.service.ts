@@ -46,7 +46,7 @@ import { settle } from "../utils";
 import { clerk$ } from "../external/clerk";
 import {
   computerUseHostAuthorityCondition,
-  resolveComputerUseHost,
+  resolveComputerUseHost$,
   verifyComputerUseSession,
   type ComputerUseHostAuthority,
   type ComputerUseSessionIdentity,
@@ -985,7 +985,7 @@ function computerUseHostLivenessIsFresh(
  */
 export const heartbeatComputerUseHost$ = command(
   async (
-    { get, set },
+    { set },
     params: ComputerUseHostAuthority & {
       readonly hostName: string;
       readonly appVersion: string;
@@ -1003,7 +1003,7 @@ export const heartbeatComputerUseHost$ = command(
       params.supportedCapabilities,
     );
 
-    const host = await resolveComputerUseHost(db, get(clerk$), params, signal);
+    const host = await set(resolveComputerUseHost$, params, signal);
     signal.throwIfAborted();
     if (!host) {
       return { status: "invalid_connection" };
@@ -1083,12 +1083,12 @@ export const heartbeatComputerUseHost$ = command(
  */
 export const stopComputerUseHost$ = command(
   async (
-    { get, set },
+    { set },
     params: ComputerUseHostAuthority,
     signal: AbortSignal,
   ): Promise<StopComputerUseHostResult> => {
     const db = set(writeDb$);
-    if (!(await resolveComputerUseHost(db, get(clerk$), params, signal))) {
+    if (!(await set(resolveComputerUseHost$, params, signal))) {
       return { status: "invalid_connection" };
     }
     const now = nowDate();
@@ -1384,7 +1384,7 @@ const hostHasRunningComputerUseCommand$ = command(
  */
 export const claimNextComputerUseHostCommand$ = command(
   async (
-    { get, set },
+    { set },
     params: ComputerUseHostAuthority & {
       readonly supportedCapabilities: readonly string[];
     },
@@ -1392,7 +1392,7 @@ export const claimNextComputerUseHostCommand$ = command(
   ): Promise<ClaimNextComputerUseHostCommandResult> => {
     const db = set(writeDb$);
     const capabilities = normalizeCapabilities(params.supportedCapabilities);
-    const host = await resolveComputerUseHost(db, get(clerk$), params, signal);
+    const host = await set(resolveComputerUseHost$, params, signal);
     signal.throwIfAborted();
     if (!host) {
       return { status: "invalid_connection" };
@@ -1639,7 +1639,7 @@ export const completeComputerUseHostCommand$ = command(
     signal: AbortSignal,
   ): Promise<CompleteComputerUseHostCommandResult> => {
     const db = set(writeDb$);
-    const host = await resolveComputerUseHost(db, get(clerk$), params, signal);
+    const host = await set(resolveComputerUseHost$, params, signal);
     signal.throwIfAborted();
     if (!host) {
       return { status: "invalid_connection" };
