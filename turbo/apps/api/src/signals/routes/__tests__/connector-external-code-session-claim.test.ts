@@ -3,6 +3,7 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
+import { settleIncludingAbort } from "../../utils";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   awsVerificationCode,
@@ -11,7 +12,7 @@ import {
   mockAwsExternalCodeProvider,
 } from "./helpers/api-bdd-connectors";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
+import { createExternalCodeProviderFixture } from "./helpers/external-code-provider-fixture";
 import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
@@ -22,16 +23,25 @@ beforeEach(mockSecretKmsHttp);
 
 async function prepareActor() {
   const actor = bdd.user();
-  context.mocks.ably.publish.mockResolvedValue(undefined);
+  const providerFixture = createExternalCodeProviderFixture(context, actor);
   mockAwsExternalCodeProvider();
   const owner = createFixtureOperationOwner(async () => {
-    await connectors.deleteFeatureSwitches(actor);
-    await deletePublicWorkspace(context, actor);
+    const flagsDeleted = await settleIncludingAbort(
+      connectors.deleteFeatureSwitches(actor),
+    );
+    await providerFixture.deleteWorkspace();
+    if (!flagsDeleted.ok) {
+      throw flagsDeleted.error;
+    }
   });
   await owner.run(() => {
     return connectors.updateFeatureSwitches(actor, {});
   });
-  return { actor, run: owner.run };
+  return {
+    actor,
+    run: owner.run,
+    expectConnectorChanged: providerFixture.expectConnectorChanged,
+  };
 }
 
 function completionInput(
@@ -144,7 +154,7 @@ async function expectDefault(actor: ApiTestUser, connectionId: string) {
 
 describe("external-code session claim ownership", () => {
   it("reclaims a rejected reconnect into the exact non-default account without changing its sibling", async () => {
-    const { actor, run } = await prepareActor();
+    const { actor, run, expectConnectorChanged } = await prepareActor();
     const defaultSession = await run(() => {
       return connectors.startExternalCode(actor, "aws", "cli", {
         intent: "add",
@@ -157,6 +167,7 @@ describe("external-code session claim ownership", () => {
         completionInput(defaultSession),
       );
     });
+    await run(expectConnectorChanged);
     const siblingSession = await run(() => {
       return connectors.startExternalCode(actor, "aws", "cli", {
         intent: "add",
@@ -169,6 +180,7 @@ describe("external-code session claim ownership", () => {
         completionInput(siblingSession),
       );
     });
+    await run(expectConnectorChanged);
     expect(siblingAccount.connector.id).not.toBe(defaultAccount.connector.id);
     const expected = [
       { id: defaultAccount.connector.id, isDefault: true },
@@ -200,6 +212,7 @@ describe("external-code session claim ownership", () => {
         completionInput(reconnect),
       );
     });
+    await run(expectConnectorChanged);
     expect(retried).toMatchObject({
       status: "complete",
       connector: {
@@ -222,7 +235,7 @@ describe("external-code session claim ownership", () => {
   });
 
   it("keeps a reclaimed real session exclusive while enforcing each identity boundary", async () => {
-    const { actor, run } = await prepareActor();
+    const { actor, run, expectConnectorChanged } = await prepareActor();
     const peer = bdd.user({ orgId: actor.orgId });
     const foreignOrg = bdd.user({ userId: actor.userId });
     expect(peer.userId).not.toBe(actor.userId);
@@ -309,6 +322,7 @@ describe("external-code session claim ownership", () => {
       provider.releaseTokenResponse();
     });
     const completed = await inFlight;
+    await run(expectConnectorChanged);
     expect(completed).toMatchObject({
       status: "complete",
       connector: {
