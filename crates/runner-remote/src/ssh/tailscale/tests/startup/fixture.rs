@@ -180,6 +180,10 @@ impl NoiseService {
                                     let mut byte = [0; 1];
                                     match io.read(&mut byte).await {
                                         Ok(0) => {}
+                                        // Destroying the socket with unread data can
+                                        // produce a TCP reset instead of a FIN.
+                                        Err(error)
+                                            if error.kind() == io::ErrorKind::ConnectionReset => {}
                                         // Abrupt owned socket destruction cannot
                                         // send TLS close_notify. Rustls reports
                                         // this exact peer EOF as UnexpectedEof.

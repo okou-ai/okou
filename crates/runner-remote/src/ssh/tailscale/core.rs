@@ -169,10 +169,21 @@ impl Core {
     }
 
     fn emit(&mut self, mut frames: Frames) -> Result<(), Failure> {
-        while let Some(packet) = self.peers.prepare_derp(&mut frames)? {
-            self.port.send(packet)?;
+        loop {
+            match self.peers.prepare_derp(&mut frames) {
+                Ok(Some(packet)) => self.port.send(packet)?,
+                Ok(None) => return Ok(()),
+                Err(Failure::Cancelled) => {
+                    // Caller retirement can invalidate the batch after SDK
+                    // production. prepare_derp clears it and releases its
+                    // capacity; discard those bytes without ending siblings.
+                    // Failed or expired node authority must still terminate.
+                    self.peers.maintain()?;
+                    return Ok(());
+                }
+                Err(failure) => return Err(failure),
+            }
         }
-        Ok(())
     }
 
     fn receive(&mut self, cx: &mut Context<'_>) -> Result<bool, Failure> {
@@ -189,7 +200,12 @@ impl Core {
                 .iter_mut()
                 .find(|active| Arc::ptr_eq(binding, &active.binding))
             {
-                active.connection.receive(binding, packet)?;
+                match active.connection.receive(binding, packet) {
+                    // The caller can close this stream after Peers checked its
+                    // binding. Retire only that connection, keeping siblings.
+                    Err(Failure::Cancelled) => active.connection.retire(),
+                    result => result?,
+                }
             }
             Ok(())
         })?;
@@ -250,11 +266,30 @@ impl Core {
                     continue;
                 }
             }
-            let packets = active.connection.outgoing()?;
-            if !packets.is_empty() {
-                let frames = self.peers.outgoing(&active.binding, packets)?;
-                self.emit(frames)?;
-                return Ok(true);
+            // Caller cancellation can race either check after poll returned.
+            // A retired binding must not terminate the shared native root.
+            let frames = active.connection.outgoing().and_then(|packets| {
+                if packets.is_empty() {
+                    Ok(None)
+                } else {
+                    self.peers.outgoing(&active.binding, packets).map(Some)
+                }
+            });
+            match frames {
+                Ok(Some(frames)) => {
+                    self.emit(frames)?;
+                    return Ok(true);
+                }
+                Ok(None) => {}
+                Err(Failure::Cancelled) => {
+                    active.connection.retire();
+                    if let Some(opening) = active.opening.take() {
+                        let _ = opening.send(Err(Failure::Cancelled));
+                    }
+                    self.active.swap_remove(index);
+                    self.peers.maintain()?;
+                }
+                Err(failure) => return Err(failure),
             }
         }
         if self.receive(cx)? {
