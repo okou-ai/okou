@@ -6154,34 +6154,39 @@ const restoreDisabledWorkflowAutomation$ = command(
       throw new Error("Official Workflow automation state is incomplete");
     }
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0338; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      const [restored] = await tx
-        .update(workflowAutomations)
-        .set({
-          enabled: previousAutomation.enabled,
-          nextRunAt: previousAutomation.nextRunAt,
-          ...(officialReconciliationStatus === null
-            ? {}
-            : {
-                officialIntendedEnabled:
-                  previousAutomation.officialIntendedEnabled,
-                officialReconciliationStatus,
-              }),
-          updatedAt: nowDate(),
-        })
-        .where(eq(workflowAutomations.id, previousAutomation.id))
-        .returning({ id: workflowAutomations.id });
-      if (
-        restored &&
-        previousAutomation.eventType === "google-forms-response-submitted" &&
-        !previousAutomation.enabled
-      ) {
-        await tx
-          .delete(googleFormsAutomationCursors)
-          .where(eq(googleFormsAutomationCursors.automationId, restored.id));
-      }
-    });
+    const restore = db
+      .update(workflowAutomations)
+      .set({
+        enabled: previousAutomation.enabled,
+        nextRunAt: previousAutomation.nextRunAt,
+        ...(officialReconciliationStatus === null
+          ? {}
+          : {
+              officialIntendedEnabled:
+                previousAutomation.officialIntendedEnabled,
+              officialReconciliationStatus,
+            }),
+        updatedAt: nowDate(),
+      })
+      .where(eq(workflowAutomations.id, previousAutomation.id))
+      .returning({ id: workflowAutomations.id });
+    if (
+      previousAutomation.eventType !== "google-forms-response-submitted" ||
+      previousAutomation.enabled
+    ) {
+      await restore;
+      return;
+    }
+    const restoredAutomation = db.$with("restored_automation").as(restore);
+    await db
+      .with(restoredAutomation)
+      .delete(googleFormsAutomationCursors)
+      .where(
+        inArray(
+          googleFormsAutomationCursors.automationId,
+          db.select({ id: restoredAutomation.id }).from(restoredAutomation),
+        ),
+      );
   },
 );
 
