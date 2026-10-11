@@ -373,7 +373,7 @@ describe("createApp", () => {
       expect(allowHeaders).toContain("X-Client-Version");
     });
 
-    it.each([
+    it.each<["production" | "preview", string]>([
       ["production", "https://app.okou.ai"],
       ["preview", "https://pr-38816-app-okou-app-preview.vm0.workers.dev"],
     ])(
