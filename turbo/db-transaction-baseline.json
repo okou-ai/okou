@@ -2,11 +2,6 @@
   "version": 1,
   "sites": [
     {
-      "id": "TX-0003",
-      "file": "turbo/apps/api/src/lib/__tests__/sql-span-name.test.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0004",
       "file": "turbo/apps/api/src/scripts/benchmark-run-seed.ts",
       "owner": "insertBenchmarkRunBatch$"
