@@ -1,0 +1,447 @@
+import { z } from "zod";
+
+import { SETTLE } from "./shared";
+
+const boxSchema = z.object({
+  x: z.number().finite(),
+  y: z.number().finite(),
+  w: z.number().positive(),
+  h: z.number().positive(),
+});
+
+const textBoxSchema = boxSchema.extend({
+  eastAsianFont: z.string(),
+  complexFont: z.string(),
+  strike: z.boolean(),
+  underlineColor: z.string(),
+  underlineWidth: z.number().nonnegative(),
+});
+
+const roundedTextSchema = z.object({
+  rendered: boxSchema,
+  measured: boxSchema,
+  singleLine: z.boolean(),
+});
+
+const tableSchema = boxSchema.extend({
+  rows: z.array(z.number().positive()),
+  fills: z.array(z.array(z.string())),
+});
+
+const orderedListSchema = boxSchema.extend({
+  numbers: z.array(z.number().int().min(1).max(32_767)),
+  markers: z.array(
+    z.object({
+      color: z.string(),
+      font: z.string(),
+      size: z.number().positive(),
+      gap: z.number().positive(),
+      offset: z.number().finite(),
+      leading: z.number().nonnegative(),
+    }),
+  ),
+});
+
+export const layoutSchema = z.object({
+  pages: z.array(
+    z.object({
+      width: z.number().positive(),
+      height: z.number().positive(),
+      tables: z.array(tableSchema),
+      orderedLists: z.array(orderedListSchema),
+      textBoxes: z.array(textBoxSchema),
+      roundedTextShapes: z.array(roundedTextSchema),
+      texts: z.array(z.string()),
+      clippedSource: z
+        .array(z.object({ original: z.string(), visible: z.string() }))
+        .default([]),
+    }),
+  ),
+  activated: z.number().int().nonnegative(),
+  fragmented: z.number().int().nonnegative(),
+});
+
+export type Layout = z.infer<typeof layoutSchema>;
+
+const RESTORABLE = String.raw`
+  const undo = [];
+  const scroll = Array.from(document.querySelectorAll('*')).map(element=>({element,left:element.scrollLeft,top:element.scrollTop}));
+  const scrollX=window.scrollX, scrollY=window.scrollY;
+  undo.push(()=>{
+    for (const item of scroll) { item.element.scrollLeft=item.left; item.element.scrollTop=item.top; }
+    window.scrollTo({left:scrollX,top:scrollY,behavior:'instant'});
+  });
+  const previous = window.__okouRestoreLayout;
+  const save = (element) => {
+    const style = element.getAttribute('style');
+    const classes = element.getAttribute('class');
+    undo.push(() => {
+      if (style === null) element.removeAttribute('style');
+      else element.setAttribute('style', style);
+      if (classes === null) element.removeAttribute('class');
+      else element.setAttribute('class', classes);
+    });
+  };
+  window.__okouRestoreLayout = () => {
+    for (const restore of undo.reverse()) restore();
+    previous?.();
+    delete window.__okouRestoreLayout;
+  };`;
+
+/**
+ * Activate selected pages and settle resources before either pixel capture or
+ * native measurement. Keep this separate from text/paint materialization.
+ */
+export const PREPARE_PAGES = String.raw`(async (selector) => {
+  const slides = Array.from(document.querySelectorAll(selector));
+  ${RESTORABLE}
+  const hidden = element => getComputedStyle(element).display === 'none';
+  const specimen = slides.find(slide => !hidden(slide));
+  let activated = 0;
+  for (const slide of slides) {
+    save(slide);
+    if (hidden(slide)) {
+      if (!specimen) throw new Error('No visible slide supplies the inactive-page layout');
+      const reference = getComputedStyle(specimen);
+      for (const property of ['display','flex-direction','flex-wrap','align-items','align-content','justify-content','grid-template-columns','grid-template-rows','grid-auto-flow']) {
+        slide.style.setProperty(property, reference.getPropertyValue(property), 'important');
+      }
+      activated += 1;
+    }
+    // Selection is an explicit request to export these pages, including inactive pages.
+    slide.style.setProperty('visibility', 'visible', 'important');
+    if (Number(getComputedStyle(slide).opacity) === 0) slide.style.setProperty('opacity', '1', 'important');
+    const own = getComputedStyle(slide);
+    if (own.backgroundImage === 'none' && (own.backgroundColor === 'rgba(0, 0, 0, 0)' || own.backgroundColor === 'transparent')) {
+      for (let ancestor = slide.parentElement; ancestor; ancestor = ancestor.parentElement) {
+        const style = getComputedStyle(ancestor);
+        if (style.backgroundImage !== 'none') break;
+        if (style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent') {
+          slide.style.backgroundColor = style.backgroundColor;
+          break;
+        }
+      }
+    }
+  }
+  // Activation can start additional font loads. Measure only after they settle.
+  for (const slide of slides) slide.getBoundingClientRect();
+  await ${SETTLE};
+  return activated;
+})`;
+
+/** Measure native text and retain the original source text for verification. */
+export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
+  const slides = Array.from(document.querySelectorAll(selector));
+  ${RESTORABLE}
+  const visible = element => {
+    if (getComputedStyle(element).visibility !== 'visible') return false;
+    for (let ancestor = element; ancestor; ancestor = ancestor.parentElement) {
+      const style = getComputedStyle(ancestor);
+      if (style.display === 'none' || Number(style.opacity) === 0) return false;
+    }
+    return true;
+  };
+  const color = value => {
+    const values = value.match(/[\d.]+/g);
+    if (!values || values.length < 3 || (values.length > 3 && Number(values[3]) === 0)) return '';
+    return values.slice(0,3).map(value => Math.round(Number(value)).toString(16).padStart(2,'0')).join('').toUpperCase();
+  };
+  // Computed declarations are live: retain values before detaching source nodes.
+  const snapshotStyle = element => {
+    const source = getComputedStyle(element);
+    const copy = document.createElement('span').style;
+    for (const property of Array.from(source)) copy.setProperty(property,source.getPropertyValue(property));
+    return copy;
+  };
+  const families = style => style.fontFamily.split(',').map(value => value.trim().replace(/^['"]|['"]$/g,''));
+  const fonts = style => {
+    const names = families(style);
+    return {
+      eastAsianFont: names.find(name => /CJK|PingFang|Hiragino|Meiryo|Yu Gothic|Microsoft YaHei|SimSun|Malgun|Nanum|Noto Sans (SC|TC|JP|KR)/i.test(name)) || '',
+      complexFont: names.find(name => /Arabic|Hebrew|Devanagari|Thai/i.test(name)) || '',
+    };
+  };
+  const textNodes = owner => {
+    const walker = document.createTreeWalker(owner, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (node.parentElement && !node.parentElement.closest('script,style,noscript,svg,math') && visible(node.parentElement) && node.nodeValue.trim()) nodes.push(node);
+    }
+    return nodes;
+  };
+  const fragment = (node, splitWords) => {
+    const style = snapshotStyle(node.parentElement);
+    const preserve = style.whiteSpace.startsWith('pre');
+    const clip={left:-Infinity,top:-Infinity,right:Infinity,bottom:Infinity};
+    let ellipsis=false,ellipsisRight=Infinity;
+    for(let ancestor=node.parentElement;ancestor;ancestor=ancestor.parentElement){
+      const s=getComputedStyle(ancestor),r=ancestor.getBoundingClientRect();
+      if(['hidden','clip','scroll','auto'].includes(s.overflowX)){clip.left=Math.max(clip.left,r.left+parseFloat(s.borderLeftWidth));clip.right=Math.min(clip.right,r.right-parseFloat(s.borderRightWidth));}
+      if(['hidden','clip','scroll','auto'].includes(s.overflowY)){clip.top=Math.max(clip.top,r.top+parseFloat(s.borderTopWidth));clip.bottom=Math.min(clip.bottom,r.bottom-parseFloat(s.borderBottomWidth));}
+      if(s.textOverflow==='ellipsis'||Number(s.webkitLineClamp)>0){ellipsis=true;ellipsisRight=Math.min(ellipsisRight,r.right-parseFloat(s.borderRightWidth)-parseFloat(s.paddingRight));}
+      if(slides.includes(ancestor))break;
+    }
+    const segments = Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(node.nodeValue));
+    const result = [];
+    let current = null;
+    for (const segment of segments) {
+      const end = segment.index + segment.segment.length;
+      const range = document.createRange();
+      range.setStart(node, segment.index);
+      range.setEnd(node, end);
+      const rect = Array.from(range.getClientRects()).find(rect => rect.width > 0 && rect.height > 0);
+      if (!rect) { if(preserve || !/\s/.test(segment.segment)) current = null; continue; }
+      if (preserve && /[\n\r]/.test(segment.segment)) { current=null;continue; }
+      if(rect.top>=clip.bottom-.5||rect.bottom<=clip.top+.5||rect.left<clip.left-.5||rect.right>clip.right+.5){result.clipped=true;continue;}
+      let value = preserve ? segment.segment : segment.segment.replace(/[\n\r\t]/g,' ');
+      if(style.textTransform==='uppercase')value=value.toUpperCase();else if(style.textTransform==='lowercase')value=value.toLowerCase();else if(style.textTransform==='capitalize'&&(segment.index===0||/\s/.test(node.nodeValue[segment.index-1])))value=value.toUpperCase();
+      if(splitWords&&/[ \t\u00a0]/.test(value)&&result.length){const previous=result.at(-1);previous.text+=value;previous.right=Math.max(previous.right,rect.right);current=null;continue;}
+      if (!current || Math.abs(rect.top - current.top) > 1 || (splitWords && /[ \t\u00a0]/.test(value))) {
+        current = {text:value,left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,style,source:node.parentElement,paintRect:(()=>{const r=node.parentElement.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}})(),href:node.parentElement.closest('a[href]')?.href || ''};
+        result.push(current);
+      } else {
+        current.text += value;
+        current.left = Math.min(current.left,rect.left);
+        current.right = Math.max(current.right,rect.right);
+        current.bottom = Math.max(current.bottom,rect.bottom);
+      }
+      if (splitWords && /[ \t\u00a0]/.test(value)) current = null;
+    }
+    if(result.clipped&&ellipsis&&result.length){
+      const last=result.at(-1),context=document.createElement('canvas').getContext('2d');
+      context.font=style.fontStyle+' '+style.fontWeight+' '+style.fontSize+' '+style.fontFamily;
+      context.letterSpacing=style.letterSpacing==='normal'?'0px':style.letterSpacing;context.wordSpacing=style.wordSpacing==='normal'?'0px':style.wordSpacing;
+      const limit=Math.min(clip.right,ellipsisRight);
+      const chars=Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(last.text.trimEnd()),s=>s.segment);
+      while(chars.length&&context.measureText(chars.join('')+'…').width>limit-last.left)chars.pop();
+      last.text=chars.join('')+'…';last.right=Math.min(limit,last.left+context.measureText(last.text).width);
+    }
+    const filtered=result.filter(part => part.text.trim());filtered.clipped=result.clipped;return filtered;
+  };
+  const clippedSource=slides.map(()=>[]);
+  const sourceTexts = slides.map((slide,index) => {
+    const texts=textNodes(slide).flatMap(node=>{const g=window.__okouNative?.geometry(node.parentElement);if(g&&(!g.similarity||Math.abs(g.rotation)>.0001))return [node.nodeValue.replace(/\s+/g,' ').trim()];const parts=fragment(node,false);if(parts.clipped)clippedSource[index].push({original:node.nodeValue.trim(),visible:parts.map(p=>p.text).join(' ')});return parts.map(p=>p.text.trim());});
+    for(const element of [slide,...slide.querySelectorAll('*')])for(const item of window.__okouNative?.nodes.get(element)?.generated||[])if(item.text.trim())texts.push(item.text.trim());
+    return texts;
+  });
+  const inlineTree = owner => Array.from(owner.querySelectorAll('*')).every(child => {
+    const style = getComputedStyle(child);
+    return child.tagName === 'BR' || ((style.display === 'inline' || style.display === 'inline-block' || style.display === 'contents') && !child.matches('svg,img,canvas,math,ruby,rt,video,iframe'));
+  });
+  // visibility is inherited but can be overridden. Unlike display:none, it
+  // must not prune visible descendants from the renderer's traversal.
+  for (const slide of slides) {
+    const exposed = [];
+    for (const element of slide.querySelectorAll('*')) {
+      if (!visible(element) || exposed.some(parent => parent.contains(element))) continue;
+      let ancestor = element.parentElement;
+      while (ancestor && ancestor !== slide && getComputedStyle(ancestor).visibility === 'visible') ancestor = ancestor.parentElement;
+      if (!ancestor || ancestor === slide) continue;
+      const rect = element.getBoundingClientRect();
+      const root = slide.getBoundingClientRect();
+      const clone = element.cloneNode(true);
+      const style = snapshotStyle(element);
+      for (const property of Array.from(style)) clone.style.setProperty(property,style.getPropertyValue(property),'important');
+      // Physical coordinates must win over copied logical inset declarations.
+      // CSS setters without priority otherwise lose to the computed snapshot.
+      const rootStyle = getComputedStyle(slide);
+      for (const [property,value] of Object.entries({position:'absolute','box-sizing':'border-box',inset:'auto',left:(rect.left-root.left-parseFloat(rootStyle.borderLeftWidth))+'px',top:(rect.top-root.top-parseFloat(rootStyle.borderTopWidth))+'px',width:rect.width+'px',height:rect.height+'px',margin:'0'})) clone.style.setProperty(property,value,'important');
+      clone.removeAttribute('id');
+      save(element);
+      element.style.setProperty('visibility','hidden','important');
+      for (const child of element.querySelectorAll('*')) {
+        save(child);
+        child.style.setProperty('visibility','hidden','important');
+      }
+      slide.append(clone);
+      undo.push(() => clone.remove());
+      const actual = clone.getBoundingClientRect();
+      if (Math.abs(actual.left-rect.left)>0.5 || Math.abs(actual.top-rect.top)>0.5 || Math.abs(actual.width-rect.width)>0.5 || Math.abs(actual.height-rect.height)>0.5) throw new Error('Visible descendant geometry disagrees with the measured source');
+      exposed.push(element);
+    }
+  }
+  const candidates = [];
+  for (const slide of slides) {
+    for (const owner of slide.querySelectorAll('*')) {
+      if (!visible(owner) || owner.closest('table,svg,math,ruby,rt') || !inlineTree(owner)) continue;
+      const style = getComputedStyle(owner);
+      if (style.display === 'inline' || style.writingMode !== 'horizontal-tb') continue;
+      const nodes = textNodes(owner);
+      if (!nodes.length) continue;
+      let transformed = false;
+      for (let ancestor = owner; ancestor; ancestor = ancestor.parentElement) {
+        const transform = getComputedStyle(ancestor).transform;
+        if (transform !== 'none') {
+          const matrix = new DOMMatrix(transform);
+          if (!matrix.is2D || Math.abs(matrix.a-1)>0.00001 || Math.abs(matrix.d-1)>0.00001 || Math.abs(matrix.b)>0.00001 || Math.abs(matrix.c)>0.00001) transformed = true;
+        }
+        if (ancestor === slide) break;
+      }
+      // Rotated/scaled bounds are axis-aligned unions too, but require affine
+      // composition, not the untransformed line-fragment contract below.
+      if (transformed) continue;
+      const decorated = color(style.backgroundColor) || style.backgroundImage !== 'none' || parseFloat(style.borderTopWidth) > 0 || Array.from(owner.querySelectorAll('*')).some(child => {
+        const s = getComputedStyle(child);
+        return s.backgroundImage !== 'none' || color(s.backgroundColor) || parseFloat(s.borderTopWidth) > 0;
+      });
+      const textDecoration = nodes.some(node => getComputedStyle(node.parentElement).textDecorationLine !== 'none');
+      const naturalWrap = nodes.some(node => fragment(node,false).length > 1);
+      const spacing = nodes.some(node => parseFloat(getComputedStyle(node.parentElement).wordSpacing) > 0 || /\t|\u00a0{2}/.test(node.nodeValue));
+      const scripts = nodes.some(node => /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(node.nodeValue) || getComputedStyle(node.parentElement).direction === 'rtl');
+      if (decorated || textDecoration || naturalWrap || spacing || scripts || owner.querySelector('sup,sub,br') || style.whiteSpace.startsWith('pre') || nodes.some(node=>fragment(node,false).clipped)) candidates.push({owner,nodes,decorated});
+    }
+  }
+  const relativeOpacity = (element,owner) => {
+    let opacity = 1;
+    for (let ancestor = element; ancestor && ancestor !== owner; ancestor = ancestor.parentElement) opacity *= Number(getComputedStyle(ancestor).opacity);
+    return opacity;
+  };
+  let fragmented = 0;
+  const prepared = [];
+  for (const candidate of candidates) {
+    const {owner,nodes} = candidate;
+    if (candidates.some(other => other !== candidate && other.owner.contains(owner))) continue;
+    const root = owner.getBoundingClientRect();
+    const sourceStyle = snapshotStyle(owner);
+    const parts = nodes.flatMap(node => fragment(node,parseFloat(getComputedStyle(node.parentElement).wordSpacing) > 0 || /\t|\u00a0{2}/.test(node.nodeValue)).map(part => ({...part,opacity:relativeOpacity(node.parentElement,owner)})));
+    if (!parts.length) continue;
+    const decorations = Array.from(owner.querySelectorAll('*')).filter(child => {
+      const style = getComputedStyle(child);
+      return color(style.backgroundColor) || style.backgroundImage !== 'none' || parseFloat(style.borderTopWidth) > 0;
+    }).map(child => ({style:snapshotStyle(child),opacity:relativeOpacity(child,owner),rects:Array.from(child.getClientRects())}));
+    const originalChildren = Array.from(owner.childNodes);
+    save(owner);
+    undo.push(() => owner.replaceChildren(...originalChildren));
+    owner.replaceChildren();
+    if (sourceStyle.position === 'static') owner.style.setProperty('position','relative','important');
+    owner.style.setProperty('box-sizing','border-box','important');
+    owner.style.setProperty('width',root.width+'px','important');
+    owner.style.setProperty('height',root.height+'px','important');
+    // Absolute child coordinates are relative to the padding box, not the border box.
+    const originX = root.left + parseFloat(sourceStyle.borderLeftWidth);
+    const originY = root.top + parseFloat(sourceStyle.borderTopWidth);
+    for (const decoration of decorations) {
+      for (const rect of decoration.rects) {
+        const paint = document.createElement('span');
+        for (const property of ['background-color','background-image','background-size','background-position','background-repeat','border-top','border-right','border-bottom','border-left','border-radius','box-shadow']) paint.style.setProperty(property,decoration.style.getPropertyValue(property));
+        Object.assign(paint.style,{position:'absolute',display:'block',left:(rect.left-originX)+'px',top:(rect.top-originY)+'px',width:rect.width+'px',height:rect.height+'px',padding:'0',margin:'0'});
+        paint.style.opacity = String(decoration.opacity);
+        owner.append(paint);
+      }
+    }
+    for (const part of parts) {
+      const span = document.createElement(part.href ? 'a' : 'span');
+      if (part.href) span.href = part.href;
+      for (const property of ['font-family','font-size','font-weight','font-style','font-variant','letter-spacing','text-transform','text-decoration','color','direction','-webkit-text-stroke-width','-webkit-text-stroke-color']) span.style.setProperty(property,part.style.getPropertyValue(property));
+      Object.assign(span.style,{position:'absolute',display:'block',left:(part.left-originX)+'px',top:(part.top-originY)+'px',width:(part.right-part.left)+'px',height:(part.bottom-part.top)+'px',padding:'0',margin:'0',lineHeight:'normal',whiteSpace:'pre',background:'transparent'});
+      span.style.opacity = String(part.opacity);
+      span.textContent = part.text;
+      if(window.__okouNative){
+        const meta=window.__okouNative.nodes.get(part.source)||window.__okouNative.nodes.get(owner);
+        if(meta)window.__okouNative.nodes.set(span,{...meta,generated:[]});
+        if(part.style.backgroundClip==='text'||part.style.webkitBackgroundClip==='text'){span.__okouTextPaint=part.style;span.__okouTextPaintRect=part.paintRect;}
+      }
+      owner.append(span);
+      prepared.push({span,style:part.style});
+    }
+    fragmented += 1;
+  }
+  const pages = slides.map((slide,index) => {
+    const rect = slide.getBoundingClientRect();
+    const box = element => {
+      const r = element.getBoundingClientRect();
+      return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};
+    };
+    const tables = Array.from(slide.querySelectorAll('table')).filter(visible).map(table => ({
+      ...box(table), rows:Array.from(table.rows).map(row => row.getBoundingClientRect().height),
+      fills:Array.from(table.rows).map(row => Array.from(row.cells).flatMap(cell => {
+        let fill = '';
+        for (let element = cell; element && table.contains(element); element = element.parentElement) {
+          fill = color(getComputedStyle(element).backgroundColor);
+          if (fill) break;
+        }
+        return Array.from({length:cell.colSpan},() => fill);
+      })),
+    }));
+    const orderedLists = Array.from(slide.querySelectorAll('ol')).filter(list => {
+      if(window.__okouNative)return false;
+      const rect = list.getBoundingClientRect();
+      return visible(list) && rect.width>0 && rect.height>0 && !list.reversed && getComputedStyle(list).listStyleType==='decimal' && Array.from(list.children).some(child=>child.tagName==='LI');
+    }).flatMap(list => {
+      let number = list.hasAttribute('start') ? Number(list.getAttribute('start')) : 1;
+      const items = Array.from(list.children).filter(child => child.tagName === 'LI');
+      const numbers = items.map(item => {
+        if (item.hasAttribute('value')) number = Number(item.getAttribute('value'));
+        return number++;
+      });
+      // DrawingML automatic decimal starts are positive 16-bit values. Other
+      // list formats stay with the renderer and need separate visual review.
+      if (numbers.some(number => !Number.isInteger(number) || number<1 || number>32767)) return [];
+      const context = document.createElement('canvas').getContext('2d');
+      if (!context) throw new Error('No canvas context for native marker measurement');
+      const rect = list.getBoundingClientRect(), listStyle = getComputedStyle(list);
+      const markers = items.map((item,index) => {
+        const marker = getComputedStyle(item,'::marker');
+        const first = textNodes(item)[0];
+        if (!first) return null;
+        const range = document.createRange();
+        range.selectNodeContents(first);
+        const text = Array.from(range.getClientRects()).find(rect => rect.width>0 && rect.height>0);
+        if (!text) return null;
+        context.font = marker.fontStyle+' '+marker.fontWeight+' '+marker.fontSize+' '+marker.fontFamily;
+        const lineHeight = parseFloat(getComputedStyle(item).lineHeight);
+        const leading = Number.isFinite(lineHeight) ? Math.max(0,(lineHeight-text.height)/2) : 0;
+        return {color:color(marker.color),font:families(marker)[0],size:parseFloat(marker.fontSize),gap:context.measureText(numbers[index]+'. ').width,offset:text.left-rect.left-parseFloat(listStyle.paddingLeft),leading};
+      });
+      if (markers.some(marker => marker===null)) return [];
+      return [{...box(list),numbers,markers}];
+    });
+    const roundedTextShapes = [];
+    for (const owner of slide.querySelectorAll('*')) {
+      const style = getComputedStyle(owner);
+      if (!visible(owner) || !inlineTree(owner) || !textNodes(owner).length || parseFloat(style.borderRadius)<=0 || style.transform==='none' || style.writingMode!=='horizontal-tb') continue;
+      const matrix = new DOMMatrix(style.transform);
+      if (!matrix.is2D || Math.abs(matrix.a-matrix.d)>0.00001 || Math.abs(matrix.b+matrix.c)>0.00001 || Math.abs(Math.hypot(matrix.a,matrix.b)-1)>0.00001 || Math.abs(matrix.b)<0.00001) continue;
+      let ancestorTransform = false;
+      for (let ancestor=owner.parentElement; ancestor; ancestor=ancestor.parentElement) {
+        const value = getComputedStyle(ancestor).transform;
+        if (value!=='none') {
+          const m = new DOMMatrix(value);
+          if (!m.is2D || Math.abs(m.a-1)>0.00001 || Math.abs(m.d-1)>0.00001 || Math.abs(m.b)>0.00001 || Math.abs(m.c)>0.00001) ancestorTransform = true;
+        }
+        if (ancestor===slide) break;
+      }
+      if (ancestorTransform || ['::before','::after'].some(pseudo => !['none','normal','""'].includes(getComputedStyle(owner,pseudo).content))) continue;
+      const bounds = owner.getBoundingClientRect();
+      const centerX = bounds.left+bounds.width/2-rect.left, centerY = bounds.top+bounds.height/2-rect.top;
+      const rendered = {x:centerX-owner.offsetWidth/2,y:centerY-owner.offsetHeight/2,w:owner.offsetWidth,h:owner.offsetHeight};
+      // Pure rotation changes the axis-aligned union, not the local CSS layout.
+      // Neutralize only this rotation synchronously and restore its exact style.
+      const originalStyle = owner.getAttribute('style');
+      try {
+        owner.style.setProperty('transition','none','important');
+        owner.style.setProperty('animation','none','important');
+        owner.style.setProperty('transform','none','important');
+        const local = owner.getBoundingClientRect();
+        const fragments = textNodes(owner).flatMap(node => {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          return Array.from(range.getClientRects()).filter(r => r.width>0 && r.height>0);
+        });
+        if (!fragments.length) throw new Error('Native rounded text has no visible line geometry');
+        const singleLine = Math.max(...fragments.map(r=>r.top)) < Math.min(...fragments.map(r=>r.bottom));
+        roundedTextShapes.push({rendered,measured:{x:centerX-local.width/2,y:centerY-local.height/2,w:local.width,h:local.height},singleLine});
+      } finally {
+        if (originalStyle===null) owner.removeAttribute('style');
+        else owner.setAttribute('style',originalStyle);
+      }
+    }
+    const textBoxes = prepared.filter(part => slide.contains(part.span)).map(part => ({
+      ...box(part.span), ...fonts(part.style), strike:part.style.textDecorationLine.includes('line-through'),
+      underlineColor:part.style.textDecorationLine.includes('underline') ? color(part.style.textDecorationColor) : '',
+      underlineWidth:parseFloat(part.style.textDecorationThickness) || 0,
+    }));
+    return {width:rect.width,height:rect.height,tables,orderedLists,textBoxes,roundedTextShapes,texts:sourceTexts[index],clippedSource:clippedSource[index]};
+  });
+  return JSON.stringify({pages,activated,fragmented});
+})`;

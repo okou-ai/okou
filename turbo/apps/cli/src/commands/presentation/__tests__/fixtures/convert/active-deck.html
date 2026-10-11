@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Inactive slide activation probe</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        color: #173047;
+      }
+      .slide {
+        display: none;
+        width: 1600px;
+        height: 900px;
+        padding: 70px 90px 40px;
+        background: #fff;
+      }
+      .slide.active {
+        display: flex;
+        flex-direction: column;
+      }
+      h1 {
+        margin: 0 0 40px;
+        font-size: 64px;
+        font-weight: 400;
+      }
+      .panel {
+        flex: 1;
+        padding: 50px;
+        background: #e2f0f8;
+        font-size: 38px;
+        line-height: 1.5;
+      }
+      footer {
+        margin-top: 30px;
+        font-size: 24px;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="slide active" id="first" data-case="N13a">
+      <h1>First active page</h1>
+      <div class="panel">
+        This flexible panel should stretch to fill the page.
+      </div>
+      <footer>N13_FIRST_ACTIVE</footer>
+    </section>
+    <section class="slide" id="second" data-case="N13b">
+      <h1>Second inactive page</h1>
+      <div class="panel">
+        The second page needs a deliberate activation contract.
+      </div>
+      <footer>N13_SECOND_INACTIVE</footer>
+    </section>
+  </body>
+</html>

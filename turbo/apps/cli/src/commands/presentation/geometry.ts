@@ -1,0 +1,490 @@
+import { crc32, deflateRawSync, inflateRawSync } from "zlib";
+
+import { SaxesParser } from "saxes";
+
+import type { Layout } from "./layout";
+import { applyNativePaint, type NativePaint } from "./native";
+
+/** The renderer writes ordinary, non-encrypted ZIP entries. Reject other methods. */
+export function pptxEntries(archive: Buffer): Map<string, Buffer> {
+  const end = archive.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  if (end < 0) throw new Error("Not a PPTX ZIP container");
+  const entries = new Map<string, Buffer>();
+  const count = archive.readUInt16LE(end + 10);
+  let offset = archive.readUInt32LE(end + 16);
+  for (let index = 0; index < count; index += 1) {
+    if (archive.readUInt32LE(offset) !== 0x02014b50) {
+      throw new Error("Invalid PPTX central directory");
+    }
+    const method = archive.readUInt16LE(offset + 10);
+    if (method !== 0 && method !== 8) {
+      throw new Error(
+        `Unsupported PPTX compression method ${method.toString()}`,
+      );
+    }
+    const size = archive.readUInt32LE(offset + 20);
+    const nameLength = archive.readUInt16LE(offset + 28);
+    const extraLength = archive.readUInt16LE(offset + 30);
+    const commentLength = archive.readUInt16LE(offset + 32);
+    const local = archive.readUInt32LE(offset + 42);
+    const name = archive
+      .subarray(offset + 46, offset + 46 + nameLength)
+      .toString("utf8");
+    const start =
+      local +
+      30 +
+      archive.readUInt16LE(local + 26) +
+      archive.readUInt16LE(local + 28);
+    const bytes = archive.subarray(start, start + size);
+    entries.set(
+      name,
+      method === 8 ? inflateRawSync(bytes) : Buffer.from(bytes),
+    );
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  return entries;
+}
+
+function pack(entries: ReadonlyMap<string, Buffer>): Buffer {
+  const local: Buffer[] = [];
+  const directory: Buffer[] = [];
+  let offset = 0;
+  for (const [name, bytes] of entries) {
+    const encoded = Buffer.from(name, "utf8");
+    const compressed = deflateRawSync(bytes);
+    const checksum = crc32(bytes);
+    const header = Buffer.alloc(30);
+    header.writeUInt32LE(0x04034b50, 0);
+    header.writeUInt16LE(20, 4);
+    header.writeUInt16LE(0x0800, 6);
+    header.writeUInt16LE(8, 8);
+    header.writeUInt32LE(checksum, 14);
+    header.writeUInt32LE(compressed.length, 18);
+    header.writeUInt32LE(bytes.length, 22);
+    header.writeUInt16LE(encoded.length, 26);
+    local.push(header, encoded, compressed);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0x0800, 8);
+    central.writeUInt16LE(8, 10);
+    central.writeUInt32LE(checksum, 16);
+    central.writeUInt32LE(compressed.length, 20);
+    central.writeUInt32LE(bytes.length, 24);
+    central.writeUInt16LE(encoded.length, 28);
+    central.writeUInt32LE(offset, 42);
+    directory.push(central, encoded);
+    offset += header.length + encoded.length + compressed.length;
+  }
+  const central = Buffer.concat(directory);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.size, 8);
+  end.writeUInt16LE(entries.size, 10);
+  end.writeUInt32LE(central.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...local, central, end]);
+}
+
+function attribute(xml: string, name: string): number {
+  const match = [...xml.matchAll(/\b(x|y|cx|cy|lIns)="([^"]+)"/gu)].find(
+    (entry) => {
+      return entry[1] === name;
+    },
+  );
+  if (match === undefined)
+    throw new Error(`Missing PPTX geometry attribute ${name}`);
+  const value = Number(match[2]);
+  if (!Number.isFinite(value))
+    throw new Error(`Invalid PPTX geometry attribute ${name}`);
+  return value;
+}
+
+function xmlValue(value: string): string {
+  return value
+    .replace(/&/gu, "&amp;")
+    .replace(/"/gu, "&quot;")
+    .replace(/</gu, "&lt;");
+}
+
+/** CSS padding belongs to a rectangular text box, not the preset's inset text area. */
+function separateRoundedText(
+  xml: string,
+  boxes: Layout["pages"][number]["roundedTextShapes"],
+  scale: number,
+  offsetX: number,
+  offsetY: number,
+): string {
+  let nextId = 0;
+  for (const match of xml.matchAll(/<p:cNvPr\b[^>]*\bid="(\d+)"/gu)) {
+    nextId = Math.max(nextId, Number(match[1]));
+  }
+  return xml.replace(/<p:sp\b[\s\S]*?<\/p:sp>/gu, (shape) => {
+    const properties = /<p:spPr\b[^>]*>[\s\S]*?<\/p:spPr>/u.exec(shape)?.[0];
+    if (
+      properties === undefined ||
+      !/<a:prstGeom\b[^>]*\bprst="roundRect"/u.test(properties)
+    )
+      return shape;
+    const text = /<p:txBody\b[^>]*>[\s\S]*?<\/p:txBody>/u.exec(shape)?.[0];
+    if (text === undefined || !text.includes("<a:t>")) return shape;
+    const nonVisual = /<p:nvSpPr\b[^>]*>[\s\S]*?<\/p:nvSpPr>/u.exec(shape)?.[0];
+    const transform = /<a:xfrm\b[\s\S]*?<\/a:xfrm>/u.exec(properties)?.[0];
+    if (nonVisual === undefined || transform === undefined)
+      throw new Error("Native rounded text has no shape metadata or transform");
+    nextId += 1;
+    if (nextId > 4_294_967_295)
+      throw new Error("No available native shape identifier");
+    const id = nextId.toString();
+    const off = /<a:off\b[^>]*\/>/u.exec(transform)?.[0];
+    const extent = /<a:ext\b[^>]*\/>/u.exec(transform)?.[0];
+    if (off === undefined || extent === undefined)
+      throw new Error("Native rounded text has no frame extent");
+    const box = boxes.find(({ rendered }) => {
+      return (
+        Math.abs(attribute(off, "x") - offsetX - rendered.x * scale) < 3 &&
+        Math.abs(attribute(off, "y") - offsetY - rendered.y * scale) < 3 &&
+        Math.abs(attribute(extent, "cx") - rendered.w * scale) < 3 &&
+        Math.abs(attribute(extent, "cy") - rendered.h * scale) < 3
+      );
+    });
+    const measuredTransform =
+      box === undefined
+        ? transform
+        : transform
+            .replace(
+              off,
+              `<a:off x="${Math.round(offsetX + box.measured.x * scale).toString()}" y="${Math.round(offsetY + box.measured.y * scale).toString()}"/>`,
+            )
+            .replace(
+              extent,
+              `<a:ext cx="${Math.round(box.measured.w * scale).toString()}" cy="${Math.round(box.measured.h * scale).toString()}"/>`,
+            );
+    let native = shape.replace(transform, measuredTransform);
+    if (box?.singleLine)
+      native = native.replace(
+        /(<a:bodyPr\b[^>]*?)\s+wrap="[^"]*"/u,
+        '$1 wrap="none"',
+      );
+    // Keep the original identity, hyperlinks and text properties on the text.
+    // The additional background must not duplicate accessibility/action metadata.
+    const background = native
+      .replace(/<p:txBody\b[^>]*>[\s\S]*?<\/p:txBody>/u, "")
+      .replace(
+        nonVisual,
+        `<p:nvSpPr><p:cNvPr id="${id}" name="Rounded background ${id}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>`,
+      );
+    // Border/fill/shape-level effects belong only to the original native paint.
+    // Run-level text effects stay in txBody; real multi-line wrapping is retained.
+    const foreground = native.replace(
+      /<p:spPr\b[^>]*>[\s\S]*?<\/p:spPr>/u,
+      `<p:spPr>${measuredTransform}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></p:spPr>`,
+    );
+    return background + foreground;
+  });
+}
+
+/** Fixed boxes and per-line text are one layout contract, not an autofit heuristic. */
+export function applyGeometry(
+  deck: Buffer,
+  layout: Layout,
+  width: number,
+  height: number,
+  nativePaint: NativePaint = {},
+): Buffer {
+  const entries = pptxEntries(deck);
+  for (let pageIndex = 0; pageIndex < layout.pages.length; pageIndex += 1) {
+    const page = layout.pages[pageIndex];
+    if (page === undefined)
+      throw new Error("Missing measured presentation page");
+    const name = `ppt/slides/slide${(pageIndex + 1).toString()}.xml`;
+    const original = entries.get(name);
+    if (original === undefined)
+      throw new Error(`Missing rendered page ${name}`);
+    const scale = Math.min(
+      (width * 914_400) / page.width,
+      (height * 914_400) / page.height,
+    );
+    const offsetX = (width * 914_400 - page.width * scale) / 2;
+    const offsetY = (height * 914_400 - page.height * scale) / 2;
+    let xml = original
+      .toString("utf8")
+      .replace(/<a:spAutoFit\s*\/>/gu, "<a:noAutofit/>");
+    xml = xml.replace(/<p:sp\b[\s\S]*?<\/p:sp>/gu, (shape) => {
+      const transform = /<a:xfrm\b[\s\S]*?<\/a:xfrm>/u.exec(shape)?.[0];
+      if (transform === undefined || !shape.includes("<a:t>")) return shape;
+      const off = /<a:off\b[^>]*\/?>/u.exec(transform)?.[0];
+      if (off === undefined) return shape;
+      const x = attribute(off, "x");
+      const y = attribute(off, "y");
+      const matches = (box: { readonly x: number; readonly y: number }) => {
+        return (
+          Math.abs(x - offsetX - box.x * scale) < 3 &&
+          Math.abs(y - offsetY - box.y * scale) < 3
+        );
+      };
+      const list = page.orderedLists.find(matches);
+      let numbered = shape;
+      if (list !== undefined) {
+        const markers = [...shape.matchAll(/<a:buAutoNum\b[^>]*\/>/gu)];
+        if (
+          markers.length !== list.numbers.length ||
+          list.markers.length !== list.numbers.length
+        )
+          throw new Error(
+            "Native ordered-list paragraphs disagree with browser items",
+          );
+        const body = /<a:bodyPr\b[^>]*>/u.exec(shape)?.[0];
+        const extent = /<a:ext\b[^>]*\/>/u.exec(shape)?.[0];
+        const first = list.markers[0];
+        if (body === undefined || extent === undefined || first === undefined)
+          throw new Error("Native ordered list has no text frame");
+        const originalInset = attribute(body, "lIns") / scale;
+        const inset = Math.min(
+          ...list.markers.map((marker) => {
+            return originalInset + marker.offset - marker.gap;
+          }),
+        );
+        const shift = Math.min(0, inset) * scale;
+        const leading = first.leading * scale;
+        numbered = shape
+          .replace(
+            body,
+            body.replace(
+              /\blIns="[^"]*"/u,
+              `lIns="${Math.round(Math.max(0, inset) * scale).toString()}"`,
+            ),
+          )
+          .replace(
+            off,
+            `<a:off x="${Math.round(x + shift).toString()}" y="${Math.round(y - leading).toString()}"/>`,
+          )
+          .replace(
+            extent,
+            `<a:ext cx="${Math.round(attribute(extent, "cx") - shift).toString()}" cy="${Math.round(attribute(extent, "cy") + leading).toString()}"/>`,
+          );
+        let index = 0;
+        numbered = numbered.replace(/<a:p\b[\s\S]*?<\/a:p>/gu, (paragraph) => {
+          if (!paragraph.includes("<a:buAutoNum")) return paragraph;
+          const number = list.numbers[index];
+          const marker = list.markers[index++];
+          if (number === undefined || marker === undefined)
+            throw new Error("Missing measured ordered-list marker");
+          return paragraph.replace(
+            /<a:pPr\b([^>]*)>([\s\S]*?)<\/a:pPr>/u,
+            (_match: string, attributes: string, properties: string) => {
+              const clean = properties
+                .replace(/<a:buClr\b[\s\S]*?<\/a:buClr>/gu, "")
+                .replace(
+                  /<a:bu(?:ClrTx|SzTx|SzPct|SzPts|Font)\b[^>]*\/>/gu,
+                  "",
+                );
+              const paint = marker.color
+                ? `<a:buClr><a:srgbClr val="${marker.color}"/></a:buClr>`
+                : "";
+              const font = `<a:buFont typeface="${xmlValue(marker.font)}"/>`;
+              const size = `<a:buSzPts val="${Math.round((marker.size * scale) / 127).toString()}"/>`;
+              const numbered = clean.replace(
+                /<a:buAutoNum\b[^>]*\/>/u,
+                `${paint}${size}${font}<a:buAutoNum type="arabicPeriod" startAt="${number.toString()}"/>`,
+              );
+              const position = attributes.replace(
+                /\s+(?:marL|indent)="[^"]*"/gu,
+                "",
+              );
+              const left = (originalInset + marker.offset - inset) * scale;
+              return `<a:pPr${position} marL="${Math.round(left).toString()}" indent="${Math.round(-marker.gap * scale).toString()}">${numbered}</a:pPr>`;
+            },
+          );
+        });
+      }
+      const box = page.textBoxes.find(matches);
+      if (box === undefined) return numbered;
+      let fixed = numbered.replace(
+        /(<a:bodyPr\b[^>]*?)\s+wrap="[^"]*"/gu,
+        '$1 wrap="none"',
+      );
+      if (box.eastAsianFont)
+        fixed = fixed.replace(
+          /<a:ea typeface="[^"]*"/gu,
+          `<a:ea typeface="${xmlValue(box.eastAsianFont)}"`,
+        );
+      if (box.complexFont)
+        fixed = fixed.replace(
+          /<a:cs typeface="[^"]*"/gu,
+          `<a:cs typeface="${xmlValue(box.complexFont)}"`,
+        );
+      if (box.strike)
+        fixed = fixed.replace(
+          /<a:rPr\b([^>]*?)>/gu,
+          '<a:rPr$1 strike="sngStrike">',
+        );
+      if (box.underlineColor) {
+        const underline = `<a:uFill><a:solidFill><a:srgbClr val="${box.underlineColor}"/></a:solidFill></a:uFill>`;
+        fixed = fixed.replace(/<a:rPr\b[^>]*>[\s\S]*?<\/a:rPr>/gu, (run) => {
+          const anchor =
+            /<a:(?:latin|ea|cs|sym|hlinkClick|hlinkMouseOver|extLst)\b/u;
+          return anchor.test(run)
+            ? run.replace(anchor, `${underline}$&`)
+            : run.replace("</a:rPr>", `${underline}</a:rPr>`);
+        });
+      }
+      return fixed;
+    });
+    let tableIndex = 0;
+    xml = xml.replace(
+      /<p:graphicFrame\b[\s\S]*?<\/p:graphicFrame>/gu,
+      (frame) => {
+        if (!frame.includes("<a:tbl>")) return frame;
+        const table = page.tables[tableIndex++];
+        if (table === undefined)
+          throw new Error("Rendered table has no browser measurement");
+        const rows = [...frame.matchAll(/<a:tr\b/gu)];
+        if (rows.length !== table.rows.length)
+          throw new Error(
+            "Rendered table row count disagrees with browser geometry",
+          );
+        const ext = /<a:ext\b[^>]*\/?>/u.exec(frame)?.[0];
+        if (ext === undefined)
+          throw new Error("Rendered table has no frame extent");
+        const tableScale = attribute(ext, "cx") / table.w;
+        const heights = table.rows.map((value) => {
+          return Math.round(value * tableScale);
+        });
+        let rowIndex = 0;
+        let fixed = frame.replace(/<a:tr\b[^>]*>[\s\S]*?<\/a:tr>/gu, (row) => {
+          const height = heights[rowIndex];
+          const fills = table.fills[rowIndex++];
+          if (height === undefined)
+            throw new Error("Missing measured table row height");
+          let cellIndex = 0;
+          return row
+            .replace(
+              /(<a:tr\b[^>]*?)\bh="[^"]*"/u,
+              `$1h="${height.toString()}"`,
+            )
+            .replace(/<a:tc\b[\s\S]*?<\/a:tc>/gu, (cell) => {
+              const fill = fills?.[cellIndex++];
+              if (!fill) return cell;
+              return cell.replace(
+                /<a:tcPr\b([^>]*)>([\s\S]*?)<\/a:tcPr>/u,
+                (_match: string, attributes: string, properties: string) => {
+                  // Replace cell fill without deleting paints inside border lines.
+                  const borders: string[] = [];
+                  const clean = properties
+                    .replace(
+                      /<a:ln(?:L|R|T|B|TlToBr|BlToTr)\b[\s\S]*?<\/a:ln(?:L|R|T|B|TlToBr|BlToTr)>/gu,
+                      (border) => {
+                        borders.push(border);
+                        return `__border${(borders.length - 1).toString()}__`;
+                      },
+                    )
+                    .replace(
+                      /<a:(?:solidFill|gradFill|blipFill|pattFill|grpFill)\b[\s\S]*?<\/a:(?:solidFill|gradFill|blipFill|pattFill|grpFill)>|<a:noFill\s*\/>/gu,
+                      "",
+                    )
+                    .replace(
+                      /__border(\d+)__/gu,
+                      (_match: string, index: string) => {
+                        const border = borders[Number(index)];
+                        if (border === undefined)
+                          throw new Error("Missing preserved table border");
+                        return border;
+                      },
+                    );
+                  return `<a:tcPr${attributes}>${clean}<a:solidFill><a:srgbClr val="${fill}"/></a:solidFill></a:tcPr>`;
+                },
+              );
+            });
+        });
+        const height = heights.reduce((total, value) => {
+          return total + value;
+        }, 0);
+        fixed = fixed.replace(
+          ext,
+          ext.replace(/\bcy="[^"]*"/u, `cy="${height.toString()}"`),
+        );
+        return fixed;
+      },
+    );
+    if (tableIndex !== page.tables.length)
+      throw new Error("Measured table was omitted by the renderer");
+    entries.set(
+      name,
+      Buffer.from(
+        applyNativePaint(
+          separateRoundedText(
+            xml,
+            page.roundedTextShapes,
+            scale,
+            offsetX,
+            offsetY,
+          ),
+          nativePaint[String(pageIndex + 1)],
+          scale,
+        ),
+        "utf8",
+      ),
+    );
+  }
+  return pack(entries);
+}
+
+/** Check identifiers before handing a package to a presentation editor. */
+export function inspectNativeStructure(deck: Buffer): {
+  page: number;
+  objects: number;
+  pictures: number;
+  paths: number;
+  gradients: number;
+  tables: number;
+  formulas: number;
+}[] {
+  const pages = [];
+  for (const [name, content] of pptxEntries(deck)) {
+    if (name.endsWith(".xml") || name.endsWith(".rels")) {
+      const parser = new SaxesParser({ xmlns: true });
+      parser.on("error", (error) => {
+        throw new Error(
+          `Invalid presentation XML in ${name}: ${error.message}`,
+        );
+      });
+      parser.write(content.toString("utf8")).close();
+    }
+    const match = /^ppt\/slides\/slide(\d+)\.xml$/u.exec(name);
+    if (!match) continue;
+    const page = Number(match[1]),
+      xml = content.toString("utf8");
+    const ids = [...xml.matchAll(/<p:cNvPr\b[^>]*\bid="(\d+)"/gu)].map(
+      (match) => {
+        return match[1];
+      },
+    );
+    const unique = new Set(ids);
+    if (unique.size !== ids.length)
+      throw new Error(
+        `Page ${page.toString()} has duplicate native object IDs`,
+      );
+    for (const reference of xml.matchAll(
+      /<(?:p:spTgt|a:stCxn|a:endCxn)\b[^>]*\b(?:spid|id)="(\d+)"/gu,
+    )) {
+      if (!unique.has(reference[1]))
+        throw new Error(
+          `Page ${page.toString()} has an unresolved native object reference`,
+        );
+    }
+    pages.push({
+      page,
+      objects: ids.length,
+      pictures: [...xml.matchAll(/<p:pic>/gu)].length,
+      paths: [...xml.matchAll(/<a:custGeom>/gu)].length,
+      gradients: [...xml.matchAll(/<a:gradFill\b/gu)].length,
+      tables: [...xml.matchAll(/<a:tbl>/gu)].length,
+      formulas: [...xml.matchAll(/name="okou-equation-\d+"/gu)].length,
+    });
+  }
+  return pages.sort((a, b) => {
+    return a.page - b.page;
+  });
+}
