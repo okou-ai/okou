@@ -1442,11 +1442,6 @@
       "owner": "validatePiMemoryStage1Cost"
     },
     {
-      "id": "TX-0418",
-      "file": "turbo/packages/db/scripts/test-pi-memory-stage1-cost.ts",
-      "owner": "validatePiMemoryStage1Cost"
-    },
-    {
       "id": "TX-0420",
       "file": "turbo/packages/db/scripts/test-prepared-domain-trigger-retirement.ts",
       "owner": "<module>"
