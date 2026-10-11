@@ -52,11 +52,6 @@
       "owner": "failPoisonQueuedJob"
     },
     {
-      "id": "TX-0043",
-      "file": "turbo/apps/api/src/signals/routes/workflow-copy-publication.ts",
-      "owner": "readWorkflowCopySnapshot$"
-    },
-    {
       "id": "TX-0044",
       "file": "turbo/apps/api/src/signals/routes/workflow-copy-publication.ts",
       "owner": "commitWorkflowCopy$"
