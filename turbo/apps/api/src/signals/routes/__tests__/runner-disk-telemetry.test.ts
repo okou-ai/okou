@@ -4,11 +4,13 @@ import { testContext } from "../../../__tests__/test-context";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 
 describe("Runner disk telemetry HTTP compatibility", () => {
   it("accepts legacy, independent, missing and malformed optional snapshots on an authenticated claimed run", async () => {
+    mockSecretKmsHttp();
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
