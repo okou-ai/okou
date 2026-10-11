@@ -1849,67 +1849,66 @@ const claimFreshBrowser$ = command(
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSessionRow>> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0070; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      signal.throwIfAborted();
-      const [owned, run] = await Promise.all([
-        tx
-          .select({ chatThreadId: browserSessions.chatThreadId })
-          .from(browserSessions)
-          .where(
-            and(
-              eq(browserSessions.chatThreadId, context.chatThreadId),
-              inArray(browserSessions.status, [...OWNED_BROWSER_STATUSES]),
-            ),
-          )
-          .limit(1),
-        tx
-          .select({ status: agentRuns.status })
-          .from(agentRuns)
-          .where(eq(agentRuns.id, context.runId))
-          .limit(1),
-      ]);
-      if (
-        context.requireLiveRun &&
-        (!run[0] || isTerminalRunStatus(run[0].status))
-      ) {
-        return conflict("The chat run already ended", "BROWSER_RUN_ENDED");
-      }
-      if (owned[0]) {
-        return conflict(
-          "This chat thread already has an active managed browser",
-          "BROWSER_THREAD_ACTIVE",
-        );
-      }
-      const [browser] = await tx
-        .insert(browserSessions)
-        .values({
-          chatThreadId: context.chatThreadId,
-          runId: context.runId,
-          orgId: context.orgId,
-          userId: context.userId,
-          name: args.name,
-          status: "creating",
-          proxyCountryCode: args.proxyCountryCode,
-          timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
-          updatedAt: nowDate(),
-        })
-        .onConflictDoNothing({
-          target: browserSessions.chatThreadId,
-          where: sql`${browserSessions.status} IN ('creating', 'active', 'resuming', 'stopping')`,
-        })
-        .returning(BROWSER_SESSION_SELECTION);
-      if (!browser) {
-        return conflict(
-          "This chat thread already has an active managed browser",
-          "BROWSER_THREAD_ACTIVE",
-        );
-      }
-      return {
-        kind: "ok",
-        value: browser,
-      };
-    });
+    signal.throwIfAborted();
+    const [owned, run] = await Promise.all([
+      db
+        .select({ chatThreadId: browserSessions.chatThreadId })
+        .from(browserSessions)
+        .where(
+          and(
+            eq(browserSessions.chatThreadId, context.chatThreadId),
+            inArray(browserSessions.status, [...OWNED_BROWSER_STATUSES]),
+          ),
+        )
+        .limit(1),
+      db
+        .select({ status: agentRuns.status })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, context.runId))
+        .limit(1),
+    ]);
+    signal.throwIfAborted();
+    if (
+      context.requireLiveRun &&
+      (!run[0] || isTerminalRunStatus(run[0].status))
+    ) {
+      return conflict("The chat run already ended", "BROWSER_RUN_ENDED");
+    }
+    if (owned[0]) {
+      return conflict(
+        "This chat thread already has an active managed browser",
+        "BROWSER_THREAD_ACTIVE",
+      );
+    }
+    const [browser] = await db
+      .insert(browserSessions)
+      .values({
+        chatThreadId: context.chatThreadId,
+        runId: context.runId,
+        orgId: context.orgId,
+        userId: context.userId,
+        name: args.name,
+        status: "creating",
+        proxyCountryCode: args.proxyCountryCode,
+        timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
+        updatedAt: nowDate(),
+      })
+      .onConflictDoNothing({
+        target: browserSessions.chatThreadId,
+        where: sql`${browserSessions.status} IN ('creating', 'active', 'resuming', 'stopping')`,
+      })
+      .returning(BROWSER_SESSION_SELECTION);
+    signal.throwIfAborted();
+    if (!browser) {
+      return conflict(
+        "This chat thread already has an active managed browser",
+        "BROWSER_THREAD_ACTIVE",
+      );
+    }
+    return {
+      kind: "ok",
+      value: browser,
+    };
   },
 );
 

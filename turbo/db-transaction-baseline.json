@@ -147,11 +147,6 @@
       "owner": "claimStartedProviderInstance$"
     },
     {
-      "id": "TX-0070",
-      "file": "turbo/apps/api/src/signals/services/browser.service.ts",
-      "owner": "claimFreshBrowser$"
-    },
-    {
       "id": "TX-0071",
       "file": "turbo/apps/api/src/signals/services/browser.service.ts",
       "owner": "claimBrowserForResume$"
