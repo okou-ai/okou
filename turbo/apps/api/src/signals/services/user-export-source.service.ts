@@ -236,105 +236,132 @@ function threadSourceStep<T extends { readonly id: string }>(
 
 const collectThread$ = command(
   async (
-    { set },
+    { get },
     args: SourceArgs,
     checkpoint: SourceCheckpoint,
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0311; new non-billing transactions are prohibited.
-    return await db.transaction(
-      async (tx) => {
-        const [thread] = await tx
-          .select({
-            id: chatThreads.id,
-            userId: chatThreads.userId,
-            title: chatThreads.title,
-            agentId: chatThreads.agentId,
-            orgId: agents.orgId,
-            sourceScheduleRunId: chatThreads.sourceScheduleRunId,
-            createdAt: chatThreads.createdAt,
-            updatedAt: chatThreads.updatedAt,
-            lastMessageAt: chatThreads.lastMessageAt,
-            lastReadAt: chatThreads.lastReadAt,
-            pinnedAt: chatThreads.pinnedAt,
-            pinOrder: chatThreads.pinOrder,
-            archived: chatThreads.archived,
-            renamedAt: chatThreads.renamedAt,
-            selectedModel: chatThreads.selectedModel,
-            modelSettings: chatThreads.modelSettings,
-            codexServiceTier: chatThreads.codexServiceTier,
-          })
-          .from(chatThreads)
-          .leftJoin(agents, eq(agents.id, chatThreads.agentId))
-          .where(
-            and(
-              eq(chatThreads.userId, args.userId),
-              lte(chatThreads.createdAt, startedBefore(checkpoint)),
-              checkpoint.cursor
-                ? gt(chatThreads.id, checkpoint.cursor)
-                : undefined,
-            ),
-          )
-          .orderBy(asc(chatThreads.id))
-          .limit(1);
-        signal.throwIfAborted();
-        if (!thread) {
-          return nextPhase(checkpoint, "agents");
-        }
-
-        const [draft] = await tx
-          .select({
-            draftUserMessage: chatThreadDrafts.draftUserMessage,
-            draftAttachments: chatThreadDrafts.draftAttachments,
-          })
-          .from(chatThreadDrafts)
-          .where(eq(chatThreadDrafts.chatThreadId, thread.id))
-          .limit(1);
-        signal.throwIfAborted();
-        const draftValues = {
-          draftUserMessage: draft?.draftUserMessage ?? null,
-          draftAttachments: draft?.draftAttachments ?? null,
-        };
-
-        const [head] = await tx
-          .select({
-            lastSeqId: chatEventSnapshots.lastSeqId,
-            lastEventId: chatEventSnapshots.lastEventId,
-            terminalSeqId: chatEventSnapshots.terminalSeqId,
-            terminalEventId: chatEventSnapshots.terminalEventId,
-            archiveSchemaVersion: chatEventSnapshots.archiveSchemaVersion,
-            objectKey: chatEventSnapshots.objectKey,
-          })
-          .from(chatEventSnapshots)
-          .where(
-            and(
-              eq(chatEventSnapshots.chatThreadId, thread.id),
-              eq(
-                chatEventSnapshots.archiveSchemaVersion,
-                CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-              ),
-            ),
-          )
-          .limit(1);
-        signal.throwIfAborted();
-
-        const [lastEvent] = await tx
-          .select({ seqId: chatEvents.seqId })
-          .from(chatEvents)
-          .where(eq(chatEvents.chatThreadId, thread.id))
-          .orderBy(desc(chatEvents.seqId))
-          .limit(1);
-        signal.throwIfAborted();
-        return threadSourceStep(
-          thread,
-          draftValues,
-          head,
-          lastEvent?.seqId,
-          checkpoint,
-        );
-      },
-      { isolationLevel: "repeatable read", accessMode: "read only" },
+    const db = get(db$);
+    const threadRoot = db
+      .select({
+        id: chatThreads.id,
+        userId: chatThreads.userId,
+        title: chatThreads.title,
+        agentId: chatThreads.agentId,
+        orgId: agents.orgId,
+        sourceScheduleRunId: chatThreads.sourceScheduleRunId,
+        createdAt: chatThreads.createdAt,
+        updatedAt: chatThreads.updatedAt,
+        lastMessageAt: chatThreads.lastMessageAt,
+        lastReadAt: chatThreads.lastReadAt,
+        pinnedAt: chatThreads.pinnedAt,
+        pinOrder: chatThreads.pinOrder,
+        archived: chatThreads.archived,
+        renamedAt: chatThreads.renamedAt,
+        selectedModel: chatThreads.selectedModel,
+        modelSettings: chatThreads.modelSettings,
+        codexServiceTier: chatThreads.codexServiceTier,
+      })
+      .from(chatThreads)
+      .leftJoin(agents, eq(agents.id, chatThreads.agentId))
+      .where(
+        and(
+          eq(chatThreads.userId, args.userId),
+          lte(chatThreads.createdAt, startedBefore(checkpoint)),
+          checkpoint.cursor ? gt(chatThreads.id, checkpoint.cursor) : undefined,
+        ),
+      )
+      .orderBy(asc(chatThreads.id))
+      .limit(1)
+      .as("export_thread");
+    const draft = db
+      .select({
+        draftUserMessage: chatThreadDrafts.draftUserMessage,
+        draftAttachments: chatThreadDrafts.draftAttachments,
+      })
+      .from(chatThreadDrafts)
+      .where(eq(chatThreadDrafts.chatThreadId, threadRoot.id))
+      .limit(1)
+      .as("export_draft");
+    const head = db
+      .select({
+        lastSeqId: chatEventSnapshots.lastSeqId,
+        lastEventId: chatEventSnapshots.lastEventId,
+        terminalSeqId: chatEventSnapshots.terminalSeqId,
+        terminalEventId: chatEventSnapshots.terminalEventId,
+        archiveSchemaVersion: chatEventSnapshots.archiveSchemaVersion,
+        objectKey: chatEventSnapshots.objectKey,
+      })
+      .from(chatEventSnapshots)
+      .where(
+        and(
+          eq(chatEventSnapshots.chatThreadId, threadRoot.id),
+          eq(
+            chatEventSnapshots.archiveSchemaVersion,
+            CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+          ),
+        ),
+      )
+      .limit(1)
+      .as("export_head");
+    const lastEvent = db
+      .select({ seqId: chatEvents.seqId })
+      .from(chatEvents)
+      .where(eq(chatEvents.chatThreadId, threadRoot.id))
+      .orderBy(desc(chatEvents.seqId))
+      .limit(1)
+      .as("export_last_event");
+    // Limit the owned root before the bounded children. One statement keeps
+    // these source facts coherent; durable snapshot pinning happens later.
+    const [result] = await db
+      .select({
+        thread: {
+          id: threadRoot.id,
+          userId: threadRoot.userId,
+          title: threadRoot.title,
+          agentId: threadRoot.agentId,
+          orgId: threadRoot.orgId,
+          sourceScheduleRunId: threadRoot.sourceScheduleRunId,
+          createdAt: threadRoot.createdAt,
+          updatedAt: threadRoot.updatedAt,
+          lastMessageAt: threadRoot.lastMessageAt,
+          lastReadAt: threadRoot.lastReadAt,
+          pinnedAt: threadRoot.pinnedAt,
+          pinOrder: threadRoot.pinOrder,
+          archived: threadRoot.archived,
+          renamedAt: threadRoot.renamedAt,
+          selectedModel: threadRoot.selectedModel,
+          modelSettings: threadRoot.modelSettings,
+          codexServiceTier: threadRoot.codexServiceTier,
+        },
+        draft: {
+          draftUserMessage: draft.draftUserMessage,
+          draftAttachments: draft.draftAttachments,
+        },
+        head: {
+          lastSeqId: head.lastSeqId,
+          lastEventId: head.lastEventId,
+          terminalSeqId: head.terminalSeqId,
+          terminalEventId: head.terminalEventId,
+          archiveSchemaVersion: head.archiveSchemaVersion,
+          objectKey: head.objectKey,
+        },
+        lastEvent: { seqId: lastEvent.seqId },
+      })
+      .from(threadRoot)
+      .leftJoinLateral(draft, sql`true`)
+      .leftJoinLateral(head, sql`true`)
+      .leftJoinLateral(lastEvent, sql`true`);
+    signal.throwIfAborted();
+    if (!result) {
+      return nextPhase(checkpoint, "agents");
+    }
+    return threadSourceStep(
+      result.thread,
+      result.draft ?? { draftUserMessage: null, draftAttachments: null },
+      result.head ?? undefined,
+      result.lastEvent?.seqId,
+      checkpoint,
     );
   },
 );

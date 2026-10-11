@@ -7,7 +7,10 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
 import { userExportContract } from "@okouai/api-contracts/contracts/user-export";
-import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatThreadByIdContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import AdmZip from "adm-zip";
@@ -21,6 +24,7 @@ import { mockNow, now, nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { agentsRoutes } from "../agents";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
+import { chatThreadPatchRoutes } from "../chat-threads-patch";
 import { cronProcessBackgroundJobsRoutes } from "../cron-process-background-jobs";
 import { userExportRoutes } from "../user-export";
 import { workflowsRoutes } from "../workflows";
@@ -40,6 +44,7 @@ const cronHeaders = Object.freeze({ authorization: `Bearer ${cronSecret}` });
 const routes = Object.freeze([
   ...agentsRoutes,
   ...chatThreadCreateRoutes,
+  ...chatThreadPatchRoutes,
   ...workflowsRoutes,
   ...webhooksClerkRoutes,
   ...userExportRoutes,
@@ -153,6 +158,140 @@ function archive(fixture: Fixture, url: string | null | undefined) {
   expect(zip.getEntry("export-manifest.json")).not.toBeNull();
   return zip;
 }
+
+test("exports PATCH-created drafts with owned thread timestamps and absent draft nulls", async () => {
+  const owner = actor();
+  const peer = actor(owner.orgId);
+  const fixture = await initialize([owner, peer]);
+  const agentId = await ownedAgent(fixture, owner);
+  const threads = [];
+  for (const title of ["Saved draft", "No draft", "Cleared draft"]) {
+    threads.push(
+      await accept(
+        fixture.app(chatThreadsContract).create({
+          headers,
+          body: { agentId, title },
+        }),
+        [201],
+      ),
+    );
+  }
+  const [saved, missing, cleared] = threads;
+  if (!saved || !missing || !cleared) {
+    throw new Error("Expected three owned threads");
+  }
+  const draftUserMessage = {
+    version: 1 as const,
+    parts: [{ type: "text" as const, text: "Keep this unsent draft: 你好" }],
+  };
+  for (const thread of [saved, cleared]) {
+    await accept(
+      fixture.app(chatThreadByIdContract).patch({
+        headers,
+        params: { id: thread.body.id },
+        body: { draftUserMessage, draftAttachments: [] },
+      }),
+      [204],
+    );
+  }
+  await accept(
+    fixture.app(chatThreadByIdContract).patch({
+      headers,
+      params: { id: cleared.body.id },
+      body: { draftUserMessage: null, draftAttachments: null },
+    }),
+    [204],
+  );
+  const peerAgentId = await ownedAgent(fixture, peer);
+  const peerThread = await accept(
+    fixture.app(chatThreadsContract).create({
+      headers,
+      body: { agentId: peerAgentId, title: "Peer draft" },
+    }),
+    [201],
+  );
+  await accept(
+    fixture.app(chatThreadByIdContract).patch({
+      headers,
+      params: { id: peerThread.body.id },
+      body: { draftUserMessage, draftAttachments: null },
+    }),
+    [204],
+  );
+  const jobId = await startExport(fixture, owner);
+  await process(fixture);
+  const ready = await status(fixture, owner);
+  expect(ready.job).toMatchObject({
+    id: jobId,
+    status: "completed",
+    error: null,
+  });
+  const zip = archive(fixture, ready.job?.downloadUrl);
+  const exportedThreads = zip.getEntries().filter((entry) => {
+    return entry.entryName.startsWith("chat-threads/");
+  });
+  expect(
+    exportedThreads
+      .map((entry) => {
+        return entry.entryName;
+      })
+      .sort(),
+  ).toStrictEqual(
+    threads
+      .map((thread) => {
+        return `chat-threads/${thread.body.id}.json`;
+      })
+      .sort(),
+  );
+  for (const thread of threads) {
+    const exported = JSON.parse(
+      zip.readAsText(`chat-threads/${thread.body.id}.json`),
+    );
+    expect(Object.keys(exported)).toStrictEqual([
+      "id",
+      "userId",
+      "title",
+      "agentId",
+      "orgId",
+      "sourceScheduleRunId",
+      "createdAt",
+      "updatedAt",
+      "lastMessageAt",
+      "lastReadAt",
+      "pinnedAt",
+      "pinOrder",
+      "archived",
+      "renamedAt",
+      "selectedModel",
+      "modelSettings",
+      "codexServiceTier",
+      "draftUserMessage",
+      "draftAttachments",
+    ]);
+    expect(exported).toMatchObject({
+      id: thread.body.id,
+      userId: owner.userId,
+      title: thread.body.title,
+      agentId,
+      orgId: owner.orgId,
+      createdAt: thread.body.createdAt,
+      sourceScheduleRunId: null,
+      pinnedAt: null,
+      renamedAt: null,
+      draftUserMessage: thread === saved ? draftUserMessage : null,
+      draftAttachments: thread === saved ? [] : null,
+    });
+    for (const timestamp of [
+      exported.updatedAt,
+      exported.lastMessageAt,
+      exported.lastReadAt,
+    ]) {
+      expect(new Date(timestamp).toISOString()).toBe(timestamp);
+    }
+  }
+  expect(zip.getEntry(`chat-threads/${peerThread.body.id}.json`)).toBeNull();
+  expect((await status(fixture, peer)).job).toBeNull();
+});
 
 test("publishes an owned ZIP while isolating peers and preserving replay", async () => {
   const owner = actor();
