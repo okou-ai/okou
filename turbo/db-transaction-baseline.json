@@ -242,11 +242,6 @@
       "owner": "convertCloudflareAccessToPersonal$"
     },
     {
-      "id": "TX-0108",
-      "file": "turbo/apps/api/src/signals/services/computer-use-authorization.service.ts",
-      "owner": "applyChatAuthorizationScope$"
-    },
-    {
       "id": "TX-0111",
       "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
       "owner": "setDefaultGoogleFormsAccount$"
