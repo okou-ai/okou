@@ -83,7 +83,7 @@ async fn rejected_or_partial_password_never_falls_back_and_reports_recovery() {
         resolve.delete_async().await;
         let resolve = h.resolve(credential(&h, true, PASSWORD)).await;
         assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
-        dispatcher.shutdown().await;
+        dispatcher.shutdown().await.unwrap();
         failure.assert_calls_async(1).await;
         recovered.assert_calls_async(1).await;
         resolve.assert_calls_async(1).await;
@@ -140,7 +140,7 @@ async fn password_waits_for_confirmed_tofu_and_reports_its_generation() {
             })
             .await;
         let frames = h.request(params()).await;
-        dispatcher.shutdown().await;
+        dispatcher.shutdown().await.unwrap();
         pin.assert_calls_async(1).await;
         if outcome == "pinned" {
             assert_eq!(terminal(&frames)["type"], "finished");

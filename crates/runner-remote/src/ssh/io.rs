@@ -52,20 +52,39 @@ impl HostLease {
 }
 
 pub(super) struct SshSocket {
-    stream: tokio::net::TcpStream,
+    stream: Carrier,
     _lease: Arc<HostLease>,
 }
 
-pub(super) struct SocketGuard(std::net::TcpStream);
+pub(super) enum Carrier {
+    Public(tokio::net::TcpStream),
+    Native {
+        stream: crate::tailscale::Stream,
+        _node: Arc<crate::tailscale::Node>,
+    },
+}
+
+pub(super) enum SocketGuard {
+    Public(std::net::TcpStream),
+    Native(tokio_util::sync::CancellationToken),
+}
 
 impl SshSocket {
-    pub(super) fn new(
-        stream: tokio::net::TcpStream,
-        lease: Arc<HostLease>,
-    ) -> io::Result<(Self, SocketGuard)> {
-        let stream = stream.into_std()?;
-        let guard = SocketGuard(stream.try_clone()?);
-        let stream = tokio::net::TcpStream::from_std(stream)?;
+    pub(super) fn new(stream: Carrier, lease: Arc<HostLease>) -> io::Result<(Self, SocketGuard)> {
+        let (stream, guard) = match stream {
+            Carrier::Public(stream) => {
+                let stream = stream.into_std()?;
+                let guard = SocketGuard::Public(stream.try_clone()?);
+                (
+                    Carrier::Public(tokio::net::TcpStream::from_std(stream)?),
+                    guard,
+                )
+            }
+            Carrier::Native { stream, _node } => {
+                let guard = SocketGuard::Native(stream.cancelled());
+                (Carrier::Native { stream, _node }, guard)
+            }
+        };
         Ok((
             Self {
                 stream,
@@ -78,11 +97,19 @@ impl SshSocket {
 
 impl SocketGuard {
     pub(super) fn enable_nodelay(&self) -> io::Result<()> {
-        self.0.set_nodelay(true)
+        match self {
+            Self::Public(stream) => stream.set_nodelay(true),
+            Self::Native(_) => Ok(()),
+        }
     }
 
     pub(super) fn close(&self) {
-        let _ = self.0.shutdown(std::net::Shutdown::Both);
+        match self {
+            Self::Public(stream) => {
+                let _ = stream.shutdown(std::net::Shutdown::Both);
+            }
+            Self::Native(cancelled) => cancelled.cancel(),
+        }
     }
 }
 
@@ -98,7 +125,10 @@ impl AsyncRead for SshSocket {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().stream).poll_read(cx, buf)
+        match &mut self.get_mut().stream {
+            Carrier::Public(stream) => Pin::new(stream).poll_read(cx, buf),
+            Carrier::Native { stream, .. } => Pin::new(stream).poll_read(cx, buf),
+        }
     }
 }
 
@@ -108,12 +138,21 @@ impl AsyncWrite for SshSocket {
         cx: &mut Context<'_>,
         bytes: &[u8],
     ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.get_mut().stream).poll_write(cx, bytes)
+        match &mut self.get_mut().stream {
+            Carrier::Public(stream) => Pin::new(stream).poll_write(cx, bytes),
+            Carrier::Native { stream, .. } => Pin::new(stream).poll_write(cx, bytes),
+        }
     }
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().stream).poll_flush(cx)
+        match &mut self.get_mut().stream {
+            Carrier::Public(stream) => Pin::new(stream).poll_flush(cx),
+            Carrier::Native { stream, .. } => Pin::new(stream).poll_flush(cx),
+        }
     }
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().stream).poll_shutdown(cx)
+        match &mut self.get_mut().stream {
+            Carrier::Public(stream) => Pin::new(stream).poll_shutdown(cx),
+            Carrier::Native { stream, .. } => Pin::new(stream).poll_shutdown(cx),
+        }
     }
 }

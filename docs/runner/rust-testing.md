@@ -52,7 +52,9 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-network -- --test-threads=1
 
-# Extracted Runner guest RPC, usage, SSH, and VNC owner tests
+# Extracted Runner guest RPC, usage, SSH, and VNC owner tests.
+# Includes native TLS/Noise/DERP/TCP and common SSH tests with synthetic external
+# services, real encrypted traffic, binary transfers and physical IO retirement.
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-remote -- --test-threads=1
 

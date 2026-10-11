@@ -44,6 +44,38 @@ impl AsyncWrite for Stream {
 }
 
 struct Acceptor(Mutex<mpsc::Receiver<AcceptedGuestRpc>>);
+
+struct FailedOwner(CancellationToken);
+#[async_trait]
+impl GuestRpcAcceptor for FailedOwner {
+    async fn accept(&self) -> io::Result<AcceptedGuestRpc> {
+        self.0.cancel();
+        panic!("synthetic guest transport owner failure")
+    }
+}
+
+#[tokio::test]
+async fn shutdown_reports_failed_owner_without_returning_its_panic_payload() {
+    let entered = CancellationToken::new();
+    let runtime = Runtime {
+        ssh: None,
+        vnc: None,
+        usage: None,
+    };
+    let run = runtime.start(
+        Arc::new(FailedOwner(entered.clone())),
+        "assigned-sandbox".into(),
+        runner_types::ids::RunId::new_v4(),
+        &CancellationToken::new(),
+    );
+    entered.cancelled().await;
+    let failure = run.shutdown().await.unwrap_err();
+    assert_eq!(failure, super::CleanupError::Owner);
+    assert_eq!(
+        failure.to_string(),
+        "guest RPC owner failed during required cleanup"
+    );
+}
 #[async_trait]
 impl GuestRpcAcceptor for Acceptor {
     async fn accept(&self) -> io::Result<AcceptedGuestRpc> {
@@ -113,7 +145,7 @@ impl Harness {
 
     async fn shutdown(mut self) {
         if let Some(run) = self.run.take() {
-            run.shutdown().await;
+            run.shutdown().await.unwrap();
         }
     }
 }
@@ -308,7 +340,7 @@ async fn run_shutdown_drop_and_lifecycle_cancel_close_admitted_partial_requests(
             error("resource_exhausted")
         );
         match stop {
-            Stop::Shutdown => h.run.take().unwrap().shutdown().await,
+            Stop::Shutdown => h.run.take().unwrap().shutdown().await.unwrap(),
             Stop::Drop => drop(h.run.take()),
             Stop::ParentCancel => h.cancelled.cancel(),
             Stop::SandboxCancel => h.lifecycle.cancel(),

@@ -1,4 +1,5 @@
 use super::*;
+use crate::executor::{SandboxReuseDisposition, SandboxReuseRejection};
 use async_trait::async_trait;
 use std::{
     io,
@@ -40,10 +41,16 @@ impl AsyncWrite for RpcStream {
 struct Acceptor {
     incoming: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<sandbox::AcceptedGuestRpc>>,
     admitted: AtomicUsize,
+    failed: bool,
+    entered: CancellationToken,
 }
 #[async_trait]
 impl sandbox::GuestRpcAcceptor for Acceptor {
     async fn accept(&self) -> io::Result<sandbox::AcceptedGuestRpc> {
+        if self.failed {
+            self.entered.cancel();
+            panic!("synthetic guest transport owner failure");
+        }
         let accepted = self
             .incoming
             .lock()
@@ -162,6 +169,9 @@ impl Sandbox for RpcSandbox {
         &self,
         request: &sandbox::StartAgentProcessRequest<'_>,
     ) -> sandbox::Result<sandbox::GuestAgentProcessHandle> {
+        if self.acceptor.failed {
+            self.acceptor.entered.cancelled().await;
+        }
         if self.enabled {
             // The actual prepared-run entry point must install before Agent work.
             let mut guest = self.guest.lock().unwrap().take().unwrap();
@@ -211,7 +221,7 @@ impl Sandbox for RpcSandbox {
 #[tokio::test]
 async fn fresh_and_reused_runs_install_before_agent_work_and_cancel_before_cleanup() {
     for reused in [false, true] {
-        for enabled in [false, true] {
+        for (enabled, failed) in [(false, false), (true, false), (true, true)] {
             let dir = tempfile::Builder::new()
                 .permissions(std::fs::Permissions::from_mode(0o700))
                 .tempdir()
@@ -244,11 +254,13 @@ async fn fresh_and_reused_runs_install_before_agent_work_and_cancel_before_clean
             let acceptor = Arc::new(Acceptor {
                 incoming: tokio::sync::Mutex::new(incoming),
                 admitted: AtomicUsize::new(0),
+                failed,
+                entered: CancellationToken::new(),
             });
             let observed = Arc::new(AtomicUsize::new(0));
             let inner = MockSandbox::new("ssh-entrypoint");
             let (guest, stream) = tokio::io::duplex(1024);
-            if enabled {
+            if enabled && !failed {
                 pending
                     .send(sandbox::AcceptedGuestRpc {
                         sandbox_id: inner.id().into(),
@@ -265,7 +277,7 @@ async fn fresh_and_reused_runs_install_before_agent_work_and_cancel_before_clean
                 pending,
                 guest: Mutex::new(Some(guest)),
                 observed: Arc::clone(&observed),
-                enabled,
+                enabled: enabled && !failed,
             };
             let source_ip = sandbox.source_ip().to_owned();
             let network_log_session = register_proxy(&config, &ctx, &source_ip).await.unwrap();
@@ -300,8 +312,23 @@ async fn fresh_and_reused_runs_install_before_agent_work_and_cancel_before_clean
             )
             .await
             .unwrap();
-            assert_eq!(outcome.exit_code(), 0);
-            assert_eq!(observed.load(Ordering::SeqCst), if enabled { 3 } else { 0 });
+            if failed {
+                assert_eq!(outcome.exit_code(), 1);
+                assert_eq!(
+                    outcome.error().unwrap(),
+                    "guest RPC owner failed during required cleanup"
+                );
+                assert_eq!(
+                    outcome.sandbox_reuse_disposition,
+                    SandboxReuseDisposition::Ineligible(
+                        SandboxReuseRejection::PostJobCleanupFailure
+                    )
+                );
+                assert_eq!(observed.load(Ordering::SeqCst), 1);
+            } else {
+                assert_eq!(outcome.exit_code(), 0);
+                assert_eq!(observed.load(Ordering::SeqCst), if enabled { 3 } else { 0 });
+            }
             assert_proxy_registry_empty(dir.path()).await;
         }
     }

@@ -217,8 +217,8 @@ impl Pool {
             let stream = runtime
                 .open_socket(
                     Arc::clone(&host_lease),
-                    &request.credential.host,
-                    request.credential.port,
+                    &request.credential,
+                    &request.access,
                     scope,
                 )
                 .await?;

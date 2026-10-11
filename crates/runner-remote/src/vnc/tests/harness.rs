@@ -236,7 +236,7 @@ impl TestRun {
 
     pub(super) async fn shutdown(&mut self) {
         if let Some(dispatcher) = self.dispatcher.take() {
-            bounded(dispatcher.shutdown()).await;
+            bounded(dispatcher.shutdown()).await.unwrap();
         }
     }
 }
