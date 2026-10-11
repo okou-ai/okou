@@ -37,11 +37,6 @@
       "owner": "updateAgentMetadataInner$"
     },
     {
-      "id": "TX-0014",
-      "file": "turbo/apps/api/src/signals/routes/connectors.ts",
-      "owner": "startBuiltinConnectorOauthInner$"
-    },
-    {
       "id": "TX-0015",
       "file": "turbo/apps/api/src/signals/routes/connectors.ts",
       "owner": "startBuiltinConnectorOpenIdInner$"

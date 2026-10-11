@@ -1,4 +1,5 @@
 import { command, computed } from "ccstate";
+import { and, eq } from "drizzle-orm";
 import {
   builtinConnectorManualGrantContract,
   builtinConnectorNoAuthGrantContract,
@@ -11,6 +12,7 @@ import {
 } from "@okouai/api-contracts/contracts/connectors";
 import type { PublicConnectorCatalogDetail } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorGrantScopes } from "@okouai/connectors/connector-auth-method";
+import { connectors } from "@okouai/db/schema/connector";
 import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
@@ -24,7 +26,8 @@ import {
   providerUnavailable,
 } from "../../lib/error";
 import { optionalEnv } from "../../lib/env";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
+import { logger } from "../../lib/log";
 import {
   authorizeConnectedConnector$,
   connectorAgentAuthorizationRequested,
@@ -413,11 +416,66 @@ const connectNoAuthBuiltinConnectorInner$ = command(
   },
 );
 
+const builtinOauthStartParams$ = pathParamsOf(
+  builtinConnectorOauthStartContract.start,
+);
+const builtinOauthStartBodyResult$ = bodyResultOf(
+  builtinConnectorOauthStartContract.start,
+);
+
+const builtinOauthStartAccountSelection$ = computed(async (get) => {
+  const bodyResult = await get(builtinOauthStartBodyResult$);
+  if (!bodyResult.ok) {
+    return bodyResult;
+  }
+  const auth = get(organizationAuthContext$);
+  const { connectorSlug } = get(builtinOauthStartParams$);
+  const account = bodyResult.data.account;
+  const db = get(db$);
+  const selected =
+    account.intent === "reconnect"
+      ? await db
+          .select({ id: connectors.id })
+          .from(connectors)
+          .where(
+            and(
+              eq(connectors.id, account.connectionId),
+              eq(connectors.orgId, auth.orgId),
+              eq(connectors.userId, auth.userId),
+              eq(connectors.connectorSlug, connectorSlug),
+            ),
+          )
+          .limit(1)
+      : await db
+          .select({ id: connectors.id })
+          .from(connectors)
+          .where(
+            and(
+              eq(connectors.orgId, auth.orgId),
+              eq(connectors.userId, auth.userId),
+              eq(connectors.connectorSlug, connectorSlug),
+            ),
+          )
+          .orderBy(connectors.id)
+          .limit(2);
+  return {
+    ok: true as const,
+    selectedCount: selected.length,
+    selectionCardinality:
+      selected.length === 0
+        ? "zero"
+        : selected.length === 1
+          ? "one"
+          : "multiple",
+  };
+});
+
+const accountMutationLog = logger("api:connector-account-mutation");
+
 const startBuiltinConnectorOauthInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const route = builtinConnectorOauthStartContract.start;
-    const params = get(pathParamsOf(route));
-    const bodyResult = await get(bodyResultOf(route));
+    const params = get(builtinOauthStartParams$);
+    const bodyResult = await get(builtinOauthStartBodyResult$);
     signal.throwIfAborted();
     if (!bodyResult.ok) {
       return bodyResult.response;
@@ -491,59 +549,60 @@ const startBuiltinConnectorOauthInner$ = command(
     });
     signal.throwIfAborted();
 
-    const writeDb = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0014; new non-billing transactions are prohibited.
-    const mutationStart = await writeDb.transaction(async (tx) => {
-      const resolution = await resolveConnectorConnectionMutation(tx, {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        target: { kind: "builtin", connectorSlug: resolved.connectorSlug },
-        mutation: bodyResult.data.account,
-        allowSiblings: true,
-      });
-      if (resolution.kind !== "ready") {
-        return resolution;
-      }
-      const [oauthState] = await tx
-        .insert(connectorOauthStates)
-        .values({
-          state: prepared.state,
-          connectorSlug: resolved.connectorSlug,
-          authMethod: resolved.authMethodId,
-          userId: auth.userId,
-          orgId: auth.orgId,
-          agentId: bodyResult.data.agentId,
-          authorizeAgent: connectorAgentAuthorizationRequested(bodyResult.data),
-          redirectUri: prepared.redirectUri,
-          authorizationUrl: authResult.url,
-          oauthRequestedScopes: requestedScopeSnapshot(resolved.method.grant),
-          codeVerifier: authResult.codeVerifier,
-          oauthContext: authResult.oauthContext,
-          accountMutation: bodyResult.data.account,
-          expiresAt: connectorOAuthStateExpiresAt(),
-        })
-        .returning({ id: connectorOauthStates.id });
-      if (!oauthState) {
-        throw new Error("Failed to create connector OAuth state");
-      }
-      return {
-        kind: "ready" as const,
-        oauthAttemptId: oauthState.id,
-        connectionId:
-          bodyResult.data.account.intent === "add" ? oauthState.id : null,
-      };
-    });
+    const selection = await get(builtinOauthStartAccountSelection$);
     signal.throwIfAborted();
-    if (mutationStart.kind !== "ready") {
-      return connectorAccountMutationFailureResponse(mutationStart.kind);
+    if (!selection.ok) {
+      return selection.response;
+    }
+    const missing =
+      bodyResult.data.account.intent === "reconnect" &&
+      selection.selectedCount === 0;
+    accountMutationLog.debug("Resolved connector account mutation", {
+      targetKind: "builtin",
+      intent: bodyResult.data.account.intent,
+      selectionCardinality: selection.selectionCardinality,
+      outcome: missing
+        ? "missing"
+        : bodyResult.data.account.intent === "add"
+          ? "insert"
+          : "update",
+    });
+    if (missing) {
+      return connectorAccountMutationFailureResponse("missing");
+    }
+
+    const writeDb = set(writeDb$);
+    const [oauthState] = await writeDb
+      .insert(connectorOauthStates)
+      .values({
+        state: prepared.state,
+        connectorSlug: resolved.connectorSlug,
+        authMethod: resolved.authMethodId,
+        userId: auth.userId,
+        orgId: auth.orgId,
+        agentId: bodyResult.data.agentId,
+        authorizeAgent: connectorAgentAuthorizationRequested(bodyResult.data),
+        redirectUri: prepared.redirectUri,
+        authorizationUrl: authResult.url,
+        oauthRequestedScopes: requestedScopeSnapshot(resolved.method.grant),
+        codeVerifier: authResult.codeVerifier,
+        oauthContext: authResult.oauthContext,
+        accountMutation: bodyResult.data.account,
+        expiresAt: connectorOAuthStateExpiresAt(),
+      })
+      .returning({ id: connectorOauthStates.id });
+    signal.throwIfAborted();
+    if (!oauthState) {
+      throw new Error("Failed to create connector OAuth state");
     }
 
     return {
       status: 200 as const,
       body: {
         authorizationUrl: authResult.url,
-        connectionId: mutationStart.connectionId ?? undefined,
-        oauthAttemptId: mutationStart.oauthAttemptId,
+        connectionId:
+          bodyResult.data.account.intent === "add" ? oauthState.id : undefined,
+        oauthAttemptId: oauthState.id,
       },
     };
   },
