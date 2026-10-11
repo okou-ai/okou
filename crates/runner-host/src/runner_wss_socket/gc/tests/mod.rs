@@ -5,6 +5,15 @@ use tokio::net::{UnixListener, UnixStream};
 use super::*;
 use crate::runner_wss_socket::RunnerWssSocket;
 
+#[test]
+fn missing_namespace_is_not_created_by_gc() {
+    let root = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(root.path().to_owned());
+    assert_eq!(gc_wss_sockets(&home, true).unwrap(), 0);
+    assert_eq!(gc_wss_sockets(&home, false).unwrap(), 0);
+    assert!(!home.wss_dir().exists());
+}
+
 fn fixture() -> (tempfile::TempDir, HomePaths) {
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());

@@ -1,6 +1,7 @@
-//! Runner-ID WSS endpoint. The host owns directory provisioning; the Runner
-//! does not create it. A locked durable inode record permits crash recovery
-//! only of a proven owned, dead endpoint; unknown or live endpoints are preserved.
+//! Runner-ID WSS endpoint. Host provisioning owns the dedicated group; Runner
+//! binding safely creates a missing namespace. Durable inode evidence permits
+//! recovery only of a proven owned, dead endpoint; unknown or live endpoints
+//! are preserved.
 //! The persistent directory comes from `HomePaths::wss_dir()` and survives host
 //! restarts independently of Caddy. Normal teardown retires owned links and
 //! records; existing Runner GC caps reclamation of crash/retired IDs. A directory
@@ -31,10 +32,11 @@ pub struct RunnerWssSocket {
 }
 
 impl RunnerWssSocket {
-    /// `dir` must already exist with a trusted owner and no writable parent.
+    /// Create a missing WSS child under an existing trusted, non-writable parent.
+    /// Host provisioning supplies the dedicated group; existing state is validated.
     /// The caller holds the exclusive runner base-dir lock while binding.
     pub fn bind(dir: &Path, runner_id: Uuid) -> io::Result<Self> {
-        let (parent, group) = namespace::open(dir)?;
+        let (parent, group) = namespace::ensure(dir)?;
         let name = format!("{runner_id}.sock");
         let namespace_lock = namespace::NamespaceLock::acquire(&parent)?;
         let owner = owner::Owner::acquire(&namespace_lock, dir, runner_id)?;
@@ -56,7 +58,7 @@ impl RunnerWssSocket {
             anchor_path: temporary,
             owner,
         };
-        // Host preparation supplies root:okou-wss-caddy 0710 without setgid.
+        // Startup supplies root:okou-wss-caddy 0710 without setgid.
         // Linux's listener FD refers to a different inode from the pathname
         // socket. Set permissions on the filesystem inode, not that FD.
         socket.set_pathname_permissions(&parent, &temporary_name, group)?;
@@ -438,11 +440,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_missing_unsafe_and_colliding_endpoints() {
+    async fn rejects_unsafe_and_colliding_endpoints() {
         let root = tempfile::tempdir().unwrap();
         let dir = root.path().join("wss");
         let id = Uuid::new_v4();
-        assert!(RunnerWssSocket::bind(&dir, id).is_err());
         std::fs::create_dir(&dir).unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
         assert!(RunnerWssSocket::bind(&dir, id).is_err());

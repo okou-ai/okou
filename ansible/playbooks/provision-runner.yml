@@ -12,14 +12,13 @@
   hosts: all
 
   tasks:
-    # Host preparation only: no Caddy installation or Runner service policy.
-    - name: Prepare protected Runner WSS socket namespace
+    # Runner creates its WSS directory; provisioning owns this system group.
+    - name: Create dedicated Runner WSS system group without user memberships
       become: true
-      ansible.builtin.script:
-        cmd: ../scripts/prepare-runner-wss.py
-        executable: /usr/bin/python3
-      register: runner_wss_namespace_prepare
-      changed_when: runner_wss_namespace_prepare.stdout | trim == 'created'
+      ansible.builtin.group:
+        name: okou-wss-caddy
+        system: true
+        state: present
       tags: runner_wss_host
 
     - name: Wait for apt lock to be released

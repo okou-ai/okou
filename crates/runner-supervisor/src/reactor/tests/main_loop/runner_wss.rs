@@ -20,25 +20,35 @@ fn enable_wss(config: &mut RunConfig, dir: PathBuf) {
 }
 
 #[tokio::test]
-async fn missing_and_unsafe_socket_directory_fail_before_runner_ready_or_claims() {
+async fn missing_parent_and_unsafe_socket_directory_fail_before_runner_ready_or_claims() {
     for unsafe_dir in [false, true] {
         let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
-        let dir = env._temp_dir.path().join("wss");
+        let dir = env._temp_dir.path().join(if unsafe_dir {
+            "wss"
+        } else {
+            "missing-home/wss"
+        });
         if unsafe_dir {
             std::fs::create_dir(&dir).unwrap();
             std::fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o777))
                 .unwrap();
         }
-        enable_wss(&mut config, dir);
+        enable_wss(&mut config, dir.clone());
         let status_path = env._temp_dir.path().join("status.json");
         let result = run(config).await;
         assert!(
             result.is_err(),
-            "unsafe/missing directory cannot start: {result:?}"
+            "unsafe directory or missing parent cannot start: {result:?}"
         );
         wait_status_mode(&status_path, "stopped", Duration::from_secs(5)).await;
         assert_eq!(env.handle.startup_readiness_calls(), 0);
         assert_eq!(env.handle.discover_started_count(), 0);
+        if unsafe_dir {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(dir.metadata().unwrap().permissions().mode() & 0o777, 0o777);
+        } else {
+            assert!(!dir.parent().unwrap().exists());
+        }
     }
 }
 
