@@ -68,16 +68,13 @@ async function setupComposer(): Promise<HTMLElement> {
 }
 
 async function enterPresentation(editor: HTMLElement): Promise<HTMLElement> {
-  await fill(editor, "Our launch /");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  const user = userEvent.setup({ delay: null });
-  // The panel's rows act on mousedown, which only a full pointer sequence fires.
-  await user.click(button("Presentation", menu));
-  // The row opens the template picker as well, and it covers the composer.
-  await user.click(button("Close", await screen.findByRole("dialog")));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
+  await fill(editor, "Our launch");
+  click(
+    button(
+      "Presentation",
+      await screen.findByRole("group", { name: "Choose a task" }),
+    ),
+  );
   return await screen.findByRole("combobox", { name: "Slide count" });
 }
 
@@ -92,6 +89,26 @@ function visibleText(message: SubmittedMessage | undefined): string {
       .trim() ?? ""
   );
 }
+
+test("Presentation from the slash menu opens templates and keeps the draft", async () => {
+  setupModels();
+  mockChatLifecycle(context);
+  const editor = await setupComposer();
+  await fill(editor, "Our launch /");
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  // The panel's rows act on mousedown, which only a full pointer sequence fires.
+  await userEvent.setup({ delay: null }).click(button("Presentation", menu));
+  const dialog = await screen.findByRole("dialog");
+  click(button("Close", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  await expect(
+    screen.findByRole("combobox", { name: "Slide count" }),
+  ).resolves.toBeInTheDocument();
+  expect(editor).toHaveTextContent("Our launch");
+  expect(editor).not.toHaveTextContent("/");
+});
 
 test("Presentation sends Auto as additional info without changing the message", async () => {
   setupModels();
