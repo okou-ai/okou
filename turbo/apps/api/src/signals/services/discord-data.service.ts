@@ -241,15 +241,14 @@ export function discordGuildUserBinding(args: {
   readonly guildId: string;
   readonly discordUserId: string;
 }): Computed<Promise<DiscordVerifiedBinding | null>> {
+  const bindings$ = verifiedBindings(
+    and(
+      eq(discordOrgConnections.guildId, args.guildId),
+      eq(discordOrgConnections.discordUserId, args.discordUserId),
+    )!,
+  );
   return computed(async (get) => {
-    const rows = await get(
-      verifiedBindings(
-        and(
-          eq(discordOrgConnections.guildId, args.guildId),
-          eq(discordOrgConnections.discordUserId, args.discordUserId),
-        )!,
-      ),
-    );
+    const rows = await get(bindings$);
     return rows[0] ?? null;
   });
 }
@@ -286,8 +285,9 @@ export type DiscordDmBindingResult =
 export function discordDmBinding(
   discordUserId: string,
 ): Computed<Promise<DiscordDmBindingResult>> {
+  const bindings$ = discordSenderBindings(discordUserId);
   return computed(async (get): Promise<DiscordDmBindingResult> => {
-    const bindings = await get(discordSenderBindings(discordUserId));
+    const bindings = await get(bindings$);
     if (bindings.length === 0) {
       return { kind: "not-connected" };
     }
