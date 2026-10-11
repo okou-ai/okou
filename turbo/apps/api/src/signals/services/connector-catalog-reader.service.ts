@@ -6,7 +6,6 @@ import type {
   PublicConnectorCatalogListResponse,
   PublicConnectorCatalogDiscoveryResponse,
   PublicConnectorCatalogPermissionDetail,
-  PublicConnectorCatalogStatusItem,
   PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
@@ -31,7 +30,6 @@ import {
   listExternalPublicConnectorCatalogStatus,
   loadCompleteConnectorCatalogSource,
   publicConnectorCatalogPermissionDetailFromSource,
-  publicConnectorCatalogStatusFromSource,
   searchExternalConnectorCatalog,
 } from "./connector-catalog-external-reader.service";
 import {
@@ -53,14 +51,9 @@ interface ConnectorCatalogSearchArgs extends ConnectorCatalogReadArgs {
   readonly keyword: string | undefined;
 }
 
-interface ConnectorCatalogConnectorReadArgs extends ConnectorCatalogReadArgs {
-  readonly connectorSlug: ConnectorSlug;
-}
-
 /**
- * Every caller here is an optional read (connected briefs, connect items by
- * slug, single-item status and permission GETs), so a slug without an entry
- * is omitted or becomes 404. Required paths reject through their own readers.
+ * Connected briefs and connect items by slug are optional reads, so a slug
+ * without an entry is omitted. Required paths reject through their own readers.
  */
 async function loadSlugDisplaySource(
   db: ReadonlyDb,
@@ -166,17 +159,6 @@ export async function discoverPublicConnectorCatalogStatus(
     referenceConnectorSlugs: [],
   });
   return read.status;
-}
-
-export async function getPublicConnectorCatalogStatus(
-  args: ConnectorCatalogConnectorReadArgs & {
-    readonly connections: readonly ConnectorCatalogConnection[];
-  },
-): Promise<PublicConnectorCatalogStatusItem | null> {
-  return publicConnectorCatalogStatusFromSource({
-    ...args,
-    catalog: await loadSlugDisplaySource(args.db, [args.connectorSlug]),
-  });
 }
 
 export function publicConnectorCatalogPermissionDetail(
