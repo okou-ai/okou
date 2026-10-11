@@ -716,38 +716,44 @@ function serializeCommand(row: ComputerUseCommandRow, hostName: string | null) {
   };
 }
 
-async function insertComputerUseCommandAuditEvent(
-  db: Db,
-  params: {
-    readonly command: ComputerUseCommandRow;
-    readonly event: "completed";
-    readonly result?: ComputerUseCommandResult | null;
-    readonly error?: ComputerUseCommandError | null;
-    readonly createdAt: Date;
-  },
-): Promise<void> {
-  if (!isComputerUseWriteCommandKind(params.command.kind)) {
-    return;
-  }
-  const redactedResult = redactedResultForAudit(params.result);
+const insertComputerUseCommandAuditEvent$ = command(
+  async (
+    { set },
+    params: {
+      readonly command: ComputerUseCommandRow;
+      readonly event: "completed";
+      readonly result?: ComputerUseCommandResult | null;
+      readonly error?: ComputerUseCommandError | null;
+      readonly createdAt: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (!isComputerUseWriteCommandKind(params.command.kind)) {
+      return;
+    }
+    const redactedResult = redactedResultForAudit(params.result);
 
-  await db.insert(computerUseCommandAuditEvents).values({
-    commandId: params.command.id,
-    orgId: params.command.orgId,
-    userId: params.command.userId,
-    runId: params.command.runId,
-    hostId: params.command.hostId,
-    kind: params.command.kind,
-    app:
-      typeof params.command.payload.app === "string"
-        ? params.command.payload.app
-        : null,
-    event: params.event,
-    redactedResult,
-    error: errorForAudit(params.error),
-    createdAt: params.createdAt,
-  });
-}
+    await set(writeDb$)
+      .insert(computerUseCommandAuditEvents)
+      .values({
+        commandId: params.command.id,
+        orgId: params.command.orgId,
+        userId: params.command.userId,
+        runId: params.command.runId,
+        hostId: params.command.hostId,
+        kind: params.command.kind,
+        app:
+          typeof params.command.payload.app === "string"
+            ? params.command.payload.app
+            : null,
+        event: params.event,
+        redactedResult,
+        error: errorForAudit(params.error),
+        createdAt: params.createdAt,
+      });
+    signal.throwIfAborted();
+  },
+);
 
 /**
  * Fail one running command that is past its timeout. The UPDATE is a
@@ -756,42 +762,48 @@ async function insertComputerUseCommandAuditEvent(
  * the audit event. Returns the failed row, or null when another writer got
  * there first.
  */
-async function failTimedOutComputerUseCommand(
-  db: Db,
-  commandRow: ComputerUseCommandRow,
-  now: Date,
-  signal: AbortSignal,
-): Promise<ComputerUseCommandRow | null> {
-  const error = timeoutErrorForCommand(commandRow);
-  const [timedOut] = await db
-    .update(computerUseCommands)
-    .set({
-      status: "failed",
-      result: { error },
-      error: error.code,
-      completedAt: now,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(computerUseCommands.id, commandRow.id),
-        eq(computerUseCommands.status, "running"),
-      ),
-    )
-    .returning();
-  signal.throwIfAborted();
-  if (!timedOut) {
-    return null;
-  }
-  await insertComputerUseCommandAuditEvent(db, {
-    command: timedOut,
-    event: "completed",
-    error,
-    createdAt: now,
-  });
-  signal.throwIfAborted();
-  return timedOut;
-}
+const failTimedOutComputerUseCommand$ = command(
+  async (
+    { set },
+    commandRow: ComputerUseCommandRow,
+    now: Date,
+    signal: AbortSignal,
+  ): Promise<ComputerUseCommandRow | null> => {
+    const error = timeoutErrorForCommand(commandRow);
+    const [timedOut] = await set(writeDb$)
+      .update(computerUseCommands)
+      .set({
+        status: "failed",
+        result: { error },
+        error: error.code,
+        completedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(computerUseCommands.id, commandRow.id),
+          eq(computerUseCommands.status, "running"),
+        ),
+      )
+      .returning();
+    signal.throwIfAborted();
+    if (!timedOut) {
+      return null;
+    }
+    await set(
+      insertComputerUseCommandAuditEvent$,
+      {
+        command: timedOut,
+        event: "completed",
+        error,
+        createdAt: now,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return timedOut;
+  },
+);
 
 function resolveComputerUseCommandTargets(params: {
   readonly onlineHosts: readonly ComputerUseHostRow[];
@@ -1309,7 +1321,7 @@ export const getComputerUseCommand$ = command(
     if (row.status === "running" && runningCommandHasTimedOut(row, now)) {
       // A loser keeps the row it read; the next poll sees the winner's state.
       commandRow =
-        (await failTimedOutComputerUseCommand(db, row, now, signal)) ?? row;
+        (await set(failTimedOutComputerUseCommand$, row, now, signal)) ?? row;
     }
 
     const [host] = await db
@@ -1358,37 +1370,39 @@ export const getComputerUseCommandScreenshot$ = command(
  * Whether this host still has a running command. A running command past its
  * timeout is failed here; a poll that loses that race still reports busy.
  */
-async function hostHasRunningComputerUseCommand(
-  db: Db,
-  hostId: string,
-  now: Date,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const [runningCommand] = await db
-    .select()
-    .from(computerUseCommands)
-    .where(
-      and(
-        eq(computerUseCommands.hostId, hostId),
-        eq(computerUseCommands.status, "running"),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!runningCommand) {
-    return false;
-  }
-  if (!runningCommandHasTimedOut(runningCommand, now)) {
-    return true;
-  }
-  const timedOut = await failTimedOutComputerUseCommand(
-    db,
-    runningCommand,
-    now,
-    signal,
-  );
-  return timedOut === null;
-}
+const hostHasRunningComputerUseCommand$ = command(
+  async (
+    { get, set },
+    hostId: string,
+    now: Date,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const [runningCommand] = await get(db$)
+      .select()
+      .from(computerUseCommands)
+      .where(
+        and(
+          eq(computerUseCommands.hostId, hostId),
+          eq(computerUseCommands.status, "running"),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!runningCommand) {
+      return false;
+    }
+    if (!runningCommandHasTimedOut(runningCommand, now)) {
+      return true;
+    }
+    const timedOut = await set(
+      failTimedOutComputerUseCommand$,
+      runningCommand,
+      now,
+      signal,
+    );
+    return timedOut === null;
+  },
+);
 
 /**
  * Claim polls run every 0.5–5s per host, so they hold no transaction and no
@@ -1441,7 +1455,7 @@ export const claimNextComputerUseHostCommand$ = command(
       signal.throwIfAborted();
     }
 
-    if (await hostHasRunningComputerUseCommand(db, host.id, now, signal)) {
+    if (await set(hostHasRunningComputerUseCommand$, host.id, now, signal)) {
       return { status: "idle" };
     }
 
@@ -1747,13 +1761,17 @@ export const completeComputerUseHostCommand$ = command(
       return await resolveMissedComputerUseCompletion(db, params, signal);
     }
 
-    await insertComputerUseCommandAuditEvent(db, {
-      command: updated,
-      event: "completed",
-      result: finalStatus === "succeeded" ? storedResult : null,
-      error: finalStatus === "failed" ? finalError : null,
-      createdAt: completedAt,
-    });
+    await set(
+      insertComputerUseCommandAuditEvent$,
+      {
+        command: updated,
+        event: "completed",
+        result: finalStatus === "succeeded" ? storedResult : null,
+        error: finalStatus === "failed" ? finalError : null,
+        createdAt: completedAt,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     await refreshComputerUseHostLiveness(db, host, completedAt, signal);
 
