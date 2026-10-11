@@ -150,7 +150,7 @@ print("runner-profile-benchmark tool-boundary tests: ok")
 PY
 
 # Assert the actual workflow's artifact/DAG boundary, not a synthetic YAML fixture.
-ruby -ryaml -e '
+ruby -ryaml - "${REPO_ROOT}/.github/workflows/runner-profile-benchmark.yml" <<'RUBY'
 workflow = YAML.load_file(ARGV.fetch(0))
 raise "read-only permissions required" unless workflow.fetch("permissions") == {"contents" => "read"}
 raise "diagnostic events only" unless workflow.fetch(true).keys.sort == %w[pull_request workflow_dispatch]
@@ -159,7 +159,10 @@ raise "production runner class required" unless job.fetch("runs-on") == "ubuntu-
 raise "bounded six-lane experiment required" unless job.fetch("timeout-minutes") <= 40 && job.fetch("strategy").fetch("matrix").fetch("profile").length == 3 && job.fetch("strategy").fetch("matrix").fetch("target").length == 2
 upload = job.fetch("steps").find { |step| step["name"] == "Upload diagnostic reports only" }
 raise "upload only reports" unless upload.fetch("with").fetch("path") == "runner-profile-report"
+raise "preserve reports across reruns" unless upload.fetch("with").fetch("name").end_with?("-${{ github.run_attempt }}")
+cli_upload = workflow.fetch("jobs").fetch("cli").fetch("steps").find { |step| step.fetch("uses", "").start_with?("actions/upload-artifact@") }
+raise "CLI producer reruns must replace their run-bound artifact" unless cli_upload.fetch("with").fetch("overwrite") == true
 raise "no production cache or deploy credentials" if File.read(ARGV.fetch(0)).match?(/secrets\.|setup-r2-sccache|rust-cache@|runner-binary-cache\.sh|runner-binary-transport\.sh/)
-' "${REPO_ROOT}/.github/workflows/runner-profile-benchmark.yml"
+RUBY
 
 echo "runner-profile-benchmark-test: ok"

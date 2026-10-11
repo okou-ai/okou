@@ -18,6 +18,10 @@ Reports bind the source, baseline digest, CLI bytes, full profile tables and
 overrides, compiler/linker and instrumentation identities to a separate
 experiment ID. Only diagnostic JSON and Cargo timing HTML leave the lane.
 
+CLI producer reruns replace the run-bound input artifact; rerunning only a
+measurement can reuse the earlier successful producer. Diagnostic artifact names
+include the workflow attempt, preserving earlier successful or partial reports.
+
 `guest.json` and `runner.json` record timed command wall time, child CPU and
 maximum child RSS, plus available cgroup CPU and memory samples. Child CPU does
 not include compilation delegated to the separately running sccache server.
