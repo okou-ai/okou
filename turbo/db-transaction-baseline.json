@@ -377,11 +377,6 @@
       "owner": "projectThread"
     },
     {
-      "id": "TX-0131",
-      "file": "turbo/apps/api/src/signals/services/cron-project-chat-event-search.service.ts",
-      "owner": "cleanupOrphanedSearchProjection"
-    },
-    {
       "id": "TX-0133",
       "file": "turbo/apps/api/src/signals/services/cron-steer-run-time-budget.service.ts",
       "owner": "persistRunTimeBudgetInput$"
