@@ -41,4 +41,10 @@ smoke_count="$(grep -Fc 'bash .github/scripts/smoke-okou-cli-artifact.sh' <<<"$d
 [[ "$smoke_count" == "2" ]] ||
   fail "deploy-cli must smoke both the local and CDN CLI artifacts"
 
+grep -Fq 'bash .github/scripts/download-okou-cli-cdn-file.sh' <<<"$deploy_cli" ||
+  fail "deploy-cli must use the bounded CDN downloader"
+verify_count="$(grep -Fc 'bash .github/scripts/verify-okou-cli-artifact.sh' <<<"$deploy_cli" || true)"
+[[ "$verify_count" == "2" ]] ||
+  fail "deploy-cli must verify both the local and CDN CLI artifacts"
+
 echo "deploy-cli-workflow tests passed"
