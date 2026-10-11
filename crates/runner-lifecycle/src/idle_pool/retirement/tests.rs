@@ -1,3 +1,4 @@
+mod activation;
 mod admission;
 mod inventory;
 mod phases;

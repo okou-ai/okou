@@ -22,6 +22,7 @@ use sandbox_mock::{
 
 use super::*;
 
+mod activation;
 mod admission;
 mod insertion;
 mod logical;

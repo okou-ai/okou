@@ -9,6 +9,7 @@ use crate::status::{BlankSandbox, IdleSandbox};
 use runner_types::ids::RunId;
 use runner_types::types::{HeldSandboxState, ReusableSandboxState};
 
+mod activation_cleanup;
 mod entry;
 mod insertion;
 mod inventory_retirement;
@@ -33,6 +34,10 @@ pub use retirement::{
 };
 pub use retirement_batch::{IdleRetirementBatchScope, IdleRetirementSelection};
 
+pub use activation_cleanup::{
+    AcceptedActivationCleanup, ActivationCleanupOutcome, IdleActivationOwner, IdleActivationState,
+    RetainedActivationCleanup,
+};
 pub use entry::{
     DestroyOutcome, FinalizingHandoffCandidate, IdleDestroyPayload, IdleDestroyResult,
     RetainedIdleDestroyResult,

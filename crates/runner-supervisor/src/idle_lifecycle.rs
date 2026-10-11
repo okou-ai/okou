@@ -1,5 +1,7 @@
 //! Idle-pool lifecycle and status helpers for `runner start`.
 
+mod activation_cleanup;
+pub use activation_cleanup::GuardedActivationCleanupTask;
 mod batch;
 mod insertion;
 mod logical;
@@ -33,7 +35,8 @@ use runner_lifecycle::idle_pool::{
     BlankIdleReservationMiss, DestroyOutcome, ExactIdleReservationMiss, GuardedIdleRetirement,
     IdleDestroyJob, IdleDestroyPayload, IdleDestroyResult, IdlePool, IdlePoolRetirement,
     IdlePoolSnapshot, IdleRetirementCandidate, IdleRetirementEnvelope, IdleRetirementStartFailure,
-    ReservedIdleSandbox, RestoreReservedIdleResult, RetainedIdleDestroyResult,
+    ReservedIdleSandbox, RestoreReservedIdleResult, RetainedActivationCleanup,
+    RetainedIdleDestroyResult,
 };
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::{StatusResult, StatusTracker};
@@ -77,6 +80,7 @@ impl<T> IdleCleanupTask<T> {
 pub struct IdleDestroyTracker {
     tasks: TaskTracker,
     reuse_state_notify: Arc<Notify>,
+    activation_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
 }
 
 impl IdleDestroyTracker {
@@ -84,6 +88,7 @@ impl IdleDestroyTracker {
         Self {
             tasks: TaskTracker::new(),
             reuse_state_notify,
+            activation_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 
