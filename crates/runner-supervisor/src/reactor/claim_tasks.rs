@@ -160,7 +160,13 @@ impl ClaimTaskResult {
     ) -> ReactorResult<DiscoveredJobResult> {
         Ok(match self.outcome {
             ClaimTaskOutcome::Claimed(claim) => {
-                handle_admitted_job(claim.into_admission()?, self.profile, context).await
+                // Keep activation's large state out of the retained Reactor future.
+                Box::pin(handle_admitted_job(
+                    claim.into_admission()?,
+                    self.profile,
+                    context,
+                ))
+                .await
             }
             ClaimTaskOutcome::Pending(candidate) => DiscoveredJobResult::pending(*candidate),
             ClaimTaskOutcome::Deferred => DiscoveredJobResult::completed(false),
