@@ -546,6 +546,8 @@ export function discordOrgStatus(args: {
   readonly orgRole?: ApiOrgRole;
 }): Computed<Promise<DiscordOrgStatus>> {
   const capability$ = discordMessageContentCapability();
+  const role$ = discordMemberRole(args);
+  const agent$ = discordEffectiveAgent(args);
   return computed(async (get): Promise<DiscordOrgStatus> => {
     const enabled = await get(
       discordIntegrationEnabledForOwner(args.orgId, args.userId),
@@ -569,7 +571,7 @@ export function discordOrgStatus(args: {
     if (!enabled) {
       return status;
     }
-    const role = await get(discordMemberRole(args));
+    const role = await get(role$);
     if (!role) {
       return {
         ...status,
@@ -603,7 +605,7 @@ export function discordOrgStatus(args: {
         )!,
       ),
     );
-    const agent = await get(discordEffectiveAgent(args));
+    const agent = await get(agent$);
     const bindings = connection
       ? (await get(discordSenderBindings(connection.discordUserId))).filter(
           (binding) => {
