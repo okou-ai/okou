@@ -430,7 +430,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Install AWS CLI for archive consumption
@@ -455,7 +455,7 @@ jobs:
           python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
           python3 ios/scripts/archive-promotion.py consume "$IOS_ARCHIVE_DIR"
       - name: Retain exact release-to-archive mapping
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-release-mapping-${{ needs.release-please.outputs.release_target }}
           path: ${{ env.IOS_ARCHIVE_DIR }}/release-mapping.json
@@ -489,7 +489,7 @@ jobs:
         run: node ios/scripts/testflight.mjs distribute
       - name: Retain release symbols
         if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-symbols-${{ needs.release-please.outputs.ios_version }}-${{ steps.prepare.outputs.build_number }}
           path: ${{ runner.temp }}/okou-ios-symbols
@@ -554,7 +554,7 @@ jobs:
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
@@ -1119,7 +1119,7 @@ jobs:
       # rebuild CLI separately for Runner or use an older versioned manifest.
       - name: Upload canonical CLI build input for Runner
         if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: runner-release-cli-${{ github.run_id }}
           path: |
@@ -1207,7 +1207,7 @@ jobs:
         run: pnpm --filter @okouai/api-contracts run build:runtime-api-schema -- --out "$GITHUB_WORKSPACE/turbo/runtime-api-schema.json"
 
       - name: Upload Runtime API Schema Artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: runtime-api-schema
           path: turbo/runtime-api-schema.json
@@ -1539,7 +1539,7 @@ jobs:
       contents: write
     steps:
       - name: Download Runtime API Schema Artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: runtime-api-schema
           path: /tmp/runtime-api-schema
@@ -2003,7 +2003,7 @@ jobs:
           ref: ${{ needs.release-please.outputs.release_target }}
 
       - name: Download canonical CLI build input
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: runner-release-cli-${{ github.run_id }}
           path: runner-cli-intermediate
@@ -2743,7 +2743,7 @@ jobs:
           MERGE_SCRIPT
 
       - name: Upload SBOM as workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom
           path: sbom.json
