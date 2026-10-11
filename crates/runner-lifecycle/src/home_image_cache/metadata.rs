@@ -228,7 +228,9 @@ impl HomeImageCache {
         sync_directory(paths.entry_dir()).await?;
         #[cfg(test)]
         self.publication_fault(super::PublicationFault::BeforeMetadataRename)?;
-        fs::rename(&tmp, paths.metadata()).await?;
+        fs::rename(&tmp, paths.metadata()).await.map_err(|error| {
+            super::io_context::with_paths(error, "rename_metadata", &tmp, &paths.metadata())
+        })?;
         #[cfg(test)]
         self.publication_fault(super::PublicationFault::AfterMetadataRename)?;
         sync_directory(paths.entry_dir()).await?;
