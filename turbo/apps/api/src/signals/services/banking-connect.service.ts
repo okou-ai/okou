@@ -23,6 +23,7 @@ import {
   isNotNull,
   isNull,
   or,
+  sql,
   type InferSelectModel,
 } from "drizzle-orm";
 
@@ -984,21 +985,22 @@ type FinicityWebhookEvent = Extract<
   { readonly kind: "event" }
 >;
 
-async function persistFinicityWebhookEvent(
-  db: Db,
-  row: {
-    readonly session: BankingConnectSessionRow;
-    readonly connection: BankingConnectionRow;
-  },
-  event: FinicityWebhookEvent,
-  providerAccounts: readonly ProviderAccount[],
-): Promise<void> {
-  const endReason =
-    nullableString(event.payload.eventTrigger) ??
-    nullableString(event.payload.reason);
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0061; new non-billing transactions are prohibited.
-  await db.transaction(async (tx) => {
-    const inserted = await tx
+const persistFinicityWebhookEvent$ = command(
+  async (
+    { set },
+    row: {
+      readonly session: BankingConnectSessionRow;
+      readonly connection: BankingConnectionRow;
+    },
+    event: FinicityWebhookEvent,
+    providerAccounts: readonly ProviderAccount[],
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const endReason =
+      nullableString(event.payload.eventTrigger) ??
+      nullableString(event.payload.reason);
+    const receipt = db
       .insert(bankingConnectEvents)
       .values({
         eventId: event.eventId,
@@ -1012,31 +1014,29 @@ async function persistFinicityWebhookEvent(
       })
       .onConflictDoNothing()
       .returning({ eventId: bankingConnectEvents.eventId });
-    if (inserted.length === 0) {
+    if (event.eventType !== "added" && event.eventType !== "done") {
+      await receipt;
+      signal.throwIfAborted();
       return;
     }
 
+    // Only an inserted receipt owns the pending-session transition.
+    const inserted = db.$with("inserted_receipt").as(receipt);
+    const pendingSession = and(
+      eq(bankingConnectSessions.id, row.session.id),
+      eq(bankingConnectSessions.status, "pending"),
+    );
     if (event.eventType === "added") {
-      await tx
+      await db
+        .with(inserted)
         .update(bankingConnectSessions)
         .set({ addedAt: nowDate(), updatedAt: nowDate() })
-        .where(
-          and(
-            eq(bankingConnectSessions.id, row.session.id),
-            eq(bankingConnectSessions.status, "pending"),
-          ),
-        );
-      return;
-    }
-    if (event.eventType !== "done") {
+        .from(inserted)
+        .where(pendingSession);
+      signal.throwIfAborted();
       return;
     }
 
-    const [latestSession] = await tx
-      .select({ addedAt: bankingConnectSessions.addedAt })
-      .from(bankingConnectSessions)
-      .where(eq(bankingConnectSessions.id, row.session.id))
-      .limit(1);
     const healthy = providerAccounts.some((account) => {
       return (
         !account.repairRequired &&
@@ -1044,29 +1044,30 @@ async function persistFinicityWebhookEvent(
           account.institutionLoginId === row.session.institutionLoginId)
       );
     });
-    const completed =
-      row.session.mode === "fix"
-        ? healthy
-        : (row.session.addedAt ?? latestSession?.addedAt ?? null) !== null &&
-          healthy;
+    // A captured addedAt still takes precedence. Otherwise use the row being
+    // transitioned, including an added callback that won a concurrent UPDATE.
+    const status = !healthy
+      ? "cancelled"
+      : row.session.mode === "fix" || row.session.addedAt !== null
+        ? "completed"
+        : sql`CASE WHEN ${isNotNull(bankingConnectSessions.addedAt)}
+            THEN 'completed' ELSE 'cancelled' END`;
     const completedAt = nowDate();
-    await tx
+    await db
+      .with(inserted)
       .update(bankingConnectSessions)
       .set({
-        status: completed ? "completed" : "cancelled",
+        status,
         doneAt: completedAt,
         completedAt,
         endReason: endReason?.slice(0, 64) ?? null,
         updatedAt: completedAt,
       })
-      .where(
-        and(
-          eq(bankingConnectSessions.id, row.session.id),
-          eq(bankingConnectSessions.status, "pending"),
-        ),
-      );
-  });
-}
+      .from(inserted)
+      .where(pendingSession);
+    signal.throwIfAborted();
+  },
+);
 
 export const handleFinicityWebhook$ = command(
   async (
@@ -1136,7 +1137,13 @@ export const handleFinicityWebhook$ = command(
       signal.throwIfAborted();
     }
 
-    await persistFinicityWebhookEvent(db, row, event, providerAccounts);
+    await set(
+      persistFinicityWebhookEvent$,
+      row,
+      event,
+      providerAccounts,
+      signal,
+    );
     signal.throwIfAborted();
 
     return { kind: "ok" };
