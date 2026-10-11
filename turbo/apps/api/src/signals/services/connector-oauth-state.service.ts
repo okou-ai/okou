@@ -168,114 +168,93 @@ function narrowStoredOAuthState(
   };
 }
 
-function requireStoredOAuthState(
-  state: StoredOAuthStateRow,
-  target: OAuthStateTarget,
-): StoredBuiltinOAuthState | StoredCustomConnectorOAuthState {
-  const narrowed = narrowStoredOAuthState(state, target);
-  if (!narrowed) {
-    throw new Error(`Claimed ${target.kind} OAuth state has invalid identity`);
-  }
-  return narrowed;
-}
+export const getConnectorOAuthStateStatus$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: string;
+      readonly target: OAuthStateTarget;
+    },
+    signal: AbortSignal,
+  ): Promise<ConnectorOAuthStateStatus> => {
+    const db = set(writeDb$);
+    const [storedState] = await db
+      .select({
+        connectorSlug: connectorOauthStates.connectorSlug,
+        customConnectorId: connectorOauthStates.customConnectorId,
+        consumedAt: connectorOauthStates.consumedAt,
+        expiresAt: connectorOauthStates.expiresAt,
+        redirectUri: connectorOauthStates.redirectUri,
+      })
+      .from(connectorOauthStates)
+      .where(eq(connectorOauthStates.state, args.state))
+      .limit(1);
+    signal.throwIfAborted();
 
-export async function getConnectorOAuthStateStatus(
-  db: Db,
-  args: {
-    readonly state: string;
-    readonly target: OAuthStateTarget;
-  },
-  signal: AbortSignal,
-): Promise<ConnectorOAuthStateStatus> {
-  const [storedState] = await db
-    .select({
-      connectorSlug: connectorOauthStates.connectorSlug,
-      customConnectorId: connectorOauthStates.customConnectorId,
-      consumedAt: connectorOauthStates.consumedAt,
-      expiresAt: connectorOauthStates.expiresAt,
-      redirectUri: connectorOauthStates.redirectUri,
-    })
-    .from(connectorOauthStates)
-    .where(eq(connectorOauthStates.state, args.state))
-    .limit(1);
-  signal.throwIfAborted();
+    if (!storedState) {
+      return { kind: "missing" };
+    }
 
-  if (!storedState) {
-    return { kind: "missing" };
-  }
+    if (
+      !matchesOAuthStateTarget(storedState, args.target) ||
+      storedState.consumedAt ||
+      storedState.expiresAt <= nowDate()
+    ) {
+      return { kind: "invalid" };
+    }
 
-  if (
-    !matchesOAuthStateTarget(storedState, args.target) ||
-    storedState.consumedAt ||
-    storedState.expiresAt <= nowDate()
-  ) {
-    return { kind: "invalid" };
-  }
-
-  return {
-    kind: "usable",
-    redirectUri: storedState.redirectUri,
-  };
-}
-
-export function claimConnectorOAuthState(
-  db: Db,
-  args: {
-    readonly state: string;
-    readonly target: BuiltinOAuthStateTarget;
-  },
-  signal: AbortSignal,
-): Promise<ConnectorOAuthStateClaimResult<StoredBuiltinOAuthState>>;
-export function claimConnectorOAuthState(
-  db: Db,
-  args: {
-    readonly state: string;
-    readonly target: CustomOAuthStateTarget;
-  },
-  signal: AbortSignal,
-): Promise<ConnectorOAuthStateClaimResult<StoredCustomConnectorOAuthState>>;
-export async function claimConnectorOAuthState(
-  db: Db,
-  args: {
-    readonly state: string;
-    readonly target: OAuthStateTarget;
-  },
-  signal: AbortSignal,
-): Promise<
-  ConnectorOAuthStateClaimResult<
-    StoredBuiltinOAuthState | StoredCustomConnectorOAuthState
-  >
-> {
-  const claimedAt = nowDate();
-  const [claimedState] = await db
-    .delete(connectorOauthStates)
-    .where(
-      and(
-        eq(connectorOauthStates.state, args.state),
-        ...oauthStateTargetConditions(args.target),
-        isNull(connectorOauthStates.consumedAt),
-        gt(connectorOauthStates.expiresAt, claimedAt),
-      ),
-    )
-    .returning(storedOAuthStateSelection);
-  signal.throwIfAborted();
-
-  if (claimedState) {
     return {
       kind: "usable",
-      state: requireStoredOAuthState(claimedState, args.target),
+      redirectUri: storedState.redirectUri,
     };
-  }
+  },
+);
 
-  const [existingState] = await db
-    .select({ id: connectorOauthStates.id })
-    .from(connectorOauthStates)
-    .where(eq(connectorOauthStates.state, args.state))
-    .limit(1);
-  signal.throwIfAborted();
+export const claimCustomConnectorOAuthState$ = command(
+  async (
+    { set },
+    state: string,
+    signal: AbortSignal,
+  ): Promise<
+    ConnectorOAuthStateClaimResult<StoredCustomConnectorOAuthState>
+  > => {
+    const db = set(writeDb$);
+    const target = { kind: "custom" } as const;
+    const claimedAt = nowDate();
+    const [claimedState] = await db
+      .delete(connectorOauthStates)
+      .where(
+        and(
+          eq(connectorOauthStates.state, state),
+          ...oauthStateTargetConditions(target),
+          isNull(connectorOauthStates.consumedAt),
+          gt(connectorOauthStates.expiresAt, claimedAt),
+        ),
+      )
+      .returning(storedOAuthStateSelection);
+    signal.throwIfAborted();
 
-  return existingState ? { kind: "invalid" } : { kind: "missing" };
-}
+    if (claimedState) {
+      const storedState = narrowStoredOAuthState(claimedState, target);
+      if (!storedState) {
+        throw new Error("Claimed custom OAuth state has invalid identity");
+      }
+      return {
+        kind: "usable",
+        state: storedState,
+      };
+    }
+
+    const [existingState] = await db
+      .select({ id: connectorOauthStates.id })
+      .from(connectorOauthStates)
+      .where(eq(connectorOauthStates.state, state))
+      .limit(1);
+    signal.throwIfAborted();
+
+    return existingState ? { kind: "invalid" } : { kind: "missing" };
+  },
+);
 
 export const claimBuiltinConnectorOAuthState$ = command(
   async (
