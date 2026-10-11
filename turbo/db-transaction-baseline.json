@@ -522,11 +522,6 @@
       "owner": "recordManagedUsage$"
     },
     {
-      "id": "TX-0183",
-      "file": "turbo/apps/api/src/signals/services/member-memory-initialization.service.ts",
-      "owner": "initializeMemberMemory$"
-    },
-    {
       "id": "TX-0184",
       "file": "turbo/apps/api/src/signals/services/memory-summary-projection.service.ts",
       "owner": "claimProjectionWork$"
