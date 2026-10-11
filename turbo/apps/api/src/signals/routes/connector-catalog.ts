@@ -8,7 +8,10 @@ import { authRoute } from "../auth/auth-route";
 import { pathParamsOf, queryOf } from "../context/request";
 import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
+import {
+  createUserFeatureSwitchContext,
+  userFeatureSwitchOverrides,
+} from "../services/feature-switches.service";
 import {
   discoverPublicConnectorCatalogStatus,
   getPublicConnectorCatalogStatus,
@@ -292,19 +295,19 @@ const getConnectorCatalogInner$ = command(
   },
 );
 
+const connectorCatalogPermissionsIdentity$ = computed((get) => {
+  const { orgId, userId } = get(organizationAuthContext$);
+  return Promise.resolve({ orgId, userId });
+});
+const connectorCatalogPermissionsFeatureContext$ =
+  createUserFeatureSwitchContext(connectorCatalogPermissionsIdentity$);
+
 const connectorCatalogPermissionsScope$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const overrides = await get(
-    userFeatureSwitchOverrides(auth.orgId, auth.userId),
-  );
+  const featureContext = await get(connectorCatalogPermissionsFeatureContext$);
   const params = get(pathParamsOf(connectorCatalogContract.permissions));
   return {
     connectorSlug: params.connectorSlug,
-    featureStates: getAllFeatureStates({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      overrides,
-    }),
+    featureStates: getAllFeatureStates(featureContext),
   };
 });
 
