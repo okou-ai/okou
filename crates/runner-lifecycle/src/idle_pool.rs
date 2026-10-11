@@ -10,6 +10,7 @@ use runner_types::ids::RunId;
 use runner_types::types::{HeldSandboxState, ReusableSandboxState};
 
 mod entry;
+mod insertion;
 mod inventory_retirement;
 mod park_transition;
 mod parking_gate;
@@ -17,6 +18,10 @@ mod pressure;
 mod retirement;
 mod retirement_batch;
 
+pub use insertion::{
+    IdlePoolIncoming, IdlePoolIncomingOwner, IdlePoolInsertion, IdlePoolInsertionCandidate,
+    IdlePoolInsertionStartFailure, IdlePoolInsertionStarted,
+};
 pub use inventory_retirement::{
     IdlePoolRetirement, IdlePoolRetirementStartFailure, IdlePoolSubstitutionStarted,
     IdleRetirementCandidate,
@@ -168,24 +173,13 @@ impl IdlePool {
 
     fn park_at(&mut self, candidate: ParkedIdleCandidate, parked_at: Instant) -> ParkResult {
         let identity = &candidate.metadata.identity;
-        if !self.parking_gate.is_open() {
-            return ParkResult::Rejected(candidate.into_rejected());
-        }
-        let mut capacity_evicted = None;
-        if self.config.max_idle > 0 && self.len() >= self.config.max_idle {
-            // At capacity and this identity has no existing entry to replace.
-            if !self.contains_identity(identity) {
-                if candidate.is_blank() {
-                    return ParkResult::Rejected(candidate.into_rejected());
-                }
-                let Some(blank_key) = self.oldest_blank_key() else {
-                    return ParkResult::Rejected(candidate.into_rejected());
-                };
-                capacity_evicted = self.blank_entries.remove(&blank_key);
-            }
-        }
+        let victim = match self.insertion_victim_identity(identity, false) {
+            Ok(victim) => victim,
+            Err(_) => return ParkResult::Rejected(candidate.into_rejected()),
+        };
         let entry = candidate.into_idle_entry(parked_at);
-        let replaced = self.insert_entry(entry).or(capacity_evicted);
+        let replaced = self.remove_insertion_victim(victim);
+        self.insert_entry(entry);
         let result = match replaced {
             Some(entry) => ParkResult::Replaced(entry.into_destroy_job()),
             None => ParkResult::Parked,
@@ -364,8 +358,32 @@ impl IdlePool {
         vcpu: u32,
         memory_mb: u32,
     ) -> Option<(IdleDestroyJob, Duration)> {
-        let (reuse_key, parked_at) = self
-            .exact_entries
+        let (reuse_key, parked_at) = self.oldest_exact_for_blank(
+            now,
+            min_idle_age,
+            profile_name,
+            device_rate_limits,
+            vcpu,
+            memory_mb,
+        )?;
+        let entry = self.exact_entries.remove(&reuse_key)?;
+        self.bump_revision();
+        Some((
+            entry.into_destroy_job(),
+            now.saturating_duration_since(parked_at),
+        ))
+    }
+
+    fn oldest_exact_for_blank(
+        &self,
+        now: Instant,
+        min_idle_age: Duration,
+        profile_name: &str,
+        device_rate_limits: &Option<DeviceRateLimits>,
+        vcpu: u32,
+        memory_mb: u32,
+    ) -> Option<(String, Instant)> {
+        self.exact_entries
             .iter()
             .filter(|(_, entry)| {
                 entry.profile_name() == profile_name
@@ -375,13 +393,34 @@ impl IdlePool {
                     && now.saturating_duration_since(entry.parked_at) >= min_idle_age
             })
             .min_by_key(|(reuse_key, entry)| (entry.parked_at, reuse_key.as_str()))
-            .map(|(reuse_key, entry)| (reuse_key.clone(), entry.parked_at))?;
-        let entry = self.exact_entries.remove(&reuse_key)?;
-        self.bump_revision();
-        Some((
-            entry.into_destroy_job(),
-            now.saturating_duration_since(parked_at),
-        ))
+            .map(|(reuse_key, entry)| (reuse_key.clone(), entry.parked_at))
+    }
+
+    /// Select aged conversion without removing the original resource. The
+    /// caller must grant and accept its mandatory retirement outside this read.
+    pub fn aged_retirement_candidate(
+        &self,
+        now: Instant,
+        min_idle_age: Duration,
+        profile_name: &str,
+        device_rate_limits: &Option<DeviceRateLimits>,
+        vcpu: u32,
+        memory_mb: u32,
+    ) -> Result<Option<IdleRetirementCandidate>, crate::host_memory_operations::MemoryOperationError>
+    {
+        if !self.parking_gate.is_open() {
+            return Err(crate::host_memory_operations::MemoryOperationError::Closed);
+        }
+        self.oldest_exact_for_blank(
+            now,
+            min_idle_age,
+            profile_name,
+            device_rate_limits,
+            vcpu,
+            memory_mb,
+        )
+        .map(|(key, _)| self.retirement_candidate(&IdleSandboxIdentity::Exact(key)))
+        .transpose()
     }
 
     pub fn restore_reserved(
@@ -393,20 +432,13 @@ impl IdlePool {
             Err(destroy_job) => return RestoreReservedIdleResult::Rejected(destroy_job),
         };
         let identity = &entry.metadata.identity;
-        if !self.parking_gate.is_open() || self.contains_identity(identity) {
-            return RestoreReservedIdleResult::Rejected(Box::new(entry.into_destroy_job()));
-        }
-
-        let mut displaced_blank = None;
-        if self.config.max_idle > 0 && self.len() >= self.config.max_idle {
-            let blank_key = (!entry.is_blank())
-                .then(|| self.oldest_blank_key())
-                .flatten();
-            let Some(blank_key) = blank_key else {
+        let victim = match self.insertion_victim_identity(identity, true) {
+            Ok(victim) => victim,
+            Err(_) => {
                 return RestoreReservedIdleResult::Rejected(Box::new(entry.into_destroy_job()));
-            };
-            displaced_blank = self.blank_entries.remove(&blank_key);
-        }
+            }
+        };
+        let displaced_blank = self.remove_insertion_victim(victim);
 
         // Restore the original entry, including its idle age, while giving exact
         // reservations the same priority over blank inventory as newly parked runs.
@@ -579,6 +611,48 @@ impl IdlePool {
         match identity {
             IdleSandboxIdentity::Exact(reuse_key) => self.exact_entries.contains_key(reuse_key),
             IdleSandboxIdentity::Blank(sandbox_id) => self.blank_entries.contains_key(sandbox_id),
+        }
+    }
+
+    /// One pure policy for ordinary and covered insertion. Retirement proof and
+    /// resource ownership are handled by their respective concrete transactions.
+    fn insertion_victim_identity(
+        &self,
+        identity: &IdleSandboxIdentity,
+        restore: bool,
+    ) -> Result<Option<IdleSandboxIdentity>, crate::host_memory_operations::MemoryOperationError>
+    {
+        use crate::host_memory_operations::MemoryOperationError;
+        if !self.parking_gate.is_open() {
+            return Err(MemoryOperationError::Closed);
+        }
+        if self.contains_identity(identity) {
+            return if restore {
+                Err(MemoryOperationError::ResourceChanged)
+            } else {
+                Ok(Some(identity.clone()))
+            };
+        }
+        if self.config.max_idle > 0 && self.len() >= self.config.max_idle {
+            if matches!(identity, IdleSandboxIdentity::Blank(_)) {
+                return Err(MemoryOperationError::ResourceChanged);
+            }
+            return self
+                .oldest_blank_key()
+                .map(IdleSandboxIdentity::Blank)
+                .map(Some)
+                .ok_or(MemoryOperationError::ResourceChanged);
+        }
+        Ok(None)
+    }
+
+    fn remove_insertion_victim(
+        &mut self,
+        victim: Option<IdleSandboxIdentity>,
+    ) -> Option<IdleEntry> {
+        match victim? {
+            IdleSandboxIdentity::Exact(key) => self.exact_entries.remove(&key),
+            IdleSandboxIdentity::Blank(id) => self.blank_entries.remove(&id),
         }
     }
 

@@ -239,10 +239,6 @@ impl ParkedIdleCandidate {
         }
     }
 
-    pub(super) fn is_blank(&self) -> bool {
-        self.metadata.is_blank()
-    }
-
     pub(super) fn into_idle_entry(self, parked_at: Instant) -> IdleEntry {
         let Self {
             resources,
@@ -1028,6 +1024,13 @@ impl ReservedIdleSandbox {
     pub(super) fn parked(entry: IdleEntry) -> Self {
         Self {
             state: ReservedIdleSandboxState::Parked(entry),
+        }
+    }
+
+    pub(super) fn into_parked_entry_preserving_owner(self) -> Result<IdleEntry, Box<Self>> {
+        match self.state {
+            ReservedIdleSandboxState::Parked(entry) => Ok(entry),
+            ReservedIdleSandboxState::Running(_) => Err(Box::new(self)),
         }
     }
 

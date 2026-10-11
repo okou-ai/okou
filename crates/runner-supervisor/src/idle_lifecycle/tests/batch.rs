@@ -23,6 +23,7 @@ use sandbox_mock::{
 use super::*;
 
 mod admission;
+mod insertion;
 mod logical;
 mod ownership;
 
@@ -136,6 +137,15 @@ impl BatchFixture {
     }
 
     async fn park(&self, key: &str, captured: bool) -> ParkedHome {
+        let (candidate, home) = self.candidate(key, captured).await;
+        assert!(matches!(
+            self.pool.lock().await.park(candidate),
+            ParkResult::Parked
+        ));
+        home
+    }
+
+    async fn candidate(&self, key: &str, captured: bool) -> (ParkedIdleCandidate, ParkedHome) {
         let fixture = HomePromotionFixture::new(key).await;
         let overrides = Arc::new(MockSandboxOverrides::new());
         add_healthy_cache_preparation_matcher(&overrides);
@@ -155,18 +165,17 @@ impl BatchFixture {
         if captured {
             candidate.capture_retirement_backing().unwrap();
         }
-        assert!(matches!(
-            self.pool.lock().await.park(candidate),
-            ParkResult::Parked
-        ));
-        ParkedHome {
-            _dir: fixture._dir,
-            cache: fixture.cache,
-            key: key.into(),
-            id: fixture.sandbox_id,
-            exit: Some(exit),
-            overrides,
-        }
+        (
+            candidate,
+            ParkedHome {
+                _dir: fixture._dir,
+                cache: fixture.cache,
+                key: key.into(),
+                id: fixture.sandbox_id,
+                exit: Some(exit),
+                overrides,
+            },
+        )
     }
 
     async fn start(
