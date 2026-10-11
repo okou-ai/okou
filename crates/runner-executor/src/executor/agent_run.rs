@@ -2048,42 +2048,42 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             .await
         }
     };
-    let mut model_catalog_prefetch = match prepared_guest_runtime {
-        PreparedGuestRuntime::Ready(prefetch) => prefetch.supervise(sandbox),
-        PreparedGuestRuntime::SandboxUnusable(error) => {
-            if let Some(prepared) = prepared_storage.as_mut() {
-                prepared.delivery.cancel_and_drain(telemetry).await;
-            }
-            session_history_restore_plan.cancel_and_drain().await;
-            return Err(error);
+    // Keep phase cancellation distinct from an error while sharing exit cleanup.
+    let guest_preparation = match prepared_guest_runtime {
+        PreparedGuestRuntime::Ready(prefetch) => Ok(prefetch),
+        PreparedGuestRuntime::SandboxUnusable(error) | PreparedGuestRuntime::Failed(error) => {
+            Err(Some(error))
         }
-        PreparedGuestRuntime::Failed(error) => {
+        PreparedGuestRuntime::Cancelled => Err(None),
+    };
+    let mut model_catalog_prefetch = match guest_preparation {
+        Ok(prefetch) => prefetch.supervise(sandbox),
+        Err(error) => {
             if let Some(prepared) = prepared_storage.as_mut() {
                 prepared.delivery.cancel_and_drain(telemetry).await;
             }
+            let result = match error {
+                Some(error) => Err(error),
+                None => {
+                    info!(
+                        run_id = %context.run_id,
+                        "cancel received before guest process started"
+                    );
+                    let result = AgentExecutionResult::cancelled();
+                    telemetry.record(
+                        "agent_execute",
+                        pre_spawn_started.elapsed(),
+                        false,
+                        result
+                            .failure
+                            .as_ref()
+                            .map(|failure| failure.error.as_str()),
+                    );
+                    Ok(result)
+                }
+            };
             session_history_restore_plan.cancel_and_drain().await;
-            return Err(error);
-        }
-        PreparedGuestRuntime::Cancelled => {
-            if let Some(prepared) = prepared_storage.as_mut() {
-                prepared.delivery.cancel_and_drain(telemetry).await;
-            }
-            info!(
-                run_id = %context.run_id,
-                "cancel received before guest process started"
-            );
-            let result = AgentExecutionResult::cancelled();
-            telemetry.record(
-                "agent_execute",
-                pre_spawn_started.elapsed(),
-                false,
-                result
-                    .failure
-                    .as_ref()
-                    .map(|failure| failure.error.as_str()),
-            );
-            session_history_restore_plan.cancel_and_drain().await;
-            return Ok(result);
+            return result;
         }
     };
     model_catalog_prefetch.record_outcome(telemetry);
@@ -2487,37 +2487,40 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 ))
                 .await;
             model_catalog_prefetch.record_outcome(telemetry);
-            match storage_result {
-                Some(Ok(deferred)) => (deferred, Some(session_history_restore_plan), None),
-                Some(Err(error)) => {
+            let storage_preparation = match storage_result {
+                Some(Ok(deferred)) => Ok(deferred),
+                Some(Err(error)) => Err(Some(error)),
+                None => Err(None),
+            };
+            match storage_preparation {
+                Ok(deferred) => (deferred, Some(session_history_restore_plan), None),
+                Err(error) => {
                     if let Some(prepared) = prepared_storage.as_mut() {
                         prepared.delivery.cancel_and_drain(telemetry).await;
                     }
                     model_catalog_prefetch.finish(telemetry).await;
+                    let result = match error {
+                        Some(error) => Err(error),
+                        None => {
+                            info!(
+                                run_id = %context.run_id,
+                                "cancel received before guest process started"
+                            );
+                            let result = AgentExecutionResult::cancelled();
+                            telemetry.record(
+                                "agent_execute",
+                                pre_spawn_started.elapsed(),
+                                false,
+                                result
+                                    .failure
+                                    .as_ref()
+                                    .map(|failure| failure.error.as_str()),
+                            );
+                            Ok(result)
+                        }
+                    };
                     session_history_restore_plan.cancel_and_drain().await;
-                    return Err(error);
-                }
-                None => {
-                    if let Some(prepared) = prepared_storage.as_mut() {
-                        prepared.delivery.cancel_and_drain(telemetry).await;
-                    }
-                    model_catalog_prefetch.finish(telemetry).await;
-                    info!(
-                        run_id = %context.run_id,
-                        "cancel received before guest process started"
-                    );
-                    let result = AgentExecutionResult::cancelled();
-                    telemetry.record(
-                        "agent_execute",
-                        pre_spawn_started.elapsed(),
-                        false,
-                        result
-                            .failure
-                            .as_ref()
-                            .map(|failure| failure.error.as_str()),
-                    );
-                    session_history_restore_plan.cancel_and_drain().await;
-                    return Ok(result);
+                    return result;
                 }
             }
         };
