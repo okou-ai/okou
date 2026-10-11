@@ -310,49 +310,29 @@ async function claimIngress(db: Db, ingressId: string) {
   return claimed ? { ...claimed, claimToken } : null;
 }
 
-async function loadClaimedIngress(
-  db: Db,
-  ingressId: string,
-  claimToken: string,
-) {
-  const [row] = await db
-    .select({
-      id: discordChatIngress.id,
-      connectionId: discordChatIngress.connectionId,
-      messageId: discordChatIngress.messageId,
-      payload: discordChatIngress.payload,
-      createdAt: discordChatIngress.createdAt,
-      routeId: discordChatThreadRoutes.id,
-      chatThreadId: discordChatThreadRoutes.chatThreadId,
-      userId: discordChatThreadRoutes.userId,
-      destinationChannelId: discordChatThreadRoutes.destinationChannelId,
-      sessionKey: discordChatThreadRoutes.sessionKey,
-    })
-    .from(discordChatIngress)
-    .innerJoin(
-      discordChatThreadRoutes,
-      and(
-        eq(discordChatIngress.routeId, discordChatThreadRoutes.id),
-        eq(
-          discordChatIngress.connectionId,
-          discordChatThreadRoutes.connectionId,
-        ),
-      ),
-    )
-    .where(
-      and(
-        eq(discordChatIngress.id, ingressId),
-        eq(discordChatIngress.status, "processing"),
-        eq(discordChatIngress.claimToken, claimToken),
-      ),
-    )
-    .limit(1);
-  return row;
-}
+const claimedIngressSelection = Object.freeze({
+  id: discordChatIngress.id,
+  connectionId: discordChatIngress.connectionId,
+  messageId: discordChatIngress.messageId,
+  payload: discordChatIngress.payload,
+  createdAt: discordChatIngress.createdAt,
+  routeId: discordChatThreadRoutes.id,
+  chatThreadId: discordChatThreadRoutes.chatThreadId,
+  userId: discordChatThreadRoutes.userId,
+  destinationChannelId: discordChatThreadRoutes.destinationChannelId,
+  sessionKey: discordChatThreadRoutes.sessionKey,
+});
 
-type ClaimedIngress = NonNullable<
-  Awaited<ReturnType<typeof loadClaimedIngress>>
->;
+type ClaimedIngress = Pick<
+  typeof discordChatIngress.$inferSelect,
+  "id" | "connectionId" | "messageId" | "payload" | "createdAt"
+> &
+  Pick<
+    typeof discordChatThreadRoutes.$inferSelect,
+    "chatThreadId" | "userId" | "destinationChannelId" | "sessionKey"
+  > & {
+    routeId: (typeof discordChatThreadRoutes.$inferSelect)["id"];
+  };
 
 const requireIngressAccess$ = command(
   async (
@@ -900,11 +880,29 @@ const persistClaimedIngress$ = command(
       return null;
     }
     const db = set(writeDb$);
-    const ingress = await loadClaimedIngress(
-      db,
-      args.ingressId,
-      args.claimToken,
-    );
+    const ingressId = args.ingressId;
+    const claimToken = args.claimToken;
+    const [ingress] = await db
+      .select(claimedIngressSelection)
+      .from(discordChatIngress)
+      .innerJoin(
+        discordChatThreadRoutes,
+        and(
+          eq(discordChatIngress.routeId, discordChatThreadRoutes.id),
+          eq(
+            discordChatIngress.connectionId,
+            discordChatThreadRoutes.connectionId,
+          ),
+        ),
+      )
+      .where(
+        and(
+          eq(discordChatIngress.id, ingressId),
+          eq(discordChatIngress.status, "processing"),
+          eq(discordChatIngress.claimToken, claimToken),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
     if (!ingress) {
       return null;
