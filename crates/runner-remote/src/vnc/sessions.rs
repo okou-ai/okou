@@ -207,7 +207,7 @@ impl Run {
             let _ = done.await;
         });
         let native_owner: Arc<dyn kerberos_worker::WorkOwner> = native_work.clone();
-        let credential = scope
+        let mut credential = scope
             .wait(self.runtime.authority.resolve(
                 self.id,
                 request.connection_id,
@@ -260,6 +260,9 @@ impl Run {
                 DirectOrSshStream::Ssh(Box::new(stream))
             }
         };
+        if let Authentication::Kerberos { binding, kdc, .. } = &mut credential.authentication {
+            binding.record_ssh_generation(kdc, credential.transport, transport);
+        }
         let mut kerberos = match &credential.authentication {
             Authentication::Kerberos { binding, .. } => Some(*binding),
             _ => None,

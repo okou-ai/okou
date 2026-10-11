@@ -29,6 +29,33 @@ pub(super) struct Kdc {
     pub(super) port: u16,
     pub(super) transport: Transport,
 }
+impl Binding {
+    pub(super) fn record_ssh_generation(
+        &mut self,
+        kdc: &mut Option<Kdc>,
+        original: Transport,
+        attested: Transport,
+    ) {
+        let (
+            Transport::Ssh {
+                connection: before, ..
+            },
+            Transport::Ssh {
+                connection: after, ..
+            },
+            Some(route),
+        ) = (original, attested, kdc.as_mut())
+        else {
+            return;
+        };
+        // Update only the exact original snapshot. Another route or an already
+        // different generation must still fail its independent authority check.
+        if before == after && self.kdc == Some(original) && route.transport == original {
+            route.transport = attested;
+            self.kdc = Some(attested);
+        }
+    }
+}
 
 pub(super) fn profiles(ssh: bool) -> Vec<ResolveRequestSupportedProfile> {
     use ResolveRequestSupportedProfileAuthMethod as A;
@@ -339,8 +366,8 @@ impl kerberos_worker::KdcExchange for Caller {
                     connection,
                     generation: stream.generation(),
                 };
-                self.kdc.as_mut().ok_or(E::Authority)?.transport = learned;
-                self.binding.kdc = Some(learned);
+                self.binding
+                    .record_ssh_generation(&mut self.kdc, transport, learned);
                 DirectOrSshStream::Ssh(Box::new(stream))
             }
         };
@@ -430,7 +457,12 @@ mod tests {
         }
     }
 
-    async fn check<'a>(h: &'a Harness, generation: i64, outcome: &str) -> httpmock::Mock<'a> {
+    async fn check<'a>(
+        h: &'a Harness,
+        generation: i64,
+        outcome: &str,
+        rfb_generation: Option<i64>,
+    ) -> httpmock::Mock<'a> {
         h.api
             .mock_async(|when, then| {
                 when.method("POST")
@@ -443,7 +475,10 @@ mod tests {
                             "heartbeatGeneration": 27
                         },
                         "expectedGeneration": 11,
-                        "expectedTransport": {"type":"direct"},
+                        "expectedTransport": rfb_generation.map_or_else(
+                            || json!({"type":"direct"}),
+                            |generation| json!({"type":"ssh","connectionId":CONNECTION,"generation":generation})
+                        ),
                         "expectedCredentialRevision": 3,
                         "expectedKdcTransport": {
                             "type":"ssh", "connectionId":CONNECTION, "generation":generation
@@ -478,8 +513,8 @@ mod tests {
         let mut h = Harness::new(Reply::default()).await;
         let resolve = h.resolve_for_run(h.run, h.credential(false)).await;
         let pin = pin(&h).await;
-        let initial = check(&h, 7, "valid").await;
-        let learned = check(&h, 8, "valid").await;
+        let initial = check(&h, 7, "valid", None).await;
+        let learned = check(&h, 8, "valid", None).await;
         let mut caller = caller(&h);
         for _ in 0..2 {
             let exchange = caller.exchange("EXAMPLE.TEST", b"test");
@@ -498,7 +533,7 @@ mod tests {
         resolve.assert_calls_async(1).await;
         pin.assert_calls_async(1).await;
         learned.delete_async().await;
-        let revoked = check(&h, 8, "configuration_changed").await;
+        let revoked = check(&h, 8, "configuration_changed", None).await;
         assert_eq!(
             caller.exchange("EXAMPLE.TEST", b"test").await.unwrap_err(),
             kerberos_worker::Error::Authority
@@ -513,8 +548,8 @@ mod tests {
         let mut h = Harness::new(Reply::default()).await;
         let resolve = h.resolve_for_run(h.run, h.credential(false)).await;
         let pin = pin(&h).await;
-        let initial = check(&h, 7, "valid").await;
-        let revoked = check(&h, 8, "unavailable").await;
+        let initial = check(&h, 7, "valid", None).await;
+        let revoked = check(&h, 8, "unavailable", None).await;
         let mut caller = caller(&h);
         let exchange = caller.exchange("EXAMPLE.TEST", b"test");
         let kdc = async {
@@ -534,6 +569,52 @@ mod tests {
         revoked.assert_calls_async(1).await;
         resolve.assert_calls_async(1).await;
         pin.assert_calls_async(1).await;
+        drop(caller);
+        h.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn shared_rfb_and_kdc_ssh_pin_preserves_both_authorized_routes() {
+        let mut h = Harness::new(Reply::default()).await;
+        let resolve = h.resolve_for_run(h.run, h.credential(false)).await;
+        let pin = pin(&h).await;
+        let current = check(&h, 8, "valid", Some(8)).await;
+        let mut caller = caller(&h);
+        let original = caller.kdc.as_ref().unwrap().transport;
+        let ssh = h.ssh();
+        let open = ssh.open_direct_tcpip(
+            CONNECTION.parse().unwrap(),
+            7,
+            "desktop.internal",
+            5900,
+            caller.scope.session.clone(),
+            caller.scope.deadline,
+        );
+        let (rfb, rfb_peer) = tokio::join!(open, h.accept_forwarded());
+        let rfb = rfb.unwrap();
+        let attested = Transport::Ssh {
+            connection: CONNECTION.parse().unwrap(),
+            generation: rfb.generation(),
+        };
+        caller.rfb = attested;
+        caller
+            .binding
+            .record_ssh_generation(&mut caller.kdc, original, attested);
+        let exchange = caller.exchange("EXAMPLE.TEST", b"test");
+        let kdc = async {
+            let mut stream = h.accept_forwarded().await;
+            receive(&mut stream).await;
+            stream.write_u32(5).await.unwrap();
+            stream.write_all(b"reply").await.unwrap();
+            stream.shutdown().await.unwrap();
+        };
+        let (reply, ()) = tokio::join!(exchange, kdc);
+        assert_eq!(reply.unwrap().as_slice(), b"reply");
+        current.assert_calls_async(3).await;
+        pin.assert_calls_async(1).await;
+        resolve.assert_calls_async(1).await;
+        drop(rfb);
+        drop(rfb_peer);
         drop(caller);
         h.shutdown().await;
     }

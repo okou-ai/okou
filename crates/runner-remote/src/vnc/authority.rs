@@ -113,7 +113,7 @@ pub(super) enum Authentication {
     },
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Transport {
     Direct,
     Ssh { connection: Uuid, generation: i64 },
