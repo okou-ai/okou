@@ -7,6 +7,7 @@ import http.server
 import os
 from pathlib import Path
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -103,13 +104,27 @@ class DownloadTests(unittest.TestCase):
             env["PATH"] = f"{bin_dir}:{env['PATH']}"
             env["CDN_TEST_REAL_CURL"] = real_curl
 
-        result = subprocess.run(
-            ["bash", script, url, str(self.destination)],
+        command = ["bash", script, url, str(self.destination)]
+        with subprocess.Popen(
+            command,
             env=env,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
-        )
+            start_new_session=True,
+        ) as process:
+            try:
+                stdout, stderr = process.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass  # The process group finished while the timeout fired.
+                process.communicate()
+                raise
+            result = subprocess.CompletedProcess(
+                command, process.returncode, stdout, stderr
+            )
         self.assertNotIn("cdn-test-access-key-canary", result.stdout + result.stderr)
         self.assertNotIn("cdn-test-secret-key-canary", result.stdout + result.stderr)
         self.assertEqual(
