@@ -44,10 +44,11 @@ pub fn gc_wss_sockets(home: &HomePaths, dry_run: bool) -> io::Result<u64> {
         if owner.dead_paths(&final_name, group).is_err() {
             continue;
         }
-        if !dry_run
-            && (owner.recover(&final_name, group).is_err() || owner.retire_locked(&guard).is_err())
-        {
-            continue;
+        if !dry_run {
+            // Once mutation starts, an IO failure may follow successful unlinks.
+            // Stop instead of spending uncounted destructive work on more IDs.
+            owner.recover(&final_name, group)?;
+            owner.retire_locked(&guard)?;
         }
         retired += 1;
         if retired == WSS_GC_MAX_IDS {
