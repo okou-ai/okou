@@ -17,7 +17,7 @@ export async function publicChatActor(
     readonly tier?: "pro" | "team";
     readonly restoreEnvironment?: () => void;
     readonly clockTime?: number | (() => number);
-    readonly beforeWorkspaceCleanup?: () => Promise<void>;
+    readonly beforeWorkspaceCleanup?: (actor: ApiTestUser) => Promise<void>;
     readonly optionalEnvironmentNames?: readonly string[];
   } = {},
 ) {
@@ -62,7 +62,7 @@ export async function publicChatActor(
           : Promise.resolve();
       });
       const external = await settleIncludingAbort(() => {
-        return options.beforeWorkspaceCleanup?.() ?? Promise.resolve();
+        return options.beforeWorkspaceCleanup?.(actor) ?? Promise.resolve();
       });
       const workspace = await settleIncludingAbort(() => {
         return deletePublicWorkspace(context, actor);
