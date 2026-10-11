@@ -1,7 +1,7 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -12,7 +12,7 @@ import { userFeatureSwitchOverrides } from "../services/feature-switches.service
 import {
   discoverPublicConnectorCatalogStatus,
   getPublicConnectorCatalogStatus,
-  getPublicConnectorCatalogPermissionDetail,
+  publicConnectorCatalogPermissionDetail,
   isConnectorCatalogUnavailableError,
   listConnectedConnectorBriefs,
   listConnectorCatalogConnectItems,
@@ -292,18 +292,33 @@ const getConnectorCatalogInner$ = command(
   },
 );
 
+const connectorCatalogPermissionsScope$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  const overrides = await get(
+    userFeatureSwitchOverrides(auth.orgId, auth.userId),
+  );
+  const params = get(pathParamsOf(connectorCatalogContract.permissions));
+  return {
+    connectorSlug: params.connectorSlug,
+    featureStates: getAllFeatureStates({
+      orgId: auth.orgId,
+      userId: auth.userId,
+      overrides,
+    }),
+  };
+});
+
+const connectorCatalogPermissions$ = publicConnectorCatalogPermissionDetail(
+  connectorCatalogPermissionsScope$,
+);
+
 const getConnectorCatalogPermissionsInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const context = await set(connectorCatalogRequestContext$);
+  async ({ get }, signal: AbortSignal) => {
+    await get(connectorCatalogPermissionsScope$);
     signal.throwIfAborted();
 
-    const params = get(pathParamsOf(connectorCatalogContract.permissions));
     const permissions = await settleConnectorCatalogRead(
-      getPublicConnectorCatalogPermissionDetail({
-        db: context.db,
-        connectorSlug: params.connectorSlug,
-        featureStates: context.featureStates,
-      }),
+      get(connectorCatalogPermissions$),
       signal,
     );
     if (!permissions.ok) {

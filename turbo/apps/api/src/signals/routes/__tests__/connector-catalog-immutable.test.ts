@@ -328,6 +328,51 @@ describe("slug-first current catalog business readers", () => {
     );
     expect(result.body.error.code).toBe("NOT_FOUND");
   });
+  it("follows permission metadata changes and removal across catalog publications", async () => {
+    const client = catalogClient();
+    const first = release(
+      `2099-02-02.${randomUUID()}`,
+      "First permission catalog",
+      "notion",
+    );
+    serve(first);
+    await accept(sync(), [200]);
+    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    const params = { connectorSlug: "notion" };
+    const initial = await accept(
+      client.permissions({ headers, params }),
+      [200],
+    );
+    expect(initial.body.permissions.label).toBe("First permission catalog");
+
+    const next = release(
+      `2099-02-03.${randomUUID()}`,
+      "Updated permission catalog",
+      "notion",
+    );
+    serve(next);
+    await accept(sync(), [200]);
+    const updated = await accept(
+      client.permissions({ headers, params }),
+      [200],
+    );
+    expect(updated.body.permissions.label).toBe("Updated permission catalog");
+
+    const removed = publication({
+      ...next.artifact,
+      catalogVersion: `2099-02-04.${randomUUID()}`,
+      connectors: next.artifact.connectors.filter((connector) => {
+        return connector.slug !== "notion";
+      }),
+    });
+    serve(removed);
+    await accept(sync(), [200]);
+    const missing = await accept(
+      client.permissions({ headers, params }),
+      [404],
+    );
+    expect(missing.body.error.code).toBe("NOT_FOUND");
+  });
   it("serves complete lists, search and compatibility from published entries", async () => {
     const candidate = await publishedCatalog();
     const listed = await accept(catalogClient().list({ headers }), [200]);
