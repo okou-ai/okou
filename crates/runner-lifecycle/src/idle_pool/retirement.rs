@@ -26,13 +26,13 @@ pub struct IdleRetirementEnvelope {
     pub tail_growth_bytes: u64,
 }
 
-enum Allowance {
+pub(super) enum Allowance {
     Queued(MemoryGrowthRequest),
     Granted(MemoryGrowthPermit),
 }
 
 impl Allowance {
-    async fn try_grant(&mut self) -> Result<(), MemoryOperationError> {
+    pub(super) async fn try_grant(&mut self) -> Result<(), MemoryOperationError> {
         if let Self::Queued(request) = self {
             let permit = request.try_grant().await?;
             *self = Self::Granted(permit);
@@ -229,7 +229,7 @@ async fn settle(operation: &mut MemoryOperation, context: &'static str) -> bool 
     }
 }
 
-async fn run_retirement(
+pub(super) async fn run_retirement(
     mut live: MemoryOperation,
     mut tail: MemoryOperation,
     (job, context, backing, backing_identity): (

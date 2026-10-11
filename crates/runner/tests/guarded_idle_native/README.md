@@ -23,6 +23,11 @@ the factory-owned sandbox, and restores the saved home into another sandbox.
 It verifies ordinary bytes survive and the previous private runtime directory
 does not. It repeats with fresh boot and the matching prepared snapshot.
 
+The fixture captures backing while the parked candidate is exclusively owned,
+then enters the real Lifecycle inventory and Supervisor retirement API. Both
+memory allowances are granted while the entry remains in the pool. Only a
+matching insertion can be detached and transferred to accepted physical cleanup.
+
 Supply `OKOU_TEST_RPC_BASE_DIR` as a disposable directory, plus
 `OKOU_TEST_RPC_FIRECRACKER`, `OKOU_TEST_RPC_KERNEL`, `OKOU_TEST_RPC_ROOTFS`,
 `OKOU_TEST_RPC_SNAPSHOT_DIR`, `OKOU_TEST_RPC_SNAPSHOT_HASH` and

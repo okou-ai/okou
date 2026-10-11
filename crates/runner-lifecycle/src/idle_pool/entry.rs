@@ -20,7 +20,9 @@ use crate::resource_budget::BudgetLease;
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::StorageFingerprints;
 use runner_types::ids::RunId;
+use uuid::Uuid;
 
+use super::inventory_retirement::CapturedBacking;
 use super::park_transition::IdleParkCandidate;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -141,6 +143,7 @@ pub struct ParkedIdleCandidate {
     pub(super) resources: IdleSandboxResources,
     pub(super) metadata: IdleSandboxMetadata,
     pub(super) budget_lease: BudgetLease,
+    pub(super) retirement_backing: Option<CapturedBacking>,
 }
 
 /// Quiesced, fenced, still-running sandbox that may only be handed to its
@@ -163,6 +166,30 @@ pub struct FinalizingHandoffCandidate {
 }
 
 impl ParkedIdleCandidate {
+    /// Capture this resource's exact backing while exclusively caller-owned,
+    /// outside inventory/accounting locks. Failure preserves the candidate and
+    /// clears any earlier proof; guarded pool retirement never falls back.
+    pub fn capture_retirement_backing(
+        &mut self,
+    ) -> Result<(), crate::host_memory_operations::MemoryOperationError> {
+        use crate::host_memory_operations::MemoryOperationError;
+        self.retirement_backing = None;
+        let captured = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let process = self
+                .resources
+                .sandbox
+                .backing_process()
+                .ok_or(MemoryOperationError::MissingBacking)?;
+            Ok(CapturedBacking {
+                identity: process.identity(),
+                process,
+            })
+        }))
+        .unwrap_or(Err(MemoryOperationError::ProducerLost))?;
+        self.retirement_backing = Some(captured);
+        Ok(())
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn reuse_key(&self) -> Option<&str> {
         self.metadata.reuse_key()
@@ -208,6 +235,7 @@ impl ParkedIdleCandidate {
                 last_completed_at: None,
             },
             budget_lease,
+            retirement_backing: None,
         }
     }
 
@@ -220,6 +248,7 @@ impl ParkedIdleCandidate {
             resources,
             metadata,
             budget_lease,
+            retirement_backing,
         } = self;
 
         IdleEntry {
@@ -227,6 +256,8 @@ impl ParkedIdleCandidate {
             metadata,
             budget_lease,
             parked_at,
+            retirement_backing,
+            insertion_epoch: Uuid::new_v4(),
         }
     }
 
@@ -399,6 +430,8 @@ pub struct IdleEntry {
     pub(super) metadata: IdleSandboxMetadata,
     pub(super) budget_lease: BudgetLease,
     pub(super) parked_at: Instant,
+    pub(super) retirement_backing: Option<CapturedBacking>,
+    pub(super) insertion_epoch: Uuid,
 }
 
 /// A sandbox reserved for reuse, preserving whether it is physically parked
