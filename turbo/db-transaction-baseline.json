@@ -1457,11 +1457,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0409",
-      "file": "turbo/packages/db/scripts/test-official-automation-result-email-schema.ts",
-      "owner": "validateOfficialAutomationResultEmailSchema"
-    },
-    {
       "id": "TX-0410",
       "file": "turbo/packages/db/scripts/test-org-plan-entitlement-permanent.ts",
       "owner": "validatePermanentOrgPlanEntitlementState"
