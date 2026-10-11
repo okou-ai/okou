@@ -1,6 +1,10 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 import { command, computed } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -14,7 +18,6 @@ import {
 } from "../services/feature-switches.service";
 import {
   discoverPublicConnectorCatalogStatus,
-  getPublicConnectorCatalogStatus,
   publicConnectorCatalogPermissionDetail,
   isConnectorCatalogUnavailableError,
   listConnectedConnectorBriefs,
@@ -22,6 +25,16 @@ import {
   listPublicConnectorCatalog,
   listPublicConnectorCatalogStatus,
 } from "../services/connector-catalog-reader.service";
+import {
+  connectorCatalogDisplayColumns,
+  materializeConnectorCatalogDisplayRow,
+} from "../services/connector-catalog-columns";
+import { publicConnectorCatalogStatusFromSource } from "../services/connector-catalog-external-reader.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorCatalogSlugJoin,
+  connectorCatalogSlugSourceFromRows,
+} from "../services/connector-catalog-slug-source.service";
 import { builtinConnectorCatalogConnectionList } from "../services/connector-data.service";
 import { notFound, providerUnavailable } from "../../lib/error";
 import { settle } from "../utils";
@@ -254,10 +267,42 @@ const discoverConnectorCatalogInner$ = command(
   },
 );
 
+const connectorCatalogStatusSource$ = computed(async (get) => {
+  const { connectorSlug } = get(pathParamsOf(connectorCatalogContract.get));
+  const rows = await get(db$)
+    .select({
+      current: {
+        schemaVersion: connectorCatalog.schemaVersion,
+        hash: connectorCatalog.hash,
+      },
+      entry: connectorCatalogDisplayColumns,
+    })
+    .from(connectorCatalog)
+    .leftJoin(
+      connectorCatalogEntries,
+      connectorCatalogSlugJoin([connectorSlug]),
+    )
+    .where(connectorCatalogCurrentWhere());
+  return connectorCatalogSlugSourceFromRows(
+    rows.map((row) => {
+      return {
+        current: row.current,
+        entry:
+          row.entry === null
+            ? null
+            : materializeConnectorCatalogDisplayRow(row.entry),
+      };
+    }),
+    [connectorSlug],
+  );
+});
+
 const getConnectorCatalogInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ get }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const context = await set(connectorCatalogRequestContext$);
+    const featureStates = getAllFeatureStates(
+      await get(connectorCatalogFeatureContext$),
+    );
     signal.throwIfAborted();
 
     const connectorState = await settleConnectorCatalogRead(
@@ -276,12 +321,15 @@ const getConnectorCatalogInner$ = command(
 
     const params = get(pathParamsOf(connectorCatalogContract.get));
     const connector = await settleConnectorCatalogRead(
-      getPublicConnectorCatalogStatus({
-        db: context.db,
-        connectorSlug: params.connectorSlug,
-        featureStates: context.featureStates,
-        connections: connectorState.value,
-      }),
+      (async () => {
+        const catalog = await get(connectorCatalogStatusSource$);
+        return publicConnectorCatalogStatusFromSource({
+          catalog,
+          connectorSlug: params.connectorSlug,
+          featureStates,
+          connections: connectorState.value,
+        });
+      })(),
       signal,
     );
     if (!connector.ok) {
@@ -295,15 +343,16 @@ const getConnectorCatalogInner$ = command(
   },
 );
 
-const connectorCatalogPermissionsIdentity$ = computed((get) => {
+const connectorCatalogIdentity$ = computed((get) => {
   const { orgId, userId } = get(organizationAuthContext$);
   return Promise.resolve({ orgId, userId });
 });
-const connectorCatalogPermissionsFeatureContext$ =
-  createUserFeatureSwitchContext(connectorCatalogPermissionsIdentity$);
+const connectorCatalogFeatureContext$ = createUserFeatureSwitchContext(
+  connectorCatalogIdentity$,
+);
 
 const connectorCatalogPermissionsScope$ = computed(async (get) => {
-  const featureContext = await get(connectorCatalogPermissionsFeatureContext$);
+  const featureContext = await get(connectorCatalogFeatureContext$);
   const params = get(pathParamsOf(connectorCatalogContract.permissions));
   return {
     connectorSlug: params.connectorSlug,
