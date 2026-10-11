@@ -95,6 +95,42 @@ describe("credit checkout auto-recharge ownership", () => {
     ).not.toHaveBeenCalled();
   });
 
+  it("keeps the default Plan usable after concurrent new-workspace checkout requests", async () => {
+    const fixture = createOrgFixture();
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const client = creditClient();
+    const responses = await Promise.all(
+      [1, 2].map(() => {
+        return accept(
+          client.create({
+            body: { ...checkoutBody, autoRecharge: enabledConfig },
+            headers,
+          }),
+          [400],
+        );
+      }),
+    );
+    for (const response of responses) {
+      expect(response.body.error.code).toBe("BAD_REQUEST");
+    }
+    await expect(readAutoRecharge()).resolves.toStrictEqual({
+      enabled: false,
+      threshold: null,
+      amount: null,
+    });
+    const subsequent = await accept(
+      client.create({ body: checkoutBody, headers }),
+      [400],
+    );
+    expect(subsequent.body.error).toStrictEqual({
+      message: "Credit purchases are not available for this workspace",
+      code: "BAD_REQUEST",
+    });
+    expect(
+      context.mocks.stripe.checkout.sessions.create,
+    ).not.toHaveBeenCalled();
+  });
+
   it("updates repeated enabled checkout config without replacing the existing Plan, then disables after hosted checkout", async () => {
     const fixture = await createPublicBillingOrg("pro");
     await fixture.run(async () => {

@@ -42,11 +42,6 @@
       "owner": "updateAgentMetadataInner$"
     },
     {
-      "id": "TX-0013",
-      "file": "turbo/apps/api/src/signals/routes/billing-credit-checkout.ts",
-      "owner": "bootstrapCreditAutoRechargeOrg$"
-    },
-    {
       "id": "TX-0014",
       "file": "turbo/apps/api/src/signals/routes/connectors.ts",
       "owner": "startBuiltinConnectorOauthInner$"
