@@ -126,9 +126,84 @@
         mode: "0644"
       register: runner_wss_caddy_unit
 
-    - name: Apply changed ingress configuration without touching Runner services
-      ansible.builtin.systemd_service:
-        name: okou-wss-caddy.service
-        daemon_reload: "{{ runner_wss_caddy_unit.changed }}"
-        enabled: true
-        state: "{{ 'restarted' if (runner_wss_caddy_unit.changed or runner_wss_caddy_config.changed or runner_wss_caddy_binary.changed or runner_wss_caddy_user.changed) else 'started' }}"
+    # A previous run can stop after publishing files but before restarting Caddy.
+    # Record completion only after readiness; task.changed alone loses that state.
+    - name: Recover and apply Runner WSS deployment
+      when: not ansible_check_mode
+      vars:
+        runner_wss_caddy_activation_state:
+          binary: "{{ runner_wss_caddy_deployment_files.results[0].stat.checksum }}"
+          config: "{{ runner_wss_caddy_deployment_files.results[1].stat.checksum }}"
+          unit: "{{ runner_wss_caddy_deployment_files.results[2].stat.checksum }}"
+          uid: "{{ runner_wss_caddy_user.uid }}"
+          gid: "{{ runner_wss_caddy_user.group }}"
+          groups: "{{ runner_wss_caddy_user.groups }}"
+          invocation: "{{ runner_wss_caddy_invocation.stdout }}"
+      block:
+        - name: Fingerprint published Caddy deployment files
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            checksum_algorithm: sha256
+          loop:
+            - "/usr/local/lib/okou-wss-caddy/{{ runner_wss_caddy_version }}/caddy"
+            - /etc/okou-wss-caddy/Caddyfile
+            - /etc/systemd/system/okou-wss-caddy.service
+          register: runner_wss_caddy_deployment_files
+
+        - name: Inspect current Caddy service invocation
+          ansible.builtin.command:
+            argv:
+              - systemctl
+              - show
+              - okou-wss-caddy.service
+              - --property=InvocationID
+              - --value
+          changed_when: false
+          register: runner_wss_caddy_invocation
+
+        - name: Check whether the published deployment has been applied
+          ansible.builtin.copy:
+            content: "{{ runner_wss_caddy_activation_state | to_nice_json }}\n"
+            dest: /etc/okou-wss-caddy/applied-state.json
+            owner: root
+            group: root
+            mode: "0600"
+          check_mode: true
+          register: runner_wss_caddy_activation
+
+        - name: Apply changed ingress configuration without touching Runner services
+          ansible.builtin.systemd_service:
+            name: okou-wss-caddy.service
+            daemon_reload: "{{ runner_wss_caddy_unit.changed or runner_wss_caddy_activation.changed }}"
+            enabled: true
+            state: "{{ 'restarted' if (runner_wss_caddy_unit.changed or runner_wss_caddy_config.changed or runner_wss_caddy_binary.changed or runner_wss_caddy_user.changed or runner_wss_caddy_activation.changed) else 'started' }}"
+
+        - name: Verify the ready Caddy service invocation
+          ansible.builtin.command:
+            argv:
+              - systemctl
+              - show
+              - okou-wss-caddy.service
+              - --property=InvocationID
+              - --value
+          changed_when: false
+          register: runner_wss_caddy_invocation
+          failed_when: runner_wss_caddy_invocation.rc != 0 or runner_wss_caddy_invocation.stdout is not match('^[0-9a-f]{32}$')
+
+        # A startup failure can follow the notify acknowledgement immediately.
+        - name: Verify Caddy remained active after startup
+          ansible.builtin.command:
+            argv:
+              - systemctl
+              - is-active
+              - --quiet
+              - okou-wss-caddy.service
+          changed_when: false
+
+        - name: Record the successfully applied Caddy deployment
+          ansible.builtin.copy:
+            content: "{{ runner_wss_caddy_activation_state | to_nice_json }}\n"
+            dest: /etc/okou-wss-caddy/applied-state.json
+            owner: root
+            group: root
+            mode: "0600"

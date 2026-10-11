@@ -42,9 +42,15 @@ lowercase UUID `/ws/<runner_id>` paths are forwarded to matching Unix sockets.
 The Runner's first-frame ticket admission still authorizes the Run.
 
 Reprovisioning restarts Caddy for changed configuration, unit/binary or service
-account settings and waits for its systemd readiness notification. This applies
+account settings, waits for its systemd readiness notification and verifies that
+the service remains active before recording completion. This applies
 repaired group membership to the running process; unchanged settings leave it
-running. Runner promotion/drain does not restart Caddy. An ingress
+running. A root-only applied-state record binds the published files and account
+to the ready service invocation. If provisioning stops before activation completes,
+the next run reloads the unit and restarts Caddy even when those files already
+match. The record is updated only after readiness; a new service invocation is
+also verified by restarting once on reprovisioning. Runner promotion/drain does
+not restart Caddy. An ingress
 restart interrupts WebSocket streams; clients reconnect with fresh tickets.
 There is no admin API, per-Runner Caddy mutation, ticket-revocation switch or
 alternate upstream.
@@ -55,7 +61,8 @@ Rollback must preserve live/draining hostnames and certificate state. Stopping
 ingress interrupts transport and eventually denies new tickets through the
 existing heartbeat observation; it does not revoke issued tickets.
 
-Local loopback TLS/Unix-socket tests establish proxy routing and access behavior,
-not public ACME renewal, native systemd activation, HTTP/2/3 extended CONNECT or
-the complete browser/Runner/Guest path. Those need environment verification in
-#37030. No dedicated filesystem-persistence reboot fixture is required.
+Loopback TLS/Unix-socket tests establish proxy routing and access behavior.
+Native systemd tests cover interrupted publication, failed startup and unchanged
+reprovisioning. Public ACME renewal, HTTP/2/3 extended CONNECT and the complete
+browser/Runner/Guest path still need environment verification in #37030.
+No dedicated filesystem-persistence reboot fixture is required.

@@ -26,15 +26,18 @@ if ! grep -Fq 'Caddy requires the exact public Runner inventory hostname' "$tmp/
   exit 1
 fi
 
-readarray -t release < <(python3 - "$repo_root" <<'PY'
+readarray -t release < <(python3 - "$repo_root" "$tmp/caddy-tasks.json" <<'PY'
 from pathlib import Path
+import json
 import platform
 import sys
 
 import yaml
 
 tasks = Path(sys.argv[1]) / 'ansible/tasks/provision-runner-wss-caddy.yml'
-variables = yaml.safe_load(tasks.read_text())[0]['vars']
+definition = yaml.safe_load(tasks.read_text())[0]
+Path(sys.argv[2]).write_text(json.dumps(definition))
+variables = definition['vars']
 archive = variables['runner_wss_caddy_archives'][platform.machine()]
 print(variables['runner_wss_caddy_version'])
 print(archive['arch'])
@@ -79,4 +82,7 @@ done
 sudo -n -- "$(command -v python3)" -B \
   "$script_dir/fixtures/runner-wss-caddy-test.py" \
   "$repo_root" "$tmp/runner-wss.Caddyfile" "$caddy_bin"
+sudo -n --preserve-env=PYTHONPATH -- "$(command -v python3)" -B \
+  "$script_dir/fixtures/runner-wss-caddy-activation-test.py" \
+  "$repo_root" "$caddy_bin" "$(command -v ansible-playbook)" "$tmp/caddy-tasks.json"
 echo 'provision-runner-wss-caddy-test: ok'
