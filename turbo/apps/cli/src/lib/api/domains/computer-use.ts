@@ -71,6 +71,7 @@ function commandBody<
   return {
     kind: params.kind,
     timeoutMs: params.timeoutMs ?? 15_000,
+    realtime: true as const,
     ...(params.app ? { app: params.app } : {}),
     ...(params.snapshotId ? { snapshotId: params.snapshotId } : {}),
     ...(params.elementId ? { elementId: params.elementId } : {}),
@@ -122,10 +123,14 @@ export async function createComputerUseWriteCommand(
 
 export async function getComputerUseCommand(
   commandId: string,
+  signal: AbortSignal,
 ): Promise<ComputerUseCommandResponse> {
   const config = await getComputerUseClientConfig();
   const client = initClient(computerUseCommandContract, config);
-  const result = await client.get({ params: { commandId } });
+  const result = await client.get({
+    params: { commandId },
+    fetchOptions: { signal },
+  });
 
   if (result.status === 200) {
     return result.body;
@@ -154,13 +159,14 @@ export async function createComputerUseAuthorizationRequest(): Promise<ComputerU
  */
 export async function fetchComputerUseScreenshot(
   commandId: string,
+  signal?: AbortSignal,
 ): Promise<{ readonly buffer: Buffer; readonly mimeType: string }> {
   const config = await getComputerUseClientConfig();
   const response = await fetch(
     `${config.baseUrl}/api/computer-use/commands/${encodeURIComponent(
       commandId,
     )}/screenshot`,
-    { headers: headersWithCliClientHeaders(config.baseHeaders) },
+    { headers: headersWithCliClientHeaders(config.baseHeaders), signal },
   );
 
   if (!response.ok) {

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { ablyTokenRequestSchema } from "./realtime";
+import { realtimeSubscriptionSchema } from "./realtime";
 
 const c = initContract();
 
@@ -20,11 +20,8 @@ export const builtInGenerationStatusSchema = z.enum([
   "failed",
 ]);
 
-export const builtInGenerationRealtimeSubscriptionSchema = z.object({
-  channelName: z.string(),
-  eventName: z.string(),
-  tokenRequest: ablyTokenRequestSchema,
-});
+export const builtInGenerationRealtimeSubscriptionSchema =
+  realtimeSubscriptionSchema;
 
 export const builtInGenerationAcceptedResponseSchema = z.object({
   generationId: z.string().uuid(),

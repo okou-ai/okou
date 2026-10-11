@@ -2431,7 +2431,7 @@ jobs:
       - name: Install E2E dependencies
         run: cd e2e && pnpm install --frozen-lockfile
       - name: Check runner E2E model selection
-        run: cd e2e && pnpm exec tsx --test scripts/runner-model-selection.test.ts scripts/runner-model-bootstrap.test.mjs scripts/runner-chat-model-default.test.mjs
+        run: cd e2e && pnpm exec tsx --test scripts/runner-model-selection.test.ts scripts/runner-model-bootstrap.test.mjs scripts/runner-chat-model-default.test.mjs scripts/runner-manual-grant.test.mjs
       - name: Generate runner E2E shard matrix
         id: shards
         shell: bash

@@ -68,9 +68,29 @@ runner_e2e_connect_manual_connector() {
         --argjson account "$account" \
         --argjson values "$values" \
         '{authMethod: $authMethod, agentId: $agentId, authorizeAgent: true, account: $account, values: $values}')
+    local grant_status=0
     response=$(runner_api_curl "/api/connectors/${connector_slug}/manual-grant" \
         -X POST \
-        -d "$payload") || return
+        -d "$payload") || grant_status=$?
+    if ((grant_status != 0)); then
+        # The response was buffered above. Report only fixed API error codes
+        # and public form descriptors, never submitted values or raw bodies.
+        local diagnostic
+        diagnostic=$(jq -er '
+            .error as $error |
+            ["BAD_REQUEST", "UNAUTHORIZED", "FORBIDDEN", "NOT_FOUND", "CONFLICT",
+             "PROVIDER_UNAVAILABLE", "INTERNAL_SERVER_ERROR"] as $codes |
+            (if ($codes | index($error.code)) != null then $error.code else "REQUEST_FAILED" end) as $code |
+            ($error.message // "") as $message |
+            if ($message | type) == "string" and
+               ($message | test("^(Unknown manual grant field\\(s\\)\\. Expected: |Missing required manual grant field\\(s\\): )[A-Za-z][A-Za-z0-9_, -]{0,511}$"))
+            then $code + ": " + $message
+            else $code
+            end
+        ' <<<"$response" 2>/dev/null) || diagnostic="REQUEST_FAILED"
+        printf 'Manual connector grant failed: %s\n' "$diagnostic" >&2
+        return "$grant_status"
+    fi
     returned_connection_id=$(jq -er \
         '.id | select(type == "string" and length > 0)' \
         <<<"$response") || return

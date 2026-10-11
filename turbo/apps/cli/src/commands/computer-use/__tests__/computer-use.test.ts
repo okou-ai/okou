@@ -273,7 +273,7 @@ describe("computer-use command visibility", () => {
     expect(mockExit).toHaveBeenCalledWith(1);
   });
 
-  it("should poll pending command results every 500ms", async () => {
+  it("retrieves the original command result when an older API omits notifications", async () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
 
@@ -321,21 +321,18 @@ describe("computer-use command visibility", () => {
       ),
     );
 
-    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
-    try {
-      await computerUseCommand.parseAsync([
-        "node",
-        "cli",
-        "list-apps",
-        "--timeout",
-        "2",
-      ]);
+    await computerUseCommand.parseAsync([
+      "node",
+      "cli",
+      "list-apps",
+      "--timeout",
+      "2",
+    ]);
 
-      expect(pollCount).toBe(2);
-      expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 500);
-    } finally {
-      setTimeoutSpy.mockRestore();
-    }
+    expect(pollCount).toBe(2);
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+      '"status": "succeeded"',
+    );
   });
 
   it("should route production commands through api.okou.ai", async () => {
