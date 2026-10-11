@@ -60,8 +60,10 @@ if [[ $4 == util/et && -n ${CACHE_TEST_READY:-} ]]; then
   echo ready > "$CACHE_TEST_READY"
   read -r release < "$CACHE_TEST_RELEASE"
 fi
-mkdir -p include/krb5 util/profile lib
+mkdir -p include/krb5 include/gssapi util/profile lib
 echo header > include/krb5/krb5.h
+echo errors > include/com_err.h
+for header in gssapi gssapi_krb5 gssapi_ext; do echo "$header" > "include/gssapi/$header.h"; done
 echo profile > util/profile/profile.h
 echo errors > util/profile/prof_err.h
 for lib in gssapi_krb5 krb5 k5crypto com_err krb5support; do echo "$lib${CPATH:-}${C_INCLUDE_PATH:-}" > "lib/lib$lib.a"; done
@@ -231,6 +233,25 @@ exec /usr/bin/flock "$@"
         log, _ = process.communicate(timeout=15)
         self.assertNotEqual(process.returncode, 0, log)
         self.assertEqual(list(other.iterdir()), [])
+
+    def test_missing_consumer_headers_rebuild(self):
+        entry = self.run_build(False)
+        for header in ("include/com_err.h", "include/gssapi/gssapi.h",
+                       "include/gssapi/gssapi_krb5.h", "include/gssapi/gssapi_ext.h"):
+            valid_package = (entry / "libraries.tar.gz").read_bytes()
+            with tarfile.open(fileobj=io.BytesIO(valid_package)) as original, \
+                    tarfile.open(entry / "libraries.tar.gz", "w:gz") as archive:
+                for info in original.getmembers():
+                    if info.name == header:
+                        continue
+                    with original.extractfile(info) as source:
+                        archive.addfile(info, source)
+            (entry / "complete").write_text(f"{entry.name} {sha(entry / 'libraries.tar.gz')}\n")
+            self.run_build(False)
+            with tarfile.open(entry / "libraries.tar.gz") as archive:
+                with archive.extractfile(header) as restored:
+                    self.assertTrue(restored.read())
+        self.run_build(True)
 
     def test_incidental_include_overrides_do_not_poison_pinned_products(self):
         self.run_build(False, extra={"CPATH": "unrelated", "C_INCLUDE_PATH": "unrelated"})

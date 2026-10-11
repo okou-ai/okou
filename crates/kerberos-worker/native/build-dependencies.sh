@@ -70,7 +70,11 @@ safe_package() {
 complete_products() {
   local library header
   for library in "${libraries[@]}"; do [[ -f "$build/lib/$library" && -s "$build/lib/$library" ]] || return 1; done
-  for header in include/krb5/krb5.h util/profile/profile.h util/profile/prof_err.h; do
+  # The helper's public include chain needs these generated headers; the fresh
+  # source archive does not provide them when a restored package is partial.
+  for header in include/krb5/krb5.h include/com_err.h \
+    include/gssapi/gssapi.h include/gssapi/gssapi_krb5.h include/gssapi/gssapi_ext.h \
+    util/profile/profile.h util/profile/prof_err.h; do
     [[ -f "$build/$header" && -s "$build/$header" ]] || return 1
   done
 }
