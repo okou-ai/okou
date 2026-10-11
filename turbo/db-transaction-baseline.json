@@ -1462,11 +1462,6 @@
       "owner": "validateOfficialAutomationResultEmailSchema"
     },
     {
-      "id": "TX-0410",
-      "file": "turbo/packages/db/scripts/test-org-plan-entitlement-permanent.ts",
-      "owner": "validatePermanentOrgPlanEntitlementState"
-    },
-    {
       "id": "TX-0411",
       "file": "turbo/packages/db/scripts/test-pi-candidate-trigger-retirement.ts",
       "owner": "<module>"
