@@ -1392,11 +1392,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0396",
-      "file": "turbo/packages/db/scripts/test-migration-consistency-schema.ts",
-      "owner": "validateCustomConnectorOauthModeConstraints"
-    },
-    {
       "id": "TX-0397",
       "file": "turbo/packages/db/scripts/test-migration-consistency-schema.ts",
       "owner": "validatePermanentUsagePackPendingSnapshotState"
