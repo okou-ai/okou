@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
-import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { z } from "zod";
 import type {
   ComputerUseAuthorizationSource,
   ComputerUseHostListResponse,
@@ -14,6 +15,7 @@ import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
 
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -360,45 +362,48 @@ const applyChatAuthorizationScope$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    // Successful preference and durable event writes commit together.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0108; new non-billing transactions are prohibited.
-    const applied = await set(writeDb$).transaction(async (tx) => {
-      const [thread] = await tx
-        .update(chatThreads)
-        .set({
-          computerUseHostId: args.computerUseHostId,
-          cloudBrowserEnabled: false,
-          updatedAt: args.now,
-        })
-        .where(
-          and(
-            eq(chatThreads.id, requiredChatThreadId(args.request)),
-            eq(chatThreads.userId, args.userId),
-          ),
-        )
-        .returning({
-          id: chatThreads.id,
-          agentId: chatThreads.agentId,
-        });
-      if (!thread?.agentId) {
-        return false;
-      }
-      await tx.execute(
-        chatThreadEventInsertSql({
-          kind: "computer_use_host_updated",
-          userId: args.userId,
-          orgId: args.orgId,
-          chatThreadId: thread.id,
-          agentId: thread.agentId,
-          computerUseHostId: args.computerUseHostId,
-          cloudBrowserEnabled: false,
-          createdAt: args.now,
-        }),
-      );
-      return true;
-    });
+    const db = set(writeDb$);
+    const chatThreadId = requiredChatThreadId(args.request);
+    const updatedThread = db
+      .update(chatThreads)
+      .set({
+        computerUseHostId: args.computerUseHostId,
+        cloudBrowserEnabled: false,
+        updatedAt: args.now,
+      })
+      .where(
+        and(
+          eq(chatThreads.id, chatThreadId),
+          eq(chatThreads.userId, args.userId),
+        ),
+      )
+      .returning({ id: chatThreads.id, agentId: chatThreads.agentId });
+    // A nullable agent still commits the preference, without reserving an event.
+    const eligibleThread = sql`EXISTS (SELECT 1 FROM updated_thread WHERE agent_id IS NOT NULL)`;
+    const [result] = parseRawRows(
+      z.object({ applied: z.boolean() }),
+      await db.execute(
+        chatThreadEventInsertSql(
+          {
+            kind: "computer_use_host_updated",
+            userId: args.userId,
+            orgId: args.orgId,
+            chatThreadId,
+            computerUseHostId: args.computerUseHostId,
+            cloudBrowserEnabled: false,
+            createdAt: args.now,
+          },
+          {
+            cte: sql`updated_thread AS (${updatedThread.getSQL()})`,
+            gate: eligibleThread,
+            agentId: sql`(SELECT agent_id FROM updated_thread)`,
+            result: sql`SELECT ${eligibleThread} AS applied`,
+          },
+        ),
+      ),
+    );
     signal.throwIfAborted();
-    return applied;
+    return result?.applied === true;
   },
 );
 

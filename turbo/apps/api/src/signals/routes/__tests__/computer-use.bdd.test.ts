@@ -621,6 +621,110 @@ describe("FILE-03 desktop computer-use runtime", () => {
     });
   });
 
+  it("orders concurrent desktop authorizations and retains the last event's preference", async () => {
+    const scenario = createScenario();
+    const {
+      bdd,
+      api,
+      createAuthorizationScenario,
+      readAuthorizationThreadLifecycle,
+    } = scenario;
+    return await withNowScopeForTest(() => {
+      return scenario.run(async () => {
+        await withMockNowForTest(now(), async () => {
+          const actor = bdd.user();
+          const { chat, run, requestToken } =
+            await createAuthorizationScenario(actor);
+          const firstHost = await api.startComputerUseHost(actor, {
+            hostName: "First authorization desktop",
+          });
+          const secondHost = await api.startComputerUseHost(actor, {
+            hostName: "Second authorization desktop",
+          });
+          const before = await readAuthorizationThreadLifecycle(actor);
+          const created = before.events.find((event) => {
+            return (
+              event.kind === "created" && event.chatThreadId === run.threadId
+            );
+          });
+          if (!created) {
+            throw new Error("Expected the publicly created thread event");
+          }
+          const responses = await Promise.all(
+            [firstHost, secondHost].map((host) => {
+              return api.applyComputerUseAuthorizationRequest(
+                actor,
+                requestToken,
+                host.hostId,
+              );
+            }),
+          );
+          expect(responses).toStrictEqual(
+            [firstHost, secondHost].map((host) => {
+              return {
+                ok: true,
+                source: "chat",
+                computerUseHostId: host.hostId,
+              };
+            }),
+          );
+          const lifecycle = await readAuthorizationThreadLifecycle(actor);
+          const events = lifecycle.events.filter((event) => {
+            return (
+              event.kind === "computer_use_host_updated" &&
+              event.chatThreadId === run.threadId
+            );
+          });
+          expect(events).toHaveLength(2);
+          expect(
+            new Set(
+              events.map((event) => {
+                return event.computerUseHostId;
+              }),
+            ),
+          ).toStrictEqual(new Set([firstHost.hostId, secondHost.hostId]));
+          for (const event of events) {
+            expect(event).toStrictEqual({
+              id: expect.any(String),
+              seqId: expect.any(Number),
+              kind: "computer_use_host_updated",
+              chatThreadId: run.threadId,
+              agentId: created.agentId,
+              title: null,
+              pinOrder: null,
+              selectedModel: null,
+              serviceTier: null,
+              computerUseHostId: event.computerUseHostId,
+              cloudBrowserEnabled: false,
+              createdAt: new Date(now()).toISOString(),
+            });
+          }
+          const [first, last] = events;
+          if (!first || !last) {
+            throw new Error("Expected both concurrent authorization events");
+          }
+          expect(first.seqId).toBeGreaterThan(created.seqId);
+          expect(last.seqId).toBeGreaterThan(first.seqId);
+          expect(last.id).not.toBe(first.id);
+          await expect(
+            scenario.run(() => {
+              return chat.readThreadMetadata(actor, run.threadId);
+            }),
+          ).resolves.toMatchObject({
+            computerUseHostId: last.computerUseHostId,
+            cloudBrowserEnabled: false,
+          });
+          await expect(
+            api.readComputerUseAuthorizationRequest(actor, requestToken),
+          ).resolves.toMatchObject({
+            completedAt: new Date(now()).toISOString(),
+            computerUseHostId: last.computerUseHostId,
+          });
+        });
+      });
+    });
+  });
+
   it("only exposes online hosts for delegated authorization requests", async () => {
     const scenario = createScenario();
     const { bdd, api, requestTokenFromUrl } = scenario;
