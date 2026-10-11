@@ -116,7 +116,9 @@ if [[ "$hit" == false ]]; then
   complete_products
   # Keep OUT_DIR paths out of reusable products, including configure's prefix
   # and compiler source locations. Generated Makefiles/stamps are not link inputs.
-  mapfile -t package_files < <(cd -- "$build" && find -L include -type f -name '*.h' | LC_ALL=C sort)
+  # Capture the checked pipeline first; process substitution hides its status.
+  package_headers=$(cd -- "$build" && find -L include -type f -name '*.h' | LC_ALL=C sort)
+  mapfile -t package_files <<< "$package_headers"
   package_files+=(util/profile/profile.h util/profile/prof_err.h)
   for library in "${libraries[@]}"; do package_files+=("lib/$library"); done
   tar -chzf "$entry/libraries.tar.gz.part" -C "$build" "${package_files[@]}"

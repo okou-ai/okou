@@ -295,6 +295,20 @@ exec /usr/bin/flock "$@"
         self.run_build(False)
         self.run_build(True)
 
+    def test_failed_header_enumeration_never_publishes_completion(self):
+        self.command("find", """#!/bin/bash
+/usr/bin/find "$@" | awk 'index($0, "include/gssapi/") != 1'
+exit 73
+""")
+        process, _ = self.start()
+        log, _ = process.communicate(timeout=15)
+        self.assertEqual(process.returncode, 73, log)
+        self.assertFalse(list(self.cache.glob("*/complete")))
+        self.assertFalse(list(self.cache.glob("*/libraries.tar.gz")))
+        self.command("find", '#!/bin/bash\nexec /usr/bin/find "$@"\n')
+        self.run_build(False)
+        self.run_build(True)
+
     def test_concurrent_writers_and_killed_writer_recovery(self):
         ready, ready_fd = self.fifo("ready")
         release, release_fd = self.fifo("release")
