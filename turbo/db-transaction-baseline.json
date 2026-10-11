@@ -132,11 +132,6 @@
       "owner": "syncCustomerAccounts"
     },
     {
-      "id": "TX-0061",
-      "file": "turbo/apps/api/src/signals/services/banking-connect.service.ts",
-      "owner": "persistFinicityWebhookEvent"
-    },
-    {
       "id": "TX-0063",
       "file": "turbo/apps/api/src/signals/services/billing-downgrade.service.ts",
       "owner": "publishDowngrade$"
