@@ -345,11 +345,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
-      # Pin the image already used by check; date tags can be republished.
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009@sha256:1bcc2515399f8a9ee79f91d6f029fe2e731237ef7e4376f572a1841ef35f07f6
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     env:
-      # The workflow contract requires identity to equal the actual image.
-      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009@sha256:1bcc2515399f8a9ee79f91d6f029fe2e731237ef7e4376f572a1841ef35f07f6
+      # Keep the cache environment identity aligned with the dated image.
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs: [detect]
     if: needs.detect.outputs.any-changed == 'true'
     steps:
@@ -598,7 +597,7 @@ jobs:
     timeout-minutes: 10
     container:
       # Generation formats Rust output with the same toolchain as native checks.
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009@sha256:1bcc2515399f8a9ee79f91d6f029fe2e731237ef7e4376f572a1841ef35f07f6
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs: [detect]
     if: |
       needs.detect.outputs.ci-changed == 'true' ||
@@ -721,7 +720,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009@sha256:1bcc2515399f8a9ee79f91d6f029fe2e731237ef7e4376f572a1841ef35f07f6
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
       # Allow namespace bootstrap; retain Docker's seccomp and worker isolation.
       options: --cap-add=SYS_ADMIN --security-opt apparmor=unconfined
     needs: [detect]
@@ -753,7 +752,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009@sha256:1bcc2515399f8a9ee79f91d6f029fe2e731237ef7e4376f572a1841ef35f07f6
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
       # Allow namespace bootstrap; retain Docker's seccomp and worker isolation.
       options: --cap-add=SYS_ADMIN --security-opt apparmor=unconfined
     needs: [detect]
