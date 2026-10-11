@@ -169,16 +169,6 @@ function createVerifiedBindings(
   });
 }
 
-export function discordUserBinding(args: {
-  readonly orgId: string;
-  readonly userId: string;
-}): Computed<Promise<DiscordVerifiedBinding | null>> {
-  const identity$ = computed(() => {
-    return Promise.resolve(args);
-  });
-  return createDiscordUserBinding(identity$);
-}
-
 /** A binding read connected before the owning graph is evaluated. */
 export function createDiscordUserBinding(
   identity$: Computed<
