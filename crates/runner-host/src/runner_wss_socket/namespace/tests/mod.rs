@@ -230,18 +230,38 @@ async fn first_creation_handles_restrictive_umask_without_changing_process_mask(
     .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "guarded child owns its process umask"]
-fn restrictive_umask_child() {
+async fn restrictive_umask_child() {
     if !ignored_child_test_env_guard_enabled((CHILD_ENV, "umask")) {
         return;
     }
     let (_root, directory) = fixture();
+    let id = uuid::Uuid::new_v4();
     let previous = nix::sys::stat::umask(Mode::from_bits_truncate(0o777));
-    let result = ensure_fixture(&directory);
+    let result = (|| {
+        let (file, group) = ensure_fixture(&directory)?;
+        let socket = RunnerWssSocket::bind(&directory, id)?;
+        Ok::<_, io::Error>((file, group, socket))
+    })();
     let still = nix::sys::stat::umask(previous);
     assert_eq!(still, Mode::from_bits_truncate(0o777));
-    let (file, group) = result.unwrap();
+    let (file, group, socket) = result.expect("strict umask must permit a complete WSS bind");
     assert_eq!(file.metadata().unwrap().mode() & 0o7777, 0o710);
     assert_eq!(file.metadata().unwrap().gid(), group.as_raw());
+    for suffix in ["lock", "owner"] {
+        let metadata = directory.join(format!("{id}.{suffix}")).metadata().unwrap();
+        assert_eq!(metadata.mode() & 0o7777, 0o600);
+    }
+    let path = directory.join(format!("{id}.sock"));
+    assert_eq!(path.metadata().unwrap().mode() & 0o7777, 0o660);
+    let mut peer = tokio::net::UnixStream::connect(path).await.unwrap();
+    let mut accepted = socket.accept().await.unwrap();
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    peer.write_all(b"wss").await.unwrap();
+    let mut bytes = [0; 3];
+    accepted.read_exact(&mut bytes).await.unwrap();
+    assert_eq!(&bytes, b"wss");
+    drop(socket);
+    assert_eq!(std::fs::read_dir(directory).unwrap().count(), 0);
 }

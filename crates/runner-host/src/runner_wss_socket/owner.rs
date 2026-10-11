@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use nix::fcntl::{Flock, FlockArg, OFlag, openat, renameat};
 use nix::sys::socket::{AddressFamily, SockFlag, SockType, UnixAddr, connect, socket};
-use nix::sys::stat::Mode;
+use nix::sys::stat::{Mode, fchmod};
 use nix::unistd::{Gid, UnlinkatFlags, geteuid, unlinkat};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -74,20 +74,28 @@ impl Owner {
         let parent = guard.parent();
         let lock_name = format!("{id}.lock");
         validate_existing(parent, &lock_name)?;
-        let lock_file = File::from(openat(
-            parent,
-            lock_name.as_str(),
-            OFlag::O_RDWR
-                | if create {
-                    OFlag::O_CREAT
-                } else {
-                    OFlag::empty()
+        let flags = OFlag::O_RDWR | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC | OFlag::O_NONBLOCK;
+        let lock_file = if create {
+            match openat(
+                parent,
+                lock_name.as_str(),
+                flags | OFlag::O_CREAT | OFlag::O_EXCL,
+                Mode::from_bits_truncate(0o600),
+            ) {
+                Ok(descriptor) => {
+                    let file = File::from(descriptor);
+                    // Initialize only our newly created inode, even under umask 0777.
+                    fchmod(&file, Mode::from_bits_truncate(0o600))?;
+                    file
                 }
-                | OFlag::O_NOFOLLOW
-                | OFlag::O_CLOEXEC
-                | OFlag::O_NONBLOCK,
-            Mode::from_bits_truncate(0o600),
-        )?);
+                Err(nix::errno::Errno::EEXIST) => {
+                    File::from(openat(parent, lock_name.as_str(), flags, Mode::empty())?)
+                }
+                Err(error) => return Err(error.into()),
+            }
+        } else {
+            File::from(openat(parent, lock_name.as_str(), flags, Mode::empty())?)
+        };
         validate_private(&lock_file.metadata()?)?;
         let lock = Flock::lock(lock_file, FlockArg::LockExclusiveNonblock)
             .map_err(|(_, error)| io::Error::from_raw_os_error(error as i32))?;
@@ -336,6 +344,7 @@ impl Owner {
             Mode::from_bits_truncate(0o600),
         )?);
         let result = (|| {
+            fchmod(&file, Mode::from_bits_truncate(0o600))?;
             file.write_all(&serde_json::to_vec(&record).map_err(io::Error::other)?)?;
             file.sync_all()?;
             renameat(
