@@ -5579,6 +5579,7 @@
       "componentsHelp": "Inserisci un componente del principal per riga. I nomi distinguono maiuscole e minuscole.",
       "initiator": "Componenti dell’iniziatore",
       "kdcHost": "Host KDC",
+      "kdcPort": "Porta KDC",
       "kdcRoute": "Percorso KDC separato",
       "keytab": "Kerberos · keytab",
       "keytabFile": "File keytab (.keytab)",

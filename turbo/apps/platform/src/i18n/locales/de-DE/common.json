@@ -5503,6 +5503,7 @@
       "componentsHelp": "Geben Sie eine Principal-Komponente pro Zeile ein. Groß- und Kleinschreibung wird beachtet.",
       "initiator": "Komponenten des Initiators",
       "kdcHost": "KDC-Host",
+      "kdcPort": "KDC-Port",
       "kdcRoute": "Separater KDC-Verbindungsweg",
       "keytab": "Kerberos · Keytab",
       "keytabFile": "Keytab-Datei (.keytab)",

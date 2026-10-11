@@ -5478,6 +5478,7 @@
       "componentsHelp": "プリンシパルの構成要素を1行に1つ入力します。大文字と小文字は区別されます。",
       "initiator": "開始側プリンシパルの構成要素",
       "kdcHost": "KDC ホスト",
+      "kdcPort": "KDC ポート",
       "kdcRoute": "独立した KDC 経路",
       "keytab": "Kerberos · キータブ",
       "keytabFile": "キータブファイル（.keytab）",

@@ -5579,6 +5579,7 @@
       "componentsHelp": "Saisissez un composant du principal par ligne. Les noms sont sensibles à la casse.",
       "initiator": "Composants de l’initiateur",
       "kdcHost": "Hôte KDC",
+      "kdcPort": "Port KDC",
       "kdcRoute": "Route KDC distincte",
       "keytab": "Kerberos · keytab",
       "keytabFile": "Fichier keytab (.keytab)",

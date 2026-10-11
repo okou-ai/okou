@@ -5478,6 +5478,7 @@
       "componentsHelp": "每行输入一个主体分量，名称区分大小写。",
       "initiator": "发起方主体分量",
       "kdcHost": "KDC 主机",
+      "kdcPort": "KDC 端口",
       "kdcRoute": "独立的 KDC 路由",
       "keytab": "Kerberos · 密钥表",
       "keytabFile": "密钥表文件（.keytab）",

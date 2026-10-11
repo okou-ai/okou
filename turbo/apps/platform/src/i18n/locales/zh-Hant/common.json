@@ -5478,6 +5478,7 @@
       "componentsHelp": "每行輸入一個主體分量，名稱區分大小寫。",
       "initiator": "發起方主體分量",
       "kdcHost": "KDC 主機",
+      "kdcPort": "KDC 連接埠",
       "kdcRoute": "獨立的 KDC 路由",
       "keytab": "Kerberos · 金鑰表",
       "keytabFile": "金鑰表檔案（.keytab）",

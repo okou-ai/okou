@@ -356,7 +356,7 @@ function KerberosKdcFields({
       <label className="grid gap-2 text-sm">
         <span>
           {t(($) => {
-            return $.vnc.port;
+            return $.vnc.kerberos.kdcPort;
           })}
         </span>
         <Input

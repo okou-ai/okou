@@ -5478,6 +5478,7 @@
       "componentsHelp": "주체 구성 요소를 한 줄에 하나씩 입력하세요. 이름은 대소문자를 구분합니다.",
       "initiator": "시작 주체 구성 요소",
       "kdcHost": "KDC 호스트",
+      "kdcPort": "KDC 포트",
       "kdcRoute": "별도의 KDC 경로",
       "keytab": "Kerberos · 키탭",
       "keytabFile": "키탭 파일 (.keytab)",

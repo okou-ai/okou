@@ -5503,6 +5503,7 @@
       "componentsHelp": "हर पंक्ति में प्रिंसिपल का एक घटक दर्ज करें। नामों में बड़े और छोटे अक्षर अलग माने जाते हैं।",
       "initiator": "आरंभकर्ता के घटक",
       "kdcHost": "KDC होस्ट",
+      "kdcPort": "KDC पोर्ट",
       "kdcRoute": "अलग KDC मार्ग",
       "keytab": "Kerberos · कीटैब",
       "keytabFile": "कीटैब फ़ाइल (.keytab)",
