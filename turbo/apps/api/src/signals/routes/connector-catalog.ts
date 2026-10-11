@@ -1,18 +1,21 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf, queryOf } from "../context/request";
 import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
+import {
+  createUserFeatureSwitchContext,
+  userFeatureSwitchOverrides,
+} from "../services/feature-switches.service";
 import {
   discoverPublicConnectorCatalogStatus,
   getPublicConnectorCatalogStatus,
-  getPublicConnectorCatalogPermissionDetail,
+  publicConnectorCatalogPermissionDetail,
   isConnectorCatalogUnavailableError,
   listConnectedConnectorBriefs,
   listConnectorCatalogConnectItems,
@@ -292,18 +295,33 @@ const getConnectorCatalogInner$ = command(
   },
 );
 
+const connectorCatalogPermissionsIdentity$ = computed((get) => {
+  const { orgId, userId } = get(organizationAuthContext$);
+  return Promise.resolve({ orgId, userId });
+});
+const connectorCatalogPermissionsFeatureContext$ =
+  createUserFeatureSwitchContext(connectorCatalogPermissionsIdentity$);
+
+const connectorCatalogPermissionsScope$ = computed(async (get) => {
+  const featureContext = await get(connectorCatalogPermissionsFeatureContext$);
+  const params = get(pathParamsOf(connectorCatalogContract.permissions));
+  return {
+    connectorSlug: params.connectorSlug,
+    featureStates: getAllFeatureStates(featureContext),
+  };
+});
+
+const connectorCatalogPermissions$ = publicConnectorCatalogPermissionDetail(
+  connectorCatalogPermissionsScope$,
+);
+
 const getConnectorCatalogPermissionsInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const context = await set(connectorCatalogRequestContext$);
+  async ({ get }, signal: AbortSignal) => {
+    await get(connectorCatalogPermissionsScope$);
     signal.throwIfAborted();
 
-    const params = get(pathParamsOf(connectorCatalogContract.permissions));
     const permissions = await settleConnectorCatalogRead(
-      getPublicConnectorCatalogPermissionDetail({
-        db: context.db,
-        connectorSlug: params.connectorSlug,
-        featureStates: context.featureStates,
-      }),
+      get(connectorCatalogPermissions$),
       signal,
     );
     if (!permissions.ok) {

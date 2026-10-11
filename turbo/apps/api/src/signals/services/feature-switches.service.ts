@@ -76,11 +76,20 @@ export function userFeatureSwitchContext(
   });
 }
 
+interface UserFeatureSwitchIdentity {
+  readonly orgId: string;
+  readonly userId: string;
+}
+
 /** Connect queried identities while constructing the owning read graph. */
 export function createUserFeatureSwitchContext(
-  identity$: Computed<
-    Promise<{ readonly orgId: string; readonly userId: string } | null>
-  >,
+  identity$: Computed<Promise<UserFeatureSwitchIdentity>>,
+): Computed<Promise<FeatureSwitchContext>>;
+export function createUserFeatureSwitchContext(
+  identity$: Computed<Promise<UserFeatureSwitchIdentity | null>>,
+): Computed<Promise<FeatureSwitchContext | null>>;
+export function createUserFeatureSwitchContext(
+  identity$: Computed<Promise<UserFeatureSwitchIdentity | null>>,
 ): Computed<Promise<FeatureSwitchContext | null>> {
   return computed(async (get) => {
     const identity = await get(identity$);
