@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/okou-ai/okou/compare/guest-control-server-v0.23.2...guest-control-server-v0.24.0) (2026-10-11)
+
+
+### Features
+
+* **guest:** manage task runtimes and image batch workers ([#38762](https://github.com/okou-ai/okou/issues/38762)) ([dbb7241](https://github.com/okou-ai/okou/commit/dbb72412af7116f4e27419057023d51bbf203613))
+
 ## [0.23.2](https://github.com/okou-ai/okou/compare/guest-control-server-v0.23.1...guest-control-server-v0.23.2) (2026-10-10)
 
 ## [0.23.1](https://github.com/okou-ai/okou/compare/guest-control-server-v0.23.0...guest-control-server-v0.23.1) (2026-10-10)

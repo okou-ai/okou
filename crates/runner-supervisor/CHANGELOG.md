@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.7.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.6.2...runner-supervisor-v0.7.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** add one-use ticket wss admission ([#37114](https://github.com/okou-ai/okou/issues/37114)) ([0eece1f](https://github.com/okou-ai/okou/commit/0eece1f399b9e1b357fa1b3c1b4a6d0699d21088))
+* **runner:** admit fenced pool retirement before detach ([#38853](https://github.com/okou-ai/okou/issues/38853)) ([3a314cc](https://github.com/okou-ai/okou/commit/3a314cc4ebbf508aea4a9f2c4ae4f5be7d3d3618))
+* **runner:** complete home cache disk visibility ([#38775](https://github.com/okou-ai/okou/issues/38775)) ([30c5539](https://github.com/okou-ai/okou/commit/30c5539999b0a90dfb693f0cc92c2cd29e6882d2))
+* **runner:** guard captured idle retirement batches ([#38909](https://github.com/okou-ai/okou/issues/38909)) ([fd104c1](https://github.com/okou-ai/okou/commit/fd104c1aa7a59f32c234f007338be49f21e47036))
+* **runner:** guard logical idle substitution ([#39001](https://github.com/okou-ai/okou/issues/39001)) ([31aee7e](https://github.com/okou-ai/okou/commit/31aee7e614d11f2fed54e5cb42078fedb5aa0670))
+* **runner:** own guarded idle terminal phases ([#38823](https://github.com/okou-ai/okou/issues/38823)) ([909af6b](https://github.com/okou-ai/okou/commit/909af6b56aa1e45ac6d2ddef1ab7e2d4c7a99771))
+
+
+### Bug Fixes
+
+* **runner:** retain accepted idle cleanup through caller cancellation ([#38770](https://github.com/okou-ai/okou/issues/38770)) ([5feb5d6](https://github.com/okou-ai/okou/commit/5feb5d66c39f43d06d05c6f087c54bd6c4e8e658))
+
 ## [0.6.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.6.1...runner-supervisor-v0.6.2) (2026-10-10)
 
 

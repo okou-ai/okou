@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.11.4...runner-remote-v0.12.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** add one-use ticket wss admission ([#37114](https://github.com/okou-ai/okou/issues/37114)) ([0eece1f](https://github.com/okou-ai/okou/commit/0eece1f399b9e1b357fa1b3c1b4a6d0699d21088))
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+
 ## [0.11.4](https://github.com/okou-ai/okou/compare/runner-remote-v0.11.3...runner-remote-v0.11.4) (2026-10-10)
 
 ## [0.11.3](https://github.com/okou-ai/okou/compare/runner-remote-v0.11.2...runner-remote-v0.11.3) (2026-10-10)
