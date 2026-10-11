@@ -2008,12 +2008,9 @@ async function handleAutomaticOAuthRefreshFailure(args: {
     args.binding.registrationMethod === "dcr"
   ) {
     const registrationId = args.binding.dcrRegistration.id;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0142; new non-billing transactions are prohibited.
-    await args.db.transaction(async (tx) => {
-      await tx.execute(
-        retireCustomConnectorDcrRegistrationSql(registrationId, nowDate()),
-      );
-    });
+    await args.db.execute(
+      retireCustomConnectorDcrRegistrationSql(registrationId, nowDate()),
+    );
     return { kind: "reconnect-required" };
   }
   if (
@@ -2088,15 +2085,12 @@ async function refreshAutomaticOAuthAccessToken(
     binding.dcrRegistration.expiresAt !== null &&
     binding.dcrRegistration.expiresAt <= nowDate()
   ) {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0143; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      await tx.execute(
-        retireCustomConnectorDcrRegistrationSql(
-          binding.dcrRegistration.id,
-          nowDate(),
-        ),
-      );
-    });
+    await db.execute(
+      retireCustomConnectorDcrRegistrationSql(
+        binding.dcrRegistration.id,
+        nowDate(),
+      ),
+    );
     return { kind: "reconnect-required" };
   }
   const refreshToken = await decryptStoredSecretValue(

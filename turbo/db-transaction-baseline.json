@@ -432,16 +432,6 @@
       "owner": "storeCustomConnectorOAuth2Connection"
     },
     {
-      "id": "TX-0142",
-      "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
-      "owner": "handleAutomaticOAuthRefreshFailure"
-    },
-    {
-      "id": "TX-0143",
-      "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
-      "owner": "refreshAutomaticOAuthAccessToken"
-    },
-    {
       "id": "TX-0144",
       "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
       "owner": "persistCustomConnectorCreate$"
@@ -1457,11 +1447,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0410",
-      "file": "turbo/packages/db/scripts/test-org-plan-entitlement-permanent.ts",
-      "owner": "validatePermanentOrgPlanEntitlementState"
-    },
-    {
       "id": "TX-0411",
       "file": "turbo/packages/db/scripts/test-pi-candidate-trigger-retirement.ts",
       "owner": "<module>"
@@ -1534,11 +1519,6 @@
     {
       "id": "TX-0426",
       "file": "turbo/packages/db/scripts/test-reusable-ssh-credentials.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0427",
-      "file": "turbo/packages/db/scripts/test-show-usage-pack-migration.ts",
       "owner": "<module>"
     },
     {

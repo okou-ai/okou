@@ -16,6 +16,7 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { createRouteMocks } from "./helpers/route-test";
+import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 const connectors = createConnectorBddApi(context);
@@ -98,6 +99,7 @@ async function expectAccounts(
 // connector snapshots or authority to substitute another account or Agent.
 describe("Builtin device-auth completed replay", () => {
   it("reloads the exact non-default account after reconnect and the completed session lifetime", async () => {
+    mockSecretKmsHttp();
     const owned = replayOwner();
     await owned.run(async () => {
       const actor = owned.actor;
@@ -158,6 +160,7 @@ describe("Builtin device-auth completed replay", () => {
   });
 
   it("fails completed replay after the exact account is deleted rather than substituting the surviving default", async () => {
+    mockSecretKmsHttp();
     const owned = replayOwner();
     await owned.run(async () => {
       const actor = owned.actor;
@@ -200,6 +203,7 @@ describe("Builtin device-auth completed replay", () => {
   });
 
   it("rechecks the completed session's explicit Agent and does not substitute a surviving default Agent", async () => {
+    mockSecretKmsHttp();
     const owned = replayOwner();
     await owned.run(async () => {
       const actor = owned.actor;

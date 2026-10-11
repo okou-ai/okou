@@ -2167,12 +2167,9 @@ jobs:
           set -euo pipefail
           cdn_dir="$(mktemp -d)"
           for filename in package.tgz manifest.json ready.json; do
-            curl -fsSL \
-              --retry 5 \
-              --retry-delay 2 \
-              --retry-all-errors \
+            bash .github/scripts/download-okou-cli-cdn-file.sh \
               "${CLI_STATIC_BASE_URL}/${ARTIFACT_PREFIX}/${filename}" \
-              --output "${cdn_dir}/${filename}"
+              "${cdn_dir}/${filename}"
           done
           bash .github/scripts/verify-okou-cli-artifact.sh \
             "$cdn_dir" \
