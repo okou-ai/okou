@@ -726,67 +726,61 @@ export const getUsagePackMigrationState$ = command(
   ): Promise<MigrationStateResult> => {
     const db = set(writeDb$);
     const at = nowDate();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0294; new non-billing transactions are prohibited.
-    const stored = await db.transaction(async (tx) => {
-      const openMigrationQuery = tx
-        .select()
-        .from(usagePackSubscriptionMigrations)
+    const openMigrationQuery = db
+      .select()
+      .from(usagePackSubscriptionMigrations)
+      .where(
+        and(
+          eq(usagePackSubscriptionMigrations.orgId, orgId),
+          inArray(usagePackSubscriptionMigrations.status, [
+            ...OPEN_MIGRATION_STATUSES,
+          ]),
+        ),
+      )
+      .limit(1);
+    let [open] = await openMigrationQuery;
+    signal.throwIfAborted();
+    if (open?.status === "previewed" && open.previewExpiresAt <= at) {
+      // Conditional expiry instead of a row lock. Zero rows means a
+      // concurrent confirmation or preview moved it; read the current row.
+      const [expired] = await db
+        .update(usagePackSubscriptionMigrations)
+        .set({
+          status: "failed",
+          failureReason: "preview_expired",
+          completedAt: at,
+          updatedAt: at,
+        })
         .where(
           and(
-            eq(usagePackSubscriptionMigrations.orgId, orgId),
-            inArray(usagePackSubscriptionMigrations.status, [
-              ...OPEN_MIGRATION_STATUSES,
-            ]),
+            eq(usagePackSubscriptionMigrations.id, open.id),
+            eq(usagePackSubscriptionMigrations.status, "previewed"),
+            lte(usagePackSubscriptionMigrations.previewExpiresAt, at),
           ),
         )
-        .limit(1);
-      let [open] = await openMigrationQuery;
-      if (!open) {
-        return null;
-      }
-      if (open.status === "previewed" && open.previewExpiresAt <= at) {
-        // Conditional expiry instead of a row lock. Zero rows means a
-        // concurrent confirmation or preview moved it; read the current row.
-        const [expired] = await tx
-          .update(usagePackSubscriptionMigrations)
-          .set({
-            status: "failed",
-            failureReason: "preview_expired",
-            completedAt: at,
-            updatedAt: at,
-          })
-          .where(
-            and(
-              eq(usagePackSubscriptionMigrations.id, open.id),
-              eq(usagePackSubscriptionMigrations.status, "previewed"),
-              lte(usagePackSubscriptionMigrations.previewExpiresAt, at),
-            ),
-          )
-          .returning({ id: usagePackSubscriptionMigrations.id });
-        if (expired) {
-          return null;
-        }
+        .returning({ id: usagePackSubscriptionMigrations.id });
+      signal.throwIfAborted();
+      if (expired) {
+        open = undefined;
+      } else {
         [open] = await openMigrationQuery;
-        if (
-          !open ||
-          (open.status === "previewed" && open.previewExpiresAt <= at)
-        ) {
-          return null;
+        signal.throwIfAborted();
+        if (open?.status === "previewed" && open.previewExpiresAt <= at) {
+          open = undefined;
         }
       }
-      const selections = await tx
+    }
+    if (open) {
+      const selections = await db
         .select()
         .from(usagePackSubscriptionMigrationSelections)
         .where(
           eq(usagePackSubscriptionMigrationSelections.migrationId, open.id),
         );
-      return { migration: open, selections };
-    });
-    signal.throwIfAborted();
-    if (stored) {
+      signal.throwIfAborted();
       return {
         status: "ready",
-        state: migrationState(stored.migration, stored.selections),
+        state: migrationState(open, selections),
       };
     }
     const context = await set(loadLegacyMigrationContext$, orgId, signal);

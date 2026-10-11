@@ -928,6 +928,127 @@ describe("legacy subscription usage pack migration", () => {
     mockOptionalEnv("STRIPE_WEBHOOK_SECRET", STRIPE_WEBHOOK_SECRET);
   });
 
+  it("expires a migration preview at its deadline without changing billing or credits", async () => {
+    await withNowScopeForTest(async () => {
+      const startedAt = now();
+      mockNow(startedAt);
+      const fixture = await seedLegacyMigrationFixture({ tier: "pro" });
+      mockMigrationStripe({
+        fixture,
+        packageQuantity: 1,
+        currentRecurringAmountCents: 2000,
+        amountDueCents: 2000,
+        amountPaidCents: 2000,
+      });
+      const billingBefore = await readBillingStatus(fixture);
+      const creditsBefore = await readMigrationCredits(fixture);
+      const allocationsBefore = await accept(
+        setupApp({ context, routes: billingCheckoutRoutes })(
+          billingUsagePackManagementContract,
+        ).get({ headers: { authorization: "Bearer clerk-session" } }),
+        [404],
+      );
+      const request = {
+        targetTier: "pro" as const,
+        memberUsagePacks: [
+          { memberId: fixture.userId, usagePackUsd: 20 as const },
+        ],
+      };
+      const preview = await accept(
+        migrationClient().preview({
+          headers: { authorization: "Bearer clerk-session" },
+          body: request,
+        }),
+        [200],
+      );
+      const expiresAt = Date.parse(preview.body.expiresAt);
+      expect(expiresAt - startedAt).toBe(30 * 60 * 1000);
+
+      mockNow(expiresAt - 1);
+      const beforeExpiry = await accept(
+        migrationClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(beforeExpiry.body).toStrictEqual({
+        tier: "pro",
+        targetTier: "pro",
+        status: "previewed",
+        migrationId: preview.body.migrationId,
+        effectiveAt: preview.body.effectiveAt,
+        hostedInvoiceUrl: null,
+        configuration: {
+          tier: "pro",
+          memberUsagePacks: request.memberUsagePacks,
+          recurringAmountCents: preview.body.nextRecurringAmountCents,
+          currency: preview.body.currency,
+        },
+      });
+
+      mockNow(expiresAt);
+      const expired = await accept(
+        migrationClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(expired.body).toStrictEqual({
+        tier: "pro",
+        targetTier: null,
+        status: "eligible",
+        migrationId: null,
+        effectiveAt: preview.body.effectiveAt,
+        hostedInvoiceUrl: null,
+      });
+      const rejected = await accept(
+        migrationClient().confirm({
+          params: { migrationId: preview.body.migrationId },
+          body: {},
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [409],
+      );
+      expect(rejected.body.error.message).toBe(
+        "Usage pack migration is no longer available",
+      );
+      const renewed = await accept(
+        migrationClient().preview({
+          headers: { authorization: "Bearer clerk-session" },
+          body: request,
+        }),
+        [200],
+      );
+      expect(renewed.body.migrationId).not.toBe(preview.body.migrationId);
+      const current = await accept(
+        migrationClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(current.body).toStrictEqual({
+        ...beforeExpiry.body,
+        migrationId: renewed.body.migrationId,
+      });
+      await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+        tier: billingBefore.tier,
+        subscriptionStatus: billingBefore.subscriptionStatus,
+        credits: billingBefore.credits,
+        creditGrants: billingBefore.creditGrants,
+      });
+      await expect(readMigrationCredits(fixture)).resolves.toStrictEqual(
+        creditsBefore,
+      );
+      const allocationsAfter = await accept(
+        setupApp({ context, routes: billingCheckoutRoutes })(
+          billingUsagePackManagementContract,
+        ).get({ headers: { authorization: "Bearer clerk-session" } }),
+        [404],
+      );
+      expect(allocationsAfter.body).toStrictEqual(allocationsBefore.body);
+    });
+  });
+
   it("rejects migration pricing prepared before the source Plan starts ending", async () => {
     const period = {
       start: currentSecond() - 15 * 86_400,
