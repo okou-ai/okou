@@ -1287,11 +1287,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0369",
-      "file": "turbo/packages/db/scripts/test-agent-run-official-workflow-provenance.ts",
-      "owner": "validateAgentRunOfficialWorkflowProvenanceSchema"
-    },
-    {
       "id": "TX-0370",
       "file": "turbo/packages/db/scripts/test-auto-model-selection-null.ts",
       "owner": "<module>"
