@@ -49,6 +49,7 @@
         mode: "0755"
       loop:
         - /var/cache/okou-wss-caddy
+        - "/var/cache/okou-wss-caddy/{{ runner_wss_caddy_version }}"
         - "/usr/local/lib/okou-wss-caddy/{{ runner_wss_caddy_version }}"
 
     - name: Download checksum-pinned Caddy archive
@@ -60,15 +61,23 @@
         group: root
         mode: "0644"
 
-    - name: Install verified Caddy binary
+    - name: Unpack verified Caddy archive
       ansible.builtin.unarchive:
         src: "/var/cache/okou-wss-caddy/caddy_{{ runner_wss_caddy_version }}.tar.gz"
-        dest: "/usr/local/lib/okou-wss-caddy/{{ runner_wss_caddy_version }}"
+        dest: "/var/cache/okou-wss-caddy/{{ runner_wss_caddy_version }}"
         remote_src: true
         owner: root
         group: root
         mode: "0755"
-        creates: "/usr/local/lib/okou-wss-caddy/{{ runner_wss_caddy_version }}/caddy"
+
+    - name: Install verified Caddy binary atomically
+      ansible.builtin.copy:
+        src: "/var/cache/okou-wss-caddy/{{ runner_wss_caddy_version }}/caddy"
+        dest: "/usr/local/lib/okou-wss-caddy/{{ runner_wss_caddy_version }}/caddy"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
       register: runner_wss_caddy_binary
 
     - name: Create dedicated Caddy system user

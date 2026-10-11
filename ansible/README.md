@@ -34,7 +34,9 @@ certificate issuance and renewal without an HTTP listener on port 80. HTTP/3
 also needs UDP 443; DNS, firewall and public activation are not playbook tasks.
 
 The checksum-pinned Caddy binary has its own system user and service, independent
-of Runner releases. Its certificate/account state stays private and persistent
+of Runner releases. Provisioning compares cached extraction with the verified
+archive and atomically installs the binary, repairing interrupted installations.
+Its certificate/account state stays private and persistent
 under `/var/lib/okou-wss-caddy`; retain it across reprovisioning. Only canonical
 lowercase UUID `/ws/<runner_id>` paths are forwarded to matching Unix sockets.
 The Runner's first-frame ticket admission still authorizes the Run.

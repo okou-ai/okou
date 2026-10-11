@@ -46,17 +46,25 @@ if [[ "${#release[@]}" -ne 3 ]]; then
   exit 1
 fi
 version="${release[0]}"
-caddy_bin="${RUNNER_WSS_CADDY_BIN:-$tmp/caddy}"
-if [[ -z "${RUNNER_WSS_CADDY_BIN:-}" ]]; then
+caddy_archive="${RUNNER_WSS_CADDY_ARCHIVE:-$tmp/caddy.tar.gz}"
+if [[ -z "${RUNNER_WSS_CADDY_ARCHIVE:-}" ]]; then
   bash "$repo_root/.github/scripts/download-verified.sh" \
     "https://github.com/caddyserver/caddy/releases/download/v${version}/caddy_${version}_linux_${release[1]}.tar.gz" \
-    "${release[2]}" "$tmp/caddy.tar.gz"
-  tar -xzf "$tmp/caddy.tar.gz" -C "$tmp" caddy
+    "${release[2]}" "$caddy_archive"
+else
+  printf '%s  %s\n' "${release[2]}" "$caddy_archive" | sha256sum --check --status
+fi
+caddy_bin="${RUNNER_WSS_CADDY_BIN:-$tmp/caddy}"
+if [[ -z "${RUNNER_WSS_CADDY_BIN:-}" ]]; then
+  tar -xzf "$caddy_archive" -C "$tmp" caddy
 fi
 if [[ "$("$caddy_bin" version)" != "v${version} "* ]]; then
   echo 'integration test requires the pinned Caddy version' >&2
   exit 1
 fi
+
+python3 -B "$script_dir/fixtures/runner-wss-caddy-install-test.py" \
+  "$repo_root" "$caddy_archive" "$tmp/install"
 
 printf 'runner-wss.example.org ansible_connection=local\n' >"$tmp/inventory"
 for template in runner-wss.Caddyfile okou-wss-caddy.service; do
