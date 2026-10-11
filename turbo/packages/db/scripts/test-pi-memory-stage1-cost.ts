@@ -119,10 +119,6 @@ export async function validatePiMemoryStage1Cost(
       }
       return Math.round(performance.now() - started);
     };
-    await client.query(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0416; new non-billing transactions are prohibited.
-      "BEGIN; SET LOCAL lock_timeout='1s'; SET LOCAL statement_timeout='10s'",
-    );
     const expandMs = await apply("1141_pi_memory_stage1_billing_context");
     assert.equal(
       (
@@ -132,7 +128,6 @@ export async function validatePiMemoryStage1Cost(
       ).rows[0].n,
       2,
     );
-    await client.query("COMMIT");
     await client.query(
       // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0417; new non-billing transactions are prohibited.
       "BEGIN; SET LOCAL lock_timeout='1s'; SET LOCAL statement_timeout='10s'",
