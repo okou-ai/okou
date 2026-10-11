@@ -1457,11 +1457,6 @@
       "owner": "validatePermanentModelCatalogConstraints"
     },
     {
-      "id": "TX-0404",
-      "file": "turbo/packages/db/scripts/test-morning-brief-enrollment-installation.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0407",
       "file": "turbo/packages/db/scripts/test-oauth-contract-hash-retirement.ts",
       "owner": "<module>"
