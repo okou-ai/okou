@@ -44,37 +44,34 @@ const adminRequired = Object.freeze({
 const creditPurchaseCapabilities$ = computed(async (get) => {
   const { orgId } = get(organizationAuthContext$);
   const db = get(db$);
+  // Read Plan and metadata in one snapshot: separate reads can mistake a
+  // concurrent atomic bootstrap for metadata without a Plan. Either table
+  // contributes the identity so an existing Plan never requires metadata.
+  const identity = db.$with("credit_purchase_identity").as(
+    db
+      .select({ orgId: orgMetadata.orgId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .union(
+        db
+          .select({ orgId: orgPlanEntitlements.orgId })
+          .from(orgPlanEntitlements)
+          .where(eq(orgPlanEntitlements.orgId, orgId)),
+      ),
+  );
   const [row] = await db
-    .select({
-      planKey: ORG_PLAN_CAPABILITY_SELECTION.planKey,
-      status: ORG_PLAN_CAPABILITY_SELECTION.status,
-      baseConcurrencyLimit: ORG_PLAN_CAPABILITY_SELECTION.baseConcurrencyLimit,
-      canBuyConcurrency: ORG_PLAN_CAPABILITY_SELECTION.canBuyConcurrency,
-      canBuyCredits: ORG_PLAN_CAPABILITY_SELECTION.canBuyCredits,
-      showUsagePack: ORG_PLAN_CAPABILITY_SELECTION.showUsagePack,
-      autoRechargeAllowed: ORG_PLAN_CAPABILITY_SELECTION.autoRechargeAllowed,
-      restrictedBuiltInModels:
-        ORG_PLAN_CAPABILITY_SELECTION.restrictedBuiltInModels,
-      workflowWebhookAutomationAllowed:
-        ORG_PLAN_CAPABILITY_SELECTION.workflowWebhookAutomationAllowed,
-      audioLifetimeLimit: ORG_PLAN_CAPABILITY_SELECTION.audioLifetimeLimit,
-      audioDailyRateLimit: ORG_PLAN_CAPABILITY_SELECTION.audioDailyRateLimit,
-      audioDailyDurationSeconds:
-        ORG_PLAN_CAPABILITY_SELECTION.audioDailyDurationSeconds,
-    })
-    .from(orgPlanEntitlements)
-    .where(eq(orgPlanEntitlements.orgId, orgId))
-    .limit(1);
-  if (row) {
-    return orgPlanCapabilitiesFromRow(row, orgId);
-  }
-  const [org] = await db
-    .select({ orgId: orgMetadata.orgId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  if (!org) {
+    .with(identity)
+    .select({ plan: ORG_PLAN_CAPABILITY_SELECTION })
+    .from(identity)
+    .leftJoin(
+      orgPlanEntitlements,
+      eq(orgPlanEntitlements.orgId, identity.orgId),
+    );
+  if (!row) {
     return null;
+  }
+  if (row.plan) {
+    return orgPlanCapabilitiesFromRow(row.plan, orgId);
   }
   throw new Error(`Missing org plan entitlement for ${orgId}`);
 });
