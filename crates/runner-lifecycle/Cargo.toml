@@ -11,7 +11,6 @@ test-support = ["dep:sandbox-mock", "dep:tempfile", "runner-host/test-support"]
 api-contracts.workspace = true
 guest-contracts.workspace = true
 runner-host.workspace = true
-runner-storage.workspace = true
 runner-types.workspace = true
 sandbox.workspace = true
 sandbox-mock = { workspace = true, optional = true }
