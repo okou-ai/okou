@@ -11,10 +11,12 @@ import {
 } from "@okouai/api-contracts/contracts/runners";
 
 import { describe, expect, it, onTestFinished } from "vitest";
+import { HttpResponse, http } from "msw";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -43,7 +45,7 @@ import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook"
  *
  * Direct runs are constructed through createAgentRun$; route boundaries cover
  * runner claims and sandbox webhooks (events/outputs/complete). Axiom reads
- * are answered by an APL-dispatching mock.
+ * use an APL-dispatching mock, with HTTP coverage for context freshness.
  */
 
 // The sanitizer accepts the literal IANA name; built by parts to satisfy
@@ -2266,30 +2268,36 @@ describe("RUN-04: agent run telemetry families", () => {
     if (!Number.isFinite(runCreatedAtMs)) {
       throw new Error("Expected the created run to have a valid creation time");
     }
+    context.mocks.axiom.useRealQuery.mockReturnValue(true);
     let snapshotVisible = false;
-    context.mocks.axiom.query.mockImplementation(
-      (apl: unknown, options: unknown) => {
-        if (
-          typeof apl !== "string" ||
-          !apl.includes("['run-context']") ||
-          !apl.includes(agentRun.runId)
-        ) {
-          return Promise.resolve([]);
-        }
-        // The provider retains its initial cached miss even after ingestion.
-        const freshRead =
-          typeof options === "object" &&
-          options !== null &&
-          "noCache" in options &&
-          options.noCache === true;
-        return Promise.resolve(
-          freshRead && snapshotVisible
-            ? [{ runId: agentRun.runId, sessionId: "bdd-bounded" }]
-            : [],
-        );
-      },
+    const queryRequests: {
+      readonly body: unknown;
+      readonly noCache: string | null;
+    }[] = [];
+    server.use(
+      http.post(
+        "https://api.axiom.co/v1/datasets/_apl",
+        async ({ request }) => {
+          const noCache = new URL(request.url).searchParams.get("nocache");
+          queryRequests.push({ body: await request.json(), noCache });
+          // Cached reads retain the initial miss after the snapshot is ingested.
+          return HttpResponse.json({
+            matches:
+              noCache === "true" && snapshotVisible
+                ? [
+                    {
+                      _time: runCreatedAt,
+                      data: {
+                        runId: agentRun.runId,
+                        sessionId: "bdd-bounded",
+                      },
+                    },
+                  ]
+                : [],
+          });
+        },
+      ),
     );
-    const queryStartIndex = axiomCallCount();
 
     const pendingContext = await api.requestRunContext(
       actor,
@@ -2315,20 +2323,17 @@ describe("RUN-04: agent run telemetry families", () => {
       sessionId: "bdd-bounded",
     });
 
-    const runContextQueries = context.mocks.axiom.query.mock.calls
-      .slice(queryStartIndex)
-      .filter(([apl]) => {
-        return typeof apl === "string" && apl.includes("['run-context']");
-      });
-    expect(runContextQueries).toHaveLength(2);
-    for (const [apl, options] of runContextQueries) {
-      expect(apl).toContain(`| where runId == "${agentRun.runId}"`);
-      expect(options).toStrictEqual({
-        noCache: true,
+    const expectedQuery = {
+      noCache: "true",
+      body: {
+        apl: `['vm0-run-context-dev']
+| where runId == "${agentRun.runId}"
+| limit 1`,
         startTime: new Date(runCreatedAtMs - HOUR_MS).toISOString(),
         endTime: new Date(runCreatedAtMs + HOUR_MS).toISOString(),
-      });
-    }
+      },
+    };
+    expect(queryRequests).toStrictEqual([expectedQuery, expectedQuery]);
   });
 
   it("maps agent run context, network, and runner metadata from axiom snapshots", async () => {
