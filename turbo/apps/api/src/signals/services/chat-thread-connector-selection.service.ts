@@ -187,29 +187,38 @@ async function loadSelectionRows(
     );
 }
 
-async function loadConnectorTargetOwnerships(
-  db: ReadonlyDb,
-  args: {
-    readonly connectorIds: readonly string[];
-  },
-): Promise<ReadonlyMap<string, ConnectorTargetOwnership>> {
-  if (args.connectorIds.length === 0) {
-    return new Map();
-  }
-  const rows = await db
-    .select({
-      connectorId: connectors.id,
-      connectorSlug: connectors.connectorSlug,
-      customConnectorId: connectors.customConnectorId,
-      orgId: connectors.orgId,
-      userId: connectors.userId,
-    })
-    .from(connectors)
-    .where(inArray(connectors.id, [...new Set(args.connectorIds)]));
+const connectorTargetOwnershipColumns = Object.freeze({
+  connectorId: connectors.id,
+  connectorSlug: connectors.connectorSlug,
+  customConnectorId: connectors.customConnectorId,
+  orgId: connectors.orgId,
+  userId: connectors.userId,
+});
+
+function connectorTargetOwnershipsFromRows(
+  rows: readonly ConnectorTargetOwnership[],
+): ReadonlyMap<string, ConnectorTargetOwnership> {
   return new Map(
     rows.map((row) => {
       return [row.connectorId, row];
     }),
+  );
+}
+
+function connectorTargetOwnershipMatches(
+  ownership: ConnectorTargetOwnership,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+  },
+  target: ConnectorAccountTarget,
+): boolean {
+  if (ownership.orgId !== args.orgId || ownership.userId !== args.userId) {
+    return false;
+  }
+  return (
+    connectorAccountTargetKey(targetFromRow(ownership)) ===
+    connectorAccountTargetKey(target)
   );
 }
 
@@ -325,9 +334,12 @@ export const prepareChatThreadConnectorSelections$ = command(
     const connectionIds = selections.map((selection) => {
       return selection.connectionId;
     });
-    const targetOwnerships = await loadConnectorTargetOwnerships(db, {
-      connectorIds: connectionIds,
-    });
+    const targetOwnerships = connectorTargetOwnershipsFromRows(
+      await db
+        .select(connectorTargetOwnershipColumns)
+        .from(connectors)
+        .where(inArray(connectors.id, [...new Set(connectionIds)])),
+    );
     signal.throwIfAborted();
     const projectedConnections = await listConnectorAccountsByIds(db, {
       orgId: args.orgId,
@@ -352,17 +364,7 @@ export const prepareChatThreadConnectorSelections$ = command(
           message: "Connector account does not match the requested target",
         };
       }
-      if (ownership.orgId !== args.orgId || ownership.userId !== args.userId) {
-        return {
-          kind: "invalid",
-          message: "Connector account does not match the requested target",
-        };
-      }
-      const ownedTarget = targetFromRow(ownership);
-      if (
-        connectorAccountTargetKey(ownedTarget) !==
-        connectorAccountTargetKey(selection.target)
-      ) {
+      if (!connectorTargetOwnershipMatches(ownership, args, selection.target)) {
         return {
           kind: "invalid",
           message: "Connector account does not match the requested target",
@@ -374,9 +376,12 @@ export const prepareChatThreadConnectorSelections$ = command(
           // Deletion can commit between the ownership read and the projection.
           // Initial thread creation omits a deleted account at either boundary;
           // an existing but unavailable account still receives the same error.
-          const current = await loadConnectorTargetOwnerships(db, {
-            connectorIds: [selection.connectionId],
-          });
+          const current = connectorTargetOwnershipsFromRows(
+            await db
+              .select(connectorTargetOwnershipColumns)
+              .from(connectors)
+              .where(inArray(connectors.id, [selection.connectionId])),
+          );
           signal.throwIfAborted();
           if (!current.has(selection.connectionId)) {
             byTarget.delete(key);
