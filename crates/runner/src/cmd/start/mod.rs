@@ -278,7 +278,7 @@ pub async fn run_start(
 async fn run_start_with_home(
     args: StartArgs,
     runtime_provider: &dyn RuntimeProvider,
-    load_home: impl FnOnce() -> RunnerResult<HomePaths>,
+    load_home: impl FnOnce() -> RunnerResult<HomePaths> + Send,
 ) -> RunnerResult<()> {
     // Register lifecycle signals (SIGTERM/SIGINT/SIGUSR1/SIGUSR2) before
     // any slow startup work. Tokio's `signal()` installs the process-wide
@@ -289,10 +289,11 @@ async fn run_start_with_home(
     let signals = signals::register_early_signals()
         .map_err(|e| RunnerError::Internal(format!("register signal handlers: {e}")))?;
 
+    // Share the startup body across home loaders while retaining lazy evaluation.
     run_with_host_memory_observer(run_start_observed(
         args,
         runtime_provider,
-        load_home,
+        Box::new(load_home),
         signals,
     ))
     .await
@@ -319,7 +320,7 @@ async fn run_with_host_memory_observer(
 async fn run_start_observed(
     args: StartArgs,
     runtime_provider: &dyn RuntimeProvider,
-    load_home: impl FnOnce() -> RunnerResult<HomePaths>,
+    load_home: Box<dyn FnOnce() -> RunnerResult<HomePaths> + Send + '_>,
     signals: EarlySignals,
 ) -> RunnerResult<()> {
     let mut runner_config = config::load_for_start(&args.config, args.api_url.as_deref()).await?;
