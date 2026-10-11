@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -10,6 +10,7 @@ import {
 } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
+import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 const {
@@ -35,6 +36,8 @@ const SUBSCRIPTION_CASES = [
 ] as const;
 
 describe("Codex execution switch", () => {
+  beforeEach(mockSecretKmsHttp);
+
   it.each(SUBSCRIPTION_CASES)(
     "uses native Codex for $model with tier $tier without changing its account",
     async ({ model, tier }) => {
