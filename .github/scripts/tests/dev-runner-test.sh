@@ -22,12 +22,14 @@ setup_test_root() {
     "${root}/.github/scripts" \
     "${root}/.certs" \
     "${root}/crates/runner" \
+    "${root}/ansible/scripts" \
     "${root}/bin"
 
   ln -s "$DEV_RUNNER" "${root}/scripts/dev-runner.sh"
   ln -s "$TARGET_HELPER" "${root}/.github/scripts/runner-image-target.sh"
   ln -s "$GUEST_HELPER" "${root}/.github/scripts/runner-guest-binaries.sh"
   ln -s "$GUEST_INVENTORY" "${root}/crates/runner/guest-binaries.json"
+  ln -s "${REPO_ROOT}/ansible/scripts/prepare-runner-wss.py" "${root}/ansible/scripts/prepare-runner-wss.py"
   touch "${root}/.certs/vm0-metal-local.pem"
 
   cat >"${root}/scripts/.env.local" <<'ENV'
@@ -52,6 +54,10 @@ case "$command" in
     printf '%s\n' "$command" >>"${SERVICE_STOP_LOG:?}"
     ;;
   "sudo mkdir -p "*)
+    ;;
+  "sudo /usr/bin/python3 -")
+    cat >/dev/null
+    [ "${WSS_PREPARE_FAIL:-0}" != 1 ]
     ;;
   "sudo install -m 755 /dev/stdin "*)
     cat >/dev/null
@@ -163,6 +169,15 @@ grep -q " service wait-running --name local-test --timeout-secs 120$" "${TMPDIR}
 start_line=$(grep -n " service start " "${TMPDIR}/x86-success/cf-ssh.log" | cut -d: -f1)
 readiness_line=$(grep -n " service wait-running " "${TMPDIR}/x86-success/cf-ssh.log" | cut -d: -f1)
 [ "$start_line" -lt "$readiness_line" ] || fail "readiness should follow service start"
+prepare_line=$(grep -n 'sudo /usr/bin/python3 -$' "${TMPDIR}/x86-success/cf-ssh.log" | cut -d: -f1)
+[ "$prepare_line" -lt "$start_line" ] || fail "WSS preparation must precede start"
+
+if run_deploy unsafe-wss x86_64 env WSS_PREPARE_FAIL=1 >"${TMPDIR}/unsafe-wss.out" 2>"${TMPDIR}/unsafe-wss.err"; then
+  fail "unsafe WSS prerequisites must fail deploy"
+fi
+if grep -q ' service start ' "${TMPDIR}/unsafe-wss/cf-ssh.log"; then
+  fail "failed WSS preparation must prevent service start"
+fi
 grep -q "\[runner\] Waiting for Runner readiness..." "${TMPDIR}/x86-success.err" || fail "expected readiness progress"
 grep -q "\[runner\] Done! Runner service local-test deployed to dev-host" "${TMPDIR}/x86-success.err" || fail "expected completion after readiness"
 if grep -q '^4$' "${TMPDIR}/x86-success.out"; then

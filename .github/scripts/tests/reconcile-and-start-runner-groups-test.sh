@@ -70,6 +70,10 @@ fi
 printf '%s\t%s\n' "$host" "$*" >>"$MOCK_SERVICE_LOG"
 service_name=$(printf '%s\n' "$*" | sed -n "s/.*--name ['\"]*\\([a-z0-9-]*\\).*/\\1/p")
 case "$*" in
+  "sudo /usr/bin/python3 -")
+    cat >/dev/null
+    [ "${MOCK_FAILURE:-none}" != wss ]
+    ;;
   "test -x ${BIN_DIR}/runner") ;;
   "sudo ${BIN_DIR}/runner config "*)
     printf '%s\n' "$*" >"${MOCK_REMOTE_ROOT}/${host}/config"
@@ -256,8 +260,16 @@ run_case() {
 
   [ "$(awk '!/runner service stop / {print $1}' "${case_dir}/service.log" | sort -u)" = "$selected_host" ] ||
     fail "${case_name}: start or readiness operations reached an unselected host"
-  [ "$(grep -c 'runner service start ' "${case_dir}/service.log")" -eq 1 ] ||
+  expected_starts=1
+  [ "$failure" != wss ] || expected_starts=0
+  [ "$(grep -c 'runner service start ' "${case_dir}/service.log" || true)" -eq "$expected_starts" ] ||
     fail "${case_name}: deployment must start exactly one service"
+  if [ "$failure" = wss ]; then
+    return
+  fi
+  prepare_line=$(grep -n 'sudo /usr/bin/python3 -' "${case_dir}/service.log" | cut -d: -f1)
+  start_line=$(grep -n 'runner service start ' "${case_dir}/service.log" | cut -d: -f1)
+  [ "$prepare_line" -lt "$start_line" ] || fail "${case_name}: preparation must precede cached start"
   grep -Fq -- "service wait-running --name ${service_ref}-${selected_index}" "${case_dir}/service.log" ||
     fail "${case_name}: readiness must use the selected service identity"
   host_index=0
@@ -283,6 +295,7 @@ run_case x86 pr-1 x86-1 2 none
 run_case x86 pr-1 x86-1 2 none
 run_case arm pr-2 arm-1 1 none
 run_case recovered-binary pr-1 x86-1 2 none true
+run_case unsafe-cached-wss pr-1 x86-1 2 wss
 run_case failed-start pr-9 x86-2 3 readiness
 run_case invalid-identity pr-9 x86-2 3 identity
 run_case failed-retirement pr-1 x86-1 2 retire

@@ -365,12 +365,13 @@ impl WssConfig {
     /// Compose the existing official API client, credential and exact hostname.
     /// The protected host namespace is fixed, not a second readiness authority.
     pub fn official(
+        home: &HomePaths,
         http: runner_provider::http::HttpClient,
         token: String,
         hostname: Option<String>,
     ) -> Self {
         Self {
-            socket_dir: PathBuf::from(runner_host::runner_wss_socket::HOST_SOCKET_DIR),
+            socket_dir: home.wss_dir(),
             hostname,
             consumer: Arc::new(runner_wss::ApiTicketConsumer::new(http, token)),
             #[cfg(test)]

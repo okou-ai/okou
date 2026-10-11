@@ -41,6 +41,9 @@
     - name: Validate runner architecture
       include_tasks: ../tasks/validate-runner-architecture.yml
 
+    - name: Prepare persistent Runner WSS prerequisites before traffic cutover
+      include_tasks: ../tasks/prepare-runner-wss.yml
+
     # ========================================
     # Phase 3b: Install systemd service (traffic cutover point)
     # ========================================

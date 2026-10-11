@@ -1,0 +1,8 @@
+# Independent of Caddy. Also used by promote/rollback on existing hosts.
+- name: Create or validate persistent Runner WSS namespace
+  become: true
+  ansible.builtin.script:
+    cmd: ../scripts/prepare-runner-wss.py
+    executable: /usr/bin/python3
+  register: runner_wss_namespace_prepare
+  changed_when: runner_wss_namespace_prepare.stdout | trim == 'created'

@@ -137,6 +137,8 @@ prepare_host() {
     return 1
   fi
 
+  bash "${SCRIPT_DIR}/prepare-runner-wss.sh" "$remote" || return 1
+
   if ! ssh "$remote" bash -s -- "${BIN_DIR}" "${RUNNER_DIR}" "${job_ref}" <<'REMOTE_SCRIPT'
 set -euo pipefail
 BIN_DIR=$1

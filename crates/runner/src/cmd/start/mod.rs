@@ -453,7 +453,7 @@ async fn run_start_observed(
     // Official socket health belongs to Supervisor; optional Caddy availability
     // only suppresses issuance. Admission uses the executor's exact registry.
     let wss = (!args.local)
-        .then(|| WssConfig::official(http.clone(), server.token.clone(), hostname.clone()));
+        .then(|| WssConfig::official(&home, http.clone(), server.token.clone(), hostname.clone()));
     let group = runner_config.group;
     let cancel_tokens = RunCancellationRegistry::new();
     let local_group_dir = if args.local {
