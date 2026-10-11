@@ -99,6 +99,7 @@ export interface ApiTestMocks {
     readonly timeout: AbortSignalTimeoutMock;
   };
   readonly axiom: {
+    readonly useRealQuery: Mock<() => boolean>;
     readonly useRealTelemetry: Mock<() => boolean>;
     readonly clientError: Mock<(error: Error) => void>;
     readonly clients: AxiomSdkClientMock[];
@@ -347,6 +348,7 @@ type AxiomJSTransportMock = Readonly<Record<string, never>>;
 
 const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
   const axiom = {
+    useRealQuery: vi.fn<() => boolean>(),
     useRealTelemetry: vi.fn<() => boolean>(),
     clientError: vi.fn<(error: Error) => void>(),
     clients: [],
@@ -1273,18 +1275,22 @@ vi.mock("../signals/external/axiom", async () => {
   >("../signals/external/axiom");
   return {
     ...actual,
-    // Wrap the underlying vi.fn() in a ccstate `computed` so `get(queryAxiom(apl))`
-    // resolves correctly. Tests configure responses via
-    // `context.mocks.axiom.query.mockResolvedValue(...)`. The optional
-    // The optional `options` second arg is forwarded so tests can assert on
-    // pagination options via `expect(...).toHaveBeenCalledWith(apl, opts)`.
-    queryAxiom: (apl: string, options?: unknown) => {
+    // HTTP contract cases exercise the production wrapper and SDK. Other cases
+    // configure external query responses through the shared mock.
+    queryAxiom: (
+      apl: string,
+      options?: Parameters<typeof actual.queryAxiom>[1],
+    ) => {
+      if (apiTestMocks.axiom.useRealQuery()) {
+        return actual.queryAxiom(apl, options);
+      }
       return computed(() => {
         return apiTestMocks.axiom.query(apl, options);
       });
     },
     getDatasetName: (name: string) => {
-      return apiTestMocks.axiom.useRealTelemetry()
+      return apiTestMocks.axiom.useRealQuery() ||
+        apiTestMocks.axiom.useRealTelemetry()
         ? actual.getDatasetName(name)
         : name;
     },
@@ -1313,7 +1319,10 @@ async function createAxiomSdkMock() {
         ...args: AxiomSdkConstructorArguments
       ) => AxiomSdkClientMock | AxiomSdkClient
     >(function (options) {
-      if (apiTestMocks.axiomLogging.useRealTransport()) {
+      if (
+        apiTestMocks.axiom.useRealQuery() ||
+        apiTestMocks.axiomLogging.useRealTransport()
+      ) {
         return new actual.Axiom(options);
       }
       apiTestMocks.axiom.clientError.mockImplementation((error: Error) => {
@@ -1482,6 +1491,8 @@ export function resetApiTestMocks(): void {
   apiTestMocks.ably.presenceGet.mockReset();
   apiTestMocks.ably.presenceGet.mockResolvedValue({ items: [] });
   apiTestMocks.ably.createTokenRequest.mockReset();
+  apiTestMocks.axiom.useRealQuery.mockReset();
+  apiTestMocks.axiom.useRealQuery.mockReturnValue(false);
   apiTestMocks.axiom.useRealTelemetry.mockReset();
   apiTestMocks.axiom.useRealTelemetry.mockReturnValue(false);
   apiTestMocks.axiom.clientError.mockReset();
