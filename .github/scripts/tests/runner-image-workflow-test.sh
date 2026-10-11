@@ -66,6 +66,23 @@ image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c 
 grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
   fail "download-only changes must be recognized as runner image inputs"
 
+# Imported host dependencies must invalidate stable image reuse on their own.
+for path in \
+  ansible/tasks/provision-runner-wss-caddy.yml \
+  ansible/files/validate-runner-wss-caddy.py \
+  ansible/templates/runner-wss.Caddyfile.j2 \
+  ansible/templates/okou-wss-caddy.service.j2 \
+  ansible/playbooks/host_vars/runner-wss.example.org.yml; do
+  base_ref=$(fixture_git rev-parse HEAD)
+  mkdir -p "${test_root}/$(dirname "$path")"
+  printf 'host dependency fixture\n' >"${test_root}/${path}"
+  fixture_git add "$path"
+  fixture_git commit --quiet -m host-dependency
+  image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c "$image_input_step")
+  grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
+    fail "host dependency changes must be recognized as runner image inputs: $path"
+done
+
 check_ci_detectors() {
   local base_ref=$1 change_label=$2 include_turbo=${3:-false}
   ruby -ryaml -ropen3 - "$REPO_ROOT" "$test_root" "$base_ref" "$change_label" "$include_turbo" <<'RUBY'

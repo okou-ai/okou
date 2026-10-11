@@ -1,0 +1,125 @@
+- name: Provision dedicated Caddy service for Runner WSS
+  vars:
+    runner_wss_caddy_version: "2.11.7"
+    runner_wss_caddy_archives:
+      x86_64:
+        arch: amd64
+        sha256: 727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b
+      aarch64:
+        arch: arm64
+        sha256: d8fc6d179a5d283028a472a5618564f6ad8a86fed513e64f032b3b0b7cc45e42
+  block:
+    - name: Validate public Runner inventory hostname
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname | length <= 253
+          - inventory_hostname is match('^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$')
+          - inventory_hostname is not search('\.(localhost|local|internal|home\.arpa|invalid|test|example)$')
+        fail_msg: Caddy requires the exact public Runner inventory hostname.
+
+    - name: Gather platform facts for the pinned Caddy binary
+      ansible.builtin.setup:
+        gather_subset:
+          - "!all"
+          - "!min"
+          - platform
+
+    - name: Validate Caddy platform and architecture
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['system'] == 'Linux'
+          - ansible_facts['architecture'] in runner_wss_caddy_archives
+        fail_msg: Caddy requires a supported Linux architecture.
+
+    # Runner supplies this namespace. Inspect it before any ingress changes.
+    - name: Validate existing Runner WSS namespace without changing it
+      ansible.builtin.script: ../files/validate-runner-wss-caddy.py
+      args:
+        executable: /usr/bin/python3
+      changed_when: false
+      check_mode: false
+
+    # A verified static binary avoids auto-starting the distro caddy.service.
+    - name: Create dedicated Caddy binary and download directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - /var/cache/okou-wss-caddy
+        - "/usr/local/lib/okou-wss-caddy/{{ runner_wss_caddy_version }}"
+
+    - name: Download checksum-pinned Caddy archive
+      ansible.builtin.get_url:
+        url: "https://github.com/caddyserver/caddy/releases/download/v{{ runner_wss_caddy_version }}/caddy_{{ runner_wss_caddy_version }}_linux_{{ runner_wss_caddy_archives[ansible_facts['architecture']]['arch'] }}.tar.gz"
+        dest: "/var/cache/okou-wss-caddy/caddy_{{ runner_wss_caddy_version }}.tar.gz"
+        checksum: "sha256:{{ runner_wss_caddy_archives[ansible_facts['architecture']]['sha256'] }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install verified Caddy binary
+      ansible.builtin.unarchive:
+        src: "/var/cache/okou-wss-caddy/caddy_{{ runner_wss_caddy_version }}.tar.gz"
+        dest: "/usr/local/lib/okou-wss-caddy/{{ runner_wss_caddy_version }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+        creates: "/usr/local/lib/okou-wss-caddy/{{ runner_wss_caddy_version }}/caddy"
+      register: runner_wss_caddy_binary
+
+    - name: Create dedicated Caddy system user
+      ansible.builtin.user:
+        name: okou-wss-caddy
+        group: okou-wss-caddy
+        groups: ""
+        system: true
+        shell: /usr/sbin/nologin
+        home: /var/lib/okou-wss-caddy
+        create_home: false
+      register: runner_wss_caddy_user
+
+    - name: Create private persistent Caddy certificate state
+      ansible.builtin.file:
+        path: /var/lib/okou-wss-caddy
+        state: directory
+        owner: okou-wss-caddy
+        group: okou-wss-caddy
+        mode: "0700"
+
+    - name: Create protected Caddy configuration directory
+      ansible.builtin.file:
+        path: /etc/okou-wss-caddy
+        state: directory
+        owner: root
+        group: okou-wss-caddy
+        mode: "0710"
+
+    - name: Validate and install static Runner WSS Caddyfile
+      ansible.builtin.template:
+        src: ../templates/runner-wss.Caddyfile.j2
+        dest: /etc/okou-wss-caddy/Caddyfile
+        owner: root
+        group: okou-wss-caddy
+        mode: "0640"
+        validate: "/usr/local/lib/okou-wss-caddy/{{ runner_wss_caddy_version }}/caddy validate --config %s --adapter caddyfile"
+      register: runner_wss_caddy_config
+
+    - name: Install dedicated Runner WSS Caddy service
+      ansible.builtin.template:
+        src: ../templates/okou-wss-caddy.service.j2
+        dest: /etc/systemd/system/okou-wss-caddy.service
+        owner: root
+        group: root
+        mode: "0644"
+      register: runner_wss_caddy_unit
+
+    - name: Apply changed ingress configuration without touching Runner services
+      ansible.builtin.systemd_service:
+        name: okou-wss-caddy.service
+        daemon_reload: "{{ runner_wss_caddy_unit.changed }}"
+        enabled: true
+        state: "{{ 'restarted' if (runner_wss_caddy_unit.changed or runner_wss_caddy_config.changed or runner_wss_caddy_binary.changed or runner_wss_caddy_user.changed) else 'started' }}"

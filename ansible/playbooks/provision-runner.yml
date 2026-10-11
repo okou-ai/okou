@@ -7,6 +7,9 @@
 # Usage:
 #   ansible-playbook -i "host1,host2," playbooks/provision-runner.yml \
 #     -e "ansible_user=ubuntu"
+#
+# Hosts with a prepared Runner namespace can opt into public WSS ingress with
+# runner_wss_caddy_enabled=true; see ansible/README.md for DNS/TLS prerequisites.
 
 - name: Provision runner host dependencies
   hosts: all
@@ -190,3 +193,9 @@
     - name: Reset SSH connection to pick up new group membership
       meta: reset_connection
       when: group_change.changed
+
+    - name: Provision optional Runner WSS ingress
+      ansible.builtin.import_tasks: ../tasks/provision-runner-wss-caddy.yml
+      become: true
+      when: runner_wss_caddy_enabled | default(false) | bool
+      tags: runner_wss_caddy

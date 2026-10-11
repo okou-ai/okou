@@ -1,0 +1,31 @@
+# Managed by ansible/playbooks/provision-runner.yml.
+[Unit]
+Description=Okou Runner WSS ingress
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=notify
+User=okou-wss-caddy
+Group=okou-wss-caddy
+Environment=XDG_DATA_HOME=/var/lib/okou-wss-caddy
+Environment=XDG_CONFIG_HOME=/var/lib/okou-wss-caddy
+ExecStart=/usr/local/lib/okou-wss-caddy/{{ runner_wss_caddy_version }}/caddy run --config /etc/okou-wss-caddy/Caddyfile --adapter caddyfile
+Restart=on-failure
+RestartPreventExitStatus=1
+UMask=0077
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/okou-wss-caddy
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
