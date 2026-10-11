@@ -1,6 +1,6 @@
 import type { BuiltinConnectorExternalCodeSessionStartResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -12,10 +12,13 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
+import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
+
+beforeEach(mockSecretKmsHttp);
 
 async function prepareActor() {
   const actor = bdd.user();
