@@ -1492,11 +1492,6 @@
       "owner": "validatePiMemoryStage1Cost"
     },
     {
-      "id": "TX-0419",
-      "file": "turbo/packages/db/scripts/test-plan-entitlement-capability-migration.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0420",
       "file": "turbo/packages/db/scripts/test-prepared-domain-trigger-retirement.ts",
       "owner": "<module>"
