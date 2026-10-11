@@ -6,16 +6,19 @@ import {
 import { chatThreadModelSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
+import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../lib/time.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
+import { SharedDatabaseMessagePortServer } from "../../../shared-database/message-port-server.ts";
+import { sharedDatabaseWorkerMessageSchema } from "../../../shared-database/protocol.ts";
 import {
   buildRunModel,
   composerModelTrigger,
@@ -43,6 +46,59 @@ const RUN_B = "a0000000-0000-4000-a000-000000000302";
 const RUN_C = "a0000000-0000-4000-a000-000000000303";
 const RUN_D = "a0000000-0000-4000-a000-000000000304";
 const PROVIDER_ID = "e0000000-0000-4000-a000-000000000301";
+
+function holdSteeringWorkerReply(
+  eventId: () => string | undefined,
+): Promise<void> {
+  // Delay the browser's delivery of a persisted steering result until the
+  // refresh triggered by run completion replies. Both use the real worker
+  // and IndexedDB; only MessagePort delivery order is controlled.
+  const replyHeld = context.mocks.deferred<void>();
+  let heldReply: unknown;
+  let released = false;
+  class SharedWorkerMock extends EventTarget {
+    readonly port: MessagePort;
+
+    constructor() {
+      super();
+      const channel = new MessageChannel();
+      this.port = channel.port1;
+      const postMessage = channel.port2.postMessage.bind(channel.port2);
+      vi.spyOn(channel.port2, "postMessage").mockImplementation(
+        (value: unknown) => {
+          const message = sharedDatabaseWorkerMessageSchema.safeParse(value);
+          const rows =
+            message.success && message.data.type === "result"
+              ? chatEventRowSchema.array().safeParse(message.data.value)
+              : null;
+          if (
+            !released &&
+            rows?.success &&
+            rows.data.some((row) => {
+              return row.id === eventId();
+            })
+          ) {
+            if (heldReply === undefined) {
+              heldReply = value;
+              replyHeld.resolve();
+              return;
+            }
+            released = true;
+            postMessage(heldReply);
+          }
+          postMessage(value);
+        },
+      );
+      new SharedDatabaseMessagePortServer(
+        context.workerStore,
+        channel.port2,
+        context.signal,
+      );
+    }
+  }
+  vi.stubGlobal("SharedWorker", SharedWorkerMock);
+  return replyHeld.promise;
+}
 
 function configureCodexSubscriptionPolicies(models: readonly string[]): void {
   configureRunModels(models, {
@@ -337,82 +393,103 @@ test("Offer Auto once, ahead of subscription models", async () => {
   ).toBeTruthy();
 });
 
-test("Keep a next-run model choice through active-run steering", async () => {
-  const steeringQueued = context.mocks.deferred<void>();
-  const runModels: (string | undefined)[] = [];
-  configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
-  const lifecycle = installRunChat({
-    selectedModel: "gpt-5.6-luna",
-    activeRunIds: [RUN_A],
-    chatEvents: [
-      promptEvent({
-        id: "steering-active-user",
-        runId: RUN_A,
-        seqId: 1,
-        text: "Active Sol request",
-        model: "gpt-5.6-sol",
-      }),
-      assistantEvent({
-        id: "steering-active-progress",
-        runId: RUN_A,
-        seqId: 2,
-        text: "Sol is still working.",
-      }),
-    ],
-    onQueuedEventAppend: () => {
-      steeringQueued.resolve();
-    },
-    onRunCreate: (body) => {
-      const model = body.userMessage?.parts.find((part) => {
-        return part.type === "model";
-      });
-      runModels.push(model?.type === "model" ? model.selectedModel : undefined);
-    },
-  });
+test.each(["normal delivery", "completion before steering delivery"] as const)(
+  "Keep a next-run model choice through active-run steering (%s)",
+  async (delivery) => {
+    const steeringQueued = context.mocks.deferred<void>();
+    let steeringEventId: string | undefined;
+    const runModels: (string | undefined)[] = [];
+    configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
+    const lifecycle = installRunChat({
+      selectedModel: "gpt-5.6-luna",
+      activeRunIds: [RUN_A],
+      chatEvents: [
+        promptEvent({
+          id: "steering-active-user",
+          runId: RUN_A,
+          seqId: 1,
+          text: "Active Sol request",
+          model: "gpt-5.6-sol",
+        }),
+        assistantEvent({
+          id: "steering-active-progress",
+          runId: RUN_A,
+          seqId: 2,
+          text: "Sol is still working.",
+        }),
+      ],
+      onQueuedEventAppend: ({ clientEventId }) => {
+        steeringEventId = clientEventId;
+        steeringQueued.resolve();
+      },
+      onRunCreate: (body) => {
+        const model = body.userMessage?.parts.find((part) => {
+          return part.type === "model";
+        });
+        runModels.push(
+          model?.type === "model" ? model.selectedModel : undefined,
+        );
+      },
+    });
+    const steeringReplyHeld =
+      delivery === "completion before steering delivery"
+        ? holdSteeringWorkerReply(() => {
+            return steeringEventId;
+          })
+        : null;
 
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
+    await setupPage({
+      context,
+      path: RUN_PATH,
+      ...(steeringReplyHeld
+        ? { sharedWorkerTestTransport: "browser" as const }
+        : {}),
+    });
 
-  await readyChat();
-  expect(screen.getByText("Sol is still working.")).toBeVisible();
-  await expect(findButton("Stop")).resolves.toBeVisible();
-  await expect(
-    screen.findByText("Next run will use GPT 5.6 Luna"),
-  ).resolves.toBeVisible();
+    await readyChat();
+    expect(screen.getByText("Sol is still working.")).toBeVisible();
+    await expect(findButton("Stop")).resolves.toBeVisible();
+    await expect(
+      screen.findByText("Next run will use GPT 5.6 Luna"),
+    ).resolves.toBeVisible();
 
-  await sendText("Steer the current Sol work");
+    await sendText("Steer the current Sol work");
 
-  await expect(
-    screen.findByText("Steer the current Sol work"),
-  ).resolves.toBeVisible();
-  expect(screen.getByText("Next run will use GPT 5.6 Luna")).toBeVisible();
-  expect(
-    screen.queryByText("Model changed to GPT 5.6 Luna"),
-  ).not.toBeInTheDocument();
+    await expect(
+      screen.findByText("Steer the current Sol work"),
+    ).resolves.toBeVisible();
+    expect(screen.getByText("Next run will use GPT 5.6 Luna")).toBeVisible();
+    expect(
+      screen.queryByText("Model changed to GPT 5.6 Luna"),
+    ).not.toBeInTheDocument();
 
-  // Clearing the draft and showing the optimistic input do not prove that
-  // the server accepted steering while Sol was active. With no appendGate,
-  // queued persistence finishes in the same turn as this fixture callback.
-  await steeringQueued.promise;
-  lifecycle.completeRun("Sol finished the current task.");
-  await expect(
-    screen.findByText("Sol finished the current task."),
-  ).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(queryButton("Stop")).toBeNull();
-  });
-  await sendText("Start the next task");
+    // Clearing the draft and showing the optimistic input do not prove that
+    // the server accepted steering while Sol was active. With no appendGate,
+    // queued persistence finishes in the same turn as this fixture callback.
+    await steeringQueued.promise;
+    if (steeringReplyHeld) {
+      await steeringReplyHeld;
+    }
+    lifecycle.completeRun("Sol finished the current task.");
+    await expect(
+      screen.findByText("Sol finished the current task."),
+    ).resolves.toBeVisible();
+    await waitFor(() => {
+      expect(queryButton("Stop")).toBeNull();
+    });
+    await sendText("Start the next task");
 
-  await expect(screen.findByText("Start the next task")).resolves.toBeVisible();
-  await expect(
-    screen.findByText("Model changed to GPT 5.6 Luna"),
-  ).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(runModels.at(-1)).toBe("gpt-5.6-luna");
-  });
-});
+    await expect(
+      screen.findByText("Start the next task"),
+    ).resolves.toBeVisible();
+    await expect(
+      screen.findByText("Model changed to GPT 5.6 Luna"),
+    ).resolves.toBeVisible();
+    await waitFor(() => {
+      expect(runModels.at(-1)).toBe("gpt-5.6-luna");
+    });
+  },
+);
 
 test("Preserve the current execution mode for an active-run follow-up", async () => {
   let followupFastMode: string | undefined;
