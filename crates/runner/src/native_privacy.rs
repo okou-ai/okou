@@ -19,34 +19,31 @@ impl sentry::Transport for Capture {
     }
 }
 
-#[test]
-fn native_privacy_protects_worker_and_blocking_descendants_in_production_sinks() {
+#[tokio::test]
+async fn native_privacy_protects_worker_and_blocking_descendants_in_production_sinks() {
     for mode in ["worker", "blocking", "auth_error", "body_error"] {
         let evidence = tempfile::tempdir().unwrap();
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "native_privacy::native_privacy_child",
-                "--ignored",
-                "--nocapture",
-                "--test-threads=1",
-            ])
-            .env("OKOU_NATIVE_PRIVACY_CHILD", "1")
-            .env("OKOU_NATIVE_PRIVACY_MODE", mode)
-            .env("OKOU_NATIVE_PRIVACY_EVIDENCE", evidence.path())
-            .output()
-            .unwrap();
+        let evidence_path = evidence.path().to_str().expect("UTF-8 evidence path");
+        let output = runner_host::test_fixtures::ignored_child::run_ignored_child_test(
+            "native_privacy::native_privacy_child",
+            ("OKOU_NATIVE_PRIVACY_CHILD", "1"),
+            &[
+                ("OKOU_NATIVE_PRIVACY_MODE", Some(mode)),
+                ("OKOU_NATIVE_PRIVACY_EVIDENCE", Some(evidence_path)),
+            ],
+            Duration::from_secs(30),
+        )
+        .await;
         assert!(
-            output.status.success(),
-            "child failed: {}",
-            String::from_utf8_lossy(&output.stderr)
+            !output.truncated,
+            "privacy checks require complete stdout and stderr"
         );
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = output.stdout;
+        let stderr = output.stderr;
         let report: serde_json::Value =
             serde_json::from_slice(&std::fs::read(evidence.path().join("report.json")).unwrap())
                 .unwrap();
-        for bytes in [stdout.as_ref(), stderr.as_ref(), &report.to_string()] {
+        for bytes in [stdout.as_str(), stderr.as_str(), &report.to_string()] {
             assert!(
                 !bytes.contains(PRIVATE_CANARY),
                 "private diagnostic escaped its resource domain"
@@ -95,10 +92,12 @@ fn native_privacy_protects_worker_and_blocking_descendants_in_production_sinks()
 #[test]
 #[ignore = "only the ordinary parent invokes this guarded process fixture"]
 fn native_privacy_child() {
-    assert_eq!(
-        std::env::var("OKOU_NATIVE_PRIVACY_CHILD").as_deref(),
-        Ok("1")
-    );
+    if !runner_host::test_fixtures::ignored_child::ignored_child_test_env_guard_enabled((
+        "OKOU_NATIVE_PRIVACY_CHILD",
+        "1",
+    )) {
+        return;
+    }
     let mode = std::env::var("OKOU_NATIVE_PRIVACY_MODE").unwrap();
     let blocking = mode == "blocking";
     let directory =
