@@ -22,6 +22,7 @@ mod entry;
 mod fs;
 mod gc;
 mod inspection;
+mod io_context;
 mod lifecycle;
 mod metadata;
 mod path_safety;
@@ -125,6 +126,7 @@ enum PublicationFault {
     AfterImageSync,
     BeforeMetadataRename,
     AfterMetadataRename,
+    RemoveStagingBeforeImageRename,
 }
 
 impl HomeImageCache {
@@ -260,6 +262,27 @@ impl HomeImageCache {
             return Err(LifecycleError::Internal(
                 "injected publication IO failure".into(),
             ));
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    async fn remove_staging_before_image_rename_for_test(
+        &self,
+        staging: &std::path::Path,
+    ) -> LifecycleResult<()> {
+        if self
+            .inner
+            .publication_fault
+            .compare_exchange(
+                PublicationFault::RemoveStagingBeforeImageRename as usize,
+                0,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            )
+            .is_ok()
+        {
+            tokio::fs::remove_file(staging).await?;
         }
         Ok(())
     }

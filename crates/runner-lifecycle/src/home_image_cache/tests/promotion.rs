@@ -1,6 +1,9 @@
 use super::super::*;
 use super::support::*;
 use crate::storage_fingerprints::StorageFingerprints;
+use sha2::{Digest, Sha256};
+use std::error::Error;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, symlink};
 use tracing_subscriber::prelude::*;
 use tracing_test_support::CapturedEvents;
@@ -48,6 +51,71 @@ async fn immutable_generation_replaces_metadata_then_retires_superseded_image() 
         new.allocated_bytes,
         std::fs::metadata(f.image("thread", &new)).unwrap().blocks() * 512
     );
+}
+
+#[tokio::test]
+async fn missing_staging_image_reports_transfer_context_and_preserves_previous_commit() {
+    let f = Fixture::new().await;
+    let old = f
+        .commit("thread", b"old-home", "2026-10-09T09:00:00Z")
+        .await;
+    let old_path = f.image("thread", &old);
+    let old_bytes = tokio::fs::read(&old_path).await.unwrap();
+    let old_metadata_bytes = tokio::fs::read(f.cache.entry_paths(&f.key("thread")).metadata())
+        .await
+        .unwrap();
+    let context = f
+        .context(
+            "thread",
+            b"new-home",
+            "2026-10-09T09:01:00Z",
+            HomeCacheTerminalStatus::Success,
+            StorageFingerprints::default(),
+        )
+        .await;
+    let paths = f.cache.entry_paths(&f.key("thread"));
+    let staging = paths.tmp_image(context.run_id());
+    let candidate = paths.image(&context.publication_generation()).unwrap();
+    // Controlled diagnostic trigger, not attribution of the original native failure.
+    f.cache.inner.publication_fault.store(
+        PublicationFault::RemoveStagingBeforeImageRename as usize,
+        std::sync::atomic::Ordering::SeqCst,
+    );
+
+    let error = context.promote().await.unwrap_err();
+    let LifecycleError::Io(error) = error else {
+        panic!("expected a filesystem error, got {error}");
+    };
+    assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+    let original = error
+        .source()
+        .and_then(|source| source.downcast_ref::<std::io::Error>())
+        .expect("original rename errno must remain available");
+    assert_eq!(original.raw_os_error(), Some(libc::ENOENT));
+    let message = error.to_string();
+    assert!(message.contains("renameat2(RENAME_NOREPLACE)"));
+    assert!(message.contains(&format!(
+        "source_path_id={}",
+        hex::encode(Sha256::digest(staging.as_os_str().as_bytes()))
+    )));
+    assert!(message.contains(&format!(
+        "destination_path_id={}",
+        hex::encode(Sha256::digest(candidate.as_os_str().as_bytes()))
+    )));
+    assert!(!message.contains(staging.to_string_lossy().as_ref()));
+    assert!(!message.contains(candidate.to_string_lossy().as_ref()));
+    drop(context);
+
+    assert_eq!(
+        f.metadata("thread").await.image_generation,
+        old.image_generation
+    );
+    assert_eq!(tokio::fs::read(&old_path).await.unwrap(), old_bytes);
+    assert_eq!(
+        tokio::fs::read(paths.metadata()).await.unwrap(),
+        old_metadata_bytes
+    );
+    assert!(!candidate.exists());
 }
 
 #[tokio::test]
