@@ -141,6 +141,8 @@ interface ThreadModelProviderInput {
 export interface ThreadModelSignals {
   readonly dispatchTiming$: Computed<ApiDispatchTimingCollector>;
   readonly queuedModel$: Computed<Promise<QueuedModelContext>>;
+  /** The admitted model selection before any personal subscription account. */
+  readonly modelSelection$: ThreadModelSelectionSignal;
   readonly subscriptionSelection$: Computed<
     Promise<ThreadModelSelection | ThreadModelError>
   >;
@@ -210,6 +212,7 @@ export function createThreadModelSignals(
   return {
     dispatchTiming$,
     queuedModel$,
+    modelSelection$: selection$,
     subscriptionSelection$,
     requestedFramework$,
     modelRoute$,

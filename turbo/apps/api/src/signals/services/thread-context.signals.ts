@@ -76,6 +76,7 @@ export interface ThreadContext extends ThreadWorkflowContext {
   readonly automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>;
   readonly templates$: ReturnType<typeof createRunTemplates>;
   readonly queuedModel$: ThreadModels["queuedModel$"];
+  readonly modelSelection$: ThreadModels["modelSelection$"];
   readonly subscriptionSelection$: ThreadModels["subscriptionSelection$"];
   readonly requestedFramework$: ThreadModels["requestedFramework$"];
   readonly modelRoute$: ThreadModels["modelRoute$"];
@@ -172,6 +173,7 @@ export function createThreadContext(
     storageCache$: workflowContext.storageCache$,
     templates$,
     queuedModel$: model.queuedModel$,
+    modelSelection$: model.modelSelection$,
     subscriptionSelection$: model.subscriptionSelection$,
     requestedFramework$: model.requestedFramework$,
     modelRoute$: model.modelRoute$,
