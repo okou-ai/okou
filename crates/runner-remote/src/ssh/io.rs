@@ -59,8 +59,8 @@ pub(super) struct SshSocket {
 pub(super) enum Carrier {
     Public(tokio::net::TcpStream),
     Native {
-        stream: super::tailscale::Stream,
-        _node: Arc<super::tailscale::Node>,
+        stream: crate::tailscale::Stream,
+        _node: Arc<crate::tailscale::Node>,
     },
 }
 

@@ -52,7 +52,7 @@ fn native_privacy_protects_worker_and_blocking_descendants_in_production_sinks()
                 "private diagnostic escaped its resource domain"
             );
         }
-        assert!(stderr.contains("native SSH resource domain failed"));
+        assert!(stderr.contains("native Tailscale resource domain failed"));
         assert!(
             stderr.contains(ORDINARY_PANIC),
             "unrelated panic behavior is preserved"
@@ -62,18 +62,18 @@ fn native_privacy_protects_worker_and_blocking_descendants_in_production_sinks()
             report["files"]
                 .as_str()
                 .unwrap()
-                .contains("native SSH resource domain failed")
+                .contains("native Tailscale resource domain failed")
         );
         assert!(
             report["axiom"]
                 .to_string()
-                .contains("native SSH resource domain failed")
+                .contains("native Tailscale resource domain failed")
         );
         if matches!(mode, "worker" | "blocking") {
             assert!(
                 report["sentry"]
                     .to_string()
-                    .contains("native SSH resource domain failed")
+                    .contains("native Tailscale resource domain failed")
             );
         }
         assert!(report["sentry"].to_string().contains(ORDINARY_PANIC));
@@ -216,8 +216,8 @@ fn native_privacy_child() {
                 }
             }
         });
-        let result = tokio::time::timeout(Duration::from_secs(15), runner_remote::ssh::native_diagnostic_fixture(address, blocking, PRIVATE_CANARY)).await.unwrap();
-        assert_eq!(result, Err(runner_remote::guest_rpc::CleanupError::Native));
+        let result = tokio::time::timeout(Duration::from_secs(15), runner_remote::tailscale::diagnostic_fixture(address, blocking, PRIVATE_CANARY)).await.unwrap();
+        assert_eq!(result, Err(runner_remote::tailscale::Failure::DomainFailed));
         tokio::time::timeout(Duration::from_secs(5), peer).await.unwrap().unwrap();
         let _ = std::panic::catch_unwind(|| panic!("{ORDINARY_PANIC}"));
         guard.shutdown().await;

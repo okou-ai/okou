@@ -35,7 +35,7 @@ pub(super) struct Credential {
 pub(super) enum Transport {
     Direct,
     CloudflareAccess(ResolveResponseResolvedAccessAccess),
-    Tailscale(super::tailscale::Configuration),
+    Tailscale(crate::tailscale::Configuration),
 }
 
 impl Transport {
@@ -208,7 +208,7 @@ impl Authority {
                 authentication,
                 tailscale,
             } => {
-                let configuration = super::tailscale::Configuration::new(tailscale)
+                let configuration = super::native::configuration(tailscale)
                     .map_err(|_| FailureReason::AuthorityFailure)?;
                 let auth = match authentication {
                     ResolveResponseResolvedAccessAuthentication::PrivateKey {

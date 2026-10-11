@@ -5,7 +5,7 @@ use api_contracts::generated::types::runners::ssh::{
 };
 use bytes::Bytes;
 use futures_util::{Sink, Stream};
-use rustls::{ClientConfig, RootCertStore, pki_types::ServerName};
+use rustls::{ClientConfig, pki_types::ServerName};
 use std::{
     io,
     pin::Pin,
@@ -34,19 +34,6 @@ const WRITE_BYTES: usize = 16 * 1024;
 
 pub(super) trait SshStream: AsyncRead + AsyncWrite + Send + Unpin {}
 impl<T: AsyncRead + AsyncWrite + Send + Unpin> SshStream for T {}
-
-pub(super) fn tls_config() -> Result<Arc<ClientConfig>, rustls::Error> {
-    Ok(Arc::new(
-        ClientConfig::builder_with_provider(
-            Arc::new(rustls::crypto::aws_lc_rs::default_provider()),
-        )
-        .with_safe_default_protocol_versions()?
-        .with_root_certificates(RootCertStore {
-            roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
-        })
-        .with_no_client_auth(),
-    ))
-}
 
 pub(super) fn validate(
     host: &str,

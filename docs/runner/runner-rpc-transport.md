@@ -205,6 +205,14 @@ retirement completes. A five-second cleanup deadline reports failure while the
 independent cleanup owner retains unfinished work. The dispatcher propagates
 that failure to the executor, which denies sandbox reuse with
 `PostJobCleanupFailure`; closing a guest stream is not cleanup confirmation.
+The shared native transport lives in `runner_remote::tailscale`, independently
+of SSH. It owns node configuration, provisioning, control HTTP, DERP, TCP, and
+diagnostic isolation. SSH converts its private resolved authority into the
+transport's validated configuration and retains host capacity through an opaque
+lease until physical transport retirement. The transport does not depend on SSH
+response types or session ownership, so later consumers can use the same core.
+TLS clients share a consumer-independent WebPKI policy with an explicit crypto
+provider. The official Tailscale SDK remains unchanged.
 The current-run usage consumer described below shares this owner without
 changing helper framing, version or retry behavior.
 

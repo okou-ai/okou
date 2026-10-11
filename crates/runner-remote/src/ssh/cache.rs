@@ -14,10 +14,10 @@ use runner_types::ids::RunId;
 const CAPACITY: usize = 256;
 
 #[derive(Clone)]
-pub(super) struct Cache {
+pub(crate) struct Cache {
     state: Arc<Mutex<State>>,
     capacity: Arc<Semaphore>,
-    native: Arc<super::tailscale::Pool>,
+    native: Arc<crate::tailscale::Pool>,
 }
 
 #[derive(Default)]
@@ -29,12 +29,12 @@ struct RunEntries {
     identity: Arc<()>,
     entries: HashMap<uuid::Uuid, Arc<Entry>>,
     sessions: Vec<(uuid::Uuid, Weak<Entry>)>,
-    native: Arc<super::tailscale::Registry>,
+    native: Arc<crate::tailscale::Registry>,
 }
 
 struct Entry {
     value: OnceCell<Arc<PreparedCredential>>,
-    native: Mutex<Option<Arc<super::tailscale::Node>>>,
+    native: Mutex<Option<Arc<crate::tailscale::Node>>>,
     cancelled: CancellationToken,
     // Retain the slot even when eviction leaves an in-flight reader owning the entry.
     _slot: Option<OwnedSemaphorePermit>,
@@ -73,15 +73,15 @@ impl Drop for RunEntries {
     }
 }
 
-pub(super) struct Registration {
+pub(crate) struct Registration {
     cache: Cache,
     run: RunId,
     identity: Arc<()>,
-    native: Arc<super::tailscale::Registry>,
+    native: Arc<crate::tailscale::Registry>,
 }
 
 #[derive(Clone)]
-pub(super) struct Access {
+pub(crate) struct Access {
     registration: Arc<Registration>,
     connection: uuid::Uuid,
     entry: Arc<Entry>,
@@ -89,15 +89,15 @@ pub(super) struct Access {
 }
 
 impl Cache {
-    pub(super) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             state: Arc::new(Mutex::new(State::default())),
             capacity: Arc::new(Semaphore::new(CAPACITY)),
-            native: Arc::new(super::tailscale::Pool::new()),
+            native: Arc::new(crate::tailscale::Pool::new()),
         }
     }
 
-    pub(super) fn register(&self, run: RunId) -> Arc<Registration> {
+    pub(crate) fn register(&self, run: RunId) -> Arc<Registration> {
         let identity = Arc::new(());
         let mut state = self
             .state
@@ -105,9 +105,9 @@ impl Cache {
             .unwrap_or_else(|poison| poison.into_inner());
         let native = Arc::new(match state.runs.get(&run) {
             Some(previous) => {
-                super::tailscale::Registry::replacement(Arc::clone(&self.native), &previous.native)
+                crate::tailscale::Registry::replacement(Arc::clone(&self.native), &previous.native)
             }
-            None => super::tailscale::Registry::new(Arc::clone(&self.native)),
+            None => crate::tailscale::Registry::new(Arc::clone(&self.native)),
         });
         state.runs.insert(
             run,
@@ -126,7 +126,7 @@ impl Cache {
         })
     }
 
-    pub(super) fn invalidate(&self, run: RunId, connection: Option<uuid::Uuid>) {
+    pub(crate) fn invalidate(&self, run: RunId, connection: Option<uuid::Uuid>) {
         let mut state = self
             .state
             .lock()
@@ -139,7 +139,7 @@ impl Cache {
 }
 
 impl Registration {
-    pub(super) fn lookup(
+    pub(crate) fn lookup(
         self: &Arc<Self>,
         connection: uuid::Uuid,
     ) -> Result<Access, FailureReason> {
@@ -189,7 +189,7 @@ impl Registration {
         })
     }
 
-    pub(super) fn close(&self) {
+    pub(crate) fn close(&self) {
         let mut state = self
             .cache
             .state
@@ -204,7 +204,7 @@ impl Registration {
         }
     }
 
-    pub(super) async fn shutdown_native(&self) -> Result<(), super::tailscale::Failure> {
+    pub(crate) async fn shutdown_native(&self) -> Result<(), crate::tailscale::Failure> {
         self.native.shutdown().await
     }
 
@@ -223,22 +223,22 @@ impl Drop for Registration {
 }
 
 impl Access {
-    pub(super) fn native_configured(
+    pub(crate) fn native_configured(
         &self,
-        configuration: super::tailscale::Configuration,
+        configuration: crate::tailscale::Configuration,
         factory: impl FnOnce(
-            super::tailscale::Configuration,
-            Arc<super::tailscale::Journal>,
-        ) -> super::tailscale::Work,
-    ) -> Result<Arc<super::tailscale::Node>, FailureReason> {
+            crate::tailscale::Configuration,
+            Arc<crate::tailscale::Journal>,
+        ) -> crate::tailscale::Work,
+    ) -> Result<Arc<crate::tailscale::Node>, FailureReason> {
         self.check()?;
         let node = self
             .registration
             .native
             .acquire_configured(configuration, factory)
             .map_err(|failure| match failure {
-                super::tailscale::Failure::ResourceExhausted => FailureReason::ResourceExhausted,
-                super::tailscale::Failure::Cancelled => FailureReason::Cancelled,
+                crate::tailscale::Failure::ResourceExhausted => FailureReason::ResourceExhausted,
+                crate::tailscale::Failure::Cancelled => FailureReason::Cancelled,
                 _ => FailureReason::AuthorityFailure,
             })?;
         self.check()?;
@@ -251,21 +251,21 @@ impl Access {
     }
 
     #[cfg(test)]
-    pub(super) fn native_node(
+    pub(crate) fn native_node(
         &self,
-        key: super::tailscale::Key,
-        work: super::tailscale::Work,
-    ) -> Result<Arc<super::tailscale::Node>, FailureReason> {
+        key: crate::tailscale::Key,
+        work: crate::tailscale::Work,
+    ) -> Result<Arc<crate::tailscale::Node>, FailureReason> {
         self.check()?;
         let node =
             self.registration
                 .native
                 .acquire(key, work)
                 .map_err(|failure| match failure {
-                    super::tailscale::Failure::ResourceExhausted => {
+                    crate::tailscale::Failure::ResourceExhausted => {
                         FailureReason::ResourceExhausted
                     }
-                    super::tailscale::Failure::Cancelled => FailureReason::Cancelled,
+                    crate::tailscale::Failure::Cancelled => FailureReason::Cancelled,
                     _ => FailureReason::AuthorityFailure,
                 })?;
         self.check()?;
@@ -320,7 +320,7 @@ impl Access {
         Ok(Arc::clone(value))
     }
 
-    pub(super) fn check(&self) -> Result<(), FailureReason> {
+    pub(crate) fn check(&self) -> Result<(), FailureReason> {
         let state = self
             .registration
             .cache
@@ -346,7 +346,7 @@ impl Access {
         Ok(())
     }
 
-    pub(super) fn invalidate(&self) {
+    pub(crate) fn invalidate(&self) {
         if !self.cached {
             return;
         }

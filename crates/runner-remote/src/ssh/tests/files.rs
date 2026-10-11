@@ -122,12 +122,7 @@ pub(super) async fn upload_across_notification_outages(h: &Harness) {
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
 }
 
-pub(in crate::ssh) async fn upload(
-    h: &Harness,
-    path: &Path,
-    bytes: &[u8],
-    overwrite: bool,
-) -> Value {
+pub(crate) async fn upload(h: &Harness, path: &Path, bytes: &[u8], overwrite: bool) -> Value {
     let guest = open(
         h,
         "upload",
@@ -150,7 +145,7 @@ pub(in crate::ssh) async fn upload(
     outcome
 }
 
-pub(in crate::ssh) async fn download(h: &Harness, path: &Path) -> (Value, Vec<u8>) {
+pub(crate) async fn download(h: &Harness, path: &Path) -> (Value, Vec<u8>) {
     response(
         open(
             h,

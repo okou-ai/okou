@@ -31,11 +31,17 @@ use crate::test_fixtures::http::{HttpClientConfig, http_client};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
 
-pub(in crate::ssh) const CONNECTION: &str = "9f0128ce-dd11-4234-b1ac-a0c33353a112";
+pub(crate) const CONNECTION: &str = "9f0128ce-dd11-4234-b1ac-a0c33353a112";
 pub(super) const TOKEN: &str = "vm0_official_test-only";
 
+pub(crate) fn native_registration(
+    run: &super::super::Run,
+) -> Arc<super::super::cache::Registration> {
+    Arc::clone(&run.sessions.registration)
+}
+
 #[derive(Clone)]
-pub(in crate::ssh) enum Reply {
+pub(crate) enum Reply {
     Exit {
         stdout: Vec<u8>,
         stderr: Vec<u8>,
@@ -68,11 +74,11 @@ impl Default for Reply {
 }
 
 #[derive(Default)]
-pub(in crate::ssh) struct Observed {
-    pub(in crate::ssh) auth: AtomicUsize,
-    pub(in crate::ssh) commands: Mutex<Vec<Vec<u8>>>,
+pub(crate) struct Observed {
+    pub(crate) auth: AtomicUsize,
+    pub(crate) commands: Mutex<Vec<Vec<u8>>>,
     pub(super) attempts: Mutex<Vec<SocketAddr>>,
-    pub(in crate::ssh) queries: Mutex<Vec<(String, u16)>>,
+    pub(crate) queries: Mutex<Vec<(String, u16)>>,
     pub(super) resolved: AtomicUsize,
     pub(super) reservations: AtomicUsize,
     pub(super) ptys: AtomicUsize,
@@ -85,8 +91,8 @@ pub(in crate::ssh) struct Observed {
     pub(super) fail_forward_connect: AtomicBool,
 }
 
-pub(in crate::ssh) struct TestNetwork {
-    pub(in crate::ssh) target: Mutex<SocketAddr>,
+pub(crate) struct TestNetwork {
+    pub(crate) target: Mutex<SocketAddr>,
     pub(super) answers: Mutex<Vec<SocketAddr>>,
     pub(super) observed: Arc<Observed>,
     pub(super) resolve_gate: Mutex<Option<Arc<Semaphore>>>,
@@ -169,14 +175,14 @@ impl tokio::io::AsyncWrite for ReservedStream {
     }
 }
 
-pub(in crate::ssh) struct Harness {
+pub(crate) struct Harness {
     pub(super) api: MockServer,
-    pub(in crate::ssh) runtime: Arc<SshRuntime>,
-    pub(in crate::ssh) network: Arc<TestNetwork>,
-    pub(in crate::ssh) observed: Arc<Observed>,
+    pub(crate) runtime: Arc<SshRuntime>,
+    pub(crate) network: Arc<TestNetwork>,
+    pub(crate) observed: Arc<Observed>,
     pub(super) key: PrivateKey,
     pub(super) host_key: PrivateKey,
-    pub(in crate::ssh) run: RunId,
+    pub(crate) run: RunId,
     pub(super) identity: RunnerProcessIdentity,
     pub(super) cancel: CancellationToken,
     pub(super) lifecycle: CancellationToken,
@@ -241,13 +247,13 @@ impl AdditionalRun {
 }
 
 impl Harness {
-    pub(in crate::ssh) fn notifications(&self) -> TestNotifications {
+    pub(crate) fn notifications(&self) -> TestNotifications {
         TestNotifications {
             runtime: Arc::clone(&self.runtime),
         }
     }
 
-    pub(in crate::ssh) async fn new(reply: Reply) -> Self {
+    pub(crate) async fn new(reply: Reply) -> Self {
         Self::with_keys(reply, key(Algorithm::Ed25519), key(Algorithm::Ed25519)).await
     }
     pub(super) async fn with_keys(reply: Reply, key: PrivateKey, host_key: PrivateKey) -> Self {
@@ -384,21 +390,17 @@ impl Harness {
         }
     }
 
-    pub(in crate::ssh) fn credential(&self, pinned: bool) -> Value {
+    pub(crate) fn credential(&self, pinned: bool) -> Value {
         json!({ "outcome": "resolved", "host": "ssh.example.com", "port": 22, "username": "test-user", "generation": 7,
             "learnedHostKey": pinned.then(|| json!({ "algorithm": self.host_key.algorithm().as_str(), "fingerprint": self.host_key.fingerprint(HashAlg::Sha256).to_string() })),
             "privateKey": self.key.to_openssh(russh::keys::ssh_key::LineEnding::LF).unwrap().as_str(), "passphrase": null })
     }
 
-    pub(in crate::ssh) async fn resolve(&self, body: Value) -> Mock<'_> {
+    pub(crate) async fn resolve(&self, body: Value) -> Mock<'_> {
         self.resolve_for_run(self.run, body).await
     }
 
-    pub(in crate::ssh) async fn resolve_connection(
-        &self,
-        connection: &str,
-        body: Value,
-    ) -> Mock<'_> {
+    pub(crate) async fn resolve_connection(&self, connection: &str, body: Value) -> Mock<'_> {
         self.api.mock_async(|when, then| {
             when.method("POST").path(format!("/api/runners/runs/{}/ssh/resolve", self.run))
                 .header("authorization", format!("Bearer {TOKEN}"))
@@ -407,7 +409,7 @@ impl Harness {
         }).await
     }
 
-    pub(in crate::ssh) async fn pin_outcome(&self, body: Value) -> Mock<'_> {
+    pub(crate) async fn pin_outcome(&self, body: Value) -> Mock<'_> {
         self.api
             .mock_async(|when, then| {
                 when.method("POST")
@@ -450,7 +452,7 @@ impl Harness {
         );
     }
 
-    pub(in crate::ssh) async fn request(&self, params: Value) -> Vec<Value> {
+    pub(crate) async fn request(&self, params: Value) -> Vec<Value> {
         self.raw(
             json!({"version":1,"method":"ssh.exec","remaining_ms":60000,"params":params})
                 .to_string(),
@@ -470,17 +472,17 @@ impl Harness {
         )
         .await
     }
-    pub(in crate::ssh) fn ssh(&self) -> Arc<super::super::Run> {
+    pub(crate) fn ssh(&self) -> Arc<super::super::Run> {
         self.dispatcher.as_ref().unwrap().ssh().unwrap()
     }
-    pub(in crate::ssh) async fn accept_forwarded(&self) -> TcpStream {
+    pub(crate) async fn accept_forwarded(&self) -> TcpStream {
         tokio::time::timeout(Duration::from_secs(5), self.forwarded.accept())
             .await
             .unwrap()
             .unwrap()
             .0
     }
-    pub(in crate::ssh) async fn shutdown(&mut self) {
+    pub(crate) async fn shutdown(&mut self) {
         if let Some(dispatcher) = self.dispatcher.take() {
             dispatcher.shutdown().await.unwrap();
         }
@@ -494,7 +496,7 @@ impl Harness {
         super::wait_for(|| self.observed.closed.load(Ordering::SeqCst) > closed).await;
     }
 
-    pub(in crate::ssh) fn take_dispatcher(&mut self) -> RpcRun {
+    pub(crate) fn take_dispatcher(&mut self) -> RpcRun {
         self.dispatcher.take().unwrap()
     }
 
@@ -519,12 +521,12 @@ impl Harness {
     }
 }
 
-pub(in crate::ssh) struct TestNotifications {
+pub(crate) struct TestNotifications {
     runtime: Arc<SshRuntime>,
 }
 
 impl TestNotifications {
-    pub(in crate::ssh) async fn send(&mut self, event: Option<ably_subscriber::Event>) {
+    pub(crate) async fn send(&mut self, event: Option<ably_subscriber::Event>) {
         if let Some(ably_subscriber::Event::Message(message)) = event {
             self.runtime.ably_message(&message);
         }
@@ -617,7 +619,7 @@ async fn control_connection() -> (
     (host.unwrap(), peer)
 }
 
-pub(in crate::ssh) fn key(algorithm: Algorithm) -> PrivateKey {
+pub(crate) fn key(algorithm: Algorithm) -> PrivateKey {
     PrivateKey::random(&mut russh::keys::key::safe_rng(), algorithm).unwrap()
 }
 
@@ -646,7 +648,7 @@ pub(super) async fn respond(socket: &mut TcpStream, body: Value) -> io::Result<(
     socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await?;
     socket.shutdown().await
 }
-pub(in crate::ssh) fn params() -> Value {
+pub(crate) fn params() -> Value {
     json!({"sshConnectionId":CONNECTION,"command":"printf test-command"})
 }
 pub(super) async fn request_frames(mut guest: DuplexStream, json: String) -> Vec<Value> {
@@ -681,7 +683,7 @@ pub(super) async fn frames(mut guest: DuplexStream) -> Vec<Value> {
         .unwrap()
 }
 
-pub(in crate::ssh) const PASSWORD: &str = " password-😀-canary \n";
+pub(crate) const PASSWORD: &str = " password-😀-canary \n";
 pub(super) const PARTIAL_PASSWORD: &str = "partial-password-canary";
 
 struct Peer {

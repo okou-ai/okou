@@ -2,20 +2,21 @@
 
 mod access;
 mod authority;
-mod cache;
+pub(crate) mod cache;
 mod engine;
 mod files;
 mod forwarding;
 mod io;
 mod keys;
+mod native;
 mod network;
 mod observation;
 mod output;
 mod pool;
 mod sessions;
-mod tailscale;
+use crate::tailscale;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use runner_rpc_proto::{Delivery, ErrorCode, Response, ResponseWriter};
 use serde::{Deserialize, Serialize};
@@ -86,7 +87,7 @@ pub struct SshRuntime {
     cache: cache::Cache,
     access_tls: Arc<rustls::ClientConfig>,
     #[cfg(test)]
-    native_services: Mutex<Option<tailscale::TestServices>>,
+    pub(crate) native_services: Mutex<Option<tailscale::TestServices>>,
 }
 
 impl SshRuntime {
@@ -137,7 +138,7 @@ impl SshRuntime {
             cpu: Arc::new(Semaphore::new(2)),
             reports: Arc::new(Semaphore::new(4)),
             cache: cache::Cache::new(),
-            access_tls: access::tls_config().map_err(|_| RemoteInitError::SshAccessTls)?,
+            access_tls: crate::tls::client_config().map_err(|_| RemoteInitError::SshAccessTls)?,
             #[cfg(test)]
             native_services: Mutex::new(None),
         })))
@@ -432,7 +433,11 @@ impl SshRuntime {
                     tailscale::work(configuration, journal)
                 })?;
             let stream = scope
-                .wait(node.dial_retained(&credential.host, credential.port, lease))
+                .wait(node.dial_retained(
+                    &credential.host,
+                    credential.port,
+                    tailscale::Lease::new(lease),
+                ))
                 .await?
                 .map_err(|failure| match failure {
                     tailscale::Failure::ResourceExhausted => FailureReason::ResourceExhausted,
@@ -585,17 +590,6 @@ pub fn safe_log_metadata(metadata: &tracing::Metadata<'_>) -> bool {
         "tokio_tungstenite",
         "rustls",
         "tokio_rustls",
-        "ts_control",
-        "ts_http_util",
-        "ts_derp",
-        "ts_actor",
-        "ts_device",
-        "ts_tunnel",
-        "ts_dataplane",
-        "ts_transport",
-        "ts_dns",
-        "ts_netstack_smoltcp_core",
-        "ts_netstack_smoltcp_socket",
     ]
     .iter()
     .any(|prefix| {
@@ -605,18 +599,4 @@ pub fn safe_log_metadata(metadata: &tracing::Metadata<'_>) -> bool {
                 .strip_prefix(prefix)
                 .is_some_and(|suffix| suffix.starts_with("::"))
     })
-}
-
-/// Used by the Runner's process panic hook before it invokes raw-payload integrations.
-pub fn in_native_domain() -> bool {
-    tailscale::in_domain()
-}
-
-#[cfg(feature = "test-support")]
-pub async fn native_diagnostic_fixture(
-    address: std::net::SocketAddr,
-    blocking: bool,
-    canary: &'static str,
-) -> Result<(), crate::guest_rpc::CleanupError> {
-    tailscale::diagnostic_fixture(address, blocking, canary).await
 }
