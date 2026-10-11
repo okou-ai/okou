@@ -179,6 +179,27 @@ export async function validatePiMemoryStage1Cost(
     assert.equal(inventory.counts.eligible, 0);
     assert.equal(inventory.counts.pending_anchor_gaps, 0);
     assert.equal(inventory.counts.missing_source, 0);
+    assert.deepEqual(inventory, {
+      mode: "dry-run",
+      scope: [auditOrg, null, null, null],
+      counts: {
+        scanned: 1,
+        eligible: 0,
+        populated: 1,
+        missing_source: 0,
+        conflicts: 0,
+        pending_anchor_gaps: 0,
+        new_writer_gaps: 0,
+        pending_generation_gaps: 0,
+        thread_gaps: 0,
+      },
+      conflictingRunIds: [],
+      truncated: false,
+      writerCoverageSince: null,
+      activationReady: false,
+      note: "A1 inventory only. A2 also requires closure/fencing, verified writer drain, no conflicts or pending anchor gaps, and a complete scoped inventory.",
+    });
+    console.log("Billing attribution dry-run CLI inventory contract passed");
     await client.query(
       "INSERT INTO usage_pricing(kind,provider,category,unit_price,unit_size) VALUES('model',$1,'tokens.input',3,1000000)",
       [model],
