@@ -8,6 +8,10 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
@@ -21,7 +25,11 @@ import {
 } from "./agent-connector-scope.service";
 import { listConnectorAccountsByIds } from "./connector-account-lifecycle.service";
 import { connectorAccountTargetKey } from "./connector-account-resolution.service";
-import { loadCurrentConnectorCatalogSlugs } from "./connector-catalog-slug-source.service";
+import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorCatalogSlugJoin,
+} from "./connector-catalog-slug-source.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 
 interface OwnedChatThread {
@@ -40,6 +48,14 @@ interface ConnectorTargetOwnership extends ConnectorSelectionRow {
 }
 
 export type PreparedChatThreadConnectorSelection = ConnectorAccountSelection;
+
+interface PrepareChatThreadConnectorSelectionsArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly agentId: string;
+  readonly selections: readonly ConnectorAccountSelection[];
+  readonly missingAccountPolicy?: "reject" | "omit";
+}
 
 type PrepareChatThreadConnectorSelectionsResult =
   | {
@@ -92,18 +108,22 @@ function targetExistsInCatalog(
   );
 }
 
-async function loadCatalogSlugsForBuiltinTargets(
-  db: ReadonlyDb,
-  selections: readonly ConnectorAccountSelection[],
-): Promise<ReadonlySet<string> | undefined> {
-  const connectorSlugs = selections.flatMap((selection) => {
-    return selection.target.kind === "builtin"
-      ? [selection.target.connectorSlug]
-      : [];
-  });
-  return connectorSlugs.length > 0
-    ? await loadCurrentConnectorCatalogSlugs(db, connectorSlugs)
-    : undefined;
+function catalogSlugsForBuiltinTargetsFromRows(
+  rows: readonly { readonly slug: string | null }[] | undefined,
+): ReadonlySet<string> | undefined {
+  if (rows === undefined) {
+    return undefined;
+  }
+  if (rows.length === 0) {
+    throw new ExternalConnectorCatalogUnavailableError(
+      "missing_current_identity",
+    );
+  }
+  return new Set(
+    rows.flatMap((row) => {
+      return row.slug === null ? [] : [row.slug];
+    }),
+  );
 }
 
 function targetColumns(target: ConnectorAccountTarget): {
@@ -238,13 +258,7 @@ export async function listChatThreadConnectorSelections(
 export const prepareChatThreadConnectorSelections$ = command(
   async (
     { get, set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly agentId: string;
-      readonly selections: readonly ConnectorAccountSelection[];
-      readonly missingAccountPolicy?: "reject" | "omit";
-    },
+    args: PrepareChatThreadConnectorSelectionsArgs,
     signal: AbortSignal,
   ): Promise<PrepareChatThreadConnectorSelectionsResult> => {
     signal.throwIfAborted();
@@ -275,9 +289,22 @@ export const prepareChatThreadConnectorSelections$ = command(
       agentId: args.agentId,
     });
     signal.throwIfAborted();
-    const catalogSlugs = await loadCatalogSlugsForBuiltinTargets(
-      db,
-      selections,
+    const slugs = selections.flatMap((selection) => {
+      return selection.target.kind === "builtin"
+        ? [selection.target.connectorSlug]
+        : [];
+    });
+    const catalogSlugs = catalogSlugsForBuiltinTargetsFromRows(
+      await (slugs.length > 0
+        ? db
+            .select({
+              current: { schemaVersion: connectorCatalog.schemaVersion },
+              slug: connectorCatalogEntries.slug,
+            })
+            .from(connectorCatalog)
+            .leftJoin(connectorCatalogEntries, connectorCatalogSlugJoin(slugs))
+            .where(connectorCatalogCurrentWhere())
+        : undefined),
     );
     signal.throwIfAborted();
     for (const selection of byTarget.values()) {
