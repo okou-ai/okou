@@ -607,11 +607,9 @@ try {
     "PASS real DDL contention is bounded by the shipped 3-second lock timeout",
   );
 
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0391; new non-billing transactions are prohibited.
-  await writer.query(`BEGIN;
+  await writer.query(`
     ALTER TABLE pi_memory_stage1_candidates DROP CONSTRAINT pi_memory_stage1_candidates_source_history_hash_blobs_hash_fk;`);
   await candidate(12);
-  await writer.query("COMMIT");
   const missingCandidate = await runFile();
   assert.equal(missingCandidate.candidate_only.missing_source_blobs, 1);
   assert.equal(missingCandidate.reconciliation.missing_metadata_references, 3);
