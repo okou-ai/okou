@@ -2,7 +2,7 @@ import type { BuiltinConnectorExternalCodeSessionStartResponse } from "@okouai/a
 import { builtinConnectorExternalCodeSessionContract } from "@okouai/api-contracts/contracts/connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -18,6 +18,7 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { createRouteMocks } from "./helpers/route-test";
+import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -99,6 +100,8 @@ async function expectAccounts(
 }
 
 describe("Builtin external-code completed replay", () => {
+  beforeEach(mockSecretKmsHttp);
+
   it("replays current non-default account state after reconnect and the original session lifetime", async () => {
     const owned = createActor();
     await owned.run(async () => {
