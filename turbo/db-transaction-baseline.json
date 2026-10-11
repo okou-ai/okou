@@ -1327,11 +1327,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0414",
-      "file": "turbo/packages/db/scripts/test-pi-inference-lifecycle.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0417",
       "file": "turbo/packages/db/scripts/test-pi-memory-stage1-cost.ts",
       "owner": "validatePiMemoryStage1Cost"
