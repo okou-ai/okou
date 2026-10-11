@@ -1,5 +1,6 @@
 """Exercise the real parallel-job predicates and aggregate gate at CI boundaries."""
 
+import ast
 import itertools
 import json
 import os
@@ -59,11 +60,29 @@ assert len(secret_steps) == 1 and secret_steps[0][0] == "check-ably-smoke"
 assert secret_steps[0][1]["env"]["ABLY_API_KEY"] == "${{ secrets.ABLY_API_KEY }}"
 
 
+def condition_value(node):
+    if isinstance(node, ast.Constant) and isinstance(node.value, (str, bool)):
+        return node.value
+    if isinstance(node, ast.BoolOp):
+        if isinstance(node.op, ast.And):
+            return all(condition_value(value) for value in node.values)
+        if isinstance(node.op, ast.Or):
+            return any(condition_value(value) for value in node.values)
+    if isinstance(node, ast.Compare) and len(node.ops) == 1:
+        left = condition_value(node.left)
+        right = condition_value(node.comparators[0])
+        if isinstance(node.ops[0], ast.Eq):
+            return left == right
+        if isinstance(node.ops[0], ast.NotEq):
+            return left != right
+    raise ValueError(f"Unsupported CI condition syntax: {type(node).__name__}")
+
+
 def expression(text, values):
     text = str(text).strip().removeprefix("${{").removesuffix("}}").strip()
     text = re.sub(r"\b(?:github|needs)\.[\w.-]+", lambda match: repr(values[match[0]]), text)
     text = text.replace("always()", "True").replace("&&", " and ").replace("||", " or ")
-    return eval("(" + text + ")", {"__builtins__": {}}, {})
+    return condition_value(ast.parse("(" + text + ")", mode="eval").body)
 
 
 def render(text, values):
