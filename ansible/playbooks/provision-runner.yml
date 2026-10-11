@@ -1,8 +1,8 @@
 # Provision Runner Host Dependencies
 #
 # Idempotent playbook that installs all system-level dependencies required by
-# the Okou runner on runner hosts. Safe to run repeatedly; ordinary dependencies
-# converge, while the protected WSS namespace rejects conflicting existing state.
+# the Okou runner on runner hosts. Safe to run repeatedly; Runner startup owns
+# creation and validation of the protected WSS namespace.
 #
 # Usage:
 #   ansible-playbook -i "host1,host2," playbooks/provision-runner.yml \
