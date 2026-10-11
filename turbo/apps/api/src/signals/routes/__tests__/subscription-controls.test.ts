@@ -414,6 +414,68 @@ test("foreign users and organizations cannot read or activate the linked account
   }
 });
 
+test("reset rejects foreign, logical-provider and disconnected IDs without changing a sibling", async () => {
+  const { actor, accountIds } = await fixture();
+  const first = await accept(
+    app()(personalSubscriptionsContract).get({
+      headers: human(actor),
+      params: { id: accountIds[0] },
+    }),
+    [200],
+  );
+  const logicalProviderId = first.body.modelProviderId;
+  if (!logicalProviderId) {
+    throw new Error("Expected an account's logical provider ID");
+  }
+  await accept(
+    app()(personalModelProviderAccountsByIdContract).delete({
+      headers: human(actor),
+      params: { id: accountIds[1] },
+    }),
+    [204],
+  );
+
+  for (const candidate of [
+    { actor, id: randomUUID() },
+    { actor, id: logicalProviderId },
+    { actor, id: accountIds[1] },
+    {
+      actor: createBddApi(context).user({ orgId: actor.orgId }),
+      id: accountIds[0],
+    },
+    {
+      actor: createBddApi(context).user({ userId: actor.userId }),
+      id: accountIds[0],
+    },
+  ]) {
+    const reset = await accept(
+      app()(personalModelProviderAccountsByIdContract).resetSubscriptionUsage({
+        headers: human(candidate.actor),
+        params: { id: candidate.id },
+        body: { idempotencyKey: randomUUID() },
+      }),
+      [404],
+    );
+    expect(reset.body).toStrictEqual({
+      error: { message: "Resource not found", code: "NOT_FOUND" },
+    });
+  }
+
+  const remaining = await accept(
+    app()(personalModelProvidersMainContract).list({ headers: human(actor) }),
+    [200],
+  );
+  expect(remaining.body.modelProviders).toStrictEqual([
+    expect.objectContaining({
+      id: accountIds[0],
+      modelProviderId: logicalProviderId,
+      isActive: true,
+      subscriptionResetCredits: first.body.subscriptionResetCredits,
+      subscriptionUsage: first.body.subscriptionUsage,
+    }),
+  ]);
+});
+
 test("an unavailable upstream usage read keeps quota unknown instead of fabricating zero", async () => {
   const { actor, accountIds } = await fixture();
   server.use(
