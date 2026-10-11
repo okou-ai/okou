@@ -191,7 +191,8 @@ impl Run {
                 .map_err(|_| Failure::ResourceExhausted)?,
         });
         let mut root_builder = tempfile::Builder::new();
-        root_builder.prefix("okou-vnc-kerberos-");
+        let root_prefix = format!("okou-vnc-kerberos-{}-", self.id);
+        root_builder.prefix(&root_prefix);
         #[cfg(unix)]
         root_builder.permissions(std::fs::Permissions::from_mode(0o700));
         let root = root_builder.tempdir().map_err(|_| Failure::Unavailable)?;
