@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { orgPlanEntitlements } from "../src/runtime/org-plan-entitlement";
@@ -13,10 +13,9 @@ export async function validatePermanentOrgPlanEntitlementState(
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
   try {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0410; new non-billing transactions are prohibited.
-    await client.query("BEGIN");
+    const db = drizzle(client);
+    const orgIds: string[] = [];
     try {
-      const db = drizzle(client);
       for (const source of [
         "stripe_subscription",
         "stripe_atom_grant",
@@ -24,6 +23,7 @@ export async function validatePermanentOrgPlanEntitlementState(
         "org_metadata_migration",
       ]) {
         const orgId = `entitlement_${randomUUID()}`;
+        orgIds.push(orgId);
         for (const state of [
           { status: "active", showUsagePack: true },
           { status: "suspended", showUsagePack: false },
@@ -63,7 +63,9 @@ export async function validatePermanentOrgPlanEntitlementState(
         "   ✅ Canonical entitlement writes preserve status and explicit package visibility",
       );
     } finally {
-      await client.query("ROLLBACK");
+      await db
+        .delete(orgPlanEntitlements)
+        .where(inArray(orgPlanEntitlements.orgId, orgIds));
     }
   } finally {
     await client.end();
