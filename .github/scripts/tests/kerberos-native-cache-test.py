@@ -131,8 +131,21 @@ exec /usr/bin/flock "$@"
         restored = self.root / "restored"
         restored.mkdir()
         with tarfile.open(self.root / "restore.tar") as archive:
-            archive.extractall(restored, filter="data")
-        self.env["KERBEROS_NATIVE_CACHE_DIR"] = str(restored / "cache")
+            for member in archive.getmembers():
+                path = Path(member.name)
+                self.assertFalse(path.is_absolute())
+                self.assertNotIn("..", path.parts)
+                self.assertEqual(path.parts[0], "cache")
+                destination = restored / path
+                if member.isdir():
+                    destination.mkdir(parents=True, exist_ok=True)
+                else:
+                    self.assertTrue(member.isfile())
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    with archive.extractfile(member) as source:
+                        destination.write_bytes(source.read())
+        self.cache = restored / "cache"
+        self.env["KERBEROS_NATIVE_CACHE_DIR"] = str(self.cache)
         self.run_build(True)
         self.assertEqual(len((self.root / "makes").read_text().splitlines()), 7)
         self.assertTrue((entry / "complete").is_file())
@@ -179,15 +192,19 @@ exec /usr/bin/flock "$@"
 
     def test_partial_products_and_directory_substitutes_rebuild(self):
         entry = self.run_build(False)
+        valid_package = (entry / "libraries.tar.gz").read_bytes()
         for directory in (False, True):
-            with tarfile.open(entry / "libraries.tar.gz", "w:gz") as archive:
-                info = tarfile.TarInfo("lib/libkrb5.a")
-                if directory:
-                    info.type = tarfile.DIRTYPE
-                    archive.addfile(info)
-                else:
-                    info.size = 4
-                    archive.addfile(info, io.BytesIO(b"only"))
+            with tarfile.open(fileobj=io.BytesIO(valid_package)) as original, \
+                    tarfile.open(entry / "libraries.tar.gz", "w:gz") as archive:
+                for info in original.getmembers():
+                    if not directory and info.name == "lib/libkrb5.a":
+                        continue
+                    if directory and info.name == "include/krb5/krb5.h":
+                        info.type, info.size = tarfile.DIRTYPE, 0
+                        archive.addfile(info)
+                    else:
+                        with original.extractfile(info) as source:
+                            archive.addfile(info, source)
             (entry / "complete").write_text(f"{entry.name} {sha(entry / 'libraries.tar.gz')}\n")
             self.run_build(False)
 
