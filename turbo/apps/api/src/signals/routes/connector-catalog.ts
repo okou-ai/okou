@@ -20,7 +20,7 @@ import {
   discoverPublicConnectorCatalogStatus,
   publicConnectorCatalogPermissionDetail,
   isConnectorCatalogUnavailableError,
-  listConnectedConnectorBriefs,
+  connectorBriefsFromRows,
   listConnectorCatalogConnectItems,
   listPublicConnectorCatalog,
   listPublicConnectorCatalogStatus,
@@ -195,19 +195,39 @@ export const listConnectorCatalogConnectItems$ = command(
  */
 export const listConnectorCatalogBriefs$ = command(
   async (
-    { set },
+    { get },
     connectorSlugs: readonly ConnectorSlug[],
     signal: AbortSignal,
   ) => {
-    const context = await set(connectorCatalogRequestContext$);
+    const featureStates = getAllFeatureStates(
+      await get(connectorCatalogFeatureContext$),
+    );
     signal.throwIfAborted();
 
     const catalog = await settleConnectorCatalogRead(
-      listConnectedConnectorBriefs({
-        db: context.db,
-        featureStates: context.featureStates,
-        connectorSlugs,
-      }),
+      connectorSlugs.length === 0
+        ? Promise.resolve([])
+        : (async () => {
+            const rows = await get(db$)
+              .select({
+                current: {
+                  schemaVersion: connectorCatalog.schemaVersion,
+                  hash: connectorCatalog.hash,
+                },
+                entry: connectorCatalogDisplayColumns,
+              })
+              .from(connectorCatalog)
+              .leftJoin(
+                connectorCatalogEntries,
+                connectorCatalogSlugJoin(connectorSlugs),
+              )
+              .where(connectorCatalogCurrentWhere());
+            return connectorBriefsFromRows({
+              rows,
+              featureStates,
+              connectorSlugs,
+            });
+          })(),
       signal,
     );
     if (!catalog.ok) {

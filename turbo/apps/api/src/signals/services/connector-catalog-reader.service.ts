@@ -108,16 +108,31 @@ export async function listPublicConnectorCatalogStatus(
   return read.status;
 }
 
-export async function listConnectedConnectorBriefs(
-  args: ConnectorCatalogReadArgs & {
-    readonly connectorSlugs: readonly ConnectorSlug[];
-  },
-): Promise<readonly BuiltinConnectorBrief[]> {
-  if (args.connectorSlugs.length === 0) {
-    return [];
-  }
+export function connectorBriefsFromRows(args: {
+  readonly rows: readonly {
+    readonly current: {
+      readonly schemaVersion: number;
+      readonly hash: string;
+    };
+    readonly entry:
+      Parameters<typeof materializeConnectorCatalogDisplayRow>[0] | null;
+  }[];
+  readonly featureStates: ConnectorFeatureStates;
+  readonly connectorSlugs: readonly ConnectorSlug[];
+}): readonly BuiltinConnectorBrief[] {
   return connectorBriefsFromSource({
-    catalog: await loadSlugDisplaySource(args.db, args.connectorSlugs),
+    catalog: connectorCatalogSlugSourceFromRows(
+      args.rows.map((row) => {
+        return {
+          current: row.current,
+          entry:
+            row.entry === null
+              ? null
+              : materializeConnectorCatalogDisplayRow(row.entry),
+        };
+      }),
+      args.connectorSlugs,
+    ),
     featureStates: args.featureStates,
   });
 }
