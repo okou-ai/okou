@@ -1147,11 +1147,6 @@
       "owner": "commitWorkflowMetadata$"
     },
     {
-      "id": "TX-0347",
-      "file": "turbo/apps/api/src/signals/services/workflow-user-automation-thread.service.ts",
-      "owner": "ensureWorkflowUserAutomationThread$"
-    },
-    {
       "id": "TX-0348",
       "file": "turbo/apps/api/src/signals/services/workflow-webhook-automation-entitlement.service.ts",
       "owner": "disableIneligibleWorkflowWebhookAutomationsForOrg"
