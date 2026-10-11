@@ -147,34 +147,6 @@ export function connectorCatalogSlugIdentityFromRows(
   );
 }
 
-/**
- * Whether each named slug has an entry at the current hash. Reads the pointer
- * and entry slugs only; a missing pointer fails like a whole-catalog read.
- */
-export async function loadCurrentConnectorCatalogSlugs(
-  db: ReadonlyDb,
-  connectorSlugs: readonly string[],
-): Promise<ReadonlySet<string>> {
-  const rows = await db
-    .select({
-      current: { schemaVersion: connectorCatalog.schemaVersion },
-      slug: connectorCatalogEntries.slug,
-    })
-    .from(connectorCatalog)
-    .leftJoin(connectorCatalogEntries, connectorCatalogSlugJoin(connectorSlugs))
-    .where(connectorCatalogCurrentWhere());
-  if (rows.length === 0) {
-    throw new ExternalConnectorCatalogUnavailableError(
-      "missing_current_identity",
-    );
-  }
-  return new Set(
-    rows.flatMap((row) => {
-      return row.slug === null ? [] : [row.slug];
-    }),
-  );
-}
-
 export interface ConnectorRuntimeAuthSelection extends ConnectorRuntimeAuthLookup {
   /** Only `firewallConnectorSlugs`; no other entry reads its firewall. */
   readonly serverFirewalls: ConnectorServerFirewallSelection;
