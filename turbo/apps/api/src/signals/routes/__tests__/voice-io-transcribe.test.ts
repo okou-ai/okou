@@ -823,13 +823,16 @@ describe("POST /api/voice-io/transcribe/segment", () => {
               earlier.slice(-1000),
             );
             expect(requestAudioParts(body)[1]?.text).not.toContain(earlier);
+            expect(requestAudioParts(body)[1]?.text).toContain(
+              "Here is the complete previous proposal.",
+            );
             return vertexVoiceResponse(
               JSON.stringify({ transcript: "Tail.", language: "en" }),
             );
           }
           expect(
             JSON.parse(String(requestAudioParts(body)[0]?.text)),
-          ).toMatchObject({
+          ).toStrictEqual({
             segments: audio ? [earlier.trim(), "Tail."] : [earlier.trim()],
           });
           return vertexVoiceResponse(complete);
@@ -837,6 +840,10 @@ describe("POST /api/voice-io/transcribe/segment", () => {
       );
       const headers = { authorization: "Bearer clerk-session" };
       const body = segmentForm(audio ? [audioFile(1, 3)] : [], earlier, 61);
+      body.set(
+        "lastAssistantMessage",
+        "Here is the complete previous proposal.",
+      );
       body.set(
         "options",
         JSON.stringify({

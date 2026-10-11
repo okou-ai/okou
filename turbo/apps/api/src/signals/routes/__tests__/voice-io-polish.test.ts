@@ -50,19 +50,37 @@ describe("POST /api/voice-io/polish", () => {
   it("preserves the old text-only polish HTTP contract without recording usage", async () => {
     await setupVoicePolish();
     const headers = { authorization: "Bearer clerk-session" };
+    let requestBody: unknown;
     server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        return vertexVoiceResponse("Preserved speech.");
+      http.post(VERTEX_VOICE_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return vertexVoiceResponse("Please continue.");
       }),
     );
     const legacy = setupApp({ context, routes: voiceIoPolishRoutes })(
       voiceIoPolishContract,
     );
     const response = await accept(
-      legacy.post({ headers, body: { text: "um preserved speech" } }),
+      legacy.post({
+        headers,
+        body: {
+          text: "um please continue",
+          lastAssistantMessage: "Here is the complete previous proposal.",
+        },
+      }),
       [200],
     );
-    expect(response.body.text).toBe("Preserved speech.");
+    expect(response.body.text).toBe("Please continue.");
+    expect(requestBody).toMatchObject({
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: JSON.stringify({ segments: ["um please continue"] }) },
+          ],
+        },
+      ],
+    });
     const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
       voiceIoQuotaContract,
     );
@@ -369,73 +387,78 @@ describe("POST /api/voice-io/polish", () => {
     await aborted.promise;
   });
 
-  it("merges ordered segments without answering speech or translating it", async () => {
-    await setupVoicePolish();
-    let requestBody: unknown;
-    server.use(
-      http.post(VERTEX_VOICE_URL, async ({ request }) => {
-        requestBody = await request.json();
-        return HttpResponse.json({
-          candidates: [
-            {
-              finishReason: "STOP",
-              content: { parts: [{ text: "Ship the release on Monday." }] },
-            },
-          ],
-        });
-      }),
-    );
+  it.each([
+    {
+      label: "a short continuation request",
+      segments: ["继续吧"],
+      lastAssistantMessage:
+        "I suggest building an English candidate review dashboard.\n\n| Part | Scope |\n| --- | --- |\n| Google Sheet | One candidate per row |",
+      text: "继续吧。",
+    },
+    {
+      label: "ordered segments with a spoken correction",
+      segments: ["um ship the nebula release Friday", "no Monday"],
+      lastAssistantMessage:
+        "The Project Nebula release is scheduled for Friday.",
+      text: "Ship the Nebula release on Monday.",
+    },
+  ])(
+    "edits only recorded speech for $label",
+    async ({ segments, lastAssistantMessage, text }) => {
+      await setupVoicePolish();
+      let requestBody: unknown;
+      server.use(
+        http.post(VERTEX_VOICE_URL, async ({ request }) => {
+          requestBody = await request.json();
+          return vertexVoiceResponse(text);
+        }),
+      );
 
-    const response = await accept(
-      client().post({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          segments: ["um ship the nebula release Friday", "no Monday"],
-          lastAssistantMessage:
-            "The Project Nebula release is scheduled for Friday.",
-        },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      text: "Ship the release on Monday.",
-    });
-    expect(requestBody).toMatchObject({
-      generationConfig: {
-        maxOutputTokens:
-          "um ship the nebula release Friday".length +
-          "no Monday".length +
-          4096,
-        thinkingConfig: { thinkingLevel: "MINIMAL" },
-      },
-      systemInstruction: {
-        parts: [
-          {
-            text: expect.stringContaining(
-              "Include every segment, not just the last one.",
-            ),
+      const response = await accept(
+        client().post({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            segments,
+            lastAssistantMessage,
           },
-        ],
-      },
-      contents: [
-        {
-          role: "user",
+        }),
+        [200],
+      );
+
+      expect(response.body).toStrictEqual({ text });
+      expect(requestBody).toMatchObject({
+        generationConfig: {
+          maxOutputTokens: segments.reduce((total, segment) => {
+            return total + segment.length;
+          }, 4096),
+          thinkingConfig: { thinkingLevel: "MINIMAL" },
+        },
+        systemInstruction: {
           parts: [
             {
-              text: JSON.stringify({
-                segments: ["um ship the nebula release Friday", "no Monday"],
-                lastAssistantMessage:
-                  "The Project Nebula release is scheduled for Friday.",
-              }),
+              text: expect.stringContaining(
+                "Include every segment, not just the last one.",
+              ),
             },
           ],
         },
-      ],
-    });
-    expect(requestBody).toHaveProperty("generationConfig.temperature", 0);
-    expect(requestBody).not.toHaveProperty("generationConfig.responseMimeType");
-  });
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: JSON.stringify({ segments }),
+              },
+            ],
+          },
+        ],
+      });
+      expect(requestBody).toHaveProperty("generationConfig.temperature", 0);
+      expect(requestBody).not.toHaveProperty(
+        "generationConfig.responseMimeType",
+      );
+    },
+  );
 
   it.each([
     { label: "empty list", segments: [] },
