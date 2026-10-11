@@ -233,22 +233,10 @@ class CollectorTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(list(self.output.iterdir()), [])
 
-    def test_provisioning_retires_only_obsolete_monitoring_and_runs_collector(self):
+    def test_provisioning_runs_home_collector(self):
         tasks = yaml.safe_load(
             (ROOT / "ansible/playbooks/provision-monitoring.yml").read_text()
         )[0]["tasks"]
-        removed = next(
-            task for task in tasks if task.get("file", {}).get("state") == "absent"
-        )
-        self.assertEqual(
-            set(removed["loop"]),
-            {
-                "/etc/systemd/system/vm0-monitoring-workspace-image-cache-collect.timer",
-                "/etc/systemd/system/vm0-monitoring-workspace-image-cache-collect.service",
-                "/usr/local/bin/vm0-monitoring-workspace-image-cache-collect",
-                "/var/lib/vm0-monitoring/textfile-collector/workspace-image-cache.prom",
-            },
-        )
         service = next(
             task["copy"]["content"]
             for task in tasks

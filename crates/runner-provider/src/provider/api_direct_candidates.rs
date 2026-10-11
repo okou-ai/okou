@@ -470,7 +470,7 @@ mod tests {
                 Some("session:must-not-renew".to_string()),
                 Some(ranked_preference_context(
                     30,
-                    RunnerPreferenceTier::WorkspaceCache,
+                    RunnerPreferenceTier::HomeCache,
                     StdInstant::now() + Duration::from_secs(30),
                 )),
             ))
@@ -535,7 +535,7 @@ mod tests {
                     Some("session:first-decision".to_string()),
                     Some(ranked_preference_context(
                         10,
-                        RunnerPreferenceTier::WorkspaceCache,
+                        RunnerPreferenceTier::HomeCache,
                         first_deadline,
                     )),
                 )
@@ -583,7 +583,7 @@ mod tests {
             Some(first_history_generation)
         );
         let preference = candidate.runner_preference().expect("runner preference");
-        assert_eq!(preference.tier(), RunnerPreferenceTier::WorkspaceCache);
+        assert_eq!(preference.tier(), RunnerPreferenceTier::HomeCache);
         assert_eq!(preference.deadline(), first_deadline);
         assert!(
             preference.targets(RunnerProcessIdentity::new(uuid::Uuid::from_u128(10), 7).unwrap())
@@ -594,7 +594,7 @@ mod tests {
         assert!(matches!(
             telemetry.runner_preference,
             RunnerPreference::Preference {
-                tier: RunnerPreferenceTier::WorkspaceCache,
+                tier: RunnerPreferenceTier::HomeCache,
                 ..
             }
         ));

@@ -85,35 +85,6 @@
         mode: "0755"
       become: true
 
-    - name: Inspect obsolete cache monitoring units
-      stat:
-        path: "/etc/systemd/system/{{ item }}"
-      loop:
-        - vm0-monitoring-workspace-image-cache-collect.timer
-        - vm0-monitoring-workspace-image-cache-collect.service
-      register: obsolete_cache_units
-      become: true
-
-    - name: Stop and disable obsolete cache monitoring units
-      systemd:
-        name: "{{ item.item }}"
-        state: stopped
-        enabled: false
-      loop: "{{ obsolete_cache_units.results }}"
-      when: item.stat.exists
-      become: true
-
-    - name: Remove obsolete monitoring files without deleting cache data
-      file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /etc/systemd/system/vm0-monitoring-workspace-image-cache-collect.timer
-        - /etc/systemd/system/vm0-monitoring-workspace-image-cache-collect.service
-        - /usr/local/bin/vm0-monitoring-workspace-image-cache-collect
-        - /var/lib/vm0-monitoring/textfile-collector/workspace-image-cache.prom
-      become: true
-
     - name: Install Okou monitoring home image cache collector script
       copy:
         src: ../files/vm0-monitoring-home-image-cache-collect.py

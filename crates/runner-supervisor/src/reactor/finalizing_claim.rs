@@ -547,7 +547,7 @@ async fn complete_claimed_without_sandbox(
                 error: Some(failure.error),
                 sandbox_id: None,
                 sandbox_reuse_result: reuse_result,
-                workspace_reuse_result: None,
+                home_reuse_result: None,
             },
             completion_auth,
         )

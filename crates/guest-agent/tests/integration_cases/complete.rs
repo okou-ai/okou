@@ -5,7 +5,7 @@ use serde_json::json;
 const TEST_RUN_ID: &str = "test-run-001";
 const TEST_SANDBOX_ID: &str = "00000000-0000-4000-8000-000000000abc";
 const TEST_SANDBOX_REUSE_RESULT: &str = "reused";
-const TEST_WORKSPACE_REUSE_RESULT: &str = "sandboxReused";
+const TEST_HOME_REUSE_RESULT: &str = "sandboxReused";
 
 // =========================================================================
 // Complete webhook
@@ -30,7 +30,7 @@ async fn cancellation_fallback_posts_full_payload_when_metadata_present() {
                 "lastEventSequence": 7,
                 "sandboxId": TEST_SANDBOX_ID,
                 "sandboxReuseResult": TEST_SANDBOX_REUSE_RESULT,
-                "workspaceReuseResult": TEST_WORKSPACE_REUSE_RESULT,
+                "homeReuseResult": TEST_HOME_REUSE_RESULT,
             }));
         then.status(200).json_body(json!({
             "success": true,
@@ -43,7 +43,7 @@ async fn cancellation_fallback_posts_full_payload_when_metadata_present() {
         TEST_RUN_ID,
         TEST_SANDBOX_ID,
         TEST_SANDBOX_REUSE_RESULT,
-        TEST_WORKSPACE_REUSE_RESULT,
+        TEST_HOME_REUSE_RESULT,
         Some(7),
     )
     .await;
@@ -100,7 +100,7 @@ async fn cancellation_fallback_swallows_server_error() {
         TEST_RUN_ID,
         TEST_SANDBOX_ID,
         TEST_SANDBOX_REUSE_RESULT,
-        TEST_WORKSPACE_REUSE_RESULT,
+        TEST_HOME_REUSE_RESULT,
         None,
     )
     .await;
@@ -130,7 +130,7 @@ async fn cancellation_fallback_swallows_4xx_auth_error() {
         TEST_RUN_ID,
         TEST_SANDBOX_ID,
         TEST_SANDBOX_REUSE_RESULT,
-        TEST_WORKSPACE_REUSE_RESULT,
+        TEST_HOME_REUSE_RESULT,
         None,
     )
     .await;

@@ -96,6 +96,20 @@ A Runner drain acknowledgement means it stopped admitting new work; claimed
 work and finalization can still be running. A healthy replacement or promotion
 warning does not prove that every old process exited.
 
+Ordered whole-state inventory heartbeats must carry explicit empty inventory so
+an accepted snapshot can clear a previous observation. Shared generation/sequence
+is sufficient only when every accepted writer replaces the complete inventory.
+Before retiring independent provenance, exclude partial writers and their
+rollback artifacts, then refresh observations under whole-state writers.
+Disposable SQL tests do not establish that deployment or consumer exit.
+
+One-time monitoring cleanup has a separate host gate from application protocol
+retirement. Verify that replacement collectors publish fresh metrics and that
+the old units are stopped, disabled and removed with their installed scripts and
+textfiles on every relevant host. Supported provisioning/rollback artifacts must
+not reinstall them. Verify that gate before releasing provisioning without
+cleanup; monitoring retirement never authorizes deleting cache data.
+
 Workspace-cache images, metadata, and history sidecars can outlive their producer
 and be consumed by another Runner release. Keep old formats readable or
 explicitly invalidate and purge incompatible disposable entries before the new

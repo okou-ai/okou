@@ -424,7 +424,7 @@ describe("shared SDK ingestion", () => {
       } as const;
       const operation = {
         ts,
-        action_type: "session_history_workspace_cache_guest_restore",
+        action_type: "session_history_home_cache_guest_restore",
         duration_ms: 1234,
         success: true,
       };
@@ -444,7 +444,7 @@ describe("shared SDK ingestion", () => {
         action_type: "session_history_transfer",
         session_history_framework: "codex",
         session_history_restore_representation: "raw",
-        session_history_transfer_source: "workspace_cache",
+        session_history_transfer_source: "home_cache",
         session_history_wire_codec: "zstd",
         session_history_transfer_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
         session_history_wire_bytes: 1024,
