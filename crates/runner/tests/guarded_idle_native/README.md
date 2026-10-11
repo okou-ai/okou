@@ -24,8 +24,8 @@ It verifies ordinary bytes survive and the previous private runtime directory
 does not. It repeats exact-prune, all-inventory drain/shutdown batches and logical
 substitution, atomic park replacement, reserved restore over blank inventory and
 aged exact-to-blank replenishment with fresh boot and the matching prepared
-snapshot (fourteen owned cases, including caller-owned cancellation before
-business activation).
+snapshot (sixteen owned cases, including caller-owned cancellation before
+business activation and speculative guest restore failure).
 
 The fixture captures backing while the parked candidate is exclusively owned,
 then enters the real Lifecycle inventory and tracked Supervisor batch API. Both
@@ -62,6 +62,14 @@ the cancelled caller's physical cleanup completes; a lost observer retains it.
 This native seam proves required saving for that caller state; mocked partial
 unpark/cancellation/panic regressions are separate, and the complete native dirty
 activation/session/history corpus remains P3d.
+
+Speculative saving unparks an exact reservation and invokes the real Executor
+guest restore with a deliberately absent required timezone, before any business
+process. The failed preparation retains its original promotion/private context,
+backing generation and full lease, then enters the same required covered cleanup.
+Both fresh and snapshot modes verify saved ordinary home bytes and removal of
+the predecessor private runtime. This fixture does not wire production policy or
+replace the broader P3d session/history corpus.
 
 An accepted aged conversion transfers its full logical lease separately from
 physical cleanup. Before blank creation it joins old cleanup; foreground

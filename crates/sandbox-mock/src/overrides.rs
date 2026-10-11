@@ -82,6 +82,8 @@ pub(crate) struct ExecOverrideState {
     pub(crate) guest_state_restore_behaviors: Mutex<VecDeque<GuestStateRestoreBehavior>>,
     /// Wakes tests after a guest-state restore call is recorded.
     pub(crate) guest_state_restore_call_notify: tokio::sync::Notify,
+    /// External guest RPC wait after recording the fixed restore request.
+    pub(crate) guest_state_restore_gate: Mutex<Option<MockLifecycleGate>>,
     /// Wakes tests after an exec call is recorded.
     pub(crate) call_notify: tokio::sync::Notify,
     /// Optional gate entered after every exec call is recorded but before its
@@ -663,6 +665,10 @@ impl MockSandboxOverrides {
             .guest_state_restore_behaviors
             .lock_ignoring_poison()
             .push_back(GuestStateRestoreBehavior::Return(result));
+    }
+
+    pub fn set_guest_state_restore_lifecycle_gate(&self, gate: MockLifecycleGate) {
+        *self.exec.guest_state_restore_gate.lock_ignoring_poison() = Some(gate);
     }
 
     /// Queue a panic for the next fixed guest-state restore operation.

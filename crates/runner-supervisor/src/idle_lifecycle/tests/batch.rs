@@ -158,7 +158,8 @@ impl BatchFixture {
         let mut candidate = ParkedIdleCandidateBuilder::new(key, lease)
             .with_sandbox_id(fixture.sandbox_id)
             .with_sandbox(Box::new(
-                MockSandbox::with_overrides(key, overrides.clone()).with_backing_process(backing),
+                MockSandbox::with_overrides(fixture.sandbox_id.to_string(), overrides.clone())
+                    .with_backing_process(backing),
             ))
             .with_factory(factory)
             .with_home_promotion(fixture.promotion)

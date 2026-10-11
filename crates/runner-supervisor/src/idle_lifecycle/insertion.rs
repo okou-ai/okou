@@ -28,7 +28,14 @@ impl IdleDestroyTracker {
             .catch_unwind()
             .await
             .map_err(|_| MemoryOperationError::ProducerLost)??;
-        let mut pool = pool.lock().await;
+        // Wait for contention without provider callbacks under the pool lock.
+        // Revalidate after that wait, then accept only with synchronous lock
+        // acquisition: another wait would make this proof stale again.
+        drop(pool.lock().await);
+        incoming.validate_captured_backing()?;
+        let mut pool = pool
+            .try_lock()
+            .map_err(|_| MemoryOperationError::OwnershipInvariant)?;
         let token = self.tasks.token();
         if self.tasks.is_closed() {
             drop(pool);

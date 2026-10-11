@@ -3,6 +3,9 @@
 //! The successful claim transfers a typed resource to Runner's existing post-claim activation.
 //! Claim rejection and a mismatched returned run ID keep rollback with the admission owner.
 
+mod guarded;
+pub use guarded::{GuardedSpeculativeAdmission, GuardedSpeculativeRollback};
+
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::Instant;

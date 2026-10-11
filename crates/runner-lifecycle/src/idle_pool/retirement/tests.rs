@@ -3,6 +3,7 @@ mod admission;
 mod inventory;
 mod phases;
 mod settlement;
+mod speculative;
 mod substitution;
 
 use std::path::PathBuf;
