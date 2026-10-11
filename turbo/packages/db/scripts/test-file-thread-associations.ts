@@ -9,12 +9,12 @@ assert.ok(databaseUrl, "DATABASE_URL is required");
 const client = new Client({ connectionString: databaseUrl });
 await client.connect();
 const schema = `file_threads_${randomUUID().replaceAll("-", "")}`;
+let schemaCreated = false;
 
 try {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0388; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${schema}"`);
-  await client.query(`SET LOCAL search_path TO "${schema}"`);
+  schemaCreated = true;
+  await client.query(`SET search_path TO "${schema}"`);
   await client.query(`
     CREATE TABLE agent_runs (
       id uuid PRIMARY KEY,
@@ -123,6 +123,11 @@ try {
     "File thread backfill: batches, preservation and idempotency passed",
   );
 } finally {
-  await client.query("ROLLBACK");
-  await client.end();
+  try {
+    if (schemaCreated) {
+      await client.query(`DROP SCHEMA "${schema}" CASCADE`);
+    }
+  } finally {
+    await client.end();
+  }
 }
