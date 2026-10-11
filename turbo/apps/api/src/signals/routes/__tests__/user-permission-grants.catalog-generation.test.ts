@@ -116,7 +116,7 @@ describe("permission-grant current catalog membership", () => {
       [200],
     );
     expect(listed.body).toHaveLength(2);
-    expect(listed.body).toEqual(expect.arrayContaining(applied.body));
+    expect(listed.body).toStrictEqual(expect.arrayContaining(applied.body));
 
     serve(catalog(`${generation}.removed`, false));
     const removed = await accept(
