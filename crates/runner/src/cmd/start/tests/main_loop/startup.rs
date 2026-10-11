@@ -67,14 +67,24 @@ enum DnsStartupEvent {
     ReadinessActivated {
         id: usize,
     },
+    ReadinessFailed {
+        id: usize,
+    },
     RuntimeShutdown {
         id: usize,
     },
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DnsStartupTestFailure {
+    MissingInterfacePattern,
+    Readiness,
+}
+
 struct DnsStartupRecordingProvider {
     next_id: AtomicUsize,
     events: Arc<Mutex<Vec<DnsStartupEvent>>>,
+    failure: Option<DnsStartupTestFailure>,
 }
 
 impl DnsStartupRecordingProvider {
@@ -82,6 +92,7 @@ impl DnsStartupRecordingProvider {
         Self {
             next_id: AtomicUsize::new(0),
             events,
+            failure: None,
         }
     }
 }
@@ -89,6 +100,8 @@ impl DnsStartupRecordingProvider {
 struct DnsStartupRecordingRuntime {
     id: usize,
     events: Arc<Mutex<Vec<DnsStartupEvent>>>,
+    dns_port: u16,
+    failure: Option<DnsStartupTestFailure>,
 }
 
 #[async_trait]
@@ -101,10 +114,20 @@ impl sandbox::SandboxRuntime for DnsStartupRecordingRuntime {
     }
 
     async fn dns_interface_pattern(&self) -> Option<String> {
-        Some("vm0-ve-test-*".into())
+        (self.failure != Some(DnsStartupTestFailure::MissingInterfacePattern))
+            .then(|| "vm0-ve-test-*".into())
     }
 
     async fn activate_dns_readiness(&self) -> sandbox::Result<()> {
+        if self.failure == Some(DnsStartupTestFailure::Readiness) {
+            self.events
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DnsStartupEvent::ReadinessFailed { id: self.id });
+            return Err(sandbox::SandboxError::BackendUnavailable {
+                message: "scripted DNS readiness failure".into(),
+            });
+        }
         self.events
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -113,6 +136,12 @@ impl sandbox::SandboxRuntime for DnsStartupRecordingRuntime {
     }
 
     async fn shutdown(&mut self) {
+        if self.failure == Some(DnsStartupTestFailure::MissingInterfacePattern) {
+            let tcp_error = std::net::TcpListener::bind(("0.0.0.0", self.dns_port)).unwrap_err();
+            assert_eq!(tcp_error.kind(), std::io::ErrorKind::AddrInUse);
+            let udp_error = std::net::UdpSocket::bind(("0.0.0.0", self.dns_port)).unwrap_err();
+            assert_eq!(udp_error.kind(), std::io::ErrorKind::AddrInUse);
+        }
         self.events
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -147,6 +176,8 @@ impl sandbox::RuntimeProvider for DnsStartupRecordingProvider {
         Ok(Box::new(DnsStartupRecordingRuntime {
             id,
             events: Arc::clone(&self.events),
+            dns_port,
+            failure: self.failure,
         }))
     }
 }
@@ -393,6 +424,169 @@ async fn non_port_dns_failure_cleans_owned_startup_resources_without_retry() {
         Some(kmsg_starttime),
         "terminal DNS failure should reap the kmsg child"
     );
+}
+
+#[tokio::test]
+async fn dns_interface_failure_retains_port_until_runtime_shutdown() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let mut runtime_provider = DnsStartupRecordingProvider::new(Arc::clone(&events));
+    runtime_provider.failure = Some(DnsStartupTestFailure::MissingInterfacePattern);
+    let (mut mitm, _mitm_crash_rx) = crate::proxy::MitmProxy::noop();
+    let prefetch_cancel = CancellationToken::new();
+    let task_cancel = prefetch_cancel.clone();
+    let (cancelled_tx, cancelled_rx) = tokio::sync::oneshot::channel();
+    let prefetch_handle = tokio::spawn(async move {
+        task_cancel.cancelled().await;
+        let _ = cancelled_tx.send(());
+    });
+    let mut memory_prefetch =
+        crate::prefetch::MemoryPrefetchTasks::from_test_handle(prefetch_cancel, prefetch_handle);
+
+    let error = match start_runtime_with_dns(
+        DnsStartupResources {
+            runtime_provider: &runtime_provider,
+            mitm: &mut mitm,
+            kmsg_handle: crate::kmsg_log::KmsgHandle::noop(),
+            memory_prefetch: &mut memory_prefetch,
+            network_log_manager: NetworkLogManager::new(),
+            host_cpu_placement: test_host_cpu_placement(),
+        },
+        // Calling the DNS callback before resolving an interface must fail.
+        scripted_dns_starter(Vec::new(), Arc::clone(&events)),
+    )
+    .await
+    {
+        Ok(_) => panic!("missing DNS interface should fail startup"),
+        Err(error) => error,
+    };
+
+    assert!(matches!(
+        error,
+        RunnerError::Internal(message)
+            if message == "sandbox runtime did not provide DNS interface pattern"
+    ));
+    cancelled_rx.await.expect("prefetch should be cancelled");
+    assert_eq!(memory_prefetch.task_count(), 0);
+    let events = events.lock().unwrap_or_else(|e| e.into_inner());
+    assert!(matches!(
+        events.as_slice(),
+        [
+            DnsStartupEvent::RuntimeCreated { id: 0, .. },
+            DnsStartupEvent::RuntimeShutdown { id: 0 }
+        ]
+    ));
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn dns_readiness_failure_reaps_dns_before_runtime_shutdown() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let mut runtime_provider = DnsStartupRecordingProvider::new(Arc::clone(&events));
+    runtime_provider.failure = Some(DnsStartupTestFailure::Readiness);
+    let (mut mitm, _mitm_crash_rx) = crate::proxy::MitmProxy::noop();
+    let prefetch_cancel = CancellationToken::new();
+    let task_cancel = prefetch_cancel.clone();
+    let prefetch_handle = tokio::spawn(async move { task_cancel.cancelled().await });
+    let mut memory_prefetch = crate::prefetch::MemoryPrefetchTasks::from_test_handle(
+        prefetch_cancel.clone(),
+        prefetch_handle,
+    );
+
+    let mut command = tokio::process::Command::new("sleep");
+    command
+        .arg("60")
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    let child = command.spawn().expect("spawn test DNS child");
+    let dns_pid = child.id().expect("test DNS child should have pid");
+    let dns_starttime = runner_host::process::read_process_stat(dns_pid)
+        .await
+        .expect("test DNS child should be visible")
+        .starttime;
+    let mut dns_handle = crate::dns::DnsProxy::from_test_child(child, NetworkLogManager::new())
+        .await
+        .expect("create test DNS handle");
+    let reap_gate = crate::test_fixtures::ReapGate::new();
+    dns_handle.set_reap_gate(reap_gate.clone());
+    let mut dns_handle = Some(dns_handle);
+    let (callback_owner, mut callback_dropped) = tokio::sync::oneshot::channel::<()>();
+
+    let result = {
+        let callback_events = Arc::clone(&events);
+        let startup = start_runtime_with_dns(
+            DnsStartupResources {
+                runtime_provider: &runtime_provider,
+                mitm: &mut mitm,
+                kmsg_handle: crate::kmsg_log::KmsgHandle::noop(),
+                memory_prefetch: &mut memory_prefetch,
+                network_log_manager: NetworkLogManager::new(),
+                host_cpu_placement: test_host_cpu_placement(),
+            },
+            move |reservation, _interface_pattern, _network_log_manager| {
+                assert!(!callback_owner.is_closed());
+                let port = reservation.port();
+                drop(reservation);
+                callback_events
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DnsStartupEvent::DnsStarted { port });
+                std::future::ready(Ok(dns_handle.take().expect("DNS starts only once")))
+            },
+        );
+        tokio::pin!(startup);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::select! {
+                _ = &mut startup => panic!("startup should wait for DNS cleanup"),
+                _ = reap_gate.entered.notified() => {},
+            }
+        })
+        .await
+        .expect("readiness failure should start DNS cleanup");
+
+        assert!(prefetch_cancel.is_cancelled());
+        assert!(matches!(
+            callback_dropped.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ));
+        {
+            let events = events.lock().unwrap_or_else(|e| e.into_inner());
+            assert_eq!(events.len(), 3);
+            assert!(matches!(
+                events.last(),
+                Some(DnsStartupEvent::ReadinessFailed { id: 0 })
+            ));
+        }
+
+        reap_gate.release.add_permits(1);
+        tokio::time::timeout(Duration::from_secs(5), &mut startup)
+            .await
+            .expect("startup should finish after DNS cleanup")
+    };
+    let error = match result {
+        Ok(_) => panic!("DNS readiness failure should fail startup"),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains(
+        "sandbox runtime DNS readiness: backend unavailable: scripted DNS readiness failure"
+    ));
+    assert!(matches!(
+        callback_dropped.try_recv(),
+        Err(tokio::sync::oneshot::error::TryRecvError::Closed)
+    ));
+    assert_eq!(memory_prefetch.task_count(), 0);
+    assert_ne!(
+        runner_host::process::read_process_stat(dns_pid)
+            .await
+            .map(|stat| stat.starttime),
+        Some(dns_starttime),
+        "readiness failure should reap the DNS child"
+    );
+    let events = events.lock().unwrap_or_else(|e| e.into_inner());
+    assert_eq!(events.len(), 4);
+    assert!(matches!(
+        events.last(),
+        Some(DnsStartupEvent::RuntimeShutdown { id: 0 })
+    ));
 }
 
 #[tokio::test]
