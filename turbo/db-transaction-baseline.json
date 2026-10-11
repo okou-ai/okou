@@ -1217,11 +1217,6 @@
       "owner": "applyPendingMigrations"
     },
     {
-      "id": "TX-0370",
-      "file": "turbo/packages/db/scripts/test-auto-model-selection-null.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0371",
       "file": "turbo/packages/db/scripts/test-built-in-model-keys-permanent.ts",
       "owner": "validateCanonicalRowLock"
