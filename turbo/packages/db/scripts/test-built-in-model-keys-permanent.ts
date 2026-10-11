@@ -133,30 +133,24 @@ async function validateCanonicalRowLock(
       );
       assert.deepEqual(locked.rows, [row]);
 
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0372; new non-billing transactions are prohibited.
-      await contender.query("BEGIN");
-      try {
-        await contender.query("SET LOCAL lock_timeout = '100ms'");
-        await assert.rejects(
-          contender.query(
-            `
+      await contender.query("SET lock_timeout = '100ms'");
+      await assert.rejects(
+        contender.query(
+          `
               UPDATE "built_in_model_keys"
               SET "label" = 'unexpected-lock-winner'
               WHERE "id" = $1
             `,
-            [row.id],
-          ),
-          (error: unknown) => {
-            return (
-              typeof error === "object" &&
-              error !== null &&
-              Reflect.get(error, "code") === "55P03"
-            );
-          },
-        );
-      } finally {
-        await contender.query("ROLLBACK");
-      }
+          [row.id],
+        ),
+        (error: unknown) => {
+          return (
+            typeof error === "object" &&
+            error !== null &&
+            Reflect.get(error, "code") === "55P03"
+          );
+        },
+      );
     } finally {
       await client.query("ROLLBACK");
     }
