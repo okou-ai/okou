@@ -29,7 +29,7 @@ expected = {
     "check": (
         "cargo xtask check-rust-path-attributes",
         "cargo fmt --all -- --check",
-        "cargo clippy --all-targets --all-features",
+        "python3 .github/scripts/select-clippy-packages.py",
     ),
     "check-docs": ("cargo doc --workspace --all-features --no-deps",),
     "check-guest-production": (

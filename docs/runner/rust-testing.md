@@ -1,5 +1,43 @@
 # Rust Testing Guide
 
+## Clippy selection in CI
+
+The Crates check lane checks module paths and formatting across the workspace.
+Main and merge queue keep full `cargo clippy --all-targets --all-features`.
+Pull requests can omit unchanged primary lint targets only for owned Rust files
+in package `src`, `tests`, `examples` and `benches` directories.
+
+The selector uses locked Cargo metadata, actual manifest directories, resolved
+package IDs and dependency aliases. It retains changed roots and all transitive
+reverse consumers across normal, dev, build, optional and conditional workspace
+dependencies. All-target/all-feature flags remain unchanged.
+
+Selection must preserve feature unification. Featureful roots, build scripts,
+proc macros, conditional/optional/build dependencies, unusual target ownership
+and source include readers remain selected. Only ordinary zero-feature roots
+can be omitted: retained roots must cover their mandatory unconditional requests
+for activation, default features and explicit features, for the same resolved
+package and normal/host compiler context. Additional donors are retained
+deterministically. Optional/conditional requests and ambiguous identities cannot
+provide coverage. Required dependencies still compile; fewer primary targets do
+not by themselves prove a duration or memory saving.
+
+Full checking remains reachable for shared/non-Rust inputs, manifests, locks,
+toolchains, lint/config files, build scripts, unknown ownership, missing diff
+history, unsupported workspace layouts/resolvers/default members and explicit
+cross-compilation. Unsupported valid alias evidence retains its root; malformed
+metadata and failed tool commands fail the job. Clippy failures keep their exit
+code. Other verification lanes retain their independent coverage.
+
+Selection JSON records the reason, affected roots, retained anchors/donors and
+exact command. Audit a PR without executing Clippy, and exercise real Cargo/Git
+feature-sensitive and lint-failure fixtures:
+
+```bash
+python3 .github/scripts/select-clippy-packages.py --event pull_request --base BASE --plan-only
+bash .github/scripts/tests/select-clippy-packages-test.sh
+```
+
 ## Overview
 
 Rust crates live in `crates/` and use `cargo test` for testing. The same principles from [testing.md](../testing.md) apply: integration tests are primary, mock at the boundary, use real infrastructure.

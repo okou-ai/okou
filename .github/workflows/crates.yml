@@ -353,6 +353,8 @@ jobs:
     if: needs.detect.outputs.any-changed == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
 
       - name: Configure Git safe directory
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -384,9 +386,21 @@ jobs:
           cargo fmt --all -- --check
 
       - name: Run clippy
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHECKOUT_REF: ${{ github.ref }}
+          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
-          cd crates
-          cargo clippy --all-targets --all-features
+          BASE_REF=""
+          if [ "$EVENT_NAME" = pull_request ]; then
+            BASE_REF=$(.github/scripts/changed-base-ref.sh) || BASE_REF=""
+          fi
+          python3 .github/scripts/select-clippy-packages.py --event "$EVENT_NAME" --base "$BASE_REF"
+
+      - name: Measure Clippy selection acceptance
+        run: python3 .github/scripts/benchmark-clippy-selection.py
 
       - name: Save pinned Kerberos dependencies
         if: github.ref == 'refs/heads/main' && steps.kerberos-cache.outputs.cache-hit != 'true'

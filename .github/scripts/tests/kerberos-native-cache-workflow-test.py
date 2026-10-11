@@ -39,6 +39,8 @@ assert save["with"]["key"] == "${{ steps.kerberos-cache.outputs.cache-primary-ke
 assert save["if"] == "github.ref == 'refs/heads/main' && steps.kerberos-cache.outputs.cache-hit != 'true'"
 assert producer["steps"].index(save) > next(i for i, s in enumerate(producer["steps"]) if s.get("name") == "Run clippy")
 assert "secrets." not in str(save)
-assert next(s for s in producer["steps"] if s.get("name") == "Run clippy")["run"] == "cd crates\ncargo clippy --all-targets --all-features\n"
+clippy = next(s for s in producer["steps"] if s.get("name") == "Run clippy")
+assert "python3 .github/scripts/select-clippy-packages.py" in clippy["run"]
+assert clippy["shell"] == "bash" and clippy["env"]["EVENT_NAME"] == "${{ github.event_name }}"
 assert next(s for s in jobs["check-docs"]["steps"] if s.get("name") == "Build documentation")["run"] == "cd crates\ncargo doc --workspace --all-features --no-deps\n"
 print("kerberos-native-cache-workflow-test: ok")
