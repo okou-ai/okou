@@ -7,6 +7,7 @@ import {
   CLIENT_TYPE_IOS,
   CLIENT_VERSION_HEADER,
 } from "@okouai/api-contracts/contracts/client-headers";
+import { VNC_KERBEROS_VERSION_HEADER } from "@okouai/api-contracts/contracts/vnc-kerberos";
 import { createApp } from "../app-factory";
 import { mockEnv } from "../lib/env";
 import webClientCompatibility from "../lib/web-client-compatibility.json";
@@ -371,6 +372,45 @@ describe("createApp", () => {
       expect(allowHeaders).toContain("X-Vercel-Protection-Bypass");
       expect(allowHeaders).toContain("X-Client-Version");
     });
+
+    it.each([
+      ["production", "https://app.okou.ai"],
+      ["preview", "https://pr-38816-app-okou-app-preview.vm0.workers.dev"],
+    ])(
+      "allows browser VNC profile negotiation in %s",
+      async (deployEnv, origin) => {
+        mockEnv("ENV", deployEnv);
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const preflight = await app.request("/api/vnc/connections", {
+          method: "OPTIONS",
+          headers: {
+            origin,
+            "access-control-request-method": "GET",
+            "access-control-request-headers":
+              "authorization,x-vnc-profile-version",
+          },
+        });
+
+        expect(preflight.status).toBe(204);
+        expect(preflight.headers.get("access-control-allow-origin")).toBe(
+          origin,
+        );
+        expect(preflight.headers.get("access-control-allow-headers")).toContain(
+          VNC_KERBEROS_VERSION_HEADER,
+        );
+
+        const response = await app.request("/health", {
+          headers: { origin },
+        });
+        expect(response.status).toBe(200);
+        expect(response.headers.get("access-control-expose-headers")).toContain(
+          VNC_KERBEROS_VERSION_HEADER,
+        );
+      },
+    );
 
     it("allows okou preview app origins", async () => {
       mockEnv("ENV", "preview");

@@ -3,6 +3,7 @@
 import { cors } from "hono/cors";
 import type { MiddlewareHandler } from "hono";
 import { CLIENT_HEADER_NAMES } from "@okouai/api-contracts/contracts/client-headers";
+import { VNC_KERBEROS_VERSION_HEADER } from "@okouai/api-contracts/contracts/vnc-kerberos";
 
 import { safeUrlParse } from "../signals/utils";
 import { env } from "./env";
@@ -90,8 +91,10 @@ const firstPartyCors: MiddlewareHandler = cors({
     "Authorization",
     "Range",
     "X-Vercel-Protection-Bypass",
+    VNC_KERBEROS_VERSION_HEADER,
     ...CLIENT_HEADER_NAMES,
   ],
+  exposeHeaders: [VNC_KERBEROS_VERSION_HEADER],
   maxAge: 86_400,
 });
 
