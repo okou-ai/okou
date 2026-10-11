@@ -3,7 +3,6 @@ import { parseRawRows } from "../../lib/db-raw-rows";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { v5 as uuidv5 } from "uuid";
 import type { ChatThreadSessionResolution } from "./chat-session-continuity.service";
-import type { MemberModelAccountSnapshot } from "./model-provider-account.service";
 
 import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events";
 import {
@@ -136,8 +135,6 @@ import {
   modelProviderWriteTypeForLaunch,
   type ModelFirstPin,
 } from "./model-selection.service";
-import type { PiCatalogModel } from "@okouai/core/pi-execution";
-import { shouldUsePiExecution } from "./pi-sandbox-config";
 import { sendUserPushNotifications } from "./push-notifications.service";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import { saveRunSummary$ } from "./run-summary.service";
@@ -386,7 +383,6 @@ interface ChatRunInfo {
 }
 
 export interface CreateQueuedChatRunInput {
-  readonly memberAccountSnapshot?: MemberModelAccountSnapshot | null;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
   readonly featureSwitchContext?: FeatureSwitchContext;
   readonly orgId: string;
@@ -2209,50 +2205,10 @@ async function chatThreadForRunFromDb(
   };
 }
 
-export interface QueuedMessageModelRoute {
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly memberAccountSnapshot?: MemberModelAccountSnapshot | null;
-  readonly modelPin: ModelFirstPin;
-  readonly effectiveModelProvider: string | null | undefined;
-  readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
-  /** The selected model's catalog projection from the pick's snapshot. */
-  readonly piCatalogModel: PiCatalogModel | null;
-  readonly cliAgentType: string | null;
-  readonly codexServiceTier: "fast" | undefined;
-  readonly reasoningEffort?: ReasoningEffort | null;
-}
-
-export function routeQueuedMessagePiExecution(args: {
-  readonly input: QueuedChatPromptData;
-  readonly modelRoute: QueuedMessageModelRoute;
-}) {
-  const piExecution = shouldUsePiExecution({
-    chatThreadId: args.input.threadId,
-    featureSwitchContext: args.modelRoute.featureSwitchContext,
-    modelProviderType: args.modelRoute.effectiveModelProvider,
-    catalogModel: args.modelRoute.piCatalogModel,
-    codexServiceTier: args.modelRoute.codexServiceTier,
-    builtInModelRuntimeRoute: args.modelRoute.builtInModelRuntimeRoute,
-  });
-  return {
-    piExecution,
-    routedModel: {
-      ...args.modelRoute,
-      cliAgentType: piExecution
-        ? ("pi" as const)
-        : args.modelRoute.cliAgentType,
-    },
-  };
-}
-
 export interface QueuedMessageModelRouteError {
   readonly code: string;
   readonly message: string;
 }
-
-export type QueuedMessageModelRouteResolution =
-  | { readonly route: QueuedMessageModelRoute }
-  | { readonly error: QueuedMessageModelRouteError };
 
 export interface QueuedChatPromptData {
   readonly threadId: string;
