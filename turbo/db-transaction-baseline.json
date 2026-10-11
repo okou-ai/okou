@@ -557,11 +557,6 @@
       "owner": "commitLegacyPlanInvoice$"
     },
     {
-      "id": "TX-0175",
-      "file": "turbo/apps/api/src/signals/services/mail-draft.service.ts",
-      "owner": "persistLinkedDraft$"
-    },
-    {
       "id": "TX-0176",
       "file": "turbo/apps/api/src/signals/services/mail-notification.service.ts",
       "owner": "commitMailNotification$"
