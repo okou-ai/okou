@@ -309,6 +309,61 @@ async fn run_release_during_ticket_consume_denies_auth() {
 }
 
 #[tokio::test]
+async fn run_release_during_guest_activation_closes_before_auth() {
+    struct PendingGuest {
+        started: tokio::sync::Notify,
+    }
+
+    #[async_trait]
+    impl GuestDuplexAcceptor for PendingGuest {
+        async fn accept(&self) -> io::Result<AcceptedGuestDuplex> {
+            self.started.notify_one();
+            std::future::pending().await
+        }
+    }
+
+    let mut fixture = Fixture::new().await;
+    drop(fixture.registration.take());
+    let guest = Arc::new(PendingGuest {
+        started: tokio::sync::Notify::new(),
+    });
+    let mut sandbox =
+        MockSandbox::new(fixture.sandbox.to_string()).with_guest_duplex(guest.clone());
+    sandbox.bind_run_control(&fixture.run.to_string()).unwrap();
+    fixture.registration =
+        fixture
+            .ctx
+            .guest
+            .register(fixture.run, &sandbox, &CancellationToken::new());
+
+    let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
+    let mut ws = client.unwrap();
+    ws.send(first(fixture.run, &"A".repeat(43))).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), guest.started.notified())
+        .await
+        .expect("redemption must reach the pending Guest activation");
+
+    // Keep the Guest registration and Running status intact. Run release must
+    // interrupt pending activation without waiting for the five-second deadline.
+    drop(fixture.guard);
+    denied(&mut ws).await;
+    tokio::time::timeout(Duration::from_secs(2), task)
+        .await
+        .expect("released Run must not retain its pending admission")
+        .unwrap();
+    assert_eq!(
+        fixture.ctx.status.running_sandbox(fixture.run).await,
+        Some(fixture.sandbox)
+    );
+    assert!(
+        fixture
+            .ctx
+            .guest
+            .contains_live_assignment(fixture.run, &fixture.sandbox.to_string())
+    );
+}
+
+#[tokio::test]
 async fn sandbox_reassignment_during_ticket_consume_denies_auth() {
     let mut fixture = Fixture::new().await;
     let (resume_tx, resume_rx) = tokio::sync::oneshot::channel();
