@@ -94,8 +94,9 @@ export function discordMemberRole(args: {
   readonly orgId: string;
   readonly userId: string;
 }): Computed<Promise<ApiOrgRole | null>> {
+  const membership$ = discordMembership(args);
   return computed(async (get) => {
-    const member = await get(discordMembership(args));
+    const member = await get(membership$);
     return member ? (member.role === "org:admin" ? "admin" : "member") : null;
   });
 }
@@ -309,8 +310,9 @@ export function discordDmBinding(
 }
 
 function savedDiscordDmBinding(discordUserId: string) {
+  const binding$ = discordDmBinding(discordUserId);
   return computed(async (get) => {
-    const resolution = await get(discordDmBinding(discordUserId));
+    const resolution = await get(binding$);
     if (resolution.kind !== "connected") {
       return null;
     }
