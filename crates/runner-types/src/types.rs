@@ -1822,7 +1822,7 @@ pub struct HeartbeatState {
     pub held_workspace_states: Vec<HeldWorkspaceState>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub home_affinity_version: Option<u8>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// Whole home inventory, including an explicit empty array when no caches are held.
     pub held_home_states: Vec<HeldHomeState>,
     pub active_reuse_producers: Vec<ActiveReuseProducer>,
     /// Host-local WSS ingress service state, not public WSS reachability.
@@ -2906,6 +2906,7 @@ mod tests {
                         "workspaceAffinityVersion": 1
                     }]
                 }],
+                "heldHomeStates": [],
                 "activeReuseProducers": [{
                     "runId": "22222222-2222-4222-8222-222222222222",
                     "reuseKey": "thread:thread-abc",
@@ -2962,6 +2963,7 @@ mod tests {
         let serialized = serde_json::to_value(state).unwrap();
         assert_eq!(serialized["heldSandboxStates"], json!([]));
         assert_eq!(serialized["heldWorkspaceStates"], json!([]));
+        assert_eq!(serialized["heldHomeStates"], json!([]));
         assert_eq!(serialized["activeReuseProducers"], json!([]));
     }
 }
