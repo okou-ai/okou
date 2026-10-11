@@ -25,9 +25,11 @@ import { command } from "ccstate";
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   exists,
+  gte,
   inArray,
   isNotNull,
   isNull,
@@ -1355,75 +1357,84 @@ const retireBrowserProfileOwnership$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0068; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      const ownedBrowsers = await tx
-        .select({
-          id: browserSessions.id,
-          runId: browserSessions.runId,
-          status: browserSessions.status,
-          updatedAt: browserSessions.updatedAt,
-        })
-        .from(browserSessions)
-        .innerJoin(
-          browserThreadProfiles,
-          eq(browserThreadProfiles.chatThreadId, browserSessions.chatThreadId),
-        )
-        .where(
-          and(
-            eq(browserSessions.chatThreadId, target.chatThreadId),
-            eq(
-              browserThreadProfiles.providerProfileId,
-              target.providerProfileId,
-            ),
-          ),
-        );
-      if (ownedBrowsers.length > 0) {
-        // A profile-qualified snapshot identifies the exact rows being retired.
-        // A delayed DELETE must not adopt a replacement row or a resumed owner.
-        await tx.delete(browserSessions).where(
-          and(
-            exists(
-              tx
-                .select({ id: browserThreadProfiles.id })
-                .from(browserThreadProfiles)
-                .where(
-                  and(
-                    eq(browserThreadProfiles.chatThreadId, target.chatThreadId),
-                    eq(
-                      browserThreadProfiles.providerProfileId,
-                      target.providerProfileId,
+    const ownedBrowsers = await db
+      .select({
+        id: browserSessions.id,
+        runId: browserSessions.runId,
+        status: browserSessions.status,
+        updatedAt: browserSessions.updatedAt,
+      })
+      .from(browserSessions)
+      .innerJoin(
+        browserThreadProfiles,
+        eq(browserThreadProfiles.chatThreadId, browserSessions.chatThreadId),
+      )
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, target.chatThreadId),
+          eq(browserThreadProfiles.providerProfileId, target.providerProfileId),
+        ),
+      );
+    signal.throwIfAborted();
+    const profileScope = and(
+      eq(browserThreadProfiles.chatThreadId, target.chatThreadId),
+      eq(browserThreadProfiles.providerProfileId, target.providerProfileId),
+    );
+    if (ownedBrowsers.length > 0) {
+      // A profile-qualified snapshot identifies the exact rows being retired.
+      // A delayed DELETE must not adopt a replacement row or a resumed owner.
+      const retiredBrowsers = db.$with("retired_browsers").as(
+        db
+          .delete(browserSessions)
+          .where(
+            and(
+              exists(
+                db
+                  .select({ id: browserThreadProfiles.id })
+                  .from(browserThreadProfiles)
+                  .where(
+                    and(
+                      eq(
+                        browserThreadProfiles.chatThreadId,
+                        target.chatThreadId,
+                      ),
+                      eq(
+                        browserThreadProfiles.providerProfileId,
+                        target.providerProfileId,
+                      ),
                     ),
                   ),
-                ),
+              ),
+              or(
+                ...ownedBrowsers.map((browser) => {
+                  return and(
+                    eq(browserSessions.id, browser.id),
+                    browser.runId === null
+                      ? isNull(browserSessions.runId)
+                      : eq(browserSessions.runId, browser.runId),
+                    eq(browserSessions.status, browser.status),
+                    eq(browserSessions.updatedAt, browser.updatedAt),
+                  );
+                }),
+              ),
             ),
-            or(
-              ...ownedBrowsers.map((browser) => {
-                return and(
-                  eq(browserSessions.id, browser.id),
-                  browser.runId === null
-                    ? isNull(browserSessions.runId)
-                    : eq(browserSessions.runId, browser.runId),
-                  eq(browserSessions.status, browser.status),
-                  eq(browserSessions.updatedAt, browser.updatedAt),
-                );
-              }),
-            ),
-          ),
-        );
-      }
-      await tx
+          )
+          .returning({ id: browserSessions.id }),
+      );
+      // Exhaust the guarded browser DELETE before retiring the exact profile,
+      // including when no snapshotted browser remains eligible.
+      await db
+        .with(retiredBrowsers)
         .delete(browserThreadProfiles)
         .where(
           and(
-            eq(browserThreadProfiles.chatThreadId, target.chatThreadId),
-            eq(
-              browserThreadProfiles.providerProfileId,
-              target.providerProfileId,
-            ),
+            profileScope,
+            gte(db.select({ count: count() }).from(retiredBrowsers), 0),
           ),
         );
-    });
+    } else {
+      await db.delete(browserThreadProfiles).where(profileScope);
+    }
     signal.throwIfAborted();
   },
 );
