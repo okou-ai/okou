@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.21.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.20.2...guest-contracts-v0.21.0) (2026-10-11)
+
+
+### Features
+
+* **guest:** manage task runtimes and image batch workers ([#38762](https://github.com/okou-ai/okou/issues/38762)) ([dbb7241](https://github.com/okou-ai/okou/commit/dbb72412af7116f4e27419057023d51bbf203613))
+
+
+### Bug Fixes
+
+* **rust:** remove the release graph cycle between contracts and ipc ([#39029](https://github.com/okou-ai/okou/issues/39029)) ([5441dd6](https://github.com/okou-ai/okou/commit/5441dd60e2c24925c05cb2f38df002c396920b25))
+
+
+### Performance Improvements
+
+* **runner-network:** decouple dns readiness constants from firecracker ([#38859](https://github.com/okou-ai/okou/issues/38859)) ([78ce425](https://github.com/okou-ai/okou/commit/78ce4259eb3679b088a55c507c9d4962c263df4c))
+
 ## [0.20.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.20.1...guest-contracts-v0.20.2) (2026-10-10)
 
 

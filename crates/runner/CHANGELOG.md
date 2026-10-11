@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.225.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.224.2...runner-rs-v0.225.0) (2026-10-11)
+
+
+### Features
+
+* **guest:** manage task runtimes and image batch workers ([#38762](https://github.com/okou-ai/okou/issues/38762)) ([dbb7241](https://github.com/okou-ai/okou/commit/dbb72412af7116f4e27419057023d51bbf203613))
+* **runner:** add one-use ticket wss admission ([#37114](https://github.com/okou-ai/okou/issues/37114)) ([0eece1f](https://github.com/okou-ai/okou/commit/0eece1f399b9e1b357fa1b3c1b4a6d0699d21088))
+* **runner:** admit fenced pool retirement before detach ([#38853](https://github.com/okou-ai/okou/issues/38853)) ([3a314cc](https://github.com/okou-ai/okou/commit/3a314cc4ebbf508aea4a9f2c4ae4f5be7d3d3618))
+* **runner:** complete home cache disk visibility ([#38775](https://github.com/okou-ai/okou/issues/38775)) ([30c5539](https://github.com/okou-ai/okou/commit/30c5539999b0a90dfb693f0cc92c2cd29e6882d2))
+* **runner:** guard captured idle retirement batches ([#38909](https://github.com/okou-ai/okou/issues/38909)) ([fd104c1](https://github.com/okou-ai/okou/commit/fd104c1aa7a59f32c234f007338be49f21e47036))
+* **runner:** guard logical idle substitution ([#39001](https://github.com/okou-ai/okou/issues/39001)) ([31aee7e](https://github.com/okou-ai/okou/commit/31aee7e614d11f2fed54e5cb42078fedb5aa0670))
+* **runner:** own guarded idle terminal phases ([#38823](https://github.com/okou-ai/okou/issues/38823)) ([909af6b](https://github.com/okou-ai/okou/commit/909af6b56aa1e45ac6d2ddef1ab7e2d4c7a99771))
+
+
+### Bug Fixes
+
+* remove retired connector references from app and tests ([#38802](https://github.com/okou-ai/okou/issues/38802)) ([63a43d9](https://github.com/okou-ai/okou/commit/63a43d9219560c0dfe29048b023c7910417a9c50))
+
+
+### Performance Improvements
+
+* **ci:** balance addon slow samples and reduce test overhead ([#38818](https://github.com/okou-ai/okou/issues/38818)) ([38e612f](https://github.com/okou-ai/okou/commit/38e612f2bd790acaf3f5808b01fb931643ec5163))
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+* **runner:** reuse per-stream json inspection configuration ([#38833](https://github.com/okou-ai/okou/issues/38833)) ([7143ac7](https://github.com/okou-ai/okou/commit/7143ac7fdfaf10120313b97021026b22a930d96a))
+* **runner:** share startup code across home loaders ([#38978](https://github.com/okou-ai/okou/issues/38978)) ([68c3caf](https://github.com/okou-ai/okou/commit/68c3cafdc4ee11c9db22bfaad2c1d5b74210df67))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.224.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.224.1...runner-rs-v0.224.2) (2026-10-10)
 
 
