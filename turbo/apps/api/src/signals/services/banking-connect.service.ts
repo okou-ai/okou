@@ -1,4 +1,9 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  randomUUID,
+  timingSafeEqual,
+} from "node:crypto";
 
 import type {
   BankingAccessRequestStatusResponse,
@@ -7,6 +12,7 @@ import type {
   BankingGrantDuration,
 } from "@okouai/api-contracts/contracts/banking";
 import { agents } from "@okouai/db/schema/agent";
+import { prepareBankingConnectSessionReplacement } from "@okouai/db/operations/banking-connect-session-replacement";
 import {
   bankingAccounts,
   bankingAgentEnablements,
@@ -441,64 +447,42 @@ function connectSessionBody(args: {
   };
 }
 
-function replacePendingConnectSession(
-  db: Db,
-  owner: BankingOwner,
-  connectionId: string,
-  body: BankingConnectSessionRequest,
-) {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0059; new non-billing transactions are prohibited.
-  return db.transaction(async (tx) => {
-    // Lock the existing owner row without blocking account-sync FK checks.
-    const [currentConnection] = await tx
-      .select({ id: bankingConnections.id })
-      .from(bankingConnections)
-      .where(
-        and(
-          eq(bankingConnections.id, connectionId),
-          eq(bankingConnections.orgId, owner.orgId),
-          eq(bankingConnections.userId, owner.userId),
-          eq(bankingConnections.provider, PROVIDER),
-          isNull(bankingConnections.revokedAt),
-          isNull(bankingConnections.deletedAt),
-          or(
-            eq(bankingConnections.status, "active"),
-            eq(bankingConnections.status, "repair_required"),
-          ),
-        ),
-      )
-      .for("no key update");
-    if (!currentConnection) {
+const replacePendingConnectSession$ = command(
+  async (
+    { set },
+    args: {
+      readonly owner: BankingOwner;
+      readonly connectionId: string;
+      readonly body: BankingConnectSessionRequest;
+    },
+  ) => {
+    const db = set(writeDb$);
+    // The application clock is now captured before the wire/parent-lock wait,
+    // rather than after the old parent SELECT. Session defaults remain DB-owned.
+    const prepared = prepareBankingConnectSessionReplacement({
+      id: randomUUID(),
+      orgId: args.owner.orgId,
+      userId: args.owner.userId,
+      connectionId: args.connectionId,
+      mode: args.body.mode,
+      institutionLoginId: args.body.institutionLoginId ?? null,
+      updatedAt: nowDate(),
+    });
+    const [result] = await db
+      .with(...prepared.ctes)
+      .select(prepared.selection)
+      .from(prepared.lockedConnection)
+      .leftJoin(prepared.pending, sql`true`);
+    if (!result) {
       return userError(
         409,
         "BANKING_CONNECTION_CONFLICT",
         "The banking connection changed while the request was starting",
       );
     }
-    await tx
-      .update(bankingConnectSessions)
-      .set({ status: "superseded", updatedAt: nowDate() })
-      .where(
-        and(
-          eq(bankingConnectSessions.orgId, owner.orgId),
-          eq(bankingConnectSessions.userId, owner.userId),
-          eq(bankingConnectSessions.connectionId, connectionId),
-          eq(bankingConnectSessions.status, "pending"),
-        ),
-      );
-    const [created] = await tx
-      .insert(bankingConnectSessions)
-      .values({
-        orgId: owner.orgId,
-        userId: owner.userId,
-        connectionId,
-        mode: body.mode,
-        institutionLoginId: body.institutionLoginId ?? null,
-      })
-      .returning();
-    return created;
-  });
-}
+    return result.session;
+  },
+);
 
 export const startBankingConnectSession$ = command(
   async (
@@ -552,12 +536,11 @@ export const startBankingConnectSession$ = command(
       }
     }
 
-    const session = await replacePendingConnectSession(
-      db,
-      args.owner,
-      connection.id,
-      args.body,
-    );
+    const session = await set(replacePendingConnectSession$, {
+      owner: args.owner,
+      connectionId: connection.id,
+      body: args.body,
+    });
     signal.throwIfAborted();
     if (!session) {
       return userError(

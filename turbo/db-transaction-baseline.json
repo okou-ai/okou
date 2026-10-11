@@ -97,11 +97,6 @@
       "owner": "syncFileArtifact$"
     },
     {
-      "id": "TX-0059",
-      "file": "turbo/apps/api/src/signals/services/banking-connect.service.ts",
-      "owner": "replacePendingConnectSession"
-    },
-    {
       "id": "TX-0060",
       "file": "turbo/apps/api/src/signals/services/banking-connect.service.ts",
       "owner": "syncCustomerAccounts"
