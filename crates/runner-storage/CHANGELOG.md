@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.4](https://github.com/okou-ai/okou/compare/runner-storage-v0.4.3...runner-storage-v0.4.4) (2026-10-11)
+
+
+### Performance Improvements
+
+* **runner-lifecycle:** decouple storage fingerprint contracts ([#39056](https://github.com/okou-ai/okou/issues/39056)) ([24f6151](https://github.com/okou-ai/okou/commit/24f61511de54a9e5c8c06391344cf67d897b51bd))
+
 ## [0.4.3](https://github.com/okou-ai/okou/compare/runner-storage-v0.4.2...runner-storage-v0.4.3) (2026-10-11)
 
 

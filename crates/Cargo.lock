@@ -2507,7 +2507,7 @@ dependencies = [
 
 [[package]]
 name = "kerberos-worker"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "kerberos-credentials",
  "rustix",
@@ -3460,7 +3460,7 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.22.1"
+version = "0.22.2"
 dependencies = [
  "aes",
  "base64 0.23.1",
@@ -3602,7 +3602,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.225.0"
+version = "0.226.0"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3670,7 +3670,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3718,7 +3718,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "chrono",
  "futures-util",
@@ -3742,7 +3742,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3772,7 +3772,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.2.23"
+version = "0.2.24"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3803,7 +3803,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3838,7 +3838,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3913,7 +3913,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3954,7 +3954,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3994,7 +3994,7 @@ dependencies = [
 
 [[package]]
 name = "runner-types"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "api-contracts",
  "idna",
@@ -4267,7 +4267,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.47.0"
+version = "0.47.1"
 dependencies = [
  "async-trait",
  "clap",
