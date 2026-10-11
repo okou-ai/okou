@@ -802,11 +802,6 @@
       "owner": "commitPiMemoryStage1Candidate$"
     },
     {
-      "id": "TX-0226",
-      "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-cost.service.ts",
-      "owner": "observePiMemoryStage1Cost$"
-    },
-    {
       "id": "TX-0227",
       "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-schedule.service.ts",
       "owner": "commitSelectedPiMemoryStage1Day$"
