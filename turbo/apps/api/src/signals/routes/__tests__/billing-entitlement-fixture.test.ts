@@ -19,7 +19,10 @@ describe("Stripe-backed billing entitlement fixtures", () => {
     "grants %s with full-UUID Stripe identities",
     async (tier) => {
       const actor = bdd.user();
-      const granted = await runs.grantProEntitlement(actor, { tier });
+      const granted = await runs.grantProEntitlement(actor, {
+        tier,
+        stripeTransport: "http",
+      });
       const suffix = granted.invoiceId.slice("in_bdd_".length);
 
       expect(suffix).toMatch(fullUuidPattern);

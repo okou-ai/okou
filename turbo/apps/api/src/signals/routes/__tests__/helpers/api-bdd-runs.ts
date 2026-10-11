@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { http, HttpResponse } from "msw";
+import { vi } from "vitest";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
 import { createChatFilesBddApi } from "./api-bdd-chat-files";
@@ -56,6 +58,7 @@ import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { env, mockOptionalEnv } from "../../../../lib/env";
 import { now, withNowScopeForTest } from "../../../../lib/time";
+import { server } from "../../../../mocks/server";
 import { mockStripeClient } from "../../../external/stripe-client";
 import { agentsRoutes } from "../../agents";
 import { billingStatusRoutes } from "../../billing-status";
@@ -266,6 +269,112 @@ function runnerHeartbeatBody(
       ? {}
       : { wssIngressServiceActive: args.wssIngressServiceActive }),
     mode: args.mode ?? "running",
+  };
+}
+
+async function prepareStripeHttpEntitlement(
+  signal: AbortSignal,
+  fixture: {
+    readonly customer: { readonly id: string };
+    readonly subscription: { readonly id: string };
+    readonly priceId: string;
+    readonly productId: string;
+    readonly payload: string;
+    readonly tier: "pro" | "team";
+  },
+) {
+  // The shared constructor is mocked; obtain only the external SDK's
+  // real implementation, then leave the production webhook route intact.
+  const { default: Stripe } =
+    await vi.importActual<typeof import("stripe")>("stripe");
+  signal.throwIfAborted();
+  const stripe = new Stripe("sk_test_bdd_stripe_http", {
+    // This real SDK transport reaches MSW without a socket handshake.
+    httpClient: Stripe.createFetchHttpClient(),
+    maxNetworkRetries: 0,
+  });
+  const price = {
+    id: fixture.priceId,
+    object: "price",
+    active: true,
+    currency: "usd",
+    type: "recurring",
+    unit_amount: 4200,
+    recurring: { interval: "month", interval_count: 1 },
+    product: {
+      id: fixture.productId,
+      object: "product",
+      active: true,
+      name: "BDD billing plan",
+      metadata: {},
+    },
+  };
+  const handlers = [
+    http.get(
+      `https://api.stripe.com/v1/customers/${fixture.customer.id}`,
+      () => {
+        return HttpResponse.json(fixture.customer);
+      },
+    ),
+    http.get(
+      `https://api.stripe.com/v1/subscriptions/${fixture.subscription.id}`,
+      () => {
+        return HttpResponse.json(fixture.subscription);
+      },
+    ),
+    http.get(
+      `https://api.stripe.com/v1/prices/${fixture.priceId}`,
+      ({ request }) => {
+        if (new URL(request.url).searchParams.get("expand[0]") !== "product") {
+          return;
+        }
+        return HttpResponse.json(price);
+      },
+    ),
+  ];
+  const concurrencyPriceId = env("OKOU_PRICE_CONCURRENCY")?.[0];
+  if (concurrencyPriceId) {
+    handlers.push(
+      http.get(`https://api.stripe.com/v1/prices/${concurrencyPriceId}`, () => {
+        return HttpResponse.json({
+          ...price,
+          id: concurrencyPriceId,
+          product: price.product.id,
+        });
+      }),
+    );
+  }
+  if (fixture.tier === "team") {
+    handlers.push(
+      http.get("https://api.stripe.com/v1/subscriptions", ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        if (
+          query.get("customer") !== fixture.customer.id ||
+          query.get("status") !== "all" ||
+          query.get("limit") !== "100"
+        ) {
+          return;
+        }
+        return HttpResponse.json({
+          object: "list",
+          data: [],
+          has_more: false,
+          url: "/v1/subscriptions",
+        });
+      }),
+    );
+  }
+  const restoreWebhook = () => {
+    mockStripeClient(stripe);
+    server.use(...handlers);
+  };
+  restoreWebhook();
+  return {
+    restoreWebhook,
+    signature: stripe.webhooks.generateTestHeaderString({
+      payload: fixture.payload,
+      secret: "whsec_bdd_stripe",
+    }),
   };
 }
 
@@ -489,6 +598,8 @@ export function createRunsApi(context: TestContext) {
         readonly periodEndUnix?: number;
         readonly subscriptionMetadata?: Record<string, string>;
         readonly cancelAtUnix?: number | null;
+        /** Exercise the real Stripe SDK and signed webhook through MSW. */
+        readonly stripeTransport?: "http";
         readonly run?: <T>(operation: () => Promise<T>) => Promise<T>;
         readonly onExternalStateReady?: (restoreWebhook: () => void) => void;
       } = {},
@@ -502,7 +613,6 @@ export function createRunsApi(context: TestContext) {
         (<T>(operation: () => Promise<T>) => {
           return operation();
         });
-      mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
       mockOptionalEnv("STRIPE_WEBHOOK_SECRET", "whsec_bdd_stripe");
       const tier = options.tier ?? "pro";
       const priceId = env(
@@ -519,12 +629,14 @@ export function createRunsApi(context: TestContext) {
       const invoiceId = `in_bdd_${suffix}`;
       const periodEndUnix =
         options.periodEndUnix ?? Math.floor(now() / 1000) + 30 * 86_400;
-      context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      const customer = {
         id: customerId,
+        object: "customer",
         metadata: { orgId: actor.orgId },
-      });
-      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+      };
+      const subscription = {
         id: subscriptionId,
+        object: "subscription",
         status: "active",
         customer: customerId,
         cancel_at_period_end: false,
@@ -533,23 +645,32 @@ export function createRunsApi(context: TestContext) {
         trial_end: null,
         metadata: options.subscriptionMetadata ?? {},
         items: {
+          object: "list",
+          has_more: false,
+          url: `/v1/subscription_items?subscription=${subscriptionId}`,
           data: [
             {
+              id: `si_bdd_${suffix}`,
+              object: "subscription_item",
               price: {
                 id: priceId,
+                object: "price",
               },
+              current_period_start: periodEndUnix - 30 * 86_400,
+              current_period_end: periodEndUnix,
             },
           ],
         },
-      });
-      if (tier === "team") {
-        context.mocks.stripe.subscriptions.list.mockResolvedValue({ data: [] });
-      }
+      };
       const invoicePaidEvent = {
+        id: `evt_bdd_${suffix}`,
+        object: "event",
+        created: Math.floor(now() / 1000),
         type: "invoice.paid",
         data: {
           object: {
             id: invoiceId,
+            object: "invoice",
             customer: customerId,
             metadata: {},
             parent: { subscription_details: { subscription: subscriptionId } },
@@ -571,29 +692,55 @@ export function createRunsApi(context: TestContext) {
           },
         },
       };
-      context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(
-        invoicePaidEvent,
-      );
-      // An operation owner may need to finish this accepted webhook after
-      // afterEach resets external mocks. Retain this exact provider event.
-      options.onExternalStateReady?.(() => {
-        context.mocks.stripe.webhooks.constructEvent.mockReset();
-        context.mocks.stripe.webhooks.constructEvent.mockImplementation(
-          (payload) => {
-            if (String(payload) !== JSON.stringify(invoicePaidEvent)) {
-              throw new Error(
-                "Unexpected Stripe webhook while draining actor setup",
-              );
-            }
-            return invoicePaidEvent;
-          },
+      const payload = JSON.stringify(invoicePaidEvent);
+      let signature = "t=1,v1=bdd";
+      let restoreWebhook: () => void;
+      if (options.stripeTransport === "http") {
+        const external = await prepareStripeHttpEntitlement(context.signal, {
+          customer,
+          subscription,
+          priceId,
+          productId: `prod_bdd_${suffix}`,
+          payload,
+          tier,
+        });
+        restoreWebhook = external.restoreWebhook;
+        signature = external.signature;
+      } else {
+        mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
+        context.mocks.stripe.customers.retrieve.mockResolvedValue(customer);
+        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+          subscription,
         );
-      });
+        if (tier === "team") {
+          context.mocks.stripe.subscriptions.list.mockResolvedValue({
+            data: [],
+          });
+        }
+        context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(
+          invoicePaidEvent,
+        );
+        restoreWebhook = () => {
+          context.mocks.stripe.webhooks.constructEvent.mockReset();
+          context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+            (received) => {
+              if (String(received) !== payload) {
+                throw new Error(
+                  "Unexpected Stripe webhook while draining actor setup",
+                );
+              }
+              return invoicePaidEvent;
+            },
+          );
+        };
+      }
+      // Retain the exact provider boundary if accepted setup outlives mock reset.
+      options.onExternalStateReady?.(restoreWebhook);
       await run(() => {
         return accept(
           runApp(context)(webhookStripeContract).post({
-            body: JSON.stringify(invoicePaidEvent),
-            extraHeaders: { "stripe-signature": "t=1,v1=bdd" },
+            body: payload,
+            extraHeaders: { "stripe-signature": signature },
           }),
           [200],
         );

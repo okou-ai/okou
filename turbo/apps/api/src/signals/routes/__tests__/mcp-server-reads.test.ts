@@ -289,7 +289,7 @@ describe("thin MCP Web adapters", () => {
   });
 
   it("reflects committed Run transitions without marking indicator or history reads as read", async () => {
-    const f = await publicChatActor(context);
+    const f = await publicChatActor(context, { stripeTransport: "http" });
     const token = mcp.authorize(f.actor);
     const runs = createRunsApi(context);
     await f.run(async () => {
