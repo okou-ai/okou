@@ -24,7 +24,8 @@ It verifies ordinary bytes survive and the previous private runtime directory
 does not. It repeats exact-prune, all-inventory drain/shutdown batches and logical
 substitution, atomic park replacement, reserved restore over blank inventory and
 aged exact-to-blank replenishment with fresh boot and the matching prepared
-snapshot (twelve owned cases).
+snapshot (fourteen owned cases, including caller-owned cancellation before
+business activation).
 
 The fixture captures backing while the parked candidate is exclusively owned,
 then enters the real Lifecycle inventory and tracked Supervisor batch API. Both
@@ -50,6 +51,17 @@ background component with an explicitly aged insertion and wraps new blank
 preparation in a supplied Fresh operation. Its final park uses guarded acceptance.
 Each scenario finishes its remaining pool inventory through the guarded batch.
 These component seams do not activate the production composition root.
+
+Caller-owned saving removes an ordinary exact reservation from inventory and
+uses the borrowed `IdleActivationOwner`/tracked Supervisor entry after successor
+cancellation before activation. Required preparation and freeze run under both
+supplied allowances; exact backing exit, publication and factory tail must all
+complete. No-progress owners remain separately retained through joined shutdown.
+The original full logical lease is explicitly recovered for release only after
+the cancelled caller's physical cleanup completes; a lost observer retains it.
+This native seam proves required saving for that caller state; mocked partial
+unpark/cancellation/panic regressions are separate, and the complete native dirty
+activation/session/history corpus remains P3d.
 
 An accepted aged conversion transfers its full logical lease separately from
 physical cleanup. Before blank creation it joins old cleanup; foreground

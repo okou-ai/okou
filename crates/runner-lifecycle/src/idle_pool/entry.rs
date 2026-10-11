@@ -61,6 +61,7 @@ impl IdleSandboxIdentity {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct IdleSandboxMetadata {
     pub(super) identity: IdleSandboxIdentity,
     /// Identity of the parked sandbox. Survives reuse (next job's `run_id`
@@ -465,10 +466,10 @@ pub enum DestroyOutcome {
 /// task owns the active lease so executor panics cannot release capacity before
 /// provider completion and post-job cleanup finish.
 pub struct ReusableIdleSandbox {
-    sandbox: Box<dyn Sandbox>,
-    metadata: IdleSandboxMetadata,
-    home_promotion: Option<HomeImagePromotionContext>,
-    guest_state_prepared: bool,
+    pub(super) sandbox: Box<dyn Sandbox>,
+    pub(super) metadata: IdleSandboxMetadata,
+    pub(super) home_promotion: Option<HomeImagePromotionContext>,
+    pub(super) guest_state_prepared: bool,
 }
 
 pub struct ReusableIdleSandboxParts {

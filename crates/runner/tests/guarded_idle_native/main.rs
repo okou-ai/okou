@@ -41,6 +41,7 @@ enum NativeScope {
     Replacement,
     Restore,
     Aged,
+    CallerOwned,
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -75,6 +76,7 @@ async fn exercise_factories(
         NativeScope::Replacement,
         NativeScope::Restore,
         NativeScope::Aged,
+        NativeScope::CallerOwned,
     ] {
         for restored in [false, true] {
             // Never share a production Runner directory or another invocation's cache.
@@ -209,6 +211,47 @@ async fn exercise_retirement(
     let pool = Arc::new(tokio::sync::Mutex::new(pool));
     let retirement: TestResult<_> = async {
         match scope {
+            NativeScope::CallerOwned => {
+                use runner_lifecycle::idle_pool::{ActivationCleanupOutcome, IdleActivationOwner};
+                // A successor cancelled before business activation still owns
+                // its exact parked reservation and mandatory terminal saving.
+                let reservation = pool
+                    .lock()
+                    .await
+                    .take_reserved(&reuse_key)
+                    .ok_or_else(|| io::Error::other("native caller reservation disappeared"))?;
+                let mut owner = Some(
+                    IdleActivationOwner::new(reservation)
+                        .map_err(|_| io::Error::other("native caller received running handoff"))?,
+                );
+                let mut task = tracker
+                    .retire_activation_owner(
+                        &mut owner,
+                        &operations,
+                        inputs.envelope(),
+                        "native_caller_cleanup",
+                    )
+                    .await?;
+                assert!(owner.is_none());
+                let outcome = task.join().await??;
+                if !matches!(
+                    outcome,
+                    ActivationCleanupOutcome::Completed {
+                        home_cache_promoted: true
+                    }
+                ) {
+                    return Err(io::Error::other(format!(
+                        "native caller required saving incomplete: {outcome:?}"
+                    ))
+                    .into());
+                }
+                tracker.close_and_wait().await;
+                drop(task.take_completed_lease()?);
+                if !tracker.take_retained_activation_owners()?.is_empty() {
+                    return Err(io::Error::other("native caller retained uncertainty").into());
+                }
+                Ok(None)
+            }
             NativeScope::Replacement | NativeScope::Restore | NativeScope::Aged => {
                 transitions::exercise(
                     transitions::Context {

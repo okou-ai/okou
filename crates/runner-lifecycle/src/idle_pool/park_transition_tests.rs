@@ -192,6 +192,12 @@ async fn cancelled_running_handoff_cannot_return_to_idle_inventory() {
     let reservation = Box::new(candidate.into_finalizing_handoff(successor, predecessor))
         .into_reservation(successor, predecessor)
         .unwrap_or_else(|_| panic!("matching successor should own the reservation"));
+    let reservation = match IdleActivationOwner::new(reservation) {
+        Err(reservation) => *reservation,
+        Ok(_) => panic!("ordinary activation must preserve a running handoff owner"),
+    };
+    assert_eq!(budget.allocated(), (2, 2048, 1));
+    assert_eq!(overrides.unpark_call_count(), 0);
     let mut pool = IdlePool::new(pool_config(1));
     let RestoreReservedIdleResult::Rejected(destroy_job) = pool.restore_reserved(reservation)
     else {

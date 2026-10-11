@@ -302,6 +302,9 @@ impl IdlePoolInsertion {
         if !same {
             return Err(reject(self, MemoryOperationError::ResourceChanged));
         }
+        let Some(mut entry) = incoming.entry.take() else {
+            return Err(reject(self, MemoryOperationError::Consumed));
+        };
         let Self {
             candidate,
             admission,
@@ -313,6 +316,7 @@ impl IdlePoolInsertion {
             {
                 Ok(task) => IdlePoolInsertionStarted::Replaced(task),
                 Err(failure) => {
+                    incoming.entry = Some(entry);
                     let (error, retirement) = failure.into_parts();
                     return Err(reject(
                         Self {
@@ -327,7 +331,6 @@ impl IdlePoolInsertion {
         };
         // Policy was rechecked immediately above; acceptance removed its exact
         // victim. A second owner cannot enter this synchronous critical section.
-        let mut entry = incoming.entry.take().expect("validated incoming owner");
         if !incoming.restore {
             // New park age starts at pool acceptance, as in ordinary park.
             // Only restoration preserves its original idle age across waits.

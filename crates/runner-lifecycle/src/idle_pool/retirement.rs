@@ -23,7 +23,7 @@ use super::{
 
 /// Positive measured/supplied growth, not guessed residency or eviction yield.
 /// Both phases consume cleanup slots and bytes in the same P2 authority.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IdleRetirementEnvelope {
     pub live_growth_bytes: u64,
     pub tail_growth_bytes: u64,
@@ -208,7 +208,7 @@ impl GuardedIdleRetirement {
     }
 }
 
-async fn settle(operation: &mut MemoryOperation, context: &'static str) -> bool {
+pub(super) async fn settle(operation: &mut MemoryOperation, context: &'static str) -> bool {
     loop {
         match AssertUnwindSafe(operation.complete_phase())
             .catch_unwind()

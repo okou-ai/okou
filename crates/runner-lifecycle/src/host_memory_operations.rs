@@ -188,6 +188,10 @@ struct Shared {
 }
 
 impl HostMemoryOperations {
+    pub(crate) fn same_authority(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.shared, &other.shared)
+    }
+
     pub fn new(
         policy: MemoryOperationPolicy,
         source: Arc<dyn MemoryObservationSource>,
