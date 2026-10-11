@@ -1542,11 +1542,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0422",
-      "file": "turbo/packages/db/scripts/test-private-artifact-absolute-urls.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0423",
       "file": "turbo/packages/db/scripts/test-pro-suspend-retirement.ts",
       "owner": "expectCheckViolation"
