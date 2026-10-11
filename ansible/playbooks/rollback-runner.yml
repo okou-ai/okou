@@ -94,10 +94,6 @@
     - name: Validate runner architecture
       include_tasks: ../tasks/validate-runner-architecture.yml
 
-    # Validate even when rollback resumes an already-active cached version.
-    - name: Prepare persistent Runner WSS prerequisites before rollback
-      include_tasks: ../tasks/prepare-runner-wss.yml
-
     # ========================================
     # Phase 1: Probe target service state
     # ========================================

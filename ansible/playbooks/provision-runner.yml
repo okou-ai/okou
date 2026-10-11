@@ -14,10 +14,12 @@
   tasks:
     # Host preparation only: no Caddy installation or Runner service policy.
     - name: Prepare protected Runner WSS socket namespace
-      ansible.builtin.include_tasks:
-        file: ../tasks/prepare-runner-wss.yml
-        apply:
-          tags: runner_wss_host
+      become: true
+      ansible.builtin.script:
+        cmd: ../scripts/prepare-runner-wss.py
+        executable: /usr/bin/python3
+      register: runner_wss_namespace_prepare
+      changed_when: runner_wss_namespace_prepare.stdout | trim == 'created'
       tags: runner_wss_host
 
     - name: Wait for apt lock to be released

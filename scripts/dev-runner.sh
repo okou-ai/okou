@@ -134,9 +134,6 @@ cmd_deploy() {
   log "Binary: $BINARY ($(du -h "$BINARY" | cut -f1))"
 
   # Stop old service before uploading (avoids "Text file busy").
-  log "Preparing persistent WSS prerequisites..."
-  ssh_cmd "sudo /usr/bin/python3 -" < "$PROJECT_ROOT/ansible/scripts/prepare-runner-wss.py"
-
   # Try --force first (new runner), fall back to no-flag (old runner).
   log "Stopping old service..."
   ssh_cmd "$RUNNER_BIN service stop --name $RUNNER_SERVICE_SUFFIX --force" || ssh_cmd "$RUNNER_BIN service stop --name $RUNNER_SERVICE_SUFFIX" || true

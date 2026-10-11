@@ -2,7 +2,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export SCRIPT_DIR
 
 require_env() {
   local name=$1
@@ -106,10 +105,6 @@ reconcile_service_on_host() {
   local RUNNER_DIRNAME="${RUNNER_DIR##*/}"
   local REMOTE="${METAL_USER}@${HOST}"
   local MC
-
-  if [ "$HOST" = "$SELECTED_HOST" ]; then
-    bash "${SCRIPT_DIR}/prepare-runner-wss.sh" "$REMOTE"
-  fi
 
   # Retire the current service namespace on every host, including staging:
   # its service names stay stable while image directories and selection change.

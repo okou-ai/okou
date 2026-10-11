@@ -275,11 +275,6 @@ if [ "${1:-}" = "sudo" ] && [ "${2:-}" = "install" ]; then
   exit 0
 fi
 
-if [ "$*" = "sudo /usr/bin/python3 -" ]; then
-  cat >/dev/null
-  exit 0
-fi
-
 if [ "${1:-}" = "sudo" ] && [ "${3:-}" = "gc" ]; then
   gc_attempt=$(( $(< "$SSH_GC_COUNT_FILE") + 1 ))
   printf '%s\n' "$gc_attempt" > "$SSH_GC_COUNT_FILE"

@@ -199,22 +199,6 @@ esac
 EOF
 chmod +x "$fake_systemctl"
 
-# Keep the real task/transport flow while stubbing the external host preparer.
-# Its filesystem behavior is covered by prepare-runner-wss-test.py; this suite
-# must not create the real /var/lib namespace or a system group on its worker.
-cp -R "$repo_root/ansible" "$tmp/ansible"
-mkdir -p "$tmp/.github"
-ln -s "$repo_root/.github/scripts" "$tmp/.github/scripts"
-promote_playbook="$tmp/ansible/playbooks/promote-runner.yml"
-rollback_playbook="$tmp/ansible/playbooks/rollback-runner.yml"
-cat >"$tmp/ansible/scripts/prepare-runner-wss.py" <<EOF
-from pathlib import Path
-if Path("$data_dir/unsafe-wss").exists():
-    raise SystemExit(1)
-with open("$invocation_log", "a") as output:
-    output.write("wss prepare\\n")
-EOF
-
 for playbook in "$promote_playbook" "$rollback_playbook"; do
   HOME="$test_home" \
     ANSIBLE_CONFIG="$ansible_config" \
@@ -263,7 +247,6 @@ fi
 
 assert_line_count "$invocation_log" 2 \
   "gc --keep-latest 6 --protect-version $runner_release"
-assert_line_count "$invocation_log" 2 "wss prepare"
 assert_line_count "$invocation_log" 4 "doctor --name $runner_release"
 assert_line_count "$invocation_log" 2 \
   "service wait-running --name $runner_release --timeout-secs 120"
@@ -401,18 +384,6 @@ fi
 if [ -s "$tmp/workflow-missing-directory/output" ]; then
   echo "warning discovery failure must not publish a success output" >&2
   cat "$tmp/workflow-missing-directory/output" >&2
-  exit 1
-fi
-
-reset_case
-touch "$data_dir/unsafe-wss"
-if run_promotion "$tmp/unsafe-wss-output" "$tmp/unsafe-wss-warnings"; then
-  echo "unsafe WSS prerequisites must fail promotion" >&2
-  exit 1
-fi
-if [ -f "$invocation_log" ]; then
-  echo "failed WSS preparation must prevent runner install/drain/GC" >&2
-  cat "$invocation_log" >&2
   exit 1
 fi
 

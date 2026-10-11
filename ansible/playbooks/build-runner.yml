@@ -49,9 +49,6 @@
     - name: Validate runner architecture
       include_tasks: ../tasks/validate-runner-architecture.yml
 
-    - name: Prepare persistent Runner WSS prerequisites
-      include_tasks: ../tasks/prepare-runner-wss.yml
-
     # ========================================
     # Phase 1: Deploy binaries
     # ========================================

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real filesystem/socket fixtures for the shared host preparer."""
+"""Real filesystem/socket fixtures for WSS host provisioning."""
 
 import concurrent.futures
 import importlib.util
@@ -8,12 +8,9 @@ from pathlib import Path
 import socket
 import stat
 import struct
-import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
-
-import yaml
 
 REPO = Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location(
@@ -147,50 +144,6 @@ class PreparationTests(unittest.TestCase):
         self.assertFalse(self.home.exists())
         with self.assertRaises(RuntimeError):
             PREPARE.prepare(str(self.root), 0)
-
-
-class ProvisioningCacheTests(unittest.TestCase):
-    def test_hash_hit_still_validates_wss_and_propagates_failure(self):
-        action = yaml.safe_load((REPO / ".github/actions/provision/action.yml").read_text())
-        command = next(step["run"] for step in action["runs"]["steps"] if step["name"] == "Provision metal hosts")
-        with tempfile.TemporaryDirectory() as directory:
-            directory = Path(directory)
-            tools = directory / "bin"
-            tools.mkdir()
-            log = directory / "calls"
-            scripts = {
-                "git": "#!/bin/sh\nprintf '%s\\n' cached-ansible-hash\n",
-                "ssh": "#!/bin/sh\nprintf '%s\\n' cached-ansible-hash\n",
-                "ansible-playbook": (
-                    "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$WSS_FIXTURE_LOG\"\n"
-                    "exit \"${WSS_FIXTURE_FAILURE:-0}\"\n"
-                ),
-            }
-            for name, source in scripts.items():
-                path = tools / name
-                path.write_text(source)
-                path.chmod(0o755)
-            for failure in [0, 3]:
-                with self.subTest(failure=failure):
-                    if log.exists():
-                        log.unlink()
-                    environment = os.environ | {
-                        "PATH": f"{tools}:{os.environ['PATH']}",
-                        "HOSTS": "fixture-1,fixture-2",
-                        "METAL_USER": "fixture",
-                        "GRAFANA_CLOUD_API_KEY": "synthetic-fixture",
-                        "WSS_FIXTURE_LOG": str(log),
-                        "WSS_FIXTURE_FAILURE": str(failure),
-                    }
-                    result = subprocess.run(
-                        ["bash", "-e", "-o", "pipefail", "-c", command],
-                        env=environment, capture_output=True, text=True, check=False,
-                    )
-                    self.assertEqual(result.returncode, failure, result.stderr)
-                    self.assertEqual(len(log.read_text().splitlines()), 1)
-                    invocation = log.read_text()
-                    self.assertIn("-i fixture-1,fixture-2,", invocation)
-                    self.assertIn("--tags runner_wss_host", invocation)
 
 
 if __name__ == "__main__":

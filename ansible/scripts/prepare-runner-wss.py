@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Prepare persistent host prerequisites; never repair existing WSS state.
 
-Used by Ansible and cached SSH starts. Caddy need not be installed or running.
-Provision, build, promote and rollback share the Ansible task. Image, preview
-and developer SSH starts run this same file even when their binary is cached.
+Invoked by ansible/playbooks/provision-runner.yml during host provisioning.
+Caddy need not be installed or running. Later Runner starts use this persistent
+directory without repeating preparation.
 Only root writes the namespace; Caddy's dedicated group can traverse/connect.
 Existing sockets and private Runner subtrees are never enumerated or changed.
 """
