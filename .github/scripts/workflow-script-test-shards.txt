@@ -103,6 +103,7 @@
 4 cli-package-identity-test.sh
 4 deploy-cli-local-test.sh
 4 dev-runner-test.sh
+4 download-okou-cli-cdn-file-test.sh
 4 fetch-okou-app-artifact-test.sh
 4 kms-production-exit-check-test.sh
 4 neon-connection-string-ssl-test.sh
