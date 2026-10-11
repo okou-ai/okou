@@ -1,5 +1,5 @@
 import type { BuiltinConnectorExternalCodeSessionStartResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -10,6 +10,7 @@ import {
   mockAwsExternalCodeProvider,
 } from "./helpers/api-bdd-connectors";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
+import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 const connectors = createConnectorBddApi(context);
@@ -79,6 +80,8 @@ async function expectAccounts(
 }
 
 describe("Builtin external-code session creation", () => {
+  beforeEach(mockSecretKmsHttp);
+
   it("replaces matching pending sessions while preserving completed replay, another workspace and the chosen non-default account", async () => {
     const owned = createActor();
     const foreign = createActor();
