@@ -128,6 +128,9 @@ const vncConnectionsResult$ = computed(async (get) => {
 export const vncConnections$ = computed(async (get) => {
   return (await get(vncConnectionsResult$))?.body.connections ?? null;
 });
+// New App builds may still reach an old serving/rollback API during rollout.
+// Remove acknowledgement gating with #39060 after those API/schema readers are
+// excluded, old Runs/sandboxes drain and the supported App client floor deploys.
 export const vncKerberosSupported$ = computed(async (get) => {
   return (
     (await get(vncConnectionsResult$))?.headers.get(

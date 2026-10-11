@@ -47,6 +47,9 @@ const admission$ = command(async ({ get, set }, signal: AbortSignal) => {
   return true;
 });
 
+// Mixed-version rollout: old sandbox clients cannot decode Kerberos variants.
+// Remove the opt-in filter with #39060 after old serving/rollback API and schema
+// readers are excluded, old Runs/sandboxes drain and the App floor deploys.
 const listHosts$ = command(async ({ get, set }, signal: AbortSignal) => {
   const admitted = await set(admission$, signal);
   if (!admitted) {

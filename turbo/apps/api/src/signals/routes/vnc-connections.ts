@@ -93,6 +93,9 @@ function mapFailure(result: {
   }
 }
 
+// Mixed-version rollout: old App/Runner readers cannot decode Kerberos variants.
+// Remove these inventory filters with #39060 after old serving/rollback API and
+// schema readers are excluded, old Runs/sandboxes drain and the App floor deploys.
 const listCredentials$ = command(async ({ get, set }, signal: AbortSignal) => {
   const context = await set(vncAdmission$, signal);
   if (!context) {
@@ -197,6 +200,7 @@ const deleteCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
     : mapFailure(result);
 });
 
+// Retire this old-reader filter together with listCredentials$ under #39060.
 const listConnections$ = command(async ({ get, set }, signal: AbortSignal) => {
   const context = await set(vncAdmission$, signal);
   if (!context) {

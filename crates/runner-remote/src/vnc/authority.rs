@@ -970,6 +970,11 @@ impl Authority {
             },
             supported_profiles,
         };
+        // Mixed API versions must receive the legacy capability shape first.
+        // Retire this two-step resolution with #39060 after old serving/rollback
+        // API/schema readers are excluded, old Runs/sandboxes fully drain and
+        // the supported App client floor deploys. The native containment probe
+        // before Kerberos secret resolution remains required after retirement.
         let (mut response, version) = self
             .call_versioned::<ResolveResponse>(
                 routes::resolve::route(routes::resolve::Params {
