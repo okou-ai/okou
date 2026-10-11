@@ -371,7 +371,8 @@ jobs:
             e2e/tests/02-browser/brw-t01-platform-e2e.bats
           shellcheck .github/scripts/tests/runner-binary-early-publication-test.sh .github/scripts/tests/runner-binary-test-inputs-test.sh
           shellcheck crates/kerberos-worker/native/build.sh crates/kerberos-worker/native/build-dependencies.sh \
-            .github/scripts/tests/kerberos-native-cache-test.sh .github/scripts/tests/kerberos-native-cache-workflow-test.sh
+            .github/scripts/tests/kerberos-native-cache-test.sh .github/scripts/tests/kerberos-native-cache-workflow-test.sh \
+            .github/scripts/tests/crates-parallel-checks-workflow-test.sh
           shellcheck -x -P .github/scripts .github/scripts/runner-binary-github.sh .github/scripts/tests/runner-binary-github-test.sh
           shellcheck -x -P .github/scripts .github/scripts/runner-image-architecture.sh .github/scripts/tests/runner-image-architecture-test.sh
           # actionlint assumes Bash when shell is omitted and does not model the

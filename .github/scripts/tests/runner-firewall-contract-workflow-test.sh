@@ -355,7 +355,7 @@ cat "$CARGO_METADATA_FIXTURE"
 
     # Optional jobs may skip, but their failures must still fail the gate.
     unrelated = contexts['unrelated']
-    skipped = {name: 'skipped' for name in gate['needs'] if name != 'detect'}
+    skipped = {name: 'skipped' for name in gate['needs'] if name not in ['detect-release', 'detect']}
     assert_gate(unrelated, skipped, True, 'unrelated jobs skip')
     for name in ['coverage', standalone, 'native-kerberos-runtime', 'native-gssapi-independent-peer']:
         for result in ['failure', 'cancelled', '']:
@@ -467,7 +467,8 @@ cat "$CARGO_METADATA_FIXTURE"
     assert 'native-kerberos-needed' not in partial and 'native-gssapi-peer-needed' not in partial
 
     released = unrelated | {'needs.detect-release.outputs.skip': 'true'}
-    assert_gate(released, {name: 'skipped' for name in gate['needs']}, True, 'release fast path')
+    release_results = {name: 'skipped' for name in gate['needs'] if name != 'detect-release'}
+    assert_gate(released, release_results, True, 'release fast path')
 
 print('runner-firewall-contract-workflow-test: ok')
 PY
