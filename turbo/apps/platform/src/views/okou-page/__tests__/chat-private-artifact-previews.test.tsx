@@ -24,7 +24,7 @@ const context = testContext();
 const NOW = Date.parse("2026-09-09T00:00:00.000Z");
 const FILE_ID = "f0000000-0000-4000-a000-000000000941";
 const R2_ORIGIN = `https://${"a".repeat(32)}.r2.cloudflarestorage.com`;
-const FIRST_URL = `${R2_ORIGIN}/private/photo%20%2B.png?X-Amz-Credential=key%2F20260911%2Fauto%2Fs3%2Faws4_request&X-Amz-Security-Token=token%2B%2F%3D&X-Amz-Signature=first&response-cache-control=private%2C%20no-store`;
+const FIRST_URL = `${R2_ORIGIN}/private/photo%20%2B.png?X-Amz-Credential=key%2F20260911%2Fauto%2Fs3%2Faws4_request&X-Amz-Security-Token=token%2B%2F%3D&X-Amz-Signature=first&response-cache-control=private%2C%20max-age%3D31536000%2C%20must-revalidate`;
 const NEXT_URL = `${R2_ORIGIN}/private/photo.png?X-Amz-Signature=next`;
 const THUMBNAIL_PREFIX =
   "https://cdn.vm7.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/";
@@ -166,9 +166,7 @@ test("repeated thread images and their lightbox share one resolved original", as
 test("downloads obtain a fresh credential without replacing the open image", async () => {
   mockPrivateImage();
   const downloads = context.mocks.browser.blobDownload();
-  context.mocks.browser.requestCacheMode();
   context.mocks.http.get(`${R2_ORIGIN}/private/photo.png`, ({ request }) => {
-    expect(request.cache).toBe("default");
     return new URL(request.url).searchParams.get("X-Amz-Signature") === "next"
       ? HttpResponse.text("private image bytes")
       : new HttpResponse(null, { status: 403 });
@@ -191,6 +189,51 @@ test("downloads obtain a fresh credential without replacing the open image", asy
     FIRST_URL,
   );
   expect(image).toHaveAttribute("src", THUMBNAIL_URL);
+});
+
+test("downloads a private image after previewing it when its credential is reused", async () => {
+  mockPrivateImage();
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(200, {
+      url: FIRST_URL,
+      expiresAt: "2026-09-11T00:00:00.000Z",
+      filename: "photo.png",
+      contentType: "image/png",
+      target: { kind: "file", id: FILE_ID },
+    });
+  });
+  const downloads = context.mocks.browser.blobDownload();
+  context.mocks.browser.requestCacheMode();
+  context.mocks.http.get(
+    `${R2_ORIGIN}/private/photo%20%2B.png`,
+    ({ request }) => {
+      // An <img> response can be cached without CORS headers. The same signed
+      // URL is readable only when the download requests a new CORS response.
+      if (request.cache !== "reload" && request.cache !== "no-store") {
+        return HttpResponse.error();
+      }
+      return HttpResponse.text("private image bytes", {
+        headers: { "Content-Type": "image/png" },
+      });
+    },
+  );
+  const image = await openChat();
+  click(image);
+  const preview = await screen.findByTestId("attachment-lightbox-image");
+  expect(preview).toHaveAttribute("src", FIRST_URL);
+  fireEvent.load(preview);
+
+  click(await findNamedButton("Download options"));
+  click(await findNamedMenuItem("Download"));
+
+  await waitFor(() => {
+    expect(downloads.downloads[0]?.filename).toBe("photo.png");
+  });
+  await expect(downloads.downloads[0]?.blob?.text()).resolves.toBe(
+    "private image bytes",
+  );
+  expect(preview).toHaveAttribute("src", FIRST_URL);
+  expect(screen.queryByText("Download failed")).not.toBeInTheDocument();
 });
 
 test.each([null, "https://a.okou.io/0123456789.png"])(

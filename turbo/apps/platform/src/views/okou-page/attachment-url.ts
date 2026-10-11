@@ -241,14 +241,19 @@ function createDownloadAnchor(
 async function fetchBlobForDownload(
   url: string,
   signal: AbortSignal,
-  cache: RequestCache,
 ): Promise<Blob | null> {
   const fetchUrl = publicAttachmentUrl(url);
+  // Image previews can cache a response without CORS headers. Reused signed
+  // URLs must also bypass that entry so the download gets a CORS response.
   // The catch branch reports network/CORS failures without falling back to
   // cross-origin anchor navigation, which would open images instead.
   // eslint-disable-next-line no-restricted-syntax -- fetch/CORS failures should surface as download failures
   try {
-    const res = await fetchResource(fetchUrl, { cache, mode: "cors" }, signal);
+    const res = await fetchResource(
+      fetchUrl,
+      { cache: "reload", mode: "cors" },
+      signal,
+    );
     if (!res.ok) {
       throw new Error(`fetch failed: ${String(res.status)}`);
     }
@@ -265,7 +270,6 @@ export async function downloadAttachmentUrl(
   signal: AbortSignal,
   filename: string,
   mode: "blob" | "native",
-  cache: RequestCache = "reload",
 ): Promise<void> {
   if (mode === "native") {
     signal.throwIfAborted();
@@ -276,7 +280,7 @@ export async function downloadAttachmentUrl(
     anchor.remove();
     return;
   }
-  const blob = await fetchBlobForDownload(url, signal, cache);
+  const blob = await fetchBlobForDownload(url, signal);
   if (blob !== null) {
     triggerBlobDownload(blob, filename, signal);
     return;

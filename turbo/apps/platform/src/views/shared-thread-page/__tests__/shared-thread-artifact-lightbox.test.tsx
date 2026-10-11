@@ -537,8 +537,19 @@ function mockArtifactResource(resource: {
   );
 }
 
-test("a shared image opens in the conversation and keeps its destination for a new tab", async () => {
+test("a shared image downloads after previewing and keeps its destination for a new tab", async () => {
   const chartUrl = `${R2_ORIGIN}/snapshots/chart.png?X-Amz-Signature=preview`;
+  const downloads = context.mocks.browser.blobDownload();
+  context.mocks.browser.requestCacheMode();
+  context.mocks.http.get(`${R2_ORIGIN}/snapshots/chart.png`, ({ request }) => {
+    // Reusing a non-CORS image cache entry makes the browser reject the fetch.
+    if (request.cache !== "reload" && request.cache !== "no-store") {
+      return HttpResponse.error();
+    }
+    return HttpResponse.text("shared image bytes", {
+      headers: { "Content-Type": "image/png" },
+    });
+  });
   mockArtifactResource({
     reference: "lightimg01.png",
     url: chartUrl,
@@ -567,6 +578,20 @@ test("a shared image opens in the conversation and keeps its destination for a n
     within(dialog).findByTestId("attachment-lightbox-image"),
   ).resolves.toHaveAttribute("src", chartUrl);
   expect(within(dialog).getByText("Quarterly chart")).toBeInTheDocument();
+
+  fireEvent.load(within(dialog).getByTestId("attachment-lightbox-image"));
+  click(getButtonByName("Download", dialog));
+
+  await waitFor(() => {
+    expect(downloads.downloads[0]?.filename).toBe("lightimg01.png");
+  });
+  await expect(downloads.downloads[0]?.blob?.text()).resolves.toBe(
+    "shared image bytes",
+  );
+  expect(
+    within(dialog).getByTestId("attachment-lightbox-image"),
+  ).toHaveAttribute("src", chartUrl);
+  expect(screen.queryByText("Download failed")).not.toBeInTheDocument();
 });
 
 test("a shared document opens in the conversation from its card and from its link", async () => {

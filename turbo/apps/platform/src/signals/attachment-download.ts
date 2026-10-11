@@ -218,9 +218,8 @@ export const downloadAttachment$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const preview = createAttachmentPreviewSignals(attachment.url);
-    const [resourceUrl, shareUrl, identity] = await Promise.all([
+    const [resourceUrl, identity] = await Promise.all([
       get(preview.resourceUrl$),
-      get(preview.shareUrl$),
       get(preview.artifactShareIdentity$),
     ]);
     signal.throwIfAborted();
@@ -245,7 +244,6 @@ export const downloadAttachment$ = command(
       }) === "file"
         ? "native"
         : "blob",
-      shareUrl === null ? "default" : "reload",
     );
   },
 );

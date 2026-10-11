@@ -77,7 +77,6 @@ const downloadStoredArtifact$ = command(
       signal,
       preview.filename,
       token?.downloadUrl ? "native" : "blob",
-      "default",
     );
   },
 );
