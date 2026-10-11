@@ -10,11 +10,11 @@ use std::{
 
 use async_trait::async_trait;
 use httpmock::{Mock, MockServer};
-use runner_rpc_proto::stream::{Frame, Reader};
+use runner_rpc_proto::stream::{Frame, Reader, Writer};
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf},
-    net::TcpStream,
+    net::{TcpStream, UnixStream},
     sync::{Semaphore, mpsc},
 };
 use tokio_util::sync::CancellationToken;
@@ -64,8 +64,8 @@ impl Network for TestNetwork {
     }
 }
 
-struct Stream {
-    stream: DuplexStream,
+struct Stream<S> {
+    stream: S,
     fail_output: bool,
     cancel_after_data: Option<CancellationToken>,
     header: Vec<u8>,
@@ -73,7 +73,7 @@ struct Stream {
     data: bool,
 }
 
-impl Stream {
+impl<S> Stream<S> {
     fn observe(&mut self, mut bytes: &[u8]) {
         if self.cancel_after_data.is_none() {
             return;
@@ -100,8 +100,8 @@ impl Stream {
         }
     }
 }
-impl sandbox::GuestRpcStream for Stream {}
-impl AsyncRead for Stream {
+impl<S: AsyncRead + AsyncWrite + Unpin + Send> sandbox::GuestRpcStream for Stream<S> {}
+impl<S: AsyncRead + Unpin> AsyncRead for Stream<S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -110,7 +110,7 @@ impl AsyncRead for Stream {
         Pin::new(&mut self.get_mut().stream).poll_read(cx, buf)
     }
 }
-impl AsyncWrite for Stream {
+impl<S: AsyncWrite + Unpin> AsyncWrite for Stream<S> {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -201,6 +201,24 @@ impl TestRun {
         self.open_options(false, true).await
     }
 
+    pub(super) async fn accept_socket(&self, host: UnixStream) {
+        self.incoming
+            .send(sandbox::AcceptedGuestRpc {
+                sandbox_id: "vnc-assigned-sandbox".into(),
+                stream: Box::new(Stream {
+                    stream: host,
+                    fail_output: false,
+                    cancel_after_data: None,
+                    header: Vec::with_capacity(4),
+                    remaining: 0,
+                    data: false,
+                }),
+                cancelled: self.lifecycle.clone(),
+            })
+            .await
+            .unwrap();
+    }
+
     async fn open_options(&self, cancel_after_data: bool, fail_output: bool) -> DuplexStream {
         let (guest, host) = tokio::io::duplex(64 * 1024);
         self.incoming
@@ -247,6 +265,7 @@ pub(super) async fn send(guest: &mut DuplexStream, request: &str) {
         .await
         .unwrap();
     guest.write_all(request.as_bytes()).await.unwrap();
+    Writer::input(&mut *guest).send(&Frame::End).await.unwrap();
     // No half-close: production Firecracker does not forward this as host EOF.
 }
 

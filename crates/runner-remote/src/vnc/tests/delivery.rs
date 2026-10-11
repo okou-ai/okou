@@ -1,8 +1,8 @@
-use std::time::Duration;
+use std::{os::fd::AsRawFd, time::Duration};
 
 use runner_rpc_proto::stream::{Frame, Writer};
 use serde_json::json;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::{
     closed,
@@ -10,6 +10,107 @@ use super::{
     mode,
     peer::Event,
 };
+
+#[tokio::test]
+async fn nonempty_or_missing_input_end_is_not_dispatched() {
+    let mut h = Harness::new().await;
+    let resolve = h.resolve().await;
+    for data in [true, false] {
+        let mut guest = h.run.open().await;
+        let request = json!({"version":1,"method":"vnc.session.start","remaining_ms":60000,
+            "params":{"connectionId":super::harness::CONNECTION,"mode":"shared"}})
+        .to_string();
+        guest.write_u32(request.len() as u32).await.unwrap();
+        guest.write_all(request.as_bytes()).await.unwrap();
+        if data {
+            Writer::input(&mut guest)
+                .send(&Frame::Data(vec![1]))
+                .await
+                .unwrap();
+        }
+        guest.shutdown().await.unwrap();
+        let reply = read(guest).await;
+        assert_eq!(
+            reply.controls.last().unwrap(),
+            &json!({
+                "type":"error", "code":"invalid_request", "delivery":"not_dispatched"
+            })
+        );
+    }
+    resolve.assert_calls_async(0).await;
+    assert!(h.network.attempts.lock().unwrap().is_empty());
+    h.run.shutdown().await;
+}
+
+#[tokio::test]
+async fn withheld_input_end_obeys_the_request_deadline_without_dispatch() {
+    let mut h = Harness::new().await;
+    let resolve = h.resolve().await;
+    let mut guest = h.run.open().await;
+    let request = json!({"version":1,"method":"vnc.session.start","remaining_ms":1100,
+        "params":{"connectionId":super::harness::CONNECTION,"mode":"shared"}})
+    .to_string();
+    guest.write_u32(request.len() as u32).await.unwrap();
+    guest.write_all(request.as_bytes()).await.unwrap();
+    let reply = read(guest).await;
+    assert_eq!(
+        reply.controls.last().unwrap(),
+        &json!({
+            "type":"error", "code":"timed_out", "delivery":"not_dispatched"
+        })
+    );
+    resolve.assert_calls_async(0).await;
+    assert!(h.network.attempts.lock().unwrap().is_empty());
+    h.run.shutdown().await;
+}
+
+#[tokio::test]
+async fn immediate_list_terminal_survives_the_bundled_helpers_input_end() {
+    let mut h = Harness::new().await;
+    let request = json!({"version":1,"method":"vnc.session.list","params":{}}).to_string();
+    let mut input = Vec::new();
+    input.extend(u32::try_from(request.len()).unwrap().to_be_bytes());
+    input.extend(request.as_bytes());
+    Writer::input(&mut input).send(&Frame::End).await.unwrap();
+    // Unlike a duplex buffer, a real socket resets when its peer closes with
+    // unread input. This is the production CLI's request plus explicit End.
+    let (guest, host) = tokio::net::UnixStream::pair().unwrap();
+    let mut output = Vec::new();
+    let mut helper = Box::pin(runner_rpc_client::stream::run_with_io(
+        input.as_slice(),
+        &mut output,
+        || async { Ok(guest) },
+    ));
+    // Queue the complete wire request AND End before accepting the socket, so
+    // the fast list handler cannot accidentally win the write scheduling race.
+    bounded(async {
+        tokio::select! {
+            result = &mut helper => panic!("helper ended before host acceptance: {result:?}"),
+            () = async {
+                loop {
+                    let mut available: libc::c_int = 0;
+                    let mut header = [0_u8; 4];
+                    // SAFETY: host owns its live descriptor; both buffers are
+                    // writable for exactly the sizes requested by these calls.
+                    let peeked = unsafe {
+                        assert_eq!(libc::ioctl(host.as_raw_fd(), libc::FIONREAD, &mut available), 0);
+                        libc::recv(host.as_raw_fd(), header.as_mut_ptr().cast(), 4, libc::MSG_PEEK | libc::MSG_DONTWAIT)
+                    };
+                    if peeked == 4 && available as u64 >= u64::from(u32::from_be_bytes(header)) + 9 {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            } => {}
+        }
+    }).await;
+    h.run.accept_socket(host).await;
+    assert!(bounded(helper).await.unwrap());
+    let reply = read(output.as_slice()).await;
+    assert_eq!(reply.result(), &json!({"outcome":"listed","sessions":[]}));
+    assert!(h.network.attempts.lock().unwrap().is_empty());
+    h.run.shutdown().await;
+}
 
 #[tokio::test]
 async fn bundled_streaming_helper_delivers_capture_and_proves_terminal_eof() {

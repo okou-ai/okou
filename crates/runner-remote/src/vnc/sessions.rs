@@ -260,7 +260,7 @@ impl Run {
                 DirectOrSshStream::Ssh(Box::new(stream))
             }
         };
-        let kerberos = match &credential.authentication {
+        let mut kerberos = match &credential.authentication {
             Authentication::Kerberos { binding, .. } => Some(*binding),
             _ => None,
         };
@@ -292,7 +292,7 @@ impl Run {
                             exchanges: 0,
                             total: 0,
                         };
-                        Box::pin(rfb_client::authenticate_qemu_gssapi(
+                        let result = Box::pin(rfb_client::authenticate_qemu_gssapi(
                             stream,
                             &server_name,
                             roots,
@@ -305,7 +305,9 @@ impl Run {
                             &mut caller,
                             scope.deadline,
                         ))
-                        .await
+                        .await;
+                        kerberos = Some(caller.binding);
+                        result
                     }
                     Authentication::X509 {
                         server_name,

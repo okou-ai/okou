@@ -332,9 +332,15 @@ impl kerberos_worker::KdcExchange for Caller {
                     .await
                     .map_err(|_| E::Authority)?
                     .map_err(|_| E::KdcUnavailable)?;
-                if stream.generation() != generation {
-                    return Err(E::Authority);
-                }
+                // The shared SSH authority permits only its attested first-use
+                // host-key pin transition. Retain that generation and recheck
+                // the independent KDC grant before sending any KDC bytes.
+                let learned = Transport::Ssh {
+                    connection,
+                    generation: stream.generation(),
+                };
+                self.kdc.as_mut().ok_or(E::Authority)?.transport = learned;
+                self.binding.kdc = Some(learned);
                 DirectOrSshStream::Ssh(Box::new(stream))
             }
         };
@@ -369,6 +375,169 @@ impl kerberos_worker::KdcExchange for Caller {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        ssh::tests::harness::{CONNECTION, Harness, Reply, TOKEN},
+        test_fixtures::http::{HttpClientConfig, http_client},
+    };
+    use kerberos_worker::KdcExchange;
+    use serde_json::json;
+    use tokio::{net::TcpStream, time::Instant};
+    use tokio_util::sync::CancellationToken;
+
+    fn caller(h: &Harness) -> Caller {
+        let runtime = VncRuntime::official(
+            http_client(HttpClientConfig {
+                api_url: h.api.base_url(),
+                vercel_bypass: None,
+                client_session_id: "kerberos-kdc-forwarding".into(),
+            }),
+            TOKEN,
+            h.identity,
+        )
+        .unwrap()
+        .unwrap();
+        let transport = Transport::Ssh {
+            connection: CONNECTION.parse().unwrap(),
+            generation: 7,
+        };
+        Caller {
+            runtime,
+            run: h.run,
+            connection: CONNECTION.parse().unwrap(),
+            generation: 11,
+            rfb: Transport::Direct,
+            binding: Binding {
+                revision: 3,
+                kdc: Some(transport),
+            },
+            kdc: Some(Kdc {
+                host: "127.0.0.1".into(),
+                port: 88,
+                transport,
+            }),
+            realm: "EXAMPLE.TEST".into(),
+            scope: Scope {
+                cancelled: h.cancel.child_token(),
+                sandbox: CancellationToken::new(),
+                session: CancellationToken::new(),
+                deadline: Instant::now() + Duration::from_secs(10),
+            },
+            ssh: Some(h.ssh()),
+            tasks: TaskTracker::new(),
+            owner: Arc::new(()),
+            exchanges: 0,
+            total: 0,
+        }
+    }
+
+    async fn check<'a>(h: &'a Harness, generation: i64, outcome: &str) -> httpmock::Mock<'a> {
+        h.api
+            .mock_async(|when, then| {
+                when.method("POST")
+                    .path(format!("/api/runners/runs/{}/vnc/check", h.run))
+                    .header("authorization", format!("Bearer {TOKEN}"))
+                    .json_body(json!({
+                        "connectionId": CONNECTION,
+                        "runnerIdentity": {
+                            "runnerId": h.identity.runner_id(),
+                            "heartbeatGeneration": 27
+                        },
+                        "expectedGeneration": 11,
+                        "expectedTransport": {"type":"direct"},
+                        "expectedCredentialRevision": 3,
+                        "expectedKdcTransport": {
+                            "type":"ssh", "connectionId":CONNECTION, "generation":generation
+                        }
+                    }));
+                then.status(200).json_body(json!({"outcome":outcome}));
+            })
+            .await
+    }
+
+    async fn pin(h: &Harness) -> httpmock::Mock<'_> {
+        h.api
+            .mock_async(|when, then| {
+                when.method("POST")
+                    .path(format!("/api/runners/runs/{}/ssh/pin", h.run))
+                    .json_body_includes(json!({"expectedGeneration":7}).to_string());
+                then.status(200)
+                    .json_body(json!({"outcome":"pinned","generation":8}));
+            })
+            .await
+    }
+
+    async fn receive(stream: &mut TcpStream) {
+        assert_eq!(stream.read_u32().await.unwrap(), 4);
+        let mut request = [0; 4];
+        stream.read_exact(&mut request).await.unwrap();
+        assert_eq!(&request, b"test");
+    }
+
+    #[tokio::test]
+    async fn first_kdc_ssh_pin_is_reauthorized_and_retained_for_later_exchanges() {
+        let mut h = Harness::new(Reply::default()).await;
+        let resolve = h.resolve_for_run(h.run, h.credential(false)).await;
+        let pin = pin(&h).await;
+        let initial = check(&h, 7, "valid").await;
+        let learned = check(&h, 8, "valid").await;
+        let mut caller = caller(&h);
+        for _ in 0..2 {
+            let exchange = caller.exchange("EXAMPLE.TEST", b"test");
+            let kdc = async {
+                let mut stream = h.accept_forwarded().await;
+                receive(&mut stream).await;
+                stream.write_u32(5).await.unwrap();
+                stream.write_all(b"reply").await.unwrap();
+                stream.shutdown().await.unwrap();
+            };
+            let (reply, ()) = tokio::join!(exchange, kdc);
+            assert_eq!(reply.unwrap().as_slice(), b"reply");
+        }
+        initial.assert_calls_async(1).await;
+        learned.assert_calls_async(5).await;
+        resolve.assert_calls_async(1).await;
+        pin.assert_calls_async(1).await;
+        learned.delete_async().await;
+        let revoked = check(&h, 8, "configuration_changed").await;
+        assert_eq!(
+            caller.exchange("EXAMPLE.TEST", b"test").await.unwrap_err(),
+            kerberos_worker::Error::Authority
+        );
+        revoked.assert_calls_async(1).await;
+        drop(caller);
+        h.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn changed_kdc_grant_after_first_pin_denies_before_any_kdc_bytes() {
+        let mut h = Harness::new(Reply::default()).await;
+        let resolve = h.resolve_for_run(h.run, h.credential(false)).await;
+        let pin = pin(&h).await;
+        let initial = check(&h, 7, "valid").await;
+        let revoked = check(&h, 8, "unavailable").await;
+        let mut caller = caller(&h);
+        let exchange = caller.exchange("EXAMPLE.TEST", b"test");
+        let kdc = async {
+            let mut stream = h.accept_forwarded().await;
+            let mut byte = [0];
+            assert_eq!(
+                tokio::time::timeout(Duration::from_secs(5), stream.read(&mut byte))
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                0
+            );
+        };
+        let (result, ()) = tokio::join!(exchange, kdc);
+        assert_eq!(result.unwrap_err(), kerberos_worker::Error::Authority);
+        initial.assert_calls_async(1).await;
+        revoked.assert_calls_async(1).await;
+        resolve.assert_calls_async(1).await;
+        pin.assert_calls_async(1).await;
+        drop(caller);
+        h.shutdown().await;
+    }
+
     #[test]
     fn capabilities_are_ten_exact_source_rfb_kdc_tuples() {
         let full = profiles(true);
