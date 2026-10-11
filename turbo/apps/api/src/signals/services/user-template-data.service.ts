@@ -96,9 +96,9 @@ export function userTemplatePageKeys(row: UserTemplateRow): readonly string[] {
  * Separate from the pages above because a cover is what a grid shows and a
  * page is what a reader scrolls, and for one kind those are different files. A
  * deck is recognised by its first slide, so its pages are both. An
- * illustration has no pages at all and is recognised by the picture it was
- * reversed from, which is the source — the one kind whose source file is
- * already an image a browser can draw.
+ * illustration has no pages at all and is recognised by the example pictures
+ * its style produced, or, for a row published before those were sent, by the
+ * picture it was reversed from.
  *
  * Sharing one list between the cover and the pages is what would put that
  * source into `pageUrls`, where a reader would be shown the same picture the
@@ -119,7 +119,13 @@ export function userTemplateCoverKeys(row: UserTemplateRow): readonly string[] {
       return coverKey === undefined ? [] : [coverKey];
     }
     case "illustration": {
-      return [row.sourceStorageKey];
+      // The approved examples are what the style draws, so they are what it
+      // is recognised by. A row published before examples were sent has only
+      // its source to show.
+      const { exampleKeys } = row.manifest;
+      return exampleKeys !== undefined && exampleKeys.length > 0
+        ? exampleKeys
+        : [row.sourceStorageKey];
     }
   }
 }

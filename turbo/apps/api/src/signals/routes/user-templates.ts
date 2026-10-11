@@ -143,11 +143,11 @@ function userTemplatePreviewAssetsForRow(args: {
  * belongs to already carries the URL. Minting a second handle for a file the
  * reader has been handed anyway buys nothing.
  *
- * An illustration's source is separately a cover, and therefore does have an
- * asset id — one produced by `userTemplateCoverKeys`, which the resolve
- * endpoint reads too, so that handle is one it accepts. Both paths sign the
- * same object with the same version, so they share a cache key and the second
- * one costs nothing.
+ * An illustration published without examples is covered by its source, which
+ * therefore also has an asset id — one produced by `userTemplateCoverKeys`,
+ * which the resolve endpoint reads too, so that handle is one it accepts. Both
+ * paths sign the same object with the same version, so they share a cache key
+ * and the second one costs nothing.
  */
 function userTemplateSourceRequest(args: {
   readonly row: UserTemplateRow;

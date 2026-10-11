@@ -19,6 +19,7 @@ interface PublishOptions {
   readonly pages?: string;
   readonly cover?: string;
   readonly pageCount?: string;
+  readonly examples?: string;
   readonly package: string;
 }
 
@@ -79,11 +80,25 @@ function requireDocumentKind(options: PublishOptions): void {
 }
 
 /**
+ * The illustration-only flag, refused on a kind the catalog does not cover
+ * with examples, for the same reason a misplaced `--cover` is refused.
+ */
+function requireIllustrationKind(options: PublishOptions): void {
+  if (options.examples !== undefined && options.kind !== "illustration") {
+    throw new ApiRequestError(
+      "--examples is only for an illustration template",
+      "UNSUPPORTED_KIND",
+      400,
+    );
+  }
+}
+
+/**
  * What each kind needs from the command line.
  *
  * Page images are a presentation's requirement, not a template's: a deck is
  * recognised by its first slide, a document by its styles, an illustration by
- * the picture it was reversed from. Every kind names its own needs here rather
+ * the example pictures its style produced. Every kind names its own needs here rather
  * than one of them being what the others fall through to, so a kind added to
  * `USER_TEMPLATE_KINDS` fails this switch until someone says what it takes —
  * instead of silently inheriting a demand for pages it has no use for.
@@ -112,7 +127,13 @@ function publishArguments(options: PublishOptions): PublishUserTemplateArgs {
       };
     }
     case "illustration": {
-      return { ...common, kind: "illustration" };
+      return {
+        ...common,
+        kind: "illustration",
+        ...(options.examples === undefined
+          ? {}
+          : { examplesDir: options.examples }),
+      };
     }
   }
 }
@@ -144,6 +165,10 @@ const publishCommand = new Command()
     "--page-count <n>",
     "How many pages the source file has. Documents only",
   )
+  .option(
+    "--examples <dir>",
+    "Directory of the approved example PNGs the style produced, in filename order; the first is the catalog cover. Illustrations only",
+  )
   .requiredOption(
     "--package <dir>",
     "Directory holding SKILL.md and whatever else its guidance names",
@@ -151,7 +176,7 @@ const publishCommand = new Command()
   .addHelpText(
     "after",
     `
-This is the publish step, not page rendering. First follow the authoritative extract-template guide. A presentation also needs ordered page images rendered with okou presentation screenshot and passed as --pages; a document has one --cover and --page-count instead, and an illustration has neither. publish uploads the original file, any page PNGs, the cover, and the guidance package, then commits them together.
+This is the publish step, not page rendering. First follow the authoritative extract-template guide. A presentation also needs ordered page images rendered with okou presentation screenshot and passed as --pages; a document has one --cover and --page-count instead, and an illustration passes the example pictures the member approved as --examples. publish uploads the original file, any page PNGs, the cover, and the guidance package, then commits them together.
 
 A document published without --cover still appears under Custom; the catalog names it by its file rather than showing its first page.
 
@@ -160,6 +185,7 @@ A published template appears under Custom in the template picker, private to you
   .action(
     withErrorHandler(async (options: PublishOptions) => {
       requireDocumentKind(options);
+      requireIllustrationKind(options);
       const template = await publishUserTemplate(publishArguments(options));
       console.log(
         template.pageCount === null

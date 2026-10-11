@@ -812,6 +812,149 @@ describe("POST /api/user-templates", () => {
     );
   });
 
+  it("covers an illustration with its approved examples, not its source", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const upload = async (
+      filename: string,
+      contentType: string,
+      body: string,
+    ) => {
+      return await uploadTemplateFile(
+        context,
+        actor,
+        fixture,
+        { filename, contentType },
+        Buffer.from(body, "utf8"),
+      );
+    };
+    const referenceId = await upload(
+      "design-review.png",
+      "image/png",
+      "PNG reference bytes",
+    );
+    const firstExampleId = await upload(
+      "ref-agenda.png",
+      "image/png",
+      "PNG first example bytes",
+    );
+    const secondExampleId = await upload(
+      "ref-approval.png",
+      "image/png",
+      "PNG second example bytes",
+    );
+    const packageFileId = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
+      tarGz(guidance("illustration")),
+    );
+
+    const response = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: {
+          title: "Quiet UI mockup",
+          kind: "illustration",
+          sourceFileId: referenceId,
+          packageFileId,
+          exampleFileIds: [firstExampleId, secondExampleId],
+        },
+      }),
+      [200],
+    );
+
+    // The style is shown by what it draws: the first example is the cover.
+    expect(
+      fixture.readSignedObject(response.body.coverUrl!).toString("utf8"),
+    ).toBe("PNG first example bytes");
+
+    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
+    const listedAssets = listed.body[0]?.previewAssets ?? [];
+    expect(
+      listedAssets.map((asset) => {
+        return fixture.readSignedObject(asset.url).toString("utf8");
+      }),
+    ).toStrictEqual(["PNG first example bytes", "PNG second example bytes"]);
+    const reresolved = await accept(
+      client.resolvePreviewUrls({
+        headers: webHeaders(),
+        body: {
+          previewAssetIds: listedAssets.map((asset) => {
+            return asset.previewAssetId;
+          }),
+        },
+      }),
+      [200],
+    );
+    expect(reresolved.body.assets).toHaveLength(2);
+
+    const detail = await accept(
+      client.get({
+        headers: webHeaders(),
+        params: { templateId: response.body.id },
+      }),
+      [200],
+    );
+    // The examples are not pages, and the source is still the file the
+    // template was read from.
+    expect(detail.body.pageUrls).toStrictEqual([]);
+    expect(detail.body.previewAssets).toHaveLength(2);
+    expect(
+      fixture.readSignedObject(detail.body.sourceUrl).toString("utf8"),
+    ).toBe("PNG reference bytes");
+  });
+
+  it("refuses an example the catalog could not paint", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const referenceId = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename: "market-day.png", contentType: "image/png" },
+      Buffer.from("PNG reference bytes", "utf8"),
+    );
+    const exampleId = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename: "ref-market.gif", contentType: "image/gif" },
+      Buffer.from("GIF example bytes", "utf8"),
+    );
+    const packageFileId = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
+      tarGz(guidance("illustration")),
+    );
+
+    const response = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: {
+          title: "Market day",
+          kind: "illustration",
+          sourceFileId: referenceId,
+          packageFileId,
+          exampleFileIds: [exampleId],
+        },
+      }),
+      [400],
+    );
+    expect(response.body.error.message).toBe("Example 1 must be a image/png");
+    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
+    expect(listed.body).toStrictEqual([]);
+  });
+
   it("refuses a source the kind it was published as cannot be shown as", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();

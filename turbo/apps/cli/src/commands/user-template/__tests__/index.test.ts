@@ -34,6 +34,7 @@ interface PublishedBody {
   readonly pageFileIds?: readonly string[];
   readonly coverFileId?: string;
   readonly pageCount?: number;
+  readonly exampleFileIds?: readonly string[];
   readonly packageFileId: string;
 }
 
@@ -455,6 +456,95 @@ describe("okou user-template publish", () => {
     expect(mockConsoleLog).toHaveBeenCalledWith(
       `Published Market day (${TEMPLATE_ID})`,
     );
+  });
+
+  it("publishes an illustration's approved examples in filename order", async () => {
+    const uploads = installUploadRoutes();
+    const referencePath = join(tempDir, "design-review.png");
+    writeFileSync(referencePath, Buffer.from("png bytes"));
+    const examplesDir = join(tempDir, "examples");
+    mkdirSync(examplesDir);
+    writeFileSync(join(examplesDir, "ref-b-approval.png"), Buffer.from("b"));
+    writeFileSync(join(examplesDir, "ref-a-agenda.png"), Buffer.from("a"));
+    writeFileSync(join(examplesDir, "notes.txt"), "not a picture");
+
+    let published: PublishedBody | undefined;
+    server.use(
+      http.post(PUBLISH_URL, async ({ request }) => {
+        published = (await request.json()) as PublishedBody;
+        return HttpResponse.json({
+          id: TEMPLATE_ID,
+          title: published.title,
+          sourceFilename: "design-review.png",
+          kind: "illustration",
+          coverUrl: "https://example.com/ref-a-agenda.png",
+          pageCount: null,
+          visibility: "private",
+          ownerUserId: "user_1",
+          canManage: true,
+          createdAt: "2026-10-11T00:00:00.000Z",
+          updatedAt: "2026-10-11T00:00:00.000Z",
+        });
+      }),
+    );
+
+    await userTemplateCommand.parseAsync([
+      "node",
+      "okou",
+      "publish",
+      "--kind",
+      "illustration",
+      "--title",
+      "Quiet UI mockup",
+      "--source",
+      referencePath,
+      "--examples",
+      examplesDir,
+      "--package",
+      packageDir,
+    ]);
+
+    // The first example becomes the cover, so their order is the file order.
+    expect(
+      (published?.exampleFileIds ?? []).map((id) => {
+        return [uploads.filenameOf(id), uploads.contentTypeOf(id)];
+      }),
+    ).toStrictEqual([
+      ["ref-a-agenda.png", "image/png"],
+      ["ref-b-approval.png", "image/png"],
+    ]);
+    expect(published?.pageFileIds).toBeUndefined();
+    expect(uploads.filenameOf(published?.sourceFileId ?? "")).toBe(
+      "design-review.png",
+    );
+  });
+
+  it("refuses examples on a kind the catalog does not cover with them", async () => {
+    const uploads = installUploadRoutes();
+    const examplesDir = join(tempDir, "examples");
+    mkdirSync(examplesDir);
+    writeFileSync(join(examplesDir, "ref-a.png"), Buffer.from("a"));
+
+    await expect(
+      userTemplateCommand.parseAsync([
+        "node",
+        "okou",
+        "publish",
+        "--title",
+        "Brand system",
+        "--source",
+        sourcePath,
+        "--pages",
+        pagesDir,
+        "--examples",
+        examplesDir,
+        "--package",
+        packageDir,
+      ]),
+    ).rejects.toThrow("process.exit called");
+    const errors = mockConsoleError.mock.calls.flat().join("\n");
+    expect(errors).toContain("--examples is only for an illustration template");
+    expect(uploads.uploadCount()).toBe(0);
   });
 
   it("refuses a presentation with no pages directory", async () => {
