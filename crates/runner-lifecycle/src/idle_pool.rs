@@ -15,6 +15,7 @@ mod park_transition;
 mod parking_gate;
 mod pressure;
 mod retirement;
+mod retirement_batch;
 
 pub use inventory_retirement::{
     IdlePoolRetirement, IdlePoolRetirementStartFailure, IdleRetirementCandidate,
@@ -24,6 +25,7 @@ pub use retirement::{
     GuardedIdleRetirement, IdleRetirementAdmissionFailure, IdleRetirementEnvelope,
     IdleRetirementStartFailure,
 };
+pub use retirement_batch::{IdleRetirementBatchScope, IdleRetirementSelection};
 
 pub use entry::{
     DestroyOutcome, FinalizingHandoffCandidate, IdleDestroyPayload, IdleDestroyResult,

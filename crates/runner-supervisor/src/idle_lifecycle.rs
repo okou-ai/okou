@@ -1,5 +1,11 @@
 //! Idle-pool lifecycle and status helpers for `runner start`.
 
+mod batch;
+
+pub use batch::{
+    IdlePoolBatchRetirementRequest, IdlePoolRetirementBatchReport, IdlePoolRetirementRefusal,
+};
+
 use std::ops::Deref;
 use std::sync::Arc;
 use std::{future::Future, panic::AssertUnwindSafe};
@@ -781,6 +787,7 @@ async fn finish_idle_payload(
 mod tests {
     use super::*;
 
+    mod batch;
     mod guarded;
     mod ownership;
 

@@ -21,12 +21,16 @@ artifacts. It physically parks a Firecracker sandbox, runs terminal private
 preparation and freeze, waits for exact backing exit, publishes home, tears down
 the factory-owned sandbox, and restores the saved home into another sandbox.
 It verifies ordinary bytes survive and the previous private runtime directory
-does not. It repeats with fresh boot and the matching prepared snapshot.
+does not. It repeats both exact-prune and all-inventory drain/shutdown batch
+scopes with fresh boot and the matching prepared snapshot (four owned cases).
 
 The fixture captures backing while the parked candidate is exclusively owned,
-then enters the real Lifecycle inventory and Supervisor retirement API. Both
+then enters the real Lifecycle inventory and tracked Supervisor batch API. Both
 memory allowances are granted while the entry remains in the pool. Only a
 matching insertion can be detached and transferred to accepted physical cleanup.
+The fixed original selection never adopts later inventory. Admission refusals,
+accepted uncertainty and status-publication failure all fail native acceptance;
+each completed full logical lease is released by its independent batch owner.
 
 Supply `OKOU_TEST_RPC_BASE_DIR` as a disposable directory, plus
 `OKOU_TEST_RPC_FIRECRACKER`, `OKOU_TEST_RPC_KERNEL`, `OKOU_TEST_RPC_ROOTFS`,
