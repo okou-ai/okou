@@ -27,6 +27,8 @@ export async function validatePiMemoryStage1Cost(
   );
   const org = randomUUID();
   const model = `scale-${randomUUID()}`;
+  let readPhaseSettings:
+    { readOnly: string; statementTimeout: string } | undefined;
   try {
     await client.query(`CREATE SCHEMA "${schema}"`);
     for (const connection of [client, writer]) {
@@ -208,9 +210,19 @@ export async function validatePiMemoryStage1Cost(
       "INSERT INTO usage_event(idempotency_key,org_id,user_id,kind,provider,category,quantity,billing_context,created_at,billing_error) VALUES(gen_random_uuid(),$1,'user','model',$2,'tokens.output',2,'pi_memory_stage1','2026-09-15','missing_pricing')",
       [org, model],
     );
+    const settings: Record<string, unknown> = (
+      await client.query(
+        "SELECT current_setting('default_transaction_read_only') AS read_only, current_setting('statement_timeout') AS statement_timeout",
+      )
+    ).rows[0];
+    assert.ok(typeof settings.read_only === "string");
+    assert.ok(typeof settings.statement_timeout === "string");
+    readPhaseSettings = {
+      readOnly: settings.read_only,
+      statementTimeout: settings.statement_timeout,
+    };
     await client.query(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0418; new non-billing transactions are prohibited.
-      "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SET LOCAL statement_timeout='5s'",
+      "SELECT set_config('default_transaction_read_only','on',false), set_config('statement_timeout','5s',false)",
     );
     const report = (await client.query(query, ["2026-09-15", org, "user", {}]))
       .rows[0].report;
@@ -226,7 +238,6 @@ export async function validatePiMemoryStage1Cost(
         {},
       ])
     ).rows[0]["QUERY PLAN"][0];
-    await client.query("COMMIT");
     const cli = await promisify(execFile)(
       process.execPath,
       [
@@ -271,6 +282,12 @@ export async function validatePiMemoryStage1Cost(
       }),
     );
   } finally {
+    if (readPhaseSettings) {
+      await client.query(
+        "SELECT set_config('default_transaction_read_only',$1,false), set_config('statement_timeout',$2,false)",
+        [readPhaseSettings.readOnly, readPhaseSettings.statementTimeout],
+      );
+    }
     await client.query("ROLLBACK");
     await client.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
     await Promise.all([client.end(), writer.end()]);
