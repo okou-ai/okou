@@ -17,11 +17,6 @@
       "owner": "reserveAgentInstructionPublication$"
     },
     {
-      "id": "TX-0009",
-      "file": "turbo/apps/api/src/signals/routes/agent-instructions.ts",
-      "owner": "settleInstructionPublication$"
-    },
-    {
       "id": "TX-0010",
       "file": "turbo/apps/api/src/signals/routes/agents.ts",
       "owner": "createAgentInner$/createAgent"
@@ -245,11 +240,6 @@
       "id": "TX-0107",
       "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
       "owner": "convertCloudflareAccessToPersonal$"
-    },
-    {
-      "id": "TX-0109",
-      "file": "turbo/apps/api/src/signals/services/computer-use-authorization.service.ts",
-      "owner": "applyTeamsAuthorizationScope$"
     },
     {
       "id": "TX-0111",
@@ -995,11 +985,6 @@
       "id": "TX-0309",
       "file": "turbo/apps/api/src/signals/services/user-export-durable.service.ts",
       "owner": "commitCollectedEntries$"
-    },
-    {
-      "id": "TX-0312",
-      "file": "turbo/apps/api/src/signals/services/user-export-source.service.ts",
-      "owner": "collectMessages$"
     },
     {
       "id": "TX-0313",
