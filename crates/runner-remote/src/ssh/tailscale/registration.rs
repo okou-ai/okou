@@ -19,9 +19,9 @@ use super::{
 const REGISTRATION_BYTES: usize = 64 * 1024;
 const STARTUP_BYTES: usize = 1024 * 1024;
 
-// Production always selects the SDK's verified connector. A controlled external
-// TLS fixture can supply its own trusted roots without changing SDK code or
-// replacing the shared key/Noise/registration/map composition.
+// Production uses the saved-host WebPKI policy with an explicit crypto provider.
+// A controlled external TLS fixture can supply its own trusted roots without
+// changing SDK code or replacing shared key/Noise/registration/map composition.
 pub(super) trait Tls {
     async fn connect<Io>(
         &self,
@@ -43,7 +43,14 @@ impl Tls for VerifiedTls {
     where
         Io: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
-        ts_tls_util::connect(name, io).await
+        // The SDK helper uses Rustls's process-default provider. Workspace
+        // feature unification can enable both providers, so reuse the explicit
+        // saved-host policy instead of relying on another client to initialize
+        // global state. The SDK source and TLS stream/crypto remain unchanged.
+        let config = super::super::access::tls_config().map_err(std::io::Error::other)?;
+        tokio_rustls::TlsConnector::from(config)
+            .connect(name, io)
+            .await
     }
 }
 
