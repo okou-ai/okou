@@ -1232,11 +1232,6 @@
       "owner": "validateCanonicalRowLock"
     },
     {
-      "id": "TX-0372",
-      "file": "turbo/packages/db/scripts/test-built-in-model-keys-permanent.ts",
-      "owner": "validateCanonicalRowLock"
-    },
-    {
       "id": "TX-0373",
       "file": "turbo/packages/db/scripts/test-cloudflare-access.ts",
       "owner": "rejects"
