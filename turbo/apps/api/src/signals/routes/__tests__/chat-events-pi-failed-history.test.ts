@@ -6,6 +6,7 @@ import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
+import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 const {
@@ -46,6 +47,7 @@ describe("Pi failed native history completion", () => {
   it.each(["empty", "partial"] as const)(
     "retains %s error leaves without advancing canonical continuation",
     async (content) => {
+      mockSecretKmsHttp();
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const model = "gpt-6-luna";
       await configureSubscriptionPiModel(actor, {}, model);
