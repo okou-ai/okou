@@ -1786,8 +1786,6 @@ async function validateCustomConnectorOauthModeConstraints(
       fixture.createdBy,
     ]);
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0396; new non-billing transactions are prohibited.
-    await client.query("BEGIN");
     await client.query(insertConnector, [
       fixture.oauthConnectorId,
       fixture.orgId,
@@ -1800,7 +1798,6 @@ async function validateCustomConnectorOauthModeConstraints(
       fixture.oauthConnectorId,
       fixture.orgId,
     ]);
-    await client.query("COMMIT");
 
     await client.query(insertAutomaticConnector, [
       fixture.automaticConnectorId,
