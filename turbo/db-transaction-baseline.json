@@ -37,11 +37,6 @@
       "owner": "updateAgentMetadataInner$"
     },
     {
-      "id": "TX-0015",
-      "file": "turbo/apps/api/src/signals/routes/connectors.ts",
-      "owner": "startBuiltinConnectorOpenIdInner$"
-    },
-    {
       "id": "TX-0018",
       "file": "turbo/apps/api/src/signals/routes/feishu-oauth.ts",
       "owner": "persistFeishuOAuthConnection"
