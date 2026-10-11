@@ -125,13 +125,16 @@ async fn retire_selection(
     );
     // External observation failures occur before acceptance. Physical work has
     // its own producer and tracker observer installed atomically by admission.
-    let mut started = AssertUnwindSafe(admission)
+    // The batch publishes only its final current snapshot. Keep the accepted
+    // observer and release intermediate inventory metadata before a held tail.
+    let mut task = AssertUnwindSafe(admission)
         .catch_unwind()
         .await
         .unwrap_or(Err(MemoryOperationError::ProducerLost))
-        .map_err(refusal)?;
+        .map_err(refusal)?
+        .task;
     tracker.notify_reuse_state();
-    let outcome = match started.task.join().await {
+    let outcome = match task.join().await {
         Ok(Ok(result)) => {
             // Release this full logical lease at real completion, even while
             // another original entry is still waiting for admission or exit.
