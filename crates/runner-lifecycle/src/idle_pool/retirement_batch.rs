@@ -34,6 +34,19 @@ impl IdleRetirementSelection {
 }
 
 impl IdlePool {
+    /// Capture the same deterministic logical-pressure ordering without detach.
+    /// Missing proof is an explicit refusal for the original selected owner.
+    pub fn logical_retirement_candidates(&self) -> Vec<IdleRetirementSelection> {
+        self.ordered_pressure_entries()
+            .into_iter()
+            .map(|entry| IdleRetirementSelection {
+                identity: entry.metadata.identity.clone(),
+                sandbox_id: entry.metadata.sandbox_id,
+                candidate: self.retirement_candidate(&entry.metadata.identity),
+            })
+            .collect()
+    }
+
     /// Capture the original batch using cached metadata only. Admission happens
     /// after releasing the pool borrow; no provider callback or removal runs here.
     /// A later reservation, restore or replacement invalidates the captured

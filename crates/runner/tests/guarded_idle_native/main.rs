@@ -11,14 +11,18 @@ use runner_lifecycle::home_image_cache::{
     HomeCacheTerminalStatus, HomeImageCache, HomeImagePromotionRequest,
 };
 use runner_lifecycle::home_mount::ensure_home_drive_mounted;
+use runner_lifecycle::host_memory_operations::MemoryOperationError;
 use runner_lifecycle::idle_pool::{
-    IdlePool, IdlePoolConfig, IdleRetirementBatchScope, ParkResult,
+    DestroyOutcome, IdlePool, IdlePoolConfig, IdleRetirementBatchScope, ParkResult,
     test_support::ParkedIdleCandidateBuilder,
 };
 use runner_lifecycle::resource_budget::ResourceBudget;
 use runner_lifecycle::status::StatusTracker;
 use runner_storage::storage_fingerprints::StorageFingerprints;
-use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, IdlePoolBatchRetirementRequest};
+use runner_supervisor::idle_lifecycle::{
+    GuardedIdlePressureRequest, IdleDestroyTracker, IdlePoolBatchRetirementRequest,
+    IdlePressureRequest, IdlePressureSelection, select_idle_entries_for_guarded_pressure,
+};
 use runner_types::ids::RunId;
 use sandbox::{
     FactoryConfig, RuntimeConfig, SandboxFactory, SandboxId, SandboxParkOutcome, SandboxRuntime,
@@ -28,6 +32,12 @@ use sandbox_firecracker::FirecrackerRuntime;
 use tokio::sync::Notify;
 
 type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+
+#[derive(Clone, Copy, Debug)]
+enum NativeScope {
+    Batch(IdleRetirementBatchScope),
+    Logical,
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires root, KVM, NBD, packaged guest artifacts and supplied measured policy"]
@@ -55,8 +65,9 @@ async fn exercise_factories(
     inputs: &fixture::Inputs,
 ) -> TestResult<()> {
     for scope in [
-        IdleRetirementBatchScope::Exact,
-        IdleRetirementBatchScope::All,
+        NativeScope::Batch(IdleRetirementBatchScope::Exact),
+        NativeScope::Batch(IdleRetirementBatchScope::All),
+        NativeScope::Logical,
     ] {
         for restored in [false, true] {
             // Never share a production Runner directory or another invocation's cache.
@@ -96,7 +107,7 @@ async fn exercise_retirement(
     factory: Arc<Box<dyn SandboxFactory>>,
     paths: RunnerPaths,
     inputs: &fixture::Inputs,
-    scope: IdleRetirementBatchScope,
+    scope: NativeScope,
 ) -> TestResult<()> {
     let status = Arc::new(StatusTracker::new(
         paths.base_dir().join("status.json"),
@@ -176,49 +187,148 @@ async fn exercise_retirement(
     }
     assert!(matches!(pool.park(candidate), ParkResult::Parked));
     let pool = Arc::new(tokio::sync::Mutex::new(pool));
-    let mut task = match tracker
-        .start_pool_retirement_batch(
-            pool.clone(),
-            status,
-            operations.clone(),
-            IdlePoolBatchRetirementRequest {
-                scope,
-                envelope: inputs.envelope(),
-                context: "native_guarded_idle",
-            },
-        )
-        .await
-    {
-        Ok(task) => task,
+    let retirement: TestResult<_> = async {
+        match scope {
+            NativeScope::Batch(scope) => {
+                let mut task = tracker
+                    .start_pool_retirement_batch(
+                        pool.clone(),
+                        status.clone(),
+                        operations.clone(),
+                        IdlePoolBatchRetirementRequest {
+                            scope,
+                            envelope: inputs.envelope(),
+                            context: "native_guarded_idle",
+                        },
+                    )
+                    .await?;
+                let result = task.join().await?;
+                if !result.is_complete() {
+                    return Err(io::Error::other(format!(
+                        "native guarded batch incomplete: {result:?}"
+                    ))
+                    .into());
+                }
+                assert_eq!(
+                    (result.selected, result.completed, result.uncertain),
+                    (1, 1, 0)
+                );
+                Ok(None)
+            }
+            NativeScope::Logical => {
+                // Same physical authority reserves real replacement growth before
+                // accepting old retirement. Logical transfer supplies no credit.
+                let mut replacement = operations.request(inputs.replacement_plan()?)?;
+                let permit = replacement.try_grant().await?;
+                let mut result = select_idle_entries_for_guarded_pressure(
+                    &pool,
+                    &status,
+                    &tracker,
+                    &budget,
+                    &operations,
+                    Vec::new(),
+                    GuardedIdlePressureRequest {
+                        selection: IdlePressureRequest {
+                            run_id: RunId::new_v4(),
+                            reuse_key: None,
+                            profile_name: fixture::PROFILE,
+                            device_rate_limits: &None,
+                            history_generation_run_id: None,
+                            allow_compatible_blank: false,
+                            blank_pool_diagnostics: None,
+                            vcpu: 2,
+                            memory_mb: 4096,
+                            context: "native_guarded_logical",
+                        },
+                        envelope: inputs.envelope(),
+                    },
+                )
+                .await;
+                if !result.not_started.is_empty() || result.status_error.is_some() {
+                    return Err(io::Error::other(format!(
+                        "native logical refusal/status failure: {:?} / {:?}",
+                        result.not_started, result.status_error
+                    ))
+                    .into());
+                }
+                let IdlePressureSelection::Fresh(lease) = result.selection else {
+                    return Err(io::Error::other(
+                        "native logical substitution did not return a full lease",
+                    )
+                    .into());
+                };
+                assert_eq!((lease.vcpu(), lease.memory_mb()), (2, 4096));
+                assert_eq!(result.retirements.len(), 1);
+                // Prepare a different guest before joining old cleanup. Ordinary
+                // external gates establish still-live overlap, without timing claims.
+                let next_factory = factory.clone();
+                let next_cache = cache.clone();
+                let next_rootfs = rootfs_hash.clone();
+                let work = permit.spawn(move |mut operation| async move {
+                    let next_run = RunId::new_v4();
+                    let next_id = SandboxId::new_v4();
+                    let key = format!("thread:native-logical-replacement-{next_run}");
+                    let mut home =
+                        fixture::checkout(&next_cache, next_run, next_id, &key, &next_rootfs).await;
+                    let mut next = next_factory
+                        .create(fixture::sandbox_config(next_id, &mut home))
+                        .await?;
+                    let prepared: TestResult<()> = async {
+                        let backing = next
+                            .backing_process()
+                            .ok_or_else(|| io::Error::other("replacement supplied no backing"))?;
+                        operation.bind_backing(backing)?;
+                        fixture::prepare_guest(&mut *next, next_run).await?;
+                        loop {
+                            match operation.complete_phase().await {
+                                Ok(()) => break,
+                                Err(MemoryOperationError::AccountingChanged) => {
+                                    tokio::task::yield_now().await
+                                }
+                                Err(error) => return Err(error.into()),
+                            }
+                        }
+                        Ok(())
+                    }
+                    .await;
+                    next_factory.destroy(next).await;
+                    prepared
+                })?;
+                work.join().await??;
+                for task in &mut result.retirements {
+                    let completion = task.join().await??;
+                    if completion.outcome != DestroyOutcome::Completed
+                        || !completion.home_cache_promoted
+                    {
+                        return Err(io::Error::other(
+                            "native logical retirement did not prove complete saving",
+                        )
+                        .into());
+                    }
+                }
+                Ok(Some(lease))
+            }
+        }
+    }
+    .await;
+    let logical_lease = match retirement {
+        Ok(lease) => lease,
         Err(error) => {
             let jobs = pool.lock().await.drain();
             for job in jobs {
-                job.run_with_context("native_fixture_admission_cleanup")
+                job.run_with_context("native_fixture_refused_batch_cleanup")
                     .await;
             }
-            return Err(error.into());
+            tracker.close_and_wait().await;
+            return Err(error);
         }
     };
-    let result = task.join().await?;
-    if !result.is_complete() {
-        let jobs = pool.lock().await.drain();
-        for job in jobs {
-            job.run_with_context("native_fixture_refused_batch_cleanup")
-                .await;
-        }
-        return Err(
-            io::Error::other(format!("native guarded batch incomplete: {result:?}")).into(),
-        );
-    }
-    assert_eq!(
-        (result.selected, result.completed, result.uncertain),
-        (1, 1, 0)
-    );
     assert!(pool.lock().await.is_empty());
     assert!(backing.exit_confirmed().await);
     tracker.close_and_wait().await;
     let report = operations.close_and_wait().await?;
     assert_eq!((report.registered_operations, report.tracked_tasks), (0, 0));
+    drop(logical_lease);
     assert_eq!(budget.allocated(), (0, 0, 0));
     let next_run = RunId::new_v4();
     let next_id = SandboxId::new_v4();

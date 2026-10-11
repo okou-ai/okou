@@ -16,7 +16,10 @@ use crate::host_memory_operations::{
     MemoryOperationError, MemoryOperationPlan, MemoryOperationTask,
 };
 
-use super::{DestroyOutcome, IdleDestroyJob, RetainedIdleDestroyResult};
+use super::{
+    DestroyOutcome, IdleDestroyJob, IdleDestroyPayload, IdleDestroyResult,
+    RetainedIdleDestroyResult,
+};
 
 /// Positive measured/supplied growth, not guessed residency or eviction yield.
 /// Both phases consume cleanup slots and bytes in the same P2 authority.
@@ -230,8 +233,8 @@ async fn settle(operation: &mut MemoryOperation, context: &'static str) -> bool 
 }
 
 pub(super) async fn run_retirement(
-    mut live: MemoryOperation,
-    mut tail: MemoryOperation,
+    live: MemoryOperation,
+    tail: MemoryOperation,
     (job, context, backing, backing_identity): (
         IdleDestroyJob,
         &'static str,
@@ -240,6 +243,25 @@ pub(super) async fn run_retirement(
     ),
 ) -> RetainedIdleDestroyResult {
     let (payload, budget_lease) = job.into_retiring_parts();
+    let result =
+        run_retirement_payload(live, tail, (payload, context, backing, backing_identity)).await;
+    RetainedIdleDestroyResult {
+        outcome: result.outcome,
+        home_cache_promoted: result.home_cache_promoted,
+        budget_lease,
+    }
+}
+
+pub(super) async fn run_retirement_payload(
+    mut live: MemoryOperation,
+    mut tail: MemoryOperation,
+    (payload, context, backing, backing_identity): (
+        IdleDestroyPayload,
+        &'static str,
+        Arc<dyn SandboxBackingProcess>,
+        BackingProcessIdentity,
+    ),
+) -> IdleDestroyResult {
     let mut prepared = payload.prepare_terminal(context).await;
     let preparation_completed = prepared.preparation_completed();
     let reclamation_permit = prepared.take_reclamation_permit();
@@ -286,14 +308,13 @@ pub(super) async fn run_retirement(
     };
     let (live_settled, (result, tail_settled), ()) =
         tokio::join!(complete_live, cleanup, reclamation);
-    RetainedIdleDestroyResult {
+    IdleDestroyResult {
         outcome: if live_settled && tail_settled {
             DestroyOutcome::Completed
         } else {
             DestroyOutcome::Uncertain
         },
         home_cache_promoted: result.home_cache_promoted,
-        budget_lease,
     }
 }
 

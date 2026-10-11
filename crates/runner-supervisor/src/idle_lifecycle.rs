@@ -1,9 +1,14 @@
 //! Idle-pool lifecycle and status helpers for `runner start`.
 
 mod batch;
+mod logical;
 
 pub use batch::{
     IdlePoolBatchRetirementRequest, IdlePoolRetirementBatchReport, IdlePoolRetirementRefusal,
+};
+pub use logical::{
+    GuardedIdlePressureRequest, GuardedIdlePressureResult, GuardedLogicalCleanupTask,
+    select_idle_entries_for_guarded_pressure,
 };
 
 use std::ops::Deref;
@@ -521,45 +526,8 @@ pub async fn select_idle_entries_for_pressure(
 ) -> (IdlePressureSelection, Option<BlankPoolSelection>) {
     let (selection, blank_pool_selection, snapshot) = {
         let mut pool = idle_pool.lock().await;
-        let exact = pool.reserve_reusable_for_pressure(
-            request.reuse_key,
-            request.profile_name,
-            request.device_rate_limits,
-            request.history_generation_run_id,
-        );
-        let (reservation, blank_pool_selection) = match exact {
-            Some(reservation) => (Some(reservation), None),
-            None if request.allow_compatible_blank => {
-                match pool.reserve_blank(request.profile_name, request.device_rate_limits) {
-                    Ok(reservation) => (Some(reservation), Some(BlankPoolSelection::Hit)),
-                    Err(BlankIdleReservationMiss::Empty) => (
-                        None,
-                        Some(request.blank_pool_diagnostics.map_or(
-                            BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown),
-                            |diagnostics| {
-                                diagnostics.classify_empty(
-                                    request.profile_name,
-                                    request.device_rate_limits,
-                                    pool.revision(),
-                                    budget,
-                                )
-                            },
-                        )),
-                    ),
-                    Err(BlankIdleReservationMiss::Incompatible) => (
-                        None,
-                        Some(BlankPoolSelection::Miss(
-                            BlankPoolSelectionReason::IncompatibleShape,
-                        )),
-                    ),
-                    Err(BlankIdleReservationMiss::Unknown) => (
-                        None,
-                        Some(BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)),
-                    ),
-                }
-            }
-            None => (None, None),
-        };
+        let (reservation, blank_pool_selection) =
+            reserve_pressure_reuse(&mut pool, budget, &request);
         if let Some(reservation) = reservation {
             drop(retiring_leases);
             let snapshot = pool.status_snapshot();
@@ -622,6 +590,51 @@ pub async fn select_idle_entries_for_pressure(
         set_idle_status_snapshot(status, snapshot).await;
     }
     (selection, blank_pool_selection)
+}
+
+fn reserve_pressure_reuse(
+    pool: &mut IdlePool,
+    budget: &Arc<ResourceBudget>,
+    request: &IdlePressureRequest<'_>,
+) -> (Option<ReservedIdleSandbox>, Option<BlankPoolSelection>) {
+    if let Some(reservation) = pool.reserve_reusable_for_pressure(
+        request.reuse_key,
+        request.profile_name,
+        request.device_rate_limits,
+        request.history_generation_run_id,
+    ) {
+        return (Some(reservation), None);
+    }
+    if !request.allow_compatible_blank {
+        return (None, None);
+    }
+    match pool.reserve_blank(request.profile_name, request.device_rate_limits) {
+        Ok(reservation) => (Some(reservation), Some(BlankPoolSelection::Hit)),
+        Err(BlankIdleReservationMiss::Empty) => (
+            None,
+            Some(request.blank_pool_diagnostics.map_or(
+                BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown),
+                |diagnostics| {
+                    diagnostics.classify_empty(
+                        request.profile_name,
+                        request.device_rate_limits,
+                        pool.revision(),
+                        budget,
+                    )
+                },
+            )),
+        ),
+        Err(BlankIdleReservationMiss::Incompatible) => (
+            None,
+            Some(BlankPoolSelection::Miss(
+                BlankPoolSelectionReason::IncompatibleShape,
+            )),
+        ),
+        Err(BlankIdleReservationMiss::Unknown) => (
+            None,
+            Some(BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)),
+        ),
+    }
 }
 
 fn try_substitute_retiring_leases(

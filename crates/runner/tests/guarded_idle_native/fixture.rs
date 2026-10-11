@@ -34,6 +34,7 @@ pub struct Inputs {
     recovery_available_bytes: u64,
     live_growth_bytes: u64,
     tail_growth_bytes: u64,
+    replacement_preparation_bytes: u64,
     max_sample_age_millis: u64,
     max_operations: usize,
     max_cleanup_inflight: usize,
@@ -68,6 +69,21 @@ impl Inputs {
             live_growth_bytes: self.live_growth_bytes,
             tail_growth_bytes: self.tail_growth_bytes,
         }
+    }
+
+    pub fn replacement_plan(
+        &self,
+    ) -> Result<runner_lifecycle::host_memory_operations::MemoryOperationPlan, MemoryOperationError>
+    {
+        if self.replacement_preparation_bytes == 0 {
+            return Err(MemoryOperationError::UnsupportedGrowth);
+        }
+        Ok(
+            runner_lifecycle::host_memory_operations::MemoryOperationPlan::Fresh {
+                memory_mib: 4096,
+                preparation_bytes: self.replacement_preparation_bytes,
+            },
+        )
     }
 }
 

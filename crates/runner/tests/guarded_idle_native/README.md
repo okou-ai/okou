@@ -21,8 +21,8 @@ artifacts. It physically parks a Firecracker sandbox, runs terminal private
 preparation and freeze, waits for exact backing exit, publishes home, tears down
 the factory-owned sandbox, and restores the saved home into another sandbox.
 It verifies ordinary bytes survive and the previous private runtime directory
-does not. It repeats both exact-prune and all-inventory drain/shutdown batch
-scopes with fresh boot and the matching prepared snapshot (four owned cases).
+does not. It repeats exact-prune, all-inventory drain/shutdown batches and logical
+substitution with fresh boot and the matching prepared snapshot (six owned cases).
 
 The fixture captures backing while the parked candidate is exclusively owned,
 then enters the real Lifecycle inventory and tracked Supervisor batch API. Both
@@ -31,6 +31,13 @@ matching insertion can be detached and transferred to accepted physical cleanup.
 The fixed original selection never adopts later inventory. Admission refusals,
 accepted uncertainty and status-publication failure all fail native acceptance;
 each completed full logical lease is released by its independent batch owner.
+
+Logical substitution transfers the complete lease without joining old exit. A
+replacement Fresh preparation allowance is granted in the same P2 authority,
+and a different guest is prepared before joining old cleanup. The original
+required export is then checked through restored home bytes. Ordinary gated
+owner tests establish live overlap; the native seam does not impose an old-exit
+startup barrier or use logical removal as physical credit.
 
 Supply `OKOU_TEST_RPC_BASE_DIR` as a disposable directory, plus
 `OKOU_TEST_RPC_FIRECRACKER`, `OKOU_TEST_RPC_KERNEL`, `OKOU_TEST_RPC_ROOTFS`,
@@ -43,6 +50,7 @@ its own factory/runtime. No production Runner directory should be used.
 current test-host measurements and limits (no defaults): `host_total_bytes`,
 `operating_floor_bytes`, `cleanup_reserve_bytes`, `critical_available_bytes`,
 `recovery_available_bytes`, `live_growth_bytes`, `tail_growth_bytes`,
+`replacement_preparation_bytes`,
 `max_sample_age_millis`, `max_operations`, `max_cleanup_inflight`. The guest shape
 matches the packaged `vm0/default` fixture: two vCPUs, 4096 MiB, 16384 MiB home.
 The host observation is a real fresh `/proc/meminfo` read. Arithmetic validation
