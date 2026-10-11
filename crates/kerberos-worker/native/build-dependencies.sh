@@ -14,12 +14,6 @@ krb5_sha=3243ffbc8ea4d4ac22ddc7dd2a1dc54c57874c40648b60ff97009763554eaf13
 recipe_sha=$(sha256sum "$recipe_dir/build-dependencies.sh" | awk '{print $1}')
 library_key=$(printf '%s\n' "$krb5_sha" "$zig_sha" "$arch" "$host" "$recipe_sha" "${KERBEROS_NATIVE_BUILD_ENV:-}" | sha256sum | awk '{print $1}')
 started=$SECONDS
-# Incidental compiler/make overrides are not inputs to the pinned recipe.
-unset MAKEFLAGS MFLAGS MAKEOVERRIDES CPP CONFIG_SHELL ZIG_LIB_DIR CPATH C_INCLUDE_PATH \
-  CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH LIBRARY_PATH COMPILER_PATH GCC_EXEC_PREFIX
-# Autoconf site files can replace the recipe's flags and probe results. The
-# pinned recipe never imports local site configuration, including prefix sites.
-export CONFIG_SITE=/dev/null
 mkdir -p "$output"
 output=$(cd -- "$output" && pwd -P)
 cache=${KERBEROS_NATIVE_CACHE_DIR:-"$output/cache"}
@@ -94,10 +88,17 @@ if [[ "$hit" == false ]]; then
   # configure/make. A lone archive never counts as a complete product.
   rm -f -- "$entry/complete" "$entry/complete.part" "$entry/libraries.tar.gz.part"
   rm -rf -- "$build"
-  mkdir -p "$build"
+  mkdir -p "$build" "$output/tmp"
+  # Ambient Autoconf probes/options and make controls can change the products
+  # without changing their identity. Pass only executable/temp/compiler paths;
+  # all recipe flags and cross-probe answers below remain explicit arguments.
+  build_env=(env -i "PATH=$PATH" LC_ALL=C CONFIG_SITE=/dev/null
+    "TMPDIR=${TMPDIR:-$output/tmp}"
+    "ZIG_GLOBAL_CACHE_DIR=${ZIG_GLOBAL_CACHE_DIR:-$output/zig-cache}"
+    "ZIG_LOCAL_CACHE_DIR=${ZIG_LOCAL_CACHE_DIR:-$output/zig-local-cache}")
   (
     cd -- "$build"
-    "$source/src/configure" --build="$host-pc-linux-gnu" --host="$arch-linux-musl" \
+    "${build_env[@]}" "$source/src/configure" --build="$host-pc-linux-gnu" --host="$arch-linux-musl" \
       --prefix=/kerberos-worker-build-only --enable-static --disable-shared --disable-thread-support --disable-pkinit \
       --without-keyutils --without-libedit --without-ldap --without-lmdb --with-crypto-impl=builtin \
       --with-tls-impl=no --with-spake-openssl=no --without-system-verto --disable-dns-for-realm \
@@ -105,7 +106,7 @@ if [[ "$hit" == false ]]; then
       "CFLAGS=-O2 -ffile-prefix-map=$output=/kerberos-worker-build-only" 'CPPFLAGS=' 'LDFLAGS=' \
       ac_cv_func_res_nsearch=no ac_cv_func_res_search=no krb5_cv_attr_constructor_destructor=yes,yes ac_cv_printf_positional=yes
     for component in util/et include util/support util/profile lib/crypto lib/krb5 lib/gssapi; do
-      make -j 2 -C "$component"
+      "${build_env[@]}" make -j 2 -C "$component"
     done
   )
   complete_products

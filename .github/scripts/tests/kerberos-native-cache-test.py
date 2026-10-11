@@ -6,6 +6,7 @@ import io
 import os
 from pathlib import Path
 import select
+import shlex
 import signal
 import subprocess
 import tarfile
@@ -35,7 +36,14 @@ class CacheTest(unittest.TestCase):
         # Fixture upstream pins and external curl/make replace network/compiler
         # cost. Hash validation, tar IO, completion publication and flock are real.
         self.archive("zig.tar.xz", "w:xz", {"zig-x86_64-linux-0.15.2/zig": b"fixture SDK"})
-        self.archive("krb5.tar.gz", "w:gz", {"krb5-1.22.2/src/configure": b"#!/bin/sh\nset -e\nif [ -n \"${CONFIG_SITE:-}\" ]; then . \"$CONFIG_SITE\"; fi\n"})
+        configure = ("#!/bin/sh\nset -e\n"
+                     f"CACHE_TEST_ROOT={shlex.quote(str(self.root))}\n"
+                     'if [ -n "${CONFIG_SITE:-}" ]; then . "$CONFIG_SITE"; fi\n'
+                     'env > configure.env\nmkdir -p include\n'
+                     'if [ "${ac_cv_func_getentropy:-yes}" = yes ]; then\n'
+                     '  echo "#define HAVE_GETENTROPY 1" > include/autoconf.h\n'
+                     'else echo "/* #undef HAVE_GETENTROPY */" > include/autoconf.h; fi\n')
+        self.archive("krb5.tar.gz", "w:gz", {"krb5-1.22.2/src/configure": configure.encode()})
         self.pin_recipe()
         self.command("curl", """#!/bin/bash
 set -eu
@@ -43,9 +51,11 @@ while [[ $1 != -o ]]; do url=$1; shift; done
 case "$url" in *ziglang*) name=zig.tar.xz ;; *) name=krb5.tar.gz ;; esac
 cp "$CACHE_TEST_ROOT/$name" "$2"
 """)
-        self.command("make", """#!/bin/bash
+        self.command("make", f"#!/bin/bash\nfixture_root={shlex.quote(str(self.root))}\n" + """
 set -eu
-echo "$*" >> "$CACHE_TEST_ROOT/makes"
+if [[ -f "${PWD%/build}.fixture-env" ]]; then source "${PWD%/build}.fixture-env"; fi
+env > make.env
+echo "$*" >> "$fixture_root/makes"
 if [[ $4 == util/et && -n ${CACHE_TEST_READY:-} ]]; then
   echo ready > "$CACHE_TEST_READY"
   read -r release < "$CACHE_TEST_RELEASE"
@@ -90,6 +100,11 @@ exec /usr/bin/flock "$@"
     def start(self, arch="x86_64", extra=None):
         self.count += 1
         output = self.root / f"context-{self.count}"
+        # External make owns its controls outside the production environment.
+        controls = {key: value for key, value in (extra or {}).items()
+                    if key in {"CACHE_TEST_READY", "CACHE_TEST_RELEASE", "CACHE_TEST_FAIL"}}
+        (self.root / f"context-{self.count}.fixture-env").write_text(
+            "".join(f"{key}={shlex.quote(str(value))}\n" for key, value in controls.items()))
         process = subprocess.Popen(["bash", str(self.recipe), str(output), arch],
                                    env={**self.env, **(extra or {})}, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, text=True, start_new_session=True)
@@ -235,6 +250,21 @@ exec /usr/bin/flock "$@"
         self.assertFalse(marker.exists())
         self.run_build(True, extra={"CONFIG_SITE": str(site)})
         self.assertFalse(marker.exists())
+
+    def test_external_configure_overrides_do_not_poison_products(self):
+        overrides = {"ac_cv_func_getentropy": "no", "krb5_cv_attr_constructor_destructor": "no,no",
+                     "ax_cv_check_cflags___Werror": "no", "k5_cv_attr_constructor_destructor": "no,no",
+                     "pkg_cv_COM_ERR_LIBS": "foreign", "LIBS": "-lforeign", "DEFCCNAME": "foreign",
+                     "with_crypto_impl": "foreign", "MAKEFILES": "foreign", "GNUMAKEFLAGS": "-e"}
+        entry = self.run_build(False, extra=overrides)
+        with tarfile.open(entry / "libraries.tar.gz") as archive:
+            with archive.extractfile("include/autoconf.h") as header:
+                self.assertEqual(header.read(), b"#define HAVE_GETENTROPY 1\n")
+        for name in ("configure.env", "make.env"):
+            observed = dict(line.split("=", 1) for line in
+                            (self.root / "context-1/build" / name).read_text().splitlines())
+            self.assertTrue(overrides.keys().isdisjoint(observed), observed)
+        self.assertEqual(self.run_build(True), entry)
 
     def test_failed_build_never_publishes_completion(self):
         process, _ = self.start(extra={"CACHE_TEST_FAIL": "true"})
