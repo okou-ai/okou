@@ -244,10 +244,7 @@ try {
     "PASS mixed capacity count retains indexed legacy admission at census scale",
   );
 
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0415; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
-  try {
-    await client.query(`INSERT INTO agent_run_inference
+  await client.query(`INSERT INTO agent_run_inference
       (run_id, input, phase, owner_epoch, deadline_at, provider_attempt_id, provider_attempt_state)
       SELECT id, '{"schemaVersion":1,"inputEventId":null,"inputGeneration":0,"configurationHash":"${"a".repeat(64)}","contextHash":"${"b".repeat(64)}","h0":{"kind":"empty"},"deferredSecrets":{"kind":"none"}}',
         'terminal', 1, now() + row_number() OVER () * interval '1 second', gen_random_uuid(), 'not-started'
@@ -257,57 +254,54 @@ try {
       INSERT INTO agent_run_sandbox_lease (run_id, state, owner_epoch, deadline_at, release_evidence)
       SELECT run_id, 'released', 1, expires_at, 'fixture:never-started' FROM agent_run_sandbox_intent;
       ANALYZE agent_run_inference; ANALYZE agent_run_sandbox_intent; ANALYZE agent_run_sandbox_lease;`);
-    for (const [table, stateColumn, state, timeColumn, index] of [
-      [
-        "agent_run_inference",
-        "phase",
-        "terminal",
-        "deadline_at",
-        "agent_run_inference_deadline_idx",
-      ],
-      [
-        "agent_run_sandbox_intent",
-        "state",
-        "waiting",
-        "enqueued_at",
-        "agent_run_sandbox_intent_queue_idx",
-      ],
-      [
-        "agent_run_sandbox_intent",
-        "state",
-        "waiting",
-        "expires_at",
-        "agent_run_sandbox_intent_expiry_idx",
-      ],
-      [
-        "agent_run_sandbox_lease",
-        "state",
-        "released",
-        "deadline_at",
-        "agent_run_sandbox_lease_deadline_idx",
-      ],
-    ]) {
-      const plan = (
-        await client.query(
-          `EXPLAIN (ANALYZE, FORMAT JSON) SELECT run_id FROM ${table} WHERE ${stateColumn} = '${state}' ORDER BY ${timeColumn}, run_id LIMIT 1`,
-        )
-      ).rows;
-      assert.ok(
-        JSON.stringify(plan).includes(index!),
-        `Expected ordered bounded scan on ${index}`,
-      );
-      console.log(`PASS indexed bounded deadline/claim plan: ${index}`);
-    }
-    // Parent deletion cannot manufacture proof that a reservation was released.
-    await assert.rejects(
-      client.query(
-        "DELETE FROM agent_runs WHERE id = (SELECT run_id FROM agent_run_sandbox_lease LIMIT 1)",
-      ),
-      /foreign key constraint/,
+  for (const [table, stateColumn, state, timeColumn, index] of [
+    [
+      "agent_run_inference",
+      "phase",
+      "terminal",
+      "deadline_at",
+      "agent_run_inference_deadline_idx",
+    ],
+    [
+      "agent_run_sandbox_intent",
+      "state",
+      "waiting",
+      "enqueued_at",
+      "agent_run_sandbox_intent_queue_idx",
+    ],
+    [
+      "agent_run_sandbox_intent",
+      "state",
+      "waiting",
+      "expires_at",
+      "agent_run_sandbox_intent_expiry_idx",
+    ],
+    [
+      "agent_run_sandbox_lease",
+      "state",
+      "released",
+      "deadline_at",
+      "agent_run_sandbox_lease_deadline_idx",
+    ],
+  ]) {
+    const plan = (
+      await client.query(
+        `EXPLAIN (ANALYZE, FORMAT JSON) SELECT run_id FROM ${table} WHERE ${stateColumn} = '${state}' ORDER BY ${timeColumn}, run_id LIMIT 1`,
+      )
+    ).rows;
+    assert.ok(
+      JSON.stringify(plan).includes(index!),
+      `Expected ordered bounded scan on ${index}`,
     );
-  } finally {
-    await client.query("ROLLBACK");
+    console.log(`PASS indexed bounded deadline/claim plan: ${index}`);
   }
+  // Parent deletion cannot manufacture proof that a reservation was released.
+  await assert.rejects(
+    client.query(
+      "DELETE FROM agent_runs WHERE id = (SELECT run_id FROM agent_run_sandbox_lease LIMIT 1)",
+    ),
+    /foreign key constraint/,
+  );
   console.log("PASS lease FK blocks implicit capacity deletion");
 } finally {
   await client.end();
