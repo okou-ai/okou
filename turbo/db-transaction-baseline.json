@@ -567,11 +567,6 @@
       "owner": "commitMorningBriefScheduleSettlement$"
     },
     {
-      "id": "TX-0190",
-      "file": "turbo/apps/api/src/signals/services/morning-brief-timezone.service.ts",
-      "owner": "synchronizeMorningBriefTimezone$"
-    },
-    {
       "id": "TX-0193",
       "file": "turbo/apps/api/src/signals/services/notion-automation-event.service.ts",
       "owner": "publishNotionPendingEvent$"
