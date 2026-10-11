@@ -1312,11 +1312,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0389",
-      "file": "turbo/packages/db/scripts/test-historical-session-blob-audit.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0390",
       "file": "turbo/packages/db/scripts/test-historical-session-blob-audit.ts",
       "owner": "<module>"
