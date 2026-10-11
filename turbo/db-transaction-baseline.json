@@ -432,16 +432,6 @@
       "owner": "storeCustomConnectorOAuth2Connection"
     },
     {
-      "id": "TX-0142",
-      "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
-      "owner": "handleAutomaticOAuthRefreshFailure"
-    },
-    {
-      "id": "TX-0143",
-      "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
-      "owner": "refreshAutomaticOAuthAccessToken"
-    },
-    {
       "id": "TX-0144",
       "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
       "owner": "persistCustomConnectorCreate$"
