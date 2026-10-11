@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.7.0...runner-supervisor-v0.8.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** guard pool replacement and aged conversion ([#39020](https://github.com/okou-ai/okou/issues/39020)) ([cf992ee](https://github.com/okou-ai/okou/commit/cf992ee7d799e1aa6a2c40e0d79f2da15a218812))
+* **runner:** persist wss sockets in shared home ([#38992](https://github.com/okou-ai/okou/issues/38992)) ([3ac8fdc](https://github.com/okou-ai/okou/commit/3ac8fdc9211315897c7c159f91d69bad107db2df))
+
 ## [0.7.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.6.2...runner-supervisor-v0.7.0) (2026-10-11)
 
 

@@ -9,6 +9,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.727.1](https://github.com/okou-ai/okou/compare/api-v1.727.0...api-v1.727.1) (2026-10-11)
+
+
+### Refactoring
+
+* **api:** own chat-thread account target reads ([#39035](https://github.com/okou-ai/okou/issues/39035)) ([6ef6b29](https://github.com/okou-ai/okou/commit/6ef6b29bbf188d567b02bf23edfc03751a780027))
+* **api:** own computer use audit event reads ([#39068](https://github.com/okou-ai/okou/issues/39068)) ([69b00a2](https://github.com/okou-ai/okou/commit/69b00a2215933ebbbacbc97f46f4f51c42c7ca24))
+* **api:** own connected connector brief reads ([#39045](https://github.com/okou-ai/okou/issues/39045)) ([9b920c1](https://github.com/okou-ai/okou/commit/9b920c1c5dbb8e84a99ae3e3f6be467e923810b5))
+* **api:** own personal account management identity reads ([#39053](https://github.com/okou-ai/okou/issues/39053)) ([e741a4c](https://github.com/okou-ai/okou/commit/e741a4c1b66772cfe4e11e186e6685a9c1419cf3))
+* **api:** prebuild discord dm selection binding graph ([#39048](https://github.com/okou-ai/okou/issues/39048)) ([c8a9cd7](https://github.com/okou-ai/okou/commit/c8a9cd7b9baba9af2f203e45fbebc6d72f2c099e)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** prebuild discord org status feature graph ([#39066](https://github.com/okou-ai/okou/issues/39066)) ([2a35b72](https://github.com/okou-ai/okou/commit/2a35b720378fcb6e8b70e7f78ac22b9917fa724f)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** retire calendar watch publication transaction ([#39064](https://github.com/okou-ai/okou/issues/39064)) ([648b42e](https://github.com/okou-ai/okou/commit/648b42e82e6e180d5bbeacac6ad978c5695582d9))
+* **api:** retire disabled automation restoration transaction ([#39062](https://github.com/okou-ai/okou/issues/39062)) ([2aa74a3](https://github.com/okou-ai/okou/commit/2aa74a300f4af17e418d9ced27f544908748dd75))
+* **api:** retire google forms activation transaction ([#39069](https://github.com/okou-ai/okou/issues/39069)) ([0522d8d](https://github.com/okou-ai/okou/commit/0522d8d61ab78b609c3bfdac7391da3d81e8b576))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 1.331.1
+
 ## [1.727.0](https://github.com/okou-ai/okou/compare/api-v1.726.0...api-v1.727.0) (2026-10-11)
 
 

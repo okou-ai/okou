@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.6.0...runner-lifecycle-v0.7.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** guard pool replacement and aged conversion ([#39020](https://github.com/okou-ai/okou/issues/39020)) ([cf992ee](https://github.com/okou-ai/okou/commit/cf992ee7d799e1aa6a2c40e0d79f2da15a218812))
+
+
+### Performance Improvements
+
+* **runner-lifecycle:** decouple storage fingerprint contracts ([#39056](https://github.com/okou-ai/okou/issues/39056)) ([24f6151](https://github.com/okou-ai/okou/commit/24f61511de54a9e5c8c06391344cf67d897b51bd))
+
 ## [0.6.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.5.0...runner-lifecycle-v0.6.0) (2026-10-11)
 
 
