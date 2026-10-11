@@ -9,7 +9,9 @@ import {
   workflowUserAutomationThreads,
   workflows,
 } from "@okouai/db/schema/workflow";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
+import { z } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
 
 import {
   modelSettingsSchema,
@@ -229,6 +231,31 @@ export function preparedWorkflowThreadValues(
   };
 }
 
+/** Preserve column encoders and omitted defaults in the gated INSERT SELECT. */
+function workflowThreadInsertFromBindingSql(
+  thread: ReturnType<typeof preparedWorkflowThreadValues>,
+) {
+  const columns = getTableColumns(chatThreads);
+  const entries = (Object.keys(thread) as (keyof typeof thread)[]).map(
+    (key) => {
+      return { key, column: columns[key], value: thread[key] };
+    },
+  );
+  const names = entries.map(({ column }) => {
+    return sql.identifier(column.name);
+  });
+  const values = entries.map(({ key, column, value }) => {
+    return key === "id"
+      ? sql`accepted_binding.chat_thread_id`
+      : sql.param(value, column);
+  });
+  return sql`INSERT INTO ${chatThreads} (${sql.join(names, sql`, `)})
+    SELECT ${sql.join(values, sql`, `)} FROM accepted_binding
+    RETURNING id, agent_id`;
+}
+
+const createdWorkflowThreadRowSchema = z.object({ id: z.uuid() });
+
 /** Lazy trigger repair owns its complete binding, thread and event publication. */
 export const ensureWorkflowUserAutomationThread$ = command(
   async (
@@ -242,63 +269,78 @@ export const ensureWorkflowUserAutomationThread$ = command(
       signal,
     );
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0347; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      // The binding, created thread and created event are one publication.
-      await tx
-        .insert(workflowUserAutomationThreads)
-        .values({
-          orgId: args.orgId,
-          userId: args.userId,
-          workflowId: args.workflowId,
-          createdAt: args.currentTime,
-          updatedAt: args.currentTime,
-        })
-        .onConflictDoNothing({
-          target: [
-            workflowUserAutomationThreads.orgId,
-            workflowUserAutomationThreads.userId,
-            workflowUserAutomationThreads.workflowId,
-          ],
-        });
-      const [binding] = await tx
-        .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
-        .from(workflowUserAutomationThreads)
-        .where(workflowUserAutomationThreadOwnerCondition(args))
-        .limit(1);
-      if (binding?.chatThreadId) {
-        return binding.chatThreadId;
-      }
-      const values = preparedWorkflowThreadValues(
-        args,
-        preparation,
-        randomUUID(),
-      );
-      await tx.insert(chatThreads).values(values);
-      await tx.execute(
-        chatThreadEventInsertSql({
-          kind: "created",
-          orgId: args.orgId,
-          userId: args.userId,
-          agentId: args.agentId,
-          chatThreadId: values.id,
-          title: values.title,
-          selectedModel: values.selectedModel,
-          modelSettings: values.modelSettings,
-          cloudBrowserEnabled: values.cloudBrowserEnabled,
-          serviceTier: chatThreadServiceTierFromCodex(values.codexServiceTier),
-          createdAt: values.createdAt,
-        }),
-      );
-      await tx
-        .update(workflowUserAutomationThreads)
-        .set({ chatThreadId: values.id, updatedAt: args.currentTime })
-        .where(workflowUserAutomationThreadOwnerCondition(args));
-      const chatThreadId = values.id;
-      signal.throwIfAborted();
-      return chatThreadId;
-    });
+    const values = preparedWorkflowThreadValues(
+      args,
+      preparation,
+      randomUUID(),
+    );
+    const binding = db
+      .insert(workflowUserAutomationThreads)
+      .values({
+        orgId: args.orgId,
+        userId: args.userId,
+        workflowId: args.workflowId,
+        chatThreadId: values.id,
+        createdAt: args.currentTime,
+        updatedAt: args.currentTime,
+      })
+      .onConflictDoUpdate({
+        target: [
+          workflowUserAutomationThreads.orgId,
+          workflowUserAutomationThreads.userId,
+          workflowUserAutomationThreads.workflowId,
+        ],
+        set: { chatThreadId: values.id, updatedAt: args.currentTime },
+        setWhere: isNull(workflowUserAutomationThreads.chatThreadId),
+      })
+      .returning({ chatThreadId: workflowUserAutomationThreads.chatThreadId });
+    // One binding mutation owns the publication. Its forward thread FK is
+    // satisfied at statement end; RETURNING gates every dependent write.
+    const publication = chatThreadEventInsertSql(
+      {
+        kind: "created",
+        orgId: args.orgId,
+        userId: args.userId,
+        chatThreadId: values.id,
+        title: values.title,
+        selectedModel: values.selectedModel,
+        modelSettings: values.modelSettings,
+        cloudBrowserEnabled: values.cloudBrowserEnabled,
+        serviceTier: chatThreadServiceTierFromCodex(values.codexServiceTier),
+        createdAt: values.createdAt,
+      },
+      {
+        cte: sql`accepted_binding AS (${binding.getSQL()}),
+            inserted_thread AS (${workflowThreadInsertFromBindingSql(values)})`,
+        gate: sql`EXISTS (SELECT 1 FROM inserted_thread)`,
+        agentId: sql`(SELECT agent_id FROM inserted_thread)`,
+        result: sql`SELECT id FROM inserted_thread`,
+      },
+    );
     signal.throwIfAborted();
-    return result;
+    const rows = parseRawRows(
+      createdWorkflowThreadRowSchema,
+      await db.execute(publication),
+    );
+    signal.throwIfAborted();
+    if (rows.length > 1) {
+      throw new Error("Workflow thread publication returned multiple threads");
+    }
+    const created = rows[0];
+    if (created) {
+      return created.id;
+    }
+    // A conflict can wait for a winner absent from the statement's initial
+    // snapshot. Read that committed binding once, after the statement ends.
+    const [winner] = await db
+      .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
+      .from(workflowUserAutomationThreads)
+      .where(workflowUserAutomationThreadOwnerCondition(args))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!winner?.chatThreadId) {
+      throw new Error("Workflow thread publication has no bound winner");
+    }
+    return winner.chatThreadId;
   },
 );
