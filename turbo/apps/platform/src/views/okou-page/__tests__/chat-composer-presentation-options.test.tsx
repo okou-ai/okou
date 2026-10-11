@@ -106,8 +106,7 @@ test("Presentation from the slash menu opens templates and keeps the draft", asy
   await expect(
     screen.findByRole("combobox", { name: "Slide count" }),
   ).resolves.toBeInTheDocument();
-  expect(editor).toHaveTextContent("Our launch");
-  expect(editor).not.toHaveTextContent("/");
+  expect(editor).toHaveTextContent(/^Our launch$/);
 });
 
 test("Presentation sends Auto as additional info without changing the message", async () => {
