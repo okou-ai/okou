@@ -572,11 +572,6 @@
       "owner": "synchronizeMorningBriefTimezone$"
     },
     {
-      "id": "TX-0192",
-      "file": "turbo/apps/api/src/signals/services/notion-automation-event.service.ts",
-      "owner": "repairNotionAutomationProjection$"
-    },
-    {
       "id": "TX-0193",
       "file": "turbo/apps/api/src/signals/services/notion-automation-event.service.ts",
       "owner": "publishNotionPendingEvent$"
