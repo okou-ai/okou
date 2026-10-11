@@ -32,6 +32,7 @@ import {
   OAuthProviderHttpError,
 } from "@okouai/connectors/auth-providers/oauth/error";
 import { connectors } from "@okouai/db/schema/connector";
+import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
@@ -66,10 +67,7 @@ import {
   type CustomConnectorRow,
 } from "./custom-connector.service";
 import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
-import {
-  insertConnectorOAuthState,
-  type StoredCustomConnectorOAuthState,
-} from "./connector-oauth-state.service";
+import type { StoredCustomConnectorOAuthState } from "./connector-oauth-state.service";
 import {
   type ConnectorConnectionMutationResolution,
   replaceConnectorConnection,
@@ -817,27 +815,33 @@ async function persistCustomConnectorOAuthStart(
     if (resolution.kind !== "ready") {
       return resolution;
     }
-    const oauthStateId = await insertConnectorOAuthState(tx, {
-      state: prepared.state,
-      customConnectorId: connector.id,
-      storageVersion: connector.storageVersion,
-      authMethod: "oauth",
-      userId: args.userId,
-      orgId: args.orgId,
-      agentId: args.agentId,
-      authorizeAgent: args.agentId !== undefined,
-      redirectUri: prepared.redirectUri,
-      authorizationUrl: prepared.authorizationUrl,
-      oauthRequestedScopes: prepared.oauthRequestedScopes,
-      codeVerifier: prepared.codeVerifier,
-      oauthContext: JSON.stringify(prepared.context),
-      accountMutation: args.account,
-      expiresAt,
-    });
+    const [oauthState] = await tx
+      .insert(connectorOauthStates)
+      .values({
+        state: prepared.state,
+        customConnectorId: connector.id,
+        storageVersion: connector.storageVersion,
+        authMethod: "oauth",
+        userId: args.userId,
+        orgId: args.orgId,
+        agentId: args.agentId,
+        authorizeAgent: args.agentId !== undefined,
+        redirectUri: prepared.redirectUri,
+        authorizationUrl: prepared.authorizationUrl,
+        oauthRequestedScopes: prepared.oauthRequestedScopes,
+        codeVerifier: prepared.codeVerifier,
+        oauthContext: JSON.stringify(prepared.context),
+        accountMutation: args.account,
+        expiresAt,
+      })
+      .returning({ id: connectorOauthStates.id });
+    if (!oauthState) {
+      throw new Error("Failed to create connector OAuth state");
+    }
     return {
       kind: "ready" as const,
-      oauthAttemptId: oauthStateId,
-      connectionId: args.account.intent === "add" ? oauthStateId : null,
+      oauthAttemptId: oauthState.id,
+      connectionId: args.account.intent === "add" ? oauthState.id : null,
       expiresAt,
     };
   });

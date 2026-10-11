@@ -11,6 +11,7 @@ import {
 } from "@okouai/api-contracts/contracts/connectors";
 import type { PublicConnectorCatalogDetail } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorGrantScopes } from "@okouai/connectors/connector-auth-method";
+import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -58,7 +59,6 @@ import {
   prepareBuiltinConnectorOpenIdAuthStartWithMethod,
 } from "./connector-openid-auth-start";
 import { resolveConnectorConnectionMutation } from "../services/connector-connection-write.service";
-import { insertConnectorOAuthState } from "../services/connector-oauth-state.service";
 
 const connectorReadAuth = {
   requireOrganization: true,
@@ -504,27 +504,33 @@ const startBuiltinConnectorOauthInner$ = command(
       if (resolution.kind !== "ready") {
         return resolution;
       }
-      const oauthStateId = await insertConnectorOAuthState(tx, {
-        state: prepared.state,
-        connectorSlug: resolved.connectorSlug,
-        authMethod: resolved.authMethodId,
-        userId: auth.userId,
-        orgId: auth.orgId,
-        agentId: bodyResult.data.agentId,
-        authorizeAgent: connectorAgentAuthorizationRequested(bodyResult.data),
-        redirectUri: prepared.redirectUri,
-        authorizationUrl: authResult.url,
-        oauthRequestedScopes: requestedScopeSnapshot(resolved.method.grant),
-        codeVerifier: authResult.codeVerifier,
-        oauthContext: authResult.oauthContext,
-        accountMutation: bodyResult.data.account,
-        expiresAt: connectorOAuthStateExpiresAt(),
-      });
+      const [oauthState] = await tx
+        .insert(connectorOauthStates)
+        .values({
+          state: prepared.state,
+          connectorSlug: resolved.connectorSlug,
+          authMethod: resolved.authMethodId,
+          userId: auth.userId,
+          orgId: auth.orgId,
+          agentId: bodyResult.data.agentId,
+          authorizeAgent: connectorAgentAuthorizationRequested(bodyResult.data),
+          redirectUri: prepared.redirectUri,
+          authorizationUrl: authResult.url,
+          oauthRequestedScopes: requestedScopeSnapshot(resolved.method.grant),
+          codeVerifier: authResult.codeVerifier,
+          oauthContext: authResult.oauthContext,
+          accountMutation: bodyResult.data.account,
+          expiresAt: connectorOAuthStateExpiresAt(),
+        })
+        .returning({ id: connectorOauthStates.id });
+      if (!oauthState) {
+        throw new Error("Failed to create connector OAuth state");
+      }
       return {
         kind: "ready" as const,
-        oauthAttemptId: oauthStateId,
+        oauthAttemptId: oauthState.id,
         connectionId:
-          bodyResult.data.account.intent === "add" ? oauthStateId : null,
+          bodyResult.data.account.intent === "add" ? oauthState.id : null,
       };
     });
     signal.throwIfAborted();
@@ -629,26 +635,32 @@ const startBuiltinConnectorOpenIdInner$ = command(
       if (resolution.kind !== "ready") {
         return resolution;
       }
-      const oauthStateId = await insertConnectorOAuthState(tx, {
-        state: prepared.state,
-        connectorSlug: resolved.connectorSlug,
-        authMethod: resolved.authMethodId,
-        userId: auth.userId,
-        orgId: auth.orgId,
-        agentId: bodyResult.data.agentId,
-        authorizeAgent: connectorAgentAuthorizationRequested(bodyResult.data),
-        redirectUri: prepared.expectedReturnTo,
-        oauthRequestedScopes: requestedScopeSnapshot(resolved.method.grant),
-        codeVerifier: authResult.codeVerifier,
-        oauthContext: JSON.stringify({ realm: prepared.realm }),
-        accountMutation: bodyResult.data.account,
-        expiresAt: connectorOAuthStateExpiresAt(),
-      });
+      const [oauthState] = await tx
+        .insert(connectorOauthStates)
+        .values({
+          state: prepared.state,
+          connectorSlug: resolved.connectorSlug,
+          authMethod: resolved.authMethodId,
+          userId: auth.userId,
+          orgId: auth.orgId,
+          agentId: bodyResult.data.agentId,
+          authorizeAgent: connectorAgentAuthorizationRequested(bodyResult.data),
+          redirectUri: prepared.expectedReturnTo,
+          oauthRequestedScopes: requestedScopeSnapshot(resolved.method.grant),
+          codeVerifier: authResult.codeVerifier,
+          oauthContext: JSON.stringify({ realm: prepared.realm }),
+          accountMutation: bodyResult.data.account,
+          expiresAt: connectorOAuthStateExpiresAt(),
+        })
+        .returning({ id: connectorOauthStates.id });
+      if (!oauthState) {
+        throw new Error("Failed to create connector OAuth state");
+      }
       return {
         kind: "ready" as const,
-        oauthAttemptId: oauthStateId,
+        oauthAttemptId: oauthState.id,
         connectionId:
-          bodyResult.data.account.intent === "add" ? oauthStateId : null,
+          bodyResult.data.account.intent === "add" ? oauthState.id : null,
       };
     });
     signal.throwIfAborted();

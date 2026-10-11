@@ -4,7 +4,7 @@ import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { and, eq, gt, isNotNull, isNull, type SQL } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { storedConnectorAccountMutationSelection } from "./connector-account-mutation.service";
 
 const storedOAuthStateSelection = Object.freeze({
@@ -85,19 +85,24 @@ type ConnectorOAuthStateStatus =
       readonly redirectUri: string;
     };
 
-export async function insertConnectorOAuthState(
-  db: Db,
-  values: typeof connectorOauthStates.$inferInsert,
-): Promise<string> {
-  const [oauthState] = await db
-    .insert(connectorOauthStates)
-    .values(values)
-    .returning({ id: connectorOauthStates.id });
-  if (!oauthState) {
-    throw new Error("Failed to create connector OAuth state");
-  }
-  return oauthState.id;
-}
+export const insertConnectorOAuthState$ = command(
+  async (
+    { set },
+    values: typeof connectorOauthStates.$inferInsert,
+    signal: AbortSignal,
+  ): Promise<string> => {
+    const db = set(writeDb$);
+    const [oauthState] = await db
+      .insert(connectorOauthStates)
+      .values(values)
+      .returning({ id: connectorOauthStates.id });
+    signal.throwIfAborted();
+    if (!oauthState) {
+      throw new Error("Failed to create connector OAuth state");
+    }
+    return oauthState.id;
+  },
+);
 
 function oauthStateTargetConditions(
   target: OAuthStateTarget,
