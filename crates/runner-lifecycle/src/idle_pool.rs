@@ -18,7 +18,8 @@ mod retirement;
 mod retirement_batch;
 
 pub use inventory_retirement::{
-    IdlePoolRetirement, IdlePoolRetirementStartFailure, IdleRetirementCandidate,
+    IdlePoolRetirement, IdlePoolRetirementStartFailure, IdlePoolSubstitutionStarted,
+    IdleRetirementCandidate,
 };
 pub use pressure::IdlePressureCandidate;
 pub use retirement::{
@@ -294,21 +295,22 @@ impl IdlePool {
 
     /// Order all current entries for pressure eviction without mutating them.
     pub fn oldest_first_pressure_keys(&self) -> Vec<IdleSandboxIdentity> {
-        let mut ordered_entries: Vec<_> = self
-            .entries()
-            .map(|entry| {
-                (
-                    !entry.is_blank(),
-                    entry.parked_at,
-                    entry.metadata.identity.clone(),
-                )
-            })
-            .collect();
-        ordered_entries.sort_unstable();
-        ordered_entries
+        self.ordered_pressure_entries()
             .into_iter()
-            .map(|(_, _, reuse_key)| reuse_key)
+            .map(|entry| entry.metadata.identity.clone())
             .collect()
+    }
+
+    fn ordered_pressure_entries(&self) -> Vec<&IdleEntry> {
+        let mut entries: Vec<_> = self.entries().collect();
+        entries.sort_unstable_by(|a, b| {
+            (!a.is_blank(), a.parked_at, &a.metadata.identity).cmp(&(
+                !b.is_blank(),
+                b.parked_at,
+                &b.metadata.identity,
+            ))
+        });
+        entries
     }
 
     pub fn reserve_blank(

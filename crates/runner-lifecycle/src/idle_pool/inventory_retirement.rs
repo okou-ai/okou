@@ -9,13 +9,18 @@ use sandbox::{BackingProcessIdentity, DeviceRateLimits, SandboxBackingProcess, S
 use uuid::Uuid;
 
 use crate::host_memory_operations::{
-    HostMemoryOperations, MemoryOperationError, MemoryOperationPlan, MemoryOperationTask,
+    HostMemoryOperations, MemoryGrowthPermit, MemoryOperationError, MemoryOperationPlan,
+    MemoryOperationTask,
 };
 
 use super::retirement::{Allowance, run_retirement};
 use super::{
     IdleEntry, IdlePool, IdleRetirementEnvelope, IdleSandboxIdentity, RetainedIdleDestroyResult,
 };
+
+mod substitution;
+
+pub use substitution::IdlePoolSubstitutionStarted;
 
 #[derive(Clone)]
 pub(super) struct CapturedBacking {
@@ -195,6 +200,49 @@ impl IdlePoolRetirement {
         context: &'static str,
     ) -> Result<MemoryOperationTask<RetainedIdleDestroyResult>, Box<IdlePoolRetirementStartFailure>>
     {
+        let DetachedRetirement {
+            entry,
+            candidate,
+            live,
+            tail,
+        } = self.detach(pool)?;
+        match live.spawn_retirement(
+            tail,
+            (entry, context, candidate),
+            |live, tail, (entry, context, candidate)| {
+                run_retirement(
+                    live,
+                    tail,
+                    (
+                        entry.into_destroy_job(),
+                        context,
+                        candidate.backing.process,
+                        candidate.backing.identity,
+                    ),
+                )
+            },
+        ) {
+            Ok(task) => {
+                pool.bump_revision();
+                Ok(task)
+            }
+            Err(failure) => {
+                let (entry, _, candidate) = failure.payload;
+                Err(DetachedRetirement {
+                    entry,
+                    candidate,
+                    live: failure.live,
+                    tail: failure.tail,
+                }
+                .restore(pool, failure.error))
+            }
+        }
+    }
+
+    fn detach(
+        self,
+        pool: &mut IdlePool,
+    ) -> Result<DetachedRetirement, Box<IdlePoolRetirementStartFailure>> {
         if !self.ready {
             return Err(self.reject(MemoryOperationError::Consumed));
         }
@@ -238,47 +286,12 @@ impl IdlePoolRetirement {
             }
             .reject(MemoryOperationError::OwnershipInvariant));
         };
-        match live.spawn_retirement(
+        Ok(DetachedRetirement {
+            entry,
+            candidate,
+            live,
             tail,
-            (entry, context, candidate),
-            |live, tail, (entry, context, candidate)| {
-                run_retirement(
-                    live,
-                    tail,
-                    (
-                        entry.into_destroy_job(),
-                        context,
-                        candidate.backing.process,
-                        candidate.backing.identity,
-                    ),
-                )
-            },
-        ) {
-            Ok(task) => {
-                pool.bump_revision();
-                Ok(task)
-            }
-            Err(failure) => {
-                // Deliberately bypass insert_entry: rejected work never became
-                // a new insertion and must not invalidate other pending claims.
-                let (entry, _, candidate) = failure.payload;
-                match &entry.metadata.identity {
-                    IdleSandboxIdentity::Exact(key) => {
-                        pool.exact_entries.insert(key.clone(), entry);
-                    }
-                    IdleSandboxIdentity::Blank(id) => {
-                        pool.blank_entries.insert(*id, entry);
-                    }
-                }
-                Err(Self {
-                    candidate,
-                    live: Allowance::Granted(failure.live),
-                    tail: Allowance::Granted(failure.tail),
-                    ready: true,
-                }
-                .reject(failure.error))
-            }
-        }
+        })
     }
 
     fn reject(self, error: MemoryOperationError) -> Box<IdlePoolRetirementStartFailure> {
@@ -286,5 +299,44 @@ impl IdlePoolRetirement {
             error,
             retirement: self,
         })
+    }
+}
+
+/// Exclusive, synchronous commit state; it never escapes an acceptance attempt.
+struct DetachedRetirement {
+    entry: IdleEntry,
+    candidate: IdleRetirementCandidate,
+    live: MemoryGrowthPermit,
+    tail: MemoryGrowthPermit,
+}
+
+impl DetachedRetirement {
+    fn restore(
+        self,
+        pool: &mut IdlePool,
+        error: MemoryOperationError,
+    ) -> Box<IdlePoolRetirementStartFailure> {
+        let Self {
+            entry,
+            candidate,
+            live,
+            tail,
+        } = self;
+        // Rejection is not a new insertion: preserve epoch, age and revision.
+        match &entry.metadata.identity {
+            IdleSandboxIdentity::Exact(key) => {
+                pool.exact_entries.insert(key.clone(), entry);
+            }
+            IdleSandboxIdentity::Blank(id) => {
+                pool.blank_entries.insert(*id, entry);
+            }
+        }
+        IdlePoolRetirement {
+            candidate,
+            live: Allowance::Granted(live),
+            tail: Allowance::Granted(tail),
+            ready: true,
+        }
+        .reject(error)
     }
 }

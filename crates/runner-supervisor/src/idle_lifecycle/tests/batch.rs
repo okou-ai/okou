@@ -23,6 +23,7 @@ use sandbox_mock::{
 use super::*;
 
 mod admission;
+mod logical;
 mod ownership;
 
 const MIB: u64 = 1024 * 1024;

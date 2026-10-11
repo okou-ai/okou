@@ -2,6 +2,7 @@ mod admission;
 mod inventory;
 mod phases;
 mod settlement;
+mod substitution;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
