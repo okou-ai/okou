@@ -15,6 +15,7 @@ export async function publicChatActor(
   options: {
     readonly beforeRuns?: (actor: ApiTestUser) => Promise<void>;
     readonly tier?: "pro" | "team";
+    readonly stripeTransport?: "http";
     readonly restoreEnvironment?: () => void;
     readonly clockTime?: number | (() => number);
     readonly beforeWorkspaceCleanup?: (actor: ApiTestUser) => Promise<void>;
@@ -104,6 +105,7 @@ export async function publicChatActor(
   const { customerId } = await run(() => {
     return fixture.api.grantProEntitlement(actor, {
       tier: options.tier,
+      stripeTransport: options.stripeTransport,
       onExternalStateReady: (restoreWebhook) => {
         restoreSetupWebhook = restoreWebhook;
       },
