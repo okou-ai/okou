@@ -206,6 +206,36 @@ export async function validatePiMemoryStage1Cost(
       ])
     ).rows[0]["QUERY PLAN"][0];
     await client.query("COMMIT");
+    const cli = await promisify(execFile)(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "scripts/pi-memory-stage1-cost.ts",
+        "--day",
+        "2026-09-15",
+        "--org-id",
+        org,
+        "--user-id",
+        "user",
+      ],
+      { env: { ...process.env, DATABASE_URL: scopedUrl.toString() } },
+    );
+    const cliReport: unknown = JSON.parse(cli.stdout);
+    assert.ok(
+      cliReport !== null &&
+        typeof cliReport === "object" &&
+        "snapshot_at" in cliReport,
+    );
+    assert.ok(typeof cliReport.snapshot_at === "string");
+    assert.match(
+      cliReport.snapshot_at,
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)$/,
+    );
+    assert.ok(Number.isFinite(Date.parse(cliReport.snapshot_at)));
+    // The CLI samples its own report transaction, not the earlier fixture clock.
+    assert.deepEqual({ ...cliReport, snapshot_at: report.snapshot_at }, report);
+    console.log("Pi Memory Stage1 cost CLI report contract passed");
     console.log(
       JSON.stringify({
         test: "stage1-cost-scale",
