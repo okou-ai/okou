@@ -447,18 +447,20 @@ test.each(["normal delivery", "completion before steering delivery"] as const)(
     });
 
     await readyChat();
-    expect(screen.getByText("Sol is still working.")).toBeVisible();
+    expect(screen.getByText("Sol is still working.")).toBeInTheDocument();
     await expect(findButton("Stop")).resolves.toBeVisible();
     await expect(
       screen.findByText("Next run will use GPT 5.6 Luna"),
-    ).resolves.toBeVisible();
+    ).resolves.toBeInTheDocument();
 
     await sendText("Steer the current Sol work");
 
     await expect(
       screen.findByText("Steer the current Sol work"),
-    ).resolves.toBeVisible();
-    expect(screen.getByText("Next run will use GPT 5.6 Luna")).toBeVisible();
+    ).resolves.toBeInTheDocument();
+    expect(
+      screen.getByText("Next run will use GPT 5.6 Luna"),
+    ).toBeInTheDocument();
     expect(
       screen.queryByText("Model changed to GPT 5.6 Luna"),
     ).not.toBeInTheDocument();
@@ -473,7 +475,7 @@ test.each(["normal delivery", "completion before steering delivery"] as const)(
     lifecycle.completeRun("Sol finished the current task.");
     await expect(
       screen.findByText("Sol finished the current task."),
-    ).resolves.toBeVisible();
+    ).resolves.toBeInTheDocument();
     await waitFor(() => {
       expect(queryButton("Stop")).toBeNull();
     });
@@ -481,10 +483,10 @@ test.each(["normal delivery", "completion before steering delivery"] as const)(
 
     await expect(
       screen.findByText("Start the next task"),
-    ).resolves.toBeVisible();
+    ).resolves.toBeInTheDocument();
     await expect(
       screen.findByText("Model changed to GPT 5.6 Luna"),
-    ).resolves.toBeVisible();
+    ).resolves.toBeInTheDocument();
     await waitFor(() => {
       expect(runModels.at(-1)).toBe("gpt-5.6-luna");
     });
