@@ -12,12 +12,13 @@ use runner_lifecycle::home_image_cache::{
 };
 use runner_lifecycle::home_mount::ensure_home_drive_mounted;
 use runner_lifecycle::idle_pool::{
-    DestroyOutcome, IdlePool, IdlePoolConfig, IdleSandboxIdentity, ParkResult,
+    IdlePool, IdlePoolConfig, IdleRetirementBatchScope, ParkResult,
     test_support::ParkedIdleCandidateBuilder,
 };
 use runner_lifecycle::resource_budget::ResourceBudget;
+use runner_lifecycle::status::StatusTracker;
 use runner_storage::storage_fingerprints::StorageFingerprints;
-use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, IdlePoolRetirementRequest};
+use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, IdlePoolBatchRetirementRequest};
 use runner_types::ids::RunId;
 use sandbox::{
     FactoryConfig, RuntimeConfig, SandboxFactory, SandboxId, SandboxParkOutcome, SandboxRuntime,
@@ -53,35 +54,40 @@ async fn exercise_factories(
     base: &std::path::Path,
     inputs: &fixture::Inputs,
 ) -> TestResult<()> {
-    for restored in [false, true] {
-        // Never share a production Runner directory or another invocation's cache.
-        let owned = tempfile::tempdir_in(base)?;
-        let paths = RunnerPaths::new(owned.path().to_owned());
-        let snapshot = if restored {
-            Some(SnapshotRef {
-                output_dir: PathBuf::from(std::env::var("OKOU_TEST_RPC_SNAPSHOT_DIR")?),
-                hash: std::env::var("OKOU_TEST_RPC_SNAPSHOT_HASH")?,
-            })
-        } else {
-            None
-        };
-        let factory = runtime
-            .create_factory(FactoryConfig {
-                profile: fixture::PROFILE.into(),
-                binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
-                kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
-                rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
-                base_dir: owned.path().to_owned(),
-                snapshot,
-            })
-            .await?;
-        let factory = Arc::new(factory);
-        let result = exercise_retirement(factory.clone(), paths, inputs).await;
-        let mut factory = Arc::try_unwrap(factory)
-            .map_err(|_| io::Error::other("native fixture lost its exclusive factory owner"))?;
-        factory.shutdown().await;
-        result?;
-        println!("GUARDED_IDLE_TERMINAL_PASS restored={restored}");
+    for scope in [
+        IdleRetirementBatchScope::Exact,
+        IdleRetirementBatchScope::All,
+    ] {
+        for restored in [false, true] {
+            // Never share a production Runner directory or another invocation's cache.
+            let owned = tempfile::tempdir_in(base)?;
+            let paths = RunnerPaths::new(owned.path().to_owned());
+            let snapshot = if restored {
+                Some(SnapshotRef {
+                    output_dir: PathBuf::from(std::env::var("OKOU_TEST_RPC_SNAPSHOT_DIR")?),
+                    hash: std::env::var("OKOU_TEST_RPC_SNAPSHOT_HASH")?,
+                })
+            } else {
+                None
+            };
+            let factory = runtime
+                .create_factory(FactoryConfig {
+                    profile: fixture::PROFILE.into(),
+                    binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
+                    kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
+                    rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
+                    base_dir: owned.path().to_owned(),
+                    snapshot,
+                })
+                .await?;
+            let factory = Arc::new(factory);
+            let result = exercise_retirement(factory.clone(), paths, inputs, scope).await;
+            let mut factory = Arc::try_unwrap(factory)
+                .map_err(|_| io::Error::other("native fixture lost its exclusive factory owner"))?;
+            factory.shutdown().await;
+            result?;
+            println!("GUARDED_IDLE_TERMINAL_PASS restored={restored} scope={scope:?}");
+        }
     }
     Ok(())
 }
@@ -90,7 +96,15 @@ async fn exercise_retirement(
     factory: Arc<Box<dyn SandboxFactory>>,
     paths: RunnerPaths,
     inputs: &fixture::Inputs,
+    scope: IdleRetirementBatchScope,
 ) -> TestResult<()> {
+    let status = Arc::new(StatusTracker::new(
+        paths.base_dir().join("status.json"),
+        1,
+        None,
+        None,
+    ));
+    status.write_initial().await?;
     let cache = HomeImageCache::new(paths);
     let run_id = RunId::new_v4();
     let sandbox_id = SandboxId::new_v4();
@@ -161,24 +175,21 @@ async fn exercise_retirement(
         return Err(error.into());
     }
     assert!(matches!(pool.park(candidate), ParkResult::Parked));
-    let candidate = pool.retirement_candidate(&IdleSandboxIdentity::Exact(reuse_key.clone()))?;
     let pool = Arc::new(tokio::sync::Mutex::new(pool));
     let mut task = match tracker
-        .retire_pool_entry(
-            &pool,
-            &operations,
-            IdlePoolRetirementRequest {
-                candidate,
+        .start_pool_retirement_batch(
+            pool.clone(),
+            status,
+            operations.clone(),
+            IdlePoolBatchRetirementRequest {
+                scope,
                 envelope: inputs.envelope(),
                 context: "native_guarded_idle",
             },
         )
         .await
     {
-        Ok(started) => {
-            assert!(started.snapshot.idle_sandboxes.is_empty());
-            started.task
-        }
+        Ok(task) => task,
         Err(error) => {
             let jobs = pool.lock().await.drain();
             for job in jobs {
@@ -188,11 +199,23 @@ async fn exercise_retirement(
             return Err(error.into());
         }
     };
-    let result = task.join().await??;
-    assert_eq!(result.outcome, DestroyOutcome::Completed);
-    assert!(result.home_cache_promoted);
+    let result = task.join().await?;
+    if !result.is_complete() {
+        let jobs = pool.lock().await.drain();
+        for job in jobs {
+            job.run_with_context("native_fixture_refused_batch_cleanup")
+                .await;
+        }
+        return Err(
+            io::Error::other(format!("native guarded batch incomplete: {result:?}")).into(),
+        );
+    }
+    assert_eq!(
+        (result.selected, result.completed, result.uncertain),
+        (1, 1, 0)
+    );
+    assert!(pool.lock().await.is_empty());
     assert!(backing.exit_confirmed().await);
-    drop(result.budget_lease);
     tracker.close_and_wait().await;
     let report = operations.close_and_wait().await?;
     assert_eq!((report.registered_operations, report.tracked_tasks), (0, 0));
