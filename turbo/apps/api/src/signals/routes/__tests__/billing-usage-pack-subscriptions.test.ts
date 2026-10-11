@@ -13239,6 +13239,133 @@ describe("usage pack allocation management", () => {
     });
   });
 
+  it("confirms an invitation with the signed payment preview and the same saved card", async () => {
+    const { fixture, email } =
+      await setupInvitationPreviewContext("signed-invite");
+    const { organizations } = context.mocks.clerk;
+    const paymentMethodId = `pm_invite_${randomUUID()}`;
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+      ...managedUsagePackSubscription(
+        fixture,
+        new Map([[TEST_PRICE_USAGE_PACK_20, 1]]),
+      ),
+      default_payment_method: paymentMethodId,
+    });
+    mockUsagePackChangePreviews(1000, 2000);
+    const client = setupApp({ context, routes: orgInviteRoutes })(
+      orgInviteContract,
+    );
+    const preview = await accept(
+      client.previewPurchase({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          email,
+          role: "member",
+          usagePackUsd: 20,
+          supportsInAppPreview: true,
+          returnUrl: APP_ORIGIN,
+        },
+      }),
+      [200],
+    );
+    expect(preview.body).toStrictEqual({
+      purchaseId: expect.any(String),
+      usagePackUsd: 20,
+      immediateAmountCents: 1000,
+      currency: "usd",
+      purchasedCredits: 10_000,
+      bonusCredits: 200,
+      totalCredits: 10_200,
+      currentPeriodEnd: new Date(
+        fixture.billingPeriod.end * 1000,
+      ).toISOString(),
+      expiresAt: expect.any(String),
+      paymentMethodPreviewToken: expect.stringMatching(/^.+$/),
+    });
+    const token = preview.body.paymentMethodPreviewToken;
+    expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();
+    expect(organizations.createOrganizationInvitation).not.toHaveBeenCalled();
+    const invoiceId = `in_invite_${randomUUID()}`;
+    const metadata = {
+      purpose: "usage_pack_invitation_purchase",
+      usagePackInvitationPurchaseId: preview.body.purchaseId,
+    };
+    context.mocks.stripe.invoices.create.mockResolvedValue({
+      id: invoiceId,
+      metadata,
+      status: "draft",
+      hosted_invoice_url: null,
+    });
+    context.mocks.stripe.invoiceItems.create.mockResolvedValue({
+      id: `ii_invite_${randomUUID()}`,
+    });
+    context.mocks.stripe.invoices.finalizeInvoice.mockResolvedValue({
+      id: invoiceId,
+      status: "open",
+      hosted_invoice_url: `https://invoice.stripe.test/${invoiceId}`,
+    });
+    context.mocks.stripe.invoices.pay.mockResolvedValue({
+      id: invoiceId,
+      status: "paid",
+    });
+    context.mocks.stripe.invoices.retrieve.mockResolvedValue({
+      id: invoiceId,
+      customer: fixture.customerId,
+      metadata,
+      status: "paid",
+      paid: true,
+      currency: "usd",
+      status_transitions: { paid_at: Math.floor(now() / 1000) },
+      payments: {
+        data: [
+          {
+            status: "paid",
+            amount_paid: 1000,
+            payment: {
+              type: "payment_intent",
+              payment_intent: `pi_invite_${randomUUID()}`,
+            },
+          },
+        ],
+      },
+    });
+    organizations.createOrganizationInvitation.mockResolvedValue({
+      id: `inv_${randomUUID()}`,
+      emailAddress: email,
+      status: "pending",
+    });
+    const response = await accept(
+      client.confirmPurchase({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { purchaseId: preview.body.purchaseId },
+        body: { paymentMethodPreviewToken: token },
+      }),
+      [200],
+    );
+    expect(response.body).toStrictEqual({
+      message: "Invitation purchased and sent",
+    });
+    expect(context.mocks.stripe.invoices.create).toHaveBeenCalledTimes(1);
+    expect(context.mocks.stripe.invoices.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customer: fixture.customerId,
+        default_payment_method: paymentMethodId,
+        metadata: expect.objectContaining(metadata),
+      }),
+      expect.any(Object),
+    );
+    expect(organizations.createOrganizationInvitation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: fixture.orgId,
+        emailAddress: email,
+        role: "org:member",
+        privateMetadata: expect.objectContaining({
+          usagePackInvitationPurchaseId: preview.body.purchaseId,
+        }),
+      }),
+    );
+  });
+
   it("rejects an invalid invitation payment preview with a stable error", async () => {
     const purchase = await beginInvitationPurchase(
       createOrgFixture(),
