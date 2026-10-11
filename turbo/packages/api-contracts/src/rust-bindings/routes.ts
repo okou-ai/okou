@@ -1,6 +1,7 @@
 import { runnerRealtimeTokenContract } from "../contracts/realtime";
 import { runnerSshContract } from "../contracts/runner-ssh";
 import { runnerVncContract } from "../contracts/runner-vnc";
+import { runnerWssTicketsContract } from "../contracts/runner-wss-tickets";
 import {
   runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
@@ -34,6 +35,11 @@ export interface RustRouteBinding {
 }
 
 export const rustRouteBindings = [
+  {
+    route: runnerWssTicketsContract.consume,
+    rustModulePath: ["runners", "wss"],
+    rustConstName: "CONSUME",
+  },
   ...(["resolve", "check"] as const).map((action) => {
     return {
       route: runnerVncContract[action],

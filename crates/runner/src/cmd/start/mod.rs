@@ -70,7 +70,7 @@ use runner_provider::{
 use runner_supervisor::reactor::{
     self, CapacityPolicy, EarlySignals, OrphanReapState, ProviderState, ProxyState, RunConfig,
     RunPaths, RunnerInfo, RunnerSharedState, RuntimeProfile, SandboxRuntimeConfig, ShutdownHandles,
-    SignalSource, SignalState,
+    SignalSource, SignalState, WssConfig,
 };
 
 mod signals;
@@ -450,6 +450,10 @@ async fn run_start_observed(
     })?;
     let background_fill = crate::storage_cache::StorageCacheBackgroundFillCoordinator::new()?;
     let hostname = runner_config.hostname;
+    // Official socket health belongs to Supervisor; optional Caddy availability
+    // only suppresses issuance. Admission uses the executor's exact registry.
+    let wss = (!args.local)
+        .then(|| WssConfig::official(http.clone(), server.token.clone(), hostname.clone()));
     let group = runner_config.group;
     let cancel_tokens = RunCancellationRegistry::new();
     let local_group_dir = if args.local {
@@ -822,6 +826,7 @@ async fn run_start_observed(
         },
         usage_flush_tx,
         usage_flush_rx,
+        wss,
         signals: SignalState {
             signal_source: SignalSource::Real(signals),
         },
