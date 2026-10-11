@@ -345,7 +345,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      # Pin the image already used by check; date tags can be republished.
+      image: &kerberos-build-image ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009@sha256:1bcc2515399f8a9ee79f91d6f029fe2e731237ef7e4376f572a1841ef35f07f6
+    env:
+      KERBEROS_NATIVE_BUILD_ENV: *kerberos-build-image
     needs: [detect]
     if: needs.detect.outputs.any-changed == 'true'
     steps:
@@ -368,7 +371,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
-          key: kerberos-native-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}
+          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}
 
       - name: Check Rust module paths
         run: |

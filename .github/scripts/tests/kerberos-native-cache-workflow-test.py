@@ -16,6 +16,9 @@ assert restore["with"]["path"] == save["with"]["path"] == "${{ env.KERBEROS_NATI
 assert configure["run"] == 'echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"'
 assert "build-dependencies.sh" in restore["with"]["key"]
 assert "runner.os" in restore["with"]["key"] and "runner.arch" in restore["with"]["key"]
+assert job["env"]["KERBEROS_NATIVE_BUILD_ENV"] == job["container"]["image"]
+assert "@sha256:" in job["container"]["image"]
+assert "env.KERBEROS_NATIVE_BUILD_ENV" in restore["with"]["key"]
 assert "restore-keys" not in restore["with"]
 assert save["with"]["key"] == "${{ steps.kerberos-cache.outputs.cache-primary-key }}"
 assert save["if"] == "github.ref == 'refs/heads/main' && steps.kerberos-cache.outputs.cache-hit != 'true'"

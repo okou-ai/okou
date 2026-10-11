@@ -35,7 +35,7 @@ class CacheTest(unittest.TestCase):
         # Fixture upstream pins and external curl/make replace network/compiler
         # cost. Hash validation, tar IO, completion publication and flock are real.
         self.archive("zig.tar.xz", "w:xz", {"zig-x86_64-linux-0.15.2/zig": b"fixture SDK"})
-        self.archive("krb5.tar.gz", "w:gz", {"krb5-1.22.2/src/configure": b"#!/bin/sh\nexit 0\n"})
+        self.archive("krb5.tar.gz", "w:gz", {"krb5-1.22.2/src/configure": b"#!/bin/sh\nset -e\nif [ -n \"${CONFIG_SITE:-}\" ]; then . \"$CONFIG_SITE\"; fi\n"})
         self.pin_recipe()
         self.command("curl", """#!/bin/bash
 set -eu
@@ -220,6 +220,21 @@ exec /usr/bin/flock "$@"
     def test_incidental_include_overrides_do_not_poison_pinned_products(self):
         self.run_build(False, extra={"CPATH": "unrelated", "C_INCLUDE_PATH": "unrelated"})
         self.run_build(True, extra={"CPATH": "different", "C_INCLUDE_PATH": "different"})
+
+    def test_build_environment_change_does_not_reuse_previous_products(self):
+        first = self.run_build(False, extra={"KERBEROS_NATIVE_BUILD_ENV": "image-v1"})
+        second = self.run_build(False, extra={"KERBEROS_NATIVE_BUILD_ENV": "image-v2"})
+        self.assertNotEqual(first.name, second.name)
+        self.assertEqual(self.run_build(True, extra={"KERBEROS_NATIVE_BUILD_ENV": "image-v1"}), first)
+
+    def test_external_configure_site_is_not_executed(self):
+        site = self.root / "external-config.site"
+        marker = self.root / "external-site-was-executed"
+        site.write_text('touch "$CACHE_TEST_ROOT/external-site-was-executed"\n')
+        self.run_build(False, extra={"CONFIG_SITE": str(site)})
+        self.assertFalse(marker.exists())
+        self.run_build(True, extra={"CONFIG_SITE": str(site)})
+        self.assertFalse(marker.exists())
 
     def test_failed_build_never_publishes_completion(self):
         process, _ = self.start(extra={"CACHE_TEST_FAIL": "true"})

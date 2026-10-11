@@ -12,11 +12,14 @@ case "$(uname -m)" in
 esac
 krb5_sha=3243ffbc8ea4d4ac22ddc7dd2a1dc54c57874c40648b60ff97009763554eaf13
 recipe_sha=$(sha256sum "$recipe_dir/build-dependencies.sh" | awk '{print $1}')
-library_key=$(printf '%s\n' "$krb5_sha" "$zig_sha" "$arch" "$host" "$recipe_sha" | sha256sum | awk '{print $1}')
+library_key=$(printf '%s\n' "$krb5_sha" "$zig_sha" "$arch" "$host" "$recipe_sha" "${KERBEROS_NATIVE_BUILD_ENV:-}" | sha256sum | awk '{print $1}')
 started=$SECONDS
 # Incidental compiler/make overrides are not inputs to the pinned recipe.
-unset MAKEFLAGS MFLAGS MAKEOVERRIDES CPP ZIG_LIB_DIR CPATH C_INCLUDE_PATH \
+unset MAKEFLAGS MFLAGS MAKEOVERRIDES CPP CONFIG_SHELL ZIG_LIB_DIR CPATH C_INCLUDE_PATH \
   CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH LIBRARY_PATH COMPILER_PATH GCC_EXEC_PREFIX
+# Autoconf site files can replace the recipe's flags and probe results. The
+# pinned recipe never imports local site configuration, including prefix sites.
+export CONFIG_SITE=/dev/null
 mkdir -p "$output"
 output=$(cd -- "$output" && pwd -P)
 cache=${KERBEROS_NATIVE_CACHE_DIR:-"$output/cache"}
