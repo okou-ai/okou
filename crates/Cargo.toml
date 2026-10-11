@@ -190,7 +190,8 @@ codegen-units = 1
 # Production runner releases still use the release profile.
 [profile.ci]
 inherits = "release"
-lto = "thin"
+# Retain thin local LTO while avoiding cross-crate LTO in these rebuilds.
+lto = false
 codegen-units = 4
 
 [workspace.lints.rust]
