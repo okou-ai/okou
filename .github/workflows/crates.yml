@@ -360,6 +360,16 @@ jobs:
           shared-key: check
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}
+
       - name: Check Rust module paths
         run: |
           cd crates
@@ -451,6 +461,13 @@ jobs:
             cargo test -p guest-control-server --release --no-default-features \
               --test production_identity -- \
               --ignored --exact production_env_script_remains_until_operation_cleanup
+
+      - name: Save pinned Kerberos dependencies
+        if: github.ref == 'refs/heads/main' && steps.kerberos-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: ${{ steps.kerberos-cache.outputs.cache-primary-key }}
 
       - name: Report peak memory
         if: always()

@@ -73,6 +73,8 @@
 3 deploy-discord-gateway-test.sh
 3 download-verified-test.sh
 3 kms-production-backup-test.sh
+3 kerberos-native-cache-test.sh
+3 kerberos-native-cache-workflow-test.sh
 3 mitm-addon-test-sharding-workflow-test.sh
 3 native-only-gates-test.sh
 3 pass-release-pr-ci-gates-test.sh
