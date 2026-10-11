@@ -42,6 +42,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
+import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
 import { agents$ } from "../agent.ts";
 import { currentChatAgentRecordId$ } from "../agent-chat.ts";
 import { detach, onRef, Reason, resetSignal } from "../utils.ts";
@@ -1518,6 +1519,53 @@ function buildWorkflowDecorations(
   return DecorationSet.create(doc, decorations);
 }
 
+function buildUrlDecorations(doc: ProseMirrorNode): DecorationSet {
+  const decorations: Decoration[] = [];
+  doc.descendants((node, pos) => {
+    if (!node.isText || !node.text) {
+      return;
+    }
+    let offset = pos;
+    for (const segment of splitPlainTextUrls(node.text)) {
+      const end = offset + segment.value.length;
+      if (segment.type === "url") {
+        decorations.push(
+          Decoration.inline(offset, end, { class: "text-link" }),
+        );
+      }
+      offset = end;
+    }
+  });
+  return DecorationSet.create(doc, decorations);
+}
+
+// Decorations keep URLs editable as literal text in drafts and sent messages.
+const UrlHighlight = Extension.create({
+  name: "urlHighlight",
+  addProseMirrorPlugins() {
+    return [
+      new Plugin<DecorationSet>({
+        key: new PluginKey("urlHighlight"),
+        state: {
+          init(_config, state) {
+            return buildUrlDecorations(state.doc);
+          },
+          apply(transaction, decorations) {
+            return transaction.docChanged
+              ? buildUrlDecorations(transaction.doc)
+              : decorations;
+          },
+        },
+        props: {
+          decorations(state) {
+            return this.getState(state);
+          },
+        },
+      }),
+    ];
+  },
+});
+
 const WorkflowHighlight = Extension.create<
   { workflowNames: readonly string[] },
   WorkflowHighlightStorage
@@ -1748,6 +1796,7 @@ function createWorkflowEditor(
       ),
       ChatThreadMentionNode,
       WorkflowHighlight,
+      UrlHighlight,
     ],
     content: valueToWorkflowComposerDoc(""),
     editorProps: {
