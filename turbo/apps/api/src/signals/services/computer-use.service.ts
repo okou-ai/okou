@@ -36,7 +36,7 @@ import { isUniqueViolation } from "../../lib/pg-errors";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   publishUserSignal,
   publishComputerUseCommandsChangedSafely,
@@ -1147,26 +1147,6 @@ export const listComputerUseHosts$ = command(
   },
 );
 
-export const listComputerUseAuditEvents$ = command(
-  async (
-    { set },
-    params: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly limit: number;
-      readonly commandId?: string;
-      readonly hostId?: string;
-      readonly runId?: string;
-    },
-    signal: AbortSignal,
-  ) => {
-    return await projectComputerUseAuditEvents(
-      { db: set(writeDb$), ...params },
-      signal,
-    );
-  },
-);
-
 export const createComputerUseCommand$ = command(
   async (
     { set },
@@ -1787,71 +1767,65 @@ export const completeComputerUseHostCommand$ = command(
   },
 );
 
-export async function projectComputerUseAuditEvents(
-  args: {
-    readonly db: Pick<Db, "select">;
+export function computerUseAuditEvents(
+  scope$: Computed<{
     readonly orgId: string;
     readonly userId: string;
     readonly limit: number;
     readonly commandId?: string;
     readonly hostId?: string;
     readonly runId?: string;
-  },
-  signal: AbortSignal,
+  }>,
 ) {
-  const filters = [
-    eq(computerUseCommandAuditEvents.orgId, args.orgId),
-    eq(computerUseCommandAuditEvents.userId, args.userId),
-    inArray(computerUseCommandAuditEvents.kind, COMPUTER_USE_COMMANDS),
-  ];
-  if (args.commandId) {
-    filters.push(eq(computerUseCommandAuditEvents.commandId, args.commandId));
-  }
-  if (args.hostId) {
-    filters.push(eq(computerUseCommandAuditEvents.hostId, args.hostId));
-  }
-  if (args.runId) {
-    filters.push(eq(computerUseCommandAuditEvents.runId, args.runId));
-  }
+  return computed(async (get) => {
+    const args = get(scope$);
+    const filters = [
+      eq(computerUseCommandAuditEvents.orgId, args.orgId),
+      eq(computerUseCommandAuditEvents.userId, args.userId),
+      inArray(computerUseCommandAuditEvents.kind, COMPUTER_USE_COMMANDS),
+    ];
+    if (args.commandId) {
+      filters.push(eq(computerUseCommandAuditEvents.commandId, args.commandId));
+    }
+    if (args.hostId) {
+      filters.push(eq(computerUseCommandAuditEvents.hostId, args.hostId));
+    }
+    if (args.runId) {
+      filters.push(eq(computerUseCommandAuditEvents.runId, args.runId));
+    }
 
-  const rows = await args.db
-    .select({
-      id: computerUseCommandAuditEvents.id,
-      commandId: computerUseCommandAuditEvents.commandId,
-      runId: computerUseCommandAuditEvents.runId,
-      hostId: computerUseCommandAuditEvents.hostId,
-      kind: computerUseCommandAuditEvents.kind,
-      app: computerUseCommandAuditEvents.app,
-      event: computerUseCommandAuditEvents.event,
-      redactedResult: computerUseCommandAuditEvents.redactedResult,
-      error: computerUseCommandAuditEvents.error,
-      createdAt: computerUseCommandAuditEvents.createdAt,
-    })
-    .from(computerUseCommandAuditEvents)
-    .where(and(...filters))
-    .orderBy(desc(computerUseCommandAuditEvents.createdAt))
-    .limit(args.limit);
-  signal.throwIfAborted();
-
-  L.debug("Listed computer-use audit events", {
-    orgId: args.orgId,
-    count: rows.length,
+    const rows = await get(db$)
+      .select({
+        id: computerUseCommandAuditEvents.id,
+        commandId: computerUseCommandAuditEvents.commandId,
+        runId: computerUseCommandAuditEvents.runId,
+        hostId: computerUseCommandAuditEvents.hostId,
+        kind: computerUseCommandAuditEvents.kind,
+        app: computerUseCommandAuditEvents.app,
+        event: computerUseCommandAuditEvents.event,
+        redactedResult: computerUseCommandAuditEvents.redactedResult,
+        error: computerUseCommandAuditEvents.error,
+        createdAt: computerUseCommandAuditEvents.createdAt,
+      })
+      .from(computerUseCommandAuditEvents)
+      .where(and(...filters))
+      .orderBy(desc(computerUseCommandAuditEvents.createdAt))
+      .limit(args.limit);
+    return {
+      auditEvents: rows.map((row) => {
+        return {
+          id: row.id,
+          commandId: row.commandId,
+          runId: row.runId,
+          hostId: row.hostId,
+          kind: row.kind as ComputerUseCommandKind,
+          app: row.app,
+          event: row.event as "completed",
+          redactedResult: row.redactedResult,
+          error: row.error,
+          createdAt: row.createdAt.toISOString(),
+        };
+      }),
+    };
   });
-
-  return {
-    auditEvents: rows.map((row) => {
-      return {
-        id: row.id,
-        commandId: row.commandId,
-        runId: row.runId,
-        hostId: row.hostId,
-        kind: row.kind as ComputerUseCommandKind,
-        app: row.app,
-        event: row.event as "completed",
-        redactedResult: row.redactedResult,
-        error: row.error,
-        createdAt: row.createdAt.toISOString(),
-      };
-    }),
-  };
 }
