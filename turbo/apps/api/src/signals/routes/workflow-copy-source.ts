@@ -86,8 +86,11 @@ export function workflowCopyConflict(message = WORKFLOW_COPY_CHANGED_MESSAGE) {
   return { kind: "conflict" as const, message };
 }
 
-/** SQL-only subqueries retain their inner locks and schema column decoders. */
-export function copySourcePlans(args: WorkflowCopyInput) {
+/** Publication retains inner locks; preparation uses ordinary statement reads. */
+export function copySourcePlans(
+  args: WorkflowCopyInput,
+  mode: "publication" | "preparation" = "publication",
+) {
   const definitionName = args.sourceWorkflow.officialDefinitionName;
   const official = definitionName !== null;
   if (definitionName === "") {
@@ -96,6 +99,47 @@ export function copySourcePlans(args: WorkflowCopyInput) {
     );
   }
   const catalog = acceptedOfficialWorkflowCatalogReadPlan();
+  const source = new QueryBuilder()
+    .select()
+    .from(workflows)
+    .where(
+      and(
+        eq(workflows.id, args.sourceWorkflow.id),
+        eq(workflows.orgId, args.orgId),
+        official ? eq(workflows.ownerUserId, args.userId) : undefined,
+        definitionName !== null
+          ? eq(workflows.officialDefinitionName, definitionName)
+          : undefined,
+        official
+          ? eq(workflows.officialInstallationState, "installed")
+          : undefined,
+      ),
+    );
+  const automations = new QueryBuilder()
+    .select({
+      ...workflowAutomationColumns(),
+      observedUpdatedAt: sql`${workflowAutomations.updatedAt}::text`
+        .mapWith(pgTextDecoder)
+        .as("observed_updated_at"),
+      observedXmin: sql`${workflowAutomations}.xmin::text`
+        .mapWith(pgTextDecoder)
+        .as("observed_xmin"),
+    })
+    .from(workflowAutomations)
+    .where(
+      and(
+        eq(workflowAutomations.orgId, args.orgId),
+        eq(workflowAutomations.ownerUserId, args.userId),
+        eq(workflowAutomations.workflowId, args.sourceWorkflow.id),
+      ),
+    )
+    .orderBy(
+      asc(
+        official
+          ? workflowAutomations.officialBlueprintKey
+          : workflowAutomations.id,
+      ),
+    );
   return {
     official,
     definitionName,
@@ -125,23 +169,7 @@ export function copySourcePlans(args: WorkflowCopyInput) {
       .for("share")
       .as("copy_parent_locks"),
     target: workflowCopyAgentQuery(args.orgId, args.targetAgentId),
-    source: new QueryBuilder()
-      .select()
-      .from(workflows)
-      .where(
-        and(
-          eq(workflows.id, args.sourceWorkflow.id),
-          eq(workflows.orgId, args.orgId),
-          official ? eq(workflows.ownerUserId, args.userId) : undefined,
-          definitionName !== null
-            ? eq(workflows.officialDefinitionName, definitionName)
-            : undefined,
-          official
-            ? eq(workflows.officialInstallationState, "installed")
-            : undefined,
-        ),
-      )
-      .for("update")
+    source: (mode === "publication" ? source.for("update") : source)
       .limit(1)
       .as("copy_source_lock"),
     visible: workflowCopyVisibleQuery({
@@ -149,34 +177,11 @@ export function copySourcePlans(args: WorkflowCopyInput) {
       member: args.member,
       workflowId: args.sourceWorkflow.id,
     }),
-    automations: new QueryBuilder()
-      .select({
-        ...workflowAutomationColumns(),
-        observedUpdatedAt: sql`${workflowAutomations.updatedAt}::text`
-          .mapWith(pgTextDecoder)
-          .as("observed_updated_at"),
-        observedXmin: sql`${workflowAutomations}.xmin::text`
-          .mapWith(pgTextDecoder)
-          .as("observed_xmin"),
-      })
-      .from(workflowAutomations)
-      .where(
-        and(
-          eq(workflowAutomations.orgId, args.orgId),
-          eq(workflowAutomations.ownerUserId, args.userId),
-          eq(workflowAutomations.workflowId, args.sourceWorkflow.id),
-        ),
-      )
-      .orderBy(
-        asc(
-          official
-            ? workflowAutomations.officialBlueprintKey
-            : workflowAutomations.id,
-        ),
-      )
-      .for("update")
-      .as("copy_automation_locks"),
-    storage: workflowCopyStorageQuery(args, true),
+    automations: (mode === "publication"
+      ? automations.for("update")
+      : automations
+    ).as("copy_automation_locks"),
+    storage: workflowCopyStorageQuery(args, mode === "publication"),
   };
 }
 
@@ -254,8 +259,9 @@ export function workflowCopyStorageQuery(
 
 export function copyWebhooksQuery(
   rows: WorkflowCopySource["sourceAutomations"],
+  mode: "publication" | "preparation" = "publication",
 ) {
-  return new QueryBuilder()
+  const query = new QueryBuilder()
     .select({
       automationId: workflowWebhookAutomations.automationId,
       encryptedSecret: workflowWebhookAutomations.encryptedSecret,
@@ -270,9 +276,10 @@ export function copyWebhooksQuery(
         }),
       ),
     )
-    .orderBy(asc(workflowWebhookAutomations.automationId))
-    .for("share")
-    .as("copy_webhook_locks");
+    .orderBy(asc(workflowWebhookAutomations.automationId));
+  return (mode === "publication" ? query.for("share") : query).as(
+    "copy_webhook_locks",
+  );
 }
 
 export function requireCopyTarget(
