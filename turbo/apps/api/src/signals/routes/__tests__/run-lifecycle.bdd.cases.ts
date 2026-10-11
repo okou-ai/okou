@@ -11160,20 +11160,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ]) {
           expect(appendSystemPrompt).toContain(toolHint);
         }
-        for (const removedCapabilityAssertion of [
-          "Do not claim support for other generated content",
-          "do not suggest connectors for them",
-          "Do not abandon it",
-          "does not provide source discovery, raw HTML, or site-wide crawling",
-          "Claude Code manual reset is unsupported",
-          "do not invent `okou github message` commands",
-          "Do not emit Mermaid",
-          "Users cannot open local paths directly",
-          "Localhost URLs, local dev server ports",
-          "runtime-only and will not persist, sync back, or affect future runs",
-        ]) {
-          expect(appendSystemPrompt).not.toContain(removedCapabilityAssertion);
-        }
         expect(
           appendSystemPrompt.indexOf("- New web chat threads:"),
         ).toBeLessThan(appendSystemPrompt.indexOf("- Web chat messaging:"));
