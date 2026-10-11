@@ -37,6 +37,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { z } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { isUniqueViolation } from "../../lib/pg-errors";
@@ -636,7 +637,7 @@ function stopProviderSessionLater(providerSessionId: string): void {
 }
 
 // Complete the committed stop and schedule exact provider cleanup before a
-// caller observes cancellation. The transaction never leaves this command.
+// caller observes cancellation. Both writes stay in one atomic statement.
 const commitBrowserStop$ = command(
   async (
     { set },
@@ -645,49 +646,56 @@ const commitBrowserStop$ = command(
     stopProvider: boolean,
   ): Promise<boolean> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0067; new non-billing transactions are prohibited.
-    const stopped = await db.transaction(async (tx) => {
-      const [instance] = await tx
-        .update(browserSessionInstances)
-        .set({
-          status: "stopped",
-          stopRequestedAt: nowDate(),
-          finishedAt: nowDate(),
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(
-              browserSessionInstances.providerSessionId,
-              target.providerSessionId,
-            ),
-            eq(browserSessionInstances.status, "active"),
+    const stoppedInstance = db
+      .update(browserSessionInstances)
+      .set({
+        status: "stopped",
+        stopRequestedAt: nowDate(),
+        finishedAt: nowDate(),
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(
+            browserSessionInstances.providerSessionId,
+            target.providerSessionId,
           ),
-        )
-        .returning({
-          providerSessionId: browserSessionInstances.providerSessionId,
-        });
-      if (!instance) {
-        return false;
-      }
-      await tx
-        .update(browserSessions)
-        .set({
-          status: "suspended",
-          suspendedAt: nowDate(),
-          suspensionReason: reason,
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(browserSessions.chatThreadId, target.chatThreadId),
-            eq(browserSessions.orgId, target.orgId),
-            eq(browserSessions.userId, target.userId),
-            eq(browserSessions.status, "active"),
-          ),
-        );
-      return true;
-    });
+          eq(browserSessionInstances.status, "active"),
+        ),
+      )
+      .returning({
+        providerSessionId: browserSessionInstances.providerSessionId,
+      })
+      .getSQL();
+    const suspendedSession = db
+      .update(browserSessions)
+      .set({
+        status: "suspended",
+        suspendedAt: nowDate(),
+        suspensionReason: reason,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, target.chatThreadId),
+          eq(browserSessions.orgId, target.orgId),
+          eq(browserSessions.userId, target.userId),
+          eq(browserSessions.status, "active"),
+          exists(sql`(SELECT 1 FROM stopped_instance)`),
+        ),
+      )
+      .getSQL();
+    const rows = parseRawRows(
+      z.object({ stopped: z.boolean() }),
+      await db.execute(sql`WITH stopped_instance AS (${stoppedInstance}),
+        suspended_session AS (${suspendedSession})
+        SELECT ${exists(sql`(SELECT 1 FROM stopped_instance)`)} AS stopped`),
+    );
+    const [result] = rows;
+    if (rows.length !== 1 || !result) {
+      throw new Error("Expected one browser stop result");
+    }
+    const stopped = result.stopped;
     if (stopped && stopProvider) {
       stopProviderSessionLater(target.providerSessionId);
     }
