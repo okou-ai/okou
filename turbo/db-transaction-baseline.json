@@ -707,11 +707,6 @@
       "owner": "deleteRemovedAutomationConfiguration$"
     },
     {
-      "id": "TX-0213",
-      "file": "turbo/apps/api/src/signals/services/onboarding-completion.command.ts",
-      "owner": "markOrgOnboardingComplete$"
-    },
-    {
       "id": "TX-0214",
       "file": "turbo/apps/api/src/signals/services/org-credit-expiration.service.ts",
       "owner": "expireOrgCreditsAt$"
