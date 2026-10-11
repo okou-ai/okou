@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 
 import { bankingUserContract } from "@okouai/api-contracts/contracts/banking";
+import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, onTestFinished } from "vitest";
@@ -13,7 +14,9 @@ import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { createRouteMocks } from "./helpers/route-test";
 import { bankingRoutes } from "../banking";
+import { agentsRoutes } from "../agents";
 
 const context = testContext();
 const secret = randomBytes(32).toString("hex");
@@ -32,17 +35,30 @@ function account(institutionLoginId: string, repairRequired = false) {
   };
 }
 
-async function pendingConnect() {
+async function pendingConnect(isolatePg = false) {
   const bdd = createBddApi(context);
   const actor = bdd.user();
   if (!actor.orgId) {
     throw new Error("Banking requires an organization");
   }
   bdd.acceptAgentStorageWrites();
-  const agent = await bdd.createAgent(actor, {
+  const agentBody = {
     displayName: "Webhook Banking Agent",
     visibility: "private",
-  });
+  } as const;
+  if (isolatePg) {
+    createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
+  }
+  const agent = isolatePg
+    ? (
+        await accept(
+          (await setupApp({ context, routes: agentsRoutes, isolatePg: true }))(
+            agentsMainContract,
+          ).create({ headers, body: agentBody }),
+          [201],
+        )
+      ).body
+    : await bdd.createAgent(actor, agentBody);
   await updateFeatureSwitchesForUser(
     context,
     { userId: actor.userId, orgId: actor.orgId },
@@ -132,6 +148,96 @@ beforeEach(() => {
 });
 
 describe("Finicity webhook outcomes", () => {
+  it.each(["success", "failure"] as const)(
+    "preserves a replacement while an older connect provider response ends in %s",
+    async (outcome) => {
+      const fixture = await pendingConnect(true);
+      const requested = createDeferredPromise<string>(context.signal);
+      const response = createDeferredPromise<void>(context.signal);
+      let firstRequest = true;
+      server.use(
+        http.post(`${baseUrl}/connect/v2/generate`, async ({ request }) => {
+          if (firstRequest) {
+            firstRequest = false;
+            const body = await request.json();
+            const parsed = body as {
+              webhookData: { uniqueRequestId: string };
+            };
+            requested.resolve(parsed.webhookData.uniqueRequestId);
+            await response.promise;
+            if (outcome === "failure") {
+              return HttpResponse.json(
+                { message: "Provider unavailable" },
+                { status: 503 },
+              );
+            }
+          }
+          return HttpResponse.json({
+            link: "https://connect.example.test/new",
+          });
+        }),
+      );
+      const start = () => {
+        return fixture.client.createConnectSession({
+          headers,
+          body: { agentId: fixture.agentId, mode: "connect" },
+        });
+      };
+      const older = start();
+      onTestFinished(async () => {
+        if (!response.settled()) {
+          response.resolve();
+        }
+        await older;
+      });
+      const olderId = await requested.promise;
+      const replacement = await accept(start(), [200]);
+      expect(replacement.body.sessionId).not.toBe(olderId);
+      expect((await fixture.status()).body.session).toMatchObject({
+        id: replacement.body.sessionId,
+        mode: "connect",
+        status: "pending",
+      });
+      response.resolve();
+      const finished = await older;
+      if (outcome === "success") {
+        expect(finished.status).toBe(200);
+        if (finished.status === 200) {
+          expect(finished.body.sessionId).toBe(olderId);
+        }
+      } else {
+        expect(finished.status).toBe(502);
+      }
+      expect((await postWebhook(fixture.event("added", olderId))).status).toBe(
+        200,
+      );
+      const current = await fixture.status();
+      expect(current.body.session).toMatchObject({
+        id: replacement.body.sessionId,
+        status: "pending",
+      });
+      expect(current.body.connection?.accounts).toStrictEqual([]);
+      expect(
+        (await postWebhook(fixture.event("added", replacement.body.sessionId)))
+          .status,
+      ).toBe(200);
+      expect(
+        (await postWebhook(fixture.event("done", replacement.body.sessionId)))
+          .status,
+      ).toBe(200);
+      expect((await fixture.status()).body.session).toMatchObject({
+        id: replacement.body.sessionId,
+        status: "completed",
+      });
+      const retry = await accept(start(), [200]);
+      expect(retry.body.sessionId).not.toBe(replacement.body.sessionId);
+      expect((await fixture.status()).body.session).toMatchObject({
+        id: retry.body.sessionId,
+        status: "pending",
+      });
+    },
+  );
+
   it("keeps unknown events pending and preserves added/done results on replay", async () => {
     const fixture = await pendingConnect();
     const unknown = fixture.event("institutionSelected");
