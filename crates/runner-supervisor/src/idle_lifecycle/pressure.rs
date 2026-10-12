@@ -1,0 +1,312 @@
+//! Bounded physical-pressure cohorts through the existing guarded terminal owner.
+
+use runner_lifecycle::host_memory_pressure::HostPressurePolicy;
+use runner_lifecycle::idle_pool::IdlePressureCandidate;
+use runner_lifecycle::status::StatusPersistenceError;
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::task_tracker::TaskTrackerToken;
+
+use super::*;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IdlePressureWaveStop {
+    Stopping,
+    NoLongerCritical,
+    InventoryBusy,
+    AdmissionRefused,
+}
+
+/// Actual bounded outcomes, never predicted released bytes. Refused and skipped
+/// entries have not been detached; uncertainty is distinct from no progress.
+#[derive(Debug)]
+pub struct IdlePressureWaveReport {
+    pub selected: usize,
+    pub completed: usize,
+    pub uncertain: usize,
+    pub not_started: Vec<IdlePoolRetirementRefusal>,
+    pub skipped: usize,
+    pub stop: Option<IdlePressureWaveStop>,
+    pub status_error: Option<StatusPersistenceError>,
+}
+
+impl IdlePressureWaveReport {
+    /// Every accepted physical task was positively observed. Refusal/skip is
+    /// resolved no-progress, not proof of relief or completed original inventory.
+    pub fn is_resolved(&self) -> bool {
+        self.uncertain == 0
+            && self.selected == self.completed + self.not_started.len() + self.skipped
+    }
+
+    fn stop(&mut self, count: usize, reason: IdlePressureWaveStop) {
+        self.skipped += count;
+        self.stop = Some(reason);
+    }
+
+    fn refuse(&mut self, candidate: &IdlePressureCandidate, error: MemoryOperationError) {
+        self.not_started.push(IdlePoolRetirementRefusal {
+            identity: candidate.identity().clone(),
+            sandbox_id: candidate.sandbox_id(),
+            error,
+        });
+    }
+}
+
+pub(crate) struct IdlePressureWaveRequest {
+    pub pool: SharedIdlePool,
+    pub status: Arc<StatusTracker>,
+    pub operations: HostMemoryOperations,
+    pub policy: HostPressurePolicy,
+    pub envelope: IdleRetirementEnvelope,
+    pub cancel: CancellationToken,
+}
+
+const CONTEXT: &str = "guarded_idle_pressure";
+
+impl IdleDestroyTracker {
+    /// Register the entire attempt before its first pool/grant wait. Physical
+    /// acceptance separately installs each existing guarded cleanup observer.
+    pub(crate) fn start_pressure_wave(
+        &self,
+        request: IdlePressureWaveRequest,
+    ) -> Result<IdleCleanupTask<IdlePressureWaveReport>, MemoryOperationError> {
+        let token = self.acceptance_token()?;
+        let tracker = self.clone();
+        Ok(self.track(
+            async move {
+                let _token = token;
+                run_wave(&tracker, request).await
+            },
+            CONTEXT,
+        ))
+    }
+
+    fn adopt_pressure_retirement(
+        &self,
+        task: runner_lifecycle::host_memory_operations::MemoryOperationTask<
+            RetainedIdleDestroyResult,
+        >,
+        token: TaskTrackerToken,
+    ) -> IdleCleanupTask<DestroyOutcome> {
+        let notify = self.reuse_state_notify.clone();
+        let retained = self.pressure_leases.clone();
+        self.track(
+            async move {
+                let _token = token;
+                match task.join().await {
+                    Ok(result) => {
+                        if result.home_cache_promoted {
+                            notify.notify_one();
+                        }
+                        match result.outcome {
+                            DestroyOutcome::Completed => drop(result.budget_lease),
+                            DestroyOutcome::Uncertain => retained
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .push(result.budget_lease),
+                        }
+                        result.outcome
+                    }
+                    Err(_) => DestroyOutcome::Uncertain,
+                }
+            },
+            CONTEXT,
+        )
+    }
+
+    /// Explicit reconciliation custody after joined shutdown. These complete
+    /// leases are unresolved ownership and supply no physical credit.
+    pub fn take_retained_pressure_leases(&self) -> Result<Vec<BudgetLease>, MemoryOperationError> {
+        if !self.tasks.is_closed() || !self.tasks.is_empty() {
+            return Err(MemoryOperationError::OwnershipInvariant);
+        }
+        let mut leases = self
+            .pressure_leases
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Ok(std::mem::take(&mut *leases))
+    }
+}
+
+async fn run_wave(
+    tracker: &IdleDestroyTracker,
+    request: IdlePressureWaveRequest,
+) -> IdlePressureWaveReport {
+    let mut report = IdlePressureWaveReport {
+        selected: 0,
+        completed: 0,
+        uncertain: 0,
+        not_started: Vec::new(),
+        skipped: 0,
+        stop: None,
+        status_error: None,
+    };
+    let selections = tokio::select! {
+        biased;
+        () = request.cancel.cancelled() => {
+            report.stop(0, IdlePressureWaveStop::Stopping);
+            return report;
+        }
+        pool = request.pool.lock() => {
+            pool.pressure_candidates(request.policy.max_wave_entries)
+                .into_iter()
+                .map(|candidate| {
+                    let retirement = pool.retirement_candidate(candidate.identity());
+                    (candidate, retirement)
+                })
+                .collect::<Vec<_>>()
+        }
+    };
+    report.selected = selections.len();
+    let mut ready = Vec::new();
+    for (candidate, captured) in selections {
+        let mut admission = match captured.and_then(|captured| {
+            IdlePoolRetirement::new(captured, &request.operations, request.envelope)
+        }) {
+            Ok(admission) => admission,
+            Err(error) => {
+                report.refuse(&candidate, error);
+                continue;
+            }
+        };
+        let grant = tokio::select! {
+            biased;
+            () = request.cancel.cancelled() => Err(MemoryOperationError::Closed),
+            result = AssertUnwindSafe(admission.try_grant()).catch_unwind() => {
+                result.unwrap_or(Err(MemoryOperationError::ProducerLost))
+            }
+        };
+        match grant {
+            Ok(()) => ready.push((candidate, admission)),
+            Err(error) => report.refuse(&candidate, error),
+        }
+    }
+    let mut refreshed = Vec::new();
+    let mut remaining = ready.into_iter();
+    let mut confirmation = None;
+    while let Some((candidate, mut admission)) = remaining.next() {
+        let grant = tokio::select! {
+            biased;
+            () = request.cancel.cancelled() => Err(MemoryOperationError::Closed),
+            result = AssertUnwindSafe(admission.refresh_grants()).catch_unwind() => {
+                result.unwrap_or(Err(MemoryOperationError::ProducerLost))
+            }
+        };
+        match grant {
+            Ok(observation) => {
+                // The last paired grant covers all other granted claims too;
+                // use that exact fresh fenced read to confirm physical pressure.
+                confirmation = Some(observation);
+                refreshed.push((candidate, admission));
+            }
+            Err(error) => {
+                report.refuse(&candidate, error);
+                report.stop(
+                    refreshed.len() + remaining.len(),
+                    if request.cancel.is_cancelled() {
+                        IdlePressureWaveStop::Stopping
+                    } else {
+                        IdlePressureWaveStop::AdmissionRefused
+                    },
+                );
+                return report;
+            }
+        }
+    }
+    let Some(observation) = confirmation else {
+        return report;
+    };
+    let available = observation
+        .available_bytes_at(tokio::time::Instant::now(), request.policy.max_sample_age)
+        .map_err(MemoryOperationError::from);
+    match available {
+        Ok(bytes) if bytes > request.policy.bounds.host_total_bytes => {
+            for (candidate, _) in &refreshed {
+                report.refuse(candidate, MemoryOperationError::ObservationExceedsTotal);
+            }
+            return report;
+        }
+        Ok(bytes) if bytes > request.policy.bounds.critical_available_bytes => {
+            report.stop(refreshed.len(), IdlePressureWaveStop::NoLongerCritical);
+            return report;
+        }
+        Err(error) => {
+            // One failed confirmation rejects the original cohort together.
+            let mut entries = refreshed.into_iter();
+            if let Some((candidate, _)) = entries.next() {
+                report.refuse(&candidate, error);
+            }
+            report.stop(entries.count(), IdlePressureWaveStop::AdmissionRefused);
+            return report;
+        }
+        Ok(_) => {}
+    }
+    let mut ready = Vec::new();
+    for (candidate, mut admission) in refreshed {
+        match admission.validate_granted_backing() {
+            Ok(()) => ready.push((candidate, admission)),
+            Err(error) => report.refuse(&candidate, error),
+        }
+    }
+    if request.cancel.is_cancelled() {
+        report.stop(ready.len(), IdlePressureWaveStop::Stopping);
+        return report;
+    }
+    let mut pool = match request.pool.try_lock() {
+        Ok(pool) => pool,
+        Err(_) => {
+            report.stop(ready.len(), IdlePressureWaveStop::InventoryBusy);
+            return report;
+        }
+    };
+    // Check the entire original revision before this cohort's own removals
+    // increment it. No await or provider callback can interleave the commit.
+    if ready
+        .iter()
+        .any(|(candidate, _)| !pool.revalidate_pressure_candidate(candidate))
+    {
+        drop(pool);
+        for (candidate, _) in ready {
+            report.refuse(&candidate, MemoryOperationError::ResourceChanged);
+        }
+        return report;
+    }
+    let mut tasks = Vec::new();
+    let mut rejected = Vec::new();
+    for (candidate, admission) in ready {
+        let token = match tracker.acceptance_token() {
+            Ok(token) => token,
+            Err(error) => {
+                rejected.push((candidate, Err((error, admission))));
+                continue;
+            }
+        };
+        match admission.start(&mut pool, CONTEXT) {
+            Ok(task) => tasks.push(tracker.adopt_pressure_retirement(task, token)),
+            Err(failure) => rejected.push((candidate, Ok(failure))),
+        }
+    }
+    drop(pool);
+    for (candidate, failure) in rejected {
+        let error = match failure {
+            Ok(failure) => failure.into_error(),
+            Err((error, _admission)) => error,
+        };
+        report.refuse(&candidate, error);
+    }
+    let accepted = !tasks.is_empty();
+    if accepted {
+        tracker.notify_reuse_state();
+    }
+    let mut pending: FuturesUnordered<_> = tasks.iter_mut().map(IdleCleanupTask::join).collect();
+    while let Some(result) = pending.next().await {
+        match result {
+            Ok(DestroyOutcome::Completed) => report.completed += 1,
+            Ok(DestroyOutcome::Uncertain) | Err(_) => report.uncertain += 1,
+        }
+    }
+    if accepted {
+        let snapshot = request.pool.lock().await.status_snapshot();
+        report.status_error = request.status.set_idle_snapshot(snapshot).await.err();
+    }
+    report
+}

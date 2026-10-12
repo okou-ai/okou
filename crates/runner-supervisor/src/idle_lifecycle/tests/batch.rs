@@ -27,6 +27,7 @@ mod admission;
 mod insertion;
 mod logical;
 mod ownership;
+mod pressure;
 
 const MIB: u64 = 1024 * 1024;
 const WAIT: Duration = Duration::from_secs(5);

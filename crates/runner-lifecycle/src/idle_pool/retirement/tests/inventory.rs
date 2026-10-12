@@ -29,6 +29,46 @@ struct FaultBacking {
     fault: AtomicU8,
 }
 
+#[tokio::test]
+async fn failed_refresh_cannot_be_rearmed_by_backing_validation_or_cached_grants() {
+    let env = Env::new(64).await;
+    let (exit, backing) = MockBackingProcess::channel();
+    let mut fixture = JobFixture::new("thread:refresh-before-capture", Some(backing)).await;
+    let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 1 });
+    let identity = park(&mut fixture, &mut pool);
+    let mut retirement = pending(&pool, &identity, &env);
+    retirement.try_grant().await.unwrap();
+    tokio::fs::write(&env.source.path, "MemAvailable: 0 kB\n")
+        .await
+        .unwrap();
+    assert!(matches!(
+        retirement.refresh_grants().await,
+        Err(MemoryOperationError::InsufficientHeadroom { .. })
+    ));
+    assert_eq!(
+        retirement.validate_granted_backing(),
+        Err(MemoryOperationError::Consumed)
+    );
+    assert!(matches!(
+        retirement.try_grant().await,
+        Err(MemoryOperationError::InsufficientHeadroom { .. })
+    ));
+    let failure = retirement
+        .start(&mut pool, "must_not_use_stale_grant")
+        .err()
+        .unwrap();
+    assert_eq!(failure.error(), &MemoryOperationError::Consumed);
+    drop(failure);
+    fixture.untouched().await;
+    assert_eq!(env.operations.snapshot().unwrap().registered_operations, 0);
+    exit.confirm_exit();
+    pool.drain()
+        .pop()
+        .unwrap()
+        .run_with_context("fixture_refresh_recovery")
+        .await;
+}
+
 #[async_trait::async_trait]
 impl SandboxBackingProcess for FaultBacking {
     fn identity(&self) -> sandbox::BackingProcessIdentity {

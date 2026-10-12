@@ -192,9 +192,48 @@ impl IdlePoolRetirement {
     /// Fresh observation and provider validation run outside inventory locks.
     /// Cancellation retains the inventory and unused claims for retry/drop.
     pub async fn try_grant(&mut self) -> Result<(), MemoryOperationError> {
+        if matches!(self.live, Allowance::Granted(_)) && matches!(self.tail, Allowance::Granted(_))
+        {
+            return self.refresh_grants().await.map(|_| ());
+        }
         self.ready = false;
         self.live.try_grant().await?;
         self.tail.try_grant().await?;
+        self.finish_grant()
+    }
+
+    /// Refresh the original paired unused claims after outside-lock waits.
+    /// Every read is fenced by P2; a failure leaves the inventory untouched.
+    pub async fn refresh_grants(
+        &mut self,
+    ) -> Result<runner_host::host_memory::HostMemoryObservation, MemoryOperationError> {
+        self.ready = false;
+        let (Allowance::Granted(live), Allowance::Granted(tail)) = (&mut self.live, &mut self.tail)
+        else {
+            return Err(MemoryOperationError::Consumed);
+        };
+        live.refresh().await?;
+        let observation = tail.refresh().await?;
+        self.finish_grant()?;
+        Ok(observation)
+    }
+
+    /// Call outside inventory locks after the last wait, followed only by
+    /// non-waiting lock acquisition and synchronous fenced acceptance.
+    pub fn validate_granted_backing(&mut self) -> Result<(), MemoryOperationError> {
+        if !self.ready {
+            return Err(MemoryOperationError::Consumed);
+        }
+        self.ready = false;
+        self.finish_grant()
+    }
+
+    fn finish_grant(&mut self) -> Result<(), MemoryOperationError> {
+        if !matches!(self.live, Allowance::Granted(_))
+            || !matches!(self.tail, Allowance::Granted(_))
+        {
+            return Err(MemoryOperationError::Consumed);
+        }
         let valid = std::panic::catch_unwind(AssertUnwindSafe(|| {
             self.candidate.backing.process.identity() == self.candidate.backing.identity
         }))

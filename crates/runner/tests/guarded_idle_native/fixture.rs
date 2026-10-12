@@ -8,6 +8,7 @@ use runner_lifecycle::host_memory_operations::{
     HostMemoryOperations, MemoryOperationError, MemoryOperationPolicy, ProcMemoryObservationSource,
 };
 use runner_lifecycle::host_memory_policy::HostMemoryBounds;
+use runner_lifecycle::host_memory_pressure::HostPressurePolicy;
 use runner_lifecycle::idle_pool::IdleRetirementEnvelope;
 use runner_types::ids::RunId;
 use sandbox::{
@@ -38,6 +39,11 @@ pub struct Inputs {
     max_sample_age_millis: u64,
     max_operations: usize,
     max_cleanup_inflight: usize,
+    pressure_sample_period_millis: u64,
+    pressure_recovery_sustain_millis: u64,
+    pressure_wave_cooldown_millis: u64,
+    pressure_optional_start_interval_millis: u64,
+    pressure_max_wave_entries: usize,
 }
 
 impl Inputs {
@@ -49,19 +55,41 @@ impl Inputs {
     pub fn operations(&self) -> Result<HostMemoryOperations, MemoryOperationError> {
         HostMemoryOperations::new(
             MemoryOperationPolicy {
-                bounds: HostMemoryBounds {
-                    host_total_bytes: self.host_total_bytes,
-                    operating_floor_bytes: self.operating_floor_bytes,
-                    cleanup_reserve_bytes: self.cleanup_reserve_bytes,
-                    critical_available_bytes: self.critical_available_bytes,
-                    recovery_available_bytes: self.recovery_available_bytes,
-                },
+                bounds: self.bounds(),
                 max_sample_age: Duration::from_millis(self.max_sample_age_millis),
                 max_operations: self.max_operations,
                 max_cleanup_inflight: self.max_cleanup_inflight,
             },
             Arc::new(ProcMemoryObservationSource),
         )
+    }
+
+    fn bounds(&self) -> HostMemoryBounds {
+        HostMemoryBounds {
+            host_total_bytes: self.host_total_bytes,
+            operating_floor_bytes: self.operating_floor_bytes,
+            cleanup_reserve_bytes: self.cleanup_reserve_bytes,
+            critical_available_bytes: self.critical_available_bytes,
+            recovery_available_bytes: self.recovery_available_bytes,
+        }
+    }
+
+    pub fn pressure_policy(&self) -> TestResult<HostPressurePolicy> {
+        Ok(HostPressurePolicy {
+            bounds: self.bounds(),
+            max_sample_age: Duration::from_millis(self.max_sample_age_millis),
+            recovery_sustain: Duration::from_millis(self.pressure_recovery_sustain_millis),
+            wave_cooldown: Duration::from_millis(self.pressure_wave_cooldown_millis),
+            optional_start_interval: Duration::from_millis(
+                self.pressure_optional_start_interval_millis,
+            ),
+            max_wave_entries: std::num::NonZeroUsize::new(self.pressure_max_wave_entries)
+                .ok_or_else(|| std::io::Error::other("pressure wave bound must be positive"))?,
+        })
+    }
+
+    pub fn pressure_sample_period(&self) -> Duration {
+        Duration::from_millis(self.pressure_sample_period_millis)
     }
 
     pub fn envelope(&self) -> IdleRetirementEnvelope {

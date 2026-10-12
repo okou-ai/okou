@@ -5,6 +5,7 @@ pub use activation_cleanup::GuardedActivationCleanupTask;
 mod batch;
 mod insertion;
 mod logical;
+pub(crate) mod pressure;
 
 pub use batch::{
     IdlePoolBatchRetirementRequest, IdlePoolRetirementBatchReport, IdlePoolRetirementRefusal,
@@ -14,6 +15,7 @@ pub use logical::{
     GuardedIdlePressureRequest, GuardedIdlePressureResult, GuardedLogicalCleanupTask,
     select_idle_entries_for_guarded_pressure,
 };
+pub use pressure::{IdlePressureWaveReport, IdlePressureWaveStop};
 
 use std::ops::Deref;
 use std::sync::Arc;
@@ -83,6 +85,7 @@ pub struct IdleDestroyTracker {
     activation_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
     finalizing_owners:
         Arc<std::sync::Mutex<Vec<crate::finalizing_admission::GuardedFinalizingRecovery>>>,
+    pressure_leases: Arc<std::sync::Mutex<Vec<BudgetLease>>>,
 }
 
 impl IdleDestroyTracker {
@@ -92,6 +95,7 @@ impl IdleDestroyTracker {
             reuse_state_notify,
             activation_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
             finalizing_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
+            pressure_leases: Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 

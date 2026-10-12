@@ -48,7 +48,7 @@ impl BatchFixture {
         job.run_with_context("fixture_incoming_disposal").await;
     }
 
-    async fn blank(&self) -> (SandboxId, MockBackingProcessCompletion) {
+    pub(super) async fn blank(&self) -> (SandboxId, MockBackingProcessCompletion) {
         let id = SandboxId::new_v4();
         let (exit, backing) = MockBackingProcess::channel();
         let mut candidate = ParkedIdleCandidate::blank(

@@ -4,6 +4,7 @@
 
 mod finalizing;
 mod fixture;
+mod pressure;
 mod transitions;
 
 use std::{error::Error, io, path::PathBuf, sync::Arc};
@@ -48,6 +49,7 @@ enum NativeScope {
     SpeculativeGuestFailure,
     FinalizingParked,
     FinalizingRunning,
+    Pressure,
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -86,6 +88,7 @@ async fn exercise_factories(
         NativeScope::SpeculativeGuestFailure,
         NativeScope::FinalizingParked,
         NativeScope::FinalizingRunning,
+        NativeScope::Pressure,
     ] {
         for restored in [false, true] {
             // Never share a production Runner directory or another invocation's cache.
@@ -243,6 +246,10 @@ async fn exercise_retirement(
     let pool = Arc::new(tokio::sync::Mutex::new(pool));
     let retirement: TestResult<_> = async {
         match scope {
+            NativeScope::Pressure => {
+                pressure::exercise(&pool, &status, &tracker, &operations, inputs).await?;
+                Ok(None)
+            }
             NativeScope::FinalizingParked | NativeScope::FinalizingRunning => Err(io::Error::other("finalizing scope did not enter its producer transition").into()),
             NativeScope::CallerOwned | NativeScope::SpeculativeGuestFailure => {
                 use runner_lifecycle::idle_pool::{
