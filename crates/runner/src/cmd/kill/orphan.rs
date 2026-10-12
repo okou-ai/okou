@@ -399,6 +399,13 @@ fn classify_orphan_exit_observation(
     read: ProcessStatRead,
 ) -> OrphanExitObservation {
     match read {
+        ProcessStatRead::Found(stat)
+            if stat.starttime == generation.starttime && stat.pgid == -1 =>
+        {
+            // Linux can lose group metadata during exit. Wait for another
+            // observation without treating the sentinel as identity or exit proof.
+            OrphanExitObservation::Unverifiable("process group metadata is unavailable".into())
+        }
         ProcessStatRead::Found(stat) if generation != &stat.procfs_generation() => {
             OrphanExitObservation::IdentityChanged {
                 expected_pgid: generation.pgid,
@@ -589,6 +596,31 @@ mod tests {
             pgid: generation.pgid,
             starttime: generation.starttime,
         }
+    }
+
+    async fn write_procfs_stat(
+        proc_root: &std::path::Path,
+        pid: u32,
+        state: char,
+        pgid: i32,
+        starttime: u64,
+    ) {
+        let state = state.to_string();
+        let pgid = pgid.to_string();
+        let starttime = starttime.to_string();
+        let mut fields = ["0"; 20];
+        fields[0] = &state;
+        fields[1] = "7";
+        fields[2] = &pgid;
+        fields[19] = &starttime;
+        let pid_dir = proc_root.join(pid.to_string());
+        tokio::fs::create_dir_all(&pid_dir).await.unwrap();
+        tokio::fs::write(
+            pid_dir.join("stat"),
+            format!("{pid} (firecracker) {}\n", fields.join(" ")),
+        )
+        .await
+        .unwrap();
     }
 
     fn process_discovery(
@@ -1023,6 +1055,120 @@ mod tests {
         .await;
 
         assert_eq!(result, Ok(()));
+    }
+
+    #[tokio::test]
+    async fn orphan_exit_wait_recovers_after_unavailable_pgid() {
+        let target = make_target(200, "sbox-123");
+        let generation = target.generation.as_ref().unwrap();
+        for state in ['R', 'Z', 'X', 'x'] {
+            let dir = tempfile::tempdir().unwrap();
+            let proc_root = dir.path();
+            let stat_path = proc_root.join(target.pid.to_string()).join("stat");
+            let mut observations =
+                VecDeque::from([Some(('S', generation.pgid)), Some((state, -1)), None]);
+
+            let result = wait_for_orphan_exit_with(
+                target.pid,
+                generation,
+                Duration::from_secs(1),
+                Duration::ZERO,
+                |pid| {
+                    let observation = observations.pop_front().unwrap();
+                    async move {
+                        match observation {
+                            Some((state, pgid)) => {
+                                write_procfs_stat(
+                                    proc_root,
+                                    pid,
+                                    state,
+                                    pgid,
+                                    generation.starttime,
+                                )
+                                .await;
+                            }
+                            None => {
+                                tokio::fs::remove_file(
+                                    proc_root.join(pid.to_string()).join("stat"),
+                                )
+                                .await
+                                .unwrap();
+                            }
+                        }
+                        process::read_process_stat_checked_from(proc_root, pid).await
+                    }
+                },
+            )
+            .await;
+
+            assert_eq!(result, Ok(()), "unavailable PGID in state {state}");
+            assert!(
+                !stat_path.exists(),
+                "exit proof must wait for disappearance"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn orphan_exit_wait_keeps_unavailable_pgid_unconfirmed_at_deadline() {
+        let target = make_target(200, "sbox-123");
+        let generation = target.generation.as_ref().unwrap();
+        for state in ['R', 'Z', 'X', 'x'] {
+            let dir = tempfile::tempdir().unwrap();
+            let proc_root = dir.path();
+            write_procfs_stat(proc_root, target.pid, state, -1, generation.starttime).await;
+
+            let result = wait_for_orphan_exit_with(
+                target.pid,
+                generation,
+                Duration::ZERO,
+                Duration::ZERO,
+                |pid| process::read_process_stat_checked_from(proc_root, pid),
+            )
+            .await;
+
+            assert!(matches!(result, Err(OrphanExitFailure::Unverifiable(_))));
+            assert!(
+                proc_root
+                    .join(target.pid.to_string())
+                    .join("stat")
+                    .is_file()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn orphan_exit_wait_rejects_changed_identity_before_terminal_state() {
+        let target = make_target(200, "sbox-123");
+        let generation = target.generation.as_ref().unwrap();
+        for (pgid, starttime) in [
+            (generation.pgid + 1, generation.starttime),
+            (generation.pgid, generation.starttime + 1),
+            (-1, generation.starttime + 1),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let proc_root = dir.path();
+            write_procfs_stat(proc_root, target.pid, 'X', pgid, starttime).await;
+
+            let result = wait_for_orphan_exit_with(
+                target.pid,
+                generation,
+                Duration::ZERO,
+                Duration::ZERO,
+                |pid| process::read_process_stat_checked_from(proc_root, pid),
+            )
+            .await;
+
+            assert_eq!(
+                result,
+                Err(OrphanExitFailure::IdentityChanged {
+                    expected_pgid: generation.pgid,
+                    observed_pgid: pgid,
+                    expected_starttime: generation.starttime,
+                    observed_starttime: starttime,
+                }),
+            );
+        }
     }
 
     #[tokio::test]
