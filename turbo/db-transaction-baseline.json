@@ -972,11 +972,6 @@
       "owner": "disableIneligibleWorkflowWebhookAutomationsForOrg"
     },
     {
-      "id": "TX-0349",
-      "file": "turbo/apps/api/src/signals/services/x-resource-usage.service.ts",
-      "owner": "ingestXResourceUsage$"
-    },
-    {
       "id": "TX-0356",
       "file": "turbo/packages/db/scripts/billing-attribution.ts",
       "owner": "<module>"
