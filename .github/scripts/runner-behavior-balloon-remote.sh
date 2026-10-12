@@ -84,23 +84,27 @@ rss_kib() {
 }
 
 assert_active_capacity() {
-  local allow_inflight_settle="${1:-false}"
+  local target actual sample
+  ensure_submit_running
+  sample=$(snapshot) || fail "balloon statistics unavailable"
+  IFS=$'\t' read -r target actual <<< "$sample"
+  [[ "$target" -eq 0 && "$actual" -eq 0 ]] \
+    || fail "active capacity changed: target=$target actual=$actual"
+}
+
+assert_activation_convergence() {
   local deadline=$(( SECONDS + 12 ))
   local target actual sample last_actual=-1
-  # Cover more than two former controller intervals under each live condition.
-  # The target must remain zero throughout. At a create/reuse boundary, a Guest
-  # inflation batch interrupted by deflation can publish actual pages after an
-  # earlier zero sample, so only that boundary may use this existing window to
-  # require bounded convergence instead of treating the first sample as an ACK.
+  # At a create/reuse boundary, a Guest inflation batch interrupted by deflation
+  # can publish actual pages after an earlier zero sample. Retain the full
+  # observation window at these boundaries and require bounded convergence;
+  # the target must remain zero throughout.
   while [ "$SECONDS" -lt "$deadline" ]; do
     ensure_submit_running
     sample=$(snapshot) || fail "balloon statistics unavailable"
     IFS=$'\t' read -r target actual <<< "$sample"
     [ "$target" -eq 0 ] \
       || fail "active balloon target changed: target=$target actual=$actual"
-    if [ "$actual" -ne 0 ] && [ "$allow_inflight_settle" != true ]; then
-      fail "active capacity changed: target=$target actual=$actual"
-    fi
     last_actual=$actual
     sleep 2
   done
@@ -126,7 +130,7 @@ FIRST_SANDBOX_ID=$SANDBOX_ID
 sudo curl -fsS --max-time 3 --unix-socket "$API_SOCK" http://localhost/balloon \
   | jq -e '.free_page_reporting == true and .deflate_on_oom == true' \
   || fail "reporting and OOM deflation must stay enabled"
-assert_active_capacity true
+assert_activation_convergence
 echo "PASS: active idle Guest retains configured capacity with reporting enabled"
 
 # Touch real anonymous pages, retain them while observing policy, then release.
@@ -147,6 +151,7 @@ assert sum(data[::4096]) == len(data) // 4096
 ALLOC_PID=$!
 for _ in $(seq 1 20); do
   kill -0 "$ALLOC_PID" 2>/dev/null || fail "allocator exited before readiness"
+  assert_active_capacity
   if sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" --timeout 3 -- \
     test -f /tmp/balloon-alloc-ready; then
     break
@@ -157,12 +162,12 @@ sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" --timeout 3 -- \
   test -f /tmp/balloon-alloc-ready || fail "allocator did not become ready"
 assert_active_capacity
 allocated_rss=$(rss_kib) || fail "allocated Guest RSS unavailable"
+kill -0 "$ALLOC_PID" 2>/dev/null || fail "allocator exited while memory should be held"
+assert_active_capacity
 sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" --timeout 5 -- \
   touch /tmp/balloon-alloc-release || fail "failed to release allocator"
 wait "$ALLOC_PID" || fail "bounded allocation failed"
 ALLOC_PID=""
-assert_active_capacity
-echo "PASS: allocation and release retain active capacity"
 
 # Verify real host backing return while the workload remains active. A partial
 # 256-MiB drop leaves room for Guest/runtime cache; zero target alone proves no
@@ -182,6 +187,7 @@ while true; do
     || fail "free-page reporting did not return backing: before=${allocated_rss}KiB after=${reported_rss}KiB"
   sleep 2
 done
+echo "PASS: allocation and release retain active capacity"
 echo "PASS: running Guest returned backing (${allocated_rss}KiB -> ${reported_rss}KiB)"
 
 finish_turn
@@ -209,7 +215,7 @@ echo "PASS: parked Guest is deflated and paused with reclaimed backing (${report
 
 start_turn "$FIRST_MEMORY; test -f /tmp/balloon-test-marker || exit 1; rm /tmp/balloon-test-finish || exit 1; $KEEPALIVE"
 [ "$SANDBOX_ID" = "$FIRST_SANDBOX_ID" ] || fail "second turn did not reuse sandbox"
-assert_active_capacity true
+assert_activation_convergence
 finish_turn
 echo "PASS: reused Guest returns to active capacity"
 sudo "$BIN_DIR/runner" service stop --name "$SVC" --force \
