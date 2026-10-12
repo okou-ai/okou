@@ -1782,60 +1782,6 @@ export const applyBrowserUserAction$ = command(
   },
 );
 
-async function mutatePendingRequest(
-  db: Db,
-  args: {
-    readonly row: RequestRow;
-    readonly requestToken: string;
-    readonly terminal: "cancelled";
-  },
-  signal: AbortSignal,
-): Promise<ServiceResult<BrowserUserActionResponse>> {
-  const payload = decodePayload(args.row);
-  if (!payload) {
-    return conflict(
-      "Browser user-action request payload is unavailable",
-      "BROWSER_USER_ACTION_UNAVAILABLE",
-    );
-  }
-  const current = args.row;
-  if (current.status === args.terminal) {
-    return {
-      kind: "ok",
-      value: publicRequest(current, args.requestToken, payload),
-    };
-  }
-  if (!(await requestHasLiveBrowser(db, current))) {
-    return expired();
-  }
-  if (current.status !== "pending") {
-    return conflict("Browser user-action state no longer permits this action");
-  }
-  const [updated] = await db
-    .update(browserUserActionRequests)
-    .set({
-      status: args.terminal,
-      completedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(
-          browserUserActionRequests.requestTokenHash,
-          current.requestTokenHash,
-        ),
-        eq(browserUserActionRequests.status, "pending"),
-      ),
-    )
-    .returning();
-  signal.throwIfAborted();
-  return updated
-    ? {
-        kind: "ok",
-        value: publicRequest(updated, args.requestToken, payload),
-      }
-    : conflict("Browser user-action state changed");
-}
-
 export const cancelBrowserUserAction$ = command(
   async (
     { get, set },
@@ -1852,15 +1798,50 @@ export const cancelBrowserUserAction$ = command(
     if (!row) {
       return notFound();
     }
-    const result = await mutatePendingRequest(
-      db,
-      { row, requestToken: args.requestToken, terminal: "cancelled" },
-      signal,
-    );
-    if (
-      result.kind === "ok" &&
-      decodePayload(row)?.target.fields[0]?.fieldKind === "file"
-    ) {
+    const payload = decodePayload(row);
+    if (!payload) {
+      return conflict(
+        "Browser user-action request payload is unavailable",
+        "BROWSER_USER_ACTION_UNAVAILABLE",
+      );
+    }
+    let current = row;
+    if (current.status !== "cancelled") {
+      if (!(await requestHasLiveBrowser(db, current))) {
+        return expired();
+      }
+      if (current.status !== "pending") {
+        return conflict(
+          "Browser user-action state no longer permits this action",
+        );
+      }
+      const [updated] = await db
+        .update(browserUserActionRequests)
+        .set({
+          status: "cancelled",
+          completedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(
+              browserUserActionRequests.requestTokenHash,
+              current.requestTokenHash,
+            ),
+            eq(browserUserActionRequests.status, "pending"),
+          ),
+        )
+        .returning();
+      signal.throwIfAborted();
+      if (!updated) {
+        return conflict("Browser user-action state changed");
+      }
+      current = updated;
+    }
+    const result: ServiceResult<BrowserUserActionResponse> = {
+      kind: "ok",
+      value: publicRequest(current, args.requestToken, payload),
+    };
+    if (decodePayload(row)?.target.fields[0]?.fieldKind === "file") {
       const cleanup = await settle(
         get(
           deleteS3Objects(
