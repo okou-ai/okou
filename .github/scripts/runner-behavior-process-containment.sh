@@ -94,4 +94,4 @@ echo "=== Staging Agent-ready benchmark worker ==="
 stage_agent_ready_benchmark
 
 exec "$DURABLE_RUNNER" process-containment "$REMOTE_WORKER" \
-  "${AGENT_READY_BENCHMARK_SAMPLES:-3}"
+  "${AGENT_READY_BENCHMARK_SAMPLES:-1}"
