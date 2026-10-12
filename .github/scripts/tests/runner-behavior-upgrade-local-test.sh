@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
-export UPGRADE_WORKER="$REPO_ROOT/.github/scripts/runner-behavior-upgrade-local-remote.sh"
+export UPGRADE_WORKER="${1:-$REPO_ROOT/.github/scripts/runner-behavior-upgrade-local-remote.sh}"
 
 # Exercise the standalone worker at the runner/systemd command boundary. Queue
 # requests, status/result files, FIFO readers/writers and submit processes are
@@ -14,6 +14,7 @@ from contextlib import ExitStack
 import os
 from pathlib import Path
 import select
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -40,6 +41,12 @@ command = Path(command).name
 def event(kind, **fields):
     with (root / 'events').open('a') as log:
         log.write(json.dumps({'kind': kind, **fields}) + '\n')
+
+def inject_failure(operation):
+    if scenario == operation or (scenario in ('cleanup-failure', 'cleanup-directory-failure') and operation == 'drain-a'):
+        (root / 'failed').touch()
+        print(f'injected failure: {operation}', file=sys.stderr)
+        sys.exit(42)
 
 def mapped(path):
     return str(root / 'host' / path.lstrip('/')) if path.startswith('/var/lib/vm0-runner/') else path
@@ -80,12 +87,20 @@ if command == 'seq':
     print('\n'.join(str(x) for x in range(start, min(end, 16) + 1)))
     sys.exit(0)
 if command == 'journalctl':
-    sys.exit(0)
+    event('journal', owner=args[args.index('--unit') + 1].rsplit('-', 1)[-1])
+    sys.exit(65 if scenario == 'cleanup-failure' else 0)
+if command == 'rm':
+    if '-rf' in args and args[-1].startswith('/tmp/vm0-upgrade.'):
+        event('remove-results', path=args[-1])
+        if scenario == 'cleanup-directory-failure' and (root / 'failed').exists():
+            sys.exit(65)
+    sys.exit(subprocess.run(['/usr/bin/rm', *args]).returncode)
 if command == 'systemctl':
     action = args[0]
     owner = 'a' if 'upgrade-a' in args[-1] else 'b'
     active, enabled = root / f'active-{owner}', root / f'enabled-{owner}'
     if action == 'enable':
+        inject_failure('enable-a')
         assert not active.exists(), 'inactive drain assertion ran while A was active'
         enabled.touch()
         event('enable-inactive', owner=owner)
@@ -114,6 +129,21 @@ if args[0] == 'service':
     action = args[1]
     owner = 'a' if args[args.index('--name') + 1].endswith('-a') else 'b'
     event(action, owner=owner)
+    counter = root / f'{action}-{owner}-count'
+    count = int(counter.read_text()) + 1 if counter.exists() else 1
+    counter.write_text(str(count))
+    operation = f'{action}-{owner}'
+    if action == 'uninstall':
+        if count == 1 and scenario == 'residual-uninstall-failure':
+            sys.exit(65)
+        if scenario == 'cleanup-failure' and (root / 'failed').exists():
+            sys.exit(65)
+        if count == 2:
+            inject_failure(operation)
+    else:
+        if operation == 'drain-a' and count == 2:
+            operation = 'inactive-drain-a'
+        inject_failure(operation)
     if action == 'install':
         if owner == 'b':
             assert (root / 'ready-1').exists(), 'B installed before exact job 1 readiness'
@@ -151,6 +181,7 @@ if args[:2] == ['local', 'submit']:
         owner = 'b'
     run_id = f'00000000-0000-4000-8000-{number:012d}'
     event('submit', number=number, owner=owner, prompt=prompt, pid=os.getpid())
+    inject_failure(f'submit-{number}')
     if number == 3:
         assert (root / 'retired-a').exists() and (root / 'active-b').exists(), 'fresh job did not run with only B left'
         print(json.dumps({'run_id': run_id, 'exit_code': 0}))
@@ -273,6 +304,10 @@ def cleanup_case(case):
         terminate(client['pid'])
         terminate(client['guest_pid'])
         Path(client['fifo']).unlink(missing_ok=True)
+    if (case / 'events').exists():
+        for event in map(json.loads, (case / 'events').read_text().splitlines()):
+            if event['kind'] == 'remove-results':
+                shutil.rmtree(event['path'], ignore_errors=True)
 
 def run_case(scenario, failure, case, binary):
     environment = {**os.environ, 'PATH': f'{binary}:{os.environ["PATH"]}', 'UPGRADE_CASE': str(case), 'UPGRADE_SCENARIO': scenario}
@@ -281,6 +316,10 @@ def run_case(scenario, failure, case, binary):
     assert (result.returncode == 0) == (failure is None), f'{scenario}: unexpected exit {result.returncode}\n{output}'
     if failure:
         assert failure in output and '=== Upgrade test passed ===' not in output, f'{scenario}: missing failure\n{output}'
+        if scenario in error_statuses:
+            assert result.returncode == error_statuses[scenario], f'{scenario}: original status replaced: {result.returncode}\n{output}'
+            following = following_phases.get(scenario)
+            assert not following or following not in output, f'{scenario}: continued after failure\n{output}'
     else:
         assert '=== Upgrade test passed ===' in output, output
     events = [json.loads(line) for line in (case / 'events').read_text().splitlines()]
@@ -296,15 +335,35 @@ def run_case(scenario, failure, case, binary):
         print(f'PASS: {scenario}: 3 submissions, 2 installs, 3 drains, 4 uninstalls, 2 explicit releases')
     else:
         assert sum(e['kind'] == 'uninstall' for e in events) >= 4, f'{scenario}: exit cleanup missing'
+        assert {e['owner'] for e in events if e['kind'] == 'journal'} == {'a', 'b'}, f'{scenario}: failure journals missing'
         print(f'PASS: {scenario}: bounded failure and cleanup')
     for event in events:
         if event['kind'] == 'output':
-            assert not Path(event['path']).parent.exists(), f'{scenario}: result directory leaked'
+            assert Path(event['path']).parent.exists() == (scenario == 'cleanup-directory-failure'), f'{scenario}: unexpected result directory state'
         if event['kind'] == 'submit':
             assert not alive(event['pid']), f'{scenario}: submit client leaked'
     for file in case.glob('client-*.json'):
         client = json.loads(file.read_text())
         assert not alive(client['guest_pid']), f'{scenario}: FIFO workload leaked'
+    if scenario != 'cleanup-failure':
+        assert not any((case / f'{kind}-{owner}').exists() for kind in ('active', 'enabled') for owner in ('a', 'b')), f'{scenario}: service state leaked'
+    if scenario == 'cleanup-directory-failure':
+        assert any(e['kind'] == 'remove-results' for e in events), 'result cleanup not attempted'
+
+error_statuses = {
+    'install-a': 42, 'install-b': 42, 'drain-a': 42, 'drain-b': 42,
+    'enable-a': 42, 'inactive-drain-a': 1, 'uninstall-a': 42, 'uninstall-b': 42,
+    'submit-1': 1, 'submit-2': 1, 'submit-3': 1,
+    'cleanup-failure': 42, 'cleanup-directory-failure': 42,
+}
+following_phases = {
+    'install-a': '--- Submit job 1', 'install-b': '--- Submit job 2',
+    'drain-a': '--- Waiting for job 1', 'drain-b': '--- Uninstalling runner B',
+    'enable-a': 'PASS: inactive drain disabled runner A',
+    'inactive-drain-a': '--- Uninstalling runner A',
+    'uninstall-a': '--- Submit job 3', 'submit-1': '--- Installing runner B',
+    'submit-2': '--- Draining runner A', 'submit-3': '--- Draining runner B',
+}
 
 with tempfile.TemporaryDirectory(prefix='upgrade-worker-test-') as temporary:
     root = Path(temporary)
@@ -313,7 +372,7 @@ with tempfile.TemporaryDirectory(prefix='upgrade-worker-test-') as temporary:
     helper = binary / 'fake-command'
     helper.write_text(fixture)
     helper.chmod(0o755)
-    for name in ('sudo', 'systemctl', 'journalctl', 'sleep', 'seq'):
+    for name in ('sudo', 'systemctl', 'journalctl', 'sleep', 'seq', 'rm'):
         (binary / name).symlink_to(helper)
     cases = {
         'job2-b': None,
@@ -334,12 +393,15 @@ with tempfile.TemporaryDirectory(prefix='upgrade-worker-test-') as temporary:
         'failed-submission': 'submission 00000000-0000-4000-8000-000000000002 failed',
         'mismatched-result': 'submission result did not confirm success',
     }
+    cases.update({name: f'injected failure: {name}' for name in error_statuses})
+    cases['cleanup-failure'] = cases['cleanup-directory-failure'] = 'injected failure: drain-a'
+    cases['residual-uninstall-failure'] = None
     for scenario, failure in cases.items():
         case = root / scenario
         case.mkdir()
         with ExitStack() as cleanup:
             cleanup.callback(cleanup_case, case)
             run_case(scenario, failure, case, binary)
-    print(f'PASS: {len(cases)} upgrade synchronization cases; native lifecycle remains covered by CI')
+    print(f'PASS: {len(cases)} upgrade synchronization/error cases; native lifecycle remains covered by CI')
 
 PYTHON
