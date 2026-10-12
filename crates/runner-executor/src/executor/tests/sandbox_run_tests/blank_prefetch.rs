@@ -249,7 +249,7 @@ async fn blank_prefetch_replacement_failure_cannot_retry_again() {
 }
 
 #[tokio::test]
-async fn blank_prefetch_replacement_releases_old_workspace_lease() {
+async fn blank_prefetch_replacement_releases_old_home_lease() {
     let dir = tempfile::tempdir().unwrap();
     let mut config = test_executor_config(dir.path()).await;
     config.home_cache = Some(HomeImageCache::new(RunnerPaths::new(

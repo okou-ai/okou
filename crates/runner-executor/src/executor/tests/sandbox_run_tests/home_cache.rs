@@ -128,7 +128,7 @@ async fn home_mount_retry_starts_a_new_codex_catalog_prefetch_owner() {
 }
 
 #[tokio::test]
-async fn post_write_prefetch_failure_replaces_consumed_cache_hit_with_fresh_workspace() {
+async fn post_write_prefetch_failure_replaces_consumed_cache_hit_with_fresh_home() {
     for start_error in [
         SandboxError::OperationTimeout {
             operation: sandbox::SandboxOperation::StartProcess,
@@ -233,21 +233,21 @@ async fn execute_inner_retries_fresh_after_home_cache_hit_create_failure() {
     overrides.set_create_lifecycle_gate(create_gate.clone());
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let server = httpmock::MockServer::start_async().await;
-    let body = storage_archive(b"workspace retry archive");
+    let body = storage_archive(b"home retry archive");
     let full_get = server
         .mock_async(|when, then| {
             when.method(httpmock::Method::GET)
-                .path("/workspace-retry.tar.gz")
+                .path("/home-retry.tar.gz")
                 .header_missing("range");
             then.status(200).body(body.clone());
         })
         .await;
     let mut ctx = minimal_context();
     let mut storage = api_storage(
-        "workspace-retry",
+        "home-retry",
         "/data",
         "v1",
-        &server.url("/workspace-retry.tar.gz"),
+        &server.url("/home-retry.tar.gz"),
     );
     storage.archive_size = Some(body.len() as u64);
     ctx.storage_manifest = Some(StorageManifest {
@@ -346,7 +346,7 @@ async fn execute_inner_retries_fresh_after_home_cache_hit_create_failure() {
             .filter(|(action, _, _)| action == "storage_cache_fresh_delivery_single_request")
             .count(),
         2,
-        "workspace fallback must replace, not retain, the old owner: {ops:?}"
+        "home fallback must replace, not retain, the old owner: {ops:?}"
     );
     assert!(ops.iter().any(|(action, success, _)| {
         action == "storage_cache_fresh_delivery_drained" && *success
@@ -706,7 +706,7 @@ async fn execute_inner_waits_for_transient_home_cache_lock() {
         prepare_lock_gate.release();
         outcome
             .await
-            .expect("transient workspace lock wait should remain bounded")
+            .expect("transient home lock wait should remain bounded")
             .unwrap()
     };
 
@@ -835,7 +835,7 @@ async fn execute_inner_records_home_cache_lock_busy_prepare_telemetry() {
         ),
     )
     .await
-    .expect("persistent workspace lock wait should remain bounded")
+    .expect("persistent home lock wait should remain bounded")
     .unwrap();
 
     assert_eq!(outcome.exit_code(), 0);
@@ -916,7 +916,7 @@ async fn execute_inner_logs_home_cache_lock_error_separately() {
     ))
     .await;
     let outcome = outcome
-        .expect("workspace lock errors should return without waiting for the contention timeout")
+        .expect("home lock errors should return without waiting for the contention timeout")
         .unwrap();
 
     assert_eq!(outcome.exit_code(), 0);
@@ -1190,11 +1190,11 @@ async fn cached_reuse_home_promotion_identity_mismatch_stops_before_agent() {
     assert!(reuse_outcome.sandbox.is_some());
     assert!(reuse_outcome.home_image.is_none());
     let error = reuse_outcome.error().expect("error should be set");
-    assert!(error.contains("workspace promotion identity mismatch"));
+    assert!(error.contains("home promotion identity mismatch"));
     assert!(!error.contains(session_id));
     assert!(
         overrides.start_agent_process_calls().is_empty(),
-        "agent must not start after workspace promotion identity mismatch"
+        "agent must not start after home promotion identity mismatch"
     );
     assert!(
         !current_image.exists(),
@@ -1366,7 +1366,7 @@ async fn cached_reuse_validation_failure_keeps_home_cache_hidden() {
     assert_eq!(
         checkout.result(),
         HomeCacheCheckoutResult::LockBusy,
-        "pre-run validation failure must not release the hidden cache baseline before finalization can promote or invalidate the live workspace"
+        "pre-run validation failure must not release the hidden cache baseline before finalization can promote or invalidate the live home"
     );
 }
 
@@ -1421,12 +1421,12 @@ async fn cached_reuse_invalid_resume_session_keeps_existing_home_cache_hidden() 
     assert_eq!(
         checkout.result(),
         HomeCacheCheckoutResult::LockBusy,
-        "invalid resume sessions must not release the hidden cache baseline before finalization can promote or invalidate the live workspace"
+        "invalid resume sessions must not release the hidden cache baseline before finalization can promote or invalidate the live home"
     );
 }
 
 #[tokio::test]
-async fn cached_reuse_invalid_resume_session_without_promotion_skips_workspace_lease() {
+async fn cached_reuse_invalid_resume_session_without_promotion_skips_home_lease() {
     let dir = tempfile::tempdir().unwrap();
     let runner_paths = RunnerPaths::new(dir.path().join("runner"));
     let cache = HomeImageCache::new(runner_paths);

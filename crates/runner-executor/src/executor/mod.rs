@@ -385,7 +385,7 @@ pub struct ExecuteOutcome {
     pub source_ip: String,
     pub network_log_session: Option<NetworkLogSession>,
     pub home_image: Option<HomeImageLease>,
-    /// Final workspace-reuse outcome, when execution reached `RunStart`.
+    /// Final home-reuse outcome, when execution reached `RunStart`.
     pub home_reuse_result: Option<HomeReuseResult>,
     /// CLI-generated session ID read from the guest after execution.
     /// Used for late session tracking and finalization when `resume_session`
@@ -1021,7 +1021,7 @@ fn reused_promotion_into_active_lease(
                 sandbox_id = %sandbox_id,
                 profile_name = %params.profile_name,
                 mismatch = mismatch.as_str(),
-                "workspace promotion expected identity could not be constructed"
+                "home promotion expected identity could not be constructed"
             );
         }) {
         Ok(expected) => expected,
@@ -1046,10 +1046,10 @@ fn home_promotion_identity_failure(
         sandbox_id = %sandbox_id,
         profile_name,
         mismatch = mismatch.as_str(),
-        "workspace promotion identity mismatch during reused sandbox execution"
+        "home promotion identity mismatch during reused sandbox execution"
     );
     ExecutionFailure::from_error(format!(
-        "workspace promotion identity mismatch during reused sandbox execution: {mismatch}"
+        "home promotion identity mismatch during reused sandbox execution: {mismatch}"
     ))
 }
 
