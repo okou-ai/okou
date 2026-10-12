@@ -43,10 +43,12 @@ function unavailable() {
   };
 }
 
+const discordStatus$ = discordOrgStatus(organizationAuthContext$);
+
 const getDiscordStatus$ = computed(async (get) => {
   return {
     status: 200 as const,
-    body: await get(discordOrgStatus(get(organizationAuthContext$))),
+    body: await get(discordStatus$),
   };
 });
 
