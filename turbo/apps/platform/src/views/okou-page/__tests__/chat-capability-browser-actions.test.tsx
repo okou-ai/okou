@@ -59,11 +59,16 @@ const BROWSER_INPUT_CALLBACK = "Continue after browser input";
 
 function browserInputAction(
   state: BrowserUserActionResponse["state"],
+  hasTaskContext = true,
 ): Extract<BrowserUserActionResponse, { kind: "input" }> {
   return {
     kind: "input",
-    title: "Sign in to download invoices",
-    reason: "The website requires sign-in to access your invoices.",
+    ...(hasTaskContext
+      ? {
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
+        }
+      : {}),
     requestToken: BROWSER_INPUT_TOKEN,
     state,
     completedAt: state === "pending" ? null : "2026-09-22T04:00:00.000Z",
@@ -516,179 +521,176 @@ test("Recognize trusted assistant actions without trusting lookalikes", async ()
   expect(window.location.hostname).toBe("app.okou.ai");
 });
 
-test("A Browser input card opens a preflighted dialog and completes without navigation", async () => {
-  let reads = 0;
-  let preflights = 0;
-  let state: BrowserUserActionResponse["state"] = "pending";
-  let sentPrompt = "";
-  const firstCheckStarted = createDeferredPromise<void>(context.signal);
-  const releaseFirstCheck = createDeferredPromise<void>(context.signal);
-  installCapabilityChat({
-    events: completedConversation(`[Enter details](${browserInputUrl()})`),
-  });
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    reads += 1;
-    return respond(200, {
-      ...browserInputAction(state),
-      fields: [
-        {
-          key: "notes",
-          label: "Notes",
-          fieldKind: "text",
-          required: false,
-          control: { tagName: "INPUT", inputType: "text" },
-        },
-        {
-          key: "quantity",
-          label: "Quantity",
-          fieldKind: "number",
-          required: false,
-          control: { tagName: "INPUT", inputType: "number" },
-        },
-      ],
+test.each([true, false])(
+  "A Browser input card opens, reopens and completes (task context: %s)",
+  async (hasTaskContext) => {
+    const title = hasTaskContext
+      ? "Sign in to download invoices"
+      : "Enter information in browser";
+    const description = hasTaskContext
+      ? "The website requires sign-in to access your invoices."
+      : "";
+    let reads = 0;
+    let preflights = 0;
+    let state: BrowserUserActionResponse["state"] = "pending";
+    let sentPrompt = "";
+    const firstCheckStarted = createDeferredPromise<void>(context.signal);
+    const releaseFirstCheck = createDeferredPromise<void>(context.signal);
+    installCapabilityChat({
+      events: completedConversation(`[Enter details](${browserInputUrl()})`),
     });
-  });
-  context.mocks.api(
-    browserUserActionsContract.preflight,
-    async ({ params, body, respond }) => {
-      preflights += 1;
-      expect(params.requestToken).toBe(BROWSER_INPUT_TOKEN);
-      expect(body).toStrictEqual({});
-      if (preflights === 1) {
-        firstCheckStarted.resolve(undefined);
-        await releaseFirstCheck.promise;
-      }
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      reads += 1;
       return respond(200, {
-        ...browserInputAction("pending"),
+        ...browserInputAction(state, hasTaskContext),
         fields: [
           {
             key: "notes",
             label: "Notes",
             fieldKind: "text",
             required: false,
-            control: { tagName: "TEXTAREA", inputType: "textarea" },
+            control: { tagName: "INPUT", inputType: "text" },
           },
           {
             key: "quantity",
             label: "Quantity",
             fieldKind: "number",
             required: false,
-            control: {
-              tagName: "INPUT",
-              inputType: "number",
-              min: "1",
-              max: "9",
-            },
+            control: { tagName: "INPUT", inputType: "number" },
           },
         ],
       });
-    },
-  );
-  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
-    expect(body.values).toStrictEqual([{ key: "notes", value: "Ready" }]);
-    state = "succeeded";
-    return respond(200, browserInputAction(state));
-  });
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    sentPrompt = body.prompt ?? "";
-    expect(body.clientEventId).toBe(BROWSER_INPUT_SUCCESS_CLIENT_ID);
-    expect(body.chatThreadSortEventId).toBe(BROWSER_INPUT_SUCCESS_SORT_ID);
-    return respond(201, {
-      runId: crypto.randomUUID(),
-      threadId: RUN_THREAD_ID,
     });
-  });
+    context.mocks.api(
+      browserUserActionsContract.preflight,
+      async ({ params, body, respond }) => {
+        preflights += 1;
+        expect(params.requestToken).toBe(BROWSER_INPUT_TOKEN);
+        expect(body).toStrictEqual({});
+        if (preflights === 1) {
+          firstCheckStarted.resolve(undefined);
+          await releaseFirstCheck.promise;
+        }
+        return respond(200, {
+          ...browserInputAction("pending", hasTaskContext),
+          fields: [
+            {
+              key: "notes",
+              label: "Notes",
+              fieldKind: "text",
+              required: false,
+              control: { tagName: "TEXTAREA", inputType: "textarea" },
+            },
+            {
+              key: "quantity",
+              label: "Quantity",
+              fieldKind: "number",
+              required: false,
+              control: {
+                tagName: "INPUT",
+                inputType: "number",
+                min: "1",
+                max: "9",
+              },
+            },
+          ],
+        });
+      },
+    );
+    context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+      expect(body.values).toStrictEqual([{ key: "notes", value: "Ready" }]);
+      state = "succeeded";
+      return respond(200, browserInputAction(state, hasTaskContext));
+    });
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      sentPrompt = body.prompt ?? "";
+      expect(body.clientEventId).toBe(BROWSER_INPUT_SUCCESS_CLIENT_ID);
+      expect(body.chatThreadSortEventId).toBe(BROWSER_INPUT_SUCCESS_SORT_ID);
+      return respond(201, {
+        runId: crypto.randomUUID(),
+        threadId: RUN_THREAD_ID,
+      });
+    });
 
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  await readyChat();
+    await setupPage({
+      context,
+      path: RUN_PATH,
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    await readyChat();
 
-  const openButton = await findButton("Enter information");
-  const currentUrl = window.location.href;
-  expect(preflights).toBe(0);
-  expect(
-    screen.queryByRole("dialog", { name: "Sign in to download invoices" }),
-  ).toBeNull();
+    const openButton = await findButton("Enter information");
+    const currentUrl = window.location.href;
+    expect(preflights).toBe(0);
+    expect(screen.queryByRole("dialog", { name: title })).toBeNull();
 
-  click(openButton);
-  const dialog = await screen.findByRole("dialog", {
-    name: "Sign in to download invoices",
-  });
-  await firstCheckStarted.promise;
-  expect(dialog).toHaveAccessibleDescription(
-    "The website requires sign-in to access your invoices.",
-  );
-  expect(
-    within(dialog).getByText(
-      "The website requires sign-in to access your invoices.",
-    ),
-  ).toBeVisible();
-  expect(
-    within(dialog).getByText(
-      "Your information will be added to this website. The agent will then continue and check the result.",
-    ),
-  ).toBeVisible();
-  const earlyNotes = within(dialog).getByRole("textbox", { name: "Notes" });
-  expect(earlyNotes).toHaveProperty("tagName", "INPUT");
-  await fill(earlyNotes, "Draft");
-  expect(buttonsByName("Add to browser", dialog)[0]).toBeEnabled();
-  releaseFirstCheck.resolve(undefined);
-  await waitFor(() => {
+    click(openButton);
+    const dialog = await screen.findByRole("dialog", {
+      name: title,
+    });
+    await firstCheckStarted.promise;
+    expect(dialog).toHaveAccessibleDescription(description);
+    expect(within(dialog).getByText(description || title)).toBeVisible();
     expect(
-      within(dialog).getByRole("textbox", { name: "Notes" }),
-    ).toHaveProperty("tagName", "TEXTAREA");
-  });
-  expect(within(dialog).getByRole("textbox", { name: "Notes" })).toHaveValue(
-    "Draft",
-  );
-  expect(within(dialog).getByLabelText("Quantity")).toHaveAttribute(
-    "type",
-    "number",
-  );
-  expect(window.location.href).toBe(currentUrl);
-  expect(preflights).toBe(1);
-  const readsBeforeFocus = reads;
-  window.dispatchEvent(new Event("focus"));
-  expect(dialog).toBeVisible();
-  expect(within(dialog).getByLabelText("Notes")).toHaveValue("Draft");
-  expect(reads).toBe(readsBeforeFocus);
+      within(dialog).getByText(
+        "Your information will be added to this website. The agent will then continue and check the result.",
+      ),
+    ).toBeVisible();
+    const earlyNotes = within(dialog).getByRole("textbox", { name: "Notes" });
+    expect(earlyNotes).toHaveProperty("tagName", "INPUT");
+    await fill(earlyNotes, "Draft");
+    expect(buttonsByName("Add to browser", dialog)[0]).toBeEnabled();
+    releaseFirstCheck.resolve(undefined);
+    await waitFor(() => {
+      expect(
+        within(dialog).getByRole("textbox", { name: "Notes" }),
+      ).toHaveProperty("tagName", "TEXTAREA");
+    });
+    expect(within(dialog).getByRole("textbox", { name: "Notes" })).toHaveValue(
+      "Draft",
+    );
+    expect(within(dialog).getByLabelText("Quantity")).toHaveAttribute(
+      "type",
+      "number",
+    );
+    expect(window.location.href).toBe(currentUrl);
+    expect(preflights).toBe(1);
+    const readsBeforeFocus = reads;
+    window.dispatchEvent(new Event("focus"));
+    expect(dialog).toBeVisible();
+    expect(within(dialog).getByLabelText("Notes")).toHaveValue("Draft");
+    expect(reads).toBe(readsBeforeFocus);
 
-  const closeButton = buttonsByName("Close", dialog)[0];
-  if (!closeButton) {
-    throw new Error("Browser input dialog close button was not visible");
-  }
-  click(closeButton);
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Sign in to download invoices" }),
-    ).toBeNull();
-  });
-  click(await findButton("Enter information"));
-  const reopenedDialog = await screen.findByRole("dialog", {
-    name: "Sign in to download invoices",
-  });
-  expect(reopenedDialog).toHaveAccessibleDescription(
-    "The website requires sign-in to access your invoices.",
-  );
-  await expect(
-    within(reopenedDialog).findByRole("textbox", { name: "Notes" }),
-  ).resolves.toBeVisible();
-  expect(preflights).toBe(2);
-  await fill(within(reopenedDialog).getByLabelText("Notes"), "Ready");
-  const submitButton = buttonsByName("Add to browser", reopenedDialog)[0];
-  if (!submitButton) {
-    throw new Error("Browser input submit button was not visible");
-  }
-  click(submitButton);
+    const closeButton = buttonsByName("Close", dialog)[0];
+    if (!closeButton) {
+      throw new Error("Browser input dialog close button was not visible");
+    }
+    click(closeButton);
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: title })).toBeNull();
+    });
+    click(await findButton("Enter information"));
+    const reopenedDialog = await screen.findByRole("dialog", {
+      name: title,
+    });
+    expect(reopenedDialog).toHaveAccessibleDescription(description);
+    await expect(
+      within(reopenedDialog).findByRole("textbox", { name: "Notes" }),
+    ).resolves.toBeVisible();
+    expect(preflights).toBe(2);
+    await fill(within(reopenedDialog).getByLabelText("Notes"), "Ready");
+    const submitButton = buttonsByName("Add to browser", reopenedDialog)[0];
+    if (!submitButton) {
+      throw new Error("Browser input submit button was not visible");
+    }
+    click(submitButton);
 
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(sentPrompt).toBe(BROWSER_INPUT_CALLBACK);
-  expect(buttonsByName("Enter information")).toHaveLength(0);
-});
+    await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+    expect(sentPrompt).toBe(BROWSER_INPUT_CALLBACK);
+    expect(buttonsByName("Enter information")).toHaveLength(0);
+  },
+);
 
 test("Closing an inline form clears password and code drafts while preserving ordinary text", async () => {
   const firstCheckStarted = createDeferredPromise<void>(context.signal);

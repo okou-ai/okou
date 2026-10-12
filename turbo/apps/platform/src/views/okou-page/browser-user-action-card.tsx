@@ -351,6 +351,11 @@ function PendingFormHeader({
   readonly showTitle?: boolean;
 }) {
   const { t } = useTranslation();
+  const title =
+    action.title ??
+    t(($) => {
+      return $.chat.browserInput.title;
+    });
   return (
     <div
       className={cn(
@@ -366,12 +371,12 @@ function PendingFormHeader({
               "break-words text-[0.9375rem] font-medium text-foreground",
               compact && "line-clamp-2 @[380px]:truncate",
             )}
-            title={compact ? action.title : undefined}
+            title={compact ? title : undefined}
           >
-            {action.title}
+            {title}
           </h2>
         )}
-        {showTitle && !compact && (
+        {showTitle && !compact && action.reason !== undefined && (
           <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">
             {action.reason}
           </p>
@@ -1544,33 +1549,40 @@ function PendingFormActions({
   const { t } = useTranslation();
   const busy = submitting || cancelling;
   return (
-    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-      <Button
-        type="button"
-        variant="outline"
-        disabled={busy}
-        onClick={onCancel}
-      >
-        {cancelling && <Loader2 size={16} className="animate-spin" />}
-        {cancelling
-          ? t(($) => {
-              return $.chat.browserInput.cancelling;
-            })
-          : t(($) => {
-              return $.chat.browserInput.cancel;
-            })}
-      </Button>
-      <Button type="submit" disabled={busy || !canSubmit}>
-        {submitting && <Loader2 size={16} className="animate-spin" />}
-        {submitting
-          ? t(($) => {
-              return $.chat.browserInput.submitting;
-            })
-          : t(($) => {
-              return $.chat.browserInput.submit;
-            })}
-      </Button>
-    </div>
+    <>
+      <p className="text-xs leading-5 text-muted-foreground">
+        {t(($) => {
+          return $.chat.browserInput.submitDescription;
+        })}
+      </p>
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busy}
+          onClick={onCancel}
+        >
+          {cancelling && <Loader2 size={16} className="animate-spin" />}
+          {cancelling
+            ? t(($) => {
+                return $.chat.browserInput.cancelling;
+              })
+            : t(($) => {
+                return $.chat.browserInput.cancel;
+              })}
+        </Button>
+        <Button type="submit" disabled={busy || !canSubmit}>
+          {submitting && <Loader2 size={16} className="animate-spin" />}
+          {submitting
+            ? t(($) => {
+                return $.chat.browserInput.submitting;
+              })
+            : t(($) => {
+                return $.chat.browserInput.submit;
+              })}
+        </Button>
+      </div>
+    </>
   );
 }
 
@@ -1706,7 +1718,12 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
     <form
       ref={formRef}
       className="flex flex-col gap-5"
-      aria-label={activeAction.title}
+      aria-label={
+        activeAction.title ??
+        t(($) => {
+          return $.chat.browserInput.title;
+        })
+      }
       onSubmit={submitForm}
     >
       <PendingFormDestination action={activeAction} showTitle={showTitle} />
@@ -1747,12 +1764,6 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
           })}
         </p>
       )}
-
-      <p className="text-xs leading-5 text-muted-foreground">
-        {t(($) => {
-          return $.chat.browserInput.submitDescription;
-        })}
-      </p>
 
       <PendingFormActions
         submitting={submitting}
@@ -1806,6 +1817,11 @@ function PendingInlineAction({
   const pageSignal = useGet(pageSignal$);
   const beginEntry = useSet(signals.beginEntry$);
   const dialogRef = useSet(signals.dialogRef$);
+  const title =
+    request.action.title ??
+    t(($) => {
+      return $.chat.browserInput.title;
+    });
   return (
     <div className="flex h-full w-full flex-col justify-center gap-2 @[520px]:flex-row @[520px]:items-center @[520px]:justify-between @[520px]:gap-3">
       <PendingFormHeader action={request.action} compact />
@@ -1828,12 +1844,12 @@ function PendingInlineAction({
           />
           <DialogContent ref={dialogRef}>
             <DialogHeader>
-              <DialogTitle className="break-words">
-                {request.action.title}
-              </DialogTitle>
-              <DialogDescription className="whitespace-pre-wrap break-words">
-                {request.action.reason}
-              </DialogDescription>
+              <DialogTitle className="break-words">{title}</DialogTitle>
+              {request.action.reason !== undefined && (
+                <DialogDescription className="whitespace-pre-wrap break-words">
+                  {request.action.reason}
+                </DialogDescription>
+              )}
             </DialogHeader>
             <PendingFormWithCheck
               signals={signals}

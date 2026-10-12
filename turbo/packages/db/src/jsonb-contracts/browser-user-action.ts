@@ -45,8 +45,9 @@ export interface BrowserUserActionInputTarget {
 export interface BrowserUserActionPayload {
   readonly version: 1;
   readonly kind: "input";
-  readonly title: string;
-  readonly reason: string;
+  /** Earlier requests did not store a task explanation. New writes require it. */
+  readonly title?: string;
+  readonly reason?: string;
   readonly callbackIds: BrowserUserActionCallbackIds;
   readonly target: BrowserUserActionInputTarget;
 }
@@ -370,18 +371,25 @@ export function parseBrowserUserActionPayload(
       "callbackIds",
       "target",
     ]) &&
-    boundedString(payload.title, 1, BROWSER_USER_ACTION_MAX_TITLE_LENGTH) &&
-    payload.title.trim().length > 0 &&
-    boundedString(payload.reason, 1, BROWSER_USER_ACTION_MAX_REASON_LENGTH) &&
-    payload.reason.trim().length > 0
+    (payload.title === undefined) === (payload.reason === undefined) &&
+    (payload.title === undefined ||
+      (boundedString(payload.title, 1, BROWSER_USER_ACTION_MAX_TITLE_LENGTH) &&
+        payload.title.trim().length > 0)) &&
+    (payload.reason === undefined ||
+      (boundedString(
+        payload.reason,
+        1,
+        BROWSER_USER_ACTION_MAX_REASON_LENGTH,
+      ) &&
+        payload.reason.trim().length > 0))
   ) {
     const target = decodeInputTarget(payload.target);
     if (target) {
       return {
         version: 1,
         kind: payload.kind,
-        title: payload.title,
-        reason: payload.reason,
+        ...(payload.title === undefined ? {} : { title: payload.title }),
+        ...(payload.reason === undefined ? {} : { reason: payload.reason }),
         callbackIds,
         target,
       };

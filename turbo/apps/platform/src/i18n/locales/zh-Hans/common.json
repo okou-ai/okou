@@ -1718,6 +1718,7 @@
       "submit": "添加到浏览器",
       "submitDescription": "填写的内容会填入此网站，随后 Agent 将继续操作并检查结果。",
       "submitting": "正在添加…",
+      "title": "在浏览器中输入信息",
       "unavailable": "请求不可用",
       "uncertain": "请检查浏览器",
       "uncertainDescription": "浏览器可能已收到这些信息。重试前，请先让 Agent 检查。"

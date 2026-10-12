@@ -1721,6 +1721,7 @@
       "submit": "Add to browser",
       "submitDescription": "Your information will be added to this website. The agent will then continue and check the result.",
       "submitting": "Adding…",
+      "title": "Enter information in browser",
       "unavailable": "Request unavailable",
       "uncertain": "Check the browser",
       "uncertainDescription": "The browser may have received the information. Ask the agent to check before trying again."

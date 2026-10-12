@@ -443,8 +443,9 @@ const responseBaseSchema = z.object({
 export const browserUserActionResponseSchema = responseBaseSchema
   .extend({
     kind: z.literal("input"),
-    title: boundedNonblank(BROWSER_USER_ACTION_MAX_TITLE_LENGTH),
-    reason: boundedNonblank(BROWSER_USER_ACTION_MAX_REASON_LENGTH),
+    // Historical requests remain readable without a task explanation.
+    title: boundedNonblank(BROWSER_USER_ACTION_MAX_TITLE_LENGTH).optional(),
+    reason: boundedNonblank(BROWSER_USER_ACTION_MAX_REASON_LENGTH).optional(),
     siteOrigin: z.url(),
     fields: z
       .array(browserUserActionDisplayFieldSchema)

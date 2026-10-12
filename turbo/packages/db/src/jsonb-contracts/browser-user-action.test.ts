@@ -21,6 +21,41 @@ const inputTarget = {
 };
 
 describe("Browser user-action JSONB payload", () => {
+  it("keeps historical input requests readable without inventing an explanation", () => {
+    const payload = {
+      version: 1,
+      kind: "input",
+      callbackIds,
+      target: {
+        ...inputTarget,
+        fields: [
+          {
+            key: "code",
+            label: "Code",
+            fieldKind: "one_time_code",
+            required: true,
+            backendNodeId: 42,
+            fingerprint: { tagName: "INPUT", inputType: "text" },
+          },
+        ],
+      },
+    };
+    expect(parseBrowserUserActionPayload(payload)).toStrictEqual(payload);
+    for (const invalid of [
+      { title: "Sign in" },
+      { reason: "Sign-in is required" },
+      { title: null, reason: null },
+      { title: " ", reason: "Sign-in is required" },
+      { title: "Sign in", reason: " " },
+      { title: "x".repeat(129), reason: "Sign-in is required" },
+      { title: "Sign in", reason: "x".repeat(513) },
+    ]) {
+      expect(() => {
+        return parseBrowserUserActionPayload({ ...payload, ...invalid });
+      }).toThrow("Invalid Browser user-action payload");
+    }
+  });
+
   it("decodes a versioned safe input payload", () => {
     expect(
       parseBrowserUserActionPayload({

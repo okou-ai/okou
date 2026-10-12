@@ -78,6 +78,50 @@ describe("Browser user-action contracts", () => {
     }
   });
 
+  it("reads historical responses without task context but validates supplied context", () => {
+    const response = {
+      kind: "input",
+      requestToken: "vm0_browser_user_action_public-token",
+      state: "pending",
+      completedAt: null,
+      agentId: uuid("1"),
+      threadId: uuid("2"),
+      siteOrigin: "https://example.com",
+      callbackIds: {
+        success: { clientEventId: uuid("3"), chatThreadSortEventId: uuid("4") },
+        cancellation: {
+          clientEventId: uuid("5"),
+          chatThreadSortEventId: uuid("6"),
+        },
+      },
+      fields: [
+        {
+          key: "code",
+          label: "Code",
+          fieldKind: "one_time_code",
+          required: true,
+          control: { tagName: "INPUT", inputType: "text" },
+        },
+      ],
+    };
+    expect(browserUserActionResponseSchema.parse(response)).toStrictEqual(
+      response,
+    );
+    for (const invalid of [
+      { title: null },
+      { title: " " },
+      { title: "x".repeat(BROWSER_USER_ACTION_MAX_TITLE_LENGTH + 1) },
+      { reason: null },
+      { reason: " " },
+      { reason: "x".repeat(BROWSER_USER_ACTION_MAX_REASON_LENGTH + 1) },
+    ]) {
+      expect(
+        browserUserActionResponseSchema.safeParse({ ...response, ...invalid })
+          .success,
+      ).toBe(false);
+    }
+  });
+
   it("accepts indexed select choices and rejects duplicate indices or values in place of choices", () => {
     const choice = {
       key: "region",

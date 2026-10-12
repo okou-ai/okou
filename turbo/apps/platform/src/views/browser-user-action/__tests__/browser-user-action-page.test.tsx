@@ -39,11 +39,16 @@ const OTHER_AGENT_ID = "c0000000-0000-4000-a000-000000001207";
 
 function action(
   state: BrowserUserActionResponse["state"],
+  hasTaskContext = true,
 ): Extract<BrowserUserActionResponse, { kind: "input" }> {
   return {
     kind: "input",
-    title: "Sign in to download invoices",
-    reason: "The website requires sign-in to access your invoices.",
+    ...(hasTaskContext
+      ? {
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
+        }
+      : {}),
     requestToken: REQUEST_TOKEN,
     state,
     completedAt: state === "pending" ? null : "2026-09-22T05:00:00.000Z",
@@ -372,13 +377,13 @@ function selectAction(args: {
   };
 }
 
-function mockPendingPreflight() {
+function mockPendingPreflight(hasTaskContext = true) {
   context.mocks.api(
     browserUserActionsContract.preflight,
     ({ params, body, respond }) => {
       expect(params.requestToken).toBe(REQUEST_TOKEN);
       expect(body).toStrictEqual({});
-      return respond(200, action("pending"));
+      return respond(200, action("pending", hasTaskContext));
     },
   );
 }
@@ -402,73 +407,82 @@ function button(name: string): HTMLElement {
   return result;
 }
 
-test("The standalone route reuses the native browser input form", async () => {
-  let state: BrowserUserActionResponse["state"] = "pending";
-  let sentPrompt = "";
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, action(state));
-  });
-  mockPendingPreflight();
-  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
-    expect(body.values).toStrictEqual([
-      { key: "email", value: "owner@example.test" },
-    ]);
-    state = "succeeded";
-    return respond(200, action(state));
-  });
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    sentPrompt = body.prompt ?? "";
-    expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
-    expect(body.chatThreadSortEventId).toBe(SUCCESS_SORT_ID);
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
-  });
+test.each([true, false])(
+  "The standalone route completes native input (task context: %s)",
+  async (hasTaskContext) => {
+    const title = hasTaskContext
+      ? "Sign in to download invoices"
+      : "Enter information in browser";
+    let state: BrowserUserActionResponse["state"] = "pending";
+    let sentPrompt = "";
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return respond(200, action(state, hasTaskContext));
+    });
+    mockPendingPreflight(hasTaskContext);
+    context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+      expect(body.values).toStrictEqual([
+        { key: "email", value: "owner@example.test" },
+      ]);
+      state = "succeeded";
+      return respond(200, action(state, hasTaskContext));
+    });
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      sentPrompt = body.prompt ?? "";
+      expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
+      expect(body.chatThreadSortEventId).toBe(SUCCESS_SORT_ID);
+      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    });
 
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
 
-  expect(
-    queryAllByRoleFast("button").some((candidate) => {
-      return candidate.textContent?.trim() === "Enter information";
-    }),
-  ).toBeFalsy();
-  const form = await screen.findByRole("form", {
-    name: "Sign in to download invoices",
-  });
-  expect(
-    within(form).getByText(
-      "The website requires sign-in to access your invoices.",
-    ),
-  ).toBeVisible();
-  expect(
-    within(form).getByText(
-      "Your information will be added to this website. The agent will then continue and check the result.",
-    ),
-  ).toBeVisible();
-  expect(
-    within(form).getByText("Use the account that holds your invoices."),
-  ).toBeVisible();
-  expect(within(form).getByText("https://login.example.test")).toBeVisible();
-  const email = within(form).getByLabelText(/Email/u);
-  expect(email).toBeRequired();
-  expect(email).toHaveAttribute(
-    "maxlength",
-    String(BROWSER_USER_ACTION_MAX_VALUE_LENGTH),
-  );
-  click(button("Add to browser"));
-  expect(form).toBeVisible();
-  await fill(email, "owner@example.test");
-  click(button("Add to browser"));
+    expect(
+      queryAllByRoleFast("button").some((candidate) => {
+        return candidate.textContent?.trim() === "Enter information";
+      }),
+    ).toBeFalsy();
+    const form = await screen.findByRole("form", {
+      name: title,
+    });
+    expect(within(form).getByRole("heading", { name: title })).toBeVisible();
+    expect(
+      within(form).getByText(
+        hasTaskContext
+          ? "The website requires sign-in to access your invoices."
+          : title,
+      ),
+    ).toBeVisible();
+    expect(
+      within(form).getByText(
+        "Your information will be added to this website. The agent will then continue and check the result.",
+      ),
+    ).toBeVisible();
+    expect(
+      within(form).getByText("Use the account that holds your invoices."),
+    ).toBeVisible();
+    expect(within(form).getByText("https://login.example.test")).toBeVisible();
+    const email = within(form).getByLabelText(/Email/u);
+    expect(email).toBeRequired();
+    expect(email).toHaveAttribute(
+      "maxlength",
+      String(BROWSER_USER_ACTION_MAX_VALUE_LENGTH),
+    );
+    click(button("Add to browser"));
+    expect(form).toBeVisible();
+    await fill(email, "owner@example.test");
+    click(button("Add to browser"));
 
-  await waitFor(() => {
-    expect(sentPrompt).toBe(CALLBACK_PROMPT);
-  });
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(document.title).toContain("Browser action");
-});
+    await waitFor(() => {
+      expect(sentPrompt).toBe(CALLBACK_PROMPT);
+    });
+    await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+    expect(document.title).toContain("Browser action");
+  },
+);
 
 test("A required native slider starts at the website position and needs deliberate confirmation", async () => {
   let sent: unknown = null;
