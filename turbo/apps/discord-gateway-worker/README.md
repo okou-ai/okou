@@ -124,6 +124,33 @@ Use the Worker URL returned by the authorized deployment. Do not put the
 control secret into a URL or share health responses publicly. An outbound
 Gateway WebSocket does not use Cloudflare's inbound WebSocket hibernation model.
 
+`/health.connection` separates connection recovery from API delivery failures:
+
+- `stage` and `stageStartedAt` identify discovery (`gateway-discovery` or
+  `application-discovery`), `websocket-handshake`, `awaiting-hello`,
+  `awaiting-ready`, `awaiting-resumed`, or `ready`. An open socket (`connected`)
+  alone does not mean Discord has acknowledged Identify or Resume.
+- `identify-wait` and `session-limit-wait` explain Identify pacing/budget waits;
+  `backoff`, `idle`, and `stopped` describe the remaining lifecycle states.
+- `httpStatus` is the response status for the current stage, or null before a
+  response or after transitioning. `lastFailure` retains the failure's stage,
+  timestamp, bounded reason/exception type, HTTP status or socket close code,
+  retry count and delay (null when no retry was scheduled).
+- `failures` is the existing durable consecutive reconnect counter, reset by an
+  accepted dispatch. `reconnectAt` is the scheduled connection time when running
+  without a socket; a full outbox can defer it further. `deliveryFailures` still
+  measures API delivery only.
+
+Stage and last-failure details belong to the current Durable Object instance;
+they reset on eviction/redeployment, while the retry counter remains durable.
+A recovered connection retains `lastFailure` for context; use `stage` and
+`failures` to determine its current state. Cloudflare logs emit JSON events
+`discord-gateway-stage`, `discord-gateway-response`, and
+`discord-gateway-connection-failure`. Stage entries precede external I/O so a
+canceled alarm can still show which operation began even without a caught error.
+These records contain no credentials, session IDs, URLs, message bodies, raw
+provider responses, exception messages/stacks, or WebSocket close reasons.
+
 ## Recovery and containment
 
 Each dispatch advances the resumable sequence in the same storage transaction

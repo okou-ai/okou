@@ -178,9 +178,6 @@ function parseTeamsBotCommand(prompt: string): TeamsBotCommand | null {
   const command = prefixed
     ? (parts[1]?.toLowerCase().replace(/^\//u, "") ?? "")
     : first;
-  if (command === "switch" || command === "model") {
-    return prefixed || parts.length === 1 ? "help" : null;
-  }
   if (!isTeamsBotCommand(command)) {
     return null;
   }
@@ -1855,10 +1852,6 @@ export const dispatchTeamsMessageToAgent$ = command(
       return { kind: "ignored" };
     }
 
-    // Previously sent picker cards must not become agent input.
-    if (activity.value?.okouTeamsAction) {
-      return commandHelpNotice({ installation: args.installation });
-    }
     const commandText = activity.text.trim();
     const prompt = teamsAgentPrompt(activity);
     const command = parseTeamsBotCommand(commandText);

@@ -156,6 +156,7 @@ export class RelayFixture {
   // Overrides Discord's /gateway/bot response when set.
   gatewayReply: (() => Response) | null = null;
   applicationReply: (() => Response) | null = null;
+  handshakeReply: (() => Response) | null = null;
   applicationMetadata: { id: string; flags?: number; flags_new?: string } = {
     id: APPLICATION_ID,
     flags: 0,
@@ -224,6 +225,7 @@ export class RelayFixture {
     }
     if (request.url === "https://gateway.discord.gg/?v=10&encoding=json") {
       expect(request.headers.get("Upgrade")).toBe("websocket");
+      if (this.handshakeReply) return this.handshakeReply();
       const connection = new GatewayConnection();
       this.opened.push(connection);
       this.connections.push(connection);

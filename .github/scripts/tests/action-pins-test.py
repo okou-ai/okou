@@ -20,7 +20,7 @@ APPROVED_ACTIONS = {
     "actions/setup-node": "949feb2413d6458794dcd2491c4babbbce0c15c1",  # v7.1.0
     "actions/setup-python": "5fda3b95a4ea91299a34e894583c3862153e4b97",  # v7
     "actions/upload-artifact": "cf430e030ddbb5b0abf93d22962f4752f3646cd9",  # v7.0.2
-    "astral-sh/setup-uv": "c18668ad3cf93ea998bef934396af7bb5c839dc7",  # v10.2.0
+    "astral-sh/setup-uv": "1c37ad07a6a961277cf70c0d37d6f313000f5884",  # v10.3.0
     "bobheadxi/deployments": "648679e8e4915b27893bd7dbc35cb504dc915bc8",  # v1
     "codecov/codecov-action": "303a32d7a59b442fa8d48b6a1cc6825c09c847a5",  # v7.1.1
     "docker/build-push-action": "c3c9e263c25d99ce0380d002d59b67737d91b0dc",  # v7.4.0
@@ -35,7 +35,7 @@ APPROVED_ACTIONS = {
     "pnpm/action-setup": "ea17c68df8912ef543352723c149a84f56e3d413",  # v6.1.0
     "slackapi/slack-github-action": "dcb1066f776dd043e64d0e8ba94ca15cc7e1875d",  # v4.0.0
     "swatinem/rust-cache": "6323deb102c322ba6fcbdcafc7e3dddab59af2b6",  # v2.9.2
-    "taiki-e/install-action": "f7e5d7c961414b23f5b25b2da9294395d08513ad",  # v2.87.26
+    "taiki-e/install-action": "ab6895351a88b908e96a4697860d4ffea5e57dbe",  # v2.87.27
 }
 SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
 

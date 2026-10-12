@@ -1403,22 +1403,6 @@ describe("INT-01: Slack integration and Slack app routes", () => {
     );
     expect(homeDisconnect.body).toBe("");
 
-    const switchActionPayload = new URLSearchParams({
-      payload: JSON.stringify({
-        type: "block_actions",
-        team: { id: "TBDD" },
-        user: { id: "UBDD" },
-        trigger_id: "trigger-bdd",
-        actions: [{ action_id: "home_switch_agent" }],
-      }),
-    }).toString();
-    const homeSwitch = await integrations.requestSlackInteractive(
-      switchActionPayload,
-      integrations.signedSlackIngressHeaders(switchActionPayload),
-      [200],
-    );
-    expect(homeSwitch.body).toBe("");
-
     const missingPayloadBody = "";
     const missingPayload = await integrations.requestSlackInteractive(
       missingPayloadBody,
@@ -2375,6 +2359,14 @@ describe("INT-01: Slack app deep webhook flows", () => {
         }),
       ).toContain(canonicalChatThreadId);
       expect(
+        visibleThreadEvents.body.events.filter((threadEvent) => {
+          return (
+            threadEvent.chatThreadId === canonicalChatThreadId &&
+            threadEvent.kind === "created"
+          );
+        }),
+      ).toHaveLength(1);
+      expect(
         (await chat.requestReadThread(actor, canonicalChatThreadId, [200]))
           .status,
       ).toBe(200);
@@ -3083,76 +3075,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
           text: "Main Slack DM answer in the new destination",
         }),
       );
-    });
-
-    it("ignores retired Slack commands and model pickers in an existing DM", async () => {
-      const {
-        actor,
-        teamId,
-        slackUserId,
-        firstMessageTs,
-        channelId,
-        runnerGroup,
-      } = preparedScenario;
-      await integrations.postSlackEvent(teamId, {
-        type: "message",
-        channel_type: "im",
-        user: slackUserId,
-        text: "start the main Slack DM",
-        ts: firstMessageTs,
-        channel: channelId,
-      });
-      const firstRunId = await pollSlackRun(runnerGroup);
-      const firstClaim = await runs.claimRunnerJob(firstRunId);
-      expect(firstClaim.cliAgentType).toBe("claude-code");
-      await completeSlackTriggeredRun({
-        runId: firstRunId,
-        sandboxToken: firstClaim.sandboxToken,
-        cliAgentType: firstClaim.cliAgentType,
-      });
-      await flushWaitUntilForTest();
-      const { chatThreadId } = await ownedThreadWhere(
-        actor,
-        launchedBy(firstRunId),
-      );
-
-      for (const text of ["switch", "model"]) {
-        const response = await integrations.postSlackCommand({
-          teamId,
-          userId: slackUserId,
-          channelId,
-          text,
-        });
-        expect(JSON.stringify(response)).toContain("Slack Bot Help");
-      }
-      expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
-      for (const selectedValue of ["gpt-6-astra", "auto"]) {
-        const response = await integrations.postSlackInteractive(
-          integrations.modelPickerSubmission({
-            workspaceId: teamId,
-            slackUserId,
-            selectedValue,
-            channelId,
-            chatThreadId,
-          }),
-        );
-        expect(response).toBe("");
-      }
-      expect(
-        (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
-      ).toBe("claude-fable-5-1");
-      await expect(
-        integrations.readUserModelPreference(actor),
-      ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
-      const events = await chat.requestThreadEvents(actor, {}, [200]);
-      expect(events.body).toMatchObject({
-        events: expect.not.arrayContaining([
-          expect.objectContaining({
-            kind: "model_selection_updated",
-            chatThreadId,
-          }),
-        ]),
-      });
     });
   });
 
@@ -4498,17 +4420,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       );
     });
 
-    // Retired commands return help without opening a picker.
-    const emptySwitch = await integrations.postSlackCommand({
-      teamId: bareInstall.teamId,
-      userId: bareSlackUserId,
-      channelId: "C_BDD_NOAGENT",
-      text: "switch",
-      triggerId: "trigger-bdd-noagent-switch",
-    });
-    expect(JSON.stringify(emptySwitch)).toContain("Slack Bot Help");
-    expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
-
     // The same unonboarded member can also receive guidance in a DM.
     integrations.clearSlackCallHistory();
     await integrations.postSlackEvent(bareInstall.teamId, {
@@ -4529,7 +4440,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
   });
 
-  it("serves supported Slack commands and returns help for retired commands", async () => {
+  it("serves Slack help, connect, and disconnect commands", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
@@ -4550,7 +4461,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     integrations.clearSlackCallHistory();
 
-    for (const text of ["", "help", "unknown", "switch", "model"]) {
+    for (const text of ["", "help", "unknown"]) {
       const help = await integrations.postSlackCommand({
         teamId,
         userId: slackUserId,
@@ -4559,8 +4470,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
       });
       const helpJson = JSON.stringify(help);
       expect(helpJson).toContain(`<@${botUserId}> Slack Bot Help`);
-      expect(helpJson).not.toContain("/okou switch");
-      expect(helpJson).not.toContain("/okou model");
+      expect(helpJson).toContain("/okou help");
+      expect(helpJson).toContain("/okou connect");
+      expect(helpJson).toContain("/okou disconnect");
       expect(helpJson).toContain(`<@${botUserId}>`);
     }
 
@@ -4571,8 +4483,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       text: "connect",
     });
     expect(JSON.stringify(alreadyConnected)).toContain("already connected");
-
-    expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
 
     const disconnected = await integrations.postSlackCommand({
       teamId,
@@ -4639,8 +4549,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const helpJson = JSON.stringify(help);
     expect(helpJson).toContain("/okou connect");
-    expect(helpJson).not.toContain("/okou switch");
-    expect(helpJson).not.toContain("/okou model");
+    expect(helpJson).toContain("/okou help");
   });
 
   it("prompts for login for an unsupported command without a Slack connection", async () => {
@@ -4658,12 +4567,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
       teamId,
       userId: disconnectedUserId,
       channelId: "C_BDD_CMD",
-      text: "switch",
+      text: "unknown",
     });
     const responseJson = JSON.stringify(response);
     expect(responseJson).toContain("ephemeral");
     expect(responseJson).toContain("connect");
-    expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
   });
 
   it("refreshes Slack App Home, welcomes once, and cleans up lifecycle events", async () => {
@@ -4716,8 +4624,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const home = JSON.stringify(context.mocks.slack.views.publish.mock.calls);
     expect(home).toContain("/okou help");
     expect(home).toContain("workspace's default agent");
-    expect(home).not.toContain("/okou switch");
-    expect(home).not.toContain("/okou model");
+    expect(home).toContain("/okou connect");
+    expect(home).toContain("/okou disconnect");
 
     await integrations.postSlackEvent(teamId, {
       type: "app_home_opened",

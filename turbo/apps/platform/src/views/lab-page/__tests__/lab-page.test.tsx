@@ -131,7 +131,7 @@ test("Maintainer filters narrow the feature list", async () => {
   await user.click(bingjie);
 
   expect(
-    screen.getByText(FeatureSwitchKey.ComposerTaskChips),
+    screen.getByText(FeatureSwitchKey.CustomTemplates),
   ).toBeInTheDocument();
   expect(
     screen.queryByText(FeatureSwitchKey.AhrefsConnector),

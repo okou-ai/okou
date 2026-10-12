@@ -1,7 +1,6 @@
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { screen, waitFor } from "@testing-library/react";
@@ -64,9 +63,6 @@ async function setupComposer(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerTaskChips]: true,
-    },
   });
   return await findComposerEditor();
 }
@@ -150,7 +146,6 @@ test("Persisted additional info stays out of the message and copied text", async
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerTaskChips]: true },
   });
   const text = await screen.findByText("Our launch brief");
   const message = text.closest<HTMLElement>('[data-role="user"]');
@@ -191,9 +186,6 @@ async function setupQueuedCreateConversation(): Promise<UserMessageDocument[]> {
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerTaskChips]: true,
-    },
   });
   await screen.findByText("Review the launch brief");
   return queued;

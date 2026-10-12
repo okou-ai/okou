@@ -2167,241 +2167,63 @@ describe("POST /api/webhooks/teams/bot", () => {
   it("handles connected Teams bot commands", async () => {
     const { fixture, actor, outboundRequests } =
       await setupConnectedTeamsBotActor();
-    const activityIds = {
-      help: teamsFixtureExternalId(fixture, "activity-command-help"),
-      connect: teamsFixtureExternalId(fixture, "activity-command-connect"),
-      switch: teamsFixtureExternalId(fixture, "activity-command-switch"),
-      model: teamsFixtureExternalId(fixture, "activity-command-model"),
-      switchSubmit: teamsFixtureExternalId(
-        fixture,
-        "activity-command-switch-submit",
-      ),
-      modelSubmit: teamsFixtureExternalId(
-        fixture,
-        "activity-command-model-submit",
-      ),
-      switchedRun: teamsFixtureExternalId(
-        fixture,
-        "activity-command-switch-run",
-      ),
-      disconnect: teamsFixtureExternalId(
-        fixture,
-        "activity-command-disconnect",
-      ),
-    };
-    const switchAgent = await authOrgApi.createAgent(actor, {
-      displayName: "Teams support agent",
-      visibility: "public",
-    });
     outboundRequests.splice(0, outboundRequests.length);
-
-    const helpResponse = await postTeamsActivity({
-      activity: teamsPersonalMessageActivity({
-        fixture,
-        id: activityIds.help,
-        text: "/help",
-      }),
-      token: teamsToken(),
-    });
-    expect(helpResponse.status).toBe(200);
-    const helpBody = await readTeamsBotResponseAndFlush(helpResponse);
-    expect(helpBody).not.toHaveProperty("dispatch");
-
-    const connectResponse = await postTeamsActivity({
-      activity: teamsPersonalMessageActivity({
-        fixture,
-        id: activityIds.connect,
-        text: "/connect",
-      }),
-      token: teamsToken(),
-    });
-    expect(connectResponse.status).toBe(200);
-    const connectBody = await readTeamsBotResponseAndFlush(connectResponse);
-    expect(connectBody).not.toHaveProperty("dispatch");
-
-    const switchResponse = await postTeamsActivity({
-      activity: teamsPersonalMessageActivity({
-        fixture,
-        id: activityIds.switch,
-        text: "/switch",
-      }),
-      token: teamsToken(),
-    });
-    expect(switchResponse.status).toBe(200);
-    const switchBody = await readTeamsBotResponseAndFlush(switchResponse);
-    expect(switchBody).not.toHaveProperty("dispatch");
-
-    const modelResponse = await postTeamsActivity({
-      activity: teamsPersonalMessageActivity({
-        fixture,
-        id: activityIds.model,
-        text: "/model",
-      }),
-      token: teamsToken(),
-    });
-    expect(modelResponse.status).toBe(200);
-    const modelBody = await readTeamsBotResponseAndFlush(modelResponse);
-    expect(modelBody).not.toHaveProperty("dispatch");
-
-    const switchSubmitResponse = await postTeamsActivity({
-      activity: teamsPersonalMessageActivity({
-        fixture,
-        id: activityIds.switchSubmit,
-        text: "",
-        value: {
-          okouTeamsAction: "switch_agent",
-          selectedAgentId: switchAgent.agentId,
-        },
-      }),
-      token: teamsToken(),
-    });
-    expect(switchSubmitResponse.status).toBe(200);
-    const switchSubmitBody =
-      await readTeamsBotResponseAndFlush(switchSubmitResponse);
-    expect(switchSubmitBody).toMatchObject({
-      activity: {
-        value: {
-          okouTeamsAction: "switch_agent",
-          selectedAgentId: switchAgent.agentId,
-        },
-      },
-    });
-    expect(switchSubmitBody).not.toHaveProperty("dispatch");
-    const modelSubmitResponse = await postTeamsActivity({
-      activity: teamsPersonalMessageActivity({
-        fixture,
-        id: activityIds.modelSubmit,
-        text: "",
-        value: {
-          okouTeamsAction: "switch_model",
-          selectedModel: "claude-fable-5-1",
-          routeConversationId: `a:personal-${fixture.teamsUserId}`,
-          routeThreadId: "direct-message:main",
-        },
-      }),
-      token: teamsToken(),
-    });
-    expect(modelSubmitResponse.status).toBe(200);
-    const modelSubmitBody =
-      await readTeamsBotResponseAndFlush(modelSubmitResponse);
-    expect(modelSubmitBody).toMatchObject({
-      activity: {
-        value: {
-          okouTeamsAction: "switch_model",
-          selectedModel: "claude-fable-5-1",
-        },
-      },
-    });
-    expect(modelSubmitBody).not.toHaveProperty("dispatch");
-    // The model card leaves the member preference the fixture configured.
-    await expect(
-      userConfigApi.readModelPreference(actor),
-    ).resolves.toMatchObject({
-      selectedModel: "claude-fable-5-1",
-    });
-
-    expect(outboundRequests).toHaveLength(6);
-    expect(
-      outboundRequests.map((request) => {
-        return request.activityId;
-      }),
-    ).toStrictEqual([
-      activityIds.help,
-      activityIds.connect,
-      activityIds.switch,
-      activityIds.model,
-      activityIds.switchSubmit,
-      activityIds.modelSubmit,
-    ]);
-    expect(outboundRequests[0]?.body).toMatchObject({
-      type: "message",
-      text: expect.stringContaining("Nova Teams Bot Help"),
-    });
-    expect(outboundRequests[1]?.body).toMatchObject({
-      type: "message",
-      text: expect.stringContaining("You're already connected"),
-    });
-    expect(outboundRequests[2]?.body).toMatchObject({
-      type: "message",
-      text: expect.stringContaining("Teams Bot Help"),
-    });
-    expect(outboundRequests[3]?.body).toMatchObject({
-      type: "message",
-      text: expect.stringContaining("Teams Bot Help"),
-    });
-    expect(outboundRequests[4]?.body).toMatchObject({
-      type: "message",
-      text: expect.stringContaining("Teams Bot Help"),
-    });
-    expect(outboundRequests[5]?.body).toMatchObject({
-      type: "message",
-      text: expect.stringContaining("Teams Bot Help"),
-    });
-
-    for (const request of outboundRequests) {
-      expect(JSON.stringify(request.body)).not.toContain("Choose your model");
-      expect(JSON.stringify(request.body)).not.toContain("Choose which agent");
-      expect(request.body).not.toHaveProperty("attachments");
+    for (const [command, expected] of [
+      ["help", "Nova Teams Bot Help"],
+      ["connect", "You're already connected"],
+    ] as const) {
+      const response = await postTeamsActivity({
+        activity: teamsPersonalMessageActivity({
+          fixture,
+          id: teamsFixtureExternalId(fixture, "activity-command-" + command),
+          text: "/" + command,
+        }),
+        token: teamsToken(),
+      });
+      expect(response.status).toBe(200);
+      const body = await readTeamsBotResponseAndFlush(response);
+      expect(body).not.toHaveProperty("dispatch");
+      expect(outboundRequests.at(-1)?.body).toMatchObject({
+        type: "message",
+        text: expect.stringContaining(expected),
+      });
     }
 
-    outboundRequests.splice(0, outboundRequests.length);
-    const switchedRunResponse = await postTeamsActivity({
+    const runResponse = await postTeamsActivity({
       activity: teamsPersonalMessageActivity({
         fixture,
-        id: activityIds.switchedRun,
-        text: "run after switch",
+        id: teamsFixtureExternalId(fixture, "activity-after-commands"),
+        text: "run after connection commands",
       }),
       token: teamsToken(),
     });
-    expect(switchedRunResponse.status).toBe(200);
-    const switchedRunBody =
-      await readTeamsBotResponseAndFlush(switchedRunResponse);
-    expect(switchedRunBody).not.toHaveProperty("dispatch");
-    const switchedRunId = await runIdForPrompt(actor, "run after switch");
-    await expect(
-      listActiveRuns(actor, 10).then(async ({ runs }) => {
-        return {
-          runs: await Promise.all(
-            runs.map(async (run) => {
-              return await runsApi.readRun(actor, run.id);
-            }),
-          ),
-        };
-      }),
-    ).resolves.toMatchObject({
-      runs: expect.arrayContaining([
-        expect.objectContaining({
-          appendSystemPrompt: expect.not.stringContaining(
-            "Your name is Teams support agent.",
-          ),
-          prompt: "run after switch",
-        }),
-      ]),
+    expect(runResponse.status).toBe(200);
+    await readTeamsBotResponseAndFlush(runResponse);
+    const runId = await runIdForPrompt(actor, "run after connection commands");
+    await expect(runsApi.readRun(actor, runId)).resolves.toMatchObject({
+      appendSystemPrompt: expect.stringContaining("Your name is Okou."),
+      prompt: "run after connection commands",
     });
-    await runsApi.requestCancelRun(actor, switchedRunId, [200]);
+    await runsApi.requestCancelRun(actor, runId, [200]);
 
     outboundRequests.splice(0, outboundRequests.length);
-    const disconnectResponse = await postTeamsActivity({
+    const disconnected = await postTeamsActivity({
       activity: teamsPersonalMessageActivity({
         fixture,
-        id: activityIds.disconnect,
+        id: teamsFixtureExternalId(fixture, "activity-command-disconnect"),
         text: "/disconnect",
       }),
       token: teamsToken(),
     });
-    expect(disconnectResponse.status).toBe(200);
-    const disconnectBody =
-      await readTeamsBotResponseAndFlush(disconnectResponse);
-    expect(disconnectBody).not.toHaveProperty("dispatch");
-    expect(outboundRequests).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          body: expect.objectContaining({
-            type: "message",
-            text: expect.stringContaining("agent access has been revoked"),
-          }),
+    expect(disconnected.status).toBe(200);
+    await readTeamsBotResponseAndFlush(disconnected);
+    expect(outboundRequests).toContainEqual(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          type: "message",
+          text: expect.stringContaining("agent access has been revoked"),
         }),
-      ]),
+      }),
     );
   });
 
@@ -2411,20 +2233,16 @@ describe("POST /api/webhooks/teams/bot", () => {
         await setupConnectedTeamsBotActor();
       const threadId = teamsFixtureExternalId(
         fixture,
-        "activity-existing-switch-root",
+        "activity-existing-pinned-root",
       );
       const activityIds = {
         initialRun: teamsFixtureExternalId(
           fixture,
-          "activity-existing-switch-initial-run",
+          "activity-existing-pinned-initial-run",
         ),
-        switchModel: teamsFixtureExternalId(
+        followUpRun: teamsFixtureExternalId(
           fixture,
-          "activity-existing-switch-model",
-        ),
-        switchedModelRun: teamsFixtureExternalId(
-          fixture,
-          "activity-existing-switch-model-run",
+          "activity-existing-pinned-model-run",
         ),
       };
 
@@ -2459,7 +2277,7 @@ describe("POST /api/webhooks/teams/bot", () => {
           fixture,
           id: activityIds.initialRun,
           threadId,
-          text: "run before model switch",
+          text: "start the pinned reply thread",
         }),
         token: teamsToken(),
       });
@@ -2467,7 +2285,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       await readTeamsBotResponseAndFlush(initialResponse);
       const initialRunId = await runIdForPrompt(
         actor,
-        "run before model switch",
+        "start the pinned reply thread",
       );
       await runsApi.heartbeatRunner(runnerGroup);
       const initialClaim = await runsApi.claimRunnerJob(initialRunId);
@@ -2475,144 +2293,39 @@ describe("POST /api/webhooks/teams/bot", () => {
       await runsApi.requestCancelRun(actor, initialRunId, [200]);
       await completeCancelledRun(initialRunId, initialClaim.sandboxToken);
 
-      const switchModelResponse = await postTeamsActivity({
-        activity: teamsPersonalMessageActivity({
-          fixture,
-          id: activityIds.switchModel,
-          text: "",
-          value: {
-            // A card without its original chat thread id is stale and cannot
-            // modify this reply thread or the member default.
-            okouTeamsAction: "switch_model",
-            selectedModel: "gpt-6-astra",
-            routeConversationId: `a:personal-${fixture.teamsUserId}`,
-            routeThreadId: "direct-message:main",
-          },
-        }),
-        token: teamsToken(),
+      await userConfigApi.updateModelPreference(actor, {
+        selectedModel: "gpt-6-astra",
+        serviceTier: null,
       });
-      expect(switchModelResponse.status).toBe(200);
-      await readTeamsBotResponseAndFlush(switchModelResponse);
 
-      const switchedModelResponse = await postTeamsActivity({
+      const followUpResponse = await postTeamsActivity({
         activity: teamsPersonalThreadMessageActivity({
           fixture,
-          id: activityIds.switchedModelRun,
+          id: activityIds.followUpRun,
           threadId,
-          text: "run after model switch",
+          text: "continue the pinned reply thread",
         }),
         token: teamsToken(),
       });
-      expect(switchedModelResponse.status).toBe(200);
-      await readTeamsBotResponseAndFlush(switchedModelResponse);
-      const switchedModelRunId = await runIdForPrompt(
+      expect(followUpResponse.status).toBe(200);
+      await readTeamsBotResponseAndFlush(followUpResponse);
+      const followUpRunId = await runIdForPrompt(
         actor,
-        "run after model switch",
+        "continue the pinned reply thread",
       );
       await runsApi.heartbeatRunner(runnerGroup);
-      const switchedModelClaim =
-        await runsApi.claimRunnerJob(switchedModelRunId);
-      expect(switchedModelClaim.appendSystemPrompt).toContain(
-        "Your name is Okou.",
-      );
-      // The stale card keeps the model and runtime unchanged. A missing
-      // native history does not rotate the session or replay prior turns.
-      expect(switchedModelClaim.appendSystemPrompt).not.toContain(
+      const followUpClaim = await runsApi.claimRunnerJob(followUpRunId);
+      expect(followUpClaim.appendSystemPrompt).toContain("Your name is Okou.");
+      // A member default change does not alter an existing conversation.
+      // Missing native history does not rotate the session or replay prior turns.
+      expect(followUpClaim.appendSystemPrompt).not.toContain(
         "# Microsoft Teams Run Context",
       );
-      expect(switchedModelClaim.cliAgentType).toBe(initialClaim.cliAgentType);
-      expect(switchedModelClaim.resumeSession).toBeNull();
-      expect(switchedModelClaim.modelUsageProvider).toBe("claude-fable-5-1");
-      await runsApi.requestCancelRun(actor, switchedModelRunId, [200]);
+      expect(followUpClaim.cliAgentType).toBe(initialClaim.cliAgentType);
+      expect(followUpClaim.resumeSession).toBeNull();
+      expect(followUpClaim.modelUsageProvider).toBe("claude-fable-5-1");
+      await runsApi.requestCancelRun(actor, followUpRunId, [200]);
     });
-  });
-
-  it("ignores a retired Teams model card targeting an existing DM", async () => {
-    const { fixture, actor, runnerGroup } = await setupConnectedTeamsBotActor();
-
-    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
-      actor,
-    );
-    teamsGraphHistoryHandlers({
-      fixture,
-      chatMessages: [],
-      channelMessages: [],
-      threadRoots: {},
-      threadReplies: {},
-    });
-
-    const initialResponse = await postTeamsActivity({
-      activity: teamsPersonalMessageActivity({
-        fixture,
-        id: teamsFixtureExternalId(fixture, "activity-dm-switch-initial"),
-        text: "run before the DM model switch",
-      }),
-      token: teamsToken(),
-    });
-    expect(initialResponse.status).toBe(200);
-    await readTeamsBotResponseAndFlush(initialResponse);
-    const initialRunId = await runIdForPrompt(
-      actor,
-      "run before the DM model switch",
-    );
-    await runsApi.heartbeatRunner(runnerGroup);
-    const initialClaim = await runsApi.claimRunnerJob(initialRunId);
-    expect(initialClaim.modelUsageProvider).toBe("claude-fable-5-1");
-    await runsApi.requestCancelRun(actor, initialRunId, [200]);
-    await completeCancelledRun(initialRunId, initialClaim.sandboxToken);
-
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const beforeEvents = await accept(
-      setupApp({ context, routes: chatThreadRoutes })(
-        chatThreadsContract,
-      ).events({
-        headers: { authorization: "Bearer clerk-session" },
-        query: {},
-      }),
-      [200],
-    );
-    const dmThread = beforeEvents.body.events.find((event) => {
-      return event.kind === "created";
-    });
-    if (!dmThread) {
-      throw new Error("Expected the main Teams DM thread");
-    }
-    const switchResponse = await postTeamsActivity({
-      activity: teamsPersonalMessageActivity({
-        fixture,
-        id: teamsFixtureExternalId(fixture, "activity-dm-switch-submit"),
-        text: "",
-        value: {
-          okouTeamsAction: "switch_model",
-          selectedModel: "gpt-6-astra",
-          routeConversationId: `a:personal-${fixture.teamsUserId}`,
-          routeThreadId: "direct-message:main",
-          chatThreadId: dmThread.chatThreadId,
-        },
-      }),
-      token: teamsToken(),
-    });
-    expect(switchResponse.status).toBe(200);
-    await readTeamsBotResponseAndFlush(switchResponse);
-    await expect(
-      userConfigApi.readModelPreference(actor),
-    ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const threadEvents = await accept(
-      setupApp({ context, routes: chatThreadRoutes })(
-        chatThreadsContract,
-      ).events({
-        headers: { authorization: "Bearer clerk-session" },
-        query: {},
-      }),
-      [200],
-    );
-    expect(threadEvents.body.events).not.toContainEqual(
-      expect.objectContaining({
-        kind: "model_selection_updated",
-        selectedModel: "gpt-6-astra",
-      }),
-    );
   });
 
   describe("queued runs for a connected Teams bot", () => {

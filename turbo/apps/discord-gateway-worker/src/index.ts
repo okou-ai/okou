@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { discordApplicationSchema } from "@okouai/api-contracts/contracts/discord-application";
 import {
+  ConnectionDiagnostics,
+  type ConnectionFailureInput,
+} from "./connection-diagnostics";
+import {
   deadlineAfterHeartbeat,
   heartbeatAckExpired,
 } from "./heartbeat-deadline";
@@ -75,6 +79,7 @@ export class DiscordGateway {
   private messageContentEnabled: boolean | null = null;
   private flushing = false;
   private deliveryAbort: AbortController | null = null;
+  private readonly connectionDiagnostics = new ConnectionDiagnostics();
 
   constructor(
     private readonly ctx: DurableObjectState,
@@ -94,6 +99,7 @@ export class DiscordGateway {
         await this.save({ ...this.state, running: false });
         await ctx.storage.deleteAlarm();
       }
+      if (!this.state.running) this.connectionDiagnostics.transition("stopped");
     });
   }
 
@@ -140,16 +146,20 @@ export class DiscordGateway {
 
   private async halt(reason: string): Promise<void> {
     this.closeSocket();
+    this.connectionDiagnostics.transition("stopped");
     this.deliveryAbort?.abort();
     await this.save({ ...this.state, running: false, fatal: reason });
     await this.ctx.storage.deleteAlarm();
   }
 
   private async retry(
+    failure: ConnectionFailureInput,
     clearSession = false,
     delay = backoff(this.state.failures),
   ): Promise<void> {
+    this.connectionDiagnostics.failure(failure, this.state.failures + 1, delay);
     this.closeSocket();
+    this.connectionDiagnostics.transition("backoff");
     await this.save({
       ...this.state,
       session: clearSession ? null : this.state.session,
@@ -184,6 +194,7 @@ export class DiscordGateway {
       const path = new URL(request.url).pathname;
       if (path === "/stop" && request.method === "POST") {
         this.closeSocket();
+        this.connectionDiagnostics.transition("stopped");
         this.deliveryAbort?.abort();
         await this.save({ ...this.state, running: false });
         await this.ctx.storage.deleteAlarm();
@@ -226,6 +237,7 @@ export class DiscordGateway {
           reconnectAt: Date.now(),
           deliveryAt: Date.now(),
         });
+        this.connectionDiagnostics.transition("idle");
       }
       await this.arm();
       return await this.health();
@@ -244,6 +256,12 @@ export class DiscordGateway {
         running: this.state.running,
         connected: this.socket !== null,
         resumable: this.state.session !== null,
+        connection: {
+          ...this.connectionDiagnostics.snapshot(),
+          failures: this.state.failures,
+          reconnectAt:
+            this.state.running && !this.socket ? this.state.reconnectAt : null,
+        },
         pending: this.state.pending,
         deadLettered: this.state.deadLettered,
         deliveryFailures: this.state.deliveryFailures,
@@ -261,6 +279,7 @@ export class DiscordGateway {
     await this.ordered(async () => {
       if (this.env.DISCORD_GATEWAY_ENABLED !== "true") {
         this.closeSocket();
+        this.connectionDiagnostics.transition("stopped");
         await this.save({ ...this.state, running: false });
         await this.ctx.storage.deleteAlarm();
         return;
@@ -279,8 +298,8 @@ export class DiscordGateway {
       ) {
         try {
           await this.connect();
-        } catch {
-          await this.retry();
+        } catch (error) {
+          await this.retry({ reason: "connection-error", error });
         }
       }
     });
@@ -290,12 +309,20 @@ export class DiscordGateway {
   private async discover(
     path: "/gateway/bot" | "/applications/@me",
   ): Promise<Response | null> {
+    this.connectionDiagnostics.transition(
+      path === "/gateway/bot" ? "gateway-discovery" : "application-discovery",
+    );
     const response = await fetch(`https://discord.com/api/v10${path}`, {
       headers: { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` },
       signal: AbortSignal.timeout(10_000),
       redirect: "manual",
     });
+    this.connectionDiagnostics.response(response.status);
     if (response.status === 401 || response.status === 403) {
+      this.connectionDiagnostics.failure(
+        { reason: "authentication" },
+        this.state.failures,
+      );
       await this.halt("gateway-authentication");
       return null;
     }
@@ -303,6 +330,7 @@ export class DiscordGateway {
       const retryAfter = Number(response.headers.get("Retry-After"));
       await response.body?.cancel();
       await this.retry(
+        { reason: "rate-limit" },
         false,
         Math.max(
           backoff(this.state.failures),
@@ -319,6 +347,7 @@ export class DiscordGateway {
 
   private async identifyGateway(): Promise<string | null> {
     if (Date.now() < this.state.identifyAt) {
+      this.connectionDiagnostics.transition("identify-wait");
       await this.save({ ...this.state, reconnectAt: this.state.identifyAt });
       return null;
     }
@@ -337,6 +366,7 @@ export class DiscordGateway {
       Date.now() + limit.reset_after,
     );
     if (remaining === 0) {
+      this.connectionDiagnostics.transition("session-limit-wait");
       await this.save({
         ...this.state,
         identifyRemaining: 0,
@@ -351,6 +381,10 @@ export class DiscordGateway {
       await applicationResponse.json(),
     );
     if (application.id !== this.env.DISCORD_APPLICATION_ID) {
+      this.connectionDiagnostics.failure(
+        { reason: "application-mismatch" },
+        this.state.failures,
+      );
       await this.halt("application-mismatch");
       return null;
     }
@@ -362,22 +396,24 @@ export class DiscordGateway {
       identifyResetAt: resetAt,
       identifyAt: Date.now() + 5000,
     });
-    return gatewayUrl(metadata.url);
+    return metadata.url;
   }
 
   private async connect(): Promise<void> {
     const url = this.state.session
-      ? gatewayUrl(this.state.session.url)
+      ? this.state.session.url
       : await this.identifyGateway();
     if (!url || !this.state.running) {
       await this.arm();
       return;
     }
-    const response = await fetch(url, {
+    this.connectionDiagnostics.transition("websocket-handshake");
+    const response = await fetch(gatewayUrl(url), {
       headers: { Upgrade: "websocket" },
       signal: AbortSignal.timeout(10_000),
       redirect: "manual",
     });
+    this.connectionDiagnostics.response(response.status);
     const socket = response.webSocket;
     if (response.status !== 101 || !socket)
       throw new Error("Gateway upgrade failed");
@@ -385,6 +421,7 @@ export class DiscordGateway {
     this.socket = socket;
     this.heartbeatDeadline = null;
     socket.accept();
+    this.connectionDiagnostics.transition("awaiting-hello");
     socket.addEventListener("message", (event) => {
       if (!this.active(generation)) return;
       try {
@@ -402,18 +439,28 @@ export class DiscordGateway {
         this.ctx.waitUntil(
           this.ordered(async () => {
             if (this.active(generation)) await this.packet(packet, generation);
-          }).catch(async () => {
+          }).catch(async (error: unknown) => {
             await this.ordered(async () => {
-              if (this.active(generation))
+              if (this.active(generation)) {
+                this.connectionDiagnostics.failure(
+                  { reason: "invalid-event-or-storage-failure", error },
+                  this.state.failures,
+                );
                 await this.halt("invalid-gateway-event-or-storage-failure");
+              }
             });
           }),
         );
-      } catch {
+      } catch (error) {
         this.ctx.waitUntil(
           this.ordered(async () => {
-            if (this.active(generation))
+            if (this.active(generation)) {
+              this.connectionDiagnostics.failure(
+                { reason: "invalid-frame", error },
+                this.state.failures,
+              );
               await this.halt("invalid-gateway-frame");
+            }
           }),
         );
       }
@@ -423,24 +470,33 @@ export class DiscordGateway {
         this.ordered(async () => {
           if (!this.active(generation)) return;
           if (FATAL_CLOSES.has(event.code)) {
+            this.connectionDiagnostics.failure(
+              { reason: "socket-close", closeCode: event.code },
+              this.state.failures,
+            );
             await this.halt(`gateway-close-${event.code}`);
             return;
           }
-          await this.retry([4007, 4009].includes(event.code));
+          await this.retry(
+            { reason: "socket-close", closeCode: event.code },
+            [4007, 4009].includes(event.code),
+          );
         }),
       );
     });
     socket.addEventListener("error", () => {
       this.ctx.waitUntil(
         this.ordered(async () => {
-          if (this.active(generation)) await this.retry();
+          if (this.active(generation))
+            await this.retry({ reason: "socket-error" });
         }),
       );
     });
     this.helloTimer = setTimeout(() => {
       this.ctx.waitUntil(
         this.ordered(async () => {
-          if (this.active(generation)) await this.retry();
+          if (this.active(generation))
+            await this.retry({ reason: "hello-timeout" });
         }),
       );
     }, 15_000);
@@ -463,10 +519,11 @@ export class DiscordGateway {
         Date.now(),
         this.heartbeatInterval,
       );
-    } catch {
+    } catch (error) {
       this.ctx.waitUntil(
         this.ordered(async () => {
-          if (this.active(generation)) await this.retry();
+          if (this.active(generation))
+            await this.retry({ reason: "heartbeat-send-error", error });
         }),
       );
     }
@@ -477,7 +534,8 @@ export class DiscordGateway {
     if (heartbeatAckExpired(this.heartbeatDeadline, Date.now())) {
       this.ctx.waitUntil(
         this.ordered(async () => {
-          if (this.active(generation)) await this.retry();
+          if (this.active(generation))
+            await this.retry({ reason: "heartbeat-timeout" });
         }),
       );
       return;
@@ -540,13 +598,17 @@ export class DiscordGateway {
                 },
           ),
         );
+        this.connectionDiagnostics.transition(
+          session ? "awaiting-resumed" : "awaiting-ready",
+        );
         return;
       }
       case 7:
-        await this.retry(false, 1000);
+        await this.retry({ reason: "server-reconnect" }, false, 1000);
         return;
       case 9:
         await this.retry(
+          { reason: "invalid-session" },
           !z.boolean().parse(packet.d),
           1000 + Math.floor(Math.random() * 4000),
         );
@@ -567,6 +629,10 @@ export class DiscordGateway {
       const ready = readySchema.parse(packet.d);
       gatewayUrl(ready.resume_gateway_url);
       if (ready.application.id !== this.env.DISCORD_APPLICATION_ID) {
+        this.connectionDiagnostics.failure(
+          { reason: "application-mismatch" },
+          this.state.failures,
+        );
         await this.halt("application-mismatch");
         return;
       }
@@ -586,7 +652,7 @@ export class DiscordGateway {
       (packet.t === "MESSAGE_CREATE" &&
         addressesBot(packet.d, session.botUserId));
     if (forwarded && this.state.pending >= MAX_OUTBOX) {
-      await this.retry(false, 5000);
+      await this.retry({ reason: "outbox-full" }, false, 5000);
       return;
     }
     const next = { ...this.state, session, failures: 0 };
@@ -641,6 +707,8 @@ export class DiscordGateway {
     } else {
       await this.save(next);
     }
+    if (packet.t === "READY" || packet.t === "RESUMED")
+      this.connectionDiagnostics.transition("ready");
     await this.arm();
     this.startFlush();
   }

@@ -285,10 +285,6 @@ const discordAccountAction$ = command(
     }
     const commandName =
       interaction.type === 2 ? interaction.data.name : undefined;
-    // Old registrations can still deliver these commands during cleanup.
-    if (commandName === "switch" || commandName === "model") {
-      return discordAccountMessage(discordHelp());
-    }
     const action = commandName ?? control?.action;
     if (action === "help") {
       return discordAccountMessage(discordHelp());

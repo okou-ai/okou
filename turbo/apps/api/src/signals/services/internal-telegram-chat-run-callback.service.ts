@@ -76,41 +76,6 @@ function telegramOwnerWhere(ownerLink: TelegramOwnerLink) {
   return eq(telegramChatThreadRoutes.telegramOfficialUserLinkId, ownerLink.id);
 }
 
-async function loadTelegramOwnerBinding(
-  args: {
-    readonly db: Db;
-    readonly target: TelegramDeliveryTarget;
-    readonly userId: string;
-    readonly orgId: string;
-  },
-  signal: AbortSignal,
-): Promise<TelegramOwnerBinding | undefined> {
-  // Self-hosted (custom) Telegram bots are retired; only the official shared
-  // bot can deliver run callbacks.
-  if (!isOfficialTelegramBotId(args.target.installationId)) {
-    return undefined;
-  }
-  const [link] = await args.db
-    .select({ id: telegramOfficialUserLinks.id })
-    .from(telegramOfficialUserLinks)
-    .where(
-      and(
-        eq(telegramOfficialUserLinks.id, args.target.userLinkId),
-        eq(telegramOfficialUserLinks.userId, args.userId),
-        eq(telegramOfficialUserLinks.orgId, args.orgId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  const botToken = getOfficialTelegramBotConfig().botToken;
-  return link && botToken
-    ? {
-        botToken,
-        ownerLink: { kind: "official", id: link.id },
-      }
-    : undefined;
-}
-
 async function loadTelegramChatDeliveryContext(
   args: {
     readonly db: Db;
@@ -172,15 +137,30 @@ async function loadTelegramChatDeliveryContext(
     throw new Error("Telegram chat delivery message is unavailable");
   }
 
-  const binding = await loadTelegramOwnerBinding(
-    {
-      db: args.db,
-      target: payload,
-      userId: runContext.userId,
-      orgId: runContext.orgId,
-    },
-    signal,
-  );
+  let binding: TelegramOwnerBinding | undefined;
+  // Only the official shared bot can deliver run callbacks.
+  if (isOfficialTelegramBotId(payload.installationId)) {
+    const [link] = await args.db
+      .select({ id: telegramOfficialUserLinks.id })
+      .from(telegramOfficialUserLinks)
+      .where(
+        and(
+          eq(telegramOfficialUserLinks.id, payload.userLinkId),
+          eq(telegramOfficialUserLinks.userId, runContext.userId),
+          eq(telegramOfficialUserLinks.orgId, runContext.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    const botToken = getOfficialTelegramBotConfig().botToken;
+    binding =
+      link && botToken
+        ? {
+            botToken,
+            ownerLink: { kind: "official", id: link.id },
+          }
+        : undefined;
+  }
   signal.throwIfAborted();
   if (binding) {
     const routeDb = args.db;
@@ -535,15 +515,30 @@ export async function deliverTelegramChatAdmissionFailure(
   if (!event?.content) {
     return;
   }
-  const binding = await loadTelegramOwnerBinding(
-    {
-      db: args.db,
-      target: args.target,
-      userId: args.userId,
-      orgId: args.orgId,
-    },
-    signal,
-  );
+  let binding: TelegramOwnerBinding | undefined;
+  // Only the official shared bot can deliver run callbacks.
+  if (isOfficialTelegramBotId(args.target.installationId)) {
+    const [link] = await args.db
+      .select({ id: telegramOfficialUserLinks.id })
+      .from(telegramOfficialUserLinks)
+      .where(
+        and(
+          eq(telegramOfficialUserLinks.id, args.target.userLinkId),
+          eq(telegramOfficialUserLinks.userId, args.userId),
+          eq(telegramOfficialUserLinks.orgId, args.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    const botToken = getOfficialTelegramBotConfig().botToken;
+    binding =
+      link && botToken
+        ? {
+            botToken,
+            ownerLink: { kind: "official", id: link.id },
+          }
+        : undefined;
+  }
   if (!binding) {
     return;
   }

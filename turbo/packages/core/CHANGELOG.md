@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.745.0](https://github.com/okou-ai/okou/compare/core-v8.744.0...core-v8.745.0) (2026-10-12)
+
+
+### Features
+
+* **app:** add tailscale setup and ssh rebind ui ([#39180](https://github.com/okou-ai/okou/issues/39180)) ([3c78e70](https://github.com/okou-ai/okou/commit/3c78e70bf7fb76b23929ea87821881dd7457ead0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.552.0
+
 ## [8.744.0](https://github.com/okou-ai/okou/compare/core-v8.743.0...core-v8.744.0) (2026-10-12)
 
 

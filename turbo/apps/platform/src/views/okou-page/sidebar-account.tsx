@@ -64,7 +64,7 @@ import {
   AccountMenuSubscriptionsPanel,
   useSubscriptionUsageRows,
 } from "./sidebar-subscriptions.tsx";
-import { UserAvatar } from "../components/avatar.tsx";
+import { ThumbnailPlaceholder, UserAvatar } from "../components/avatar.tsx";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { i18n } from "../../i18n/index.ts";
 
@@ -158,8 +158,14 @@ function accountDisplayFrom(
   };
 }
 
+/**
+ * Until the session or the user record arrives there is no one to show, so the
+ * mark and the name stay empty rather than showing the generic "User" and its
+ * initial, which then change into the real account.
+ */
 function renderAccountTrigger(
   display: AccountDisplay,
+  visible: boolean,
   collapsed: boolean,
   avatarShape: "circle" | "square",
 ) {
@@ -173,13 +179,17 @@ function renderAccountTrigger(
         aria-label={display.name}
         className="shrink-0 p-0"
       >
-        <UserAvatar
-          imageUrl={display.imageUrl}
-          name={display.name}
-          initial={display.initial}
-          size="md+"
-          shape={avatarShape}
-        />
+        {visible ? (
+          <UserAvatar
+            imageUrl={display.imageUrl}
+            name={display.name}
+            initial={display.initial}
+            size="md+"
+            shape={avatarShape}
+          />
+        ) : (
+          <ThumbnailPlaceholder size="md+" shape={avatarShape} />
+        )}
       </Button>
     );
   }
@@ -190,15 +200,19 @@ function renderAccountTrigger(
       type="button"
       className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-state-hover text-sidebar-foreground transition-colors"
     >
-      <UserAvatar
-        imageUrl={display.imageUrl}
-        name={display.name}
-        initial={display.initial}
-        size="sm"
-        shape={avatarShape}
-      />
+      {visible ? (
+        <UserAvatar
+          imageUrl={display.imageUrl}
+          name={display.name}
+          initial={display.initial}
+          size="sm"
+          shape={avatarShape}
+        />
+      ) : (
+        <ThumbnailPlaceholder size="sm" shape={avatarShape} />
+      )}
       <span className="min-w-0 flex-1 text-left text-sm font-medium leading-tight truncate">
-        {display.name}
+        {visible ? display.name : null}
       </span>
     </button>
   );
@@ -794,7 +808,12 @@ export function AccountDropdown({
     <>
       <DropdownMenu onOpenChange={handleMenuOpenChange}>
         <DropdownMenuTrigger
-          render={renderAccountTrigger(accountDisplay, collapsed, avatarShape)}
+          render={renderAccountTrigger(
+            accountDisplay,
+            accountVisible,
+            collapsed,
+            avatarShape,
+          )}
         />
 
         <DropdownMenuContent

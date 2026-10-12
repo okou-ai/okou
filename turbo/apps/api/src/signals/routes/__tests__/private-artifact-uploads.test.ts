@@ -500,24 +500,26 @@ describe("private artifact uploads", () => {
     );
     expect(preview.body).toStrictEqual({
       url: "https://private-r2.example/report.html?signature=one",
+      downloadUrl: "https://private-r2.example/report.html?signature=one",
       publicUrl: null,
       previewImageUrl: null,
       expiresAt: "2026-09-11T12:00:00.000Z",
     });
     expect(preview.headers.get("cache-control")).toBe("private, no-store");
-    expect(context.mocks.s3.getSignedUrl.mock.calls.at(-1)).toMatchObject({
-      1: {
-        input: {
+    expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        input: expect.objectContaining({
           Bucket: bucket,
           Key: `private-artifacts/${id}/report.html`,
           ResponseCacheControl: "private, max-age=31536000, must-revalidate",
-        },
-      },
-      2: {
+        }),
+      }),
+      {
         expiresIn: 172_800,
         signingDate: new Date("2026-09-09T12:00:00.000Z"),
       },
-    });
+    );
     const reference = new URL(url).pathname.slice("/artifacts/".length);
     const resolved = await accept(
       api()(artifactReferencesContract).resolve({
@@ -544,7 +546,10 @@ describe("private artifact uploads", () => {
       api()(webFilesContract).fileUrl({ headers, query: { file_id: id } }),
       [200],
     );
-    expect(refreshed.body).toStrictEqual(preview.body);
+    expect(refreshed.body).toStrictEqual({
+      ...preview.body,
+      downloadUrl: "https://private-r2.example/report.html?signature=two",
+    });
 
     mockNow(new Date("2026-09-11T11:50:00.123Z"));
     const nearExpiry = await accept(
@@ -553,6 +558,7 @@ describe("private artifact uploads", () => {
     );
     expect(nearExpiry.body).toStrictEqual({
       url: "https://private-r2.example/report.html?signature=two",
+      downloadUrl: "https://private-r2.example/report.html?signature=two",
       publicUrl: null,
       previewImageUrl: null,
       expiresAt: "2026-09-13T11:50:00.000Z",

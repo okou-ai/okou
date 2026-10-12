@@ -554,9 +554,7 @@ function isOfficialTelegramCommand(
     commandName === "help" ||
     commandName === "connect" ||
     commandName === "start" ||
-    commandName === "disconnect" ||
-    commandName === "switch" ||
-    commandName === "model"
+    commandName === "disconnect"
   );
 }
 
@@ -1521,11 +1519,7 @@ const handleOfficialCommand$ = command(
       });
     };
 
-    if (
-      args.command === "help" ||
-      args.command === "switch" ||
-      args.command === "model"
-    ) {
+    if (args.command === "help") {
       await reply(
         formatTelegramHelpMessage(args.botUsername, assistantName),
         signal,

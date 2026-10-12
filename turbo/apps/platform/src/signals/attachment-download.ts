@@ -19,7 +19,7 @@ import {
   classifyChatAttachment,
   isHostedSiteUrl,
 } from "./chat-page/parse-body-blocks.ts";
-import { createAttachmentPreviewSignals } from "./attachment-resource-url.ts";
+import { attachmentDownloadSource$ } from "./attachment-download-source.ts";
 import { logger } from "./log.ts";
 import { settle } from "./utils.ts";
 
@@ -50,9 +50,10 @@ function hostedPublicationUrl(url: string): URL | null {
 /**
  * List the publication an artifact reference or public site URL points at.
  *
- * `403` and `404` are the documented misses for this viewer: a reference that
+ * `401`, `403` and `404` are the documented misses for this viewer: a reference that
  * does not name hosted content, and a publication whose files this viewer may
- * not clone even though it may open the artifact. Both leave the artifact on
+ * not clone even though it may open the artifact (including anonymous viewers).
+ * These leave the artifact on
  * the single-resource download path. The same `404` covers an API deployed
  * before the additive `files` route (#35220); see the PR's `Fallbacks` section.
  * Every other status is a failed required operation and propagates, because
@@ -73,7 +74,7 @@ const hostedPublication$ = command(
             params: { reference: `${reference.hash}${reference.extension}` },
             fetchOptions: { signal },
           }),
-          [200, 403, 404],
+          [200, 401, 403, 404],
           signal,
           { showErrorToast: false },
         )
@@ -85,7 +86,7 @@ const hostedPublication$ = command(
               query: { hostname: siteUrl.hostname },
               fetchOptions: { signal },
             }),
-            [200, 403, 404],
+            [200, 401, 403, 404],
             signal,
             // This path owns one downloadFailed toast for every way it can fail.
             { showErrorToast: false },
@@ -208,25 +209,24 @@ const downloadHostedPublication$ = command(
 );
 
 /**
- * Resolve private uploaded files through the authenticated signing endpoint
- * before fetching their bytes. Public artifact URLs pass through unchanged.
+ * Authorize each download independently of its preview. Signed attachments
+ * use browser delivery; unmanaged URLs retain the CORS-readable blob path.
  */
 export const downloadAttachment$ = command(
   async (
-    { get, set },
+    { set },
     attachment: AttachmentDownload,
     signal: AbortSignal,
   ): Promise<void> => {
-    const preview = createAttachmentPreviewSignals(attachment.url);
-    const [resourceUrl, shareUrl, identity] = await Promise.all([
-      get(preview.resourceUrl$),
-      get(preview.shareUrl$),
-      get(preview.artifactShareIdentity$),
-    ]);
-    signal.throwIfAborted();
-    const siteUrl = hostedPublicationUrl(attachment.url);
+    const { resourceUrl, downloadUrl, hosted } = await set(
+      attachmentDownloadSource$,
+      attachment.url,
+      signal,
+    );
+    const siteUrl =
+      hostedPublicationUrl(attachment.url) ?? hostedPublicationUrl(resourceUrl);
     if (
-      (identity?.target.kind === "html" || siteUrl) &&
+      (hosted || siteUrl) &&
       (await set(
         downloadHostedPublication$,
         { attachment, resourceUrl, siteUrl },
@@ -236,16 +236,18 @@ export const downloadAttachment$ = command(
       return;
     }
     await downloadAttachmentUrl(
-      resourceUrl,
+      // New App -> old API: retain a cache-reloading read until APIs without
+      // downloadUrl are neither serving nor retained as rollback targets (#39235).
+      downloadUrl ?? resourceUrl,
       signal,
       attachment.filename,
-      classifyChatAttachment({
-        filename: attachment.filename,
-        url: resourceUrl,
-      }) === "file"
+      downloadUrl ||
+        classifyChatAttachment({
+          filename: attachment.filename,
+          url: resourceUrl,
+        }) === "file"
         ? "native"
         : "blob",
-      shareUrl === null ? "default" : "reload",
     );
   },
 );

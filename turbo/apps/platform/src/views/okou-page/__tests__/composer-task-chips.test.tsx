@@ -1,7 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import {
@@ -40,13 +39,10 @@ function button(
   return result;
 }
 
-async function setupChips(enabled = true): Promise<HTMLElement> {
+async function setupChips(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerTaskChips]: enabled,
-    },
   });
   return await findComposerEditor();
 }
@@ -121,19 +117,6 @@ test("A task moves into the composer and can be removed without losing the draft
     screen.queryByRole("group", { name: "Presentation templates" }),
   ).toBeNull();
   expect(editor).toHaveTextContent("Keep my draft");
-});
-
-test("The original start cards remain when task chips are disabled", async () => {
-  mockTemplateChat();
-  await setupChips(false);
-  expect(screen.getByTestId("start-cards")).toBeInTheDocument();
-  expect(
-    document.querySelector('[data-slot="workflow-recommendation-tile"]'),
-  ).toBeNull();
-  expect(screen.queryByText("Browse workflows")).toBeNull();
-  expect(
-    screen.queryByRole("region", { name: "Tasks to get started" }),
-  ).toBeNull();
 });
 
 test("A send carries the task and its slide count into the thread it opens", async () => {
@@ -211,7 +194,7 @@ test("Visualization preferences are interactive and are sent as agent-only conte
   });
 });
 
-test("Image enters and submits the existing create mode with only the chip switch enabled", async () => {
+test("Image enters and submits the create mode", async () => {
   const capture = mockTemplateChat();
   const editor = await setupChips();
   const tasks = screen.getByRole("group", { name: "Choose a task" });
@@ -572,7 +555,6 @@ test("Task chips do not replace the composer in an existing conversation", async
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerTaskChips]: true },
   });
   await findComposerEditor();
   expect(

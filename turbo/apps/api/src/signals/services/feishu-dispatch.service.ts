@@ -84,7 +84,6 @@ export interface FeishuDispatchConnection {
 
 interface FeishuCommand {
   readonly name: string;
-  readonly argument: string;
 }
 
 interface ConnectedCommandArgs {
@@ -104,13 +103,12 @@ type EffectiveAgentResolution =
     };
 
 function parseFeishuCommand(text: string): FeishuCommand | null {
-  const match = /^\/(\S+)(?:\s+(.+))?$/u.exec(text.trim());
+  const match = /^\/(\S+)(?:\s+.+)?$/u.exec(text.trim());
   if (!match) {
     return null;
   }
   return {
     name: match[1]?.toLowerCase() ?? "",
-    argument: match[2]?.trim() ?? "",
   };
 }
 

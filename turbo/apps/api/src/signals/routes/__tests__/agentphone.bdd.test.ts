@@ -1338,39 +1338,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await chat.requestListThreadEvents(actor, thread.chatThreadId, {}, [404]);
   });
 
-  it.each(modelSessionScenarios)(
-    "ignores retired commands in a $channel DM (conversation: $withConversation)",
-    async (scenario) => {
-      const { actor, send, sends, complete } =
-        await modelSessionScenario(scenario);
-      const original = await complete(
-        "start before retired commands",
-        "claude-fable-5-1",
-      );
-      for (const text of [
-        "/switch",
-        "/model",
-        "/model gpt-6-astra",
-        "/model auto",
-      ]) {
-        await send(text);
-        expect(lastSend(sends).body).toContain("text message commands");
-        expect(lastSend(sends).body).not.toContain("/model");
-        expect(lastSend(sends).body).not.toContain("/switch");
-      }
-      const chat = createChatFilesBddApi(context);
-      expect(
-        (await chat.readThreadMetadata(actor, original.threadId)).selectedModel,
-      ).toBe("claude-fable-5-1");
-      const continued = await complete(
-        "continue after retired commands",
-        "claude-fable-5-1",
-      );
-      expect(continued.threadId).toBe(original.threadId);
-      expect(continued.threadCount).toBe(1);
-    },
-  );
-
   it("rejects unavailable personal DM input without silently billing Auto", async () => {
     const integrations = createBddIntegrationApi(context);
     const runs = createRunsApi(context);
@@ -2136,7 +2103,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await completeSandboxRun(run.sandboxToken, run.runId, 0);
   });
 
-  it("answers supported and retired slash commands over SMS without model selection", async () => {
+  it("answers help, connect, and disconnect commands over SMS", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const integrations = createBddIntegrationApi(context);
@@ -2176,23 +2143,16 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const help = await commandReply("/help");
     expect(help).toContain("Okou text message commands");
     expect(help).toContain("/connect - Connect this phone number to Okou");
-    expect(help).not.toContain("/model");
-    expect(help).not.toContain("/switch");
+    expect(help).toContain("/help - Show these commands");
+    expect(help).toContain(
+      "/disconnect - Disconnect this phone number from Okou",
+    );
     expect(help).toContain(SMS_RISK_WARNING);
 
     const alreadyConnected = await commandReply("/connect");
     expect(alreadyConnected).toContain("You are already connected");
     expect(alreadyConnected).toContain("start using Okou");
     expect(alreadyConnected).toContain(SMS_RISK_WARNING);
-
-    const before = await integrations.readUserModelPreference(actor);
-    const modelOptions = await commandReply("/model");
-    expect(modelOptions).toContain("text message commands");
-    const switched = await commandReply("/model claude-sonnet-5");
-    expect(switched).toContain("text message commands");
-    await expect(
-      integrations.readUserModelPreference(actor),
-    ).resolves.toStrictEqual(before);
 
     const disconnected = await commandReply("/disconnect");
     expect(disconnected).toContain(
@@ -2205,9 +2165,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(disconnectAgain).toContain(
       "Error: This phone number is not connected.",
     );
-
-    const modelUnlinked = await commandReply("/model");
-    expect(modelUnlinked).toContain("text message commands");
 
     const plainPromptUnlinked = await commandReply("hello again");
     expect(plainPromptUnlinked).toContain(

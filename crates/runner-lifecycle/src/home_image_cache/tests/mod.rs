@@ -1,3 +1,4 @@
+pub(super) mod allocation_scan;
 mod fs;
 mod gc;
 mod inspection;

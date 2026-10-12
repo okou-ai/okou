@@ -387,11 +387,6 @@
       "owner": "completeOutboxItem"
     },
     {
-      "id": "TX-0159",
-      "file": "turbo/apps/api/src/signals/services/feishu-chat-ingress.service.ts",
-      "owner": "ensureFeishuChatThreadRoute$"
-    },
-    {
       "id": "TX-0160",
       "file": "turbo/apps/api/src/signals/services/feishu-chat-ingress.service.ts",
       "owner": "admitFeishuChatEvent$"
@@ -475,11 +470,6 @@
       "id": "TX-0189",
       "file": "turbo/apps/api/src/signals/services/morning-brief-schedule-claim.service.ts",
       "owner": "commitMorningBriefScheduleSettlement$"
-    },
-    {
-      "id": "TX-0193",
-      "file": "turbo/apps/api/src/signals/services/notion-automation-event.service.ts",
-      "owner": "publishNotionPendingEvent$"
     },
     {
       "id": "TX-0194",
@@ -667,11 +657,6 @@
       "owner": "consumeRunnerWssTicket$"
     },
     {
-      "id": "TX-0244",
-      "file": "turbo/apps/api/src/signals/services/slack-chat-ingress.service.ts",
-      "owner": "ensureCanonicalSlackChatThreadRoute$"
-    },
-    {
       "id": "TX-0245",
       "file": "turbo/apps/api/src/signals/services/slack-chat-ingress.service.ts",
       "owner": "admitCanonicalSlackChatEvent$"
@@ -715,11 +700,6 @@
       "id": "TX-0257",
       "file": "turbo/apps/api/src/signals/services/stripe-automation-event.service.ts",
       "owner": "finishDelivery$"
-    },
-    {
-      "id": "TX-0259",
-      "file": "turbo/apps/api/src/signals/services/telegram-chat-ingress.service.ts",
-      "owner": "ensureTelegramChatThreadRoute$"
     },
     {
       "id": "TX-0261",

@@ -1,4 +1,3 @@
-import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import {
   generateKeyPairSync,
   randomBytes,
@@ -13,7 +12,6 @@ import {
 } from "@okouai/api-contracts/contracts/discord-interactions";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 
-import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
@@ -25,13 +23,10 @@ import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createRunsApi } from "./helpers/api-bdd-runs";
 import { discordInteractionsRoutes } from "../discord-interactions";
 import { integrationsDiscordRoutes } from "../integrations-discord";
 
-import { userModelPreferenceRoutes } from "../user-model-preference";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   removePublicDiscordBinding,
   mockDiscordApplication,
@@ -39,15 +34,7 @@ import {
   createPublicDiscordBinding,
   uniqueDiscordSnowflake,
 } from "./helpers/discord";
-import {
-  DISCORD_TEST_APPLICATION_ID,
-  discordChatThreads,
-  discordMessageForTest,
-  mockDiscordProvider,
-  postDiscordMessage,
-  setupConnectedDiscordActor,
-} from "./helpers/discord-fixture";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { DISCORD_TEST_APPLICATION_ID } from "./helpers/discord-fixture";
 import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
@@ -155,77 +142,6 @@ type Fixture = Awaited<ReturnType<typeof fixture>> & {
   readonly parentChannelId?: string;
 };
 
-async function routedModelFixture(owner = actor()) {
-  const connected = await setupConnectedDiscordActor(context, {
-    userId: owner.userId,
-    orgId: owner.orgId,
-  });
-  // The Gateway fixture configures the bot; this suite owns interaction signing.
-  mockEnv("DISCORD_PUBLIC_KEY", publicKey);
-  onTestFinished(async () => {
-    mockDiscordMemberships(context, [owner]);
-    await removePublicDiscordBinding(context, connected.fixture);
-    await deleteFeatureSwitchesForUser(context, owner);
-  });
-  const { headers, preference } = await configureModelPreferences({ owner });
-  await accept(
-    preference.update({
-      headers,
-      body: { selectedModel: "claude-fable-5-1", serviceTier: null },
-    }),
-    [200],
-  );
-  const provider = mockDiscordProvider(connected);
-  const message = discordMessageForTest(connected, {
-    channelId: provider.guildChannelId,
-    content: `<@${connected.botUserId}> Start the routed model picker thread`,
-  });
-  provider.messages.set(message.id, message);
-  await postDiscordMessage(context, message);
-  await flushWaitUntilForTest();
-  const [thread] = await discordChatThreads(context, connected);
-  if (!thread) {
-    throw new Error(
-      "Expected Gateway admission to create the Discord conversation",
-    );
-  }
-  const chat = createChatFilesBddApi(context);
-  const { events } = await chat.listThreadEvents(connected.actor, thread.id);
-  const input = events.find((event) => {
-    return event.eventType === "input.prompt" && event.runId !== undefined;
-  });
-  if (!input?.runId) {
-    throw new Error("Expected the Discord conversation to admit a Run");
-  }
-  const runs = createRunsApi(context);
-  await runs.heartbeatRunner(connected.runnerGroup);
-  const claim = await runs.claimRunnerJob(input.runId);
-  await createWebhookCallbackApi(context).requestAgentComplete(
-    {
-      runId: input.runId,
-      exitCode: 1,
-      error: "The task could not be completed",
-    },
-    { authorization: `Bearer ${claim.sandboxToken}` },
-    [200],
-  );
-  await flushWaitUntilForTest();
-  await accept(
-    preference.update({
-      headers,
-      body: { selectedModel: null, serviceTier: null },
-    }),
-    [200],
-  );
-  return {
-    owner,
-    binding: connected.fixture,
-    channelId: message.id,
-    parentChannelId: provider.guildChannelId,
-    threadId: thread.id,
-  };
-}
-
 function guildSender(scope: Fixture): DiscordSender {
   return {
     discordUserId: scope.binding.discordUserId,
@@ -265,7 +181,7 @@ function selectPayload(
   value: string,
 ): DiscordComponentInteraction {
   return {
-    ...commandPayload(sender, "model"),
+    ...commandPayload(sender, "connect"),
     type: 3,
     data: { component_type: 3, custom_id: customId, values: [value] },
   };
@@ -510,25 +426,6 @@ async function disconnect(owner: Actor): Promise<void> {
   );
 }
 
-async function configureModelPreferences(scope: Pick<Fixture, "owner">) {
-  await createRunsApi(context).grantProEntitlement(scope.owner);
-  await createBddIntegrationApi(context).configureNativeSubscriptionModels(
-    scope.owner,
-  );
-  const headers = accountApi.authenticate(scope.owner);
-  const preference = setupApp({ context, routes: userModelPreferenceRoutes })(
-    userModelPreferenceContract,
-  );
-  await accept(
-    preference.update({
-      headers,
-      body: { selectedModel: null, serviceTier: null },
-    }),
-    [200],
-  );
-  return { headers, preference };
-}
-
 beforeEach(() => {
   mockEnv("DISCORD_APPLICATION_ID", applicationId);
   mockEnv("DISCORD_PUBLIC_KEY", publicKey);
@@ -712,28 +609,5 @@ describe("Discord account preferences through private controls", () => {
     expect(
       preselected(await discord.send(commandPayload(sender, "connect"))),
     ).toStrictEqual([first.binding.connectionId]);
-  });
-
-  it("returns help for retired Discord commands without changing the routed thread", async () => {
-    const scope = await routedModelFixture();
-    const { headers, preference } = await configureModelPreferences(scope);
-    const chat = createChatFilesBddApi(context);
-    const before = await chat.readThreadMetadata(scope.owner, scope.threadId);
-    const discord = discordHttp([scope]);
-    const sender = guildSender(scope);
-    for (const name of ["switch", "model"] as const) {
-      const response = await discord.send(commandPayload(sender, name));
-      expect(response.content).toContain("Okou in Discord");
-      expect(response.content).not.toContain("/switch");
-      expect(response.content).not.toContain("/model");
-      expect(response.components).toStrictEqual([]);
-    }
-    expect(
-      (await chat.readThreadMetadata(scope.owner, scope.threadId))
-        .selectedModel,
-    ).toBe(before.selectedModel);
-    expect(
-      (await accept(preference.get({ headers }), [200])).body.selectedModel,
-    ).toBe("auto");
   });
 });

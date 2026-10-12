@@ -1125,6 +1125,7 @@ export function generateHostedSitesPresignedGetUrl(
   usePublicEndpoint = false,
   options?: {
     readonly filename?: string;
+    readonly responseCacheControl?: string;
     readonly signingDate?: Date;
   },
 ): Computed<Promise<string>> {
@@ -1225,7 +1226,11 @@ function signPresignedGetUrl(
       : {}),
     ...(options?.filename
       ? {
-          ResponseContentDisposition: `attachment; filename="${options.filename}"`,
+          ResponseContentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(
+            options.filename,
+          ).replace(/['()*]/gu, (character) => {
+            return `%${character.charCodeAt(0).toString(16).toUpperCase()}`;
+          })}`,
         }
       : {}),
   });

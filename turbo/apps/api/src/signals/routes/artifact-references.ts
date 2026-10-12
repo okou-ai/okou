@@ -11,6 +11,7 @@ import { authorization$, setResHeader$ } from "../context/hono";
 import { pathParamsOf, queryOf } from "../context/request";
 import { s3ObjectHead } from "../external/s3";
 import { resolveArtifactPreviewUrl$ } from "../services/artifact-preview-url.service";
+import { resolveArtifactDownloadUrl$ } from "../services/artifact-download-url.service";
 import { privateArtifactRecord$ } from "../services/private-artifact-storage.service";
 import {
   resolveArtifactShare$,
@@ -64,11 +65,13 @@ const resolveFileReference$ = command(
         { bucket: file.bucket, key: file.key, signingDate: nowDate() },
         signal,
       );
+      const downloadUrl = await set(resolveArtifactDownloadUrl$, file, signal);
       signal.throwIfAborted();
       return {
         status: 200 as const,
         body: {
           ...preview,
+          downloadUrl,
           filename: file.filename,
           contentType: file.contentType,
           target: { kind: "file" as const, id },

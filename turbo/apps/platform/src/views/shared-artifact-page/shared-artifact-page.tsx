@@ -114,7 +114,7 @@ function ArtifactViewerActions({
       )}
       <ArtifactDownloadMenu
         filename={artifact.filename}
-        url={artifact.publicUrl ?? artifact.preview.url}
+        url={artifact.preview.url}
         iconSize={18}
         showGoogleDriveAction={false}
       />

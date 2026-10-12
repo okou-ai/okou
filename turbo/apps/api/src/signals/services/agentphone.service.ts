@@ -1177,9 +1177,7 @@ const dispatchAgentPhoneCommand$ = command(
         );
         return true;
       }
-      case "help":
-      case "switch":
-      case "model": {
+      case "help": {
         await set(
           sendAgentPhoneSlashCommandText$,
           args.event,
