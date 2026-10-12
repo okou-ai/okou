@@ -468,6 +468,73 @@ describe("POST /api/integrations/teams/connect", () => {
     });
   });
 
+  it("updates metadata when claiming an installation and preserves omitted fields for a member", async () => {
+    const fixture = await seedTeamsInstallation(track);
+    const claimedTeamId = teamsFixtureExternalId(fixture, "claimed-team");
+    const client = setupApp({ context, routes: teamsConnectRoutes })(
+      teamsConnectContract,
+    );
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const claimed = await accept(
+      client.connect({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          ...connectBody(fixture),
+          teamId: claimedTeamId,
+          teamName: "Claimed team",
+        },
+      }),
+      [200],
+    );
+    expect(claimed.body.role).toBe("admin");
+    const adminStatus = await accept(
+      client.getStatus({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(adminStatus.body).toMatchObject({
+      isInstalled: true,
+      isConnected: true,
+      teamId: claimedTeamId,
+      teamName: "Claimed team",
+    });
+
+    mocks.clerk.session(
+      `member_${fixture.userId}`,
+      fixture.orgId,
+      "org:member",
+    );
+    const connected = await accept(
+      client.connect({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          tenantId: fixture.teamsTenantId,
+          teamsUserId: teamsFixtureExternalId(fixture, "29:metadata-member"),
+          teamsAadObjectId: teamsFixtureExternalId(
+            fixture,
+            "aad-metadata-member",
+          ),
+          teamName: "Member updated team",
+        },
+      }),
+      [200],
+    );
+    expect(connected.body.role).toBe("member");
+    const memberStatus = await accept(
+      client.getStatus({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(memberStatus.body).toMatchObject({
+      isInstalled: true,
+      isConnected: true,
+      teamId: claimedTeamId,
+      teamName: "Member updated team",
+    });
+  });
+
   it("rejects a member connecting an unbound Teams installation", async () => {
     const fixture = await seedTeamsInstallation(track);
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
