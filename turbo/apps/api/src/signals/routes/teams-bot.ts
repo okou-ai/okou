@@ -37,8 +37,7 @@ import { ApiDispatchTimingCollector } from "../services/api-dispatch-timing.serv
 import { safeJsonParse, tapError } from "../utils";
 
 const L = logger("TeamsBot");
-const TEAMS_SUPPORTED_COMMANDS_TEXT =
-  "`help`, `connect`, `disconnect`, `switch`, `model`";
+const TEAMS_SUPPORTED_COMMANDS_TEXT = "`help`, `connect`, `disconnect`";
 
 function errorResponse(
   status: 400 | 401 | 403 | 503,
@@ -92,7 +91,6 @@ type TeamsDispatchReplySource =
       readonly kind: "notice";
       readonly replyText: string;
       readonly connectUrl?: string;
-      readonly card?: TeamsAdaptiveCard;
     }
   | { readonly kind: "ignored" | "accepted" };
 
@@ -110,16 +108,14 @@ function dispatchReplyContent(dispatch: TeamsDispatchReplySource): {
   if (dispatch.kind === "notice") {
     return {
       replyText: dispatch.replyText,
-      ...(dispatch.card
-        ? { card: dispatch.card }
-        : dispatch.connectUrl
-          ? {
-              card: buildTeamsLoginPromptCard({
-                connectUrl: dispatch.connectUrl,
-                text: dispatch.replyText,
-              }),
-            }
-          : {}),
+      ...(dispatch.connectUrl
+        ? {
+            card: buildTeamsLoginPromptCard({
+              connectUrl: dispatch.connectUrl,
+              text: dispatch.replyText,
+            }),
+          }
+        : {}),
     };
   }
   return { replyText: null };

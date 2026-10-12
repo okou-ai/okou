@@ -1,7 +1,7 @@
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { createHash, randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it } from "vitest";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
@@ -91,13 +91,6 @@ const modelSessionScenarios = [
   { channel: "imessage", withConversation: true },
   { channel: "imessage", withConversation: false },
 ] as const;
-
-const modelResumeScenarios = modelSessionScenarios.flatMap((scenario) => {
-  return [
-    { ...scenario, model: "claude-fable-5-1", otherModel: "gpt-6-astra" },
-    { ...scenario, model: "gpt-6-astra", otherModel: "claude-fable-5-1" },
-  ] as const;
-});
 
 async function modelSessionScenario({
   channel,
@@ -1345,94 +1338,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await chat.requestListThreadEvents(actor, thread.chatThreadId, {}, [404]);
   });
 
-  describe.each(modelResumeScenarios)(
-    "switches the $model $channel DM thread with /model (conversation: $withConversation)",
-    (scenario) => {
-      async function prepareScenario() {
-        return await modelSessionScenario(scenario);
-      }
-      let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-      beforeEach(async () => {
-        preparedScenario = await prepareScenario();
-      });
-      it("switches only the existing DM thread", async () => {
-        const { actor, send, sends, complete } = preparedScenario;
-        const integrations = createBddIntegrationApi(context);
-        if (scenario.model !== "claude-fable-5-1") {
-          // The browser preference still controls initialization of new threads.
-          await integrations.updateUserModelPreference(actor, scenario.model);
-        }
-        const original = await complete(
-          "start the selected model session",
-          scenario.model,
-        );
-        expect(original.selectedModel).toBe(scenario.model);
-        expect(original.threadCount).toBe(1);
-
-        await send(`/model ${scenario.otherModel}`);
-        expect(lastSend(sends).body).toContain("Switched to");
-        await expect(
-          integrations.readUserModelPreference(actor),
-        ).resolves.toMatchObject({ selectedModel: scenario.model });
-        const lifecycle = await createChatFilesBddApi(
-          context,
-        ).requestThreadEvents(actor, {}, [200]);
-        if (lifecycle.status !== 200) {
-          throw new Error("Expected AgentPhone thread lifecycle events");
-        }
-        expect(lifecycle.body.events).toContainEqual(
-          expect.objectContaining({
-            kind: "model_selection_updated",
-            chatThreadId: original.threadId,
-            selectedModel: scenario.otherModel,
-          }),
-        );
-        const alternate = await complete(
-          "switch the existing DM model",
-          scenario.otherModel,
-        );
-        expect(alternate.selectedModel).toBe(scenario.otherModel);
-        expect(alternate.threadId).toBe(original.threadId);
-        expect(alternate.threadCount).toBe(1);
-
-        await send(`/model ${scenario.model}`);
-        const returned = await complete(
-          "return to the selected model session",
-          scenario.model,
-        );
-        expect(returned.selectedModel).toBe(scenario.model);
-        expect(returned.threadId).toBe(original.threadId);
-        expect(returned.threadCount).toBe(1);
-      });
-    },
-  );
-
-  it("switches the existing DM thread to canonical Auto", async () => {
-    const { actor, send, sends, complete } = await modelSessionScenario({
-      channel: "sms",
-      withConversation: false,
-    });
-    const original = await complete(
-      "start before the Auto switch",
-      "claude-fable-5-1",
-    );
-
-    await send("/model");
-    expect(lastSend(sends).body).toContain("/model auto - Auto (default)");
-    await send("/model auto");
-    expect(lastSend(sends).body).toContain("Switched to Auto.");
-    const metadata = await createChatFilesBddApi(context).readThreadMetadata(
-      actor,
-      original.threadId,
-    );
-    expect(metadata.selectedModel).toBe("auto");
-    await send("/model");
-    expect(lastSend(sends).body).toContain("Current: Auto");
-    expect(lastSend(sends).body).toContain(
-      "/model auto - Auto (current, default)",
-    );
-  });
-
   it("rejects unavailable personal DM input without silently billing Auto", async () => {
     const integrations = createBddIntegrationApi(context);
     const runs = createRunsApi(context);
@@ -2198,7 +2103,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await completeSandboxRun(run.sandboxToken, run.runId, 0);
   });
 
-  it("answers the slash-command surface over SMS with link state and model selection", async () => {
+  it("answers help, connect, and disconnect commands over SMS", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const integrations = createBddIntegrationApi(context);
@@ -2238,22 +2143,16 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const help = await commandReply("/help");
     expect(help).toContain("Okou text message commands");
     expect(help).toContain("/connect - Connect this phone number to Okou");
-    expect(help).toContain("/model - Choose your model");
+    expect(help).toContain("/help - Show these commands");
+    expect(help).toContain(
+      "/disconnect - Disconnect this phone number from Okou",
+    );
     expect(help).toContain(SMS_RISK_WARNING);
 
     const alreadyConnected = await commandReply("/connect");
     expect(alreadyConnected).toContain("You are already connected");
     expect(alreadyConnected).toContain("start using Okou");
     expect(alreadyConnected).toContain(SMS_RISK_WARNING);
-
-    const before = await integrations.readUserModelPreference(actor);
-    const modelOptions = await commandReply("/model");
-    expect(modelOptions).toContain("existing Okou conversation");
-    const switched = await commandReply("/model claude-sonnet-5");
-    expect(switched).toContain("existing Okou conversation");
-    await expect(
-      integrations.readUserModelPreference(actor),
-    ).resolves.toStrictEqual(before);
 
     const disconnected = await commandReply("/disconnect");
     expect(disconnected).toContain(
@@ -2266,9 +2165,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(disconnectAgain).toContain(
       "Error: This phone number is not connected.",
     );
-
-    const modelUnlinked = await commandReply("/model");
-    expect(modelUnlinked).toContain("/agentphone/connect?");
 
     const plainPromptUnlinked = await commandReply("hello again");
     expect(plainPromptUnlinked).toContain(

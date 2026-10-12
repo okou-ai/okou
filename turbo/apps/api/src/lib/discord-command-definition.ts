@@ -22,16 +22,6 @@ export const DISCORD_COMMANDS = [
     name: "disconnect",
     description: "Disconnect from Okou",
   },
-  {
-    ...COMMAND_SETTINGS,
-    name: "switch",
-    description: "View your workspace agent",
-  },
-  {
-    ...COMMAND_SETTINGS,
-    name: "model",
-    description: "Choose your model",
-  },
 ] as const;
 
 export type DiscordCommandName = (typeof DISCORD_COMMANDS)[number]["name"];
