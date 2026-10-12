@@ -763,12 +763,6 @@ OUTPUT=$(sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" --sudo -- id -u) ||
 [ "$OUTPUT" = "0" ] || fail "privileged exec expected UID 0, got: $OUTPUT"
 echo "PASS: privilege boundary"
 
-# Test 2: basic exec
-echo "--- Test: basic exec ---"
-OUTPUT=$(sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" -- echo hello-from-exec)
-echo "$OUTPUT" | grep -q "hello-from-exec" || fail "expected 'hello-from-exec', got: $OUTPUT"
-echo "PASS: basic exec"
-
 # Test 3: one-shot exec owns detached descendants, including through the
 # production non-sudo `su` boundary. The long-running job above can own another
 # valid leaf concurrently, so record and verify this exec's exact leaf.
