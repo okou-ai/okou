@@ -5,7 +5,6 @@ import {
 import { connectors } from "@okouai/db/schema/connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
-import { secrets } from "@okouai/db/schema/secret";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { and, eq, inArray, ne, exists, sql } from "drizzle-orm";
@@ -280,7 +279,7 @@ const emptySections = Object.freeze({
     .as("grant_permissionNames"),
 });
 
-export function customRuntimeSnapshotReadQuery(args: {
+interface CustomRuntimeSnapshotInput {
   readonly scope: {
     readonly orgId: string;
     readonly userId: string;
@@ -290,18 +289,21 @@ export function customRuntimeSnapshotReadQuery(args: {
     readonly customConnectorId: string;
     readonly sourceId?: string;
   }[];
-}) {
-  const queryBuilder = new QueryBuilder();
+}
+
+function customRuntimeSnapshotTargets(
+  registrations: CustomRuntimeSnapshotInput["registrations"],
+) {
   const customConnectorIds = [
     ...new Set(
-      args.registrations.map((registration) => {
+      registrations.map((registration) => {
         return registration.customConnectorId;
       }),
     ),
   ];
   // Collect raw identities without running request normalization before catalog
   // materialization. Wrong-target identities must still be captured below.
-  const sources = args.registrations.flatMap((registration) => {
+  const sources = registrations.flatMap((registration) => {
     return registration.sourceId === undefined
       ? []
       : [
@@ -318,6 +320,13 @@ export function customRuntimeSnapshotReadQuery(args: {
       }),
     ),
   ];
+  return { customConnectorIds, sources, sourceIds };
+}
+
+function customRuntimeSnapshotReadPlan(args: CustomRuntimeSnapshotInput) {
+  const queryBuilder = new QueryBuilder();
+  const { customConnectorIds, sources, sourceIds } =
+    customRuntimeSnapshotTargets(args.registrations);
   const definitions = queryBuilder.$with("custom_runtime_definitions").as(
     queryBuilder
       .select(customConnectorDefinitionSelection())
@@ -397,14 +406,23 @@ export function customRuntimeSnapshotReadQuery(args: {
   });
   const storage = storagePlan.storedConnections;
   const storedValues = storagePlan.storedValues;
-  const emptyRows = queryBuilder
-    .select({
-      section: sql`'definition'`.mapWith(sectionDecoder).as("section"),
-      ...emptySections,
-    })
-    .from(definitions)
-    .where(sql`false`);
-  const definitionRows = queryBuilder
+  return {
+    definitions,
+    requestedSources,
+    dependencies,
+    storage,
+    storedValues,
+    customConnectorIds,
+    sourceIds,
+  };
+}
+
+type CustomRuntimeReadPlan = ReturnType<typeof customRuntimeSnapshotReadPlan>;
+
+function customRuntimeDefinitionRows(
+  definitions: CustomRuntimeReadPlan["definitions"],
+) {
+  return new QueryBuilder()
     .select({
       section: sql`'definition'`.mapWith(sectionDecoder).as("section"),
       ...emptySections,
@@ -452,7 +470,12 @@ export function customRuntimeSnapshotReadQuery(args: {
         eq(orgCustomConnectorOauthConfigs.orgId, definitions.orgId),
       ),
     );
-  const catalogRows = queryBuilder
+}
+
+function customRuntimeCatalogRows(
+  dependencies: CustomRuntimeReadPlan["dependencies"],
+) {
+  return new QueryBuilder()
     .select({
       section: sql`'catalog'`.mapWith(sectionDecoder).as("section"),
       ...emptySections,
@@ -477,12 +500,20 @@ export function customRuntimeSnapshotReadQuery(args: {
         eq(connectorCatalogEntries.hash, connectorCatalog.hash),
         inArray(
           connectorCatalogEntries.slug,
-          queryBuilder.select({ slug: dependencies.slug }).from(dependencies),
+          new QueryBuilder()
+            .select({ slug: dependencies.slug })
+            .from(dependencies),
         ),
       ),
     )
     .where(connectorCatalogCurrentWhere());
-  const accountRows = queryBuilder
+}
+
+function customRuntimeAccountRows(
+  scope: CustomRuntimeSnapshotInput["scope"],
+  sourceIds: readonly string[],
+) {
+  return new QueryBuilder()
     .select({
       section: sql`'account'`.mapWith(sectionDecoder).as("section"),
       ...emptySections,
@@ -496,12 +527,15 @@ export function customRuntimeSnapshotReadQuery(args: {
     .from(connectors)
     .where(
       and(
-        eq(connectors.orgId, args.scope.orgId),
-        eq(connectors.userId, args.scope.userId),
+        eq(connectors.orgId, scope.orgId),
+        eq(connectors.userId, scope.userId),
         inArray(connectors.id, sourceIds),
       ),
     );
-  const storageRows = queryBuilder
+}
+
+function customRuntimeStorageRows(storage: CustomRuntimeReadPlan["storage"]) {
+  return new QueryBuilder()
     .select({
       section: sql`'storage'`.mapWith(sectionDecoder).as("section"),
       ...emptySections,
@@ -520,7 +554,12 @@ export function customRuntimeSnapshotReadQuery(args: {
       storage_automaticOAuthBindingId: storage.automaticOAuthBindingId,
     })
     .from(storage);
-  const valueRows = queryBuilder
+}
+
+function customRuntimeValueRows(
+  storedValues: CustomRuntimeReadPlan["storedValues"],
+) {
+  return new QueryBuilder()
     .select({
       section: sql`'value'`.mapWith(sectionDecoder).as("section"),
       ...emptySections,
@@ -530,7 +569,10 @@ export function customRuntimeSnapshotReadQuery(args: {
       storage_storedValue: storedValues.storedValue,
     })
     .from(storedValues);
-  const featureRows = queryBuilder
+}
+
+function customRuntimeFeatureRows(scope: CustomRuntimeSnapshotInput["scope"]) {
+  return new QueryBuilder()
     .select({
       section: sql`'feature'`.mapWith(sectionDecoder).as("section"),
       ...emptySections,
@@ -538,8 +580,14 @@ export function customRuntimeSnapshotReadQuery(args: {
       feature_switches: userFeatureSwitches.switches,
     })
     .from(userFeatureSwitches)
-    .where(userFeatureSwitchRowCondition(args.scope.orgId, args.scope.userId));
-  const grantRows = queryBuilder
+    .where(userFeatureSwitchRowCondition(scope.orgId, scope.userId));
+}
+
+function customRuntimeGrantRows(
+  scope: CustomRuntimeSnapshotInput["scope"],
+  customConnectorIds: readonly string[],
+) {
+  return new QueryBuilder()
     .select({
       section: sql`'grant'`.mapWith(sectionDecoder).as("section"),
       ...emptySections,
@@ -549,23 +597,45 @@ export function customRuntimeSnapshotReadQuery(args: {
     .from(userCustomConnectors)
     .where(
       and(
-        eq(userCustomConnectors.orgId, args.scope.orgId),
-        eq(userCustomConnectors.userId, args.scope.userId),
-        eq(userCustomConnectors.agentId, args.scope.agentId),
+        eq(userCustomConnectors.orgId, scope.orgId),
+        eq(userCustomConnectors.userId, scope.userId),
+        eq(userCustomConnectors.agentId, scope.agentId),
         inArray(userCustomConnectors.customConnectorId, customConnectorIds),
       ),
     );
+}
+
+export function customRuntimeSnapshotReadQuery(
+  args: CustomRuntimeSnapshotInput,
+) {
+  const queryBuilder = new QueryBuilder();
+  const {
+    definitions,
+    requestedSources,
+    dependencies,
+    storage,
+    storedValues,
+    sourceIds,
+    customConnectorIds,
+  } = customRuntimeSnapshotReadPlan(args);
+  const emptyRows = queryBuilder
+    .select({
+      section: sql`'definition'`.mapWith(sectionDecoder).as("section"),
+      ...emptySections,
+    })
+    .from(definitions)
+    .where(sql`false`);
   const sections = queryBuilder
     .$with("custom_runtime_sections")
     .as(
       emptyRows
-        .unionAll(definitionRows)
-        .unionAll(catalogRows)
-        .unionAll(accountRows)
-        .unionAll(storageRows)
-        .unionAll(valueRows)
-        .unionAll(featureRows)
-        .unionAll(grantRows),
+        .unionAll(customRuntimeDefinitionRows(definitions))
+        .unionAll(customRuntimeCatalogRows(dependencies))
+        .unionAll(customRuntimeAccountRows(args.scope, sourceIds))
+        .unionAll(customRuntimeStorageRows(storage))
+        .unionAll(customRuntimeValueRows(storedValues))
+        .unionAll(customRuntimeFeatureRows(args.scope))
+        .unionAll(customRuntimeGrantRows(args.scope, customConnectorIds)),
     );
   return queryBuilder
     .with(
@@ -594,133 +664,129 @@ type SnapshotRow = ReturnType<
   typeof customRuntimeSnapshotReadQuery
 >["_"]["result"][number];
 
+function customRuntimeDefinitionFromRow(row: SnapshotRow) {
+  return {
+    connector: {
+      id: requiredSlot(row.definition_id),
+      orgId: requiredSlot(row.definition_orgId),
+      slug: requiredSlot(row.definition_slug),
+      displayName: requiredSlot(row.definition_displayName),
+      prefixTemplates: requiredSlot(row.definition_prefixTemplates),
+      fields: requiredSlot(row.definition_fields),
+      headerInjections: requiredSlot(row.definition_headerInjections),
+      queryInjections: requiredSlot(row.definition_queryInjections),
+      authMode: requiredSlot(row.definition_authMode),
+      enabled: requiredSlot(row.definition_enabled),
+      permissionBundleRef: row.definition_permissionBundleRef,
+      mcpEndpoint: row.definition_mcpEndpoint,
+      mcpTransport: row.definition_mcpTransport,
+      skillMarkdown: row.definition_skillMarkdown,
+      skillStorageVersionId: row.definition_skillStorageVersionId,
+      storageVersion: requiredSlot(row.definition_storageVersion),
+      createdBy: requiredSlot(row.definition_createdBy),
+      createdAt: requiredSlot(row.definition_createdAt),
+      updatedAt: requiredSlot(row.definition_updatedAt),
+    },
+    oauthConfig:
+      row.oauth_connectorId === null
+        ? null
+        : {
+            connectorId: requiredSlot(row.oauth_connectorId),
+            orgId: requiredSlot(row.oauth_orgId),
+            providerAdapter: requiredSlot(row.oauth_providerAdapter),
+            clientId: requiredSlot(row.oauth_clientId),
+            encryptedClientSecret: requiredSlot(
+              row.oauth_encryptedClientSecret,
+            ),
+            authorizationUrl: requiredSlot(row.oauth_authorizationUrl),
+            tokenUrl: requiredSlot(row.oauth_tokenUrl),
+            tokenEndpointAuthMethod: requiredSlot(
+              row.oauth_tokenEndpointAuthMethod,
+            ),
+            pkceMethod: requiredSlot(row.oauth_pkceMethod),
+            scopes: requiredSlot(row.oauth_scopes),
+            authorizationParams: requiredSlot(row.oauth_authorizationParams),
+            createdAt: requiredSlot(row.oauth_createdAt),
+            updatedAt: requiredSlot(row.oauth_updatedAt),
+          },
+  };
+}
+
+function customRuntimeCatalogFromRow(row: SnapshotRow) {
+  return {
+    current: {
+      schemaVersion: requiredSlot(row.catalog_schemaVersion),
+      hash: requiredSlot(row.catalog_hash),
+    },
+    entry:
+      row.catalog_slug === null
+        ? null
+        : {
+            slug: requiredSlot(row.catalog_slug),
+            authMethods: requiredSlot(row.catalog_authMethods),
+            mcp: row.catalog_mcp,
+            label: requiredSlot(row.catalog_label),
+            description: requiredSlot(row.catalog_description),
+            category: requiredSlot(row.catalog_category),
+            icon: requiredSlot(row.catalog_icon),
+            tags: requiredSlot(row.catalog_tags),
+            generation: requiredSlot(row.catalog_generation),
+            skill: requiredSlot(row.catalog_skill),
+            firewall: requiredSlot(row.catalog_firewall),
+          },
+  };
+}
+
+function customRuntimeAccountFromRow(row: SnapshotRow) {
+  return {
+    authMethod: requiredSlot(row.account_authMethod),
+    automaticAuthType: row.account_automaticAuthType,
+    connectorId: requiredSlot(row.account_connectorId),
+    connectorSlug: row.account_connectorSlug,
+    customConnectorId: row.account_customConnectorId,
+    storageVersion: requiredSlot(row.account_storageVersion),
+  };
+}
+
+function customRuntimeStorageFromRow(row: SnapshotRow) {
+  return {
+    id: requiredSlot(row.storage_id),
+    updatedAt: requiredSlot(row.storage_updatedAt),
+    customConnectorId: requiredSlot(row.storage_customConnectorId),
+    storedAuthMethod: requiredSlot(row.storage_storedAuthMethod),
+    storedStorageVersion: requiredSlot(row.storage_storedStorageVersion),
+    storedNeedsReconnect: requiredSlot(row.storage_storedNeedsReconnect),
+    tokenExpiresAt: row.storage_tokenExpiresAt,
+    definitionAuthMethod: requiredSlot(row.storage_definitionAuthMethod),
+    definitionMcpTransport: row.storage_definitionMcpTransport,
+    definitionStorageVersion: requiredSlot(
+      row.storage_definitionStorageVersion,
+    ),
+    oauthAccessTokenId: row.storage_oauthAccessTokenId,
+    oauthRefreshTokenId: row.storage_oauthRefreshTokenId,
+    automaticOAuthBindingId: row.storage_automaticOAuthBindingId,
+    kind: row.storage_kind,
+    key: row.storage_key,
+    storedValue: row.storage_storedValue,
+  };
+}
+
 export function customRuntimeSnapshotSectionsFromRows(
   rows: readonly SnapshotRow[],
 ) {
   const definitionRows = rows.flatMap((row) => {
-    if (row.section !== "definition") {
-      return [];
-    }
-    return [
-      {
-        connector: {
-          id: requiredSlot(row.definition_id),
-          orgId: requiredSlot(row.definition_orgId),
-          slug: requiredSlot(row.definition_slug),
-          displayName: requiredSlot(row.definition_displayName),
-          prefixTemplates: requiredSlot(row.definition_prefixTemplates),
-          fields: requiredSlot(row.definition_fields),
-          headerInjections: requiredSlot(row.definition_headerInjections),
-          queryInjections: requiredSlot(row.definition_queryInjections),
-          authMode: requiredSlot(row.definition_authMode),
-          enabled: requiredSlot(row.definition_enabled),
-          permissionBundleRef: row.definition_permissionBundleRef,
-          mcpEndpoint: row.definition_mcpEndpoint,
-          mcpTransport: row.definition_mcpTransport,
-          skillMarkdown: row.definition_skillMarkdown,
-          skillStorageVersionId: row.definition_skillStorageVersionId,
-          storageVersion: requiredSlot(row.definition_storageVersion),
-          createdBy: requiredSlot(row.definition_createdBy),
-          createdAt: requiredSlot(row.definition_createdAt),
-          updatedAt: requiredSlot(row.definition_updatedAt),
-        },
-        oauthConfig:
-          row.oauth_connectorId === null
-            ? null
-            : {
-                connectorId: requiredSlot(row.oauth_connectorId),
-                orgId: requiredSlot(row.oauth_orgId),
-                providerAdapter: requiredSlot(row.oauth_providerAdapter),
-                clientId: requiredSlot(row.oauth_clientId),
-                encryptedClientSecret: requiredSlot(
-                  row.oauth_encryptedClientSecret,
-                ),
-                authorizationUrl: requiredSlot(row.oauth_authorizationUrl),
-                tokenUrl: requiredSlot(row.oauth_tokenUrl),
-                tokenEndpointAuthMethod: requiredSlot(
-                  row.oauth_tokenEndpointAuthMethod,
-                ),
-                pkceMethod: requiredSlot(row.oauth_pkceMethod),
-                scopes: requiredSlot(row.oauth_scopes),
-                authorizationParams: requiredSlot(
-                  row.oauth_authorizationParams,
-                ),
-                createdAt: requiredSlot(row.oauth_createdAt),
-                updatedAt: requiredSlot(row.oauth_updatedAt),
-              },
-      },
-    ];
+    return row.section === "definition"
+      ? [customRuntimeDefinitionFromRow(row)]
+      : [];
   });
   const catalogRows = rows.flatMap((row) => {
-    if (row.section !== "catalog") {
-      return [];
-    }
-    return [
-      {
-        current: {
-          schemaVersion: requiredSlot(row.catalog_schemaVersion),
-          hash: requiredSlot(row.catalog_hash),
-        },
-        entry:
-          row.catalog_slug === null
-            ? null
-            : {
-                slug: requiredSlot(row.catalog_slug),
-                authMethods: requiredSlot(row.catalog_authMethods),
-                mcp: row.catalog_mcp,
-                label: requiredSlot(row.catalog_label),
-                description: requiredSlot(row.catalog_description),
-                category: requiredSlot(row.catalog_category),
-                icon: requiredSlot(row.catalog_icon),
-                tags: requiredSlot(row.catalog_tags),
-                generation: requiredSlot(row.catalog_generation),
-                skill: requiredSlot(row.catalog_skill),
-                firewall: requiredSlot(row.catalog_firewall),
-              },
-      },
-    ];
+    return row.section === "catalog" ? [customRuntimeCatalogFromRow(row)] : [];
   });
   const accountRows = rows.flatMap((row) => {
-    if (row.section !== "account") {
-      return [];
-    }
-    return [
-      {
-        authMethod: requiredSlot(row.account_authMethod),
-        automaticAuthType: row.account_automaticAuthType,
-        connectorId: requiredSlot(row.account_connectorId),
-        connectorSlug: row.account_connectorSlug,
-        customConnectorId: row.account_customConnectorId,
-        storageVersion: requiredSlot(row.account_storageVersion),
-      },
-    ];
+    return row.section === "account" ? [customRuntimeAccountFromRow(row)] : [];
   });
   const storageRows = rows.flatMap((row) => {
-    if (row.section !== "storage") {
-      return [];
-    }
-    return [
-      {
-        id: requiredSlot(row.storage_id),
-        updatedAt: requiredSlot(row.storage_updatedAt),
-        customConnectorId: requiredSlot(row.storage_customConnectorId),
-        storedAuthMethod: requiredSlot(row.storage_storedAuthMethod),
-        storedStorageVersion: requiredSlot(row.storage_storedStorageVersion),
-        storedNeedsReconnect: requiredSlot(row.storage_storedNeedsReconnect),
-        tokenExpiresAt: row.storage_tokenExpiresAt,
-        definitionAuthMethod: requiredSlot(row.storage_definitionAuthMethod),
-        definitionMcpTransport: row.storage_definitionMcpTransport,
-        definitionStorageVersion: requiredSlot(
-          row.storage_definitionStorageVersion,
-        ),
-        oauthAccessTokenId: row.storage_oauthAccessTokenId,
-        oauthRefreshTokenId: row.storage_oauthRefreshTokenId,
-        automaticOAuthBindingId: row.storage_automaticOAuthBindingId,
-        kind: row.storage_kind,
-        key: row.storage_key,
-        storedValue: row.storage_storedValue,
-      },
-    ];
+    return row.section === "storage" ? [customRuntimeStorageFromRow(row)] : [];
   });
   const valuesByAccountId = new Map<
     string,
