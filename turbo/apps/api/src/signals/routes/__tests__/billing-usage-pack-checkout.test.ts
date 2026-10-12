@@ -2118,11 +2118,12 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     ).toHaveBeenCalledWith(checkoutSessionId);
   });
 
-  it("expires a known Checkout without a URL before retrying its snapshot", async () => {
+  it("expires a known Checkout without a URL before replacing its snapshot", async () => {
     const fixture = createOrgFixture();
     authenticateOrg(fixture);
     const customerId = `cus_${randomUUID()}`;
     const sessionId = `cs_${randomUUID()}`;
+    const replacementSessionId = `cs_${randomUUID()}`;
     const checkoutUrl = "https://checkout.stripe.test/recovered-url";
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
       {
@@ -2173,22 +2174,48 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     expect(original).toBeDefined();
 
     context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
-      id: sessionId,
+      id: replacementSessionId,
       url: checkoutUrl,
     });
-    const retried = await accept(client.create({ body, headers }), [200]);
+    const replacementBody = {
+      ...body,
+      memberUsagePacks: [
+        { memberId: fixture.userId, usagePackUsd: 50 as const },
+      ],
+    };
+    const retried = await accept(
+      client.create({ body: replacementBody, headers }),
+      [200],
+    );
     expect(retried.body).toStrictEqual({ url: checkoutUrl });
+    const replacement =
+      context.mocks.stripe.checkout.sessions.create.mock.calls[1];
+    expect(replacement).toBeDefined();
+    expect(replacement?.[1]).not.toStrictEqual(original?.[1]);
     expect(
-      context.mocks.stripe.checkout.sessions.create.mock.calls[1],
-    ).toStrictEqual(original);
+      context.mocks.stripe.checkout.sessions.create,
+    ).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        line_items: [
+          { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
+          { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
+        ],
+      }),
+      expect.objectContaining({
+        idempotencyKey: expect.stringContaining("usage-pack-checkout:"),
+      }),
+    );
     expect(expired).toStrictEqual([sessionId]);
 
     context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
-      id: sessionId,
+      id: replacementSessionId,
       status: "open",
       url: checkoutUrl,
     });
-    const reused = await accept(client.create({ body, headers }), [200]);
+    const reused = await accept(
+      client.create({ body: replacementBody, headers }),
+      [200],
+    );
     expect(reused.body).toStrictEqual(retried.body);
     expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledTimes(
       2,
