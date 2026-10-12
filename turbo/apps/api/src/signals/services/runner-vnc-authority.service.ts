@@ -75,10 +75,11 @@ export const currentRunnerVncAuthority$ = command(
           vncConnections.kerberosRenewableLifetimeSeconds,
         kdcSshGeneration: kdcSsh.generation,
         kdcSshAllowed: runThreadSshAccess(kdcSsh),
-        kdcSshNeedsRebind: sql`(${kdcSsh.transport} = 'cloudflare_access' AND ${kdcSsh.cloudflareAccessId} IS NULL) OR
+        kdcSshNeedsRebind:
+          sql`(${kdcSsh.transport} = 'cloudflare_access' AND ${kdcSsh.cloudflareAccessId} IS NULL) OR
           (${kdcSsh.transport} = 'tailscale' AND ${kdcSsh.tailscaleId} IS NULL)`.mapWith(
-          nullableDriverValueDecoder(pgBooleanDecoder),
-        ),
+            nullableDriverValueDecoder(pgBooleanDecoder),
+          ),
       })
       .from(agentRuns)
       .innerJoin(
