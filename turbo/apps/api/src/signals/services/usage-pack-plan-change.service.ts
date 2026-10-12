@@ -2359,12 +2359,14 @@ const markPreparedChangeApplying$ = command(
     signal: AbortSignal,
   ): Promise<UsagePackSubscriptionChangeRow | null> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0289; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
+    // Keep the original read/publication phase and its two Abort checkpoints.
+    // This block is invoked and awaited here; neither the handle nor an executor
+    // leaves this command.
+    const result = await (async () => {
       // Accepted Plan intent is a real preview -> applying transition. The
       // existing active-org unique index arbitrates Plan operations; observed
       // other money work is checked again in the transition predicate.
-      const [subscription] = await tx
+      const [subscription] = await db
         .select({ id: usagePackSubscriptions.id })
         .from(usagePackSubscriptions)
         .where(
@@ -2379,7 +2381,7 @@ const markPreparedChangeApplying$ = command(
       }
       if (
         (
-          await tx.execute(
+          await db.execute(
             conflictingUsagePackMutationSql({
               subscriptionId: subscription.id,
               planChangeId: args.changeId,
@@ -2389,7 +2391,7 @@ const markPreparedChangeApplying$ = command(
       ) {
         return null;
       }
-      const [root] = await tx
+      const [root] = await db
         .select()
         .from(usagePackSubscriptionChanges)
         .where(
@@ -2412,56 +2414,75 @@ const markPreparedChangeApplying$ = command(
         subscriptionChangeIdentity(root),
         eq(usagePackSubscriptionChanges.status, "previewed"),
       );
+
       if (root.previewExpiresAt <= at) {
-        const [expired] = await tx
-          .update(usagePackSubscriptionChanges)
-          .set({
-            status: "failed",
-            failureReason: "preview_expired",
-            completedAt: at,
-            updatedAt: at,
-          })
-          .where(previewedRoot)
-          .returning({ id: usagePackSubscriptionChanges.id });
-        if (expired) {
-          await tx
-            .update(usagePackAllocationChanges)
+        const expired = db.$with("expired_plan_change").as(
+          db
+            .update(usagePackSubscriptionChanges)
             .set({
               status: "failed",
               failureReason: "preview_expired",
               completedAt: at,
               updatedAt: at,
             })
-            .where(
-              eq(usagePackAllocationChanges.subscriptionChangeId, root.id),
-            );
-        }
-        return null;
-      }
-      const [updated] = await tx
-        .update(usagePackSubscriptionChanges)
-        .set({ status: "applying", updatedAt: at })
-        .where(
-          and(
-            previewedRoot,
-            sql`NOT EXISTS (${conflictingUsagePackMutationSql({ subscriptionId: subscription.id, planChangeId: args.changeId })})`,
-          ),
-        )
-        .returning();
-      if (!updated) {
-        return null;
-      }
-      await tx
-        .update(usagePackAllocationChanges)
-        .set({ status: "applying", updatedAt: at })
-        .where(
-          and(
-            eq(usagePackAllocationChanges.subscriptionChangeId, root.id),
-            eq(usagePackAllocationChanges.status, "previewed"),
-          ),
+            .where(previewedRoot)
+            .returning({ id: usagePackSubscriptionChanges.id }),
         );
-      return updated ?? null;
-    });
+        await db
+          .with(expired)
+          .update(usagePackAllocationChanges)
+          .set({
+            status: "failed",
+            failureReason: "preview_expired",
+            completedAt: at,
+            updatedAt: at,
+          })
+          .from(expired)
+          .where(
+            eq(usagePackAllocationChanges.subscriptionChangeId, expired.id),
+          );
+        return null;
+      }
+      const applying = db.$with("applying_plan_change").as(
+        db
+          .update(usagePackSubscriptionChanges)
+          .set({ status: "applying", updatedAt: at })
+          .where(
+            and(
+              previewedRoot,
+              sql`NOT EXISTS (${conflictingUsagePackMutationSql({ subscriptionId: subscription.id, planChangeId: args.changeId })})`,
+            ),
+          )
+          .returning(),
+      );
+      const applyingChildren = db.$with("applying_plan_children").as(
+        db
+          .update(usagePackAllocationChanges)
+          .set({ status: "applying", updatedAt: at })
+          .from(applying)
+          .where(
+            and(
+              eq(usagePackAllocationChanges.subscriptionChangeId, applying.id),
+              eq(usagePackAllocationChanges.status, "previewed"),
+            ),
+          )
+          .returning({ id: usagePackAllocationChanges.id }),
+      );
+      // Only the parent's actual RETURNING owns these children. Exhaust their
+      // mutation even when it returns zero rows, while decoding the complete root
+      // through its schema columns. No new cancellation boundary splits the write.
+      const [updated] = await db
+        .with(applying, applyingChildren)
+        .select()
+        .from(applying)
+        .crossJoin(
+          db
+            .select({ total: count().as("total") })
+            .from(applyingChildren)
+            .as("exhausted_plan_children"),
+        );
+      return updated?.applying_plan_change ?? null;
+    })();
     signal.throwIfAborted();
     return result;
   },
