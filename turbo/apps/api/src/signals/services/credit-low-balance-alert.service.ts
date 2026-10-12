@@ -59,11 +59,13 @@ function membershipUserId(
   return membership.publicUserData?.userId;
 }
 
-async function refreshOrgMemberCache(
-  db: Db,
+const refreshOrgMemberCache$ = command(async function refreshOrgMemberCache(
+  { set },
   orgId: string,
   memberships: readonly OrganizationMembership[],
+  signal: AbortSignal,
 ): Promise<void> {
+  const db = set(writeDb$);
   const cachedAt = nowDate();
   const rowsByUserId = new Map<string, OrgMemberCacheRow>();
   for (const membership of memberships) {
@@ -115,7 +117,8 @@ async function refreshOrgMemberCache(
 
     await tx.delete(orgMembersCache).where(eq(orgMembersCache.orgId, orgId));
   });
-}
+  signal.throwIfAborted();
+});
 
 function adminUserIds(
   memberships: readonly OrganizationMembership[],
@@ -244,7 +247,7 @@ export const enqueueCreditLowBalanceAlert$ = command(
       createClerkReadContext(),
       signal,
     );
-    await refreshOrgMemberCache(db, args.orgId, memberships);
+    await set(refreshOrgMemberCache$, args.orgId, memberships, signal);
     signal.throwIfAborted();
 
     const userIds = adminUserIds(memberships);
