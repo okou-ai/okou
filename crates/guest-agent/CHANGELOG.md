@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.106.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.106.0...guest-agent-v0.106.1) (2026-10-12)
+
+
+### Refactoring
+
+* **runner:** retire workspace protocol and application sql ([#38837](https://github.com/okou-ai/okou/issues/38837)) ([a932f1f](https://github.com/okou-ai/okou/commit/a932f1f86ae10eb624fa3ff3bccc851ba4809a7e))
+
 ## [0.106.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.105.2...guest-agent-v0.106.0) (2026-10-11)
 
 

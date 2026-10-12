@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.4...runner-provider-v0.7.5) (2026-10-12)
+
+
+### Refactoring
+
+* **runner:** retire workspace protocol and application sql ([#38837](https://github.com/okou-ai/okou/issues/38837)) ([a932f1f](https://github.com/okou-ai/okou/commit/a932f1f86ae10eb624fa3ff3bccc851ba4809a7e))
+
 ## [0.7.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.3...runner-provider-v0.7.4) (2026-10-11)
 
 ## [0.7.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.2...runner-provider-v0.7.3) (2026-10-11)

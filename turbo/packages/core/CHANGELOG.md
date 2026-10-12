@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.742.2](https://github.com/okou-ai/okou/compare/core-v8.742.1...core-v8.742.2) (2026-10-12)
+
+
+### Refactoring
+
+* **runner:** retire workspace protocol and application sql ([#38837](https://github.com/okou-ai/okou/issues/38837)) ([a932f1f](https://github.com/okou-ai/okou/commit/a932f1f86ae10eb624fa3ff3bccc851ba4809a7e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.551.1
+
 ## [8.742.1](https://github.com/okou-ai/okou/compare/core-v8.742.0...core-v8.742.1) (2026-10-11)
 
 

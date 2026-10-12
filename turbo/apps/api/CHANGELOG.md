@@ -9,6 +9,43 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.727.2](https://github.com/okou-ai/okou/compare/api-v1.727.1...api-v1.727.2) (2026-10-12)
+
+
+### Refactoring
+
+* **api:** apply chat desktop authorization in one statement ([#39130](https://github.com/okou-ai/okou/issues/39130)) ([f01a33a](https://github.com/okou-ai/okou/commit/f01a33a88edd6da4c281b6542e52b2f7026ef4ef))
+* **api:** capture export message pages in one bounded select ([#39128](https://github.com/okou-ai/okou/issues/39128)) ([2532ef5](https://github.com/okou-ai/okou/commit/2532ef5b6f3ee76af7ff971a24f63b07c4f43d78))
+* **api:** initialize member memory in one atomic statement ([#39118](https://github.com/okou-ai/okou/issues/39118)) ([a5755f2](https://github.com/okou-ai/okou/commit/a5755f2935311ffb3fc78fb89017aecf130c5778))
+* **api:** own computer use host directory reads ([#39081](https://github.com/okou-ai/okou/issues/39081)) ([b1f4a50](https://github.com/okou-ai/okou/commit/b1f4a50cb5384843623e12371a09160241aea3a7))
+* **api:** own computer use screenshot reads ([#39096](https://github.com/okou-ai/okou/issues/39096)) ([884bcf7](https://github.com/okou-ai/okou/commit/884bcf7eb313ace7cc4d5142bbd266378bc00e01))
+* **api:** own computer use timeout and audit actions ([#39075](https://github.com/okou-ai/okou/issues/39075)) ([c5942aa](https://github.com/okou-ai/okou/commit/c5942aa3612406a33cd2d9b61d65b739aa97b064))
+* **api:** publish lazy workflow threads in one statement ([#39120](https://github.com/okou-ai/okou/issues/39120)) ([838b530](https://github.com/okou-ai/okou/commit/838b530b53ae076c6ea970a08f05f4fff25d1f7e))
+* **api:** remove morning brief timezone transaction ([#39100](https://github.com/okou-ai/okou/issues/39100)) ([3ac0d32](https://github.com/okou-ai/okou/commit/3ac0d32df28d716caee53b97b40a35f7b02f5067))
+* **api:** replace pending banking sessions in one statement ([#39133](https://github.com/okou-ai/okou/issues/39133)) ([78247bd](https://github.com/okou-ai/okou/commit/78247bd62dc7388936b63e29fa3717ce09673663))
+* **api:** retire browser authorization transaction ([#39105](https://github.com/okou-ai/okou/issues/39105)) ([73a8f42](https://github.com/okou-ai/okou/commit/73a8f42c9c2e0bdfa2d944dd5698026415adc277)) [#39101](https://github.com/okou-ai/okou/issues/39101)
+* **api:** retire browser profile ownership transaction ([#39111](https://github.com/okou-ai/okou/issues/39111)) ([4a7c873](https://github.com/okou-ai/okou/commit/4a7c8735ed8174fbd1d1043304da3fc8d74f4af1))
+* **api:** retire migration state getter transaction ([#39113](https://github.com/okou-ai/okou/issues/39113)) ([f667435](https://github.com/okou-ai/okou/commit/f667435c439db3e3ad4284a283173ded1fe1fa68))
+* **api:** retire teams computer-use authorization transaction ([#39131](https://github.com/okou-ai/okou/issues/39131)) ([6b3635c](https://github.com/okou-ai/okou/commit/6b3635c54233d5016fa479c61dca3a633af75758))
+* **api:** retire tx-0009 instruction settlement transaction ([#39129](https://github.com/okou-ai/okou/issues/39129)) ([a17b042](https://github.com/okou-ai/okou/commit/a17b042ea43c4d83afbf0bcb2061189ce0fa4f7b))
+* **api:** retire tx-0014 builtin oauth start transaction ([#39080](https://github.com/okou-ai/okou/issues/39080)) ([fd1f4c8](https://github.com/okou-ai/okou/commit/fd1f4c8fae4984333912ffdbed5847dfd7c2f8ed))
+* **api:** retire tx-0015 builtin openid start transaction ([#39087](https://github.com/okou-ai/okou/issues/39087)) ([512c376](https://github.com/okou-ai/okou/commit/512c3764f17b3134755417e22c20986d6bf46215))
+* **api:** retire tx-0070 fresh browser claim transaction ([#39104](https://github.com/okou-ai/okou/issues/39104)) ([d40e6ad](https://github.com/okou-ai/okou/commit/d40e6adb53a93715fa3e6a0cd333f38731d61d54))
+* **api:** retire tx-0192 notion projection repair transaction ([#39095](https://github.com/okou-ai/okou/issues/39095)) ([d526d86](https://github.com/okou-ai/okou/commit/d526d86ac9092772d46ad6308519ee56c4ddbb18))
+* **api:** retire tx-0217 bootstrap preparation transaction ([#39116](https://github.com/okou-ai/okou/issues/39116)) ([6cf72c0](https://github.com/okou-ai/okou/commit/6cf72c0201546acc56e255db843343cdcc8e55c5))
+* **api:** retire workflow copy preparation transaction ([#39110](https://github.com/okou-ai/okou/issues/39110)) ([26a0536](https://github.com/okou-ai/okou/commit/26a05361b52bfa252e0266066f0ed5f6f21da3d8))
+* **runner:** retire workspace protocol and application sql ([#38837](https://github.com/okou-ai/okou/issues/38837)) ([a932f1f](https://github.com/okou-ai/okou/commit/a932f1f86ae10eb624fa3ff3bccc851ba4809a7e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.551.1
+    * @okouai/core bumped to 8.742.2
+    * @okouai/db bumped to 1.331.2
+    * @okouai/pi-agent-runtime bumped to 1.49.9
+
 ## [1.727.1](https://github.com/okou-ai/okou/compare/api-v1.727.0...api-v1.727.1) (2026-10-11)
 
 
