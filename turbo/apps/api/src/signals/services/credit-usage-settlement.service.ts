@@ -1,4 +1,13 @@
-import { OrgCreditExpirationConflict } from "./org-credit-expiration";
+import {
+  OrgCreditExpirationConflict,
+  orgCreditExpirationOutcome,
+  orgCreditExpirationOutcomeRow,
+  orgCreditExpirationSql,
+  pendingOrgCreditExpirationQuery,
+  requireCompleteOrgCreditExpiration,
+} from "./org-credit-expiration";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { eq } from "drizzle-orm";
 import {
   usageCashQueries,
   usageCashExpiryLotsQuery,
@@ -11,7 +20,6 @@ import {
   usagePackOverdraftTransferOutcomeRow as debtRow,
 } from "./usage-pack-overdraft-transfer.service";
 import { parseRawRows as parseRows } from "../../lib/db-raw-rows";
-import { expireOrgCreditsInTransaction } from "./org-credit-expiration.service";
 import {
   usageFinancialPlan,
   type PreparedUsageFinancialPlan,
@@ -109,7 +117,7 @@ const commitUsageBatch$ = command(
   async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
     const { orgId, batch, at } = args;
     const { startedAt, work } = settlementObservation(batch.prices.length);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0122; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: usage claims, credit deductions, debt audit and Social receipts must commit together; single-statement alternative: the dependent validated cash plan and later fresh expiration snapshot require precommit whole-batch rollback.
     const result = await set(writeDb$).transaction(async (tx) => {
       work.lockWaitMs = 0;
       const [job] = args.social
@@ -161,7 +169,27 @@ const commitUsageBatch$ = command(
       const grants = await tx.select().from(cash.grants);
       const deduction = planMemberGrantDeductions(charges.byUser, grants);
       if (deduction.sharedCredits > 0) {
-        await expireOrgCreditsInTransaction(tx, orgId, at);
+        // Cash writers acquire the wallet before grant/expiry-lot locks.
+        await tx
+          .select({ orgId: orgMetadata.orgId })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, orgId))
+          .for("update");
+        const outcome = orgCreditExpirationOutcome(
+          parseRows(
+            orgCreditExpirationOutcomeRow,
+            await tx.execute(orgCreditExpirationSql(orgId, at)),
+          ),
+        );
+        // A later statement snapshot distinguishes remaining expired lots
+        // from a concurrent clear or extension that completed expiration.
+        const [remaining] =
+          outcome.cleared === outcome.expected
+            ? []
+            : await tx
+                .select()
+                .from(pendingOrgCreditExpirationQuery(orgId, at));
+        requireCompleteOrgCreditExpiration(orgId, outcome, remaining);
       }
       requirePackDebt(
         parseRows(debtRow, await tx.execute(packDebtSql({ orgId }, at))),
