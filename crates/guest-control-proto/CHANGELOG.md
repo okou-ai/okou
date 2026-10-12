@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.22.5](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.4...guest-control-proto-v0.22.5) (2026-10-12)
+
+
+### Refactoring
+
+* **runner:** finish home cache cleanup ([#39301](https://github.com/okou-ai/okou/issues/39301)) ([40103fe](https://github.com/okou-ai/okou/commit/40103fe690a91412d3f01841a08dc306d52773f9))
+
+
+### Performance Improvements
+
+* **runner:** restore sessions from verified zstd sources ([#39335](https://github.com/okou-ai/okou/issues/39335)) ([42f118d](https://github.com/okou-ai/okou/commit/42f118dd2aa86e9d22a732a67d9f46a053ca32e8))
+
 ## [0.22.4](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.3...guest-control-proto-v0.22.4) (2026-10-12)
 
 ## [0.22.3](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.2...guest-control-proto-v0.22.3) (2026-10-11)

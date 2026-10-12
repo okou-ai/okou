@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.219](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.218...guest-write-file-v0.1.219) (2026-10-12)
+
+
+### Performance Improvements
+
+* **runner:** restore sessions from verified zstd sources ([#39335](https://github.com/okou-ai/okou/issues/39335)) ([42f118d](https://github.com/okou-ai/okou/commit/42f118dd2aa86e9d22a732a67d9f46a053ca32e8))
+
 ## [0.1.218](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.217...guest-write-file-v0.1.218) (2026-10-12)
 
 ## [0.1.217](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.216...guest-write-file-v0.1.217) (2026-10-11)

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.747.0](https://github.com/okou-ai/okou/compare/core-v8.746.0...core-v8.747.0) (2026-10-12)
+
+
+### Features
+
+* add discoverable personal subscription linking ([#39286](https://github.com/okou-ai/okou/issues/39286)) ([a2da736](https://github.com/okou-ai/okou/commit/a2da7366467ccf6e07a5f626f4d1ad373ed21dcd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.552.2
+
 ## [8.746.0](https://github.com/okou-ai/okou/compare/core-v8.745.0...core-v8.746.0) (2026-10-12)
 
 

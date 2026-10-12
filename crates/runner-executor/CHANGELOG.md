@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.5](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.4...runner-executor-v0.10.5) (2026-10-12)
+
+
+### Performance Improvements
+
+* **runner:** restore sessions from verified zstd sources ([#39335](https://github.com/okou-ai/okou/issues/39335)) ([42f118d](https://github.com/okou-ai/okou/commit/42f118dd2aa86e9d22a732a67d9f46a053ca32e8))
+
 ## [0.10.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.3...runner-executor-v0.10.4) (2026-10-12)
 
 

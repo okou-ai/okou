@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.2.1...guest-tool-exec-v0.3.0) (2026-10-12)
+
+
+### Features
+
+* **pi:** manage background subagents in nested guest task domains ([#38611](https://github.com/okou-ai/okou/issues/38611)) ([72a5d7f](https://github.com/okou-ai/okou/commit/72a5d7f01c854f713efce0c095b50edde6ac889a))
+
 ## [0.2.1](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.2.0...guest-tool-exec-v0.2.1) (2026-10-12)
 
 ## [0.2.0](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.1.121...guest-tool-exec-v0.2.0) (2026-10-11)

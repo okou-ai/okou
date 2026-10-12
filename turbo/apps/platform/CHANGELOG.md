@@ -12,6 +12,29 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1015.0](https://github.com/okou-ai/okou/compare/app-v0.1014.0...app-v0.1015.0) (2026-10-12)
+
+
+### Features
+
+* add discoverable personal subscription linking ([#39286](https://github.com/okou-ai/okou/issues/39286)) ([a2da736](https://github.com/okou-ai/okou/commit/a2da7366467ccf6e07a5f626f4d1ad373ed21dcd))
+
+
+### Bug Fixes
+
+* **app:** center the mobile add account sign-in dialog ([#39350](https://github.com/okou-ai/okou/issues/39350)) ([6ce6d36](https://github.com/okou-ai/okou/commit/6ce6d36f612fd5cbcc0283ee2de3c13cb540bd7c))
+* **app:** keep people table columns accessible on mobile ([#39351](https://github.com/okou-ai/okou/issues/39351)) ([b36b6fd](https://github.com/okou-ai/okou/commit/b36b6fd3f79d74b4614f98fccb7b96731190683a))
+* **platform:** add spaces around english terms and units in chinese copy ([#39352](https://github.com/okou-ai/okou/issues/39352)) ([09caea6](https://github.com/okou-ai/okou/commit/09caea697eb15ce302eb54d4ad4141d19832b936))
+* **platform:** align tailscale management with cloudflare access ([#39320](https://github.com/okou-ai/okou/issues/39320)) ([e82f75a](https://github.com/okou-ai/okou/commit/e82f75a1b6f4016e2982e4273951025dfc02bb92))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.552.2
+    * @okouai/core bumped to 8.747.0
+
 ## [0.1014.0](https://github.com/okou-ai/okou/compare/app-v0.1013.0...app-v0.1014.0) (2026-10-12)
 
 
