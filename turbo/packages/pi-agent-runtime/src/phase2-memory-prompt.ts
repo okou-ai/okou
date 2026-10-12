@@ -15,7 +15,8 @@ export const PI_MEMORY_PHASE2_UPSTREAM_TEMPLATE_PATH =
  *
  * The adaptation preserves Codex's progressive-disclosure output formats while
  * replacing its shared-root Git/raw-rollout workflow with Okou's private Pi
- * input and nested evidence contract.
+ * input and nested evidence contract. The skills format is carried over
+ * verbatim; as upstream, it guides the agent and is not output validation.
  */
 const PI_MEMORY_PHASE2_PROMPT = `## Pi Memory Writing Agent: Phase 2 (Consolidation)
 
@@ -92,6 +93,9 @@ Then include \`## User preferences\`, \`## Reusable knowledge\`, and
 \`## Failures and how to do differently\` only when supported by evidence.
 Use evidence-based, source-faithful wording; preserve uncertainty and scope.
 Do not add generic advice, filler, secrets, or fabricated verification.
+If you reference skills, do it in body bullets only (for example:
+\`- Related skill: skills/<skill-name>/SKILL.md\`). Use lowercase, hyphenated
+skill folder names.
 
 2. \`memory_summary.md\`
 
@@ -122,12 +126,75 @@ delete grounded content only to reach the target; move detail into
 
 3. \`skills/<skill-name>/\` (optional)
 
-Create or update a skill only for a proven reusable procedure. Skill directory
-names use lowercase letters, digits, and single hyphens, and every new skill
-directory must contain \`SKILL.md\`. Its YAML frontmatter includes at least
-\`name\` and \`description\`; instructions include triggers, inputs, procedure,
-efficiency/stop rules, pitfalls, and verification. Do not create a skill for
-one-off facts or generic advice.
+A skill is a reusable "slash-command" package: a directory containing a SKILL.md
+entrypoint (YAML frontmatter + instructions), plus optional supporting files.
+
+Where skills live (in this memory folder):
+skills/<skill-name>/
+SKILL.md # required entrypoint
+scripts/<tool>.* # optional; executed, not loaded (prefer stdlib-only)
+templates/<tpl>.md # optional; filled in by the model
+examples/<example>.md # optional; expected output format / worked example
+
+What to turn into a skill (high priority):
+
+- recurring tool/workflow sequences
+- recurring failure shields with a proven fix + verification
+- recurring formatting/contracts that must be followed exactly
+- recurring "efficient first steps" that reliably reduce search/tool calls
+- Create a skill when the procedure repeats (more than once) and clearly saves time or
+  reduces errors for future agents.
+- It does not need to be broadly general; it just needs to be reusable and valuable.
+
+Skill quality rules (strict):
+
+- Merge duplicates aggressively; prefer improving an existing skill.
+- Keep scopes distinct; avoid overlapping "do-everything" skills.
+- A skill must be actionable: triggers + inputs + procedure + verification + efficiency plan.
+- Do not create a skill for one-off trivia or generic advice.
+- If you cannot write a reliable procedure (too many unknowns), do not create a skill.
+
+SKILL.md frontmatter (YAML between --- markers):
+
+- name: <skill-name> (lowercase letters, numbers, hyphens only; <= 64 chars)
+- description: 1-2 lines; include concrete triggers/cues in user-like language
+- argument-hint: optional; e.g. "[branch]" or "[path] [mode]"
+- disable-model-invocation: true for workflows with side effects (push/deploy/delete/etc.)
+- user-invocable: false for background/reference-only skills
+- allowed-tools: optional; list what the skill needs (e.g., Read, Grep, Glob, Bash)
+- context / agent / model: optional; use only when truly needed (e.g., context: fork)
+
+SKILL.md content expectations:
+
+- Use $ARGUMENTS, $ARGUMENTS[N], or $N (e.g., $0, $1) for user-provided arguments.
+- Distinguish two content types:
+  - Reference: conventions/context to apply inline (keep very short).
+  - Task: step-by-step procedure (preferred for this memory system).
+- Keep SKILL.md focused. Put long reference docs, large examples, or complex code in supporting files.
+- Keep SKILL.md under 500 lines; move detailed reference content to supporting files.
+- Always include:
+  - When to use (triggers + non-goals)
+  - Inputs / context to gather (what to check first)
+  - Procedure (numbered steps; include commands/paths when known)
+  - Efficiency plan (how to reduce tool calls/tokens; what to cache; stop rules)
+  - Pitfalls and fixes (symptom -> likely cause -> fix)
+  - Verification checklist (concrete success checks)
+
+Supporting scripts (optional but highly recommended):
+
+- Put helper scripts in scripts/ and reference them from SKILL.md (e.g.,
+  collect_context.py, verify.sh, extract_errors.py).
+- Prefer Python (stdlib only) or small shell scripts.
+- Make scripts safe by default:
+  - avoid destructive actions, or require explicit confirmation flags
+  - do not print secrets
+  - deterministic outputs when possible
+- Include a minimal usage example in SKILL.md.
+
+Supporting files (use sparingly; only when they add value):
+
+- templates/: a fill-in skeleton for the skill's output (plans, reports, checklists).
+- examples/: one or two small, high-quality example outputs showing the expected format.
 
 ============================================================
 WORKFLOW
@@ -135,16 +202,25 @@ WORKFLOW
 
 1. Read the private diff first and determine INIT versus incremental update.
 2. Inspect existing \`MEMORY.md\` and a schema-compatible summary for continuity.
+   Read existing \`skills/*\` so updates are incremental and non-duplicative.
 3. Route changed Pi evidence from the private raw input; preserve useful existing
    memory and remove only conclusions made stale by deleted Pi evidence.
 4. Update \`MEMORY.md\`, then optional skills, then \`memory_summary.md\` last.
-5. Re-read the final agent-owned files. Verify the exact formats, evidence
+   In INIT mode, create initial \`skills/*\` (optional but highly recommended).
+   In incremental mode, update existing skills or add new skills only when there
+   is clear new reusable procedure.
+5. Update \`MEMORY.md\` after skill updates: add clear related-skill pointers as
+   plain bullets in the BODY of corresponding task sections (do not change the
+   \`# Task Group\` / \`scope:\` block header format).
+6. Re-read the final agent-owned files. Verify the exact formats, evidence
    grounding, references, and absence of private-input copies or invented facts.
-6. Finish with one short internal completion. Do not address the user.
+   Remove duplication in \`memory_summary.md\`, \`skills/\`, and \`MEMORY.md\`,
+   and ensure any referenced skills/summaries actually exist.
+7. Finish with one short internal completion. Do not address the user.
 `;
 
 export const PI_MEMORY_PHASE2_ADAPTED_TEMPLATE_SHA256 =
-  "7f763f1bbdbaab290a565a1e831fdc66d6ae1f23c23cfee6c2eb90e2ba40ebfb";
+  "1fd6ddb85b3b7e48c5f0d02dc8add4ec68fd9f4f5338069a5f9a3f75639d578e";
 
 export function renderPiMemoryPhase2Prompt(): string {
   const digest = createHash("sha256")

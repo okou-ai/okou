@@ -68,6 +68,23 @@ describe("Pi memory Phase 2 prompt", () => {
     }
   });
 
+  it("carries Codex's skills format and skill workflow as guidance", () => {
+    const prompt = renderPiMemoryPhase2Prompt();
+    const requiredBlocks = [
+      "SKILL.md frontmatter (YAML between --- markers):",
+      "- name: <skill-name> (lowercase letters, numbers, hyphens only; <= 64 chars)",
+      "- description: 1-2 lines; include concrete triggers/cues in user-like language",
+      "Skill quality rules (strict):",
+      "`- Related skill: skills/<skill-name>/SKILL.md`",
+      "create initial `skills/*` (optional but highly recommended)",
+      "add clear related-skill pointers",
+      "ensure any referenced skills/summaries actually exist",
+    ];
+    for (const block of requiredBlocks) {
+      expect(prompt).toContain(block);
+    }
+  });
+
   it("states the injection target and the hard byte limit as separate numbers", () => {
     const prompt = renderPiMemoryPhase2Prompt();
     expect(prompt).toContain(
