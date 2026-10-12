@@ -31,7 +31,6 @@ import { db$, writeDb$ } from "../external/db";
 import { getStripeClient } from "../external/stripe-client";
 import { parseBillingPaymentMethodPreviewToken } from "../services/billing-purchase-preview-token.service";
 import {
-  loadOrgPlanCapabilities,
   orgPlanCapabilitiesFromRow,
   runtimeStatusForEntitlement,
 } from "../services/org-plan-entitlement-read.service";
@@ -240,8 +239,7 @@ const inviteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
 
-  const db = get(db$);
-  const capabilities = await loadOrgPlanCapabilities(db, auth.orgId);
+  const capabilities = await get(invitationPurchasePlanCapabilities$);
   signal.throwIfAborted();
   if (capabilities?.status !== "active") {
     return activePlanRequired;
