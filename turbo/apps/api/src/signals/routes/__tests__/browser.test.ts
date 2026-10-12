@@ -2176,6 +2176,78 @@ describe("Browser user-action route", () => {
     expect(temporaryObjects.has(cancelledKey)).toBeFalsy();
   });
 
+  it("preserves stale and cancelled native file requests after their target disappears", async () => {
+    const owned = await setupOwnedNativeFileBrowserScenario();
+    await owned.run(async () => {
+      const { create, state } = await setupNativeFileScenario(owned);
+      const created = await create();
+      const headers = { authorization: "Bearer clerk-session" };
+      const params = { requestToken: created.body.action.requestToken };
+      const pending = await accept(
+        userActionClient().preflight({ headers, params, body: {} }),
+        [200],
+      );
+      expect(pending.body.state).toBe("pending");
+
+      state.missingNode = true;
+      const stale = await accept(
+        userActionClient().preflight({ headers, params, body: {} }),
+        [200],
+      );
+      expect(stale.body.state).toBe("stale");
+      const staleRead = await accept(
+        userActionClient().get({ headers, params }),
+        [200],
+      );
+      expect(staleRead.body.state).toBe("stale");
+      const rejected = [
+        await userActionClient().preflight({ headers, params, body: {} }),
+        await userActionClient().cancel({ headers, params, body: {} }),
+      ];
+      for (const response of rejected) {
+        expect(response).toMatchObject({
+          status: 409,
+          body: { error: { code: "BROWSER_USER_ACTION_CONFLICT" } },
+        });
+      }
+      const stillStale = await accept(
+        userActionClient().get({ headers, params }),
+        [200],
+      );
+      expect(stillStale.body.state).toBe("stale");
+
+      state.missingNode = false;
+      const cancelledCandidate = await create();
+      const cancelledParams = {
+        requestToken: cancelledCandidate.body.action.requestToken,
+      };
+      const cancelled = await accept(
+        userActionClient().cancel({
+          headers,
+          params: cancelledParams,
+          body: {},
+        }),
+        [200],
+      );
+      expect(cancelled.body.state).toBe("cancelled");
+      state.missingNode = true;
+      const cancelledPreflight = await userActionClient().preflight({
+        headers,
+        params: cancelledParams,
+        body: {},
+      });
+      expect(cancelledPreflight).toMatchObject({
+        status: 409,
+        body: { error: { code: "BROWSER_USER_ACTION_CONFLICT" } },
+      });
+      const cancelledRead = await accept(
+        userActionClient().get({ headers, params: cancelledParams }),
+        [200],
+      );
+      expect(cancelledRead.body.state).toBe("cancelled");
+    });
+  });
+
   it.each(["succeeded", "cancelled"] as const)(
     "rejects resubmitting %s native file actions after upload cleanup",
     async (terminalState) => {
