@@ -4,7 +4,7 @@ import {
 } from "@okouai/db/schema/slack-chat-ingress";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, exists, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db$, writeDb$ } from "../external/db";
@@ -251,7 +251,7 @@ export const ensureCanonicalSlackChatThreadRoute$ = command(
       await db.execute(
         integrationThreadCreatedEventSql(args.orgId, thread, {
           cte: sql`inserted_slack_route AS (${routeInsert.getSQL()}), inserted_slack_thread AS (${insertedThread})`,
-          gate: sql`EXISTS (SELECT 1 FROM inserted_slack_thread)`,
+          gate: exists(sql`(SELECT 1 FROM inserted_slack_thread)`),
           agentId: sql`(SELECT agent_id FROM inserted_slack_thread)`,
           result: db.select().from(insertedRoute).getSQL(),
         }),
