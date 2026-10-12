@@ -131,8 +131,8 @@ describe("POST /api/welcome-chat-threads", () => {
   });
 
   it("rejects a claimed credential after the member leaves the organization", async () => {
-    const { actor } = await fixture();
-    const member = bdd.user({ orgId: actor.orgId });
+    const actor = bdd.user();
+    const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     const token = await credentials.okouToken(member);
     await credentials.removeMember(member, actor);
     const clientThreadId = randomUUID();

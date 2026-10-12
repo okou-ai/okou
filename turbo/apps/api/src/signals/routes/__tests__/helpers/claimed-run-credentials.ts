@@ -84,7 +84,16 @@ export function createClaimedRunCredentials(context: TestContext) {
         runs.acceptTelemetryIngest();
         const runnerGroup = runs.configureRunnerGroup();
         mockOptionalEnv("OPENROUTER_API_KEY", "bdd-issued-credential-key");
-        await runs.grantProEntitlement(actor);
+        // Default Agent onboarding requires an administrator. Keep the caller's
+        // member role unchanged when obtaining its own Run credentials.
+        const admin =
+          actor.orgRole === "org:member"
+            ? bdd.user({ orgId: actor.orgId, orgRole: "org:admin" })
+            : actor;
+        await runs.grantProEntitlement(admin);
+        if (admin.userId !== actor.userId) {
+          await bdd.completeOnboarding(actor);
+        }
         await createAuthDeviceSupportApi(context).initializePreferences(actor);
         const agent = await bdd.createAgent(actor, {
           displayName: "API caller credential",

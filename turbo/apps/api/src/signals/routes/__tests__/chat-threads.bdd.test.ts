@@ -1,7 +1,6 @@
 import {
   chatThreadConnectorSelectionContract,
   chatThreadsContract,
-  chatThreadSnapshotArchiveSchema,
   chatThreadUsageContract,
   type ChatEvent,
   type ChatEventUsagePayload,
@@ -547,20 +546,21 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         apiClient.snapshot({ headers: okouHeaders }),
         [200],
       );
-      if (!("url" in snapshot.body)) {
-        throw new Error("Expected a populated thread snapshot archive");
-      }
-      const archive = await fetch(snapshot.body.url);
-      expect(archive.status).toBe(200);
-      const contents = chatThreadSnapshotArchiveSchema.parse(
-        await archive.json(),
-      );
-      expect(contents.chatThreads).toContainEqual(
-        expect.objectContaining({ id: run.threadId, agentId }),
-      );
+      expect(snapshot.body).toStrictEqual({
+        chatThreads: [],
+        latestEventId: null,
+        latestSeqId: null,
+      });
       const events = await accept(
         apiClient.events({ headers: okouHeaders, query: {} }),
         [200],
+      );
+      expect(events.body.events).toContainEqual(
+        expect.objectContaining({
+          kind: "created",
+          chatThreadId: run.threadId,
+          agentId,
+        }),
       );
       createRouteMocks(context).clerk.session(
         actor.userId,
