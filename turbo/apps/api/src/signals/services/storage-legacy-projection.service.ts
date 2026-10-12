@@ -11,26 +11,6 @@ interface RunStorageProjection {
   readonly volumeVersionsSnapshot: LegacyVolumeVersionsSnapshot | null;
 }
 
-export function projectLegacyWritebackArtifacts(
-  mounts: readonly PersistedStorageMount[],
-): readonly ContextArtifact[] {
-  return mounts.flatMap((mount) => {
-    if (!mount.writeback) {
-      return [];
-    }
-    return [
-      {
-        name: mount.name,
-        ...(mount.version === undefined ? {} : { version: mount.version }),
-        mountPath: mount.mountPath,
-        ...(mount.missingRootPolicy === undefined
-          ? {}
-          : { missingRootPolicy: mount.missingRootPolicy }),
-      },
-    ];
-  });
-}
-
 /**
  * Projects launch mounts and writeback outputs into the existing Run result shape.
  */

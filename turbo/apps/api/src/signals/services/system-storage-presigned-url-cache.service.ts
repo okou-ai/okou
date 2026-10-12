@@ -38,8 +38,7 @@ export type StorageManifestPresignedUrlCacheScope = Exclude<
   "presentation_template_preview" | "private_artifact_preview"
 >;
 
-export type StorageManifestCacheBranch =
-  "requested" | "session_writeback" | "captured";
+export type StorageManifestCacheBranch = "requested" | "captured";
 export type StorageManifestCacheEntryKind =
   "compose" | "additional" | "artifact";
 

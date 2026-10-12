@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { artifacts } from "@okouai/db/schema/artifact";

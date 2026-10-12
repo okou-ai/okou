@@ -1,7 +1,7 @@
 import { agentDeletionError } from "@okouai/core/agent-protection";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { conversations } from "@okouai/db/schema/conversation";
 import { blobs } from "@okouai/db/schema/blob";

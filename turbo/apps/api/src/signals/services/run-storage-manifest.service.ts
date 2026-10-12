@@ -63,7 +63,6 @@ import {
   type StorageRequest,
   type StorageVersionIndexEntry,
 } from "./storage-index.service";
-import { projectLegacyWritebackArtifacts } from "./storage-legacy-projection.service";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
 import type {
   StorageManifestCacheBranch,
@@ -91,8 +90,6 @@ interface PrepareAgentRunStorageManifestArgs {
   readonly additionalVolumeSources:
     readonly StorageManifestSource[] | undefined;
   readonly framework: SupportedFramework | "pi";
-  /** Canonical session persistence replaces matching request writeback artifacts. */
-  readonly persistedStorageMounts?: readonly PersistedStorageMount[];
   readonly timing?: ApiDispatchTimingCollector;
   readonly stats?: StorageManifestBuildStats;
 }
@@ -151,17 +148,15 @@ interface ResolvedStorageEntries {
   readonly resolved: ResolvedStorageManifestEntryPlans;
 }
 
-/** One immutable selection per attempt, including canonical session writeback. */
+/** One immutable storage selection per Run preparation attempt. */
 export interface ResolvedAgentRunStorage {
   readonly metadata: PreparedAgentRunStorage<StorageMountMetadata>;
   readonly requested: ResolvedStorageEntries;
-  readonly sessionWriteback: ResolvedStorageEntries | undefined;
 }
 
 /** Read-only selection. Missing writeback roots are initialized by materialization. */
 export interface AgentRunStoragePlan {
   readonly requested: ResolvedStorageEntries;
-  readonly sessionWriteback: ResolvedStorageEntries | undefined;
   readonly missingArtifacts: readonly ContextArtifact[];
 }
 
@@ -1184,12 +1179,6 @@ export function storageEntriesMetadata(
   };
 }
 
-function persistedMountIdentity(
-  mount: Pick<PersistedStorageMount, "name" | "mountPath">,
-): string {
-  return JSON.stringify([mount.name, mount.mountPath]);
-}
-
 export function assertUniquePersistedMountPaths(
   mounts: readonly PersistedStorageMount[],
 ): void {
@@ -1298,10 +1287,7 @@ export function resolveValidatedPersistedStorageMounts(args: {
   readonly bucket: string;
   readonly storageIndex: StorageIndex;
   readonly mounts: readonly PersistedStorageMount[];
-  readonly branch: Extract<
-    StorageManifestCacheBranch,
-    "session_writeback" | "captured"
-  >;
+  readonly branch: "captured";
   readonly timing?: ApiDispatchTimingCollector;
   readonly stats?: StorageManifestBuildStats;
 }): ResolvedStorageEntries {
@@ -1345,93 +1331,6 @@ export function resolveValidatedPersistedStorageMounts(args: {
     throw result.error;
   }
   return result.ok;
-}
-
-export function resolveSessionWritebackStorageMounts(args: {
-  readonly db: ReadonlyDb;
-  readonly bucket: string;
-  readonly storageIndex: StorageIndex;
-  readonly mounts: readonly PersistedStorageMount[];
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly stats?: StorageManifestBuildStats;
-}): ResolvedStorageEntries {
-  assertUniquePersistedMountPaths(args.mounts);
-  return resolveValidatedPersistedStorageMounts({
-    ...args,
-    branch: "session_writeback",
-  });
-}
-
-export function combinePreparedStorageEntries<
-  TMount extends StorageMountMetadata,
->(args: {
-  readonly requested: PreparedStorageEntries<TMount>;
-  readonly sessionWriteback: PreparedStorageEntries<TMount>;
-}): PreparedStorageEntries<TMount> {
-  return {
-    composeEntries: args.requested.composeEntries,
-    additionalEntries: [
-      ...args.requested.additionalEntries,
-      ...args.sessionWriteback.additionalEntries,
-    ],
-    writebackEntries: [
-      ...args.requested.writebackEntries,
-      ...args.sessionWriteback.writebackEntries,
-    ],
-    resolvedComposeEntryCount: args.requested.resolvedComposeEntryCount,
-    resolvedAdditionalEntryCount:
-      args.requested.resolvedAdditionalEntryCount +
-      args.sessionWriteback.resolvedAdditionalEntryCount,
-  };
-}
-
-interface SessionStorageOverlay {
-  readonly canonicalWritebackMounts: readonly PersistedStorageMount[];
-  readonly remainingArtifacts: readonly ContextArtifact[];
-}
-
-export function resolveSessionStorageOverlay(args: {
-  readonly artifacts: readonly ContextArtifact[];
-  readonly persistedStorageMounts: readonly PersistedStorageMount[] | undefined;
-}): SessionStorageOverlay {
-  const canonicalWritebackByIdentity = new Map(
-    (args.persistedStorageMounts ?? []).map((mount) => {
-      if (!mount.writeback) {
-        throw new Error(
-          "Session Storage persistence may only contain writeback mounts",
-        );
-      }
-      return [persistedMountIdentity(mount), mount] as const;
-    }),
-  );
-  const canonicalWritebackMounts = args.artifacts.flatMap((artifact) => {
-    const mount = canonicalWritebackByIdentity.get(
-      persistedMountIdentity(artifact),
-    );
-    if (!mount) {
-      return [];
-    }
-    const {
-      version: _storedVersion,
-      missingRootPolicy: _storedMissingRootPolicy,
-      ...mountBase
-    } = mount;
-    return [
-      {
-        ...mountBase,
-        ...(artifact.version === undefined
-          ? {}
-          : { version: artifact.version }),
-        ...(artifact.missingRootPolicy === undefined
-          ? {}
-          : { missingRootPolicy: artifact.missingRootPolicy }),
-      },
-    ];
-  });
-  const remainingArtifacts = args.artifacts.filter((artifact) => {
-    return !canonicalWritebackByIdentity.has(persistedMountIdentity(artifact));
-  });
-  return { canonicalWritebackMounts, remainingArtifacts };
 }
 
 export function prepareRequestStorageResolution(
@@ -1490,8 +1389,6 @@ export type AgentRunStorageSelection =
       readonly args: PrepareAgentRunStorageManifestArgs;
       readonly bucket: string;
       readonly request: PreparedRequestStorageResolution;
-      readonly remainingArtifacts: readonly ContextArtifact[];
-      readonly canonicalWritebackMounts: readonly PersistedStorageMount[];
       readonly requests: readonly StorageRequest[];
     }
   | {
@@ -1507,21 +1404,6 @@ function frameworkSkillsMountPath(framework: SupportedFramework): string {
     : `${CANONICAL_CLAUDE_CONFIG_DIR}/skills`;
 }
 
-export function resolvedSessionStorage(session: {
-  readonly id: string;
-  readonly storageMounts: readonly PersistedStorageMount[] | null;
-}): Pick<ResolvedAgentExecution, "artifacts" | "persistedStorageMounts"> {
-  if (session.storageMounts === null) {
-    throw new Error(
-      `Agent session "${session.id}" is missing canonical Storage mounts`,
-    );
-  }
-  return {
-    artifacts: projectLegacyWritebackArtifacts(session.storageMounts),
-    persistedStorageMounts: session.storageMounts,
-  };
-}
-
 function skillsRootForRun(
   framework: SupportedFramework,
   piSandbox: PiModelConfig | undefined,
@@ -1531,14 +1413,9 @@ function skillsRootForRun(
     : PI_SKILLS_ROOT;
 }
 
-export type RunStorageExecution = Pick<
+type RunStorageExecution = Pick<
   ResolvedRunExecution,
-  | "orgId"
-  | "instructionsStorageName"
-  | "artifacts"
-  | "agentSessionId"
-  | "persistedStorageMounts"
-  | "additionalVolumes"
+  "orgId" | "instructionsStorageName" | "additionalVolumes"
 >;
 
 /**
@@ -1640,9 +1517,7 @@ export interface ResolvedAgentExecution {
   readonly agentId: string;
   readonly ownerUserId: string;
   readonly orgId: string;
-  readonly artifacts: readonly AgentRunCreateContextArtifact[];
   readonly additionalVolumes?: readonly AgentRunCreateAdditionalVolume[];
-  readonly persistedStorageMounts?: readonly PersistedStorageMount[];
   readonly agentSessionId?: string;
   readonly continuedFromAgentSessionId?: string;
   readonly resumeSession?: StoredExecutionContext["resumeSession"];
@@ -1684,19 +1559,11 @@ function autoMemoryMountPath(
 }
 
 function artifactsForRun(args: {
-  readonly resolved: Pick<ResolvedRunExecution, "artifacts">;
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
 }): RunArtifacts {
   return {
     artifacts: [
-      ...args.resolved.artifacts.filter((artifact) => {
-        return (
-          artifact.name !== AUTO_MEMORY_ARTIFACT_NAME &&
-          artifact.mountPath !==
-            autoMemoryMountPath(args.framework, args.piSandbox)
-        );
-      }),
       {
         name: AUTO_MEMORY_ARTIFACT_NAME,
         mountPath: autoMemoryMountPath(args.framework, args.piSandbox),
@@ -1757,7 +1624,6 @@ export function prepareRunOutputMetadata(args: {
     resolved: args.resolved,
   });
   const artifacts = artifactsForRun({
-    resolved: args.resolved,
     framework: args.framework,
     piSandbox: args.piSandbox,
   }).artifacts;
@@ -1777,11 +1643,11 @@ export function prepareRunOutputMetadata(args: {
   };
 }
 
-export type ArtifactMissingRootPolicy = NonNullable<
+type ArtifactMissingRootPolicy = NonNullable<
   StorageMountEntry["missingRootPolicy"]
 >;
 
-export interface AgentRunCreateContextArtifact {
+interface AgentRunCreateContextArtifact {
   readonly name: string;
   readonly version?: string;
   readonly mountPath: string;

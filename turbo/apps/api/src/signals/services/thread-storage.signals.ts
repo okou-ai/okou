@@ -3,9 +3,7 @@ import { computed, type Computed } from "ccstate";
 import { env } from "../../lib/env";
 import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
-import type { BootstrapAgent } from "./agent-data.service";
 import { measureApiDispatchTiming } from "./api-dispatch-timing.service";
-import type { ChatThreadSessionResolution } from "./chat-session-continuity.service";
 import {
   createResolvedExecutionStorageObjects,
   type ExecutionStorageRequest,
@@ -17,20 +15,15 @@ import {
   type AgentRunStoragePlan,
   type AgentRunStorageSelection,
   assertUniquePersistedMountPaths,
-  combinePreparedStorageEntries,
   finalizePreparedStorage,
   loadStorageBaseIndex,
   type MaterializedAgentRunStorage,
   persistedStorageMountRequests,
   prepareRequestStorageResolution,
   prepareRunOutputMetadata,
-  resolvedSessionStorage,
-  resolveSessionStorageOverlay,
-  resolveSessionWritebackStorageMounts,
   resolveStorageEntries,
   resolveStorageManifestInputs,
   resolveValidatedPersistedStorageMounts,
-  type RunStorageExecution,
   StorageManifestBuildStats,
   storageEntriesMetadata,
   storageIndexKey,
@@ -66,7 +59,7 @@ export type SkillVolumeSource = Computed<
 >;
 
 /**
- * The Run's storage from its Agent, session, model and skill volumes: resolved
+ * The Run's storage from its current Agent, model and skill volumes: resolved
  * versions, mounts, writeback targets and signed URLs.
  */
 export function createStorageSignals(
@@ -146,7 +139,6 @@ export function createStorageSignals(
       resolved: {
         metadata: selected.metadata,
         requested: selected.plan.requested,
-        sessionWriteback: selected.plan.sessionWriteback,
       },
       prepared,
       presignedUrlCache: { mounts: storage.mounts, prepared: mounts },
@@ -164,7 +156,6 @@ function createStorageInputSignal(
     const [
       event,
       agent,
-      session,
       framework,
       modelProvider,
       selection,
@@ -174,7 +165,6 @@ function createStorageInputSignal(
     ] = await Promise.all([
       get(pickedEvent$),
       get(bootstrap.agent$),
-      get(threadContext.threadSession$),
       get(threadContext.providerFramework$),
       get(threadContext.modelRoute$),
       get(threadContext.subscriptionSelection$),
@@ -196,7 +186,10 @@ function createStorageInputSignal(
     ) {
       throw new Error("Run storage requires an admitted model selection");
     }
-    const resolved = sessionStorageExecution(agent, session ?? undefined);
+    const resolved = {
+      orgId: agent.orgId,
+      instructionsStorageName: getInstructionsStorageName(agent.name),
+    };
     const piSandbox = resolvePreparedPiModelConfig({
       input: {
         catalog,
@@ -228,35 +221,11 @@ function createStorageInputSignal(
         additionalVolumes: metadata.additionalVolumes,
         additionalVolumeSources: metadata.additionalVolumeSources,
         framework: piSandbox === undefined ? framework : "pi",
-        persistedStorageMounts: resolved.persistedStorageMounts,
         timing: get(threadContext.dispatchTiming$),
         stats: new StorageManifestBuildStats(),
       },
     };
   });
-}
-
-/** Storage from the session the run continues, or the Agent's base storage. */
-function sessionStorageExecution(
-  agent: Pick<BootstrapAgent, "orgId" | "name">,
-  session: ChatThreadSessionResolution | undefined,
-): RunStorageExecution {
-  const common = {
-    orgId: agent.orgId,
-    instructionsStorageName: getInstructionsStorageName(agent.name),
-  };
-  if (!session?.sessionId) {
-    return { ...common, artifacts: [] };
-  }
-  const snapshot = session.executionSnapshot;
-  if (!snapshot?.agent) {
-    throw new Error("Run storage requires the continued session and Agent");
-  }
-  return {
-    ...common,
-    ...resolvedSessionStorage(snapshot.session),
-    agentSessionId: session.sessionId,
-  };
 }
 
 type StorageInput$ = ReturnType<typeof createStorageInputSignal>;
@@ -291,28 +260,18 @@ function createStorageIndexSignals(
       const { artifacts, composeVolumes } = await resolveStorageManifestInputs(
         input.args,
       );
-      const { canonicalWritebackMounts, remainingArtifacts } =
-        resolveSessionStorageOverlay({
-          artifacts,
-          persistedStorageMounts: input.args.persistedStorageMounts,
-        });
       const request = prepareRequestStorageResolution(
         input.args,
         bucket,
         composeVolumes,
-        remainingArtifacts,
+        artifacts,
       );
       return {
         kind: "requested",
         args: input.args,
         bucket,
         request,
-        remainingArtifacts,
-        canonicalWritebackMounts,
-        requests: [
-          ...request.requests,
-          ...persistedStorageMountRequests(canonicalWritebackMounts),
-        ],
+        requests: request.requests,
       };
     },
   );
@@ -386,11 +345,10 @@ function createStoragePlanSignals(
               storageIndex,
               branch: "captured",
             }),
-            sessionWriteback: undefined,
             missingArtifacts: [],
           };
         }
-        const missingArtifacts = selection.remainingArtifacts.filter(
+        const missingArtifacts = selection.request.input.artifacts.filter(
           (artifact) => {
             const entry = storageIndex.get(
               storageIndexKey(
@@ -407,37 +365,24 @@ function createStoragePlanSignals(
             return artifact.name;
           }),
         );
-        const [requested, sessionWriteback] = await Promise.all([
-          resolveStorageEntries(
-            {
-              ...selection.request.input,
-              artifacts: selection.remainingArtifacts.filter((artifact) => {
-                return !missingNames.has(artifact.name);
-              }),
-              storageIndex,
-            },
-            "requested",
-          ),
-          selection.canonicalWritebackMounts.length === 0
-            ? undefined
-            : resolveSessionWritebackStorageMounts({
-                db: selection.args.db,
-                bucket: selection.bucket,
-                storageIndex,
-                mounts: selection.canonicalWritebackMounts,
-                timing: selection.args.timing,
-                stats: selection.args.stats,
-              }),
-        ]);
+        const requested = await resolveStorageEntries(
+          {
+            ...selection.request.input,
+            artifacts: selection.request.input.artifacts.filter((artifact) => {
+              return !missingNames.has(artifact.name);
+            }),
+            storageIndex,
+          },
+          "requested",
+        );
         return {
           requested: {
             ...requested,
             input: {
               ...requested.input,
-              artifacts: selection.remainingArtifacts,
+              artifacts: selection.request.input.artifacts,
             },
           },
-          sessionWriteback,
           missingArtifacts,
         };
       },
@@ -462,13 +407,7 @@ function createStorageObjectSignals(
           .join(", ")}`,
       );
     }
-    const entries =
-      plan.sessionWriteback === undefined
-        ? storageEntriesMetadata(plan.requested)
-        : combinePreparedStorageEntries({
-            requested: storageEntriesMetadata(plan.requested),
-            sessionWriteback: storageEntriesMetadata(plan.sessionWriteback),
-          });
+    const entries = storageEntriesMetadata(plan.requested);
     const metadata = await finalizePreparedStorage({ entries });
     return { plan, entries, metadata };
   });
@@ -502,10 +441,7 @@ function createStorageObjectSignals(
             };
       },
     );
-    const storageIndex = mergeStorageIndexes(
-      selected.plan.requested.input.storageIndex,
-      selected.plan.sessionWriteback?.input.storageIndex ?? new Map(),
-    );
+    const storageIndex = selected.plan.requested.input.storageIndex;
     const cache = await get(threadContext.storageCache$);
     const versions = exactStorageVersionsFromIndex(mounts, storageIndex);
     const rows = [
