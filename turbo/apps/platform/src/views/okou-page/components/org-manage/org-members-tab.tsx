@@ -115,6 +115,10 @@ function memberRowGrid(showUsagePack: boolean): string {
   );
 }
 
+function memberTableMinWidth(showUsagePack: boolean): string {
+  return showUsagePack ? "min-w-[48rem]" : "min-w-[34rem]";
+}
+
 function MembersTableHeader({ showUsagePack }: { showUsagePack: boolean }) {
   const { t } = useTranslation();
   return (
@@ -230,9 +234,9 @@ export function OrgMembersTab() {
   })();
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
+      <div className="flex shrink-0 items-center gap-3">
+        <div className="relative min-w-0 flex-1">
           <Search
             size={15}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60"
@@ -257,23 +261,91 @@ export function OrgMembersTab() {
         )}
       </div>
 
-      <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
-        <MembersTableHeader showUsagePack={showUsagePack} />
-        <div className="h-0 border-t border-t-gray-400 mx-5" />
+      <div className="isolate min-h-0 overflow-auto scroll-pt-12 rounded-xl bg-card border border-surface-border">
+        <div className={memberTableMinWidth(showUsagePack)}>
+          <MembersTableHeader showUsagePack={showUsagePack} />
+          <div className="h-0 border-t border-t-gray-400 mx-5" />
 
-        {isLoading && (
-          <>
-            <MemberRowSkeleton showUsagePack={showUsagePack} />
-            <MemberRowSkeleton showUsagePack={showUsagePack} />
-            <MemberRowSkeleton showUsagePack={showUsagePack} />
-          </>
-        )}
+          {isLoading && (
+            <>
+              <MemberRowSkeleton showUsagePack={showUsagePack} />
+              <MemberRowSkeleton showUsagePack={showUsagePack} />
+              <MemberRowSkeleton showUsagePack={showUsagePack} />
+            </>
+          )}
 
+          {!isLoading && membershipRequests.length > 0 && (
+            <>
+              <div className="px-5 pt-3 pb-1">
+                <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <UserPlus size={13} />
+                  {t(($) => {
+                    return $.settings.workspace.members.joinRequests;
+                  })}
+                </span>
+              </div>
+              {membershipRequests.map((req, i) => {
+                return (
+                  <div key={req.id}>
+                    {i > 0 && (
+                      <div className="h-0 border-t border-t-gray-400 mx-5" />
+                    )}
+                    <MembershipRequestRow
+                      request={req}
+                      showUsagePack={showUsagePack}
+                    />
+                  </div>
+                );
+              })}
+              <div className="h-0 border-t border-t-gray-400 mx-5" />
+            </>
+          )}
+
+          {!isLoading &&
+            filtered.map((m, i) => {
+              return (
+                <div key={m.userId}>
+                  {(i > 0 || membershipRequests.length > 0) && (
+                    <div className="h-0 border-t border-t-gray-400 mx-5" />
+                  )}
+                  <MemberRow
+                    member={m}
+                    isCurrentUser={m.userId === currentUserId}
+                    isAdmin={isAdmin}
+                    isOnlyAdmin={adminCount < 2}
+                    showUsagePack={showUsagePack}
+                    usagePackManagement={usagePackManagement}
+                    usagePackAllocation={
+                      usagePackAllocationByMemberId.get(m.userId) ?? null
+                    }
+                  />
+                </div>
+              );
+            })}
+
+          {!isLoading &&
+            filteredPending.map((inv, i) => {
+              return (
+                <div key={inv.id}>
+                  {(i > 0 ||
+                    filtered.length > 0 ||
+                    membershipRequests.length > 0) && (
+                    <div className="h-0 border-t border-t-gray-400 mx-5" />
+                  )}
+                  <PendingInvitationRow
+                    invitation={inv}
+                    isAdmin={isAdmin}
+                    showUsagePack={showUsagePack}
+                  />
+                </div>
+              );
+            })}
+        </div>
         {!isLoading &&
           filtered.length === 0 &&
           filteredPending.length === 0 &&
           membershipRequests.length === 0 && (
-            <div className="flex items-center justify-center py-12">
+            <div className="sticky left-0 flex items-center justify-center py-12">
               <span className="text-sm text-muted-foreground">
                 {search.trim()
                   ? t(($) => {
@@ -285,73 +357,6 @@ export function OrgMembersTab() {
               </span>
             </div>
           )}
-
-        {!isLoading && membershipRequests.length > 0 && (
-          <>
-            <div className="px-5 pt-3 pb-1">
-              <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                <UserPlus size={13} />
-                {t(($) => {
-                  return $.settings.workspace.members.joinRequests;
-                })}
-              </span>
-            </div>
-            {membershipRequests.map((req, i) => {
-              return (
-                <div key={req.id}>
-                  {i > 0 && (
-                    <div className="h-0 border-t border-t-gray-400 mx-5" />
-                  )}
-                  <MembershipRequestRow
-                    request={req}
-                    showUsagePack={showUsagePack}
-                  />
-                </div>
-              );
-            })}
-            <div className="h-0 border-t border-t-gray-400 mx-5" />
-          </>
-        )}
-
-        {!isLoading &&
-          filtered.map((m, i) => {
-            return (
-              <div key={m.userId}>
-                {(i > 0 || membershipRequests.length > 0) && (
-                  <div className="h-0 border-t border-t-gray-400 mx-5" />
-                )}
-                <MemberRow
-                  member={m}
-                  isCurrentUser={m.userId === currentUserId}
-                  isAdmin={isAdmin}
-                  isOnlyAdmin={adminCount < 2}
-                  showUsagePack={showUsagePack}
-                  usagePackManagement={usagePackManagement}
-                  usagePackAllocation={
-                    usagePackAllocationByMemberId.get(m.userId) ?? null
-                  }
-                />
-              </div>
-            );
-          })}
-
-        {!isLoading &&
-          filteredPending.map((inv, i) => {
-            return (
-              <div key={inv.id}>
-                {(i > 0 ||
-                  filtered.length > 0 ||
-                  membershipRequests.length > 0) && (
-                  <div className="h-0 border-t border-t-gray-400 mx-5" />
-                )}
-                <PendingInvitationRow
-                  invitation={inv}
-                  isAdmin={isAdmin}
-                  showUsagePack={showUsagePack}
-                />
-              </div>
-            );
-          })}
       </div>
     </div>
   );
