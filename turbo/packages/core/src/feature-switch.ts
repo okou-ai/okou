@@ -385,6 +385,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Anchor slash and mention suggestions above the full composer, with the highest-priority candidate at the bottom and no template preview flyout on mobile.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.DeliveryFormatGuidance]: {
     maintainer: "bingjie@okou.ai",
