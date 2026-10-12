@@ -1,5 +1,5 @@
+import { desktopResponseTransforms } from "@okouai/api-contracts/client-transforms/desktop";
 import { selectClientResponseTransforms } from "@okouai/api-contracts/client-transforms/select";
-import type { ClientResponseTransform } from "@okouai/api-contracts/client-transforms/types";
 import {
   CLIENT_TYPE_HEADER,
   CLIENT_VERSION_HEADER,
@@ -35,8 +35,6 @@ export type JsonResponseObserver = (
 
 interface HonoSignalHandlerOptions {
   readonly initializeServices$: Command<void, []>;
-
-  readonly clientResponseTransforms: readonly ClientResponseTransform[];
 
   readonly observeJsonResponse?: JsonResponseObserver;
 }
@@ -127,8 +125,6 @@ export function honoSignalHandler(
   {
     initializeServices$,
 
-    clientResponseTransforms,
-
     observeJsonResponse,
   }: HonoSignalHandlerOptions,
 ): Handler {
@@ -181,7 +177,7 @@ export function honoSignalHandler(
     // contract by design, so it is not validated again. Both serialization
     // paths below send, and observe, the transformed body.
     const body = selectClientResponseTransforms({
-      transforms: clientResponseTransforms,
+      transforms: desktopResponseTransforms,
       client: context.req.header(CLIENT_TYPE_HEADER),
       version: context.req.header(CLIENT_VERSION_HEADER),
       method: contract.method,
