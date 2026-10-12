@@ -1,14 +1,15 @@
 import { computed, type Computed } from "ccstate";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
+import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { and, desc, eq, gt, lte, sql, sum } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lte, sql, sum } from "drizzle-orm";
 
 import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
 import {
-  activeConcurrencySubscriptions,
+  activeConcurrencySubscriptionPredicate,
   cappedBaseConcurrencyLimit,
   totalConcurrencyLimit,
   type ActiveConcurrencySubscription,
@@ -464,6 +465,58 @@ function billingPlanStatus(
   return capabilities?.status ?? "suspended";
 }
 
+function activeConcurrencySubscriptionSelection() {
+  return {
+    id: orgConcurrencySubscriptions.stripeSubscriptionId,
+    quantity: orgConcurrencySubscriptions.slots,
+    currentPeriodEnd: orgConcurrencySubscriptions.currentPeriodEnd,
+    cancelAtPeriodEnd: orgConcurrencySubscriptions.cancelAtPeriodEnd,
+    scheduledQuantity: orgConcurrencySubscriptions.scheduledSlots,
+    scheduledChangeAt: orgConcurrencySubscriptions.scheduledChangeAt,
+  };
+}
+
+function dbTimestamp(value: Date | string | null | undefined): Date | null {
+  if (!value) {
+    return null;
+  }
+  return value instanceof Date ? value : new Date(value);
+}
+
+function concurrencySubscriptionsFromRows(
+  rows: readonly ActiveConcurrencySubscription[],
+): readonly ActiveConcurrencySubscription[] {
+  return rows
+    .map((row) => {
+      return {
+        id: row.id,
+        quantity: Number(row.quantity),
+        currentPeriodEnd: dbTimestamp(row.currentPeriodEnd),
+        cancelAtPeriodEnd: row.cancelAtPeriodEnd,
+        scheduledQuantity: row.scheduledQuantity,
+        scheduledChangeAt: dbTimestamp(row.scheduledChangeAt),
+      };
+    })
+    .filter((row) => {
+      return row.quantity > 0;
+    });
+}
+
+function billingCapabilityResponseFields(
+  capabilities: OrgPlanCapabilities | null,
+) {
+  return {
+    canBuyConcurrency: capabilities?.canBuyConcurrency ?? false,
+    canBuyCredits: capabilities?.canBuyCredits ?? false,
+    showUsagePack: capabilities?.showUsagePack === true,
+    status: billingPlanStatus(capabilities),
+    autoRechargeAllowed: capabilities?.autoRechargeAllowed ?? false,
+    restrictedBuiltInModels: capabilities?.restrictedBuiltInModels ?? false,
+    workflowWebhookAutomationAllowed:
+      capabilities?.workflowWebhookAutomationAllowed ?? false,
+  };
+}
+
 export function orgBillingStatus(
   orgId: string,
 ): Computed<Promise<BillingStatusResponse>> {
@@ -531,7 +584,17 @@ export function orgBillingStatus(
           ),
         )
         .orderBy(desc(creditExpiresRecord.createdAt)),
-      activeConcurrencySubscriptions(db, orgId, currentTime),
+      (async () => {
+        const rows = await db
+          .select(activeConcurrencySubscriptionSelection())
+          .from(orgConcurrencySubscriptions)
+          .where(activeConcurrencySubscriptionPredicate(orgId, currentTime))
+          .orderBy(
+            asc(orgConcurrencySubscriptions.createdAt),
+            asc(orgConcurrencySubscriptions.stripeSubscriptionId),
+          );
+        return concurrencySubscriptionsFromRows(rows);
+      })(),
       (async () => {
         const query = db
           .select({
@@ -575,14 +638,7 @@ export function orgBillingStatus(
     return billingStatusResponse({
       orgId,
       org: org[0],
-      canBuyConcurrency: capabilities?.canBuyConcurrency ?? false,
-      canBuyCredits: capabilities?.canBuyCredits ?? false,
-      showUsagePack: capabilities?.showUsagePack === true,
-      status: billingPlanStatus(capabilities),
-      autoRechargeAllowed: capabilities?.autoRechargeAllowed ?? false,
-      restrictedBuiltInModels: capabilities?.restrictedBuiltInModels ?? false,
-      workflowWebhookAutomationAllowed:
-        capabilities?.workflowWebhookAutomationAllowed ?? false,
+      ...billingCapabilityResponseFields(capabilities),
       unsettledExpired: unsettledExpiredRow[0]?.total ?? 0,
       activeRecords,
       concurrencySubscriptions,
