@@ -8,6 +8,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 
 const context = testContext();
 
@@ -75,7 +76,7 @@ function activePreviewFrame(): HTMLIFrameElement {
 }
 
 async function openPresentationDetail(): Promise<HTMLIFrameElement> {
-  click(await waitForNamedButton("Template"));
+  await clickComposerAddMenuItem("Template");
   const dialog = await screen.findByRole("dialog");
   click(
     await waitForNamedButton(

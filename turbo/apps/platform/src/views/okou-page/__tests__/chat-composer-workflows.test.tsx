@@ -20,6 +20,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 import {
   composerInlineTemplates,
   context,
@@ -90,11 +91,8 @@ function templateTab(name: string): HTMLElement {
   return tab;
 }
 
-async function openTemplateCategory(
-  category: string,
-  templateLabel = "Template",
-): Promise<HTMLElement> {
-  click(await screen.findByLabelText(templateLabel));
+async function openTemplateCategory(category: string): Promise<HTMLElement> {
+  await clickComposerAddMenuItem("Template");
   const dialog = await waitFor(() => {
     const element = document.querySelector<HTMLElement>('[role="dialog"]');
     if (!element) {
@@ -190,7 +188,7 @@ test("Multiple inline templates preserve every reference when you send", async (
 
   const user = userEvent.setup();
   const editor = await findComposerEditor();
-  await expect(screen.findByLabelText("Template")).resolves.toBeVisible();
+  await expect(screen.findByLabelText("Add")).resolves.toBeVisible();
 
   await waitFor(() => {
     return expect(composerInlineTemplates()).toHaveLength(2);

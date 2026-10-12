@@ -1,11 +1,9 @@
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
-  click,
   queryAllByRoleFast,
   setupPage,
   startPage,
@@ -17,11 +15,12 @@ import {
   mockPersonalModelRoutes,
 } from "../../views/okou-page/__tests__/chat-composer-test-helpers.ts";
 import { bootstrapSkeleton } from "../../test/bootstrap-skeleton.ts";
+import { clickComposerAddMenuItem } from "../../views/okou-page/__tests__/chat-composer-add-menu-test-helpers.ts";
 
 const CUSTOMER_ORG_ID = "org_customer_workspace";
 
 async function openTemplates() {
-  click(await screen.findByLabelText("Template"));
+  await clickComposerAddMenuItem("Template");
   await screen.findByRole("dialog");
 }
 
@@ -78,9 +77,7 @@ async function setupEmailRolloutPage(args: {
   // so reaching the composer already proves the server payload landed and the
   // email defaults were reapplied on top of it.
   await screen.findByRole("textbox", { name: "Message" });
-  const user = userEvent.setup({ delay: null });
-  await user.click(await screen.findByLabelText("Template"));
-  await screen.findByRole("dialog");
+  await openTemplates();
 }
 
 function customTemplatesTab(): HTMLElement | undefined {
