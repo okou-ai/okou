@@ -26,7 +26,7 @@ const {
 const STEER_AT_MS = 115 * 60 * 1000;
 const CRON_SECRET = "test-run-time-budget-steer-secret";
 
-async function startRunAtBudgetBoundary() {
+async function startBudgetRun() {
   const app = await setupApp({
     context,
     routes: cronSteerRunTimeBudgetRoutes,
@@ -55,6 +55,20 @@ async function startRunAtBudgetBoundary() {
     throw new Error("Expected the claimed run's public start time");
   }
   const startedAt = Date.parse(run.startedAt);
+  return {
+    actor,
+    agentId,
+    runnerGroup,
+    active,
+    claimed,
+    startedAt,
+    requestBudgetSweep,
+  };
+}
+
+async function startRunAtBudgetBoundary() {
+  const started = await startBudgetRun();
+  const { actor, active, claimed, startedAt, requestBudgetSweep } = started;
   mockNow(startedAt + STEER_AT_MS - 1);
   await requestBudgetSweep();
   expect(
@@ -65,7 +79,7 @@ async function startRunAtBudgetBoundary() {
     ),
   ).toHaveLength(0);
 
-  mockNow(startedAt + STEER_AT_MS + 1);
+  mockNow(startedAt + STEER_AT_MS);
   await requestBudgetSweep();
   const budget = (
     await chat.listThreadEvents(actor, active.threadId)
@@ -75,6 +89,15 @@ async function startRunAtBudgetBoundary() {
   if (!budget || budget.eventType !== "input.budget") {
     throw new Error("Expected the cron's run-targeted budget warning");
   }
+  mockNow(startedAt + STEER_AT_MS + 1);
+  await requestBudgetSweep();
+  expect(
+    (await chat.listThreadEvents(actor, active.threadId)).events.filter(
+      (event) => {
+        return event.eventType === "input.budget";
+      },
+    ),
+  ).toStrictEqual([budget]);
   expect(budget.runId).toBeUndefined();
   const prompt = chatEventDisplayText(budget);
   expect(prompt).toContain("leaving approximately 5 minutes");
@@ -82,11 +105,7 @@ async function startRunAtBudgetBoundary() {
     api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
   ).resolves.toStrictEqual({ input: { eventId: budget.id, prompt } });
   return {
-    actor,
-    agentId,
-    runnerGroup,
-    active,
-    claimed,
+    ...started,
     budget,
     prompt,
     requestBudgetSweep,
@@ -94,6 +113,59 @@ async function startRunAtBudgetBoundary() {
 }
 
 describe("run-targeted time budget steering through HTTP", () => {
+  it("does not append a late warning after the runner completed", async () => {
+    const { actor, active, claimed, startedAt, requestBudgetSweep } =
+      await startBudgetRun();
+    await completeChatRunOk(active.runId, claimed.sandboxHeaders);
+    await flushWaitUntilForTest();
+    mockNow(startedAt + STEER_AT_MS);
+    await requestBudgetSweep();
+    await expect(api.readRun(actor, active.runId)).resolves.toMatchObject({
+      status: "completed",
+    });
+    expect(
+      (await chat.listThreadEvents(actor, active.threadId)).events.filter(
+        (event) => {
+          return event.eventType === "input.budget";
+        },
+      ),
+    ).toHaveLength(0);
+  }, 90_000);
+
+  it("leaves no pending warning when a sweep overlaps runner completion", async () => {
+    const { actor, active, claimed, startedAt, requestBudgetSweep } =
+      await startBudgetRun();
+    mockNow(startedAt + STEER_AT_MS);
+    await Promise.all([
+      requestBudgetSweep(),
+      completeChatRunOk(active.runId, claimed.sandboxHeaders),
+    ]);
+    await flushWaitUntilForTest();
+    const events = (await chat.listThreadEvents(actor, active.threadId)).events;
+    const budgets = events.filter((event) => {
+      return event.eventType === "input.budget";
+    });
+    expect(budgets.length).toBeLessThanOrEqual(1);
+    for (const budget of budgets) {
+      expect(
+        events.filter((event) => {
+          return event.revokesEventId === budget.id;
+        }),
+      ).toStrictEqual([
+        expect.objectContaining({
+          eventType: "control.revoke",
+          runId: active.runId,
+        }),
+      ]);
+    }
+    await expect(
+      api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+    ).resolves.toStrictEqual({ input: null });
+    await expect(api.readRun(actor, active.runId)).resolves.toMatchObject({
+      status: "completed",
+    });
+  }, 90_000);
+
   it("consumes the warning once, retains its run identity, and survives a later prompt anchor", async () => {
     const {
       actor,
