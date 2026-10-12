@@ -59,7 +59,7 @@ import {
   type ConnectorRuntimeMethod,
 } from "./connector-catalog-runtime.service";
 import {
-  resolveConnectorRuntimeDiagnosticTargets,
+  resolveConnectorRuntimeDiagnosticTargets$,
   type ConnectorRuntimeDiagnosticResult,
 } from "./connector-runtime-sync.service";
 import type { FirewallRoutingRouteMetadata } from "./connector-server-firewall-catalog.service";
@@ -685,26 +685,12 @@ function isCustomAvailableDiagnosticRuntime(
 }
 
 async function loadRunDiagnosticState(args: {
-  readonly db: Db;
   readonly scope: RunDiagnosticRegistration;
-  readonly request: ConnectorCheckRequestBody;
-  readonly orgId: string;
-  readonly userId: string;
+  readonly targets: readonly ConnectorRuntimeTargetRegistration[];
+  readonly runtimes: readonly ConnectorRuntimeDiagnosticResult[];
   readonly snapshot: ConnectorRuntimeSnapshot;
 }): Promise<RunDiagnosticState> {
-  const targets = runtimeTargetsForRequest(args.scope, args.request);
-  const runtimes =
-    targets.length === 0
-      ? []
-      : await resolveConnectorRuntimeDiagnosticTargets({
-          db: args.db,
-          scope: {
-            orgId: args.orgId,
-            userId: args.userId,
-            agentId: args.scope.agentId,
-          },
-          targets,
-        });
+  const { targets, runtimes } = args;
   const runtimeByTargetKey = new Map(
     runtimes.map((runtime) => {
       return [connectorRuntimeTargetKey(runtime.target), runtime] as const;
@@ -1731,12 +1717,22 @@ export const resolveConnectorCheck$ = command(
     signal.throwIfAborted();
     let timeline: ConnectorCheckTimeline;
     if (runRegistration) {
+      const targets = runtimeTargetsForRequest(runRegistration, args.request);
+      const runtimes =
+        targets.length === 0
+          ? []
+          : await set(resolveConnectorRuntimeDiagnosticTargets$, {
+              scope: {
+                orgId: args.orgId,
+                userId: args.userId,
+                agentId: runRegistration.agentId,
+              },
+              targets,
+            });
       const state = await loadRunDiagnosticState({
-        db,
         scope: runRegistration,
-        request: args.request,
-        orgId: args.orgId,
-        userId: args.userId,
+        targets,
+        runtimes,
         snapshot,
       });
       signal.throwIfAborted();

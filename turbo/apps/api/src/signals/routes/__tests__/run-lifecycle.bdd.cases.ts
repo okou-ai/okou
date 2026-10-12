@@ -7360,6 +7360,92 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
+      it("keeps a revoked exact custom source absent after a replacement becomes default", async () => {
+        const owned = await publicChatActor(context);
+        const { actor, agentId, runnerGroup } = owned;
+        const api = createRunsApi(context);
+        const connectors = createConnectorBddApi(context);
+        const fw = createFirewallApi(context);
+        await owned.run(async () => {
+          const custom = await connectors.createCustomConnector(
+            actor,
+            manualMcpRuntimeConnectorBody({
+              displayName: "Exact source replacement",
+              endpoint: "https://exact-source.example.test/mcp",
+            }),
+          );
+          await connectors.setCustomConnectorValues(actor, custom.id, [
+            { key: "secret", kind: "secret", value: "original-source-token" },
+          ]);
+          await connectors.updateAgentCustomConnectors(actor, agentId, [
+            custom.id,
+          ]);
+          const run = await api.createThreadRun(actor, {
+            agentId,
+            prompt: "use the exact custom connector account",
+          });
+          await api.heartbeatRunner(runnerGroup);
+          const { claim } = await owned.claimChatRun(runnerGroup, run.runId);
+          const target = customConnectorRuntimeRegistration(claim, custom.id);
+          if (!target.sourceId) {
+            throw new Error("Expected the admitted exact source");
+          }
+          const [initial] = await api.syncConnectorRuntime(run.runId, {
+            targets: [target],
+          });
+          const { body: originalAuth } = customConnectorRuntimeAuthBody(
+            availableCustomConnectorRuntime(initial),
+            fw.encryptedSecretsBody({}),
+          );
+          await connectors.deleteCustomConnectorAccount(
+            actor,
+            custom.id,
+            target.sourceId,
+          );
+          await connectors.setCustomConnectorValues(actor, custom.id, [
+            {
+              key: "secret",
+              kind: "secret",
+              value: "replacement-source-token",
+            },
+          ]);
+          const replacement = (
+            await connectors.listCustomConnectorAccounts(actor, custom.id)
+          ).find((account) => {
+            return account.isDefault;
+          });
+          if (!replacement) {
+            throw new Error(
+              "Expected the publicly created replacement default",
+            );
+          }
+          expect(replacement.id).not.toBe(target.sourceId);
+          const [revoked] = await api.syncConnectorRuntime(run.runId, {
+            targets: [target],
+          });
+          expect(revoked).toStrictEqual({
+            target: { kind: "custom", customConnectorId: custom.id },
+            state: "absent",
+            reason: "connector-unavailable",
+          });
+          const rejected = await fw.requestFirewallAuth(
+            { authorization: `Bearer ${claim.sandboxToken}` },
+            originalAuth,
+            [424],
+          );
+          expect(rejected.body).toMatchObject({
+            error: { code: "CONNECTOR_NOT_CONFIGURED" },
+          });
+          const [current] = await api.syncConnectorRuntime(run.runId, {
+            targets: [{ ...target, sourceId: replacement.id }],
+          });
+          expect(
+            availableCustomConnectorRuntime(current).firewall.sourceId,
+          ).toBe(replacement.id);
+          await api.requestCancelRun(actor, run.runId, [200]);
+        });
+      });
+
       async function setupBoundedMcpAwareness() {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
