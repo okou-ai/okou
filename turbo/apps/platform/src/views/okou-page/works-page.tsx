@@ -75,6 +75,7 @@ import {
 import {
   approveDiscordAuthorization$,
   discordApprovalAvailable$,
+  discordApprovalRequest$,
   discordApprovalSucceeded$,
 } from "../../signals/okou-page/discord-oauth-approval.ts";
 import { useTranslation } from "react-i18next";
@@ -552,6 +553,14 @@ function DiscordDmSelection({
   );
 }
 
+function canAuthorizeDiscord(data: DiscordOrgStatus): boolean {
+  return (
+    data.isAvailable &&
+    ((!data.isInstalled && data.isAdmin) ||
+      (data.isInstalled && !data.isConnected))
+  );
+}
+
 function DiscordAuthorizationActions({
   data,
   disabled,
@@ -570,10 +579,15 @@ function DiscordAuthorizationActions({
   if (approvalAvailable || approvalSucceeded) {
     return null;
   }
-  const canAuthorize =
-    data?.isAvailable &&
-    ((!data.isInstalled && data.isAdmin) ||
-      (data.isInstalled && !data.isConnected));
+  const canAuthorize = data && canAuthorizeDiscord(data);
+  if (
+    !canAuthorize &&
+    authorizationState.state !== "loading" &&
+    authorizationState.state !== "hasError" &&
+    !authorizationFailed
+  ) {
+    return null;
+  }
 
   return (
     <div className="flex max-w-64 flex-col items-end gap-2">
@@ -644,37 +658,37 @@ function DiscordApprovalPanel() {
   const { t } = useTranslation();
   const available = useGet(discordApprovalAvailable$);
   const approved = useGet(discordApprovalSucceeded$);
-  const [loadable, approve] = useLoadableSet(approveDiscordAuthorization$);
+  const loadable = useLoadable(discordApprovalRequest$);
+  const approve = useSet(approveDiscordAuthorization$);
   const pageSignal = useGet(pageSignal$);
   if (!available && !approved) {
     return null;
   }
   return (
     <div className="space-y-2 px-4 pb-3">
-      <p role="status" className="text-sm text-muted-foreground">
-        {approved
-          ? t(($) => {
-              return $.works.discord.approvalConfirmed;
-            })
-          : t(($) => {
-              return $.works.discord.approvalPrompt;
-            })}
-      </p>
-      {available ? (
+      {loadable.state !== "hasError" ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          {approved
+            ? t(($) => {
+                return $.works.discord.approvalConfirmed;
+              })
+            : t(($) => {
+                return $.works.discord.authorizing;
+              })}
+        </p>
+      ) : null}
+      {available && loadable.state === "hasError" ? (
         <Button
           type="button"
-          disabled={loadable.state === "loading"}
+          variant="outline"
+          size="sm"
           onClick={() => {
             detach(approve(pageSignal), Reason.DomCallback);
           }}
         >
-          {loadable.state === "loading"
-            ? t(($) => {
-                return $.works.discord.approving;
-              })
-            : t(($) => {
-                return $.works.discord.approve;
-              })}
+          {t(($) => {
+            return $.works.discord.retry;
+          })}
         </Button>
       ) : null}
       {loadable.state === "hasError" ? (
@@ -705,25 +719,13 @@ function DiscordAuthorizationPendingNotice() {
 function DiscordCardDescription({ data }: { data: DiscordOrgStatus | null }) {
   const { t } = useTranslation();
   return (
-    <>
-      <p className="text-sm text-muted-foreground">
-        {data
-          ? discordDescription(data)
-          : t(($) => {
-              return $.works.discord.memberSetup;
-            })}
-      </p>
-      {data?.isInstalled && data.guildName ? (
-        <p className="text-sm text-muted-foreground">
-          {t(
-            ($) => {
-              return $.works.discord.server;
-            },
-            { name: data.guildName },
-          )}
-        </p>
-      ) : null}
-    </>
+    <p className="text-sm text-muted-foreground">
+      {data
+        ? discordDescription(data)
+        : t(($) => {
+            return $.works.discord.memberSetup;
+          })}
+    </p>
   );
 }
 
@@ -750,7 +752,7 @@ function DiscordCard() {
         aria-label={title}
         className={surfaceVariants({ className: "flex flex-col" })}
       >
-        <div className="flex flex-wrap items-center gap-4 p-4">
+        <div className="flex items-center gap-4 p-4">
           <div className="shrink-0 text-foreground">
             <DiscordMark size={28} />
           </div>
@@ -772,6 +774,7 @@ function DiscordCard() {
               isAdmin={data.isAdmin}
               installUrl={null}
               connectUrl={null}
+              connectedDetail={data.guildName}
               connectedTestId="discord-connected-indicator"
               installTestId="discord-install-button"
               installLabel={title}
