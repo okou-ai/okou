@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Native operations already require root; keep the fixture's host lock FDs in
+# this worker so cleanup and the durable unit own their complete lifetime.
+if [ "$EUID" -ne 0 ]; then
+  exec sudo -- bash "$0" "$@"
+fi
+
 BIN_DIR=$1
 JOB_REF=$2
 SVC="${JOB_REF}-home-cache-promotion"
@@ -22,8 +28,35 @@ ROOTFS_UPDATE_DIR="${RUNNER_DIR}/rootfs-update"
 UPDATED_ROOTFS_HASH=""
 UPDATED_SNAPSHOT_HASH=""
 UPDATED_IMAGE_DIR=""
+HOME_CACHE_PIN_FDS=()
 
 fail() { echo "FAIL: $1"; exit 1; }
+hold_fixture_cache_locks() {
+  local keys cache_key cache_fd
+  keys=$(env RUST_LOG=off "$BIN_DIR/runner" home-image-cache list --json \
+    | python3 -c 'import json, sys
+entries = json.load(sys.stdin)["entries"]
+keys = sorted(entry["cacheKey"] for entry in entries
+              if entry.get("cacheScope") == sys.argv[1] and entry["status"] == "reusable")
+if not keys:
+    raise SystemExit("fixture has no reusable committed home")
+print("\n".join(keys))' "$GROUP")
+  while IFS= read -r cache_key; do
+    [[ "$cache_key" =~ ^[0-9a-f]{64}$ ]] || fail "unsafe fixture cache key"
+    exec {cache_fd}<>"/var/lib/vm0-runner/locks/home-image-cache-${cache_key}.lock"
+    HOME_CACHE_PIN_FDS+=("$cache_fd")
+    flock -n "$cache_fd" || fail "fixture cache lock is busy"
+    echo "Pinned fixture home during rootfs build: $cache_key"
+  done <<<"$keys"
+}
+release_fixture_cache_locks() {
+  local cache_fd
+  for cache_fd in "${HOME_CACHE_PIN_FDS[@]}"; do
+    flock -u "$cache_fd"
+    exec {cache_fd}>&-
+  done
+  HOME_CACHE_PIN_FDS=()
+}
 cache_diagnostics() {
   sudo env RUST_LOG=off "$BIN_DIR/runner" home-image-cache list --json \
     | python3 -c 'import json, sys
@@ -59,6 +92,7 @@ stop_active_attempt() {
 cleanup() {
   echo "--- Cleanup ---"
   stop_active_attempt
+  release_fixture_cache_locks
   if [ -n "$UPDATED_IMAGE_DIR" ]; then
     sudo rm -rf "$UPDATED_IMAGE_DIR"
   fi
@@ -349,8 +383,12 @@ sudo touch /home/user/workspace/nested/ephemeral'; then
 
   # Clear the drain drop-in before starting a fresh transient service.
   cache_diagnostics before-rootfs-update
+  # Shared native hosts can still run outgoing formula-aware GC. Isolate this
+  # restore assertion from the accepted rollout miss while constructing a VM.
+  hold_fixture_cache_locks
   sudo "$BIN_DIR/runner" service stop --name "$SVC" --force
   prepare_updated_rootfs
+  release_fixture_cache_locks
   cache_diagnostics after-rootfs-update
   sudo "$BIN_DIR/runner" service start --name "$SVC" \
     --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true \
