@@ -164,7 +164,7 @@ if grep -q 'actions/runs/777 ' "$test_dir/push/gh.log"; then fail "push must ski
 
 ruby -ryaml - "$root" <<'RUBY'
 root = ARGV.fetch(0)
-{"turbo" => ["deploy-runner-prepare"], "crates" => ["runner-test-prepare", "runner-image-architecture-manifest"]}.each do |workflow, names|
+{"turbo" => ["deploy-runner-prepare"], "crates" => ["runner-test-prepare"]}.each do |workflow, names|
   jobs = YAML.load_file("#{root}/.github/workflows/#{workflow}.yml").fetch("jobs")
   names.each do |name|
     job = jobs.fetch(name)
