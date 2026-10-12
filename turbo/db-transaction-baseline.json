@@ -1200,11 +1200,6 @@
       "id": "TX-0437",
       "file": "turbo/packages/db/scripts/test-vnc-runner-authority.ts",
       "owner": "<module>"
-    },
-    {
-      "id": "TX-0438",
-      "file": "turbo/packages/db/scripts/test-x-resource-usage.ts",
-      "owner": "validateXResourceUsageSchema"
     }
   ]
 }
