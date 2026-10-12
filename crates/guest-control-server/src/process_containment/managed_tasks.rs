@@ -274,13 +274,17 @@ impl ManagedTasks {
             let result = (|| {
                 stream.set_read_timeout(Some(TOOL_PLACEMENT_IO_TIMEOUT))?;
                 stream.set_write_timeout(Some(TOOL_PLACEMENT_IO_TIMEOUT))?;
+                // Consume the bounded request before rejecting its caller. Closing
+                // unread input can reset the stream while the helper is still writing,
+                // replacing the rejection diagnostic with a transport error.
+                let request = ipc::read_request_with_timeout(stream, TOOL_PLACEMENT_IO_TIMEOUT)?;
                 if !self.caller_is_main(stream)? {
                     return Err(io::Error::new(
                         io::ErrorKind::PermissionDenied,
                         "task caller is not in the owning main runtime/tools domain",
                     ));
                 }
-                match ipc::read_request_with_timeout(stream, TOOL_PLACEMENT_IO_TIMEOUT)? {
+                match request {
                     TaskRequest::Launch {} => self.launch(stream),
                     TaskRequest::Stop { handle } => {
                         self.stop(&handle, ProcessContainmentCleanupMode::Graceful)?;
@@ -388,6 +392,58 @@ mod tests {
         assert!(!wrong_operation.caller_is_main(&server).unwrap());
         assert!(wrong_operation.launch(&server).is_err());
         assert!(wrong_operation.scopes().unwrap().is_empty());
+    }
+
+    #[test]
+    fn rejected_launch_and_stop_requests_close_after_a_complete_reply() {
+        use std::io::Read;
+
+        for request in [
+            TaskRequest::Launch {},
+            TaskRequest::Stop {
+                handle: TaskHandle::generate(),
+            },
+        ] {
+            let endpoint = format!("task-rejection-{}", TaskHandle::generate().as_str());
+            let listener = process_control_ipc::bind_abstract_listener(&endpoint).unwrap();
+            let tasks = Arc::new(ManagedTasks::new(
+                unsafe { libc::geteuid() } + 1,
+                PathBuf::from("/runtime"),
+                PathBuf::from("/tools"),
+            ));
+            let active = Arc::new(ActiveToolPlacement {
+                stream: Mutex::new(None),
+            });
+            let cancel = Arc::new(AtomicBool::new(false));
+            let mut client = process_control_ipc::connect_abstract_with_timeout(
+                &endpoint,
+                TOOL_PLACEMENT_IO_TIMEOUT,
+            )
+            .unwrap();
+            client
+                .set_read_timeout(Some(TOOL_PLACEMENT_IO_TIMEOUT))
+                .unwrap();
+            // Queue the complete request before the broker can reject it. Closing
+            // with these bytes unread deterministically resets the peer's stream.
+            ipc::write_request(&mut client, &request).unwrap();
+            let worker = {
+                let active = Arc::clone(&active);
+                let cancel = Arc::clone(&cancel);
+                thread::spawn(move || tasks.serve(listener, active, cancel))
+            };
+            let reply = ipc::read_reply_with_timeout(&client, TOOL_PLACEMENT_IO_TIMEOUT);
+            let closed = client.read(&mut [0]);
+            cancel.store(true, Ordering::Release);
+            active.shutdown().unwrap();
+            worker.join().unwrap();
+
+            assert!(matches!(
+                reply.unwrap(),
+                TaskReply::Rejected { diagnostic }
+                    if diagnostic == "task caller is not in the owning main runtime/tools domain"
+            ));
+            assert_eq!(closed.unwrap(), 0, "rejection must end with clean EOF");
+        }
     }
 
     #[test]
