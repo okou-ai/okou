@@ -289,6 +289,13 @@ describe("sandbox hosted previews", () => {
       width: 1200,
       height: 630,
     });
+    const compact = await accept(
+      og.image({ query: { ...imageQuery, variant: "slack" } }),
+      [200],
+    );
+    await expect(
+      sharp(Buffer.from(await compact.body.arrayBuffer())).metadata(),
+    ).resolves.toMatchObject({ width: 381, height: 200 });
     expect(original.headers.get("cache-control")).toBe("private, no-store");
     expect(original.headers.get("cloudflare-cdn-cache-control")).toBe(
       "no-store",
@@ -301,6 +308,16 @@ describe("sandbox hosted previews", () => {
       [302],
     );
     expect(stale.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
+    const compactStale = await accept(
+      og.image({
+        query: { ...imageQuery, version: "wrong", variant: "slack" },
+      }),
+      [302],
+    );
+    const brandUrl = new URL(ARTIFACT_OG_BRAND.imageUrl);
+    expect(compactStale.headers.get("location")).toBe(
+      `${brandUrl.origin}/cdn-cgi/image/height=200,fit=scale-down,format=auto,quality=85,metadata=none${brandUrl.pathname}`,
+    );
 
     const nextBytes = await image("#1122ee");
     const second = await host.prepareHostedSite(actor, {

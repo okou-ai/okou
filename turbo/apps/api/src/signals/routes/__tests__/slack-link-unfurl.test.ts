@@ -51,6 +51,11 @@ const previousBotScopes = [
   "files:write",
 ].join(",");
 
+function compactBrandImageUrl() {
+  const brandUrl = new URL(ARTIFACT_OG_BRAND.imageUrl);
+  return `${brandUrl.origin}/cdn-cgi/image/height=200,fit=scale-down,format=auto,quality=85,metadata=none${brandUrl.pathname}`;
+}
+
 async function fixture(
   options: {
     readonly scopes?: string;
@@ -154,7 +159,7 @@ function postLinks(
 }
 
 describe("Slack link previews", () => {
-  it("adds only a divider, linked title and large image without requiring membership or an Okou user connection", async () => {
+  it("adds a divider, linked title and compact image without requiring membership or an Okou user connection", async () => {
     const f = await fixture();
     const immutable = `https://dpl-${f.prepared.deploymentId}.okou.app/?source=slack&view=cover#cover|v1`;
     const alias = `https://${f.prepared.publicSlug}.okou.app/index.html`;
@@ -163,8 +168,11 @@ describe("Slack link previews", () => {
 
     const cover = {
       type: "image",
-      image_url: expect.stringContaining(
-        `/api/artifact-og/image?kind=host&id=${f.prepared.deploymentId}&version=`,
+      image_url: expect.stringMatching(
+        new RegExp(
+          `/api/artifact-og/image\\?kind=host&id=${f.prepared.deploymentId}&version=[^&]+&variant=slack$`,
+          "u",
+        ),
       ),
       alt_text: 'Report & <!channel>\u00a0"标题"',
     };
@@ -209,7 +217,7 @@ describe("Slack link previews", () => {
     );
   });
 
-  it("uses only public branding for ordinary App pages without loading their content", async () => {
+  it("uses compact public branding for ordinary App pages without loading their content", async () => {
     const f = await fixture({ privateArtifacts: true });
     await updateFeatureSwitchesForUser(context, f.actor, {
       artifactPreviews: false,
@@ -258,7 +266,7 @@ describe("Slack link previews", () => {
                 },
                 {
                   type: "image",
-                  image_url: ARTIFACT_OG_BRAND.imageUrl,
+                  image_url: compactBrandImageUrl(),
                   alt_text: ARTIFACT_OG_BRAND.title,
                 },
               ],
@@ -344,7 +352,7 @@ describe("Slack link previews", () => {
           blocks: expect.arrayContaining([
             {
               type: "image",
-              image_url: ARTIFACT_OG_BRAND.imageUrl,
+              image_url: compactBrandImageUrl(),
               alt_text: ARTIFACT_OG_BRAND.title,
             },
           ]),
