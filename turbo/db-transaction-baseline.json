@@ -447,11 +447,6 @@
       "owner": "recordManagedUsage$"
     },
     {
-      "id": "TX-0184",
-      "file": "turbo/apps/api/src/signals/services/memory-summary-projection.service.ts",
-      "owner": "claimProjectionWork$"
-    },
-    {
       "id": "TX-0185",
       "file": "turbo/apps/api/src/signals/services/model-provider-account.service.ts",
       "owner": "writePersonalAccount"
