@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.9.1...runner-executor-v0.10.0) (2026-10-12)
+
+
+### Features
+
+* **ssh:** integrate native tailscale saved-host transport ([#39018](https://github.com/okou-ai/okou/issues/39018)) ([e8f8c83](https://github.com/okou-ai/okou/commit/e8f8c83186b0d6881c546048b7198f6dd2d96181))
+
+
+### Refactoring
+
+* **runner-executor:** converge pre-spawn exit cleanup ([#39083](https://github.com/okou-ai/okou/issues/39083)) ([a877797](https://github.com/okou-ai/okou/commit/a877797d84fe928b7314ee2dda31ec94c35084ec))
+* **runner:** retire workspace protocol and application sql ([#38837](https://github.com/okou-ai/okou/issues/38837)) ([a932f1f](https://github.com/okou-ai/okou/commit/a932f1f86ae10eb624fa3ff3bccc851ba4809a7e))
+
 ## [0.9.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.9.0...runner-executor-v0.9.1) (2026-10-11)
 
 ## [0.9.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.8.2...runner-executor-v0.9.0) (2026-10-11)

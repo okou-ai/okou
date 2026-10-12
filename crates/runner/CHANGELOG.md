@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.227.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.226.0...runner-rs-v0.227.0) (2026-10-12)
+
+
+### Features
+
+* **runner:** retain guarded ordinary activation cleanup owners ([#39073](https://github.com/okou-ai/okou/issues/39073)) ([9d380c4](https://github.com/okou-ai/okou/commit/9d380c4e66d449bc99663447dac4aca71e1e5547))
+* **ssh:** integrate native tailscale saved-host transport ([#39018](https://github.com/okou-ai/okou/issues/39018)) ([e8f8c83](https://github.com/okou-ai/okou/commit/e8f8c83186b0d6881c546048b7198f6dd2d96181))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.226.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.225.0...runner-rs-v0.226.0) (2026-10-11)
 
 

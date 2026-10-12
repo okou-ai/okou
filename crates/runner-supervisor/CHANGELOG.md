@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.8.0...runner-supervisor-v0.9.0) (2026-10-12)
+
+
+### Features
+
+* **runner:** retain guarded ordinary activation cleanup owners ([#39073](https://github.com/okou-ai/okou/issues/39073)) ([9d380c4](https://github.com/okou-ai/okou/commit/9d380c4e66d449bc99663447dac4aca71e1e5547))
+
+
+### Refactoring
+
+* **runner:** retire workspace protocol and application sql ([#38837](https://github.com/okou-ai/okou/issues/38837)) ([a932f1f](https://github.com/okou-ai/okou/commit/a932f1f86ae10eb624fa3ff3bccc851ba4809a7e))
+
 ## [0.8.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.7.0...runner-supervisor-v0.8.0) (2026-10-11)
 
 
