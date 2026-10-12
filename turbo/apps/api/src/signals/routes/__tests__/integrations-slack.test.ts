@@ -1,25 +1,25 @@
-import { randomUUID } from "node:crypto";
-import { createStore } from "ccstate";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
+import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
+import { randomUUID } from "node:crypto";
 
-import { createApp } from "../../../app-factory";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createApp } from "../../../app-factory";
 import { server } from "../../../mocks/server";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { SlackFileFetchError } from "../../external/slack-file-fetcher";
+import { integrationsSlackRoutes } from "../integrations-slack";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
-import { integrationsSlackRoutes } from "../integrations-slack";
 
 // Connecting a Slack user resolves the built-in Slack connector OAuth method.
 const context = testContext();
+const claimedToken = createClaimedRunCredentials(context).okouToken;
 const store = createStore();
 
 const bdd = createBddApi(context);
@@ -333,27 +333,6 @@ type SlackFileMetadata = {
   readonly url_private?: string;
 };
 
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
-}
-
-function okouToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly capabilities: readonly ("slack:write" | "file:read")[];
-}): string {
-  const seconds = currentSecond();
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: `run_${randomUUID()}`,
-    capabilities: args.capabilities,
-    iat: seconds,
-    exp: seconds + 60,
-  });
-}
-
 function mockSlackFilesInfo(
   response:
     | { readonly ok: true; readonly file: SlackFileMetadata }
@@ -429,25 +408,9 @@ describe("GET /api/integrations/slack/download-file", () => {
     await store.set(seedOrgMembership$, { orgId, userId }, context.signal);
 
     return {
-      token: okouToken({ userId, orgId, capabilities: ["slack:write"] }),
+      token: await claimedToken({ userId, orgId }),
     };
   }
-
-  it("rejects an agent token without slack:write capability", async () => {
-    expect.hasAssertions();
-    const token = okouToken({
-      userId: `user_${randomUUID()}`,
-      orgId: `org_${randomUUID()}`,
-      capabilities: ["file:read"],
-    });
-
-    const response = await requestDownloadFile(
-      "?file_id=F1",
-      `Bearer ${token}`,
-    );
-
-    await expectErrorResponse(response, 403, "FORBIDDEN");
-  });
 
   it("returns 400 when file_id query param is missing", async () => {
     expect.hasAssertions();

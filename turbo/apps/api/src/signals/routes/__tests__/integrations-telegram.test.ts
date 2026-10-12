@@ -2,31 +2,32 @@ import { createHash, createHmac, randomUUID } from "node:crypto";
 
 import { integrationsTelegramBotListContract } from "@okouai/api-contracts/contracts/integrations";
 import {
-  OFFICIAL_TELEGRAM_BOT_ID,
   integrationsTelegramContract,
+  OFFICIAL_TELEGRAM_BOT_ID,
   type TelegramListResponse,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { createStore } from "ccstate";
-import { beforeEach } from "vitest";
 import { http, HttpResponse } from "msw";
+import { beforeEach } from "vitest";
 
-import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { server } from "../../../mocks/server";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+import { createApp } from "../../../app-factory";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { buildTelegramBotAvatarUrl } from "../../external/telegram-avatar";
-import { seedOrgMembership$ } from "./helpers/org-membership";
-import { createRouteMocks } from "./helpers/route-test";
-import { createPublicTelegramActor } from "./helpers/public-telegram-actor";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createPublicTelegramActor } from "./helpers/public-telegram-actor";
+import { createRouteMocks } from "./helpers/route-test";
 
 const TEST_APP_ROUTES = Object.freeze([...integrationsTelegramRoutes]);
 
 const context = testContext();
+const credentials = createClaimedRunCredentials(context);
 const store = createStore();
 const mocks = createRouteMocks(context);
 
@@ -50,23 +51,6 @@ function expectUnauthorized(body: unknown): void {
       message: "Not authenticated",
       code: "UNAUTHORIZED",
     },
-  });
-}
-
-function mintOkouToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly capabilities: readonly "telegram:read"[];
-}): string {
-  const nowSeconds = Math.floor(now() / 1000);
-  return signSandboxJwtForTests({
-    scope: "okou" as const,
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: `run_${randomUUID()}`,
-    capabilities: args.capabilities,
-    iat: nowSeconds,
-    exp: nowSeconds + 3600,
   });
 }
 
@@ -199,17 +183,11 @@ describe("GET /api/integrations/telegram/bots", () => {
 
   it("returns 401 when the token has no active organization membership", async () => {
     expect.hasAssertions();
-    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-      data: [],
-    });
 
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
-    const token = mintOkouToken({
-      userId,
-      orgId,
-      capabilities: ["telegram:read"],
-    });
+    const token = await credentials.okouToken({ userId, orgId });
+    await credentials.removeMember({ userId, orgId });
     const client = setupApp({
       context,
       routes: integrationsTelegramRoutes,
@@ -247,11 +225,7 @@ describe("GET /api/integrations/telegram/bots", () => {
 
     await store.set(seedOrgMembership$, { orgId, userId }, context.signal);
 
-    const token = mintOkouToken({
-      userId,
-      orgId,
-      capabilities: ["telegram:read"],
-    });
+    const token = await credentials.okouToken({ userId, orgId });
     const client = setupApp({
       context,
       routes: integrationsTelegramRoutes,
@@ -283,11 +257,7 @@ describe("GET /api/integrations/telegram", () => {
 
     await store.set(seedOrgMembership$, { orgId, userId }, context.signal);
 
-    const token = mintOkouToken({
-      userId,
-      orgId,
-      capabilities: ["telegram:read"],
-    });
+    const token = await credentials.okouToken({ userId, orgId });
     const client = setupApp({
       context,
       routes: integrationsTelegramRoutes,
@@ -334,11 +304,7 @@ describe("GET /api/integrations/telegram/link", () => {
     const userId = `user_${randomUUID()}`;
     await store.set(seedOrgMembership$, { orgId, userId }, context.signal);
     return {
-      token: mintOkouToken({
-        userId,
-        orgId,
-        capabilities: ["telegram:read"],
-      }),
+      token: await credentials.okouToken({ userId, orgId }),
       orgId,
       userId,
     };
@@ -918,11 +884,7 @@ describe("GET /api/integrations/telegram/:botId/avatar", () => {
     return {
       orgId,
       userId,
-      token: mintOkouToken({
-        userId,
-        orgId,
-        capabilities: ["telegram:read"],
-      }),
+      token: await credentials.okouToken({ userId, orgId }),
     };
   }
 
@@ -1100,11 +1062,7 @@ describe("GET /api/integrations/telegram/download-file", () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
     await store.set(seedOrgMembership$, { orgId, userId }, context.signal);
-    return mintOkouToken({
-      userId,
-      orgId,
-      capabilities: ["telegram:read"],
-    });
+    return await credentials.okouToken({ userId, orgId });
   }
 
   function expectJson(response: Response): Promise<unknown> {
@@ -1122,17 +1080,10 @@ describe("GET /api/integrations/telegram/download-file", () => {
   });
 
   it("returns 401 when the token has no active organization membership", async () => {
-    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-      data: [],
-    });
-
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
-    const token = mintOkouToken({
-      userId,
-      orgId,
-      capabilities: ["telegram:read"],
-    });
+    const token = await credentials.okouToken({ userId, orgId });
+    await credentials.removeMember({ userId, orgId });
 
     const response = await requestDownload({
       search: "?file_id=tg-file-1&bot_id=tg-bot",

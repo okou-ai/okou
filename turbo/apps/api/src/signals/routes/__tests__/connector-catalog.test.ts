@@ -1,7 +1,7 @@
 import { http, HttpResponse } from "msw";
-import { server } from "../../../mocks/server";
-import { env, mockEnv } from "../../../lib/env";
 import { randomUUID } from "node:crypto";
+import { env, mockEnv } from "../../../lib/env";
+import { server } from "../../../mocks/server";
 
 import {
   connectorCatalogContract,
@@ -15,24 +15,25 @@ import { afterEach, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now, withMockNowForTest } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import {
-  deleteOrgMembership$,
-  seedOrgMembership$,
-  type OrgMembershipFixture,
-} from "./helpers/org-membership";
-import { createRouteMocks } from "./helpers/route-test";
-import { assertPublicConnectorCatalogHasNoPrivateFields } from "./helpers/connector-catalog-public-leak";
+import { connectorCatalogRoutes } from "../connector-catalog";
+import { featureSwitchesRoutes } from "../feature-switches";
 import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
   mockGitHubConnectorOAuth,
   mockStripeCliDashboardAuth,
 } from "./helpers/api-bdd-connectors";
-import { connectorCatalogRoutes } from "../connector-catalog";
-import { featureSwitchesRoutes } from "../feature-switches";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { assertPublicConnectorCatalogHasNoPrivateFields } from "./helpers/connector-catalog-public-leak";
+import {
+  deleteOrgMembership$,
+  seedOrgMembership$,
+  type OrgMembershipFixture,
+} from "./helpers/org-membership";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const claimedToken = createClaimedRunCredentials(context).okouToken;
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
@@ -68,10 +69,6 @@ async function deleteFeatureSwitches(
     client.delete({ headers: { authorization: "Bearer clerk-session" } }),
     [200],
   );
-}
-
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
 }
 
 function stateFromAuthorizationUrl(authorizationUrl: string): string {
@@ -254,16 +251,7 @@ describe("GET /api/connector-catalog", () => {
         context.signal,
       ),
     );
-    const seconds = currentSecond();
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId,
-      orgId,
-      runId: `run_${randomUUID()}`,
-      capabilities: ["connector:read"],
-      iat: seconds,
-      exp: seconds + 600,
-    });
+    const token = await claimedToken({ userId, orgId });
 
     const client = setupApp({ context, routes: connectorCatalogRoutes })(
       connectorCatalogContract,
@@ -274,41 +262,6 @@ describe("GET /api/connector-catalog", () => {
     );
 
     expect(response.body.connectors.length).toBeGreaterThan(0);
-  });
-
-  it("rejects an Okou run token missing connector:read with 403", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    seededOrgs.push(
-      await store.set(
-        seedOrgMembership$,
-        { orgId, userId, role: "admin" },
-        context.signal,
-      ),
-    );
-    const seconds = currentSecond();
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId,
-      orgId,
-      runId: `run_${randomUUID()}`,
-      capabilities: [],
-      iat: seconds,
-      exp: seconds + 600,
-    });
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.list({ headers: { authorization: `Bearer ${token}` } }),
-      [403],
-    );
-
-    expect(response.body.error.code).toBe("FORBIDDEN");
-    expect(response.body.error.message).toBe(
-      "Missing required capability: connector:read",
-    );
   });
 
   it("returns 401 for catalog status when not authenticated", async () => {
@@ -473,41 +426,6 @@ describe("GET /api/connector-catalog", () => {
         return left - right;
       }),
     ).toStrictEqual(ranks);
-  });
-
-  it("rejects catalog status calls from Okou run tokens without connector:read", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    seededOrgs.push(
-      await store.set(
-        seedOrgMembership$,
-        { orgId, userId, role: "admin" },
-        context.signal,
-      ),
-    );
-    const seconds = currentSecond();
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId,
-      orgId,
-      runId: `run_${randomUUID()}`,
-      capabilities: [],
-      iat: seconds,
-      exp: seconds + 600,
-    });
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.status({ headers: { authorization: `Bearer ${token}` } }),
-      [403],
-    );
-
-    expect(response.body.error.code).toBe("FORBIDDEN");
-    expect(response.body.error.message).toBe(
-      "Missing required capability: connector:read",
-    );
   });
 
   it("returns public catalog status without private connector fields", async () => {

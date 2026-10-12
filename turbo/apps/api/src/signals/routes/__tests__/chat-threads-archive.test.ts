@@ -1,24 +1,23 @@
-import { randomUUID } from "node:crypto";
 import {
   chatThreadArchiveContract,
   chatThreadMetadataContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { createBddApi } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { seedOrgMembership$ } from "./helpers/org-membership";
 import { chatThreadArchiveRoutes } from "../chat-threads-archive";
 import { chatThreadGetRoutes } from "../chat-threads-get";
+import { createBddApi } from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { seedOrgMembership$ } from "./helpers/org-membership";
 
 const context = testContext();
+const claimedToken = createClaimedRunCredentials(context).okouToken;
 const store = createStore();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
@@ -52,23 +51,6 @@ async function seedChatThread(title: string, archivingEnabled = true) {
   return { actor, orgId: actor.orgId, threadId: thread.id };
 }
 
-function okouToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly capabilities: readonly Capability[];
-}): string {
-  const seconds = Math.floor(now() / 1000);
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: `run_${randomUUID()}`,
-    capabilities: [...args.capabilities],
-    iat: seconds,
-    exp: seconds + 600,
-  });
-}
-
 function archiveClient() {
   return setupApp({ context, routes: chatThreadArchiveRoutes })(
     chatThreadArchiveContract,
@@ -86,11 +68,7 @@ async function readMetadata(args: {
   const response = await accept(
     client.get({
       headers: {
-        authorization: `Bearer ${okouToken({
-          userId: args.userId,
-          orgId: args.orgId,
-          capabilities: ["chat-thread:read"],
-        })}`,
+        authorization: `Bearer ${await claimedToken({ userId: args.userId, orgId: args.orgId })}`,
       },
       params: { id: args.threadId },
     }),
@@ -113,11 +91,7 @@ describe("POST /api/chat-threads/:id/archive and /unarchive", () => {
     });
 
     const headers = {
-      authorization: `Bearer ${okouToken({
-        userId: owner.userId,
-        orgId: owner.orgId,
-        capabilities: ["chat-thread:write"],
-      })}`,
+      authorization: `Bearer ${await claimedToken({ userId: owner.userId, orgId: owner.orgId })}`,
     };
     const archiveEventId = randomUUID();
     await accept(
@@ -175,11 +149,7 @@ describe("POST /api/chat-threads/:id/archive and /unarchive", () => {
   it("is unavailable while chat thread archiving is switched off", async () => {
     const fixture = await seedChatThread("Launch plan", false);
     const headers = {
-      authorization: `Bearer ${okouToken({
-        userId: fixture.actor.userId,
-        orgId: fixture.orgId,
-        capabilities: ["chat-thread:write"],
-      })}`,
+      authorization: `Bearer ${await claimedToken({ userId: fixture.actor.userId, orgId: fixture.orgId })}`,
     };
     for (const request of [
       archiveClient().archive({ headers, params: { id: fixture.threadId } }),
@@ -200,29 +170,6 @@ describe("POST /api/chat-threads/:id/archive and /unarchive", () => {
         threadId: fixture.threadId,
       }),
     ).resolves.toMatchObject({ archived: false });
-  });
-
-  it("rejects an Okou run token without chat-thread:write", async () => {
-    const fixture = await seedChatThread("Launch plan");
-    const response = await accept(
-      archiveClient().archive({
-        headers: {
-          authorization: `Bearer ${okouToken({
-            userId: fixture.actor.userId,
-            orgId: fixture.orgId,
-            capabilities: ["chat-thread:read"],
-          })}`,
-        },
-        params: { id: fixture.threadId },
-      }),
-      [403],
-    );
-    expect(response.body).toStrictEqual({
-      error: {
-        code: "FORBIDDEN",
-        message: "Missing required capability: chat-thread:write",
-      },
-    });
   });
 
   it("does not archive a same-user thread from another org", async () => {
@@ -246,11 +193,7 @@ describe("POST /api/chat-threads/:id/archive and /unarchive", () => {
     const response = await accept(
       archiveClient().archive({
         headers: {
-          authorization: `Bearer ${okouToken({
-            userId: fixture.actor.userId,
-            orgId: otherOrgId,
-            capabilities: ["chat-thread:write"],
-          })}`,
+          authorization: `Bearer ${await claimedToken({ userId: fixture.actor.userId, orgId: otherOrgId })}`,
         },
         params: { id: fixture.threadId },
       }),

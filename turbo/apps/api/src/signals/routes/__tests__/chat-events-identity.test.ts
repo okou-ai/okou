@@ -1,11 +1,8 @@
-import { createPublicConnectorActor } from "./helpers/public-connector-actor";
-import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import { settleIncludingAbort } from "../../utils";
-import { publicChatActor } from "./helpers/public-chat-actor";
-import { createPublicComputerUseHosts } from "./helpers/public-computer-use-hosts";
+import { runsByIdContract } from "@okouai/api-contracts/contracts/run-routes";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import {
   clearMockNow,
@@ -14,10 +11,12 @@ import {
   withMockNowForTest,
   withNowScopeForTest,
 } from "../../../lib/time";
-import { verifyOkouToken } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
+import { runsRoutes } from "../runs";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import {
   createChatEventsFixture,
   okouTokenFromClaim,
@@ -25,6 +24,9 @@ import {
   type PromptMessage,
   type RunnerClaim,
 } from "./helpers/chat-events-fixture";
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { createPublicComputerUseHosts } from "./helpers/public-computer-use-hosts";
+import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 
 const context = testContext();
 const {
@@ -54,12 +56,12 @@ async function entitledNativeChatActor(): Promise<
   return fixture;
 }
 
-function expectRunAppContext(args: {
+async function expectRunAppContext(args: {
   readonly actor: ApiTestUser;
   readonly runId: string;
   readonly claim: RunnerClaim;
   readonly appUrl: string;
-}): void {
+}): Promise<void> {
   if (!args.actor.orgId) {
     throw new Error("Expected an organization-scoped chat actor");
   }
@@ -68,9 +70,14 @@ function expectRunAppContext(args: {
   if (!token) {
     throw new Error("Expected the run context to contain an Okou token");
   }
-  expect(verifyOkouToken(token)).toMatchObject({
-    runId: args.runId,
-  });
+  const response = await accept(
+    setupApp({ context, routes: runsRoutes })(runsByIdContract).getById({
+      headers: { authorization: `Bearer ${token}` },
+      params: { id: args.runId },
+    }),
+    [200],
+  );
+  expect(response.body.runId).toBe(args.runId);
 }
 
 async function readThreadComputerUseHostId(
@@ -99,7 +106,7 @@ describe("CHAT-02: default assistant identity", () => {
     expect(anchorRun.appendSystemPrompt).toContain("Your name is Okou.");
 
     const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
-    expectRunAppContext({
+    await expectRunAppContext({
       actor,
       runId: anchor.runId,
       claim: anchorClaim.claim,
@@ -158,7 +165,7 @@ describe("CHAT-02: default assistant identity", () => {
     const promotedRun = await api.readRun(actor, promoted.runId);
     expect(promotedRun.appendSystemPrompt).toContain("Your name is Okou.");
     const promotedClaim = await claimChatRun(runnerGroup, promoted.runId);
-    expectRunAppContext({
+    await expectRunAppContext({
       actor,
       runId: promoted.runId,
       claim: promotedClaim.claim,
@@ -180,7 +187,7 @@ describe("CHAT-02: default assistant identity", () => {
     expect(customPrompt).toContain("Your name is Nova.");
     expect(customPrompt).not.toContain("Your name is Okou.");
     const customClaim = await claimChatRun(runnerGroup, customRun.runId);
-    expectRunAppContext({
+    await expectRunAppContext({
       actor,
       runId: customRun.runId,
       claim: customClaim.claim,

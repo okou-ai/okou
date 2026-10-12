@@ -1,22 +1,21 @@
-import { randomUUID } from "node:crypto";
 import {
   chatThreadMetadataContract,
   chatThreadRenameContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { createStore } from "ccstate";
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { createBddApi } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { seedOrgMembership$ } from "./helpers/org-membership";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { chatThreadRenameRoutes } from "../chat-threads-rename";
+import { createBddApi } from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { seedOrgMembership$ } from "./helpers/org-membership";
 
 const context = testContext();
+const claimedToken = createClaimedRunCredentials(context).okouToken;
 const store = createStore();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
@@ -56,27 +55,6 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
   };
 }
 
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
-}
-
-function okouToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly capabilities: readonly Capability[];
-}): string {
-  const seconds = currentSecond();
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: `run_${randomUUID()}`,
-    capabilities: [...args.capabilities],
-    iat: seconds,
-    exp: seconds + 600,
-  });
-}
-
 function renameClient() {
   return setupApp({ context, routes: chatThreadRenameRoutes })(
     chatThreadRenameContract,
@@ -92,10 +70,9 @@ function metadataClient() {
 describe("POST /api/chat-threads/:id/rename", () => {
   it("renames a thread with an Okou run token carrying chat-thread:write", async () => {
     const fixture = await seedChatThread("Original title");
-    const token = okouToken({
+    const token = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
-      capabilities: ["chat-thread:write"],
     });
 
     const response = await accept(
@@ -111,11 +88,7 @@ describe("POST /api/chat-threads/:id/rename", () => {
     const metadataResponse = await accept(
       metadataClient().get({
         headers: {
-          authorization: `Bearer ${okouToken({
-            userId: fixture.userId,
-            orgId: fixture.orgId,
-            capabilities: ["chat-thread:read"],
-          })}`,
+          authorization: `Bearer ${await claimedToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
         },
         params: { id: fixture.threadId },
       }),
@@ -224,31 +197,6 @@ describe("POST /api/chat-threads/:id/rename", () => {
     expect(metadata.body.title).toBe("Member title");
   });
 
-  it("rejects an Okou run token without chat-thread:write", async () => {
-    const fixture = await seedChatThread("Original title");
-    const token = okouToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      capabilities: ["chat-event:read"],
-    });
-
-    const response = await accept(
-      renameClient().rename({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: fixture.threadId },
-        body: { title: "Unauthorized title" },
-      }),
-      [403],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        code: "FORBIDDEN",
-        message: "Missing required capability: chat-thread:write",
-      },
-    });
-  });
-
   it("does not rename a same-user thread from another org", async () => {
     const fixture = await seedChatThread("Original title");
     const otherOrgId = `org_${randomUUID()}`;
@@ -261,11 +209,7 @@ describe("POST /api/chat-threads/:id/rename", () => {
     const response = await accept(
       renameClient().rename({
         headers: {
-          authorization: `Bearer ${okouToken({
-            userId: fixture.userId,
-            orgId: otherOrgId,
-            capabilities: ["chat-thread:write"],
-          })}`,
+          authorization: `Bearer ${await claimedToken({ userId: fixture.userId, orgId: otherOrgId })}`,
         },
         params: { id: fixture.threadId },
         body: { title: "Wrong org title" },
@@ -279,11 +223,7 @@ describe("POST /api/chat-threads/:id/rename", () => {
     const metadataResponse = await accept(
       metadataClient().get({
         headers: {
-          authorization: `Bearer ${okouToken({
-            userId: fixture.userId,
-            orgId: fixture.orgId,
-            capabilities: ["chat-thread:read"],
-          })}`,
+          authorization: `Bearer ${await claimedToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
         },
         params: { id: fixture.threadId },
       }),

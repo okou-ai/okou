@@ -1,17 +1,16 @@
+import { prepareSessionHistoryBytes } from "./helpers/prepared-session-history";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { randomUUID } from "node:crypto";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
-import { createHash, randomUUID } from "node:crypto";
 
-import { describe, expect, it, onTestFinished } from "vitest";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { hostRoutes } from "../host";
 
+import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockOptionalEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { artifactCatalogRoutes } from "../artifact-catalog";
@@ -23,7 +22,11 @@ import {
 } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { hostedTextFile } from "./helpers/api-bdd-host-files";
+import {
+  hostedTextFile,
+  installHostedUploadTransport,
+  uploadHostedTextFiles,
+} from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -41,11 +44,24 @@ const sharedThreadTestRoutes: readonly RouteEntry[] = [
   ...artifactCatalogRoutes,
   ...sharedThreadRoutes,
 ];
+function createCatalogStorage() {
+  let storage:
+    ReturnType<typeof chatCallbacks.acceptChatObjectStorage> | undefined;
+  beforeEach(() => {
+    storage = undefined;
+  });
+  return () => {
+    storage ??= chatCallbacks.acceptChatObjectStorage();
+    return storage;
+  };
+}
+const catalogStorage = createCatalogStorage();
 type RunnerClaim = Awaited<ReturnType<typeof api.claimRunnerJob>>;
 interface CatalogActor {
   readonly actor: ApiTestUser;
   readonly agentId: string;
   readonly runnerGroup: string;
+  readonly storage: ReturnType<typeof chatCallbacks.acceptChatObjectStorage>;
 }
 
 /**
@@ -55,7 +71,7 @@ interface CatalogActor {
 function stageUploadObject(
   key: string,
   size: number,
-  storage = chatCallbacks.acceptChatObjectStorage(),
+  storage = catalogStorage(),
 ): void {
   storage.addObject({ bucket: "test-user-artifacts", key, size });
 }
@@ -65,7 +81,7 @@ async function catalogActor(
   actor: ApiTestUser = bdd.user(),
   options: { readonly bootstrapOrg?: boolean } = {},
 ): Promise<CatalogActor> {
-  chatCallbacks.acceptChatObjectStorage();
+  const storage = catalogStorage();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
@@ -86,7 +102,7 @@ async function catalogActor(
     displayName,
     visibility: "private",
   });
-  return { actor, agentId: agent.agentId, runnerGroup };
+  return { actor, agentId: agent.agentId, runnerGroup, storage };
 }
 
 async function sendChatRun(
@@ -131,9 +147,15 @@ async function completeChatRunOk(
   sandboxHeaders: { readonly authorization: string },
   lastEventSequence?: number,
 ): Promise<void> {
-  const historyHash = createHash("sha256")
-    .update(`bdd artifact catalog history ${runId}`)
-    .digest("hex");
+  const historyHash = await prepareSessionHistoryBytes(
+    context,
+    runId,
+    sandboxHeaders,
+    Buffer.from(`bdd artifact catalog history ${runId}`),
+    (restore) => {
+      onTestFinished(restore);
+    },
+  );
   await webhooks.requestAgentComplete(
     {
       runId,
@@ -326,7 +348,6 @@ async function publishHostedSite(args: {
   readonly site: string;
   readonly artifactKind?: "hosted-site" | "presentation-html";
   readonly threadId?: string;
-  readonly claimRun?: boolean;
 }): Promise<{
   readonly url: string;
   readonly siteId: string;
@@ -341,14 +362,8 @@ async function publishHostedSite(args: {
     prompt: `publish ${args.site}`,
     ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
   });
-  const claimed =
-    args.claimRun === false
-      ? null
-      : await claimChatRun(args.owner.runnerGroup, run.runId);
-  const bearer =
-    claimed === null
-      ? `Bearer ${scopedOkouToken(args.owner, run.runId, ["host:write"])}`
-      : `Bearer ${okouTokenFromClaim(claimed.claim)}`;
+  const claimed = await claimChatRun(args.owner.runnerGroup, run.runId);
+  const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
   const body = {
     site: args.site,
     artifactKind: args.artifactKind ?? ("hosted-site" as const),
@@ -356,11 +371,13 @@ async function publishHostedSite(args: {
     files: [hostedTextFile("/index.html", `<main>${args.site}</main>`)],
   };
 
+  installHostedUploadTransport(context, args.owner.storage);
   const prepared = await chat.prepareHostedSiteWithBearer(bearer, body);
+  await uploadHostedTextFiles(prepared, {
+    "/index.html": `<main>${args.site}</main>`,
+  });
   await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
-  if (claimed !== null) {
-    await completeChatRunOk(run.runId, claimed.sandboxHeaders);
-  }
+  await completeChatRunOk(run.runId, claimed.sandboxHeaders);
   return {
     url: prepared.url,
     siteId: prepared.siteId,
@@ -372,26 +389,6 @@ async function publishHostedSite(args: {
     runId: run.runId,
     threadId: run.threadId,
   };
-}
-
-function scopedOkouToken(
-  owner: CatalogActor,
-  runId: string,
-  capabilities: readonly ("file:write" | "host:read" | "host:write")[],
-): string {
-  if (!owner.actor.orgId) {
-    throw new Error("Expected artifact catalog actor to have an org");
-  }
-  const seconds = Math.floor(now() / 1000);
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: owner.actor.userId,
-    orgId: owner.actor.orgId,
-    runId,
-    capabilities,
-    iat: seconds,
-    exp: seconds + 60,
-  });
 }
 
 describe("GET /api/artifacts/catalog", () => {
@@ -726,7 +723,6 @@ describe("GET /api/artifacts/catalog", () => {
       owner,
       site,
       threadId: hosted.threadId,
-      claimRun: false,
     });
     // Redeploying keeps one site; each publication stays its own artifact.
     expect(second.siteId).toBe(hosted.siteId);
@@ -945,7 +941,6 @@ describe("GET /api/artifacts/catalog", () => {
       site,
       artifactKind: "presentation-html",
       threadId: hosted.threadId,
-      claimRun: false,
     });
 
     // One name is one site, and its single catalog entry follows the newest

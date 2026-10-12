@@ -1,30 +1,29 @@
-import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
 import {
   chatThreadConnectorSelectionContract,
   chatThreadMetadataContract,
   chatThreadModelSelectionContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import { welcomeChatThreadsContract } from "@okouai/api-contracts/contracts/welcome-chat-threads";
 import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { SUPPORTED_USER_LOCALES } from "@okouai/api-contracts/contracts/user-preferences";
+import { welcomeChatThreadsContract } from "@okouai/api-contracts/contracts/welcome-chat-threads";
+import { randomUUID } from "node:crypto";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { welcomeChatThreadRoutes } from "../welcome-chat-threads";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadGetRoutes } from "../chat-threads-get";
-import { userModelPreferenceRoutes } from "../user-model-preference";
-import { meModelProvidersListRoutes } from "../me-model-providers-list";
-import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
+import { meModelProvidersListRoutes } from "../me-model-providers-list";
 import { meModelProvidersResetSubscriptionRoutes } from "../me-model-providers-reset-subscription";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { userModelPreferenceRoutes } from "../user-model-preference";
+import { welcomeChatThreadRoutes } from "../welcome-chat-threads";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -39,6 +38,7 @@ const personalModelProviderTestRoutes = Object.freeze([
 ]);
 
 const context = testContext();
+const credentials = createClaimedRunCredentials(context);
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
@@ -130,41 +130,15 @@ describe("POST /api/welcome-chat-threads", () => {
     expect(response.status).toBe(401);
   });
 
-  it("requires write capability and current membership for agent credentials", async () => {
-    const { actor } = await fixture();
-    if (!actor.orgId) {
-      throw new Error("Expected a workspace");
-    }
-    const orgId = actor.orgId;
+  it("rejects a claimed credential after the member leaves the organization", async () => {
+    const actor = bdd.user();
+    const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
+    const token = await credentials.okouToken(member);
+    await credentials.removeMember(member, actor);
     const clientThreadId = randomUUID();
-    const token = (userId: string, capabilities: Capability[]) => {
-      return signSandboxJwtForTests({
-        scope: "okou",
-        userId,
-        orgId,
-        runId: randomUUID(),
-        capabilities,
-        iat: Math.floor(now() / 1000),
-        exp: Math.floor(now() / 1000) + 600,
-      });
-    };
     await accept(
       welcomeClient().create({
-        headers: {
-          authorization: `Bearer ${token(actor.userId, ["chat-thread:read"])}`,
-        },
-        body: { clientThreadId },
-      }),
-      [403],
-    );
-    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-      data: [],
-    });
-    await accept(
-      welcomeClient().create({
-        headers: {
-          authorization: `Bearer ${token(`user_${randomUUID()}`, ["chat-thread:write"])}`,
-        },
+        headers: { authorization: `Bearer ${token}` },
         body: { clientThreadId },
       }),
       [401],

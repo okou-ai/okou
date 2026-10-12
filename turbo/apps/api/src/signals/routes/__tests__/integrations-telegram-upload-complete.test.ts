@@ -1,61 +1,40 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
-import { integrationsTelegramUploadInitRoutes } from "../integrations-telegram-upload-init";
-import { randomUUID } from "node:crypto";
-import { beforeEach, describe, expect, it } from "vitest";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
+import { randomUUID } from "node:crypto";
+import { beforeEach, describe, expect, it } from "vitest";
+import { integrationsTelegramUploadInitRoutes } from "../integrations-telegram-upload-init";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 
 import {
   integrationsTelegramUploadCompleteContract,
   integrationsTelegramUploadInitContract,
 } from "@okouai/api-contracts/contracts/integrations";
 
+import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { server } from "../../../mocks/server";
-import { now } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
-import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+import { server } from "../../../mocks/server";
+import { integrationsTelegramUploadCompleteRoutes } from "../integrations-telegram-upload-complete";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createPublicTelegramActor } from "./helpers/public-telegram-actor";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
-import { integrationsTelegramUploadCompleteRoutes } from "../integrations-telegram-upload-complete";
 
 const context = testContext();
+const credentials = createClaimedRunCredentials(context);
 const store = createStore();
 const bdd = createBddApi(context);
 const chatApi = createChatFilesBddApi(context);
 const runsApi = createRunsApi(context);
 
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
-}
-
 function uniqueBotId(): string {
   return String(100_000_000 + Math.floor(Math.random() * 899_999_999));
-}
-
-function okouToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly runId: string;
-}): string {
-  const seconds = currentSecond();
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: args.runId,
-    capabilities: ["telegram:write"],
-    iat: seconds,
-    exp: seconds + 60,
-  });
 }
 
 function actorFor(args: {
@@ -274,7 +253,6 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
   it("returns 404 for an unsupported bot id", async () => {
     const orgId = `org_${randomUUID().slice(0, 8)}`;
     const userId = `user_${randomUUID().slice(0, 8)}`;
-    const runId = `run_${randomUUID()}`;
     await store.set(
       seedOrgMembership$,
       { orgId, userId, role: "admin" },
@@ -293,7 +271,7 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
           chatId: "-1001234567890",
         },
         headers: {
-          authorization: `Bearer ${okouToken({ userId, orgId, runId })}`,
+          authorization: `Bearer ${await credentials.okouToken({ userId, orgId })}`,
         },
       }),
       [404],
@@ -304,10 +282,8 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
   it("returns 403 when the token has no organization membership", async () => {
     const userId = `user_${randomUUID().slice(0, 8)}`;
     const orgId = `org_${randomUUID().slice(0, 8)}`;
-    const runId = `run_${randomUUID()}`;
-    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-      data: [],
-    });
+    const token = await credentials.okouToken({ userId, orgId });
+    await credentials.removeMember({ userId, orgId });
     const client = setupApp({
       context,
       routes: integrationsTelegramUploadCompleteRoutes,
@@ -321,7 +297,7 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
           chatId: "-1001234567890",
         },
         headers: {
-          authorization: `Bearer ${okouToken({ userId, orgId, runId })}`,
+          authorization: `Bearer ${token}`,
         },
       }),
       [403],

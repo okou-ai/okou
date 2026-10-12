@@ -10,15 +10,15 @@ import { afterEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 
-import { seedOrgMembership$ } from "./helpers/org-membership";
-import { createRouteMocks } from "./helpers/route-test";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
+import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const claimedToken = createClaimedRunCredentials(context).okouToken;
 const store = createStore();
 const mocks = createRouteMocks(context);
 
@@ -29,10 +29,6 @@ interface AuthenticatedFixture {
 
 function authHeaders() {
   return { authorization: "Bearer clerk-session" };
-}
-
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
 }
 
 function seedAuthenticatedFixture(): AuthenticatedFixture {
@@ -187,15 +183,9 @@ describe("GET /api/connectors/:connectorSlug", () => {
     seededFixtures.push(fixture);
     await connectOpenai(fixture);
 
-    const seconds = currentSecond();
-    const token = signSandboxJwtForTests({
-      scope: "okou",
+    const token = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
-      runId: `run_${randomUUID()}`,
-      capabilities: ["connector:read"],
-      iat: seconds,
-      exp: seconds + 60,
     });
 
     const client = setupApp({ context, routes: builtinConnectorsRoutes })(

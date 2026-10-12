@@ -1,48 +1,45 @@
 import { randomUUID } from "node:crypto";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 
-import {
-  GetObjectCommand,
-  HeadObjectCommand,
-  ListObjectsV2Command,
-} from "@aws-sdk/client-s3";
-import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
-import {
-  integrationsFeishuMessageContract,
-  integrationsLarkUploadCompleteContract,
-  integrationsLarkUploadInitContract,
-  integrationsFeishuUploadCompleteContract,
-  integrationsFeishuUploadInitContract,
-} from "@okouai/api-contracts/contracts/integrations";
 import {
   feishuConnectContract,
   larkConnectContract,
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
 import {
+  integrationsFeishuMessageContract,
+  integrationsFeishuUploadCompleteContract,
+  integrationsFeishuUploadInitContract,
+  integrationsLarkUploadCompleteContract,
+  integrationsLarkUploadInitContract,
+} from "@okouai/api-contracts/contracts/integrations";
+import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
+import { HttpResponse, http } from "msw";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { now } from "../../../lib/time";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
-import type { ApiTestUser } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { mockClerkMembership } from "./helpers/api-bdd-clerk";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { createRouteMocks } from "./helpers/route-test";
 import { feishuConnectRoutes } from "../feishu-connect";
 import { feishuOauthRoutes } from "../feishu-oauth";
 import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
 import { integrationsFeishuMessageRoutes } from "../integrations-feishu-message";
+import type { ApiTestUser } from "./helpers/api-bdd";
+import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { mockClerkMembership } from "./helpers/api-bdd-clerk";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { createRouteMocks } from "./helpers/route-test";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...feishuConnectRoutes,
@@ -52,6 +49,7 @@ const TEST_APP_ROUTES = Object.freeze([
 ]);
 
 const context = testContext();
+const credentials = createClaimedRunCredentials(context);
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const chatApi = createChatFilesBddApi(context);
@@ -71,39 +69,6 @@ interface FeishuRequestBody {
   readonly msg_type: string;
   readonly content: string;
   readonly reply_in_thread?: boolean;
-}
-
-function okouToken(args: {
-  readonly platform?: FeishuPlatform;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly runId?: string;
-}): string {
-  const seconds = Math.floor(now() / 1000);
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: args.runId ?? `run_${randomUUID()}`,
-    capabilities: [args.platform === "lark" ? "lark:write" : "feishu:write"],
-    iat: seconds,
-    exp: seconds + 60,
-  });
-}
-
-function sandboxToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-}): string {
-  const seconds = Math.floor(now() / 1000);
-  return signSandboxJwtForTests({
-    scope: "sandbox",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: `run_${randomUUID()}`,
-    iat: seconds,
-    exp: seconds + 60,
-  });
 }
 
 interface FeishuTestActor extends ApiTestUser {
@@ -330,10 +295,7 @@ describe("POST /api/integrations/feishu/message", () => {
     const forbidden = await accept(
       client.sendMessage({
         headers: {
-          authorization: `Bearer ${sandboxToken({
-            userId: `user_${randomUUID()}`,
-            orgId: `org_${randomUUID()}`,
-          })}`,
+          authorization: `Bearer ${await credentials.sandboxToken({ userId: `user_${randomUUID()}`, orgId: `org_${randomUUID()}` })}`,
         },
         body: { chat: "oc_chat", text: "hello" },
       }),
@@ -346,7 +308,7 @@ describe("POST /api/integrations/feishu/message", () => {
     const { actor, installationId } = await createOnboardedFeishuInstallation();
     await connectCurrentFeishuUser(actor);
     captured = [];
-    const token = okouToken(actor);
+    const token = await credentials.okouToken(actor);
     const client = setupApp({
       context,
       routes: integrationsFeishuMessageRoutes,
@@ -443,7 +405,7 @@ describe("POST /api/integrations/feishu/message", () => {
       routes: integrationsFeishuMessageRoutes,
     })(integrationsFeishuMessageContract);
     const headers = {
-      authorization: `Bearer ${okouToken(actor)}`,
+      authorization: `Bearer ${await credentials.okouToken(actor)}`,
     };
     const body = {
       installationId,
@@ -511,7 +473,7 @@ describe("POST /api/integrations/feishu/message", () => {
         `/api/integrations/${platform}/download-file?${query.toString()}`,
         {
           headers: {
-            authorization: `Bearer ${okouToken({ ...actor, platform })}`,
+            authorization: `Bearer ${await credentials.okouToken({ ...actor })}`,
           },
         },
       );
@@ -535,15 +497,24 @@ describe("POST /api/integrations/feishu/message", () => {
       await runsApi.ensurePersonalSubscriptionModel(actor);
       const runnerGroup = runsApi.configureRunnerGroup();
       await runsApi.heartbeatRunner(runnerGroup);
-      const sent = await chatApi.sendAndLaunch(actor, {
-        agentId,
-        prompt: "Create a run for Feishu file upload completion",
+      const owner = publicRunOwner(context, actor, {
+        restoreEnvironment: captureConnectorExternalState(context),
       });
-      const token = okouToken({ ...actor, platform, runId: sent.runId });
+      const sent = await owner.run(() => {
+        return chatApi.sendAndLaunch(actor, {
+          agentId,
+          prompt: "Create a run for Feishu file upload completion",
+        });
+      });
+      const claim = await owner.run(() => {
+        return owner.claim(sent.runId);
+      });
+      const token = claim.platformEnvironment?.OKOU_TOKEN;
+      if (!token) {
+        throw new Error("Expected the claimed Okou token");
+      }
       const content = Buffer.from("feishu upload bytes");
-      context.mocks.s3.getSignedUrl.mockResolvedValue(
-        "https://storage.test/feishu-upload",
-      );
+      installSharedThreadStorage(context);
       const initClient = setupApp({
         context,
         routes: integrationsFeishuFileRoutes,
@@ -563,39 +534,12 @@ describe("POST /api/integrations/feishu/message", () => {
         }),
         [200],
       );
-      const key = `private-artifacts/${initialized.body.uploadId}/report.pdf`;
-      context.mocks.s3.send.mockImplementation((command: unknown) => {
-        if (command instanceof HeadObjectCommand) {
-          expect(command.input).toMatchObject({
-            Bucket: "test-private-artifacts",
-            Key: key,
-          });
-          return Promise.resolve({
-            ContentLength: content.length,
-            ContentType: "application/pdf",
-          });
-        }
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: [
-              {
-                Key: key,
-                Size: content.length,
-                LastModified: new Date("2026-01-01T00:00:00.000Z"),
-              },
-            ],
-          });
-        }
-        if (command instanceof GetObjectCommand) {
-          return Promise.resolve({
-            ContentLength: content.length,
-            Body: (async function* stream(): AsyncIterable<Uint8Array> {
-              yield content;
-            })(),
-          });
-        }
-        return Promise.resolve({});
+      const uploaded = await fetch(initialized.body.uploadUrl, {
+        method: "PUT",
+        headers: initialized.body.uploadHeaders,
+        body: content,
       });
+      expect(uploaded.status).toBe(200);
 
       server.use(
         http.post(

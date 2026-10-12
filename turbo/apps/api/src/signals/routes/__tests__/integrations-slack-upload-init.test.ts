@@ -1,55 +1,21 @@
+import { createStore } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createStore } from "ccstate";
 
 import { integrationsSlackUploadInitContract } from "@okouai/api-contracts/contracts/integrations";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+import { integrationsSlackUploadInitRoutes } from "../integrations-slack-upload-init";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
-import { integrationsSlackUploadInitRoutes } from "../integrations-slack-upload-init";
 
 const context = testContext();
+const credentials = createClaimedRunCredentials(context);
 const store = createStore();
 const slackOrgs = createPublicSlackOrgApi(context);
 const LARGE_DIRECT_UPLOAD_BYTES = 100 * 1024 * 1024 + 1;
-
-function okouToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly runId: string;
-  readonly capabilities?: readonly string[];
-}): string {
-  const seconds = Math.floor(now() / 1000);
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: args.runId,
-    capabilities: (args.capabilities ?? ["slack:write"]) as never,
-    iat: seconds,
-    exp: seconds + 60,
-  });
-}
-
-function sandboxToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly runId: string;
-}): string {
-  const seconds = Math.floor(now() / 1000);
-  return signSandboxJwtForTests({
-    scope: "sandbox",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: args.runId,
-    iat: seconds,
-    exp: seconds + 60,
-  });
-}
 
 describe("POST /api/integrations/slack/upload-file/init", () => {
   beforeEach(() => {
@@ -95,8 +61,7 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
   it("returns 403 when sandbox token lacks slack:write", async () => {
     const orgId = `org_${randomUUID().slice(0, 8)}`;
     const userId = `user_${randomUUID().slice(0, 8)}`;
-    const runId = `run_${randomUUID()}`;
-    const token = sandboxToken({ userId, orgId, runId });
+    const token = await credentials.sandboxToken({ userId, orgId });
 
     const client = setupApp({
       context,
@@ -123,7 +88,7 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
       { orgId, userId, role: "admin" },
       context.signal,
     );
-    const token = okouToken({ userId, orgId, runId: `run_${randomUUID()}` });
+    const token = await credentials.okouToken({ userId, orgId });
 
     const client = setupApp({
       context,
@@ -144,7 +109,7 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
 
   it("returns 400 for invalid request bodies", async () => {
     const { orgId, userId } = await seedWithInstallation();
-    const token = okouToken({ userId, orgId, runId: `run_${randomUUID()}` });
+    const token = await credentials.okouToken({ userId, orgId });
 
     const client = setupApp({
       context,
@@ -166,7 +131,7 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
 
   it("returns a Slack-issued upload URL and file id on the happy path", async () => {
     const { orgId, userId } = await seedWithInstallation();
-    const token = okouToken({ userId, orgId, runId: `run_${randomUUID()}` });
+    const token = await credentials.okouToken({ userId, orgId });
 
     const client = setupApp({
       context,
@@ -191,7 +156,7 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
 
   it("rejects large canonical uploads after asset graduation", async () => {
     const { orgId, userId } = await seedWithInstallation();
-    const token = okouToken({ userId, orgId, runId: `run_${randomUUID()}` });
+    const token = await credentials.okouToken({ userId, orgId });
 
     const client = setupApp({
       context,
@@ -225,7 +190,7 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
 
   it("forwards Slack non-ok upload URL responses as 400 SLACK_ERROR", async () => {
     const { orgId, userId } = await seedWithInstallation();
-    const token = okouToken({ userId, orgId, runId: `run_${randomUUID()}` });
+    const token = await credentials.okouToken({ userId, orgId });
 
     context.mocks.slack.files.getUploadURLExternal.mockResolvedValueOnce({
       ok: false,
@@ -250,7 +215,7 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
 
   it("forwards malformed Slack upload URL responses as 400 SLACK_ERROR", async () => {
     const { orgId, userId } = await seedWithInstallation();
-    const token = okouToken({ userId, orgId, runId: `run_${randomUUID()}` });
+    const token = await credentials.okouToken({ userId, orgId });
 
     context.mocks.slack.files.getUploadURLExternal.mockResolvedValueOnce({
       ok: true,
@@ -275,7 +240,7 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
 
   it("forwards Slack platform errors as 400 SLACK_ERROR", async () => {
     const { orgId, userId } = await seedWithInstallation();
-    const token = okouToken({ userId, orgId, runId: `run_${randomUUID()}` });
+    const token = await credentials.okouToken({ userId, orgId });
 
     context.mocks.slack.files.getUploadURLExternal.mockRejectedValueOnce(
       Object.assign(new Error("invalid_filename"), {

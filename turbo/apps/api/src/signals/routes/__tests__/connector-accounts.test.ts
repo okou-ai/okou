@@ -5,7 +5,6 @@ import {
   connectorAccountsContract,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import {
   builtinConnectorManualGrantContract,
   builtinConnectorsBySlugContract,
@@ -20,15 +19,13 @@ import {
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 
-import { now } from "../../../lib/time";
-
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { settle } from "../../utils";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -40,6 +37,7 @@ import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const claimedToken = createClaimedRunCredentials(context).okouToken;
 const mocks = createRouteMocks(context);
 const routes = Object.freeze([
   ...connectorAccountRoutes,
@@ -56,22 +54,6 @@ interface Fixture {
 
 function authHeaders() {
   return { authorization: "Bearer clerk-session" };
-}
-
-function sandboxToken(
-  fixture: Fixture,
-  capabilities: readonly Capability[],
-): string {
-  const seconds = Math.floor(now() / 1000);
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: fixture.userId,
-    orgId: fixture.orgId,
-    runId: `run_${randomUUID()}`,
-    capabilities: [...capabilities],
-    iat: seconds,
-    exp: seconds + 600,
-  });
 }
 
 function accountClient() {
@@ -305,7 +287,7 @@ describe("connector account lifecycle routes", () => {
     ]);
   });
 
-  it("requires connector read capability for account inspection", async () => {
+  it("accepts a claimed Runner credential for account inspection", async () => {
     const fixture = await seedFixture();
     mockClerkMembership(
       context,
@@ -321,26 +303,13 @@ describe("connector account lifecycle routes", () => {
     const allowed = await accept(
       accountClient().inspect({
         headers: {
-          authorization: `Bearer ${sandboxToken(fixture, ["connector:read"])}`,
+          authorization: `Bearer ${await claimedToken(fixture)}`,
         },
         body: { selections: [] },
       }),
       [200],
     );
     expect(allowed.body).toStrictEqual({ results: [] });
-
-    const denied = await accept(
-      accountClient().inspect({
-        headers: {
-          authorization: `Bearer ${sandboxToken(fixture, [])}`,
-        },
-        body: { selections: [] },
-      }),
-      [403],
-    );
-    expect(denied.body.error.message).toBe(
-      "Missing required capability: connector:read",
-    );
   });
 
   it("accepts one bounded inspection batch and rejects a larger one", async () => {

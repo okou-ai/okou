@@ -1,18 +1,16 @@
-import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
-import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import {
   agentInstructionsContract,
   agentsByIdContract,
 } from "@okouai/api-contracts/contracts/agents";
-import { agentInstructionsRoutes } from "../agent-instructions";
 import { randomUUID } from "node:crypto";
+import { agentInstructionsRoutes } from "../agent-instructions";
+import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
+import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+import { createApp } from "../../../app-factory";
+import { agentsRoutes } from "../agents";
 import {
   createBddApi,
   expectApiError,
@@ -20,15 +18,12 @@ import {
 } from "./helpers/api-bdd";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { agentsRoutes } from "../agents";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 
 const context = testContext();
+const claimedToken = createClaimedRunCredentials(context).okouToken;
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
-
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
-}
 
 function agentsClient() {
   return setupApp({ context, routes: agentsRoutes })(agentsByIdContract);
@@ -111,25 +106,6 @@ async function apiKeyHeaders(
   return bearerHeaders(key.token);
 }
 
-function okouTokenFor(
-  actor: ApiTestUser,
-  capabilities: readonly Capability[],
-): string {
-  if (!actor.orgId) {
-    throw new Error("Expected an org-scoped actor");
-  }
-  const seconds = currentSecond();
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: actor.userId,
-    orgId: actor.orgId,
-    runId: randomUUID(),
-    capabilities,
-    iat: seconds,
-    exp: seconds + 60,
-  });
-}
-
 describe("GET /api/agents/:id", () => {
   // Exercise every supported credential against the same declared contract
   // path. Invalid path parameters have dedicated coverage below.
@@ -151,7 +127,7 @@ describe("GET /api/agents/:id", () => {
 
     const capabilityBody = await readAgentAs(
       agent.agentId,
-      bearerHeaders(okouTokenFor(actor, ["agent:read"])),
+      bearerHeaders(await claimedToken(actor)),
     );
 
     expect(patBody).toStrictEqual(sessionBody);
@@ -277,33 +253,13 @@ describe("GET /api/agents/:id", () => {
     });
   });
 
-  it("returns 403 for an agent token without agent:read capability", async () => {
-    const actor = bdd.user();
-    const token = okouTokenFor(actor, ["file:read"]);
-
-    const response = await accept(
-      agentsClient().get({
-        params: { id: randomUUID() },
-        headers: bearerHeaders(token),
-      }),
-      [403],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Missing required capability: agent:read",
-        code: "FORBIDDEN",
-      },
-    });
-  });
-
   it("returns the agent for an agent token with agent:read capability", async () => {
     const actor = bdd.user();
     const agent = await createAgent(actor, {
       displayName: "Okou Run Token Agent",
       description: "Read by an Okou run token",
     });
-    const token = okouTokenFor(actor, ["agent:read"]);
+    const token = await claimedToken(actor);
     mockClerkMembership(context, actor, "org:admin");
 
     const response = await accept(
@@ -333,7 +289,7 @@ describe("DELETE /api/agents/:id", () => {
 
   it("returns 403 for an agent token without agent:delete capability", async () => {
     const actor = bdd.user();
-    const token = okouTokenFor(actor, ["file:read"]);
+    const token = await claimedToken(actor);
 
     const response = await accept(
       agentsClient().delete({

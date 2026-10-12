@@ -1,26 +1,27 @@
-import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { mcpGetChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-snapshots";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
-import { http, HttpResponse } from "msw";
-import { z } from "zod";
 import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import { http, HttpResponse } from "msw";
+import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
+import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mcpServerRoutes } from "../mcp-server";
-import type { ApiTestUser } from "./helpers/api-bdd";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { createRouteMocks } from "./helpers/route-test";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { modelCatalogRoutes } from "../model-catalog";
 import { userModelPreferenceRoutes } from "../user-model-preference";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+import type { ApiTestUser } from "./helpers/api-bdd";
+import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const credentials = createClaimedRunCredentials(context);
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const {
@@ -231,20 +232,12 @@ describe("GET /api/model-catalog", () => {
   });
 
   it.each(["okou", "sandbox"] as const)(
-    "allows authenticated %s tokens to read the catalog without a dedicated capability",
+    "allows authenticated %s tokens to read the catalog",
     async (scope) => {
       const actor = authOrgApi.user({ orgRole: "org:member" });
       authOrgApi.mockClerkOrg(actor);
-      const seconds = Math.floor(now() / 1000);
-      const token = signSandboxJwtForTests({
-        scope,
-        userId: actor.userId,
-        orgId: requireOrgId(actor),
-        runId: randomUUID(),
-        capabilities: [],
-        iat: seconds,
-        exp: seconds + 60,
-      });
+      const claimed = await credentials.claim(actor);
+      const token = scope === "okou" ? claimed.token : claimed.sandboxToken;
 
       const response = await accept(
         apiClient().get({ headers: { authorization: `Bearer ${token}` } }),
@@ -264,16 +257,8 @@ describe("GET /api/model-catalog", () => {
   it("rejects an expired agent token", async () => {
     const actor = authOrgApi.user({ orgRole: "org:member" });
     authOrgApi.mockClerkOrg(actor);
-    const seconds = Math.floor(now() / 1000);
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId: actor.userId,
-      orgId: requireOrgId(actor),
-      runId: randomUUID(),
-      capabilities: [],
-      iat: seconds - 120,
-      exp: seconds - 60,
-    });
+    const token = await credentials.okouToken(actor);
+    mockNow(now() + 2 * 60 * 60 * 1000 + 1000);
 
     const response = await apiClient().get({
       headers: { authorization: `Bearer ${token}` },
@@ -284,17 +269,8 @@ describe("GET /api/model-catalog", () => {
 
   it("rejects an agent token whose user is no longer an organization member", async () => {
     const actor = authOrgApi.user({ orgRole: "org:member" });
-    authOrgApi.mockClerkOrg(actor, { members: [] });
-    const seconds = Math.floor(now() / 1000);
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId: actor.userId,
-      orgId: requireOrgId(actor),
-      runId: randomUUID(),
-      capabilities: [],
-      iat: seconds,
-      exp: seconds + 60,
-    });
+    const token = await credentials.okouToken(actor);
+    await credentials.removeMember(actor);
 
     const response = await apiClient().get({
       headers: { authorization: `Bearer ${token}` },
