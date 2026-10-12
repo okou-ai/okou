@@ -26,7 +26,7 @@ ruleTester.run("require-sql-result-mapping", requireSqlResultMapping, {
   valid: [
     {
       code: `${preamble}
-        import { orgMembersMetadata } from "@okouai${"/db/runtime/org-members-metadata"}";
+        import { orgMembersMetadata } from "@okouai${"/db/schema/org-members-metadata"}";
         import { sql } from "drizzle-orm";
         import { nullableDriverValueDecoder } from "../../apps/api/src/lib/db-structured-result";
         db.select({
@@ -159,7 +159,7 @@ ruleTester.run("require-sql-result-mapping", requireSqlResultMapping, {
   invalid: [
     {
       code: `${preamble}
-        import { orgMembersMetadata } from "@okouai${"/db/runtime/org-members-metadata"}";
+        import { orgMembersMetadata } from "@okouai${"/db/schema/org-members-metadata"}";
         import { sql } from "drizzle-orm";
         db.select({ modelSettings: sql\`COALESCE(\${orgMembersMetadata.modelSettings}, '{}'::jsonb)\` }).from(orgMembersMetadata);
       `,

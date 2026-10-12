@@ -16,8 +16,7 @@ function isSchemaModule(source: string | undefined): boolean {
     source?.startsWith(SCHEMA_MODULE_PREFIX) === true ||
     source === "@okouai/db/runtime/agent-run" ||
     source === "@okouai/db/runtime/chat-thread" ||
-    source === "@okouai/db/runtime/connector-catalog" ||
-    source === "@okouai/db/runtime/org-members-metadata"
+    source === "@okouai/db/runtime/connector-catalog"
   );
 }
 const DATABASE_NAMES = new Set([
