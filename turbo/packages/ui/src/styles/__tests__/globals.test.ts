@@ -354,6 +354,28 @@ describe("interaction state ladder", () => {
   });
 });
 
+describe("brand neutrals", () => {
+  const brandNeutrals = [
+    ["--brand-charcoal", "#252121"],
+    ["--brand-dark-gray", "#665D5D"],
+    ["--brand-gray", "#989292"],
+    ["--brand-silver", "#CECECE"],
+    ["--brand-light-gray", "#E5E5E5"],
+    ["--brand-off-white", "#F8F5F3"],
+  ] as const;
+
+  it.each(brandNeutrals)(
+    "keeps %s at the guideline value in both themes",
+    (name, hex) => {
+      const light = readCustomProperties(readRuleBody(globalCss, ":root"));
+      const dark = readCustomProperties(readRuleBody(globalCss, ".dark,"));
+
+      expect(rgbToHex(color(light, name))).toBe(hex);
+      expect(dark.has(name)).toBe(false);
+    },
+  );
+});
+
 describe("primary palette", () => {
   it.each([
     { name: "light", selector: ":root" },
