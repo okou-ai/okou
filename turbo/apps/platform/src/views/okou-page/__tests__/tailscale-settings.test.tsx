@@ -577,6 +577,12 @@ test("Changing organizations unmounts the draft, clears secrets and hides old ne
   expect(secret).toHaveValue("");
   expect(screen.queryByText(config.name)).toBeNull();
   expect(screen.queryByText(shared.name)).toBeNull();
+  await act(() => {
+    mockOrganization(auth.organization);
+    emitMockedClerkEvent();
+  });
+  await screen.findByText(config.name);
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
 
 test("An unavailable list stays an error and can be retried instead of appearing empty", async () => {

@@ -222,9 +222,16 @@ export const mountTailscaleForm$ = onRef(
       () => {
         form.reset();
         if (get(dialog$) === mounted) {
-          set(resetSave$);
-          set(attempt$, null);
-          set(replace$, false);
+          if (
+            !get(tailscaleEnabled$) ||
+            mounted?.sessionKey !== get(authenticatedSessionKey$)
+          ) {
+            set(closeTailscaleDialog$);
+          } else {
+            set(resetSave$);
+            set(attempt$, null);
+            set(replace$, false);
+          }
         }
       },
       { once: true },
