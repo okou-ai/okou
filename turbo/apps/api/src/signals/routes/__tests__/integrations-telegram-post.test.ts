@@ -1506,6 +1506,64 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     await runCanonicalTelegramForumScenario("callback");
   });
 
+  it("does not deliver a completed Telegram reply after public unlink", async () => {
+    const runnerGroup = configureCanonicalTelegramRunner();
+    const fixture = await createTelegramPostFixture({ linkOfficial: true });
+    const telegramMocks = telegramApiMocks();
+    const prompt = `@${OFFICIAL_BOT_USERNAME} complete after unlink`;
+    expect(
+      (
+        await postWebhook({
+          telegramBotId: fixture.telegramBotId,
+          secret: fixture.webhookSecret,
+          body: {
+            update_id: 205,
+            message: {
+              message_id: 2207,
+              message_thread_id: 9202,
+              chat: { id: -77_203, type: "supergroup" },
+              from: { id: Number(fixture.telegramUserId), first_name: "Alice" },
+              text: prompt,
+              entities: [mentionEntity(OFFICIAL_BOT_USERNAME)],
+            },
+          },
+        })
+      ).status,
+    ).toBe(200);
+    await flushWaitUntilForTest();
+    const run = await runForPrompt(fixture, prompt);
+    if (!run) {
+      throw new Error("Expected the pending Telegram unlink run");
+    }
+    const claim = await claimTelegramRun(run.id, runnerGroup, fixture);
+    const actor = actorForFixture(fixture);
+    await accept(
+      telegramClient().unlink({
+        headers: authOrgApi.authenticate(actor),
+        query: { botId: fixture.telegramBotId },
+      }),
+      [204],
+    );
+    const disconnected = await accept(
+      telegramClient().list({ headers: authOrgApi.authenticate(actor) }),
+      [200],
+    );
+    expect(
+      disconnected.body.bots.find((bot) => {
+        return bot.id === fixture.telegramBotId;
+      }),
+    ).toMatchObject({ id: fixture.telegramBotId, isConnected: false });
+    await completeCanonicalChatRun({
+      runId: run.id,
+      sandboxToken: claim.sandboxToken,
+    });
+    await expect(runForPrompt(fixture, prompt)).resolves.toMatchObject({
+      id: run.id,
+      status: "completed",
+    });
+    expect(telegramMocks.sentMessages).toHaveLength(0);
+  });
+
   it("keeps Telegram completion terminal after provider delivery fails", async () => {
     const runnerGroup = configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
