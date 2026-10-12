@@ -1,7 +1,7 @@
 import { artifacts } from "@okouai/db/schema/artifact";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/schema/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { connectors } from "@okouai/db/schema/connector";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";

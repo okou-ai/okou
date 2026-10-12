@@ -129,7 +129,7 @@
 //!   means the supervised-exec containment invariant could not be proven.
 //!
 //! [`REUSE_PREPARATION_EXIT_HOME_MOUNT_FAILED`](guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_HOME_MOUNT_FAILED)
-//! is reserved for the composed runner workspace-mount wrapper; it is not a
+//! is reserved for the composed runner home-mount wrapper; it is not a
 //! guest-helper failure. Cleanup is not transactional: a later failure can be
 //! returned after earlier stale entries have already been removed.
 //!

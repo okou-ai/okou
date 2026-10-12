@@ -6,6 +6,7 @@ use guest_control_proto::{
     ExecCapturedOutput, ExecTermination, MSG_GUEST_STORAGE_MANIFEST,
     MSG_GUEST_STORAGE_MANIFEST_RESULT,
 };
+use sandbox::StorageManifestRequestTiming;
 use tokio::sync::oneshot;
 
 use crate::operation_tracker::NormalOperationReadiness;
@@ -34,6 +35,108 @@ fn success_payload() -> Vec<u8> {
 }
 
 #[tokio::test]
+async fn storage_timing_retains_only_observed_phases_when_input_validation_fails() {
+    let (host_stream, guest_stream) = make_pair();
+    let (release_tx, release_rx) = oneshot::channel();
+    let guest = tokio::spawn(async move {
+        let mut guest = MockGuest::new(guest_stream);
+        guest.complete_handshake().await;
+        release_rx.await.unwrap();
+    });
+    let host = host_from_stream(host_stream).await.unwrap();
+    let mut timing = StorageManifestRequestTiming {
+        frame_write: Some(Duration::from_secs(9)),
+        response_wait: Some(Duration::from_secs(9)),
+        result_decode: Some(Duration::from_secs(9)),
+        ..StorageManifestRequestTiming::default()
+    };
+    let error = host
+        .guest_storage_manifest_with_timing(
+            b"{}",
+            "",
+            "/run",
+            1,
+            Duration::from_secs(1),
+            &mut timing,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+    assert!(timing.setup.is_some());
+    assert!(timing.frame_builder_wait.is_some());
+    assert!(timing.frame_encode.is_some());
+    assert!(timing.writer_wait.is_none());
+    assert!(timing.frame_write.is_none());
+    assert!(timing.response_wait.is_none());
+    assert!(timing.result_decode.is_none());
+    assert_eq!(pending_request_count(&host), 0);
+    assert_eq!(
+        normal_operation_readiness(&host),
+        NormalOperationReadiness::Idle
+    );
+    release_tx.send(()).unwrap();
+    guest.await.unwrap();
+}
+
+#[tokio::test]
+async fn storage_timing_observes_frame_builder_contention_with_the_original_request() {
+    use std::future::Future;
+    use std::task::{Context, Poll, Waker};
+
+    let (host_stream, guest_stream) = make_pair();
+    let (release_tx, release_rx) = oneshot::channel();
+    let guest = tokio::spawn(async move {
+        let mut guest = MockGuest::new(guest_stream);
+        guest.complete_handshake().await;
+        let request = guest.expect_message(MSG_GUEST_STORAGE_MANIFEST).await;
+        guest
+            .send_response(
+                MSG_GUEST_STORAGE_MANIFEST_RESULT,
+                request.seq,
+                &success_payload(),
+            )
+            .await;
+        release_rx.await.unwrap();
+    });
+    let host = host_from_stream(host_stream).await.unwrap();
+    let gate = host.shared.frame_builder.lock().await;
+    let mut timing = StorageManifestRequestTiming::default();
+    {
+        // Complete real handshake I/O before pausing only this blocked phase.
+        tokio::time::pause();
+        let request = host.guest_storage_manifest_with_timing(
+            b"{}",
+            "run",
+            "/run",
+            1,
+            Duration::from_secs(1),
+            &mut timing,
+        );
+        tokio::pin!(request);
+        assert!(matches!(
+            request
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop())),
+            Poll::Pending
+        ));
+        tokio::time::advance(Duration::from_millis(25)).await;
+        tokio::time::resume();
+        drop(gate);
+        let result = request.await.unwrap();
+        assert_eq!(result.stdout, b"out");
+    }
+    assert!(timing.frame_builder_wait.unwrap() >= Duration::from_millis(25));
+    assert!(timing.frame_write.is_some());
+    assert!(timing.result_decode.is_some());
+    assert_eq!(
+        normal_operation_readiness(&host),
+        NormalOperationReadiness::Idle
+    );
+    release_tx.send(()).unwrap();
+    guest.await.unwrap();
+}
+
+#[tokio::test]
 async fn guest_storage_manifest_sends_request_and_decodes_result() {
     let (host_stream, guest_stream) = make_pair();
     let (release_tx, release_rx) = oneshot::channel();
@@ -58,13 +161,15 @@ async fn guest_storage_manifest_sends_request_and_decodes_result() {
     });
     let host = host_from_stream(host_stream).await.unwrap();
 
+    let mut timing = StorageManifestRequestTiming::default();
     let result = host
-        .guest_storage_manifest(
+        .guest_storage_manifest_with_timing(
             b"{}",
             "run-1",
             "/run/vm0/runs/run-1",
             300_000,
             Duration::from_secs(1),
+            &mut timing,
         )
         .await
         .unwrap();
@@ -76,6 +181,13 @@ async fn guest_storage_manifest_sends_request_and_decodes_result() {
     assert!(!result.stdout_truncated);
     assert!(result.stderr_truncated);
     assert!(result.resources.is_none());
+    assert!(timing.setup.is_some());
+    assert!(timing.frame_builder_wait.is_some());
+    assert!(timing.frame_encode.is_some());
+    assert!(timing.writer_wait.is_some());
+    assert!(timing.frame_write.is_some());
+    assert!(timing.response_wait.is_some());
+    assert!(timing.result_decode.is_some());
     assert_eq!(
         normal_operation_readiness(&host),
         NormalOperationReadiness::Idle
@@ -247,15 +359,31 @@ async fn guest_storage_manifest_timeout_abandons_connection_and_ignores_late_res
     let host = Arc::new(host_from_stream(host_stream).await.unwrap());
     let request_host = Arc::clone(&host);
     let request = tokio::spawn(async move {
-        request_host
-            .guest_storage_manifest(b"{}", "run", "/run", 1, Duration::from_millis(20))
-            .await
+        let mut timing = StorageManifestRequestTiming {
+            result_decode: Some(Duration::from_secs(9)),
+            ..StorageManifestRequestTiming::default()
+        };
+        let result = request_host
+            .guest_storage_manifest_with_timing(
+                b"{}",
+                "run",
+                "/run",
+                1,
+                Duration::from_millis(20),
+                &mut timing,
+            )
+            .await;
+        (result, timing)
     });
     request_rx.await.unwrap();
 
-    let error = request.await.unwrap().unwrap_err();
+    let (result, timing) = request.await.unwrap();
+    let error = result.unwrap_err();
 
     assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+    assert!(timing.frame_write.is_some());
+    assert!(timing.response_wait.is_some());
+    assert!(timing.result_decode.is_none());
     assert_eq!(pending_request_count(&host), 0);
     assert_eq!(
         normal_operation_readiness(&host),
@@ -281,8 +409,16 @@ async fn dropping_guest_storage_manifest_after_write_abandons_connection_for_par
     let host = Arc::new(host_from_stream(host_stream).await.unwrap());
     let request_host = Arc::clone(&host);
     let request = tokio::spawn(async move {
+        let mut timing = StorageManifestRequestTiming::default();
         request_host
-            .guest_storage_manifest(b"{}", "run", "/run", 1, Duration::from_secs(1))
+            .guest_storage_manifest_with_timing(
+                b"{}",
+                "run",
+                "/run",
+                1,
+                Duration::from_secs(1),
+                &mut timing,
+            )
             .await
     });
     request_rx.await.unwrap();

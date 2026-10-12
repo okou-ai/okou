@@ -1201,7 +1201,7 @@ async fn execute_cli_inner(
     cmd.stdin(Stdio::piped());
     child_env::apply_values_to_tokio_command(&mut cmd, &child_env_values);
     // Set the child cwd explicitly at spawn time so the CLI observes the
-    // current canonical workspace mount instead of relying on inherited cwd.
+    // current canonical working directory instead of relying on inherited cwd.
     set_cli_current_dir(&mut cmd, paths::CANONICAL_WORKING_DIR)?;
     if let Some(workload_containment) = workload_containment {
         workload_containment.configure_command(&mut cmd)?;
@@ -2631,6 +2631,29 @@ mod tests {
                 "--no-audit".to_string(),
                 "--package=https://static.okou.io/okou-cli/abc/package.tgz".to_string(),
                 "okou".to_string(),
+                "__agent-loop".to_string()
+            ]
+        );
+
+        runtime.pi_installed_cli_requirement = Cow::Borrowed(
+            r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.387.0","requiredPiSessionConstructionDigest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}"#,
+        );
+        assert_eq!(
+            build_pi_command_for_runtime(&runtime, Some(&installed))
+                .unwrap()
+                .last()
+                .unwrap(),
+            "__agent-loop"
+        );
+        let mut current = installed_okou_cli_for_test("9.387.0", "1.36.0");
+        current.session_construction =
+            Some(guest_contracts::okou_cli::OkouCliSessionConstruction {
+                digest: "d".repeat(64),
+            });
+        assert_eq!(
+            build_pi_command_for_runtime(&runtime, Some(&current)).unwrap(),
+            vec![
+                OKOU_CLI_LAUNCHER_PATH.to_string(),
                 "__agent-loop".to_string()
             ]
         );

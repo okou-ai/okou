@@ -244,14 +244,6 @@ interface SlackCommandRequest {
   readonly triggerId?: string;
 }
 
-interface SlackPickerSubmissionArgs {
-  readonly workspaceId: string;
-  readonly slackUserId: string;
-  readonly selectedValue: string;
-  readonly channelId?: string;
-  readonly chatThreadId?: string;
-}
-
 function signedSlackHeaders(
   body: string,
   timestampOverride?: string,
@@ -288,41 +280,6 @@ function slackCommandRequestBody(args: SlackCommandRequest): string {
     trigger_id: args.triggerId ?? "trigger-bdd",
     api_app_id: "A-bdd",
   }).toString();
-}
-
-function slackPickerSubmission(
-  callbackId: string,
-  blockId: string,
-  actionId: string,
-  args: SlackPickerSubmissionArgs,
-): Record<string, unknown> {
-  return {
-    type: "view_submission",
-    user: {
-      id: args.slackUserId,
-      username: "bdduser",
-      team_id: args.workspaceId,
-    },
-    team: { id: args.workspaceId, domain: "bdd" },
-    view: {
-      callback_id: callbackId,
-      ...(args.channelId === undefined
-        ? {}
-        : {
-            private_metadata: JSON.stringify({
-              channelId: args.channelId,
-              ...(args.chatThreadId ? { chatThreadId: args.chatThreadId } : {}),
-            }),
-          }),
-      state: {
-        values: {
-          [blockId]: {
-            [actionId]: { selected_option: { value: args.selectedValue } },
-          },
-        },
-      },
-    },
-  };
 }
 
 function clerkUserProfile(actor: ApiTestUser): ClerkUserProfile {
@@ -1292,17 +1249,6 @@ export function createBddIntegrationApi(context: TestContext) {
         [200],
       );
       return response.body;
-    },
-
-    modelPickerSubmission(
-      args: SlackPickerSubmissionArgs,
-    ): Record<string, unknown> {
-      return slackPickerSubmission(
-        "model_preference_modal",
-        "model_select_block",
-        "model_select",
-        args,
-      );
     },
 
     async readUserModelPreference(actor: ApiTestUser) {

@@ -9,8 +9,6 @@ pub enum ReactorError {
     #[error(transparent)]
     Provider(#[from] runner_provider::ProviderError),
     #[error(transparent)]
-    Storage(#[from] runner_storage::StorageError),
-    #[error(transparent)]
     Lifecycle(#[from] runner_lifecycle::LifecycleError),
     #[error(transparent)]
     Network(#[from] runner_network::NetworkError),

@@ -1,4 +1,4 @@
-//! Shared, bounded view of reusable workspaces backed by the home cache.
+//! Shared, bounded view of reusable homes backed by the home cache.
 //!
 //! Heartbeats refresh this state from an asynchronous cache scan, while
 //! finalization immediately upserts successful home-cache promotions.
@@ -184,20 +184,20 @@ fn merge_held_home_state(existing: &mut HeldHomeState, mut incoming: HeldHomeSta
     if incoming.last_completed_at > existing.last_completed_at {
         existing.last_completed_at = incoming.last_completed_at;
     }
-    for incoming_workspace in incoming.home_caches.drain(..) {
+    for incoming_home_cache in incoming.home_caches.drain(..) {
         match existing
             .home_caches
             .iter_mut()
-            .find(|workspace| workspace.profile == incoming_workspace.profile)
+            .find(|home_cache| home_cache.profile == incoming_home_cache.profile)
         {
-            Some(existing_workspace)
-                if incoming_workspace.home_affinity_version
-                    >= existing_workspace.home_affinity_version =>
+            Some(existing_home_cache)
+                if incoming_home_cache.home_affinity_version
+                    >= existing_home_cache.home_affinity_version =>
             {
-                *existing_workspace = incoming_workspace;
+                *existing_home_cache = incoming_home_cache;
             }
             Some(_) => {}
-            None => existing.home_caches.push(incoming_workspace),
+            None => existing.home_caches.push(incoming_home_cache),
         }
     }
     existing

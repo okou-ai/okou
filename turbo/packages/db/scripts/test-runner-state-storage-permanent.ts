@@ -17,8 +17,8 @@ import { z } from "zod";
 import { runnerState } from "../src/runtime/runner-state";
 import { runnerState as physicalRunnerState } from "../src/schema/runner-state";
 
-/** Executing canonical ORM contract, also used by the retained-shape validator. */
-export async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
+/** Executing permanent canonical ORM storage contract. */
+async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
   const db = drizzle(client);

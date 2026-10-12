@@ -19,9 +19,9 @@
 //!   branches do not restart polling;
 //! - heartbeat and status retry tasks run independently of the reactor so its
 //!   inline resource waits cannot strand a queued task ahead of it;
-//! - workspace-cache watcher work is pinned across reactor turns so async
+//! - home-cache watcher work is pinned across reactor turns so async
 //!   metadata classification cannot lose already-drained kernel events;
-//! - routine workspace-cache GC is independently scheduled and single-flight, and
+//! - routine home-cache GC is independently scheduled and single-flight, and
 //!   its host-global cadence is coordinated through the capacity lock;
 //! - the first routine heartbeat tick is deferred;
 //! - teardown drains heartbeat work and drops discovery before provider

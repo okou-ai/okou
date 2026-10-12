@@ -1,3 +1,4 @@
+import { PersonalSubscriptionDialogs } from "./subscription-linking.tsx";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
 import {
@@ -490,6 +491,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       data-color-theme={paletteColorTheme}
     >
       <SettingsDialogMount />
+      <PersonalSubscriptionDialogs />
       <ChatShortcutHelpDialog />
       <ConcurrencyConfirmDialog />
       <CreditPurchaseConfirmDialog />

@@ -151,7 +151,7 @@ const previewReload$ = state(0);
 // Never retain a request body: only its immutable identity survives uncertainty.
 const attempt$ = state<{
   readonly dialog: TailscaleDialogState;
-  readonly id: string | null;
+  readonly id: string;
 } | null>(null);
 const resetSave$ = resetSignal();
 
@@ -323,7 +323,7 @@ export const tailscaleImpact$ = computed(async (get) => {
 });
 export const tailscaleLatestConfig$ = computed(async (get) => {
   const dialog = await get(tailscaleDialog$);
-  if (!dialog?.config || !get(error$)) {
+  if (dialog?.kind !== "edit" || !dialog.config || !get(error$)) {
     return null;
   }
   return (
@@ -381,8 +381,15 @@ export const reviewTailscale$ = command(
   },
 );
 export const refreshTailscaleReview$ = command(
-  ({ set }, signal: AbortSignal) => {
+  ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
+    const dialog = get(dialog$);
+    if (
+      dialog?.kind === "adopt" ||
+      (dialog?.kind === "delete" && dialog.config?.scope === "organization")
+    ) {
+      set(error$, null);
+    }
     set(acknowledged$, null);
     set(previewReload$, (value) => {
       return value + 1;
@@ -413,56 +420,6 @@ export function tailscaleFieldsFromForm(form: HTMLFormElement) {
   };
 }
 
-const reconcileTailscaleAttempt$ = command(
-  async ({ get, set }, dialog: TailscaleDialogState, signal: AbortSignal) => {
-    const attempt = get(attempt$);
-    if (attempt?.dialog !== dialog) {
-      return false;
-    }
-    const clients = await get(tailscaleClient$);
-    signal.throwIfAborted();
-    if (clients.identity !== dialog.identity) {
-      return true;
-    }
-    const result = await accept(
-      clients.client.list({ fetchOptions: { signal } }),
-      [200],
-      signal,
-    );
-    if (get(dialog$) !== dialog) {
-      return true;
-    }
-    const current = result.body.configs.find((config) => {
-      return config.id === (attempt.id ?? dialog.config?.id);
-    });
-    if (
-      (dialog.kind === "create" && current) ||
-      (dialog.kind === "promote" && current?.scope === "organization") ||
-      (dialog.kind === "adopt" && current?.scope === "personal")
-    ) {
-      set(closeTailscaleDialog$);
-      set(invalidateTailscale$);
-      return true;
-    }
-    if (dialog.kind !== "create" && !current) {
-      set(attempt$, null);
-      set(error$, TAILSCALE_ERROR_CODES.NOT_FOUND);
-      return true;
-    }
-    if (
-      current &&
-      current.revision !== (get(reviewedRevision$) ?? dialog.config?.revision)
-    ) {
-      set(attempt$, null);
-      set(error$, TAILSCALE_ERROR_CODES.REVISION_CONFLICT);
-      set(invalidateTailscale$);
-      return true;
-    }
-    // A read did not prove completion. Only the user's explicit same-ID/revision retry can write.
-    return false;
-  },
-);
-
 const createTailscale$ = command(
   async (
     { get, set },
@@ -480,10 +437,7 @@ const createTailscale$ = command(
       return false;
     }
     const attempt = get(attempt$);
-    const id =
-      attempt?.dialog === dialog && attempt.id
-        ? attempt.id
-        : crypto.randomUUID();
+    const id = attempt?.dialog === dialog ? attempt.id : crypto.randomUUID();
     const parsed = tailscaleContract.create.body.safeParse({
       id,
       scope: get(scope$),
@@ -556,7 +510,17 @@ const editTailscale$ = command(
       set(error$, "invalid");
       return false;
     }
-    set(attempt$, { dialog, id: null });
+    if (
+      get(reviewedRevision$) === null &&
+      !get(replace$) &&
+      parsed.data.name === config.name &&
+      parsed.data.tags?.length === config.tags.length &&
+      parsed.data.tags.every((tag, index) => {
+        return tag === config.tags[index];
+      })
+    ) {
+      return true;
+    }
     const outcome = await settle(
       accept(
         clients.client.update({
@@ -581,9 +545,6 @@ const editTailscale$ = command(
     const result = outcome.value;
     if (result.status === 200) {
       return true;
-    }
-    if (result.status !== 500) {
-      set(attempt$, null);
     }
     set(error$, result.status === 500 ? "uncertain" : result.body.error.code);
     set(invalidateTailscale$);
@@ -634,17 +595,10 @@ const confirmTailscaleChange$ = command(
       return false;
     }
     const params = { configId: config.id };
-    const expectedRevision = get(reviewedRevision$) ?? config.revision;
-    if (preview && preview.expectedRevision !== expectedRevision) {
-      set(error$, TAILSCALE_ERROR_CODES.REVISION_CONFLICT);
-      set(acknowledged$, null);
-      set(invalidateTailscale$);
-      return false;
-    }
+    const expectedRevision = preview?.expectedRevision ?? config.revision;
     if (!canConfirmTailscaleChange(dialog, preview, get(acknowledged$))) {
       return false;
     }
-    set(attempt$, { dialog, id: null });
     const outcome = await settle(
       (async () => {
         if (dialog.kind === "promote") {
@@ -703,9 +657,6 @@ const confirmTailscaleChange$ = command(
     if (result.status === 200 || result.status === 204) {
       return true;
     }
-    if (result.status !== 500) {
-      set(attempt$, null);
-    }
     set(error$, result.status === 500 ? "uncertain" : result.body.error.code);
     set(acknowledged$, null);
     set(invalidateTailscale$);
@@ -731,9 +682,6 @@ export const saveTailscale$ = command(
       !admin
     ) {
       set(error$, TAILSCALE_ERROR_CODES.FORBIDDEN);
-      return;
-    }
-    if (await set(reconcileTailscaleAttempt$, dialog, signal)) {
       return;
     }
     if (get(dialog$) !== dialog || !get(tailscaleEnabled$)) {

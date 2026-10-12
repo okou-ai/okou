@@ -858,8 +858,8 @@ jobs:
 
   publish-desktop-update-manifest:
     name: publish-desktop-update-manifest
-    # The first native release needs the API's new appcast route before old
-    # Electron clients are offered the native ZIP.
+    # Publish Native release metadata after its API and notarized assets are live.
+    # The fixed Electron migration feed is independent of this mutable manifest.
     needs: [release-please, promote-desktop-release, promote-api-production]
     if: ${{ needs.release-please.outputs.desktop_release_created == 'true' && needs.promote-desktop-release.result == 'success' && needs.promote-api-production.result == 'success' }}
     runs-on: ubuntu-latest

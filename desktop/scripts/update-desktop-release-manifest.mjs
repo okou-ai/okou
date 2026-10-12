@@ -56,6 +56,18 @@ function ensureRecord(value, fallback = {}) {
   return fallback;
 }
 
+// First Native release (#37889), not the independently changing admission floor.
+function isNativeDesktopVersion(version) {
+  if (typeof version !== "string" || !/^\d+\.\d+\.\d+$/u.test(version)) {
+    throw new Error(`Expected a stable Desktop version, received ${version}`);
+  }
+  const parts = version.split(".").map(Number);
+  if (!parts.every(Number.isSafeInteger)) {
+    throw new Error(`Invalid Desktop version: ${version}`);
+  }
+  return parts[0] > 0 || parts[1] >= 50;
+}
+
 const args = parseArgs(process.argv.slice(2));
 const manifestPath = requiredArg(args, "manifest");
 const version = requiredArg(args, "version");
@@ -64,6 +76,12 @@ const channel = args.get("channel") ?? "stable";
 const platform = args.get("platform") ?? "darwin";
 const arch = args.get("arch") ?? "arm64";
 const pubDate = args.get("pub-date") ?? new Date().toISOString();
+
+if (!isNativeDesktopVersion(version)) {
+  throw new Error(
+    `Desktop publication requires Native 0.50.0 or later: ${version}`,
+  );
+}
 
 const expectedZipAssetName = `Okou-${platform}-${arch}-${version}.zip`;
 const actualZipAssetName = decodeURIComponent(
@@ -84,13 +102,20 @@ if (manifest.product !== "okou") {
 manifest.schemaVersion = 1;
 manifest.product = "okou";
 manifest.channels = ensureRecord(manifest.channels);
-manifest.releases = ensureRecord(manifest.releases);
+manifest.releases = Object.fromEntries(
+  Object.entries(ensureRecord(manifest.releases)).filter(([key, release]) => {
+    if (release?.version !== key) {
+      throw new Error(`Desktop release version does not match its key: ${key}`);
+    }
+    return isNativeDesktopVersion(key);
+  }),
+);
 
 const currentChannel = ensureRecord(manifest.channels[channel], {
   blocked: [],
 });
 const blocked = Array.isArray(currentChannel.blocked)
-  ? currentChannel.blocked
+  ? currentChannel.blocked.filter(isNativeDesktopVersion)
   : [];
 manifest.channels[channel] = {
   ...currentChannel,

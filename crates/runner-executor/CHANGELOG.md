@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.3...runner-executor-v0.10.4) (2026-10-12)
+
+
+### Performance Improvements
+
+* **runner:** attribute host-side storage apply phases ([#39232](https://github.com/okou-ai/okou/issues/39232)) ([87699ec](https://github.com/okou-ai/okou/commit/87699ec74930a925c53aa653b48cc78ab63e634e))
+
 ## [0.10.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.2...runner-executor-v0.10.3) (2026-10-12)
 
 ## [0.10.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.1...runner-executor-v0.10.2) (2026-10-12)

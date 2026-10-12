@@ -20,11 +20,13 @@ import {
 import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import { and, asc, eq, isNull, lte, ne, or } from "drizzle-orm";
+import { and, asc, count, eq, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { Parser } from "tar";
 import { z } from "zod";
 
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -204,6 +206,85 @@ const backfillMissingProjections$ = command(
   },
 );
 
+function projectionClaimConditions(currentTime: Date) {
+  return {
+    storage: and(
+      eq(storages.id, memorySummaryProjections.memoryStorageId),
+      eq(storages.orgId, memorySummaryProjections.orgId),
+      eq(storages.userId, memorySummaryProjections.userId),
+      eq(storages.name, MEMORY_ARTIFACT_NAME),
+      ne(storages.userId, VOLUME_ORG_USER_ID),
+    ),
+    version: and(
+      eq(storageVersions.id, memorySummaryProjections.storageVersionId),
+      eq(storageVersions.storageId, memorySummaryProjections.memoryStorageId),
+    ),
+    eligible: or(
+      and(
+        eq(memorySummaryProjections.status, "pending"),
+        lte(memorySummaryProjections.availableAt, currentTime),
+      ),
+      and(
+        eq(memorySummaryProjections.status, "running"),
+        lte(memorySummaryProjections.leaseExpiresAt, currentTime),
+      ),
+    ),
+  };
+}
+
+const claimedProjectionDriverRowSchema = z
+  .object({
+    memory_storage_id: z.string().uuid(),
+    storage_version_id: z.string(),
+    org_id: z.string(),
+    user_id: z.string(),
+    s3_key: z.string(),
+    storage_size: z
+      .string()
+      .transform((value) => {
+        return storageVersions.size.mapFromDriverValue(value);
+      })
+      .pipe(z.number()),
+    archive_size: z
+      .string()
+      .transform((value) => {
+        return storageVersions.archiveSize.mapFromDriverValue(value);
+      })
+      .pipe(z.number()),
+    file_count: z.int(),
+    lease_id: z.string().uuid(),
+    attempt_count: z.int(),
+  })
+  .transform((row) => {
+    return {
+      memoryStorageId: row.memory_storage_id,
+      storageVersionId: row.storage_version_id,
+      orgId: row.org_id,
+      userId: row.user_id,
+      s3Key: row.s3_key,
+      storageSize: row.storage_size,
+      archiveSize: row.archive_size,
+      fileCount: row.file_count,
+      leaseId: row.lease_id,
+      attemptCount: row.attempt_count,
+    };
+  });
+
+const projectionClaimFields = Object.freeze({
+  memoryStorageId: memorySummaryProjections.memoryStorageId,
+  storageVersionId: memorySummaryProjections.storageVersionId,
+  orgId: memorySummaryProjections.orgId,
+  userId: memorySummaryProjections.userId,
+  attemptCount: memorySummaryProjections.attemptCount,
+  s3Key: storageVersions.s3Key,
+  storageSize: sql`${storageVersions.size}`
+    .mapWith(storageVersions.size)
+    .as("storage_size"),
+  archiveSize: storageVersions.archiveSize,
+  fileCount: storageVersions.fileCount,
+  availableAt: memorySummaryProjections.availableAt,
+});
+
 const claimProjectionWork$ = command(
   async (
     { set },
@@ -211,98 +292,134 @@ const claimProjectionWork$ = command(
     signal: AbortSignal,
   ): Promise<readonly ClaimedProjection[]> => {
     const db = set(writeDb$);
-    // Claim selection and lease assignment are one atomic worker admission.
-    // The existing row locks prevent duplicate live leases across workers.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0184; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const rows = await tx
+    const conditions = projectionClaimConditions(currentTime);
+    const eligible = db
+      .select(projectionClaimFields)
+      .from(memorySummaryProjections)
+      .innerJoin(storages, conditions.storage)
+      .innerJoin(storageVersions, conditions.version)
+      .where(conditions.eligible)
+      .orderBy(
+        asc(memorySummaryProjections.availableAt),
+        asc(memorySummaryProjections.memoryStorageId),
+        asc(memorySummaryProjections.storageVersionId),
+      )
+      .limit(WORK_BATCH_SIZE);
+
+    // This unlocked read owns only the prewrite cancellation checkpoint. The
+    // locked statement re-evaluates eligibility and never uses this row count.
+    const preflight = await eligible;
+    signal.throwIfAborted();
+    if (preflight.length === 0) {
+      return [];
+    }
+
+    // At most four application UUIDs; contention can leave candidates unused.
+    const leaseIds = Array.from({ length: WORK_BATCH_SIZE }, () => {
+      return randomUUID();
+    });
+    const cohort = db.$with("projection_cohort").as(
+      eligible.for("update", {
+        of: memorySummaryProjections,
+        skipLocked: true,
+      }),
+    );
+    const assignments = db.$with("projection_assignments").as(
+      db
         .select({
-          memoryStorageId: memorySummaryProjections.memoryStorageId,
-          storageVersionId: memorySummaryProjections.storageVersionId,
-          orgId: memorySummaryProjections.orgId,
-          userId: memorySummaryProjections.userId,
-          attemptCount: memorySummaryProjections.attemptCount,
-          s3Key: storageVersions.s3Key,
-          storageSize: storageVersions.size,
-          archiveSize: storageVersions.archiveSize,
-          fileCount: storageVersions.fileCount,
+          memoryStorageId: cohort.memoryStorageId,
+          storageVersionId: cohort.storageVersionId,
+          orgId: cohort.orgId,
+          userId: cohort.userId,
+          attemptCount: cohort.attemptCount,
+          s3Key: cohort.s3Key,
+          storageSize: cohort.storageSize,
+          archiveSize: cohort.archiveSize,
+          fileCount: cohort.fileCount,
+          ordinal: sql`row_number() over (order by ${asc(cohort.availableAt)},
+            ${asc(cohort.memoryStorageId)}, ${asc(cohort.storageVersionId)})::int`
+            .mapWith(pgIntegerDecoder)
+            .as("ordinal"),
         })
-        .from(memorySummaryProjections)
-        .innerJoin(
-          storages,
-          and(
-            eq(storages.id, memorySummaryProjections.memoryStorageId),
-            eq(storages.orgId, memorySummaryProjections.orgId),
-            eq(storages.userId, memorySummaryProjections.userId),
-            eq(storages.name, MEMORY_ARTIFACT_NAME),
-            ne(storages.userId, VOLUME_ORG_USER_ID),
-          ),
-        )
-        .innerJoin(
-          storageVersions,
-          and(
-            eq(storageVersions.id, memorySummaryProjections.storageVersionId),
-            eq(
-              storageVersions.storageId,
-              memorySummaryProjections.memoryStorageId,
-            ),
-          ),
-        )
+        .from(cohort),
+    );
+    const cohortCount = db.select({ total: count() }).from(assignments);
+    const updated = db.$with("projection_updated").as(
+      db
+        .update(memorySummaryProjections)
+        .set({
+          status: "running",
+          leaseId: sql`case ${assignments.ordinal} ${sql.join(
+            leaseIds.map((leaseId, index) => {
+              return sql`when ${index + 1} then ${sql.param(leaseId, memorySummaryProjections.leaseId)}::uuid`;
+            }),
+            sql` `,
+          )} end`,
+          leaseExpiresAt: new Date(currentTime.getTime() + WORK_LEASE_MS),
+          attemptCount: sql`${assignments.attemptCount} + 1`,
+          updatedAt: currentTime,
+        })
+        .from(assignments)
         .where(
           and(
-            or(
-              and(
-                eq(memorySummaryProjections.status, "pending"),
-                lte(memorySummaryProjections.availableAt, currentTime),
-              ),
-              and(
-                eq(memorySummaryProjections.status, "running"),
-                lte(memorySummaryProjections.leaseExpiresAt, currentTime),
-              ),
+            eq(
+              memorySummaryProjections.memoryStorageId,
+              assignments.memoryStorageId,
             ),
+            eq(
+              memorySummaryProjections.storageVersionId,
+              assignments.storageVersionId,
+            ),
+            // The scalar aggregate exhausts the locked, bounded cohort before
+            // any lease update. MATERIALIZED alone permits lazy consumption.
+            lte(sql`(${cohortCount})`, WORK_BATCH_SIZE),
           ),
         )
-        .orderBy(
-          asc(memorySummaryProjections.availableAt),
-          asc(memorySummaryProjections.memoryStorageId),
-          asc(memorySummaryProjections.storageVersionId),
-        )
-        .limit(WORK_BATCH_SIZE)
-        .for("update", { of: memorySummaryProjections, skipLocked: true });
-      signal.throwIfAborted();
-
-      const claimed: ClaimedProjection[] = [];
-      for (const row of rows) {
-        const leaseId = randomUUID();
-        const attemptCount = row.attemptCount + 1;
-        const [updated] = await tx
-          .update(memorySummaryProjections)
-          .set({
-            status: "running",
-            leaseId,
-            leaseExpiresAt: new Date(currentTime.getTime() + WORK_LEASE_MS),
-            attemptCount,
-            updatedAt: currentTime,
-          })
-          .where(
-            and(
-              eq(memorySummaryProjections.memoryStorageId, row.memoryStorageId),
-              eq(
-                memorySummaryProjections.storageVersionId,
-                row.storageVersionId,
-              ),
-            ),
-          )
-          .returning({
-            memoryStorageId: memorySummaryProjections.memoryStorageId,
-          });
-        if (updated) {
-          claimed.push({ ...row, leaseId, attemptCount });
-        }
-      }
-      signal.throwIfAborted();
-      return claimed;
-    });
+        .returning({
+          memoryStorageId: memorySummaryProjections.memoryStorageId,
+          storageVersionId: memorySummaryProjections.storageVersionId,
+          leaseId: memorySummaryProjections.leaseId,
+          attemptCount: memorySummaryProjections.attemptCount,
+        }),
+    );
+    const updatedCount = db.select({ total: count() }).from(updated);
+    const result = db
+      .select({
+        memoryStorageId: updated.memoryStorageId,
+        storageVersionId: updated.storageVersionId,
+        orgId: assignments.orgId,
+        userId: assignments.userId,
+        s3Key: assignments.s3Key,
+        storageSize: assignments.storageSize,
+        archiveSize: assignments.archiveSize,
+        fileCount: assignments.fileCount,
+        leaseId: updated.leaseId,
+        attemptCount: updated.attemptCount,
+      })
+      .from(updated)
+      .innerJoin(
+        assignments,
+        and(
+          eq(updated.memoryStorageId, assignments.memoryStorageId),
+          eq(updated.storageVersionId, assignments.storageVersionId),
+        ),
+      )
+      // Exhaust actual UPDATE RETURNING before selecting winner-only work.
+      .where(lte(sql`(${updatedCount})`, WORK_BATCH_SIZE))
+      .orderBy(asc(assignments.ordinal));
+    // The installed builder cannot mark SELECT CTEs MATERIALIZED. Keep the
+    // envelope bound and schema-aware; parse the raw driver rows at this boundary.
+    const claimed = parseRawRows(
+      claimedProjectionDriverRowSchema,
+      await db.execute(sql`with projection_cohort as materialized (${cohort._.sql}),
+        projection_assignments as materialized (${assignments._.sql}),
+        projection_updated as (${updated._.sql})
+        ${result}`),
+    );
+    // Completed compound SQL has committed coherent leases before this check.
+    // Execution errors (including PostgreSQL cancellation) remain primary.
+    signal.throwIfAborted();
+    return claimed;
   },
 );
 

@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.746.0](https://github.com/okou-ai/okou/compare/core-v8.745.0...core-v8.746.0) (2026-10-12)
+
+
+### Features
+
+* **app:** roll out stable preview fullscreen and remove its switch ([#39268](https://github.com/okou-ai/okou/issues/39268)) ([7df145d](https://github.com/okou-ai/okou/commit/7df145de2bdad57f6d3aee8e79a2ddee9b122abb))
+
+
+### Refactoring
+
+* remove chat running indicator wave feature switch ([#39284](https://github.com/okou-ai/okou/issues/39284)) ([bfc319c](https://github.com/okou-ai/okou/commit/bfc319ccbe51dc0d33b585ba04dab4b1d7873adb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.552.1
+
 ## [8.745.0](https://github.com/okou-ai/okou/compare/core-v8.744.0...core-v8.745.0) (2026-10-12)
 
 

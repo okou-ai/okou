@@ -11,9 +11,9 @@ const { appcastRequest, mockDesktopUpdateManifest, stableManifest } =
 describe("desktop update routes", () => {
   it("returns not found when the manifest has no matching asset", async () => {
     mockDesktopUpdateManifest(
-      stableManifest("0.2.1", {
-        "0.2.1": {
-          version: "0.2.1",
+      stableManifest("0.52.0", {
+        "0.52.0": {
+          version: "0.52.0",
           pubDate: "2026-06-08T00:00:00.000Z",
           platforms: {
             darwin: {},

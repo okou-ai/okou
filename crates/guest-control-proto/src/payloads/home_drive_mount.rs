@@ -11,8 +11,8 @@ pub const HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES: usize = 64 * 1024;
 /// Encode a full fixed home-drive mount request frame.
 ///
 /// The only payload is the immutable paired-layout discriminator, never
-/// caller-selected paths or commands. An old empty workspace-mount request
-/// cannot be accepted as home mounting, and an old Guest rejects this payload.
+/// caller-selected paths or commands. The guest accepts only the exact current
+/// paired layout; empty or incompatible payloads fail validation.
 /// The guest owns paths, identity, timeout, output policy, and containment.
 ///
 /// # Errors
@@ -145,7 +145,6 @@ mod tests {
         decode_home_drive_mount_request(&decoded.payload).unwrap();
         for incompatible in [
             b"".as_slice(),
-            b"workspace-drive-v1",
             b"home-drive-v2",
             b"home-drive-v1\0",
             b"/dev/vda",

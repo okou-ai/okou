@@ -2,6 +2,7 @@ import { command, computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { clerk$, currentUserInfo$ } from "../auth.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import { refreshPersonalModelProvidersIfStale$ } from "../external/personal-model-providers.ts";
 import { bestEffort } from "../utils.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
 import {
@@ -29,6 +30,10 @@ export const initializePwaMePage$ = command(
     const cacheKey = clerk.session?.id ?? user?.id ?? null;
     const subscriptionsEnabled =
       get(featureSwitch$)[FeatureSwitchKey.SidebarSubscriptionUsage] ?? false;
+
+    if (get(featureSwitch$)[FeatureSwitchKey.SubscriptionLinkingEntry]) {
+      set(refreshPersonalModelProvidersIfStale$);
+    }
 
     await Promise.all([
       set(reloadAccountMenuCreditBalances$, signal),

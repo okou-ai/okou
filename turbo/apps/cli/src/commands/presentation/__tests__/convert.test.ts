@@ -15,6 +15,7 @@ import {
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { Script } from "vm";
 import { crc32, inflateRawSync } from "zlib";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -206,6 +207,8 @@ function deckBase64(): string {
 
 /** Answers the page scripts the command evaluates, in the order it evaluates them. */
 function fakeEval(expression: string): string {
+  // The external browser rejects malformed injected code before evaluating it.
+  new Script(expression);
   state.evaluated.push(expression);
   // agent-browser prints the evaluated value JSON-encoded, and the page scripts
   // already stringify their result, so a string answer is encoded twice.
@@ -305,6 +308,12 @@ vi.mock("child_process", () => {
               "items.push(bgItem);",
               "async function elementToCanvasImage(node, widthPx, heightPx) {",
               "async function capturePseudoElementCanvas(node, pseudoType, widthPx, heightPx) {",
+              "const elements = Array.isArray(target) ? target : [target];",
+              "async function fontToEot(typeOrSubsets, fontBufferOrWasmUrl, wasmUrl) {",
+              "fontFace: style.fontFamily.split(',')[0].replace(/['\"]/g, ''),",
+              "bold: parseInt(style.fontWeight) >= 600,",
+              "italic: style.fontStyle === 'italic',",
+              "console.warn(`Failed to embed font family: ${fontCfg.name}`, e);",
               "const result = prepareRenderItem(node,",
               "if (node.nodeType === 1) {\n      const beforeStyle",
               "if (node.nodeType === 1) {\n      const afterStyle",
@@ -657,7 +666,7 @@ describe("okou presentation convert", () => {
     await convert([]);
 
     expect(state.evaluated.join("")).toContain(
-      `file://${join(cacheHome, "okou", "presentation-convert", "native-v2", RENDERER_BUNDLE)}`,
+      `file://${join(cacheHome, "okou", "presentation-convert", "native-v3", RENDERER_BUNDLE)}`,
     );
   });
 
@@ -679,7 +688,7 @@ describe("okou presentation convert", () => {
           cacheHome,
           "okou",
           "presentation-convert",
-          "native-v2",
+          "native-v3",
           RENDERER_BUNDLE,
         ),
       ),
@@ -1052,6 +1061,43 @@ describe("okou presentation convert", () => {
     expect(slide).toContain('<a:uFill><a:solidFill><a:srgbClr val="FF0000"/>');
     expect(slide.indexOf("<a:uFill>")).toBeLessThan(slide.indexOf("<a:latin"));
     expect(slide).toContain('sz="7680"');
+  });
+
+  it("retains resolved embedded script fonts by object identity", async () => {
+    state.slideXml = [
+      slideXml(["Hello deck"]).replace(
+        "<p:sp>",
+        '<p:sp><p:nvSpPr><p:cNvPr id="2" name="okou-object-0"/></p:nvSpPr>',
+      ),
+      slideXml(["Second line"]),
+    ];
+    state.textBoxes = [
+      {
+        x: 0,
+        y: 0,
+        w: 100,
+        h: 100,
+        eastAsianFont: "Unembedded CSS fallback",
+        complexFont: "",
+        strike: false,
+        underlineColor: "",
+        underlineWidth: 0,
+      },
+    ];
+    state.nativePaint = { "1": { "okou-object-0": { resolvedFonts: true } } };
+
+    await convert([]);
+
+    const entries = readZip(readFileSync(outPath));
+    expect(entries.get("ppt/slides/slide1.xml")).toContain(
+      '<a:ea typeface="Lexend"/>',
+    );
+    expect(entries.get("ppt/slides/slide1.xml")).not.toContain(
+      "Unembedded CSS fallback",
+    );
+    expect(entries.get("ppt/slides/slide2.xml")).toContain(
+      '<a:ea typeface="Unembedded CSS fallback"/>',
+    );
   });
 
   it("uses measured table row heights and fills without deleting border paint", async () => {

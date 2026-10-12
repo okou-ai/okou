@@ -4,7 +4,9 @@ import {
   BROWSER_USER_ACTION_MAX_KEY_LENGTH,
   BROWSER_USER_ACTION_MAX_LABEL_LENGTH,
   BROWSER_USER_ACTION_MAX_RADIO_MEMBERS,
+  BROWSER_USER_ACTION_MAX_REASON_LENGTH,
   BROWSER_USER_ACTION_MAX_TARGET_ID_LENGTH,
+  BROWSER_USER_ACTION_MAX_TITLE_LENGTH,
   type BrowserUserActionFieldKind,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 
@@ -43,6 +45,9 @@ export interface BrowserUserActionInputTarget {
 export interface BrowserUserActionPayload {
   readonly version: 1;
   readonly kind: "input";
+  /** Earlier requests did not store a task explanation. New writes require it. */
+  readonly title?: string;
+  readonly reason?: string;
   readonly callbackIds: BrowserUserActionCallbackIds;
   readonly target: BrowserUserActionInputTarget;
 }
@@ -358,11 +363,36 @@ export function parseBrowserUserActionPayload(
   }
   if (
     payload.kind === "input" &&
-    hasOnlyKeys(payload, ["version", "kind", "callbackIds", "target"])
+    hasOnlyKeys(payload, [
+      "version",
+      "kind",
+      "title",
+      "reason",
+      "callbackIds",
+      "target",
+    ]) &&
+    (payload.title === undefined) === (payload.reason === undefined) &&
+    (payload.title === undefined ||
+      (boundedString(payload.title, 1, BROWSER_USER_ACTION_MAX_TITLE_LENGTH) &&
+        payload.title.trim().length > 0)) &&
+    (payload.reason === undefined ||
+      (boundedString(
+        payload.reason,
+        1,
+        BROWSER_USER_ACTION_MAX_REASON_LENGTH,
+      ) &&
+        payload.reason.trim().length > 0))
   ) {
     const target = decodeInputTarget(payload.target);
     if (target) {
-      return { version: 1, kind: payload.kind, callbackIds, target };
+      return {
+        version: 1,
+        kind: payload.kind,
+        ...(payload.title === undefined ? {} : { title: payload.title }),
+        ...(payload.reason === undefined ? {} : { reason: payload.reason }),
+        callbackIds,
+        target,
+      };
     }
   }
   throw new Error("Invalid Browser user-action payload");

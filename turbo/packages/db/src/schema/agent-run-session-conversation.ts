@@ -1,4 +1,5 @@
 import { agentRunColumns } from "../columns/agent-run";
+import { agentSessionColumns } from "../columns/agent-session";
 
 import {
   pgTable,
@@ -13,7 +14,6 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
-import { agents } from "./agent";
 import { registerAgentRunReferences } from "./agent-run-reference";
 
 import type { AgentSessionStorageMounts } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
@@ -330,27 +330,14 @@ export const agentRuns = pgTable(
 export const agentSessions = pgTable(
   "agent_sessions",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    userId: text("user_id").notNull(),
-    orgId: text("org_id").notNull(),
-    agentId: uuid("agent_id").references(
-      () => {
-        return agents.id;
-      },
-      { onDelete: "cascade" },
-    ),
-    conversationId: uuid("conversation_id").references(
-      (): AnyPgColumn => {
-        return conversations.id;
-      },
-      {
-        onDelete: "set null",
-      },
-    ),
-    // Canonical writeback mounts used by session continuation.
-    storageMounts: jsonb("storage_mounts").$type<AgentSessionStorageMounts>(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    ...agentSessionColumns(() => {
+      return conversations.id;
+    }),
+    // Migration-owned compatibility under #39310. New runtime writers omit it;
+    // the empty array keeps supported old continuation readers from seeing NULL.
+    storageMounts: jsonb("storage_mounts")
+      .$type<AgentSessionStorageMounts>()
+      .default(sql`'[]'::jsonb`),
   },
   (table) => {
     return [
@@ -398,4 +385,5 @@ export const conversations = pgTable("conversations", {
 registerAgentRunReferences({
   agentRunId: agentRuns.id,
   agentSessionId: agentSessions.id,
+  conversationId: conversations.id,
 });

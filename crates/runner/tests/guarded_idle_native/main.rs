@@ -2,6 +2,7 @@
 
 //! Opt-in packaged-guest terminal saving fixture; see README.md in this directory.
 
+mod finalizing;
 mod fixture;
 mod transitions;
 
@@ -45,6 +46,8 @@ enum NativeScope {
     Aged,
     CallerOwned,
     SpeculativeGuestFailure,
+    FinalizingParked,
+    FinalizingRunning,
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -81,6 +84,8 @@ async fn exercise_factories(
         NativeScope::Aged,
         NativeScope::CallerOwned,
         NativeScope::SpeculativeGuestFailure,
+        NativeScope::FinalizingParked,
+        NativeScope::FinalizingRunning,
     ] {
         for restored in [false, true] {
             // Never share a production Runner directory or another invocation's cache.
@@ -153,6 +158,28 @@ async fn exercise_retirement(
         _ => (2, 4096),
     };
     let budget = Arc::new(ResourceBudget::new(vcpu, memory, 1.0, 0));
+    if matches!(
+        scope,
+        NativeScope::FinalizingParked | NativeScope::FinalizingRunning
+    ) {
+        return finalizing::exercise(
+            finalizing::Context {
+                factory,
+                cache,
+                sandbox,
+                home,
+                budget,
+                operations,
+                rootfs_hash,
+                run_id,
+                sandbox_id,
+                reuse_key,
+            },
+            inputs,
+            matches!(scope, NativeScope::FinalizingRunning),
+        )
+        .await;
+    }
     let parked: TestResult<_> = async {
         let backing = sandbox
             .backing_process()
@@ -216,6 +243,7 @@ async fn exercise_retirement(
     let pool = Arc::new(tokio::sync::Mutex::new(pool));
     let retirement: TestResult<_> = async {
         match scope {
+            NativeScope::FinalizingParked | NativeScope::FinalizingRunning => Err(io::Error::other("finalizing scope did not enter its producer transition").into()),
             NativeScope::CallerOwned | NativeScope::SpeculativeGuestFailure => {
                 use runner_lifecycle::idle_pool::{
                     ActivationCleanupOutcome, GuardedSpeculativeIdleOwner, IdleActivationOwner,

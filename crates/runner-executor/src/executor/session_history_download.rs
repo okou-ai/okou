@@ -38,6 +38,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -77,6 +78,60 @@ const SESSION_HISTORY_PROBE_CAPACITY: usize = 4096;
 
 pub struct SessionHistoryMaterializer {
     state: SessionHistoryMaterializerState,
+}
+
+/// Observation only: these states never authorize skipping restoration.
+#[derive(Clone, Copy)]
+pub(super) enum SessionHistoryReadiness {
+    Ready,
+    NotReady,
+    Cancelled,
+    Inline,
+    NoHistory,
+    NotStarted,
+    VerifyFirst,
+}
+
+impl SessionHistoryReadiness {
+    pub(super) const fn outcome(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            // Includes pending and failed work; task completion is not readiness.
+            Self::NotReady => "not_ready",
+            Self::Cancelled => "cancelled",
+            Self::Inline => "inline",
+            Self::NoHistory => "no_history",
+            Self::NotStarted => "not_started",
+            Self::VerifyFirst => "verify_first",
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(super) enum SessionHistoryReadinessObserver {
+    Fixed(SessionHistoryReadiness),
+    Prestarted {
+        ready: Arc<AtomicBool>,
+        cancel: CancellationToken,
+    },
+}
+
+impl SessionHistoryReadinessObserver {
+    pub(super) fn snapshot(&self) -> SessionHistoryReadiness {
+        match self {
+            Self::Fixed(state) => *state,
+            Self::Prestarted { ready, cancel } => {
+                let ready = ready.load(Ordering::Acquire);
+                if cancel.is_cancelled() {
+                    SessionHistoryReadiness::Cancelled
+                } else if ready {
+                    SessionHistoryReadiness::Ready
+                } else {
+                    SessionHistoryReadiness::NotReady
+                }
+            }
+        }
+    }
 }
 
 /// Runner-process-local, in-memory observation of session-history ref activity.
@@ -135,6 +190,7 @@ enum SessionHistoryMaterializerState {
         started_at: Instant,
         metadata: SessionHistoryTelemetryMetadata,
         probe_registration: Option<SessionHistoryProbeRegistration>,
+        ready: Arc<AtomicBool>,
         cancel: CancellationToken,
         task: Option<JoinHandle<SessionHistoryDownloadTaskResult>>,
     },
@@ -519,6 +575,8 @@ impl SessionHistoryMaterializer {
         let task_cancel = cancel.child_token();
         let task_cancel_for_task = task_cancel.clone();
         let task_probe_registration = probe_registration.clone();
+        let ready = Arc::new(AtomicBool::new(false));
+        let task_ready = Arc::clone(&ready);
         // The spawned task observes cancellation even before `finish` runs, so
         // prestarted downloads do not need to wait for final materialization.
         Self {
@@ -526,6 +584,7 @@ impl SessionHistoryMaterializer {
                 started_at,
                 metadata,
                 probe_registration,
+                ready,
                 cancel: task_cancel,
                 task: Some(tokio::spawn(async move {
                     let result = download_resume_session_history_timed(
@@ -541,6 +600,11 @@ impl SessionHistoryMaterializer {
                     if let Some(registration) = &task_probe_registration {
                         registration.finish();
                     }
+                    // The complete validated/CPU-materialized result exists. A failed
+                    // or cancelled task must not count as available history bytes.
+                    if result.result.is_ok() {
+                        task_ready.store(true, Ordering::Release);
+                    }
                     result
                 })),
             },
@@ -552,6 +616,23 @@ impl SessionHistoryMaterializer {
             self.state,
             SessionHistoryMaterializerState::Downloading { .. }
         )
+    }
+
+    pub(super) fn readiness_observer(&self) -> SessionHistoryReadinessObserver {
+        match &self.state {
+            SessionHistoryMaterializerState::Missing => {
+                SessionHistoryReadinessObserver::Fixed(SessionHistoryReadiness::NoHistory)
+            }
+            SessionHistoryMaterializerState::NoDownloadNeeded => {
+                SessionHistoryReadinessObserver::Fixed(SessionHistoryReadiness::Inline)
+            }
+            SessionHistoryMaterializerState::Downloading { ready, cancel, .. } => {
+                SessionHistoryReadinessObserver::Prestarted {
+                    ready: Arc::clone(ready),
+                    cancel: cancel.clone(),
+                }
+            }
+        }
     }
 
     pub(super) fn is_download_finished(&self) -> bool {
@@ -581,6 +662,7 @@ impl SessionHistoryMaterializer {
                 probe_registration,
                 cancel: task_cancel,
                 task,
+                ..
             } => {
                 let started_at = *started_at;
                 let metadata = *metadata;
@@ -3092,6 +3174,7 @@ mod tests {
                 started_at: Instant::now(),
                 metadata: identity_metadata(),
                 probe_registration: None,
+                ready: Arc::new(AtomicBool::new(true)),
                 cancel: CancellationToken::new(),
                 task: Some(task),
             },
@@ -3130,6 +3213,7 @@ mod tests {
                 started_at: Instant::now(),
                 metadata: identity_metadata(),
                 probe_registration: None,
+                ready: Arc::new(AtomicBool::new(true)),
                 cancel: cancel.clone(),
                 task: Some(task),
             },

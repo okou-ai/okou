@@ -1,5 +1,6 @@
 mod final_identity;
 mod materialization;
+mod readiness;
 mod reuse_identity;
 
 use sha2::{Digest, Sha256};

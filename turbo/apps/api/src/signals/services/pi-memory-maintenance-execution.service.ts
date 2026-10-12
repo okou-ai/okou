@@ -81,7 +81,7 @@ import type { AgentRunFullLaunchSnapshot } from "@okouai/db/jsonb-contracts/agen
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { storages } from "@okouai/db/schema/storage";
@@ -333,39 +333,7 @@ async function prepareMaintenanceStorage(
       });
     },
   );
-  return { artifact, storage };
-}
-
-/** The run's writeback mount, recorded on the session at the declared base. */
-function maintenanceSessionStorageMounts(
-  runStorageMounts: readonly PersistedStorageMount[],
-  artifact: Awaited<ReturnType<typeof prepareMaintenanceStorage>>["artifact"],
-): readonly PersistedStorageMount[] {
-  return runStorageMounts.flatMap((mount) => {
-    if (!mount.writeback) {
-      return [];
-    }
-    if (
-      mount.name !== artifact.name ||
-      mount.mountPath !== artifact.mountPath
-    ) {
-      throw new Error(
-        `Resolved writeback Storage "${mount.name}" has no source declaration`,
-      );
-    }
-    const {
-      version: _resolvedVersion,
-      missingRootPolicy: _resolvedMissingRootPolicy,
-      ...mountBase
-    } = mount;
-    return [
-      {
-        ...mountBase,
-        version: artifact.version,
-        missingRootPolicy: artifact.missingRootPolicy,
-      },
-    ];
-  });
+  return { storage };
 }
 
 const FIREWALL_BASE_URL_VAR_PATTERN =
@@ -520,7 +488,7 @@ const prepareMaintenanceLaunch$ = command(
       throw args.preparedMounts.error;
     }
     const runnerGroup = maintenanceRunnerGroup();
-    const { artifact, storage } = await prepareMaintenanceStorage(
+    const { storage } = await prepareMaintenanceStorage(
       args.job,
       args.preparedMounts.value,
       args.timing,
@@ -554,10 +522,6 @@ const prepareMaintenanceLaunch$ = command(
       ...built,
       runnerGroup,
       runStorageMounts,
-      sessionStorageMounts: maintenanceSessionStorageMounts(
-        runStorageMounts,
-        artifact,
-      ),
       runContextStorage: storage.runContextStorage,
     };
   },
@@ -588,17 +552,12 @@ const failMaintenanceLaunch$ = command(
         createdAt: nowDate(),
         status: "failed" as const,
         runStorageMounts: null,
-        sessionStorageMounts: null,
         runnerGroup: null,
         creditAdmitted: false,
         accountIdentity: null,
         error,
       };
-      await tx
-        .insert(agentSessions)
-        .values(
-          maintenanceSessionValues(record, rowInput.sessionStorageMounts),
-        );
+      await tx.insert(agentSessions).values(maintenanceSessionValues(record));
       await tx.insert(agentRuns).values(maintenanceRunValues(rowInput));
       await tx
         .insert(agentRunCallbacks)
@@ -1257,16 +1216,12 @@ function maintenanceRunValues(args: {
   };
 }
 
-function maintenanceSessionValues(
-  record: MaintenanceRunRecord,
-  storageMounts: readonly PersistedStorageMount[] | null,
-) {
+function maintenanceSessionValues(record: MaintenanceRunRecord) {
   return {
     id: record.sessionId,
     userId: record.userId,
     orgId: record.orgId,
     agentId: null,
-    storageMounts: storageMounts ? [...storageMounts] : null,
     conversationId: null,
   };
 }
@@ -1355,10 +1310,7 @@ function maintenancePendingRunInput(
 ) {
   return {
     record: args.record,
-    session: maintenanceSessionValues(
-      args.record,
-      args.launch.sessionStorageMounts,
-    ),
+    session: maintenanceSessionValues(args.record),
     callback: maintenanceCallbackValues(args.record),
     createdAt,
     status: "pending" as const,
@@ -1405,7 +1357,6 @@ interface MaintenanceLaunch {
   readonly secretNames: readonly string[];
   readonly secretValues: readonly string[];
   readonly runStorageMounts: readonly PersistedStorageMount[];
-  readonly sessionStorageMounts: readonly PersistedStorageMount[];
   readonly runContextStorage: {
     readonly volumes: RunContextResponse["volumes"];
     readonly artifact: RunContextResponse["artifact"];

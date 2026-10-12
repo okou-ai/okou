@@ -15,6 +15,7 @@ import { generateCommand } from "../index";
 import { imageCommand } from "../image";
 import {
   ablyRealtimeFake,
+  ablyTokenExchangeHandler,
   deferred,
 } from "../../../test-fixtures/ably-realtime";
 
@@ -77,6 +78,7 @@ describe("okou generate image command", () => {
 
   beforeEach(() => {
     ablyRealtimeFake.reset();
+    server.use(ablyTokenExchangeHandler);
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
@@ -843,6 +845,76 @@ describe("okou generate image command", () => {
       expect(stdout).toContain(`![${IMAGE_RESULT.filename}](<${expectedUrl}>)`);
     },
   );
+
+  it("prints a completed image while cancelling unfinished token redemption", async () => {
+    const started = deferred<void>();
+    const aborted = deferred<void>();
+    let reads = 0;
+    server.use(
+      http.post(
+        "https://main.realtime.ably.net/keys/test.key/requestToken",
+        async ({ request }) => {
+          request.signal.addEventListener(
+            "abort",
+            () => {
+              return aborted.resolve();
+            },
+            {
+              once: true,
+            },
+          );
+          started.resolve();
+          await aborted.promise;
+          return new HttpResponse(null, { status: 503 });
+        },
+      ),
+      http.post(IMAGE_URL, () => {
+        return HttpResponse.json(
+          {
+            generationId: IMAGE_GENERATION_ID,
+            type: "image",
+            status: "queued",
+            realtime: {
+              channelName: "user:user-1",
+              eventName: `built-in-generation:${IMAGE_GENERATION_ID}`,
+              tokenRequest: {
+                keyName: "test.key",
+                timestamp: 1,
+                capability: '{"user:user-1":["subscribe"]}',
+                nonce: "nonce",
+                mac: "mac",
+              },
+            },
+          },
+          { status: 202 },
+        );
+      }),
+      http.get(IMAGE_STATUS_URL, async () => {
+        const complete = ++reads > 1;
+        if (complete) await started.promise;
+        return HttpResponse.json({
+          generationId: IMAGE_GENERATION_ID,
+          type: "image",
+          status: complete ? "completed" : "running",
+          ...(complete ? { result: IMAGE_RESULT } : {}),
+          createdAt: "2026-10-12T00:00:00Z",
+          startedAt: "2026-10-12T00:00:01Z",
+          completedAt: complete ? "2026-10-12T00:00:02Z" : null,
+        });
+      }),
+    );
+    await generateCommand.parseAsync([
+      "node",
+      "okou",
+      "image",
+      "--raw-prompt",
+      "A watercolor fox",
+    ]);
+    await aborted.promise;
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+      `Image generated: ${IMAGE_RESULT.url}`,
+    );
+  });
 
   it("uses the shared notification transport for a pending image and closes it after printing the result", async () => {
     const pendingRead = deferred<void>();

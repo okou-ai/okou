@@ -1,6 +1,6 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
 import { conversations } from "@okouai/db/schema/conversation";
 import { computed, type Computed } from "ccstate";
@@ -41,7 +41,7 @@ export interface ChatThreadSessionResolution {
 export interface ChatThreadExecutionSnapshot {
   readonly session: Pick<
     typeof agentSessions.$inferSelect,
-    "id" | "agentId" | "storageMounts" | "conversationId"
+    "id" | "agentId" | "conversationId"
   >;
   readonly agent: Pick<
     typeof agents.$inferSelect,
@@ -108,7 +108,6 @@ export function createChatThreadSessionRead(
         session: {
           id: agentSessions.id,
           agentId: agentSessions.agentId,
-          storageMounts: agentSessions.storageMounts,
           conversationId: agentSessions.conversationId,
         },
         conversation: {

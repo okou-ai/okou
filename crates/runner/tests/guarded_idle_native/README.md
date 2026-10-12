@@ -24,8 +24,9 @@ It verifies ordinary bytes survive and the previous private runtime directory
 does not. It repeats exact-prune, all-inventory drain/shutdown batches and logical
 substitution, atomic park replacement, reserved restore over blank inventory and
 aged exact-to-blank replenishment with fresh boot and the matching prepared
-snapshot (sixteen owned cases, including caller-owned cancellation before
-business activation and speculative guest restore failure).
+snapshot (twenty owned cases, including caller-owned cancellation before
+business activation, speculative guest restore failure, and cancelled parked
+and fenced running finalizing deliveries).
 
 The fixture captures backing while the parked candidate is exclusively owned,
 then enters the real Lifecycle inventory and tracked Supervisor batch API. Both
@@ -71,6 +72,19 @@ backing generation and full lease, then enters the same required covered cleanup
 Both fresh and snapshot modes verify saved ordinary home bytes and removal of
 the predecessor private runtime. This fixture does not wire production policy or
 replace the broader P3d session/history corpus.
+
+Finalizing saving uses the real `IdleParkRequest` transition and exact
+`ActiveRuns` broker. The parked case completes physical park; the running case
+requests handoff before balloon submission and requires the provider's fenced
+running result. Both carry the original backing proof through
+`GuardedFinalizingOffer` and recover queued delivery on successor cancellation
+in `GuardedFinalizingAdmission`. Required covered preparation, freeze, exact
+exit, publication and factory tail must complete before release of the full
+logical lease. Fresh and snapshot restores verify ordinary bytes and absence of
+the predecessor private runtime. The native seam carries a local fixture claim;
+ordinary provider-boundary tests verify preservation of real returned completion
+authorization. This opt-in fixture is compiled by ordinary checks and requires
+separate execution on the specified KVM/NBD host to establish native acceptance.
 
 An accepted aged conversion transfers its full logical lease separately from
 physical cleanup. Before blank creation it joins old cleanup; foreground

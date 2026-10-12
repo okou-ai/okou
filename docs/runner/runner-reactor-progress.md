@@ -111,6 +111,36 @@ replacement/required cleanup is adopted before status publication. Production
 assembly must supply the same host authority and measured preparation/cleanup
 coverage; these component APIs do not enable the P4 production policy.
 
+The supplied-policy finalizing component preserves actual broker delivery
+bindings in `GuardedFinalizingOffer` and keeps the original provider
+`ClaimedJob` in `GuardedFinalizingAdmission`. Both capsules remain outside
+borrowed observation/activation futures. Producer capture precedes broker
+transfer; receipt and post-unpark validation use that original process
+generation. A parked candidate and a fenced running handoff remain distinct;
+uncertain or running ownership cannot become generic pool inventory. Activation
+checks the actual successor, predecessor and claimed reuse key, then transfers
+the original sandbox, factory, full logical lease and completion authorization
+without another await.
+
+Cancelled receive observations preserve the actual request. Explicit
+cancellation and capsule drop synchronously recover queued delivery before
+dropping the receiver. Refused offers, lost producers, stale backing and failed
+or cancelled activation retain their resources and original claim. Required
+cleanup reuses the ordinary mandatory live/tail engine; no-headroom, unknown
+observation and cancelled grant waits do not abandon home or release the lease.
+Capsule drop only moves custody into the Supervisor registry, with no provider
+callback, I/O or physical cleanup. Retained records hold no tracker handle and
+cannot create a registry Arc cycle.
+
+Callers must settle or drop their finalizing capsules before dependent teardown.
+`close_and_wait` joins accepted work, while
+`take_retained_finalizing_owners` retrieves dropped caller-owned resources and
+claims afterward. Successful cleanup leases and accepted uncertainty remain in
+the separate activation registry. Recovery is an explicit reconciliation
+boundary, not completion proof or memory credit. The production root still
+uses its existing policy until P4 assembly; the native finalizing fixture and
+broader P3d corpus need separate execution and do not calibrate host limits.
+
 ## Routine GC and promotion capacity
 
 Updated runners serialize routine maintenance with
@@ -132,8 +162,8 @@ unlocked pass. Shared entry flocks protect mutations, and the second interval
 check observes another collector's intervening completion. Manual and
 promotion-triggered pressure GC retain capacity ownership and can still contend
 with promotion. This removes the routine inventory/entry-cleanup collision
-window, not pressure contention. Retired workspace caches are a separate domain;
-they are never probed or interpreted as home images. Cache byte/count targets
+window, not pressure contention. The inventory covers the canonical home-cache
+domain. Cache byte/count targets
 remain periodic GC policy, not a strict per-promotion whole-cache admission
 bound. Profile-bound image eligibility, fresh allocation/reserve and cross-device
 copy headroom remain mandatory.

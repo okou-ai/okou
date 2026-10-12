@@ -1,5 +1,4 @@
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -19,15 +18,11 @@ import {
   verifySlackSignature,
 } from "../../lib/slack-request-verification";
 import {
-  MODEL_PICKER_ACTION_ID,
-  MODEL_PICKER_BLOCK_ID,
-  MODEL_PICKER_CALLBACK_ID,
   buildAppHomeView,
   buildErrorMessage,
   buildHelpMessage,
   buildLoginMessage,
   buildLoginPromptMessage,
-  buildModelPickerModal,
   buildSuccessMessage,
   buildWelcomeMessage,
 } from "../../lib/slack-webhook-blocks";
@@ -45,18 +40,11 @@ import { onRejection, safeJsonParse, tapError } from "../utils";
 import { processCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
-import {
-  integrationModelOptionValue,
-  readIntegrationChatThreadModel$,
-  updateIntegrationChatThreadModel$,
-} from "./integration-chat-thread-model.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
-import { listAvailableRunModels$ } from "./run-models.service";
 import {
   admitCanonicalSlackChatEvent$,
   ensureCanonicalSlackChatThreadRoute$,
   findSlackChatThreadRoute$,
-  findSlackDirectMessageChatThreadId$,
   slackSessionThreadTs,
 } from "./slack-chat-ingress.service";
 import { publishSlackAdminSignal$ } from "./slack-connect.service";
@@ -71,7 +59,6 @@ import {
   type SlackSessionStoppedEvent,
 } from "./slack-session-stop.service";
 const L = logger("SlackWebhooks");
-const MODEL_PICKER_MAX_OPTIONS = 100;
 
 type SlackInstallation = typeof slackOrgInstallations.$inferSelect;
 type SlackConnection = typeof slackOrgConnections.$inferSelect;
@@ -177,25 +164,6 @@ interface SlackInteractivePayload {
     readonly action_id: string;
     readonly block_id: string;
   }[];
-  readonly view?: {
-    readonly callback_id: string;
-    readonly private_metadata?: string;
-    readonly state: {
-      readonly values: Record<
-        string,
-        Record<
-          string,
-          { readonly selected_option?: { readonly value: string } | null }
-        >
-      >;
-    };
-  };
-}
-
-interface ConnectionContext {
-  readonly connection: SlackConnection;
-  readonly installation: SlackInstallation;
-  readonly orgId: string;
 }
 
 interface SlackEventCallbackArgs {
@@ -266,12 +234,6 @@ type SlackAgentAdmissionNotice =
       readonly kind: "not_configured" | "not_found" | "not_accessible";
       readonly connection: SlackConnection;
     });
-
-interface CommandModelResponseArgs {
-  readonly payload: SlackCommandPayload;
-  readonly installation: SlackInstallation;
-  readonly connection: SlackConnection;
-}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -408,10 +370,8 @@ async function installationForWorkspace(
 
 function buildOfficialSlackHelpMessage(args: {
   readonly installation: SlackInstallation | undefined;
-  readonly canModel: boolean;
 }): SlackAnyBlock[] {
   return buildHelpMessage({
-    canModel: args.canModel,
     botUserId: args.installation?.botUserId,
   });
 }
@@ -449,22 +409,6 @@ async function slackCommandWorkspaceContext(
     : undefined;
   signal.throwIfAborted();
   return { installation, connection };
-}
-
-async function resolveConnectionContext(
-  db: Db,
-  slackUserId: string,
-  workspaceId: string,
-): Promise<ConnectionContext | null> {
-  const installation = await installationForWorkspace(db, workspaceId);
-  if (!installation?.orgId) {
-    return null;
-  }
-  const connection = await connectionForSlackUser(db, workspaceId, slackUserId);
-  if (!connection) {
-    return null;
-  }
-  return { connection, installation, orgId: installation.orgId };
 }
 
 function slackPersistentSecretContext(args: {
@@ -854,42 +798,6 @@ const cleanupWorkspaceInstallation$ = command(
   },
 );
 
-const slackModelPickerState$ = command(
-  async (
-    { set },
-    orgId: string,
-    userId: string,
-    currentSelectedModel: string | null,
-    signal: AbortSignal,
-  ): Promise<{
-    readonly enabled: boolean;
-    readonly options: readonly {
-      readonly model: string | null;
-      readonly label: string;
-      readonly isDefault: boolean;
-    }[];
-    readonly currentSelectedModel: string | null;
-  }> => {
-    const runModels = await set(
-      listAvailableRunModels$,
-      { orgId, userId },
-      signal,
-    );
-    signal.throwIfAborted();
-    return {
-      enabled: true,
-      options: runModels.models.map((runModel) => {
-        return {
-          model: runModel.model,
-          label: runModel.modelLabel,
-          isDefault: runModel.model === AUTO_SELECTED_MODEL,
-        };
-      }),
-      currentSelectedModel,
-    };
-  },
-);
-
 const refreshOrgAppHome$ = command(
   async (
     { get },
@@ -954,109 +862,6 @@ const refreshOrgAppHome$ = command(
   },
 );
 
-const commandModelResponse$ = command(
-  async (
-    { get, set },
-    args: CommandModelResponseArgs,
-    signal: AbortSignal,
-  ): Promise<Response> => {
-    if (!args.installation.orgId) {
-      return ephemeral(
-        buildErrorMessage(
-          "This workspace is not bound to an org. Please contact your admin.",
-        ),
-      );
-    }
-    if (!args.payload.trigger_id) {
-      return ephemeral(
-        buildErrorMessage(
-          "Couldn't open the model picker \u2014 please try again.",
-        ),
-      );
-    }
-    const chatThreadId = await set(
-      findSlackDirectMessageChatThreadId$,
-      {
-        connectionId: args.connection.id,
-        channelId: args.payload.channel_id,
-        userId: args.connection.userId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    const currentModel = await set(
-      readIntegrationChatThreadModel$,
-      {
-        orgId: args.installation.orgId,
-        userId: args.connection.userId,
-        chatThreadId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!chatThreadId || currentModel.kind === "no_thread") {
-      return ephemeral(
-        buildErrorMessage(
-          "Use /okou model in an existing Okou Slack main DM conversation.",
-        ),
-      );
-    }
-    const picker = await set(
-      slackModelPickerState$,
-      args.installation.orgId,
-      args.connection.userId,
-      currentModel.selectedModel,
-      signal,
-    );
-    if (!picker.enabled) {
-      return ephemeral(
-        buildErrorMessage(
-          "Model switching is not available for this workspace.",
-        ),
-      );
-    }
-    if (picker.options.length === 0) {
-      return ephemeral(
-        buildErrorMessage("No models are configured for this workspace."),
-      );
-    }
-    const client = createSlackClient(
-      await get(
-        decryptSlackBotToken({
-          installation: args.installation,
-          userId: args.connection.userId,
-        }),
-      ),
-    );
-    signal.throwIfAborted();
-    const result = await tapError(
-      client.openView(
-        args.payload.trigger_id,
-        buildModelPickerModal({
-          options: picker.options.slice(0, MODEL_PICKER_MAX_OPTIONS),
-          currentSelectedModel: picker.currentSelectedModel,
-          privateMetadata: JSON.stringify({
-            channelId: args.payload.channel_id,
-            chatThreadId,
-          }),
-        }),
-      ),
-      (error) => {
-        L.warn("Failed to open model picker modal", { error });
-      },
-    );
-    signal.throwIfAborted();
-    if (!result) {
-      return ephemeral(
-        buildErrorMessage(
-          "Couldn't open the model picker \u2014 please try again.",
-        ),
-      );
-    }
-    return emptyResponse();
-  },
-);
-
 export const handleSlackCommands$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const request = get(request$);
@@ -1081,14 +886,10 @@ export const handleSlackCommands$ = command(
       payload,
       signal,
     );
-    // Auto is always listed, so a connected workspace member can pick a model.
-    const canModel = !!installation?.orgId && !!connection;
-
     if (subCommand === "help" || subCommand === "") {
       return ephemeral(
         buildOfficialSlackHelpMessage({
           installation,
-          canModel,
         }),
       );
     }
@@ -1159,26 +960,9 @@ export const handleSlackCommands$ = command(
       );
     }
 
-    if (subCommand === "switch") {
-      return ephemeral(
-        buildErrorMessage(
-          "Switching agents is no longer supported. Slack always uses your org's default agent.",
-        ),
-      );
-    }
-
-    if (subCommand === "model") {
-      return set(
-        commandModelResponse$,
-        { payload, installation, connection },
-        signal,
-      );
-    }
-
     return ephemeral(
       buildOfficialSlackHelpMessage({
         installation,
-        canModel,
       }),
     );
   },
@@ -1625,166 +1409,6 @@ export const handleSlackEvents$ = command(
   },
 );
 
-function parseModelViewRoute(
-  privateMetadata: string | undefined,
-): { channelId: string; chatThreadId: string } | undefined {
-  if (!privateMetadata) {
-    return undefined;
-  }
-  const metadata = safeJsonParse(privateMetadata);
-  if (typeof metadata !== "object" || metadata === null) {
-    return undefined;
-  }
-  const channelId = "channelId" in metadata ? metadata.channelId : undefined;
-  const chatThreadId =
-    "chatThreadId" in metadata ? metadata.chatThreadId : undefined;
-  return typeof channelId === "string" &&
-    channelId.length > 0 &&
-    typeof chatThreadId === "string" &&
-    chatThreadId.length > 0
-    ? { channelId, chatThreadId }
-    : undefined;
-}
-
-async function postEphemeralMessage(args: {
-  readonly botToken: string;
-  readonly channel: string;
-  readonly slackUserId: string;
-  readonly text: string;
-}): Promise<void> {
-  const result = await createSlackClient(args.botToken).postEphemeral({
-    channel: args.channel,
-    user: args.slackUserId,
-    text: args.text,
-  });
-  if (result.kind === "slack_error") {
-    L.warn("Failed to post ephemeral message", { error: result.error });
-  }
-}
-
-const handleModelPickerSubmit$ = command(
-  async (
-    { get, set },
-    db: Db,
-    payload: SlackInteractivePayload,
-    signal: AbortSignal,
-  ): Promise<Response> => {
-    const selected =
-      payload.view?.state.values[MODEL_PICKER_BLOCK_ID]?.[
-        MODEL_PICKER_ACTION_ID
-      ]?.selected_option?.value;
-    if (!selected) {
-      return jsonResponse({
-        response_action: "errors",
-        errors: { [MODEL_PICKER_BLOCK_ID]: "Please choose a model." },
-      });
-    }
-    const ctx = await resolveConnectionContext(
-      db,
-      payload.user.id,
-      payload.team.id,
-    );
-    signal.throwIfAborted();
-    if (!ctx) {
-      return emptyResponse();
-    }
-    const route = parseModelViewRoute(payload.view?.private_metadata);
-    const chatThreadId = route
-      ? await set(
-          findSlackDirectMessageChatThreadId$,
-          {
-            connectionId: ctx.connection.id,
-            channelId: route.channelId,
-            userId: ctx.connection.userId,
-          },
-          signal,
-        )
-      : undefined;
-    signal.throwIfAborted();
-    if (!chatThreadId || chatThreadId !== route?.chatThreadId) {
-      return jsonResponse({
-        response_action: "errors",
-        errors: {
-          [MODEL_PICKER_BLOCK_ID]:
-            "This model picker is out of date. Use /okou model in your main DM again.",
-        },
-      });
-    }
-    const currentModel = await set(
-      readIntegrationChatThreadModel$,
-      {
-        orgId: ctx.orgId,
-        userId: ctx.connection.userId,
-        chatThreadId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (currentModel.kind === "no_thread") {
-      return jsonResponse({
-        response_action: "errors",
-        errors: {
-          [MODEL_PICKER_BLOCK_ID]: "This model picker is out of date.",
-        },
-      });
-    }
-    const picker = await set(
-      slackModelPickerState$,
-      ctx.orgId,
-      ctx.connection.userId,
-      currentModel.selectedModel,
-      signal,
-    );
-    const option = picker.options.find((candidate) => {
-      return integrationModelOptionValue(candidate.model) === selected;
-    });
-    if (!option) {
-      return jsonResponse({
-        response_action: "errors",
-        errors: {
-          [MODEL_PICKER_BLOCK_ID]: "You don't have access to that model.",
-        },
-      });
-    }
-    signal.throwIfAborted();
-    const threadModel = await set(
-      updateIntegrationChatThreadModel$,
-      {
-        orgId: ctx.orgId,
-        userId: ctx.connection.userId,
-        chatThreadId,
-        model: option.model,
-      },
-      signal,
-    );
-    if (threadModel.kind !== "updated") {
-      return jsonResponse({
-        response_action: "errors",
-        errors: {
-          [MODEL_PICKER_BLOCK_ID]:
-            threadModel.kind === "no_thread"
-              ? "This model picker is out of date."
-              : "You don't have access to that model.",
-        },
-      });
-    }
-    if (route) {
-      await postEphemeralMessage({
-        botToken: await get(
-          decryptSlackBotToken({
-            installation: ctx.installation,
-            userId: ctx.connection.userId,
-          }),
-        ),
-        channel: route.channelId,
-        slackUserId: payload.user.id,
-        text: `Switched to *${option.label}* for this conversation.`,
-      });
-    }
-    return emptyResponse();
-  },
-);
-
 const handleHomeDisconnect$ = command(
   async ({ set }, db: Db, payload: SlackInteractivePayload): Promise<void> => {
     const connection = await connectionForSlackUser(
@@ -1825,12 +1449,6 @@ export const handleSlackInteractive$ = command(
     const payload = parsedPayload as SlackInteractivePayload;
 
     const db = set(writeDb$);
-    if (
-      payload.type === "view_submission" &&
-      payload.view?.callback_id === MODEL_PICKER_CALLBACK_ID
-    ) {
-      return set(handleModelPickerSubmit$, db, payload, signal);
-    }
     if (payload.type === "block_actions") {
       const action = payload.actions?.[0];
       if (!action) {

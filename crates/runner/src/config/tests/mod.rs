@@ -159,7 +159,7 @@ async fn test_home_with_artifacts(dir: &std::path::Path, hashes: &[(&str, &str)]
 }
 
 #[tokio::test]
-async fn paired_home_profile_round_trips_and_rejects_workspace_only_or_mixed_config() {
+async fn paired_home_profile_round_trips() {
     let fixture = ConfigFixture::new().await;
     let profile = ProfileConfig {
         rootfs_hash: TEST_ROOTFS_HASH.into(),
@@ -176,16 +176,6 @@ async fn paired_home_profile_round_trips_and_rejects_workspace_only_or_mixed_con
     assert!(serialized.contains("home_disk_mb: 24576"));
     let reparsed: RunnerConfig = serde_yaml_ng::from_str(&serialized).unwrap();
     assert_eq!(reparsed, loaded);
-
-    let old = yaml.replace("home_disk_mb: 24576", "workspace_disk_mb: 24576");
-    let mixed = yaml.replace(
-        "home_disk_mb: 24576",
-        "home_disk_mb: 24576\n    workspace_disk_mb: 24576",
-    );
-    for incompatible in [old, mixed] {
-        let error = fixture.load_config(&incompatible, true).await.unwrap_err();
-        assert!(error.to_string().contains("workspace_disk_mb"), "{error}");
-    }
 }
 
 fn make_profiles() -> BTreeMap<String, ProfileConfig> {

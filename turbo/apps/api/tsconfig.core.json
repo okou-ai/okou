@@ -467,7 +467,6 @@
     "src/signals/services/feishu-realtime.service.ts",
     "src/signals/services/history-generation-run.ts",
     "src/signals/services/integration-agent-response-presentation.service.ts",
-    "src/signals/services/integration-chat-thread-model.service.ts",
     "src/signals/services/integration-chat-thread-publication.ts",
     "src/signals/services/integration-note-prompt.service.ts",
     "src/signals/services/integration-run-errors.service.ts",

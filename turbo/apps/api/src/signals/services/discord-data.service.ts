@@ -287,23 +287,6 @@ export function discordDmBinding(
   });
 }
 
-function savedDiscordDmBinding(discordUserId: string) {
-  const binding$ = discordDmBinding(discordUserId);
-  return computed(async (get) => {
-    const resolution = await get(binding$);
-    if (resolution.kind !== "connected") {
-      return null;
-    }
-    const [choice] = await get(db$)
-      .select({ connectionId: discordUserDmPreferences.connectionId })
-      .from(discordUserDmPreferences)
-      .where(eq(discordUserDmPreferences.discordUserId, discordUserId));
-    return choice?.connectionId === resolution.binding.connectionId
-      ? resolution.binding
-      : null;
-  });
-}
-
 const commitDiscordDmSelection$ = command(
   async ({ set }, binding: DiscordVerifiedBinding, signal: AbortSignal) => {
     const db = set(writeDb$);
@@ -517,6 +500,19 @@ export function discordEffectiveAgent(args: {
   });
 }
 
+function discordStatusAgentFields(
+  agent: {
+    readonly id: string;
+    readonly name: string;
+    readonly displayName: string | null;
+  } | null,
+): Pick<DiscordOrgStatus, "defaultAgentId" | "defaultAgentName"> {
+  return {
+    defaultAgentId: agent?.id ?? null,
+    defaultAgentName: agent?.displayName ?? agent?.name ?? null,
+  };
+}
+
 export function discordOrgStatus(args: {
   readonly orgId: string;
   readonly userId: string;
@@ -593,9 +589,26 @@ export function discordOrgStatus(args: {
           },
         )
       : [];
-    const choice = connection
-      ? await get(savedDiscordDmBinding(connection.discordUserId))
+    const resolution = connection
+      ? await get(discordDmBinding(connection.discordUserId))
       : null;
+    const [savedChoice] =
+      connection && resolution?.kind === "connected"
+        ? await get(db$)
+            .select({ connectionId: discordUserDmPreferences.connectionId })
+            .from(discordUserDmPreferences)
+            .where(
+              eq(
+                discordUserDmPreferences.discordUserId,
+                connection.discordUserId,
+              ),
+            )
+        : [];
+    const choice =
+      resolution?.kind === "connected" &&
+      savedChoice?.connectionId === resolution.binding.connectionId
+        ? resolution.binding
+        : null;
     return {
       ...currentStatus,
       isAdmin: role === "admin",
@@ -604,8 +617,7 @@ export function discordOrgStatus(args: {
       guildId: installation.guildId,
       guildName: installation.guildName,
       discordUserId: connection?.discordUserId ?? null,
-      defaultAgentId: agent?.id ?? null,
-      defaultAgentName: agent?.displayName ?? agent?.name ?? null,
+      ...discordStatusAgentFields(agent),
       dmSelectionConnectionId:
         choice?.userId === args.userId ? choice.connectionId : null,
       dmBindings: bindings.map(({ connectionId, guildId, guildName }) => {

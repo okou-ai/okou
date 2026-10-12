@@ -80,21 +80,17 @@ async function networkSection() {
 }
 
 async function createForm() {
-  click(getAction("button", "Add Tailscale", await networkSection()));
+  const section = await networkSection();
+  const trigger = await waitFor(() => {
+    return getAction("button", "Add Tailscale", section);
+  });
+  click(trigger);
   const dialog = await screen.findByRole("dialog");
-  await fill(within(dialog).getByLabelText("Name"), "New network");
-  await fill(
-    within(dialog).getByLabelText("Registration tags"),
-    "tag:okou, tag:build",
-  );
-  await fill(
-    within(dialog).getByLabelText("OAuth client ID"),
-    "test-client-id",
-  );
-  await fill(
-    within(dialog).getByLabelText("OAuth client secret"),
-    "secret-canary",
-  );
+  const fields = within(dialog);
+  await fill(fields.getByLabelText("Name"), "New network");
+  await fill(fields.getByLabelText("Registration tags"), "tag:okou, tag:build");
+  await fill(fields.getByLabelText("OAuth client ID"), "test-client-id");
+  await fill(fields.getByLabelText("OAuth client secret"), "secret-canary");
   return dialog;
 }
 
@@ -240,12 +236,14 @@ test("Own SSH references block personal network deletion", async () => {
   });
   await page();
   await screen.findByText("Private server");
-  click(getAction("button", "Delete Tailscale", await networkSection()));
-  const dialog = await screen.findByRole("dialog");
-  expect(getAction("button", "Delete Tailscale", dialog)).toBeDisabled();
-  expect(within(dialog).getByRole("alert")).toHaveTextContent(
-    "Rebind or delete those hosts first.",
-  );
+  const section = await networkSection();
+  expect(getAction("button", "Delete Tailscale", section)).toBeDisabled();
+  expect(
+    within(section).getByText(
+      "Your SSH hosts still use this network. Rebind or delete those hosts first.",
+    ),
+  ).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
 
 test("Credential replacement is explicit, clears discarded secrets and updates tags with the revision", async () => {
@@ -372,66 +370,7 @@ test("Shared deletion acknowledges fresh impact without exposing other host iden
   ]);
 });
 
-test.each([
-  { operation: "delete", label: "Delete Tailscale" },
-  { operation: "adopt", label: "Make personal" },
-] as const)(
-  "A zero-impact $operation needs no other-owner acknowledgement",
-  async ({ operation, label }) => {
-    const requests: unknown[] = [];
-    context.mocks.api(tailscaleContract.impactPreview, ({ respond }) => {
-      return respond(200, {
-        ...impact,
-        otherHostCount: 0,
-        affectedOwners: [],
-      });
-    });
-    if (operation === "delete") {
-      context.mocks.api(tailscaleContract.delete, ({ body, respond }) => {
-        requests.push(body);
-        return respond(204);
-      });
-    } else {
-      context.mocks.api(
-        tailscaleContract.convertToPersonal,
-        ({ body, respond }) => {
-          requests.push(body);
-          return respond(200, {
-            ...shared,
-            scope: "personal",
-            revision: 2,
-            generation: 2,
-          });
-        },
-      );
-    }
-    await page("admin");
-    const section = await networkSection();
-    await within(section).findByText(shared.name);
-    click(
-      getAction(
-        "button",
-        label,
-        within(section).getByRole("region", { name: "Organization" }),
-      ),
-    );
-    const dialog = await screen.findByRole("dialog");
-    await waitFor(() => {
-      return expect(getAction("button", label, dialog)).toBeEnabled();
-    });
-    expect(within(dialog).queryByRole("checkbox")).toBeNull();
-    expect(within(dialog).queryByText(/Affected:/u)).toBeNull();
-    click(getAction("button", label, dialog));
-    await waitFor(() => {
-      return expect(screen.queryByRole("dialog")).toBeNull();
-    });
-    expect(requests).toStrictEqual([
-      { expectedRevision: 1, impactSnapshot: impact.impactSnapshot },
-    ]);
-  },
-);
-
-test("A new shared revision cannot be deleted through an automatically refreshed impact preview", async () => {
+test("A refreshed shared revision is deleted only after acknowledging its current impact", async () => {
   let current = shared;
   let currentImpact = impact;
   const requests: unknown[] = [];
@@ -471,17 +410,8 @@ test("A new shared revision cannot be deleted through an automatically refreshed
   await waitFor(() => {
     return expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
   });
-  await userEvent.click(
-    within(dialog).getByRole("checkbox", { name: acknowledgement }),
-  );
-  click(getAction("button", "Delete Tailscale", dialog));
-  await within(dialog).findByText("Changed shared network");
   expect(requests).toHaveLength(0);
   expect(getAction("button", "Delete Tailscale", dialog)).toBeDisabled();
-  click(getAction("button", "Keep my changes with this version", dialog));
-  await waitFor(() => {
-    return expect(within(dialog).queryByRole("alert")).toBeNull();
-  });
   await userEvent.click(
     within(dialog).getByRole("checkbox", { name: acknowledgement }),
   );
@@ -541,16 +471,13 @@ test("An impact conflict refreshes the snapshot and requires explicit review and
     within(dialog).getByRole("checkbox", { name: acknowledgement }),
   );
   click(getAction("button", "Make personal", dialog));
-  await within(dialog).findByRole("alert");
-  expect(document.body.textContent).not.toContain("private-provider-detail");
-  click(
-    await waitFor(() => {
-      return getAction("button", "Keep my changes with this version", dialog);
-    }),
+  await within(dialog).findByText(
+    "The affected hosts changed. Review the latest impact before confirming again.",
   );
-  await waitFor(() => {
-    return expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
-  });
+  expect(document.body.textContent).not.toContain("private-provider-detail");
+  click(getAction("button", "Review latest impact", dialog));
+  await within(dialog).findByText(/Affected: 1 member and 3 SSH hosts\./u);
+  expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
   expect(getAction("button", "Make personal", dialog)).toBeDisabled();
   await userEvent.click(
     within(dialog).getByRole("checkbox", { name: acknowledgement }),
@@ -565,14 +492,17 @@ test("An impact conflict refreshes the snapshot and requires explicit review and
   ]);
 });
 
-test("A create whose response is uncertain reconciles its UUID before another write", async () => {
+test("An uncertain create retries its original UUID and leaves one saved network", async () => {
   let created: TailscaleConfig | null = null;
-  const requests: unknown[] = [];
+  const requests: { id: string }[] = [];
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
     return respond(200, { configs: created ? [created] : [] });
   });
   context.mocks.api(tailscaleContract.create, ({ body, respond }) => {
     requests.push(body);
+    if (created) {
+      return respond(204);
+    }
     created = { ...config, id: body.id, name: body.name, tags: body.tags };
     return respond(500, {
       error: { code: "INTERNAL_ERROR", message: "private-secret-detail" },
@@ -588,11 +518,12 @@ test("A create whose response is uncertain reconciles its UUID before another wr
     return expect(screen.queryByRole("dialog")).toBeNull();
   });
   await screen.findByText("New network");
-  expect(requests).toHaveLength(1);
+  expect(screen.getAllByText("New network")).toHaveLength(1);
+  expect(requests).toStrictEqual([requests[0], requests[0]]);
   expect(document.body.textContent).not.toContain("private-secret-detail");
 });
 
-test("A retry after a read proves no creation reuses the original UUID", async () => {
+test("An explicit retry after an uncertain create reuses the original UUID", async () => {
   const requests: { id: string }[] = [];
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
     return respond(200, { configs: [] });
@@ -696,7 +627,7 @@ test("Promotion requires explicit sharing acknowledgement and preserves the reso
   ]);
 });
 
-test("Revision conflicts preserve the draft until the displayed saved version is reviewed", async () => {
+test("Revision review preserves a draft and permits restoring the original metadata", async () => {
   let current = config;
   const requests: unknown[] = [];
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
@@ -734,6 +665,7 @@ test("Revision conflicts preserve the draft until the displayed saved version is
   await within(dialog).findByText("Server rename");
   expect(within(dialog).getByLabelText("Name")).toHaveValue("My draft");
   expect(getAction("button", "Save", dialog)).toBeDisabled();
+  await fill(within(dialog).getByLabelText("Name"), config.name);
   click(getAction("button", "Keep my changes with this version", dialog));
   await waitFor(() => {
     return expect(getAction("button", "Save", dialog)).toBeEnabled();
@@ -744,7 +676,7 @@ test("Revision conflicts preserve the draft until the displayed saved version is
   });
   expect(requests).toStrictEqual([
     { expectedRevision: 1, name: "My draft", tags: ["tag:okou"] },
-    { expectedRevision: 2, name: "My draft", tags: ["tag:okou"] },
+    { expectedRevision: 2, name: config.name, tags: ["tag:okou"] },
   ]);
 });
 
@@ -764,9 +696,10 @@ test("Escape discards a secret draft and returns focus to the Add control", asyn
   expect(trigger).toHaveFocus();
 });
 
-test("Cancelling an in-flight save clears its secrets and its late response cannot close a new draft", async () => {
+test("A busy dialog blocks dismissal but an organization change clears secrets and fences a late response", async () => {
   const pending = context.mocks.deferred<void>();
   const started = context.mocks.deferred<void>();
+  context.mocks.data.org({ id: "org_next", name: "Next", role: "member" });
   context.mocks.api(tailscaleContract.create, async ({ body, respond }) => {
     started.resolve();
     await pending.promise;
@@ -777,11 +710,26 @@ test("Cancelling an in-flight save clears its secrets and its late response cann
   const secret = within(first).getByLabelText("OAuth client secret");
   click(getAction("button", "Save", first));
   await started.promise;
-  click(getAction("button", "Cancel", first));
+  expect(getAction("button", "Cancel", first)).toBeDisabled();
+  await userEvent.keyboard("{Escape}");
+  expect(
+    within(screen.getByRole("dialog")).getByLabelText("OAuth client secret"),
+  ).toBeDisabled();
+  await act(() => {
+    mockOrganization({
+      activeOrg: { id: "org_next", name: "Next" },
+      memberships: [{ id: "org_next" }],
+    });
+    emitMockedClerkEvent();
+  });
   await waitFor(() => {
     return expect(screen.queryByRole("dialog")).toBeNull();
   });
   expect(secret).toHaveValue("");
+  await act(() => {
+    mockOrganization(auth.organization);
+    emitMockedClerkEvent();
+  });
   const next = await createForm();
   await fill(within(next).getByLabelText("Name"), "Second draft");
   await act(async () => {

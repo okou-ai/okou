@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.2](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.1...guest-control-server-v0.24.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* **guest:** consume task requests before rejecting callers ([#39291](https://github.com/okou-ai/okou/issues/39291)) ([cc963a3](https://github.com/okou-ai/okou/commit/cc963a36aad563816fe02a9ac23cdc211b13e4fd))
+
 ## [0.24.1](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.0...guest-control-server-v0.24.1) (2026-10-12)
 
 ## [0.24.0](https://github.com/okou-ai/okou/compare/guest-control-server-v0.23.2...guest-control-server-v0.24.0) (2026-10-11)
