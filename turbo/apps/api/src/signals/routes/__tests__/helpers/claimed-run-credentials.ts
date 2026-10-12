@@ -1,4 +1,4 @@
-import { beforeEach } from "vitest";
+import { beforeEach, onTestFinished } from "vitest";
 import type { TestContext } from "../../../../__tests__/test-context";
 import { mockOptionalEnv, optionalEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
@@ -24,54 +24,57 @@ export function createClaimedRunCredentials(context: TestContext) {
       readonly agentId: string;
     }
   >();
-  const owners = new Map<
+  const owners = new Map<string, ReturnType<typeof publicRunOwner>[]>();
+  const workspaces = new Map<
     string,
-    {
-      readonly owner: ReturnType<typeof publicRunOwner>;
-      retainWorkspace: boolean;
-    }
+    { actor: ApiTestUser; restore: () => void }
   >();
   beforeEach(() => {
+    workspaces.clear();
     owners.clear();
     credentials.clear();
   });
-  async function claim(identity: {
-    readonly userId: string;
-    readonly orgId: string | null;
-  }) {
+  async function claim(
+    identity: {
+      readonly userId: string;
+      readonly orgId: string | null;
+    },
+    fresh = false,
+  ) {
     if (!identity.orgId) {
       throw new Error("A Runner claim requires an organization");
     }
     const key = JSON.stringify([identity.userId, identity.orgId]);
     const existing = credentials.get(key);
-    if (existing) {
+    if (existing && !fresh) {
       return existing;
     }
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const actor = bdd.user(identity);
     let restoreAccepted = captureConnectorExternalState(context);
-    const retention = { retainWorkspace: false };
+    let workspace = workspaces.get(identity.orgId);
+    if (!workspace) {
+      const ownedWorkspace = { actor, restore: restoreAccepted };
+      workspaces.set(identity.orgId, ownedWorkspace);
+      workspace = ownedWorkspace;
+      // Registered before all Run owners: reverse-order teardown releases
+      // every actor's claims before deleting their shared organization.
+      onTestFinished(async () => {
+        ownedWorkspace.restore();
+        await deletePublicWorkspace(context, ownedWorkspace.actor);
+      });
+    }
+    const ownedWorkspace = workspace;
     const owner = publicRunOwner(context, actor, {
       clockTime: now,
       restoreEnvironment: () => {
         restoreAccepted();
       },
-      afterRuns: () => {
-        return retention.retainWorkspace
-          ? Promise.resolve()
-          : deletePublicWorkspace(context, actor);
-      },
     });
-    owners.set(key, {
-      owner,
-      get retainWorkspace() {
-        return retention.retainWorkspace;
-      },
-      set retainWorkspace(value: boolean) {
-        retention.retainWorkspace = value;
-      },
-    });
+    const actorOwners = owners.get(key) ?? [];
+    actorOwners.push(owner);
+    owners.set(key, actorOwners);
     const previousRunnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
     const previousOpenrouterKey = optionalEnv("OPENROUTER_API_KEY");
     const token = await owner.run(async () => {
@@ -111,6 +114,7 @@ export function createClaimedRunCredentials(context: TestContext) {
         };
       });
       restoreAccepted = captureConnectorExternalState(context);
+      ownedWorkspace.restore = restoreAccepted;
       mockOptionalEnv("RUNNER_DEFAULT_GROUP", previousRunnerGroup);
       mockOptionalEnv("OPENROUTER_API_KEY", previousOpenrouterKey);
       if (!result.ok) {
@@ -122,15 +126,20 @@ export function createClaimedRunCredentials(context: TestContext) {
     return token;
   }
   return {
-    claim,
+    claim(identity: Parameters<typeof claim>[0]) {
+      return claim(identity);
+    },
+    freshClaim(identity: Parameters<typeof claim>[0]) {
+      return claim(identity, true);
+    },
     async removeMember(
       identity: Parameters<typeof claim>[0],
       survivingAdmin?: ApiTestUser,
     ) {
-      const record = owners.get(
+      const actorOwners = owners.get(
         JSON.stringify([identity.userId, identity.orgId]),
       );
-      if (!record) {
+      if (!actorOwners || !identity.orgId) {
         throw new Error("Claim a Run before revoking its member");
       }
       // Release this actor's accepted work while its credentials still exist.
@@ -140,20 +149,23 @@ export function createClaimedRunCredentials(context: TestContext) {
       const admin =
         survivingAdmin ??
         auth.user({ orgId: actor.orgId, orgRole: "org:admin" });
+      const workspace = workspaces.get(identity.orgId);
+      if (!workspace) {
+        throw new Error("Expected an owned workspace");
+      }
+      workspace.actor = admin;
       let restoreAdmin = captureConnectorExternalState(context);
       const administrator = publicRunOwner(context, admin, {
         clockTime: now,
         restoreEnvironment: () => {
           restoreAdmin();
         },
-        afterRuns: () => {
-          return deletePublicWorkspace(context, admin);
-        },
       });
       await administrator.run(async () => {
         const result = await settleIncludingAbort(async () => {
-          record.retainWorkspace = true;
-          await record.owner.cleanup();
+          for (const actorOwner of actorOwners) {
+            await actorOwner.cleanup();
+          }
           auth.mockClerkOrg(admin, {
             members: [{ actor: admin }, { actor }],
             createdBy: admin.userId,
@@ -177,6 +189,7 @@ export function createClaimedRunCredentials(context: TestContext) {
           );
         });
         restoreAdmin = captureConnectorExternalState(context);
+        workspace.restore = restoreAdmin;
         if (!result.ok) {
           throw result.error;
         }

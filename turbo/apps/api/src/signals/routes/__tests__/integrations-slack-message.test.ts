@@ -111,27 +111,29 @@ describe("POST /api/integrations/slack/message", () => {
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     api.configureRunnerGroup();
-    const run = await api.createThreadRun(actor, {
-      agentId: agent.agentId,
-      prompt: "send slack message",
-    });
-    // Product run creation authenticates through the Clerk session mocks;
-    // restore the membership-list mock the Okou-token auth path relies on.
-    await store.set(
-      seedOrgMembership$,
-      { orgId: base.orgId, userId: base.userId, role: "admin" },
-      context.signal,
-    );
     const owner = publicRunOwner(context, actor, {
       restoreEnvironment: captureConnectorExternalState(context),
     });
-    await api.heartbeatRunner();
-    const claim = await owner.claim(run.runId);
-    const token = claim.platformEnvironment?.OKOU_TOKEN;
-    if (!token) {
-      throw new Error("Expected the claimed Okou token");
-    }
-    return { runId: run.runId, token };
+    return await owner.run(async () => {
+      const run = await api.createThreadRun(actor, {
+        agentId: agent.agentId,
+        prompt: "send slack message",
+      });
+      // Product run creation authenticates through the Clerk session mocks;
+      // restore the membership-list mock the Okou-token auth path relies on.
+      await store.set(
+        seedOrgMembership$,
+        { orgId: base.orgId, userId: base.userId, role: "admin" },
+        context.signal,
+      );
+      await api.heartbeatRunner();
+      const claim = await owner.claim(run.runId);
+      const token = claim.platformEnvironment?.OKOU_TOKEN;
+      if (!token) {
+        throw new Error("Expected the claimed Okou token");
+      }
+      return { runId: run.runId, token };
+    });
   }
 
   it("returns 401 when the token has no active organization membership", async () => {

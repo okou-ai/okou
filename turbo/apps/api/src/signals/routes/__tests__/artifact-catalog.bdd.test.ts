@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { hostRoutes } from "../host";
 
@@ -43,6 +43,18 @@ const sharedThreadTestRoutes: readonly RouteEntry[] = [
   ...artifactCatalogRoutes,
   ...sharedThreadRoutes,
 ];
+function createCatalogStorage() {
+  let storage:
+    ReturnType<typeof chatCallbacks.acceptChatObjectStorage> | undefined;
+  beforeEach(() => {
+    storage = undefined;
+  });
+  return () => {
+    storage ??= chatCallbacks.acceptChatObjectStorage();
+    return storage;
+  };
+}
+const catalogStorage = createCatalogStorage();
 type RunnerClaim = Awaited<ReturnType<typeof api.claimRunnerJob>>;
 interface CatalogActor {
   readonly actor: ApiTestUser;
@@ -58,7 +70,7 @@ interface CatalogActor {
 function stageUploadObject(
   key: string,
   size: number,
-  storage = chatCallbacks.acceptChatObjectStorage(),
+  storage = catalogStorage(),
 ): void {
   storage.addObject({ bucket: "test-user-artifacts", key, size });
 }
@@ -68,7 +80,7 @@ async function catalogActor(
   actor: ApiTestUser = bdd.user(),
   options: { readonly bootstrapOrg?: boolean } = {},
 ): Promise<CatalogActor> {
-  const storage = chatCallbacks.acceptChatObjectStorage();
+  const storage = catalogStorage();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);

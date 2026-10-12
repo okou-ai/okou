@@ -500,9 +500,11 @@ describe("POST /api/integrations/feishu/message", () => {
       const owner = publicRunOwner(context, actor, {
         restoreEnvironment: captureConnectorExternalState(context),
       });
-      const sent = await chatApi.sendAndLaunch(actor, {
-        agentId,
-        prompt: "Create a run for Feishu file upload completion",
+      const sent = await owner.run(() => {
+        return chatApi.sendAndLaunch(actor, {
+          agentId,
+          prompt: "Create a run for Feishu file upload completion",
+        });
       });
       const claim = await owner.run(() => {
         return owner.claim(sent.runId);

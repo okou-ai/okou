@@ -34,7 +34,6 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const credentials = createClaimedRunCredentials(context);
-const disabledCredentials = createClaimedRunCredentials(context);
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const runsApi = createRunsApi(context);
@@ -334,7 +333,7 @@ describe("Lark integration", () => {
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.LarkIntegration]: false,
     });
-    const feishuOnlyToken = await disabledCredentials.okouToken(actor);
+    const { token: feishuOnlyToken } = await credentials.freshClaim(actor);
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.LarkIntegration]: true,
     });
