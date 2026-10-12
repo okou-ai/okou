@@ -420,7 +420,8 @@ check_required_executable "/usr/bin/pdftocairo" "Poppler pdftocairo"
 # build-template.sh also exercises them as the sandbox user before publication.
 check_required_executable "/opt/office/bin/python" "Office Python"
 check_bin "/usr/lib/libreoffice/program/libswlo.so" "LibreOffice Writer library"
-check_bin "/usr/lib/libreoffice/share/registry/writer.xcd" "LibreOffice Writer filters"
+check_required_file_contains "/usr/lib/libreoffice/share/registry/writer.xcd" \
+  "writer_MS_Word_2007" "LibreOffice Writer OOXML filters"
 for module in docx typst openpyxl matplotlib PIL pypdf; do
   check_bin "/opt/office/lib/python*/site-packages/${module}/__init__.py" "Office Python ${module}"
 done
