@@ -1,5 +1,5 @@
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
-import { and, asc, eq, gt, inArray, sql, sum } from "drizzle-orm";
+import { and, eq, gt, inArray, sql, sum } from "drizzle-orm";
 import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
@@ -25,13 +25,6 @@ export interface ActiveConcurrencySubscription {
   readonly cancelAtPeriodEnd: boolean;
   readonly scheduledQuantity: number | null;
   readonly scheduledChangeAt: Date | null;
-}
-
-function dbTimestamp(value: Date | string | null | undefined): Date | null {
-  if (!value) {
-    return null;
-  }
-  return value instanceof Date ? value : new Date(value);
 }
 
 export function activeConcurrencyPriceId(): string | undefined {
@@ -100,41 +93,4 @@ export async function activePaidConcurrencySlots(
     .where(activeConcurrencySubscriptionPredicate(orgId, at));
 
   return row?.slots ?? 0;
-}
-
-export async function activeConcurrencySubscriptions(
-  db: ReadDb,
-  orgId: string,
-  at: Date = nowDate(),
-): Promise<readonly ActiveConcurrencySubscription[]> {
-  const rows = await db
-    .select({
-      id: orgConcurrencySubscriptions.stripeSubscriptionId,
-      quantity: orgConcurrencySubscriptions.slots,
-      currentPeriodEnd: orgConcurrencySubscriptions.currentPeriodEnd,
-      cancelAtPeriodEnd: orgConcurrencySubscriptions.cancelAtPeriodEnd,
-      scheduledQuantity: orgConcurrencySubscriptions.scheduledSlots,
-      scheduledChangeAt: orgConcurrencySubscriptions.scheduledChangeAt,
-    })
-    .from(orgConcurrencySubscriptions)
-    .where(activeConcurrencySubscriptionPredicate(orgId, at))
-    .orderBy(
-      asc(orgConcurrencySubscriptions.createdAt),
-      asc(orgConcurrencySubscriptions.stripeSubscriptionId),
-    );
-
-  return rows
-    .map((row) => {
-      return {
-        id: row.id,
-        quantity: Number(row.quantity),
-        currentPeriodEnd: dbTimestamp(row.currentPeriodEnd),
-        cancelAtPeriodEnd: row.cancelAtPeriodEnd,
-        scheduledQuantity: row.scheduledQuantity,
-        scheduledChangeAt: dbTimestamp(row.scheduledChangeAt),
-      };
-    })
-    .filter((row) => {
-      return row.quantity > 0;
-    });
 }
