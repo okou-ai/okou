@@ -3,9 +3,12 @@ import {
   type SlackChatIngressStatus,
 } from "@okouai/db/schema/slack-chat-ingress";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, sql } from "drizzle-orm";
+import { z } from "zod";
 
 import { db$, writeDb$ } from "../external/db";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
@@ -133,6 +136,44 @@ const ROUTE_COLUMNS = {
   chatThreadId: slackChatThreadRoutes.chatThreadId,
 } as const;
 
+const insertedSlackRouteSchema = z
+  .object({
+    id: z.uuid(),
+    connection_id: z.uuid(),
+    channel_id: z.string(),
+    thread_ts: z.string(),
+    user_id: z.string(),
+    chat_thread_id: z.uuid(),
+  })
+  .transform((route): SlackChatThreadRouteBinding => {
+    return {
+      id: route.id,
+      connectionId: route.connection_id,
+      channelId: route.channel_id,
+      threadTs: route.thread_ts,
+      userId: route.user_id,
+      chatThreadId: route.chat_thread_id,
+    };
+  });
+
+function requireSlackDmDestination(rows: readonly { channelId: string }[]) {
+  const [updated] = rows;
+  if (!updated) {
+    throw new Error("Failed to update Slack DM route destination");
+  }
+  return updated;
+}
+
+function requireSlackRouteAfterConflict(
+  rows: readonly SlackChatThreadRouteBinding[],
+) {
+  const [winner] = rows;
+  if (!winner) {
+    throw new Error("Failed to resolve Slack chat thread route after conflict");
+  }
+  return winner;
+}
+
 /**
  * The unique route and its new thread/event commit in this command alone.
  * One `INSERT … ON CONFLICT DO NOTHING` decides a concurrent create; the loser
@@ -152,21 +193,21 @@ export const ensureCanonicalSlackChatThreadRoute$ = command(
     );
     const candidateId = randomUUID();
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0244; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const [existing] = await tx
-        .select(ROUTE_COLUMNS)
-        .from(slackChatThreadRoutes)
-        .where(slackChatThreadRouteWhere(args))
-        .limit(1);
-      if (existing) {
-        if (
-          args.threadTs !== INTEGRATION_DM_SESSION_KEY ||
-          existing.channelId === args.channelId
-        ) {
-          return existing;
-        }
-        const [updated] = await tx
+    const [existing] = await db
+      .select(ROUTE_COLUMNS)
+      .from(slackChatThreadRoutes)
+      .where(slackChatThreadRouteWhere(args))
+      .limit(1);
+    signal.throwIfAborted();
+    if (existing) {
+      if (
+        args.threadTs !== INTEGRATION_DM_SESSION_KEY ||
+        existing.channelId === args.channelId
+      ) {
+        return existing;
+      }
+      const updated = requireSlackDmDestination(
+        await db
           .update(slackChatThreadRoutes)
           .set({ channelId: args.channelId })
           .where(
@@ -175,64 +216,68 @@ export const ensureCanonicalSlackChatThreadRoute$ = command(
               slackChatThreadRouteWhere(args),
             ),
           )
-          .returning({ channelId: slackChatThreadRoutes.channelId });
-        if (!updated) {
-          throw new Error("Failed to update Slack DM route destination");
-        }
-        return { ...existing, ...updated };
-      }
-      const thread = integrationChatThreadValues(args, candidateId, defaults);
-      const insertedRoute = tx.$with("inserted_slack_route").as(
-        tx
-          .insert(slackChatThreadRoutes)
-          .values({
-            connectionId: args.connectionId,
-            channelId: args.channelId,
-            threadTs: args.threadTs,
-            userId: args.userId,
-            chatThreadId: thread.id,
-            createdAt: args.currentTime,
-          })
-          .onConflictDoNothing({
-            target: [
-              slackChatThreadRoutes.connectionId,
-              slackChatThreadRoutes.channelId,
-              slackChatThreadRoutes.threadTs,
-              slackChatThreadRoutes.userId,
-            ],
-          })
-          .returning(ROUTE_COLUMNS),
+          .returning({ channelId: slackChatThreadRoutes.channelId }),
       );
-      const insertedThread = tx
-        .$with("inserted_slack_thread", {})
-        .as(integrationChatThreadInsertFromRouteSql(thread, insertedRoute));
-      const [route] = await tx
-        .with(insertedRoute, insertedThread)
-        .select()
-        .from(insertedRoute);
-      if (route) {
-        await tx.execute(integrationThreadCreatedEventSql(args.orgId, thread));
-        signal.throwIfAborted();
-        return route;
-      }
-      // ON CONFLICT waited for the winner's commit; read it once.
-      const [winner] = await tx
+      signal.throwIfAborted();
+      return { ...existing, ...updated };
+    }
+    const thread = integrationChatThreadValues(args, candidateId, defaults);
+    const routeInsert = db
+      .insert(slackChatThreadRoutes)
+      .values({
+        connectionId: args.connectionId,
+        channelId: args.channelId,
+        threadTs: args.threadTs,
+        userId: args.userId,
+        chatThreadId: thread.id,
+        createdAt: args.currentTime,
+      })
+      .onConflictDoNothing({
+        target: [
+          slackChatThreadRoutes.connectionId,
+          slackChatThreadRoutes.channelId,
+          slackChatThreadRoutes.threadTs,
+          slackChatThreadRoutes.userId,
+        ],
+      })
+      .returning(ROUTE_COLUMNS);
+    const insertedRoute = db.$with("inserted_slack_route").as(routeInsert);
+    // A dependent CTE must consume RETURNING: it cannot see this newly
+    // inserted thread in the statement's base-table snapshot.
+    const insertedThread = sql`${integrationChatThreadInsertFromRouteSql(thread, insertedRoute)}
+        RETURNING ${chatThreads.agentId}`;
+    const [route] = parseRawRows(
+      insertedSlackRouteSchema,
+      await db.execute(
+        integrationThreadCreatedEventSql(args.orgId, thread, {
+          cte: sql`inserted_slack_route AS (${routeInsert.getSQL()}), inserted_slack_thread AS (${insertedThread})`,
+          gate: sql`EXISTS (SELECT 1 FROM inserted_slack_thread)`,
+          agentId: sql`(SELECT agent_id FROM inserted_slack_thread)`,
+          result: db.select().from(insertedRoute).getSQL(),
+        }),
+      ),
+    );
+    signal.throwIfAborted();
+    if (route) {
+      return route;
+    }
+    // ON CONFLICT waited for the winner's commit; read it once.
+    const winner = requireSlackRouteAfterConflict(
+      await db
         .select(ROUTE_COLUMNS)
         .from(slackChatThreadRoutes)
         .where(slackChatThreadRouteWhere(args))
-        .limit(1);
-      if (!winner) {
-        throw new Error(
-          "Failed to resolve Slack chat thread route after conflict",
-        );
-      }
-      if (
-        args.threadTs !== INTEGRATION_DM_SESSION_KEY ||
-        winner.channelId === args.channelId
-      ) {
-        return winner;
-      }
-      const [updated] = await tx
+        .limit(1),
+    );
+    signal.throwIfAborted();
+    if (
+      args.threadTs !== INTEGRATION_DM_SESSION_KEY ||
+      winner.channelId === args.channelId
+    ) {
+      return winner;
+    }
+    const updated = requireSlackDmDestination(
+      await db
         .update(slackChatThreadRoutes)
         .set({ channelId: args.channelId })
         .where(
@@ -241,14 +286,10 @@ export const ensureCanonicalSlackChatThreadRoute$ = command(
             slackChatThreadRouteWhere(args),
           ),
         )
-        .returning({ channelId: slackChatThreadRoutes.channelId });
-      if (!updated) {
-        throw new Error("Failed to update Slack DM route destination");
-      }
-      return { ...winner, ...updated };
-    });
+        .returning({ channelId: slackChatThreadRoutes.channelId }),
+    );
     signal.throwIfAborted();
-    return result;
+    return { ...winner, ...updated };
   },
 );
 

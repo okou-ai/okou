@@ -667,11 +667,6 @@
       "owner": "consumeRunnerWssTicket$"
     },
     {
-      "id": "TX-0244",
-      "file": "turbo/apps/api/src/signals/services/slack-chat-ingress.service.ts",
-      "owner": "ensureCanonicalSlackChatThreadRoute$"
-    },
-    {
       "id": "TX-0245",
       "file": "turbo/apps/api/src/signals/services/slack-chat-ingress.service.ts",
       "owner": "admitCanonicalSlackChatEvent$"

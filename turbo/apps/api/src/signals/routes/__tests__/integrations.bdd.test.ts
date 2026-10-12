@@ -2375,6 +2375,14 @@ describe("INT-01: Slack app deep webhook flows", () => {
         }),
       ).toContain(canonicalChatThreadId);
       expect(
+        visibleThreadEvents.body.events.filter((threadEvent) => {
+          return (
+            threadEvent.chatThreadId === canonicalChatThreadId &&
+            threadEvent.kind === "created"
+          );
+        }),
+      ).toHaveLength(1);
+      expect(
         (await chat.requestReadThread(actor, canonicalChatThreadId, [200]))
           .status,
       ).toBe(200);
