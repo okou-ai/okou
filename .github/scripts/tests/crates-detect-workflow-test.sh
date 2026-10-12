@@ -104,8 +104,7 @@ jq -e '
     ".github/scripts/runner-behavior-home-cache-promotion.sh"
   ] and
   behavior_commands($lane_b) == [
-    ".github/scripts/runner-behavior-exec.sh",
-    ".github/scripts/runner-behavior-benchmark.sh"
+    ".github/scripts/runner-behavior-exec.sh"
   ] and
   behavior_commands($lane_c) == [
     ".github/scripts/runner-behavior-process-containment.sh",

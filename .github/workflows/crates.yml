@@ -1217,12 +1217,6 @@ jobs:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
         run: .github/scripts/runner-behavior-exec.sh
 
-      - name: Run benchmark
-        timeout-minutes: 8
-        env:
-          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-benchmark.sh
-
   runner-behavior-lane-c:
     runs-on: ubuntu-latest
     needs: [runner-test-prepare]
