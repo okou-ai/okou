@@ -692,10 +692,9 @@ async fn assert_signal_handler_task_end_cancels_active_jobs(
     handler_task: tokio::task::JoinHandle<()>,
     trigger_handler_task_end: impl FnOnce(),
 ) {
-    let gate = Arc::new(tokio::sync::Notify::new());
-    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::with_wait_process_gate(
-        gate,
-    ));
+    let wait_gate = sandbox_mock::MockLifecycleGate::new();
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.set_wait_process_lifecycle_gate(wait_gate.clone());
     let (mut config, env) = mock_run_config_with_overrides(test_profiles(), 8, 32768, 4, overrides);
     config.signals.signal_source = SignalSource::Override(SignalController {
         mode_rx: env.mode_tx.subscribe(),
@@ -706,8 +705,16 @@ async fn assert_signal_handler_task_end_cancels_active_jobs(
 
     let run_id = RunId::new_v4();
     push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
-    let _token = wait_cancel_token(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
+    let token = wait_cancel_token(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
+    wait_gate
+        .wait_entered(1, Duration::from_secs(5))
+        .await
+        .expect("wait_process should enter the lifecycle gate before handler termination");
 
+    // Complete real setup before controlling the shutdown deadline. Tokio holds
+    // paused time while blocking filesystem work runs, so status-file latency
+    // cannot consume the cancellation budget; a stuck async job still times out.
+    tokio::time::pause();
     trigger_handler_task_end();
 
     assert_run_exits_within(
@@ -716,6 +723,12 @@ async fn assert_signal_handler_task_end_cancels_active_jobs(
         "signal handler exit should cancel active jobs and stop promptly",
     )
     .await;
+    tokio::time::resume();
+    assert!(
+        token.is_cancelled(),
+        "handler termination must cancel the job"
+    );
+    wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
 
     let comps = env.handle.completions.lock().unwrap();
     let c = comps
