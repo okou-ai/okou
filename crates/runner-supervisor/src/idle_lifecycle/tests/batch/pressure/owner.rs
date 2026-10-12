@@ -193,6 +193,38 @@ async fn uncertain_settlement_retains_wave_custody_and_original_full_lease_after
 struct PanicReader;
 
 #[tokio::test]
+async fn dropped_pressure_owner_does_not_abort_accepted_saving_or_release_its_full_lease() {
+    let fixture = fixture(24).await;
+    let mut home = fixture.park("thread:dropped-pressure-owner", true).await;
+    home.confirm_exit();
+    let kill = MockLifecycleGate::new();
+    home.overrides.set_kill_lifecycle_gate(kill.clone());
+    let owner = IdlePressureOwner::spawn(config(&fixture, 1)).unwrap();
+    let mut updates = owner.subscribe();
+    kill.wait_entered(1, WAIT).await.unwrap();
+    drop(owner);
+    let joined = fixture.tracker.close_and_wait();
+    tokio::pin!(joined);
+    assert!(futures_util::poll!(joined.as_mut()).is_pending());
+    assert_eq!(fixture.budget.allocated(), (2, 2048, 1));
+    kill.release_one();
+    let stopped = snapshot(&mut updates, |state| state.stopped).await;
+    assert!(stopped.last_wave.unwrap().is_resolved());
+    tokio::time::timeout(WAIT, joined).await.unwrap();
+    home.assert_cached_bytes().await;
+    assert_eq!(fixture.budget.allocated(), (0, 0, 0));
+    assert_eq!(
+        fixture
+            .operations
+            .close_and_wait()
+            .await
+            .unwrap()
+            .registered_operations,
+        0
+    );
+}
+
+#[tokio::test]
 async fn stopping_a_recovered_owner_invalidates_optional_readiness() {
     let fixture = fixture(64).await;
     let owner = IdlePressureOwner::spawn(config(&fixture, 1)).unwrap();
