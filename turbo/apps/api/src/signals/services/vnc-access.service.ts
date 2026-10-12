@@ -8,6 +8,7 @@ import {
 } from "@okouai/db/runtime/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { and, asc, eq, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 import { command } from "ccstate";
 import {
@@ -30,6 +31,7 @@ export const listRunVncHosts$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
+    const kdcSsh = alias(sshConnections, "inventory_vnc_kdc_ssh");
     // The left joins preserve an authorized empty inventory in the same snapshot.
     const rows = await db
       .select({
@@ -44,6 +46,13 @@ export const listRunVncHosts$ = command(
         port: vncConnections.port,
         authMethod: vncConnections.authMethod,
         securityType: vncConnections.securityType,
+        kdcTransportType: vncConnections.kdcTransportType,
+        kdcAllowed: runThreadSshAccess(kdcSsh),
+        kdcNeedsRebind:
+          sql`(${kdcSsh.transport} = 'cloudflare_access' AND ${kdcSsh.cloudflareAccessId} IS NULL) OR
+          (${kdcSsh.transport} = 'tailscale' AND ${kdcSsh.tailscaleId} IS NULL)`.mapWith(
+            nullableDriverValueDecoder(pgBooleanDecoder),
+          ),
       })
       .from(agentRuns)
       .innerJoin(
@@ -78,6 +87,14 @@ export const listRunVncHosts$ = command(
           eq(sshConnections.userId, agentRuns.userId),
         ),
       )
+      .leftJoin(
+        kdcSsh,
+        and(
+          eq(kdcSsh.id, vncConnections.kdcSshConnectionId),
+          eq(kdcSsh.orgId, agentRuns.orgId),
+          eq(kdcSsh.userId, agentRuns.userId),
+        ),
+      )
       .where(
         and(
           eq(agentRuns.id, owner.runId),
@@ -97,6 +114,12 @@ export const listRunVncHosts$ = command(
         if (row.id === null) {
           return [];
         }
+        if (row.kdcTransportType === "ssh" && !row.kdcAllowed) {
+          return [];
+        }
+        if (row.kdcTransportType === "ssh" && row.kdcNeedsRebind === null) {
+          throw new Error("VNC KDC SSH reference is missing");
+        }
         if (row.transportType === "ssh" && !row.sshAllowed) {
           return [];
         }
@@ -113,7 +136,8 @@ export const listRunVncHosts$ = command(
             authMethod: row.authMethod,
             securityType: row.securityType,
             availability:
-              row.transportType === "ssh" && row.sshNeedsRebind
+              (row.transportType === "ssh" && row.sshNeedsRebind) ||
+              (row.kdcTransportType === "ssh" && row.kdcNeedsRebind)
                 ? { status: "blocked", reason: "needs_rebind" }
                 : { status: "ready" },
           }),

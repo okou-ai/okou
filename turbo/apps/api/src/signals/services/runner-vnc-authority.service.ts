@@ -12,6 +12,7 @@ import {
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, eq, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -27,12 +28,12 @@ type RunnerVncInput = Pick<
   RunnerVncResolveRequest,
   "connectionId" | "runnerIdentity"
 > & { readonly runId: string };
+const kdcSsh = alias(sshConnections, "vnc_kdc_ssh");
 
 /** Always read current authorization from the primary database. */
 export const currentRunnerVncAuthority$ = command(
   async ({ get, set }, input: RunnerVncInput, signal: AbortSignal) => {
     const db = get(db$);
-
     const [row] = await db
       .select({
         generation: vncConnections.generation,
@@ -58,6 +59,27 @@ export const currentRunnerVncAuthority$ = command(
         username: vncCredentials.username,
         encryptedPassword: vncCredentials.encryptedPassword,
         encryptedClientIdentity: vncCredentials.encryptedClientIdentity,
+        credentialRevision: vncCredentials.revision,
+        encryptedKerberosCredential: vncCredentials.encryptedKerberosCredential,
+        kerberosInitiator: vncCredentials.kerberosInitiator,
+        kerberosCredentialService: vncCredentials.kerberosService,
+        kerberosDeclaredExpiresAt: vncCredentials.kerberosDeclaredExpiresAt,
+        kerberosService: vncConnections.kerberosService,
+        kdcHost: vncConnections.kdcHost,
+        kdcPort: vncConnections.kdcPort,
+        kdcTransportType: vncConnections.kdcTransportType,
+        kdcSshConnectionId: vncConnections.kdcSshConnectionId,
+        kerberosTicketLifetimeSeconds:
+          vncConnections.kerberosTicketLifetimeSeconds,
+        kerberosRenewableLifetimeSeconds:
+          vncConnections.kerberosRenewableLifetimeSeconds,
+        kdcSshGeneration: kdcSsh.generation,
+        kdcSshAllowed: runThreadSshAccess(kdcSsh),
+        kdcSshNeedsRebind:
+          sql`(${kdcSsh.transport} = 'cloudflare_access' AND ${kdcSsh.cloudflareAccessId} IS NULL) OR
+          (${kdcSsh.transport} = 'tailscale' AND ${kdcSsh.tailscaleId} IS NULL)`.mapWith(
+            nullableDriverValueDecoder(pgBooleanDecoder),
+          ),
       })
       .from(agentRuns)
       .innerJoin(
@@ -103,6 +125,14 @@ export const currentRunnerVncAuthority$ = command(
           eq(sshConnections.userId, agentRuns.userId),
         ),
       )
+      .leftJoin(
+        kdcSsh,
+        and(
+          eq(kdcSsh.id, vncConnections.kdcSshConnectionId),
+          eq(kdcSsh.orgId, agentRuns.orgId),
+          eq(kdcSsh.userId, agentRuns.userId),
+        ),
+      )
       .where(
         and(
           eq(agentRuns.id, input.runId),
@@ -126,9 +156,8 @@ export const currentRunnerVncAuthority$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext)) {
-      return null;
-    }
-    return row;
+    return isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext)
+      ? row
+      : null;
   },
 );

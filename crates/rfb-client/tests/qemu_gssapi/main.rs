@@ -115,6 +115,8 @@ struct Relay {
     requests: usize,
     unknown: bool,
     revoke_after_exchange: bool,
+    tgs_requests: usize,
+    renewal_failure: Option<kerberos_worker::Error>,
 }
 impl Relay {
     fn new(root: &Path) -> Self {
@@ -125,6 +127,8 @@ impl Relay {
             requests: 0,
             unknown: false,
             revoke_after_exchange: false,
+            tgs_requests: 0,
+            renewal_failure: None,
         }
     }
 }
@@ -146,6 +150,16 @@ impl KdcExchange for Relay {
             return Err(kerberos_worker::Error::Authority);
         }
         self.requests += 1;
+        if request.first() == Some(&0x6c) {
+            self.tgs_requests += 1;
+            // The first TGS request acquires the service. The next requests
+            // are the real renewal and refreshed service, before GSS starts.
+            if self.tgs_requests == 2
+                && let Some(error) = self.renewal_failure
+            {
+                return Err(error);
+            }
+        }
         if self.unknown {
             return Err(kerberos_worker::Error::DeliveryUnknown);
         }
@@ -254,15 +268,27 @@ async fn connect(
     relay: &mut Relay,
     lifetime: Duration,
 ) -> Result<Session<TcpStream>, Error> {
+    let policy = TicketPolicy::new(
+        Duration::from_secs(if mode == "short_ticket" { 4 } else { 60 }),
+        Duration::from_secs(120),
+    )
+    .unwrap();
+    connect_with_policy(root, mode, name, relay, lifetime, policy).await
+}
+
+async fn connect_with_policy(
+    root: &Path,
+    mode: &str,
+    name: &str,
+    relay: &mut Relay,
+    lifetime: Duration,
+    policy: TicketPolicy,
+) -> Result<Session<TcpStream>, Error> {
     let port: u16 = public(root, "vnc-port").parse().unwrap();
     let stream = TcpStream::connect(("127.0.0.1", port)).await?;
     let auth = QemuGssapiAuthentication {
         credentials: credentials(root, mode),
-        ticket_policy: TicketPolicy::new(
-            Duration::from_secs(if mode == "short_ticket" { 4 } else { 60 }),
-            Duration::from_secs(120),
-        )
-        .unwrap(),
+        ticket_policy: policy,
         private_root: root.join("private"),
         expires_at: Instant::now() + lifetime,
     };
@@ -280,6 +306,200 @@ async fn connect(
             .initialize(SharingMode::Shared, Instant::now() + Duration::from_secs(3))
             .await?,
     ))
+}
+
+#[tokio::test]
+#[ignore = "manual local-11 real QEMU with independent signed MIT KDC"]
+async fn pinned_online_password_eligible_pre_auth_renewal_is_once_and_terminal_on_failure() {
+    let root = fixture(0);
+    for mode in ["keytab", "password"] {
+        for (lifetime, renewable, expected_tgs) in [(4, 120, 3), (4, 0, 1), (60, 120, 1)] {
+            let mut relay = Relay::new(&root);
+            let mut session = connect_with_policy(
+                &root,
+                mode,
+                "localhost",
+                &mut relay,
+                Duration::from_secs(60),
+                TicketPolicy::new(
+                    Duration::from_secs(lifetime),
+                    Duration::from_secs(renewable),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+            let frame = session
+                .capture(Instant::now() + Duration::from_secs(2))
+                .await
+                .unwrap();
+            assert_eq!(
+                (frame.metadata().width, frame.metadata().height),
+                (640, 480)
+            );
+            assert!(frame.png().len() > 1000);
+            assert_eq!(relay.tgs_requests, expected_tgs);
+            session.close();
+            assert_eq!(fs::read_dir(root.join("private")).unwrap().count(), 0);
+        }
+        for failure in [
+            kerberos_worker::Error::KdcUnavailable,
+            kerberos_worker::Error::DeliveryUnknown,
+            kerberos_worker::Error::Authority,
+        ] {
+            let mut relay = Relay::new(&root);
+            relay.renewal_failure = Some(failure);
+            let result = connect_with_policy(
+                &root,
+                mode,
+                "localhost",
+                &mut relay,
+                Duration::from_secs(60),
+                TicketPolicy::new(Duration::from_secs(4), Duration::from_secs(120)).unwrap(),
+            )
+            .await;
+            assert!(matches!(result, Err(Error::Kerberos(error)) if error == failure));
+            assert_eq!(
+                relay.tgs_requests, 2,
+                "failed renewal must not reach GSS, reacquire or replay"
+            );
+            // Failed authentication drops Context; the owned fixture checks
+            // actual kill/wait and private-tree cleanup before final teardown.
+        }
+    }
+    println!(
+        "real QEMU keytab/password automatic eligible pre-auth renewal; live nonrenewable/long tickets avoid renewal; controlled route failures are terminal without reacquisition/replay"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires independent signed MIT KDC and actual native worker"]
+// Keep this in the manual full-QEMU group, outside controlled-peer CI selection.
+async fn pinned_online_password_renew_cancellation_keeps_native_owner_until_reap_and_cleanup() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    };
+    use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot};
+
+    struct Lease {
+        root: Option<tempfile::TempDir>,
+        pid: AtomicU32,
+        permit: Option<OwnedSemaphorePermit>,
+        completed: Option<oneshot::Sender<(bool, bool, bool)>>,
+    }
+    impl Drop for Lease {
+        fn drop(&mut self) {
+            let reaped =
+                !Path::new(&format!("/proc/{}", self.pid.load(Ordering::Acquire))).exists();
+            let empty = self.root.as_ref().is_some_and(|root| {
+                fs::read_dir(root.path()).is_ok_and(|mut entries| entries.next().is_none())
+            });
+            let removed = self.root.take().unwrap().close().is_ok();
+            drop(self.permit.take());
+            let _ = self
+                .completed
+                .take()
+                .unwrap()
+                .send((reaped, empty, removed));
+        }
+    }
+    struct OwnedRelay {
+        relay: Relay,
+        owner: Option<Arc<Lease>>,
+        entered: Option<oneshot::Sender<()>>,
+        gate: Option<oneshot::Receiver<()>>,
+    }
+    impl KdcExchange for OwnedRelay {
+        fn work_owner(&self) -> Option<Arc<dyn kerberos_worker::WorkOwner>> {
+            self.owner
+                .as_ref()
+                .map(|owner| Arc::clone(owner) as Arc<dyn kerberos_worker::WorkOwner>)
+        }
+        async fn authorize(&mut self) -> Result<(), kerberos_worker::Error> {
+            self.relay.authorize().await
+        }
+        async fn exchange(
+            &mut self,
+            realm: &str,
+            request: &[u8],
+        ) -> Result<Zeroizing<Vec<u8>>, kerberos_worker::Error> {
+            if let Some(gate) = self.gate.take() {
+                self.entered.take().unwrap().send(()).unwrap();
+                gate.await.map_err(|_| kerberos_worker::Error::Authority)?;
+            }
+            self.relay.exchange(realm, request).await
+        }
+    }
+
+    let fixture = fixture(0);
+    for cancel in [false, true] {
+        let semaphore = Arc::new(Semaphore::new(1));
+        let root = tempfile::Builder::new()
+            .permissions(fs::Permissions::from_mode(0o700))
+            .tempdir_in(fixture.join("private"))
+            .unwrap();
+        let path = root.path().to_owned();
+        let (completed, receipt) = oneshot::channel();
+        let owner = Arc::new(Lease {
+            root: Some(root),
+            pid: AtomicU32::new(0),
+            permit: Some(semaphore.clone().acquire_owned().await.unwrap()),
+            completed: Some(completed),
+        });
+        let weak = Arc::downgrade(&owner);
+        let mut relay = OwnedRelay {
+            relay: Relay::new(&fixture),
+            owner: Some(owner.clone()),
+            entered: None,
+            gate: None,
+        };
+        let (mut context, _) = kerberos_worker::open(
+            &path,
+            credentials(&fixture, "keytab"),
+            TicketPolicy::new(Duration::from_secs(60), Duration::from_secs(120)).unwrap(),
+            Instant::now() + Duration::from_secs(20),
+            &mut relay,
+        )
+        .await
+        .unwrap();
+        let pid = context.process_id();
+        owner.pid.store(pid, Ordering::Release);
+        relay.owner.take();
+        drop(owner);
+        assert!(weak.upgrade().is_some());
+        assert_eq!(semaphore.available_permits(), 0);
+        assert!(Path::new(&format!("/proc/{pid}")).exists());
+        if cancel {
+            let (entered, waiting) = oneshot::channel();
+            let (release, gate) = oneshot::channel();
+            relay.entered = Some(entered);
+            relay.gate = Some(gate);
+            let task = tokio::spawn(async move { context.renew(&mut relay).await });
+            tokio::time::timeout(Duration::from_secs(5), waiting)
+                .await
+                .unwrap()
+                .unwrap();
+            task.abort();
+            assert!(task.await.unwrap_err().is_cancelled());
+            drop(release);
+        } else {
+            context.close().await.unwrap();
+        }
+        let observed = tokio::time::timeout(Duration::from_secs(5), receipt)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            observed,
+            (true, true, true),
+            "opaque owner was released before native reap/fixed-file cleanup/root removal"
+        );
+        assert!(weak.upgrade().is_none());
+        assert_eq!(semaphore.available_permits(), 1);
+        assert!(!path.exists());
+    }
 }
 fn retain_frame(
     directory: &Path,

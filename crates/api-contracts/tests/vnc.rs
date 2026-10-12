@@ -401,41 +401,49 @@ fn resolve_request_advertises_the_eight_exact_supported_tuples() {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
                 transport_type: ResolveRequestSupportedProfileTransportType::Direct,
+                kdc_transport_type: None,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
                 transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                kdc_transport_type: None,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::UsernamePassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
                 transport_type: ResolveRequestSupportedProfileTransportType::Direct,
+                kdc_transport_type: None,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::UsernamePassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
                 transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                kdc_transport_type: None,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::AppleVncPassword,
                 transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                kdc_transport_type: None,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::AppleDhUsernamePassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::AppleDh,
                 transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                kdc_transport_type: None,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::AppleSrpUsernamePassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::AppleSrp,
                 transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                kdc_transport_type: None,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::AppleRsaSrpUsernamePassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::AppleRsaSrp,
                 transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                kdc_transport_type: None,
             },
         ],
     };
@@ -463,6 +471,8 @@ fn authorization_check_preserves_expected_generation_and_closed_outcomes() {
             heartbeat_generation: 5_000_000_000,
         },
         expected_generation: 5,
+        expected_credential_revision: None,
+        expected_kdc_transport: None,
         expected_transport: CheckRequestExpectedTransport::Ssh {
             connection_id: "00000000-0000-4000-8000-000000000003".to_owned(),
             generation: 7,
@@ -491,6 +501,8 @@ fn authorization_check_preserves_expected_generation_and_closed_outcomes() {
             heartbeat_generation: 5_000_000_000,
         },
         expected_generation: 5,
+        expected_credential_revision: None,
+        expected_kdc_transport: None,
         expected_transport: CheckRequestExpectedTransport::Direct,
     };
     assert_eq!(

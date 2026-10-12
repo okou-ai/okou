@@ -2122,6 +2122,13 @@
       "when": 1791808839349,
       "tag": "1380_prepare_ssh_needs_rebind_retirement",
       "breakpoints": true
+    },
+    {
+      "idx": 1381,
+      "version": "7",
+      "when": 1791814527776,
+      "tag": "1381_vnc_kerberos_admission",
+      "breakpoints": true
     }
   ]
 }
