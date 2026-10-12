@@ -4,7 +4,7 @@
     "copySecret": {
       "formButtonPrimary__copyAndClose": "复制并关闭",
       "formHint": "出于安全原因，我们不会允许您稍后再次查看。",
-      "formTitle": "立即复制您的\"{{name}}\" API密钥"
+      "formTitle": "立即复制您的\"{{name}}\" API 密钥"
     },
     "revokeConfirmation": {}
   },
@@ -316,7 +316,7 @@
   "formFieldInputPlaceholder__emailAddress": "请输入您的电子邮件地址",
   "formFieldInputPlaceholder__emailAddresses": "输入或粘贴一个或多个电子邮件地址，用空格或逗号分隔",
   "formFieldInputPlaceholder__organizationSlug": "我的组织",
-  "formFieldLabel__apiKey": "API密钥",
+  "formFieldLabel__apiKey": "API 密钥",
   "formFieldLabel__apiKeyDescription": "描述",
   "formFieldLabel__apiKeyExpiration": "过期时间",
   "formFieldLabel__apiKeyName": "密钥名称",
@@ -841,7 +841,7 @@
     }
   },
   "unstable__errors": {
-    "avatar_file_size_exceeded": "文件大小超过10MB的最大限制。请选择一个较小的文件。",
+    "avatar_file_size_exceeded": "文件大小超过 10MB 的最大限制。请选择一个较小的文件。",
     "avatar_file_type_invalid": "不支持的文件类型。请上传 JPG、PNG、GIF 或 WEBP 格式的图片。",
     "captcha_invalid": "由于安全验证失败，注册未成功。请刷新页面重试或联系支持获取更多帮助。",
     "captcha_unavailable": "注册失败，原因是未通过机器人验证。请刷新页面重试或联系支持团队以获取更多帮助。",
@@ -1078,7 +1078,7 @@
     },
     "plansPage": {},
     "profilePage": {
-      "fileDropAreaHint": "上传小于10MB的JPG, PNG, GIF, 或WEBP格式的图片",
+      "fileDropAreaHint": "上传小于 10MB 的 JPG, PNG, GIF, 或 WEBP 格式的图片",
       "imageFormDestructiveActionSubtitle": "移除图片",
       "imageFormSubtitle": "上传图片",
       "imageFormTitle": "个人资料图片",
@@ -1183,7 +1183,7 @@
       "subtitle__availableWallets": "选择一个 web3 钱包连接到您的账户。",
       "subtitle__unavailableWallets": "没有可用的 web3 钱包。",
       "successMessage": "钱包已被添加到您的账户。",
-      "title": "添加web3钱包"
+      "title": "添加 web3 钱包"
     }
   },
   "waitlist": {
