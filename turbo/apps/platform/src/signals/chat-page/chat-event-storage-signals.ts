@@ -192,20 +192,14 @@ function createSharedDatabaseEventSignals({
       const dataKey = await get(dataKey$);
       signal.throwIfAborted();
       const afterSeqId = get(persistentChatEvents$).at(-1)?.seqId ?? null;
-      const cachedRows = await set(
+      // An earlier refresh can populate the worker cache before this page
+      // receives its result. Cached rows alone do not cover a newer realtime
+      // notification, so every sync must catch up to the server's event tail.
+      const rows = await set(
         queryChatEventSharedDatabase$,
-        { dataKey, afterSeqId, consistency: "cache-only" },
+        { dataKey, afterSeqId, consistency: "catch-up" },
         signal,
       );
-      signal.throwIfAborted();
-      const rows =
-        cachedRows.length > 0
-          ? cachedRows
-          : await set(
-              queryChatEventSharedDatabase$,
-              { dataKey, afterSeqId, consistency: "catch-up" },
-              signal,
-            );
       signal.throwIfAborted();
       await set(
         mergePersistentEvents$,
