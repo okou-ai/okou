@@ -1824,6 +1824,97 @@ describe("Browser user-action route", () => {
     },
   );
 
+  it("rejects overlapping native file applications and preserves the completed action", async () => {
+    const owned = await setupOwnedNativeFileBrowserScenario();
+    await owned.run(async () => {
+      const { create } = await setupNativeFileScenario(owned);
+      const created = await create();
+      expect(created.body.action.state).toBe("pending");
+      const headers = { authorization: "Bearer clerk-session" };
+      const params = { requestToken: created.body.action.requestToken };
+      const observed = await accept(
+        userActionClient().preflight({ headers, params, body: {} }),
+        [200],
+      );
+      expect(observed.body.state).toBe("pending");
+      const fingerprint = observed.body.fields[0]?.control.fileSetFingerprint;
+      if (!fingerprint) {
+        throw new Error("Expected the owner's observed file fingerprint");
+      }
+      const body = {
+        values: [
+          {
+            key: "document",
+            observedFingerprint: fingerprint,
+            operation: "clear" as const,
+            files: [],
+          },
+        ],
+      };
+      const providerReadStarted = createDeferredPromise<void>(context.signal);
+      const releaseProviderRead = createDeferredPromise<void>(context.signal);
+      let holdNextRead = true;
+      server.use(
+        http.get(`${BROWSER_USE_API_URL}/browsers/:id`, async ({ params }) => {
+          if (holdNextRead) {
+            holdNextRead = false;
+            providerReadStarted.resolve(undefined);
+            await releaseProviderRead.promise;
+          }
+          return HttpResponse.json(providerBrowser(String(params.id)));
+        }),
+      );
+      const applying = owned.run(() => {
+        return accept(
+          userActionClient().apply({ headers, params, body }),
+          [200],
+        );
+      });
+      const overlap = await settleIncludingAbort(async () => {
+        await providerReadStarted.promise;
+        const inProgress = await accept(
+          userActionClient().get({ headers, params }),
+          [200],
+        );
+        expect(inProgress.body.state).toBe("applying");
+        const overlapping = await userActionClient().apply({
+          headers,
+          params,
+          body,
+        });
+        expect(overlapping).toMatchObject({
+          status: 409,
+          body: { error: { code: "BROWSER_USER_ACTION_CONFLICT" } },
+        });
+      });
+      releaseProviderRead.resolve(undefined);
+      const applied = await settleIncludingAbort(applying);
+      if (!overlap.ok && !applied.ok) {
+        throw new AggregateError(
+          [overlap.error, applied.error],
+          "Browser overlap checks and application failed",
+        );
+      }
+      if (!overlap.ok) {
+        throw overlap.error;
+      }
+      if (!applied.ok) {
+        throw applied.error;
+      }
+      expect(applied.value.body.state).toBe("succeeded");
+      const terminal = await accept(
+        userActionClient().get({ headers, params }),
+        [200],
+      );
+      expect(terminal.body.state).toBe("succeeded");
+      const replay = await userActionClient().apply({ headers, params, body });
+      expect(replay).toMatchObject({
+        status: 409,
+        body: { error: { code: "BROWSER_USER_ACTION_CONFLICT" } },
+      });
+    });
+  });
+
   it("bounds native file input and cleans staged files when target observation becomes stale", async () => {
     const { state, create, stageSyntheticFile, temporaryObjects, deletedKeys } =
       await setupNativeFileScenario();
