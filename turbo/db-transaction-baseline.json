@@ -117,11 +117,6 @@
       "owner": "claimExpiredInactiveBrowser$"
     },
     {
-      "id": "TX-0074",
-      "file": "turbo/apps/api/src/signals/services/browser.service.ts",
-      "owner": "retireExpiredInactiveBrowser$"
-    },
-    {
       "id": "TX-0077",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-connection.service.ts",
       "owner": "publishAutomaticConnection$"
