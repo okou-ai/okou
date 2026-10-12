@@ -391,6 +391,7 @@ function configureGoogleCalendarStopMock(
 function configureGoogleCalendarWatchMock(args?: {
   readonly calendarId?: string;
   readonly calendarIds?: readonly string[];
+  readonly resourceId?: string;
   readonly accessTokens?: readonly string[];
   readonly watchTtlMs?: number;
   readonly baselineItems?: readonly Record<string, unknown>[];
@@ -437,7 +438,8 @@ function configureGoogleCalendarWatchMock(args?: {
         expect(body.token).toBeTruthy();
         const channelId = String(body.id);
         const channelToken = String(body.token);
-        const resourceId = `calendar-resource-${recorder.watchCalls}`;
+        const resourceId =
+          args?.resourceId ?? `calendar-resource-${recorder.watchCalls}`;
         recorder.channelIds.push(channelId);
         await args?.onWatchRegistered?.({
           channelId,
@@ -2972,6 +2974,95 @@ describe("okou workflow automations", () => {
     expect(watch.watchCalls).toBe(2);
     expect(watch.baselineCalls).toBe(2);
     expect(stop.calls).toBe(0);
+  });
+
+  it("keeps matching-resource alias consumers independent during public reconfiguration", async () => {
+    const scenario = await setupFixture();
+    await connectGoogleCalendar(scenario);
+    const alias = "shared-alias@example.com";
+    const watch = configureGoogleCalendarWatchMock({
+      calendarIds: [alias, "primary"],
+      resourceId: "same-provider-calendar-resource",
+    });
+    const stop = configureGoogleCalendarStopMock();
+    const switching = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId: scenario.workflowId },
+        body: {
+          kind: "event",
+          eventType: "google-calendar-event-created",
+          eventConfig: {
+            provider: "google-calendar",
+            event: "event_created",
+            calendarId: alias,
+          },
+        },
+      }),
+      [201],
+    );
+    const disabledAlias = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId: scenario.workflowId },
+        body: {
+          kind: "event",
+          eventType: "google-calendar-event-updated",
+          enabled: false,
+          eventConfig: {
+            provider: "google-calendar",
+            event: "event_updated",
+            calendarId: alias,
+          },
+        },
+      }),
+      [201],
+    );
+    const primary = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId: scenario.workflowId },
+        body: { kind: "event", eventType: "google-calendar-event-cancelled" },
+      }),
+      [201],
+    );
+    await accept(
+      automationsClient().update({
+        headers: authHeaders(),
+        params: { id: switching.body.id },
+        body: {
+          eventConfig: {
+            provider: "google-calendar",
+            event: "event_created",
+            calendarId: "primary",
+          },
+        },
+      }),
+      [200],
+    );
+
+    await expect(wf.readAutomation(switching.body.id)).resolves.toMatchObject({
+      enabled: true,
+      eventConfig: { calendarId: "primary" },
+    });
+    await expect(
+      wf.readAutomation(disabledAlias.body.id),
+    ).resolves.toMatchObject({
+      enabled: false,
+      eventConfig: { calendarId: alias },
+    });
+    await expect(wf.readAutomation(primary.body.id)).resolves.toMatchObject({
+      enabled: true,
+      eventConfig: { calendarId: "primary" },
+    });
+    expect(watch.watchCalls).toBe(2);
+    expect(watch.baselineCalls).toBe(2);
+    expect(stop.requests).toStrictEqual([
+      {
+        id: watch.channelIds[0],
+        resourceId: "same-provider-calendar-resource",
+      },
+    ]);
   });
 
   it("rolls back Calendar config when replacement watch registration fails", async () => {

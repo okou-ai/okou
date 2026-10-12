@@ -427,11 +427,6 @@
       "owner": "handleDisconnectCommand"
     },
     {
-      "id": "TX-0167",
-      "file": "turbo/apps/api/src/signals/services/google-calendar-automation-watch.service.ts",
-      "owner": "persistLegacyPrimaryCalendarMigration$"
-    },
-    {
       "id": "TX-0169",
       "file": "turbo/apps/api/src/signals/services/host.service.ts",
       "owner": "createHostedSiteDeployment$"
