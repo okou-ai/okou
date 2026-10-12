@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { ArtifactDeliveryRecord } from "@okouai/api-contracts/contracts/artifact-delivery";
 import type { ArtifactOgTarget } from "@okouai/api-contracts/contracts/artifact-og";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
+import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
@@ -33,6 +34,8 @@ export const slackLinkSharedEventSchema = z.object({
 });
 
 export type SlackLinkSharedEvent = z.infer<typeof slackLinkSharedEventSchema>;
+
+type SlackUnfurlTarget = ArtifactOgTarget | { readonly kind: "app" };
 
 function escapeSlackLinkText(value: string): string {
   // Slack decodes only amp/lt/gt; retain non-breaking spaces as Unicode.
@@ -137,13 +140,13 @@ const slackPublicationTarget$ = command(
   },
 );
 
-/** Resolve only known delivery identities; never fetch a user-supplied URL. */
+/** Resolve trusted App links and artifact identities without fetching URLs. */
 const slackArtifactOgTarget$ = command(
   async (
     { get, set },
     value: string,
     signal: AbortSignal,
-  ): Promise<ArtifactOgTarget | null> => {
+  ): Promise<SlackUnfurlTarget | null> => {
     const url = parseSlackLinkUrl(value);
     if (!url) {
       return null;
@@ -152,7 +155,7 @@ const slackArtifactOgTarget$ = command(
       const reference = parseArtifactReference(url.pathname);
       return reference
         ? { kind: "reference", id: `${reference.hash}${reference.extension}` }
-        : null;
+        : { kind: "app" };
     }
     const alias = hostedArtifactAlias(url);
     if (!alias) {
@@ -196,8 +199,11 @@ const slackArtifactUnfurl$ = command(
     if (!target) {
       return null;
     }
-    // This is the same anonymous publication policy used by the OG endpoints.
-    const metadata = await set(artifactOgMetadata$, target, signal);
+    // App pages expose only public branding; artifacts keep their public policy.
+    const metadata =
+      target.kind === "app"
+        ? { available: true as const, ...ARTIFACT_OG_BRAND }
+        : await set(artifactOgMetadata$, target, signal);
     signal.throwIfAborted();
     if (!metadata.available) {
       return null;
