@@ -1264,6 +1264,7 @@ jobs:
     outputs:
       producer-attempt: ${{ steps.build.outputs.producer-attempt }}
     env:
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
       TARGET_TRIPLE: ${{ needs.runner-host-groups.outputs.selected-target }}
       TEST_NAME: host_cpu_fairness
       ARTIFACT_DIR: native-test-artifact
@@ -1276,6 +1277,16 @@ jobs:
           workspaces: crates -> target
           shared-key: ${{ needs.runner-host-groups.outputs.selected-target }}-host-cpu-fairness
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}-${{ env.TARGET_TRIPLE }}
 
       - name: Cross-compile host CPU fairness test
         id: build
@@ -1369,6 +1380,7 @@ jobs:
     outputs:
       producer-attempt: ${{ steps.build.outputs.producer-attempt }}
     env:
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
       TARGET_TRIPLE: ${{ needs.runner-host-groups.outputs.selected-target }}
       TEST_NAME: guest_rpc
       ARTIFACT_DIR: native-test-artifact
@@ -1381,6 +1393,16 @@ jobs:
           workspaces: crates -> target
           shared-key: ${{ needs.runner-host-groups.outputs.selected-target }}-guest-rpc
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}-${{ env.TARGET_TRIPLE }}
 
       - name: Cross-compile native Guest RPC and duplex test
         id: build
@@ -1397,6 +1419,13 @@ jobs:
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
         run: bash .github/scripts/runner-native-test-artifact.sh publish
+
+      - name: Save pinned Kerberos dependencies
+        if: github.ref == 'refs/heads/main' && steps.kerberos-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: ${{ steps.kerberos-cache.outputs.cache-primary-key }}
 
       - name: Report peak memory
         if: always()
