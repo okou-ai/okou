@@ -3069,7 +3069,6 @@
         "unshared": "未共享给任何智能体"
       },
       "filterWith": "筛选：{{category}}",
-      "iconUnavailable": "连接器图标不可用",
       "noConnectorsAlt": "暂无连接器",
       "otherCategory": "其他",
       "remoteAccess": "远程访问",

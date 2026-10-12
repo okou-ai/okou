@@ -3069,7 +3069,6 @@
         "unshared": "どのエージェントとも共有されていません"
       },
       "filterWith": "フィルタ: {{category}}",
-      "iconUnavailable": "コネクタアイコンが使用不可",
       "noConnectorsAlt": "コネクターなし",
       "otherCategory": "その他",
       "remoteAccess": "リモートアクセス",

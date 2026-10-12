@@ -3080,7 +3080,6 @@
         "unshared": "Not shared with any agent"
       },
       "filterWith": "Filter: {{category}}",
-      "iconUnavailable": "Connector icon unavailable",
       "noConnectorsAlt": "No connectors",
       "otherCategory": "Other",
       "remoteAccess": "Remote access",
