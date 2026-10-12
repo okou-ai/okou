@@ -15,10 +15,9 @@ the current WSS backend keeps its protocol-specific `/var/lib/vm0-runner/wss`
 namespace. Future HTTPS routes can extend the same Caddy configuration while
 their backend owns its own paths and authorization.
 
-During the Runner cutover, host provisioning keeps the previous group record
-at the same numeric GID so older Runner/GC/provisioning artifacts retain access.
-Existing namespace, socket and lock ownership stays unchanged. Remove that
-temporary record only after the consumer/rollback gate tracked in #39194.
+Host provisioning preserves the existing access group's numeric GID. Runner owns
+creation and validation of its namespace; provisioning leaves existing namespace,
+socket and lock ownership unchanged.
 
 Set `runner_caddy_enabled: true` in a host's Ansible configuration to manage
 the dedicated `okou-runner-caddy.service`. Ordinary provisioning omits these tasks
