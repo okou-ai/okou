@@ -14,7 +14,9 @@ import {
   type VncAuthMethod,
   type VncProfile,
 } from "../../signals/vnc.ts";
-import { sshConnections$ } from "../../signals/ssh.ts";
+import { openSshDialog$, sshConnections$ } from "../../signals/ssh.ts";
+import { tailscaleEnabled$ } from "../../signals/tailscale.ts";
+import type { SshConnectionResponse } from "@okouai/api-contracts/contracts/ssh-connections";
 import { isRsaAesProfile } from "../../signals/vnc-rsa-aes.ts";
 import { useRsaAesProfileLabels } from "./vnc-rsa-aes-labels.ts";
 import { isVncRsaAesAuthenticationOnly } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
@@ -168,19 +170,49 @@ function VncAuthenticationLabel({
   return null;
 }
 
-function VncRebindWarning({ tailscale }: { readonly tailscale: boolean }) {
+function VncRebindWarning({
+  tailscale,
+  sshConnection,
+}: {
+  readonly tailscale: boolean;
+  readonly sshConnection: SshConnectionResponse | null | undefined;
+}) {
   const { t } = useTranslation();
+  const enabled = useGet(tailscaleEnabled$);
+  const open = useSet(openSshDialog$);
+  const signal = useGet(pageSignal$);
   return (
-    <p
-      role="alert"
-      className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
-    >
-      {t(($) => {
-        return tailscale
-          ? $.vnc.transport.sshTailscaleNeedsRebind
-          : $.vnc.transport.sshNeedsRebind;
-      })}
-    </p>
+    <div className="grid gap-3">
+      <p
+        role="alert"
+        className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+      >
+        {t(($) => {
+          return tailscale
+            ? enabled
+              ? $.tailscale.vncRebind
+              : $.vnc.transport.sshTailscaleNeedsRebind
+            : $.vnc.transport.sshNeedsRebind;
+        })}
+      </p>
+      {tailscale && enabled && sshConnection && (
+        <Button
+          type="button"
+          variant="outline"
+          className="justify-self-start"
+          onClick={() => {
+            return detach(
+              open("edit", sshConnection, signal),
+              Reason.DomCallback,
+            );
+          }}
+        >
+          {t(($) => {
+            return $.tailscale.rebindAction;
+          })}
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -285,7 +317,9 @@ function VncHostCard({
           })}
         </span>
       </div>
-      {needsSshRebind && <VncRebindWarning tailscale={tailscale} />}
+      {needsSshRebind && (
+        <VncRebindWarning tailscale={tailscale} sshConnection={sshConnection} />
+      )}
       <p className="text-sm text-muted-foreground">
         {sshConnectionId
           ? t(($) => {
