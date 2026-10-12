@@ -104,12 +104,12 @@ jq -e '
     ".github/scripts/runner-behavior-home-cache-promotion.sh"
   ] and
   behavior_commands($lane_b) == [
-    ".github/scripts/runner-behavior-exec.sh"
-  ] and
-  behavior_commands($lane_c) == [
-    ".github/scripts/runner-behavior-process-containment.sh",
+    ".github/scripts/runner-behavior-exec.sh",
     ".github/scripts/runner-behavior-cancel.sh",
     ".github/scripts/runner-behavior-systemd-reload.sh"
+  ] and
+  behavior_commands($lane_c) == [
+    ".github/scripts/runner-behavior-process-containment.sh"
   ] and
   behavior_commands($lane_d) == [
     ".github/scripts/runner-behavior-drain-resume.sh",
