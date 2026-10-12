@@ -699,7 +699,7 @@ fn push_recorded_event(events: &Arc<Mutex<Vec<RecordedHttpEvent>>>, event: Recor
 }
 
 /// Integration tests call `execute_cli` directly, bypassing the runner-side
-/// workspace-drive mount. Create the canonical mountpoint once at the host-test
+/// home-drive mount. Create the canonical mountpoint once at the host-test
 /// boundary so tests exercise the same cwd contract as production.
 pub fn ensure_canonical_workspace_for_test() -> Result<(), String> {
     let path = Path::new(guest_agent::paths::CANONICAL_WORKING_DIR);

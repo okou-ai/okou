@@ -35,11 +35,12 @@ import {
 import { nativeRenderer } from "./renderer";
 import { INSTALL_NATIVE, nativePaintSchema } from "./native";
 import { captureBrowserLayout } from "./snapshot";
+import { INSTALL_FONTS } from "./fonts";
 import { browser, childPath, operatorPath, SETTLE, TIMEOUT_MS } from "./shared";
 
 const RENDERER_PACKAGE = "dom-to-pptx@2.1.2";
 const RENDERER_BUNDLE = "dom-to-pptx.bundle.js";
-const RENDERER_CACHE_VERSION = "native-v2";
+const RENDERER_CACHE_VERSION = "native-v3";
 const RENDERER_CDN = `https://cdn.jsdelivr.net/npm/${RENDERER_PACKAGE}/dist/${RENDERER_BUNDLE}`;
 const DEFAULT_VIEWPORT_WIDTH = 1600;
 const DEFAULT_VIEWPORT_HEIGHT = 900;
@@ -295,6 +296,7 @@ function render(options: Options): Rendered {
     }
     captureBrowserLayout(page, selector);
     page.evaluate(`(${INSTALL_NATIVE})(${JSON.stringify(selector)})`);
+    page.evaluate(`(${INSTALL_FONTS})()`);
     const layout = layoutSchema.parse(
       page.evaluate(
         `${PREPARE_LAYOUT}(${JSON.stringify(selector)},${activated.toString()})`,

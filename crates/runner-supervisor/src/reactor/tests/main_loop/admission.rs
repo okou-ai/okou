@@ -2071,7 +2071,7 @@ async fn selected_ranked_finalizing_candidate_falls_back_at_deadline() {
 
 #[tokio::test(start_paused = true)]
 async fn pending_finalizing_fallback_skips_home_cache_lock_retry() {
-    let reuse_key = "thread:pending-finalizing-workspace-lock";
+    let reuse_key = "thread:pending-finalizing-home-lock";
     let image_size_bytes = 1024 * 1024;
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;

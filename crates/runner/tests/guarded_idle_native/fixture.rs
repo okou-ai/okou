@@ -20,7 +20,7 @@ use shell_quote::quote_shell_arg;
 use super::TestResult;
 
 pub const PROFILE: &str = "vm0/default";
-const IMAGE_BYTES: u64 = 16384 * 1024 * 1024;
+pub const IMAGE_BYTES: u64 = 16384 * 1024 * 1024;
 const HOME: &str = api_contracts::generated::constants::runners::paths::CANONICAL_GUEST_HOME_DIR;
 
 /// Required current measurements for this test host; no production selector/default.

@@ -12,8 +12,6 @@ import { parseAvatarComposerUrl } from "@okouai/core/agent-avatar";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import {
   createAuthOrgAgentsBddApi,
   type ApiTestUser,
@@ -53,10 +51,6 @@ function agentsByIdClient() {
   return setupApp({ context, routes: agentsRoutes })(agentsByIdContract);
 }
 
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
-}
-
 describe("POST /api/agents", () => {
   it("returns 401 when the request is unauthenticated", async () => {
     const response = await accept(
@@ -66,34 +60,6 @@ describe("POST /api/agents", () => {
 
     expect(response.body).toStrictEqual({
       error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
-  it("returns 403 for an agent token without agent:write capability", async () => {
-    const seconds = currentSecond();
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId: `user_${randomUUID()}`,
-      orgId: `org_${randomUUID()}`,
-      runId: `run_${randomUUID()}`,
-      capabilities: ["agent:read"],
-      iat: seconds,
-      exp: seconds + 60,
-    });
-
-    const response = await accept(
-      agentsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {},
-      }),
-      [403],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Missing required capability: agent:write",
-        code: "FORBIDDEN",
-      },
     });
   });
 

@@ -9,6 +9,7 @@ import { delay } from "signal-timers";
 import { z } from "zod";
 
 import { logger } from "../../lib/log";
+import { desktopVersionIsSupported } from "../../lib/desktop-version";
 import { testOverride } from "../../lib/singleton";
 import { now } from "../../lib/time";
 import { settle } from "../utils";
@@ -33,7 +34,8 @@ const DESKTOP_RELEASE_PAGE_URL_PREFIX =
   "https://github.com/okou-ai/okou/releases/tag";
 const DESKTOP_UPDATE_MANIFEST_URL =
   "https://github.com/okou-ai/okou/releases/download/ai-okou-desktop-updates/ai-okou-desktop-update-manifest.json";
-const MIN_DESKTOP_DMG_VERSION = "0.12.0";
+// 0.50.0 is the first Native release, independent of Computer Use admission.
+const MIN_NATIVE_DESKTOP_VERSION = "0.50.0";
 
 const DESKTOP_UPDATE_MANIFEST_CACHE_TTL_MS = 60_000;
 
@@ -266,7 +268,11 @@ function selectDesktopRelease(
 
   const blocked = new Set(channel.blocked ?? []);
   const latest = manifest.releases[channel.latest];
-  if (latest && !blocked.has(latest.version)) {
+  if (
+    latest &&
+    desktopVersionIsSupported(latest.version, MIN_NATIVE_DESKTOP_VERSION) &&
+    !blocked.has(latest.version)
+  ) {
     const latestAsset = assetForRelease(latest, request);
     if (latestAsset) {
       return { release: latest, asset: latestAsset };
@@ -276,6 +282,10 @@ function selectDesktopRelease(
   const [fallback] = Object.values(manifest.releases)
     .filter((release) => {
       return (
+        desktopVersionIsSupported(
+          release.version,
+          MIN_NATIVE_DESKTOP_VERSION,
+        ) &&
         !blocked.has(release.version) &&
         compareDesktopVersions(release.version, channel.latest) <= 0 &&
         assetForRelease(release, request)
@@ -471,12 +481,5 @@ export async function loadDesktopDmgDownloadUrl(
 ): Promise<string | null> {
   const manifest = await loadDesktopUpdateManifest(request.line, signal);
   const selected = selectDesktopRelease(manifest, request);
-  if (
-    !selected ||
-    compareDesktopVersions(selected.release.version, MIN_DESKTOP_DMG_VERSION) <
-      0
-  ) {
-    return null;
-  }
-  return desktopDmgDownloadUrl(selected.release, request);
+  return selected ? desktopDmgDownloadUrl(selected.release, request) : null;
 }

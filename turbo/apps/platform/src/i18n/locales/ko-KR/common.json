@@ -1716,6 +1716,7 @@
       "stale": "필드가 변경됨",
       "staleDescription": "에이전트에게 새 요청을 만들도록 요청하세요.",
       "submit": "브라우저에 추가",
+      "submitDescription": "입력한 정보가 이 웹사이트에 추가됩니다. 이후 에이전트가 작업을 계속하고 결과를 확인합니다.",
       "submitting": "추가 중…",
       "title": "브라우저에 정보 입력",
       "unavailable": "요청을 사용할 수 없음",

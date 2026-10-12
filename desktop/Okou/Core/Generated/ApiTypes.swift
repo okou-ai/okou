@@ -18,12 +18,10 @@ public struct ComputerUseHostRegistration: Codable, Equatable, Sendable {
 
   public let connectionGeneration: Int
   public let hostId: String
-  /// Optional for rollout: a pre-notification API omits it and the host retires its registration.
-  /// Surface: new Desktop -> old API; remove with the notification-less fallback in HostRuntime.
-  public let commandNotifications: CommandNotifications?
+  public let commandNotifications: CommandNotifications
 
   public init(
-    connectionGeneration: Int, hostId: String, commandNotifications: CommandNotifications?
+    connectionGeneration: Int, hostId: String, commandNotifications: CommandNotifications
   ) {
     self.connectionGeneration = connectionGeneration
     self.hostId = hostId

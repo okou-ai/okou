@@ -8,7 +8,7 @@ const entryFixture = fileURLToPath(
   new URL("../../test/fixtures/pi-startup-cli-entry.mjs", import.meta.url),
 );
 
-it("reports bounded startup phases from the real entry without changing a failed command", async () => {
+it("reports startup phases through the main entry without changing a failed command", async () => {
   const result = await new Promise<{
     code: number;
     stderr: string;
@@ -24,6 +24,9 @@ it("reports bounded startup phases from the real entry without changing a failed
           OKOU_RUN_ID: "00000000-0000-4000-8000-000000000123",
           OKOU_PI_PREPARATION_TIMING: "1",
           OKOU_PI_MODEL_CONFIG: "invalid-json",
+          OKOU_PI_SESSION_ID: "test-session",
+          OKOU_PI_LAUNCH_PAYLOAD_FILE: "/unused-invalid-config-launch.json",
+          OKOU_PI_SESSION_ROLE: "parent",
         },
       },
       (error, stdout, stderr) => {
@@ -93,6 +96,8 @@ it("keeps a failed command terminal when its stderr sink throws", async () => {
   await expect(
     agentLoopCommand.parseAsync(["node", "okou"]),
   ).resolves.toBeDefined();
-  expect(log).toHaveBeenCalledWith("OKOU_RUN_ID is required for Pi execution");
+  expect(log).toHaveBeenCalledWith(
+    "The main loop requires a guest-launched Pi session.",
+  );
   expect(process.exitCode).toBe(1);
 });

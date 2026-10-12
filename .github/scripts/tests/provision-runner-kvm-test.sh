@@ -77,54 +77,40 @@ tasks = [t for t in production['tasks'] if t.get('tags') == 'runner_wss_host']
 def run(*args):
     return subprocess.run(args, check=True, capture_output=True, text=True, timeout=30)
 
-for case in ['fresh', 'legacy', 'partial', 'canonical', 'root']:
+for case in ['fresh', 'existing', 'root']:
     suffix = uuid.uuid4().hex[:12]
-    previous, current = f'caddyold-{suffix}', f'caddynew-{suffix}'
-    if case == 'root':
-        previous = 'root'
-    for name in ([current] if case == 'root' else [previous, current]):
+    current = 'root' if case == 'root' else f'caddyaccess-{suffix}'
+    groups = [] if case == 'root' else [current]
+    for name in groups:
         try:
             grp.getgrnam(name)
         except KeyError:
             pass
         else:
             raise AssertionError('fixture group already exists')
-    groups = []
     with tempfile.TemporaryDirectory(prefix='caddy-group-', dir='/run') as value:
         root = Path(value)
         root.chmod(0o751)
         try:
-            if case not in ['fresh', 'canonical', 'root']:
-                run('groupadd', '--system', previous)
-                groups.append(previous)
-            if case in ['partial', 'canonical']:
+            if case == 'existing':
                 run('groupadd', '--system', current)
-                groups.append(current)
-                if case == 'partial':
-                    assert grp.getgrnam(current).gr_gid != grp.getgrnam(previous).gr_gid
-            fixture = json.loads(json.dumps(tasks).replace('okou-wss-caddy', previous)
-                                 .replace('okou-runner-caddy', current))
+            fixture = json.loads(json.dumps(tasks).replace('okou-runner-caddy', current))
             path = root / 'provision.yml'
             path.write_text(json.dumps([{'hosts': 'all', 'gather_facts': False,
                                          'tasks': fixture}]))
             command = [ansible, '-i', 'localhost,', '-c', 'local', str(path)]
-            # Claim the unique, initially absent name before Ansible can create it.
-            if current not in groups:
-                groups.append(current)
-            if case != 'root' and previous not in groups:
-                groups.append(previous)
             if case == 'root':
+                before = grp.getgrnam(current)
                 rejected = subprocess.run(command, capture_output=True, text=True,
                                           timeout=30)
                 assert rejected.returncode != 0 and 'must not use the root group' in rejected.stdout
-                try:
-                    grp.getgrnam(current)
-                except KeyError:
-                    pass
-                else:
-                    raise AssertionError('root GID created a socket access group')
+                assert grp.getgrnam(current) == before
                 continue
 
+            if case == 'fresh':
+                run(*command)
+            gid = grp.getgrnam(current).gr_gid
+            assert gid > 0 and not grp.getgrnam(current).gr_mem
             namespace = root / 'wss'
             namespace.mkdir(mode=0o710)
             endpoint = namespace / 'runner.sock'
@@ -139,24 +125,17 @@ for case in ['fresh', 'legacy', 'partial', 'canonical', 'root']:
                 endpoint.chmod(0o660)
                 listener.listen()
                 listener.settimeout(5)
-                if case != 'fresh':
-                    gid = grp.getgrnam(current if case == 'canonical' else previous).gr_gid
-                    os.chown(namespace, 0, gid)
-                    os.chown(endpoint, 0, gid)
+                os.chown(namespace, 0, gid)
+                os.chown(endpoint, 0, gid)
                 def metadata():
                     return [(p.stat().st_dev, p.stat().st_ino, p.stat().st_uid,
                              p.stat().st_gid, p.stat().st_mode)
                             for p in [namespace, endpoint, owner, lock]]
                 before = metadata()
                 run(*command)
-                gid = grp.getgrnam(current).gr_gid
-                assert gid > 0 and not grp.getgrnam(current).gr_mem
-                assert gid == grp.getgrnam(previous).gr_gid
-                if case != 'fresh':
-                    assert metadata() == before
-                else:
-                    os.chown(namespace, 0, gid)
-                    os.chown(endpoint, 0, gid)
+                assert grp.getgrnam(current).gr_gid == gid
+                assert not grp.getgrnam(current).gr_mem
+                assert metadata() == before
                 unchanged = run(*command)
                 assert re.search(r'\bchanged=0\b', unchanged.stdout), unchanged.stdout
                 peer = subprocess.Popen(
@@ -175,8 +154,7 @@ for case in ['fresh', 'legacy', 'partial', 'canonical', 'root']:
                     if peer.poll() is None:
                         peer.kill()
                         peer.wait(timeout=5)
-                if case != 'fresh':
-                    assert metadata() == before
+                assert metadata() == before
         finally:
             # Include a group created before a failed Ansible invocation returned.
             for name in reversed(groups):
@@ -188,7 +166,7 @@ for case in ['fresh', 'legacy', 'partial', 'canonical', 'root']:
                     run('groupdel', name)
             assert all(not any(g.gr_name == name for g in grp.getgrall())
                        for name in groups)
-print('Caddy group cutover: fresh/legacy/partial/canonical/root cases and socket access: ok')
+print('Caddy access group: fresh/existing/root cases and socket access: ok')
 PY
 
 echo "provision-runner-kvm-test: ok"

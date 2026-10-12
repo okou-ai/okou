@@ -438,10 +438,8 @@ function gateFirstStoredSecretDecrypt(): {
 }
 
 describe("FW-1: firewall auth boundaries", () => {
-  it("rejects missing, malformed, and runless firewall auth requests", async () => {
+  it("rejects missing and malformed firewall auth requests", async () => {
     const fw = createFirewallApi(context);
-    const bdd = createBddApi(context);
-    const outsider = bdd.user();
     const body = {
       encryptedSecrets: fw.encryptedSecretsBody({}),
       authHeaders: {},
@@ -457,19 +455,16 @@ describe("FW-1: firewall auth boundaries", () => {
     );
     expectApiError(junkToken.body);
 
-    const headers = fw.sandboxHeaders(outsider, randomUUID());
-    const invalidJson = await fw.requestFirewallAuthRaw("not json", headers);
-    expect(invalidJson.status).toBe(400);
+    await withPublicFirewallRun(async (headers) => {
+      const invalidJson = await fw.requestFirewallAuthRaw("not json", headers);
+      expect(invalidJson.status).toBe(400);
 
-    const missingFields = await fw.requestFirewallAuthRaw(
-      JSON.stringify({ authHeaders: {} }),
-      headers,
-    );
-    expect(missingFields.status).toBe(400);
-
-    const missingRun = await fw.requestFirewallAuth(headers, body, [400]);
-    expectApiError(missingRun.body);
-    expect(missingRun.body.error.message).toContain("Run not found");
+      const missingFields = await fw.requestFirewallAuthRaw(
+        JSON.stringify({ authHeaders: {} }),
+        headers,
+      );
+      expect(missingFields.status).toBe(400);
+    });
   });
 
   it("rejects undecryptable secret payloads for a real run", async () => {
@@ -1012,7 +1007,7 @@ describe("FW-3: billable firewall lease", () => {
     bdd.acceptAgentStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
-    runsApi.configureRunnerGroup();
+    const runnerGroup = runsApi.configureRunnerGroup();
     const granted = await runsApi.grantProEntitlement(actor);
     await runsApi.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
@@ -1023,7 +1018,9 @@ describe("FW-3: billable firewall lease", () => {
       agentId: agent.agentId,
       prompt: "billable auth across a subscription deletion",
     });
-    const headers = fw.sandboxHeaders(actor, run.runId);
+    await runsApi.heartbeatRunner(runnerGroup);
+    const claim = await runsApi.claimRunnerJob(run.runId);
+    const headers = { authorization: `Bearer ${claim.sandboxToken}` };
     const body = {
       encryptedSecrets: fw.encryptedSecretsBody({ API_KEY: "paid" }),
       authHeaders: {
@@ -1070,6 +1067,11 @@ describe("FW-3: billable firewall lease", () => {
     );
 
     await runsApi.requestCancelRun(actor, run.runId, [200]);
+    await webhooks.requestAgentComplete(
+      { runId: run.runId, exitCode: 1, error: "Firewall carrier cancelled" },
+      headers,
+      [200],
+    );
   });
 
   it("denies billable firewall auth when the granted credits already expired", async () => {
@@ -1080,7 +1082,7 @@ describe("FW-3: billable firewall lease", () => {
     bdd.acceptAgentStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
-    runsApi.configureRunnerGroup();
+    const runnerGroup = runsApi.configureRunnerGroup();
     // The credit expiry is the subscription period end plus one month, so a
     // period that ended two months ago yields a pro org whose entire balance
     // is expired but unsettled.
@@ -1097,8 +1099,10 @@ describe("FW-3: billable firewall lease", () => {
       prompt: "billable auth with expired credits",
     });
 
+    await runsApi.heartbeatRunner(runnerGroup);
+    const claim = await runsApi.claimRunnerJob(run.runId);
     const denied = await fw.requestFirewallAuth(
-      fw.sandboxHeaders(actor, run.runId),
+      { authorization: `Bearer ${claim.sandboxToken}` },
       {
         encryptedSecrets: fw.encryptedSecretsBody({ API_KEY: "paid" }),
         authHeaders: {
@@ -1114,6 +1118,11 @@ describe("FW-3: billable firewall lease", () => {
     expect(denied.body.error.code).toBe("INSUFFICIENT_CREDITS");
 
     await runsApi.requestCancelRun(actor, run.runId, [200]);
+    await createWebhookCallbackApi(context).requestAgentComplete(
+      { runId: run.runId, exitCode: 1, error: "Firewall carrier cancelled" },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
   });
 });
 
@@ -3646,33 +3655,6 @@ describe("FW-10: platform connector secrets", () => {
       throw new Error("Expected invalid platform alias to fail with 424");
     }
     expect(invalid.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
-  });
-
-  it("keeps old encrypted platform-secret payloads working without metadata", async () => {
-    await withPublicFirewallRun(async (headers) => {
-      const fw = createFirewallApi(context);
-
-      mockOptionalEnv("GOOGLE_ADS_DEVELOPER_TOKEN", undefined);
-
-      const resolved = await fw.requestFirewallAuth(
-        headers,
-        {
-          encryptedSecrets: fw.encryptedSecretsBody({
-            GOOGLE_ADS_DEVELOPER_TOKEN: "old-encrypted-developer-token",
-          }),
-          authHeaders: {
-            "developer-token": secretTemplate("GOOGLE_ADS_DEVELOPER_TOKEN"),
-          },
-        },
-        [200],
-      );
-      if (resolved.status !== 200) {
-        throw new Error("Expected old encrypted platform payload to resolve");
-      }
-      expect(resolved.body.headers["developer-token"]).toBe(
-        "old-encrypted-developer-token",
-      );
-    });
   });
 });
 

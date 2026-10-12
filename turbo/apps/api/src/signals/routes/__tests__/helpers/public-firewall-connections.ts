@@ -12,7 +12,7 @@ import {
   mockTestOAuthAuthCodeProvider,
   mockTestOAuthDeviceConnectorProvider,
 } from "./api-bdd-connectors";
-import { createFirewallApi } from "./api-bdd-firewall";
+import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { createRunsApi } from "./api-bdd-runs";
 
 interface ProviderToken {
@@ -33,7 +33,7 @@ export function createPublicFirewallConnections(context: TestContext) {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    runs.configureRunnerGroup();
+    const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
@@ -48,20 +48,39 @@ export function createPublicFirewallConnections(context: TestContext) {
       agentId: agent.agentId,
       prompt: "resolve firewall auth",
     });
+    const credential: { token?: string } = {};
     runCleanups.push(async () => {
       const current = await runs.readRun(actor, created.runId);
       if (current.status === "pending" || current.status === "running") {
         await runs.requestCancelRun(actor, created.runId, [200]);
+      }
+      if (
+        credential.token &&
+        !["completed", "failed", "timeout"].includes(current.status)
+      ) {
+        await createWebhookCallbackApi(context).requestAgentComplete(
+          {
+            runId: created.runId,
+            exitCode: 1,
+            error: "Firewall carrier cancelled",
+          },
+          { authorization: `Bearer ${credential.token}` },
+          [200],
+        );
       }
       await flushWaitUntilForTest();
     });
     if (created.status !== "pending" && created.status !== "running") {
       throw new Error("Expected an active Run for firewall authorization");
     }
+    await runs.heartbeatRunner(runnerGroup);
+    const claim = await runs.claimRunnerJob(created.runId);
+    credential.token = claim.sandboxToken;
     return {
       actor,
       runId: created.runId,
-      headers: createFirewallApi(context).sandboxHeaders(actor, created.runId),
+      claim,
+      headers: { authorization: `Bearer ${claim.sandboxToken}` },
     };
   }
 

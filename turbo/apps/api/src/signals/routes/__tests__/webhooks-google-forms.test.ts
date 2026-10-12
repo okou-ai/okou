@@ -697,7 +697,7 @@ describe("Google Forms Pub/Sub webhook", () => {
         throw new Error("Expected a running Forms workflow");
       }
       await runs.heartbeatRunner(RUNNER_GROUP);
-      await runs.claimRunnerJob(runId);
+      const claim = await runs.claimRunnerJob(runId);
       const connection = await connectors.readConnectorBySlug(
         actor,
         "google-forms",
@@ -720,7 +720,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       // while only the application's OAuth expiry clock advances below.
       const googleIdToken = signedGoogleIdToken();
       mockNow(startedAt + 2 * 60 * 60 * 1000);
-      const headers = fw.sandboxHeaders(actor, runId);
+      const headers = { authorization: `Bearer ${claim.sandboxToken}` };
       const refreshedForms = configureFormsApi(["forms-refresh-success"]);
       let preparedSuccess = false;
       server.use(

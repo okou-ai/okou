@@ -38,24 +38,6 @@ function routeWhere(key: AgentPhoneChatThreadRouteKey) {
   );
 }
 
-/** Read the chat thread an AgentPhone conversation already routes to. */
-export const findAgentPhoneRoutedChatThreadId$ = command(
-  async (
-    { set },
-    key: AgentPhoneChatThreadRouteKey,
-    signal?: AbortSignal,
-  ): Promise<string | undefined> => {
-    const db = set(writeDb$);
-    const [route] = await db
-      .select({ chatThreadId: agentphoneChatThreadRoutes.chatThreadId })
-      .from(agentphoneChatThreadRoutes)
-      .where(routeWhere(key))
-      .limit(1);
-    signal?.throwIfAborted();
-    return route?.chatThreadId;
-  },
-);
-
 const ROUTE_COLUMNS = {
   id: agentphoneChatThreadRoutes.id,
   conversationId: agentphoneChatThreadRoutes.conversationId,

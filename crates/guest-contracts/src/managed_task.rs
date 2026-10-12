@@ -73,25 +73,37 @@ pub fn is_task_runtime_path(path: &str) -> bool {
 }
 
 /// Recognize an exact task node/runtime/tools/tool path owned by this workload.
-/// Reject aliases, traversal, recursive delegation and malformed identities.
+/// Reject aliases, traversal and malformed identities at every nesting level.
 pub fn owned_task_path(path: &str, workload: &str) -> bool {
     let prefix = format!("{workload}/tools/{TASK_CGROUP_PREFIX}");
     let Some(suffix) = path.strip_prefix(&prefix) else {
         return false;
     };
     let mut parts = suffix.split('/');
-    let Some(handle) = parts.next() else {
-        return false;
-    };
-    if TaskHandle::parse(handle.to_owned()).is_err() {
-        return false;
-    }
-    match (parts.next(), parts.next(), parts.next(), parts.next()) {
-        (None, None, None, None) | (Some("runtime" | "tools"), None, None, None) => true,
-        (Some("tools"), Some(tool), None, None) => tool.strip_prefix("tool-").is_some_and(|id| {
-            !id.is_empty() && id.len() <= 20 && id.bytes().all(|b| b.is_ascii_digit())
-        }),
-        _ => false,
+    let mut handle = parts.next();
+    loop {
+        if !handle.is_some_and(|handle| TaskHandle::parse(handle.to_owned()).is_ok()) {
+            return false;
+        }
+        match parts.next() {
+            None => return true,
+            Some("runtime") => return parts.next().is_none(),
+            Some("tools") => match parts.next() {
+                None => return true,
+                Some(node) if node.starts_with(TASK_CGROUP_PREFIX) => {
+                    handle = node.strip_prefix(TASK_CGROUP_PREFIX);
+                }
+                Some(tool) => {
+                    return parts.next().is_none()
+                        && tool.strip_prefix("tool-").is_some_and(|id| {
+                            !id.is_empty()
+                                && id.len() <= 20
+                                && id.bytes().all(|b| b.is_ascii_digit())
+                        });
+                }
+            },
+            _ => return false,
+        }
     }
 }
 
@@ -123,6 +135,15 @@ mod tests {
             assert!(owned_task_path(&format!("{task}{suffix}"), w));
         }
         assert!(is_task_runtime_path(&format!("{task}/runtime")));
+        let child = format!("{task}/tools/task-{}", TaskHandle::generate().as_str());
+        let grandchild = format!("{child}/tools/task-{}", TaskHandle::generate().as_str());
+        for parent in [&child, &grandchild] {
+            for suffix in ["", "/runtime", "/tools", "/tools/tool-18446744073709551615"] {
+                assert!(owned_task_path(&format!("{parent}{suffix}"), w));
+            }
+            assert!(is_task_runtime_path(&format!("{parent}/runtime")));
+            assert!(!owned_task_path(&format!("{parent}/runtime/../tools"), w));
+        }
         for suffix in [
             "/",
             "/runtime/",

@@ -1716,6 +1716,7 @@
       "stale": "Kolom telah berubah",
       "staleDescription": "Minta agen membuat permintaan baru.",
       "submit": "Tambahkan ke browser",
+      "submitDescription": "Informasi Anda akan diisikan ke situs ini. Agen kemudian akan melanjutkan dan memeriksa hasilnya.",
       "submitting": "Menambahkan…",
       "title": "Masukkan informasi di browser",
       "unavailable": "Permintaan tidak tersedia",

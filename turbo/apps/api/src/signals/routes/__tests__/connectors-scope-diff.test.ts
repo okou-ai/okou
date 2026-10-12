@@ -1,11 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { builtinConnectorScopeDiffContract } from "@okouai/api-contracts/contracts/connectors";
-
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+import { testContext } from "../../../__tests__/test-context";
 import {
   createBddApi,
   expectApiError,
@@ -15,8 +10,6 @@ import {
   createConnectorBddApi,
   mockGitHubConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
-
-import { builtinConnectorsRoutes } from "../connectors";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -30,10 +23,6 @@ const connectorsApi = createConnectorBddApi(context);
 // OAuth callback stores the currently requested scope set, so arbitrary old
 // scope snapshots are not externally constructible through the API.
 const GITHUB_CURRENT_SCOPES = ["repo", "project", "workflow"] as const;
-
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
-}
 
 function stateFromAuthorizationUrl(authorizationUrl: string): string {
   const state = new URL(authorizationUrl).searchParams.get("state");
@@ -72,35 +61,6 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
     );
     expectApiError(response.body);
     expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
-  it("returns 403 for a sandbox token without connector:read capability", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    const seconds = currentSecond();
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId,
-      orgId,
-      runId: `run_${randomUUID()}`,
-      capabilities: ["file:read"],
-      iat: seconds,
-      exp: seconds + 60,
-    });
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorScopeDiffContract,
-    );
-    const response = await accept(
-      client.getScopeDiff({
-        params: { connectorSlug: "github" },
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [403],
-    );
-    expectApiError(response.body);
-    expect(response.body.error.message).toBe(
-      "Missing required capability: connector:read",
-    );
   });
 
   it("returns 404 when no connector is configured for the slug", async () => {

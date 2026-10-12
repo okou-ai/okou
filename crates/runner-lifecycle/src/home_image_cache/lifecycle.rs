@@ -177,7 +177,7 @@ impl HomeEntryLock {
         let registration = owners.entry(cache_key.to_owned());
         assert!(
             matches!(&registration, std::collections::hash_map::Entry::Vacant(_)),
-            "workspace entry lock acquired while a local owner remains registered"
+            "home entry lock acquired while a local owner remains registered"
         );
         if let std::collections::hash_map::Entry::Vacant(registration) = registration {
             registration.insert(HomeCacheLockRegistration {
@@ -205,7 +205,7 @@ impl HomeEntryLock {
             registered
                 .as_ref()
                 .is_some_and(|registered| Arc::ptr_eq(&registered.identity, &self.identity)),
-            "workspace entry lock ownership transition requires the original registration"
+            "home entry lock ownership transition requires the original registration"
         );
         if let Some(registered) = registered {
             registered.owner = owner;
@@ -872,12 +872,12 @@ impl HomeImageCache {
             .states
             .iter()
             .flat_map(|state| {
-                state.home_caches.iter().filter_map(|workspace| {
+                state.home_caches.iter().filter_map(|home_cache| {
                     profile_image_sizes_bytes
-                        .get(workspace.profile.as_str())
+                        .get(home_cache.profile.as_str())
                         .map(|image_size_bytes| {
                             self.scoped_cache_key(
-                                &workspace.profile,
+                                &home_cache.profile,
                                 image_size_bytes.rootfs_hash,
                                 &state.reuse_key,
                                 CANONICAL_WORKING_DIR,

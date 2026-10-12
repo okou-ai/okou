@@ -1716,6 +1716,7 @@
       "stale": "欄位已變更",
       "staleDescription": "請讓 Agent 建立一個新請求。",
       "submit": "新增到瀏覽器",
+      "submitDescription": "填寫的內容會填入此網站，隨後 Agent 將繼續操作並檢查結果。",
       "submitting": "正在新增…",
       "title": "在瀏覽器中輸入資訊",
       "unavailable": "請求不可用",

@@ -11,7 +11,7 @@ import {
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { users } from "@okouai/db/schema/user";
-import { command } from "ccstate";
+import { command, type Write } from "ccstate";
 import {
   and,
   asc,
@@ -41,12 +41,9 @@ import { webUrl } from "../../lib/web-url";
 import { clerk$, type ClerkClient } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { db$, writeDb$, type Db } from "../external/db";
-import type { Tx } from "../../lib/db-types";
 import { renderOfficialAutomationResultEmail } from "./official-automation-result-email-renderer";
 import { renderCreditLowBalanceEmail } from "./credit-low-balance-email-renderer";
 import { renderDataExportReadyEmail } from "./data-export-ready-email-renderer";
-
-type Transaction = Tx;
 
 interface EmailOutboxDrainContext {
   readonly currentTimeMs: number;
@@ -459,25 +456,19 @@ async function sendProviderRequest(
   return { kind: "sent", resendId: data.id };
 }
 
-async function findSuppressedAddress(
-  tx: Transaction,
-  addresses: readonly string[],
-): Promise<string | null> {
-  if (addresses.length === 0) {
-    return null;
-  }
-  const lowerAddresses = addresses.map((address) => {
-    return address.toLowerCase();
-  });
-  const rows = await tx
-    .select({ emailAddress: emailSuppressions.emailAddress })
-    .from(emailSuppressions)
-    .where(
-      inArray(sql`lower(${emailSuppressions.emailAddress})`, lowerAddresses),
-    )
-    .limit(1);
+function suppressionAddressCondition(addresses: readonly string[]) {
+  return inArray(
+    sql`lower(${emailSuppressions.emailAddress})`,
+    addresses.map((address) => {
+      return address.toLowerCase();
+    }),
+  );
+}
 
-  const matchedLower = rows[0]?.emailAddress.toLowerCase();
+function matchedSuppressedAddress(
+  addresses: readonly string[],
+  matchedLower: string | undefined,
+): string | null {
   if (!matchedLower) {
     return null;
   }
@@ -505,33 +496,6 @@ type PrepareOutcome =
   // suppressed.
   | { readonly kind: "resolved" }
   | { readonly kind: "prepared"; readonly item: PreparedOutboxItem };
-
-async function resolveWithoutSending(
-  tx: Transaction,
-  itemId: string,
-  lastError: string,
-  reason:
-    | "expired"
-    | "delivery-failed"
-    | "suppressed"
-    | "unsubscribed" = "delivery-failed",
-): Promise<PrepareOutcome> {
-  await tx
-    .update(emailOutbox)
-    .set({ status: "failed", lastError })
-    .where(eq(emailOutbox.id, itemId));
-  await tx
-    .update(mailNotifications)
-    .set({
-      status:
-        reason === "suppressed" || reason === "unsubscribed"
-          ? "skipped"
-          : "failed",
-      reason,
-    })
-    .where(eq(mailNotifications.outboxId, itemId));
-  return { kind: "resolved" };
-}
 
 function outboxAdmissionError(
   expiresAtMs: number,
@@ -581,9 +545,10 @@ function notificationIsUnsubscribed(
  * retry replays are already durable when the provider first sees them.
  */
 async function prepareNextOutboxItem(
-  db: Db,
+  { set }: Parameters<Write<Promise<PrepareOutcome>, [number]>>[0],
   currentTimeMs: number,
 ): Promise<PrepareOutcome> {
+  const db = set(writeDb$);
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0156; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const [selectedRow] = await tx
@@ -629,12 +594,15 @@ async function prepareNextOutboxItem(
       hasCommittedRequest,
     );
     if (admissionError) {
-      return await resolveWithoutSending(
-        tx,
-        itemId,
-        admissionError.message,
-        admissionError.reason,
-      );
+      await tx
+        .update(emailOutbox)
+        .set({ status: "failed", lastError: admissionError.message })
+        .where(eq(emailOutbox.id, itemId));
+      await tx
+        .update(mailNotifications)
+        .set({ status: "failed", reason: admissionError.reason })
+        .where(eq(mailNotifications.outboxId, itemId));
+      return { kind: "resolved" };
     }
 
     const toAddresses =
@@ -648,21 +616,41 @@ async function prepareNextOutboxItem(
       .where(eq(mailNotifications.outboxId, itemId))
       .limit(1);
     if (notificationIsUnsubscribed(row.template, notification)) {
-      return await resolveWithoutSending(
-        tx,
-        itemId,
-        "Recipient unsubscribed",
-        "unsubscribed",
-      );
+      await tx
+        .update(emailOutbox)
+        .set({ status: "failed", lastError: "Recipient unsubscribed" })
+        .where(eq(emailOutbox.id, itemId));
+      await tx
+        .update(mailNotifications)
+        .set({ status: "skipped", reason: "unsubscribed" })
+        .where(eq(mailNotifications.outboxId, itemId));
+      return { kind: "resolved" };
     }
-    const suppressedAddress = await findSuppressedAddress(tx, toAddresses);
+    const suppressedRows =
+      toAddresses.length === 0
+        ? []
+        : await tx
+            .select({ emailAddress: emailSuppressions.emailAddress })
+            .from(emailSuppressions)
+            .where(suppressionAddressCondition(toAddresses))
+            .limit(1);
+    const suppressedAddress = matchedSuppressedAddress(
+      toAddresses,
+      suppressedRows[0]?.emailAddress.toLowerCase(),
+    );
     if (suppressedAddress) {
-      return await resolveWithoutSending(
-        tx,
-        itemId,
-        `Recipient address suppressed (${suppressedAddress})`,
-        "suppressed",
-      );
+      await tx
+        .update(emailOutbox)
+        .set({
+          status: "failed",
+          lastError: `Recipient address suppressed (${suppressedAddress})`,
+        })
+        .where(eq(emailOutbox.id, itemId));
+      await tx
+        .update(mailNotifications)
+        .set({ status: "skipped", reason: "suppressed" })
+        .where(eq(mailNotifications.outboxId, itemId));
+      return { kind: "resolved" };
     }
 
     // Render only for a row whose request is not committed yet. Once it is,
@@ -701,148 +689,145 @@ async function prepareNextOutboxItem(
   });
 }
 
-async function completeOutboxItem(
-  db: Db,
-  item: PreparedOutboxItem,
-  outcome: OutboxAttemptOutcome,
-): Promise<void> {
-  const completion =
-    outcome.kind === "sent"
-      ? {
-          status: "sent" as const,
-          resendId: outcome.resendId,
-          lastError: null,
-          nextRetryAt: null,
-          // A delivered row is retained past the outbox TTL, so drop the
-          // rendered message once nothing can replay it. The key stays for
-          // reconciliation against the provider.
-          providerRequest: null,
-        }
-      : outcome.kind === "expired"
+const prepareNextOutboxItem$ = command(prepareNextOutboxItem);
+
+const completeOutboxItem$ = command(
+  async (
+    { set },
+    item: PreparedOutboxItem,
+    outcome: OutboxAttemptOutcome,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const completion =
+      outcome.kind === "sent"
         ? {
-            // This attempt sent nothing, so the committed request and key stay
-            // on the row: an earlier attempt may still be unresolved at the
-            // provider, and that ambiguity is the only evidence of it.
-            status: "failed" as const,
-            lastError: OUTBOX_EXPIRED_BEFORE_PROVIDER_ERROR,
+            status: "sent" as const,
+            resendId: outcome.resendId,
+            lastError: null,
             nextRetryAt: null,
+            // A delivered row is retained past the outbox TTL, so drop the
+            // rendered message once nothing can replay it. The key stays for
+            // reconciliation against the provider.
+            providerRequest: null,
           }
-        : outcome.kind === "retry" && item.attempts < MAX_ATTEMPTS
+        : outcome.kind === "expired"
           ? {
-              status: "pending" as const,
-              lastError: outcome.error,
-              nextRetryAt: new Date(
-                item.preparedAtMs + BACKOFF_BASE_MS * 4 ** (item.attempts - 1),
-              ),
-            }
-          : {
+              // This attempt sent nothing, so the committed request and key stay
+              // on the row: an earlier attempt may still be unresolved at the
+              // provider, and that ambiguity is the only evidence of it.
               status: "failed" as const,
-              lastError: outcome.error,
+              lastError: OUTBOX_EXPIRED_BEFORE_PROVIDER_ERROR,
               nextRetryAt: null,
-            };
+            }
+          : outcome.kind === "retry" && item.attempts < MAX_ATTEMPTS
+            ? {
+                status: "pending" as const,
+                lastError: outcome.error,
+                nextRetryAt: new Date(
+                  item.preparedAtMs +
+                    BACKOFF_BASE_MS * 4 ** (item.attempts - 1),
+                ),
+              }
+            : {
+                status: "failed" as const,
+                lastError: outcome.error,
+                nextRetryAt: null,
+              };
 
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0157; new non-billing transactions are prohibited.
-  const completed = await db.transaction(async (tx) => {
-    const [updated] = await tx
-      .update(emailOutbox)
-      .set(completion)
-      .where(
-        and(
-          eq(emailOutbox.id, item.id),
-          // A lost completion is recovered by a later attempt. Never overwrite
-          // whatever that attempt has already decided.
-          eq(emailOutbox.status, "sending"),
-          eq(emailOutbox.attempts, item.attempts),
-        ),
-      )
-      .returning({ id: emailOutbox.id });
-    if (updated && completion.status !== "pending") {
-      await tx
-        .update(mailNotifications)
-        .set({
-          status: completion.status,
-          reason:
-            completion.status === "sent"
-              ? null
-              : outcome.kind === "expired"
-                ? "expired"
-                : "delivery-failed",
-        })
-        .where(eq(mailNotifications.outboxId, item.id));
+    const completedOutbox = db.$with("completed_email_outbox").as(
+      db
+        .update(emailOutbox)
+        .set(completion)
+        .where(
+          and(
+            eq(emailOutbox.id, item.id),
+            // A lost completion is recovered by a later attempt. Never overwrite
+            // whatever that attempt has already decided.
+            eq(emailOutbox.status, "sending"),
+            eq(emailOutbox.attempts, item.attempts),
+          ),
+        )
+        .returning({ id: emailOutbox.id }),
+    );
+    let completedRows: { id: string }[];
+    if (completion.status === "pending") {
+      completedRows = await db
+        .with(completedOutbox)
+        .select({ id: completedOutbox.id })
+        .from(completedOutbox);
+    } else {
+      const completedReceipts = db.$with("completed_mail_notifications").as(
+        db
+          .update(mailNotifications)
+          .set({
+            status: completion.status,
+            reason:
+              completion.status === "sent"
+                ? null
+                : outcome.kind === "expired"
+                  ? "expired"
+                  : "delivery-failed",
+          })
+          .where(
+            and(
+              inArray(
+                mailNotifications.outboxId,
+                db.select({ id: completedOutbox.id }).from(completedOutbox),
+              ),
+              // Finish the outbox winner before taking receipt row locks,
+              // matching cleanup and erasure order.
+              gte(db.select({ count: count() }).from(completedOutbox), 0),
+            ),
+          )
+          .returning({ id: mailNotifications.id }),
+      );
+      completedRows = await db
+        .with(completedOutbox, completedReceipts)
+        .select({ id: completedOutbox.id })
+        .from(completedOutbox)
+        // Exhaust receipt RETURNING before returning the actual outbox
+        // winner. A missing receipt remains a successful completion.
+        .where(gte(db.select({ count: count() }).from(completedReceipts), 0));
     }
-    return updated;
-  });
+    const [completed] = completedRows;
 
-  if (!completed) {
-    log.warn("Email outbox completion lost its claim", {
-      itemId: item.id,
-      attempts: item.attempts,
-      outcome: outcome.kind,
-    });
-  }
-}
-
-async function drainNextOutboxItem(
-  db: Db,
-  currentTimeMs: number,
-): Promise<boolean> {
-  const prepared = await prepareNextOutboxItem(db, currentTimeMs);
-  if (prepared.kind === "empty") {
-    return false;
-  }
-  if (prepared.kind === "resolved") {
-    return true;
-  }
-
-  // Preparation admitted this row, then spent real time on the suppression
-  // lookup, the claim update and its commit. This is the last point at which no
-  // email exists yet, so the original deadline is rechecked against a fresh
-  // clock here rather than trusting the sample preparation started with.
-  if (now() >= prepared.item.expiresAtMs) {
-    await completeOutboxItem(db, prepared.item, { kind: "expired" });
-    return true;
-  }
-
-  const outcome = await sendProviderRequest(
-    prepared.item.request,
-    prepared.item.idempotencyKey,
-  );
-  await completeOutboxItem(db, prepared.item, outcome);
-  return true;
-}
-
-async function drainEmailOutboxBatch(
-  args: {
-    readonly db: Db;
-    readonly context: EmailOutboxDrainContext;
+    if (!completed) {
+      log.warn("Email outbox completion lost its claim", {
+        itemId: item.id,
+        attempts: item.attempts,
+        outcome: outcome.kind,
+      });
+    }
   },
-  signal: AbortSignal,
-): Promise<number> {
-  const { db, context } = args;
-  let processed = 0;
+);
 
-  for (let index = 0; index < MAX_OUTBOX_BATCH_SIZE; index++) {
-    signal.throwIfAborted();
-    const hadItem = await drainNextOutboxItem(db, context.currentTimeMs);
-    signal.throwIfAborted();
-    if (!hadItem) {
-      break;
+const drainNextOutboxItem$ = command(
+  async ({ set }, currentTimeMs: number): Promise<boolean> => {
+    const prepared = await set(prepareNextOutboxItem$, currentTimeMs);
+    if (prepared.kind === "empty") {
+      return false;
+    }
+    if (prepared.kind === "resolved") {
+      return true;
     }
 
-    processed++;
-    if (index < MAX_OUTBOX_BATCH_SIZE - 1) {
-      const delayMs = outboxDrainDelayMs();
-      if (delayMs > 0) {
-        await delay(delayMs, { signal });
-      }
+    // Preparation admitted this row, then spent real time on the suppression
+    // lookup, the claim update and its commit. This is the last point at which no
+    // email exists yet, so the original deadline is rechecked against a fresh
+    // clock here rather than trusting the sample preparation started with.
+    if (now() >= prepared.item.expiresAtMs) {
+      await set(completeOutboxItem$, prepared.item, { kind: "expired" });
+      return true;
     }
-  }
 
-  if (processed > 0) {
-    log.debug("Drained emails from outbox", { processed });
-  }
-  return processed;
-}
+    const outcome = await sendProviderRequest(
+      prepared.item.request,
+      prepared.item.idempotencyKey,
+    );
+    await set(completeOutboxItem$, prepared.item, outcome);
+    return true;
+  },
+);
 
 export const drainEmailOutboxBatch$ = command(
   async (
@@ -850,13 +835,29 @@ export const drainEmailOutboxBatch$ = command(
     context: EmailOutboxDrainContext,
     signal: AbortSignal,
   ): Promise<number> => {
-    return await drainEmailOutboxBatch(
-      {
-        db: set(writeDb$),
-        context,
-      },
-      signal,
-    );
+    let processed = 0;
+
+    for (let index = 0; index < MAX_OUTBOX_BATCH_SIZE; index++) {
+      signal.throwIfAborted();
+      const hadItem = await set(drainNextOutboxItem$, context.currentTimeMs);
+      signal.throwIfAborted();
+      if (!hadItem) {
+        break;
+      }
+
+      processed++;
+      if (index < MAX_OUTBOX_BATCH_SIZE - 1) {
+        const delayMs = outboxDrainDelayMs();
+        if (delayMs > 0) {
+          await delay(delayMs, { signal });
+        }
+      }
+    }
+
+    if (processed > 0) {
+      log.debug("Drained emails from outbox", { processed });
+    }
+    return processed;
   },
 );
 

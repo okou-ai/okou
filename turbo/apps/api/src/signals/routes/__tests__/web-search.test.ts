@@ -22,7 +22,6 @@ import { createAppWithRoutes } from "../../../app-factory-core";
 import { env, mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { createDeferredPromise } from "../../utils";
@@ -626,37 +625,6 @@ describe("okou web-search route", () => {
 
     expect(response.status).toBe(500);
     expect(membershipRead).toHaveBeenCalledOnce();
-  });
-
-  it("rejects agent tokens without web-search:read capability", async () => {
-    const actor = createBddApi(context).user();
-    if (!actor.orgId) {
-      throw new Error("Web Search test actor must belong to an organization");
-    }
-    await bootstrapOnboarding(actor);
-    const seconds = Math.floor(now() / 1000);
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      runId: "run_web_search_missing_capability",
-      capabilities: [],
-      iat: seconds,
-      exp: seconds + 60,
-    });
-
-    const response = await accept(
-      client()(webSearchContract).search({
-        headers: { authorization: `Bearer ${token}` },
-        body: defaultRequest(),
-      }),
-      [403],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error.message).toBe(
-      "Missing required capability: web-search:read",
-    );
   });
 
   it("rejects invalid filters before calling Perplexity", async () => {

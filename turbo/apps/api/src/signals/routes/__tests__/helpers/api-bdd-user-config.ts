@@ -1,9 +1,7 @@
 import { mockClerkUsers } from "./clerk-users";
-import { randomUUID } from "node:crypto";
 
 import { initContract } from "@okouai/api-contracts/contracts/trpc-contract";
 import { authContract } from "@okouai/api-contracts/contracts/auth";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
@@ -19,11 +17,6 @@ import { z } from "zod";
 
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
-import { now } from "../../../../lib/time";
-import {
-  signPatJwtForTests,
-  signSandboxJwtForTests,
-} from "../../../auth/tokens";
 import { authMeRoutes } from "../../auth-me";
 import { agentsRoutes } from "../../agents";
 import { pushSubscriptionsRoutes } from "../../push-subscriptions";
@@ -44,14 +37,9 @@ interface BearerCredential {
 
 /**
  * Session actor (Clerk mocks set on use) or a raw bearer token minted through
- * the CLI device flow (PAT) or the sandbox and Okou run-token test signers.
+ * the CLI device flow (PAT) or a real Runner claim.
  */
 type Credential = ApiTestUser | BearerCredential;
-
-interface MintedBearer {
-  readonly token: string;
-  readonly runId: string;
-}
 
 interface ProbeHeaders {
   readonly authorization?: string;
@@ -171,50 +159,6 @@ export function createUserConfigBddApi(context: TestContext) {
           data: role === null ? [] : [{ role, organization: { id: orgId } }],
         },
       );
-    },
-
-    sandboxBearer(actor: ApiTestUser): MintedBearer {
-      const seconds = Math.floor(now() / 1000);
-      const runId = `run_${randomUUID()}`;
-      const token = signSandboxJwtForTests({
-        scope: "sandbox",
-        userId: actor.userId,
-        orgId: requireOrgId(actor),
-        runId,
-        iat: seconds,
-        exp: seconds + 3600,
-      });
-      return { token, runId };
-    },
-
-    okouBearer(
-      actor: ApiTestUser,
-      capabilities: readonly Capability[],
-    ): MintedBearer {
-      const seconds = Math.floor(now() / 1000);
-      const runId = `run_${randomUUID()}`;
-      const token = signSandboxJwtForTests({
-        scope: "okou",
-        userId: actor.userId,
-        orgId: requireOrgId(actor),
-        runId,
-        capabilities: [...capabilities],
-        iat: seconds,
-        exp: seconds + 3600,
-      });
-      return { token, runId };
-    },
-
-    forgedPatBearer(userId: string): string {
-      const seconds = Math.floor(now() / 1000);
-      return signPatJwtForTests({
-        scope: "cli",
-        userId,
-        orgId: `org_${randomUUID()}`,
-        tokenId: randomUUID(),
-        iat: seconds,
-        exp: seconds + 3600,
-      });
     },
 
     async requestMe(

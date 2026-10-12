@@ -39,9 +39,16 @@ const OTHER_AGENT_ID = "c0000000-0000-4000-a000-000000001207";
 
 function action(
   state: BrowserUserActionResponse["state"],
+  hasTaskContext = true,
 ): Extract<BrowserUserActionResponse, { kind: "input" }> {
   return {
     kind: "input",
+    ...(hasTaskContext
+      ? {
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
+        }
+      : {}),
     requestToken: REQUEST_TOKEN,
     state,
     completedAt: state === "pending" ? null : "2026-09-22T05:00:00.000Z",
@@ -52,6 +59,7 @@ function action(
       {
         key: "email",
         label: "Email",
+        description: "Use the account that holds your invoices.",
         fieldKind: "username",
         required: true,
         control: { tagName: "INPUT", inputType: "email" },
@@ -369,13 +377,13 @@ function selectAction(args: {
   };
 }
 
-function mockPendingPreflight() {
+function mockPendingPreflight(hasTaskContext = true) {
   context.mocks.api(
     browserUserActionsContract.preflight,
     ({ params, body, respond }) => {
       expect(params.requestToken).toBe(REQUEST_TOKEN);
       expect(body).toStrictEqual({});
-      return respond(200, action("pending"));
+      return respond(200, action("pending", hasTaskContext));
     },
   );
 }
@@ -399,60 +407,82 @@ function button(name: string): HTMLElement {
   return result;
 }
 
-test("The standalone route reuses the native browser input form", async () => {
-  let state: BrowserUserActionResponse["state"] = "pending";
-  let sentPrompt = "";
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, action(state));
-  });
-  mockPendingPreflight();
-  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
-    expect(body.values).toStrictEqual([
-      { key: "email", value: "owner@example.test" },
-    ]);
-    state = "succeeded";
-    return respond(200, action(state));
-  });
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    sentPrompt = body.prompt ?? "";
-    expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
-    expect(body.chatThreadSortEventId).toBe(SUCCESS_SORT_ID);
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
-  });
+test.each([true, false])(
+  "The standalone route completes native input (task context: %s)",
+  async (hasTaskContext) => {
+    const title = hasTaskContext
+      ? "Sign in to download invoices"
+      : "Enter information in browser";
+    let state: BrowserUserActionResponse["state"] = "pending";
+    let sentPrompt = "";
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return respond(200, action(state, hasTaskContext));
+    });
+    mockPendingPreflight(hasTaskContext);
+    context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+      expect(body.values).toStrictEqual([
+        { key: "email", value: "owner@example.test" },
+      ]);
+      state = "succeeded";
+      return respond(200, action(state, hasTaskContext));
+    });
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      sentPrompt = body.prompt ?? "";
+      expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
+      expect(body.chatThreadSortEventId).toBe(SUCCESS_SORT_ID);
+      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    });
 
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
 
-  expect(
-    queryAllByRoleFast("button").some((candidate) => {
-      return candidate.textContent?.trim() === "Enter information";
-    }),
-  ).toBeFalsy();
-  const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
-  });
-  expect(within(form).getByText("https://login.example.test")).toBeVisible();
-  const email = within(form).getByLabelText(/Email/u);
-  expect(email).toBeRequired();
-  expect(email).toHaveAttribute(
-    "maxlength",
-    String(BROWSER_USER_ACTION_MAX_VALUE_LENGTH),
-  );
-  click(button("Add to browser"));
-  expect(form).toBeVisible();
-  await fill(email, "owner@example.test");
-  click(button("Add to browser"));
+    expect(
+      queryAllByRoleFast("button").some((candidate) => {
+        return candidate.textContent?.trim() === "Enter information";
+      }),
+    ).toBeFalsy();
+    const form = await screen.findByRole("form", {
+      name: title,
+    });
+    expect(within(form).getByRole("heading", { name: title })).toBeVisible();
+    expect(
+      within(form).getByText(
+        hasTaskContext
+          ? "The website requires sign-in to access your invoices."
+          : title,
+      ),
+    ).toBeVisible();
+    expect(
+      within(form).getByText(
+        "Your information will be added to this website. The agent will then continue and check the result.",
+      ),
+    ).toBeVisible();
+    expect(
+      within(form).getByText("Use the account that holds your invoices."),
+    ).toBeVisible();
+    expect(within(form).getByText("https://login.example.test")).toBeVisible();
+    const email = within(form).getByLabelText(/Email/u);
+    expect(email).toBeRequired();
+    expect(email).toHaveAttribute(
+      "maxlength",
+      String(BROWSER_USER_ACTION_MAX_VALUE_LENGTH),
+    );
+    click(button("Add to browser"));
+    expect(form).toBeVisible();
+    await fill(email, "owner@example.test");
+    click(button("Add to browser"));
 
-  await waitFor(() => {
-    expect(sentPrompt).toBe(CALLBACK_PROMPT);
-  });
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(document.title).toContain("Browser action");
-});
+    await waitFor(() => {
+      expect(sentPrompt).toBe(CALLBACK_PROMPT);
+    });
+    await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+    expect(document.title).toContain("Browser action");
+  },
+);
 
 test("A required native slider starts at the website position and needs deliberate confirmation", async () => {
   let sent: unknown = null;
@@ -480,7 +510,7 @@ test("A required native slider starts at the website position and needs delibera
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const slider = within(form).getByRole("slider", { name: /Level/u });
   await waitFor(() => {
@@ -533,7 +563,7 @@ test("An optional native slider stays untouched unless the user changes it", asy
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const slider = within(form).getByRole("slider", { name: /Level/u });
   await waitFor(() => {
@@ -577,7 +607,7 @@ test("An optional native slider submits a changed position with its observed sna
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const slider = within(form).getByRole("slider", { name: /Level/u });
   await waitFor(() => {
@@ -628,7 +658,7 @@ test("A required native color starts from the website and needs explicit confirm
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const picker = within(form).getByLabelText(/Swatch/u) as HTMLInputElement;
   await waitFor(() => {
@@ -674,7 +704,7 @@ test("An optional native color remains untouched or submits an explicit change",
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const picker = within(form).getByLabelText(/Swatch/u) as HTMLInputElement;
   await waitFor(() => {
@@ -718,7 +748,7 @@ test("A changed native color submits its observed website snapshot", async () =>
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const picker = within(form).getByLabelText(/Swatch/u) as HTMLInputElement;
   await waitFor(() => {
@@ -807,7 +837,7 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const input = within(form).getByLabelText(/Document/u);
   await waitFor(() => {
@@ -863,7 +893,7 @@ test("A rejected Browser file authorization and PUT leave the selection retryabl
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const input = within(form).getByLabelText(/Document/u);
   await waitFor(() => {
@@ -1013,7 +1043,7 @@ test("The standalone form accepts input and submission while its background chec
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   await checkStarted.promise;
   expect(screen.getByText("Checking this request…")).toBeVisible();
@@ -1056,7 +1086,7 @@ test("A failed background check blocks submission and retains the draft for retr
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const email = within(form).getByLabelText(/Email/u);
   await fill(email, "owner@example.test");
@@ -1119,7 +1149,7 @@ test("The standalone form uses preflight's observed multiline and email controls
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   await waitFor(() => {
     expect(within(form).getByLabelText(/Remembered answer/u).tagName).toBe(
@@ -1164,7 +1194,7 @@ test("The standalone form uses the existing input style with live number constra
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const quantity = within(form).getByLabelText(/Quantity/u);
   expect(quantity).toHaveAttribute("data-slot", "input");
@@ -1209,7 +1239,7 @@ test.each([
       featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     const form = await screen.findByRole("form", {
-      name: "Enter information in browser",
+      name: "Sign in to download invoices",
     });
     expect(within(form).getByLabelText(/Quantity/u)).toHaveAttribute(
       "type",
@@ -1258,7 +1288,7 @@ test.each([
       featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     const form = await screen.findByRole("form", {
-      name: "Enter information in browser",
+      name: "Sign in to download invoices",
     });
     const picker = within(form).getByLabelText(/Arrival/u);
     expect(picker).toHaveAttribute("type", inputType);
@@ -1299,7 +1329,7 @@ test.each([
       featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     const form = await screen.findByRole("form", {
-      name: "Enter information in browser",
+      name: "Sign in to download invoices",
     });
     if (clear) {
       const picker = within(form).getByLabelText(/Arrival/u);
@@ -1357,7 +1387,7 @@ test.each([
       featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     const form = await screen.findByRole("form", {
-      name: "Enter information in browser",
+      name: "Sign in to download invoices",
     });
     const checkbox = within(form).getByRole("checkbox", { name: /Consent/u });
     await waitFor(() => {
@@ -1403,7 +1433,7 @@ test("An untouched optional checkbox preserves a checked website value", async (
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const checkbox = within(form).getByRole("checkbox", { name: /Consent/u });
   await waitFor(() => {
@@ -1448,7 +1478,7 @@ test("A required checked checkbox submits its valid website state without auxili
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const checkbox = within(form).getByRole("checkbox", { name: /Consent/u });
   await waitFor(() => {
@@ -1510,7 +1540,7 @@ test("A changed checkbox state on Retry uses the fresh valid website snapshot", 
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const checkbox = within(form).getByRole("checkbox", { name: /Consent/u });
   await waitFor(() => {
@@ -1575,7 +1605,7 @@ test("A radio group submits an indexed choice without its duplicate value", asyn
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const radios = await within(form).findAllByRole("radio");
   expect(radios).toHaveLength(3);
@@ -1638,7 +1668,7 @@ test("A radio choice from a changed website group uses its fresh snapshot on Ret
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const radios = await within(form).findAllByRole("radio");
   await waitFor(() => {
@@ -1707,7 +1737,7 @@ test("An untouched optional radio group preserves the existing selection", async
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   await within(form).findAllByRole("radio");
   click(button("Add to browser"));
@@ -1753,7 +1783,7 @@ test("An Agent-required radio group submits its existing valid website choice", 
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   await within(form).findAllByRole("radio");
   expect(screen.queryByText("Leave website value unchanged")).toBeNull();
@@ -1800,7 +1830,7 @@ test("The standalone form selects a required native option by index, not its web
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const region = within(form).getByLabelText(/Region/u);
   await waitFor(() => {
@@ -1874,7 +1904,7 @@ test("A required multiple select cannot keep a disabled website choice and drops
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const region = within(form).getByLabelText(/Region/u);
   await waitFor(() => {
@@ -1927,7 +1957,7 @@ test("An optional multiple select distinguishes untouched from an explicit clear
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const region = within(form).getByLabelText(/Region/u);
   await waitFor(() => {
@@ -2001,7 +2031,7 @@ test("An optional single select clears its website selection through the native 
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const region = within(form).getByLabelText(/Region/u);
   await waitFor(() => {
@@ -2088,7 +2118,7 @@ test.each([
       featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     const form = await screen.findByRole("form", {
-      name: "Enter information in browser",
+      name: "Sign in to download invoices",
     });
     const region = within(form).getByLabelText(/Region/u);
     await waitFor(() => {
@@ -2169,7 +2199,7 @@ test("Changed site constraints require a fresh preflight without losing ordinary
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   let form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
   await fill(within(form).getByLabelText(/Remembered answer/u), "abcd");
@@ -2177,7 +2207,7 @@ test("Changed site constraints require a fresh preflight without losing ordinary
   await screen.findByRole("alert");
   click(button("Retry"));
   form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   expect(preflights).toBe(2);
   expect(within(form).getByLabelText(/Remembered answer/u)).toHaveAttribute(
@@ -2232,7 +2262,7 @@ test("Leaving and returning to a standalone form clears password and code drafts
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   await fill(within(form).getByLabelText("Password"), "synthetic-password");
   await fill(within(form).getByLabelText("Verification code"), "012345");
@@ -2251,7 +2281,7 @@ test("Leaving and returning to a standalone form clears password and code drafts
     window.history.back();
   });
   const returned = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   expect(within(returned).getByLabelText("Password")).toHaveValue("");
   expect(within(returned).getByLabelText("Verification code")).toHaveValue("");
@@ -2283,7 +2313,7 @@ test("The standalone form records cancellation before notifying the agent", asyn
     host: "app.okou.ai",
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
-  await screen.findByRole("form", { name: "Enter information in browser" });
+  await screen.findByRole("form", { name: "Sign in to download invoices" });
   click(button("Cancel"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
@@ -2362,7 +2392,7 @@ test("A transient standalone preflight failure keeps fields visible but blocks s
   });
   expect(attempts).toBe(1);
   expect(
-    screen.getByRole("form", { name: "Enter information in browser" }),
+    screen.getByRole("form", { name: "Sign in to download invoices" }),
   ).toBeVisible();
   expect(button("Add to browser")).toBeDisabled();
   click(button("Retry"));
@@ -2403,7 +2433,7 @@ test("Retry after a failed standalone request also runs preflight", async () => 
   });
   expect(checks).toBe(0);
   click(button("Retry"));
-  await screen.findByRole("form", { name: "Enter information in browser" });
+  await screen.findByRole("form", { name: "Sign in to download invoices" });
   expect(reads).toBe(2);
   expect(checks).toBe(1);
 });
@@ -2455,7 +2485,7 @@ test.each(["apply", "cancel"] as const)(
       featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     const form = await screen.findByRole("form", {
-      name: "Enter information in browser",
+      name: "Sign in to download invoices",
     });
     await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
     await fill(within(form).getByLabelText("Password"), "synthetic-password");
@@ -2518,7 +2548,7 @@ test.each([
       featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     const form = await screen.findByRole("form", {
-      name: "Enter information in browser",
+      name: "Sign in to download invoices",
     });
     await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
     await fill(within(form).getByLabelText("Password"), "synthetic-password");
@@ -2569,7 +2599,7 @@ test("An authoritative pending recovery rechecks the form before an explicit ret
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
   await fill(
@@ -2839,7 +2869,7 @@ test("A failed callback retries without repeating the Browser mutation", async (
   });
 
   const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
   click(button("Add to browser"));
@@ -2872,7 +2902,7 @@ test.each([
 
     await expect(screen.findByText(title)).resolves.toBeInTheDocument();
     expect(
-      screen.queryByRole("form", { name: "Enter information in browser" }),
+      screen.queryByRole("form", { name: "Sign in to download invoices" }),
     ).toBeNull();
   },
 );

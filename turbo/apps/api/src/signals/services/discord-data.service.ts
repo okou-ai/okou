@@ -50,19 +50,6 @@ const bindingColumns = Object.freeze({
   userId: discordOrgConnections.userId,
 });
 
-function bindingRows(where: SQL) {
-  return computed(async (get) => {
-    return await get(db$)
-      .select(bindingColumns)
-      .from(discordOrgConnections)
-      .innerJoin(
-        discordOrgInstallations,
-        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
-      )
-      .where(where);
-  });
-}
-
 /** Always ask the identity authority; a cached role cannot revive a binding. */
 function discordMembership(binding: {
   readonly orgId: string;
@@ -586,14 +573,18 @@ export function discordOrgStatus(args: {
     if (!installation) {
       return { ...currentStatus, isAdmin: role === "admin" };
     }
-    const [connection] = await get(
-      bindingRows(
-        and(
-          eq(discordOrgConnections.guildId, installation.guildId),
-          eq(discordOrgConnections.userId, args.userId),
-        )!,
-      ),
-    );
+    const connectionWhere = and(
+      eq(discordOrgConnections.guildId, installation.guildId),
+      eq(discordOrgConnections.userId, args.userId),
+    )!;
+    const [connection] = await get(db$)
+      .select(bindingColumns)
+      .from(discordOrgConnections)
+      .innerJoin(
+        discordOrgInstallations,
+        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+      )
+      .where(connectionWhere);
     const agent = await get(agent$);
     const bindings = connection
       ? (await get(discordSenderBindings(connection.discordUserId))).filter(

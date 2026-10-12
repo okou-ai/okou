@@ -4,6 +4,7 @@ import { computerUseCommand } from "../index";
 import { server } from "../../../mocks/server";
 import {
   ablyRealtimeFake,
+  ablyTokenExchangeHandler,
   deferred,
 } from "../../../test-fixtures/ably-realtime";
 
@@ -89,6 +90,7 @@ function run(timeout = "3") {
 
 beforeEach(() => {
   ablyRealtimeFake.reset();
+  server.use(ablyTokenExchangeHandler);
   vi.stubEnv("OKOU_TOKEN", "sandbox-token");
   vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
   log.mockClear();
@@ -99,6 +101,30 @@ afterEach(() => {
 });
 
 describe("Computer Use result notifications", () => {
+  it.each(["unavailable", "invalid"])(
+    "prints the durable result when token redemption is %s",
+    async (failure) => {
+      const creates = serveCreate();
+      let reads = 0;
+      server.use(
+        http.post(
+          "https://main.realtime.ably.net/keys/test.key/requestToken",
+          () => {
+            return failure === "unavailable"
+              ? new HttpResponse(null, { status: 503 })
+              : HttpResponse.json({ token: "invalid-response" });
+          },
+        ),
+        http.get(`${baseUrl}/commands/${commandId}`, () => {
+          return response(++reads > 1 ? "succeeded" : "running");
+        }),
+      );
+      await run();
+      expect(log.mock.calls.flat().join("\n")).toContain("Chrome");
+      expect(creates()).toBe(1);
+    },
+  );
+
   it("prints an already-complete result without opening a subscription", async () => {
     const creates = serveCreate();
     server.use(

@@ -377,11 +377,6 @@
       "owner": "prepareNextOutboxItem"
     },
     {
-      "id": "TX-0157",
-      "file": "turbo/apps/api/src/signals/services/email-common.service.ts",
-      "owner": "completeOutboxItem"
-    },
-    {
       "id": "TX-0160",
       "file": "turbo/apps/api/src/signals/services/feishu-chat-ingress.service.ts",
       "owner": "admitFeishuChatEvent$"
@@ -445,11 +440,6 @@
       "id": "TX-0178",
       "file": "turbo/apps/api/src/signals/services/managed-usage.service.ts",
       "owner": "recordManagedUsage$"
-    },
-    {
-      "id": "TX-0184",
-      "file": "turbo/apps/api/src/signals/services/memory-summary-projection.service.ts",
-      "owner": "claimProjectionWork$"
     },
     {
       "id": "TX-0185",
@@ -620,11 +610,6 @@
       "id": "TX-0230",
       "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-worker.service.ts",
       "owner": "validatePreparedWork$"
-    },
-    {
-      "id": "TX-0231",
-      "file": "turbo/apps/api/src/signals/services/pi-resource-version-index.service.ts",
-      "owner": "claimWork$"
     },
     {
       "id": "TX-0234",
@@ -910,11 +895,6 @@
       "id": "TX-0315",
       "file": "turbo/apps/api/src/signals/services/vnc-connection.service.ts",
       "owner": "createVncConnection$"
-    },
-    {
-      "id": "TX-0316",
-      "file": "turbo/apps/api/src/signals/services/vnc-connection.service.ts",
-      "owner": "updateVncConnection$"
     },
     {
       "id": "TX-0319",

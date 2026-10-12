@@ -13,11 +13,6 @@ export interface SwiftTypeBinding {
   readonly schema: z.ZodType;
   readonly swiftTypeName: string;
   readonly doc: readonly string[];
-  /**
-   * Contract-required fields rendered as Optional. Each value documents the
-   * rollout fallback the relaxation preserves and is emitted above the field.
-   */
-  readonly optionalFields?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -30,10 +25,6 @@ export const swiftTypeBindings = [
     schema: computerUseSessionHostsContract.register.responses[200],
     swiftTypeName: "ComputerUseHostRegistration",
     doc: ["`POST /api/computer-use/hosts/register` success body."],
-    optionalFields: {
-      commandNotifications:
-        "Optional for rollout: a pre-notification API omits it and the host retires its registration. Surface: new Desktop -> old API; remove with the notification-less fallback in HostRuntime.",
-    },
   },
   {
     schema: computerUseSessionHostsContract.heartbeat.responses[200],

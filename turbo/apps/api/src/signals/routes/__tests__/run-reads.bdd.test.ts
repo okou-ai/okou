@@ -1516,7 +1516,7 @@ function sequenceEventRows(
   const limit = limitMatch?.[1] ? Number(limitMatch[1]) : rows.length;
   const sinceTimeMatch = /\| where _time > datetime\("([^"]+)"\)/.exec(apl);
   const groupingPosition = apl.indexOf(
-    "| summarize arg_min(_time, *) by sequenceNumber",
+    "| summarize arg_min(_time, eventType, eventData) by sequenceNumber",
   );
   const filterTime = (row: Record<string, unknown>) => {
     const sinceTime = sinceTimeMatch?.[1];
@@ -1972,7 +1972,7 @@ describe("RUN-04: agent run telemetry families", () => {
             const query: unknown = await request.json();
             expect(query).toMatchObject({
               apl: expect.stringContaining(
-                "| summarize arg_min(_time, *) by sequenceNumber",
+                "| summarize arg_min(_time, eventType, eventData) by sequenceNumber",
               ),
             });
             return HttpResponse.json({
@@ -1980,14 +1980,14 @@ describe("RUN-04: agent run telemetry families", () => {
               tables: [
                 {
                   fields: [
-                    { name: "_time", type: "datetime" },
                     { name: "sequenceNumber", type: "integer" },
+                    { name: "_time", type: "datetime" },
                     { name: "eventType", type: "string" },
                     { name: "eventData", type: "dynamic" },
                   ],
                   columns: [
-                    ["2026-06-10T10:30:00Z"],
                     [0],
+                    ["2026-06-10T10:30:00Z"],
                     ["assistant"],
                     [
                       {

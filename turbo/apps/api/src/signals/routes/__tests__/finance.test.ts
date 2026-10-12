@@ -8,8 +8,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { now } from "../../../lib/time";
 import {
   createBddApi,
   expectApiError,
@@ -59,38 +57,6 @@ function configureProvider(): void {
 }
 
 describe("okou finance routes", () => {
-  it("rejects agent tokens without finance:read capability", async () => {
-    const actor = createBddApi(context).user();
-    if (!actor.orgId) {
-      throw new Error("Finance test actor must belong to an organization");
-    }
-    const completed = await createBddApi(context).completeOnboarding(actor);
-    expect(completed.status).toBe(200);
-    const seconds = Math.floor(now() / 1000);
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      runId: "run_finance_missing_capability",
-      capabilities: [],
-      iat: seconds,
-      exp: seconds + 60,
-    });
-
-    const response = await accept(
-      client()(financeContract).quote({
-        headers: { authorization: `Bearer ${token}` },
-        body: { symbol: "AAPL" },
-      }),
-      [403],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error.message).toBe(
-      "Missing required capability: finance:read",
-    );
-  });
-
   it("maps all operations to APIDojo and charges one credit each", async () => {
     const actor = createBddApi(context).user();
     await fundActor(actor);

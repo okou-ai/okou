@@ -276,7 +276,7 @@ export function runAgentEvents(
 | where _time >= datetime("${run.createdAt.toISOString()}")
 ${sequenceFilter}
 | project _time, sequenceNumber, eventType, eventData
-| summarize arg_min(_time, *) by sequenceNumber
+| summarize arg_min(_time, eventType, eventData) by sequenceNumber
 ${timeFilter}
 | order by sequenceNumber ${order}
 | limit ${limit + 1}`;

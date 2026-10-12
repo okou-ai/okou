@@ -169,7 +169,7 @@ describe("Discord private account interactions", () => {
     expect(replies.messages[0]?.allowed_mentions.parse).toStrictEqual([]);
   });
 
-  it.each(["connect", "disconnect", "switch", "model"])(
+  it.each(["connect", "disconnect"])(
     "gives an unbound sender setup guidance for /%s",
     async (name) => {
       const replies = privateResponses();
@@ -188,11 +188,11 @@ describe("Discord private account interactions", () => {
   it("rejects a forged picker without reading or changing another account", async () => {
     const replies = privateResponses();
     const payload = {
-      ...command("switch"),
+      ...command("connect"),
       type: 3,
       data: {
         component_type: 3,
-        custom_id: `okou:1:agent:${randomUUID()}:0:ffff:forged`,
+        custom_id: `okou:1:org:${randomUUID()}:0:ffff:forged`,
         values: [randomUUID()],
       },
     };

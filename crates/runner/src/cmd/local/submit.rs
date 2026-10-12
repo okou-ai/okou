@@ -49,7 +49,7 @@ pub struct SubmitArgs {
     /// Sandbox profile to use (e.g. "vm0/default")
     #[arg(long)]
     profile: Option<String>,
-    /// Chat thread ID for sandbox and workspace reuse across turns
+    /// Chat thread ID for sandbox and home reuse across turns
     #[arg(long)]
     chat_thread_id: Option<Uuid>,
     /// Provider-native session ID to resume

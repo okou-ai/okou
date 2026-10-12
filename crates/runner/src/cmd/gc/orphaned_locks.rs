@@ -81,7 +81,7 @@ mod tests {
             .unwrap()
             .lock_path(&home);
         let historical_service_lock = locks_dir.join("service-vm0-runner-OLD_NAME.lock");
-        let stale_lock = locks_dir.join("workspace-image-cache-test.lock");
+        let stale_lock = locks_dir.join("home-image-cache-test.lock");
         std::fs::write(&version_service_lock, "").unwrap();
         std::fs::write(&staging_service_lock, "").unwrap();
         std::fs::write(&historical_service_lock, "").unwrap();
@@ -135,7 +135,7 @@ mod tests {
         std::fs::create_dir_all(&locks_dir).unwrap();
         let reload_lock = home.systemd_daemon_reload_lock();
         let gc_lock = home.gc_lock();
-        let stale_lock = locks_dir.join("workspace-image-cache-test.lock");
+        let stale_lock = locks_dir.join("home-image-cache-test.lock");
         std::fs::write(&reload_lock, "").unwrap();
         std::fs::write(&gc_lock, "").unwrap();
         std::fs::write(&stale_lock, "").unwrap();
@@ -165,7 +165,7 @@ mod tests {
         let locks_dir = home.locks_dir();
         std::fs::create_dir_all(&locks_dir).unwrap();
         let base_dir_lock = locks_dir.join("base-dir-dead.lock");
-        let stale_lock = locks_dir.join("workspace-image-cache-test.lock");
+        let stale_lock = locks_dir.join("home-image-cache-test.lock");
         std::fs::write(&base_dir_lock, "/data/dead-runner").unwrap();
         std::fs::write(&stale_lock, "").unwrap();
 

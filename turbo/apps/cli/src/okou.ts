@@ -16,6 +16,8 @@ import {
   startPiCliObservation,
 } from "./lib/pi-startup-timing.js";
 
+import { isPiSession } from "./lib/pi-session-env.js";
+
 observePiCliEntryImports();
 
 interface CommandDefinition {
@@ -36,6 +38,8 @@ const COMMAND_CAPABILITY_MAP: Record<
   string | readonly string[] | null
 > = {
   "__agent-loop": null,
+  __subagent_loop__: null,
+  subagent: null,
   agent: "agent:read",
   workflow: "agent:read",
   connector: ["connector:read", "connector:write"],
@@ -127,6 +131,20 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     description: "Inspect observed usage for the current assigned Run",
     load: async () => {
       return (await import("./commands/run")).runCommand;
+    },
+  },
+  {
+    name: "__subagent_loop__",
+    description: "Internal child Pi loop",
+    load: async () => {
+      return (await import("./commands/__subagent_loop__")).subagentLoopCommand;
+    },
+  },
+  {
+    name: "subagent",
+    description: "Manage background Pi subagents in the current Run",
+    load: async () => {
+      return (await import("./commands/subagent/index")).subagentCommand;
     },
   },
   {
@@ -467,6 +485,7 @@ function shouldHideCommand(
   payload: SandboxTokenPayload | undefined,
 ): boolean {
   if (name.startsWith("__")) return true;
+  if (name === "subagent") return !isPiSession();
   if (!payload) return RUN_ONLY_COMMANDS.has(name);
   const requiredCap = COMMAND_CAPABILITY_MAP[name];
   if (requiredCap === undefined) return true;
@@ -631,6 +650,11 @@ export function buildHelpText(
     ...commandExampleIfVisible(
       "run",
       "  Inspect Run usage?    okou run usage --json",
+      payload,
+    ),
+    ...commandExampleIfVisible(
+      "subagent",
+      "  Delegate Pi work?     okou subagent --help",
       payload,
     ),
     "  Introduce Okou?       okou intro",

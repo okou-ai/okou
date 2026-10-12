@@ -236,6 +236,8 @@ function actionResponse() {
   return {
     ...base,
     kind: "input" as const,
+    title: "Sign in to download invoices",
+    reason: "The website requires sign-in to access your invoices.",
     siteOrigin: "https://example.com",
     fields: [
       {
@@ -282,6 +284,9 @@ describe("okou browser user-action commands", () => {
     vi.stubEnv("OKOU_TOKEN", "test-run-token");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_ID);
     inputCommand().setOptionValue("field", []);
+    inputCommand().setOptionValue("title", undefined);
+    inputCommand().setOptionValue("reason", undefined);
+    inputCommand().setOptionValue("json", false);
     installAgentBrowser();
   });
 
@@ -310,6 +315,10 @@ describe("okou browser user-action commands", () => {
       "node",
       "okou",
       "input-request",
+      "--title",
+      "Sign in to download invoices",
+      "--reason",
+      "The website requires sign-in to access your invoices.",
       "--field",
       JSON.stringify({
         key: "username",
@@ -324,6 +333,8 @@ describe("okou browser user-action commands", () => {
 
     expect(requestBody).toStrictEqual({
       kind: "input",
+      title: "Sign in to download invoices",
+      reason: "The website requires sign-in to access your invoices.",
       callbackPrompt: "Continue after the user enters their email",
       pageTargetId: "page-target",
       fields: [
@@ -374,6 +385,10 @@ describe("okou browser user-action commands", () => {
       "node",
       "okou",
       "input-request",
+      "--title",
+      "Sign in to download invoices",
+      "--reason",
+      "The website requires sign-in to access your invoices.",
       "--field",
       JSON.stringify({
         key: "quantity",
@@ -401,6 +416,10 @@ describe("okou browser user-action commands", () => {
       "node",
       "okou",
       "input-request",
+      "--title",
+      "Sign in to download invoices",
+      "--reason",
+      "The website requires sign-in to access your invoices.",
       "--field",
       JSON.stringify({
         key: "level",
@@ -431,6 +450,10 @@ describe("okou browser user-action commands", () => {
       "node",
       "okou",
       "input-request",
+      "--title",
+      "Sign in to download invoices",
+      "--reason",
+      "The website requires sign-in to access your invoices.",
       "--field",
       JSON.stringify({
         key: "swatch",
@@ -461,6 +484,10 @@ describe("okou browser user-action commands", () => {
       "node",
       "okou",
       "input-request",
+      "--title",
+      "Sign in to download invoices",
+      "--reason",
+      "The website requires sign-in to access your invoices.",
       "--field",
       JSON.stringify({
         key: "arrival",
@@ -491,6 +518,10 @@ describe("okou browser user-action commands", () => {
       "node",
       "okou",
       "input-request",
+      "--title",
+      "Sign in to download invoices",
+      "--reason",
+      "The website requires sign-in to access your invoices.",
       "--field",
       JSON.stringify({
         key: "consent",
@@ -521,6 +552,10 @@ describe("okou browser user-action commands", () => {
       "node",
       "okou",
       "input-request",
+      "--title",
+      "Sign in to download invoices",
+      "--reason",
+      "The website requires sign-in to access your invoices.",
       "--field",
       JSON.stringify({
         key: "delivery",
@@ -551,6 +586,10 @@ describe("okou browser user-action commands", () => {
       "node",
       "okou",
       "input-request",
+      "--title",
+      "Sign in to download invoices",
+      "--reason",
+      "The website requires sign-in to access your invoices.",
       "--field",
       JSON.stringify({
         key: "region",
@@ -582,6 +621,10 @@ describe("okou browser user-action commands", () => {
       "node",
       "okou",
       "input-request",
+      "--title",
+      "Sign in to download invoices",
+      "--reason",
+      "The website requires sign-in to access your invoices.",
       "--field",
       JSON.stringify({
         key: "username",
@@ -620,6 +663,10 @@ describe("okou browser user-action commands", () => {
       "node",
       "okou",
       "input-request",
+      "--title",
+      "Sign in to download invoices",
+      "--reason",
+      "The website requires sign-in to access your invoices.",
       "--field",
       JSON.stringify({
         key: "username",
@@ -667,6 +714,61 @@ describe("okou browser user-action commands", () => {
     ).toHaveLength(2);
   });
 
+  it.each([
+    { option: "title", value: undefined },
+    { option: "title", value: "" },
+    { option: "title", value: "   " },
+    { option: "title", value: "x".repeat(129) },
+    { option: "reason", value: undefined },
+    { option: "reason", value: "" },
+    { option: "reason", value: "   " },
+    { option: "reason", value: "x".repeat(513) },
+  ])(
+    "rejects invalid $option before capturing Browser controls",
+    async ({ option, value }) => {
+      const args = [
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "username",
+          label: "Email",
+          fieldKind: "username",
+          required: true,
+          target: "#email",
+        }),
+        "--callback-prompt",
+        "Continue after input",
+        "--json",
+      ];
+      const title = option === "title" ? value : "Sign in to download invoices";
+      const reason =
+        option === "reason" ? value : "The website requires sign-in";
+      if (title !== undefined) {
+        args.push("--title", title);
+      }
+      if (reason !== undefined) {
+        args.push("--reason", reason);
+      }
+
+      await expect(browserCommand.parseAsync(args)).rejects.toThrow(
+        "process.exit called",
+      );
+
+      const output = consoleError.mock.calls.flat().join("\n");
+      expect(JSON.parse(output)).toMatchObject({
+        error: {
+          code: "BROWSER_INPUT_INVALID_REQUEST",
+          message: expect.stringContaining(`--${option} must be`),
+        },
+      });
+      expect(consoleLog.mock.calls).toHaveLength(0);
+      expect(output).not.toContain("#email");
+      expect(output).not.toContain("x".repeat(129));
+    },
+  );
+
   it("rejects invalid field metadata before Browser or API access", async () => {
     let apiRequests = 0;
     installCreateRoute(() => {
@@ -678,6 +780,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "username",
@@ -706,6 +812,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "username",
@@ -733,6 +843,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "username",
@@ -774,6 +888,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         field,
         "--field",
@@ -827,6 +945,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "username",
@@ -865,6 +987,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "username",
@@ -895,6 +1021,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "username",
@@ -937,6 +1067,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "username",
@@ -968,6 +1102,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "username",
@@ -998,6 +1136,10 @@ describe("okou browser user-action commands", () => {
       "node",
       "okou",
       "input-request",
+      "--title",
+      "Sign in to download invoices",
+      "--reason",
+      "The website requires sign-in to access your invoices.",
       "--field",
       JSON.stringify({
         key: "username",
@@ -1027,6 +1169,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "username",
@@ -1062,6 +1208,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "username",
@@ -1108,6 +1258,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "username",
@@ -1146,6 +1300,10 @@ describe("okou browser user-action commands", () => {
           "node",
           "okou",
           "input-request",
+          "--title",
+          "Sign in to download invoices",
+          "--reason",
+          "The website requires sign-in to access your invoices.",
           "--field",
           JSON.stringify({
             key: "username",
@@ -1179,6 +1337,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "username",
@@ -1219,6 +1381,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "username",
@@ -1264,6 +1430,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "password",
@@ -1308,6 +1478,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "username",
@@ -1348,6 +1522,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "username",
@@ -1388,6 +1566,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "username",
@@ -1457,6 +1639,10 @@ describe("okou browser user-action commands", () => {
         "node",
         "okou",
         "input-request",
+        "--title",
+        "Sign in to download invoices",
+        "--reason",
+        "The website requires sign-in to access your invoices.",
         "--field",
         JSON.stringify({
           key: "username",

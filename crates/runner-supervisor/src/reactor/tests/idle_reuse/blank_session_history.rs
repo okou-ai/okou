@@ -10,8 +10,9 @@ use tokio::sync::oneshot;
 
 use super::super::super::*;
 use super::super::support::{
-    minimal_context, mock_run_config_with_overrides, push_job, seed_home_cache_state, shutdown,
-    test_profiles, wait_cancel_handle, wait_idle_pool_len,
+    minimal_context, mock_run_config_with_overrides, mock_run_config_with_overrides_and_api_url,
+    push_job, seed_home_cache_state, shutdown, test_profiles, wait_cancel_handle,
+    wait_idle_pool_len,
 };
 use crate::home_image_cache::HomeImageCache;
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, http_response};
@@ -25,6 +26,79 @@ use runner_types::types::{
 
 const WAIT: Duration = Duration::from_secs(5);
 const HISTORY: &[u8] = b"{\"type\":\"init\"}\n";
+
+#[tokio::test]
+async fn blank_storage_handoff_observes_pending_history_without_starting_restore_early() {
+    use httpmock::prelude::*;
+
+    let api = MockServer::start_async().await;
+    let telemetry = api
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path("/api/webhooks/agent/telemetry")
+                .body_matches(
+                    r#""action_type":"session_history_readiness_at_guest_storage_start","duration_ms":0,"success":true,"outcome":"not_ready""#,
+                );
+            then.status(200).body(r#"{"success":true}"#);
+        })
+        .await;
+    let (release_history, history_release) = oneshot::channel();
+    let mut history = RawHttpTestServer::spawn(vec![RawHttpAction::WaitThenRespond {
+        release: history_release,
+        response: http_response("200 OK", HISTORY),
+    }])
+    .await;
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    let storage_gate = MockLifecycleGate::new();
+    overrides.set_storage_manifest_lifecycle_gate(storage_gate.clone());
+    let (config, env) = mock_run_config_with_overrides_and_api_url(
+        test_profiles(),
+        16,
+        32_768,
+        8,
+        Arc::clone(&overrides),
+        &api.base_url(),
+    );
+    let budget = Arc::clone(&config.capacity.budget);
+    let run_handle = tokio::spawn(run(config));
+    wait_idle_pool_len(&env.idle_pool, 1, WAIT).await;
+    let blank_id = env.idle_pool.lock().await.status_snapshot().blank_sandboxes[0].sandbox_id;
+    let run_id = RunId::new_v4();
+    push_job(
+        &env,
+        run_id,
+        "vm0/default",
+        Some(history_context(run_id, history.url(), HISTORY)),
+    );
+    storage_gate.wait_entered(1, WAIT).await.unwrap();
+    history
+        .next_request("automatic Blank history prestart")
+        .await;
+    assert!(overrides.write_file_calls().is_empty());
+    assert!(overrides.start_agent_process_calls().is_empty());
+    release_history.send(()).unwrap();
+    history.assert_finished().await;
+    storage_gate.release_one();
+    let completion = env.handle.wait_completion(run_id, WAIT).await.unwrap();
+    assert_eq!(completion.exit_code, 0);
+    assert_eq!(completion.sandbox_id, Some(blank_id));
+    assert_eq!(
+        completion.home_reuse_result,
+        Some(HomeReuseResult::NotConfigured)
+    );
+    let writes = overrides.write_file_calls();
+    assert_eq!(writes.len(), 1);
+    assert_eq!(writes[0].content, HISTORY);
+    assert_eq!(
+        writes[0].path,
+        "/home/user/.claude/projects/-home-user-workspace/sess-blank-history.jsonl"
+    );
+    assert!(overrides.finalize_staged_file_calls().is_empty());
+    assert_eq!(overrides.start_agent_process_calls().len(), 1);
+    shutdown(&env, run_handle).await;
+    telemetry.assert_calls_async(1).await;
+    assert_eq!(budget.allocated().2, 0);
+}
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum PublicationExpectation {

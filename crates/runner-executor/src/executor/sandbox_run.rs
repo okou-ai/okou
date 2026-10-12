@@ -56,10 +56,9 @@ use runner_types::ids::RunId;
 use runner_types::types::{ExecutionContext, HomeReuseResult};
 
 const SLOW_PROXY_REGISTER_THRESHOLD: Duration = Duration::from_secs(3);
-const WORKSPACE_DRIVE_MOUNT: &str = "home_drive_mount";
-const WORKSPACE_DRIVE_MOUNT_GUEST_EXEC: &str = "home_drive_mount_guest_exec";
-const WORKSPACE_DRIVE_MOUNT_GUEST_EXEC_UNAVAILABLE: &str =
-    "home_drive_mount_guest_exec_unavailable";
+const HOME_DRIVE_MOUNT: &str = "home_drive_mount";
+const HOME_DRIVE_MOUNT_GUEST_EXEC: &str = "home_drive_mount_guest_exec";
+const HOME_DRIVE_MOUNT_GUEST_EXEC_UNAVAILABLE: &str = "home_drive_mount_guest_exec_unavailable";
 const RUNNER_FRESH_HOME_IMAGE_PREPARE: &str = "runner_fresh_home_image_prepare";
 const RUNNER_FRESH_PRE_SPAWN_ADMISSION_WAIT: &str = "runner_fresh_pre_spawn_admission_wait";
 const RUNNER_FRESH_SANDBOX_FACTORY_CREATE: &str = "runner_fresh_sandbox_factory_create";
@@ -69,11 +68,11 @@ const RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_DIR_RENAME: &str =
     "runner_fresh_sandbox_factory_workspace_dir_rename";
 // `home_drive_prepare` contains the seed-copy/fresh-format child stages;
 // downstream queries should not sum the parent and child durations together.
-const RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_DRIVE_PREPARE: &str =
+const RUNNER_FRESH_SANDBOX_FACTORY_HOME_DRIVE_PREPARE: &str =
     "runner_fresh_sandbox_factory_home_drive_prepare";
-const RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_SEED_SPARSE_COPY: &str =
+const RUNNER_FRESH_SANDBOX_FACTORY_HOME_SEED_SPARSE_COPY: &str =
     "runner_fresh_sandbox_factory_home_seed_sparse_copy";
-const RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_FRESH_FORMAT: &str =
+const RUNNER_FRESH_SANDBOX_FACTORY_HOME_FRESH_FORMAT: &str =
     "runner_fresh_sandbox_factory_home_fresh_format";
 const RUNNER_FRESH_SANDBOX_FACTORY_SOCK_DIR_PREPARE: &str =
     "runner_fresh_sandbox_factory_sock_dir_prepare";
@@ -147,7 +146,7 @@ const HOME_IMAGE_PREPARE_INVALID_METADATA: &str = "home_image_prepare_invalid_me
 const HOME_IMAGE_PREPARE_DISK_PRESSURE: &str = "home_image_prepare_disk_pressure";
 const SANDBOX_FACTORY_CREATE_FAILED: &str = "sandbox_factory_create_failed";
 const SANDBOX_FACTORY_CREATE_STAGE_FAILED: &str = "sandbox_factory_create_stage_failed";
-const SANDBOX_PROXY_REGISTER_FAILED: &str = "sandbox_proxy_register_failed";
+pub(super) const SANDBOX_PROXY_REGISTER_FAILED: &str = "sandbox_proxy_register_failed";
 const SANDBOX_START_FAILED: &str = "sandbox_start_failed";
 const SANDBOX_START_STAGE_FAILED: &str = "sandbox_start_stage_failed";
 const DNS_READINESS_RETRY_PREPARE_FAILED: &str = "replacement_prepare_failed";
@@ -155,14 +154,14 @@ const SANDBOX_PREPARE_RETRY_CLEANUP_UNCERTAIN: &str = "cleanup_uncertain";
 
 struct DnsReadinessReplacement {
     started: Instant,
-    workspace_fallback: bool,
+    home_fallback: bool,
 }
 
 impl DnsReadinessReplacement {
-    fn new(workspace_fallback: bool) -> Self {
+    fn new(home_fallback: bool) -> Self {
         Self {
             started: Instant::now(),
-            workspace_fallback,
+            home_fallback,
         }
     }
 
@@ -183,7 +182,7 @@ impl DnsReadinessReplacement {
             run_id = %context.run_id,
             sandbox_id = %sandbox_id,
             success,
-            workspace_fallback = self.workspace_fallback,
+            home_fallback = self.home_fallback,
             "guest DNS readiness replacement completed"
         );
     }
@@ -343,13 +342,11 @@ fn fresh_sandbox_factory_stage_action(stage: SandboxCreateStage) -> &'static str
     match stage {
         SandboxCreateStage::CowPoolAcquire => RUNNER_FRESH_SANDBOX_FACTORY_COW_POOL_ACQUIRE,
         SandboxCreateStage::WorkspaceDirRename => RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_DIR_RENAME,
-        SandboxCreateStage::HomeDrivePrepare => {
-            RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_DRIVE_PREPARE
-        }
+        SandboxCreateStage::HomeDrivePrepare => RUNNER_FRESH_SANDBOX_FACTORY_HOME_DRIVE_PREPARE,
         SandboxCreateStage::HomeSeedSparseCopy => {
-            RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_SEED_SPARSE_COPY
+            RUNNER_FRESH_SANDBOX_FACTORY_HOME_SEED_SPARSE_COPY
         }
-        SandboxCreateStage::HomeFreshFormat => RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_FRESH_FORMAT,
+        SandboxCreateStage::HomeFreshFormat => RUNNER_FRESH_SANDBOX_FACTORY_HOME_FRESH_FORMAT,
         SandboxCreateStage::SockDirPrepare => RUNNER_FRESH_SANDBOX_FACTORY_SOCK_DIR_PREPARE,
         SandboxCreateStage::NetnsAcquire => RUNNER_FRESH_SANDBOX_FACTORY_NETNS_ACQUIRE,
         SandboxCreateStage::NbdCowCreate => RUNNER_FRESH_SANDBOX_FACTORY_NBD_COW_CREATE,
@@ -592,7 +589,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
     )
     .await;
     let mut used_retry = preparation == FreshPreparation::WithoutCodexPrefetchReplacement;
-    let mut used_workspace_fallback = false;
+    let mut used_home_fallback = false;
     let mut codex_model_catalog_prefetch = preparation == FreshPreparation::Initial;
     let mut dns_replacement: Option<DnsReadinessReplacement> = None;
     let prepared = loop {
@@ -660,7 +657,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             return Err(error);
         }
         let retry_guest_dns = failure.retry == SandboxPrepareRetry::GuestDnsReadiness;
-        let retry_without_workspace =
+        let retry_without_home_image =
             failure.retry == SandboxPrepareRetry::WithoutHomeImage && cache_hit;
         let retry_without_codex_prefetch =
             failure.retry == SandboxPrepareRetry::WithoutCodexModelCatalogPrefetch;
@@ -677,7 +674,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                     sandbox_id = %sandbox_id,
                     "guest DNS readiness replacement suppressed after uncertain cleanup"
                 );
-            } else if retry_without_workspace {
+            } else if retry_without_home_image {
                 telemetry.record(
                     RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_HOME_IMAGE,
                     Duration::ZERO,
@@ -687,7 +684,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 warn!(
                     run_id = %context.run_id,
                     sandbox_id = %sandbox_id,
-                    "workspace image fallback suppressed after uncertain cleanup"
+                    "home image fallback suppressed after uncertain cleanup"
                 );
             } else if retry_without_codex_prefetch {
                 telemetry.record(
@@ -715,7 +712,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 .await;
             return Err(error);
         }
-        if !retry_guest_dns && !retry_without_workspace && !retry_without_codex_prefetch {
+        if !retry_guest_dns && !retry_without_home_image && !retry_without_codex_prefetch {
             let error = failure.error;
             telemetry.record(
                 "runner_fresh_sandbox_prepare",
@@ -757,7 +754,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
         }
 
         if cache_hit {
-            used_workspace_fallback = true;
+            used_home_fallback = true;
             controls.session_history_restore_plan =
                 replace_home_candidate_restore_plan_for_home_retry(
                     std::mem::take(&mut controls.session_history_restore_plan),
@@ -778,7 +775,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 run_id = %context.run_id,
                 sandbox_id = %sandbox_id,
                 error = %failure.error,
-                "workspace image cache hit failed during sandbox preparation; retrying with fresh workspace image"
+                "home image cache hit failed during sandbox preparation; retrying with fresh home image"
             );
             telemetry.record(
                 RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_HOME_IMAGE,
@@ -817,7 +814,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
 
     let home_reuse_result = final_home_reuse_result(
         home_image.as_ref().map(HomeImageLease::result),
-        used_workspace_fallback,
+        used_home_fallback,
     );
 
     let mut outcome = execute_prepared_sandbox_run(
@@ -1090,9 +1087,9 @@ fn home_image_prepare_error(result: HomeCacheCheckoutResult) -> Option<&'static 
 
 fn final_home_reuse_result(
     checkout_result: Option<HomeCacheCheckoutResult>,
-    used_workspace_fallback: bool,
+    used_home_fallback: bool,
 ) -> HomeReuseResult {
-    if used_workspace_fallback {
+    if used_home_fallback {
         return HomeReuseResult::SandboxPrepareFallback;
     }
     match checkout_result {
@@ -1375,7 +1372,7 @@ async fn create_started_sandbox(
         Ok(guest_duration) => guest_duration,
         Err(e) => {
             telemetry.record(
-                WORKSPACE_DRIVE_MOUNT,
+                HOME_DRIVE_MOUNT,
                 mount_duration,
                 false,
                 Some(&e.error.to_string()),
@@ -1393,7 +1390,7 @@ async fn create_started_sandbox(
                         warn!(
                             run_id = %context.run_id,
                             error = %unregister_error,
-                            "failed to unregister sandbox from proxy after workspace mount failure"
+                            "failed to unregister sandbox from proxy after home mount failure"
                         );
                         false
                     }
@@ -1410,7 +1407,7 @@ async fn create_started_sandbox(
             ));
         }
     };
-    telemetry.record(WORKSPACE_DRIVE_MOUNT, mount_duration, true, None);
+    telemetry.record(HOME_DRIVE_MOUNT, mount_duration, true, None);
     record_home_drive_mount_guest_exec(telemetry, guest_duration, true);
     if let Some(notifier) = sandbox_prepared
         && let Err(error) = notifier.notify(context.run_id, sandbox_id).await
@@ -1463,11 +1460,9 @@ fn record_home_drive_mount_guest_exec(
     success: bool,
 ) {
     match guest_duration {
-        Some(duration) => {
-            telemetry.record(WORKSPACE_DRIVE_MOUNT_GUEST_EXEC, duration, success, None)
-        }
+        Some(duration) => telemetry.record(HOME_DRIVE_MOUNT_GUEST_EXEC, duration, success, None),
         None => telemetry.record_bounded_outcome(
-            WORKSPACE_DRIVE_MOUNT_GUEST_EXEC_UNAVAILABLE,
+            HOME_DRIVE_MOUNT_GUEST_EXEC_UNAVAILABLE,
             success,
             "unavailable",
             None,
@@ -1491,7 +1486,7 @@ pub(super) async fn invalidate_home_cache_hit(
             run_id = %run_id,
             reason,
             error = %e,
-            "failed to invalidate workspace image cache entry"
+            "failed to invalidate home image cache entry"
         );
     }
 }

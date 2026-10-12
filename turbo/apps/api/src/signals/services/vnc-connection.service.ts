@@ -9,6 +9,10 @@ import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, asc, count, eq, sql } from "drizzle-orm";
+import {
+  QueryBuilder,
+  type WithSubqueryWithSelection,
+} from "drizzle-orm/pg-core";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { command } from "ccstate";
@@ -645,6 +649,93 @@ function referenceViolation(
   }
 }
 
+function newVncCredentialIdQuery() {
+  const builder = new QueryBuilder();
+  // gen_random_uuid() is the credential id column's database default.
+  return builder
+    .$with("new_vnc_credential_id", { id: vncCredentials.id })
+    .as(sql`SELECT gen_random_uuid() AS id`);
+}
+
+// Pure statement parts retain column decoders without carrying a DB executor.
+function inlineVncCredentialParts(
+  owner: VncOwner,
+  create: NonNullable<
+    Awaited<ReturnType<typeof prepareVncCredentialSelection>>["create"]
+  >,
+  updated: WithSubqueryWithSelection<typeof metadata, "updated_vnc_connection">,
+) {
+  const builder = new QueryBuilder();
+  // INSERT SELECT in Drizzle 0.45 requires every column; this partial insert
+  // preserves the schema-owned revision and timestamp defaults.
+  const created = builder.$with("created_vnc_credential", {
+    ...vncCredentialMetadata,
+  }).as(sql`
+    INSERT INTO ${vncCredentials} (
+      ${sql.identifier(vncCredentials.id.name)},
+      ${sql.identifier(vncCredentials.orgId.name)},
+      ${sql.identifier(vncCredentials.userId.name)},
+      ${sql.identifier(vncCredentials.name.name)},
+      ${sql.identifier(vncCredentials.username.name)},
+      ${sql.identifier(vncCredentials.authMethod.name)},
+      ${sql.identifier(vncCredentials.encryptedPassword.name)},
+      ${sql.identifier(vncCredentials.encryptedClientIdentity.name)}
+    )
+    SELECT ${updated.credentialId}, ${owner.orgId}, ${owner.userId},
+      ${create.name}, ${create.username}, ${create.authMethod},
+      ${create.encryptedPassword}, ${create.encryptedClientIdentity}
+    FROM ${updated}
+    RETURNING ${sql.join(Object.values(vncCredentialMetadata), sql`, `)}
+  `);
+  const exhausted = builder
+    .$with("exhausted_vnc_credential")
+    .as(builder.select({ total: count().as("total") }).from(created));
+  return {
+    created,
+    exhausted,
+    metadata: {
+      connection: {
+        id: updated.id,
+        displayName: updated.displayName,
+        host: updated.host,
+        port: updated.port,
+        transportType: updated.transportType,
+        sshConnectionId: updated.sshConnectionId,
+        x509ServerName: updated.x509ServerName,
+        credentialId: updated.credentialId,
+        authMethod: updated.authMethod,
+        securityType: updated.securityType,
+        trustMode: updated.trustMode,
+        caBundle: updated.caBundle,
+        rsaServerKeySha256: updated.rsaServerKeySha256,
+        generation: updated.generation,
+        createdAt: updated.createdAt,
+        updatedAt: updated.updatedAt,
+      },
+      credential: {
+        id: created.id,
+        name: created.name,
+        username: created.username,
+        authMethod: created.authMethod,
+        revision: created.revision,
+        createdAt: created.createdAt,
+        updatedAt: created.updatedAt,
+      },
+    },
+  };
+}
+
+function inlineVncConnectionResult(
+  row:
+    | { readonly connection: Metadata; readonly credential: CredentialMetadata }
+    | undefined,
+): VncResult<VncConnectionResponse> {
+  if (!row) {
+    throw new Error("VNC connection update returned no row");
+  }
+  return { ok: true, value: response(row.connection, row.credential) };
+}
+
 export const updateVncConnection$ = command(
   async (
     { set },
@@ -659,10 +750,9 @@ export const updateVncConnection$ = command(
     }
     const { host, security, preparedCredential } = prepared.value;
     const written = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0316; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
+      (async () => {
         const owner = args.owner;
-        const [current] = await tx
+        const [current] = await db
           .select(metadata)
           .from(vncConnections)
           .where(ownedConnection(owner, args.connectionId));
@@ -687,7 +777,7 @@ export const updateVncConnection$ = command(
         }
         const { newHost, newPort, transport, securityType } = resolved.value;
         if (transport.value.sshConnectionId !== null) {
-          const [ssh] = await tx
+          const [ssh] = await db
             .select({ id: sshConnections.id })
             .from(sshConnections)
             .where(ownedSshConnection(owner, transport.value.sshConnectionId));
@@ -697,16 +787,41 @@ export const updateVncConnection$ = command(
         }
         let credential: CredentialMetadata | undefined | null = null;
         if (preparedCredential?.create !== undefined) {
-          [credential] = await tx
-            .insert(vncCredentials)
-            .values({ ...owner, ...preparedCredential.create })
-            .returning(vncCredentialMetadata);
+          const create = preparedCredential.create;
+          const newId = newVncCredentialIdQuery();
+          const updated = db.$with("updated_vnc_connection").as(
+            db
+              .update(vncConnections)
+              .set({
+                displayName: args.body.displayName,
+                host: newHost,
+                port: newPort,
+                ...transport.value,
+                credentialId: newId.id,
+                authMethod: create.authMethod,
+                ...security?.value,
+                generation: sql`${vncConnections.generation} + 1`,
+                updatedAt: nowDate(),
+              })
+              .from(newId)
+              .where(ownedConnection(owner, args.connectionId))
+              .returning({ ...metadata }),
+          );
+          const parts = inlineVncCredentialParts(owner, create, updated);
+          const { created, exhausted } = parts;
+          const [written] = await db
+            .with(newId, updated, created, exhausted)
+            .select(parts.metadata)
+            .from(exhausted)
+            .innerJoin(updated, eq(exhausted.total, 1))
+            .innerJoin(created, eq(created.id, updated.credentialId));
+          return inlineVncConnectionResult(written);
         } else if (securityType !== "x509_none") {
           const credentialId = preparedCredential?.id ?? current.credentialId;
           if (credentialId === null) {
             return vncFailure("credentialNotFound");
           }
-          [credential] = await tx
+          [credential] = await db
             .select(vncCredentialMetadata)
             .from(vncCredentials)
             .where(ownedCredential(owner, credentialId));
@@ -717,7 +832,7 @@ export const updateVncConnection$ = command(
         if (!validSelectedCredentialProfile(credential, securityType)) {
           return vncFailure("profileMismatch");
         }
-        const [updated] = await tx
+        const [updated] = await db
           .update(vncConnections)
           .set({
             displayName: args.body.displayName,
@@ -735,7 +850,7 @@ export const updateVncConnection$ = command(
           throw new Error("VNC connection update returned no row");
         }
         return { ok: true as const, value: response(updated, credential) };
-      }),
+      })(),
       signal,
     );
     if (written.ok) {

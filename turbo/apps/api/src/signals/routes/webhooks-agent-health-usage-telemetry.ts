@@ -74,6 +74,17 @@ interface SandboxOperationDimensionInput {
   readonly dns_readiness_timing?: string;
   readonly storage_batch_guest_duration_ms?: number;
   readonly storage_batch_outer_residual_ms?: number;
+  readonly storage_batch_admission_ms?: number;
+  readonly storage_batch_request_setup_ms?: number;
+  readonly storage_batch_frame_builder_wait_ms?: number;
+  readonly storage_batch_frame_encode_ms?: number;
+  readonly storage_batch_writer_wait_ms?: number;
+  readonly storage_batch_frame_write_ms?: number;
+  readonly storage_batch_response_wait_ms?: number;
+  readonly storage_batch_result_decode_ms?: number;
+  readonly storage_batch_resource_log_ms?: number;
+  readonly storage_batch_host_timing?: string;
+  readonly storage_batch_payload_size_bucket?: string;
   readonly storage_batch_timing?: string;
   readonly runner_startup_path?: RunnerStartupPath;
   readonly sandbox_reuse_result?: SandboxReuseResult;
@@ -168,6 +179,45 @@ function storageBatchDimensions(
   op: SandboxOperationDimensionInput,
 ): Record<string, string | number> {
   return {
+    ...(op.storage_batch_admission_ms !== undefined
+      ? { storage_batch_admission_ms: op.storage_batch_admission_ms }
+      : {}),
+    ...(op.storage_batch_request_setup_ms !== undefined
+      ? { storage_batch_request_setup_ms: op.storage_batch_request_setup_ms }
+      : {}),
+    ...(op.storage_batch_frame_builder_wait_ms !== undefined
+      ? {
+          storage_batch_frame_builder_wait_ms:
+            op.storage_batch_frame_builder_wait_ms,
+        }
+      : {}),
+    ...(op.storage_batch_frame_encode_ms !== undefined
+      ? { storage_batch_frame_encode_ms: op.storage_batch_frame_encode_ms }
+      : {}),
+    ...(op.storage_batch_writer_wait_ms !== undefined
+      ? { storage_batch_writer_wait_ms: op.storage_batch_writer_wait_ms }
+      : {}),
+    ...(op.storage_batch_frame_write_ms !== undefined
+      ? { storage_batch_frame_write_ms: op.storage_batch_frame_write_ms }
+      : {}),
+    ...(op.storage_batch_response_wait_ms !== undefined
+      ? { storage_batch_response_wait_ms: op.storage_batch_response_wait_ms }
+      : {}),
+    ...(op.storage_batch_result_decode_ms !== undefined
+      ? { storage_batch_result_decode_ms: op.storage_batch_result_decode_ms }
+      : {}),
+    ...(op.storage_batch_resource_log_ms !== undefined
+      ? { storage_batch_resource_log_ms: op.storage_batch_resource_log_ms }
+      : {}),
+    ...(op.storage_batch_host_timing !== undefined
+      ? { storage_batch_host_timing: op.storage_batch_host_timing }
+      : {}),
+    ...(op.storage_batch_payload_size_bucket !== undefined
+      ? {
+          storage_batch_payload_size_bucket:
+            op.storage_batch_payload_size_bucket,
+        }
+      : {}),
     ...(op.storage_batch_guest_duration_ms !== undefined
       ? { storage_batch_guest_duration_ms: op.storage_batch_guest_duration_ms }
       : {}),
