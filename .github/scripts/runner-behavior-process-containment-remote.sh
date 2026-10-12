@@ -369,6 +369,48 @@ for action in sys.stdin:
         raise AssertionError("task runtime OOM did not occur")
     if action.strip() == "crash":
         os.kill(os.getpid(), signal.SIGKILL)
+    if action.strip() == "pending_task_exit":
+        # Hold a real nested task handoff across creator exit, then confirm it.
+        # The closed ancestor must prevent ACK, not merely clean up a running target.
+        pending = r"""
+import array, json, os, pathlib, socket, struct
+stream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+stream.settimeout(10)
+stream.connect("\0" + os.environ["OKOU_TOOL_CGROUP_PROCS_ENDPOINT"] + "-tasks")
+payload = b'\x01{"op":"launch"}'
+stream.sendall(struct.pack("!I", len(payload)) + payload)
+def receive(size):
+    value = b""
+    while len(value) < size:
+        part = stream.recv(size - len(value))
+        assert part, "nested admission closed before descriptor handoff"
+        value += part
+    return value
+reply = receive(struct.unpack("!I", receive(4))[0])
+assert reply[0] == 1
+task = json.loads(reply[1:])["task"]
+fds = array.array("i")
+marker, control, flags, _ = stream.recvmsg(1, socket.CMSG_SPACE(fds.itemsize))
+assert marker == b"T" and not flags & socket.MSG_CTRUNC
+for level, kind, data in control:
+    assert (level, kind) == (socket.SOL_SOCKET, socket.SCM_RIGHTS)
+    fds.frombytes(data)
+assert len(fds) == 1
+os.write(fds[0], b"0")
+os.close(fds[0])
+runtime = pathlib.Path("/proc/self/cgroup").read_text().strip()[3:]
+print(json.dumps(dict(task, runtime=runtime)), flush=True)
+with open(os.environ["TASK_PENDING_GATE"], "rb", buffering=0) as gate:
+    assert gate.read(1) == b"1"
+stream.sendall(b"C")
+if stream.recv(1) == b"A":
+    pathlib.Path(os.environ["TASK_PENDING_GATE"] + ".acked").touch()
+    raise AssertionError("exited creator admitted its nested task")
+"""
+        peer = subprocess.Popen(["python3", "-u", "-c", pending], stdout=subprocess.PIPE, text=True)
+        assert select.select([peer.stdout], [], [], 10)[0]
+        print(peer.stdout.readline().strip(), flush=True)
+        sys.exit(0)
     if action.strip() == "pending":
         # A real protocol peer observes the production broker's FD handoff but
         # withholds confirmation. Stop must fence and drain this admission;
@@ -547,6 +589,21 @@ for action in ("exit", "crash"):
     gone(child_path)
     gone(pathlib.Path(f"/proc/{child['pid']}"))
     gone(pathlib.Path(f"/proc/{child['detached']}"))
+
+gate = pathlib.Path("/tmp/vm0-process-containment/pending-task-gate")
+os.mkfifo(gate, 0o600)
+os.environ["TASK_PENDING_GATE"] = str(gate)
+ancestor = launch()
+unconfirmed = command(ancestor[0], "pending_task_exit")
+assert ancestor[0].wait(timeout=5) == 0
+unconfirmed_path = nested_path(ancestor[3], unconfirmed)
+with gate.open("wb", buffering=0) as release_gate:
+    release_gate.write(b"1")
+gone(ancestor[3])
+gone(unconfirmed_path)
+gone(pathlib.Path(f"/proc/{unconfirmed['pid']}"))
+assert not pathlib.Path(str(gate) + ".acked").exists()
+gate.unlink()
 
 failed, metadata = startup(["/no/such/managed-task-program"])
 assert metadata is not None and failed.wait(timeout=10) == 126
