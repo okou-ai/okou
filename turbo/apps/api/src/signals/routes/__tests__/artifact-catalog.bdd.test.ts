@@ -1,5 +1,6 @@
+import { prepareSessionHistoryBytes } from "./helpers/prepared-session-history";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 
 import { hostContract } from "@okouai/api-contracts/contracts/host";
@@ -146,9 +147,15 @@ async function completeChatRunOk(
   sandboxHeaders: { readonly authorization: string },
   lastEventSequence?: number,
 ): Promise<void> {
-  const historyHash = createHash("sha256")
-    .update(`bdd artifact catalog history ${runId}`)
-    .digest("hex");
+  const historyHash = await prepareSessionHistoryBytes(
+    context,
+    runId,
+    sandboxHeaders,
+    Buffer.from(`bdd artifact catalog history ${runId}`),
+    (restore) => {
+      onTestFinished(restore);
+    },
+  );
   await webhooks.requestAgentComplete(
     {
       runId,
