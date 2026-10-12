@@ -580,5 +580,8 @@ export async function fillStripeCheckout(page: Page): Promise<void> {
   await email.fill(emailAddress, { timeout: 5_000 });
   await expect(email).toHaveValue(emailAddress);
 
+  // Email edits can re-enable Link and its required phone field after the
+  // earlier opt-out. Reassert the intended checkout form state before payment.
+  await disableLinkSaveInfo(page);
   await checkoutSubmitLocator(page).click({ timeout: 30_000 });
 }
