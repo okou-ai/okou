@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { Command } from "commander";
 
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { requirePiParentSession } from "../../lib/pi-session-env";
+import { requirePiSession } from "../../lib/pi-session-env";
 import {
   inspectSubagent,
   killSubagent,
@@ -28,15 +28,13 @@ export function createSubagentCommand(
   options: SubagentLaunchOptions = {},
 ): Command {
   const command = new Command("subagent")
-    .description(
-      "Manage one layer of background Pi subagents in the current Run",
-    )
+    .description("Manage background Pi subagents in the current Run")
     .addHelpText(
       "after",
-      "\nPi parent sessions only. Completed tasks delete their temporary logs; write deliverables to the workspace. IDs may be reused after deletion. Steering is fire-and-forget (4096-byte frame limit).\n",
+      "\nPi sessions only. Stopping a task also stops its nested subagents and tools. Completed tasks delete their temporary logs; write deliverables to the workspace. IDs may be reused after deletion. Steering is fire-and-forget (4096-byte frame limit).\n",
     )
     .hook("preAction", () => {
-      return requirePiParentSession();
+      return requirePiSession();
     });
 
   command

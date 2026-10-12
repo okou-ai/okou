@@ -12,8 +12,12 @@ import {
   removeSubagentDirectory,
   validateSubagentDirectory,
 } from "./pi-subagents";
+import { guestTaskStartupSchema } from "./guest-task";
 
 const inputSchema = z.object({ prompt: z.string().trim().min(1) });
+const bootstrapSchema = inputSchema.extend({
+  handle: guestTaskStartupSchema.shape.handle,
+});
 
 export async function runPiSubagentLoop(
   directory: string,
@@ -32,6 +36,7 @@ export async function runPiSubagentLoop(
   let fifo: Awaited<ReturnType<typeof open>> | undefined;
   let inputTask: Promise<void> | undefined;
   const inputController = new AbortController();
+  let handle: string | undefined;
   try {
     fifo = await open(
       join(directory, "stdin"),
@@ -48,7 +53,9 @@ export async function runPiSubagentLoop(
         throw new Error("Subagent prompt exceeds 1 MiB.");
       }
     }
-    const { prompt } = inputSchema.parse(JSON.parse(bootstrap));
+    const input = bootstrapSchema.parse(JSON.parse(bootstrap));
+    handle = input.handle;
+    const { prompt } = input;
     const config = await piSandboxAgentConfigFromEnv();
     if (config.launchPayload.launchConfig.maintenance) {
       throw new Error("Memory maintenance cannot launch subagents.");
@@ -102,7 +109,7 @@ export async function runPiSubagentLoop(
     await fifo?.close();
     process.off("SIGTERM", stop);
     process.off("SIGINT", stop);
-    await removeSubagentDirectory(directory);
+    if (handle) await removeSubagentDirectory(directory, handle);
   }
 }
 

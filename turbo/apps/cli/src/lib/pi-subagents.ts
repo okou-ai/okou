@@ -1,20 +1,18 @@
-import { spawn, execFile } from "node:child_process";
+import { execFile, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { constants, closeSync, openSync } from "node:fs";
-import {
-  mkdir,
-  open,
-  readFile,
-  readdir,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, open, readFile, readdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as scheduleTimeout, clearTimeout } from "node:timers";
-import { setTimeout } from "node:timers/promises";
 import { promisify } from "node:util";
 
-import { PI_SESSION_ROLE_ENV, requirePiParentSession } from "./pi-session-env";
+import { PI_SESSION_ROLE_ENV, requirePiSession } from "./pi-session-env";
+import {
+  guestTaskStartupSchema,
+  launchGuestTask,
+  stopGuestTask,
+  type GuestTask,
+} from "./guest-task";
 
 const execFileAsync = promisify(execFile);
 const ID_PATTERN = /^[1-9]\d*$/u;
@@ -45,7 +43,7 @@ function environmentRunDirectory(): string {
 }
 
 function runDirectory(): string {
-  requirePiParentSession();
+  requirePiSession();
   return environmentRunDirectory();
 }
 
@@ -69,9 +67,106 @@ function taskDirectory(id: string): string {
 
 export async function removeSubagentDirectory(
   directory: string,
+  handle?: string,
 ): Promise<void> {
-  // Disposable task control/log files: deletion is intentionally best effort.
-  await rm(directory, { recursive: true, force: true }).catch(() => {});
+  // Serialize removers with a kernel lock, including when SIGKILL interrupts a
+  // child's cleanup. Check the UUID while locked so ID reuse stays safe. The
+  // short-lived helper belongs to this invocation; it is not a task runtime.
+  const cleanup = `
+const fs = require("node:fs");
+const path = require("node:path");
+const [directory, handle] = process.argv.slice(1);
+try {
+  if (handle && JSON.parse(fs.readFileSync(path.join(directory, "task"), "utf8")).handle !== handle) process.exit(0);
+  fs.rmSync(directory, { recursive: true, force: true });
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+}
+`;
+  await execFileAsync(
+    "flock",
+    [
+      "--no-fork",
+      "-x",
+      "-w",
+      "5",
+      join(dirname(directory), ".cleanup.lock"),
+      process.execPath,
+      "-e",
+      cleanup,
+      directory,
+      handle ?? "",
+    ],
+    { timeout: 5_000, killSignal: "SIGKILL" },
+  ).catch(() => {}); // Disposable control/log deletion is intentionally best effort.
+}
+
+async function readTask(directory: string) {
+  try {
+    return guestTaskStartupSchema.parse(
+      JSON.parse(await readFile(join(directory, "task"), "utf8")),
+    );
+  } catch (error) {
+    if (hasCode(error, "ENOENT")) return undefined;
+    throw error;
+  }
+}
+
+function observeReady(child: ChildProcess) {
+  let dispose = () => {};
+  let arm = () => {};
+  const ready = new Promise<void>((resolve, reject) => {
+    let timer: ReturnType<typeof scheduleTimeout> | undefined;
+    let settled = false;
+    const cleanup = () => {
+      settled = true;
+      clearTimeout(timer);
+      child.off("message", onMessage);
+      child.off("error", onError);
+      child.off("exit", onExit);
+    };
+    const onMessage = (message: unknown) => {
+      if (
+        typeof message === "object" &&
+        message !== null &&
+        "type" in message &&
+        message.type === "ready"
+      ) {
+        cleanup();
+        resolve();
+      }
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const onExit = () => {
+      return onError(
+        new Error("Subagent exited before startup. Check its stderr."),
+      );
+    };
+    child.on("message", onMessage);
+    child.once("error", onError);
+    child.once("exit", onExit);
+    dispose = cleanup;
+    arm = () => {
+      if (!settled)
+        timer = scheduleTimeout(() => {
+          return onError(new Error("Subagent startup timed out."));
+        }, 10_000);
+    };
+  });
+  // Readiness can fail while the independent native admission is still pending.
+  void ready.catch(() => {});
+  return {
+    ready,
+    dispose: () => {
+      return dispose();
+    },
+    arm: () => {
+      arm();
+    },
+  };
 }
 
 async function allocateDirectory(): Promise<{ id: string; directory: string }> {
@@ -100,21 +195,31 @@ export async function startSubagent(
 ): Promise<SubagentInspection> {
   if (!prompt.trim())
     throw new Error("A non-empty subagent prompt is required.");
-  if (Buffer.byteLength(JSON.stringify({ prompt })) > 1024 * 1024)
+  if (
+    Buffer.byteLength(
+      JSON.stringify({
+        prompt,
+        handle: "00000000-0000-0000-0000-000000000000",
+      }),
+    ) >
+    1024 * 1024
+  )
     throw new Error("Subagent prompt exceeds 1 MiB.");
   const entry = options.entry ?? process.argv[1];
   if (!entry)
     throw new Error("Cannot locate the current Okou CLI entry point.");
   const { id, directory } = await allocateDirectory();
   const descriptors: number[] = [];
-  let child: ReturnType<typeof spawn> | undefined;
+  let task: GuestTask | undefined;
+  let readiness: ReturnType<typeof observeReady> | undefined;
+  let bootstrap: Promise<void> | undefined;
   try {
     await execFileAsync("mkfifo", ["-m", "600", join(directory, "stdin")]);
     const stdout = openSync(join(directory, "stdout"), "wx", 0o600);
     descriptors.push(stdout);
     const stderr = openSync(join(directory, "stderr"), "wx", 0o600);
     descriptors.push(stderr);
-    child = spawn(
+    task = await launchGuestTask(
       process.execPath,
       [
         ...(options.execArgv ?? process.execArgv),
@@ -123,55 +228,32 @@ export async function startSubagent(
         directory,
       ],
       {
-        cwd: process.cwd(),
-        detached: true,
-        stdio: ["pipe", stdout, stderr, "ipc"],
+        stdout,
+        stderr,
         env: {
           ...process.env,
           [PI_SESSION_ROLE_ENV]: "child",
           OKOU_PI_SESSION_ID: randomUUID(),
           OKOU_PI_PREPARATION_TIMING: "0",
         },
+        onSpawn(child) {
+          readiness = observeReady(child);
+        },
       },
     );
-    const started = child;
-    const ready = new Promise<void>((resolve, reject) => {
-      const timer = scheduleTimeout(() => {
-        return onError(new Error("Subagent startup timed out."));
-      }, 10_000);
-      const cleanup = () => {
-        clearTimeout(timer);
-        started.off("message", onMessage);
-        started.off("error", onError);
-        started.off("exit", onExit);
-      };
-      const onMessage = (message: unknown) => {
-        if (
-          typeof message === "object" &&
-          message !== null &&
-          "type" in message &&
-          message.type === "ready"
-        ) {
-          cleanup();
-          resolve();
-        }
-      };
-      const onError = (error: Error) => {
-        cleanup();
-        reject(error);
-      };
-      const onExit = () => {
-        cleanup();
-        reject(new Error("Subagent exited before startup. Check its stderr."));
-      };
-      started.on("message", onMessage);
-      started.once("error", onError);
-      started.once("exit", onExit);
-    });
-    const bootstrap = async () => {
-      if (!started.pid) throw new Error("Subagent has no PID.");
-      await writeFile(join(directory, "pid"), `${started.pid}\n`, {
+    const admitted = task;
+    const started = admitted.child;
+    if (!readiness) throw new Error("Subagent readiness was not observed.");
+    readiness.arm();
+    const publishAndBootstrap = async () => {
+      await writeFile(
+        join(directory, "task"),
+        JSON.stringify({ handle: admitted.handle, pid: admitted.pid }),
+        { mode: 0o600, flag: "wx" },
+      );
+      await writeFile(join(directory, "pid"), `${admitted.pid}\n`, {
         mode: 0o600,
+        flag: "wx",
       });
       await new Promise<void>((done, fail) => {
         const stdin = started.stdin;
@@ -180,35 +262,53 @@ export async function startSubagent(
           return;
         }
         stdin.once("error", fail);
-        stdin.end(JSON.stringify({ prompt }), () => {
+        stdin.once("close", () => {
           stdin.off("error", fail);
-          done();
         });
+        stdin.end(
+          JSON.stringify({ prompt, handle: admitted.handle }),
+          (error?: Error | null) => {
+            if (error) fail(error);
+            else done();
+          },
+        );
       });
     };
-    await Promise.all([ready, bootstrap()]);
-    started.unref();
+    bootstrap = publishAndBootstrap();
+    await Promise.all([readiness.ready, bootstrap]);
+    task.detach();
     return {
       id,
-      pid: started.pid ?? 0,
+      pid: task.pid,
       running: true,
       stdout: join(directory, "stdout"),
       stderr: join(directory, "stderr"),
     };
   } catch (error) {
-    if (child?.pid) signalProcessGroup(child.pid, "SIGKILL");
-    await removeSubagentDirectory(directory);
+    if (task) {
+      try {
+        await task.stop();
+      } catch (cleanup) {
+        await bootstrap?.catch(() => {});
+        throw new AggregateError(
+          [error, cleanup],
+          "Subagent startup and Guest cleanup failed; its directory was retained.",
+        );
+      }
+    }
+    // Readiness may reject while publication or a pipe write is still pending.
+    // Native stop closes the child first; drain the writer before ID reuse.
+    await bootstrap?.catch(() => {});
+    await removeSubagentDirectory(directory, task?.handle);
     throw error;
   } finally {
+    readiness?.dispose();
     for (const fd of descriptors) closeSync(fd);
   }
 }
 
 interface ProcessIdentity {
   readonly pid: number;
-  readonly ppid: number;
-  readonly start: string;
-  readonly group: number;
 }
 
 async function processIdentity(
@@ -223,7 +323,7 @@ async function processIdentity(
     const state = fields[0];
     const start = fields[19];
     if (!state || !start || state === "Z") return undefined;
-    return { pid, ppid: Number(fields[1]), group: Number(fields[2]), start };
+    return { pid };
   } catch (error) {
     if (hasCode(error, "ENOENT") || hasCode(error, "ESRCH")) return undefined;
     throw error;
@@ -298,8 +398,10 @@ export async function listSubagents(): Promise<SubagentInspection[]> {
 }
 
 export async function steerSubagent(id: string, prompt: string): Promise<void> {
-  const item = await inspectSubagent(id);
-  if (!item.running) throw new Error(`Subagent ${id} is not running.`);
+  const directory = taskDirectory(id);
+  const task = await readTask(directory);
+  if (!task || !(await isOwnedProcess(task.pid, directory)))
+    throw new Error(`Subagent ${id} is not running.`);
   if (!prompt.trim())
     throw new Error("A non-empty steering prompt is required.");
   const frame = Buffer.from(`${JSON.stringify({ prompt })}\n`);
@@ -307,10 +409,14 @@ export async function steerSubagent(id: string, prompt: string): Promise<void> {
   if (frame.length > 4096)
     throw new Error("Steering input exceeds the 4096-byte FIFO frame limit.");
   const fifo = await open(
-    join(taskDirectory(id), "stdin"),
+    join(directory, "stdin"),
     constants.O_WRONLY | constants.O_NONBLOCK,
   );
   try {
+    // Pin the FIFO first, then verify its generation before the atomic write.
+    // A concurrent completion/ID reuse must not steer the replacement task.
+    if ((await readTask(directory))?.handle !== task.handle)
+      throw new Error(`Subagent ${id} changed while steering.`);
     const { bytesWritten } = await fifo.write(frame);
     if (bytesWritten !== frame.length)
       throw new Error("Could not write the complete steering frame.");
@@ -319,86 +425,11 @@ export async function steerSubagent(id: string, prompt: string): Promise<void> {
   }
 }
 
-function signalProcessGroup(pid: number, signal: NodeJS.Signals): void {
-  try {
-    process.kill(-pid, signal);
-  } catch (error) {
-    if (!hasCode(error, "ESRCH")) throw error;
-  }
-}
-
-async function descendants(
-  parent: ProcessIdentity,
-): Promise<ProcessIdentity[]> {
-  const identities = (
-    await Promise.all(
-      (await readdir("/proc"))
-        .filter((name) => {
-          return /^\d+$/u.test(name);
-        })
-        .map((name) => {
-          return processIdentity(Number(name));
-        }),
-    )
-  ).filter((item) => {
-    return item !== undefined;
-  });
-  const result = [parent];
-  for (let index = 0; index < result.length; index += 1) {
-    const current = result[index];
-    result.push(
-      ...identities.filter((item) => {
-        return item.ppid === current?.pid;
-      }),
-    );
-  }
-  return result;
-}
-
-async function sameProcess(identity: ProcessIdentity): Promise<boolean> {
-  return (await processIdentity(identity.pid))?.start === identity.start;
-}
-
 export async function killSubagent(id: string): Promise<void> {
-  const item = await inspectSubagent(id);
   const directory = taskDirectory(id);
-  const parent = await processIdentity(item.pid);
-  if (!item.running || !parent) {
-    await removeSubagentDirectory(directory);
-    return;
-  }
-  let owned = await descendants(parent);
-  if (await sameProcess(parent)) {
-    try {
-      process.kill(item.pid, "SIGTERM");
-    } catch (error) {
-      if (!hasCode(error, "ESRCH")) throw error;
-    }
-  }
-  const deadline = Date.now() + 5_000;
-  while ((await sameProcess(parent)) && Date.now() < deadline)
-    await setTimeout(25);
-  if (await sameProcess(parent))
-    owned = [...owned, ...(await descendants(parent))];
-  // Pi aborts its active Bash tools first. Also cover detached tool groups on escalation.
-  for (const identity of owned.reverse()) {
-    if (await sameProcess(identity)) {
-      if (identity.group === identity.pid)
-        signalProcessGroup(identity.pid, "SIGKILL");
-      try {
-        process.kill(identity.pid, "SIGKILL");
-      } catch (error) {
-        if (!hasCode(error, "ESRCH")) throw error;
-      }
-    }
-  }
-  const exitDeadline = Date.now() + 5_000;
-  while ((await Promise.all(owned.map(sameProcess))).some(Boolean)) {
-    if (Date.now() >= exitDeadline)
-      throw new Error(
-        `Subagent ${id} did not exit; its directory was retained.`,
-      );
-    await setTimeout(25);
-  }
-  await removeSubagentDirectory(directory);
+  const task = await readTask(directory);
+  if (!task)
+    throw new Error(`Subagent ${id} was not found or is still starting.`);
+  await stopGuestTask(task.handle);
+  await removeSubagentDirectory(directory, task.handle);
 }

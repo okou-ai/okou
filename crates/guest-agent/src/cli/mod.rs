@@ -587,7 +587,7 @@ fn build_pi_command_for_runtime(
     let loop_command = if requirement
         .min_cli_version
         .and_then(guest_contracts::okou_cli::parse_release_version)
-        .is_some_and(|version| version >= [9, 385, 0])
+        .is_some_and(|version| version >= [9, 387, 0])
     {
         "__main_loop__"
     } else {
@@ -2646,7 +2646,22 @@ mod tests {
         );
 
         runtime.pi_installed_cli_requirement = Cow::Borrowed(
-            r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.385.0","requiredPiSessionConstructionDigest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}"#,
+            r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.386.0","requiredPiSessionConstructionDigest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}"#,
+        );
+        let mut preceding = installed_okou_cli_for_test("9.386.1", "1.36.0");
+        preceding.session_construction =
+            Some(guest_contracts::okou_cli::OkouCliSessionConstruction {
+                digest: "d".repeat(64),
+            });
+        assert_eq!(
+            build_pi_command_for_runtime(&runtime, Some(&preceding))
+                .unwrap()
+                .last()
+                .unwrap(),
+            "__agent-loop"
+        );
+        runtime.pi_installed_cli_requirement = Cow::Borrowed(
+            r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.387.0","requiredPiSessionConstructionDigest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}"#,
         );
         assert_eq!(
             build_pi_command_for_runtime(&runtime, Some(&installed))
@@ -2655,7 +2670,7 @@ mod tests {
                 .unwrap(),
             "__main_loop__"
         );
-        let mut renamed = installed_okou_cli_for_test("9.385.0", "1.36.0");
+        let mut renamed = installed_okou_cli_for_test("9.387.0", "1.36.0");
         renamed.session_construction =
             Some(guest_contracts::okou_cli::OkouCliSessionConstruction {
                 digest: "d".repeat(64),

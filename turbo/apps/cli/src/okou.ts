@@ -16,7 +16,7 @@ import {
   startPiCliObservation,
 } from "./lib/pi-startup-timing.js";
 
-import { isPiParentSession } from "./lib/pi-session-env.js";
+import { isPiSession } from "./lib/pi-session-env.js";
 
 observePiCliEntryImports();
 
@@ -493,7 +493,7 @@ function shouldHideCommand(
   payload: SandboxTokenPayload | undefined,
 ): boolean {
   if (name.startsWith("__")) return true;
-  if (name === "subagent") return !isPiParentSession();
+  if (name === "subagent") return !isPiSession();
   if (!payload) return RUN_ONLY_COMMANDS.has(name);
   const requiredCap = COMMAND_CAPABILITY_MAP[name];
   if (requiredCap === undefined) return true;

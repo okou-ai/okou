@@ -238,8 +238,98 @@ parent_tool = sys.argv[2]
 main_pids = (main_runtime / "cgroup.procs").read_text()
 main_min = (main_runtime / "memory.min").read_text()
 
+nested_support = r'''
+import json, os, pathlib, select, subprocess
+children = {}
+def delegation_action(action):
+    if action == "nested":
+        r, w = os.pipe()
+        child = subprocess.Popen(["/usr/local/bin/guest-task-exec", "--report-fd", str(w), "--",
+                                  "python3", "-u", "-c", os.environ["TASK_NESTED_PROGRAM"]],
+                                 pass_fds=(w,), stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        os.close(w)
+        assert select.select([r], [], [], 10)[0], "nested admission timed out"
+        with os.fdopen(r) as report:
+            metadata = json.loads(report.readline())
+        assert metadata["pid"] == child.pid
+        assert select.select([child.stdout], [], [], 10)[0], "nested runtime not ready"
+        ready = json.loads(child.stdout.readline())
+        children[metadata["handle"]] = child
+        print(json.dumps({"nested": dict(metadata, **ready)}), flush=True)
+        return True
+    if action.startswith("child "):
+        _, handle, command = action.split(" ", 2)
+        child = children[handle]
+        child.stdin.write(command + "\n")
+        child.stdin.flush()
+        assert select.select([child.stdout], [], [], 15)[0], "nested command timed out"
+        print(child.stdout.readline().strip(), flush=True)
+        return True
+    if action.startswith("stop "):
+        handle = action.split(" ", 1)[1]
+        stopped = subprocess.run(["/usr/local/bin/guest-task-exec", "stop", handle],
+                                 capture_output=True, timeout=20)
+        if stopped.returncode == 0 and handle in children:
+            children[handle].wait(timeout=5)
+        print(json.dumps({"stop_code": stopped.returncode}), flush=True)
+        return True
+    return False
+'''
+
+nested_program = r'''
+import json, os, pathlib, signal, subprocess, sys
+exec(os.environ["TASK_NESTED_SUPPORT"])
+relative = pathlib.Path("/proc/self/cgroup").read_text().strip().removeprefix("0::")
+assert relative.endswith("/runtime") and relative.count("/tools/task-") >= 2
+assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "0"
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+detached = subprocess.Popen(["/usr/bin/setsid", "/bin/bash", "-c", "trap '' TERM; while :; do sleep 1; done"],
+                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+lines = subprocess.check_output(["/usr/local/bin/guest-tool-exec", "-c", "cat /proc/self/cgroup; cat /proc/self/oom_score_adj"],
+                                text=True, timeout=10).splitlines()
+assert lines[0].startswith("0::" + relative.removesuffix("/runtime") + "/tools/tool-")
+assert lines[1] == "1000"
+print(json.dumps({"runtime": relative, "tool": lines[0][3:], "detached": detached.pid}), flush=True)
+for action in sys.stdin:
+    action = action.strip()
+    if delegation_action(action):
+        continue
+    if action == "exit":
+        sys.exit(0)
+    if action == "runtime_oom":
+        leaf = "/sys/fs/cgroup" + relative
+        subprocess.run(["sudo", "sh", "-c", 'echo 50331648 > "$1/memory.max"', "sh", leaf], check=True)
+        print(json.dumps({"nested_runtime_oom_armed": True}), flush=True)
+        a = bytearray(134217728)
+        raise AssertionError("nested runtime OOM did not occur")
+    if action == "pending":
+        pending = r"""
+import array, json, os, socket
+stream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+stream.settimeout(15)
+stream.connect("\0" + os.environ["OKOU_TOOL_CGROUP_PROCS_ENDPOINT"])
+fds = array.array("i")
+marker, control, flags, _ = stream.recvmsg(1, socket.CMSG_SPACE(fds.itemsize))
+assert marker == b"T" and not flags & socket.MSG_CTRUNC
+for level, kind, data in control:
+    assert (level, kind) == (socket.SOL_SOCKET, socket.SCM_RIGHTS)
+    fds.frombytes(data)
+assert len(fds) == 1
+print(json.dumps({"placement_pending": True}), flush=True)
+assert stream.recv(1) == b"", "closed ancestor allowed a tool ACK"
+os.close(fds[0])
+"""
+        peer = subprocess.Popen(["python3", "-u", "-c", pending], stdout=subprocess.PIPE, text=True)
+        assert json.loads(peer.stdout.readline())["placement_pending"]
+        print(json.dumps({"placement_pending": True}), flush=True)
+        assert peer.wait(timeout=10) == 0
+'''
+os.environ["TASK_NESTED_SUPPORT"] = nested_support
+os.environ["TASK_NESTED_PROGRAM"] = nested_program
+
 runtime_program = r'''
 import errno, json, os, pathlib, signal, subprocess, sys
+exec(os.environ["TASK_NESTED_SUPPORT"])
 assert os.geteuid() != 0
 assert sys.argv[1:] == ["ordinary task arg", ""]
 assert os.environ["TASK_SENTINEL"] == "preserved"
@@ -262,6 +352,8 @@ assert lines[0].startswith("0::" + relative.removesuffix("/runtime") + "/tools/t
 assert lines[1] == "1000"
 print(json.dumps({"runtime": relative, "tool": lines[0][3:], "detached": detached.pid}), flush=True)
 for action in sys.stdin:
+    if delegation_action(action.strip()):
+        continue
     if action.strip() == "exit":
         sys.exit(0)
     if action.strip() == "oom":
@@ -275,6 +367,8 @@ for action in sys.stdin:
         subprocess.run(["sudo", "sh", "-c", 'echo 50331648 > "$1/memory.max"', "sh", leaf], check=True)
         a = bytearray(134217728)
         raise AssertionError("task runtime OOM did not occur")
+    if action.strip() == "crash":
+        os.kill(os.getpid(), signal.SIGKILL)
     if action.strip() == "pending":
         # A real protocol peer observes the production broker's FD handoff but
         # withholds confirmation. Stop must fence and drain this admission;
@@ -361,7 +455,25 @@ def stop(task):
     process.wait(timeout=5)
     gone(path)
     stale = subprocess.run([helper, "stop", metadata["handle"]], timeout=10, capture_output=True)
-    assert stale.returncode == 125, "retired handle was accepted"
+    assert stale.returncode == 0, "proven cleanup was not idempotent"
+    gone(pathlib.Path(f"/proc/{ready['detached']}"))
+
+
+def command(process, action):
+    process.stdin.write(action + "\n")
+    process.stdin.flush()
+    return read_json(process)
+
+
+def nested_path(parent, child):
+    path = pathlib.Path("/sys/fs/cgroup" + child["runtime"]).parent
+    assert path == parent / "tools" / ("task-" + child["handle"])
+    for node, oom_group in [(path, "0"), (path / "runtime", "1"), (path / "tools", "0")]:
+        assert (node / "memory.oom.group").read_text().strip() == oom_group
+        assert (node / "memory.min").read_text().strip() == "0"
+    assert not (path / "cgroup.procs").read_text().strip()
+    assert not (path / "tools/cgroup.procs").read_text().strip()
+    return path
 
 
 a, b = launch(), launch()  # Deliberately one starter Bash, not two tool owners.
@@ -370,7 +482,33 @@ a[0].stdin.write("oom\n")
 a[0].stdin.flush()
 assert read_json(a[0])["tool_oom_survived"]
 assert a[0].poll() is None and b[0].poll() is None
+n = command(a[0], "nested")["nested"]
+np = nested_path(a[3], n)
+g = command(a[0], "child " + n["handle"] + " nested")["nested"]
+gp = nested_path(np, g)
+assert command(a[0], "stop " + b[1]["handle"])["stop_code"] == 125
+assert b[0].poll() is None
+assert command(a[0], "child " + n["handle"] + " stop " + g["handle"])["stop_code"] == 0
+gone(gp)
+gone(pathlib.Path(f"/proc/{g['detached']}"))
+assert pathlib.Path(f"/proc/{n['pid']}").exists() and a[0].poll() is None
+g2 = command(a[0], "child " + n["handle"] + " nested")["nested"]
+gp2 = nested_path(np, g2)
+assert g2["handle"] != g["handle"]
+assert command(a[0], "child " + n["handle"] + " stop " + g["handle"])["stop_code"] == 0
+assert pathlib.Path(f"/proc/{g2['pid']}").exists(), "retired handle stopped a replacement"
+assert command(a[0], "child " + n["handle"] + " child " + g2["handle"] + " runtime_oom")["nested_runtime_oom_armed"]
+gone(gp2)
+gone(pathlib.Path(f"/proc/{g2['detached']}"))
+assert a[0].poll() is None and pathlib.Path(f"/proc/{n['pid']}").exists()
+g3 = command(a[0], "child " + n["handle"] + " nested")["nested"]
+gp3 = nested_path(np, g3)
+assert command(a[0], "child " + n["handle"] + " child " + g3["handle"] + " pending")["placement_pending"]
 stop(a)  # Runtime/descendant ignore TERM: task-only cgroup.kill is required.
+for child in (n, g3):
+    gone(pathlib.Path(f"/proc/{child['pid']}"))
+    gone(pathlib.Path(f"/proc/{child['detached']}"))
+gone(gp3)
 assert b[0].poll() is None
 assert (main_runtime / "cgroup.procs").read_text() == main_pids
 assert (main_runtime / "memory.min").read_text() == main_min
@@ -381,10 +519,14 @@ assert b[0].wait(timeout=5) == 0
 gone(b[3])  # The runtime socket is long closed; pidfd lifetime owns descendants.
 
 c = launch()
+cn = command(c[0], "nested")["nested"]
+cnp = nested_path(c[3], cn)
 c[0].stdin.write("runtime_oom\n")
 c[0].stdin.flush()
 assert c[0].wait(timeout=10) in (-9, 137)
 gone(c[3])
+gone(cnp)
+gone(pathlib.Path(f"/proc/{cn['pid']}"))
 assert (main_runtime / "cgroup.procs").read_text() == main_pids
 
 pending = launch()
@@ -393,6 +535,18 @@ pending[0].stdin.flush()
 assert read_json(pending[0])["placement_pending"]
 stop(pending)
 assert read_json(pending[0])["placement_drained"]
+
+for action in ("exit", "crash"):
+    ancestor = launch()
+    child = command(ancestor[0], "nested")["nested"]
+    child_path = nested_path(ancestor[3], child)
+    ancestor[0].stdin.write(action + "\n")
+    ancestor[0].stdin.flush()
+    assert ancestor[0].wait(timeout=5) == (0 if action == "exit" else -9)
+    gone(ancestor[3])
+    gone(child_path)
+    gone(pathlib.Path(f"/proc/{child['pid']}"))
+    gone(pathlib.Path(f"/proc/{child['detached']}"))
 
 failed, metadata = startup(["/no/such/managed-task-program"])
 assert metadata is not None and failed.wait(timeout=10) == 126
@@ -418,7 +572,7 @@ out, err = p.communicate(timeout=10)
 with os.fdopen(r) as report:
     assert report.read() == ""
 assert p.returncode == 125 and out == ""
-assert "task caller is not in the owning" in err
+assert "task caller UID mismatch" in err
 '''
 subprocess.run(["sudo", "--preserve-env=OKOU_TOOL_CGROUP_PROCS_ENDPOINT", "python3", "-c", root_probe], check=True, timeout=15)
 
@@ -505,6 +659,143 @@ for state, task_path, pid in batch_tasks:
     gone(task_path)
     gone(pathlib.Path(f"/proc/{pid}"))
 print("image-batch-native-task-consumer-passed", flush=True)
+
+# The actual packaged Pi loop, model/session factories and Bash wrapper run
+# against a local provider fixture. A creates B through its real scoped Bash;
+# an unrelated sibling remains alive when A's complete subtree is stopped.
+import http.server
+import shlex
+import threading
+import uuid
+
+pi_root = pathlib.Path("/tmp/vm0-process-containment/pi-subagents")
+pi_root.mkdir()
+pi_launch = pi_root / "launch.json"
+pi_launch.write_text(json.dumps({"schemaVersion": 1, "appendSystemPrompt": "Native Guest subagent fixture",
+                               "launchConfig": {"schemaVersion": 2}}))
+labels = ("NATIVE_TASK_A", "NATIVE_TASK_B", "NATIVE_TASK_C")
+requests = {label: 0 for label in labels}
+active = {label: threading.Event() for label in labels}
+release = {label: threading.Event() for label in labels}
+failures = []
+
+
+class PiProvider(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *_args):
+        pass
+
+    def do_POST(self):
+        try:
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            assert self.headers["Authorization"] == "Bearer synthetic-subagent-key"
+            assert body["model"] == "deepseek/deepseek-v4.1-flash"
+            assert body["reasoning"]["effort"] == "high"
+            initial = next(message for message in body["messages"] if message["role"] == "user")
+            label = next(label for label in labels if label in json.dumps(initial["content"]))
+            requests[label] += 1
+            if requests[label] == 1:
+                observed = pi_root / (label + ".tool.json")
+                source = "import json,pathlib; print(json.dumps({'cgroup':pathlib.Path('/proc/self/cgroup').read_text().strip()[3:], 'score':pathlib.Path('/proc/self/oom_score_adj').read_text().strip()}))"
+                command = "python3 -c " + shlex.quote(source) + " > " + shlex.quote(str(observed))
+                if label == "NATIVE_TASK_A":
+                    command += "; " + shlex.quote(cli) + " subagent start NATIVE_TASK_B > " + shlex.quote(str(pi_root / "nested-start"))
+                delta = {"role": "assistant", "tool_calls": [{"index": 0, "id": "native_tool", "type": "function",
+                          "function": {"name": "bash", "arguments": json.dumps({"command": command})}}]}
+                finish = "tool_calls"
+            else:
+                active[label].set()
+                assert release[label].wait(45), "native provider fixture did not finish"
+                delta = {"role": "assistant", "content": "Native fixture complete"}
+                finish = "stop"
+            events = [
+                {"id": "native-fixture", "object": "chat.completion.chunk", "created": 1,
+                 "model": body["model"], "choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+                {"id": "native-fixture", "object": "chat.completion.chunk", "created": 1,
+                 "model": body["model"], "choices": [{"index": 0, "delta": {}, "finish_reason": finish}],
+                 "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8}},
+            ]
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(("".join("data: " + json.dumps(event) + "\n\n" for event in events) + "data: [DONE]\n\n").encode())
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # Expected when native stop cancels an in-flight model request.
+        except Exception as error:
+            failures.append(repr(error))
+            self.close_connection = True
+
+
+provider = http.server.ThreadingHTTPServer(("127.0.0.1", 0), PiProvider)
+threading.Thread(target=provider.serve_forever, daemon=True).start()
+pi_env = dict(os.environ, OKOU_RUN_ID=str(uuid.uuid4()), OKOU_PI_SESSION_ROLE="parent",
+              OKOU_PI_SESSION_ID="native-parent", OKOU_PI_RUNTIME_ROOT=str(pi_root),
+              OKOU_PI_LAUNCH_PAYLOAD_FILE=str(pi_launch), OKOU_PI_EFFECTIVE_THINKING_LEVEL="high",
+              OPENAI_API_KEY="synthetic-subagent-key", OKOU_TOKEN="synthetic-subagent-token", SENTRY_DSN="")
+pi_env["OKOU_PI_MODEL_CONFIG"] = json.dumps({
+    "schemaVersion": 5, "provider": "openrouter", "baseUrl": f"http://127.0.0.1:{provider.server_port}/v1",
+    "model": "deepseek/deepseek-v4.1-flash", "dialect": "openai-completions", "transport": "sse",
+    "thinkingLevel": "low", "credentialBindings": [{"kind": "api-key", "environment": "OPENAI_API_KEY",
+                                                    "secretName": "OPENROUTER_API_KEY"}]})
+
+
+def pi_command(*args):
+    result = subprocess.run([cli, "subagent", *args], env=pi_env, capture_output=True, text=True, timeout=40)
+    assert result.returncode == 0, (args, result.stdout, result.stderr)
+    return result.stdout
+
+
+def decode_inspection(text):
+    return json.JSONDecoder().raw_decode(text)[0]
+
+
+def pi_task(item):
+    registry = pathlib.Path(item["stdout"]).parent
+    native = json.loads((registry / "task").read_text())
+    assert native["pid"] == item["pid"]
+    relative = pathlib.Path(f"/proc/{item['pid']}/cgroup").read_text().strip()[3:]
+    assert relative.endswith("/task-" + native["handle"] + "/runtime")
+    assert pathlib.Path(f"/proc/{item['pid']}/oom_score_adj").read_text().strip() == "0"
+    return registry, pathlib.Path("/sys/fs/cgroup" + relative).parent
+
+
+try:
+    pa = decode_inspection(pi_command("start", "NATIVE_TASK_A"))
+    pc = decode_inspection(pi_command("start", "NATIVE_TASK_C"))
+    for label in labels:
+        assert active[label].wait(15), (label, failures)
+    pb = decode_inspection((pi_root / "nested-start").read_text())
+    ra, ca = pi_task(pa)
+    rb, cb = pi_task(pb)
+    rc, cc = pi_task(pc)
+    assert ca.parent == cc.parent == main_runtime.parent / "tools"
+    assert cb.parent == ca / "tools", "Pi child escaped its creator's subtree"
+    for item, path, label in [(pa, ca, "NATIVE_TASK_A"), (pb, cb, "NATIVE_TASK_B"), (pc, cc, "NATIVE_TASK_C")]:
+        tool = json.loads((pi_root / (label + ".tool.json")).read_text())
+        assert pathlib.Path("/sys/fs/cgroup" + tool["cgroup"]).parent == path / "tools"
+        assert tool["score"] == "1000"
+        assert item["id"] in pi_command("list")
+        assert decode_inspection(pi_command("inspect", item["id"]))["running"]
+    pi_command("steer", "-p", pa["id"], "Native steering before cancellation")
+    pi_command("kill", pa["id"])
+    for item, path in [(pa, ca), (pb, cb)]:
+        gone(path)
+        gone(pathlib.Path(f"/proc/{item['pid']}"))
+    assert pathlib.Path(f"/proc/{pc['pid']}").exists() and cc.exists()
+    # SIGKILL may prevent best-effort Pi registry removal; the saved UUID still
+    # supports safe cleanup after the native ancestor stop has retired B.
+    if rb.exists():
+        pi_command("kill", pb["id"])
+    release["NATIVE_TASK_C"].set()
+    gone(rc)
+    gone(cc)
+    assert "No running subagents" in pi_command("list")
+    assert not failures, failures
+finally:
+    for event in release.values():
+        event.set()
+    provider.shutdown()
+    provider.server_close()
+print("pi-subagent-native-nested-consumer-passed", flush=True)
 
 assert not list((main_runtime.parent / "tools").glob("task-*"))
 assert (main_runtime / "cgroup.procs").read_text() == main_pids

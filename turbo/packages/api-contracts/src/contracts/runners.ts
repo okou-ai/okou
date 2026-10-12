@@ -88,11 +88,11 @@ export const RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX = 8;
  * compatibility. The API records it in every Pi run's installed-CLI
  * requirement; a rootfs whose installed CLI is older keeps launching the
  * commit-addressed package. Raise it whenever the launch payload changes in a
- * way an older CLI rejects. Version 9.385.0 introduces the hidden main-loop
+ * way an older CLI rejects. Version 9.387.0 introduces the hidden main-loop
  * entry and Pi subagent commands. Older captured contexts retain the legacy
  * entry; newer contexts must not launch a CLI that lacks the renamed entry.
  */
-export const PI_SANDBOX_INSTALLED_CLI_MIN_VERSION = "9.385.0";
+export const PI_SANDBOX_INSTALLED_CLI_MIN_VERSION = "9.387.0";
 /** Release versions are exact `MAJOR.MINOR.PATCH`; nothing here is a range. */
 export const releaseVersionSchema = z
   .string()

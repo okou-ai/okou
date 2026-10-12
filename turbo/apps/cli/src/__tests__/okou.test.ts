@@ -140,17 +140,17 @@ describe("Pi-only CLI visibility", () => {
   });
 
   it.each(["parent", "child", ""])(
-    "shows subagent only for a Pi parent (%s)",
+    "shows subagent for Pi sessions (%s)",
     (role) => {
       vi.stubEnv("OKOU_PI_SESSION_ROLE", role);
       vi.stubEnv("OKOU_RUN_ID", "test-run");
       const cli = new Command("okou");
       registerCommands(cli);
       expect(cli.helpInformation().includes("subagent")).toBe(
-        role === "parent",
+        role === "parent" || role === "child",
       );
       expect(buildHelpText().includes("okou subagent --help")).toBe(
-        role === "parent",
+        role === "parent" || role === "child",
       );
       expect(cli.helpInformation()).not.toContain("__main_loop__");
       expect(cli.helpInformation()).not.toContain("__subagent_loop__");

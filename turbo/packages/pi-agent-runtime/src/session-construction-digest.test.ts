@@ -34,8 +34,10 @@ describe("Pi session construction digest", () => {
       return profile.name === "child-no-memory";
     });
     expect(parent?.systemPrompt).toContain("okou subagent start");
-    expect(child?.systemPrompt).not.toContain("okou subagent start");
-    expect(child?.systemPrompt).toContain("Nested delegation is disabled");
+    expect(child?.systemPrompt).toContain("okou subagent start");
+    expect(child?.systemPrompt).toContain(
+      "nested subagents belong to your task",
+    );
   });
 
   it("covers verified limit corrections as well as prompt and tool profiles", async () => {

@@ -12,10 +12,45 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { once } from "node:events";
+import { type SpawnOptions } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { createSubagentCommand } from "../index";
+
+const helper = vi.hoisted(() => {
+  return { root: "", mode: "normal" };
+});
+vi.mock("node:child_process", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:child_process")>();
+  return {
+    ...original,
+    spawn(file: string, args: string[], options: SpawnOptions) {
+      expect(file).toBe("/usr/local/bin/guest-task-exec");
+      if (helper.mode === "missing-helper")
+        return original.spawn(
+          join(helper.root, "missing-helper"),
+          args,
+          options,
+        );
+      return original.spawn(
+        "python3",
+        [
+          fileURLToPath(
+            new URL(
+              "../../../test/fixtures/guest-task-helper.py",
+              import.meta.url,
+            ),
+          ),
+          helper.mode,
+          helper.root,
+          ...args,
+        ],
+        options,
+      );
+    },
+  };
+});
 
 const fixture = fileURLToPath(
   new URL("../../../test/fixtures/pi-subagent-child.ts", import.meta.url),
@@ -176,6 +211,8 @@ describe("okou subagent", () => {
   beforeEach(async () => {
     entry = fixture;
     root = await mkdtemp(join(tmpdir(), "okou-subagent-"));
+    helper.root = join(root, "guest-tasks");
+    helper.mode = "normal";
     requests = [];
     pending = [];
     server = createServer((request, response) => {
@@ -239,6 +276,7 @@ describe("okou subagent", () => {
   });
 
   afterEach(async () => {
+    helper.mode = "normal";
     vi.stubEnv("OKOU_PI_SESSION_ROLE", "parent");
     vi.stubEnv("OKOU_RUN_ID", "run-one");
     const active = (
@@ -308,6 +346,7 @@ describe("okou subagent", () => {
       "stderr",
       "stdin",
       "stdout",
+      "task",
     ]);
     const providerA = await nextRequest();
     const providerB = await nextRequest();
@@ -320,7 +359,7 @@ describe("okou subagent", () => {
       expect(JSON.stringify(request.body)).toContain(
         "Inherited task constraints",
       );
-      expect(JSON.stringify(request.body)).not.toContain("okou subagent start");
+      expect(JSON.stringify(request.body)).toContain("okou subagent start");
     }
     expect(JSON.stringify(providerA.body.messages)).not.toBe(
       JSON.stringify(providerB.body.messages),
@@ -371,7 +410,7 @@ describe("okou subagent", () => {
     expect(await readFile(artifact, "utf8")).toBe("independent result");
   });
 
-  it("escalates an ignored SIGTERM and stops detached tool processes before deleting the directory", async () => {
+  it("uses the saved Guest handle to stop a runtime with a detached tool before deleting the directory", async () => {
     entry = fileURLToPath(
       new URL(
         "../../../test/fixtures/pi-subagent-unresponsive.ts",
@@ -394,7 +433,11 @@ describe("okou subagent", () => {
     });
     if (stat)
       expect(stat.slice(stat.lastIndexOf(")") + 2).startsWith("Z ")).toBe(true);
-  }, 15_000); // Exercises the real five-second SIGTERM escalation deadline.
+    const admitted = (await readdir(helper.root)).filter((name) => {
+      return !name.endsWith(".stopped");
+    });
+    expect(await readdir(helper.root)).toContain(`${admitted[0]}.stopped`);
+  }); // Kernel escalation and reaping are exercised by the native Guest lane.
 
   it("cancels a Pi child immediately after startup without retaining its directory", async () => {
     const first = inspectionSchema.parse(
@@ -435,13 +478,113 @@ describe("okou subagent", () => {
     await waitForRemoval(dirname(item.stdout));
   });
 
-  it("rejects nested delegation and non-Pi sessions", async () => {
+  it("allows child Pi sessions to delegate and rejects non-Pi sessions", async () => {
     vi.stubEnv("OKOU_PI_SESSION_ROLE", "child");
-    await expect(run("start", "nested task")).rejects.toThrow(
-      "parent Pi session",
+    const child = inspectionSchema.parse(
+      JSON.parse((await run("start", "nested task"))[0] ?? ""),
     );
+    expect(child.running).toBe(true);
     vi.stubEnv("OKOU_PI_SESSION_ROLE", "");
-    await expect(run("list")).rejects.toThrow("parent Pi session");
+    await expect(run("list")).rejects.toThrow("Pi session");
+  });
+
+  it.each([
+    "wrong-pid",
+    "invalid-handle",
+    "missing-report",
+    "oversized-report",
+    "readiness-failure",
+    "publication-failure",
+    "missing-helper",
+  ])(
+    "cleans a failed %s startup without publishing a running subagent",
+    async (mode) => {
+      helper.mode = mode;
+      const exit = vi.spyOn(process, "exit").mockImplementation(() => {
+        throw new Error("command failed");
+      });
+      try {
+        await expect(run("start", "failed startup")).rejects.toThrow(
+          "command failed",
+        );
+        expect((await run("list")).join("\n")).toContain(
+          "No running subagents",
+        );
+        await expect(access(join(root, "run-one", "1"))).rejects.toThrow();
+      } finally {
+        exit.mockRestore();
+      }
+    },
+  );
+
+  it("retains the registry when Guest stop fails, then permits a successful retry", async () => {
+    const item = inspectionSchema.parse(
+      JSON.parse((await run("start", "active task"))[0] ?? ""),
+    );
+    helper.mode = "stop-failure";
+    const exit = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("command failed");
+    });
+    try {
+      await expect(run("kill", item.id)).rejects.toThrow("command failed");
+      expect(
+        await readFile(join(dirname(item.stdout), "task"), "utf8"),
+      ).toContain(String(item.pid));
+      expect((await run("inspect", item.id)).join("\n")).toContain(
+        '"running": true',
+      );
+    } finally {
+      exit.mockRestore();
+      helper.mode = "normal";
+    }
+    await run("kill", item.id);
+    await expect(access(dirname(item.stdout))).rejects.toThrow();
+  });
+
+  it("retains diagnostic state if startup rollback cannot prove native cleanup", async () => {
+    helper.mode = "readiness-and-stop-failure";
+    const exit = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("command failed");
+    });
+    try {
+      await expect(run("start", "failed rollback")).rejects.toThrow(
+        "command failed",
+      );
+      expect(errorLog.mock.calls.flat().join("\n")).toContain(
+        "its directory was retained",
+      );
+      expect(
+        await readFile(join(root, "run-one", "1", "task"), "utf8"),
+      ).toContain('"handle"');
+    } finally {
+      exit.mockRestore();
+    }
+  });
+
+  it("preserves a replacement when an ID is reused during native stop", async () => {
+    entry = fileURLToPath(
+      new URL(
+        "../../../test/fixtures/pi-subagent-responsive.ts",
+        import.meta.url,
+      ),
+    );
+    const first = inspectionSchema.parse(
+      JSON.parse((await run("start", "original task"))[0] ?? ""),
+    );
+    const native = await readFile(join(dirname(first.stdout), "task"), "utf8");
+    helper.mode = "replace-on-stop";
+    await run("kill", first.id);
+    helper.mode = "normal";
+    const replacement = inspectionSchema.parse(
+      JSON.parse((await run("inspect", first.id))[0] ?? ""),
+    );
+    expect(replacement.pid).not.toBe(first.pid);
+    expect(replacement.running).toBe(true);
+    expect(
+      await readFile(join(dirname(first.stdout), "task"), "utf8"),
+    ).not.toBe(native);
+    await run("kill", replacement.id);
+    await expect(access(dirname(first.stdout))).rejects.toThrow();
   });
 
   it("validates prompt exclusivity and path-safe IDs through Commander", async () => {
