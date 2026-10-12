@@ -3144,7 +3144,6 @@
         "unshared": "Non condiviso con nessun agente"
       },
       "filterWith": "Filtro: {{category}}",
-      "iconUnavailable": "Icona del connettore non disponibile",
       "noConnectorsAlt": "Nessun connettore",
       "otherCategory": "Altro",
       "remoteAccess": "Accesso remoto",

@@ -484,7 +484,7 @@ describe("Discord account preferences through private controls", () => {
       );
       const message = await discord.send(commandPayload(sender, "connect"));
 
-      expect(message.content).toContain("already has a verified connection");
+      expect(message.content).toContain("You are already connected to Okou.");
       expect(message.components).toStrictEqual([]);
     },
   );

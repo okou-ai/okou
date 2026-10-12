@@ -50,14 +50,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Manage Tailscale networks and bind or rebind SSH hosts.",
     enabled: false,
   },
-  [FeatureSwitchKey.StablePreviewFullscreen]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Stable preview fullscreen",
-    description:
-      "Keep thread sidebars in a shell-owned host and expand artifact previews without moving DOM nodes.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",
     displayName: "Artifact sidebar preview",
@@ -365,13 +357,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Let users archive chats and hide archived chats from the sidebar unless they are unread or explicitly shown.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatRunningIndicatorWave]: {
-    maintainer: "liangyou@okou.ai",
-    description:
-      "Make running chat indicators breathe in a top-to-bottom wave through the sidebar.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

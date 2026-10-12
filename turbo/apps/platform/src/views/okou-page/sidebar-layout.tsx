@@ -1,6 +1,4 @@
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
 import {
   activeThreadSidebar$,
@@ -407,7 +405,7 @@ function MobileSidebarMount() {
   );
 }
 
-function StableChatWorkspace({
+function ChatWorkspace({
   children,
   beside,
   header,
@@ -449,8 +447,6 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const pwaNavigation = useGet(pwaNavigationEnabled$);
   const chatListVisible = useGet(pwaChatListVisible$);
   const activeRoute = useGet(activeRoute$);
-  const stableHost =
-    useGet(featureSwitch$)[FeatureSwitchKey.StablePreviewFullscreen];
 
   if (activeRoute === "me" && !pwaNavigation) {
     return <NotFoundPage />;
@@ -509,15 +505,15 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       ) : isDesktop ? (
         <Sidebar isDesktop />
       ) : null}
-      {stableHost && activeRoute === "chat" ? (
-        <StableChatWorkspace
+      {activeRoute === "chat" ? (
+        <ChatWorkspace
           beside={beside}
           header={workspaceHeader}
           footer={workspaceFooter}
           pwaNavigation={pwaNavigation}
         >
           {workspaceContent}
-        </StableChatWorkspace>
+        </ChatWorkspace>
       ) : (
         <WorkspaceInset beside={beside}>
           {workspaceHeader}

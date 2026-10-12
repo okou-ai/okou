@@ -2,7 +2,7 @@ import { discordGatewayEnvelopeSchema } from "@okouai/api-contracts/contracts/di
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { command } from "ccstate";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, count, eq, gt, gte, isNull, or, sql } from "drizzle-orm";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 
 import {
@@ -527,59 +527,109 @@ const resolveDiscordAdmissionDestination$ = command(
   },
 );
 
-async function persistDiscordAdmissionDestination(
-  db: Db,
-  args: DiscordIngressClaim,
-  routeId: string,
-  destinationChannelId: string,
-  signal: AbortSignal,
-): Promise<boolean> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0155; new non-billing transactions are prohibited.
-  return await db.transaction(async (tx) => {
-    const [claim] = await tx
+const persistDiscordAdmissionDestination$ = command(
+  async (
+    { set },
+    args: DiscordIngressClaim,
+    routeId: string,
+    destinationChannelId: string,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const claimWhere = and(
+      eq(discordChatIngress.id, args.ingressId),
+      eq(discordChatIngress.claimToken, args.claimToken),
+      eq(discordChatIngress.status, "processing"),
+    );
+    // This read owns the prewrite cancellation checkpoint, not write authority.
+    const [preflight] = await db
       .select({ id: discordChatIngress.id })
       .from(discordChatIngress)
-      .where(
-        and(
-          eq(discordChatIngress.id, args.ingressId),
-          eq(discordChatIngress.claimToken, args.claimToken),
-          eq(discordChatIngress.status, "processing"),
-        ),
-      )
-      .for("update")
+      .where(claimWhere)
       .limit(1);
     signal.throwIfAborted();
-    if (!claim) {
+    if (!preflight) {
       return false;
     }
-    const [updatedRoute] = await tx
-      .update(discordChatThreadRoutes)
-      .set({ destinationChannelId })
-      .where(
-        and(
-          eq(discordChatThreadRoutes.id, routeId),
-          or(
-            isNull(discordChatThreadRoutes.destinationChannelId),
-            eq(
-              discordChatThreadRoutes.destinationChannelId,
-              destinationChannelId,
+    // Sample application time before the atomic write, including any lock wait.
+    const updatedAt = nowDate();
+    const claim = db
+      .$with("discord_admission_claim")
+      .as(
+        db
+          .select({ id: discordChatIngress.id })
+          .from(discordChatIngress)
+          .where(claimWhere)
+          .for("update")
+          .limit(1),
+      );
+    const exhaustedClaim = db
+      .$with("discord_admission_claim_complete")
+      .as(db.select({ count: count().as("count") }).from(claim));
+    const updatedRoute = db.$with("discord_admission_route").as(
+      db
+        .update(discordChatThreadRoutes)
+        .set({ destinationChannelId })
+        .from(exhaustedClaim)
+        .where(
+          and(
+            gt(exhaustedClaim.count, 0),
+            eq(discordChatThreadRoutes.id, routeId),
+            or(
+              isNull(discordChatThreadRoutes.destinationChannelId),
+              eq(
+                discordChatThreadRoutes.destinationChannelId,
+                destinationChannelId,
+              ),
             ),
           ),
-        ),
+        )
+        .returning({ id: discordChatThreadRoutes.id }),
+    );
+    const exhaustedRoute = db
+      .$with("discord_admission_route_complete")
+      .as(db.select({ count: count().as("count") }).from(updatedRoute));
+    const updatedIngress = db.$with("discord_admission_ingress").as(
+      db
+        .update(discordChatIngress)
+        .set({ routeId, updatedAt })
+        .from(exhaustedRoute)
+        .where(
+          and(
+            gt(exhaustedRoute.count, 0),
+            eq(discordChatIngress.id, args.ingressId),
+          ),
+        )
+        .returning({ id: discordChatIngress.id }),
+    );
+    // Exhaust the mutation even when its row count is zero, as the old owner did.
+    const exhaustedIngress = db
+      .$with("discord_admission_ingress_complete")
+      .as(db.select({ count: count().as("count") }).from(updatedIngress));
+    const [completed] = await db
+      .with(
+        claim,
+        exhaustedClaim,
+        updatedRoute,
+        exhaustedRoute,
+        updatedIngress,
+        exhaustedIngress,
       )
-      .returning({ id: discordChatThreadRoutes.id });
+      .select({ claimId: claim.id, routeId: updatedRoute.id })
+      .from(claim)
+      .leftJoin(updatedRoute, sql`true`)
+      .crossJoin(exhaustedIngress)
+      .where(gte(exhaustedIngress.count, 0));
     signal.throwIfAborted();
-    if (!updatedRoute) {
+    if (!completed) {
+      return false;
+    }
+    if (!completed.routeId) {
       throw new Error("Discord route destination changed during admission");
     }
-    await tx
-      .update(discordChatIngress)
-      .set({ routeId, updatedAt: nowDate() })
-      .where(eq(discordChatIngress.id, args.ingressId));
-    signal.throwIfAborted();
     return true;
-  });
-}
+  },
+);
 
 export const prepareCanonicalDiscordIngressRoute$ = command(
   async (
@@ -634,8 +684,8 @@ export const prepareCanonicalDiscordIngressRoute$ = command(
     if (!destinationChannelId) {
       return false;
     }
-    return await persistDiscordAdmissionDestination(
-      db,
+    return await set(
+      persistDiscordAdmissionDestination$,
       args,
       route.id,
       destinationChannelId,

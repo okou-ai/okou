@@ -10,18 +10,17 @@ export const DISCORD_COMMANDS = [
   {
     ...COMMAND_SETTINGS,
     name: "help",
-    description: "Learn how to use Okou in Discord",
+    description: "Show commands and usage",
   },
   {
     ...COMMAND_SETTINGS,
     name: "connect",
-    description:
-      "View your connection status or choose your workspace for bot DMs",
+    description: "Connect to Okou",
   },
   {
     ...COMMAND_SETTINGS,
     name: "disconnect",
-    description: "Disconnect your account from the selected Discord server",
+    description: "Disconnect from Okou",
   },
 ] as const;
 

@@ -865,20 +865,14 @@ and menus. That ordering depends on the fullscreen host staying inside the app
 root's stacking context. Business components do not own this portal or its
 stacking utilities.
 
-A shell-owned host outside the workspace boundary can opt into
-`relocate={false}`. Both modes then use the same portal container in the same DOM
-location; only fullscreen geometry changes. Keep navigation outside the mobile
-single-pane body, and keep the docked sidebar's width reserved during fullscreen
-so covered chat content does not reflow unnecessarily. The host's ancestors must
+A shell-owned host outside the workspace boundary keeps the same portal
+container in the same DOM location in both modes; only fullscreen geometry
+changes. Keep navigation outside the mobile single-pane body, and keep the docked
+sidebar's width reserved during fullscreen so covered chat content does not
+reflow unnecessarily. The host's ancestors must
 not introduce a stacking or containing-block boundary that traps the fixed
 surface. A host that inherits a docked-only safe-area override must stop applying
 that override while its surface covers the viewport.
-
-The relocating placement moves one stable portal container to `#root` in
-fullscreen and back into its inline slot on exit. Native `moveBefore` preserves
-scroll, iframe and media state; browsers without it use `appendChild` with
-explicit scroll restoration, but embedded frames/media may reload. Neither
-placement switches between a portal and an in-place React subtree.
 
 Reflowing Markdown previews opt into `FullscreenPanel`'s `scrollAnchor` contract.
 The primitive captures the first visible content block and its viewport offset

@@ -42,9 +42,6 @@ test("An unsafe route icon is not loaded", async () => {
     screen.findByRole("heading", { name: "Redirecting to Server Only…" }),
   ).resolves.toBeInTheDocument();
   expect(
-    screen.getByLabelText("Connector icon unavailable"),
-  ).toBeInTheDocument();
-  expect(
     document.querySelector(
       'img[src="http://icons.example.test/server-only.svg"]',
     ),

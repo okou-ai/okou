@@ -15,9 +15,9 @@ import { findWorkflowTemplateItem } from "@okouai/core/workflow-template-items";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import {
   WORKFLOW_RECOMMENDATIONS,
+  workflowRecommendationConnectors$,
   type WorkflowRecommendation,
 } from "../../signals/okou-page/composer-workflow-recommendations.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
@@ -42,13 +42,11 @@ function WorkflowFacts({ item }: { readonly item: WorkflowRecommendation }) {
     },
     { returnObjects: true },
   )[item.id].cadence;
-  const connectors = useLastResolved(connectorCatalogStatus$)?.connectors;
+  const connectors = useLastResolved(workflowRecommendationConnectors$);
   return (
     <ul className="flex min-w-0 flex-wrap gap-2">
       {item.connectors.map((slug) => {
-        const connector = connectors?.find((candidate) => {
-          return candidate.slug === slug;
-        });
+        const connector = connectors?.get(slug);
         return connector ? (
           <Badge key={slug} render={<li />} className="text-xs text-foreground">
             <ConnectorIcon icon={connector.icon} size={12} />

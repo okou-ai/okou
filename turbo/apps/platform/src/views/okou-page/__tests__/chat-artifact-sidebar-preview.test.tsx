@@ -16,73 +16,67 @@ const context = testContext();
 const FILE_URL =
   "https://cdn.vm7.io/artifacts/tests/sidebar/sidebar-report.pdf";
 
-// Both the page-owned and stable shell-owned sidebar must work from a closed
-// state; neither path should require opening the artifact list first.
-test.each([false, true])(
-  "Chat artifacts open a closed sidebar directly (stable host: %s)",
-  async (stableHost) => {
-    mockArtifactConversation(context, {
-      catalog: [],
-      artifactRuns: () => {
-        return [
-          artifactRun({
-            filename: "sidebar-report.pdf",
-            fileId: "sidebar-report-file",
-            contentType: "application/pdf",
-            url: FILE_URL,
-          }),
-        ];
+test("Chat artifacts open a closed sidebar directly", async () => {
+  mockArtifactConversation(context, {
+    catalog: [],
+    artifactRuns: () => {
+      return [
+        artifactRun({
+          filename: "sidebar-report.pdf",
+          fileId: "sidebar-report-file",
+          contentType: "application/pdf",
+          url: FILE_URL,
+        }),
+      ];
+    },
+    chatEvents: [
+      {
+        id: "sidebar-artifact-message",
+        createdAt: "2026-09-01T12:00:00.000Z",
+        role: "assistant",
+        content: `![sidebar-report.pdf](${FILE_URL})`,
+        runId: "navigation-artifact-run",
+        seqId: 1,
       },
-      chatEvents: [
-        {
-          id: "sidebar-artifact-message",
-          createdAt: "2026-09-01T12:00:00.000Z",
-          role: "assistant",
-          content: `![sidebar-report.pdf](${FILE_URL})`,
-          runId: "navigation-artifact-run",
-          seqId: 1,
-        },
-        {
-          id: "sidebar-artifact-completed",
-          createdAt: "2026-09-01T12:00:01.000Z",
-          role: "assistant",
-          content: null,
-          runId: "navigation-artifact-run",
-          runLifecycleEvent: "completed",
-          seqId: 2,
-        },
-      ],
-    });
-    await setupPage({
-      context,
-      path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-      host: "app.okou.ai",
-      featureSwitches: {
-        [FeatureSwitchKey.ArtifactSidebarPreview]: true,
-        [FeatureSwitchKey.StablePreviewFullscreen]: stableHost,
+      {
+        id: "sidebar-artifact-completed",
+        createdAt: "2026-09-01T12:00:01.000Z",
+        role: "assistant",
+        content: null,
+        runId: "navigation-artifact-run",
+        runLifecycleEvent: "completed",
+        seqId: 2,
       },
-    });
-    const card = await screen.findByLabelText(
-      "Open pdf preview for sidebar-report.pdf",
-    );
+    ],
+  });
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: {
+      [FeatureSwitchKey.ArtifactSidebarPreview]: true,
+    },
+  });
+  const card = await screen.findByLabelText(
+    "Open pdf preview for sidebar-report.pdf",
+  );
+  expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
+  click(card);
+  const preview = await screen.findByTestId("artifact-sidebar");
+  await expect(
+    within(preview).findByTitle("sidebar-report.pdf preview"),
+  ).resolves.toHaveAttribute("src", `${FILE_URL}#navpanes=0`);
+  expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
+  click(buttonNamed("Close artifact", preview));
+  await waitFor(() => {
     expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
-    click(card);
-    const preview = await screen.findByTestId("artifact-sidebar");
-    await expect(
-      within(preview).findByTitle("sidebar-report.pdf preview"),
-    ).resolves.toHaveAttribute("src", `${FILE_URL}#navpanes=0`);
-    expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
-    click(buttonNamed("Close artifact", preview));
-    await waitFor(() => {
-      expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
-    });
-    click(card);
-    await expect(
-      screen.findByTestId("artifact-sidebar"),
-    ).resolves.toBeInTheDocument();
-    expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
-  },
-);
+  });
+  click(card);
+  await expect(
+    screen.findByTestId("artifact-sidebar"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
+});
 
 test("Sent user attachments open in the sidebar and retain their private sharing behavior", async () => {
   const url = "https://files.example.test/upload.txt";

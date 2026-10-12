@@ -47,6 +47,7 @@ import {
 import { resolveOAuthRequestedScopeSnapshot } from "./connector-oauth-scope-snapshot.service";
 
 const L = logger("SlackConnectorOAuth");
+const slackOAuthResolver$ = connectorActionResolver(["slack"]);
 
 function redirect(url: string): Response {
   return new Response(null, {
@@ -63,7 +64,7 @@ function failed(message: string): Response {
 
 const resolveSlackOAuthMethod$ = command(
   async ({ get }, starting: boolean, signal: AbortSignal) => {
-    const resolver = await get(connectorActionResolver(["slack"]));
+    const resolver = await get(slackOAuthResolver$);
     signal.throwIfAborted();
     const args = {
       connectorSlug: "slack",

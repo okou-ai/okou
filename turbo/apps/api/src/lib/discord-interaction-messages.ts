@@ -33,6 +33,7 @@ export function discordAccountLabel(value: string): string {
 
 export function discordAccountPicker(args: {
   readonly content: string;
+  readonly placeholder: string;
   readonly action: DiscordPickerAction;
   readonly actor: DiscordInteractionActor;
   readonly connectionId: string;
@@ -92,7 +93,7 @@ export function discordAccountPicker(args: {
           {
             type: 3,
             custom_id: customId(page),
-            placeholder: "Choose an option",
+            placeholder: args.placeholder,
             min_values: 1,
             max_values: 1,
             options: args.options
