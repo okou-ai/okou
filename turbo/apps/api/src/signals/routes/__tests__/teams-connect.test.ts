@@ -18,6 +18,9 @@ import {
   type TeamsConnectFixture,
 } from "./helpers/teams-connect";
 import { teamsConnectRoutes } from "../teams-connect";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createBddApi } from "./helpers/api-bdd";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -145,8 +148,19 @@ async function seedTeamsInstallation(
 }
 
 describe("GET /api/integrations/teams/connect", () => {
+  const bdd = createBddApi(context);
+  const webhooks = createWebhookCallbackApi(context);
   const track = createFixtureTracker<TeamsConnectFixture>((fixture) => {
     return removeTeamsForTest(context.signal, fixture);
+  });
+  const trackOrg = createFixtureTracker<string>(async (orgId) => {
+    webhooks.configureClerkWebhookSecret();
+    webhooks.verifyNextClerkWebhook({
+      type: "organization.deleted",
+      data: { id: orgId },
+    });
+    await webhooks.requestClerkWebhook("{}", {}, [200]);
+    await flushWaitUntilForTest();
   });
 
   beforeEach(() => {
@@ -312,6 +326,57 @@ describe("GET /api/integrations/teams/connect", () => {
       isAdmin: true,
       permissionMismatch: true,
       reinstallUrl: teamsInstallUrl(fixture.teamsTenantId),
+    });
+  });
+
+  it("returns the configured default agent display name for a connected user", async () => {
+    const fixture = await seedTeamsInstallation(track);
+    await trackOrg(Promise.resolve(fixture.orgId));
+    const actor = bdd.user({
+      userId: fixture.userId,
+      orgId: fixture.orgId,
+    });
+    bdd.acceptAgentStorageWrites();
+    const onboarding = await bdd.readOnboardingStatus(actor);
+    expect(onboarding.hasDefaultAgent).toBeTruthy();
+    if (!onboarding.defaultAgentId) {
+      throw new Error(
+        "Expected public onboarding to configure a default agent",
+      );
+    }
+    const agent = await bdd.readAgent(actor, onboarding.defaultAgentId);
+    expect(agent.isDefaultAgent).toBeTruthy();
+    expect(agent.displayName).toBe("Okou");
+
+    const client = setupApp({ context, routes: teamsConnectRoutes })(
+      teamsConnectContract,
+    );
+    await accept(
+      client.connect({
+        headers: { authorization: "Bearer clerk-session" },
+        body: connectBody(fixture),
+      }),
+      [200],
+    );
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    const response = await accept(
+      client.getStatus({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(response.body).toMatchObject({
+      isInstalled: true,
+      isConnected: true,
+      isAdmin: false,
+      connectUrl: null,
+      defaultAgentName: "Okou",
+      environment: {
+        requiredSecrets: [],
+        requiredVars: [],
+        missingSecrets: [],
+        missingVars: [],
+      },
     });
   });
 

@@ -12,7 +12,7 @@ import { env } from "../../lib/env";
 import { internalApiBaseUrl } from "../../lib/internal-api-url";
 import { logger } from "../../lib/log";
 import { teamsBotDisplayName } from "../../lib/teams-official-app";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import {
   createTeamsPersonalConversation,
@@ -320,30 +320,6 @@ async function upsertTeamsConnection(
   throw new Error("Teams connection upsert did not return a row");
 }
 
-async function resolveDefaultComposeId(
-  db: ReadonlyDb,
-  orgId: string,
-): Promise<string | null> {
-  const [metadata] = await db
-    .select({ defaultAgentId: orgMetadata.defaultAgentId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  return metadata?.defaultAgentId ?? null;
-}
-
-async function getTeamsAgentName(
-  db: ReadonlyDb,
-  composeId: string,
-): Promise<string | undefined> {
-  const [agent] = await db
-    .select({ name: agents.name, displayName: agents.displayName })
-    .from(agents)
-    .where(eq(agents.id, composeId))
-    .limit(1);
-  return agent?.displayName ?? agent?.name;
-}
-
 interface TeamsEnvironment {
   readonly requiredSecrets: readonly string[];
   readonly requiredVars: readonly string[];
@@ -379,19 +355,6 @@ function emptyTeamsEnvironment(): TeamsEnvironment {
     requiredVars: [],
     missingSecrets: [],
     missingVars: [],
-  };
-}
-
-async function resolveConnectedStatusFields(args: {
-  readonly db: ReadonlyDb;
-  readonly orgId: string;
-}): Promise<ConnectedTeamsStatusFields> {
-  const composeId = await resolveDefaultComposeId(args.db, args.orgId);
-  return {
-    defaultAgentName: composeId
-      ? ((await getTeamsAgentName(args.db, composeId)) ?? null)
-      : null,
-    environment: emptyTeamsEnvironment(),
   };
 }
 
@@ -508,12 +471,28 @@ export function teamsConnectStatus(args: {
         ),
       )
       .limit(1);
-    const connectedFields = connection
-      ? await resolveConnectedStatusFields({
-          db,
-          orgId: args.orgId,
-        })
-      : null;
+    let connectedFields: ConnectedTeamsStatusFields | null = null;
+    if (connection) {
+      const [metadata] = await db
+        .select({ defaultAgentId: orgMetadata.defaultAgentId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, args.orgId))
+        .limit(1);
+      const composeId = metadata?.defaultAgentId ?? null;
+      let defaultAgentName: string | null = null;
+      if (composeId) {
+        const [agent] = await db
+          .select({ name: agents.name, displayName: agents.displayName })
+          .from(agents)
+          .where(eq(agents.id, composeId))
+          .limit(1);
+        defaultAgentName = agent?.displayName ?? agent?.name ?? null;
+      }
+      connectedFields = {
+        defaultAgentName,
+        environment: emptyTeamsEnvironment(),
+      };
+    }
 
     return activeTeamsStatus({
       ...args,
