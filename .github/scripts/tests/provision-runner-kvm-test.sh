@@ -77,7 +77,7 @@ tasks = [t for t in production['tasks'] if t.get('tags') == 'runner_wss_host']
 def run(*args):
     return subprocess.run(args, check=True, capture_output=True, text=True, timeout=30)
 
-for case in ['fresh', 'legacy', 'partial', 'root']:
+for case in ['fresh', 'legacy', 'partial', 'canonical', 'root']:
     suffix = uuid.uuid4().hex[:12]
     previous, current = f'caddyold-{suffix}', f'caddynew-{suffix}'
     if case == 'root':
@@ -94,13 +94,14 @@ for case in ['fresh', 'legacy', 'partial', 'root']:
         root = Path(value)
         root.chmod(0o751)
         try:
-            if case not in ['fresh', 'root']:
+            if case not in ['fresh', 'canonical', 'root']:
                 run('groupadd', '--system', previous)
                 groups.append(previous)
-            if case == 'partial':
+            if case in ['partial', 'canonical']:
                 run('groupadd', '--system', current)
                 groups.append(current)
-                assert grp.getgrnam(current).gr_gid != grp.getgrnam(previous).gr_gid
+                if case == 'partial':
+                    assert grp.getgrnam(current).gr_gid != grp.getgrnam(previous).gr_gid
             fixture = json.loads(json.dumps(tasks).replace('okou-wss-caddy', previous)
                                  .replace('okou-runner-caddy', current))
             path = root / 'provision.yml'
@@ -110,6 +111,8 @@ for case in ['fresh', 'legacy', 'partial', 'root']:
             # Claim the unique, initially absent name before Ansible can create it.
             if current not in groups:
                 groups.append(current)
+            if case != 'root' and previous not in groups:
+                groups.append(previous)
             if case == 'root':
                 rejected = subprocess.run(command, capture_output=True, text=True,
                                           timeout=30)
@@ -137,7 +140,7 @@ for case in ['fresh', 'legacy', 'partial', 'root']:
                 listener.listen()
                 listener.settimeout(5)
                 if case != 'fresh':
-                    gid = grp.getgrnam(previous).gr_gid
+                    gid = grp.getgrnam(current if case == 'canonical' else previous).gr_gid
                     os.chown(namespace, 0, gid)
                     os.chown(endpoint, 0, gid)
                 def metadata():
@@ -148,8 +151,8 @@ for case in ['fresh', 'legacy', 'partial', 'root']:
                 run(*command)
                 gid = grp.getgrnam(current).gr_gid
                 assert gid > 0 and not grp.getgrnam(current).gr_mem
+                assert gid == grp.getgrnam(previous).gr_gid
                 if case != 'fresh':
-                    assert gid == grp.getgrnam(previous).gr_gid
                     assert metadata() == before
                 else:
                     os.chown(namespace, 0, gid)
@@ -185,7 +188,7 @@ for case in ['fresh', 'legacy', 'partial', 'root']:
                     run('groupdel', name)
             assert all(not any(g.gr_name == name for g in grp.getgrall())
                        for name in groups)
-print('Caddy group cutover: fresh/legacy/partial/root cases and socket access: ok')
+print('Caddy group cutover: fresh/legacy/partial/canonical/root cases and socket access: ok')
 PY
 
 echo "provision-runner-kvm-test: ok"

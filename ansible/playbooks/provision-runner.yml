@@ -39,6 +39,26 @@
         non_unique: "{{ runner_caddy_previous_group.ansible_facts.getent_group['okou-wss-caddy'] is not none }}"
         system: true
         state: present
+      register: runner_caddy_access_group
+      tags: runner_wss_host
+
+    - name: Reject a root GID for the canonical Runner Caddy access group
+      ansible.builtin.assert:
+        that:
+          - (runner_caddy_access_group.gid | int) > 0
+        fail_msg: Runner Caddy socket access must not use the root group.
+      tags: runner_wss_host
+
+    # Older provisioning must also resolve the same GID on newly prepared hosts.
+    # Remove this record and lookup after the cutover gate in issue #39194.
+    - name: Retain the pre-rename group record during the Runner cutover
+      become: true
+      ansible.builtin.group:
+        name: okou-wss-caddy
+        gid: "{{ runner_caddy_access_group.gid }}"
+        non_unique: true
+        system: true
+        state: present
       tags: runner_wss_host
 
     - name: Wait for apt lock to be released
