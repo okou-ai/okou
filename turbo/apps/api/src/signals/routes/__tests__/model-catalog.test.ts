@@ -133,7 +133,7 @@ async function mcpThread(actor: ApiTestUser, threadId: string) {
   const created = mcpGetChatThreadOutputSchema
     .parse(result.structuredContent)
     .events.find((event) => {
-      return event.chatThreadId === threadId && event.kind === "created";
+      return event.threadId === threadId && event.kind === "created";
     });
   if (!created) {
     throw new Error("Expected the thread's creation event");

@@ -3,6 +3,7 @@ import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { cronProjectChatEventSearchContract } from "@okouai/api-contracts/contracts/cron";
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { mcpChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
+import { mcpGetChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-snapshots";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -158,23 +159,51 @@ describe("GET /api/cron/project-chat-event-search", () => {
       return { raw, ...mcpChatSearchContract.search.responses[200].parse(raw) };
     }
     const result = await search(token());
-    expect(result.raw).toStrictEqual({
-      results: native.results.map(({ agentName: _name, ...hit }) => {
-        const input = ownerInputs.find((item) => {
-          return item.threadId === hit.chatThreadId;
-        });
-        const agent = listed.find((item) => {
-          return item.agentId === input?.agentId;
-        });
-        if (!agent) {
-          throw new Error("Expected the indexed input's visible Agent");
-        }
-        return {
-          ...hit,
-          agentId: agent.agentId,
-          displayName: agent.displayName,
-        };
+    const hit = result.results[0];
+    if (!hit) {
+      throw new Error("Expected an indexed MCP hit");
+    }
+    expect(hit.matchedMessage.threadId).toBe(hit.threadId);
+    const history = mcpGetChatMessagesOutputSchema.parse(
+      await call(token(), "get_chat_messages", {
+        threadId: hit.threadId,
+        sinceSeqId: 0,
       }),
+    );
+    expect(history.rows).toContainEqual(
+      expect.objectContaining({
+        threadId: hit.threadId,
+        payload: expect.objectContaining({
+          userMessage: expect.objectContaining({
+            parts: expect.arrayContaining([
+              { type: "text", text: hit.matchedMessage.content },
+            ]),
+          }),
+        }),
+      }),
+    );
+    expect(result.raw).toStrictEqual({
+      results: native.results.map(
+        ({ agentName: _name, chatThreadId, matchedMessage, ...hit }) => {
+          const input = ownerInputs.find((item) => {
+            return item.threadId === chatThreadId;
+          });
+          const agent = listed.find((item) => {
+            return item.agentId === input?.agentId;
+          });
+          if (!agent) {
+            throw new Error("Expected the indexed input's visible Agent");
+          }
+          const { chatThreadId: messageThreadId, ...message } = matchedMessage;
+          return {
+            ...hit,
+            agentId: agent.agentId,
+            displayName: agent.displayName,
+            threadId: chatThreadId,
+            matchedMessage: { ...message, threadId: messageThreadId },
+          };
+        },
+      ),
     });
     expect(
       new Set(
