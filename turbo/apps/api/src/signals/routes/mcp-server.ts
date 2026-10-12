@@ -2,12 +2,12 @@ import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import {
   chatEventsContract,
-  chatSearchContract,
   chatThreadEventsContract,
   chatThreadModelSelectionContract,
   chatThreadRenameContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { mcpChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
@@ -21,10 +21,14 @@ import {
 } from "../../lib/mcp-server-config";
 import { VERCEL_PROTECTION_BYPASS_HEADER } from "../../lib/preview-automation-bypass";
 import { request$ } from "../context/hono";
+import { queryOf } from "../context/request";
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { authRoute } from "../auth/auth-route";
 import { verifyClerkOAuthAccessToken } from "../external/clerk";
 import { serveMcpRequest } from "../external/mcp-server";
 import type { RouteEntry } from "../route-entry";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
+import { mcpChatSearch } from "../services/mcp-chat-search.service";
 import { awaitWithSignal, settle } from "../utils";
 import { agentsRoutes } from "./agents";
 import { chatEventsRoutes } from "./chat-events";
@@ -32,8 +36,19 @@ import { chatThreadRoutes } from "./chat-threads";
 import { runModelsRoutes } from "./run-models";
 import { runsCancelRoutes } from "./runs-cancel";
 
-// These are the production Web route entries, not an MCP business registry.
-const webContracts: ReadonlySet<AppRoute> = Object.freeze(
+const searchInput$ = computed((get) => {
+  const auth = get(organizationAuthContext$);
+  const query = get(queryOf(mcpChatSearchContract.search));
+  return { userId: auth.userId, orgId: auth.orgId, ...query };
+});
+const search$ = mcpChatSearch(searchInput$);
+const searchResponse$ = computed(async (get) => {
+  const result = await get(search$);
+  return { status: 200 as const, body: result };
+});
+
+// Search alone owns MCP presentation; other tools reuse production Web entries.
+const toolContracts: ReadonlySet<AppRoute> = Object.freeze(
   new Set([
     agentsMainContract.list,
     runModelsMainContract.list,
@@ -42,7 +57,7 @@ const webContracts: ReadonlySet<AppRoute> = Object.freeze(
     chatThreadsContract.indicators,
     chatThreadEventsContract.snapshot,
     chatThreadEventsContract.rows,
-    chatSearchContract.search,
+    mcpChatSearchContract.search,
     chatThreadActivitySummaryContract.summarize,
     chatEventsContract.send,
     chatThreadRenameContract.rename,
@@ -50,14 +65,26 @@ const webContracts: ReadonlySet<AppRoute> = Object.freeze(
     runsCancelContract.cancel,
   ]),
 );
-const webRoutes = [
+const toolRoutes = [
   ...agentsRoutes,
   ...runModelsRoutes,
   ...chatThreadRoutes,
   ...chatEventsRoutes,
   ...runsCancelRoutes,
+  {
+    route: mcpChatSearchContract.search,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "chat-event:read",
+        oauthScope: "okou:chat:read",
+      },
+      searchResponse$,
+    ),
+  },
 ].filter((entry) => {
-  return webContracts.has(entry.route);
+  return toolContracts.has(entry.route);
 });
 
 function unavailable() {
@@ -172,10 +199,10 @@ const mcpRequest$ = command(async ({ get, set }, rootSignal: AbortSignal) => {
             headers.set(name, value);
           }
         }
-        // In-process HTTP dispatch still runs the production Web validation,
-        // scoped OAuth authentication, ownership checks and side effects.
+        // In-process dispatch retains scoped OAuth authentication and native
+        // validation/ownership. Only search composes MCP-specific Agent metadata.
         const app = createAppWithRoutes({
-          routes: webRoutes,
+          routes: toolRoutes,
           signal: operationSignal,
         });
         return await app.fetch(new Request(webRequest, { headers }));

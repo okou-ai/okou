@@ -10,12 +10,12 @@ import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contrac
 import {
   chatEventNormalSendBodySchema,
   chatEventsContract,
-  chatSearchContract,
   chatThreadEventsContract,
   chatThreadModelSelectionContract,
   chatThreadRenameContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { mcpChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
 import {
   mcpGetChatMessagesInputSchema,
   mcpGetChatMessagesOutputSchema,
@@ -604,14 +604,14 @@ function registerReadTools(
       name: "search_chat_messages",
       scope: "okou:chat:read",
       description:
-        "Search using the Web keyword, agentId and since parameters and return the Web results unchanged. The index updates asynchronously: recent messages may be missing even after a Run completes, and an empty result does not prove absence. No index freshness signal or lag bound is returned. To confirm a recent send, use get_chat_messages with its known threadId and inspect the snapshot and event pages; do not resend solely because search is empty.",
-      inputSchema: chatSearchContract.search.query,
-      outputSchema: chatSearchContract.search.responses[200],
+        "Search using the Web keyword, agentId and since filters. Hits expose stable agentId and nullable canonical displayName matching list_agents, for currently visible Agents. The index updates asynchronously: recent messages may be missing even after a Run completes, and an empty result does not prove absence. No index freshness signal or lag bound is returned. To confirm a recent send, use get_chat_messages with its known threadId and inspect the snapshot and event pages; do not resend solely because search is empty.",
+      inputSchema: mcpChatSearchContract.search.query,
+      outputSchema: mcpChatSearchContract.search.responses[200],
       annotations: readAnnotations,
       operation: (query, signal) => {
         return requestWebApi(
           access,
-          chatSearchContract.search,
+          mcpChatSearchContract.search,
           { query },
           signal,
         );

@@ -23,6 +23,7 @@ import { createAppWithRoutes } from "../../../app-factory-core";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mcpServerRoutes } from "../mcp-server";
+import { mcpChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -141,6 +142,31 @@ describe("thin MCP Web adapters", () => {
           }).not.toThrow();
         }
       }
+      const search = tools.find((tool) => {
+        return tool.name === "search_chat_messages";
+      });
+      if (!search?.outputSchema) {
+        throw new Error("Missing MCP search response schema");
+      }
+      const searchThreadId = randomUUID();
+      const searchHit = {
+        chatThreadId: searchThreadId,
+        agentId: f.agentId,
+        displayName: null,
+        matchedMessage: {
+          chatThreadId: searchThreadId,
+          role: "user",
+          content: "indexed message",
+          createdAt: "2026-10-12T08:00:00.000Z",
+          seqId: 1,
+          runId: null,
+        },
+        matchedRanges: [],
+      };
+      const validateSearch = validator.getValidator(
+        search.outputSchema as JsonSchemaType,
+      );
+      expect(validateSearch({ results: [searchHit] }).valid).toBeTruthy();
       const messages = tools.find((tool) => {
         return tool.name === "get_chat_messages";
       });
@@ -577,7 +603,7 @@ describe("thin MCP Web adapters", () => {
     });
   });
 
-  it("uses Web keyword search and activity-summary contracts without MCP filters or projections", async () => {
+  it("preserves Web search filters, empty results and activity-summary behavior", async () => {
     const f = await fixture();
     const query = { keyword: "plain keyword", agentId: f.agentId, since: 1 };
     const web = await mcp.web(
@@ -586,6 +612,9 @@ describe("thin MCP Web adapters", () => {
     );
     const search = await mcp.call(f.token(), "search_chat_messages", query);
     expect(search.isError).not.toBeTruthy();
+    expect(
+      mcpChatSearchContract.search.responses[200].parse(body(search)),
+    ).toStrictEqual({ results: [] });
     expect(body(search)).toStrictEqual(web.body);
     const id = randomUUID();
     const runId = randomUUID();

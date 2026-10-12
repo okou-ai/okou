@@ -154,18 +154,29 @@ async function chatSearchVisibleMatches(
   });
 }
 
-export function chatSearch(args: {
+type ChatSearchInput = {
   readonly userId: string;
   readonly orgId: string;
   readonly keyword: string;
   readonly agentId?: string;
   readonly since?: number;
-}): Computed<
+};
+
+export function chatSearch(
+  input: ChatSearchInput | Computed<ChatSearchInput>,
+): Computed<
   Promise<{
     readonly results: readonly ChatSearchResult[];
   }>
 > {
+  const input$ =
+    "read" in input
+      ? input
+      : computed(() => {
+          return input;
+        });
   return computed(async (get) => {
+    const args = get(input$);
     const db = get(db$);
     const sinceDate = args.since ? new Date(args.since) : undefined;
     const matches = await chatSearchVisibleMatches(db, {
