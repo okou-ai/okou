@@ -27,6 +27,7 @@ import {
   CloudflareAccessDeletionDialog,
   CloudflareAccessPromotionDialog,
 } from "./cloudflare-access.tsx";
+import { TailscaleManagement } from "./tailscale-management.tsx";
 
 function ConnectionTypeFilter({
   vncEnabled,
@@ -180,22 +181,25 @@ export function RemoteControlPanel({
 export function PrivateNetworkPanel() {
   const { t } = useTranslation();
   return (
-    <section
-      aria-label={t(($) => {
-        return $.cloudflareAccess.title;
-      })}
-      className="grid gap-4"
-    >
-      <h2 className="text-sm font-medium">
-        {t(($) => {
+    <div className="grid gap-6">
+      <section
+        aria-label={t(($) => {
           return $.cloudflareAccess.title;
         })}
-      </h2>
-      <CloudflareAccessConfigs />
-      <CloudflareAccessDialog />
-      <CloudflareAccessConversionDialog />
-      <CloudflareAccessDeletionDialog />
-      <CloudflareAccessPromotionDialog />
-    </section>
+        className="grid gap-4"
+      >
+        <h2 className="text-sm font-medium">
+          {t(($) => {
+            return $.cloudflareAccess.title;
+          })}
+        </h2>
+        <CloudflareAccessConfigs />
+        <CloudflareAccessDialog />
+        <CloudflareAccessConversionDialog />
+        <CloudflareAccessDeletionDialog />
+        <CloudflareAccessPromotionDialog />
+      </section>
+      <TailscaleManagement />
+    </div>
   );
 }

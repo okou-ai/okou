@@ -8,7 +8,6 @@ import {
   STORAGE_MANIFEST_MAX_FILES,
   STORAGE_MANIFEST_MAX_PATH_BYTES,
 } from "@okouai/api-contracts/contracts/storages";
-import { parse as parseYaml } from "yaml";
 
 import { piMemoryPhase2SelectionDigest } from "./phase2-memory-selection";
 import {
@@ -699,37 +698,6 @@ function validChangedSkillPath(path: string): boolean {
   );
 }
 
-function validSkillManifest(content: Buffer, expectedName: string): boolean {
-  const decoded = decodeUtf8(content);
-  if (decoded === null || !decoded.startsWith("---")) {
-    return false;
-  }
-  try {
-    const frontmatter = decoded.match(
-      /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u,
-    )?.[1];
-    if (frontmatter === undefined) {
-      return false;
-    }
-    const parsed: unknown = parseYaml(frontmatter);
-    if (
-      parsed === null ||
-      typeof parsed !== "object" ||
-      Array.isArray(parsed)
-    ) {
-      return false;
-    }
-    const fields = parsed as Record<string, unknown>;
-    return (
-      fields.name === expectedName &&
-      typeof fields.description === "string" &&
-      fields.description.trim().length > 0
-    );
-  } catch {
-    return false;
-  }
-}
-
 async function inventoryFiles(
   memoryRoot: string,
 ): Promise<Map<string, Buffer>> {
@@ -1002,8 +970,6 @@ function validateChangedSkills(
     });
   }
   let totalBytes = 0;
-  const newSkillNames = new Set<string>();
-  const changedSkillManifests = new Set<string>();
   for (const path of changed) {
     if (!validChangedSkillPath(path)) {
       throw new Phase2OutputInvalidError("skill_path", { fileClass: "skill" });
@@ -1023,18 +989,6 @@ function validateChangedSkills(
         });
       }
       totalBytes += content.length;
-      const skillName = path.split("/")[1];
-      if (skillName !== undefined && path === `skills/${skillName}/SKILL.md`) {
-        changedSkillManifests.add(skillName);
-      }
-      if (
-        skillName !== undefined &&
-        ![...baseline.keys()].some((basePath) => {
-          return basePath.startsWith(`skills/${skillName}/`);
-        })
-      ) {
-        newSkillNames.add(skillName);
-      }
     }
   }
   if (totalBytes > PI_MEMORY_PHASE2_MAX_CHANGED_SKILL_BYTES) {
@@ -1043,22 +997,6 @@ function validateChangedSkills(
       actual: totalBytes,
       limit: PI_MEMORY_PHASE2_MAX_CHANGED_SKILL_BYTES,
     });
-  }
-  for (const skillName of changedSkillManifests) {
-    const manifest = finalFiles.get(`skills/${skillName}/SKILL.md`);
-    if (!manifest || !validSkillManifest(manifest, skillName)) {
-      throw new Phase2OutputInvalidError("skill_manifest", {
-        fileClass: "skill",
-      });
-    }
-  }
-  for (const skillName of newSkillNames) {
-    const manifest = finalFiles.get(`skills/${skillName}/SKILL.md`);
-    if (!manifest || !validSkillManifest(manifest, skillName)) {
-      throw new Phase2OutputInvalidError("skill_manifest", {
-        fileClass: "skill",
-      });
-    }
   }
 }
 

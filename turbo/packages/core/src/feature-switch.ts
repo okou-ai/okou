@@ -44,6 +44,12 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.TailscaleAccess]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Tailscale setup",
+    description: "Manage Tailscale networks and bind or rebind SSH hosts.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",
     displayName: "Artifact sidebar preview",

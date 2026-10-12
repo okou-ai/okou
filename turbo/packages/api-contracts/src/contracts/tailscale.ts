@@ -167,6 +167,7 @@ export const tailscaleContract = c.router({
   },
 });
 export type TailscaleConfig = z.infer<typeof tailscaleConfigSchema>;
+export type TailscaleImpactPreview = z.infer<typeof impactPreviewSchema>;
 export type CreateTailscaleRequest = z.infer<
   typeof createTailscaleRequestSchema
 >;

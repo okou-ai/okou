@@ -4,6 +4,7 @@ import { setAuthenticatedIdentity$ } from "./auth-context.ts";
 import { clerk$, clerkUser$, setupClerk$ } from "./auth.ts";
 import { initializeChatThreadEventSource$ } from "./chat-page/chat-thread-event-sourcing.ts";
 import { subscribeCloudflareAccessChanged$ } from "./cloudflare-access.ts";
+import { subscribeTailscaleChanged$ } from "./tailscale.ts";
 import { setupRunModelRealtime$ } from "./external/run-model-realtime.ts";
 import { setupUserPreferenceRealtime$ } from "./external/user-model-preference.ts";
 import { setupBillingRealtime$ } from "./okou-page/billing.ts";
@@ -44,6 +45,7 @@ const runAppRealtimeDaemons$ = command(
     set(subscribeCustomTemplatesChanged$, signal);
     set(subscribeSshChanged$, signal);
     set(subscribeCloudflareAccessChanged$, signal);
+    set(subscribeTailscaleChanged$, signal);
   },
 );
 

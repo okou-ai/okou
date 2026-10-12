@@ -137,26 +137,26 @@ impl AsyncRead for PausedTcp {
 
 impl AsyncWrite for PausedTcp {
     fn poll_write(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         bytes: &[u8],
     ) -> Poll<io::Result<usize>> {
-        let allowed = {
-            let mut state = self.gate.state.lock().unwrap();
-            if state.remaining == 0 {
-                state.pending = true;
-                state.waker = Some(cx.waker().clone());
-                self.gate.changed.notify_waiters();
-                return Poll::Pending;
-            }
-            state.remaining.min(bytes.len())
-        };
-        let result = Pin::new(&mut self.socket).poll_write(cx, &bytes[..allowed]);
-        if let Poll::Ready(Ok(written)) = result {
-            let mut state = self.gate.state.lock().unwrap();
-            if state.remaining != usize::MAX {
-                state.remaining -= written;
-            }
+        let this = self.get_mut();
+        // Keep the nonblocking write and its accounting atomic with pause_after,
+        // so an in-flight write cannot consume a newly installed budget.
+        let mut state = this.gate.state.lock().unwrap();
+        if state.remaining == 0 {
+            state.pending = true;
+            state.waker = Some(cx.waker().clone());
+            this.gate.changed.notify_waiters();
+            return Poll::Pending;
+        }
+        let allowed = state.remaining.min(bytes.len());
+        let result = Pin::new(&mut this.socket).poll_write(cx, &bytes[..allowed]);
+        if let Poll::Ready(Ok(written)) = result
+            && state.remaining != usize::MAX
+        {
+            state.remaining -= written;
         }
         result
     }
