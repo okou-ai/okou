@@ -2,9 +2,11 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { telegramChatThreadRoutes } from "@okouai/db/schema/telegram-chat-thread-route";
 import { and, eq, sql } from "drizzle-orm";
 
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
   integrationChatThreadInsertFromRouteSql,
@@ -228,7 +230,7 @@ const ROUTE_COLUMNS = {
  */
 export const ensureTelegramChatThreadRoute$ = command(
   async (
-    { set },
+    { get, set },
     args: TelegramChatThreadRouteKey & TelegramChatThreadCreateArgs,
     signal: AbortSignal,
   ): Promise<TelegramChatThreadBinding> => {
@@ -239,76 +241,56 @@ export const ensureTelegramChatThreadRoute$ = command(
     );
     const candidateId = randomUUID();
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0259; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      let [existing] = await tx
-        .select({
-          id: telegramChatThreadRoutes.id,
-          chatId: telegramChatThreadRoutes.chatId,
-          chatThreadId: telegramChatThreadRoutes.chatThreadId,
-        })
-        .from(telegramChatThreadRoutes)
-        .innerJoin(
-          chatThreads,
-          eq(chatThreads.id, telegramChatThreadRoutes.chatThreadId),
-        )
-        .where(routeWhere(args))
-        .limit(1);
-      // No row lock: the DM destination move is one conditional update pinned
-      // to the route id.
-      if (
-        existing &&
-        args.rootMessageId === INTEGRATION_DM_SESSION_KEY &&
-        existing.chatId !== args.chatId
-      ) {
-        const [updated] = await tx
-          .update(telegramChatThreadRoutes)
-          .set({ chatId: args.chatId })
-          .where(
-            and(eq(telegramChatThreadRoutes.id, existing.id), routeWhere(args)),
-          )
-          .returning({ chatId: telegramChatThreadRoutes.chatId });
-        if (!updated) {
-          throw new Error("Failed to update Telegram DM route destination");
-        }
-        existing = { ...existing, ...updated };
-      }
-      if (existing) {
-        return existing;
-      }
+    const readDb = get(db$);
+    let [route] = await readDb
+      .select(ROUTE_COLUMNS)
+      .from(telegramChatThreadRoutes)
+      .innerJoin(
+        chatThreads,
+        eq(chatThreads.id, telegramChatThreadRoutes.chatThreadId),
+      )
+      .where(routeWhere(args))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!route) {
       const thread = integrationChatThreadValues(args, candidateId, defaults);
-      const insertedRoute = tx.$with("inserted_telegram_route").as(
-        tx
-          .insert(telegramChatThreadRoutes)
-          .values({
-            telegramOfficialUserLinkId: args.ownerLink.id,
-            chatId: args.chatId,
-            rootMessageId: args.rootMessageId,
-            chatThreadId: thread.id,
-            createdAt: args.currentTime,
-          })
-          .onConflictDoNothing()
-          .returning(ROUTE_COLUMNS),
-      );
-      const insertedThread = tx
-        .$with("inserted_telegram_thread", {})
-        .as(integrationChatThreadInsertFromRouteSql(thread, insertedRoute));
-      const [route] = await tx
-        .with(insertedRoute, insertedThread)
-        .select()
-        .from(insertedRoute);
-      if (route) {
-        await tx.execute(integrationThreadCreatedEventSql(args.orgId, thread));
-        signal.throwIfAborted();
-        return route;
-      }
-      // ON CONFLICT waited for the winner's commit; read it once.
-      let [winner] = await tx
-        .select({
-          id: telegramChatThreadRoutes.id,
-          chatId: telegramChatThreadRoutes.chatId,
-          chatThreadId: telegramChatThreadRoutes.chatThreadId,
+      const insert = db
+        .insert(telegramChatThreadRoutes)
+        .values({
+          telegramOfficialUserLinkId: args.ownerLink.id,
+          chatId: args.chatId,
+          rootMessageId: args.rootMessageId,
+          chatThreadId: thread.id,
+          createdAt: args.currentTime,
         })
+        .onConflictDoNothing()
+        .returning(ROUTE_COLUMNS);
+      const insertedRoute = db.$with("inserted_telegram_route").as(insert);
+      // RETURNING gates publication; the statement snapshot cannot see the
+      // new thread through its base table. A conflict loser writes nothing.
+      const statement = integrationThreadCreatedEventSql(args.orgId, thread, {
+        cte: sql`inserted_telegram_route AS (${insert.getSQL()}),
+          inserted_telegram_thread AS (
+            ${integrationChatThreadInsertFromRouteSql(thread, insertedRoute)}
+            RETURNING ${chatThreads.agentId}
+          )`,
+        gate: sql`EXISTS (SELECT 1 FROM inserted_telegram_thread)`,
+        agentId: sql`(SELECT agent_id FROM inserted_telegram_thread)`,
+        result: sql`SELECT id, chat_id AS "chatId", chat_thread_id AS "chatThreadId"
+          FROM inserted_telegram_route`,
+      });
+      const [inserted] = parseRawRows(
+        z.object({ id: z.uuid(), chatId: z.string(), chatThreadId: z.uuid() }),
+        await db.execute(statement),
+      );
+      signal.throwIfAborted();
+      if (inserted) {
+        return inserted;
+      }
+      // ON CONFLICT waited for the winner's commit; read it once in a fresh
+      // statement, never through the creation statement's old snapshot.
+      [route] = await readDb
+        .select(ROUTE_COLUMNS)
         .from(telegramChatThreadRoutes)
         .innerJoin(
           chatThreads,
@@ -316,34 +298,36 @@ export const ensureTelegramChatThreadRoute$ = command(
         )
         .where(routeWhere(args))
         .limit(1);
-      // No row lock: the DM destination move is one conditional update pinned
-      // to the route id.
-      if (
-        winner &&
-        args.rootMessageId === INTEGRATION_DM_SESSION_KEY &&
-        winner.chatId !== args.chatId
-      ) {
-        const [updated] = await tx
-          .update(telegramChatThreadRoutes)
-          .set({ chatId: args.chatId })
-          .where(
-            and(eq(telegramChatThreadRoutes.id, winner.id), routeWhere(args)),
-          )
-          .returning({ chatId: telegramChatThreadRoutes.chatId });
-        if (!updated) {
-          throw new Error("Failed to update Telegram DM route destination");
-        }
-        winner = { ...winner, ...updated };
-      }
-      if (!winner) {
+      signal.throwIfAborted();
+      if (!route) {
         throw new Error(
           "Failed to resolve Telegram chat thread route after conflict",
         );
       }
-      return winner;
-    });
+    }
+    // Existing and freshly read winner routes share the original conditional
+    // destination adoption, pinned to the route id and exact DM predicate.
+    if (
+      args.rootMessageId === INTEGRATION_DM_SESSION_KEY &&
+      route.chatId !== args.chatId
+    ) {
+      const [updated] = await db
+        .update(telegramChatThreadRoutes)
+        .set({ chatId: args.chatId })
+        .where(and(eq(telegramChatThreadRoutes.id, route.id), routeWhere(args)))
+        .returning({ chatId: telegramChatThreadRoutes.chatId });
+      if (signal.aborted) {
+        if (updated) {
+          signal.throwIfAborted();
+        }
+      }
+      if (!updated) {
+        throw new Error("Failed to update Telegram DM route destination");
+      }
+      route = { ...route, ...updated };
+    }
     signal.throwIfAborted();
-    return result;
+    return route;
   },
 );
 
