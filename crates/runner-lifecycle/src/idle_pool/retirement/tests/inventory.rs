@@ -30,6 +30,81 @@ struct FaultBacking {
 }
 
 #[tokio::test]
+async fn required_pool_start_rejects_foreign_authority_and_changed_coverage_without_detach() {
+    let env = Env::new(64).await;
+    let foreign = Env::new(64).await;
+    let (exit, backing) = MockBackingProcess::channel();
+    let mut fixture = JobFixture::new("thread:required-inventory-authority", Some(backing)).await;
+    let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 1 });
+    let identity = park(&mut fixture, &mut pool);
+    let revision = pool.status_snapshot().revision;
+    let mut retirement = pending(&pool, &identity, &env);
+    retirement.try_grant().await.unwrap();
+    let failure = retirement
+        .start_required(
+            &mut pool,
+            &foreign.operations,
+            envelope(),
+            "foreign_required_authority",
+        )
+        .err()
+        .unwrap();
+    assert_eq!(failure.error(), &MemoryOperationError::OwnershipInvariant);
+    assert_eq!(pool.status_snapshot().revision, revision);
+    fixture.untouched().await;
+    let failure = failure
+        .into_retirement()
+        .start_required(
+            &mut pool,
+            &env.operations,
+            IdleRetirementEnvelope {
+                live_growth_bytes: 8 * MIB + 1,
+                ..envelope()
+            },
+            "changed_required_envelope",
+        )
+        .err()
+        .unwrap();
+    assert_eq!(failure.error(), &MemoryOperationError::OwnershipInvariant);
+    assert_eq!(pool.status_snapshot().revision, revision);
+    fixture.untouched().await;
+    exit.confirm_exit();
+    let (task, retained) = failure
+        .into_retirement()
+        .start_required(
+            &mut pool,
+            &env.operations,
+            envelope(),
+            "required_original_retry",
+        )
+        .unwrap()
+        .into_parts();
+    assert!(matches!(
+        task.join().await.unwrap(),
+        crate::idle_pool::ActivationCleanupOutcome::Completed { .. }
+    ));
+    drop(retained.take_completed_lease().unwrap());
+    fixture.saved().await;
+    assert_eq!(
+        env.operations
+            .close_and_wait()
+            .await
+            .unwrap()
+            .registered_operations,
+        0
+    );
+    assert_eq!(
+        foreign
+            .operations
+            .close_and_wait()
+            .await
+            .unwrap()
+            .registered_operations,
+        0
+    );
+}
+
+#[tokio::test]
 async fn failed_refresh_cannot_be_rearmed_by_backing_validation_or_cached_grants() {
     let env = Env::new(64).await;
     let (exit, backing) = MockBackingProcess::channel();

@@ -63,6 +63,14 @@ impl MemoryGrowthPermit {
         self.id
     }
 
+    pub(crate) fn matches_coverage(
+        &self,
+        operations: &super::HostMemoryOperations,
+        growth_bytes: u64,
+    ) -> bool {
+        Arc::ptr_eq(&self.shared, &operations.shared) && self.plan.allowance == growth_bytes
+    }
+
     /// Recheck unused coverage with a fresh fenced read, preserving the exact
     /// originally captured purpose/backing. Refusal never starts physical work.
     pub async fn refresh(&mut self) -> Result<runner_host::host_memory::HostMemoryObservation> {

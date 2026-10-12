@@ -15,7 +15,8 @@ use crate::host_memory_operations::{
 
 use super::retirement::{Allowance, run_retirement};
 use super::{
-    IdleEntry, IdlePool, IdleRetirementEnvelope, IdleSandboxIdentity, RetainedIdleDestroyResult,
+    AcceptedActivationCleanup, IdleEntry, IdlePool, IdleRetirementEnvelope, IdleSandboxIdentity,
+    RetainedActivationCleanup, RetainedIdleDestroyResult,
 };
 
 mod substitution;
@@ -282,6 +283,63 @@ impl IdlePoolRetirement {
             }
             Err(failure) => {
                 let (entry, _, candidate) = failure.payload;
+                Err(DetachedRetirement {
+                    entry,
+                    candidate,
+                    live: failure.live,
+                    tail: failure.tail,
+                }
+                .restore(pool, failure.error))
+            }
+        }
+    }
+
+    /// Accept the same original paired coverage into the mandatory saving
+    /// engine. Required failures retain the sandbox, home context and full lease.
+    /// The caller adopts both the completion and retained slot before yielding.
+    pub fn start_required(
+        self,
+        pool: &mut IdlePool,
+        operations: &HostMemoryOperations,
+        envelope: IdleRetirementEnvelope,
+        context: &'static str,
+    ) -> Result<AcceptedActivationCleanup, Box<IdlePoolRetirementStartFailure>> {
+        let covered = matches!(
+            (&self.live, &self.tail),
+            (Allowance::Granted(live), Allowance::Granted(tail))
+                if live.matches_coverage(operations, envelope.live_growth_bytes)
+                    && tail.matches_coverage(operations, envelope.tail_growth_bytes)
+        );
+        if !covered {
+            return Err(self.reject(MemoryOperationError::OwnershipInvariant));
+        }
+        let DetachedRetirement {
+            entry,
+            candidate,
+            live,
+            tail,
+        } = self.detach(pool)?;
+        let retained = RetainedActivationCleanup::new();
+        let payload = (
+            entry,
+            retained.clone(),
+            candidate.backing.process.clone(),
+            candidate.backing.identity,
+            operations.clone(),
+            envelope,
+            context,
+        );
+        match live.spawn_retirement(
+            tail,
+            payload,
+            super::activation_cleanup::run_cleanup_from_entry,
+        ) {
+            Ok(task) => {
+                pool.bump_revision();
+                Ok(AcceptedActivationCleanup::new(task, retained))
+            }
+            Err(failure) => {
+                let (entry, _, _, _, _, _, _) = failure.payload;
                 Err(DetachedRetirement {
                     entry,
                     candidate,

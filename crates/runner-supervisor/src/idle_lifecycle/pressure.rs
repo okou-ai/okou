@@ -1,7 +1,9 @@
 //! Bounded physical-pressure cohorts through the existing guarded terminal owner.
 
 use runner_lifecycle::host_memory_pressure::HostPressurePolicy;
-use runner_lifecycle::idle_pool::IdlePressureCandidate;
+use runner_lifecycle::idle_pool::{
+    AcceptedActivationCleanup, ActivationCleanupOutcome, IdlePressureCandidate,
+};
 use runner_lifecycle::status::StatusPersistenceError;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::task_tracker::TaskTrackerToken;
@@ -82,48 +84,62 @@ impl IdleDestroyTracker {
 
     fn adopt_pressure_retirement(
         &self,
-        task: runner_lifecycle::host_memory_operations::MemoryOperationTask<
-            RetainedIdleDestroyResult,
-        >,
+        accepted: AcceptedActivationCleanup,
         token: TaskTrackerToken,
     ) -> IdleCleanupTask<DestroyOutcome> {
         let notify = self.reuse_state_notify.clone();
-        let retained = self.pressure_leases.clone();
+        let (task, retained) = accepted.into_parts();
+        {
+            let mut owners = self
+                .pressure_owners
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            // Completed slots no longer contain a provider or lease. Keep only
+            // in-flight or unresolved original capsules, bounded by P2 custody.
+            owners.retain(RetainedActivationCleanup::needs_retention);
+            owners.push(retained.clone());
+        }
         self.track(
             async move {
                 let _token = token;
                 match task.join().await {
-                    Ok(result) => {
-                        if result.home_cache_promoted {
+                    Ok(ActivationCleanupOutcome::Completed {
+                        home_cache_promoted,
+                    }) => {
+                        if home_cache_promoted {
                             notify.notify_one();
                         }
-                        match result.outcome {
-                            DestroyOutcome::Completed => drop(result.budget_lease),
-                            DestroyOutcome::Uncertain => retained
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                .push(result.budget_lease),
+                        match retained.take_completed_lease() {
+                            Ok(lease) => {
+                                drop(lease);
+                                DestroyOutcome::Completed
+                            }
+                            Err(_) => DestroyOutcome::Uncertain,
                         }
-                        result.outcome
                     }
-                    Err(_) => DestroyOutcome::Uncertain,
+                    Ok(ActivationCleanupOutcome::NoProgress(_)) | Err(_) => {
+                        DestroyOutcome::Uncertain
+                    }
                 }
             },
             CONTEXT,
         )
     }
 
-    /// Explicit reconciliation custody after joined shutdown. These complete
-    /// leases are unresolved ownership and supply no physical credit.
-    pub fn take_retained_pressure_leases(&self) -> Result<Vec<BudgetLease>, MemoryOperationError> {
+    /// Explicit reconciliation custody after joined shutdown. Unresolved
+    /// capsules retain original data/resources and complete logical leases.
+    pub fn take_retained_pressure_owners(
+        &self,
+    ) -> Result<Vec<RetainedActivationCleanup>, MemoryOperationError> {
         if !self.tasks.is_closed() || !self.tasks.is_empty() {
             return Err(MemoryOperationError::OwnershipInvariant);
         }
-        let mut leases = self
-            .pressure_leases
+        let mut owners = self
+            .pressure_owners
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        Ok(std::mem::take(&mut *leases))
+        owners.retain(RetainedActivationCleanup::needs_retention);
+        Ok(std::mem::take(&mut *owners))
     }
 }
 
@@ -280,7 +296,7 @@ async fn run_wave(
                 continue;
             }
         };
-        match admission.start(&mut pool, CONTEXT) {
+        match admission.start_required(&mut pool, &request.operations, request.envelope, CONTEXT) {
             Ok(task) => tasks.push(tracker.adopt_pressure_retirement(task, token)),
             Err(failure) => rejected.push((candidate, Ok(failure))),
         }

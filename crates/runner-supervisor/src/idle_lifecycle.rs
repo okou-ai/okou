@@ -85,7 +85,7 @@ pub struct IdleDestroyTracker {
     activation_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
     finalizing_owners:
         Arc<std::sync::Mutex<Vec<crate::finalizing_admission::GuardedFinalizingRecovery>>>,
-    pressure_leases: Arc<std::sync::Mutex<Vec<BudgetLease>>>,
+    pressure_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
 }
 
 impl IdleDestroyTracker {
@@ -95,7 +95,7 @@ impl IdleDestroyTracker {
             reuse_state_notify,
             activation_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
             finalizing_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
-            pressure_leases: Arc::new(std::sync::Mutex::new(Vec::new())),
+            pressure_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 

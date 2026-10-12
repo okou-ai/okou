@@ -238,19 +238,105 @@ async fn uncertain_settlement_retains_wave_custody_and_original_full_lease_after
     fixture.tracker.close_and_wait().await;
     assert_eq!(fixture.budget.allocated(), (2, 2048, 1));
     assert!(ResourceBudget::try_reserve_lease(&fixture.budget, 8, 8192).is_none());
-    let custody = fixture.tracker.take_retained_pressure_leases().unwrap();
+    let custody = fixture.tracker.take_retained_pressure_owners().unwrap();
     assert_eq!(custody.len(), 1);
-    assert_eq!((custody[0].vcpu(), custody[0].memory_mb()), (2, 2048));
-    home.assert_cached_bytes().await;
+    assert!(custody[0].take_completed_lease().is_err());
+    let retained = custody[0].take_owner().unwrap();
+    assert_eq!(retained.sandbox_id(), home.id);
+    assert_eq!(
+        retained.state(),
+        runner_lifecycle::idle_pool::IdleActivationState::Destroyed
+    );
+    assert!(!retained.cleanup_completed());
     let physical = fixture.operations.close_and_wait().await.unwrap();
     assert_eq!(
         (physical.uncertain, physical.cleanup_growth_bytes),
         (1, MIB)
     );
-    drop(custody); // Explicit fixture reconciliation, never physical relief proof.
+    drop(retained); // Explicit fixture reconciliation, never physical relief proof.
+    home.assert_cached_bytes().await;
+}
+
+#[tokio::test]
+async fn required_preparation_failure_keeps_pressure_victim_and_original_home_owned() {
+    for phase in ["prepare-for-cache", "--freeze"] {
+        let fixture = fixture(24).await;
+        let mut home = fixture
+            .park("thread:required-pressure-preparation", true)
+            .await;
+        home.overrides.add_exec_matcher(sandbox_mock::ExecMatcher {
+            pattern: phase.into(),
+            exit_code: 1,
+            stdout: Vec::new(),
+            stderr: b"required pressure saving refused".to_vec(),
+        });
+        home.confirm_exit();
+        let owner = IdlePressureOwner::spawn(config(&fixture, 1)).unwrap();
+        let mut updates = owner.subscribe();
+        let held = snapshot(&mut updates, |state| state.last_wave.is_some()).await;
+        let report = held.last_wave.unwrap();
+        assert_eq!((report.completed, report.uncertain), (0, 1));
+        assert!(!report.is_resolved());
+        assert!(owner.shutdown().await.unwrap().decision.wave_inflight);
+        fixture.tracker.close_and_wait().await;
+        assert_eq!(fixture.budget.allocated(), (2, 2048, 1));
+        assert_eq!(home.overrides.kill_call_count(), 0);
+        assert_eq!(home.overrides.destroy_call_count(), 0);
+        home.assert_active_bytes().await;
+        let physical = fixture.operations.close_and_wait().await.unwrap();
+        assert_eq!(
+            (physical.uncertain, physical.cleanup_growth_bytes),
+            (2, 9 * MIB)
+        );
+        let custody = fixture.tracker.take_retained_pressure_owners().unwrap();
+        assert_eq!(custody.len(), 1);
+        let retained = custody[0].take_owner().unwrap();
+        assert_eq!(retained.sandbox_id(), home.id);
+        assert!(!retained.cleanup_completed());
+        drop(retained);
+    }
 }
 
 struct PanicReader;
+
+#[tokio::test]
+async fn publication_refusal_retains_pressure_saving_custody_after_exact_exit() {
+    let fixture = fixture(24).await;
+    let mut home = fixture
+        .park("thread:required-pressure-publication", true)
+        .await;
+    let lock_path = runner_host::paths::home_image_cache_capacity_lock_path(
+        &home.cache.paths().base_dir().join("locks"),
+    );
+    let capacity = runner_host::lock::acquire(lock_path).await.unwrap();
+    home.confirm_exit();
+    let owner = IdlePressureOwner::spawn(config(&fixture, 1)).unwrap();
+    let mut updates = owner.subscribe();
+    let held = snapshot(&mut updates, |state| state.last_wave.is_some()).await;
+    let report = held.last_wave.unwrap();
+    assert_eq!((report.completed, report.uncertain), (0, 1));
+    assert!(!report.is_resolved());
+    assert!(held.decision.wave_inflight);
+    assert!(owner.shutdown().await.unwrap().decision.wave_inflight);
+    fixture.tracker.close_and_wait().await;
+    assert_eq!(fixture.budget.allocated(), (2, 2048, 1));
+    assert_eq!(home.overrides.destroy_call_count(), 0);
+    home.assert_active_bytes().await;
+    assert_eq!(
+        fixture.operations.close_and_wait().await.unwrap().uncertain,
+        1
+    );
+    drop(capacity);
+    let custody = fixture.tracker.take_retained_pressure_owners().unwrap();
+    assert_eq!(custody.len(), 1);
+    let retained = custody[0].take_owner().unwrap();
+    assert_eq!(retained.sandbox_id(), home.id);
+    assert_eq!(
+        retained.state(),
+        runner_lifecycle::idle_pool::IdleActivationState::Exited
+    );
+    drop(retained);
+}
 
 #[tokio::test]
 async fn dropped_pressure_owner_does_not_abort_accepted_saving_or_release_its_full_lease() {
@@ -329,7 +415,7 @@ async fn failed_and_lost_backing_waits_preserve_uncertainty_and_complete_logical
             (2, 9 * MIB)
         );
         home.assert_active_bytes().await;
-        let custody = fixture.tracker.take_retained_pressure_leases().unwrap();
+        let custody = fixture.tracker.take_retained_pressure_owners().unwrap();
         assert_eq!(custody.len(), 1);
         drop(custody);
     }
