@@ -10,8 +10,10 @@ export UPGRADE_WORKER="$REPO_ROOT/.github/scripts/runner-behavior-upgrade-local-
 # real local resources; this helper does not replace the native CI lane.
 python3 - <<'PYTHON'
 import json
+from contextlib import ExitStack
 import os
 from pathlib import Path
+import select
 import signal
 import subprocess
 import tempfile
@@ -248,6 +250,62 @@ def alive(pid):
     except ProcessLookupError:
         return False
 
+def terminate(pid):
+    try:
+        descriptor = os.pidfd_open(pid)
+    except ProcessLookupError:
+        return
+    try:
+        signal.pidfd_send_signal(descriptor, signal.SIGTERM)
+        if not select.select([descriptor], [], [], 5)[0]:
+            signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+            select.select([descriptor], [], [], 5)
+    except ProcessLookupError:
+        pass
+    finally:
+        os.close(descriptor)
+
+def cleanup_case(case):
+    # Also retire owned resources if an assertion or the outer worker deadline
+    # aborts the helper. Normal-path leak assertions run before this fallback.
+    for file in case.glob('client-*.json'):
+        client = json.loads(file.read_text())
+        terminate(client['pid'])
+        terminate(client['guest_pid'])
+        Path(client['fifo']).unlink(missing_ok=True)
+
+def run_case(scenario, failure, case, binary):
+    environment = {**os.environ, 'PATH': f'{binary}:{os.environ["PATH"]}', 'UPGRADE_CASE': str(case), 'UPGRADE_SCENARIO': scenario}
+    result = subprocess.run(['bash', os.environ['UPGRADE_WORKER'], '/fake/bin', 'test'], env=environment, text=True, capture_output=True, timeout=20)
+    output = result.stdout + result.stderr
+    assert (result.returncode == 0) == (failure is None), f'{scenario}: unexpected exit {result.returncode}\n{output}'
+    if failure:
+        assert failure in output and '=== Upgrade test passed ===' not in output, f'{scenario}: missing failure\n{output}'
+    else:
+        assert '=== Upgrade test passed ===' in output, output
+    events = [json.loads(line) for line in (case / 'events').read_text().splitlines()]
+    if not failure:
+        assert sum(e['kind'] == 'submit' for e in events) == 3
+        assert sum(e['kind'] == 'install' for e in events) == 2
+        assert sum(e['kind'] == 'drain' for e in events) == 3
+        assert sum(e['kind'] == 'uninstall' for e in events) == 4
+        assert sum(e['kind'] == 'release' for e in events) == 2
+        assert not (case / 'enabled-a').exists() and not (case / 'active-b').exists()
+        if scenario == 'delayed-ready':
+            assert sum(e['kind'] == 'not-ready' for e in events) == 2
+        print(f'PASS: {scenario}: 3 submissions, 2 installs, 3 drains, 4 uninstalls, 2 explicit releases')
+    else:
+        assert sum(e['kind'] == 'uninstall' for e in events) >= 4, f'{scenario}: exit cleanup missing'
+        print(f'PASS: {scenario}: bounded failure and cleanup')
+    for event in events:
+        if event['kind'] == 'output':
+            assert not Path(event['path']).parent.exists(), f'{scenario}: result directory leaked'
+        if event['kind'] == 'submit':
+            assert not alive(event['pid']), f'{scenario}: submit client leaked'
+    for file in case.glob('client-*.json'):
+        client = json.loads(file.read_text())
+        assert not alive(client['guest_pid']), f'{scenario}: FIFO workload leaked'
+
 with tempfile.TemporaryDirectory(prefix='upgrade-worker-test-') as temporary:
     root = Path(temporary)
     binary = root / 'bin'
@@ -279,36 +337,9 @@ with tempfile.TemporaryDirectory(prefix='upgrade-worker-test-') as temporary:
     for scenario, failure in cases.items():
         case = root / scenario
         case.mkdir()
-        environment = {**os.environ, 'PATH': f'{binary}:{os.environ["PATH"]}', 'UPGRADE_CASE': str(case), 'UPGRADE_SCENARIO': scenario}
-        result = subprocess.run(['bash', os.environ['UPGRADE_WORKER'], '/fake/bin', 'test'], env=environment, text=True, capture_output=True, timeout=20)
-        output = result.stdout + result.stderr
-        assert (result.returncode == 0) == (failure is None), f'{scenario}: unexpected exit {result.returncode}\n{output}'
-        if failure:
-            assert failure in output and '=== Upgrade test passed ===' not in output, f'{scenario}: missing failure\n{output}'
-        else:
-            assert '=== Upgrade test passed ===' in output, output
-        events = [json.loads(line) for line in (case / 'events').read_text().splitlines()]
-        if not failure:
-            assert sum(e['kind'] == 'submit' for e in events) == 3
-            assert sum(e['kind'] == 'install' for e in events) == 2
-            assert sum(e['kind'] == 'drain' for e in events) == 3
-            assert sum(e['kind'] == 'uninstall' for e in events) == 4
-            assert sum(e['kind'] == 'release' for e in events) == 2
-            assert not (case / 'enabled-a').exists() and not (case / 'active-b').exists()
-            if scenario == 'delayed-ready':
-                assert sum(e['kind'] == 'not-ready' for e in events) == 2
-            print(f'PASS: {scenario}: 3 submissions, 2 installs, 3 drains, 4 uninstalls, 2 explicit releases')
-        else:
-            assert sum(e['kind'] == 'uninstall' for e in events) >= 4, f'{scenario}: exit cleanup missing'
-            print(f'PASS: {scenario}: bounded failure and cleanup')
-        for event in events:
-            if event['kind'] == 'output':
-                assert not Path(event['path']).parent.exists(), f'{scenario}: result directory leaked'
-            if event['kind'] == 'submit':
-                assert not alive(event['pid']), f'{scenario}: submit client leaked'
-        for file in case.glob('client-*.json'):
-            client = json.loads(file.read_text())
-            assert not alive(client['guest_pid']), f'{scenario}: FIFO workload leaked'
-            Path(client['fifo']).unlink(missing_ok=True)
+        with ExitStack() as cleanup:
+            cleanup.callback(cleanup_case, case)
+            run_case(scenario, failure, case, binary)
     print(f'PASS: {len(cases)} upgrade synchronization cases; native lifecycle remains covered by CI')
+
 PYTHON
