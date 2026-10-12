@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1010.2](https://github.com/okou-ai/okou/compare/app-v0.1010.1...app-v0.1010.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* **app:** highlight urls in chat drafts ([#38779](https://github.com/okou-ai/okou/issues/38779)) ([0f4d46a](https://github.com/okou-ai/okou/commit/0f4d46a3a5b1c46c91c231dd5e4fa3387a619a90))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.551.2
+    * @okouai/core bumped to 8.742.3
+
 ## [0.1010.1](https://github.com/okou-ai/okou/compare/app-v0.1010.0...app-v0.1010.1) (2026-10-12)
 
 

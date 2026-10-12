@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.727.4](https://github.com/okou-ai/okou/compare/api-v1.727.3...api-v1.727.4) (2026-10-12)
+
+
+### Refactoring
+
+* **api:** clean expired email outbox in one statement ([#39172](https://github.com/okou-ai/okou/issues/39172)) ([10ad20f](https://github.com/okou-ai/okou/commit/10ad20f6fd0fe6f15bec2bbcd6d74e005faed1c5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.551.2
+    * @okouai/core bumped to 8.742.3
+    * @okouai/db bumped to 1.331.3
+    * @okouai/pi-agent-runtime bumped to 1.49.10
+
 ## [1.727.3](https://github.com/okou-ai/okou/compare/api-v1.727.2...api-v1.727.3) (2026-10-12)
 
 
