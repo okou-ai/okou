@@ -46,6 +46,9 @@ readonly VIDEO_GENERATION_RETIREMENT_COMMIT=45b537a596a153a91b76c3bc7223187840f5
 # #38129 moved both memory stages to Luna. DeepSeek route retirement makes
 # earlier APIs unsafe: they would admit work with a deleted execution binding.
 readonly PI_MEMORY_LUNA_ROUTING_COMMIT=77357abdb29ce96b2caf9ee679299602757844dc
+# #38765 reads the Job result rather than compatibility receipts/columns.
+# Storage-independent writers require this reader even before physical DROP.
+readonly PI_MEMORY_JOB_RESULT_READER_COMMIT=cdd6a0abe3f5880e98a02da8df5143232d7632e1
 # #38096 permanently moved OpenRouter Pi captures to generation 5. Current
 # API/Runner/CLI readers no longer execute unversioned contexts, so a rollback
 # must not restore the generation 1 writer or its disabled-switch path.
@@ -182,6 +185,9 @@ if ! git merge-base --is-ancestor "$VIDEO_GENERATION_RETIREMENT_COMMIT" "$TARGET
 fi
 if ! git merge-base --is-ancestor "$PI_MEMORY_LUNA_ROUTING_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates Pi memory Luna routing: ${PI_MEMORY_LUNA_ROUTING_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$PI_MEMORY_JOB_RESULT_READER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Pi memory Job-result readers: ${PI_MEMORY_JOB_RESULT_READER_COMMIT}."
 fi
 if ! git merge-base --is-ancestor "$PI_OPENROUTER_VERSIONED_WRITER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the versioned Pi OpenRouter writer: ${PI_OPENROUTER_VERSIONED_WRITER_COMMIT}."

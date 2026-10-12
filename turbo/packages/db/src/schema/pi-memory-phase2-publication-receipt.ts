@@ -14,10 +14,10 @@ import { agentRuns } from "./agent-run";
 import { storages } from "./storage";
 
 /**
- * Compatibility output for outgoing API readers; current runtime reads the
- * Job's latest maintenance result. Keep writes until those APIs drain and are
- * excluded from rollback, then deploy a writer-free version before dropping
- * this table in a later release. Follow-up: #37970.
+ * Migration-owned compatibility storage. The runtime no longer reads or writes
+ * receipts. Drop only after the storage-independent API is independently
+ * deployed, old statements/leases drain, and rollback excludes old writers.
+ * Follow-up: #39171.
  */
 export const piMemoryPhase2PublicationReceipts = pgTable(
   "pi_memory_phase2_checkpoints",

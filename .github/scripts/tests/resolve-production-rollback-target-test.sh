@@ -54,6 +54,8 @@ case "${1:-}" in
       [ "${MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "77357abdb29ce96b2caf9ee679299602757844dc" ]; then
       [ "${MOCK_PI_MEMORY_LUNA_ROUTING_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "cdd6a0abe3f5880e98a02da8df5143232d7632e1" ]; then
+      [ "${MOCK_PI_MEMORY_JOB_RESULT_READER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "a635ec3afa20cdb5df9c8125afe6cec24ef53e16" ]; then
       [ "${MOCK_PI_OPENROUTER_VERSIONED_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "b6919718b6d856dfa3a7c500b6e899dd3fde7674" ]; then
@@ -264,6 +266,7 @@ assert_failure() {
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
 grep -Fxq "git merge-base --is-ancestor 77357abdb29ce96b2caf9ee679299602757844dc ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must select Luna for memory"
+grep -Fxq "git merge-base --is-ancestor cdd6a0abe3f5880e98a02da8df5143232d7632e1 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must read the Pi memory Job result"
 grep -Fxq "git merge-base --is-ancestor 4558c9fac46ce1a96a25745b477b32b70dab7ae6 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft child-only writer floor"
 grep -Fxq "git merge-base --is-ancestor 7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft owner key floor"
 grep -Fxq "git merge-base --is-ancestor 2222222222222222222222222222222222222222 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the public_brand retirement floor"
@@ -584,6 +587,14 @@ grep -Fq '3737373737373737373737373737373737373737' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/model-route-state-floor.output" ] || fail "pre-retirement API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "model route state floor must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates Pi memory Job-result readers" \
+  run_resolver "${tmp_dir}/pi-memory-job-result-floor.output" MOCK_PI_MEMORY_JOB_RESULT_READER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/pi-memory-job-result-floor.output" ] || fail "receipt-dependent API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Pi memory reader floor must fail before artifact or host access"
 fi
 
 for drop_commit in "" invalid; do

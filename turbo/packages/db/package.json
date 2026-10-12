@@ -8,6 +8,10 @@
       "import": "./src/index.ts",
       "types": "./src/index.ts"
     },
+    "./columns/pi-memory-phase2-job": {
+      "import": "./src/columns/pi-memory-phase2-job.ts",
+      "types": "./src/columns/pi-memory-phase2-job.ts"
+    },
     "./runtime/*": {
       "import": "./src/runtime/*.ts",
       "types": "./src/runtime/*.ts"

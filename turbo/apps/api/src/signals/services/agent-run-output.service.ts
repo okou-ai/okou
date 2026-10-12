@@ -19,7 +19,7 @@ import {
 } from "@okouai/pi-agent-runtime/api";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { piMemoryPhase2MaintenanceCallbackPayloadSchema } from "./pi-memory-phase2-maintenance.service";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
+import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import {
   maintenancePublicationResultCondition,
   maintenancePublicationResultVersion,

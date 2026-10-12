@@ -5,7 +5,7 @@ import {
 import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
+import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
