@@ -2033,7 +2033,7 @@ printf '%s\n' \
             sandbox_id: sandbox_id.to_string(),
             base_dir: Some(base_dir.to_path_buf()),
             generation: Some(process::ProcfsProcessGeneration {
-                pgid: pid,
+                pgid: i32::try_from(pid).unwrap(),
                 starttime: u64::from(pid),
             }),
         }
@@ -3085,7 +3085,7 @@ printf '%s\n' \
             sandbox_id: sandbox_id.clone(),
             base_dir: None,
             generation: Some(process::ProcfsProcessGeneration {
-                pgid: pid,
+                pgid: i32::try_from(pid).unwrap(),
                 starttime: u64::from(pid),
             }),
         };
@@ -3526,7 +3526,7 @@ printf '%s\n' \
             ppid: None,
             port,
             generation: Some(process::ProcfsProcessGeneration {
-                pgid: pid,
+                pgid: i32::try_from(pid).unwrap(),
                 starttime: u64::from(pid),
             }),
         }

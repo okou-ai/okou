@@ -410,11 +410,11 @@ mod tests {
         parts.iter().map(|s| (*s).to_string()).collect()
     }
 
-    fn stat(state: char, pgid: u32, starttime: u64) -> ProcessStat {
+    fn stat(state: char, pgid: i32, starttime: u64) -> ProcessStat {
         stat_with_ppid(state, 7, pgid, starttime)
     }
 
-    fn stat_with_ppid(state: char, ppid: u32, pgid: u32, starttime: u64) -> ProcessStat {
+    fn stat_with_ppid(state: char, ppid: u32, pgid: i32, starttime: u64) -> ProcessStat {
         ProcessStat {
             state,
             ppid,

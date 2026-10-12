@@ -152,10 +152,17 @@ fn read_process_comm_for_scan(proc_root: &Path, pid: u32) -> ProcessCommRead {
 }
 
 fn parse_char_field(field: &[u8]) -> Option<char> {
-    std::str::from_utf8(field).ok()?.chars().next()
+    let [state] = field else {
+        return None;
+    };
+    state.is_ascii().then_some(char::from(*state))
 }
 
 fn parse_u32_field(field: &[u8]) -> Option<u32> {
+    std::str::from_utf8(field).ok()?.parse().ok()
+}
+
+fn parse_i32_field(field: &[u8]) -> Option<i32> {
     std::str::from_utf8(field).ok()?.parse().ok()
 }
 
@@ -178,7 +185,12 @@ fn parse_process_stat(content: &[u8]) -> Option<ProcessStat> {
     // 22 (`starttime`).
     let state = parse_char_field(fields.next()?)?;
     let ppid = parse_u32_field(fields.next()?)?;
-    let pgid = parse_u32_field(fields.next()?)?;
+    // do_task_stat can retain its signed -1 PGID sentinel after sighand is
+    // released. State is sampled separately, so -1 alone does not prove exit.
+    let pgid = parse_i32_field(fields.next()?)?;
+    if pgid < -1 {
+        return None;
+    }
     let starttime = parse_u64_field(fields.nth(16)?)?;
 
     Some(ProcessStat {
@@ -1057,6 +1069,44 @@ mod tests {
     fn parse_process_stat_rejects_invalid_pgid() {
         let stat = stat_with_comm("firecracker", "S", "not-a-number", "123456");
         assert!(parse_process_stat(stat.as_bytes()).is_none());
+    }
+
+    #[test]
+    fn parse_process_stat_accepts_unavailable_pgid_without_inferring_exit() {
+        for state in ["R", "S", "Z", "X", "x"] {
+            let raw = stat_with_comm("exiting", state, "-1", "123456");
+            let ProcessStatRead::Found(stat) = classify_process_stat_read(Ok(raw.into_bytes()))
+            else {
+                panic!("valid signed process group must remain observable");
+            };
+            assert_eq!(stat.pgid, -1);
+            assert_eq!(stat.starttime, 123456);
+            assert_eq!(process_stat_is_live(&stat), matches!(state, "R" | "S"));
+        }
+    }
+
+    #[test]
+    fn parse_process_stat_rejects_pgid_outside_kernel_range() {
+        for pgid in ["-2", "-2147483648", "2147483648", "4294967295"] {
+            let raw = stat_with_comm("exiting", "X", pgid, "123456");
+            assert!(matches!(
+                classify_process_stat_read(Ok(raw.into_bytes())),
+                ProcessStatRead::Invalid
+            ));
+        }
+        let raw = stat_with_comm("live", "S", "2147483647", "123456");
+        assert_eq!(parse_process_stat(raw.as_bytes()).unwrap().pgid, i32::MAX);
+    }
+
+    #[test]
+    fn parse_process_stat_rejects_malformed_state_with_unavailable_pgid() {
+        for state in ["XX", "Xjunk", "☃"] {
+            let raw = stat_with_comm("exiting", state, "-1", "123456");
+            assert!(matches!(
+                classify_process_stat_read(Ok(raw.into_bytes())),
+                ProcessStatRead::Invalid
+            ));
+        }
     }
 
     #[test]

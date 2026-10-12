@@ -48,6 +48,12 @@ struct TestEnvironmentReadError {
     error: Box<dyn FnOnce() -> std::io::Error + Send>,
 }
 
+#[cfg(test)]
+struct TestCleanupStatRead {
+    pid: u32,
+    proc_root: PathBuf,
+}
+
 /// Serializes owners of the runner-local proxy resources and scopes every
 /// PyInstaller extraction to one private launch directory.
 pub(super) struct MitmdumpRuntime {
@@ -55,6 +61,8 @@ pub(super) struct MitmdumpRuntime {
     _lock: Flock<File>,
     #[cfg(test)]
     test_environment_read_error: std::sync::Mutex<Option<TestEnvironmentReadError>>,
+    #[cfg(test)]
+    test_cleanup_stat_read: std::sync::Mutex<Option<TestCleanupStatRead>>,
 }
 
 impl MitmdumpRuntime {
@@ -79,6 +87,8 @@ impl MitmdumpRuntime {
             _lock: runtime_lock,
             #[cfg(test)]
             test_environment_read_error: std::sync::Mutex::new(None),
+            #[cfg(test)]
+            test_cleanup_stat_read: std::sync::Mutex::new(None),
         });
         runtime.reconcile().await?;
         Ok(runtime)
@@ -218,7 +228,7 @@ impl MitmdumpRuntime {
                 for process in &snapshot.processes {
                     signal_stable_process(self, exact_path, process.identity).await?;
                 }
-                wait_for_processes_exit(target, &snapshot).await?;
+                wait_for_processes_exit(self, target, &snapshot).await?;
             }
             tokio::time::sleep(PROCESS_EXIT_POLL_INTERVAL).await;
         }
@@ -259,6 +269,35 @@ impl MitmdumpRuntime {
             }
         }
         tokio::fs::read(format!("/proc/{pid}/environ")).await
+    }
+
+    async fn read_cleanup_process_stat(&self, pid: u32) -> ProcessStatRead {
+        #[cfg(test)]
+        {
+            let test_read = {
+                let mut test_read = self.test_cleanup_stat_read.lock().unwrap();
+                if test_read.as_ref().is_some_and(|read| read.pid == pid) {
+                    test_read.take()
+                } else {
+                    None
+                }
+            };
+            if let Some(test_read) = test_read {
+                return runner_host::process::read_process_stat_checked_from(
+                    &test_read.proc_root,
+                    pid,
+                )
+                .await;
+            }
+        }
+        runner_host::process::read_process_stat_checked(pid).await
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_test_cleanup_stat_read(&self, pid: u32, proc_root: PathBuf) {
+        let mut test_read = self.test_cleanup_stat_read.lock().unwrap();
+        assert!(test_read.is_none(), "test cleanup stat read is already set");
+        *test_read = Some(TestCleanupStatRead { pid, proc_root });
     }
 
     #[cfg(test)]
@@ -452,13 +491,17 @@ fn log_process_snapshot(target: &Path, snapshot: &ProcessSnapshot) {
     }
 }
 
-async fn wait_for_processes_exit(target: &Path, snapshot: &ProcessSnapshot) -> RunnerResult<()> {
+async fn wait_for_processes_exit(
+    runtime: &MitmdumpRuntime,
+    target: &Path,
+    snapshot: &ProcessSnapshot,
+) -> RunnerResult<()> {
     let deadline = tokio::time::Instant::now() + PROCESS_EXIT_TIMEOUT;
     let mut remaining = snapshot.processes.clone();
     loop {
         let mut live = Vec::new();
         for process in &remaining {
-            if let Some(observation) = observe_stable_process(process).await? {
+            if let Some(observation) = observe_stable_process(runtime, process).await? {
                 live.push(observation);
             }
         }
@@ -476,9 +519,13 @@ async fn wait_for_processes_exit(target: &Path, snapshot: &ProcessSnapshot) -> R
 }
 
 async fn observe_stable_process(
+    runtime: &MitmdumpRuntime,
     process: &ProcessObservation,
 ) -> RunnerResult<Option<ProcessObservation>> {
-    match runner_host::process::read_process_stat_checked(process.identity.pid).await {
+    match runtime
+        .read_cleanup_process_stat(process.identity.pid)
+        .await
+    {
         ProcessStatRead::Found(stat)
             if process_stat_is_live(&stat) && stat.starttime == process.identity.starttime =>
         {
@@ -793,6 +840,51 @@ mod tests {
         MitmdumpRuntime::acquire(root.to_path_buf(), root.join("runtime.lock"))
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    async fn cleanup_observation_keeps_nonterminal_unavailable_pgid_live() {
+        let root = tempfile::tempdir().unwrap();
+        let runtime = test_runtime(root.path()).await;
+        let mut child = ProbeChild::spawn(None);
+        let identity = process_identity(child.pid()).await;
+        let ProcessStatRead::Found(stat) =
+            runner_host::process::read_process_stat_checked(identity.pid).await
+        else {
+            panic!("probe child stat must be readable");
+        };
+        let observation = ProcessObservation {
+            identity,
+            stat,
+            command: "cat".to_string(),
+        };
+        let proc_root = root.path().join("proc");
+        let pid_dir = proc_root.join(identity.pid.to_string());
+        std::fs::create_dir_all(&pid_dir).unwrap();
+        let fields = [
+            "R", "0", "-1", "-1", "0", "-1", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0",
+            "0", "0",
+        ];
+        std::fs::write(
+            pid_dir.join("stat"),
+            format!(
+                "{} (cat) {} {}\n",
+                identity.pid,
+                fields.join(" "),
+                identity.starttime,
+            ),
+        )
+        .unwrap();
+        runtime.set_test_cleanup_stat_read(identity.pid, proc_root);
+
+        let live = observe_stable_process(&runtime, &observation)
+            .await
+            .unwrap()
+            .expect("negative PGID alone must not prove exit");
+
+        assert_eq!(live.stat.pgid, -1);
+        assert_eq!(live.identity.starttime, identity.starttime);
+        child.assert_responds();
     }
 
     #[tokio::test]

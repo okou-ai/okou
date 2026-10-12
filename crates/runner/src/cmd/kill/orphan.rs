@@ -341,8 +341,8 @@ enum OrphanExitObservation {
     Live,
     Terminated,
     IdentityChanged {
-        expected_pgid: u32,
-        observed_pgid: u32,
+        expected_pgid: i32,
+        observed_pgid: i32,
         expected_starttime: u64,
         observed_starttime: u64,
     },
@@ -353,8 +353,8 @@ enum OrphanExitObservation {
 pub(super) enum OrphanExitFailure {
     TimedOut,
     IdentityChanged {
-        expected_pgid: u32,
-        observed_pgid: u32,
+        expected_pgid: i32,
+        observed_pgid: i32,
         expected_starttime: u64,
         observed_starttime: u64,
     },
@@ -491,12 +491,16 @@ enum ProcessGroupSignalResult {
     Failed,
 }
 
-fn process_group_is_safe(pid: u32, pgid: u32) -> bool {
+fn process_group_is_safe(pid: u32, pgid: i32) -> bool {
     if pgid <= 1 {
-        tracing::warn!(pid, pgid, "refusing to signal system process group");
+        tracing::warn!(
+            pid,
+            pgid,
+            "refusing to signal unavailable or system process group"
+        );
         return false;
     }
-    if pid != pgid {
+    if i32::try_from(pid).ok() != Some(pgid) {
         tracing::warn!(
             pid,
             pgid,
@@ -505,11 +509,8 @@ fn process_group_is_safe(pid: u32, pgid: u32) -> bool {
         return false;
     }
 
-    let Ok(pgid_i32) = i32::try_from(pgid) else {
-        return false;
-    };
-    if nix::unistd::getpgrp().as_raw() == pgid_i32 {
-        tracing::warn!(pid, pgid = pgid_i32, "refusing to signal own process group");
+    if nix::unistd::getpgrp().as_raw() == pgid {
+        tracing::warn!(pid, pgid, "refusing to signal own process group");
         return false;
     }
     true
@@ -1096,7 +1097,7 @@ mod tests {
         let mut member = tokio::process::Command::new("/bin/sh")
             .arg("-c")
             .arg("IFS= read -r _")
-            .process_group(i32::try_from(leader_stat.pgid).unwrap())
+            .process_group(leader_stat.pgid)
             .kill_on_drop(true)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::null())
@@ -1130,7 +1131,7 @@ mod tests {
             Some(format!(
                 "group leader and member unexpectedly share PID {leader_pid}"
             ))
-        } else if leader_stat.pgid != leader_pid {
+        } else if Some(leader_stat.pgid) != i32::try_from(leader_pid).ok() {
             Some(format!(
                 "group leader PID {leader_pid} does not match its PGID {}",
                 leader_stat.pgid
@@ -1186,20 +1187,29 @@ mod tests {
     }
 
     #[test]
+    fn signal_process_group_rejects_unavailable_pgid() {
+        assert!(!process_group_is_safe(std::process::id(), -1));
+        assert!(!process_group_is_safe(u32::MAX, -1));
+    }
+
+    #[test]
     fn signal_process_group_rejects_init_pgid() {
         assert!(!process_group_is_safe(1, 1));
     }
 
     #[test]
     fn signal_process_group_rejects_own_pgid() {
-        let current_pgid = u32::try_from(nix::unistd::getpgrp().as_raw()).unwrap();
+        let current_pgid = nix::unistd::getpgrp().as_raw();
 
-        assert!(!process_group_is_safe(current_pgid, current_pgid));
+        assert!(!process_group_is_safe(
+            u32::try_from(current_pgid).unwrap(),
+            current_pgid,
+        ));
     }
 
     #[test]
-    fn signal_process_group_rejects_out_of_range_pgid() {
-        assert!(!process_group_is_safe(u32::MAX, u32::MAX));
+    fn signal_process_group_rejects_out_of_range_pid() {
+        assert!(!process_group_is_safe(u32::MAX, i32::MAX));
     }
 
     #[tokio::test]

@@ -8,14 +8,15 @@ use std::path::PathBuf;
 pub struct ProcessStat {
     pub state: char,
     pub ppid: u32,
-    pub pgid: u32,
+    /// Linux reports -1 when signal metadata becomes unavailable during exit.
+    pub pgid: i32,
     pub starttime: u64,
 }
 
 /// Stable generation of a process observed through procfs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProcfsProcessGeneration {
-    pub pgid: u32,
+    pub pgid: i32,
     pub starttime: u64,
 }
 
