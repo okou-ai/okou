@@ -97,6 +97,25 @@ export const workflows = pgTable(
       )
         .on(table.orgId, table.agentId, table.ownerUserId, table.name)
         .where(sql`visibility = 'private'`),
+      // Retain the shared Private key above until namespace-aware APIs are the
+      // serving and rollback floor. These independent keys prepare that cutover.
+      ordinaryPrivateOwnerAgentNameIdx: uniqueIndex(
+        "idx_workflows_ordinary_private_owner_agent_name_unique",
+      )
+        .on(table.orgId, table.agentId, table.ownerUserId, table.name)
+        .where(
+          sql`visibility = 'private' AND official_definition_name IS NULL`,
+        ),
+      officialOwnerAgentDefinitionIdx: uniqueIndex(
+        "idx_workflows_official_owner_agent_definition_unique",
+      )
+        .on(
+          table.orgId,
+          table.agentId,
+          table.ownerUserId,
+          table.officialDefinitionName,
+        )
+        .where(sql`official_definition_name IS NOT NULL`),
       orgIdx: index("idx_workflows_org").on(table.orgId),
       ownerIdx: index("idx_workflows_org_owner").on(
         table.orgId,

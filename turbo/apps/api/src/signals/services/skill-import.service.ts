@@ -1,7 +1,7 @@
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
-import { and, count, eq, gte, or } from "drizzle-orm";
+import { and, count, eq, gte, isNull, or } from "drizzle-orm";
 
 import type { ReadonlyDb } from "../external/db";
 
@@ -57,6 +57,7 @@ export async function countSkillsImportedInSession(
         eq(workflows.agentId, args.agentId),
         eq(workflows.createdBy, args.userId),
         gte(workflows.createdAt, args.since),
+        isNull(workflows.officialDefinitionName),
       ),
     );
 
@@ -87,6 +88,7 @@ export async function findOwnPrivateWorkflowIdByName(
         eq(workflows.ownerUserId, args.ownerUserId),
         eq(workflows.name, args.name),
         eq(workflows.visibility, "private"),
+        isNull(workflows.officialDefinitionName),
       ),
     )
     .limit(1);

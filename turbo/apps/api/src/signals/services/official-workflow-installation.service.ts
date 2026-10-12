@@ -696,7 +696,6 @@ const recoverOrRejectExistingInstallation$ = command(
     const [existing] = await get(db$)
       .select({
         id: workflows.id,
-        officialDefinitionName: workflows.officialDefinitionName,
         officialInstallationState: workflows.officialInstallationState,
         createdAt: workflows.createdAt,
       })
@@ -707,7 +706,7 @@ const recoverOrRejectExistingInstallation$ = command(
           eq(workflows.agentId, args.agentId),
           eq(workflows.ownerUserId, args.userId),
           eq(workflows.visibility, "private"),
-          eq(workflows.name, args.definitionName),
+          eq(workflows.officialDefinitionName, args.definitionName),
         ),
       )
       .limit(1);
@@ -716,7 +715,6 @@ const recoverOrRejectExistingInstallation$ = command(
       return null;
     }
     if (
-      existing.officialDefinitionName === args.definitionName &&
       existing.officialInstallationState === "installing" &&
       args.currentTime.getTime() - existing.createdAt.getTime() >=
         STALE_INSTALLATION_AGE_MS
@@ -741,10 +739,7 @@ const recoverOrRejectExistingInstallation$ = command(
     }
     return {
       kind: "conflict",
-      message:
-        existing.officialDefinitionName === args.definitionName
-          ? "Official Workflow is already installed on this agent"
-          : `A private workflow named "${args.definitionName}" already exists on this agent`,
+      message: "Official Workflow is already installed on this agent",
     };
   },
 );
@@ -879,7 +874,24 @@ const insertInstallingWorkflow$ = command(
       signal,
     );
     if (!inserted.ok) {
-      if (isUniqueViolation(inserted.error)) {
+      if (
+        isUniqueViolation(
+          inserted.error,
+          "idx_workflows_official_owner_agent_definition_unique",
+        )
+      ) {
+        return {
+          kind: "conflict",
+          message:
+            "Official Workflow installation is in progress or already installed on this agent",
+        };
+      }
+      if (
+        isUniqueViolation(
+          inserted.error,
+          "idx_workflows_private_owner_agent_name_unique",
+        )
+      ) {
         return {
           kind: "conflict",
           message: `A private workflow named "${args.definition.name}" already exists on this agent`,
