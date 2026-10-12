@@ -757,11 +757,6 @@
       "owner": "claimMigrationConfirmation$"
     },
     {
-      "id": "TX-0301",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
-      "owner": "correlateUsagePackCheckout"
-    },
-    {
       "id": "TX-0303",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
       "owner": "publishUsagePackCheckoutState$"

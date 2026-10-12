@@ -994,20 +994,20 @@ type UsagePackCheckoutCorrelation =
  * owner and commercial snapshot. Conditional publication, not an advisory
  * acquisition, selects the canonical Session before its URL is exposed.
  */
-async function correlateUsagePackCheckout(
-  db: Pick<Db, "transaction">,
-  args: {
-    readonly orgId: string;
-    readonly usagePackSubscriptionId: string;
-    readonly sessionId: string;
-    readonly customerId: string;
-    readonly planPriceId: string;
-    readonly tier: CreateUsagePackCheckoutSessionArgs["tier"];
-  },
-): Promise<UsagePackCheckoutCorrelation> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0301; new non-billing transactions are prohibited.
-  return await db.transaction(async (tx) => {
-    const correlated = await tx
+const correlateUsagePackCheckout$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly usagePackSubscriptionId: string;
+      readonly sessionId: string;
+      readonly customerId: string;
+      readonly planPriceId: string;
+      readonly tier: CreateUsagePackCheckoutSessionArgs["tier"];
+    },
+  ): Promise<UsagePackCheckoutCorrelation> => {
+    const db = set(writeDb$);
+    const correlated = await db
       .update(usagePackSubscriptions)
       .set({
         stripeCheckoutSessionId: args.sessionId,
@@ -1032,7 +1032,7 @@ async function correlateUsagePackCheckout(
     if (correlated.length === 1) {
       return "correlated";
     }
-    const [current] = await tx
+    const [current] = await db
       .select({
         status: usagePackSubscriptions.subscriptionStatus,
         sessionId: usagePackSubscriptions.stripeCheckoutSessionId,
@@ -1061,7 +1061,7 @@ async function correlateUsagePackCheckout(
     ) {
       return "changed";
     }
-    const [replacement] = await tx
+    const [replacement] = await db
       .select({ id: usagePackSubscriptions.id })
       .from(usagePackSubscriptions)
       .where(
@@ -1077,8 +1077,8 @@ async function correlateUsagePackCheckout(
     // A replacement purchase retired it (superseded); otherwise stale
     // reconciliation retired it without a successor.
     return replacement ? "superseded" : "retired";
-  });
-}
+  },
+);
 
 /**
  * Correlate a Session created by the claim winner itself. Moving the claimed
@@ -1134,88 +1134,92 @@ async function correlateClaimedUsagePackCheckout(
  * null when the snapshot was retired without a successor or taken by another
  * transition; the caller reports a conflict instead of selecting again.
  */
-async function createUsagePackCheckoutForSnapshot(args: {
-  readonly db: Db;
-  readonly stripe: StripeClient;
-  readonly purchase: CreateUsagePackCheckoutSessionArgs;
-  readonly customerId: string;
-  readonly usagePackSubscriptionId: string;
-  readonly fromClaim?: boolean;
-}): Promise<string | null> {
-  const metadata = usagePackSubscriptionMetadata({
-    orgId: args.purchase.orgId,
-    tier: args.purchase.tier,
-    planPriceId: args.purchase.planPriceId,
-    usagePackSubscriptionId: args.usagePackSubscriptionId,
-  });
-  const session = await args.stripe.checkout.sessions.create(
-    {
-      mode: "subscription",
-      customer: args.customerId,
-      line_items: [
-        { price: args.purchase.planPriceId, quantity: 1 },
-        ...usagePackLineItems(args.purchase.allocations),
-      ],
-      allow_promotion_codes: true,
-      success_url: args.purchase.successUrl,
-      cancel_url: args.purchase.cancelUrl,
-      metadata,
-      subscription_data: { metadata },
+const createUsagePackCheckoutForSnapshot$ = command(
+  async (
+    { set },
+    args: {
+      readonly purchase: CreateUsagePackCheckoutSessionArgs;
+      readonly customerId: string;
+      readonly usagePackSubscriptionId: string;
+      readonly fromClaim?: boolean;
     },
-    {
-      idempotencyKey: `usage-pack-checkout:${args.usagePackSubscriptionId}`,
-    },
-  );
-  // Stripe cannot be rolled back. Correlate or expire the Session before
-  // returning it to the caller.
-  if (!session.url) {
-    await args.stripe.checkout.sessions.expire(session.id);
-    throw new Error("Stripe checkout session did not return a URL");
-  }
-  const correlationArgs = {
-    orgId: args.purchase.orgId,
-    usagePackSubscriptionId: args.usagePackSubscriptionId,
-    sessionId: session.id,
-    customerId: args.customerId,
-    planPriceId: args.purchase.planPriceId,
-    tier: args.purchase.tier,
-  };
-  const correlation = args.fromClaim
-    ? await correlateClaimedUsagePackCheckout(args.db, correlationArgs)
-    : await correlateUsagePackCheckout(args.db, correlationArgs);
-  if (correlation === "correlated") {
-    return session.url;
-  }
-  // The Session never became payable through a retained snapshot.
-  await args.stripe.checkout.sessions.expire(session.id);
-  if (correlation === "superseded") {
-    // A later purchase retired this snapshot after it was selected: the same
-    // outcome as this request completing first and then being superseded.
-    return session.url;
-  }
-  return null;
-}
+  ): Promise<string | null> => {
+    const stripe = getStripeClient();
+    const metadata = usagePackSubscriptionMetadata({
+      orgId: args.purchase.orgId,
+      tier: args.purchase.tier,
+      planPriceId: args.purchase.planPriceId,
+      usagePackSubscriptionId: args.usagePackSubscriptionId,
+    });
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: "subscription",
+        customer: args.customerId,
+        line_items: [
+          { price: args.purchase.planPriceId, quantity: 1 },
+          ...usagePackLineItems(args.purchase.allocations),
+        ],
+        allow_promotion_codes: true,
+        success_url: args.purchase.successUrl,
+        cancel_url: args.purchase.cancelUrl,
+        metadata,
+        subscription_data: { metadata },
+      },
+      {
+        idempotencyKey: `usage-pack-checkout:${args.usagePackSubscriptionId}`,
+      },
+    );
+    // Stripe cannot be rolled back. Correlate or expire the Session before
+    // returning it to the caller.
+    if (!session.url) {
+      await stripe.checkout.sessions.expire(session.id);
+      throw new Error("Stripe checkout session did not return a URL");
+    }
+    const correlationArgs = {
+      orgId: args.purchase.orgId,
+      usagePackSubscriptionId: args.usagePackSubscriptionId,
+      sessionId: session.id,
+      customerId: args.customerId,
+      planPriceId: args.purchase.planPriceId,
+      tier: args.purchase.tier,
+    };
+    const correlation = args.fromClaim
+      ? await correlateClaimedUsagePackCheckout(set(writeDb$), correlationArgs)
+      : await set(correlateUsagePackCheckout$, correlationArgs);
+    if (correlation === "correlated") {
+      return session.url;
+    }
+    // The Session never became payable through a retained snapshot.
+    await stripe.checkout.sessions.expire(session.id);
+    if (correlation === "superseded") {
+      // A later purchase retired this snapshot after it was selected: the same
+      // outcome as this request completing first and then being superseded.
+      return session.url;
+    }
+    return null;
+  },
+);
 
-async function createUsagePackCheckout(
-  db: Db,
-  args: CreateUsagePackCheckoutSessionArgs,
-  customerId: string,
-  usagePackSubscriptionId: string,
-  signal: AbortSignal,
-): Promise<StartUsagePackPurchaseResult> {
-  // Provider I/O runs after the snapshot selection commits; the Session is
-  // published by the conditional correlation, and a lost correlation is a
-  // deterministic conflict.
-  const url = await createUsagePackCheckoutForSnapshot({
-    db,
-    stripe: getStripeClient(),
-    purchase: args,
-    customerId,
-    usagePackSubscriptionId,
-  });
-  signal.throwIfAborted();
-  return url === null ? { status: "conflict" } : { status: "checkout", url };
-}
+const createUsagePackCheckout$ = command(
+  async (
+    { set },
+    args: CreateUsagePackCheckoutSessionArgs,
+    customerId: string,
+    usagePackSubscriptionId: string,
+    signal: AbortSignal,
+  ): Promise<StartUsagePackPurchaseResult> => {
+    // Provider I/O runs after the snapshot selection commits; the Session is
+    // published by the conditional correlation, and a lost correlation is a
+    // deterministic conflict.
+    const url = await set(createUsagePackCheckoutForSnapshot$, {
+      purchase: args,
+      customerId,
+      usagePackSubscriptionId,
+    });
+    signal.throwIfAborted();
+    return url === null ? { status: "conflict" } : { status: "checkout", url };
+  },
+);
 
 const createUsagePackCheckoutSession$ = command(
   async (
@@ -1242,8 +1246,8 @@ const createUsagePackCheckoutSession$ = command(
     if (prepared.kind === "redirect") {
       return { status: "checkout", url: prepared.url };
     }
-    return await createUsagePackCheckout(
-      db,
+    return await set(
+      createUsagePackCheckout$,
       args,
       customerId,
       prepared.usagePackSubscriptionId,
@@ -1483,8 +1487,8 @@ export const startUsagePackPurchase$ = command(
       return { status: "checkout", url: prepared.url };
     }
     if (route.kind === "checkout") {
-      return await createUsagePackCheckout(
-        db,
+      return await set(
+        createUsagePackCheckout$,
         args,
         customerId,
         prepared.usagePackSubscriptionId,
@@ -2024,9 +2028,7 @@ const confirmUsagePackPurchaseSnapshot$ = command(
     }
     if (admission.kind === "checkout") {
       const checkout = await settleIncludingAbort(
-        createUsagePackCheckoutForSnapshot({
-          db,
-          stripe,
+        set(createUsagePackCheckoutForSnapshot$, {
           purchase: {
             orgId,
             tier: preview.tier,

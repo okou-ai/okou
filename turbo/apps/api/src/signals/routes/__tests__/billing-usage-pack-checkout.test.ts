@@ -2273,6 +2273,111 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     ).toHaveBeenCalledWith(checkoutSessionId);
   });
 
+  it("expires a known Checkout without a URL before replacing its snapshot", async () => {
+    const fixture = createOrgFixture();
+    authenticateOrg(fixture);
+    const customerId = `cus_${randomUUID()}`;
+    const sessionId = `cs_${randomUUID()}`;
+    const replacementSessionId = `cs_${randomUUID()}`;
+    const checkoutUrl = "https://checkout.stripe.test/recovered-url";
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            role: "org:admin",
+            publicUserData: { userId: fixture.userId },
+            createdAt: now(),
+          },
+        ],
+      },
+    );
+    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+      { data: [] },
+    );
+    context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
+    context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      id: customerId,
+      invoice_settings: { default_payment_method: null },
+      default_source: null,
+    });
+    context.mocks.stripe.paymentMethods.list.mockResolvedValue({ data: [] });
+    const expired: string[] = [];
+    context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
+      id: sessionId,
+      url: null,
+    });
+    context.mocks.stripe.checkout.sessions.expire.mockImplementation((id) => {
+      if (typeof id !== "string") {
+        throw new Error("Expected a known Checkout Session");
+      }
+      expired.push(id);
+      return Promise.resolve({ id, status: "expired" });
+    });
+    const app = await setupApp({
+      context,
+      routes: billingCheckoutRoutes,
+      isolatePg: true,
+    });
+    const client = app(billingUsagePackCheckoutContract);
+    const body = usagePackCheckoutBody(fixture.userId);
+    const headers = { authorization: "Bearer clerk-session" };
+    const failed = await accept(client.create({ body, headers }), [500]);
+    expect(failed.status).toBe(500);
+    expect(expired).toStrictEqual([sessionId]);
+    const original =
+      context.mocks.stripe.checkout.sessions.create.mock.calls[0];
+    expect(original).toBeDefined();
+
+    context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
+      id: replacementSessionId,
+      url: checkoutUrl,
+    });
+    const replacementBody = {
+      ...body,
+      memberUsagePacks: [
+        { memberId: fixture.userId, usagePackUsd: 50 as const },
+      ],
+    };
+    const retried = await accept(
+      client.create({ body: replacementBody, headers }),
+      [200],
+    );
+    expect(retried.body).toStrictEqual({ url: checkoutUrl });
+    const replacement =
+      context.mocks.stripe.checkout.sessions.create.mock.calls[1];
+    expect(replacement).toBeDefined();
+    expect(replacement?.[1]).not.toStrictEqual(original?.[1]);
+    expect(
+      context.mocks.stripe.checkout.sessions.create,
+    ).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        line_items: [
+          { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
+          { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
+        ],
+      }),
+      expect.objectContaining({
+        idempotencyKey: expect.stringContaining("usage-pack-checkout:"),
+      }),
+    );
+    expect(expired).toStrictEqual([sessionId]);
+
+    context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
+      id: replacementSessionId,
+      status: "open",
+      url: checkoutUrl,
+    });
+    const reused = await accept(
+      client.create({ body: replacementBody, headers }),
+      [200],
+    );
+    expect(reused.body).toStrictEqual(retried.body);
+    expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledTimes(
+      2,
+    );
+    expect(expired).toStrictEqual([sessionId]);
+  });
+
   it("rejects stale member selections before creating checkout", async () => {
     const fixture = createOrgFixture();
     authenticateOrg(fixture);
