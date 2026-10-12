@@ -9,7 +9,8 @@ use crate::error::AgentError;
 use crate::failure_patterns::{
     has_exact_codex_oauth_connector, is_codex_chatgpt_account_unsupported_model_message,
     is_codex_context_window_exceeded_message, is_codex_model_capacity_message,
-    is_codex_output_token_limit_message, is_content_policy_rejection_message,
+    is_codex_output_token_limit_message, is_codex_provider_server_error_message,
+    is_content_policy_rejection_message,
 };
 use crate::http::{HttpAttemptObserver, HttpClient};
 use crate::masker::SecretMasker;
@@ -377,6 +378,12 @@ fn codex_error_failure_reason(event: &Value, error: Option<&Value>) -> Option<Fa
     }
     if let Some(reason) = crate::provider_failure::provider_error_reason(error) {
         return Some(reason);
+    }
+    if codex_error_message(Some(error))
+        .as_deref()
+        .is_some_and(is_codex_provider_server_error_message)
+    {
+        return Some(FailureReason::ProviderServerError);
     }
     // Codex maps this incomplete-response stream error to `other`. Recognized
     // native/provider causes above remain authoritative over display text.
@@ -1078,6 +1085,90 @@ mod tests {
                 assert_eq!(diagnostic.failure_reason, Some(reason), "event: {event}");
                 assert_eq!(diagnostic.message, message);
             }
+        }
+    }
+
+    #[test]
+    fn codex_upstream_stream_failures_preserve_native_text_and_structured_causes() {
+        const MESSAGE: &str = "stream disconnected before completion: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req_test in your message.";
+        for prefix in ["", "Error running remote compact task: "] {
+            let message = format!("{prefix}{MESSAGE}");
+            for (fields, expected) in [
+                (json!({}), FailureReason::ProviderServerError),
+                (
+                    json!({"codex_error_info": "other"}),
+                    FailureReason::ProviderServerError,
+                ),
+                (
+                    json!({"codex_error_info": "unauthorized"}),
+                    FailureReason::InvalidCredentials,
+                ),
+                (
+                    json!({"code": "invalid_api_key"}),
+                    FailureReason::InvalidApiKey,
+                ),
+                (
+                    json!({"codex_error_info": "usageLimitExceeded"}),
+                    FailureReason::UsageLimit,
+                ),
+                (
+                    json!({"codex_error_info": "contextWindowExceeded"}),
+                    FailureReason::ContextWindowExceeded,
+                ),
+                (
+                    json!({"codex_error_info": "cyberPolicy"}),
+                    FailureReason::SafetyPolicyRefusal,
+                ),
+                (
+                    json!({"codex_error_info": {"responseStreamDisconnected": {"httpStatusCode": null}}}),
+                    FailureReason::ResponseConnectionLost,
+                ),
+            ] {
+                let mut error = fields;
+                error["message"] = json!(message);
+                for event in [
+                    json!({"type": "error", "message": message, "error": error}),
+                    json!({"type": "turn.completed", "turn": {"status": "failed", "error": error}}),
+                ] {
+                    let diagnostic =
+                        masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                            .expect("terminal failure diagnostic");
+                    assert_eq!(diagnostic.failure_reason, Some(expected), "event: {event}");
+                    assert_eq!(diagnostic.message, message);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn codex_upstream_stream_failures_require_complete_terminal_signature() {
+        const MESSAGE: &str = "stream disconnected before completion: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req_test in your message.";
+        for event in [
+            json!({"type": "warning", "message": MESSAGE}),
+            json!({"type": "turn.completed", "turn": {"status": "completed", "error": {"message": MESSAGE}}}),
+            json!({"type": "item.completed", "item": {"type": "agent_message", "text": MESSAGE}}),
+            json!({"type": "item.completed", "item": {"type": "command_execution", "aggregated_output": MESSAGE, "exit_code": 1}}),
+        ] {
+            assert!(masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw("")).is_none());
+        }
+        for message in [
+            "stream disconnected before completion".to_string(),
+            "stream disconnected before completion: connection reset by peer".to_string(),
+            format!("Tool output: {MESSAGE}"),
+            format!("{MESSAGE} additional diagnostics"),
+            MESSAGE.replace("help.openai.com", "example.invalid"),
+            MESSAGE.replace("req_test", ""),
+            MESSAGE.replace("req_test", "request id with spaces"),
+            MESSAGE.replace("req_test", "req\ncontinued"),
+            MESSAGE.replace("req_test", "req\0continued"),
+            "Error running remote compact task: stream disconnected before completion".to_string(),
+        ] {
+            let event = json!({"type": "turn.completed", "turn": {
+                "status": "failed", "error": {"message": message, "codex_error_info": "other"}
+            }});
+            let diagnostic = masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                .expect("terminal failure diagnostic");
+            assert_eq!(diagnostic.failure_reason, None, "message: {message}");
         }
     }
 

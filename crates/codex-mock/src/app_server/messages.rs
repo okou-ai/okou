@@ -638,6 +638,12 @@ fn turn_failure_error(failure: TurnFailure) -> Value {
 
 fn turn_failure_message(failure: TurnFailure) -> &'static str {
     match failure {
+        TurnFailure::ProviderStreamServerError => {
+            "stream disconnected before completion: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req_response in your message."
+        }
+        TurnFailure::RemoteCompactionServerError => {
+            "Error running remote compact task: stream disconnected before completion: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req_compaction in your message."
+        }
         TurnFailure::OutputTokenLimit => {
             "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens"
         }
@@ -659,9 +665,10 @@ fn turn_failure_error_info(failure: TurnFailure) -> Option<Value> {
         TurnFailure::Generic
         | TurnFailure::ContentPolicyRejection
         | TurnFailure::InvalidRequestFormat => None,
-        TurnFailure::BiologicalRiskRejection | TurnFailure::OutputTokenLimit => {
-            Some(json!("other"))
-        }
+        TurnFailure::BiologicalRiskRejection
+        | TurnFailure::OutputTokenLimit
+        | TurnFailure::ProviderStreamServerError
+        | TurnFailure::RemoteCompactionServerError => Some(json!("other")),
         TurnFailure::ContextWindowExceeded => Some(json!("contextWindowExceeded")),
         TurnFailure::InternalServerError | TurnFailure::BiologicalRiskInternalServerError => {
             Some(json!("internalServerError"))
