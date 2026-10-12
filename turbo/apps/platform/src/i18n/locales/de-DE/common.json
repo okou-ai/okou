@@ -2160,35 +2160,6 @@
       "unread": "Ungelesen",
       "unreadOnly": "Ungelesen"
     },
-    "startCards": {
-      "kinds": {
-        "illustration": {
-          "description": "Erstellen Sie ein fertiges Motiv im gewünschten Stil",
-          "prompt": "Erstelle eine Illustration in dem Stil, den ich beschreibe.",
-          "title": "Illustration erstellen"
-        },
-        "slides": {
-          "description": "Machen Sie aus einem Thema ein fertiges Deck",
-          "prompt": "Erstelle eine Präsentation aus einem Thema oder Dokument, das ich dir gebe.",
-          "title": "Präsentation erstellen"
-        },
-        "website": {
-          "description": "Erstellen Sie eine teilbare Seite",
-          "prompt": "Erstelle und veröffentliche eine teilbare Webseite für mich.",
-          "title": "Website erstellen"
-        }
-      },
-      "openTemplatesAria": "Vorlagen durchsuchen",
-      "startWithPrompt": "Erstellen",
-      "subscription": {
-        "claude": "Claude",
-        "codex": "Codex",
-        "description": "Mit deinem Claude Max 5x/20x- oder Codex-Plan",
-        "openSettingsAria": "Modelleinstellungen öffnen",
-        "title": "Kostenlos ausführen"
-      },
-      "templates": "Vorlagen"
-    },
     "subscriptionReset": {
       "account": "{{provider}} · {{account}} · {{plan}}",
       "alreadyRedeemed": "Diese Zurücksetzungsanfrage wurde bereits eingelöst.",

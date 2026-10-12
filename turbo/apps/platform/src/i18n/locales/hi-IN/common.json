@@ -2160,35 +2160,6 @@
       "unread": "अपठित",
       "unreadOnly": "अपठित"
     },
-    "startCards": {
-      "kinds": {
-        "illustration": {
-          "description": "अपनी पसंद की शैली में तैयार विज़ुअल बनाएं",
-          "prompt": "मेरी बताई गई शैली में एक चित्र बनाएं।",
-          "title": "चित्र बनाएं"
-        },
-        "slides": {
-          "description": "किसी विषय या दस्तावेज़ को बेहतरीन डेक में बदलें",
-          "prompt": "मेरे दिए गए विषय या दस्तावेज़ से एक प्रस्तुति बनाएं।",
-          "title": "प्रस्तुति बनाएं"
-        },
-        "website": {
-          "description": "साझा करने योग्य पेज बनाएं और प्रकाशित करें",
-          "prompt": "मेरे लिए एक साझा करने योग्य वेब पेज बनाएं और प्रकाशित करें।",
-          "title": "वेबसाइट बनाएं"
-        }
-      },
-      "openTemplatesAria": "टेम्पलेट ब्राउज़ करें",
-      "startWithPrompt": "बनाएं",
-      "subscription": {
-        "claude": "Claude",
-        "codex": "Codex",
-        "description": "अपने Claude Max 5x/20x या Codex प्लान से",
-        "openSettingsAria": "मॉडल सेटिंग्स खोलें",
-        "title": "मुफ़्त में काम चलाएँ"
-      },
-      "templates": "टेम्पलेट"
-    },
     "subscriptionReset": {
       "account": "{{provider}} · {{account}} · {{plan}}",
       "alreadyRedeemed": "यह रीसेट अनुरोध पहले ही इस्तेमाल किया जा चुका है।",
