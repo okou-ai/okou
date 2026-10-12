@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.5](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.4...guest-control-client-v0.23.5) (2026-10-12)
+
+
+### Performance Improvements
+
+* **runner:** attribute host-side storage apply phases ([#39232](https://github.com/okou-ai/okou/issues/39232)) ([87699ec](https://github.com/okou-ai/okou/commit/87699ec74930a925c53aa653b48cc78ab63e634e))
+
 ## [0.23.4](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.3...guest-control-client-v0.23.4) (2026-10-12)
 
 ## [0.23.3](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.2...guest-control-client-v0.23.3) (2026-10-11)

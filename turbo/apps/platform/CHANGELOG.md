@@ -12,6 +12,33 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1014.0](https://github.com/okou-ai/okou/compare/app-v0.1013.0...app-v0.1014.0) (2026-10-12)
+
+
+### Features
+
+* **app:** roll out stable preview fullscreen and remove its switch ([#39268](https://github.com/okou-ai/okou/issues/39268)) ([7df145d](https://github.com/okou-ai/okou/commit/7df145de2bdad57f6d3aee8e79a2ddee9b122abb))
+
+
+### Bug Fixes
+
+* **app:** hold connector marks empty until they load ([#39208](https://github.com/okou-ai/okou/issues/39208)) ([ce9dbb1](https://github.com/okou-ai/okou/commit/ce9dbb19fd4d378b9f0c38ed9810e4afc0ca6eef))
+* **app:** stop loading placeholders standing in for identity marks ([#39210](https://github.com/okou-ai/okou/issues/39210)) ([b283a57](https://github.com/okou-ai/okou/commit/b283a571219d91db03903f2d885627adbfd7c3d9))
+
+
+### Refactoring
+
+* remove chat running indicator wave feature switch ([#39284](https://github.com/okou-ai/okou/issues/39284)) ([bfc319c](https://github.com/okou-ai/okou/commit/bfc319ccbe51dc0d33b585ba04dab4b1d7873adb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.552.1
+    * @okouai/core bumped to 8.746.0
+    * @okouai/ui bumped to 1.15.0
+
 ## [0.1013.0](https://github.com/okou-ai/okou/compare/app-v0.1012.0...app-v0.1013.0) (2026-10-12)
 
 

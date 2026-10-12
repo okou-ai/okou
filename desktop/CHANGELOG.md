@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.3](https://github.com/okou-ai/okou/compare/desktop-v0.53.2...desktop-v0.53.3) (2026-10-12)
+
+
+### Bug Fixes
+
+* **desktop:** keep native update manifests free of electron releases ([#39302](https://github.com/okou-ai/okou/issues/39302)) ([147e765](https://github.com/okou-ai/okou/commit/147e76579e0029ef1db4b47708ac39995937da5e))
+
 ## [0.53.2](https://github.com/okou-ai/okou/compare/desktop-v0.53.1...desktop-v0.53.2) (2026-10-12)
 
 
