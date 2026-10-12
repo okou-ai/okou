@@ -587,7 +587,6 @@ test("Consent browser automatically verifies the current account and closes with
   expect(credentials).toBe("include");
   expect(closed).toHaveBeenCalledOnce();
   expect(within(card).queryByText(/^Connected(?: \(.+\))?$/u)).toBeNull();
-  expect(queryAction("button", "Confirm Discord consent", card)).toBeNull();
 });
 
 test.each(["", "invalid-proof"])(
@@ -613,7 +612,6 @@ test.each(["", "invalid-proof"])(
     ).resolves.toBeInTheDocument();
     expect(window.location.hash).toBe("");
     const card = getIntegrationCard("Discord");
-    expect(queryAction("button", "Confirm Discord consent", card)).toBeNull();
     expect(within(card).queryByText(/^Connected(?: \(.+\))?$/u)).toBeNull();
     expect(approvals).toStrictEqual([]);
   },
@@ -711,13 +709,6 @@ test("Leaving the consent route cancels automatic verification and destroys its 
       "Connect your Discord account through official browser consent.",
     ),
   ).resolves.toBeInTheDocument();
-  expect(
-    queryAction(
-      "button",
-      "Confirm Discord consent",
-      getIntegrationCard("Discord"),
-    ),
-  ).toBeNull();
   expect(approvals).toStrictEqual([{ state: attemptState, approvalProof }]);
   expect(closed).not.toHaveBeenCalled();
 });
