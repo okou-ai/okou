@@ -10,7 +10,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  useGet,
   useLastLoadable,
   useLastResolved,
   useLoadable,
@@ -26,8 +25,6 @@ import {
   cn,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { ArtifactRef } from "../../signals/chat-page/thread-sidebar.ts";
 import {
   CsvPreviewTable,
@@ -281,16 +278,11 @@ function ArtifactSidebarResolvedContent({
   text$,
   toggleFullscreen,
 }: ArtifactSidebarResolvedContentProps) {
-  const stableHost =
-    useGet(featureSwitch$)[FeatureSwitchKey.StablePreviewFullscreen];
   return (
     <FullscreenPanel
       fullscreen={fullscreen}
-      relocate={!stableHost}
       className={
-        stableHost && fullscreen
-          ? "h-viewport max-h-viewport min-h-viewport"
-          : undefined
+        fullscreen ? "h-viewport max-h-viewport min-h-viewport" : undefined
       }
       data-testid="artifact-sidebar"
       scrollAnchor={

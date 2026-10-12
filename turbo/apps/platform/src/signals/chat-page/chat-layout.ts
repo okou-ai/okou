@@ -92,8 +92,7 @@ function createChatLayoutSignals(): ChatLayoutSignals {
   return { transitionOnRef$ };
 }
 
-// The legacy page and shell-owned sidebar mount this same layout owner
-// exclusively, so thread navigation does not replace its transition lifetime.
+// The shell-owned sidebar keeps its transition lifetime across thread navigation.
 export const chatLayout = createChatLayoutSignals();
 
 /** Transactions acknowledge the editor DOM even when draft sync suppresses onUpdate. */

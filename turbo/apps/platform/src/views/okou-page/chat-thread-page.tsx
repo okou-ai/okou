@@ -1,4 +1,3 @@
-import type { ChatLayoutSignals } from "../../signals/chat-page/chat-layout.ts";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
@@ -230,7 +229,6 @@ import {
   ThreadSidebarSlot,
   useOpenThreadArtifacts,
 } from "./thread-sidebar.tsx";
-import { ChatThreadSidebarShell } from "./chat-thread-sidebar-shell.tsx";
 import { openQueueDrawer$ } from "../../signals/queue-page/queue-drawer-state.ts";
 import {
   closeChatThreadEmojiMenu$,
@@ -2976,31 +2974,12 @@ export function ChatThreadSidebarPane() {
   );
 }
 
-export function ChatThreadPage({
-  layout,
-}: {
-  readonly layout: ChatLayoutSignals;
-}) {
-  const activeThreadSidebar = useGet(activeThreadSidebar$);
-  const stableHost =
-    useGet(featureSwitch$)[FeatureSwitchKey.StablePreviewFullscreen];
+export function ChatThreadPage() {
   const leftPane = useGet(currentLeftPane$);
   const rightPane = useGet(currentRightPane$);
-  const threads = <ChatThreadArea leftPane={leftPane} rightPane={rightPane} />;
   return withChatScrollLayout(
     <>
-      {stableHost ? (
-        threads
-      ) : (
-        <ChatThreadSidebarShell
-          layout={layout}
-          animateEntry={activeThreadSidebar?.animateEntry ?? true}
-          open={activeThreadSidebar !== null}
-          sidebar={<ChatThreadSidebarPane />}
-        >
-          {threads}
-        </ChatThreadSidebarShell>
-      )}
+      <ChatThreadArea leftPane={leftPane} rightPane={rightPane} />
       <ChatConnectorActionConnectModal />
     </>,
   );

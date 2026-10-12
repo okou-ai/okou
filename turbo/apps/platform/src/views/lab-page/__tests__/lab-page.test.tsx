@@ -106,11 +106,6 @@ test("Lab groups active feature switches", async () => {
     ),
   ).toBeVisible();
   expect(buttonNamed("Reset all")).toBeEnabled();
-  expect(
-    within(
-      featureSwitchRow(FeatureSwitchKey.StablePreviewFullscreen),
-    ).getByRole("switch"),
-  ).not.toBeChecked();
 });
 
 test("Maintainer filters narrow the feature list", async () => {
@@ -152,10 +147,8 @@ test("Maintainer filters narrow the feature list", async () => {
   expect(screen.getAllByRole("switch")).toHaveLength(totalCount);
 });
 
-test.each([
-  FeatureSwitchKey.TestOauthConnector,
-  FeatureSwitchKey.StablePreviewFullscreen,
-])("Toggle and reset a Lab override (%s)", async (featureKey) => {
+test("Toggle and reset a Lab override", async () => {
+  const featureKey = FeatureSwitchKey.TestOauthConnector;
   const user = userEvent.setup();
   const updatedSwitches: Record<string, boolean>[] = [];
   let resetRequested = false;

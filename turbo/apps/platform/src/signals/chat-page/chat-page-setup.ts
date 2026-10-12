@@ -16,8 +16,6 @@ import {
 import { createThreadMetaLookup } from "./chat-thread-event-sourcing.ts";
 import { recordBootstrapThreadMetadataTiming$ } from "../../lib/posthog.ts";
 
-import { chatLayout } from "./chat-layout.ts";
-
 const resolveLeftThreadMeta$ = createThreadMetaLookup();
 const resolveRightThreadMeta$ = createThreadMetaLookup();
 
@@ -78,11 +76,7 @@ const internalSetupChatPage$ = command(
       throw new Error("threadId is required to load chat page");
     }
 
-    set(
-      updatePage$,
-      createElement(ChatThreadPage, { layout: chatLayout }),
-      "sidebar",
-    );
+    set(updatePage$, createElement(ChatThreadPage), "sidebar");
 
     const sidebarThreadId = get(searchParams$).get(SIDEBAR_PARAM);
     const initialEventId = chatEventIdFromHash(get(hash$));
