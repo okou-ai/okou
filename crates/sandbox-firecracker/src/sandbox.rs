@@ -890,6 +890,54 @@ impl FirecrackerSandbox {
             .map_err(|error| self.operation_start_error(operation, error))
     }
 
+    async fn apply_storage_manifest_observed(
+        &self,
+        request: &StorageManifestRequest<'_>,
+        mut timing: Option<&mut sandbox::StorageManifestTiming>,
+    ) -> sandbox::Result<ExecResult> {
+        let operation = SandboxOperation::Exec;
+        let timeout_ms = request.timeout_ms();
+        let admission_started = timing.as_ref().map(|_| Instant::now());
+        self.run_bounded_guest_operation(operation, |guest| async move {
+            if let (Some(timing), Some(started)) = (timing.as_deref_mut(), admission_started) {
+                timing.admission = Some(started.elapsed());
+            }
+            validate_exec_capture_timeout(timeout_ms)?;
+            let timeout = Duration::from_millis(u64::from(timeout_ms) + 5_000);
+            let result = if let Some(timing) = timing.as_deref_mut() {
+                guest
+                    .guest_storage_manifest_with_timing(
+                        request.manifest_json,
+                        request.run_id,
+                        request.runtime_dir,
+                        timeout_ms,
+                        timeout,
+                        &mut timing.request,
+                    )
+                    .await
+            } else {
+                guest
+                    .guest_storage_manifest(
+                        request.manifest_json,
+                        request.run_id,
+                        request.runtime_dir,
+                        timeout_ms,
+                        timeout,
+                    )
+                    .await
+            };
+            result.map(|result| {
+                let log_started = timing.as_ref().map(|_| Instant::now());
+                result.log_resources(&self.id);
+                if let (Some(timing), Some(started)) = (timing, log_started) {
+                    timing.resource_log = Some(started.elapsed());
+                }
+                storage_manifest_exec_result(result)
+            })
+        })
+        .await
+    }
+
     async fn run_bounded_guest_operation<T, Fut>(
         &self,
         operation: SandboxOperation,
@@ -2791,26 +2839,17 @@ impl Sandbox for FirecrackerSandbox {
         &self,
         request: &StorageManifestRequest<'_>,
     ) -> sandbox::Result<ExecResult> {
-        let operation = SandboxOperation::Exec;
-        let timeout_ms = request.timeout_ms();
+        self.apply_storage_manifest_observed(request, None).await
+    }
 
-        self.run_bounded_guest_operation(operation, |guest| async move {
-            validate_exec_capture_timeout(timeout_ms)?;
-            guest
-                .guest_storage_manifest(
-                    request.manifest_json,
-                    request.run_id,
-                    request.runtime_dir,
-                    timeout_ms,
-                    Duration::from_millis(u64::from(timeout_ms) + 5_000),
-                )
-                .await
-                .map(|result| {
-                    result.log_resources(&self.id);
-                    storage_manifest_exec_result(result)
-                })
-        })
-        .await
+    async fn apply_storage_manifest_with_timing(
+        &self,
+        request: &StorageManifestRequest<'_>,
+        timing: &mut sandbox::StorageManifestTiming,
+    ) -> sandbox::Result<ExecResult> {
+        *timing = sandbox::StorageManifestTiming::default();
+        self.apply_storage_manifest_observed(request, Some(timing))
+            .await
     }
 
     async fn mount_home_drive(&self) -> sandbox::Result<ExecResult> {
