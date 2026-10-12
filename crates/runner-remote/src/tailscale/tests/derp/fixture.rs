@@ -30,6 +30,8 @@ use tokio::{
     sync::Notify,
 };
 
+mod tests;
+
 struct State {
     remaining: usize,
     pending: bool,
@@ -106,18 +108,18 @@ impl WriteGate {
     }
 }
 
-pub(crate) struct PausedTcp {
-    socket: TcpStream,
+pub(crate) struct PausedTcp<Io = TcpStream> {
+    socket: Io,
     gate: Arc<WriteGate>,
 }
 
-impl PausedTcp {
-    pub(in crate::tailscale::tests) fn new(socket: TcpStream, gate: Arc<WriteGate>) -> Self {
+impl<Io> PausedTcp<Io> {
+    pub(in crate::tailscale::tests) fn new(socket: Io, gate: Arc<WriteGate>) -> Self {
         Self { socket, gate }
     }
 }
 
-impl AsyncRead for PausedTcp {
+impl<Io: AsyncRead + Unpin> AsyncRead for PausedTcp<Io> {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -135,7 +137,7 @@ impl AsyncRead for PausedTcp {
     }
 }
 
-impl AsyncWrite for PausedTcp {
+impl<Io: AsyncWrite + Unpin> AsyncWrite for PausedTcp<Io> {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -170,9 +172,14 @@ impl AsyncWrite for PausedTcp {
     }
 }
 
-impl Drop for PausedTcp {
+impl<Io> Drop for PausedTcp<Io> {
     fn drop(&mut self) {
-        self.gate.state.lock().unwrap().destroyed = true;
+        // Preserve the original failure and poison; cleanup must not panic again.
+        self.gate
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .destroyed = true;
         self.gate.changed.notify_waiters();
     }
 }
