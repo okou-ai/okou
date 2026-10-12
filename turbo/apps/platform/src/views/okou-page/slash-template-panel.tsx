@@ -569,8 +569,15 @@ export function SlashTemplatePanel({
   return (
     <div
       className={cn(
-        "flex h-full w-full overflow-hidden",
-        reversed ? "flex-row" : "flex-col",
+        "flex min-h-0 w-full overflow-hidden",
+        reversed ? "flex-row" : "h-full flex-col",
+        // Reserve preview space while categories are available so hovering a
+        // workflow cannot move the menu under the pointer. Filtered workflow
+        // results and mobile menus only claim the height their rows need.
+        reversed &&
+          isDesktop &&
+          categories.length > 0 &&
+          "h-[min(380px,var(--available-height))]",
       )}
       data-slot="slash-panel"
       onMouseLeave={(event) => {

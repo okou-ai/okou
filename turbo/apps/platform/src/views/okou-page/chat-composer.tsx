@@ -336,7 +336,6 @@ function isHappyDomTestEnvironment(): boolean {
 interface ChatComposerProps {
   readonly signals: ComposerSignals;
   readonly showPendingItems?: boolean;
-  readonly anchorSuggestionsToComposer?: boolean;
 }
 
 interface ComposerComputerUseHost {
@@ -7952,12 +7951,10 @@ function ComposerInputSlot({
   signals,
   actions,
   minimumHeightClassName,
-  anchorSuggestionsToComposer,
 }: {
   signals: ComposerSignals;
   actions: ComposerActions;
   minimumHeightClassName: string;
-  anchorSuggestionsToComposer: boolean;
 }) {
   const sending = useLastResolved(signals.submission.sending$) ?? false;
   const notifyDraftChanged = useComposerDraftChange(signals);
@@ -8079,7 +8076,6 @@ function ComposerInputSlot({
     >
       <TiptapWorkflowComposer
         signals={signals}
-        anchorSuggestionsToComposer={anchorSuggestionsToComposer}
         onDraftChange={notifyDraftChanged}
         sending={sending}
         onKeyDown={handleKeyDown}
@@ -9095,13 +9091,7 @@ function containsFiles(dataTransfer: DataTransfer): boolean {
   );
 }
 
-function ComposerCard({
-  signals,
-  anchorSuggestionsToComposer,
-}: {
-  signals: ComposerSignals;
-  anchorSuggestionsToComposer: boolean;
-}) {
+function ComposerCard({ signals }: { signals: ComposerSignals }) {
   const actions = useComposerActions(signals);
   const connectorActions = useComposerConnectorActions(signals.connector);
   const hasTemplateAttachment = useGet(signals.template.hasTemplateAttachment$);
@@ -9160,7 +9150,6 @@ function ComposerCard({
             signals={signals}
             actions={actions}
             minimumHeightClassName={layoutHeightClassNames.input}
-            anchorSuggestionsToComposer={anchorSuggestionsToComposer}
           />
           {/* Voice states share 8px/12px outer tray spacing and 12px/8px
               inner padding so their surfaces stay aligned through handoff. */}
@@ -9178,7 +9167,6 @@ function ComposerCard({
 export function ChatComposer({
   signals,
   showPendingItems = true,
-  anchorSuggestionsToComposer = false,
 }: ChatComposerProps) {
   const setImageAnnotationLifecycleRef = useSet(
     signals.setImageAnnotationLifecycleRef$,
@@ -9194,10 +9182,7 @@ export function ChatComposer({
         className="@container/composer relative flex w-full min-w-0 flex-col"
       >
         {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
-        <ComposerCard
-          signals={signals}
-          anchorSuggestionsToComposer={anchorSuggestionsToComposer}
-        />
+        <ComposerCard signals={signals} />
         <ComposerNoticeSlot signals={signals} />
         <ImageAnnotationEditor signals={signals.imageAnnotation} />
       </div>
