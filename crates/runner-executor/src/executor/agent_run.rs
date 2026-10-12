@@ -49,7 +49,7 @@ use super::guest_state::{restore_guest_state, sync_guest_timezone};
 use super::session_history_cpu::{SessionHistoryCpuJob, SessionHistoryPrefixOutcome};
 use super::session_history_download::{
     SessionHistoryDownloadPhaseTiming, SessionHistoryDownloadTimings,
-    SessionHistoryMaterialization, SessionHistoryMaterializer,
+    SessionHistoryMaterialization, SessionHistoryMaterializer, SessionHistoryReadinessObserver,
 };
 use super::session_restore::{
     FreshSessionRestorePlan, MaterializedResumeSession, SessionRestoreDiagnostics,
@@ -1503,6 +1503,29 @@ struct StagedSessionRestoreInput<'a> {
     staging_path: &'a str,
 }
 
+struct GuestStorageStart<'a> {
+    history_readiness: &'a SessionHistoryReadinessObserver,
+    staged_history: Option<(oneshot::Sender<()>, &'a AtomicBool)>,
+}
+
+impl GuestStorageStart<'_> {
+    fn record(&mut self, telemetry: &mut JobTelemetry) {
+        // Sample the existing owner after Host preparation and before Guest delivery.
+        // This records Runner handoff, not admission by the Guest storage worker.
+        telemetry.record_with_outcome(
+            "session_history_readiness_at_guest_storage_start",
+            Duration::ZERO,
+            true,
+            None,
+            Some(self.history_readiness.snapshot().outcome()),
+        );
+        if let Some((start, storage_apply_admitted)) = self.staged_history.take() {
+            storage_apply_admitted.store(true, Ordering::Release);
+            let _ = start.send(());
+        }
+    }
+}
+
 async fn discard_staged_session_history(sandbox: &dyn Sandbox, staging_path: &str) -> bool {
     match sandbox
         .finalize_staged_file(&StagedFileFinalizeRequest {
@@ -1821,7 +1844,7 @@ async fn prepare_guest_storage(
     start: &RunStart<'_>,
     telemetry: &mut JobTelemetry,
     prepared_storage: &mut Option<crate::storage_cache::PreparedStorage>,
-    mut storage_apply_start: Option<(oneshot::Sender<()>, &AtomicBool)>,
+    mut storage_start: GuestStorageStart<'_>,
 ) -> RunnerResult<Option<crate::storage_cache::DeferredBackgroundFill>> {
     let Some(manifest) = &context.storage_manifest else {
         return Ok(None);
@@ -1865,10 +1888,7 @@ async fn prepare_guest_storage(
                 })?;
                 let files = prepared.plan.take_decoded();
                 let guest_manifest = prepared.plan.into_guest_manifest();
-                if let Some((start, storage_apply_admitted)) = storage_apply_start.take() {
-                    storage_apply_admitted.store(true, Ordering::Release);
-                    let _ = start.send(());
-                }
+                storage_start.record(telemetry);
                 let download_started = Instant::now();
                 let download_result = super::storage::download_storages_with_files(
                     sandbox,
@@ -1910,10 +1930,7 @@ async fn prepare_guest_storage(
                     populate_storage_plan(&mut plan, None, sandbox, config, telemetry).await?;
                 let files = plan.take_decoded();
                 let guest_manifest = plan.into_guest_manifest();
-                if let Some((start, storage_apply_admitted)) = storage_apply_start.take() {
-                    storage_apply_admitted.store(true, Ordering::Release);
-                    let _ = start.send(());
-                }
+                storage_start.record(telemetry);
                 let download_started = Instant::now();
                 let download_result = super::storage::download_storages_with_files(
                     sandbox,
@@ -2012,6 +2029,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         mut pre_spawn_admission_lease,
         guest_state_prepared,
     } = controls;
+    let history_readiness = session_history_restore_plan.readiness_observer(context);
     let staged_history_eligible = start.home_reuse_result == HomeReuseResult::Reused
         && start.reuse_result != SandboxReuseResult::Reused
         && context.resume_session.is_some()
@@ -2110,7 +2128,13 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                                 &start,
                                 telemetry,
                                 &mut prepared_storage,
-                                Some((storage_apply_start, &storage_apply_admitted)),
+                                GuestStorageStart {
+                                    history_readiness: &history_readiness,
+                                    staged_history: Some((
+                                        storage_apply_start,
+                                        &storage_apply_admitted,
+                                    )),
+                                },
                             );
                             tokio::pin!(storage);
                             let result = tokio::select! {
@@ -2482,7 +2506,10 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                         &start,
                         telemetry,
                         &mut prepared_storage,
-                        None,
+                        GuestStorageStart {
+                            history_readiness: &history_readiness,
+                            staged_history: None,
+                        },
                     ),
                 ))
                 .await;
