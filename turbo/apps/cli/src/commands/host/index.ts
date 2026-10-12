@@ -76,7 +76,7 @@ Examples:
 Notes:
   - Publishes a static directory containing index.html. It does not deploy a long-running backend, database, worker, or framework runtime; use the project's deployment workflow for those
   - For an HTML presentation, add --artifact-kind presentation-html
-  - Covers use the artifactPreviews feature switch (enable it in Lab); when disabled, --preview is ignored and publishing continues
+  - Covers are enabled by default; if artifactPreviews is disabled in Lab, --preview is ignored and publishing continues
   - When enabled, use a user-selected cover or run host screenshot on the final bundle, inspect the image, and pass --preview; re-capture after editing
   - Preview images upload separately to private artifact storage and feed Artifacts cards; they do not become public files inside your site
   - The returned hosted URL is the user-facing artifact view; a local index.html or localhost server is not

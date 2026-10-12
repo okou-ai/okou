@@ -878,11 +878,9 @@ describe("CHAT-02: generation templates and attachments", () => {
         throw new Error("Expected an organization");
       }
       const actor = { ...owner, orgId: owner.orgId };
-      if (artifactPreviewsEnabled) {
-        await updateFeatureSwitchesForUser(context, actor, {
-          [FeatureSwitchKey.ArtifactPreviews]: true,
-        });
-      }
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.ArtifactPreviews]: artifactPreviewsEnabled,
+      });
       chatCallbacks.failIfChatCallbackRouteIsFetched();
       // Pinned by slug because the assertions below quote this runbook by name.
       const template = PRESENTATION_TEMPLATE_PICKER_ITEMS.find((item) => {

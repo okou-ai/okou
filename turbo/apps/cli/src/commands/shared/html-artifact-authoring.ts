@@ -187,7 +187,7 @@ export function createHtmlArtifactAuthoringInstructions(
     ...(options.artifactPreviewsEnabled
       ? [
           `- Capture the final bundle with \`okou host screenshot ${outputDir} --out ${previewPath}${options.kind === "website" ? " --spa" : ""}\`. This local tool writes a PNG and a bundle receipt; it uploads nothing.`,
-          "- Open and visually inspect that PNG. Fix blank, loading, clipped, or incomplete content, then capture again. A capture failure is not a successful preview; do not omit --preview to fall back to a server screenshot.",
+          "- Open and visually inspect that PNG. Fix blank, loading, clipped, or incomplete content, then capture again. Resolve capture failures before publishing; do not omit --preview.",
           "- For asynchronous charts, set window.__OKOU_PREVIEW_READY__ to false until their first complete frame, then true (or expose a promise). The capture tool waits for visible images and fonts and samples animations in a clean local browser.",
           "- Keep the screenshot and receipt outside the hosted directory. Publishing rejects a screenshot receipt if the bundle has changed since capture.",
           "- If the user supplied a cover image, use its local PNG/JPEG path with --preview instead of creating a screenshot. Covers must be at most 5 MiB and 16 megapixels.",

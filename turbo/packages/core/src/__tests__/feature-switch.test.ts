@@ -48,20 +48,21 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("enables artifact previews for staff and honors explicit overrides", () => {
-    for (const [context, enabled] of [
-      [{}, false],
-      [{ orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }, true],
-      [{ orgId: "external-org" }, false],
-    ] as const) {
-      expect(
-        getAllFeatureStates(context)[FeatureSwitchKey.ArtifactPreviews],
-      ).toBe(enabled);
+  it.each([
+    FeatureSwitchKey.ArtifactPreviews,
+    FeatureSwitchKey.SlackLinkUnfurls,
+  ])("enables %s for everyone and honors explicit overrides", (key) => {
+    for (const context of [
+      {},
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+      { orgId: "external-org", userId: "external-user" },
+    ]) {
+      expect(getAllFeatureStates(context)[key]).toBe(true);
       for (const override of [true, false]) {
         expect(
-          isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, {
+          isFeatureEnabled(key, {
             ...context,
-            overrides: { [FeatureSwitchKey.ArtifactPreviews]: override },
+            overrides: { [key]: override },
           }),
         ).toBe(override);
       }

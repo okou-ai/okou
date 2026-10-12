@@ -166,9 +166,6 @@ describe("sandbox hosted previews", () => {
       throw new Error("Expected an organization");
     }
     const actor = { ...owner, orgId: owner.orgId };
-    await updateFeatureSwitchesForUser(context, actor, {
-      artifactPreviews: true,
-    });
     host.captureHostedSitesS3();
     const html =
       '<html><head><title>Morning coffee</title><meta name="description" content="Fresh coffee daily"><meta property="og:image" content="social-card.png"></head><body>Coffee menu</body></html>';
@@ -229,9 +226,6 @@ describe("sandbox hosted previews", () => {
       throw new Error("Expected an organization");
     }
     const actor = { ...owner, orgId: owner.orgId };
-    await updateFeatureSwitchesForUser(context, actor, {
-      artifactPreviews: true,
-    });
     const previewObjects = previewStorage();
     const html =
       '<html><head><title>Quarterly &amp; Annual</title><meta name="description" content="Public summary"></head><body>Report</body></html>';
@@ -361,6 +355,9 @@ describe("sandbox hosted previews", () => {
         throw new Error("Expected an organization");
       }
       const actor = { ...owner, orgId: owner.orgId };
+      await updateFeatureSwitchesForUser(context, actor, {
+        artifactPreviews: false,
+      });
       previewStorage();
       const bytes = await image();
       const body = {

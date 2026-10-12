@@ -70,9 +70,10 @@ async function fixture(
   context.mocks.slack.chat.postMessage.mockClear();
   context.mocks.slack.chat.unfurl.mockResolvedValue({ ok: true });
   await updateFeatureSwitchesForUser(context, actor, {
-    artifactPreviews: true,
     privateArtifacts: options.privateArtifacts ?? false,
-    slackLinkUnfurls: options.enabled ?? true,
+    ...(options.enabled === undefined
+      ? {}
+      : { slackLinkUnfurls: options.enabled }),
   });
   const capture = host.captureHostedSitesS3();
   const storage = context.mocks.s3.send.getMockImplementation()!;
