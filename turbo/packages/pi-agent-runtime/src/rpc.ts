@@ -55,6 +55,7 @@ function resolveSessionManager(args: {
 }
 
 function createRuntimeFactory(args: {
+  readonly sessionRole?: "parent" | "child";
   readonly model: PiAgentModelConfig;
   readonly appendSystemPrompt: string | null;
   readonly memoryRecall?: PiMemoryRecallSelection;
@@ -69,6 +70,7 @@ function createRuntimeFactory(args: {
       agentDir,
       sessionManager,
       model: args.model,
+      sessionRole: args.sessionRole,
       appendSystemPrompt: args.appendSystemPrompt,
       memoryRecall: args.memoryRecall,
       resourceSnapshot: args.resourceSnapshot,
@@ -83,6 +85,7 @@ function createRuntimeFactory(args: {
 
 /** Run Pi's official AgentSession RPC host until stdin closes. */
 export async function runPiOfficialRpcMode(args: {
+  readonly sessionRole?: "parent" | "child";
   readonly sessionId: string;
   readonly sessionDir: string;
   readonly cwd: string;

@@ -1,5 +1,6 @@
 mod activation;
 mod admission;
+mod finalizing;
 mod inventory;
 mod phases;
 mod settlement;

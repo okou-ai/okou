@@ -7,6 +7,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use tokio::sync::Notify;
 
+use crate::StorageManifestTiming;
 use crate::error::{Result, SandboxError, SandboxIdleTransition};
 use crate::types::{
     CodexSessionCleanupRequest, CopyFileOptions, CopyFileResult, ExecRequest, ExecResult,
@@ -965,6 +966,20 @@ pub trait Sandbox: Send + Sync + Any {
         &self,
         request: &StorageManifestRequest<'_>,
     ) -> Result<ExecResult>;
+
+    /// Apply storage with optional, fixed Host phase observations.
+    ///
+    /// Providers without these observations retain the original operation and
+    /// leave the fresh record unavailable. Timing never changes the result,
+    /// deadline, cancellation or normal-operation ownership.
+    async fn apply_storage_manifest_with_timing(
+        &self,
+        request: &StorageManifestRequest<'_>,
+        timing: &mut StorageManifestTiming,
+    ) -> Result<ExecResult> {
+        *timing = StorageManifestTiming::default();
+        self.apply_storage_manifest(request).await
+    }
 
     /// Mount the fixed home drive through the provider's typed guest
     /// operation.

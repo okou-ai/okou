@@ -7,9 +7,10 @@ use tracing::{info, warn};
 
 use super::agent_run::{PreparedGuestRuntime, PreparedRunInputs, RunStart};
 use super::sandbox_run::{
-    FreshPreparation, NewSandboxHooks, PreparedSandboxRun, cancel_prepared_storage,
-    destroy_sandbox_panic_safe, execute_new_sandbox_with_prepared_notifier,
-    execute_prepared_sandbox_run, prepare_storage, register_proxy, unregister_proxy_registry,
+    FreshPreparation, NewSandboxHooks, PreparedSandboxRun, SANDBOX_PROXY_REGISTER_FAILED,
+    cancel_prepared_storage, destroy_sandbox_panic_safe,
+    execute_new_sandbox_with_prepared_notifier, execute_prepared_sandbox_run, prepare_storage,
+    register_proxy, unregister_proxy_registry,
 };
 use super::{ExecuteOutcome, ExecutionFailure, ExecutorConfig, JobParams, NewSandboxDispatch};
 use crate::error::RunnerError;
@@ -51,7 +52,20 @@ pub(super) async fn execute_reused_sandbox(
     let network_log_session = match prepared_storage {
         Ok(storage) => {
             inputs.controls.prepared_storage = storage;
-            register_proxy(config, context, &run.source_ip).await
+            // Time required registration separately from storage preparation;
+            // addon receipt completion is not awaited.
+            let proxy_register_started = Instant::now();
+            let registration = register_proxy(config, context, &run.source_ip).await;
+            telemetry.record(
+                "runner_reused_sandbox_proxy_register",
+                proxy_register_started.elapsed(),
+                registration.is_ok(),
+                registration
+                    .as_ref()
+                    .err()
+                    .map(|_| SANDBOX_PROXY_REGISTER_FAILED),
+            );
+            registration
         }
         Err(error) => Err(error),
     };

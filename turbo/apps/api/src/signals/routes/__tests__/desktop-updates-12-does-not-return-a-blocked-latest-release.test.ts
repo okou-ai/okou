@@ -15,16 +15,16 @@ const {
 // Default Vitest file isolation gives this scenario a fresh module cache.
 describe("desktop update routes", () => {
   it("does not return a blocked latest release", async () => {
-    const previousUrl = okouZipUrl("0.2.1");
+    const previousUrl = okouZipUrl("0.52.0");
     mockDesktopUpdateManifest(
       stableManifest(
-        "0.2.2",
+        "0.52.1",
         {
-          "0.2.1": darwinArm64Release("0.2.1", previousUrl),
-          "0.2.2": darwinArm64Release("0.2.2", okouZipUrl("0.2.2")),
-          "0.3.0": darwinArm64Release("0.3.0", okouZipUrl("0.3.0")),
+          "0.52.0": darwinArm64Release("0.52.0", previousUrl),
+          "0.52.1": darwinArm64Release("0.52.1", okouZipUrl("0.52.1")),
+          "0.53.0": darwinArm64Release("0.53.0", okouZipUrl("0.53.0")),
         },
-        ["0.2.2"],
+        ["0.52.1"],
       ),
     );
 
@@ -33,7 +33,7 @@ describe("desktop update routes", () => {
 
     const responseXml = await response.text();
 
-    expect(responseXml).toContain("<sparkle:version>0.2.1</sparkle:version>");
+    expect(responseXml).toContain("<sparkle:version>0.52.0</sparkle:version>");
     expect(responseXml).toContain(`<enclosure url="${previousUrl}"`);
   });
 });

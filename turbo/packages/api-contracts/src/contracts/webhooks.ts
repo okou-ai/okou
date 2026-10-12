@@ -971,6 +971,75 @@ const sandboxOperationSchema = z.object({
     .max(4_294_967_295)
     .optional(),
   storage_batch_outer_residual_ms: z.number().int().nonnegative().optional(),
+  storage_batch_admission_ms: z
+    .number()
+    .int()
+    .min(0)
+    .max(4_294_967_295)
+    .optional(),
+  storage_batch_request_setup_ms: z
+    .number()
+    .int()
+    .min(0)
+    .max(4_294_967_295)
+    .optional(),
+  storage_batch_frame_builder_wait_ms: z
+    .number()
+    .int()
+    .min(0)
+    .max(4_294_967_295)
+    .optional(),
+  storage_batch_frame_encode_ms: z
+    .number()
+    .int()
+    .min(0)
+    .max(4_294_967_295)
+    .optional(),
+  storage_batch_writer_wait_ms: z
+    .number()
+    .int()
+    .min(0)
+    .max(4_294_967_295)
+    .optional(),
+  storage_batch_frame_write_ms: z
+    .number()
+    .int()
+    .min(0)
+    .max(4_294_967_295)
+    .optional(),
+  storage_batch_response_wait_ms: z
+    .number()
+    .int()
+    .min(0)
+    .max(4_294_967_295)
+    .optional(),
+  storage_batch_result_decode_ms: z
+    .number()
+    .int()
+    .min(0)
+    .max(4_294_967_295)
+    .optional(),
+  storage_batch_resource_log_ms: z
+    .number()
+    .int()
+    .min(0)
+    .max(4_294_967_295)
+    .optional(),
+  storage_batch_host_timing: z
+    .enum(["complete", "partial", "unavailable"])
+    .optional(),
+  storage_batch_payload_size_bucket: z
+    .enum([
+      "none",
+      "up_to_4_kib",
+      "4_to_16_kib",
+      "16_to_64_kib",
+      "64_to_256_kib",
+      "256_kib_to_1_mib",
+      "1_to_4_mib",
+      "4_to_15_mib",
+    ])
+    .optional(),
   storage_batch_timing: z
     .enum(["paired", "unavailable", "inconsistent"])
     .optional(),

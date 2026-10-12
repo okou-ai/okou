@@ -28,6 +28,9 @@ mod dns_readiness;
 mod history_transfer;
 mod rejection;
 mod session_history;
+mod storage_batch;
+
+pub(crate) use storage_batch::StorageBatchDimensions;
 
 pub(crate) use history_transfer::{
     HistoryCodecDecision, HistoryTransferMeasurements, HistoryTransferSource,
@@ -308,6 +311,9 @@ struct StorageBatchTelemetryFields {
     #[serde(skip_serializing_if = "Option::is_none")]
     storage_batch_outer_residual_ms: Option<u64>,
     storage_batch_timing: &'static str,
+    storage_batch_payload_size_bucket: &'static str,
+    #[serde(flatten)]
+    host: storage_batch::HostTimingFields,
 }
 
 #[derive(Serialize)]
@@ -516,7 +522,7 @@ impl JobTelemetry {
     }
 
     /// Record a storage-apply call using only fixed transport/position and
-    /// serialized-manifest-size labels. The manifest and its identifiers never
+    /// serialized-manifest/payload-size labels. The manifest and its identifiers never
     /// enter this operation. The outer residual includes work outside the
     /// Guest-server timer on both sides of the connection, not pure transport.
     pub(crate) fn record_storage_apply_batch(
@@ -524,18 +530,18 @@ impl JobTelemetry {
         duration: Duration,
         success: bool,
         guest_duration_ms: Option<u32>,
-        transport_position: &'static str,
-        manifest_size_bucket: &'static str,
+        host_timing: &sandbox::StorageManifestTiming,
+        dimensions: StorageBatchDimensions,
     ) {
         let mut op = sandbox_op(
             "runner_storage_manifest_batch_apply",
             duration,
             success,
             (!success).then_some("storage_batch_apply_failed"),
-            Some(transport_position),
+            Some(dimensions.transport_position),
             None,
         );
-        op.reason = Some(manifest_size_bucket.to_string());
+        op.reason = Some(dimensions.manifest_size_bucket.to_string());
         let residual =
             guest_duration_ms.and_then(|guest| op.duration_ms.checked_sub(u64::from(guest)));
         let timing = match (guest_duration_ms, residual) {
@@ -547,6 +553,8 @@ impl JobTelemetry {
             storage_batch_guest_duration_ms: guest_duration_ms,
             storage_batch_outer_residual_ms: residual,
             storage_batch_timing: timing,
+            storage_batch_payload_size_bucket: dimensions.payload_size_bucket,
+            host: storage_batch::HostTimingFields::new(host_timing),
         });
         self.push_operation(op);
     }
@@ -1226,8 +1234,12 @@ mod tests {
             Duration::from_millis(42),
             true,
             Some(31),
-            "dedicated_middle",
-            "32_to_64_kib",
+            &sandbox::StorageManifestTiming::default(),
+            StorageBatchDimensions {
+                transport_position: "dedicated_middle",
+                manifest_size_bucket: "32_to_64_kib",
+                payload_size_bucket: "none",
+            },
         );
 
         let batches = telemetry.pending_storage_batch_payloads();
@@ -1236,6 +1248,93 @@ mod tests {
         assert_eq!(batches[0]["storage_batch_guest_duration_ms"], 31);
         assert_eq!(batches[0]["storage_batch_outer_residual_ms"], 11);
         assert_eq!(batches[0]["storage_batch_timing"], "paired");
+    }
+
+    #[test]
+    fn storage_host_telemetry_preserves_coverage_units_and_missing_phases() {
+        use sandbox::{StorageManifestRequestTiming, StorageManifestTiming};
+        let mut telemetry = JobTelemetry::new(
+            http_client(),
+            RunId::from(uuid::Uuid::nil()),
+            "tok".to_string(),
+            None,
+        );
+        let dimensions = || StorageBatchDimensions {
+            transport_position: "dedicated_middle",
+            manifest_size_bucket: "32_to_64_kib",
+            payload_size_bucket: "64_to_256_kib",
+        };
+        let full = StorageManifestTiming {
+            admission: Some(Duration::from_millis(1)),
+            request: StorageManifestRequestTiming {
+                setup: Some(Duration::from_millis(2)),
+                frame_builder_wait: Some(Duration::from_millis(3)),
+                frame_encode: Some(Duration::from_millis(4)),
+                writer_wait: Some(Duration::from_millis(5)),
+                frame_write: Some(Duration::from_millis(6)),
+                response_wait: Some(Duration::from_millis(7)),
+                result_decode: Some(Duration::from_millis(8)),
+            },
+            resource_log: Some(Duration::from_millis(9)),
+        };
+        telemetry.record_storage_apply_batch(
+            Duration::from_millis(100),
+            true,
+            Some(0),
+            &full,
+            dimensions(),
+        );
+        let partial = StorageManifestTiming {
+            admission: Some(Duration::ZERO),
+            request: StorageManifestRequestTiming {
+                setup: Some(Duration::from_nanos(1)),
+                result_decode: Some(Duration::from_millis(u64::from(u32::MAX) + 1)),
+                ..StorageManifestRequestTiming::default()
+            },
+            ..StorageManifestTiming::default()
+        };
+        telemetry.record_storage_apply_batch(
+            Duration::from_millis(100),
+            false,
+            None,
+            &partial,
+            dimensions(),
+        );
+        telemetry.record_storage_apply_batch(
+            Duration::ZERO,
+            true,
+            None,
+            &StorageManifestTiming::default(),
+            dimensions(),
+        );
+        let batches = telemetry.pending_storage_batch_payloads();
+        assert_eq!(batches[0]["storage_batch_host_timing"], "complete");
+        for (field, value) in [
+            ("storage_batch_admission_ms", 1),
+            ("storage_batch_request_setup_ms", 2),
+            ("storage_batch_frame_builder_wait_ms", 3),
+            ("storage_batch_frame_encode_ms", 4),
+            ("storage_batch_writer_wait_ms", 5),
+            ("storage_batch_frame_write_ms", 6),
+            ("storage_batch_response_wait_ms", 7),
+            ("storage_batch_result_decode_ms", 8),
+            ("storage_batch_resource_log_ms", 9),
+        ] {
+            assert_eq!(batches[0][field], value);
+        }
+        assert_eq!(
+            batches[0]["storage_batch_payload_size_bucket"],
+            "64_to_256_kib"
+        );
+        assert_eq!(batches[1]["storage_batch_host_timing"], "partial");
+        assert_eq!(batches[1]["success"], false);
+        assert_eq!(batches[1]["storage_batch_admission_ms"], 0);
+        assert_eq!(batches[1]["storage_batch_request_setup_ms"], 0);
+        assert!(batches[1].get("storage_batch_frame_write_ms").is_none());
+        assert!(batches[1].get("storage_batch_result_decode_ms").is_none());
+        assert!(batches[1].get("storage_batch_resource_log_ms").is_none());
+        assert_eq!(batches[2]["storage_batch_host_timing"], "unavailable");
+        assert!(batches[2].get("storage_batch_admission_ms").is_none());
     }
 
     #[tokio::test]

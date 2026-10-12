@@ -27,6 +27,10 @@ use super::{ReservedIdleSandbox, ReusableIdleSandbox};
 
 mod speculative;
 pub use speculative::{GuardedSpeculativeIdleOwner, SpeculativeActivationState};
+mod finalizing;
+pub use finalizing::{
+    ActivatedFinalizingHandoff, FinalizingHandoffState, GuardedFinalizingHandoffOwner,
+};
 
 /// Conservative physical state, never a proof of reusable inventory.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -78,22 +82,101 @@ impl IdleActivationOwner {
     }
 
     pub(super) fn from_entry(entry: super::IdleEntry) -> Self {
+        Self::from_parts(
+            entry.resources,
+            entry.metadata,
+            entry.budget_lease,
+            IdleActivationState::Parked,
+            entry.retirement_backing,
+        )
+    }
+
+    pub(super) fn from_parts(
+        resources: super::entry::IdleSandboxResources,
+        metadata: IdleSandboxMetadata,
+        lease: BudgetLease,
+        state: IdleActivationState,
+        original_backing: Option<CapturedBacking>,
+    ) -> Self {
         Self {
-            sandbox: Some(entry.resources.sandbox),
-            factory: entry.resources.factory,
-            metadata: entry.metadata,
-            promotion: entry.resources.home_promotion,
+            sandbox: Some(resources.sandbox),
+            factory: resources.factory,
+            metadata,
+            promotion: resources.home_promotion,
             prepared: None,
-            lease: Some(entry.budget_lease),
-            state: IdleActivationState::Parked,
+            lease: Some(lease),
+            state,
             coverage: None,
             reclamation: None,
             accepted: false,
             admission: None,
             cleanup_completed: false,
             cleanup_error: None,
-            original_backing: entry.retirement_backing,
+            original_backing,
         }
+    }
+
+    pub(super) fn capture_original_backing(&mut self) -> Result<(), MemoryOperationError> {
+        std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let sandbox = self
+                .sandbox
+                .as_deref()
+                .ok_or(MemoryOperationError::Consumed)?;
+            if sandbox.id() != self.metadata.sandbox_id.to_string() {
+                return Err(MemoryOperationError::OwnershipInvariant);
+            }
+            if self.original_backing.is_none() {
+                let process = sandbox
+                    .backing_process()
+                    .ok_or(MemoryOperationError::MissingBacking)?;
+                self.original_backing = Some(CapturedBacking {
+                    identity: process.identity(),
+                    process,
+                });
+            }
+            self.validate_original_backing()
+        }))
+        .unwrap_or(Err(MemoryOperationError::ProducerLost))
+    }
+
+    pub(super) fn validate_original_backing(&self) -> Result<(), MemoryOperationError> {
+        if self
+            .sandbox
+            .as_ref()
+            .ok_or(MemoryOperationError::Consumed)?
+            .id()
+            != self.metadata.sandbox_id.to_string()
+        {
+            return Err(MemoryOperationError::OwnershipInvariant);
+        }
+        let backing = self
+            .original_backing
+            .as_ref()
+            .ok_or(MemoryOperationError::MissingBacking)?;
+        validate_backing(self.sandbox.as_deref(), &backing.process, backing.identity)
+    }
+
+    pub(super) fn take_reused(
+        &mut self,
+    ) -> Result<(Box<ReusableIdleSandbox>, BudgetLease), String> {
+        let lease = self.lease.take().ok_or("activation lease consumed")?;
+        let sandbox = match self.sandbox.take() {
+            Some(sandbox) => sandbox,
+            None => {
+                self.lease = Some(lease);
+                return Err("activation resource consumed".into());
+            }
+        };
+        self.state = IdleActivationState::Reused;
+        Ok((
+            Box::new(ReusableIdleSandbox {
+                sandbox,
+                metadata: self.metadata.clone(),
+                home_promotion: self.promotion.take(),
+                guest_state_prepared: false,
+            }),
+            lease,
+        ))
     }
 
     pub fn sandbox_id(&self) -> SandboxId {
@@ -147,25 +230,7 @@ impl IdleActivationOwner {
         .unwrap_or_else(|_| Err("ordinary idle activation panicked".into()));
         result?;
         // No await separates successful readiness from resource transfer.
-        let lease = self.lease.take().ok_or("activation lease consumed")?;
-        let sandbox = match self.sandbox.take() {
-            Some(sandbox) => sandbox,
-            None => {
-                self.lease = Some(lease);
-                return Err("activation resource consumed".into());
-            }
-        };
-        let metadata = self.metadata.clone();
-        self.state = IdleActivationState::Reused;
-        Ok((
-            Box::new(ReusableIdleSandbox {
-                sandbox,
-                metadata,
-                home_promotion: self.promotion.take(),
-                guest_state_prepared: false,
-            }),
-            lease,
-        ))
+        self.take_reused()
     }
 
     /// Register once while exclusively owned, outside resource/accounting locks.

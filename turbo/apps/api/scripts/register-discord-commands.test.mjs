@@ -14,7 +14,7 @@ const APPLICATION_ID = "123456789012345678";
 const GUILD_ID = "234567890123456789";
 const COMMAND_ID = "345678901234567890";
 const BOT_TOKEN = "synthetic.bot.token";
-const COMMAND_NAMES = ["help", "connect", "disconnect", "switch", "model"];
+const COMMAND_NAMES = ["help", "connect", "disconnect"];
 const GUILD_URL = `https://discord.com/api/v10/applications/${APPLICATION_ID}/guilds/${GUILD_ID}/commands`;
 const GLOBAL_URL = `https://discord.com/api/v10/applications/${APPLICATION_ID}/commands`;
 const ENVIRONMENT = {
@@ -135,7 +135,11 @@ test("standalone guild preview needs no server configuration or token", () => {
     assert.equal(command.contexts, undefined);
     assert.equal(command.integration_types, undefined);
   }
-  assert.deepEqual(preview.removeCommands, [{ name: "okou", type: 1 }]);
+  assert.deepEqual(preview.removeCommands, [
+    { name: "okou", type: 1 },
+    { name: "switch", type: 1 },
+    { name: "model", type: 1 },
+  ]);
 });
 
 test("standalone invocation exits unsuccessfully when the scope is absent", () => {
@@ -174,14 +178,20 @@ test("apply requires a token and rejects malformed tokens without echoing them",
   }
 });
 
-test("guild registration replaces the grouped command and preserves unrelated commands", async () => {
+test("guild registration removes retired commands and preserves unrelated commands", async () => {
   const output = captureOutput();
   const unrelated = [
     registeredCommand("status", true, "456789012345678901"),
     { ...registeredCommand("okou", true, "567890123456789012"), type: 2 },
+    { ...registeredCommand("model", true, "567890123456789013"), type: 2 },
   ];
   const readCommands = mockRegistration({
-    commands: [registeredCommand("okou"), ...unrelated],
+    commands: [
+      registeredCommand("okou"),
+      registeredCommand("switch", true, "678901234567890123"),
+      registeredCommand("model", true, "678901234567890124"),
+      ...unrelated,
+    ],
   });
   const args = ["--guild", GUILD_ID, "--apply"];
 
@@ -209,6 +219,8 @@ test("guild registration replaces the grouped command and preserves unrelated co
   }
   assert.equal(registered.length, COMMAND_NAMES.length + unrelated.length);
   assert.match(output(), /Removed \/okou/);
+  assert.match(output(), /Removed \/switch/);
+  assert.match(output(), /Removed \/model/);
   assert.match(output(), /Verify \/help/);
   assert.ok(!output().includes(BOT_TOKEN));
 
@@ -237,7 +249,11 @@ test("global registration leaves commands in other scopes unchanged", async () =
   const readGuild = mockRegistration({ commands: [guildCommand] });
   const readGlobal = mockRegistration({
     guild: false,
-    commands: [registeredCommand("okou", false)],
+    commands: [
+      registeredCommand("okou", false),
+      registeredCommand("switch", false, "678901234567890123"),
+      registeredCommand("model", false, "678901234567890124"),
+    ],
   });
 
   await runDiscordCommandRegistration(["--global", "--apply"], ENVIRONMENT);

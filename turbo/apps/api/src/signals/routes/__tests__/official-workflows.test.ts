@@ -47,7 +47,7 @@ import {
 } from "@okouai/core/storage-names";
 
 import { http, HttpResponse } from "msw";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -5560,7 +5560,8 @@ describe("Official Workflow installations", () => {
 });
 
 describe("Official Workflow Run admission", () => {
-  it("selects the exact official trigger while ordinary Runs retain their same-name Workflow", async () => {
+  it("switches the same chat between official and ordinary Workflows while retaining steering and history", async () => {
+    const fixture = createChatEventsFixture(context);
     const name = `api-test-run-scope-${randomUUID().slice(0, 8)}`;
     const unrelatedName = `api-test-unrelated-${randomUUID().slice(0, 8)}`;
     installCatalogStorageFixture();
@@ -5755,20 +5756,122 @@ describe("Official Workflow Run admission", () => {
     );
     expect(claim.prompt).toContain(`/${name}`);
     expect(claim.prompt).toContain('"automationId"');
+    const steeredEventId = randomUUID();
     await owned.run(async () => {
-      await webhooks.requestAgentComplete(
-        { runId: official.runId, exitCode: 1 },
+      const sent = await owned.requestSendEvent(
+        owned.actor,
+        {
+          agentId: owned.agentId,
+          threadId: official.chatThreadId,
+          prompt: "Include this additional instruction in the official Run.",
+          clientEventId: steeredEventId,
+        },
+        [201],
+      );
+      if (sent.status !== 201) {
+        throw new Error("Expected the additional instruction to be accepted");
+      }
+      expect(sent.body.runId).toBeNull();
+      await expect(
+        runs.nextSteerableInput(claim.sandboxToken, official.runId),
+      ).resolves.toStrictEqual({
+        input: {
+          eventId: steeredEventId,
+          prompt: "Include this additional instruction in the official Run.",
+        },
+      });
+      await runs.declareSteeredInput(
+        claim.sandboxToken,
+        official.runId,
+        steeredEventId,
+      );
+      await expect(
+        runs.nextSteerableInput(claim.sandboxToken, official.runId),
+      ).resolves.toStrictEqual({ input: null });
+      const events = await allThreadEventRows(
+        owned.actor,
+        official.chatThreadId,
+      );
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          revokesEventId: steeredEventId,
+          runId: official.runId,
+        }),
+      );
+    });
+    const waiting = await owned.sendWaitingChatInput(owned.actor, {
+      agentId: owned.agentId,
+      threadId: official.chatThreadId,
+      prompt: `/${name}`,
+    });
+    const sessionId = `official-transition-${randomUUID()}`;
+    await owned.run(async () => {
+      await fixture.completeChatRunOk(
+        official.runId,
         { authorization: `Bearer ${claim.sandboxToken}` },
-        [200],
+        { cliAgentSessionId: sessionId, sessionHistory: "official history" },
       );
       await flushWaitUntilForTest();
     });
-    const later = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
-      threadId: ordinary.threadId,
-      prompt: `/${name}`,
+    const later = await owned.run(() => {
+      return waiting.launchedRun();
     });
-    await assertOrdinaryMounts(later.runId);
+    const laterClaim = await assertOrdinaryMounts(later.runId);
+    expect(laterClaim.resumeSession).toMatchObject({
+      sessionId,
+      historyRef: {
+        hash: createHash("sha256").update("official history").digest("hex"),
+      },
+    });
+    await owned.run(async () => {
+      await fixture.completeChatRunOk(
+        later.runId,
+        { authorization: `Bearer ${laterClaim.sandboxToken}` },
+        {
+          cliAgentSessionId: sessionId,
+          sessionHistory: "official history\nordinary continuation",
+        },
+      );
+      await flushWaitUntilForTest();
+    });
+    const nextAutomation = await owned.run(() => {
+      return accept(
+        automationClient().get({
+          headers: authHeaders(owned.actor),
+          params: { id: setup.automation.id },
+        }),
+        [200],
+      );
+    });
+    const nextOfficial = await owned.run(() => {
+      return fireOfficialSchedule(owned.actor, nextAutomation.body);
+    });
+    expect(nextOfficial.chatThreadId).toBe(official.chatThreadId);
+    expect(nextOfficial.runId).not.toBe(later.runId);
+    const { claim: nextClaim } = await owned.claimChatRun(
+      owned.runnerGroup,
+      nextOfficial.runId,
+    );
+    expect(nextClaim.resumeSession).toMatchObject({
+      sessionId,
+      historyRef: {
+        hash: createHash("sha256")
+          .update("official history\nordinary continuation")
+          .digest("hex"),
+      },
+    });
+    expect(
+      expectCanonicalStorageManifest(
+        nextClaim.storageManifest,
+      )?.storageMounts?.filter((mount) => {
+        return mount.mountPath.endsWith(`/${name}`);
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        name: getOfficialWorkflowDefinitionStorageName(name),
+        versionId: expect.stringMatching(/^[0-9a-f]{64}$/),
+      }),
+    ]);
   });
 
   it("pins ordinary Workflow publications across a normal revision", async () => {

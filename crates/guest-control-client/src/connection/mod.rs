@@ -25,6 +25,7 @@ use crate::{GuestControlClient, exec_operation};
 pub(crate) use frame::{FrameWriteDecision, FrameWriteTiming};
 pub(super) use request::{
     CompositeNormalOperation, normal_operation_transition_error,
+    normal_request_on_shared_with_timing_frame_builder,
     normal_request_on_shared_with_write_observer_frame_builder,
     request_on_shared_with_composite_operation_and_observer_frame_builder,
 };

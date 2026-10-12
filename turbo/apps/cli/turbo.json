@@ -1,0 +1,15 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "passThroughEnv": [
+        "OKOU_PI_SESSION_ID",
+        "OKOU_PI_MODEL_CONFIG",
+        "OKOU_PI_LAUNCH_PAYLOAD_FILE",
+        "OKOU_PI_SESSION_ROLE",
+        "OKOU_PI_EFFECTIVE_THINKING_LEVEL",
+        "OKOU_PI_RUNTIME_ROOT"
+      ]
+    }
+  }
+}

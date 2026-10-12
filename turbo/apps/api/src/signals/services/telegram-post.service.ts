@@ -11,10 +11,6 @@ import {
   type TelegramMessageEntity,
 } from "@okouai/db/schema/telegram-message";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import {
-  AUTO_SELECTED_MODEL,
-  sameSelectedModel,
-} from "@okouai/core/auto-run-model";
 import { command } from "ccstate";
 import { and, desc, eq } from "drizzle-orm";
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -55,11 +51,6 @@ import {
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import {
-  integrationModelOptionValue,
-  readIntegrationChatThreadModel$,
-  updateIntegrationChatThreadModel$,
-} from "./integration-chat-thread-model.service";
-import {
   canonicalInputFilePrompt,
   integrationInputMessageFiles,
   materializeIntegrationInputAssets$,
@@ -69,12 +60,10 @@ import {
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import { listAvailableRunModels$ } from "./run-models.service";
 import {
   bindTelegramReplyMessageRoute,
   createTelegramChatThread$,
   ensureTelegramChatThreadRoute$,
-  findTelegramRoutedChatThreadId$,
   type TelegramOwnerLink,
 } from "./telegram-chat-ingress.service";
 import {
@@ -565,8 +554,7 @@ function isOfficialTelegramCommand(
     commandName === "help" ||
     commandName === "connect" ||
     commandName === "start" ||
-    commandName === "disconnect" ||
-    commandName === "model"
+    commandName === "disconnect"
   );
 }
 
@@ -675,10 +663,6 @@ function formatTelegramCommandSuccess(message: string): string {
   return `✅ ${escapeHtml(message)}`;
 }
 
-function formatTelegramCommandError(message: string): string {
-  return `❌ <b>Error</b>\n${escapeHtml(message)}`;
-}
-
 function formatTelegramConnectPrompt(agentName: string): string {
   return `To use ${escapeHtml(agentName)} in Telegram, please connect your account first.`;
 }
@@ -723,7 +707,7 @@ function formatTelegramHelpMessage(
     "",
     "<b>Commands</b>",
     `• <code>/connect</code> - Connect to ${label}`,
-    "• <code>/model</code> - Choose your model",
+    "• <code>/help</code> - Show available commands",
     `• <code>/disconnect</code> - Disconnect from ${label}`,
     "",
     "<b>Usage</b>",
@@ -1466,254 +1450,6 @@ const handleTelegramAgentMessage$ = command(
   },
 );
 
-/** The routed chat thread of the conversation a `/model` command is sent in. */
-const findModelCommandChatThreadId$ = command(
-  async (
-    { set },
-    args: {
-      readonly message: TelegramMessage;
-      readonly ownerLink: TelegramOwnerLink;
-    },
-    signal: AbortSignal,
-  ): Promise<string | undefined> => {
-    const rootMessageId = rootMessageIdForAgentMessage({
-      isDM: args.message.chat.type === "private",
-      message: args.message,
-      botId: OFFICIAL_TELEGRAM_BOT_ID,
-    });
-    if (rootMessageId === undefined) {
-      return undefined;
-    }
-    return await set(
-      findTelegramRoutedChatThreadId$,
-      {
-        ownerLink: args.ownerLink,
-        chatId: String(args.message.chat.id),
-        rootMessageId,
-      },
-      signal,
-    );
-  },
-);
-
-interface TelegramModelCommandArgs {
-  readonly botToken: string;
-  readonly message: TelegramMessage;
-  readonly ownerLink: TelegramOwnerLink;
-  readonly orgId: string;
-  readonly userId: string;
-}
-
-const handleModelCommand$ = command(
-  async (
-    { set },
-    args: TelegramModelCommandArgs,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const chatId = String(args.message.chat.id);
-    const replyToMessageId =
-      args.message.chat.type === "private"
-        ? undefined
-        : args.message.message_id;
-    const chatThreadId = await set(
-      findModelCommandChatThreadId$,
-      { message: args.message, ownerLink: args.ownerLink },
-      signal,
-    );
-    signal.throwIfAborted();
-    const currentModel = await set(
-      readIntegrationChatThreadModel$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        chatThreadId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (currentModel.kind === "no_thread") {
-      await postTelegramMessage({
-        botToken: args.botToken,
-        chatId,
-        text: formatTelegramCommandError(
-          "Start or enter an existing Okou conversation before using /model.",
-        ),
-        replyToMessageId,
-      });
-      signal.throwIfAborted();
-      return;
-    }
-    const currentSelectedModel = currentModel.selectedModel;
-    const runModels = await set(
-      listAvailableRunModels$,
-      { orgId: args.orgId, userId: args.userId },
-      signal,
-    );
-    signal.throwIfAborted();
-    const options = runModels.models.map((runModel) => {
-      return {
-        model: runModel.model,
-        label: runModel.modelLabel,
-        isDefault: runModel.model === AUTO_SELECTED_MODEL,
-      };
-    });
-    if (options.length === 0) {
-      await postTelegramMessage({
-        botToken: args.botToken,
-        chatId,
-        text: formatTelegramCommandError(
-          "No models are configured for this workspace.",
-        ),
-        replyToMessageId,
-      });
-      signal.throwIfAborted();
-      return;
-    }
-
-    const input = commandArgument(args.message.text ?? args.message.caption);
-    if (!input) {
-      await postTelegramMessage({
-        botToken: args.botToken,
-        chatId,
-        text: formatTelegramModelOptionsMessage(options, currentSelectedModel),
-        replyToMessageId,
-      });
-      signal.throwIfAborted();
-      return;
-    }
-
-    const option = findModelOption(options, input);
-    if (!option) {
-      await postTelegramMessage({
-        botToken: args.botToken,
-        chatId,
-        text: [
-          formatTelegramCommandError(`Unknown model "${input}".`),
-          "",
-          formatTelegramModelOptionsMessage(options, currentSelectedModel),
-        ].join("\n"),
-        replyToMessageId,
-      });
-      signal.throwIfAborted();
-      return;
-    }
-
-    const threadModel = await set(
-      updateIntegrationChatThreadModel$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        chatThreadId,
-        model: option.model,
-      },
-      signal,
-    );
-    if (threadModel.kind !== "updated") {
-      await postTelegramMessage({
-        botToken: args.botToken,
-        chatId,
-        text: formatTelegramCommandError(
-          threadModel.kind === "no_thread"
-            ? "Start or enter an existing Okou conversation before using /model."
-            : "You don't have access to that model.",
-        ),
-        replyToMessageId,
-      });
-      signal.throwIfAborted();
-      return;
-    }
-    signal.throwIfAborted();
-    await postTelegramMessage({
-      botToken: args.botToken,
-      chatId,
-      text: formatTelegramCommandSuccess(`Switched to ${option.label}.`),
-      replyToMessageId,
-    });
-  },
-);
-
-function commandArgument(text: string | undefined): string {
-  const trimmed = text?.trim();
-  if (!trimmed) {
-    return "";
-  }
-  const firstWhitespaceIndex = trimmed.search(/\s/u);
-  if (firstWhitespaceIndex === -1) {
-    return "";
-  }
-  return trimmed.slice(firstWhitespaceIndex).trim();
-}
-
-function lookupKey(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_]+/gu, "-");
-}
-
-function compactLookupKey(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]/gu, "");
-}
-
-function findModelOption(
-  options: readonly {
-    readonly model: string | null;
-    readonly label: string;
-    readonly isDefault: boolean;
-  }[],
-  input: string,
-) {
-  const inputKeys = new Set([lookupKey(input), compactLookupKey(input)]);
-  return options.find((option) => {
-    return [integrationModelOptionValue(option.model), option.label].some(
-      (value) => {
-        return (
-          inputKeys.has(lookupKey(value)) ||
-          inputKeys.has(compactLookupKey(value))
-        );
-      },
-    );
-  });
-}
-
-function formatTelegramModelOptionsMessage(
-  options: readonly {
-    readonly model: string | null;
-    readonly label: string;
-    readonly isDefault: boolean;
-  }[],
-  currentSelectedModel: string | null,
-): string {
-  const optionLines = options.map((option) => {
-    const markers = [
-      sameSelectedModel(option.model, currentSelectedModel) ? "current" : null,
-      option.isDefault ? "default" : null,
-    ].filter((marker): marker is string => {
-      return marker !== null;
-    });
-    const suffix = markers.length > 0 ? ` (${markers.join(", ")})` : "";
-    return `• <code>/model ${escapeHtml(integrationModelOptionValue(option.model))}</code> - ${escapeHtml(
-      option.label,
-    )}${escapeHtml(suffix)}`;
-  });
-
-  const current =
-    options.find((option) => {
-      return sameSelectedModel(option.model, currentSelectedModel);
-    })?.label ?? integrationModelOptionValue(currentSelectedModel);
-  return [
-    "<b>Available models</b>",
-    "",
-    `Current: <b>${escapeHtml(current)}</b>`,
-    "",
-    "Send one of these commands to switch:",
-    ...optionLines,
-  ].join("\n");
-}
-
 async function resolveOfficialComposeId(
   db: Db,
   userLink: OfficialTelegramUserLink,
@@ -1825,20 +1561,6 @@ const handleOfficialCommand$ = command(
         signal,
       );
       return;
-    }
-
-    if (args.command === "model") {
-      await set(
-        handleModelCommand$,
-        {
-          botToken: args.botToken,
-          message: args.message,
-          ownerLink: { kind: "official", id: userLink.id },
-          orgId: userLink.orgId,
-          userId: userLink.userId,
-        },
-        signal,
-      );
     }
   },
 );

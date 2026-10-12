@@ -9,8 +9,8 @@ import { DISCORD_COMMANDS } from "../src/lib/discord-command-definition.ts";
 const HELP = `Usage: pnpm --filter api discord:register [options]
 
 Preview Okou command registration in an explicitly selected test guild by default.
-Only --apply writes to Discord. Register /help, /connect, /disconnect, /switch,
-and /model, then remove the old /okou command in the selected scope. Other
+Only --apply writes to Discord. Register /help, /connect, and /disconnect,
+then remove /okou, /switch, and /model in the selected scope. Other
 application commands are preserved. This tool never configures credentials or
 feature flags.
 
@@ -34,6 +34,8 @@ application and explicitly select --global. Register only after the interaction
 endpoint is deployed and configured in Discord. Production registration requires
 separate rollout authorization; this command is never part of deployment.
 `;
+
+const OBSOLETE_COMMAND_NAMES = ["okou", "switch", "model"];
 
 function requireSnowflake(value, name) {
   if (
@@ -145,8 +147,11 @@ export async function runDiscordCommandRegistration(
   });
 
   if (!values.apply) {
+    const removeCommands = OBSOLETE_COMMAND_NAMES.map((name) => {
+      return { name, type: 1 };
+    });
     process.stdout.write(
-      `${JSON.stringify({ mode: "dry-run", scope, method: "POST", url, commands, removeCommands: [{ name: "okou", type: 1 }] }, null, 2)}\n`,
+      `${JSON.stringify({ mode: "dry-run", scope, method: "POST", url, commands, removeCommands }, null, 2)}\n`,
     );
     return;
   }
@@ -163,12 +168,17 @@ export async function runDiscordCommandRegistration(
   if (!Array.isArray(existing)) {
     throw new Error("Discord returned an unexpected command list.");
   }
-  const obsoleteIds = existing
+  const obsoleteCommands = existing
     .filter((command) => {
-      return command?.name === "okou" && command.type === 1;
+      return (
+        OBSOLETE_COMMAND_NAMES.includes(command?.name) && command.type === 1
+      );
     })
     .map((command) => {
-      return registeredCommandId(command, "okou", applicationId, guildId);
+      return {
+        name: command.name,
+        id: registeredCommandId(command, command.name, applicationId, guildId),
+      };
     });
 
   for (const command of commands) {
@@ -185,9 +195,11 @@ export async function runDiscordCommandRegistration(
   }
 
   // Preserve the existing entry point if any replacement registration fails.
-  for (const commandId of obsoleteIds) {
-    await commandRequest(`${url}/${commandId}`, token, "DELETE");
-    process.stdout.write(`Removed /okou (${commandId}) from ${scope}.\n`);
+  for (const command of obsoleteCommands) {
+    await commandRequest(`${url}/${command.id}`, token, "DELETE");
+    process.stdout.write(
+      `Removed /${command.name} (${command.id}) from ${scope}.\n`,
+    );
   }
 
   process.stdout.write(`Verify /help in the selected scope: ${scope}.\n`);

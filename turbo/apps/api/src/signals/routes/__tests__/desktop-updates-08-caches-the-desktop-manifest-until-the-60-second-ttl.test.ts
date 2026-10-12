@@ -21,20 +21,20 @@ describe("desktop update routes", () => {
 
     await withMockNowForTest(initialNow, async () => {
       mockDesktopUpdateManifest(
-        stableManifest("0.2.1", {
-          "0.2.1": darwinArm64Release("0.2.1", okouZipUrl("0.2.1")),
+        stableManifest("0.52.0", {
+          "0.52.0": darwinArm64Release("0.52.0", okouZipUrl("0.52.0")),
         }),
       );
 
       const firstResponse = await appcastRequest();
       expect(firstResponse.status).toBe(200);
       await expect(firstResponse.text()).resolves.toContain(
-        "<sparkle:version>0.2.1</sparkle:version>",
+        "<sparkle:version>0.52.0</sparkle:version>",
       );
 
       mockDesktopUpdateManifest(
-        stableManifest("0.2.2", {
-          "0.2.2": darwinArm64Release("0.2.2", okouZipUrl("0.2.2")),
+        stableManifest("0.52.1", {
+          "0.52.1": darwinArm64Release("0.52.1", okouZipUrl("0.52.1")),
         }),
       );
       mockNow(initialNow + 59_999);
@@ -42,7 +42,7 @@ describe("desktop update routes", () => {
       const cachedResponse = await appcastRequest();
       expect(cachedResponse.status).toBe(200);
       await expect(cachedResponse.text()).resolves.toContain(
-        "<sparkle:version>0.2.1</sparkle:version>",
+        "<sparkle:version>0.52.0</sparkle:version>",
       );
 
       mockNow(initialNow + 60_000);
@@ -50,7 +50,7 @@ describe("desktop update routes", () => {
       const refreshedResponse = await appcastRequest();
       expect(refreshedResponse.status).toBe(200);
       await expect(refreshedResponse.text()).resolves.toContain(
-        "<sparkle:version>0.2.2</sparkle:version>",
+        "<sparkle:version>0.52.1</sparkle:version>",
       );
     });
   });

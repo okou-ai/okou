@@ -113,6 +113,7 @@ end
 publish = release.fetch("publish-desktop-update-manifest")
 raise "feed must wait for notarized release assets" unless publish.fetch("needs").include?("promote-desktop-release") && publish.fetch("if").include?("needs.promote-desktop-release.result == 'success'")
 raise "feed must wait for the API appcast deployment" unless publish.fetch("needs").include?("promote-api-production") && publish.fetch("if").include?("needs.promote-api-production.result == 'success'")
-raise "legacy updater manifest must stay on same line" unless publish.fetch("steps").any? { |step| step.fetch("run", "").include?("ai-okou-desktop-update-manifest.json") }
+raise "Native updater manifest must retain its published identity" unless publish.fetch("steps").any? { |step| step.fetch("run", "").include?("ai-okou-desktop-update-manifest.json") }
 RUBY
+node --test "$repo_root/.github/scripts/tests/desktop-release-manifest-test.mjs"
 echo "native Desktop workflow tests passed"

@@ -541,25 +541,6 @@ function userModelPreferenceClient() {
   );
 }
 
-/** The member's default model from the public preference endpoint. */
-async function memberDefaultModelOf(
-  actor: ApiTestUser,
-): Promise<string | null> {
-  const response = await accept(
-    userModelPreferenceClient().get({
-      headers: authOrgApi.authenticate(actor),
-    }),
-    [200],
-  );
-  return response.body.selectedModel;
-}
-
-async function memberDefaultModel(
-  fixture: TelegramPostFixture,
-): Promise<string | null> {
-  return await memberDefaultModelOf(actorForFixture(fixture));
-}
-
 describe("POST /api/telegram/webhook/:telegramBotId", () => {
   it("validates bot ownership, webhook secret, and JSON payload", async () => {
     const fixture = await createTelegramPostFixture();
@@ -1168,7 +1149,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     });
 
     it(`routes ${ownerKind} Telegram DM ${scenario}`, async () => {
-      const { sendDm, completeDm, main } = dm;
+      const { completeDm, main } = dm;
       expect(main.claim.resumeSession).toBeNull();
       if (scenario !== "models") {
         if (!replyChain) {
@@ -1186,13 +1167,16 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           );
           return;
         }
-        await sendDm("/model gpt-6-astra", 3506);
+        await createBddIntegrationApi(context).updateUserModelPreference(
+          dm.actor,
+          "gpt-6-astra",
+        );
         const pinnedReply = await completeDm(
           "keep the reply chain model",
           3508,
           branch.botReplyId,
         );
-        // `/model` in the main DM switches only the main DM thread.
+        // Existing conversations keep their model when the member default changes.
         expect(pinnedReply.claim.modelUsageProvider).toBe("claude-fable-5-1");
         expect(pinnedReply.chatThread.id).toBe(branch.chatThread.id);
         expect(pinnedReply.chatThread.selectedModel).toBe("claude-fable-5-1");
@@ -1206,41 +1190,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       expect(followUp.claim.resumeSession?.sessionId).toBe(main.sessionId);
       expect(followUp.chatThread.id).toBe(main.chatThread.id);
       expect(followUp.chatThread.selectedModel).toBe("claude-fable-5-1");
-
-      await sendDm("/model gpt-6-astra", 3506);
-      // `/model` leaves the member preference the fixture configured.
-      await expect(memberDefaultModelOf(dm.actor)).resolves.toBe(
-        "claude-fable-5-1",
-      );
-      const alternate = await completeDm("switch the main DM model", 3507);
-      expect(alternate.claim.cliAgentType).toBe("codex");
-      expect(alternate.chatThread.id).toBe(main.chatThread.id);
-      expect(alternate.chatThread.selectedModel).toBe("gpt-6-astra");
-      await sendDm("/model claude-fable-5-1", 3509);
-      const returned = await completeDm("return to the main model", 3510);
-      expect(returned.claim.modelUsageProvider).toBe("claude-fable-5-1");
-      expect(returned.chatThread.id).toBe(main.chatThread.id);
-      expect(returned.chatThread.selectedModel).toBe("claude-fable-5-1");
-
-      // An explicit Auto command stores the canonical selection.
-      await sendDm("/model auto", 3512);
-      const lifecycle = await chatApi.requestThreadEvents(dm.actor, {}, [200]);
-      if (lifecycle.status !== 200) {
-        throw new Error("Expected the Telegram thread event stream");
-      }
-      const autoThread = replayChatThreadEvents([], lifecycle.body.events).find(
-        (thread) => {
-          return thread.id === main.chatThread.id;
-        },
-      );
-      expect(autoThread?.selectedModel).toBe("auto");
-      await sendDm("/model", 3513);
-      expect(dm.telegram.sentMessages.at(-1)?.text).toContain(
-        "Current: <b>Auto</b>",
-      );
-      expect(dm.telegram.sentMessages.at(-1)?.text).toContain(
-        "Auto (current, default)",
-      );
     });
   });
 
@@ -2174,91 +2123,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       actorForFixture(outsider),
       first.chatThreadId,
       [404],
-    );
-  });
-
-  it("does not change the member default before a Telegram conversation exists", async () => {
-    const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    const actor = actorForFixture(fixture);
-    await runsApi.grantProEntitlement(actor);
-    await runsApi.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-sonnet-5-5",
-    });
-    const telegramMocks = telegramApiMocks();
-
-    const list = await postWebhook({
-      telegramBotId: fixture.telegramBotId,
-      secret: fixture.webhookSecret,
-      body: {
-        update_id: 101,
-        message: {
-          message_id: 1011,
-          chat: { id: Number(fixture.telegramUserId), type: "private" },
-          from: {
-            id: Number(fixture.telegramUserId),
-            username: "alice",
-            first_name: "Alice",
-          },
-          text: "/model",
-        },
-      },
-    });
-    expect(list.status).toBe(200);
-    await flushWaitUntilForTest();
-    expect(telegramMocks.sentMessages[0]?.text).toContain(
-      "existing Okou conversation",
-    );
-
-    const switchModel = await postWebhook({
-      telegramBotId: fixture.telegramBotId,
-      secret: fixture.webhookSecret,
-      body: {
-        update_id: 102,
-        message: {
-          message_id: 1012,
-          chat: { id: Number(fixture.telegramUserId), type: "private" },
-          from: {
-            id: Number(fixture.telegramUserId),
-            username: "alice",
-            first_name: "Alice",
-          },
-          text: "/model Claude Sonnet 5.5",
-        },
-      },
-    });
-    expect(switchModel.status).toBe(200);
-    await flushWaitUntilForTest();
-    expect(telegramMocks.sentMessages[1]?.text).toContain(
-      "existing Okou conversation",
-    );
-    await expect(memberDefaultModel(fixture)).resolves.toBe(
-      "claude-sonnet-5-5",
-    );
-
-    const defaultModel = await postWebhook({
-      telegramBotId: fixture.telegramBotId,
-      secret: fixture.webhookSecret,
-      body: {
-        update_id: 103,
-        message: {
-          message_id: 1013,
-          chat: { id: Number(fixture.telegramUserId), type: "private" },
-          from: {
-            id: Number(fixture.telegramUserId),
-            username: "alice",
-            first_name: "Alice",
-          },
-          text: "/model default",
-        },
-      },
-    });
-    expect(defaultModel.status).toBe(200);
-    await flushWaitUntilForTest();
-    expect(telegramMocks.sentMessages[2]?.text).toContain(
-      "existing Okou conversation",
-    );
-    await expect(memberDefaultModel(fixture)).resolves.toBe(
-      "claude-sonnet-5-5",
     );
   });
 

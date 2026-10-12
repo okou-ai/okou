@@ -1571,13 +1571,10 @@ fn place_tool_peer_in_scope(
     expected_runtime_cgroup: &Path,
     tools_path: &Path,
     tool_id: u64,
-    closing: Option<&AtomicBool>,
+    admission_check: Option<&dyn Fn() -> io::Result<()>>,
 ) -> io::Result<()> {
-    if closing.is_some_and(|closing| closing.load(Ordering::Acquire)) {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "task is closing",
-        ));
+    if let Some(check) = admission_check {
+        check()?;
     }
     if !peer_matches(stream, expected_uid, expected_runtime_cgroup)? {
         return Err(io::Error::new(
@@ -1604,11 +1601,8 @@ fn place_tool_peer_in_scope(
                 "peer did not enter the assigned tool cgroup",
             ));
         }
-        if closing.is_some_and(|closing| closing.load(Ordering::Acquire)) {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "task closed during tool placement",
-            ));
+        if let Some(check) = admission_check {
+            check()?;
         }
         process_control_ipc::write_tool_placement_ack(stream)
     })();

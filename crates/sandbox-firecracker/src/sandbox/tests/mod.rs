@@ -2854,7 +2854,8 @@ async fn apply_storage_manifest_preserves_terminal_metadata() {
         timeout: Duration::from_secs(5),
     };
 
-    let apply = sandbox.apply_storage_manifest(&request);
+    let mut timing = sandbox::StorageManifestTiming::default();
+    let apply = sandbox.apply_storage_manifest_with_timing(&request, &mut timing);
     let respond = async {
         let request = read_vsock_message(&mut guest).await;
         assert_eq!(
@@ -2910,6 +2911,15 @@ async fn apply_storage_manifest_preserves_terminal_metadata() {
     let (result, ()) = tokio::join!(apply, respond);
     let result = result.unwrap();
 
+    assert!(timing.admission.is_some());
+    assert!(timing.request.setup.is_some());
+    assert!(timing.request.frame_builder_wait.is_some());
+    assert!(timing.request.frame_encode.is_some());
+    assert!(timing.request.writer_wait.is_some());
+    assert!(timing.request.frame_write.is_some());
+    assert!(timing.request.response_wait.is_some());
+    assert!(timing.request.result_decode.is_some());
+    assert!(timing.resource_log.is_some());
     assert_eq!(result.termination, ExecTermination::WaitFailed);
     assert_eq!(result.guest_duration_ms, Some(19));
     assert_eq!(result.stdout, b"out");

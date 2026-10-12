@@ -41,6 +41,38 @@ export function nativeRenderer(source: string): string {
   }
   const nativeReplacements = [
     [
+      "const elements = Array.isArray(target) ? target : [target];",
+      `const elements = Array.isArray(target) ? target : [target];
+    options.fonts = await window.__okouNative.prepareFonts(elements, getAutoDetectedFonts, async buffer => {
+      const magic=String.fromCharCode(...new Uint8Array(buffer,0,4));
+      if(magic==='wOF2'){await main_esmExports.woff2.init(woff2WasmBase64);return main_esmExports.woff2tottf(buffer);}
+      if(magic==='wOFF')return main_esmExports.woff2ttf(buffer,{inflate:pako.inflate});
+      return buffer;
+    }, buffer=>main_esmExports.ttf2eot(buffer));
+    options.autoEmbedFonts = false;`,
+    ],
+    [
+      "async function fontToEot(typeOrSubsets, fontBufferOrWasmUrl, wasmUrl) {",
+      `async function fontToEot(typeOrSubsets, fontBufferOrWasmUrl, wasmUrl) {
+    if(Array.isArray(typeOrSubsets)&&typeOrSubsets.length===1){const buffer=typeOrSubsets[0].buffer;if(buffer.byteLength>36&&new DataView(buffer).getUint16(34,true)===0x504c)return buffer;}`,
+    ],
+    [
+      "fontFace: style.fontFamily.split(',')[0].replace(/['\"]/g, ''),",
+      "fontFace: window.__okouNative.fontStyle(style).fontFace,",
+    ],
+    [
+      "bold: parseInt(style.fontWeight) >= 600,",
+      "bold: window.__okouNative.fontStyle(style).bold,",
+    ],
+    [
+      "italic: style.fontStyle === 'italic',",
+      "italic: window.__okouNative.fontStyle(style).italic,",
+    ],
+    [
+      "console.warn(`Failed to embed font family: ${fontCfg.name}`, e);",
+      "throw new Error('Cannot embed native presentation font: ' + fontCfg.name, {cause:e});",
+    ],
+    [
       "const result = prepareRenderItem(node,",
       "let result = prepareRenderItem(node,",
     ],
@@ -58,7 +90,7 @@ export function nativeRenderer(source: string): string {
     ],
     [
       "return compareKeys(a.zIndex, b.zIndex);",
-      "return (a._paintOrder-b._paintOrder) || (a._sourceId-b._sourceId) || (a._paintPhase-b._paintPhase) || compareKeys(a.zIndex, b.zIndex);",
+      "return compareKeys(a._paintKey,b._paintKey) || (a._paintPhase-b._paintPhase) || (a.domOrder-b.domOrder);",
     ],
     [
       "item.options.objectName = transportVal;",
