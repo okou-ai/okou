@@ -435,6 +435,30 @@ describe("POST /api/integrations/teams/connect", () => {
     setupTeamsConnectTestEnv();
   });
 
+  it("returns not found when the Teams installation is missing", async () => {
+    const fixture = await track(Promise.resolve(teamsConnectFixture()));
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+
+    const client = setupApp({ context, routes: teamsConnectRoutes })(
+      teamsConnectContract,
+    );
+    const response = await accept(
+      client.connect({
+        headers: { authorization: "Bearer clerk-session" },
+        body: connectBody(fixture),
+      }),
+      [404],
+    );
+
+    expect(response.body).toStrictEqual({
+      error: {
+        code: "NOT_FOUND",
+        message:
+          "Teams installation not found. Please install the Teams app first.",
+      },
+    });
+  });
+
   it("binds an unbound Teams installation for its admin", async () => {
     const fixture = await seedTeamsInstallation(track);
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");

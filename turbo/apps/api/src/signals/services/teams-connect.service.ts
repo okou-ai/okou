@@ -544,11 +544,6 @@ type ConnectTeamsInstallationArgs = {
   readonly threadId?: string;
 };
 
-type BindTeamsInstallationResult =
-  | { readonly kind: "bound"; readonly installation: TeamsInstallation }
-  | { readonly kind: "not_found"; readonly message: string }
-  | { readonly kind: "forbidden"; readonly message: string };
-
 function buildTeamsWelcomeCard(
   installation: TeamsInstallation,
 ): TeamsAdaptiveCard {
@@ -678,48 +673,6 @@ async function notifyTeamsConnect(
     .set({ dmWelcomeSent: true, updatedAt: nowDate() })
     .where(eq(teamsOrgConnections.id, args.connectionId));
   signal.throwIfAborted();
-}
-
-async function bindUnclaimedTeamsInstallation(
-  args: {
-    readonly db: Db;
-    readonly connectArgs: ConnectTeamsInstallationArgs;
-  },
-  signal: AbortSignal,
-): Promise<BindTeamsInstallationResult> {
-  const [updated] = await args.db
-    .update(teamsOrgInstallations)
-    .set({
-      orgId: args.connectArgs.orgId,
-      installedByUserId: args.connectArgs.userId,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(teamsOrgInstallations.teamsTenantId, args.connectArgs.tenantId),
-        isNull(teamsOrgInstallations.orgId),
-      ),
-    )
-    .returning();
-  signal.throwIfAborted();
-
-  if (updated) {
-    return { kind: "bound", installation: updated };
-  }
-
-  const [existing] = await args.db
-    .select()
-    .from(teamsOrgInstallations)
-    .where(eq(teamsOrgInstallations.teamsTenantId, args.connectArgs.tenantId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!existing) {
-    return { kind: "not_found", message: installationNotFoundMessage };
-  }
-  if (existing.orgId !== args.connectArgs.orgId) {
-    return { kind: "forbidden", message: orgMismatchMessage };
-  }
-  return { kind: "bound", installation: existing };
 }
 
 async function finalizeTeamsConnection(
@@ -874,22 +827,44 @@ export const connectTeamsInstallation$ = command(
         .where(eq(teamsOrgInstallations.teamsTenantId, args.tenantId));
       signal.throwIfAborted();
 
-      const bindResult = await bindUnclaimedTeamsInstallation(
-        {
-          db: writeDb,
-          connectArgs: args,
-        },
-        signal,
-      );
-      if (bindResult.kind !== "bound") {
-        return bindResult;
+      const [updated] = await writeDb
+        .update(teamsOrgInstallations)
+        .set({
+          orgId: args.orgId,
+          installedByUserId: args.userId,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(teamsOrgInstallations.teamsTenantId, args.tenantId),
+            isNull(teamsOrgInstallations.orgId),
+          ),
+        )
+        .returning();
+      signal.throwIfAborted();
+
+      let boundInstallation = updated;
+      if (!boundInstallation) {
+        const [existing] = await writeDb
+          .select()
+          .from(teamsOrgInstallations)
+          .where(eq(teamsOrgInstallations.teamsTenantId, args.tenantId))
+          .limit(1);
+        signal.throwIfAborted();
+        if (!existing) {
+          return { kind: "not_found", message: installationNotFoundMessage };
+        }
+        if (existing.orgId !== args.orgId) {
+          return { kind: "forbidden", message: orgMismatchMessage };
+        }
+        boundInstallation = existing;
       }
 
       return finalizeTeamsConnection(
         {
           db: writeDb,
           connectArgs: args,
-          installation: bindResult.installation,
+          installation: boundInstallation,
           role: "admin",
         },
         signal,
