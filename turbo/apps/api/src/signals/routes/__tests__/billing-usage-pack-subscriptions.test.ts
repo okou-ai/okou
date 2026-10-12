@@ -2141,7 +2141,10 @@ describe("legacy subscription usage pack migration", () => {
 });
 
 describe("usage pack allocation management", () => {
-  function createManagedUsagePackHelpers(lifecycle?: PublicBillingScenario) {
+  function createManagedUsagePackHelpers(
+    lifecycle?: PublicBillingScenario,
+    isolatePg = false,
+  ) {
     const run =
       lifecycle?.run ??
       (<T>(operation: () => Promise<T>) => {
@@ -3598,11 +3601,14 @@ describe("usage pack allocation management", () => {
           },
         );
         lifecycle?.captureExternalState();
+        const checkoutApp = await setupApp({
+          context,
+          routes: billingCheckoutRoutes,
+          isolatePg,
+        });
         await run(() => {
           return accept(
-            setupApp({ context, routes: billingCheckoutRoutes })(
-              billingUsagePackCheckoutContract,
-            ).create({
+            checkoutApp(billingUsagePackCheckoutContract).create({
               headers: { authorization: "Bearer clerk-session" },
               body: { ...usagePackCheckoutBody(actor.userId), tier: "team" },
             }),
@@ -8456,6 +8462,71 @@ describe("usage pack allocation management", () => {
           );
         });
         expect(confirmation.body.status).toBe("scheduled");
+      });
+    });
+  });
+
+  it("recovers the immutable deferred request through a case-owned public database", async () => {
+    const lifecycle = createPublicBillingScenario(context);
+    const {
+      prepareDeferredInvoiceReplay,
+      postManagedUsagePackEvent,
+      readDeferredReplayCredits,
+    } = createManagedUsagePackHelpers(lifecycle, true);
+    return await withNowScopeForTest(() => {
+      return lifecycle.run(async () => {
+        const replay = await prepareDeferredInvoiceReplay();
+        retainBillingSequence(
+          context.mocks.stripe.subscriptionSchedules.update,
+          [
+            () => {
+              return Promise.reject(new Error("Stripe update unavailable"));
+            },
+          ],
+        );
+        lifecycle.captureExternalState();
+        await expect(
+          postManagedUsagePackEvent("invoice.paid", replay.invoice),
+        ).rejects.toThrow(
+          "Unknown response status 500 for POST /api/webhooks/stripe",
+        );
+        const credits = await readDeferredReplayCredits(replay.fixture);
+        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+          ...replay.subscription,
+          schedule: replay.scheduleId,
+        });
+        context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue(
+          replay.initialSchedule,
+        );
+        lifecycle.captureExternalState();
+
+        await postManagedUsagePackEvent("invoice.paid", replay.invoice);
+
+        const requests =
+          context.mocks.stripe.subscriptionSchedules.update.mock.calls;
+        expect(requests).toHaveLength(2);
+        expect(requests[1]).toStrictEqual(requests[0]);
+        expect(
+          context.mocks.stripe.subscriptionSchedules.create,
+        ).toHaveBeenCalledOnce();
+        await expect(
+          readDeferredReplayCredits(replay.fixture),
+        ).resolves.toStrictEqual(credits);
+        const confirmation = await lifecycle.run(() => {
+          return accept(
+            replay.client.confirmSubscriptionChange({
+              headers: { authorization: "Bearer clerk-session" },
+              body: { changeId: replay.preview.body.changeId },
+            }),
+            [200],
+          );
+        });
+        expect(confirmation.body).toMatchObject({
+          status: "scheduled",
+          effectiveAt: new Date(
+            replay.fixture.billingPeriod.end * 1000,
+          ).toISOString(),
+        });
       });
     });
   });
