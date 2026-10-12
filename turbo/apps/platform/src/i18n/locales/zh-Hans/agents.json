@@ -75,7 +75,7 @@
   },
   "detail": {
     "chatWith": "与{{agentName}}对话",
-    "defaultDescription": "为你调校的AI同事",
+    "defaultDescription": "为你调校的 AI 同事",
     "notFound": {
       "back": "返回团队",
       "description": "智能体「{{agentId}}」不存在，或者你没有访问权限。",
@@ -100,11 +100,11 @@
         "cases": {
           "cloudinary-media-optimizer": {
             "description": "批量优化和转换图片",
-            "title": "Cloudinary媒体优化"
+            "title": "Cloudinary 媒体优化"
           },
           "fal-ai-image-generation": {
-            "description": "根据Notion里的描述生成产品图",
-            "title": "Fal AI图像生成"
+            "description": "根据 Notion 里的描述生成产品图",
+            "title": "Fal AI 图像生成"
           }
         },
         "title": "创意"
@@ -112,23 +112,23 @@
       "engineering": {
         "cases": {
           "batch-create-issues": {
-            "description": "粘贴一份清单，{{assistantName}}就替你把issue逐条建好",
-            "title": "批量创建issue"
+            "description": "粘贴一份清单，{{assistantName}}就替你把 issue 逐条建好",
+            "title": "批量创建 issue"
           },
           "browserbase-web-testing": {
             "description": "为你的网页应用做自动化浏览器测试",
-            "title": "Browserbase网页测试"
+            "title": "Browserbase 网页测试"
           },
           "cloudflare-traffic-security-report": {
-            "description": "每周在Slack汇总流量与安全事件",
-            "title": "Cloudflare流量与安全报告"
+            "description": "每周在 Slack 汇总流量与安全事件",
+            "title": "Cloudflare 流量与安全报告"
           },
           "codebase-investigation": {
-            "description": "给一个URL，{{assistantName}}就在代码库里追查这个缺陷",
+            "description": "给一个 URL，{{assistantName}}就在代码库里追查这个缺陷",
             "title": "代码库排查"
           },
           "daily-standup-report": {
-            "description": "把早间数据做成幻灯片，发到Slack",
+            "description": "把早间数据做成幻灯片，发到 Slack",
             "title": "每日站会报告"
           },
           "deep-research-code-analysis": {
@@ -136,39 +136,39 @@
             "title": "深度代码分析"
           },
           "github-pr-summarizer": {
-            "description": "已合并的PR摘要写进Notion，也可以同步发到Slack",
-            "title": "GitHub PR摘要"
+            "description": "已合并的 PR 摘要写进 Notion，也可以同步发到 Slack",
+            "title": "GitHub PR 摘要"
           },
           "github-progress-weekly": {
             "description": "按功能汇总每周的仓库动态",
-            "title": "GitHub每周进展"
+            "title": "GitHub 每周进展"
           },
           "gitlab-to-github-migration-helper": {
-            "description": "把GitLab的issue和合并请求同步到GitHub",
-            "title": "GitLab迁移到GitHub助手"
+            "description": "把 GitLab 的 issue 和合并请求同步到 GitHub",
+            "title": "GitLab 迁移到 GitHub 助手"
           },
           "jira-github-issue-sync": {
-            "description": "让Jira工单和GitHub issue保持同步",
-            "title": "Jira ↔ GitHub问题同步"
+            "description": "让 Jira 工单和 GitHub issue 保持同步",
+            "title": "Jira ↔ GitHub 问题同步"
           },
           "make-scenario-builder": {
-            "description": "用一段描述设计多步骤的Make场景",
-            "title": "Make场景搭建"
+            "description": "用一段描述设计多步骤的 Make 场景",
+            "title": "Make 场景搭建"
           },
           "security-dependency-alert-digest": {
-            "description": "每周汇总GitHub的安全与依赖告警",
+            "description": "每周汇总 GitHub 的安全与依赖告警",
             "title": "安全与依赖告警摘要"
           },
           "sentry-issue-digest": {
             "description": "每天早上按严重程度分组汇总报错",
-            "title": "Sentry报错摘要"
+            "title": "Sentry 报错摘要"
           },
           "vercel-deploy-digest": {
-            "description": "把每次部署关联到对应提交，部署失败时在Slack告警",
-            "title": "Vercel部署摘要"
+            "description": "把每次部署关联到对应提交，部署失败时在 Slack 告警",
+            "title": "Vercel 部署摘要"
           },
           "zapier-okou-migration": {
-            "description": "把你的Zapier工作流重建为{{brandName}}智能体",
+            "description": "把你的 Zapier 工作流重建为{{brandName}}智能体",
             "title": "Zapier → {{brandName}}迁移"
           }
         },
@@ -185,27 +185,27 @@
             "title": "日程优化"
           },
           "calendly-booking-sync": {
-            "description": "新预约自动进日历，并在Slack提醒",
-            "title": "Calendly预约同步"
+            "description": "新预约自动进日历，并在 Slack 提醒",
+            "title": "Calendly 预约同步"
           },
           "email-assistant": {
             "description": "早间收件箱摘要，附下一步建议",
             "title": "邮件助理"
           },
           "granola-notes-to-notion": {
-            "description": "把Granola会议笔记同步到Notion数据库",
-            "title": "Granola笔记同步到Notion"
+            "description": "把 Granola 会议笔记同步到 Notion 数据库",
+            "title": "Granola 笔记同步到 Notion"
           },
           "lark-slack-message-relay": {
-            "description": "在Lark和Slack之间双向转发消息",
-            "title": "Lark ↔ Slack消息互转"
+            "description": "在 Lark 和 Slack 之间双向转发消息",
+            "title": "Lark ↔ Slack 消息互转"
           },
           "line-message-relay": {
-            "description": "把LINE消息转发到Slack，反向同样可以",
-            "title": "LINE消息转发"
+            "description": "把 LINE 消息转发到 Slack，反向同样可以",
+            "title": "LINE 消息转发"
           },
           "meeting-notes-pipeline": {
-            "description": "Fireflies记录进Notion，跟进事项发到Slack",
+            "description": "Fireflies 记录进 Notion，跟进事项发到 Slack",
             "title": "会议纪要流水线"
           },
           "morning-brief": {
@@ -213,11 +213,11 @@
             "title": "晨间简报"
           },
           "perplexity-deep-research": {
-            "description": "AI调研摘要自动存入Notion",
-            "title": "Perplexity深度调研"
+            "description": "AI 调研摘要自动存入 Notion",
+            "title": "Perplexity 深度调研"
           },
           "personal-weekly-digest": {
-            "description": "PR、邮件和日历汇总成一条Slack周报",
+            "description": "PR、邮件和日历汇总成一条 Slack 周报",
             "title": "个人每周摘要"
           },
           "self-update-instructions": {
@@ -225,20 +225,20 @@
             "title": "自助更新指令"
           },
           "send-messages-on-your-behalf": {
-            "description": "替你把团队公告发到Slack",
+            "description": "替你把团队公告发到 Slack",
             "title": "代你发送消息"
           },
           "strava-team-fitness-digest": {
-            "description": "每周把团队运动数据汇总发到Slack",
-            "title": "Strava团队运动摘要"
+            "description": "每周把团队运动数据汇总发到 Slack",
+            "title": "Strava 团队运动摘要"
           },
           "tavily-web-research-pipeline": {
-            "description": "搜索网页，并把结果整理进Notion",
-            "title": "Tavily网页调研流水线"
+            "description": "搜索网页，并把结果整理进 Notion",
+            "title": "Tavily 网页调研流水线"
           },
           "tl-dv-meeting-recap": {
-            "description": "会议录像在Notion里生成摘要和待办事项",
-            "title": "tl;dv会议回顾"
+            "description": "会议录像在 Notion 里生成摘要和待办事项",
+            "title": "tl;dv 会议回顾"
           }
         },
         "title": "通用"
@@ -246,72 +246,72 @@
       "marketing": {
         "cases": {
           "apify-web-scraper-to-sheets": {
-            "description": "Apify抓取网站，整理成Google Sheets的结构化行",
-            "title": "Apify网页抓取到Sheets"
+            "description": "Apify 抓取网站，整理成 Google Sheets 的结构化行",
+            "title": "Apify 网页抓取到 Sheets"
           },
           "brevo-email-nurture-sequence": {
-            "description": "根据CRM事件自动发送邮件序列",
-            "title": "Brevo邮件培育序列"
+            "description": "根据 CRM 事件自动发送邮件序列",
+            "title": "Brevo 邮件培育序列"
           },
           "competitive-intel-scraper": {
-            "description": "Firecrawl盯住竞品网站，把变化记进Notion",
+            "description": "Firecrawl 盯住竞品网站，把变化记进 Notion",
             "title": "竞品情报抓取"
           },
           "competitor-research-to-notion": {
-            "description": "把X上的调研整理成Notion结构化笔记",
-            "title": "竞品调研存入Notion"
+            "description": "把 X 上的调研整理成 Notion 结构化笔记",
+            "title": "竞品调研存入 Notion"
           },
           "content-planner": {
             "description": "头脑风暴选题，规划内容日历",
             "title": "内容规划"
           },
           "dev-to-auto-publisher": {
-            "description": "把Notion文章发布到Dev.to，并在X上带链接推广",
-            "title": "Dev.to自动发布"
+            "description": "把 Notion 文章发布到 Dev.to，并在 X 上带链接推广",
+            "title": "Dev.to 自动发布"
           },
           "discord-community-insights": {
-            "description": "Discord反馈汇入Notion，每周在Slack出摘要",
-            "title": "Discord社区洞察"
+            "description": "Discord 反馈汇入 Notion，每周在 Slack 出摘要",
+            "title": "Discord 社区洞察"
           },
           "instagram-engagement-tracker": {
-            "description": "互动数据进Sheets，每周在Slack汇总",
-            "title": "Instagram互动追踪"
+            "description": "互动数据进 Sheets，每周在 Slack 汇总",
+            "title": "Instagram 互动追踪"
           },
           "loops-email-campaign": {
-            "description": "用Loops起草并发送事务性邮件",
-            "title": "Loops邮件活动"
+            "description": "用 Loops 起草并发送事务性邮件",
+            "title": "Loops 邮件活动"
           },
           "marketing-automation-system": {
             "description": "三个智能体分管调研、每周监测和临时任务",
             "title": "市场自动化体系"
           },
           "marketing-content-planning": {
-            "description": "结合Slack、访谈和竞品规划发布内容",
+            "description": "结合 Slack、访谈和竞品规划发布内容",
             "title": "市场内容规划"
           },
           "onboarding-email-use-cases": {
-            "description": "从Slack和访谈里挖新手引导的切入点",
+            "description": "从 Slack 和访谈里挖新手引导的切入点",
             "title": "新手引导邮件用例"
           },
           "serpapi-keyword-tracker": {
-            "description": "每周追踪关键词排名并记录到Sheets",
-            "title": "SerpAPI关键词追踪"
+            "description": "每周追踪关键词排名并记录到 Sheets",
+            "title": "SerpAPI 关键词追踪"
           },
           "similarweb-traffic-comparison": {
-            "description": "与竞品的流量对比存入Notion",
-            "title": "SimilarWeb流量对比"
+            "description": "与竞品的流量对比存入 Notion",
+            "title": "SimilarWeb 流量对比"
           },
           "social-media-content-calendar": {
-            "description": "把Sheets里的日历变成各平台的帖子",
+            "description": "把 Sheets 里的日历变成各平台的帖子",
             "title": "社交内容日历"
           },
           "x-brand-monitor": {
-            "description": "X上的品牌提及存入Notion，并提醒团队",
-            "title": "X品牌监测"
+            "description": "X 上的品牌提及存入 Notion，并提醒团队",
+            "title": "X 品牌监测"
           },
           "youtube-to-x-thread-repurposer": {
-            "description": "有新的YouTube视频发布时，生成Notion摘要和一条X长帖来推广",
-            "title": "YouTube转X长帖"
+            "description": "有新的 YouTube 视频发布时，生成 Notion 摘要和一条 X 长帖来推广",
+            "title": "YouTube 转 X 长帖"
           }
         },
         "title": "市场"
@@ -319,48 +319,48 @@
       "ops": {
         "cases": {
           "agentmail-inbox": {
-            "description": "用AgentMail API创建和管理收件箱",
-            "title": "AgentMail收件箱"
+            "description": "用 AgentMail API 创建和管理收件箱",
+            "title": "AgentMail 收件箱"
           },
           "clickup-slack-standups": {
-            "description": "每天把ClickUp任务作为站会发到Slack",
-            "title": "ClickUp → Slack站会"
+            "description": "每天把 ClickUp 任务作为站会发到 Slack",
+            "title": "ClickUp → Slack 站会"
           },
           "google-docs-notion-migrator": {
-            "description": "批量把Google Docs搬进Notion，排版原样保留",
-            "title": "Google Docs → Notion迁移"
+            "description": "批量把 Google Docs 搬进 Notion，排版原样保留",
+            "title": "Google Docs → Notion 迁移"
           },
           "google-drive-file-organizer": {
             "description": "新文件自动归入对应文件夹",
-            "title": "Google Drive文件整理"
+            "title": "Google Drive 文件整理"
           },
           "jotform-intake-to-notion": {
-            "description": "表单答复进入Notion，并在Slack通知",
-            "title": "Jotform表单收集到Notion"
+            "description": "表单答复进入 Notion，并在 Slack 通知",
+            "title": "Jotform 表单收集到 Notion"
           },
           "monday-com-weekly-digest": {
-            "description": "每周在Slack汇报Monday.com的看板进展",
-            "title": "Monday.com每周摘要"
+            "description": "每周在 Slack 汇报 Monday.com 的看板进展",
+            "title": "Monday.com 每周摘要"
           },
           "pdf-contract-processor": {
-            "description": "合同字段进Notion，到期前提醒",
-            "title": "PDF合同处理"
+            "description": "合同字段进 Notion，到期前提醒",
+            "title": "PDF 合同处理"
           },
           "revenuecat-subscription-digest": {
-            "description": "订阅数据进Sheets，流失异常在Slack告警",
-            "title": "RevenueCat订阅摘要"
+            "description": "订阅数据进 Sheets，流失异常在 Slack 告警",
+            "title": "RevenueCat 订阅摘要"
           },
           "todoist-notion-task-sync": {
-            "description": "把Todoist任务同步到Notion，团队随时能看",
-            "title": "Todoist → Notion任务同步"
+            "description": "把 Todoist 任务同步到 Notion，团队随时能看",
+            "title": "Todoist → Notion 任务同步"
           },
           "wrike-project-reporter": {
-            "description": "每周在Slack汇总Wrike的项目进展",
-            "title": "Wrike项目播报"
+            "description": "每周在 Slack 汇总 Wrike 的项目进展",
+            "title": "Wrike 项目播报"
           },
           "xero-financial-summary": {
-            "description": "每周把Xero的利润和现金流发到Slack",
-            "title": "Xero财务摘要"
+            "description": "每周把 Xero 的利润和现金流发到 Slack",
+            "title": "Xero 财务摘要"
           }
         },
         "title": "运营"
@@ -368,20 +368,20 @@
       "product": {
         "cases": {
           "asana-notion-project-sync": {
-            "description": "Asana的里程碑和任务同步到Notion",
-            "title": "Asana → Notion项目同步"
+            "description": "Asana 的里程碑和任务同步到 Notion",
+            "title": "Asana → Notion 项目同步"
           },
           "feedback-router": {
-            "description": "按你的规则把Slack里的反馈分发到对应位置",
+            "description": "按你的规则把 Slack 里的反馈分发到对应位置",
             "title": "反馈分发"
           },
           "linear-prd-implementer": {
-            "description": "把Notion里的需求文档变成Linear项目和issue",
-            "title": "Linear需求落地"
+            "description": "把 Notion 里的需求文档变成 Linear 项目和 issue",
+            "title": "Linear 需求落地"
           },
           "metabase-dashboard-digest": {
-            "description": "自动把仪表盘快照发到Slack",
-            "title": "Metabase仪表盘摘要"
+            "description": "自动把仪表盘快照发到 Slack",
+            "title": "Metabase 仪表盘摘要"
           },
           "pricing-analysis": {
             "description": "分析竞品的定价策略，并与同类产品对比",
@@ -397,31 +397,31 @@
       "sales": {
         "cases": {
           "airtable-deal-tracker": {
-            "description": "交易成交时同步到Sheets并通知Slack",
-            "title": "Airtable商机追踪"
+            "description": "交易成交时同步到 Sheets 并通知 Slack",
+            "title": "Airtable 商机追踪"
           },
           "bitrix24-lead-nurture": {
-            "description": "新的Bitrix线索自动生成跟进任务，并在Slack提醒",
-            "title": "Bitrix24线索培育"
+            "description": "新的 Bitrix 线索自动生成跟进任务，并在 Slack 提醒",
+            "title": "Bitrix24 线索培育"
           },
           "hubspot-sales-reporter": {
-            "description": "每周把HubSpot数据整理成结构化报告",
-            "title": "HubSpot销售播报"
+            "description": "每周把 HubSpot 数据整理成结构化报告",
+            "title": "HubSpot 销售播报"
           },
           "lead-follow-up-pipeline": {
-            "description": "新线索变成HubSpot任务，并在Slack提醒",
+            "description": "新线索变成 HubSpot 任务，并在 Slack 提醒",
             "title": "线索跟进流水线"
           },
           "salesforce-pipeline-digest": {
-            "description": "每周在Slack更新Salesforce的商机进展",
-            "title": "Salesforce商机管道摘要"
+            "description": "每周在 Slack 更新 Salesforce 的商机进展",
+            "title": "Salesforce 商机管道摘要"
           },
           "streak-pipeline-report": {
-            "description": "每周把Gmail里的CRM管道数据发到Slack",
-            "title": "Streak管道报告"
+            "description": "每周把 Gmail 里的 CRM 管道数据发到 Slack",
+            "title": "Streak 管道报告"
           },
           "win-loss-reporter": {
-            "description": "在Slack汇报管道里的赢单与丢单趋势",
+            "description": "在 Slack 汇报管道里的赢单与丢单趋势",
             "title": "赢单/丢单播报"
           }
         },
@@ -430,19 +430,19 @@
       "support": {
         "cases": {
           "chatwoot-notion-support-log": {
-            "description": "客户对话在Notion里记录并归类",
-            "title": "Chatwoot → Notion支持记录"
+            "description": "客户对话在 Notion 里记录并归类",
+            "title": "Chatwoot → Notion 支持记录"
           },
           "customer-support-bot": {
             "description": "用知识库作答，答不上来的自动建任务",
             "title": "客服机器人"
           },
           "intercom-conversation-triager": {
-            "description": "把Intercom对话变成带优先级的Notion任务",
-            "title": "Intercom对话分诊"
+            "description": "把 Intercom 对话变成带优先级的 Notion 任务",
+            "title": "Intercom 对话分诊"
           },
           "support-ticket-router": {
-            "description": "工单进Notion，紧急的在Slack提醒",
+            "description": "工单进 Notion，紧急的在 Slack 提醒",
             "title": "工单分发"
           }
         },
