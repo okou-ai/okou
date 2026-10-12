@@ -9,6 +9,32 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.727.7](https://github.com/okou-ai/okou/compare/api-v1.727.6...api-v1.727.7) (2026-10-12)
+
+
+### Bug Fixes
+
+* **api:** retry optional agent traces within a shared deadline ([#39201](https://github.com/okou-ai/okou/issues/39201)) ([3bf199f](https://github.com/okou-ai/okou/commit/3bf199fd296ba7d796a9a51ef9ceac0aac3e9f26))
+
+
+### Refactoring
+
+* **api:** atomically publish teams routes and thread events ([#39253](https://github.com/okou-ai/okou/issues/39253)) ([2a667ee](https://github.com/okou-ai/okou/commit/2a667ee0cb24738bee5c1b8bf591fdb82b8a6b59))
+* **api:** give screenshot completion explicit write ownership ([#39228](https://github.com/okou-ai/okou/issues/39228)) ([d4c9148](https://github.com/okou-ai/okou/commit/d4c91480673a4179341d3551bb7daa3ce3a278a0))
+* **api:** publish agentphone routes and created events atomically ([#39252](https://github.com/okou-ai/okou/issues/39252)) ([c864200](https://github.com/okou-ai/okou/commit/c864200ab65c4e13844687ac7827ea65bc93c7c5))
+* **api:** publish global skill cache in one statement ([#39233](https://github.com/okou-ai/okou/issues/39233)) ([7caf463](https://github.com/okou-ai/okou/commit/7caf463df08c950c9f38b29a6b257547ec9b52d7))
+* **api:** retire legacy primary calendar migration transaction ([#39237](https://github.com/okou-ai/okou/issues/39237)) ([c11e5bc](https://github.com/okou-ai/okou/commit/c11e5bc9270443aa417d7b3d9298f8749ec9131c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.552.0
+    * @okouai/core bumped to 8.745.0
+    * @okouai/db bumped to 1.331.6
+    * @okouai/pi-agent-runtime bumped to 1.49.13
+
 ## [1.727.6](https://github.com/okou-ai/okou/compare/api-v1.727.5...api-v1.727.6) (2026-10-12)
 
 

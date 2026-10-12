@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.228.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.228.0...runner-rs-v0.228.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* **runner:** parse signed procfs process groups ([#39226](https://github.com/okou-ai/okou/issues/39226)) ([0e8e339](https://github.com/okou-ai/okou/commit/0e8e339a5ecd84af0c9d9652a88374c1a719fc07))
+* **runner:** wait for orphan exit with unavailable process groups ([#39255](https://github.com/okou-ai/okou/issues/39255)) ([8f097a1](https://github.com/okou-ai/okou/commit/8f097a1af60486828dfd874204d6928306c96a87))
+
+
+### Refactoring
+
+* **runner:** narrow kill orphan callback boundaries ([#39211](https://github.com/okou-ai/okou/issues/39211)) ([86b247a](https://github.com/okou-ai/okou/commit/86b247aee2eae145a1e4b5177ae9f0bd22f1b586))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.228.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.227.3...runner-rs-v0.228.0) (2026-10-12)
 
 
