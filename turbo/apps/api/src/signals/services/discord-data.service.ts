@@ -51,11 +51,13 @@ const bindingColumns = Object.freeze({
 });
 
 /** Always ask the identity authority; a cached role cannot revive a binding. */
-function discordMembership(binding: {
-  readonly orgId: string;
-  readonly userId: string;
-}) {
+function discordMembership(
+  input:
+    | { readonly orgId: string; readonly userId: string }
+    | Computed<{ readonly orgId: string; readonly userId: string }>,
+) {
   return computed(async (get) => {
+    const binding = "read" in input ? get(input) : input;
     const result = await settle(
       get(clerk$).organizations.getOrganizationMembershipList({
         organizationId: binding.orgId,
@@ -77,10 +79,11 @@ function discordMembership(binding: {
   });
 }
 
-export function discordMemberRole(args: {
-  readonly orgId: string;
-  readonly userId: string;
-}): Computed<Promise<ApiOrgRole | null>> {
+export function discordMemberRole(
+  args:
+    | { readonly orgId: string; readonly userId: string }
+    | Computed<{ readonly orgId: string; readonly userId: string }>,
+): Computed<Promise<ApiOrgRole | null>> {
   const membership$ = discordMembership(args);
   return computed(async (get) => {
     const member = await get(membership$);
@@ -468,11 +471,13 @@ export const disconnectDiscordBinding$ = command(
   },
 );
 
-export function discordEffectiveAgent(args: {
-  readonly orgId: string;
-  readonly userId: string;
-}) {
+export function discordEffectiveAgent(
+  input:
+    | { readonly orgId: string; readonly userId: string }
+    | Computed<{ readonly orgId: string; readonly userId: string }>,
+) {
   return computed(async (get) => {
+    const args = "read" in input ? get(input) : input;
     const db = get(db$);
     const [metadata] = await db
       .select({ defaultAgentId: orgMetadata.defaultAgentId })
@@ -513,16 +518,19 @@ function discordStatusAgentFields(
   };
 }
 
-export function discordOrgStatus(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly orgRole?: ApiOrgRole;
-}): Computed<Promise<DiscordOrgStatus>> {
+export function discordOrgStatus(
+  identity$: Computed<{
+    readonly orgId: string;
+    readonly userId: string;
+    readonly orgRole?: ApiOrgRole;
+  }>,
+): Computed<Promise<DiscordOrgStatus>> {
   const capability$ = discordMessageContentCapability();
-  const role$ = discordMemberRole(args);
-  const agent$ = discordEffectiveAgent(args);
-  const enabled$ = discordIntegrationEnabledForOwner(args.orgId, args.userId);
+  const role$ = discordMemberRole(identity$);
+  const agent$ = discordEffectiveAgent(identity$);
+  const enabled$ = discordIntegrationEnabledForOwner(identity$);
   return computed(async (get): Promise<DiscordOrgStatus> => {
+    const args = get(identity$);
     const enabled = await get(enabled$);
     const config = getDiscordAppConfig();
     const status: DiscordOrgStatus = {

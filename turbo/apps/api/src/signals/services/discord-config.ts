@@ -1,12 +1,16 @@
-import { command, computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
+import { and, eq, inArray } from "drizzle-orm";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 
 import { env } from "../../lib/env";
+import { db$ } from "../external/db";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
-  loadUserFeatureSwitchContext$,
-  userFeatureSwitchContext,
-} from "./feature-switches.service";
+  ORG_SENTINEL_USER_ID,
+  userFeatureSwitchOverridesFromRows,
+} from "./feature-switch-scope";
 
 export interface DiscordAppConfig {
   readonly applicationId: string;
@@ -50,10 +54,28 @@ export const discordIntegrationEnabledForOwner$ = command(
 );
 
 export function discordIntegrationEnabledForOwner(
-  orgId: string,
-  userId: string,
+  identity$: Computed<{ readonly orgId: string; readonly userId: string }>,
 ) {
-  const context$ = userFeatureSwitchContext(orgId, userId);
+  const overrides$ = computed(async (get) => {
+    const { orgId, userId } = get(identity$);
+    const rows = await get(db$)
+      .select({
+        userId: userFeatureSwitches.userId,
+        switches: userFeatureSwitches.switches,
+      })
+      .from(userFeatureSwitches)
+      .where(
+        and(
+          eq(userFeatureSwitches.orgId, orgId),
+          inArray(userFeatureSwitches.userId, [userId, ORG_SENTINEL_USER_ID]),
+        ),
+      );
+    return userFeatureSwitchOverridesFromRows(rows, userId);
+  });
+  const context$ = computed(async (get) => {
+    const { orgId, userId } = get(identity$);
+    return { orgId, userId, overrides: await get(overrides$) };
+  });
   return computed(async (get) => {
     return isFeatureEnabled(
       FeatureSwitchKey.DiscordIntegration,

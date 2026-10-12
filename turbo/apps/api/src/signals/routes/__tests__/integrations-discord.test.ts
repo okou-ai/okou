@@ -181,7 +181,7 @@ describe("verified Discord integration settings", () => {
   });
 
   it("keeps configured bindings unavailable until their owner enables the feature", async () => {
-    const { actor } = createActors();
+    const { actor, restore } = createActors();
     const owner = actor();
     await fixture(owner);
     await updateFeatureSwitchesForUser(context, owner, {
@@ -189,6 +189,9 @@ describe("verified Discord integration settings", () => {
     });
     await flushWaitUntilForTest();
     context.mocks.ably.publish.mockClear();
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
+      new Error("Clerk membership unavailable"),
+    );
 
     await expect(status(owner)).resolves.toMatchObject({
       isAvailable: false,
@@ -200,6 +203,7 @@ describe("verified Discord integration settings", () => {
       onboarding: "oauth",
       dmBindings: [],
     });
+    restore();
     await expectDiscordChanges([]);
   });
 
