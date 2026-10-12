@@ -366,7 +366,7 @@ test("deduplicates immutable intent details, returns the exact approval URL, and
   );
   expect(created.body.status).toBe("pending_approval");
   expect(created.body.approvalUrl).toMatch(
-    /^https:\/\/app.link.com\/activity\/approve\//,
+    /^https:\/\/app\.link\.com\/activity\/approve\//,
   );
   const repeated = await accept(
     client().createSpend({ headers: fixture.headers, body: input }),

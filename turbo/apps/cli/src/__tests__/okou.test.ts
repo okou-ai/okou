@@ -96,6 +96,7 @@ describe("Okou CLI program", () => {
       "finance",
       "seo",
       "banking",
+      "wallet",
     ];
     for (const name of expectedCommands) {
       expect(canonicalCommandNames).toContain(name);
@@ -125,8 +126,8 @@ describe("Okou CLI program", () => {
     expect(canonicalCommandNames).not.toContain("__agent-loop");
   });
 
-  it("should have exactly 48 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(48);
+  it("should have exactly 49 canonical commands", () => {
+    expect(canonicalCommandNames).toHaveLength(49);
     expect(canonicalCommandNames).toContain("subscription");
   });
 });
