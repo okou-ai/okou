@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
   BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH,
+  BROWSER_USER_ACTION_MAX_REASON_LENGTH,
+  BROWSER_USER_ACTION_MAX_TITLE_LENGTH,
   browserUserActionApplyRequestSchema,
   browserUserActionCreateRequestSchema,
   browserUserActionResponseSchema,
@@ -18,6 +20,8 @@ describe("Browser user-action contracts", () => {
     expect(
       browserUserActionCreateRequestSchema.parse({
         kind: "input",
+        title: "  Sign in to download invoices  ",
+        reason: "  The website requires sign-in to access your invoices.  ",
         callbackPrompt: "Continue after the user supplies the code",
         pageTargetId: "page-target",
         fields: [
@@ -30,7 +34,92 @@ describe("Browser user-action contracts", () => {
           },
         ],
       }),
-    ).toMatchObject({ kind: "input", fields: [{ key: "code" }] });
+    ).toMatchObject({
+      kind: "input",
+      title: "Sign in to download invoices",
+      reason: "The website requires sign-in to access your invoices.",
+      fields: [{ key: "code" }],
+    });
+  });
+
+  it("requires a bounded, nonblank title and reason", () => {
+    const request = {
+      kind: "input",
+      title: "Sign in to download invoices",
+      reason: "The website requires sign-in to access your invoices.",
+      callbackPrompt: "Continue after input",
+      pageTargetId: "page-target",
+      fields: [
+        {
+          key: "code",
+          label: "Verification code",
+          fieldKind: "one_time_code",
+          required: true,
+          backendNodeId: 42,
+        },
+      ],
+    };
+    for (const invalid of [
+      { title: undefined },
+      { title: "" },
+      { title: "   " },
+      { title: "x".repeat(BROWSER_USER_ACTION_MAX_TITLE_LENGTH + 1) },
+      { reason: undefined },
+      { reason: "" },
+      { reason: "   " },
+      { reason: "x".repeat(BROWSER_USER_ACTION_MAX_REASON_LENGTH + 1) },
+    ]) {
+      expect(
+        browserUserActionCreateRequestSchema.safeParse({
+          ...request,
+          ...invalid,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("reads historical responses without task context but validates supplied context", () => {
+    const response = {
+      kind: "input",
+      requestToken: "vm0_browser_user_action_public-token",
+      state: "pending",
+      completedAt: null,
+      agentId: uuid("1"),
+      threadId: uuid("2"),
+      siteOrigin: "https://example.com",
+      callbackIds: {
+        success: { clientEventId: uuid("3"), chatThreadSortEventId: uuid("4") },
+        cancellation: {
+          clientEventId: uuid("5"),
+          chatThreadSortEventId: uuid("6"),
+        },
+      },
+      fields: [
+        {
+          key: "code",
+          label: "Code",
+          fieldKind: "one_time_code",
+          required: true,
+          control: { tagName: "INPUT", inputType: "text" },
+        },
+      ],
+    };
+    expect(browserUserActionResponseSchema.parse(response)).toStrictEqual(
+      response,
+    );
+    for (const invalid of [
+      { title: null },
+      { title: " " },
+      { title: "x".repeat(BROWSER_USER_ACTION_MAX_TITLE_LENGTH + 1) },
+      { reason: null },
+      { reason: " " },
+      { reason: "x".repeat(BROWSER_USER_ACTION_MAX_REASON_LENGTH + 1) },
+    ]) {
+      expect(
+        browserUserActionResponseSchema.safeParse({ ...response, ...invalid })
+          .success,
+      ).toBe(false);
+    }
   });
 
   it("accepts indexed select choices and rejects duplicate indices or values in place of choices", () => {
@@ -59,6 +148,8 @@ describe("Browser user-action contracts", () => {
     expect(
       browserUserActionCreateRequestSchema.parse({
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackPrompt: "Confirm consent",
         pageTargetId: "page-target",
         fields: [
@@ -139,6 +230,8 @@ describe("Browser user-action contracts", () => {
   it("bounds native file selections and keeps content out of the persisted creation request", () => {
     const created = browserUserActionCreateRequestSchema.parse({
       kind: "input",
+      title: "Sign in to download invoices",
+      reason: "The website requires sign-in to access your invoices.",
       callbackPrompt: "Continue after selecting a file",
       pageTargetId: "page-target",
       fields: [
@@ -255,6 +348,8 @@ describe("Browser user-action contracts", () => {
   it("accepts five native date/time response types and scalar HTML strings without timezone conversion", () => {
     const request = browserUserActionCreateRequestSchema.parse({
       kind: "input",
+      title: "Sign in to download invoices",
+      reason: "The website requires sign-in to access your invoices.",
       callbackPrompt: "Continue after date entry",
       pageTargetId: "page-target",
       fields: [
@@ -271,6 +366,8 @@ describe("Browser user-action contracts", () => {
     const base = {
       requestToken: "vm0_browser_user_action_public-token",
       kind: "input",
+      title: "Sign in to download invoices",
+      reason: "The website requires sign-in to access your invoices.",
       state: "pending",
       siteOrigin: "https://example.com",
       completedAt: null,
@@ -326,6 +423,8 @@ describe("Browser user-action contracts", () => {
   it("keeps number values as strings and bounds observed constraints", () => {
     const request = browserUserActionCreateRequestSchema.parse({
       kind: "input",
+      title: "Sign in to download invoices",
+      reason: "The website requires sign-in to access your invoices.",
       callbackPrompt: "Continue after quantity entry",
       pageTargetId: "page-target",
       fields: [
@@ -361,6 +460,8 @@ describe("Browser user-action contracts", () => {
       browserUserActionResponseSchema.safeParse({
         requestToken: "vm0_browser_user_action_public-token",
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         state: "pending",
         siteOrigin: "https://example.com",
         completedAt: null,
@@ -383,6 +484,8 @@ describe("Browser user-action contracts", () => {
       browserUserActionResponseSchema.safeParse({
         requestToken: "vm0_browser_user_action_public-token",
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         state: "pending",
         siteOrigin: "https://example.com",
         completedAt: null,
@@ -424,6 +527,8 @@ describe("Browser user-action contracts", () => {
     expect(
       browserUserActionCreateRequestSchema.safeParse({
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackPrompt: "Enter credentials",
         pageTargetId: "page-target",
         fields: [field, field],
@@ -443,6 +548,8 @@ describe("Browser user-action contracts", () => {
     expect(
       browserUserActionCreateRequestSchema.safeParse({
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackPrompt: "Finish verification",
         pageTargetId: "page-target",
         fields: [
@@ -473,6 +580,8 @@ describe("Browser user-action contracts", () => {
     const safe = {
       requestToken: "vm0_browser_user_action_public-token",
       kind: "input" as const,
+      title: "Sign in to download invoices",
+      reason: "The website requires sign-in to access your invoices.",
       state: "pending" as const,
       siteOrigin: "https://example.com",
       completedAt: null,

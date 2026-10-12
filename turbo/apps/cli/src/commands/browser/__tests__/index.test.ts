@@ -104,6 +104,9 @@ describe("okou browser command", () => {
     expect(help).toContain("okou browser tab select t2");
     expect(help).toContain('"fieldKind":"password"');
     expect(help).toContain('"fieldKind":"one_time_code"');
+    expect(help).toContain('--title "Sign in to download invoices"');
+    expect(help).toContain('--reason "The website requires sign-in');
+    expect(help).toContain("Every input-request requires --title and --reason");
     expect(help).toContain(
       "prefer input-request for user-held values in supported exact controls",
     );

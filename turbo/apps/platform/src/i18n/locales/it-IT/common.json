@@ -1748,6 +1748,7 @@
       "stale": "I campi sono cambiati",
       "staleDescription": "Chiedi all’agente di creare una nuova richiesta.",
       "submit": "Aggiungi al browser",
+      "submitDescription": "Le tue informazioni saranno inserite in questo sito. L’agente proseguirà e verificherà il risultato.",
       "submitting": "Aggiunta…",
       "title": "Inserisci informazioni nel browser",
       "unavailable": "Richiesta non disponibile",
