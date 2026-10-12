@@ -10,7 +10,7 @@ import type {
   UserExportStatusResponse,
 } from "@okouai/api-contracts/contracts/user-export";
 import { exportJobs } from "@okouai/db/schema/export-job";
-import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { emailOutbox } from "@okouai/db/runtime/email-outbox";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { env } from "../../lib/env";
 import { db$, writeDb$ } from "../external/db";

@@ -1,21 +1,6 @@
-import {
-  pgTable,
-  uuid,
-  text,
-  jsonb,
-  timestamp,
-  integer,
-  index,
-  uniqueIndex,
-  check,
-} from "drizzle-orm/pg-core";
+import { pgTable, uuid, index, uniqueIndex, check } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type {
-  EmailOutboxAddresses,
-  EmailOutboxHeaders,
-  EmailOutboxProviderRequest,
-  EmailOutboxTemplate,
-} from "@okouai/db/jsonb-contracts/email-outbox";
+import { emailOutboxColumns } from "../columns/email-outbox";
 
 /**
  * Email Outbox table
@@ -41,43 +26,12 @@ import type {
 export const emailOutbox = pgTable(
   "email_outbox",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-
-    // Email envelope
-    fromAddress: text("from_address").notNull(),
-    toAddresses: jsonb("to_addresses").$type<EmailOutboxAddresses>().notNull(),
-    ccAddresses: jsonb("cc_addresses").$type<EmailOutboxAddresses>(),
-    subject: text("subject").notNull(),
-    replyTo: text("reply_to"),
-    headers: jsonb("headers").$type<EmailOutboxHeaders>(),
-
-    // Template (discriminated union stored as JSONB)
-    template: jsonb("template").$type<EmailOutboxTemplate>().notNull(),
-
-    // Durable producer identity. The pair is intentionally not foreign-keyed:
-    // deleting a completed Run or Automation must not discard queued email.
-    sourceRunId: uuid("source_run_id"),
-    sourceWorkflowAutomationId: uuid("source_workflow_automation_id"),
-
-    // Committed provider identity and payload. Both are null until the first
-    // delivery attempt prepares them; rows enqueued by a producer never set
-    // them, and rows written before this column existed prepare them on their
-    // next attempt. The request is cleared once the row is delivered, so the
-    // rendered message is retained only while a replay can still need it.
-    providerIdempotencyKey: text("provider_idempotency_key"),
-    providerRequest:
-      jsonb("provider_request").$type<EmailOutboxProviderRequest>(),
-
-    // Queue status
-    status: text("status").notNull().default("pending"), // pending | sending | sent | failed
-    attempts: integer("attempts").notNull().default(0),
-    lastError: text("last_error"),
-    // Retry backoff for a pending item, and the recovery lease of a `sending`
-    // item whose provider outcome was never recorded.
-    nextRetryAt: timestamp("next_retry_at"),
-    resendId: text("resend_id"), // Resend internal ID (filled after send)
-
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    ...emailOutboxColumns(),
+    // Migration-only producer identity of the retired platform completion
+    // email. The runtime mapping omits it; release 3 of #39378 drops the pair,
+    // its index and check after outgoing APIs drain and rollback excludes them.
+    legacySourceRunId: uuid("source_run_id"),
+    legacySourceWorkflowAutomationId: uuid("source_workflow_automation_id"),
   },
   (table) => {
     return [
@@ -90,8 +44,8 @@ export const emailOutbox = pgTable(
       // TTL cleanup
       index("email_outbox_created_at_idx").on(table.createdAt),
       uniqueIndex("email_outbox_source_run_automation_unique").on(
-        table.sourceRunId,
-        table.sourceWorkflowAutomationId,
+        table.legacySourceRunId,
+        table.legacySourceWorkflowAutomationId,
       ),
       // Two rows must never replay each other's provider request. Unprepared
       // rows keep a NULL key, which PostgreSQL treats as distinct.
@@ -101,11 +55,11 @@ export const emailOutbox = pgTable(
       check(
         "email_outbox_source_identity_check",
         sql`(
-          ${table.sourceRunId} IS NULL
-          AND ${table.sourceWorkflowAutomationId} IS NULL
+          ${table.legacySourceRunId} IS NULL
+          AND ${table.legacySourceWorkflowAutomationId} IS NULL
         ) OR (
-          ${table.sourceRunId} IS NOT NULL
-          AND ${table.sourceWorkflowAutomationId} IS NOT NULL
+          ${table.legacySourceRunId} IS NOT NULL
+          AND ${table.legacySourceWorkflowAutomationId} IS NOT NULL
         )`,
       ),
     ];

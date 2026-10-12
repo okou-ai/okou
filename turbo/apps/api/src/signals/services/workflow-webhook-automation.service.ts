@@ -1,10 +1,10 @@
 import {
-  workflowAutomations,
   workflowUserAutomationThreads,
   workflowWebhookAutomations,
   workflowWebhookDeliveries,
   workflows,
 } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq, gte } from "drizzle-orm";
 import { Buffer } from "node:buffer";

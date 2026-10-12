@@ -23,8 +23,11 @@ interface OwnedRun {
   readonly restoreStorage: () => void;
 }
 
-/** Real producers and external delivery for the approved ordinary email cases. */
-export function createPublicAutomationResultEmailApi(context: TestContext) {
+/**
+ * Launches Automation Runs through the public run route and drives them to
+ * completion through the authenticated Runner claim and webhook protocol.
+ */
+export function createPublicAutomationRunApi(context: TestContext) {
   const runs = createRunsApi(context);
   const workflows = createWorkflowsBddApi(context);
   const webhooks = createWebhookCallbackApi(context);
@@ -36,10 +39,11 @@ export function createPublicAutomationResultEmailApi(context: TestContext) {
     return { authorization: "Bearer clerk-session" };
   }
 
+  /** Configures the external mail provider and recipient for Agent mail. */
   function configureDelivery(actor: ApiTestUser): void {
     mockEnv("APP_URL", "https://app.okou.ai");
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-    mockEnv("RESEND_API_KEY", "public-result-email-key");
+    mockEnv("RESEND_API_KEY", "public-automation-run-key");
     mockEnv("RESEND_FROM_DOMAIN", "mail.example.com");
     mockOptionalEnv("EMAIL_OUTBOX_DRAIN_DELAY_MS", "0");
     const emailId = `email_${actor.userId}`;
@@ -181,7 +185,7 @@ export function createPublicAutomationResultEmailApi(context: TestContext) {
       );
     }
     const history = Buffer.from(
-      `official result email history ${runId}`,
+      `public automation run history ${runId}`,
       "utf8",
     );
     const hash = createHash("sha256").update(history).digest("hex");
@@ -228,7 +232,7 @@ export function createPublicAutomationResultEmailApi(context: TestContext) {
         ...(args.output === undefined ? {} : { lastEventSequence: 0 }),
         completion: {
           cliAgentType: "claude-code",
-          cliAgentSessionId: `official-result-email-${runId}`,
+          cliAgentSessionId: `public-automation-run-${runId}`,
           cliAgentSessionHistoryHash: hash,
         },
       },

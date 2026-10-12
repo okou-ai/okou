@@ -7,10 +7,11 @@ import {
 } from "drizzle-orm/pg-core";
 
 /**
- * Permanent dedupe claims for Official Automation result emails.
+ * Migration-only storage of the retired Official Automation completion email.
  *
- * This identity deliberately has no foreign keys. Runs, Automations, and email
- * outbox rows can all be deleted while a terminal callback remains redrivable.
+ * No runtime code reads or writes these dedupe claims. The table stays until
+ * release 3 of #39378 drops it after outgoing APIs drain and rollback excludes
+ * them.
  */
 export const officialAutomationResultEmailClaims = pgTable(
   "official_automation_result_email_claims",

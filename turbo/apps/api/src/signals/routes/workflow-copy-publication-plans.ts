@@ -5,10 +5,10 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import {
   workflows,
-  workflowAutomations,
   workflowWebhookAutomations,
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { storages } from "@okouai/db/schema/storage";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";

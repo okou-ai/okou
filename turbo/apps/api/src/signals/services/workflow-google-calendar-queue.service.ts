@@ -1,6 +1,6 @@
 import { connectors } from "@okouai/db/schema/connector";
 import { googleCalendarWatchStates } from "@okouai/db/schema/google-calendar-event";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 export interface GoogleCalendarQueueSource {

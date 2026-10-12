@@ -20,7 +20,6 @@ import {
   type InternalRunCallbackEnvelope,
   type InternalRunCallbackKind,
 } from "./internal-run-callback";
-import { handleWorkflowAutomationResultEmailInternalCallback$ } from "./internal-workflow-automation-result-email-callback.service";
 import { handlePiMemoryPhase2MaintenanceCallback$ } from "./pi-memory-phase2-maintenance.service";
 import { handleWorkflowAutomationInternalCallback$ } from "./workflow-automation-run-callback.service";
 
@@ -163,13 +162,6 @@ const dispatchInternalCallback$ = command(
         return await set(
           handleWorkflowAutomationInternalCallback$,
           { kind: input.kind, callback: input.envelope },
-          signal,
-        );
-      }
-      case "workflow-automation:result-email": {
-        return await set(
-          handleWorkflowAutomationResultEmailInternalCallback$,
-          input.envelope,
           signal,
         );
       }
