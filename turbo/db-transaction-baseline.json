@@ -752,11 +752,6 @@
       "owner": "completeMigrationInvitations$"
     },
     {
-      "id": "TX-0300",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-subscription-migration.service.ts",
-      "owner": "claimMigrationConfirmation$"
-    },
-    {
       "id": "TX-0303",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
       "owner": "publishUsagePackCheckoutState$"
