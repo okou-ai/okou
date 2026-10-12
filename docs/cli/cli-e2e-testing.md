@@ -19,6 +19,8 @@ entry points. The current suite covers:
   deployed preview API, runner, sandbox, and proxy.
 - raw network protocol, DNS, connector diagnostic, browser classification, and
   opt-in body-capture telemetry through the deployed runner and public run API.
+- direct browser WSS admission and opaque Guest echo, with one-use ticket replay
+  rejection and Run completion/cancellation revocation.
 
 An E2E test must not call `/api/test/*`, mint a test-only API token, write the
 database directly, or use an internal fixture endpoint to construct or inspect
@@ -264,3 +266,9 @@ The workflow discovers the checked-in BATS files, weighs each file by its test
 count, and assigns whole files to at most twelve non-empty shards. New files are
 included automatically. Keep setup and teardown self-contained within a file so
 the shard planner can move it without introducing cross-file ordering.
+
+Browser transport probes must preserve the production authentication and TLS
+boundaries. Use the credential kind the endpoint admits, the returned target
+verbatim, and certificate validation for deployed acceptance. Controlled local
+peers validate the probe; they do not prove public trust or real sandbox traffic.
+Public cleanup must remain available after the browser being tested is lost.
