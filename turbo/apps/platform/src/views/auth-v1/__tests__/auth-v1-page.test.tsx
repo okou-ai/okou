@@ -314,9 +314,9 @@ test("Hosted auth reaches the brand home and the theme toggle", async () => {
   context.mocks.browser.matchMedia(false);
   await setupSignedOutPage("/sign-up");
 
-  // The wordmark is a same-origin static asset, so it must not request CORS.
+  // Match Clerk's anonymous CORS mode for the shared cross-origin wordmark.
   const logoImage = screen.getByAltText("Okou");
-  expect(logoImage).not.toHaveAttribute("crossorigin");
+  expect(logoImage).toHaveAttribute("crossorigin", "anonymous");
   expect(logoImage.closest("a")).toBe(okouBrandLink());
   expect(screen.getByLabelText("Toggle theme")).toBeVisible();
 });
