@@ -101,13 +101,19 @@ test.each([
     const nextWordmark = dark
       ? platformOkouWordmarkDarkImg
       : platformOkouWordmarkLightImg;
-    expect(form).toHaveAttribute("data-clerk-logo-image-url", initialWordmark);
+    expect(form).toHaveAttribute(
+      "data-clerk-logo-image-url",
+      `${initialWordmark}?clerk-logo=1`,
+    );
     expect(screen.getByAltText("Okou")).toHaveAttribute("src", initialWordmark);
 
     click(screen.getByLabelText("Toggle theme"));
 
     await waitFor(() => {
-      expect(form).toHaveAttribute("data-clerk-logo-image-url", nextWordmark);
+      expect(form).toHaveAttribute(
+        "data-clerk-logo-image-url",
+        `${nextWordmark}?clerk-logo=1`,
+      );
     });
     expect(screen.getByAltText("Okou")).toHaveAttribute("src", nextWordmark);
 
@@ -116,7 +122,7 @@ test.each([
     await waitFor(() => {
       expect(form).toHaveAttribute(
         "data-clerk-logo-image-url",
-        initialWordmark,
+        `${initialWordmark}?clerk-logo=1`,
       );
     });
   },
@@ -314,9 +320,9 @@ test("Hosted auth reaches the brand home and the theme toggle", async () => {
   context.mocks.browser.matchMedia(false);
   await setupSignedOutPage("/sign-up");
 
-  // Match Clerk's anonymous CORS mode for the shared cross-origin wordmark.
+  // Keep the shell's ordinary image loading independent of Clerk's CORS cache.
   const logoImage = screen.getByAltText("Okou");
-  expect(logoImage).toHaveAttribute("crossorigin", "anonymous");
+  expect(logoImage).not.toHaveAttribute("crossorigin");
   expect(logoImage.closest("a")).toBe(okouBrandLink());
   expect(screen.getByLabelText("Toggle theme")).toBeVisible();
 });

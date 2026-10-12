@@ -98,7 +98,7 @@ test("An invitation accepted for another account offers account switching", asyn
         appearance: expect.objectContaining({
           theme: "simple",
           options: expect.objectContaining({
-            logoImageUrl: platformOkouWordmarkDarkImg,
+            logoImageUrl: `${platformOkouWordmarkDarkImg}?clerk-logo=1`,
             logoLinkUrl: "/",
           }),
         }),

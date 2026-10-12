@@ -1128,9 +1128,7 @@ test.each([false, true])(
           appearance: expect.objectContaining({
             theme: "simple",
             options: expect.objectContaining({
-              logoImageUrl: dark
-                ? platformOkouWordmarkLightImg
-                : platformOkouWordmarkDarkImg,
+              logoImageUrl: `${dark ? platformOkouWordmarkLightImg : platformOkouWordmarkDarkImg}?clerk-logo=1`,
               logoLinkUrl: "/",
             }),
             elements: expect.objectContaining({

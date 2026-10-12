@@ -27,13 +27,10 @@ export function ProductBrandMark({
           ? { width: 76, height: 20 }
           : { width: 60, height: 16 };
 
-  // Clerk loads these same wordmarks with anonymous CORS. Align the request
-  // mode so a non-CORS cache entry cannot make the hosted card's logo fail.
   return (
     <img
       alt={decorative ? "" : BRAND_NAME}
       aria-hidden={decorative || undefined}
-      crossOrigin="anonymous"
       className="block h-auto"
       height={dimensions.height}
       src={

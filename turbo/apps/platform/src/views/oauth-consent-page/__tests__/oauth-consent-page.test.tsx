@@ -86,7 +86,7 @@ test.each([false, true])(
     const consent = await screen.findByTestId("clerk-oauth-consent");
     expect(consent).toHaveAttribute(
       "data-clerk-logo-image-url",
-      dark ? platformOkouWordmarkLightImg : platformOkouWordmarkDarkImg,
+      `${dark ? platformOkouWordmarkLightImg : platformOkouWordmarkDarkImg}?clerk-logo=1`,
     );
 
     click(screen.getByLabelText("Toggle theme"));
@@ -94,7 +94,7 @@ test.each([false, true])(
     await waitFor(() => {
       expect(consent).toHaveAttribute(
         "data-clerk-logo-image-url",
-        dark ? platformOkouWordmarkDarkImg : platformOkouWordmarkLightImg,
+        `${dark ? platformOkouWordmarkDarkImg : platformOkouWordmarkLightImg}?clerk-logo=1`,
       );
     });
   },

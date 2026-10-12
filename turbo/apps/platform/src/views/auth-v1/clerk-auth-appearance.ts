@@ -51,14 +51,21 @@ export function getClerkAuthAppearance(
   homeUrl: string,
   theme: "light" | "dark",
 ): ClerkAppearance {
+  // Clerk requests logos with anonymous CORS, unlike ordinary brand images.
+  // A distinct, stable URL keeps existing non-CORS cache entries out of its
+  // image requests without requiring users to clear their browser cache.
+  const logoImageUrl = new URL(
+    theme === "dark"
+      ? platformOkouWordmarkLightImg
+      : platformOkouWordmarkDarkImg,
+  );
+  logoImageUrl.searchParams.set("clerk-logo", "1");
+
   return {
     ...CLERK_AUTH_APPEARANCE_BASE,
     options: {
       ...CLERK_AUTH_APPEARANCE_BASE.options,
-      logoImageUrl:
-        theme === "dark"
-          ? platformOkouWordmarkLightImg
-          : platformOkouWordmarkDarkImg,
+      logoImageUrl: logoImageUrl.href,
       logoLinkUrl: homeUrl,
     },
   };
