@@ -388,9 +388,13 @@ async fn independent_b(retirement: u8) {
         return;
     }
     if retirement == 3 {
+        assert_eq!(descriptors.lock().unwrap().len(), 2);
         // Both genuine TCP flows have transferred before the actual home TLS
         // socket disappears. Its single-use listener is gone; bounded owned
         // reconnects really fail rather than being injected into Root state.
+        // Count the established sockets before retirement: a failed reconnect
+        // can still open TCP after the loopback port has been reused, without
+        // completing TLS/DERP or replacing either original TCP flow.
         peers.services[0].frames.take();
         peers.services[0].outgoing.clear();
         bounded(native.physical()).await.unwrap();
@@ -399,7 +403,6 @@ async fn independent_b(retirement: u8) {
         assert!(matches!(bounded(cb.read(&mut byte)).await, Ok(0) | Err(_)));
         bounded(gates[0].destroyed()).await;
         bounded(gates[1].destroyed()).await;
-        assert_eq!(descriptors.lock().unwrap().len(), 2);
         control.assert_control_closed();
         dial.assert_closed(2);
         api.assert_contract(1, 0);
