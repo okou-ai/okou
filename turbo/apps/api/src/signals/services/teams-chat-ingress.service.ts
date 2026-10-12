@@ -1,7 +1,9 @@
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { z } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
 
 import { writeDb$ } from "../external/db";
 import { command } from "ccstate";
@@ -64,6 +66,24 @@ const ROUTE_COLUMNS = {
   chatThreadId: teamsChatThreadRoutes.chatThreadId,
 } as const;
 
+/** Check the returned outcome before propagating a later cancellation. */
+function requiredRouteRow<TRow>(rows: readonly TRow[], message: string): TRow {
+  const [row] = rows;
+  if (!row) {
+    throw new Error(message);
+  }
+  return row;
+}
+
+const createdRouteSchema = z.object({
+  id: z.uuid(),
+  connectionId: z.uuid(),
+  conversationId: z.string(),
+  threadId: z.string(),
+  userId: z.string(),
+  chatThreadId: z.uuid(),
+});
+
 /**
  * The unique route and its new thread/event commit in this command alone.
  * One `INSERT … ON CONFLICT DO NOTHING` decides a concurrent create; the loser
@@ -83,72 +103,87 @@ export const ensureTeamsChatThreadRoute$ = command(
     );
     const candidateId = randomUUID();
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0258; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const [existing] = await tx
-        .select(ROUTE_COLUMNS)
-        .from(teamsChatThreadRoutes)
-        .innerJoin(
-          chatThreads,
-          eq(chatThreads.id, teamsChatThreadRoutes.chatThreadId),
-        )
-        .where(routeWhere(args))
-        .limit(1);
-      if (existing) {
-        if (
-          args.threadId !== INTEGRATION_DM_SESSION_KEY ||
-          existing.conversationId === args.conversationId
-        ) {
-          return existing;
-        }
-        const [updated] = await tx
+    const [existing] = await db
+      .select(ROUTE_COLUMNS)
+      .from(teamsChatThreadRoutes)
+      .innerJoin(
+        chatThreads,
+        eq(chatThreads.id, teamsChatThreadRoutes.chatThreadId),
+      )
+      .where(routeWhere(args))
+      .limit(1);
+    signal.throwIfAborted();
+    if (existing) {
+      if (
+        args.threadId !== INTEGRATION_DM_SESSION_KEY ||
+        existing.conversationId === args.conversationId
+      ) {
+        return existing;
+      }
+      const updated = requiredRouteRow(
+        await db
           .update(teamsChatThreadRoutes)
           .set({ conversationId: args.conversationId })
           .where(
             and(eq(teamsChatThreadRoutes.id, existing.id), routeWhere(args)),
           )
-          .returning({ conversationId: teamsChatThreadRoutes.conversationId });
-        if (!updated) {
-          throw new Error("Failed to update Teams DM route destination");
-        }
-        return { ...existing, ...updated };
-      }
-      const thread = integrationChatThreadValues(args, candidateId, defaults);
-      const insertedRoute = tx.$with("inserted_teams_route").as(
-        tx
-          .insert(teamsChatThreadRoutes)
-          .values({
-            connectionId: args.connectionId,
-            conversationId: args.conversationId,
-            threadId: args.threadId,
-            userId: args.userId,
-            chatThreadId: thread.id,
-            createdAt: args.currentTime,
-          })
-          .onConflictDoNothing({
-            target: [
-              teamsChatThreadRoutes.connectionId,
-              teamsChatThreadRoutes.conversationId,
-              teamsChatThreadRoutes.threadId,
-              teamsChatThreadRoutes.userId,
-            ],
-          })
-          .returning(ROUTE_COLUMNS),
+          .returning({ conversationId: teamsChatThreadRoutes.conversationId }),
+        "Failed to update Teams DM route destination",
       );
-      const insertedThread = tx
-        .$with("inserted_teams_thread", {})
-        .as(integrationChatThreadInsertFromRouteSql(thread, insertedRoute));
-      const [route] = await tx
-        .with(insertedRoute, insertedThread)
-        .select()
-        .from(insertedRoute);
-      if (route) {
-        await tx.execute(integrationThreadCreatedEventSql(args.orgId, thread));
-        signal.throwIfAborted();
-        return route;
-      }
-      // ON CONFLICT waited for the winner's commit; read it once.
-      const [winner] = await tx
+      signal.throwIfAborted();
+      return { ...existing, ...updated };
+    }
+    const thread = integrationChatThreadValues(args, candidateId, defaults);
+    const routeInsert = db
+      .insert(teamsChatThreadRoutes)
+      .values({
+        connectionId: args.connectionId,
+        conversationId: args.conversationId,
+        threadId: args.threadId,
+        userId: args.userId,
+        chatThreadId: thread.id,
+        createdAt: args.currentTime,
+      })
+      .onConflictDoNothing({
+        target: [
+          teamsChatThreadRoutes.connectionId,
+          teamsChatThreadRoutes.conversationId,
+          teamsChatThreadRoutes.threadId,
+          teamsChatThreadRoutes.userId,
+        ],
+      })
+      .returning(ROUTE_COLUMNS);
+    const insertedRoute = db.$with("inserted_teams_route").as(routeInsert);
+    const threadInsert = integrationChatThreadInsertFromRouteSql(
+      thread,
+      insertedRoute,
+    );
+    // The thread's RETURNING gates reservation/publication. The base-table
+    // snapshot cannot see a thread inserted by another CTE in this statement.
+    const [route] = parseRawRows(
+      createdRouteSchema,
+      await db.execute(
+        integrationThreadCreatedEventSql(args.orgId, thread, {
+          cte: sql`inserted_teams_route AS (${routeInsert.getSQL()}),
+            inserted_teams_thread AS (
+              ${threadInsert} RETURNING ${chatThreads.agentId}
+            )`,
+          gate: sql`EXISTS (SELECT 1 FROM inserted_teams_thread)`,
+          agentId: sql`(SELECT agent_id FROM inserted_teams_thread)`,
+          result: sql`SELECT id, connection_id AS "connectionId",
+            conversation_id AS "conversationId", thread_id AS "threadId",
+            user_id AS "userId", chat_thread_id AS "chatThreadId"
+            FROM inserted_teams_route`,
+        }),
+      ),
+    );
+    signal.throwIfAborted();
+    if (route) {
+      return route;
+    }
+    // ON CONFLICT waited for the winner's commit; read it once.
+    const winner = requiredRouteRow(
+      await db
         .select(ROUTE_COLUMNS)
         .from(teamsChatThreadRoutes)
         .innerJoin(
@@ -156,29 +191,25 @@ export const ensureTeamsChatThreadRoute$ = command(
           eq(chatThreads.id, teamsChatThreadRoutes.chatThreadId),
         )
         .where(routeWhere(args))
-        .limit(1);
-      if (!winner) {
-        throw new Error(
-          "Failed to resolve Teams chat thread route after conflict",
-        );
-      }
-      if (
-        args.threadId !== INTEGRATION_DM_SESSION_KEY ||
-        winner.conversationId === args.conversationId
-      ) {
-        return winner;
-      }
-      const [updated] = await tx
+        .limit(1),
+      "Failed to resolve Teams chat thread route after conflict",
+    );
+    signal.throwIfAborted();
+    if (
+      args.threadId !== INTEGRATION_DM_SESSION_KEY ||
+      winner.conversationId === args.conversationId
+    ) {
+      return winner;
+    }
+    const updated = requiredRouteRow(
+      await db
         .update(teamsChatThreadRoutes)
         .set({ conversationId: args.conversationId })
         .where(and(eq(teamsChatThreadRoutes.id, winner.id), routeWhere(args)))
-        .returning({ conversationId: teamsChatThreadRoutes.conversationId });
-      if (!updated) {
-        throw new Error("Failed to update Teams DM route destination");
-      }
-      return { ...winner, ...updated };
-    });
+        .returning({ conversationId: teamsChatThreadRoutes.conversationId }),
+      "Failed to update Teams DM route destination",
+    );
     signal.throwIfAborted();
-    return result;
+    return { ...winner, ...updated };
   },
 );
