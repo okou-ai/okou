@@ -1509,7 +1509,7 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
         lastSequence: 2,
       });
       await flushWaitUntilForTest();
-      expect(failedRequestCount).toBe(1);
+      expect(failedRequestCount).toBe(2);
 
       const redirectTarget =
         "https://api.axiom.co/v1/datasets/redirected-agent-run-events/ingest";

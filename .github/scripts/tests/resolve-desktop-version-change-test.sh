@@ -8,6 +8,8 @@ trap 'rm -rf "$tmp_dir"' EXIT
 
 test_repo="${tmp_dir}/repo"
 git init -q "$test_repo"
+# Prevent background Git maintenance from racing temporary repository cleanup.
+git -C "$test_repo" config maintenance.auto false
 git -C "$test_repo" config user.email test@example.com
 git -C "$test_repo" config user.name Test
 mkdir -p "${test_repo}/desktop"

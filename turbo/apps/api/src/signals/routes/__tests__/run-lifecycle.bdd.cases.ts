@@ -13595,7 +13595,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               if (!Array.isArray(events)) {
                 throw new Error("Expected an Axiom event array");
               }
-              if (ingestRequests === 1) {
+              if (ingestRequests <= 2) {
                 return HttpResponse.text("axiom down", { status: 503 });
               }
               return HttpResponse.json({
@@ -13618,7 +13618,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         expect(acceptedWithTraceFailure.status).toBe(200);
         await flushWaitUntilForTest();
-        expect(ingestRequests).toBe(1);
+        expect(ingestRequests).toBe(2);
 
         const recovered = await webhooks.requestAgentEvents(
           {
@@ -13630,7 +13630,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         expect(recovered.status).toBe(200);
         await flushWaitUntilForTest();
-        expect(ingestRequests).toBe(2);
+        expect(ingestRequests).toBe(3);
       });
     });
 

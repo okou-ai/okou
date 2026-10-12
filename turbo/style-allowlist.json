@@ -3,433 +3,562 @@
   "selectors": [
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": "[data-color-mode*=\"light\"] .wmde-markdown,.wmde-markdown[data-color-mode*=\"light\"]",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": "[data-color-mode*=\"dark\"] .wmde-markdown,.wmde-markdown[data-color-mode*=\"dark\"]",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown p",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content. This paragraph rhythm previously shared its rule with the first-party okou-markdown-card class, which is why it is allowlisted later than its siblings.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown h1,.wmde-markdown h2,.wmde-markdown h3,.wmde-markdown h4,.wmde-markdown h5,.wmde-markdown h6",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown blockquote,.wmde-markdown table,.wmde-markdown pre,.wmde-markdown details",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown ul,.wmde-markdown ol,.wmde-markdown dl",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown>:first-child",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown>:last-child",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown li>p",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown h1",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown h2",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown h3",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown h4",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown h5",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown h6",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown a",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown a:hover",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
-      "selector": ":where([data-theme=\"dark\"]) .wmde-markdown a",
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
+      "selector": ".wmde-markdown:where([data-color-mode=\"dark\"]) a",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
-      "selector": ":where([data-theme=\"dark\"]) .wmde-markdown a:hover",
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
+      "selector": ".wmde-markdown:where([data-color-mode=\"dark\"]) a:hover",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown blockquote",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown ul,.wmde-markdown ol",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown ul ul,.wmde-markdown ol ul,.wmde-markdown ul ol,.wmde-markdown ol ol",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown ul",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown ol",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown ul ul",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown ol ol",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown hr",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown mark",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown table",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown table th,.wmde-markdown table td",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown table th",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown table tr",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown table tr:nth-child(2n)",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown code,.wmde-markdown tt",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown :not(pre)>code,.wmde-markdown :not(pre)>tt",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown pre",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown pre code,.wmde-markdown pre tt",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown pre>code::-webkit-scrollbar-thumb",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown kbd",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown .markdown-alert",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown .markdown-alert.markdown-alert-note",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
+      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown .markdown-alert.markdown-alert-note .markdown-alert-title",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
+      "parentSelectors": [
+        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
+      ]
     },
     {
       "file": "apps/platform/src/views/css/index.css",

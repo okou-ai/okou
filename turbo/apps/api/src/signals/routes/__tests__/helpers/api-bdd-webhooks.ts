@@ -464,9 +464,10 @@ export function createWebhookCallbackApi(context: TestContext) {
       body: AgentEventsBody,
       headers: SandboxWebhookHeaders,
       statuses: readonly (200 | 400 | 401 | 404 | 500 | 503)[],
+      signal?: AbortSignal,
     ) {
       return await accept(
-        setupApp({ context, routes: webhooksAgentEventsRoutes })(
+        setupApp({ context, routes: webhooksAgentEventsRoutes, signal })(
           webhookEventsContract,
         ).send({
           headers,

@@ -24,7 +24,7 @@ import {
 } from "./run-content-ownership.service";
 import type { EventCitation } from "./pi-memory-citation-events";
 import { refreshTelegramTypingEvents$ } from "./agent-event-consumer-telegram-typing.service";
-import { settle, tapError } from "../utils";
+import { joinAll, settle, tapError } from "../utils";
 
 const L = logger("webhook:events");
 
@@ -147,30 +147,32 @@ export const dispatchOptionalAgentEventConsumers$ = command(
       },
     );
 
-    if (accepted.chatProjection) {
-      await tapError(
-        publishMaterializedChatProjection(
-          payload,
-          accepted.chatProjection,
-          signal,
-        ),
-        (error) => {
-          L.error("Optional materialized chat publication failed", {
-            runId: payload.runId,
-            ...eventRange(payload.events),
-            error,
-          });
-        },
-      );
-      signal.throwIfAborted();
-    }
+    const otherConsumers = (async () => {
+      if (accepted.chatProjection) {
+        await tapError(
+          publishMaterializedChatProjection(
+            payload,
+            accepted.chatProjection,
+            signal,
+          ),
+          (error) => {
+            L.error("Optional materialized chat publication failed", {
+              runId: payload.runId,
+              ...eventRange(payload.events),
+              error,
+            });
+          },
+        );
+        signal.throwIfAborted();
+      }
 
-    for (const consumer of OPTIONAL_EVENT_CONSUMERS) {
-      await set(runOptionalEventConsumer$, { consumer, payload }, signal);
-    }
+      for (const consumer of OPTIONAL_EVENT_CONSUMERS) {
+        await set(runOptionalEventConsumer$, { consumer, payload }, signal);
+      }
+    })();
 
     const range = eventRange(payload.events);
-    await axiomTrace;
+    await joinAll([axiomTrace, otherConsumers]);
     signal.throwIfAborted();
     L.debug(
       `Optional events ${range.firstSequence}-${range.lastSequence} dispatched for run ${payload.runId} (${now() - startedAt}ms)`,

@@ -42,7 +42,7 @@ import {
   publishComputerUseCommandsChangedSafely,
   publishComputerUseResultChangedSafely,
 } from "../external/realtime";
-import { downloadS3Buffer, putS3Object } from "../external/s3";
+import { downloadS3Buffer, putS3Object$ } from "../external/s3";
 import { settle } from "../utils";
 import { clerk$ } from "../external/clerk";
 import {
@@ -468,15 +468,16 @@ function sanitizeComputerUseJsonValue(
  * result unchanged when there is no inline
  * screenshot (older clients, non-screenshot commands, or already a pointer).
  */
-function offloadScreenshotForResult(
-  params: {
-    readonly owner: ComputerUseHostOwner;
-    readonly commandId: string;
-    readonly result: ComputerUseCommandResult;
-  },
-  signal: AbortSignal,
-): Computed<Promise<ComputerUseCommandResult>> {
-  return computed(async (get): Promise<ComputerUseCommandResult> => {
+const offloadScreenshotForResult$ = command(
+  async (
+    { set },
+    params: {
+      readonly owner: ComputerUseHostOwner;
+      readonly commandId: string;
+      readonly result: ComputerUseCommandResult;
+    },
+    signal: AbortSignal,
+  ): Promise<ComputerUseCommandResult> => {
     const screenshot = params.result.screenshot;
     if (typeof screenshot !== "string") {
       return params.result;
@@ -488,7 +489,13 @@ function offloadScreenshotForResult(
 
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
     const key = `computer-use/${params.owner.orgId}/${params.owner.userId}/${params.commandId}/screenshot.${extensionForScreenshotMime(parsed.mimeType)}`;
-    await get(putS3Object(bucket, key, parsed.buffer, parsed.mimeType));
+    // Drain an admitted upload before the completion owner's abort checkpoint.
+    await set(putS3Object$, {
+      bucket,
+      key,
+      body: parsed.buffer,
+      contentType: parsed.mimeType,
+    });
     signal.throwIfAborted();
     const pointer: StoredScreenshotPointer = {
       type: "s3",
@@ -500,8 +507,8 @@ function offloadScreenshotForResult(
       height: numberField(params.result, "screenshotHeight"),
     };
     return { ...params.result, screenshot: pointer };
-  });
-}
+  },
+);
 
 /**
  * Map a stored result's screenshot pointer to its client-facing form, dropping
@@ -1668,15 +1675,14 @@ export const completeComputerUseHostCommand$ = command(
       const sanitizedResult = sanitizeComputerUseJsonRecord(params.result);
       nulCharacterCount = sanitizedResult.nulCharacterCount;
       keyCollisionCount = sanitizedResult.keyCollisionCount;
-      storedResult = await get(
-        offloadScreenshotForResult(
-          {
-            owner: host,
-            commandId: params.commandId,
-            result: sanitizedResult.value,
-          },
-          signal,
-        ),
+      storedResult = await set(
+        offloadScreenshotForResult$,
+        {
+          owner: host,
+          commandId: params.commandId,
+          result: sanitizedResult.value,
+        },
+        signal,
       );
     } else {
       const sanitizedMessage = sanitizeComputerUseJsonString(

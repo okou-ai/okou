@@ -77,11 +77,6 @@
       "owner": "createAgentRunCompletion/complete$"
     },
     {
-      "id": "TX-0051",
-      "file": "turbo/apps/api/src/signals/services/agentphone-chat-ingress.service.ts",
-      "owner": "ensureAgentPhoneChatThreadRoute$"
-    },
-    {
       "id": "TX-0052",
       "file": "turbo/apps/api/src/signals/services/agentphone-link.service.ts",
       "owner": "linkAgentPhoneIdentity$"
@@ -317,11 +312,6 @@
       "owner": "projectThread"
     },
     {
-      "id": "TX-0134",
-      "file": "turbo/apps/api/src/signals/services/cron-sync-skills.service.ts",
-      "owner": "commitSkillPublication$"
-    },
-    {
       "id": "TX-0137",
       "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
       "owner": "prepareAutomaticOAuthStart$"
@@ -425,11 +415,6 @@
       "id": "TX-0164",
       "file": "turbo/apps/api/src/signals/services/feishu-dispatch.service.ts",
       "owner": "handleDisconnectCommand"
-    },
-    {
-      "id": "TX-0167",
-      "file": "turbo/apps/api/src/signals/services/google-calendar-automation-watch.service.ts",
-      "owner": "persistLegacyPrimaryCalendarMigration$"
     },
     {
       "id": "TX-0169",
@@ -730,11 +715,6 @@
       "id": "TX-0257",
       "file": "turbo/apps/api/src/signals/services/stripe-automation-event.service.ts",
       "owner": "finishDelivery$"
-    },
-    {
-      "id": "TX-0258",
-      "file": "turbo/apps/api/src/signals/services/teams-chat-ingress.service.ts",
-      "owner": "ensureTeamsChatThreadRoute$"
     },
     {
       "id": "TX-0261",

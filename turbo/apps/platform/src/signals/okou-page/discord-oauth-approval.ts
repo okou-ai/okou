@@ -3,10 +3,10 @@ import type { z } from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
-import { i18n } from "../../i18n/index.ts";
 import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import { settle } from "../utils.ts";
 
 type DiscordApprovalProof = z.infer<typeof discordOauthContract.approve.body>;
 
@@ -14,12 +14,16 @@ type DiscordApprovalProof = z.infer<typeof discordOauthContract.approve.body>;
 // browser storage, logging, analytics, or a callback query parameter.
 const approvalProof$ = state<DiscordApprovalProof | null>(null);
 const approvalSucceeded$ = state(false);
+const approvalRequest$ = state<Promise<void> | null>(null);
 
 export const discordApprovalAvailable$ = computed((get) => {
   return get(approvalProof$) !== null;
 });
 export const discordApprovalSucceeded$ = computed((get) => {
   return get(approvalSucceeded$);
+});
+export const discordApprovalRequest$ = computed((get) => {
+  return get(approvalRequest$);
 });
 
 export const captureDiscordApprovalFragment$ = command(
@@ -64,22 +68,15 @@ export const ownDiscordApprovalRoute$ = command(
       () => {
         set(approvalProof$, null);
         set(approvalSucceeded$, false);
+        set(approvalRequest$, null);
       },
       { once: true },
     );
   },
 );
 
-export const approveDiscordAuthorization$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const proof = get(approvalProof$);
-    if (!proof || !get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration]) {
-      throw new Error(
-        i18n.t(($) => {
-          return $.works.discord.approvalFailed;
-        }),
-      );
-    }
+const verifyDiscordAuthorization$ = command(
+  async ({ get, set }, proof: DiscordApprovalProof, signal: AbortSignal) => {
     await get(runtimeAuthenticatedIdentity$);
     signal.throwIfAborted();
     const client = get(apiClient$)(discordOauthContract);
@@ -97,5 +94,20 @@ export const approveDiscordAuthorization$ = command(
     // Approval is not a connection. Only the original tab may complete with its
     // separately retained token; if close() is blocked, the UI explains this.
     window.close();
+  },
+);
+
+export const approveDiscordAuthorization$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const proof = get(approvalProof$);
+    if (!proof || !get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration]) {
+      return;
+    }
+    // The authenticated endpoint verifies the initiating account and workspace.
+    const request = set(verifyDiscordAuthorization$, proof, signal);
+    set(approvalRequest$, request);
+    // The panel owns failure and retry UI; a rejection must not fail route setup.
+    await settle(request, signal);
   },
 );

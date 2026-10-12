@@ -121,21 +121,32 @@ async function registerLegacyArtifactWrite(
   signal?.throwIfAborted();
 }
 
+function publicArtifactWriteRegistrationBucket(
+  bucket: string,
+  write: LegacyArtifactWrite,
+): string | null {
+  if (
+    bucket !== env("R2_USER_ARTIFACTS_BUCKET_NAME") ||
+    !write.key.startsWith("artifacts/")
+  ) {
+    return null;
+  }
+  const registryBucket = env("R2_HOSTED_SITES_BUCKET_NAME");
+  if (!registryBucket) {
+    throw new Error("Artifact delivery registry storage is not configured");
+  }
+  return registryBucket;
+}
+
 function publicArtifactWriteRegistration(
   bucket: string,
   write: LegacyArtifactWrite,
   signal?: AbortSignal,
 ): Computed<Promise<void>> {
   return computed(async (get) => {
-    if (
-      bucket !== env("R2_USER_ARTIFACTS_BUCKET_NAME") ||
-      !write.key.startsWith("artifacts/")
-    ) {
+    const registryBucket = publicArtifactWriteRegistrationBucket(bucket, write);
+    if (registryBucket === null) {
       return;
-    }
-    const registryBucket = env("R2_HOSTED_SITES_BUCKET_NAME");
-    if (!registryBucket) {
-      throw new Error("Artifact delivery registry storage is not configured");
     }
     await registerLegacyArtifactWrite(
       get(hostedSitesS3Client$),
@@ -1280,6 +1291,43 @@ interface PutS3ObjectArgs {
   readonly metadata?: Readonly<Record<string, string>>;
 }
 
+function createPutS3ObjectCommand(args: PutS3ObjectArgs): PutObjectCommand {
+  return new PutObjectCommand({
+    Bucket: args.bucket,
+    Key: args.key,
+    Body: args.body,
+    ContentType: args.contentType,
+    Metadata: args.metadata,
+  });
+}
+
+/** Write plain request data using the adapter's existing bucket clients. */
+export const putS3Object$ = command(
+  async (
+    { get },
+    args: PutS3ObjectArgs,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    const client = get(s3ClientForBucket(args.bucket));
+    const registryBucket = publicArtifactWriteRegistrationBucket(
+      args.bucket,
+      args,
+    );
+    if (registryBucket !== null) {
+      await registerLegacyArtifactWrite(
+        get(hostedSitesS3Client$),
+        registryBucket,
+        args,
+        signal,
+      );
+    }
+    await client.send(
+      createPutS3ObjectCommand(args),
+      signal ? { abortSignal: signal } : undefined,
+    );
+  },
+);
+
 function isAbortSignal(value: unknown): value is AbortSignal {
   return (
     typeof value === "object" &&
@@ -1308,13 +1356,7 @@ function sendPutS3Object(
     const client = get(client$);
     await get(publicArtifactWriteRegistration(args.bucket, args, signal));
     return await client.send(
-      new PutObjectCommand({
-        Bucket: args.bucket,
-        Key: args.key,
-        Body: args.body,
-        ContentType: args.contentType,
-        Metadata: args.metadata,
-      }),
+      createPutS3ObjectCommand(args),
       signal ? { abortSignal: signal } : undefined,
     );
   });

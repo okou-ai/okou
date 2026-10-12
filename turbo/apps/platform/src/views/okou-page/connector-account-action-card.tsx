@@ -27,7 +27,7 @@ export function ConnectorAccountActionCard({
   // Keep the frame mounted while async states replace their content. WebKit can
   // clamp the chat's scroll position if the card collapses during a DOM commit.
   return (
-    <ChatCard className="h-[136px] w-full sm:h-[88px]">
+    <ChatCard className="h-[136px] w-full @[640px]:h-[88px]">
       <ConnectorAccountActionCardContent signals={signals} />
     </ChatCard>
   );
@@ -228,7 +228,7 @@ function ReadyConnectorAccountActionCard({
   return (
     <div
       data-testid="connector-account-action-card"
-      className="flex h-full w-full flex-col justify-between gap-3 px-4 py-3 text-left sm:flex-row sm:items-center"
+      className="flex h-full w-full flex-col justify-between gap-3 px-4 py-3 text-left @[640px]:flex-row @[640px]:items-center"
     >
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
@@ -274,7 +274,7 @@ function ReadyConnectorAccountActionCard({
       {selected ? null : (
         <Button
           size="sm"
-          className="w-full shrink-0 sm:w-auto"
+          className="w-full shrink-0 @[640px]:w-auto"
           disabled={switching}
           onClick={() => {
             detach(confirm(pageSignal), Reason.DomCallback);

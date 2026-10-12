@@ -1514,8 +1514,37 @@ function sequenceEventRows(
   const order = apl.includes("| order by sequenceNumber desc") ? "desc" : "asc";
   const limitMatch = /\| limit (\d+)/.exec(apl);
   const limit = limitMatch?.[1] ? Number(limitMatch[1]) : rows.length;
+  const sinceTimeMatch = /\| where _time > datetime\("([^"]+)"\)/.exec(apl);
+  const groupingPosition = apl.indexOf(
+    "| summarize arg_min(_time, *) by sequenceNumber",
+  );
+  const filterTime = (row: Record<string, unknown>) => {
+    const sinceTime = sinceTimeMatch?.[1];
+    return (
+      sinceTime === undefined ||
+      Date.parse(String(row._time)) > Date.parse(sinceTime)
+    );
+  };
+  let selectedRows = [...rows];
+  if (sinceTimeMatch && sinceTimeMatch.index < groupingPosition) {
+    selectedRows = selectedRows.filter(filterTime);
+  }
+  if (groupingPosition !== -1) {
+    const selected = new Map<unknown, Record<string, unknown>>();
+    for (const row of selectedRows) {
+      const previous = selected.get(row.sequenceNumber);
+      if (
+        !previous ||
+        Date.parse(String(row._time)) < Date.parse(String(previous._time))
+      ) {
+        selected.set(row.sequenceNumber, row);
+      }
+    }
+    selectedRows = [...selected.values()];
+  }
 
-  return [...rows]
+  return selectedRows
+    .filter(filterTime)
     .filter((row) => {
       if (boundary === undefined || typeof row.sequenceNumber !== "number") {
         return boundary === undefined;
@@ -1813,8 +1842,195 @@ describe("RUN-04: agent run telemetry families", () => {
     expect(eventQueries[0]?.[0]).toContain(`| where runId == "${run.runId}"`);
     expect(eventQueries[0]?.[0]).toContain("| order by sequenceNumber asc");
     expect(eventQueries[1]?.[0]).toContain("| where sequenceNumber > 0");
-    expect(eventQueries[0]?.[1]).toStrictEqual({ noCache: true });
+    expect(eventQueries[0]?.[1]).toStrictEqual({
+      noCache: true,
+      format: "tabular",
+    });
   });
+
+  it.each(["asc", "desc"] as const)(
+    "pages unique Activity events in %s order after ambiguous trace retries",
+    async (order) => {
+      const actor = await entitledActor();
+      const compose = await createThreadAgent(actor, "bdd-duplicate-traces");
+      const run = await api.createThreadRun(actor, {
+        agentId: compose.agentId,
+        prompt: "inspect repeated diagnostic events",
+      });
+      dispatchAxiomQueries({
+        [run.runId]: {
+          events: [
+            {
+              ...agentEvent(run.runId, 0, "First event"),
+              _time: "2026-06-10T10:30:05Z",
+            },
+            agentEvent(run.runId, 0, "First event"),
+            agentEvent(run.runId, 1, "Second event"),
+            {
+              ...agentEvent(run.runId, 1, "Second event"),
+              _time: "2026-06-10T10:30:05Z",
+            },
+          ],
+        },
+      });
+      const first = await reads.requestAgentRunAgentEvents(
+        actor,
+        run.runId,
+        { limit: 1, order },
+        [200],
+      );
+      const firstSequence = order === "asc" ? 0 : 1;
+      expect(first.body.events).toHaveLength(1);
+      expect(first.body.events[0]).toMatchObject({
+        sequenceNumber: firstSequence,
+        createdAt: "2026-06-10T10:30:00Z",
+      });
+      expect(first.body.hasMore).toBeTruthy();
+      expect(first.body.nextCursor).toBe(`sequence:${order}:${firstSequence}`);
+      const cursor = first.body.nextCursor;
+      if (!cursor) {
+        throw new Error("Expected the next unique event page");
+      }
+      const second = await reads.requestAgentRunAgentEvents(
+        actor,
+        run.runId,
+        { limit: 1, order, cursor },
+        [200],
+      );
+      expect(second.body.events).toHaveLength(1);
+      expect(second.body.events[0]).toMatchObject({
+        sequenceNumber: order === "asc" ? 1 : 0,
+        createdAt: "2026-06-10T10:30:00Z",
+      });
+      expect(second.body.hasMore).toBeFalsy();
+      expect(second.body.nextCursor).toBeUndefined();
+    },
+  );
+
+  it("does not re-emit an already seen Activity event through sinceTime after a trace retry", async () => {
+    const actor = await entitledActor();
+    const compose = await createThreadAgent(actor, "bdd-trace-incremental");
+    const run = await api.createThreadRun(actor, {
+      agentId: compose.agentId,
+      prompt: "read incremental Activity diagnostics",
+    });
+    const capturedAt = now();
+    dispatchAxiomQueries({
+      [run.runId]: {
+        events: [
+          {
+            ...agentEvent(run.runId, 0, "Already seen"),
+            _time: new Date(capturedAt + 1000).toISOString(),
+          },
+          {
+            ...agentEvent(run.runId, 0, "Already seen"),
+            _time: new Date(capturedAt + 3000).toISOString(),
+          },
+          {
+            ...agentEvent(run.runId, 1, "New event"),
+            _time: new Date(capturedAt + 4000).toISOString(),
+          },
+        ],
+      },
+    });
+    const result = await reads.requestAgentRunAgentEvents(
+      actor,
+      run.runId,
+      { limit: 10, order: "asc", sinceTime: capturedAt + 2000 },
+      [200],
+    );
+    expect(result.body.events).toStrictEqual([
+      {
+        sequenceNumber: 1,
+        eventType: "assistant",
+        eventData: {
+          message: { content: [{ type: "text", text: "New event" }] },
+        },
+        createdAt: new Date(capturedAt + 4000).toISOString(),
+      },
+    ]);
+    expect(result.body.hasMore).toBeFalsy();
+  });
+
+  it.each([false, true])(
+    "reads tabular Activity aggregation with partial=%s",
+    async (partial) => {
+      const actor = await entitledActor();
+      const compose = await createThreadAgent(actor, "bdd-tabular-traces");
+      const run = await api.createThreadRun(actor, {
+        agentId: compose.agentId,
+        prompt: "read aggregated trace data",
+      });
+      context.mocks.axiom.useRealQuery.mockReturnValue(true);
+      server.use(
+        http.post(
+          "https://api.axiom.co/v1/datasets/_apl",
+          async ({ request }) => {
+            const url = new URL(request.url);
+            expect(url.searchParams.get("format")).toBe("tabular");
+            expect(url.searchParams.get("nocache")).toBe("true");
+            const query: unknown = await request.json();
+            expect(query).toMatchObject({
+              apl: expect.stringContaining(
+                "| summarize arg_min(_time, *) by sequenceNumber",
+              ),
+            });
+            return HttpResponse.json({
+              status: { isPartial: partial },
+              tables: [
+                {
+                  fields: [
+                    { name: "_time", type: "datetime" },
+                    { name: "sequenceNumber", type: "integer" },
+                    { name: "eventType", type: "string" },
+                    { name: "eventData", type: "dynamic" },
+                  ],
+                  columns: [
+                    ["2026-06-10T10:30:00Z"],
+                    [0],
+                    ["assistant"],
+                    [
+                      {
+                        message: { content: [{ type: "text", text: "Trace" }] },
+                      },
+                    ],
+                  ],
+                },
+              ],
+            });
+          },
+        ),
+      );
+      if (partial) {
+        await expect(
+          reads.requestAgentRunAgentEvents(
+            actor,
+            run.runId,
+            { limit: 1, order: "asc" },
+            [200],
+          ),
+        ).rejects.toThrow("Unknown response status 500");
+      } else {
+        const result = await reads.requestAgentRunAgentEvents(
+          actor,
+          run.runId,
+          { limit: 1, order: "asc" },
+          [200],
+        );
+        expect(result.body.events).toStrictEqual([
+          {
+            sequenceNumber: 0,
+            eventType: "assistant",
+            eventData: {
+              message: { content: [{ type: "text", text: "Trace" }] },
+            },
+            createdAt: "2026-06-10T10:30:00Z",
+          },
+        ]);
+        expect(result.body.hasMore).toBeFalsy();
+      }
+    },
+  );
 
   it("hardens network log rows in the agent read API", async () => {
     const actor = await entitledActor();
