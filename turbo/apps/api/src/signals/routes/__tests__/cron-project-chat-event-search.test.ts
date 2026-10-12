@@ -531,10 +531,9 @@ describe("GET /api/cron/project-chat-event-search", () => {
         ...(since === undefined ? {} : { since }),
       });
       expect(response.isError).not.toBeTruthy();
-      const raw: unknown =
-        response.structuredContent ??
-        JSON.parse(response.content[0]?.text ?? "null");
-      return mcpChatSearchContract.search.responses[200].parse(raw).results;
+      return mcpChatSearchContract.search.responses[200].parse(
+        response.structuredContent,
+      ).results;
     }
     const unfiltered = await search();
     expect(
@@ -613,10 +612,9 @@ describe("GET /api/cron/project-chat-event-search", () => {
         since,
       });
       expect(rejected.isError).toBeTruthy();
-      const raw: unknown =
-        rejected.structuredContent ??
-        JSON.parse(rejected.content[0]?.text ?? "null");
-      expect(apiErrorSchema.parse(raw).error.code).toBe("BAD_REQUEST");
+      expect(apiErrorSchema.parse(rejected.structuredContent).error.code).toBe(
+        "BAD_REQUEST",
+      );
     }
   }, 60_000);
 
