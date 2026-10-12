@@ -25,8 +25,6 @@ import {
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
-import { now } from "../../../../lib/time";
-import { signSandboxJwtForTests } from "../../../auth/tokens";
 import { authMeRoutes } from "../../auth-me";
 import { agentsRoutes } from "../../agents";
 import { agentInstructionsRoutes } from "../../agent-instructions";
@@ -76,23 +74,6 @@ export interface OnboardingBootstrapOptions {
 
 function authHeaders(user: ApiTestUser | null): AuthHeaders {
   return user ? { authorization: "Bearer clerk-session" } : {};
-}
-
-function okouAgentReadHeaders(user: ApiTestUser): AuthHeaders {
-  if (!user.orgId) {
-    throw new Error("Cannot bootstrap onboarding without an organization");
-  }
-  const seconds = Math.floor(now() / 1000);
-  const token = signSandboxJwtForTests({
-    scope: "okou",
-    userId: user.userId,
-    orgId: user.orgId,
-    runId: `run_${randomUUID()}`,
-    capabilities: ["agent:read"],
-    iat: seconds,
-    exp: seconds + 60,
-  });
-  return { authorization: `Bearer ${token}` };
 }
 
 function clerkUserProfile(user: ApiTestUser): ClerkUserProfile {
@@ -304,10 +285,7 @@ export function createBddApi(context: TestContext) {
       options: OnboardingBootstrapOptions,
     ): Promise<string> {
       const headers = authenticate(nextUser);
-      await accept(
-        agentsClient().list({ headers: okouAgentReadHeaders(nextUser) }),
-        [200],
-      );
+      await accept(agentsClient().list({ headers }), [200]);
       const statusResponse = await accept(
         onboardingStatusClient().getStatus({
           headers,

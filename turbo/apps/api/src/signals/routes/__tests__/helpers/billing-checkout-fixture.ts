@@ -10,14 +10,16 @@ import {
   billingStatusContract,
   type BillingStatusResponse,
 } from "@okouai/api-contracts/contracts/billing";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks";
 import { createStore } from "ccstate";
 import { accept, testContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
-import { signSandboxJwtForTests } from "../../../auth/tokens";
+import { createBddApi } from "./api-bdd";
+import { createRunsApi } from "./api-bdd-runs";
+import { publicRunOwner } from "./public-run-owner";
+import { deletePublicWorkspace } from "./public-workspace-cleanup";
 import { billingCheckoutRoutes } from "../../billing-checkout";
 import { billingStatusRoutes } from "../../billing-status";
 
@@ -261,20 +263,43 @@ export function createBillingCheckoutFixture() {
     return sessionStates;
   }
 
-  function okouToken(args: {
-    readonly userId: string;
-    readonly orgId: string;
-    readonly capabilities: readonly Capability[];
-  }): string {
-    const seconds = currentSecond();
-    return signSandboxJwtForTests({
-      scope: "okou",
-      userId: args.userId,
-      orgId: args.orgId,
-      runId: `run_${randomUUID()}`,
-      capabilities: args.capabilities,
-      iat: seconds,
-      exp: seconds + 600,
+  async function claimAgentToken(fixture: BillingOrgFixture): Promise<string> {
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const actor = bdd.user(fixture);
+    let restoreAccepted = captureCheckoutExternalState();
+    const owner = publicRunOwner(context, actor, {
+      restoreEnvironment: () => {
+        restoreAccepted();
+      },
+      afterRuns: () => {
+        return deletePublicWorkspace(context, actor);
+      },
+    });
+    return await owner.run(async () => {
+      bdd.acceptAgentStorageWrites();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      const runnerGroup = runs.configureRunnerGroup();
+      await bdd.updateUserTimezone(actor, "Etc/UTC");
+      await runs.ensurePersonalSubscriptionModel(actor);
+      const agent = await bdd.createAgent(actor, {
+        displayName: "Billing credential carrier",
+        visibility: "private",
+      });
+      const run = await runs.createThreadRun(actor, {
+        agentId: agent.agentId,
+        model: "claude-fable-5-1",
+        prompt: "Use the issued agent credential for billing",
+      });
+      await runs.heartbeatRunner(runnerGroup);
+      const claim = await owner.claim(run.runId);
+      restoreAccepted = captureCheckoutExternalState();
+      const token = claim.platformEnvironment?.OKOU_TOKEN;
+      if (!token) {
+        throw new Error("Expected the real claim's Okou token");
+      }
+      return token;
     });
   }
 
@@ -877,7 +902,7 @@ export function createBillingCheckoutFixture() {
     currentSecond,
     stripeInputMetadata,
     mockStatefulUsagePackCheckoutSessions,
-    okouToken,
+    claimAgentToken,
     createOrgFixture,
     usagePackCheckoutBody,
     authenticateOrg,

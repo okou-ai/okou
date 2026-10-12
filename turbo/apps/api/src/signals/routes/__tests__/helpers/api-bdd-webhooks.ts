@@ -22,7 +22,6 @@ import type { z } from "zod";
 import { createApp } from "../../../../app-factory";
 import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
-import { generateSandboxToken } from "../../../auth/tokens";
 import { mockStripeClient } from "../../../external/stripe-client";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
@@ -214,19 +213,6 @@ async function requestRawGithubWebhook(
       throw new Error(`Unexpected GitHub webhook status ${response.status}`);
     }
   }
-}
-
-function sandboxWebhookHeaders(args: {
-  readonly runId: string;
-  readonly tokenRunId?: string;
-}): SandboxWebhookHeaders {
-  return {
-    authorization: `Bearer ${generateSandboxToken(
-      "user_bdd_sandbox_webhook",
-      args.tokenRunId ?? args.runId,
-      "org_bdd_sandbox_webhook",
-    )}`,
-  };
 }
 
 export function createWebhookCallbackApi(context: TestContext) {
@@ -457,8 +443,6 @@ export function createWebhookCallbackApi(context: TestContext) {
     signedEventConsumerHeaders(body: unknown): EventConsumerSignatureHeaders {
       return eventConsumerSignatureHeaders(body);
     },
-
-    sandboxWebhookHeaders,
 
     async requestAgentEvents(
       body: AgentEventsBody,

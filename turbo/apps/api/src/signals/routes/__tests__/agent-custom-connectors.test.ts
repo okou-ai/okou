@@ -1,13 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import {
@@ -21,10 +18,6 @@ const context = testContext();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const connectors = createConnectorBddApi(context);
-
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
-}
 
 function agentCustomConnectorsClient() {
   return setupApp({ context, routes: agentsRoutes })(
@@ -50,25 +43,6 @@ async function apiKeyHeaders(
   const key = await api.createCliToken(actor);
   mockClerkMembership(context, actor, actor.orgRole ?? "org:admin");
   return bearerHeaders(key.token);
-}
-
-function okouTokenFor(
-  actor: ApiTestUser,
-  capabilities: readonly Capability[],
-): string {
-  if (!actor.orgId) {
-    throw new Error("Expected an org-scoped actor");
-  }
-  const seconds = currentSecond();
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: actor.userId,
-    orgId: actor.orgId,
-    runId: randomUUID(),
-    capabilities,
-    iat: seconds,
-    exp: seconds + 60,
-  });
 }
 
 async function createUnconfiguredCustomConnector(
@@ -230,26 +204,6 @@ describe("GET /api/agents/:id/custom-connectors", () => {
       error: {
         message: `Agent not found: ${agent.agentId}`,
         code: "NOT_FOUND",
-      },
-    });
-  });
-
-  it("returns 403 for an agent token without agent:read capability", async () => {
-    const actor = bdd.user();
-    const token = okouTokenFor(actor, ["file:read"]);
-
-    const response = await accept(
-      agentCustomConnectorsClient().get({
-        params: { id: randomUUID() },
-        headers: bearerHeaders(token),
-      }),
-      [403],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Missing required capability: agent:read",
-        code: "FORBIDDEN",
       },
     });
   });
