@@ -2213,7 +2213,32 @@ test("Confirm before making a public workflow private", async () => {
   });
 });
 
-test("Keep a retired Official Workflow operable but structurally read-only", async () => {
+test("Keep official configuration available without manual execution or legacy shadow warnings", async () => {
+  const workflow = {
+    ...officialSalesResearch(),
+    shadowedBy: {
+      id: OPS_WORKFLOW_ID,
+      name: "sales-research",
+      displayName: "Private Sales Research",
+    },
+  };
+  mockWorkflowApis([workflow]);
+
+  await setupWorkflowDetailPage(workflowDetailPath("automations"));
+  await expect(screen.findByRole("switch")).resolves.toBeEnabled();
+  expect(screen.queryByLabelText("Run now")).not.toBeInTheDocument();
+
+  click(buttonByText("Instructions"));
+  await screen.findByLabelText("Workflow instruction");
+  expect(screen.queryByText(/currently resolves to/i)).not.toBeInTheDocument();
+
+  click(buttonByText("Settings"));
+  await screen.findByLabelText("Name");
+  expect(buttonByText("Reconfigure")).toBeInTheDocument();
+  expect(buttonByText("Uninstall")).toBeInTheDocument();
+});
+
+test("Keep a retired Official Workflow configurable and structurally read-only", async () => {
   const workflow = officialSalesResearch("retired", "needs_reconfiguration");
   const definition = officialCatalogDetail("retired");
   mockAgentPageApis();
@@ -2241,7 +2266,7 @@ test("Keep a retired Official Workflow operable but structurally read-only", asy
   expect(
     screen.getByText("Needs reconfiguration · intended on"),
   ).toBeInTheDocument();
-  expect(buttonByText("Run now")).toBeEnabled();
+  expect(screen.queryByLabelText("Run now")).not.toBeInTheDocument();
   expect(screen.getByRole("switch")).toBeEnabled();
   expect(screen.queryByText("Add automation")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("Edit automation")).not.toBeInTheDocument();
@@ -2710,6 +2735,22 @@ test("Summarize Gmail automation match conditions", async () => {
   ).toBeInTheDocument();
   // Only the schedule automation shows a "Next" run stat; event automations omit it.
   expect(screen.getAllByText("Next")).toHaveLength(1);
+});
+
+test("Recover when a stale Run now action receives the automatic-only policy rejection", async () => {
+  const message =
+    "Official Workflows can only run through their automatic triggers";
+  mockWorkflowApis([salesResearch()]);
+  context.mocks.api(workflowAutomationsContract.run, ({ respond }) => {
+    return respond(409, { error: { code: "CONFLICT", message } });
+  });
+
+  await setupWorkflowDetailPage(workflowDetailPath("automations"));
+  click(buttonByText("Run now"));
+
+  await screen.findByText(message);
+  expect(buttonByText("Run now")).toBeEnabled();
+  expect(pathname()).toBe(workflowDetailPath("automations"));
 });
 
 test("Run a workflow automation now", async () => {

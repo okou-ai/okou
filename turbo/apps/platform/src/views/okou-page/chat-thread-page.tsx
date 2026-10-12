@@ -2154,10 +2154,12 @@ function HeaderWorkflowAutomationCard({
         dimmed={!automation.enabled}
         actions={
           <>
-            {automation.automation.kind === "schedule" ||
-            (automation.automation.kind === "event" &&
-              (automation.automation.eventType === "gmail-new-message" ||
-                automation.automation.eventType === "gmail-label-applied")) ? (
+            {!automation.automation.official &&
+            (automation.automation.kind === "schedule" ||
+              (automation.automation.kind === "event" &&
+                (automation.automation.eventType === "gmail-new-message" ||
+                  automation.automation.eventType ===
+                    "gmail-label-applied"))) ? (
               <button
                 type="button"
                 className="rounded-md px-1 py-1 text-sm font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
@@ -2170,33 +2172,35 @@ function HeaderWorkflowAutomationCard({
                 })}
               </button>
             ) : null}
-            <Button
-              type="button"
-              variant="neutral"
-              size="sm"
-              className="ml-auto h-8 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-medium"
-              disabled={running}
-              onClick={() => {
-                detach(
-                  runNow(automation.id, pageSignal),
-                  Reason.DomCallback,
-                  "run header workflow automation now",
-                );
-              }}
-            >
-              {running ? (
-                <Loader2 size={13} className="animate-spin" />
-              ) : (
-                <Play size={13} />
-              )}
-              {running
-                ? t(($) => {
-                    return $.chat.automations.starting;
-                  })
-                : t(($) => {
-                    return $.chat.automations.runNow;
-                  })}
-            </Button>
+            {!automation.automation.official ? (
+              <Button
+                type="button"
+                variant="neutral"
+                size="sm"
+                className="ml-auto h-8 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-medium"
+                disabled={running}
+                onClick={() => {
+                  detach(
+                    runNow(automation.id, pageSignal),
+                    Reason.DomCallback,
+                    "run header workflow automation now",
+                  );
+                }}
+              >
+                {running ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <Play size={13} />
+                )}
+                {running
+                  ? t(($) => {
+                      return $.chat.automations.starting;
+                    })
+                  : t(($) => {
+                      return $.chat.automations.runNow;
+                    })}
+              </Button>
+            ) : null}
           </>
         }
       />
