@@ -11,6 +11,7 @@ import {
 } from "node:crypto";
 
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { teamsBotContract } from "@okouai/api-contracts/contracts/teams-bot";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
@@ -1726,6 +1727,54 @@ describe("POST /api/webhooks/teams/bot", () => {
       },
     });
     expect(outboundRequests[0]?.body).not.toHaveProperty("text");
+  });
+
+  it("asks for a message when a personal Teams message is blank", async () => {
+    const fixture = await trackedBotFixture();
+    const activityId = teamsFixtureExternalId(
+      fixture,
+      "activity-blank-personal",
+    );
+    botFrameworkHandlers();
+    const outboundRequests = teamsOutboundHandlers(SERVICE_URL);
+    const client = setupApp({ context, routes: teamsBotRoutes })(
+      teamsBotContract,
+    );
+
+    const response = await accept(
+      client.post({
+        extraHeaders: { authorization: `Bearer ${teamsToken()}` },
+        body: teamsPersonalMessageActivity({
+          fixture,
+          id: activityId,
+          text: " \n\t ",
+        }),
+      }),
+      [200],
+    );
+
+    expect(response.body).toMatchObject({
+      ok: true,
+      activity: {
+        kind: "message",
+        conversationType: "personal",
+        text: "",
+        mentionsRecipient: false,
+        attachments: [],
+      },
+    });
+    expect(response.body).not.toHaveProperty("dispatch");
+    await flushWaitUntilForTest();
+    expect(outboundRequests).toHaveLength(1);
+    expect(outboundRequests[0]).toMatchObject({
+      conversationId: `a:personal-${fixture.teamsUserId}`,
+      activityId,
+      body: {
+        type: "message",
+        text: "Please include a message for Nova.",
+        replyToId: activityId,
+      },
+    });
   });
 
   it("downloads Teams channel reference attachments through Graph", async () => {
