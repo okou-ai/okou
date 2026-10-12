@@ -84,6 +84,8 @@ function providerTextFailureReason(
     semanticMessage === "unable to verify model access right now. please retry."
   )
     return "provider_server_error";
+  if (isRequestProcessingFailure(semanticMessage))
+    return "provider_server_error";
   if (
     semanticMessage ===
       "our servers are currently overloaded. please try again later." ||
@@ -133,6 +135,20 @@ function providerTextFailureReason(
     return "context_window_exceeded";
   }
   return undefined;
+}
+
+function isRequestProcessingFailure(message: string): boolean {
+  // Require the provider's complete retry/support instruction, not generic error prose.
+  const prefix =
+    "an error occurred while processing your request. " +
+    "you can retry your request, or contact us through our help center at help.openai.com if the error persists.";
+  if (message === prefix) return true;
+  const requestPrefix = `${prefix} please include the request id `;
+  const suffix = " in your message.";
+  if (!message.startsWith(requestPrefix) || !message.endsWith(suffix))
+    return false;
+  const requestId = message.slice(requestPrefix.length, -suffix.length);
+  return requestId.length > 0 && !/\p{White_Space}/u.test(requestId);
 }
 
 function isDaybreakCyberSafetyRefusal(message: string): boolean {

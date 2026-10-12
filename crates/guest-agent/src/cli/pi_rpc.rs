@@ -1440,7 +1440,18 @@ mod tests {
 
     #[test]
     fn semantic_http_success_keeps_failed_reason_and_observed_retries() {
+        let processing_failure: Value = serde_json::from_str(include_str!(
+            "../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-request-processing-error.json"
+        ))
+        .expect("shared request-processing failure fixture");
         for (message, reason, retries) in [
+            (
+                processing_failure["errorMessage"]
+                    .as_str()
+                    .expect("request-processing failure text"),
+                "provider_server_error",
+                3,
+            ),
             (
                 "Codex error: Our servers are currently overloaded. Please try again later.",
                 "provider_overloaded",
