@@ -224,7 +224,7 @@ function connectorConnectionSelection() {
   };
 }
 
-function existingConnectorConnectionSelection() {
+export function existingConnectorConnectionSelection() {
   return {
     ...connectorConnectionSelection(),
     stateRevision: sql`${connectors.updatedAt}::text`.mapWith(pgTextDecoder),
