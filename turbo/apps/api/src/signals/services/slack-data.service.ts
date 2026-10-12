@@ -6,7 +6,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { and, eq } from "drizzle-orm";
 
 import { env } from "../../lib/env";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import type { ApiOrgRole } from "../../types/auth";
 import { userFeatureSwitchContext } from "./feature-switches.service";
@@ -264,50 +264,6 @@ export function slackOrgInstallation(args: {
   });
 }
 
-type SlackUserBinding =
-  | {
-      readonly kind: "connected";
-      readonly installation: typeof slackOrgInstallations.$inferSelect;
-      readonly slackUserId: string;
-    }
-  | { readonly kind: "not-installed" }
-  | { readonly kind: "not-connected" };
-
-export async function loadSlackUserBinding(
-  db: Pick<ReadonlyDb, "select">,
-  args: { readonly orgId: string; readonly userId: string },
-  beforeConnectionRead?: () => Promise<void>,
-): Promise<SlackUserBinding> {
-  const [installation] = await db
-    .select()
-    .from(slackOrgInstallations)
-    .where(eq(slackOrgInstallations.orgId, args.orgId))
-    .limit(1);
-  if (!installation) {
-    return { kind: "not-installed" };
-  }
-
-  await beforeConnectionRead?.();
-  const [connection] = await db
-    .select({ slackUserId: slackOrgConnections.slackUserId })
-    .from(slackOrgConnections)
-    .where(
-      and(
-        eq(slackOrgConnections.userId, args.userId),
-        eq(slackOrgConnections.slackWorkspaceId, installation.slackWorkspaceId),
-      ),
-    )
-    .limit(1);
-  if (!connection) {
-    return { kind: "not-connected" };
-  }
-  return {
-    kind: "connected",
-    installation,
-    slackUserId: connection.slackUserId,
-  };
-}
-
 export function slackUserInstallation(args: {
   readonly orgId: string;
   readonly userId: string;
@@ -327,12 +283,34 @@ export function slackUserInstallation(args: {
   const featureContext$ = userFeatureSwitchContext(args.orgId, args.userId);
 
   return computed(async (get) => {
-    const binding = await loadSlackUserBinding(get(db$), args);
-    if (binding.kind !== "connected") {
-      return binding;
+    const db = get(db$);
+
+    const [installation] = await db
+      .select()
+      .from(slackOrgInstallations)
+      .where(eq(slackOrgInstallations.orgId, args.orgId))
+      .limit(1);
+    if (!installation) {
+      return { kind: "not-installed" } as const;
     }
 
-    const { installation } = binding;
+    const [connection] = await db
+      .select({ slackUserId: slackOrgConnections.slackUserId })
+      .from(slackOrgConnections)
+      .where(
+        and(
+          eq(slackOrgConnections.userId, args.userId),
+          eq(
+            slackOrgConnections.slackWorkspaceId,
+            installation.slackWorkspaceId,
+          ),
+        ),
+      )
+      .limit(1);
+    if (!connection) {
+      return { kind: "not-connected" } as const;
+    }
+
     const botToken = await decryptPersistentSecretValue(
       installation.encryptedBotToken,
       await get(featureContext$),
@@ -342,7 +320,7 @@ export function slackUserInstallation(args: {
       workspaceId: installation.slackWorkspaceId,
       botToken,
       workspaceName: installation.slackWorkspaceName ?? null,
-      slackUserId: binding.slackUserId,
+      slackUserId: connection.slackUserId,
     } as const;
   });
 }
