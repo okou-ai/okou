@@ -41,6 +41,7 @@ For Platform requests, async ownership, module state, or runtime loading, read
 | Changed surface                            | Read                                                                                                                                                          |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Tests or test failures                     | [Testing](docs/testing.md), then the matching application guide                                                                                               |
+| GitHub Actions or CI scripts               | [GitHub scripts](docs/github-scripts.md)                                                                                                                      |
 | React, signals, async ownership            | [ccstate](.claude/skills/ccstate/SKILL.md), [effects](docs/react.md#effects-and-ownership), [cache](docs/react.md#cache-and-resource-lifetimes) as applicable |
 | App/shared UI styling or interactions      | [Styles](docs/app/styles.md), [UI interaction contracts](#ui-interaction-contracts)                                                                           |
 | Database schema or queries                 | [Database guide](docs/api/database.md), then [database development](.claude/skills/database-development/SKILL.md)                                             |
