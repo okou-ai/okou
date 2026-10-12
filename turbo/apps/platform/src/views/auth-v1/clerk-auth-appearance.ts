@@ -28,6 +28,10 @@ const CLERK_AUTH_APPEARANCE_BASE = {
     socialButtonsVariant: "blockButton",
   },
   elements: {
+    // Center hosted dialogs on mobile too. Auto margins yield to scrolling on
+    // short viewports; the backdrop keeps Clerk's existing vertical gutter.
+    modalBackdrop: "py-10",
+    modalContent: "my-auto",
     rootBox:
       "mx-auto flex w-full max-w-[var(--okou-auth-card-max-width)] flex-col",
     cardBox: cn(cardClassName, "w-full shadow-none"),
