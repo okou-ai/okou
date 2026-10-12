@@ -7,7 +7,7 @@ import {
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { isValidTimeZone } from "@okouai/core/timezone";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 

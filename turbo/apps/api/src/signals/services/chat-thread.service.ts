@@ -1,6 +1,6 @@
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { artifacts } from "@okouai/db/schema/artifact";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command, computed, type Computed } from "ccstate";
 import {
   type ChatThreadDraft,

@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { emailOutbox } from "@okouai/db/runtime/email-outbox";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
 import { orgCache } from "@okouai/db/schema/org-cache";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";

@@ -7,10 +7,8 @@ import {
   googleFormsAutomationCursors,
   googleFormsWatchStates,
 } from "@okouai/db/schema/google-forms-event";
-import {
-  workflowAutomations,
-  workflowUserAutomationThreads,
-} from "@okouai/db/schema/workflow";
+import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";

@@ -1,5 +1,6 @@
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
+import { workflows } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { agents } from "@okouai/db/schema/agent";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";

@@ -88,6 +88,7 @@ readonly PI_DEBUG_TRACE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1345_ou
 readonly CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_PATH=turbo/packages/db/src/migrations/1348_connector_catalog_payload_independent_api.sql
 readonly USAGE_ALLOWANCE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1356_drop_organization_usage_allowance.sql
 readonly SSH_CANONICAL_TRANSPORT_PATH=turbo/packages/db/src/migrations/1365_tailscale_private_ssh.sql
+readonly OFFICIAL_RESULT_EMAIL_RUNTIME_RETIREMENT_PATH=turbo/packages/db/src/migrations/1382_retire_official_result_email_runtime.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -458,6 +459,19 @@ if [[ ! "$ssh_canonical_transport_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$ssh_canonical_transport_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates canonical SSH transport: ${ssh_canonical_transport_commit}."
+fi
+
+# Release 2 of #39378 stops writing official_result_email_enabled (new Official
+# Automations store NULL) and publishes catalog schema v3. Earlier APIs treat
+# NULL as incomplete dormant materialization state or mismatched ownership and
+# predate the v3 writer, so no earlier API is a safe rollback target.
+official_result_email_runtime_retirement_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$OFFICIAL_RESULT_EMAIL_RUNTIME_RETIREMENT_PATH" | sed -n '1p')
+if [[ ! "$official_result_email_runtime_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Official result-email runtime retirement on main."
+fi
+if ! git merge-base --is-ancestor "$official_result_email_runtime_retirement_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Official result-email runtime retirement: ${official_result_email_runtime_retirement_commit}."
 fi
 
 # Chat Event V8 removes eight event types and two context types. Earlier APIs

@@ -4,7 +4,7 @@ import {
   googleFormsWatchStates,
 } from "@okouai/db/schema/google-forms-event";
 import { sql } from "drizzle-orm";
-import type { workflowAutomations } from "@okouai/db/schema/workflow";
+import type { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 
 type FormsCursorSource = Pick<
   typeof workflowAutomations.$inferSelect,

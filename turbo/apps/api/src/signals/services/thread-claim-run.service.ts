@@ -289,7 +289,7 @@ import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 
-import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import {
   PI_AGENT_RUNTIME_VERSION,
@@ -651,7 +651,6 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
       args.automation,
       args.agentId,
       args.chatThreadId,
-      args.workflowName,
     ),
     ...EVENT_POLICY[eventType],
     allowClaimedOnceScheduleAutomation: args.automation.scheduleType === "once",
@@ -982,7 +981,6 @@ function buildWorkflowAutomationCallbacks(
   automation: AutomationRow,
   agentId: string,
   chatThreadId: string,
-  workflowName: string,
 ): InternalRunCallbackInput[] {
   const callbacks: InternalRunCallbackInput[] = [];
   if (automation.kind === "schedule") {
@@ -1005,15 +1003,6 @@ function buildWorkflowAutomationCallbacks(
         },
       });
     }
-  }
-  if (automation.officialResultEmailEnabled === true) {
-    callbacks.push({
-      internalKind: "workflow-automation:result-email",
-      payload: {
-        automationId: automation.id,
-        workflowName,
-      },
-    });
   }
   callbacks.push({
     internalKind: "chat",

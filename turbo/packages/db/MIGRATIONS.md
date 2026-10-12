@@ -139,6 +139,21 @@ are enforced by the integration ingress tests.
   `DATABASE_URL`. Retain the validator and its outgoing fixture through #39380's
   separately released contraction and drain/rollback acceptance.
 
+- `scripts/test-official-result-email-retirement-preparation.ts` protects
+  migration `1382_retire_official_result_email_runtime`. Release 1 rows and
+  frozen outgoing ORM statements (Official `false`/`true` writes, ordinary
+  NULLs, implicit `SELECT`/`RETURNING`, metadata updates, claims and sourced
+  outbox inserts) survive the migration byte-for-byte and stay legal. Runtime
+  mappings never name the retired column, claim table or outbox source pair;
+  their Official rows store NULL, so 1382 must be applied before release 2
+  serves. Ordinary rows still reject non-null values, and the other Official
+  bindings, source-pair index and check remain enforced. Run
+  `pnpm test:official-result-email-retirement-preparation` with an owned
+  PostgreSQL `DATABASE_URL`. The production rollback resolver enforces a floor
+  on the first-parent `main` commit that adds 1382. Retain the validator and its
+  outgoing fixture through release 3 of #39378's contraction and its
+  drain/rollback acceptance.
+
 - `scripts/test-pi-memory-storage-retirement-preparation.ts` replays writer
   preparation and the actual compatibility-storage contraction. Unexpected
   indexes, checks, views, routines, triggers, inheritance and foreign keys reject

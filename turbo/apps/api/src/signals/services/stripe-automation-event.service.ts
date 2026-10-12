@@ -22,10 +22,10 @@ import {
   stripeWorkflowDeliveries,
 } from "@okouai/db/schema/stripe-automation-event";
 import {
-  workflowAutomations,
   workflows,
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";

@@ -4,10 +4,8 @@ import {
   notionPageContentUpdatedEventConfigSchema,
 } from "@okouai/api-contracts/contracts/workflows";
 import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
-import {
-  workflowAutomations,
-  type WorkflowAutomationEventConfig,
-} from "@okouai/db/schema/workflow";
+import type { WorkflowAutomationEventConfig } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, inArray } from "drizzle-orm";
 
 import type { Db, ReadonlyDb } from "../external/db";

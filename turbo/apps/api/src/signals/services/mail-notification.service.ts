@@ -5,11 +5,12 @@ import type {
   NotifyMailBody,
 } from "@okouai/api-contracts/contracts/notifications";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { emailOutbox } from "@okouai/db/runtime/email-outbox";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
 import { mailNotifications } from "@okouai/db/schema/mail-notification";
 import { users } from "@okouai/db/schema/user";
-import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
+import { workflows } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command, computed } from "ccstate";
 import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
 import {

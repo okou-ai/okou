@@ -68,7 +68,6 @@ function scheduleBlueprint(
         cronExpression,
       },
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -80,7 +79,6 @@ function loopBlueprint(key: string): OfficialWorkflowBlueprint {
       kind: "schedule",
       schedule: { type: "loop", intervalSeconds: 3600 },
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -104,7 +102,6 @@ function calendarBlueprint(
             },
           }),
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -125,7 +122,6 @@ function chatRunFinishedBlueprint(
         runStatuses: [...runStatuses],
       },
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -405,7 +401,6 @@ describe("Official Workflow catalog release boundary", () => {
           cronExpression: "0 9 * * 1",
         },
       },
-      runtime: { resultEmail: false },
     };
     const released = await syncCatalog(
       catalog([
@@ -452,21 +447,21 @@ describe("Official Workflow catalog release boundary", () => {
     expect(morningBriefDefinition).toMatchObject({
       name: "morning-brief",
       lifecycle: "active",
-      blueprints: [
-        {
-          key: "daily-delivery",
-          parameters: [],
-          desiredState: {
-            kind: "schedule",
-            schedule: {
-              type: "cron",
-              cronExpression: "0 7 * * *",
-            },
-          },
-          runtime: { resultEmail: false },
-        },
-      ],
     });
+    expect(morningBriefDefinition.blueprints).toStrictEqual([
+      {
+        key: "daily-delivery",
+        parameters: [],
+        desiredState: {
+          kind: "schedule",
+          schedule: {
+            type: "cron",
+            cronExpression: "0 7 * * *",
+          },
+        },
+        fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
+      },
+    ]);
     expect(connectorDoctorDefinition).toMatchObject({
       name: "connector-doctor",
       lifecycle: "retired",
@@ -924,43 +919,22 @@ describe("Official Workflow catalog release boundary", () => {
       expect.objectContaining({ code: "invalid-parameter-declaration" }),
     );
 
-    const unknownRuntimeSetting = await syncCatalog({
+    const runtimeSetting = await syncCatalog({
       schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
       definitions: [
         {
           ...activeDefinition(name),
           blueprints: [
-            {
-              ...scheduleBlueprint("daily"),
-              runtime: { resultEmail: false, futureSetting: true },
-            },
+            { ...scheduleBlueprint("daily"), runtime: { resultEmail: false } },
           ],
         },
       ],
     });
-    expect(unknownRuntimeSetting.body.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "invalid-candidate" }),
-    );
-
-    for (const runtime of [{}, { resultEmail: "yes" }]) {
-      const malformedRuntime = await syncCatalog({
-        schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
-        definitions: [
-          {
-            ...activeDefinition(name),
-            blueprints: [
-              {
-                ...scheduleBlueprint("daily"),
-                runtime,
-              },
-            ],
-          },
-        ],
-      });
-      expect(malformedRuntime.body.diagnostics).toContainEqual(
-        expect.objectContaining({ code: "invalid-candidate" }),
-      );
-    }
+    expect(runtimeSetting.body).toMatchObject({
+      outcome: "rejected",
+      releaseId: acceptedReleaseId,
+      diagnostics: [{ code: "invalid-candidate" }],
+    });
 
     const nonCanonical = await syncCatalog(
       catalog([

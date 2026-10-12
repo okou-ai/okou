@@ -387,11 +387,6 @@
       "owner": "enqueueIntegrationChatInput$"
     },
     {
-      "id": "TX-0173",
-      "file": "turbo/apps/api/src/signals/services/internal-workflow-automation-result-email-callback.service.ts",
-      "owner": "enqueueResultEmail$"
-    },
-    {
       "id": "TX-0176",
       "file": "turbo/apps/api/src/signals/services/mail-notification.service.ts",
       "owner": "commitMailNotification$"
