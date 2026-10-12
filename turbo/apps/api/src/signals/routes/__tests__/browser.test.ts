@@ -2582,7 +2582,7 @@ describe("Browser user-action route", () => {
                 {
                   key: "document",
                   observedFingerprint: fingerprint,
-                  operation: "replace",
+                  operation: "clear",
                   files: [],
                 },
               ],
