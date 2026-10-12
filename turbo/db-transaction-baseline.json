@@ -902,11 +902,6 @@
       "owner": "applyVisibleAgentGrantRows"
     },
     {
-      "id": "TX-0315",
-      "file": "turbo/apps/api/src/signals/services/vnc-connection.service.ts",
-      "owner": "createVncConnection$"
-    },
-    {
       "id": "TX-0316",
       "file": "turbo/apps/api/src/signals/services/vnc-connection.service.ts",
       "owner": "updateVncConnection$"

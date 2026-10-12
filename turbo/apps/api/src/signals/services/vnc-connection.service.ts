@@ -9,6 +9,7 @@ import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, asc, count, eq, sql } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { command } from "ccstate";
@@ -317,6 +318,51 @@ interface CreateVncConnectionArgs {
   readonly featureContext: FeatureSwitchContext;
 }
 
+const createdVncConnectionCteName = "created_vnc_connection";
+
+// Sessionless fragments: the owning command constructs the parent INSERT and
+// executes the compound statement. No database handle leaves that command.
+function inlineVncCredentialCtes(
+  owner: VncOwner,
+  create: NonNullable<
+    Awaited<ReturnType<typeof prepareVncCredentialSelection>>["create"]
+  >,
+) {
+  const qb = new QueryBuilder();
+  const parent = sql.identifier(createdVncConnectionCteName);
+  const credentialId = sql`${parent}.${sql.identifier(vncConnections.credentialId.name)}`;
+  // The same generator as the credential's physical UUID default. A
+  // no-FROM SELECT has no complete builder in installed Drizzle.
+  const generated = qb
+    .$with("new_vnc_credential_id", { id: vncCredentials.id })
+    .as(sql`select gen_random_uuid() as id`);
+  // Drizzle INSERT SELECT requires every schema column. This partial
+  // column list retains the database revision/timestamp defaults and
+  // gates the child on actual parent RETURNING, including zero rows.
+  const createdCredential = qb.$with("created_vnc_credential", {
+    ...vncCredentialMetadata,
+  }).as(sql`
+      insert into ${vncCredentials}
+        (id, org_id, user_id, name, username, auth_method,
+         encrypted_password, encrypted_client_identity)
+      select ${credentialId},
+        ${sql.param(owner.orgId, vncCredentials.orgId)},
+        ${sql.param(owner.userId, vncCredentials.userId)},
+        ${sql.param(create.name, vncCredentials.name)},
+        ${sql.param(create.username, vncCredentials.username)},
+        ${sql.param(create.authMethod, vncCredentials.authMethod)},
+        ${sql.param(create.encryptedPassword, vncCredentials.encryptedPassword)},
+        ${sql.param(create.encryptedClientIdentity, vncCredentials.encryptedClientIdentity)}
+      from ${parent}
+      returning id, name, username, auth_method, revision, created_at, updated_at
+    `);
+  const exhausted = qb
+    .select({ count: count().as("count") })
+    .from(createdCredential)
+    .as("exhausted_vnc_credential");
+  return { generated, createdCredential, exhausted };
+}
+
 const prepareCreateVncConnection$ = command(
   async ({ set }, args: CreateVncConnectionArgs, signal: AbortSignal) => {
     const preflight = await set(
@@ -382,6 +428,26 @@ const prepareCreateVncConnection$ = command(
   },
 );
 
+function vncConnectionCreationValues(
+  args: CreateVncConnectionArgs,
+  prepared: NonNullable<
+    Extract<
+      Awaited<ReturnType<typeof prepareCreateVncConnection$.write>>,
+      { readonly ok: true }
+    >["value"]
+  >,
+) {
+  return {
+    ...args.owner,
+    id: args.body.id,
+    displayName: args.body.displayName,
+    host: prepared.host.value,
+    port: args.body.port,
+    ...prepared.transport.value,
+    ...prepared.security.value,
+  };
+}
+
 export const createVncConnection$ = command(
   async (
     { set },
@@ -394,12 +460,11 @@ export const createVncConnection$ = command(
     if (!prepared.ok || prepared.value === undefined) {
       return prepared;
     }
-    const { host, security, transport, preparedCredential } = prepared.value;
-    const transaction = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0315; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
+    const { security, transport, preparedCredential } = prepared.value;
+    const written = await settle(
+      (async () => {
         const owner = args.owner;
-        const [existing] = await tx
+        const [existing] = await db
           .select({
             orgId: vncConnections.orgId,
             userId: vncConnections.userId,
@@ -413,7 +478,7 @@ export const createVncConnection$ = command(
             : vncFailure("resourceIdConflict");
         }
         if (transport.value.sshConnectionId !== null) {
-          const [ssh] = await tx
+          const [ssh] = await db
             .select({ id: sshConnections.id })
             .from(sshConnections)
             .where(ownedSshConnection(owner, transport.value.sshConnectionId));
@@ -423,12 +488,46 @@ export const createVncConnection$ = command(
         }
         let credential: CredentialMetadata | undefined | null = null;
         if (preparedCredential?.create !== undefined) {
-          [credential] = await tx
-            .insert(vncCredentials)
-            .values({ ...owner, ...preparedCredential.create })
-            .returning(vncCredentialMetadata);
+          const create = preparedCredential.create;
+          if (
+            !isVncProfileCompatible(
+              create.authMethod,
+              security.value.securityType,
+            )
+          ) {
+            return vncFailure("profileMismatch");
+          }
+          const { generated, createdCredential, exhausted } =
+            inlineVncCredentialCtes(owner, create);
+          const connection = db.$with(createdVncConnectionCteName).as(
+            db
+              .insert(vncConnections)
+              .values({
+                ...vncConnectionCreationValues(args, prepared.value),
+                credentialId: sql`(select ${generated.id} from ${generated})`,
+                authMethod: create.authMethod,
+              })
+              .returning({ ...metadata }),
+          );
+          const [created] = await db
+            .with(generated, connection, createdCredential)
+            .select()
+            .from(connection)
+            .crossJoin(exhausted)
+            .crossJoin(createdCredential);
+          if (!created) {
+            throw new Error("VNC connection insert returned no row");
+          }
+          // Both writes have committed before decoding/response validation.
+          return {
+            ok: true as const,
+            value: response(
+              created.created_vnc_connection,
+              created.created_vnc_credential,
+            ),
+          };
         } else if (preparedCredential !== null) {
-          [credential] = await tx
+          [credential] = await db
             .select(vncCredentialMetadata)
             .from(vncCredentials)
             .where(ownedCredential(owner, preparedCredential.id));
@@ -444,28 +543,22 @@ export const createVncConnection$ = command(
         ) {
           return vncFailure("profileMismatch");
         }
-        const [created] = await tx
+        const [created] = await db
           .insert(vncConnections)
           .values({
-            ...owner,
-            id: args.body.id,
-            displayName: args.body.displayName,
-            host: host.value,
-            port: args.body.port,
-            ...transport.value,
+            ...vncConnectionCreationValues(args, prepared.value),
             ...credentialDatabaseValues(credential),
-            ...security.value,
           })
           .returning(metadata);
         if (!created) {
           throw new Error("VNC connection insert returned no row");
         }
         return { ok: true as const, value: response(created, credential) };
-      }),
+      })(),
     );
     signal.throwIfAborted();
-    if (!transaction.ok) {
-      const reference = referenceViolation(transaction.error);
+    if (!written.ok) {
+      const reference = referenceViolation(written.error);
       if (reference) {
         return vncFailure(reference);
       }
@@ -475,12 +568,12 @@ export const createVncConnection$ = command(
           owner: args.owner,
           resource: "connection",
           id: args.body.id,
-          error: transaction.error,
+          error: written.error,
         },
         signal,
       );
     }
-    return transaction.value;
+    return written.value;
   },
 );
 
