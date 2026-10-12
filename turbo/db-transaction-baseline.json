@@ -387,11 +387,6 @@
       "owner": "completeOutboxItem"
     },
     {
-      "id": "TX-0159",
-      "file": "turbo/apps/api/src/signals/services/feishu-chat-ingress.service.ts",
-      "owner": "ensureFeishuChatThreadRoute$"
-    },
-    {
       "id": "TX-0160",
       "file": "turbo/apps/api/src/signals/services/feishu-chat-ingress.service.ts",
       "owner": "admitFeishuChatEvent$"
