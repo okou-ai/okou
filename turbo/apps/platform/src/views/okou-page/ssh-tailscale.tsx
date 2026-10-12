@@ -1,5 +1,6 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import type { TailscaleConfig } from "@okouai/api-contracts/contracts/tailscale";
 import {
   Select,
   SelectContent,
@@ -16,6 +17,49 @@ import {
 import { tailscaleConfigs$ } from "../../signals/tailscale.ts";
 import { TailscaleFields } from "./tailscale-fields.tsx";
 import { SshLoadError } from "./ssh-load-error.tsx";
+
+function TailscaleConfigGroup({
+  scope,
+  configs,
+}: {
+  readonly scope: "personal" | "organization";
+  readonly configs: readonly TailscaleConfig[];
+}) {
+  const { t } = useTranslation();
+  const scoped = configs.filter((config) => {
+    return config.scope === scope;
+  });
+  if (scope === "organization" && scoped.length === 0) {
+    return null;
+  }
+  return (
+    <SelectGroup>
+      <SelectLabel>
+        {scope === "personal"
+          ? t(($) => {
+              return $.cloudflareAccess.personal;
+            })
+          : t(($) => {
+              return $.cloudflareAccess.organization;
+            })}
+      </SelectLabel>
+      {scoped.map((config) => {
+        return (
+          <SelectItem key={config.id} value={config.id}>
+            {config.name}
+          </SelectItem>
+        );
+      })}
+      {scope === "personal" && (
+        <SelectItem value="new">
+          {t(($) => {
+            return $.tailscale.createNew;
+          })}
+        </SelectItem>
+      )}
+    </SelectGroup>
+  );
+}
 
 export function TailscaleSelection({
   disabled,
@@ -85,35 +129,11 @@ export function TailscaleSelection({
               <SelectContent>
                 {(["personal", "organization"] as const).map((scope) => {
                   return (
-                    <SelectGroup key={scope}>
-                      <SelectLabel>
-                        {scope === "personal"
-                          ? t(($) => {
-                              return $.cloudflareAccess.personal;
-                            })
-                          : t(($) => {
-                              return $.cloudflareAccess.organization;
-                            })}
-                      </SelectLabel>
-                      {available
-                        .filter((config) => {
-                          return config.scope === scope;
-                        })
-                        .map((config) => {
-                          return (
-                            <SelectItem key={config.id} value={config.id}>
-                              {config.name}
-                            </SelectItem>
-                          );
-                        })}
-                      {scope === "personal" && (
-                        <SelectItem value="new">
-                          {t(($) => {
-                            return $.tailscale.createNew;
-                          })}
-                        </SelectItem>
-                      )}
-                    </SelectGroup>
+                    <TailscaleConfigGroup
+                      key={scope}
+                      scope={scope}
+                      configs={available}
+                    />
                   );
                 })}
               </SelectContent>

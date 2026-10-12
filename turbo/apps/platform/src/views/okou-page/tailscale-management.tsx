@@ -19,7 +19,6 @@ import {
   SelectValue,
   surfaceVariants,
 } from "@okouai/ui";
-import { TAILSCALE_ERROR_CODES } from "@okouai/api-contracts/contracts/tailscale-errors";
 import type {
   TailscaleConfig,
   TailscaleImpactPreview,
@@ -51,6 +50,7 @@ import { isOrgAdmin$ } from "../../signals/org.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { TailscaleFields } from "./tailscale-fields.tsx";
+import { PrivateNetworkAffectedMembers } from "./private-network-impact.tsx";
 
 function useOperationCopy(kind: TailscaleOperation | undefined) {
   const { t } = useTranslation();
@@ -207,53 +207,7 @@ function TailscaleImpact({
   }
   return (
     <div className="grid gap-3 rounded-lg border p-4 text-sm">
-      <p>
-        {t(
-          ($) => {
-            return $.cloudflareAccess.impactSummary;
-          },
-          {
-            members: t(
-              ($) => {
-                return $.cloudflareAccess.affectedMembers;
-              },
-              {
-                count: preview.affectedOwners.length,
-              },
-            ),
-            hosts: t(
-              ($) => {
-                return $.cloudflareAccess.hostCount;
-              },
-              {
-                count: preview.otherHostCount,
-              },
-            ),
-          },
-        )}
-      </p>
-      {preview.affectedOwners.length > 0 && (
-        <ul className="list-inside list-disc">
-          {preview.affectedOwners.map((owner) => {
-            return (
-              <li key={owner.userId}>
-                {owner.displayName ??
-                  t(($) => {
-                    return $.cloudflareAccess.nameUnavailable;
-                  })}
-                {t(
-                  ($) => {
-                    return $.cloudflareAccess.memberIdentifier;
-                  },
-                  {
-                    identifier: owner.userId,
-                  },
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <PrivateNetworkAffectedMembers preview={preview} />
       <label className="flex items-start gap-2">
         <Checkbox
           disabled={disabled}
@@ -270,7 +224,13 @@ function TailscaleImpact({
   );
 }
 
-function TailscaleReview({ isSaving }: { readonly isSaving: boolean }) {
+function TailscaleReview({
+  dialog,
+  isSaving,
+}: {
+  readonly dialog: TailscaleDialogState;
+  readonly isSaving: boolean;
+}) {
   const { t } = useTranslation();
   const error = useGet(tailscaleError$);
   const uncertain = useGet(tailscaleSaveUncertain$);
@@ -280,6 +240,42 @@ function TailscaleReview({ isSaving }: { readonly isSaving: boolean }) {
   const signal = useGet(pageSignal$);
   if (isSaving || (!error && !uncertain)) {
     return null;
+  }
+  const shared =
+    dialog.kind === "adopt" ||
+    (dialog.kind === "delete" && dialog.config?.scope === "organization");
+  if (shared || dialog.kind === "promote") {
+    return (
+      <div className="grid gap-3 text-sm">
+        <p role="alert">
+          {error === "uncertain"
+            ? t(($) => {
+                return dialog.kind === "delete"
+                  ? $.cloudflareAccess.deleteUncertain
+                  : dialog.kind === "promote"
+                    ? $.cloudflareAccess.promoteUncertain
+                    : $.cloudflareAccess.convertUncertain;
+              })
+            : (localizedTailscaleError(error ?? "") ??
+              t(($) => {
+                return $.tailscale.failed;
+              }))}
+        </p>
+        {shared && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              return refresh(signal);
+            }}
+          >
+            {t(($) => {
+              return $.cloudflareAccess.reviewLatest;
+            })}
+          </Button>
+        )}
+      </div>
+    );
   }
   const config = latest.state === "hasData" ? latest.data : null;
   return (
@@ -322,21 +318,19 @@ function TailscaleReview({ isSaving }: { readonly isSaving: boolean }) {
           </Button>
         </div>
       )}
-      {!config &&
-        (latest.state === "hasError" ||
-          error === TAILSCALE_ERROR_CODES.IMPACT_CONFLICT) && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              return refresh(signal);
-            }}
-          >
-            {t(($) => {
-              return $.cloudflareAccess.reviewLatest;
-            })}
-          </Button>
-        )}
+      {latest.state === "hasError" && (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            return refresh(signal);
+          }}
+        >
+          {t(($) => {
+            return $.global.actions.tryAgain;
+          })}
+        </Button>
+      )}
     </div>
   );
 }
@@ -354,6 +348,7 @@ function TailscaleOperationBody({
   const impact = useLoadable(tailscaleImpact$);
   const acknowledged = useGet(tailscaleAcknowledged$);
   const acknowledge = useSet(acknowledgeTailscale$);
+  const error = useGet(tailscaleError$);
   const refresh = useSet(refreshTailscaleReview$);
   const signal = useGet(pageSignal$);
   return (
@@ -363,7 +358,7 @@ function TailscaleOperationBody({
       {kind === "promote" && (
         <label className="flex items-start gap-2 text-sm">
           <Checkbox
-            disabled={disabled}
+            disabled={disabled || !!error}
             checked={acknowledged === "promote"}
             onCheckedChange={(checked) => {
               return acknowledge(checked ? "promote" : null);
@@ -398,7 +393,14 @@ function TailscaleOperationBody({
               />
             )}
             {impact.state === "hasData" && impact.data && (
-              <TailscaleImpact preview={impact.data} disabled={disabled} />
+              <TailscaleImpact
+                preview={impact.data}
+                disabled={
+                  disabled ||
+                  !!error ||
+                  (kind === "delete" && impact.data.ownHostCount > 0)
+                }
+              />
             )}
           </>
         )}
@@ -527,7 +529,7 @@ export function TailscaleDialog() {
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) {
+        if (!open && !busy) {
           close();
         }
       }}
@@ -554,10 +556,15 @@ export function TailscaleDialog() {
         >
           <DialogBody className="grid gap-4">
             <TailscaleFormFields dialog={dialog} disabled={busy || uncertain} />
-            <TailscaleReview isSaving={busy} />
+            <TailscaleReview dialog={dialog} isSaving={busy} />
           </DialogBody>
           <div className="flex shrink-0 justify-end gap-2">
-            <Button type="button" variant="outline" onClick={close}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={close}
+            >
               {t(($) => {
                 return $.cloudflareAccess.cancel;
               })}
@@ -677,6 +684,7 @@ function TailscaleSection({
                 <Button
                   type="button"
                   variant="outline"
+                  disabled={config.sshHosts.length > 0}
                   onClick={() => {
                     return detach(
                       open("delete", config, signal),
@@ -689,6 +697,13 @@ function TailscaleSection({
                   })}
                 </Button>
               </div>
+            )}
+            {canManage && config.sshHosts.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                {t(($) => {
+                  return $.tailscale.inUse;
+                })}
+              </p>
             )}
           </article>
         );
@@ -715,25 +730,29 @@ export function TailscaleManagement() {
         return $.tailscale.title;
       })}
     >
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-medium">
-          {t(($) => {
-            return $.tailscale.title;
-          })}
-        </h2>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            return detach(open("create", null, signal), Reason.DomCallback);
-          }}
-        >
-          <Plus size={16} aria-hidden="true" />
-          {t(($) => {
-            return $.tailscale.add;
-          })}
-        </Button>
-      </div>
+      {configs.state === "hasData" && configs.data && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            {t(
+              ($) => {
+                return $.tailscale.summary;
+              },
+              { count: configs.data.length },
+            )}
+          </p>
+          <Button
+            type="button"
+            onClick={() => {
+              return detach(open("create", null, signal), Reason.DomCallback);
+            }}
+          >
+            <Plus size={16} aria-hidden="true" />
+            {t(($) => {
+              return $.tailscale.add;
+            })}
+          </Button>
+        </div>
+      )}
       {configs.state === "loading" && (
         <p role="status">
           {t(($) => {

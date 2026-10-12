@@ -1027,6 +1027,35 @@ function HostKeyIdentity({
   );
 }
 
+function TailscaleHostLabel({
+  configId,
+}: {
+  readonly configId: string | null;
+}) {
+  const { t } = useTranslation();
+  const configs = useLoadable(tailscaleConfigs$);
+  const config =
+    configs.state === "hasData"
+      ? configs.data?.find((value) => {
+          return value.id === configId;
+        })
+      : null;
+  return (
+    <p className="text-sm text-muted-foreground">
+      {config
+        ? t(
+            ($) => {
+              return $.tailscale.protectedHost;
+            },
+            { name: config.name },
+          )
+        : t(($) => {
+            return $.tailscale.title;
+          })}
+    </p>
+  );
+}
+
 function HostCard({
   connection,
 }: {
@@ -1037,8 +1066,8 @@ function HostCard({
   const signal = useGet(pageSignal$);
   const configs = useLoadable(cloudflareAccessConfigs$);
   const tailscaleEnabled = useGet(tailscaleEnabled$);
-  const tailscale =
-    "transport" in connection && connection.transport.type === "tailscale";
+  const transport = "transport" in connection ? connection.transport : null;
+  const tailscale = transport?.type === "tailscale";
   const configId = cloudflareConfigId(connection);
   const needsRebind =
     "transport" in connection && "needsRebind" in connection.transport;
@@ -1078,7 +1107,11 @@ function HostCard({
       <p className="break-all text-sm">
         {connection.username}@{connection.host}:{connection.port}
       </p>
-      {tailscale && <p className="text-sm text-muted-foreground">Tailscale</p>}
+      {tailscale && (
+        <TailscaleHostLabel
+          configId={"configId" in transport ? transport.configId : null}
+        />
+      )}
       {configId && (
         <p className="text-sm text-muted-foreground">
           {unavailable

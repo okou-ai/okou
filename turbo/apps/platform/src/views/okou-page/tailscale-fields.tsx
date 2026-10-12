@@ -26,7 +26,8 @@ function TailscaleCredentials() {
           required
           maxLength={TAILSCALE_CREDENTIAL_MAX_LENGTH}
           pattern="[!-~]+"
-          autoComplete="off"
+          autoComplete="new-password"
+          spellCheck={false}
         />
       </label>
       <label className="grid gap-2">
@@ -40,6 +41,7 @@ function TailscaleCredentials() {
           maxLength={TAILSCALE_CREDENTIAL_MAX_LENGTH}
           pattern="[!-~]+"
           autoComplete="new-password"
+          spellCheck={false}
         />
       </label>
     </fieldset>
@@ -64,6 +66,9 @@ export function TailscaleFields({
         })}
         <Input
           name="tailscaleName"
+          placeholder={t(($) => {
+            return $.cloudflareAccess.namePlaceholder;
+          })}
           required
           pattern=".*\S.*"
           maxLength={128}
