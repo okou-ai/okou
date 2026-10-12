@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.5](https://github.com/okou-ai/okou/compare/runner-host-v0.7.4...runner-host-v0.7.5) (2026-10-12)
+
+
+### Performance Improvements
+
+* **runner:** address home caches independently of rootfs ([#39421](https://github.com/okou-ai/okou/issues/39421)) ([01c57b8](https://github.com/okou-ai/okou/commit/01c57b82a8fd464599460502ae2fd012909792e9))
+
 ## [0.7.4](https://github.com/okou-ai/okou/compare/runner-host-v0.7.3...runner-host-v0.7.4) (2026-10-12)
 
 ## [0.7.3](https://github.com/okou-ai/okou/compare/runner-host-v0.7.2...runner-host-v0.7.3) (2026-10-12)

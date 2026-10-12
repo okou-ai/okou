@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.13.4...runner-remote-v0.14.0) (2026-10-12)
+
+
+### Features
+
+* **vnc:** prepare owner kerberos api and runner admission ([#38816](https://github.com/okou-ai/okou/issues/38816)) ([738b20d](https://github.com/okou-ai/okou/commit/738b20de5c517c2008bcc5543cc0f55a439670cb))
+
 ## [0.13.4](https://github.com/okou-ai/okou/compare/runner-remote-v0.13.3...runner-remote-v0.13.4) (2026-10-12)
 
 ## [0.13.3](https://github.com/okou-ai/okou/compare/runner-remote-v0.13.2...runner-remote-v0.13.3) (2026-10-12)

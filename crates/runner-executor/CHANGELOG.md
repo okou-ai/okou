@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.6...runner-executor-v0.10.7) (2026-10-12)
+
+
+### Performance Improvements
+
+* **runner:** address home caches independently of rootfs ([#39421](https://github.com/okou-ai/okou/issues/39421)) ([01c57b8](https://github.com/okou-ai/okou/commit/01c57b82a8fd464599460502ae2fd012909792e9))
+
 ## [0.10.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.5...runner-executor-v0.10.6) (2026-10-12)
 
 

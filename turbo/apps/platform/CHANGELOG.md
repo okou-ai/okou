@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1016.0](https://github.com/okou-ai/okou/compare/app-v0.1015.2...app-v0.1016.0) (2026-10-12)
+
+
+### Features
+
+* **vnc:** prepare owner kerberos api and runner admission ([#38816](https://github.com/okou-ai/okou/issues/38816)) ([738b20d](https://github.com/okou-ai/okou/commit/738b20de5c517c2008bcc5543cc0f55a439670cb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.553.0
+    * @okouai/core bumped to 8.748.1
+
 ## [0.1015.2](https://github.com/okou-ai/okou/compare/app-v0.1015.1...app-v0.1015.2) (2026-10-12)
 
 
