@@ -36,6 +36,12 @@ elif endpoint == 'repos/okou-ai/okou/actions/runs/777':
     count_file = base / 'run-count'
     count = int(count_file.read_text()) + 1 if count_file.exists() else 1
     count_file.write_text(str(count))
+    if case == 'initial-run-rate-limited' and count == 1: respond({}, 429, 'Retry-After: 1\r\n')
+    if case in ['authority-restored-during-run-retry', 'authority-restored-during-run-transient']:
+        if count == 2:
+            if case.endswith('-retry'): respond({}, 429, 'Retry-After: 60\r\n')
+            respond({}, 503)
+        if count > 2: (base / 'ownership-restored').touch()
     event = os.environ['GITHUB_EVENT_NAME']
     branch = os.environ['GITHUB_REF'].removeprefix('refs/heads/') if event == 'merge_group' else os.environ['GITHUB_HEAD_REF']
     run = {'id':777, 'run_attempt':1, 'event':event, 'status':'in_progress',
@@ -58,7 +64,9 @@ elif '/git/ref/' in endpoint:
     count_file.write_text(str(count))
     if case == 'owner-restored' and count == 1: respond({}, 404)
     if case == 'ref-denied': respond({}, 403)
-    if case in ['missing-ref', 'crates-missing-ref', 'attempt-changed', 'cancel-denied', 'cancel-conflict', 'no-interruption', 'near-deadline']: respond({}, 404)
+    if case in ['authority-restored-during-run-retry', 'authority-restored-during-run-transient'] and not (base / 'ownership-restored').exists(): respond({}, 404)
+    if case == 'final-ref-rate-limited' and count == 2: respond({}, 429, 'Retry-After: 1\r\n')
+    if case in ['missing-ref', 'crates-missing-ref', 'attempt-changed', 'cancel-denied', 'cancel-conflict', 'no-interruption', 'near-deadline', 'initial-run-rate-limited', 'final-ref-rate-limited']: respond({}, 404)
     if case == 'rate-limited':
         flag = base / 'rate-limit'
         if not flag.exists():
@@ -123,7 +131,7 @@ run_case() {
     bash "$root/.github/scripts/wait-runner-image.sh" >"$case_dir/stdout" 2>"$case_dir/stderr"
 }
 
-for case in missing-ref changed-ref rate-limited changed-pr closed-pr queued-pr cancel-conflict near-deadline crates-missing-ref crates-changed-pr; do
+for case in missing-ref changed-ref rate-limited changed-pr closed-pr queued-pr cancel-conflict near-deadline crates-missing-ref crates-changed-pr initial-run-rate-limited final-ref-rate-limited; do
   event=merge_group
   case "$case" in *-pr) event=pull_request ;; esac
   if run_case "$case" "$event"; then fail "obsolete $case must await interruption, never succeed"; else status=$?; fi
@@ -132,7 +140,7 @@ for case in missing-ref changed-ref rate-limited changed-pr closed-pr queued-pr 
   [ ! -s "$test_dir/$case/outputs" ] || fail "cancelled wait must not emit manifest outputs"
 done
 
-for case in current current-pr producer-failed wrong-workflow other-repository other-pr wrong-sha new-attempt attempt-changed invalid-status ref-denied malformed-ref pr-query-error owner-restored; do
+for case in current current-pr producer-failed wrong-workflow other-repository other-pr wrong-sha new-attempt attempt-changed invalid-status ref-denied malformed-ref pr-query-error owner-restored authority-restored-during-run-retry authority-restored-during-run-transient; do
   event=merge_group
   case "$case" in current-pr|pr-query-error) event=pull_request ;; esac
   if run_case "$case" "$event"; then fail "$case must retain its failure, never pass"; else status=$?; fi

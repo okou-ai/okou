@@ -74,10 +74,11 @@ response_header() {
 }
 
 api_get() {
-  local endpoint=$1 failures=0 backoff=60 allow_not_found=false
+  local endpoint=$1 failures=0 backoff=60 allow_not_found=false retry=true
   local status retry_after remaining reset delay now
   shift
   if [ "${1:-}" = "--allow-not-found" ]; then allow_not_found=true; shift; fi
+  if [ "${1:-}" = "--no-retry" ]; then retry=false; shift; fi
   while true; do
     check_deadline
     if gh api "$endpoint" --include "$@" >"$GH_RESPONSE" 2>"$GH_ERR"; then
@@ -87,6 +88,10 @@ api_get() {
     status=$(awk 'NR == 1 && /^HTTP\// { print $2 }' "$GH_RESPONSE")
     if $allow_not_found && [ "$status" = "404" ]; then return 44; fi
     cat "$GH_ERR" >&2
+    if ! $retry; then
+      echo "GitHub API ownership revalidation failed; refusing cancellation from earlier evidence: ${endpoint}" >&2
+      return 1
+    fi
     retry_after=$(response_header retry-after)
     remaining=$(response_header x-ratelimit-remaining)
     reset=$(response_header x-ratelimit-reset)
@@ -220,10 +225,11 @@ cancel_obsolete_consumer() {
   [ "$obsolete" = "true" ] || return 0
 
   # Recheck authority as well as identity: a ref/head can be restored, and a
-  # rerun retains its run ID. Never cancel from stale obsolescence evidence.
+  # rerun retains its run ID. The last identity read must not retry across a
+  # cooldown after the ref/head proof; that would age the proof before writing.
   obsolete=$(consumer_obsolete_state) || return 1
   [ "$obsolete" = "true" ] || return 0
-  run_json=$(api_get "repos/${REPO}/actions/runs/${GITHUB_RUN_ID}")
+  run_json=$(api_get "repos/${REPO}/actions/runs/${GITHUB_RUN_ID}" --no-retry)
   if ! consumer_identity_matches "$run_json"; then
     echo "obsolete consumer attempt changed before cancellation" >&2
     return 1
