@@ -132,6 +132,17 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-pi-memory-storage-retirement-preparation.ts` replays writer
+  preparation and the actual compatibility-storage contraction. Unexpected
+  indexes, checks, views, routines, triggers, inheritance and foreign keys reject
+  deletion without advancing the migration journal. Matching compatibility
+  leases block contraction; real prepared leases, latest results, native history
+  and Storage content/lineage survive it. Keep this historical replay through
+  independent production contraction acceptance under #39171.
+  `scripts/test-pi-memory-job-permanent.ts` protects canonical Job statements,
+  root queries, ownership, claim/result constraints and published/no-diff/failure
+  outcomes against both replayed and freshly generated schemas.
+
 - `scripts/test-run-checkpoint-retirement.ts` replays the generic checkpoint
   contraction against populated historical data and preserves Runs/results,
   native continuation, blob references, Storage versions/lineage and memory
