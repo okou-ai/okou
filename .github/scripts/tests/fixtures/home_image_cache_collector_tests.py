@@ -108,20 +108,6 @@ class CollectorTests(unittest.TestCase):
             abs(self.metric(text, "collection_timestamp_seconds") - time.time()), 2
         )
 
-    def test_mixed_legacy_and_fixed_home_names_measure_all_physical_allocation(self):
-        legacy = self.entry()
-        current = self.cache / ("home-" + "b" * 64)
-        current.mkdir()
-        (legacy / "image.ext4").write_bytes(b"legacy" * 1024)
-        (current / "image.ext4").write_bytes(b"current" * 2048)
-        text = self.collect()
-        self.assertEqual(self.metric(text, "entries"), 2)
-        self.assertEqual(self.metric(text, "measurements_complete"), 1)
-        self.assertEqual(
-            self.metric(text, "allocated_bytes"),
-            allocated_tree(legacy) + allocated_tree(current),
-        )
-
     def test_sparse_generations_staging_and_metadata_count_physical_allocation(self):
         entry = self.entry()
         image = entry / "image-00000000-0000-4000-8000-000000000001.ext4"

@@ -142,9 +142,8 @@ def collect(cache_dir):
                     break
                 if entry is None:
                     break
-                key = entry.name.removeprefix("home-")
-                if len(key) != 64 or any(
-                    c not in "0123456789abcdef" for c in key
+                if len(entry.name) != 64 or any(
+                    c not in "0123456789abcdef" for c in entry.name
                 ):
                     continue
                 metadata = entry.stat(follow_symlinks=False)

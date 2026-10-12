@@ -8,7 +8,7 @@ async fn opaque_entry_survives_gc_while_reader_eligibility_and_orphan_cleanup_st
     let committed = f.commit("thread", b"home", "2026-10-09T09:00:00Z").await;
     // Another writer can use a different addressing formula with the same
     // committed-image format. Moving the directory preserves pinned file identity.
-    let opaque_key = format!("home-{}", "a".repeat(64));
+    let opaque_key = "a".repeat(64);
     assert_ne!(opaque_key, f.key("thread"));
     let paths = f.cache.entry_paths(&opaque_key);
     std::fs::rename(
@@ -39,7 +39,7 @@ async fn opaque_entry_survives_gc_while_reader_eligibility_and_orphan_cleanup_st
 async fn opaque_entry_is_reclaimable_under_pressure_with_dry_run_and_held_lock_protection() {
     let f = Fixture::new().await;
     f.commit("thread", b"home", "2026-10-09T09:00:00Z").await;
-    let opaque_key = format!("home-{}", "b".repeat(64));
+    let opaque_key = "b".repeat(64);
     let paths = f.cache.entry_paths(&opaque_key);
     std::fs::rename(
         f.cache.entry_paths(&f.key("thread")).entry_dir(),
@@ -77,7 +77,7 @@ async fn opaque_entry_is_reclaimable_under_pressure_with_dry_run_and_held_lock_p
 async fn opaque_address_does_not_exempt_a_corrupt_committed_image_from_safe_cleanup() {
     let f = Fixture::new().await;
     let committed = f.commit("thread", b"home", "2026-10-09T09:00:00Z").await;
-    let paths = f.cache.entry_paths(&format!("home-{}", "c".repeat(64)));
+    let paths = f.cache.entry_paths(&"c".repeat(64));
     std::fs::rename(
         f.cache.entry_paths(&f.key("thread")).entry_dir(),
         paths.entry_dir(),
