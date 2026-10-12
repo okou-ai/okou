@@ -10,13 +10,12 @@ use uuid::Uuid;
 
 use crate::host_memory_operations::{
     HostMemoryOperations, MemoryGrowthPermit, MemoryOperationError, MemoryOperationPlan,
-    MemoryOperationTask,
 };
 
-use super::retirement::{Allowance, run_retirement};
+use super::retirement::Allowance;
 use super::{
     AcceptedActivationCleanup, IdleEntry, IdlePool, IdleRetirementEnvelope, IdleSandboxIdentity,
-    RetainedActivationCleanup, RetainedIdleDestroyResult,
+    RetainedActivationCleanup,
 };
 
 mod substitution;
@@ -123,6 +122,8 @@ impl IdleRetirementCandidate {
 #[must_use]
 pub struct IdlePoolRetirement {
     candidate: IdleRetirementCandidate,
+    operations: HostMemoryOperations,
+    envelope: IdleRetirementEnvelope,
     live: Allowance,
     tail: Allowance,
     ready: bool,
@@ -184,6 +185,8 @@ impl IdlePoolRetirement {
         .unwrap_or(Err(MemoryOperationError::ProducerLost))?;
         Ok(Self {
             candidate,
+            operations: operations.clone(),
+            envelope,
             live: Allowance::Queued(live),
             tail: Allowance::Queued(tail),
             ready: false,
@@ -246,52 +249,19 @@ impl IdlePoolRetirement {
         Ok(())
     }
 
-    /// Revalidate and atomically accept both phases under short exclusive pool
-    /// access, with no await or provider callback. Start rejection reinserts the
-    /// original unconverted entry, retaining its age, epoch, promotion and lease.
+    /// Accept required saving with this admission's original authority/coverage.
+    /// Refusal restores the original entry; success exposes independent custody.
     pub fn start(
         self,
         pool: &mut IdlePool,
         context: &'static str,
-    ) -> Result<MemoryOperationTask<RetainedIdleDestroyResult>, Box<IdlePoolRetirementStartFailure>>
-    {
-        let DetachedRetirement {
-            entry,
-            candidate,
-            live,
-            tail,
-        } = self.detach(pool)?;
-        match live.spawn_retirement(
-            tail,
-            (entry, context, candidate),
-            |live, tail, (entry, context, candidate)| {
-                run_retirement(
-                    live,
-                    tail,
-                    (
-                        entry.into_destroy_job(),
-                        context,
-                        candidate.backing.process,
-                        candidate.backing.identity,
-                    ),
-                )
-            },
-        ) {
-            Ok(task) => {
-                pool.bump_revision();
-                Ok(task)
-            }
-            Err(failure) => {
-                let (entry, _, candidate) = failure.payload;
-                Err(DetachedRetirement {
-                    entry,
-                    candidate,
-                    live: failure.live,
-                    tail: failure.tail,
-                }
-                .restore(pool, failure.error))
-            }
+    ) -> Result<AcceptedActivationCleanup, Box<IdlePoolRetirementStartFailure>> {
+        if !self.ready {
+            return Err(self.reject(MemoryOperationError::Consumed));
         }
+        let operations = self.operations.clone();
+        let envelope = self.envelope;
+        self.start_required(pool, &operations, envelope, context)
     }
 
     /// Accept the same original paired coverage into the mandatory saving
@@ -318,6 +288,8 @@ impl IdlePoolRetirement {
             candidate,
             live,
             tail,
+            operations,
+            envelope,
         } = self.detach(pool)?;
         let retained = RetainedActivationCleanup::new();
         let payload = (
@@ -339,12 +311,14 @@ impl IdlePoolRetirement {
                 Ok(AcceptedActivationCleanup::new(task, retained))
             }
             Err(failure) => {
-                let (entry, _, _, _, _, _, _) = failure.payload;
+                let (entry, _, _, _, operations, envelope, _) = failure.payload;
                 Err(DetachedRetirement {
                     entry,
                     candidate,
                     live: failure.live,
                     tail: failure.tail,
+                    operations,
+                    envelope,
                 }
                 .restore(pool, failure.error))
             }
@@ -369,6 +343,8 @@ impl IdlePoolRetirement {
         }
         let Self {
             candidate,
+            operations,
+            envelope,
             live,
             tail,
             ..
@@ -378,6 +354,8 @@ impl IdlePoolRetirement {
             (live, tail) => {
                 return Err(Self {
                     candidate,
+                    operations,
+                    envelope,
                     live,
                     tail,
                     ready: false,
@@ -392,6 +370,8 @@ impl IdlePoolRetirement {
         let Some(entry) = entry else {
             return Err(Self {
                 candidate,
+                operations,
+                envelope,
                 live: Allowance::Granted(live),
                 tail: Allowance::Granted(tail),
                 ready: true,
@@ -403,6 +383,8 @@ impl IdlePoolRetirement {
             candidate,
             live,
             tail,
+            operations,
+            envelope,
         })
     }
 
@@ -420,6 +402,8 @@ struct DetachedRetirement {
     candidate: IdleRetirementCandidate,
     live: MemoryGrowthPermit,
     tail: MemoryGrowthPermit,
+    operations: HostMemoryOperations,
+    envelope: IdleRetirementEnvelope,
 }
 
 impl DetachedRetirement {
@@ -433,6 +417,8 @@ impl DetachedRetirement {
             candidate,
             live,
             tail,
+            operations,
+            envelope,
         } = self;
         // Rejection is not a new insertion: preserve epoch, age and revision.
         match &entry.metadata.identity {
@@ -445,6 +431,8 @@ impl DetachedRetirement {
         }
         IdlePoolRetirement {
             candidate,
+            operations,
+            envelope,
             live: Allowance::Granted(live),
             tail: Allowance::Granted(tail),
             ready: true,

@@ -603,15 +603,17 @@ async fn blank_replacement_progresses_before_old_exit_under_separate_coverage() 
     let retirement = result.retirement.as_mut().unwrap();
     exit.confirm_exit();
     gate.release_one();
-    let old = tokio::time::timeout(WAIT, retirement.join())
+    let outcome = tokio::time::timeout(WAIT, retirement.join())
         .await
         .unwrap()
         .unwrap()
         .unwrap();
-    assert_eq!(
-        (old.budget_lease.vcpu(), old.budget_lease.memory_mb()),
-        (2, 8)
-    );
+    assert!(matches!(
+        outcome,
+        ActivationCleanupOutcome::Completed { .. }
+    ));
+    let old = retirement.take_completed_lease().unwrap();
+    assert_eq!((old.vcpu(), old.memory_mb()), (2, 8));
     drop(old);
     fixture.retained().await;
     fixture.tracker.close_and_wait().await;
@@ -703,6 +705,13 @@ async fn status_wait_cancellation_leaves_replaced_blank_in_joined_tracker() {
     exit.confirm_exit();
     kill.release_one();
     tokio::time::timeout(WAIT, shutdown).await.unwrap();
+    assert_eq!(fixture.budget.allocated(), (4, 16, 2));
+    let mut retained = fixture.tracker.take_retained_activation_owners().unwrap();
+    assert_eq!(retained.len(), 1);
+    assert!(retained[0].cleanup_completed());
+    let lease = retained[0].take_completed_lease().unwrap();
+    assert_eq!((lease.vcpu(), lease.memory_mb()), (2, 8));
+    drop(lease);
     fixture.retained().await;
 }
 

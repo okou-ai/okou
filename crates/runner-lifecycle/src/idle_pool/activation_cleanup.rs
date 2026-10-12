@@ -98,13 +98,47 @@ impl IdleActivationOwner {
         state: IdleActivationState,
         original_backing: Option<CapturedBacking>,
     ) -> Self {
+        Self::from_resources(resources, metadata, Some(lease), state, original_backing)
+    }
+
+    /// Only an accepted full-profile substitution may detach logical custody.
+    pub(super) fn after_substitution(
+        resources: super::entry::IdleSandboxResources,
+        metadata: IdleSandboxMetadata,
+        original_backing: Option<CapturedBacking>,
+    ) -> Self {
+        Self::from_resources(
+            resources,
+            metadata,
+            None,
+            IdleActivationState::Parked,
+            original_backing,
+        )
+    }
+
+    pub(super) fn accept_substitution(
+        &mut self,
+        operations: HostMemoryOperations,
+        envelope: IdleRetirementEnvelope,
+    ) {
+        self.accepted = true;
+        self.admission = Some((operations, envelope));
+    }
+
+    fn from_resources(
+        resources: super::entry::IdleSandboxResources,
+        metadata: IdleSandboxMetadata,
+        lease: Option<BudgetLease>,
+        state: IdleActivationState,
+        original_backing: Option<CapturedBacking>,
+    ) -> Self {
         Self {
             sandbox: Some(resources.sandbox),
             factory: resources.factory,
             metadata,
             promotion: resources.home_promotion,
             prepared: None,
-            lease: Some(lease),
+            lease,
             state,
             coverage: None,
             reclamation: None,
@@ -422,7 +456,7 @@ impl RetainedActivationCleanup {
                 || !state
                     .owner
                     .as_ref()
-                    .is_some_and(|owner| owner.cleanup_completed)
+                    .is_some_and(|owner| owner.cleanup_completed && owner.lease.is_some())
             {
                 return Err(MemoryOperationError::OwnershipInvariant);
             }
@@ -431,6 +465,25 @@ impl RetainedActivationCleanup {
         // Provider/factory Drop stays outside the retained-state lock.
         let mut owner = owner;
         owner.take_completed_lease()
+    }
+
+    /// The original full lease was explicitly transferred at acceptance.
+    /// Release completed physical custody without touching the replacement lease.
+    pub fn release_completed_substitution(&self) -> Result<(), MemoryOperationError> {
+        let owner = {
+            let mut state = self.lock_state();
+            if !state.finished
+                || !state
+                    .owner
+                    .as_ref()
+                    .is_some_and(|owner| owner.cleanup_completed && owner.lease.is_none())
+            {
+                return Err(MemoryOperationError::OwnershipInvariant);
+            }
+            state.owner.take().ok_or(MemoryOperationError::Consumed)?
+        };
+        drop(owner);
+        Ok(())
     }
 
     /// Call after joining accepted work. None while in flight is not completion.
@@ -515,7 +568,7 @@ pub(super) async fn run_cleanup_from_entry(
     run_cleanup(live, tail, (owner, retained, backing, identity, context)).await
 }
 
-async fn run_cleanup(
+pub(super) async fn run_cleanup(
     mut live: MemoryOperation,
     mut tail: MemoryOperation,
     (mut owner, retained, backing, identity, context): (

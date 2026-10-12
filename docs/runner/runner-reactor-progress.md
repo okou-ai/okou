@@ -80,6 +80,22 @@ a completion observer cannot release that lease. Accepting runtimes must retain
 these owners through their explicit reconciliation boundary before dependent
 teardown.
 
+Supplied-policy ordinary pool batches, replacement and aged retirement adopt
+the same mandatory cleanup owner before yielding. A completed result alone does
+not release its original full lease: batches claim and release it explicitly,
+while aged replenishment claims it for new preparation. Dropped observers and
+required saving failures retain the original resources, home context and lease
+in the joined activation registry. Aged preemption releases CPU admission while
+joining required saving; it releases the logical lease only after proven cleanup,
+independently of a held status publication.
+
+Logical eviction still transfers full-profile leases synchronously through atomic
+substitution, without waiting for old backing exit. Its accepted resource owner
+records that explicit transfer and uses the same mandatory saving engine. Only
+completed physical custody is released; failed saving stays recoverable through
+the activation registry without retaining or releasing the replacement lease.
+This transfer grants no physical memory credit.
+
 The supplied-policy speculative component keeps a
 `GuardedSpeculativeAdmission` outside preparation/rollback observation futures.
 Its actual provider claim is accepted by the joined Supervisor tracker before

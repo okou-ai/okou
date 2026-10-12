@@ -19,6 +19,12 @@ async fn accepted_replacement_survives_receiver_drop_and_joins_shutdown_through_
     kill.release_one();
     tokio::time::timeout(WAIT, shutdown).await.unwrap();
     old.assert_cached_bytes().await;
+    assert_eq!(fixture.budget.allocated(), (4, 4096, 2));
+    let owners = fixture.tracker.take_retained_activation_owners().unwrap();
+    assert_eq!(owners.len(), 1);
+    assert_eq!(owners[0].sandbox_id(), old.id);
+    assert!(owners[0].cleanup_completed());
+    drop(owners);
     assert_eq!(fixture.budget.allocated(), (2, 2048, 1));
     assert_eq!(
         fixture
@@ -52,10 +58,22 @@ async fn lost_grant_producer_preserves_owners_and_accepted_provider_panic_keeps_
                 .push_kill_panic("synthetic retired provider panic");
             old.confirm_exit();
             let mut result = fixture.insert(&mut incoming).await.unwrap();
-            let completion = complete(result.retirement.as_mut().unwrap()).await;
-            assert_eq!(completion.outcome, DestroyOutcome::Uncertain);
+            let completion = result
+                .retirement
+                .as_mut()
+                .unwrap()
+                .join()
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(matches!(
+                completion,
+                runner_lifecycle::idle_pool::ActivationCleanupOutcome::NoProgress(_)
+            ));
             assert!(fixture.operations.snapshot().unwrap().uncertain > 0);
-            drop(completion);
+            assert_eq!(fixture.budget.allocated(), (4, 4096, 2));
+            old.assert_active_bytes().await;
+            assert_eq!(old.overrides.destroy_call_count(), 0);
         } else {
             fixture.operations =
                 HostMemoryOperations::new(policy(), Arc::new(PanickingSource)).unwrap();

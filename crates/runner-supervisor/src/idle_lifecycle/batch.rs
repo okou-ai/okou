@@ -1,7 +1,8 @@
 //! Independently owned, fixed guarded batches for prune, drain and shutdown.
 
 use runner_lifecycle::idle_pool::{
-    IdleRetirementBatchScope, IdleRetirementEnvelope, IdleRetirementSelection, IdleSandboxIdentity,
+    ActivationCleanupOutcome, IdleRetirementBatchScope, IdleRetirementEnvelope,
+    IdleRetirementSelection, IdleSandboxIdentity,
 };
 use runner_lifecycle::status::StatusPersistenceError;
 
@@ -135,14 +136,16 @@ async fn retire_selection(
         .task;
     tracker.notify_reuse_state();
     let outcome = match task.join().await {
-        Ok(Ok(result)) => {
-            // Release this full logical lease at real completion, even while
-            // another original entry is still waiting for admission or exit.
-            let outcome = result.outcome;
-            drop(result.budget_lease);
-            outcome
+        Ok(Ok(ActivationCleanupOutcome::Completed { .. })) => match task.take_completed_lease() {
+            Ok(lease) => {
+                drop(lease);
+                DestroyOutcome::Completed
+            }
+            Err(_) => DestroyOutcome::Uncertain,
+        },
+        Ok(Ok(ActivationCleanupOutcome::NoProgress(_))) | Ok(Err(_)) | Err(_) => {
+            DestroyOutcome::Uncertain
         }
-        Ok(Err(_)) | Err(_) => DestroyOutcome::Uncertain,
     };
     Ok(outcome)
 }

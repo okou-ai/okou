@@ -211,7 +211,9 @@ async fn lost_observation_producer_is_not_started_and_accepted_provider_panic_is
             assert_eq!(report.uncertain, 1);
             assert!(report.not_started.is_empty());
             assert!(fixture.pool.lock().await.is_empty());
-            assert_eq!(fixture.budget.allocated(), (0, 0, 0));
+            assert_eq!(fixture.budget.allocated(), (2, 2048, 1));
+            home.assert_active_bytes().await;
+            assert_eq!(home.overrides.destroy_call_count(), 0);
         } else {
             assert_eq!(report.uncertain, 0);
             assert_eq!(

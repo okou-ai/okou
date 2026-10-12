@@ -9,7 +9,7 @@ mod admission;
 mod ownership;
 
 impl BatchFixture {
-    async fn logical(&self, vcpu: u32, memory_mb: u32) -> GuardedIdlePressureResult {
+    pub(super) async fn logical(&self, vcpu: u32, memory_mb: u32) -> GuardedIdlePressureResult {
         self.logical_request(IdlePressureRequest {
             run_id: RunId::new_v4(),
             reuse_key: None,

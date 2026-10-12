@@ -351,9 +351,8 @@ async fn guarded_aged_status_wait_keeps_cleanup_owned_and_releases_foreground_pe
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(owner.fixture.budget.allocated(), (0, 0, 0));
-    let foreground_budget =
-        ResourceBudget::try_reserve_lease(&owner.fixture.budget, 16, 16384).unwrap();
+    assert_eq!(owner.fixture.budget.allocated(), (2, 2048, 1));
+    assert!(ResourceBudget::try_reserve_lease(&owner.fixture.budget, 16, 16384).is_none());
     assert!(owner.fixture.operations.snapshot().unwrap().started > 0);
     let tracker = owner.fixture.tracker.clone();
     let shutdown = tracker.close_and_wait();
@@ -361,6 +360,17 @@ async fn guarded_aged_status_wait_keeps_cleanup_owned_and_releases_foreground_pe
     assert!(futures_util::poll!(&mut shutdown).is_pending());
     home.confirm_exit();
     kill.release_one();
+    let foreground_budget = tokio::time::timeout(
+        WAIT,
+        ResourceBudget::substitute_leases_when_available(
+            &owner.fixture.budget,
+            &mut Vec::new(),
+            16,
+            16384,
+        ),
+    )
+    .await
+    .unwrap();
     tokio::time::timeout(WAIT, shutdown).await.unwrap();
     assert!(owner.blank.create_configs().is_empty());
     drop(held);
@@ -387,5 +397,51 @@ async fn uncertain_aged_provider_cleanup_keeps_physical_coverage_and_never_creat
     ));
     assert!(owner.blank.create_configs().is_empty());
     assert!(owner.fixture.operations.snapshot().unwrap().uncertain > 0);
+    assert_eq!(owner.fixture.budget.allocated(), (2, 2048, 1));
+    assert_eq!(home.overrides.destroy_call_count(), 0);
+    home.assert_active_bytes().await;
     owner.fixture.recover().await;
+}
+
+#[tokio::test]
+async fn guarded_aged_publication_refusal_retains_original_home_and_full_lease() {
+    let (mut owner, mut home) = AgedFixture::new().await;
+    let capacity =
+        runner_host::lock::acquire(runner_host::paths::home_image_cache_capacity_lock_path(
+            &home.cache.paths().base_dir().join("locks"),
+        ))
+        .await
+        .unwrap();
+    home.confirm_exit();
+    owner.start().await;
+    assert!(matches!(
+        owner.finish().await,
+        BlankPrepareResult::Failed(_)
+    ));
+    assert!(owner.blank.create_configs().is_empty());
+    assert_eq!(owner.fixture.budget.allocated(), (2, 2048, 1));
+    assert_eq!(home.overrides.destroy_call_count(), 0);
+    home.assert_active_bytes().await;
+    owner.fixture.tracker.close_and_wait().await;
+    assert_eq!(
+        owner
+            .fixture
+            .operations
+            .close_and_wait()
+            .await
+            .unwrap()
+            .uncertain,
+        1
+    );
+    let retained = owner
+        .fixture
+        .tracker
+        .take_retained_activation_owners()
+        .unwrap();
+    assert_eq!(retained.len(), 1);
+    assert_eq!(retained[0].sandbox_id(), home.id);
+    assert!(!retained[0].cleanup_completed());
+    drop(capacity);
+    drop(retained);
+    assert_eq!(owner.fixture.budget.allocated(), (0, 0, 0));
 }
