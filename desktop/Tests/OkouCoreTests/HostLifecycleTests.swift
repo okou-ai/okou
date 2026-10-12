@@ -154,7 +154,9 @@ private final class PendingResponse: @unchecked Sendable {
   private let lock = NSLock()
   private var connection: URLProtocolFixture?
   func hold(_ value: URLProtocolFixture) { lock.withLock { connection = value } }
-  func reply(_ value: JSONValue) { lock.withLock { connection }!.reply(value) }
+  func reply(_ value: JSONValue, status: Int = 200) {
+    lock.withLock { connection }!.reply(value, status: status)
+  }
 }
 
 private final class CompletionFlag: @unchecked Sendable {
