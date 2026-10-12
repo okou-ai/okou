@@ -17,6 +17,7 @@ export interface ReplayProof {
 export interface RunWssProbe {
   readonly state: RunWssState;
   readonly bootstrapStatuses: readonly number[];
+  readonly hasUnexpectedFrames: boolean;
   connect(runId: string, expectedUrl: string): Promise<void>;
   echo(): Promise<readonly number[]>;
   replay(): Promise<ReplayProof>;
@@ -74,6 +75,9 @@ export function createRunWssProbe(
     },
     get bootstrapStatuses() {
       return [...statuses];
+    },
+    get hasUnexpectedFrames() {
+      return frameError;
     },
     async connect(runId, expectedUrl) {
       if (transport || lifetime.signal.aborted)

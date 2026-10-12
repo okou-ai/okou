@@ -213,9 +213,13 @@ async function peer(options: PeerOptions = {}) {
       origin,
       apiOrigin,
       paths,
-      async revoke() {
+      async revoke(withUnexpectedFrame = false) {
         terminal = true;
-        for (const socket of sockets) socket.close(1000);
+        for (const socket of sockets) {
+          if (withUnexpectedFrame)
+            socket.send(Buffer.from([99]), { binary: true });
+          socket.close(1000);
+        }
       },
       async close() {
         if (!page.isClosed()) await closeRunWssProbe(page);
@@ -278,6 +282,18 @@ test("corrupted peer echo fails instead of recording a successful acceptance", a
       await fixture.page.evaluate(() => window.__runWssProbe),
       undefined,
     );
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("unexpected Guest bytes after echo prevent successful terminal acceptance", async () => {
+  const fixture = await peer();
+  try {
+    await install(fixture.page, fixture.origin);
+    await verifyRunWssEcho(fixture.page, RUN, TARGET, false);
+    await fixture.revoke(true);
+    await assert.rejects(verifyRunWssRevocation(fixture.page, RUN));
   } finally {
     await fixture.close();
   }

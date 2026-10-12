@@ -85,10 +85,15 @@ export async function verifyRunWssRevocation(
     undefined,
     { timeout: 30_000 },
   );
-  const statuses = await page.evaluate(
-    () => window.__runWssProbe?.bootstrapStatuses,
-  );
-  expect(statuses?.at(-1)).toBe(404);
+  const outcome = await page.evaluate(() => {
+    if (!window.__runWssProbe) throw new Error("Browser probe missing");
+    return {
+      statuses: window.__runWssProbe.bootstrapStatuses,
+      hasUnexpectedFrames: window.__runWssProbe.hasUnexpectedFrames,
+    };
+  });
+  expect(outcome.hasUnexpectedFrames).toBe(false);
+  expect(outcome.statuses.at(-1)).toBe(404);
   const freshStatus = await page.evaluate(async (id) => {
     if (!window.__runWssProbe) throw new Error("Browser probe missing");
     return await window.__runWssProbe.bootstrapStatus(id);
