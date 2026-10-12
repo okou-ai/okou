@@ -39,7 +39,7 @@ export const ingestXResourceUsage$ = command(
     const actor = { orgId: auth.orgId, userId: auth.userId, runId: body.runId };
     const db = set(writeDb$);
     const outcome = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0349; new non-billing transactions are prohibited.
+      // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: ordered source reservations, global resource claims, billable winner quantities and immutable Run attribution must commit or roll back together; single-statement alternative: one snapshot cannot read committed conflict receipts or fresh Run completion after native waits, so later READ COMMITTED clock and Run checks must reject the whole batch without leaving claims or placeholders.
       db.transaction(
         async (tx) => {
           const [run] = await tx.select().from(xUsageRunQuery(actor));
