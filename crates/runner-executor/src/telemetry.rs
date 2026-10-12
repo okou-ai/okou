@@ -26,6 +26,7 @@ pub(crate) use session_history::{
 
 mod dns_readiness;
 mod history_transfer;
+mod rejection;
 mod session_history;
 
 pub(crate) use history_transfer::{
@@ -1052,7 +1053,22 @@ async fn send_telemetry(
 
     match req.send("telemetry").await {
         Ok(resp) if !resp.status().is_success() => {
-            warn!(run_id = %run_id, status = %resp.status(), "telemetry flush rejected");
+            let status = resp.status();
+            let diagnostic = if status == reqwest::StatusCode::BAD_REQUEST {
+                rejection::read(resp, &payload).await
+            } else {
+                None
+            };
+            warn!(
+                run_id = %run_id,
+                status = %status,
+                runner_version = payload.runner_version,
+                operation_count = payload.sandbox_operations.len(),
+                rejection_field = diagnostic.as_ref().map(|value| value.schema_field.as_str()),
+                rejection_operation_index = diagnostic.as_ref().and_then(|value| value.operation_index),
+                rejection_operation = diagnostic.as_ref().and_then(|value| value.operation),
+                "telemetry flush rejected"
+            );
         }
         Err(error) => match &error {
             runner_provider::ProviderError::ApiTransport(api_error) => warn!(
@@ -1986,6 +2002,218 @@ mod tests {
         assert!(!event_debug.contains(SANDBOX_ID));
         assert!(!event_debug.contains("oom-evidence-token-secret"));
         assert!(!event_debug.contains(&evidence.operation_id));
+    }
+
+    #[tokio::test]
+    async fn home_startup_http_payload_matches_shared_contract_fixture() {
+        let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
+            "200 OK",
+            r#"{"success":true}"#,
+        ))])
+        .await;
+        let mut telemetry = JobTelemetry::new(
+            http_client_for_api_url(&server.url()),
+            RunId::from(uuid::Uuid::nil()),
+            "startup-token".to_owned(),
+            None,
+        );
+        telemetry.record_api_to_spawn(
+            Duration::from_millis(125),
+            RunnerStartupPath::Home,
+            SandboxReuseResult::PoolMiss,
+        );
+        telemetry.record_api_to_agent_ready(
+            Duration::from_millis(150),
+            RunnerStartupPath::Home,
+            SandboxReuseResult::PoolMiss,
+        );
+        telemetry.flush().await;
+        let requests = server.assert_finished_with_requests().await;
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].starts_with("POST /api/webhooks/agent/telemetry "));
+        let (_, body) = requests[0].split_once("\r\n\r\n").unwrap();
+        let actual: serde_json::Value = serde_json::from_str(body).unwrap();
+        let mut expected: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../turbo/packages/api-contracts/src/contracts/__tests__/fixtures/runner-home-startup-telemetry.json"
+        ))
+        .unwrap();
+        expected["runnerVersion"] = serde_json::json!(RUNNER_VERSION);
+        for (expected_op, actual_op) in expected["sandboxOperations"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .zip(actual["sandboxOperations"].as_array().unwrap())
+        {
+            DateTime::parse_from_rfc3339(actual_op["ts"].as_str().unwrap()).unwrap();
+            expected_op["ts"] = actual_op["ts"].clone();
+        }
+        assert_eq!(actual, expected);
+    }
+
+    #[tokio::test]
+    async fn telemetry_rejection_attributes_schema_operation_and_version_without_values() {
+        let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
+            "400 Bad Request",
+            r#"{"error":{"code":"BAD_REQUEST","message":"sandboxOperations.1.runner_startup_path: response-private-value"}}"#,
+        ))])
+        .await;
+        let captured = CapturedEvents::default();
+        let subscriber = tracing_subscriber::registry().with(captured.clone());
+        let mut telemetry = JobTelemetry::new(
+            http_client_for_api_url(&server.url()),
+            RunId::from(uuid::Uuid::nil()),
+            "telemetry-private-token".to_owned(),
+            None,
+        );
+        telemetry.record(
+            "telemetry-private-action",
+            Duration::ZERO,
+            false,
+            Some("telemetry-private-error"),
+        );
+        telemetry.record_api_to_spawn(
+            Duration::from_millis(125),
+            RunnerStartupPath::Home,
+            SandboxReuseResult::PoolMiss,
+        );
+        telemetry.flush().with_subscriber(subscriber).await;
+        let requests = server.assert_finished_with_requests().await;
+        assert_eq!(requests.len(), 1);
+        let event = captured
+            .entries()
+            .into_iter()
+            .find(|event| {
+                event
+                    .fields
+                    .get("message")
+                    .is_some_and(|message| message == "telemetry flush rejected")
+            })
+            .expect("telemetry rejection should be logged");
+        assert_eq!(event.level, Level::WARN);
+        assert_eq!(event.fields["runner_version"], RUNNER_VERSION);
+        assert_eq!(event.fields["operation_count"], "2");
+        assert_eq!(event.fields["rejection_field"], "runner_startup_path");
+        assert_eq!(event.fields["rejection_operation_index"], "1");
+        assert_eq!(event.fields["rejection_operation"], "api_to_spawn");
+        let event_debug = format!("{event:#?}");
+        for secret in [
+            "response-private-value",
+            "telemetry-private-token",
+            "telemetry-private-action",
+            "telemetry-private-error",
+        ] {
+            assert!(!event_debug.contains(secret));
+        }
+    }
+
+    #[tokio::test]
+    async fn telemetry_rejection_keeps_unusable_responses_unattributed() {
+        let valid = r#"{"error":{"code":"BAD_REQUEST","message":"sandboxOperations.0.runner_startup_path: response-private-value"}}"#;
+        for (status, body) in [
+            ("400 Bad Request", "{"),
+            (
+                "400 Bad Request",
+                r#"{"error":{"code":"BAD_REQUEST","message":"Invalid JSON in request body"}}"#,
+            ),
+            (
+                "400 Bad Request",
+                r#"{"error":{"code":"PRIVATE_CODE","message":"sandboxOperations.0.runner_startup_path: response-private-value"}}"#,
+            ),
+            (
+                "400 Bad Request",
+                r#"{"error":{"code":"BAD_REQUEST","message":"sandboxOperations.0.response-private-key: response-private-value"}}"#,
+            ),
+            (
+                "400 Bad Request",
+                r#"{"error":{"code":"BAD_REQUEST","message":"sandboxOperations.1.runner_startup_path: response-private-value"}}"#,
+            ),
+            ("500 Internal Server Error", valid),
+        ] {
+            let server =
+                RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(status, body))])
+                    .await;
+            let captured = CapturedEvents::default();
+            let subscriber = tracing_subscriber::registry().with(captured.clone());
+            let mut telemetry = JobTelemetry::new(
+                http_client_for_api_url(&server.url()),
+                RunId::from(uuid::Uuid::nil()),
+                "telemetry-private-token".to_owned(),
+                None,
+            );
+            telemetry.record_api_to_spawn(
+                Duration::ZERO,
+                RunnerStartupPath::Home,
+                SandboxReuseResult::PoolMiss,
+            );
+            telemetry.flush().with_subscriber(subscriber).await;
+            server.assert_finished().await;
+            let event = captured
+                .entries()
+                .into_iter()
+                .find(|event| {
+                    event
+                        .fields
+                        .get("message")
+                        .is_some_and(|message| message == "telemetry flush rejected")
+                })
+                .expect("unattributed rejection should still be logged");
+            assert!(!event.fields.contains_key("rejection_field"));
+            assert!(!event.fields.contains_key("rejection_operation_index"));
+            assert!(!event.fields.contains_key("rejection_operation"));
+            assert!(!format!("{event:#?}").contains("private"));
+        }
+    }
+
+    #[tokio::test]
+    async fn telemetry_rejection_bounds_response_bytes_and_arbitrary_action_names() {
+        for size in [4096, 4097] {
+            let mut body = serde_json::json!({
+                "error": {
+                    "code": "BAD_REQUEST",
+                    "message": "sandboxOperations.0.action_type: response-private-value",
+                },
+                "padding": "",
+            });
+            let padding = size - serde_json::to_vec(&body).unwrap().len();
+            body["padding"] = serde_json::json!("x".repeat(padding));
+            let body = serde_json::to_string(&body).unwrap();
+            assert_eq!(body.len(), size);
+            let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
+                "400 Bad Request",
+                &body,
+            ))])
+            .await;
+            let captured = CapturedEvents::default();
+            let subscriber = tracing_subscriber::registry().with(captured.clone());
+            let mut telemetry = JobTelemetry::new(
+                http_client_for_api_url(&server.url()),
+                RunId::from(uuid::Uuid::nil()),
+                "telemetry-private-token".to_owned(),
+                None,
+            );
+            telemetry.record("telemetry-private-action", Duration::ZERO, true, None);
+            telemetry.flush().with_subscriber(subscriber).await;
+            server.assert_finished().await;
+            let event = captured
+                .entries()
+                .into_iter()
+                .find(|event| {
+                    event
+                        .fields
+                        .get("message")
+                        .is_some_and(|message| message == "telemetry flush rejected")
+                })
+                .expect("oversize and attributed rejections should be logged");
+            if size == 4096 {
+                assert_eq!(event.fields["rejection_field"], "action_type");
+                assert_eq!(event.fields["rejection_operation_index"], "0");
+            } else {
+                assert!(!event.fields.contains_key("rejection_field"));
+                assert!(!event.fields.contains_key("rejection_operation_index"));
+            }
+            assert!(!event.fields.contains_key("rejection_operation"));
+            assert!(!format!("{event:#?}").contains("private"));
+        }
     }
 
     #[tokio::test]

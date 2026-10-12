@@ -13,6 +13,7 @@ import { oomEvidenceSchema } from "@okouai/api-contracts/contracts/oom-evidence"
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import homeStartupTelemetry from "../../../../../../packages/api-contracts/src/contracts/__tests__/fixtures/runner-home-startup-telemetry.json";
 
 import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
 import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
@@ -2147,6 +2148,62 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
         "sandbox-telemetry-network",
         "sandbox-telemetry-system",
       ]);
+      await flushWaitUntilForTest();
+    });
+  });
+
+  it("accepts Runner home startup telemetry while preserving validation and run ownership", async () => {
+    const {
+      runId,
+      headers,
+      run: own,
+    } = await createEventWebhookRun(`home startup telemetry ${randomUUID()}`);
+    await own(async () => {
+      const body = { ...homeStartupTelemetry, runId };
+      for (const startupPath of ["home", "workspace", "sandbox", "cold"]) {
+        const response = await api.requestAgentTelemetryUnchecked(
+          {
+            ...body,
+            sandboxOperations: body.sandboxOperations.map((operation) => {
+              return { ...operation, runner_startup_path: startupPath };
+            }),
+          },
+          headers,
+          [200],
+        );
+        expect(response.body).toStrictEqual({ success: true, id: runId });
+      }
+
+      const invalid = await api.requestAgentTelemetryUnchecked(
+        {
+          ...body,
+          sandboxOperations: body.sandboxOperations.map((operation) => {
+            return { ...operation, runner_startup_path: "warm" };
+          }),
+        },
+        headers,
+        [400],
+      );
+      expectApiError(invalid.body);
+      expect(invalid.body.error.code).toBe("BAD_REQUEST");
+      expect(invalid.body.error.message).toMatch(
+        /^sandboxOperations\.0\.runner_startup_path: /u,
+      );
+
+      const mismatch = await api.requestAgentTelemetryUnchecked(
+        { ...body, runId: randomUUID() },
+        headers,
+        [401],
+      );
+      expectApiError(mismatch.body);
+      expect(mismatch.body.error.code).toBe("UNAUTHORIZED");
+      const unauthenticated = await api.requestAgentTelemetryUnchecked(
+        body,
+        {},
+        [401],
+      );
+      expectApiError(unauthenticated.body);
+      expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
       await flushWaitUntilForTest();
     });
   });
