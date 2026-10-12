@@ -550,7 +550,7 @@ test("resolves a public snapshot to copied bytes without exposing its private so
     kind: "file",
     filename: "report.pdf",
     contentType: "application/pdf",
-    url: resolved.body.url,
+    url: resolved.body.downloadUrl,
   });
   const cloneFile = await accept(
     downloads.files({
