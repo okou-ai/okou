@@ -397,11 +397,6 @@
       "owner": "enqueueResultEmail$"
     },
     {
-      "id": "TX-0174",
-      "file": "turbo/apps/api/src/signals/services/legacy-plan-invoice.service.ts",
-      "owner": "commitLegacyPlanInvoice$"
-    },
-    {
       "id": "TX-0176",
       "file": "turbo/apps/api/src/signals/services/mail-notification.service.ts",
       "owner": "commitMailNotification$"
