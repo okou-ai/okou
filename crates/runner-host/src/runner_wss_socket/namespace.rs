@@ -36,7 +36,7 @@ fn is_official(directory: &Path) -> io::Result<bool> {
 }
 
 fn dedicated_group() -> io::Result<Gid> {
-    let group = Group::from_name("okou-wss-caddy")?
+    let group = Group::from_name("okou-runner-caddy")?
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "WSS Caddy group missing"))?;
     if group.gid.as_raw() == 0 {
         return Err(io::Error::new(

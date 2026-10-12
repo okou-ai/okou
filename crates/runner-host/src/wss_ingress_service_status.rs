@@ -10,7 +10,7 @@ use tokio::process::Command;
 use crate::bounded_command::{BoundedCommandOutcome, run_bounded};
 
 const SYSTEMCTL: &str = "/usr/bin/systemctl";
-const WSS_INGRESS_UNIT: &str = "okou-wss-caddy.service";
+const WSS_INGRESS_UNIT: &str = "okou-runner-caddy.service";
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Missing, inactive, failed, unqueryable or timed-out services all fail closed.
@@ -49,7 +49,7 @@ mod tests {
 
     #[tokio::test]
     async fn only_the_dedicated_active_unit_reports_true() {
-        let script = "#!/bin/sh\n[ \"$1\" = is-active ] && [ \"$2\" = --quiet ] && [ \"$3\" = okou-wss-caddy.service ]\n";
+        let script = "#!/bin/sh\n[ \"$1\" = is-active ] && [ \"$2\" = --quiet ] && [ \"$3\" = okou-runner-caddy.service ]\n";
         assert!(scripted_status(script, Duration::from_secs(1)).await);
         assert!(!scripted_status("#!/bin/sh\nexit 3\n", Duration::from_secs(1)).await);
     }
