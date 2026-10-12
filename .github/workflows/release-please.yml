@@ -793,11 +793,21 @@ jobs:
               --latest=false
           fi
 
-          gh release upload "$OKOU_RELEASE_TAG" \
+          # Signed bytes already published at a versioned URL are permanent.
+          # A rerun may finish a partial upload, but must retain existing assets.
+          release_assets=$(gh release view "$OKOU_RELEASE_TAG" \
+            --repo "${{ github.repository }}" --json assets --jq '.assets[].name')
+          for artifact in \
             "${{ steps.desktop-artifacts.outputs.okou_zip_path }}" \
-            "${{ steps.desktop-artifacts.outputs.okou_dmg_path }}" \
-            --repo "${{ github.repository }}" \
-            --clobber
+            "${{ steps.desktop-artifacts.outputs.okou_dmg_path }}"; do
+            asset_name=$(basename "$artifact")
+            if printf '%s\n' "$release_assets" | grep -qx "$asset_name"; then
+              echo "Retaining published Desktop asset: $asset_name"
+            else
+              gh release upload "$OKOU_RELEASE_TAG" "$artifact" \
+                --repo "${{ github.repository }}"
+            fi
+          done
 
       - name: Calculate duration
         id: duration
