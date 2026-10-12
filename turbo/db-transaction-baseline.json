@@ -167,11 +167,6 @@
       "owner": "recordIngressFailure"
     },
     {
-      "id": "TX-0090",
-      "file": "turbo/apps/api/src/signals/services/chat-event-history.service.ts",
-      "owner": "readSharedThreadChatEventHistory$"
-    },
-    {
       "id": "TX-0091",
       "file": "turbo/apps/api/src/signals/services/chat-events.command.ts",
       "owner": "appendNormalSendInput$"
