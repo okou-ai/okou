@@ -2,6 +2,8 @@ use super::*;
 use runner_lifecycle::idle_pool::{ActivationCleanupOutcome, IdleActivationState};
 use sandbox_mock::ExecMatcher;
 
+mod reclamation;
+
 #[tokio::test]
 async fn publication_refusal_retains_ordinary_batch_saving_custody_after_exact_exit() {
     let fixture = BatchFixture::new().await;

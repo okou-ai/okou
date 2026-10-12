@@ -89,6 +89,14 @@ in the joined activation registry. Aged preemption releases CPU admission while
 joining required saving; it releases the logical lease only after proven cleanup,
 independently of a held status publication.
 
+Required saving keeps its home-reclamation CPU permit when pre-exit work fails.
+Other required cleanups wait while healthy holders can finish. If every permit
+is instead held by retained failed owners, waiting cleanup returns no progress
+with its original resource, data and lease intact. Joined shutdown can then
+expose all retained owners; neither a timeout nor false exit proof releases CPU
+custody to obtain progress. Explicit owner reconciliation releases the retained
+permit and makes that capacity available again.
+
 Logical eviction still transfers full-profile leases synchronously through atomic
 substitution, without waiting for old backing exit. Its accepted resource owner
 records that explicit transfer and uses the same mandatory saving engine. Only

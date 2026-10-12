@@ -150,6 +150,14 @@ impl BatchFixture {
 
     async fn candidate(&self, key: &str, captured: bool) -> (ParkedIdleCandidate, ParkedHome) {
         let fixture = HomePromotionFixture::new(key).await;
+        self.candidate_with_home(fixture, captured)
+    }
+
+    fn candidate_with_home(
+        &self,
+        fixture: HomePromotionFixture,
+        captured: bool,
+    ) -> (ParkedIdleCandidate, ParkedHome) {
         let overrides = Arc::new(MockSandboxOverrides::new());
         add_healthy_cache_preparation_matcher(&overrides);
         let (exit, backing) = MockBackingProcess::channel();
@@ -157,7 +165,7 @@ impl BatchFixture {
         let factory: Arc<Box<dyn SandboxFactory>> = Arc::new(Box::new(
             MockSandboxFactory::with_overrides(overrides.clone()),
         ));
-        let mut candidate = ParkedIdleCandidateBuilder::new(key, lease)
+        let mut candidate = ParkedIdleCandidateBuilder::new(&fixture.reuse_key, lease)
             .with_sandbox_id(fixture.sandbox_id)
             .with_sandbox(Box::new(
                 MockSandbox::with_overrides(fixture.sandbox_id.to_string(), overrides.clone())
@@ -174,7 +182,7 @@ impl BatchFixture {
             ParkedHome {
                 _dir: fixture._dir,
                 cache: fixture.cache,
-                key: key.into(),
+                key: fixture.reuse_key,
                 id: fixture.sandbox_id,
                 exit: Some(exit),
                 overrides,

@@ -1552,6 +1552,14 @@ impl HomeImageLease {
 }
 
 impl HomeImagePromotionContext {
+    /// Required cleanup preserves CPU custody on failure while allowing queued
+    /// owners to report no progress if every slot needs explicit recovery.
+    pub async fn acquire_required_idle_home_reclamation_permit(
+        &self,
+    ) -> LifecycleResult<super::IdleHomeReclamationPermit> {
+        self.cache.idle_home_reclamation.acquire_required().await
+    }
+
     pub async fn acquire_idle_home_reclamation_permit(
         &self,
     ) -> LifecycleResult<tokio::sync::OwnedSemaphorePermit> {

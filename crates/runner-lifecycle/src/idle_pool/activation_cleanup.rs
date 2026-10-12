@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use futures_util::FutureExt;
 use sandbox::{BackingProcessIdentity, Sandbox, SandboxBackingProcess, SandboxFactory, SandboxId};
 
-use crate::home_image_cache::HomeImagePromotionContext;
+use crate::home_image_cache::{HomeImagePromotionContext, IdleHomeReclamationPermit};
 use crate::home_mount::{ensure_home_drive_mounted, freeze_home_drive};
 use crate::home_promotion::{PreparedHomeImagePromotion, prepare_terminal_cache_runtime};
 use crate::host_memory_operations::{
@@ -63,7 +63,7 @@ pub struct IdleActivationOwner {
     lease: Option<BudgetLease>,
     state: IdleActivationState,
     coverage: Option<Coverage>,
-    reclamation: Option<tokio::sync::OwnedSemaphorePermit>,
+    reclamation: Option<IdleHomeReclamationPermit>,
     accepted: bool,
     admission: Option<(HostMemoryOperations, IdleRetirementEnvelope)>,
     cleanup_completed: bool,
@@ -594,6 +594,9 @@ pub(super) async fn run_cleanup(
             }
         }
         Err(error) => {
+            if let Some(permit) = &mut owner.reclamation {
+                permit.retain_for_recovery();
+            }
             owner.cleanup_error = Some(error.clone());
             ActivationCleanupOutcome::NoProgress(error)
         }
@@ -626,7 +629,7 @@ async fn cleanup_phases(
                     .promotion
                     .as_ref()
                     .ok_or("required home promotion consumed")?
-                    .acquire_idle_home_reclamation_permit()
+                    .acquire_required_idle_home_reclamation_permit()
                     .await
                     .map_err(|e| e.to_string())?,
             );
