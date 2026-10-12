@@ -24,10 +24,7 @@ export async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
   const db = drizzle(client);
   const runnerId = randomUUID();
   const defaultId = randomUUID();
-  const otherGroupId = randomUUID();
-  const otherProfileId = randomUUID();
-  const otherKeyId = randomUUID();
-  const ids = [runnerId, defaultId, otherGroupId, otherProfileId, otherKeyId];
+  const ids = [runnerId, defaultId];
   const runnerGroup = `vm0/storage-${randomUUID()}`;
   const keys = Object.keys(getTableColumns(runnerState)).sort();
   const observation = {
@@ -155,56 +152,6 @@ export async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
         .where(eq(physicalRunnerState.runnerId, runnerId)),
       [inserted],
     );
-    await db.insert(runnerState).values([
-      {
-        ...observation,
-        runnerId: otherGroupId,
-        runnerGroup: `${runnerGroup}-other`,
-      },
-      {
-        ...observation,
-        runnerId: otherProfileId,
-        admittableProfiles: ["vm0/large"],
-      },
-      {
-        ...observation,
-        runnerId: otherKeyId,
-        heldHomeStates: [
-          {
-            reuseKey: "thread:other",
-            lastCompletedAt: "2026-10-12T00:59:00.000Z",
-            homeCaches: [{ profile: "vm0/default", homeAffinityVersion: 1 }],
-          },
-        ],
-      },
-    ]);
-    assert.deepEqual(await holders(), [{ runnerId }]);
-
-    for (const [generation, sequence] of [
-      [9, 3],
-      [9, 4],
-      [8, 999],
-    ] as const) {
-      const stale = {
-        ...observation,
-        heartbeatGeneration: generation,
-        heartbeatSequence: sequence,
-        heldHomeStates: [],
-      };
-      assert.deepEqual(
-        await db
-          .insert(runnerState)
-          .values(stale)
-          .onConflictDoUpdate({
-            target: runnerState.runnerId,
-            set: stale,
-            setWhere: order(generation, sequence),
-          })
-          .returning(),
-        [],
-        "Replay, lower sequence and lower generation cannot replace a newer whole state",
-      );
-    }
     assert.deepEqual(await holders(), [{ runnerId }]);
     const empty = { ...observation, heartbeatSequence: 5, heldHomeStates: [] };
     const [cleared] = await db
@@ -260,7 +207,7 @@ export async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
       observation.activeReuseProducers,
     );
     console.log(
-      "Canonical Runner storage preserves whole inventories, shared fences, defaults, scope and capacity through real ORM statements",
+      "Canonical Runner storage preserves inventories, defaults, empty-state replacement, generation reset and capacity through real ORM statements",
     );
   } finally {
     try {

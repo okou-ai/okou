@@ -171,8 +171,8 @@ are enforced by the integration ingress tests.
   `held_home_states` and existing shared heartbeat order. The production
   canonical Runner-state mapping executes real INSERT/UPSERT/SELECT/UPDATE and
   implicit RETURNING on both retained and actually contracted shapes, checking
-  preserved home/sandbox/capacity data, empty-state replacement, replay/lower
-  sequence and generation reset. This verifies executing application SQL; it
+  preserved home/sandbox/producer/capacity data, defaults, empty-state replacement
+  and generation reset. This verifies executing application SQL; it
   does not establish a deployed writer floor or consumer/rollback drain.
   Retain the validator/fixtures through #38139's deployed application-SQL
   retirement of `held_workspace_states`, `home_affinity_version`,
@@ -189,12 +189,9 @@ are enforced by the integration ingress tests.
 - `scripts/test-runner-state-contraction.ts` protects the physical Runner-state
   retirement migration. It executes the actual four-column drop against populated
   data, preserves home/sandbox/producer/capacity/order fields, and verifies replay.
-  The migration rejects unexpected indexes, checks, views, string-bodied routines
-  and inherited tables before DROP; rejection must preserve every column, row and
-  journal entry. Column-owned defaults and declared NOT NULL ownership are
-  expected. Retain it through physical deployment and the preceding SQL-consumer
-  exit gate. The current physical schema and runtime mapping share the same
-  canonical table; historical mappings exist only in the transition fixtures.
+  Retain it through physical deployment and the preceding SQL-consumer exit gate.
+  The current physical schema and runtime mapping share the same canonical table;
+  historical mappings exist only in the transition fixtures.
 
 - `scripts/test-usage-allowance-retirement.ts` protects migration
   `1356_drop_organization_usage_allowance`: positive team Allowance rows are

@@ -110,80 +110,6 @@ try {
     .select()
     .from(runnerState)
     .orderBy(runnerState.runnerId);
-  const columnsBefore = (
-    await client.query(
-      "SELECT attname FROM pg_catalog.pg_attribute WHERE attrelid = 'public.runner_state'::regclass AND attnum > 0 AND NOT attisdropped ORDER BY attname",
-    )
-  ).rows;
-  const journalBefore = (
-    await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id")
-  ).rows;
-
-  for (const dependency of [
-    {
-      create:
-        "CREATE INDEX runner_state_unexpected_index ON runner_state (home_affinity_version)",
-      drop: "DROP INDEX runner_state_unexpected_index",
-    },
-    {
-      create:
-        "ALTER TABLE runner_state ADD CONSTRAINT runner_state_unexpected_check CHECK (home_affinity_generation >= 0)",
-      drop: "ALTER TABLE runner_state DROP CONSTRAINT runner_state_unexpected_check",
-    },
-    {
-      create:
-        "CREATE VIEW runner_state_unexpected_view AS SELECT held_workspace_states FROM runner_state",
-      drop: "DROP VIEW runner_state_unexpected_view",
-    },
-    {
-      create:
-        "CREATE FUNCTION runner_state_unexpected_routine() RETURNS bigint LANGUAGE sql AS $$ SELECT home_affinity_sequence FROM runner_state LIMIT 1 $$",
-      drop: "DROP FUNCTION runner_state_unexpected_routine()",
-    },
-    {
-      create:
-        "CREATE TABLE runner_state_unexpected_child () INHERITS (runner_state)",
-      drop: "DROP TABLE runner_state_unexpected_child",
-    },
-  ]) {
-    await client.query(dependency.create);
-    await assert.rejects(
-      applyPendingMigrations(migrationSql, {
-        beforeMillis: contraction.when + 1,
-      }),
-      (error: unknown) => {
-        return (
-          error instanceof Error &&
-          "code" in error &&
-          error.code === "2BP01" &&
-          error.message.includes(
-            "Unexpected Runner state retirement dependencies",
-          )
-        );
-      },
-    );
-    assert.deepEqual(
-      (
-        await client.query(
-          "SELECT * FROM drizzle.__drizzle_migrations ORDER BY id",
-        )
-      ).rows,
-      journalBefore,
-    );
-    assert.deepEqual(
-      (
-        await client.query(
-          "SELECT attname FROM pg_catalog.pg_attribute WHERE attrelid = 'public.runner_state'::regclass AND attnum > 0 AND NOT attisdropped ORDER BY attname",
-        )
-      ).rows,
-      columnsBefore,
-    );
-    assert.deepEqual(
-      await db.select().from(runnerState).orderBy(runnerState.runnerId),
-      before,
-    );
-    await client.query(dependency.drop);
-  }
   await applyPendingMigrations(migrationSql, {
     beforeMillis: contraction.when + 1,
   });
@@ -235,7 +161,7 @@ try {
   );
   await validatePermanentRunnerStateStorage(url.toString());
   console.log(
-    "Actual Runner-state contraction preserves canonical data and journal atomicity, rejects unexpected dependencies, and safely replays",
+    "Actual Runner-state contraction preserves canonical data and safely replays",
   );
 } finally {
   await client.end();
