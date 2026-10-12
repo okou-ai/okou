@@ -3088,7 +3088,6 @@
         "unshared": "Mit keinem Agenten geteilt"
       },
       "filterWith": "Filter: {{category}}",
-      "iconUnavailable": "Integrationssymbol nicht verfügbar",
       "noConnectorsAlt": "Keine Integrationen",
       "otherCategory": "Andere",
       "remoteAccess": "Fernzugriff",

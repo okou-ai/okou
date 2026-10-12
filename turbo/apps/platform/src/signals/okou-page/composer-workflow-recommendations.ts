@@ -1,6 +1,7 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { WorkflowTemplateItem } from "@okouai/core/workflow-template-items";
+import { connectorCatalogItemBySlug } from "../external/connectors.ts";
 import type { WorkflowComposerSignals } from "./tiptap-workflow-composer.ts";
 
 export interface WorkflowRecommendationActions {
@@ -163,6 +164,33 @@ export const WORKFLOW_RECOMMENDATIONS = [
 
 export type WorkflowRecommendation = (typeof WORKFLOW_RECOMMENDATIONS)[number];
 export type WorkflowRecommendationId = WorkflowRecommendation["id"];
+
+// The recommendations are fixed, so their lookups are built once, one
+// connector each: drawing a handful of marks must not pull the full connector
+// catalog, which holds thousands of entries and takes most of a second.
+const recommendationConnectorItems$ = [
+  ...new Set(
+    WORKFLOW_RECOMMENDATIONS.flatMap((item) => {
+      return item.connectors;
+    }),
+  ),
+].map((connectorSlug) => {
+  return connectorCatalogItemBySlug(connectorSlug);
+});
+
+/** The catalog entry of every connector a recommendation names, by slug. */
+export const workflowRecommendationConnectors$ = computed(async (get) => {
+  const items = await Promise.all(
+    recommendationConnectorItems$.map((item$) => {
+      return get(item$);
+    }),
+  );
+  return new Map(
+    items.flatMap((item) => {
+      return item ? [[item.slug, item] as const] : [];
+    }),
+  );
+});
 
 export function createWorkflowRecommendationSignals(
   visible$: Computed<boolean>,

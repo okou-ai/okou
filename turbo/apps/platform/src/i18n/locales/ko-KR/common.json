@@ -3069,7 +3069,6 @@
         "unshared": "어떤 에이전트와도 공유되지 않음"
       },
       "filterWith": "필터: {{category}}",
-      "iconUnavailable": "커넥터 아이콘을 사용할 수 없습니다",
       "noConnectorsAlt": "커넥터 없음",
       "otherCategory": "기타",
       "remoteAccess": "원격 액세스",

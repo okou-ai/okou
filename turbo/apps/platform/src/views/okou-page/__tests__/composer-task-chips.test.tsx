@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import {
@@ -604,6 +605,27 @@ test("The Workflow shelf carries every recommendation on one rail without changi
   ]);
   expect(editor).toHaveTextContent("Keep this context");
   expect(capture.sentMessages).toHaveLength(0);
+});
+
+// A cover's marks are its own connectors' catalog entries, so they never wait
+// on the full catalog, which holds every connector there is.
+test("Workflow covers draw their marks without waiting for the full connector catalog", async () => {
+  const fullCatalog = context.mocks.deferred<void>();
+  context.mocks.api(
+    connectorCatalogContract.status,
+    async ({ respond, withSignal }) => {
+      await withSignal(fullCatalog.promise);
+      return respond(200, { connectors: [] });
+    },
+  );
+  await selectWorkflow();
+  const [morning] = workflowTiles(
+    screen.getByRole("group", { name: "Workflows" }),
+  );
+  await waitFor(() => {
+    expect(morning?.querySelectorAll("img")).toHaveLength(3);
+  });
+  expect(fullCatalog.settled()).toBeFalsy();
 });
 
 test("Browse workflows opens the existing template picker in Workflow and preserves the draft", async () => {
