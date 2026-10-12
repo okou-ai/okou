@@ -270,57 +270,6 @@ export const sendDiscordChatReply$ = command(
   },
 );
 
-const sendIngressNotice$ = command(
-  async (
-    { set },
-    db: Db,
-    notice: DiscordIngressNotice,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const [owner] = await db
-      .select({
-        userId: discordOrgConnections.userId,
-        orgId: discordOrgInstallations.orgId,
-      })
-      .from(discordChatIngress)
-      .innerJoin(
-        discordOrgConnections,
-        eq(discordOrgConnections.id, discordChatIngress.connectionId),
-      )
-      .innerJoin(
-        discordOrgInstallations,
-        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
-      )
-      .where(
-        and(
-          eq(discordChatIngress.id, notice.ingressId),
-          eq(discordChatIngress.connectionId, notice.connectionId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!owner) {
-      return;
-    }
-    const access = await set(
-      currentDestinationAccess$,
-      db,
-      {
-        connectionId: notice.connectionId,
-        orgId: owner.orgId,
-        userId: owner.userId,
-        channelId: notice.channelId,
-        routeId: null,
-      },
-      signal,
-    );
-    if (!access) {
-      return;
-    }
-    await postParts(access.botToken, notice.channelId, notice.content, signal);
-  },
-);
-
 /**
  * Fire and forget: call once, after the ingress became terminal or its input
  * was enqueued. Failures are logged and never propagate to the caller.
@@ -333,7 +282,54 @@ export const sendDiscordIngressNotice$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const sent = await settle(
-      set(sendIngressNotice$, db, notice, signal),
+      (async (): Promise<void> => {
+        const [owner] = await db
+          .select({
+            userId: discordOrgConnections.userId,
+            orgId: discordOrgInstallations.orgId,
+          })
+          .from(discordChatIngress)
+          .innerJoin(
+            discordOrgConnections,
+            eq(discordOrgConnections.id, discordChatIngress.connectionId),
+          )
+          .innerJoin(
+            discordOrgInstallations,
+            eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+          )
+          .where(
+            and(
+              eq(discordChatIngress.id, notice.ingressId),
+              eq(discordChatIngress.connectionId, notice.connectionId),
+            ),
+          )
+          .limit(1);
+        signal.throwIfAborted();
+        if (!owner) {
+          return;
+        }
+        const access = await set(
+          currentDestinationAccess$,
+          db,
+          {
+            connectionId: notice.connectionId,
+            orgId: owner.orgId,
+            userId: owner.userId,
+            channelId: notice.channelId,
+            routeId: null,
+          },
+          signal,
+        );
+        if (!access) {
+          return;
+        }
+        await postParts(
+          access.botToken,
+          notice.channelId,
+          notice.content,
+          signal,
+        );
+      })(),
       signal,
     );
     if (!sent.ok) {
