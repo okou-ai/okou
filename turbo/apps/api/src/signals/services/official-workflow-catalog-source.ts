@@ -1,5 +1,5 @@
 import {
-  OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
+  OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
   type OfficialWorkflowSourceCatalog,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 
@@ -49,7 +49,7 @@ Do not read application database tables or use internal application APIs, signed
  */
 export const OFFICIAL_WORKFLOW_SOURCE_CATALOG: OfficialWorkflowSourceCatalog =
   Object.freeze<OfficialWorkflowSourceCatalog>({
-    schemaVersion: OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
+    schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
     definitions: [
       {
         name: "morning-brief",

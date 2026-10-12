@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import {
-  OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
+  OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
   type OfficialWorkflowBlueprint,
   type OfficialWorkflowSourceCatalog,
   type OfficialWorkflowSourceDefinition,
@@ -42,7 +42,7 @@ function catalog(
   definitions: OfficialWorkflowSourceCatalog["definitions"],
 ): OfficialWorkflowSourceCatalog {
   return {
-    schemaVersion: OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
+    schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
     definitions,
   };
 }
@@ -836,7 +836,7 @@ describe("Official Workflow catalog release boundary", () => {
       unknownField: "must fail closed",
     };
     const invalid = await syncCatalog({
-      schemaVersion: OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
+      schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
       definitions: [activeDefinition(name), invalidDefinition],
     });
     expect(invalid.body).toMatchObject({
@@ -846,7 +846,7 @@ describe("Official Workflow catalog release boundary", () => {
     });
 
     const invalidName = await syncCatalog({
-      schemaVersion: OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
+      schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
       definitions: [
         { ...activeDefinition(name), name: "Invalid Definition Name" },
       ],
@@ -899,7 +899,7 @@ describe("Official Workflow catalog release boundary", () => {
     );
 
     const invalidParameter = await syncCatalog({
-      schemaVersion: OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
+      schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
       definitions: [
         {
           ...activeDefinition(name),
@@ -925,7 +925,7 @@ describe("Official Workflow catalog release boundary", () => {
     );
 
     const unknownRuntimeSetting = await syncCatalog({
-      schemaVersion: OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
+      schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
       definitions: [
         {
           ...activeDefinition(name),
@@ -944,7 +944,7 @@ describe("Official Workflow catalog release boundary", () => {
 
     for (const runtime of [{}, { resultEmail: "yes" }]) {
       const malformedRuntime = await syncCatalog({
-        schemaVersion: OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
+        schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
         definitions: [
           {
             ...activeDefinition(name),
@@ -973,7 +973,7 @@ describe("Official Workflow catalog release boundary", () => {
 
     const blueprintWithUndefined = scheduleBlueprint("daily");
     const explicitUndefined = await syncCatalog({
-      schemaVersion: OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
+      schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
       definitions: [
         {
           ...activeDefinition(name),

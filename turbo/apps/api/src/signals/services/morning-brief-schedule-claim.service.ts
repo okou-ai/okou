@@ -133,7 +133,6 @@ export const isCanonicalMorningBriefAutomation$ = command(
         scheduleType: workflowAutomations.scheduleType,
         blueprintKey: workflowAutomations.officialBlueprintKey,
         reconciliationStatus: workflowAutomations.officialReconciliationStatus,
-        resultEmailEnabled: workflowAutomations.officialResultEmailEnabled,
       })
       .from(workflowAutomations)
       .where(
@@ -152,9 +151,7 @@ export const isCanonicalMorningBriefAutomation$ = command(
       current.kind === "schedule" &&
       current.scheduleType === "cron" &&
       current.blueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY &&
-      current.reconciliationStatus === "current" &&
-      // Both legacy completion mail and Agent-controlled delivery are valid.
-      current.resultEmailEnabled !== null
+      current.reconciliationStatus === "current"
     );
   },
 );

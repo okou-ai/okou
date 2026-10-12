@@ -1,15 +1,10 @@
 import { convert } from "html-to-text";
 import MarkdownIt from "markdown-it";
-import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
-import { safeSync, safeUrlParse } from "../utils";
-import { renderEmailLayout } from "./email-layout";
+import { safeUrlParse } from "../signals/utils";
 
-const OFFICIAL_AUTOMATION_RESULT_EMAIL_HTML_MAX_BYTES = 96 * 1024;
-const MORNING_BRIEF_HERO_URL = "https://a.okou.io/vfv041yxil.png";
-
-const SAFE_LINK_INFO = "official-email-safe-link";
-const UNSAFE_LINK_INFO = "official-email-unsafe-link";
+const SAFE_LINK_INFO = "email-safe-link";
+const UNSAFE_LINK_INFO = "email-unsafe-link";
 const LINK_STYLE =
   "color:#171717;text-decoration:underline;text-decoration-color:#f5d90a;text-underline-offset:3px";
 const PARAGRAPH_STYLE =
@@ -34,26 +29,7 @@ const HEADING_STYLES: Readonly<Record<string, string>> = {
   h6: "margin:16px 0 8px;font-size:12px;line-height:1.45",
 };
 
-interface OfficialAutomationResultEmailRenderProps {
-  readonly title: string;
-  readonly resultText: string;
-  readonly runUrl: string;
-  readonly manageUrl: string;
-}
-
-interface OfficialAutomationResultEmailFallback {
-  readonly reason: "render-error" | "size-limit";
-  readonly attemptedHtmlBytes: number | null;
-  readonly fallbackHtmlBytes: number;
-}
-
-interface RenderedOfficialAutomationResultEmail {
-  readonly html: string;
-  readonly text: string;
-  readonly fallback: OfficialAutomationResultEmailFallback | null;
-}
-
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   let escaped = "";
   for (const char of value) {
     switch (char) {
@@ -114,7 +90,7 @@ function createMarkdownRenderer(): MarkdownIt {
   markdown.validateLink = () => {
     return true;
   };
-  markdown.core.ruler.after("inline", "official_email_link_policy", (state) => {
+  markdown.core.ruler.after("inline", "email_link_policy", (state) => {
     for (const blockToken of state.tokens) {
       if (blockToken.type !== "inline" || blockToken.children === null) {
         continue;
@@ -207,93 +183,12 @@ function createMarkdownRenderer(): MarkdownIt {
   return markdown;
 }
 
+/** Safe email Markdown: HTTPS/mailto links only, images reduced to alt text. */
 export const markdownRenderer = createMarkdownRenderer();
-
-function officialAutomationResultEmailHtml(
-  props: OfficialAutomationResultEmailRenderProps,
-  resultBodyHtml: string,
-  unsubscribeUrl: string,
-): string {
-  const assistantName = BRAND_PRESENTATION.assistantName;
-  return renderEmailLayout({
-    title: props.title,
-    heroUrl: MORNING_BRIEF_HERO_URL,
-    heroAlt: "Wake up to what matters. Your morning brief is ready.",
-    bodyHtml: resultBodyHtml,
-    action: { label: `Open in ${assistantName}`, url: props.runUrl },
-    footerText: `Sent by an ${assistantName} automation`,
-    footerLinks: [
-      { label: "Manage", url: props.manageUrl },
-      { label: "Unsubscribe", url: unsubscribeUrl },
-    ],
-  });
-}
 
 export function plainTextFromHtml(html: string): string {
   return convert(html, {
     wordwrap: false,
     selectors: [{ selector: "img", format: "skip" }],
   }).trim();
-}
-
-export function renderOfficialAutomationResultEmail(
-  props: OfficialAutomationResultEmailRenderProps,
-  unsubscribeUrl: string,
-): RenderedOfficialAutomationResultEmail {
-  let attemptedHtmlBytes: number | null = null;
-  let fallbackReason: OfficialAutomationResultEmailFallback["reason"] =
-    "render-error";
-
-  const renderAttempt = safeSync(() => {
-    const html = officialAutomationResultEmailHtml(
-      props,
-      markdownRenderer.render(props.resultText),
-      unsubscribeUrl,
-    );
-    const htmlBytes = Buffer.byteLength(html, "utf8");
-    if (htmlBytes <= OFFICIAL_AUTOMATION_RESULT_EMAIL_HTML_MAX_BYTES) {
-      return {
-        kind: "rendered" as const,
-        html,
-        text: plainTextFromHtml(html),
-      };
-    }
-    return { kind: "size-limit" as const, attemptedHtmlBytes: htmlBytes };
-  });
-
-  if ("ok" in renderAttempt) {
-    if (renderAttempt.ok.kind === "rendered") {
-      return {
-        html: renderAttempt.ok.html,
-        text: renderAttempt.ok.text,
-        fallback: null,
-      };
-    }
-    attemptedHtmlBytes = renderAttempt.ok.attemptedHtmlBytes;
-    fallbackReason = "size-limit";
-  }
-
-  const fallbackHtml = officialAutomationResultEmailHtml(
-    props,
-    `<pre style="margin:0;font-family:inherit;font-size:14px;line-height:1.58;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word">${escapeHtml(
-      props.resultText,
-    )}</pre>`,
-    unsubscribeUrl,
-  );
-  const fallbackHtmlBytes = Buffer.byteLength(fallbackHtml, "utf8");
-  if (fallbackHtmlBytes > OFFICIAL_AUTOMATION_RESULT_EMAIL_HTML_MAX_BYTES) {
-    throw new Error(
-      "Official Automation result email fallback exceeded its size bound",
-    );
-  }
-
-  return {
-    html: fallbackHtml,
-    text: plainTextFromHtml(fallbackHtml),
-    fallback: {
-      reason: fallbackReason,
-      attemptedHtmlBytes,
-      fallbackHtmlBytes,
-    },
-  };
 }

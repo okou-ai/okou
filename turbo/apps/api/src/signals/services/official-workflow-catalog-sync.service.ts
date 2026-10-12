@@ -24,7 +24,7 @@ import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
-  readAllCurrentSchemaOfficialWorkflowRevisions$,
+  readAllSupportedOfficialWorkflowRevisions$,
   readAcceptedOfficialWorkflowCatalog$,
   acceptedCatalogFromRow,
   type AcceptedOfficialWorkflowCatalog,
@@ -241,7 +241,7 @@ const prepareDefinitions$ = command(
       }
   > => {
     const historicalResult = await settle(
-      set(readAllCurrentSchemaOfficialWorkflowRevisions$, signal),
+      set(readAllSupportedOfficialWorkflowRevisions$, signal),
       signal,
     );
     if (!historicalResult.ok) {
@@ -531,7 +531,7 @@ export function createOfficialWorkflowCatalogSyncCommand(candidate: unknown) {
       }
       const transitionDiagnostics = releaseDiagnostics(
         validation.catalog,
-        current,
+        current?.payload ?? null,
       );
       if (transitionDiagnostics.length > 0) {
         return {

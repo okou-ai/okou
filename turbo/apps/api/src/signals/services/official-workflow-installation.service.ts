@@ -76,6 +76,19 @@ export interface ResolvedBlueprint {
   readonly autonomyBudget: number | undefined;
 }
 
+/**
+ * Legacy `official_result_email_enabled` value for an accepted Blueprint. The
+ * official binding check still requires it and the installation and
+ * reconciliation baselines compare it. Schema v2 keeps its declared setting;
+ * schema v3 has no platform completion mail and stores `false`. Remove with
+ * the column's writers in the runtime retirement release of #39378.
+ */
+export function legacyResultEmailEnabled(
+  blueprint: OfficialWorkflowAcceptedBlueprint,
+): boolean {
+  return "runtime" in blueprint ? blueprint.runtime.resultEmail : false;
+}
+
 type OfficialWorkflowBlueprintReconciliationResolution =
   | {
       readonly ok: true;
@@ -1054,7 +1067,9 @@ const completeInstallation$ = command(
           blueprintKey: resolvedBlueprint.blueprint.key,
           appliedFingerprint: resolvedBlueprint.blueprint.fingerprint,
           parameterBindings: resolvedBlueprint.bindings,
-          resultEmailEnabled: resolvedBlueprint.blueprint.runtime.resultEmail,
+          resultEmailEnabled: legacyResultEmailEnabled(
+            resolvedBlueprint.blueprint,
+          ),
         },
       };
       const automation = await set(createWorkflowAutomation$, input, signal);
@@ -1205,7 +1220,7 @@ function officialPatchMetadata(resolved: ResolvedBlueprint, currentTime: Date) {
     autonomyBudget: resolved.autonomyBudget ?? AUTONOMY_BUDGET_CEILING,
     officialAppliedFingerprint: resolved.blueprint.fingerprint,
     officialParameterBindings: [...resolved.bindings],
-    officialResultEmailEnabled: resolved.blueprint.runtime.resultEmail,
+    officialResultEmailEnabled: legacyResultEmailEnabled(resolved.blueprint),
     officialReconciliationStatus: "reconciling" as const,
     updatedAt: currentTime,
   };
