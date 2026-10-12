@@ -3,7 +3,8 @@ import { agents } from "@okouai/db/schema/agent";
 import { blobs } from "@okouai/db/schema/blob";
 import { conversations } from "@okouai/db/schema/conversation";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
+import { workflows } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, asc, count, eq, gt, sql } from "drizzle-orm";
 
 import { db$, writeDb$ } from "../external/db";

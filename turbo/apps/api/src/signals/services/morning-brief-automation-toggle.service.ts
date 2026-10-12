@@ -1,6 +1,6 @@
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { sql } from "drizzle-orm";
 

@@ -17,11 +17,11 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import {
-  workflowAutomations,
   workflowGithubProcessedEvents,
   workflows,
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, asc, eq } from "drizzle-orm";
 import { resolveImmutableDedupeInsert } from "../../lib/immutable-dedupe-insert";

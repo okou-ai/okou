@@ -6,10 +6,10 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import {
-  workflowAutomations,
   workflows,
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";

@@ -1,5 +1,5 @@
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { and, eq, isNull, ne, notExists, or } from "drizzle-orm";

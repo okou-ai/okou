@@ -703,7 +703,6 @@ function officialCatalogDetail(
             intervalSeconds: { parameter: "interval-seconds" },
           },
         },
-        runtime: { resultEmail: false },
       },
     ],
   };

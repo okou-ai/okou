@@ -85,13 +85,13 @@ import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
 import { stripeWorkflowAutomationHealth } from "@okouai/db/schema/stripe-automation-event";
 import {
   officialWorkflowAutomationIdentities,
-  workflowAutomations,
   workflows,
   workflowUserAutomationThreads,
   workflowWebhookAutomations,
   type WorkflowAutomationEventConfig,
   type WorkflowScheduleType,
 } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
@@ -1834,7 +1834,6 @@ export interface OfficialAutomationCreationMetadata {
   readonly blueprintKey: string;
   readonly appliedFingerprint: string;
   readonly parameterBindings: readonly OfficialWorkflowParameterBinding[];
-  readonly resultEmailEnabled: boolean;
   readonly automationId?: string;
   readonly installationState?: "installing" | "installed";
   readonly intendedEnabled?: boolean;
@@ -4214,7 +4213,6 @@ function plainOfficialAutomationWhere(automationId: string) {
     isNull(workflowAutomations.officialReconciliationStatus),
     isNull(workflowAutomations.officialParameterBindings),
     isNull(workflowAutomations.officialIntendedEnabled),
-    isNull(workflowAutomations.officialResultEmailEnabled),
   );
 }
 
@@ -4231,7 +4229,6 @@ function officialAutomationMetadataValues(
         : ("current" as const),
     officialParameterBindings: [...metadata.parameterBindings],
     officialIntendedEnabled: metadata.intendedEnabled ?? true,
-    officialResultEmailEnabled: metadata.resultEmailEnabled,
     updatedAt: at,
   };
 }

@@ -1,8 +1,6 @@
 import { gmailLabelAppliedEventConfigSchema } from "@okouai/api-contracts/contracts/workflows";
-import {
-  workflowAutomations,
-  workflowUserAutomationThreads,
-} from "@okouai/db/schema/workflow";
+import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { command } from "ccstate";

@@ -117,11 +117,6 @@
       "owner": "claimExpiredInactiveBrowser$"
     },
     {
-      "id": "TX-0074",
-      "file": "turbo/apps/api/src/signals/services/browser.service.ts",
-      "owner": "retireExpiredInactiveBrowser$"
-    },
-    {
       "id": "TX-0077",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-connection.service.ts",
       "owner": "publishAutomaticConnection$"
@@ -392,16 +387,6 @@
       "owner": "enqueueIntegrationChatInput$"
     },
     {
-      "id": "TX-0173",
-      "file": "turbo/apps/api/src/signals/services/internal-workflow-automation-result-email-callback.service.ts",
-      "owner": "enqueueResultEmail$"
-    },
-    {
-      "id": "TX-0174",
-      "file": "turbo/apps/api/src/signals/services/legacy-plan-invoice.service.ts",
-      "owner": "commitLegacyPlanInvoice$"
-    },
-    {
       "id": "TX-0176",
       "file": "turbo/apps/api/src/signals/services/mail-notification.service.ts",
       "owner": "commitMailNotification$"
@@ -490,11 +475,6 @@
       "id": "TX-0206",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "deleteReservedCreationOrphan$"
-    },
-    {
-      "id": "TX-0207",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "validateDormantMaterialization$"
     },
     {
       "id": "TX-0208",
@@ -752,11 +732,6 @@
       "owner": "persistDeferredSubscriptionChangeSchedule"
     },
     {
-      "id": "TX-0288",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
-      "owner": "storeDeferredScheduleRequest"
-    },
-    {
       "id": "TX-0289",
       "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
       "owner": "markPreparedChangeApplying$"
@@ -770,11 +745,6 @@
       "id": "TX-0291",
       "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
       "owner": "recordImmediateSubscriptionChangeInvoice"
-    },
-    {
-      "id": "TX-0292",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
-      "owner": "restoreScheduledSubscriptionChange"
     },
     {
       "id": "TX-0293",
@@ -1200,11 +1170,6 @@
       "id": "TX-0437",
       "file": "turbo/packages/db/scripts/test-vnc-runner-authority.ts",
       "owner": "<module>"
-    },
-    {
-      "id": "TX-0438",
-      "file": "turbo/packages/db/scripts/test-x-resource-usage.ts",
-      "owner": "validateXResourceUsageSchema"
     }
   ]
 }

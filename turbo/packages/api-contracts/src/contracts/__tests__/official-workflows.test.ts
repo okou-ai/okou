@@ -37,7 +37,6 @@ const blueprint = {
       intervalSeconds: 3600,
     },
   },
-  runtime: { resultEmail: true },
   fingerprint: FINGERPRINT,
 };
 

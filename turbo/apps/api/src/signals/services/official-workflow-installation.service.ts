@@ -24,7 +24,8 @@ import {
 } from "@okouai/db/schema/official-workflow-catalog";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
+import { workflows } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -74,19 +75,6 @@ export interface ResolvedBlueprint {
   readonly bindings: readonly OfficialWorkflowParameterBinding[];
   readonly createRequest: WorkflowAutomationCreateRequest;
   readonly autonomyBudget: number | undefined;
-}
-
-/**
- * Legacy `official_result_email_enabled` value for an accepted Blueprint. The
- * official binding check still requires it and the installation and
- * reconciliation baselines compare it. Schema v2 keeps its declared setting;
- * schema v3 has no platform completion mail and stores `false`. Remove with
- * the column's writers in the runtime retirement release of #39378.
- */
-export function legacyResultEmailEnabled(
-  blueprint: OfficialWorkflowAcceptedBlueprint,
-): boolean {
-  return "runtime" in blueprint ? blueprint.runtime.resultEmail : false;
 }
 
 type OfficialWorkflowBlueprintReconciliationResolution =
@@ -1067,9 +1055,6 @@ const completeInstallation$ = command(
           blueprintKey: resolvedBlueprint.blueprint.key,
           appliedFingerprint: resolvedBlueprint.blueprint.fingerprint,
           parameterBindings: resolvedBlueprint.bindings,
-          resultEmailEnabled: legacyResultEmailEnabled(
-            resolvedBlueprint.blueprint,
-          ),
         },
       };
       const automation = await set(createWorkflowAutomation$, input, signal);
@@ -1206,7 +1191,6 @@ export interface OfficialAutomationPatch {
   readonly autonomyBudget: number;
   readonly officialAppliedFingerprint: string;
   readonly officialParameterBindings: OfficialWorkflowParameterBinding[];
-  readonly officialResultEmailEnabled: boolean;
   readonly officialReconciliationStatus: "reconciling";
   readonly updatedAt: Date;
 }
@@ -1220,7 +1204,6 @@ function officialPatchMetadata(resolved: ResolvedBlueprint, currentTime: Date) {
     autonomyBudget: resolved.autonomyBudget ?? AUTONOMY_BUDGET_CEILING,
     officialAppliedFingerprint: resolved.blueprint.fingerprint,
     officialParameterBindings: [...resolved.bindings],
-    officialResultEmailEnabled: legacyResultEmailEnabled(resolved.blueprint),
     officialReconciliationStatus: "reconciling" as const,
     updatedAt: currentTime,
   };
@@ -1438,7 +1421,6 @@ export function officialAutomationRestorePatch(
     officialAppliedFingerprint: row.officialAppliedFingerprint,
     officialReconciliationStatus: row.officialReconciliationStatus,
     officialParameterBindings: row.officialParameterBindings,
-    officialResultEmailEnabled: row.officialResultEmailEnabled,
     updatedAt: currentTime,
   };
 }

@@ -513,13 +513,11 @@ function canonicalizeBlueprint(blueprint: SourceBlueprint): PublishedBlueprint {
   const fingerprint = officialWorkflowFingerprint({
     parameters,
     desiredState,
-    runtime: blueprint.runtime,
   });
   return {
     key: blueprint.key,
     parameters,
     desiredState,
-    runtime: blueprint.runtime,
     fingerprint,
   };
 }

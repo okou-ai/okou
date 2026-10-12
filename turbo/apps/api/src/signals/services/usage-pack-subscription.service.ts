@@ -84,8 +84,8 @@ import {
   reconcileUsagePackAllocationChangeSubscriptionDeleted,
 } from "./usage-pack-allocation-change.service";
 import {
-  handleUsagePackSubscriptionChangeInvoicePaid,
-  reconcileUsagePackSubscriptionChanges,
+  handleUsagePackSubscriptionChangeInvoicePaid$,
+  reconcileUsagePackSubscriptionChanges$,
 } from "./usage-pack-plan-change.service";
 import { completeBillingOperationInvoiceWithInvoice } from "./billing-operation-invoice.service";
 import {
@@ -3897,8 +3897,10 @@ export const handleUsagePackInvoicePaid$ = command(
     if (!usagePackSubscriptionId) {
       return { handled: false, orgId: null };
     }
-    const subscriptionChangeOutcome =
-      await handleUsagePackSubscriptionChangeInvoicePaid(db, invoice);
+    const subscriptionChangeOutcome = await set(
+      handleUsagePackSubscriptionChangeInvoicePaid$,
+      invoice,
+    );
     signal.throwIfAborted();
     if (subscriptionChangeOutcome.handled) {
       await set(
@@ -3907,11 +3909,7 @@ export const handleUsagePackInvoicePaid$ = command(
         signal,
       );
       signal.throwIfAborted();
-      return {
-        handled: true,
-        orgId: subscriptionChangeOutcome.orgId,
-        subscription: subscriptionChangeOutcome.subscription,
-      };
+      return subscriptionChangeOutcome;
     }
     const changeOutcome = await handleUsagePackAllocationChangeInvoicePaid(
       db,
@@ -4307,8 +4305,8 @@ export const reconcileUsagePackSubscriptions$ = command(
     signal.throwIfAborted();
     const db = set(writeDb$);
 
-    const subscriptionChanges = await reconcileUsagePackSubscriptionChanges(
-      db,
+    const subscriptionChanges = await set(
+      reconcileUsagePackSubscriptionChanges$,
       signal,
     );
     const allocationChanges = await reconcileUsagePackAllocationChanges(

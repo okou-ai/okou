@@ -4,7 +4,7 @@ import {
   type DebugMorningBriefEmailResponse,
 } from "@okouai/api-contracts/contracts/debug-morning-brief-email";
 import { MORNING_BRIEF_PREFERENCES_PATH } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { emailOutbox } from "@okouai/db/runtime/email-outbox";
 import { mailNotifications } from "@okouai/db/schema/mail-notification";
 import { users } from "@okouai/db/schema/user";
 import { command, computed } from "ccstate";

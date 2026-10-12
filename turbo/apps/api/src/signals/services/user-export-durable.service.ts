@@ -10,7 +10,7 @@ import {
   userExportEntries,
   userExportParts,
 } from "@okouai/db/schema/user-export-entry";
-import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { emailOutbox } from "@okouai/db/runtime/email-outbox";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { env } from "../../lib/env";

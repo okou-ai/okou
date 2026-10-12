@@ -765,105 +765,30 @@ function hasMixedFileFields(input: BrowserUserActionCreateRequest): boolean {
   );
 }
 
-async function prepareBrowserUserAction(
-  db: Db,
-  args: CreateBrowserUserActionArgs,
-  signal: AbortSignal,
-): Promise<ServiceResult<PreparedBrowserUserAction>> {
-  const [run] = await db
-    .select({
-      chatThreadId: agentRuns.chatThreadId,
-      triggerSource: agentRuns.triggerSource,
-    })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, args.runId),
-        eq(agentRuns.orgId, args.orgId),
-        eq(agentRuns.userId, args.userId),
-        inArray(agentRuns.status, ["pending", "running"]),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (
-    !run?.chatThreadId ||
-    (run.triggerSource !== "web" && run.triggerSource !== "agent")
-  ) {
-    return conflict(
-      "Browser user actions require an active chat run",
-      "BROWSER_USER_ACTION_RUN_REQUIRED",
-    );
-  }
-  const live = await loadLiveBrowser(db, {
-    chatThreadId: run.chatThreadId,
-    orgId: args.orgId,
-    userId: args.userId,
-  });
-  signal.throwIfAborted();
-  if (!live || live.runId !== args.runId) {
-    return conflict(
-      "The current chat run has no live managed Browser",
-      "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
-    );
-  }
-  const providerResult = await settle(
-    getBrowserUseSession(live.providerSessionId, signal),
-  );
-  signal.throwIfAborted();
-  if (!providerResult.ok) {
-    return providerFailure(providerResult.error);
-  }
-  if (
-    providerResult.value.status !== "active" ||
-    !providerResult.value.cdpUrl
-  ) {
-    return conflict(
-      "The managed Browser is no longer live",
-      "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
-    );
-  }
-  const validationResult = await settle(
-    validateBrowserUseUserAction(
-      providerResult.value.cdpUrl,
-      {
-        pageTargetId: args.input.pageTargetId,
-        backendNodeIds: args.input.fields.map((field) => {
-          return field.backendNodeId;
-        }),
-      },
-      signal,
-    ),
-  );
-  signal.throwIfAborted();
-  if (!validationResult.ok) {
-    return validationResult.error instanceof BrowserUseUserActionValidationError
-      ? conflict(
-          browserCreationValidationMessage(validationResult.error),
-          `BROWSER_USER_ACTION_${validationResult.error.code.toUpperCase()}`,
-        )
-      : providerFailure(validationResult.error);
-  }
-  if (hasMixedFileFields(args.input)) {
+function requestedBrowserFieldsError(
+  input: BrowserUserActionCreateRequest,
+  validation: BrowserUseUserActionValidation,
+): BrowserUserActionServiceError | null {
+  if (hasMixedFileFields(input)) {
     return conflict(
       "File input must be requested on its own",
       "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL",
     );
   }
-  const mismatchedPosition = args.input.fields.findIndex((field, index) => {
-    const target = validationResult.value.fields[index];
+  const mismatchedPosition = input.fields.findIndex((field, index) => {
+    const target = validation.fields[index];
     return (
       !target ||
       !browserUserActionFieldSupportsTarget(field.fieldKind, target.fingerprint)
     );
   });
   if (
-    validationResult.value.fields.length !== args.input.fields.length ||
+    validation.fields.length !== input.fields.length ||
     mismatchedPosition !== -1
   ) {
     const position = mismatchedPosition === -1 ? 0 : mismatchedPosition + 1;
-    const field = args.input.fields[mismatchedPosition];
-    const target = validationResult.value.fields[mismatchedPosition];
+    const field = input.fields[mismatchedPosition];
+    const target = validation.fields[mismatchedPosition];
     const compatibleKinds = target
       ? browserUserActionFieldKindSchema.options.filter((kind) => {
           return browserUserActionFieldSupportsTarget(kind, target.fingerprint);
@@ -876,15 +801,127 @@ async function prepareBrowserUserAction(
       "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL",
     );
   }
-  return {
-    kind: "ok",
-    value: {
-      chatThreadId: run.chatThreadId,
-      providerSessionId: live.providerSessionId,
-      validation: validationResult.value,
-    },
-  };
+  return null;
 }
+
+const prepareBrowserUserAction$ = command(
+  async (
+    { get },
+    args: CreateBrowserUserActionArgs,
+    signal: AbortSignal,
+  ): Promise<ServiceResult<PreparedBrowserUserAction>> => {
+    const db = get(db$);
+    const [run] = await db
+      .select({
+        chatThreadId: agentRuns.chatThreadId,
+        triggerSource: agentRuns.triggerSource,
+      })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, args.runId),
+          eq(agentRuns.orgId, args.orgId),
+          eq(agentRuns.userId, args.userId),
+          inArray(agentRuns.status, ["pending", "running"]),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      !run?.chatThreadId ||
+      (run.triggerSource !== "web" && run.triggerSource !== "agent")
+    ) {
+      return conflict(
+        "Browser user actions require an active chat run",
+        "BROWSER_USER_ACTION_RUN_REQUIRED",
+      );
+    }
+    const now = nowDate();
+    const [live = null] = await db
+      .select({
+        runId: browserSessions.runId,
+        providerSessionId: browserSessionInstances.providerSessionId,
+      })
+      .from(browserSessions)
+      .innerJoin(
+        browserSessionInstances,
+        eq(browserSessionInstances.chatThreadId, browserSessions.chatThreadId),
+      )
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, run.chatThreadId),
+          eq(browserSessions.orgId, args.orgId),
+          eq(browserSessions.userId, args.userId),
+          eq(browserSessions.status, "active"),
+          eq(browserSessionInstances.status, "active"),
+          gt(browserSessionInstances.timeoutAt, now),
+          gt(browserSessionInstances.idleExpiresAt, now),
+        ),
+      )
+      .limit(1)
+      .for("share");
+    signal.throwIfAborted();
+    if (!live || live.runId !== args.runId) {
+      return conflict(
+        "The current chat run has no live managed Browser",
+        "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
+      );
+    }
+    const providerResult = await settle(
+      getBrowserUseSession(live.providerSessionId, signal),
+    );
+    signal.throwIfAborted();
+    if (!providerResult.ok) {
+      return providerFailure(providerResult.error);
+    }
+    if (
+      providerResult.value.status !== "active" ||
+      !providerResult.value.cdpUrl
+    ) {
+      return conflict(
+        "The managed Browser is no longer live",
+        "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
+      );
+    }
+    const validationResult = await settle(
+      validateBrowserUseUserAction(
+        providerResult.value.cdpUrl,
+        {
+          pageTargetId: args.input.pageTargetId,
+          backendNodeIds: args.input.fields.map((field) => {
+            return field.backendNodeId;
+          }),
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    if (!validationResult.ok) {
+      return validationResult.error instanceof
+        BrowserUseUserActionValidationError
+        ? conflict(
+            browserCreationValidationMessage(validationResult.error),
+            `BROWSER_USER_ACTION_${validationResult.error.code.toUpperCase()}`,
+          )
+        : providerFailure(validationResult.error);
+    }
+    const fieldsError = requestedBrowserFieldsError(
+      args.input,
+      validationResult.value,
+    );
+    if (fieldsError) {
+      return fieldsError;
+    }
+    return {
+      kind: "ok",
+      value: {
+        chatThreadId: run.chatThreadId,
+        providerSessionId: live.providerSessionId,
+        validation: validationResult.value,
+      },
+    };
+  },
+);
 
 function buildBrowserUserActionPayload(
   input: BrowserUserActionCreateRequest,
@@ -1023,7 +1060,7 @@ export const createBrowserUserAction$ = command(
     }>
   > => {
     const db = set(writeDb$);
-    const prepared = await prepareBrowserUserAction(db, args, signal);
+    const prepared = await set(prepareBrowserUserAction$, args, signal);
     if (prepared.kind === "error") {
       return prepared;
     }

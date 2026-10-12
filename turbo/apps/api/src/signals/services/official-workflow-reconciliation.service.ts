@@ -15,6 +15,13 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 
 import { connectors } from "@okouai/db/schema/connector";
+import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
+import {
+  officialWorkflowCatalogState,
+  officialWorkflowCatalogReleases,
+  officialWorkflowDefinitionRevisions,
+} from "@okouai/db/schema/official-workflow-catalog";
+import { storages, storageVersions } from "@okouai/db/schema/storage";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -24,11 +31,11 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import {
   officialWorkflowAutomationIdentities,
-  workflowAutomations,
   workflows,
 } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, isNull, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 
@@ -49,6 +56,7 @@ import {
   automationWebhookReadStatement,
   acceptedCatalogRowSchema,
   acceptedCatalogReadStatement,
+  acceptedCatalogDefinitionRevision,
   acceptedCatalogLockStatement,
   acceptedRevisionRowSchema,
   acceptedRevisionReadStatement,
@@ -79,6 +87,7 @@ import { observedWorkflowAutomationCondition } from "./workflow-automation-snaps
 import { notionConfigWithConnectorId } from "./notion-automation-account.service";
 import {
   acceptedCatalogFromRow,
+  acceptedOfficialWorkflowCatalogReadPlan,
   type AcceptedOfficialWorkflowCatalog,
   readAcceptedOfficialWorkflowCatalog$,
   readAcceptedOfficialWorkflowRevision$,
@@ -89,7 +98,6 @@ import type {
 } from "./official-workflow-reconciliation.types";
 import {
   buildOfficialAutomationPatch,
-  legacyResultEmailEnabled,
   officialAutomationRestorePatch,
   refreshOfficialAutomationPatch,
   resolveOfficialWorkflowBlueprintForReconciliation,
@@ -390,8 +398,7 @@ function sameAutomationBaseline(
     expected.officialReconciliationStatus ===
       current.officialReconciliationStatus &&
     expected.enabled === current.enabled &&
-    expected.officialIntendedEnabled === current.officialIntendedEnabled &&
-    expected.officialResultEmailEnabled === current.officialResultEmailEnabled
+    expected.officialIntendedEnabled === current.officialIntendedEnabled
   );
 }
 
@@ -421,8 +428,7 @@ function sameAutomationConfigurationBaseline(
     isDeepStrictEqual(
       expected.officialParameterBindings,
       current.officialParameterBindings,
-    ) &&
-    expected.officialResultEmailEnabled === current.officialResultEmailEnabled
+    )
   );
 }
 
@@ -1876,7 +1882,6 @@ function createInput(
             blueprintKey: resolved.blueprint.key,
             appliedFingerprint: resolved.blueprint.fingerprint,
             parameterBindings: resolved.bindings,
-            resultEmailEnabled: legacyResultEmailEnabled(resolved.blueprint),
             automationId: options.automationId,
             installationState: "installed" as const,
             intendedEnabled: options.intendedEnabled ?? false,
@@ -2406,7 +2411,6 @@ interface DormantMaterializationOwnershipArgs {
   readonly automationId: string;
   readonly bindings: readonly OfficialWorkflowParameterBinding[];
   readonly intendedEnabled: boolean;
-  readonly resultEmailEnabled: boolean;
 }
 
 function dormantMaterializationRows(
@@ -2432,7 +2436,6 @@ function dormantMaterializationRows(
     automation.officialAppliedFingerprint !== args.fingerprint ||
     automation.officialReconciliationStatus === null ||
     automation.officialIntendedEnabled !== args.intendedEnabled ||
-    automation.officialResultEmailEnabled !== args.resultEmailEnabled ||
     !isDeepStrictEqual(automation.officialParameterBindings, args.bindings)
   ) {
     return null;
@@ -2442,90 +2445,128 @@ function dormantMaterializationRows(
 
 const validateDormantMaterialization$ = command(
   async (
-    { set },
+    { get },
     args: DormantMaterializationOwnershipArgs,
     signal: AbortSignal,
   ): Promise<OfficialAutomationRow | null> => {
-    const db = set(writeDb$);
-
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0207; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
-      await tx.execute(acceptedCatalogLockStatement());
-      const [catalogRow] = parseRawRows(
-        acceptedCatalogRowSchema,
-        await tx.execute(acceptedCatalogReadStatement()),
-      );
-      signal.throwIfAborted();
-      const catalogIdentity = {
-        definitionName: args.definitionName,
-        blueprintKey: args.blueprintKey,
-        fingerprint: args.fingerprint,
-        activeDefinitionOnly: args.activeDefinitionOnly,
-      };
-      const acceptedDefinition = matchingAcceptedBlueprintDefinition(
-        acceptedCatalogFromRow(catalogRow),
-        catalogIdentity,
-      );
-      if (!acceptedDefinition) {
-        return null;
-      }
-      const [revisionRow] = parseRawRows(
-        acceptedRevisionRowSchema,
-        await tx.execute(acceptedRevisionReadStatement(acceptedDefinition)),
-      );
-      signal.throwIfAborted();
-      if (!acceptedRevisionBlueprintMatches(revisionRow, catalogIdentity)) {
-        return null;
-      }
-      const [authorityRow] = await tx
-        .select({ id: workflows.id })
-        .from(workflows)
-        .where(installedWorkflowCondition(args, args.workflowId))
-        .for("update")
-        .limit(1);
-      const authority = authorityRow !== undefined;
-      if (!authority) {
-        return null;
-      }
-      const [materializationAutomation] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, args.automationId))
-        .for("update")
-        .limit(1);
-      const [materializationIdentity] = await tx
-        .select()
-        .from(officialWorkflowAutomationIdentities)
-        .where(
-          and(
-            eq(officialWorkflowAutomationIdentities.id, args.automationId),
-            eq(
-              officialWorkflowAutomationIdentities.workflowId,
-              args.workflowId,
-            ),
-            eq(
-              officialWorkflowAutomationIdentities.blueprintKey,
-              args.blueprintKey,
-            ),
+    const db = get(db$);
+    const catalogPlan = acceptedOfficialWorkflowCatalogReadPlan();
+    // One committed statement observation, without waiting for publisher/row locks.
+    // Neither this read nor the former transaction reserves later enable/finalize.
+    const [row] = await db
+      .select({
+        catalog: catalogPlan.columns,
+        revision: {
+          definitionName: officialWorkflowDefinitionRevisions.definitionName,
+          revision: officialWorkflowDefinitionRevisions.revision,
+          payload: officialWorkflowDefinitionRevisions.payload,
+          storageName: officialWorkflowDefinitionRevisions.storageName,
+          storageId: officialWorkflowDefinitionRevisions.storageId,
+          storageVersion: officialWorkflowDefinitionRevisions.storageVersion,
+        },
+        registeredStorageId: storages.id,
+        registeredStorageVersion: storageVersions.id,
+        installation: { id: workflows.id },
+        automation: workflowAutomationColumns(),
+        identity: getTableColumns(officialWorkflowAutomationIdentities),
+      })
+      .from(officialWorkflowCatalogState)
+      .innerJoin(officialWorkflowCatalogReleases, catalogPlan.join)
+      .leftJoin(
+        officialWorkflowDefinitionRevisions,
+        and(
+          eq(
+            officialWorkflowDefinitionRevisions.definitionName,
+            args.definitionName,
           ),
-        )
-        .for("update")
-        .limit(1);
-      const rows = dormantMaterializationRows(
-        materializationAutomation,
-        materializationIdentity,
-        args,
-      );
-      if (
-        !rows ||
-        rows.identity.state !== "reconciling" ||
-        rows.automation.officialReconciliationStatus !== "reconciling"
-      ) {
-        return null;
-      }
-      return rows.automation;
-    });
+          eq(
+            officialWorkflowDefinitionRevisions.revision,
+            acceptedCatalogDefinitionRevision(args.definitionName),
+          ),
+        ),
+      )
+      .leftJoin(
+        storages,
+        and(
+          eq(storages.id, officialWorkflowDefinitionRevisions.storageId),
+          eq(storages.name, officialWorkflowDefinitionRevisions.storageName),
+          eq(storages.orgId, SYSTEM_ORG_ID),
+          eq(storages.userId, VOLUME_ORG_USER_ID),
+        ),
+      )
+      .leftJoin(
+        storageVersions,
+        and(
+          eq(
+            storageVersions.id,
+            officialWorkflowDefinitionRevisions.storageVersion,
+          ),
+          eq(
+            storageVersions.storageId,
+            officialWorkflowDefinitionRevisions.storageId,
+          ),
+        ),
+      )
+      .leftJoin(workflows, installedWorkflowCondition(args, args.workflowId))
+      .leftJoin(
+        workflowAutomations,
+        eq(workflowAutomations.id, args.automationId),
+      )
+      .leftJoin(
+        officialWorkflowAutomationIdentities,
+        and(
+          eq(officialWorkflowAutomationIdentities.id, args.automationId),
+          eq(officialWorkflowAutomationIdentities.workflowId, args.workflowId),
+          eq(
+            officialWorkflowAutomationIdentities.blueprintKey,
+            args.blueprintKey,
+          ),
+        ),
+      )
+      .where(catalogPlan.condition)
+      .limit(1);
+    signal.throwIfAborted();
+    const catalogIdentity = {
+      definitionName: args.definitionName,
+      blueprintKey: args.blueprintKey,
+      fingerprint: args.fingerprint,
+      activeDefinitionOnly: args.activeDefinitionOnly,
+    };
+    const acceptedDefinition = matchingAcceptedBlueprintDefinition(
+      acceptedCatalogFromRow(row?.catalog),
+      catalogIdentity,
+    );
+    if (!acceptedDefinition || !row) {
+      return null;
+    }
+    // Missing artifact registration has the same absence outcome as the old inner joins.
+    if (
+      !acceptedRevisionBlueprintMatches(
+        row.registeredStorageId !== null &&
+          row.registeredStorageVersion !== null
+          ? (row.revision ?? undefined)
+          : undefined,
+        catalogIdentity,
+      )
+    ) {
+      return null;
+    }
+    if (!row.installation) {
+      return null;
+    }
+    const rows = dormantMaterializationRows(
+      row.automation ?? undefined,
+      row.identity ?? undefined,
+      args,
+    );
+    if (
+      !rows ||
+      rows.identity.state !== "reconciling" ||
+      rows.automation.officialReconciliationStatus !== "reconciling"
+    ) {
+      return null;
+    }
+    return rows.automation;
   },
 );
 
@@ -2848,7 +2889,6 @@ function dormantMaterializationOwnershipArgs(
     blueprintKey: args.blueprint.key,
     fingerprint: args.blueprint.fingerprint,
     activeDefinitionOnly: args.activeDefinitionOnly,
-    resultEmailEnabled: legacyResultEmailEnabled(args.blueprint),
     ...materialization,
   };
 }
@@ -3543,8 +3583,7 @@ const reconcileReservedDormantMaterialization$ = command(
       automation.officialBlueprintKey === null ||
       automation.officialAppliedFingerprint === null ||
       automation.officialParameterBindings === null ||
-      automation.officialIntendedEnabled === null ||
-      automation.officialResultEmailEnabled === null
+      automation.officialIntendedEnabled === null
     ) {
       return {
         kind: "retry",
@@ -3570,7 +3609,6 @@ const reconcileReservedDormantMaterialization$ = command(
           automationId: automation.id,
           bindings: automation.officialParameterBindings,
           intendedEnabled: automation.officialIntendedEnabled,
-          resultEmailEnabled: automation.officialResultEmailEnabled,
         },
         signal,
       );

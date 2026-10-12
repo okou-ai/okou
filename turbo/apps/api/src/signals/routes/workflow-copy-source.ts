@@ -15,9 +15,9 @@ import {
 } from "@okouai/db/schema/official-workflow-catalog";
 import {
   workflows,
-  workflowAutomations,
   workflowWebhookAutomations,
 } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, asc, eq, inArray, or, getTableColumns, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { isDeepStrictEqual } from "node:util";

@@ -1,5 +1,5 @@
 import { googleWorkspaceEventSubscriptionStates } from "@okouai/db/schema/google-workspace-event";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, sql } from "drizzle-orm";
 
 export interface GoogleMeetQueueSource {

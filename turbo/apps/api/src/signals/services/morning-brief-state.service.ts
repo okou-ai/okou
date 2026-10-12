@@ -6,10 +6,10 @@ import { agents } from "@okouai/db/schema/agent";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import {
-  workflowAutomations,
   workflows,
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, asc, eq } from "drizzle-orm";
 
 import { command } from "ccstate";

@@ -18,10 +18,23 @@ function databaseErrorConstraint(error: unknown): string | undefined {
   return typeof error.constraint === "string" ? error.constraint : undefined;
 }
 
+function isOfficialBindingViolation(error: unknown): boolean {
+  return (
+    databaseErrorCode(error) === "23514" &&
+    databaseErrorConstraint(error) === officialBindingConstraint
+  );
+}
+
+/**
+ * The retained `official_result_email_enabled` column is outside the runtime
+ * mapping. Ordinary Automations must keep it NULL; Official Automations accept
+ * NULL (current writers) and the booleans written by earlier APIs, while every
+ * other Official binding invariant stays enforced.
+ */
 export async function validateOfficialAutomationResultEmailSchema(
   databaseUrl: string,
 ): Promise<void> {
-  console.log("=== Validate Official Automation result-email schema ===\n");
+  console.log("=== Validate Official Automation binding schema ===\n");
   const client = new Client({ connectionString: databaseUrl });
   const identity = randomUUID();
   const agentId = randomUUID();
@@ -66,18 +79,38 @@ export async function validateOfficialAutomationResultEmailSchema(
       [officialAutomationId, orgId, workflowId, userId, ordinaryAutomationId],
     );
 
-    const ordinaryBefore = await client.query<{
-      resultEmailEnabled: boolean | null;
-    }>(
-      `
-        SELECT "official_result_email_enabled" AS "resultEmailEnabled"
-        FROM "workflow_automations"
-        WHERE "id" = $1
-      `,
-      [ordinaryAutomationId],
-    );
-    assert.deepEqual(ordinaryBefore.rows, [{ resultEmailEnabled: null }]);
+    const readResultEmail = async (automationId: string) => {
+      const result = await client.query<{
+        resultEmailEnabled: boolean | null;
+      }>(
+        `
+          SELECT "official_result_email_enabled" AS "resultEmailEnabled"
+          FROM "workflow_automations"
+          WHERE "id" = $1
+        `,
+        [automationId],
+      );
+      return result.rows;
+    };
 
+    assert.deepEqual(await readResultEmail(ordinaryAutomationId), [
+      { resultEmailEnabled: null },
+    ]);
+    for (const value of [false, true]) {
+      await assert.rejects(
+        client.query(
+          `
+            UPDATE "workflow_automations"
+            SET "official_result_email_enabled" = $1
+            WHERE "id" = $2
+          `,
+          [value, ordinaryAutomationId],
+        ),
+        isOfficialBindingViolation,
+      );
+    }
+
+    // Current writers mark an Official Automation without naming the column.
     await client.query(
       `
         UPDATE "workflow_automations"
@@ -86,63 +119,64 @@ export async function validateOfficialAutomationResultEmailSchema(
           "official_applied_fingerprint" = $1,
           "official_reconciliation_status" = 'current',
           "official_parameter_bindings" = '[]'::jsonb,
-          "official_intended_enabled" = true,
-          "official_result_email_enabled" = false
+          "official_intended_enabled" = true
         WHERE "id" = $2
       `,
       ["a".repeat(64), officialAutomationId],
     );
-    const officialDisabled = await client.query<{
-      resultEmailEnabled: boolean | null;
-    }>(
-      `
-        SELECT "official_result_email_enabled" AS "resultEmailEnabled"
-        FROM "workflow_automations"
-        WHERE "id" = $1
-      `,
-      [officialAutomationId],
-    );
-    assert.deepEqual(officialDisabled.rows, [{ resultEmailEnabled: false }]);
+    assert.deepEqual(await readResultEmail(officialAutomationId), [
+      { resultEmailEnabled: null },
+    ]);
+    // Earlier APIs still write booleans on Official rows.
+    for (const value of [false, true, null]) {
+      await client.query(
+        `
+          UPDATE "workflow_automations"
+          SET "official_result_email_enabled" = $1
+          WHERE "id" = $2
+        `,
+        [value, officialAutomationId],
+      );
+      assert.deepEqual(await readResultEmail(officialAutomationId), [
+        { resultEmailEnabled: value },
+      ]);
+    }
 
-    await client.query(
-      `
-        UPDATE "workflow_automations"
-        SET "official_result_email_enabled" = true
-        WHERE "id" = $1
-      `,
-      [officialAutomationId],
-    );
-    const officialEnabled = await client.query<{
-      resultEmailEnabled: boolean | null;
-    }>(
-      `
-        SELECT "official_result_email_enabled" AS "resultEmailEnabled"
-        FROM "workflow_automations"
-        WHERE "id" = $1
-      `,
-      [officialAutomationId],
-    );
-    assert.deepEqual(officialEnabled.rows, [{ resultEmailEnabled: true }]);
-
+    const invalidOfficialUpdates = [
+      `"official_applied_fingerprint" = 'not-a-fingerprint'`,
+      `"official_reconciliation_status" = 'unknown'`,
+      `"official_parameter_bindings" = '{}'::jsonb`,
+      `"official_intended_enabled" = NULL`,
+      // An Official row cannot become partially ordinary.
+      `"official_blueprint_key" = NULL`,
+    ];
+    for (const assignment of invalidOfficialUpdates) {
+      await assert.rejects(
+        client.query(
+          `UPDATE "workflow_automations" SET ${assignment} WHERE "id" = $1`,
+          [officialAutomationId],
+        ),
+        isOfficialBindingViolation,
+        assignment,
+      );
+    }
+    // Ordinary rows cannot carry a partial Official projection.
     await assert.rejects(
       client.query(
         `
           UPDATE "workflow_automations"
-          SET "official_result_email_enabled" = true
+          SET "official_intended_enabled" = true
           WHERE "id" = $1
         `,
         [ordinaryAutomationId],
       ),
-      (error: unknown) => {
-        return (
-          databaseErrorCode(error) === "23514" &&
-          databaseErrorConstraint(error) === officialBindingConstraint
-        );
-      },
+      isOfficialBindingViolation,
     );
 
-    console.log("   ✅ ordinary Automations retain a null projection");
-    console.log("   ✅ Official Automations retain an explicit boolean\n");
+    console.log("   ✅ ordinary Automations keep a null result-email column");
+    console.log(
+      "   ✅ Official Automations accept null or retained booleans and keep their bindings\n",
+    );
   } finally {
     try {
       if (agentCreated) {

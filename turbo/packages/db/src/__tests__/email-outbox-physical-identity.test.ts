@@ -1,10 +1,11 @@
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
+import { emailOutbox as runtimeEmailOutbox } from "../runtime/email-outbox";
 import { emailOutbox } from "../schema/email-outbox";
 
 describe("email outbox physical identity", () => {
-  it("keeps the durable Automation result source pair and exact constraints", () => {
+  it("keeps the migration-only source pair and exact constraints", () => {
     const config = getTableConfig(emailOutbox);
 
     expect(config.name).toBe("email_outbox");
@@ -39,5 +40,29 @@ describe("email outbox physical identity", () => {
         return check.name;
       }),
     ).toStrictEqual(["email_outbox_source_identity_check"]);
+  });
+
+  it("omits only the retired source pair from the runtime mapping", () => {
+    const columnNames = (table: Parameters<typeof getTableConfig>[0]) => {
+      return getTableConfig(table)
+        .columns.map(({ name }) => {
+          return name;
+        })
+        .sort();
+    };
+    const physical = columnNames(emailOutbox);
+    const runtime = columnNames(runtimeEmailOutbox);
+
+    expect(getTableConfig(runtimeEmailOutbox).name).toBe("email_outbox");
+    expect(
+      physical.filter((name) => {
+        return !runtime.includes(name);
+      }),
+    ).toStrictEqual(["source_run_id", "source_workflow_automation_id"]);
+    expect(
+      runtime.filter((name) => {
+        return !physical.includes(name);
+      }),
+    ).toStrictEqual([]);
   });
 });
