@@ -8,7 +8,6 @@ import type { JsonSchemaType } from "@modelcontextprotocol/server";
 import { apiErrorSchema } from "@okouai/api-contracts/contracts/errors";
 import { activitySummaryResponseSchema } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import {
-  chatEventsContract,
   chatThreadEventsContract,
   chatThreadsContract,
   indicatorsSchema,
@@ -17,7 +16,10 @@ import {
   mcpGetChatMessagesOutputSchema,
   mcpGetChatThreadOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-snapshots";
-import { mcpCancelRunOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-tools";
+import {
+  mcpCancelRunOutputSchema,
+  mcpSendChatMessageOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-tools";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
@@ -63,16 +65,14 @@ async function send(
   f: Awaited<ReturnType<typeof fixture>>,
   prompt: string,
   threadId?: string,
-  clientEventId?: string,
 ) {
   const result = await mcp.call(f.token(), "send_chat_message", {
     agentId: f.agentId,
     prompt,
     ...(threadId ? { threadId } : {}),
-    ...(clientEventId ? { clientEventId } : {}),
   });
   expect(result.isError).not.toBeTruthy();
-  return chatEventsContract.send.responses[201].parse(body(result));
+  return mcpSendChatMessageOutputSchema.parse(body(result));
 }
 
 describe("thin MCP Web adapters", () => {
@@ -150,6 +150,36 @@ describe("thin MCP Web adapters", () => {
       if (!search?.outputSchema) {
         throw new Error("Missing MCP search response schema");
       }
+      expect(search.inputSchema.properties?.keyword).toMatchObject({
+        description: expect.stringMatching(
+          /CJK.*single-character CJK.*whole-word.*AND.*no indexable tokens.*No Unicode normalization/s,
+        ),
+      });
+      expect(search.outputSchema).toMatchObject({
+        properties: {
+          results: {
+            items: {
+              properties: {
+                matchedRanges: {
+                  description: expect.stringMatching(
+                    /\[start,end\).*matchedMessage\.content.*UTF-16.*code points.*UTF-8.*content\.slice.*ACK-QA-A1-🧪-中文.*\[13,15\)/s,
+                  ),
+                  items: {
+                    properties: {
+                      start: {
+                        description: expect.stringMatching(/Inclusive.*UTF-16/),
+                      },
+                      end: {
+                        description: expect.stringMatching(/Exclusive.*UTF-16/),
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
       const searchThreadId = randomUUID();
       const searchHit = {
         threadId: searchThreadId,
@@ -169,11 +199,23 @@ describe("thin MCP Web adapters", () => {
         search.outputSchema as JsonSchemaType,
       );
       expect(validateSearch({ results: [searchHit] }).valid).toBeTruthy();
+      const sendTool = tools.find((tool) => {
+        return tool.name === "send_chat_message";
+      });
+      if (!sendTool?.outputSchema) {
+        throw new Error("Missing MCP send response schema");
+      }
+      expect(
+        Object.keys(sendTool.inputSchema.properties ?? {}).sort(),
+      ).toStrictEqual(["agentId", "model", "prompt", "threadId"]);
+      expect(sendTool.outputSchema).toMatchObject({
+        properties: { eventId: { type: "string", format: "uuid" } },
+      });
       for (const [name, args] of [
         ["send_chat_message", { agentId: f.agentId, prompt: "reference" }],
         [
           "revoke_queued_message",
-          { agentId: f.agentId, revokesEventId: randomUUID() },
+          { agentId: f.agentId, eventId: randomUUID() },
         ],
         ["get_chat_messages", {}],
         ["rename_chat_thread", { title: "reference" }],
@@ -249,10 +291,14 @@ describe("thin MCP Web adapters", () => {
         arguments: { agentId: f.agentId, prompt: "SDK canonical reference" },
       });
       expect(sent.isError).not.toBeTruthy();
-      const reference = chatEventsContract.send.responses[201].parse(
+      const reference = mcpSendChatMessageOutputSchema.parse(
         sent.structuredContent,
       );
-      expect(reference.runId).toBeNull();
+      expect(sent.structuredContent).toStrictEqual(reference);
+      expect(sent.content).toContainEqual({
+        type: "text",
+        text: JSON.stringify(reference),
+      });
       await flushWaitUntilForTest();
       const history = await sdk.callTool({
         name: "get_chat_messages",
@@ -264,6 +310,7 @@ describe("thin MCP Web adapters", () => {
       );
       expect(page.rows).toContainEqual(
         expect.objectContaining({
+          eventId: reference.eventId,
           threadId: reference.threadId,
           eventType: "input.prompt",
           runId: null,
@@ -459,35 +506,27 @@ describe("thin MCP Web adapters", () => {
     });
   });
 
-  it("uses Web normal-send response and persists plain text through the ordinary event stream", async () => {
+  it("returns the generated input identity and persists plain text through the ordinary event stream", async () => {
     await withMockNowForTest(now(), async () => {
       const f = await fixture();
-      const clientEventId = randomUUID();
       const input = {
         agentId: f.agentId,
         prompt: "Figma logo\n请展示最终方案",
-        clientEventId,
       };
-      const result = await send(f, input.prompt, undefined, clientEventId);
-      expect(result.runId).toBeNull();
-      expect(
-        body(
-          await mcp.call(f.token(), "send_chat_message", {
-            ...input,
-            threadId: result.threadId,
-          }),
-        ),
-      ).toMatchObject({ runId: null, threadId: result.threadId });
+      const result = await send(f, input.prompt);
+      const second = await send(f, input.prompt, result.threadId);
+      expect(second.threadId).toBe(result.threadId);
+      expect(second.eventId).not.toBe(result.eventId);
       await flushWaitUntilForTest();
       const rows = await chat.listThreadEventRows(f.actor, result.threadId);
       expect(
         rows.filter((row) => {
-          return row.id === clientEventId;
+          return row.id === result.eventId;
         }),
       ).toHaveLength(1);
       expect(
         rows.find((row) => {
-          return row.id === clientEventId;
+          return row.id === result.eventId;
         }),
       ).toMatchObject({
         eventType: "input.prompt",
@@ -504,6 +543,7 @@ describe("thin MCP Web adapters", () => {
       const web = await mcp.web(f.token(), "/api/chat/events", "POST", {
         ...input,
         threadId: result.threadId,
+        clientEventId: result.eventId,
         userMessage: {
           version: 1,
           parts: [{ type: "text", text: input.prompt }],
@@ -511,7 +551,18 @@ describe("thin MCP Web adapters", () => {
         hasTextContent: true,
       });
       expect(web.status).toBe(201);
-      expect(result).toStrictEqual(web.body);
+      expect(web.body).toStrictEqual({
+        runId: null,
+        threadId: result.threadId,
+        createdAt: result.createdAt,
+      });
+      expect(
+        (await chat.listThreadEventRows(f.actor, result.threadId)).filter(
+          (row) => {
+            return row.id === result.eventId;
+          },
+        ),
+      ).toHaveLength(1);
     });
   });
 
@@ -520,9 +571,10 @@ describe("thin MCP Web adapters", () => {
     const first = await send(f, "same ordinary message");
     const second = await send(f, "same ordinary message");
     expect(first.threadId).not.toBe(second.threadId);
+    expect(first.eventId).not.toBe(second.eventId);
   });
 
-  it("projects raw-row Thread references and preserves payloads, event IDs and paired cursors", async () => {
+  it("projects raw-row entity references and preserves payloads, event identities and paired cursors", async () => {
     const f = await fixture();
     const sent = await send(f, "bounded raw history");
     await flushWaitUntilForTest();
@@ -540,8 +592,8 @@ describe("thin MCP Web adapters", () => {
     expect(first).toStrictEqual({
       snapshot: null,
       ...nativePage,
-      rows: nativePage.rows.map(({ chatThreadId, ...row }) => {
-        return { ...row, threadId: chatThreadId };
+      rows: nativePage.rows.map(({ id, chatThreadId, ...row }) => {
+        return { ...row, eventId: id, threadId: chatThreadId };
       }),
     });
     expect(first.rows).toHaveLength(1);
@@ -575,7 +627,7 @@ describe("thin MCP Web adapters", () => {
     ).toBe("BAD_REQUEST");
   });
 
-  it("preserves the native snapshot pointer and projects only inline lifecycle Thread references", async () => {
+  it("preserves the native snapshot pointer and projects inline lifecycle entity references", async () => {
     const f = await fixture();
     const sent = await send(f, "lifecycle aggregate");
     await flushWaitUntilForTest();
@@ -590,8 +642,8 @@ describe("thin MCP Web adapters", () => {
     expect(page).toStrictEqual({
       snapshot: snapshot.body,
       ...nativeEvents,
-      events: nativeEvents.events.map(({ chatThreadId, ...event }) => {
-        return { ...event, threadId: chatThreadId };
+      events: nativeEvents.events.map(({ id, chatThreadId, ...event }) => {
+        return { ...event, eventId: id, threadId: chatThreadId };
       }),
     });
     expect(
@@ -652,6 +704,18 @@ describe("thin MCP Web adapters", () => {
         }),
       ]),
     });
+    const lifecycle = mcpGetChatThreadOutputSchema.parse(
+      body(await mcp.call(f.token(), "get_chat_thread")),
+    );
+    expect(lifecycle.events).toContainEqual(
+      expect.objectContaining({ eventId, kind: "model_selection_updated" }),
+    );
+    expect(lifecycle.events).toContainEqual(
+      expect.objectContaining({
+        eventId: serviceTierEventId,
+        kind: "service_tier_updated",
+      }),
+    );
   });
 
   it("recalls the supplied event directly and returns the native Web response", async () => {
@@ -666,15 +730,12 @@ describe("thin MCP Web adapters", () => {
       agentId: f.agentId,
       prompt: "hold the queue",
     });
-    const inputId = randomUUID();
-    const sent = await send(f, "recall me", active.threadId, inputId);
+    const sent = await send(f, "recall me", active.threadId);
     await flushWaitUntilForTest();
-    const clientEventId = randomUUID();
     const args = {
       agentId: f.agentId,
       threadId: sent.threadId,
-      revokesEventId: inputId,
-      clientEventId,
+      eventId: sent.eventId,
     };
     const recalled = await mcp.call(
       f.token({ scope: "user:org:read okou:chat:read okou:run:cancel" }),
@@ -682,16 +743,25 @@ describe("thin MCP Web adapters", () => {
       args,
     );
     expect(recalled.isError).not.toBeTruthy();
-    const web = await mcp.web(f.token(), "/api/chat/events", "POST", args);
-    expect(body(recalled)).toStrictEqual(web.body);
-    const rows = await chat.listThreadEventRows(f.actor, sent.threadId);
-    expect(
-      rows.find((row) => {
-        return row.id === clientEventId;
-      }),
-    ).toMatchObject({
-      revokesEventId: inputId,
+    const web = await mcp.web(f.token(), "/api/chat/events", "POST", {
+      agentId: args.agentId,
+      threadId: args.threadId,
+      revokesEventId: args.eventId,
     });
+    expect(body(recalled)).toStrictEqual(web.body);
+    const history = mcpGetChatMessagesOutputSchema.parse(
+      body(
+        await mcp.call(f.token(), "get_chat_messages", {
+          threadId: sent.threadId,
+        }),
+      ),
+    );
+    expect(history.rows).toContainEqual(
+      expect.objectContaining({
+        eventType: "control.revoke",
+        revokesEventId: sent.eventId,
+      }),
+    );
   });
 
   it("preserves Web search filters, empty results and activity-summary behavior", async () => {
@@ -745,7 +815,7 @@ describe("thin MCP Web adapters", () => {
         await mcp.call(peer, "revoke_queued_message", {
           agentId: f.agentId,
           threadId: sent.threadId,
-          revokesEventId: randomUUID(),
+          eventId: randomUUID(),
         }),
       ).code,
     ).toBe("NOT_FOUND");

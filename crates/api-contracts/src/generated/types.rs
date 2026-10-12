@@ -1409,6 +1409,23 @@ pub mod runners {
             },
         }
 
+        /// Independently authorized exact KDC transport snapshot.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(tag = "type", rename_all_fields = "camelCase")]
+        pub enum CheckRequestExpectedKdcTransport {
+            /// Exact saved public-network KDC route.
+            #[serde(rename = "direct")]
+            Direct,
+            /// Exact independently authorized SSH-to-loopback KDC route.
+            #[serde(rename = "ssh")]
+            Ssh {
+                /// Exact separately granted saved SSH UUID.
+                connection_id: String,
+                /// Current SSH generation, independently fenced from RFB.
+                generation: i64,
+            },
+        }
+
         /// Recheck current Run authorization and saved configuration.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -1421,6 +1438,12 @@ pub mod runners {
             pub expected_generation: i64,
             /// Expected explicit transport snapshot.
             pub expected_transport: CheckRequestExpectedTransport,
+            /// Online-only independent KDC authority snapshot.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub expected_kdc_transport: Option<CheckRequestExpectedKdcTransport>,
+            /// Kerberos-only pinned source revision.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub expected_credential_revision: Option<i64>,
         }
 
         /// Current authorization snapshot, not a reservation or guarantee of exclusive control.
@@ -1464,6 +1487,15 @@ pub mod runners {
             /// QEMU-specific SCRAM-SHA-256 authentication.
             #[serde(rename = "qemu_scram_sha256")]
             QemuScramSha256,
+            /// Canonical selected-service ticket; no KDC.
+            #[serde(rename = "qemu_kerberos_ticket")]
+            QemuKerberosTicket,
+            /// Explicit online canonical keytab.
+            #[serde(rename = "qemu_kerberos_keytab")]
+            QemuKerberosKeytab,
+            /// Explicit online password.
+            #[serde(rename = "qemu_kerberos_password")]
+            QemuKerberosPassword,
             /// RSA-AES password-only subtype with 255-byte fields.
             #[serde(rename = "rsa_aes_password")]
             RsaAesPassword,
@@ -1502,6 +1534,9 @@ pub mod runners {
             /// QEMU X509SASL subtype 263 with verified TLS.
             #[serde(rename = "qemu_x509_sasl")]
             QemuX509Sasl,
+            /// Verified QEMU263 with exact GSSAPI and no inner layer.
+            #[serde(rename = "qemu_x509_gssapi")]
+            QemuX509Gssapi,
             /// Pinned RSA-AES type 5; full-session AES-128 EAX.
             #[serde(rename = "rsa_aes_ra2")]
             RsaAesRa2,
@@ -1539,6 +1574,20 @@ pub mod runners {
             Ssh,
         }
 
+        /// KDC transport for this exact source/RFB/KDC tuple.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        pub enum ResolveRequestSupportedProfileKdcTransportType {
+            /// Offline service ticket; no KDC operation.
+            #[serde(rename = "none")]
+            None,
+            /// Separate exact public KDC route.
+            #[serde(rename = "direct")]
+            Direct,
+            /// Separate authorized SSH-loopback KDC route.
+            #[serde(rename = "ssh")]
+            Ssh,
+        }
+
         /// One supported authentication, security and transport tuple, never a cross-product.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -1549,6 +1598,9 @@ pub mod runners {
             pub security_type: ResolveRequestSupportedProfileSecurityType,
             /// Supported transport for this exact tuple.
             pub transport_type: ResolveRequestSupportedProfileTransportType,
+            /// Absent for legacy, none for offline tickets, exact direct/ssh for online sources.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub kdc_transport_type: Option<ResolveRequestSupportedProfileKdcTransportType>,
         }
 
         /// Resolve one saved VNC policy supported by this Runner.
@@ -1658,8 +1710,54 @@ pub mod runners {
             }
         }
 
+        /// Explicit case-preserving Kerberos identity; native validates K1 budgets.
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        pub struct ResolveResponseResolvedTransportAuthenticationQemuKerberosTicketInitiator {
+            /// Exact realm, never discovered from a hostname.
+            pub realm: String,
+            /// Ordered bounded principal components, never a path or ambient identity.
+            pub components: Vec<String>,
+        }
+
+        /// Explicit case-preserving Kerberos identity; native validates K1 budgets.
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        pub struct ResolveResponseResolvedTransportAuthenticationQemuKerberosTicketService {
+            /// Exact realm, never discovered from a hostname.
+            pub realm: String,
+            /// Ordered bounded principal components, never a path or ambient identity.
+            pub components: Vec<String>,
+        }
+
         /// Typed private VNC credential.
         pub enum ResolveResponseResolvedTransportAuthentication {
+            /// Explicit canonical offline ticket; no KDC fallback.
+            QemuKerberosTicket {
+                /// Explicit saved initiator identity.
+                initiator:
+                    ResolveResponseResolvedTransportAuthenticationQemuKerberosTicketInitiator,
+                /// Exact service selected by offline import.
+                service: ResolveResponseResolvedTransportAuthenticationQemuKerberosTicketService,
+                /// Canonical service-only FILE4 cache, zeroizing and never guest-visible.
+                ticket_cache: crate::SecretUtf8Text<87384>,
+            },
+            /// Explicit same-source online keytab acquisition.
+            QemuKerberosKeytab {
+                /// Explicit saved initiator identity.
+                initiator:
+                    ResolveResponseResolvedTransportAuthenticationQemuKerberosTicketInitiator,
+                /// Canonical FILEkeytab2, zeroizing and never guest-visible.
+                keytab: crate::SecretUtf8Text<87384>,
+            },
+            /// Explicit same-source online password acquisition.
+            QemuKerberosPassword {
+                /// Explicit saved initiator identity.
+                initiator:
+                    ResolveResponseResolvedTransportAuthenticationQemuKerberosTicketInitiator,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
             /// Classic VNC password challenge response.
             VncPassword {
                 /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
@@ -1737,6 +1835,12 @@ pub mod runners {
                 // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
                 #[derive(serde::Deserialize)]
                 enum Kind {
+                    #[serde(rename = "qemu_kerberos_ticket")]
+                    QemuKerberosTicket,
+                    #[serde(rename = "qemu_kerberos_keytab")]
+                    QemuKerberosKeytab,
+                    #[serde(rename = "qemu_kerberos_password")]
+                    QemuKerberosPassword,
                     #[serde(rename = "vnc_password")]
                     VncPassword,
                     #[serde(rename = "username_password")]
@@ -1765,6 +1869,14 @@ pub mod runners {
                 enum Field {
                     #[serde(rename = "method")]
                     Outcome,
+                    #[serde(rename = "initiator")]
+                    Initiator,
+                    #[serde(rename = "service")]
+                    Service,
+                    #[serde(rename = "ticketCache")]
+                    TicketCache,
+                    #[serde(rename = "keytab")]
+                    Keytab,
                     #[serde(rename = "password")]
                     Password,
                     #[serde(rename = "username")]
@@ -1788,6 +1900,12 @@ pub mod runners {
                         mut map: M,
                     ) -> Result<Self::Value, M::Error> {
                         let mut outcome = None::<Kind>;
+                        let mut initiator = None::<ResolveResponseResolvedTransportAuthenticationQemuKerberosTicketInitiator>;
+                        let mut service = None::<
+                            ResolveResponseResolvedTransportAuthenticationQemuKerberosTicketService,
+                        >;
+                        let mut ticket_cache = None::<crate::SecretUtf8Text<87384>>;
+                        let mut keytab = None::<crate::SecretUtf8Text<87384>>;
                         let mut password = None::<crate::SecretUtf8Text<1023>>;
                         let mut username = None::<String>;
                         let mut certificate_chain_der = None::<Vec<String>>;
@@ -1801,6 +1919,38 @@ pub mod runners {
                                         ));
                                     }
                                     outcome = Some(map.next_value()?);
+                                }
+                                Field::Initiator => {
+                                    if initiator.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    initiator = Some(map.next_value()?);
+                                }
+                                Field::Service => {
+                                    if service.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    service = Some(map.next_value()?);
+                                }
+                                Field::TicketCache => {
+                                    if ticket_cache.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    ticket_cache = Some(map.next_value()?);
+                                }
+                                Field::Keytab => {
+                                    if keytab.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    keytab = Some(map.next_value()?);
                                 }
                                 Field::Password => {
                                     if password.is_some() {
@@ -1836,18 +1986,21 @@ pub mod runners {
                                 }
                             }
                         }
-                        match (outcome, password, username, certificate_chain_der, private_key_pkcs8_der) {
-                            (Some(Kind::VncPassword), Some(password), None, None, None) => Ok(ResolveResponseResolvedTransportAuthentication::VncPassword { password }),
-                            (Some(Kind::UsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::UsernamePassword { username, password }),
-                            (Some(Kind::AppleDhUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleDhUsernamePassword { username, password }),
-                            (Some(Kind::AppleSrpUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleSrpUsernamePassword { username, password }),
-                            (Some(Kind::AppleRsaSrpUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleRsaSrpUsernamePassword { username, password }),
-                            (Some(Kind::RsaAesPassword), Some(password), None, None, None) => Ok(ResolveResponseResolvedTransportAuthentication::RsaAesPassword { password }),
-                            (Some(Kind::RsaAesUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::RsaAesUsernamePassword { username, password }),
-                            (Some(Kind::QemuScramSha256), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::QemuScramSha256 { username, password }),
-                            (Some(Kind::None), None, None, None, None) => Ok(ResolveResponseResolvedTransportAuthentication::None),
-                            (Some(Kind::ClientCertificate), None, None, Some(certificate_chain_der), Some(private_key_pkcs8_der)) => Ok(ResolveResponseResolvedTransportAuthentication::ClientCertificate { certificate_chain_der, private_key_pkcs8_der }),
-                            (Some(Kind::ClientCertificateVncPassword), Some(password), None, Some(certificate_chain_der), Some(private_key_pkcs8_der)) => Ok(ResolveResponseResolvedTransportAuthentication::ClientCertificateVncPassword { certificate_chain_der, private_key_pkcs8_der, password }),
+                        match (outcome, initiator, service, ticket_cache, keytab, password, username, certificate_chain_der, private_key_pkcs8_der) {
+                            (Some(Kind::QemuKerberosTicket), Some(initiator), Some(service), Some(ticket_cache), None, None, None, None, None) => Ok(ResolveResponseResolvedTransportAuthentication::QemuKerberosTicket { initiator, service, ticket_cache }),
+                            (Some(Kind::QemuKerberosKeytab), Some(initiator), None, None, Some(keytab), None, None, None, None) => Ok(ResolveResponseResolvedTransportAuthentication::QemuKerberosKeytab { initiator, keytab }),
+                            (Some(Kind::QemuKerberosPassword), Some(initiator), None, None, None, Some(password), None, None, None) => Ok(ResolveResponseResolvedTransportAuthentication::QemuKerberosPassword { initiator, password }),
+                            (Some(Kind::VncPassword), None, None, None, None, Some(password), None, None, None) => Ok(ResolveResponseResolvedTransportAuthentication::VncPassword { password }),
+                            (Some(Kind::UsernamePassword), None, None, None, None, Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::UsernamePassword { username, password }),
+                            (Some(Kind::AppleDhUsernamePassword), None, None, None, None, Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleDhUsernamePassword { username, password }),
+                            (Some(Kind::AppleSrpUsernamePassword), None, None, None, None, Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleSrpUsernamePassword { username, password }),
+                            (Some(Kind::AppleRsaSrpUsernamePassword), None, None, None, None, Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleRsaSrpUsernamePassword { username, password }),
+                            (Some(Kind::RsaAesPassword), None, None, None, None, Some(password), None, None, None) => Ok(ResolveResponseResolvedTransportAuthentication::RsaAesPassword { password }),
+                            (Some(Kind::RsaAesUsernamePassword), None, None, None, None, Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::RsaAesUsernamePassword { username, password }),
+                            (Some(Kind::QemuScramSha256), None, None, None, None, Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::QemuScramSha256 { username, password }),
+                            (Some(Kind::None), None, None, None, None, None, None, None, None) => Ok(ResolveResponseResolvedTransportAuthentication::None),
+                            (Some(Kind::ClientCertificate), None, None, None, None, None, None, Some(certificate_chain_der), Some(private_key_pkcs8_der)) => Ok(ResolveResponseResolvedTransportAuthentication::ClientCertificate { certificate_chain_der, private_key_pkcs8_der }),
+                            (Some(Kind::ClientCertificateVncPassword), None, None, None, None, Some(password), None, Some(certificate_chain_der), Some(private_key_pkcs8_der)) => Ok(ResolveResponseResolvedTransportAuthentication::ClientCertificateVncPassword { certificate_chain_der, private_key_pkcs8_der, password }),
                             _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
                         }
                     }
@@ -1937,6 +2090,122 @@ pub mod runners {
             }
         }
 
+        /// Explicit case-preserving Kerberos identity; native validates K1 budgets.
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        pub struct ResolveResponseResolvedTransportSecurityQemuX509GssapiService {
+            /// Exact realm, never discovered from a hostname.
+            pub realm: String,
+            /// Ordered bounded principal components, never a path or ambient identity.
+            pub components: Vec<String>,
+        }
+
+        /// Independently authorized exact KDC transport snapshot.
+        pub enum ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport {
+            /// Exact saved public-network KDC route.
+            Direct,
+            /// Exact independently authorized SSH-to-loopback KDC route.
+            Ssh {
+                /// Exact separately granted saved SSH UUID.
+                connection_id: String,
+                /// Current SSH generation, independently fenced from RFB.
+                generation: i64,
+            },
+        }
+
+        impl<'de> serde::Deserialize<'de>
+            for ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport
+        {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
+                #[derive(serde::Deserialize)]
+                enum Kind {
+                    #[serde(rename = "direct")]
+                    Direct,
+                    #[serde(rename = "ssh")]
+                    Ssh,
+                }
+                #[derive(serde::Deserialize)]
+                #[serde(field_identifier)]
+                enum Field {
+                    #[serde(rename = "type")]
+                    Outcome,
+                    #[serde(rename = "connectionId")]
+                    ConnectionId,
+                    #[serde(rename = "generation")]
+                    Generation,
+                }
+                struct Visitor;
+                impl<'de> serde::de::Visitor<'de> for Visitor {
+                    type Value = ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport;
+                    fn expecting(
+                        &self,
+                        formatter: &mut std::fmt::Formatter<'_>,
+                    ) -> std::fmt::Result {
+                        formatter.write_str("a private authority response object")
+                    }
+                    fn visit_map<M: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: M,
+                    ) -> Result<Self::Value, M::Error> {
+                        let mut outcome = None::<Kind>;
+                        let mut connection_id = None::<String>;
+                        let mut generation = None::<i64>;
+                        while let Some(field) = map.next_key::<Field>()? {
+                            match field {
+                                Field::Outcome => {
+                                    if outcome.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    outcome = Some(map.next_value()?);
+                                }
+                                Field::ConnectionId => {
+                                    if connection_id.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    connection_id = Some(map.next_value()?);
+                                }
+                                Field::Generation => {
+                                    if generation.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    generation = Some(map.next_value()?);
+                                }
+                            }
+                        }
+                        match (outcome, connection_id, generation) {
+                            (Some(Kind::Direct), None, None) => Ok(ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport::Direct),
+                            (Some(Kind::Ssh), Some(connection_id), Some(generation)) => Ok(ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport::Ssh { connection_id, generation }),
+                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
+                        }
+                    }
+                }
+                deserializer.deserialize_map(Visitor)
+            }
+        }
+
+        /// Online-only bounded KDC policy, independent of RFB transport.
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        pub struct ResolveResponseResolvedTransportSecurityQemuX509GssapiKdc {
+            /// Exact saved KDC host; never provided by native.
+            pub host: String,
+            /// Exact saved TCP KDC port.
+            pub port: u64,
+            /// Current separately authorized route snapshot.
+            pub transport: ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport,
+            /// Requested bounded lifetime, not a server guarantee.
+            pub ticket_lifetime_seconds: u64,
+            /// Requested bounded renew-till policy; never extends active RFB.
+            pub renewable_lifetime_seconds: u64,
+        }
+
         /// Saved security policy, independent of future engine capabilities.
         pub enum ResolveResponseResolvedTransportSecurity {
             /// Pinned type 5; full-session AES-128 EAX.
@@ -1987,6 +2256,15 @@ pub mod runners {
             AppleSrp,
             /// Apple RSA/SRP type 33; only the separately verified SSH channel protects the RFB session.
             AppleRsaSrp,
+            /// Verified QEMU263/GSSAPI/no inner layer; never SCRAM or anonymous TLS.
+            QemuX509Gssapi {
+                /// Required verified TLS trust policy.
+                trust: ResolveResponseResolvedTransportSecurityX509VncTrust,
+                /// Exact same-realm vnc service, separate from TCP/TLS identities.
+                service: ResolveResponseResolvedTransportSecurityQemuX509GssapiService,
+                /// Absent offline; separately authorized route/policy online.
+                kdc: Option<ResolveResponseResolvedTransportSecurityQemuX509GssapiKdc>,
+            },
         }
 
         impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedTransportSecurity {
@@ -2018,6 +2296,8 @@ pub mod runners {
                     AppleSrp,
                     #[serde(rename = "apple_rsa_srp")]
                     AppleRsaSrp,
+                    #[serde(rename = "qemu_x509_gssapi")]
+                    QemuX509Gssapi,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -2028,6 +2308,10 @@ pub mod runners {
                     ServerKeySha256,
                     #[serde(rename = "trust")]
                     Trust,
+                    #[serde(rename = "service")]
+                    Service,
+                    #[serde(rename = "kdc")]
+                    Kdc,
                 }
                 struct Visitor;
                 impl<'de> serde::de::Visitor<'de> for Visitor {
@@ -2046,6 +2330,11 @@ pub mod runners {
                         let mut server_key_sha256 = None::<String>;
                         let mut trust =
                             None::<ResolveResponseResolvedTransportSecurityX509VncTrust>;
+                        let mut service =
+                            None::<ResolveResponseResolvedTransportSecurityQemuX509GssapiService>;
+                        let mut kdc = None::<
+                            Option<ResolveResponseResolvedTransportSecurityQemuX509GssapiKdc>,
+                        >;
                         while let Some(field) = map.next_key::<Field>()? {
                             match field {
                                 Field::Outcome => {
@@ -2072,53 +2361,92 @@ pub mod runners {
                                     }
                                     trust = Some(map.next_value()?);
                                 }
+                                Field::Service => {
+                                    if service.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    service = Some(map.next_value()?);
+                                }
+                                Field::Kdc => {
+                                    if kdc.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    kdc = Some(map.next_value()?);
+                                }
                             }
                         }
-                        match (outcome, server_key_sha256, trust) {
-                            (Some(Kind::RsaAesRa2), Some(server_key_sha256), None) => {
+                        match (outcome, server_key_sha256, trust, service, kdc) {
+                            (Some(Kind::RsaAesRa2), Some(server_key_sha256), None, None, None) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::RsaAesRa2 {
                                     server_key_sha256,
                                 })
                             }
-                            (Some(Kind::RsaAesRa2256), Some(server_key_sha256), None) => {
-                                Ok(ResolveResponseResolvedTransportSecurity::RsaAesRa2256 {
-                                    server_key_sha256,
-                                })
-                            }
-                            (Some(Kind::RsaAesRa2ne), Some(server_key_sha256), None) => {
-                                Ok(ResolveResponseResolvedTransportSecurity::RsaAesRa2ne {
-                                    server_key_sha256,
-                                })
-                            }
-                            (Some(Kind::RsaAesRa2ne256), Some(server_key_sha256), None) => {
-                                Ok(ResolveResponseResolvedTransportSecurity::RsaAesRa2ne256 {
-                                    server_key_sha256,
-                                })
-                            }
-                            (Some(Kind::X509Vnc), None, Some(trust)) => {
+                            (
+                                Some(Kind::RsaAesRa2256),
+                                Some(server_key_sha256),
+                                None,
+                                None,
+                                None,
+                            ) => Ok(ResolveResponseResolvedTransportSecurity::RsaAesRa2256 {
+                                server_key_sha256,
+                            }),
+                            (
+                                Some(Kind::RsaAesRa2ne),
+                                Some(server_key_sha256),
+                                None,
+                                None,
+                                None,
+                            ) => Ok(ResolveResponseResolvedTransportSecurity::RsaAesRa2ne {
+                                server_key_sha256,
+                            }),
+                            (
+                                Some(Kind::RsaAesRa2ne256),
+                                Some(server_key_sha256),
+                                None,
+                                None,
+                                None,
+                            ) => Ok(ResolveResponseResolvedTransportSecurity::RsaAesRa2ne256 {
+                                server_key_sha256,
+                            }),
+                            (Some(Kind::X509Vnc), None, Some(trust), None, None) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::X509Vnc { trust })
                             }
-                            (Some(Kind::X509Plain), None, Some(trust)) => {
+                            (Some(Kind::X509Plain), None, Some(trust), None, None) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::X509Plain { trust })
                             }
-                            (Some(Kind::X509None), None, Some(trust)) => {
+                            (Some(Kind::X509None), None, Some(trust), None, None) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::X509None { trust })
                             }
-                            (Some(Kind::QemuX509Sasl), None, Some(trust)) => Ok(
+                            (Some(Kind::QemuX509Sasl), None, Some(trust), None, None) => Ok(
                                 ResolveResponseResolvedTransportSecurity::QemuX509Sasl { trust },
                             ),
-                            (Some(Kind::AppleVncPassword), None, None) => {
+                            (Some(Kind::AppleVncPassword), None, None, None, None) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::AppleVncPassword)
                             }
-                            (Some(Kind::AppleDh), None, None) => {
+                            (Some(Kind::AppleDh), None, None, None, None) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::AppleDh)
                             }
-                            (Some(Kind::AppleSrp), None, None) => {
+                            (Some(Kind::AppleSrp), None, None, None, None) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::AppleSrp)
                             }
-                            (Some(Kind::AppleRsaSrp), None, None) => {
+                            (Some(Kind::AppleRsaSrp), None, None, None, None) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::AppleRsaSrp)
                             }
+                            (
+                                Some(Kind::QemuX509Gssapi),
+                                None,
+                                Some(trust),
+                                Some(service),
+                                Some(kdc),
+                            ) => Ok(ResolveResponseResolvedTransportSecurity::QemuX509Gssapi {
+                                trust,
+                                service,
+                                kdc,
+                            }),
                             _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
                         }
                     }
@@ -2225,6 +2553,25 @@ pub mod runners {
                 /// Explicit saved transport and trust policy; never downgrade.
                 security: ResolveResponseResolvedTransportSecurity,
             },
+            /// Current explicit Kerberos source, independent KDC route and source revision.
+            ResolvedKerberos {
+                /// Current private destination.
+                host: String,
+                /// Current destination port.
+                port: u64,
+                /// Current saved configuration generation.
+                generation: i64,
+                /// Kerberos-only source revision, mandatory when admitting a Kerberos profile.
+                credential_revision: i64,
+                /// Certificate identity for X509 transport handoffs; absent for Apple DH.
+                server_name: String,
+                /// Explicit direct or generation-bound SSH transport snapshot.
+                transport: ResolveResponseResolvedTransportTransport,
+                /// Exact saved method, with no credential for X509None.
+                authentication: ResolveResponseResolvedTransportAuthentication,
+                /// Explicit saved transport and trust policy; never downgrade.
+                security: ResolveResponseResolvedTransportSecurity,
+            },
         }
 
         impl<'de> serde::Deserialize<'de> for ResolveResponse {
@@ -2248,6 +2595,8 @@ pub mod runners {
                     ResolvedAppleRsaSrp,
                     #[serde(rename = "resolved_rsa_aes")]
                     ResolvedRsaAes,
+                    #[serde(rename = "resolved_kerberos")]
+                    ResolvedKerberos,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -2268,6 +2617,8 @@ pub mod runners {
                     Authentication,
                     #[serde(rename = "security")]
                     Security,
+                    #[serde(rename = "credentialRevision")]
+                    CredentialRevision,
                 }
                 struct Visitor;
                 impl<'de> serde::de::Visitor<'de> for Visitor {
@@ -2291,6 +2642,7 @@ pub mod runners {
                         let mut authentication =
                             None::<ResolveResponseResolvedTransportAuthentication>;
                         let mut security = None::<ResolveResponseResolvedTransportSecurity>;
+                        let mut credential_revision = None::<i64>;
                         while let Some(field) = map.next_key::<Field>()? {
                             match field {
                                 Field::Outcome => {
@@ -2357,6 +2709,14 @@ pub mod runners {
                                     }
                                     security = Some(map.next_value()?);
                                 }
+                                Field::CredentialRevision => {
+                                    if credential_revision.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    credential_revision = Some(map.next_value()?);
+                                }
                             }
                         }
                         match (
@@ -2368,12 +2728,22 @@ pub mod runners {
                             transport,
                             authentication,
                             security,
+                            credential_revision,
                         ) {
-                            (Some(Kind::Unavailable), None, None, None, None, None, None, None) => {
-                                Ok(ResolveResponse::Unavailable)
-                            }
+                            (
+                                Some(Kind::Unavailable),
+                                None,
+                                None,
+                                None,
+                                None,
+                                None,
+                                None,
+                                None,
+                                None,
+                            ) => Ok(ResolveResponse::Unavailable),
                             (
                                 Some(Kind::UnsupportedProfile),
+                                None,
                                 None,
                                 None,
                                 None,
@@ -2391,6 +2761,7 @@ pub mod runners {
                                 Some(transport),
                                 Some(authentication),
                                 Some(security),
+                                None,
                             ) => Ok(ResolveResponse::ResolvedTransport {
                                 host,
                                 port,
@@ -2409,6 +2780,7 @@ pub mod runners {
                                 Some(transport),
                                 Some(authentication),
                                 Some(security),
+                                None,
                             ) => Ok(ResolveResponse::ResolvedAppleVncPassword {
                                 host,
                                 port,
@@ -2426,6 +2798,7 @@ pub mod runners {
                                 Some(transport),
                                 Some(authentication),
                                 Some(security),
+                                None,
                             ) => Ok(ResolveResponse::ResolvedAppleDh {
                                 host,
                                 port,
@@ -2443,6 +2816,7 @@ pub mod runners {
                                 Some(transport),
                                 Some(authentication),
                                 Some(security),
+                                None,
                             ) => Ok(ResolveResponse::ResolvedAppleSrp {
                                 host,
                                 port,
@@ -2460,6 +2834,7 @@ pub mod runners {
                                 Some(transport),
                                 Some(authentication),
                                 Some(security),
+                                None,
                             ) => Ok(ResolveResponse::ResolvedAppleRsaSrp {
                                 host,
                                 port,
@@ -2477,10 +2852,31 @@ pub mod runners {
                                 Some(transport),
                                 Some(authentication),
                                 Some(security),
+                                None,
                             ) => Ok(ResolveResponse::ResolvedRsaAes {
                                 host,
                                 port,
                                 generation,
+                                transport,
+                                authentication,
+                                security,
+                            }),
+                            (
+                                Some(Kind::ResolvedKerberos),
+                                Some(host),
+                                Some(port),
+                                Some(generation),
+                                Some(server_name),
+                                Some(transport),
+                                Some(authentication),
+                                Some(security),
+                                Some(credential_revision),
+                            ) => Ok(ResolveResponse::ResolvedKerberos {
+                                host,
+                                port,
+                                generation,
+                                credential_revision,
+                                server_name,
                                 transport,
                                 authentication,
                                 security,

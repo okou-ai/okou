@@ -9,6 +9,39 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.729.0](https://github.com/okou-ai/okou/compare/api-v1.728.2...api-v1.729.0) (2026-10-12)
+
+
+### Features
+
+* **vnc:** prepare owner kerberos api and runner admission ([#38816](https://github.com/okou-ai/okou/issues/38816)) ([738b20d](https://github.com/okou-ai/okou/commit/738b20de5c517c2008bcc5543cc0f55a439670cb))
+
+
+### Documentation
+
+* **mcp:** clarify chat search limits and completeness ([#39448](https://github.com/okou-ai/okou/issues/39448)) ([411368e](https://github.com/okou-ai/okou/commit/411368e37d5363f2125451520d3fba7a7d1f3fa5))
+* **mcp:** publish unicode search and highlight semantics ([#39450](https://github.com/okou-ai/okou/issues/39450)) ([76197e7](https://github.com/okou-ai/okou/commit/76197e77788081316d24bcbfd7a02c1a6c538b34))
+
+
+### Refactoring
+
+* **api:** atomically disable ineligible workflow webhooks ([#39462](https://github.com/okou-ai/okou/issues/39462)) ([840440c](https://github.com/okou-ai/okou/commit/840440cd12fa2f32eb9dfb1cd834ed575f507716))
+* **api:** connect slack status to request graph inputs ([#39444](https://github.com/okou-ai/okou/issues/39444)) ([043377b](https://github.com/okou-ai/okou/commit/043377b754621c6c548186d11c066a0278e704bc)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own browser user-action application claim ([#39441](https://github.com/okou-ai/okou/issues/39441)) ([09c1a97](https://github.com/okou-ai/okou/commit/09c1a97c7d105e9b0eae1bd0319a2c7f648bc467))
+* **api:** own discord ingress notices locally ([#39469](https://github.com/okou-ai/okou/issues/39469)) ([20488b7](https://github.com/okou-ai/okou/commit/20488b7d807c67a60d704cd082024efdb5474169))
+* **api:** preconnect billing status request graph ([#39459](https://github.com/okou-ai/okou/issues/39459)) ([3cbd47b](https://github.com/okou-ai/okou/commit/3cbd47b2bc2cc75890a9aa416452db980ce4a36c)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **mcp:** unify chat event identities ([#39452](https://github.com/okou-ai/okou/issues/39452)) ([da20e96](https://github.com/okou-ai/okou/commit/da20e96dc74e79aa3fab079beae064259906469e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.553.0
+    * @okouai/core bumped to 8.748.1
+    * @okouai/db bumped to 1.332.0
+    * @okouai/pi-agent-runtime bumped to 1.49.18
+
 ## [1.728.2](https://github.com/okou-ai/okou/compare/api-v1.728.1...api-v1.728.2) (2026-10-12)
 
 

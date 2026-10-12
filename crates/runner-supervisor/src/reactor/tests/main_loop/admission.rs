@@ -2083,7 +2083,6 @@ async fn pending_finalizing_fallback_skips_home_cache_lock_retry() {
     let cache_key = runner_host::paths::scoped_home_image_cache_key(
         &config.runner.group,
         "vm0/default",
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         reuse_key,
         image_size_bytes,
     );

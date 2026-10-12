@@ -79,7 +79,7 @@ const commitLegacyPlanInvoice$ = command(
   ): Promise<LegacyPlanInvoiceResult> => {
     const db = set(writeDb$);
     const args = input.invoice;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0174; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: invoice receipt/credit grants or trial-lot extensions must roll back when the later wallet publication rejects its observed admission identity; single-statement alternative: receipt-first CTEs can retain a receipt after rejected publication, and an initial snapshot cannot preserve later fresh member-pack and Stripe-owner reads.
     return await db.transaction(async (tx) => {
       const [wallet] = await tx
         .select()

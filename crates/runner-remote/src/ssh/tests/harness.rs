@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 mod process;
 use httpmock::{Mock, MockServer};
+use runner_rpc_proto::stream::{Frame, Writer};
 use russh::{
     Channel, ChannelId,
     keys::{Algorithm, HashAlg, PrivateKey, PublicKey},
@@ -32,7 +33,7 @@ use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
 
 pub(crate) const CONNECTION: &str = "9f0128ce-dd11-4234-b1ac-a0c33353a112";
-pub(super) const TOKEN: &str = "vm0_official_test-only";
+pub(crate) const TOKEN: &str = "vm0_official_test-only";
 
 pub(crate) fn native_registration(
     run: &super::super::Run,
@@ -176,15 +177,15 @@ impl tokio::io::AsyncWrite for ReservedStream {
 }
 
 pub(crate) struct Harness {
-    pub(super) api: MockServer,
+    pub(crate) api: MockServer,
     pub(crate) runtime: Arc<SshRuntime>,
     pub(crate) network: Arc<TestNetwork>,
     pub(crate) observed: Arc<Observed>,
     pub(super) key: PrivateKey,
     pub(super) host_key: PrivateKey,
     pub(crate) run: RunId,
-    pub(super) identity: RunnerProcessIdentity,
-    pub(super) cancel: CancellationToken,
+    pub(crate) identity: RunnerProcessIdentity,
+    pub(crate) cancel: CancellationToken,
     pub(super) lifecycle: CancellationToken,
     pub(super) control: guest_control_client::GuestControlClient,
     _control_peer: tokio::net::UnixStream,
@@ -424,7 +425,7 @@ impl Harness {
             .await
     }
 
-    pub(super) async fn resolve_for_run(&self, run: RunId, body: Value) -> Mock<'_> {
+    pub(crate) async fn resolve_for_run(&self, run: RunId, body: Value) -> Mock<'_> {
         self.api.mock_async(|when, then| {
             when.method("POST").path(format!("/api/runners/runs/{run}/ssh/resolve"))
                 .header("authorization", format!("Bearer {TOKEN}"))
@@ -654,7 +655,18 @@ pub(crate) fn params() -> Value {
 pub(super) async fn request_frames(mut guest: DuplexStream, json: String) -> Vec<Value> {
     guest.write_u32(json.len() as u32).await.unwrap();
     guest.write_all(json.as_bytes()).await.unwrap();
-    guest.shutdown().await.unwrap();
+    if serde_json::from_str::<Value>(&json)
+        .ok()
+        .is_some_and(|request| {
+            request["method"]
+                .as_str()
+                .is_some_and(|method| method.starts_with("vnc."))
+        })
+    {
+        Writer::input(&mut guest).send(&Frame::End).await.unwrap();
+    } else {
+        guest.shutdown().await.unwrap();
+    }
     frames(guest).await
 }
 pub(super) async fn frames(mut guest: DuplexStream) -> Vec<Value> {

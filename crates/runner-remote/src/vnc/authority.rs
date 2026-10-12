@@ -83,6 +83,14 @@ enum X509Choice {
 }
 
 pub(super) enum Authentication {
+    Kerberos {
+        server_name: String,
+        roots: TrustRoots,
+        credentials: kerberos_worker::Credentials,
+        policy: kerberos_worker::TicketPolicy,
+        binding: super::kerberos::Binding,
+        kdc: Option<super::kerberos::Kdc>,
+    },
     X509 {
         server_name: String,
         authentication: X509Authentication,
@@ -105,7 +113,7 @@ pub(super) enum Authentication {
     },
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Transport {
     Direct,
     Ssh { connection: Uuid, generation: i64 },
@@ -194,6 +202,7 @@ fn rsa_aes_profiles(supports_ssh: bool) -> Vec<ResolveRequestSupportedProfile> {
                     auth_method: auth,
                     security_type: security,
                     transport_type: Route::Direct,
+                    kdc_transport_type: None,
                 });
             }
             if supports_ssh {
@@ -201,6 +210,7 @@ fn rsa_aes_profiles(supports_ssh: bool) -> Vec<ResolveRequestSupportedProfile> {
                     auth_method: auth,
                     security_type: security,
                     transport_type: Route::Ssh,
+                    kdc_transport_type: None,
                 });
             }
         }
@@ -208,7 +218,7 @@ fn rsa_aes_profiles(supports_ssh: bool) -> Vec<ResolveRequestSupportedProfile> {
     profiles
 }
 
-fn valid_port_and_generation(port: u64, generation: i64) -> Result<u16, Failure> {
+pub(super) fn valid_port_and_generation(port: u64, generation: i64) -> Result<u16, Failure> {
     let port = u16::try_from(port).map_err(|_| Failure::Authority)?;
     if port == 0 || !(1..=i64::from(i32::MAX)).contains(&generation) {
         return Err(Failure::Authority);
@@ -216,7 +226,7 @@ fn valid_port_and_generation(port: u64, generation: i64) -> Result<u16, Failure>
     Ok(port)
 }
 
-fn parse_transport(
+pub(super) fn parse_transport(
     transport: ResolveResponseResolvedTransportTransport,
     supports_ssh: bool,
 ) -> Result<Transport, Failure> {
@@ -822,37 +832,48 @@ impl Authority {
         run: RunId,
         connection: uuid::Uuid,
         supports_ssh: bool,
+        kerberos_probe: Option<(
+            &std::path::Path,
+            std::sync::Arc<dyn kerberos_worker::WorkOwner>,
+            tokio::time::Instant,
+        )>,
     ) -> Result<Credential, Failure> {
         let mut supported_profiles = vec![
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::None,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509None,
                 transport_type: ResolveRequestSupportedProfileTransportType::Direct,
+                kdc_transport_type: None,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
                 transport_type: ResolveRequestSupportedProfileTransportType::Direct,
+                kdc_transport_type: None,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::UsernamePassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
                 transport_type: ResolveRequestSupportedProfileTransportType::Direct,
+                kdc_transport_type: None,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::QemuScramSha256,
                 security_type: ResolveRequestSupportedProfileSecurityType::QemuX509Sasl,
                 transport_type: ResolveRequestSupportedProfileTransportType::Direct,
+                kdc_transport_type: None,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::ClientCertificate,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509None,
                 transport_type: ResolveRequestSupportedProfileTransportType::Direct,
+                kdc_transport_type: None,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::ClientCertificateVncPassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
                 transport_type: ResolveRequestSupportedProfileTransportType::Direct,
+                kdc_transport_type: None,
             },
         ];
         if supports_ssh {
@@ -861,57 +882,77 @@ impl Authority {
                     auth_method: ResolveRequestSupportedProfileAuthMethod::None,
                     security_type: ResolveRequestSupportedProfileSecurityType::X509None,
                     transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                    kdc_transport_type: None,
                 },
                 ResolveRequestSupportedProfile {
                     auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
                     security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
                     transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                    kdc_transport_type: None,
                 },
                 ResolveRequestSupportedProfile {
                     auth_method: ResolveRequestSupportedProfileAuthMethod::UsernamePassword,
                     security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
                     transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                    kdc_transport_type: None,
                 },
                 ResolveRequestSupportedProfile {
                     auth_method: ResolveRequestSupportedProfileAuthMethod::QemuScramSha256,
                     security_type: ResolveRequestSupportedProfileSecurityType::QemuX509Sasl,
                     transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                    kdc_transport_type: None,
                 },
                 ResolveRequestSupportedProfile {
                     auth_method: ResolveRequestSupportedProfileAuthMethod::ClientCertificate,
                     security_type: ResolveRequestSupportedProfileSecurityType::X509None,
                     transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                    kdc_transport_type: None,
                 },
                 ResolveRequestSupportedProfile {
                     auth_method:
                         ResolveRequestSupportedProfileAuthMethod::ClientCertificateVncPassword,
                     security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
                     transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                    kdc_transport_type: None,
                 },
                 ResolveRequestSupportedProfile {
                     auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
                     security_type: ResolveRequestSupportedProfileSecurityType::AppleVncPassword,
                     transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                    kdc_transport_type: None,
                 },
                 ResolveRequestSupportedProfile {
                     auth_method: ResolveRequestSupportedProfileAuthMethod::AppleDhUsernamePassword,
                     security_type: ResolveRequestSupportedProfileSecurityType::AppleDh,
                     transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                    kdc_transport_type: None,
                 },
                 ResolveRequestSupportedProfile {
                     auth_method: ResolveRequestSupportedProfileAuthMethod::AppleSrpUsernamePassword,
                     security_type: ResolveRequestSupportedProfileSecurityType::AppleSrp,
                     transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                    kdc_transport_type: None,
                 },
                 ResolveRequestSupportedProfile {
                     auth_method:
                         ResolveRequestSupportedProfileAuthMethod::AppleRsaSrpUsernamePassword,
                     security_type: ResolveRequestSupportedProfileSecurityType::AppleRsaSrp,
                     transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                    kdc_transport_type: None,
                 },
             ]);
         }
         supported_profiles.extend(rsa_aes_profiles(supports_ssh));
+        let kerberos_admitted = if let Some((root, owner, deadline)) = kerberos_probe {
+            Box::pin(kerberos_worker::probe_owned(root, deadline, Some(owner)))
+                .await
+                .is_ok()
+        } else {
+            false
+        };
+        if kerberos_admitted {
+            supported_profiles.extend(super::kerberos::profiles(supports_ssh));
+        }
         let request = ResolveRequest {
             connection_id: connection.to_string(),
             runner_identity: ResolveRequestRunnerIdentity {
@@ -921,7 +962,7 @@ impl Authority {
             supported_profiles,
         };
         let response = self
-            .call(
+            .call::<ResolveResponse>(
                 routes::resolve::route(routes::resolve::Params {
                     run_id: &run.to_string(),
                 }),
@@ -932,6 +973,31 @@ impl Authority {
             match response {
                 ResolveResponse::Unavailable => return Err(Failure::Unavailable),
                 ResolveResponse::UnsupportedProfile => return Err(Failure::UnsupportedProfile),
+                ResolveResponse::ResolvedKerberos {
+                    host,
+                    port,
+                    generation,
+                    credential_revision,
+                    server_name,
+                    transport,
+                    authentication,
+                    security,
+                } => {
+                    if !kerberos_admitted {
+                        return Err(Failure::Authority);
+                    }
+                    return super::kerberos::credential(
+                        host,
+                        port,
+                        generation,
+                        credential_revision,
+                        server_name,
+                        transport,
+                        authentication,
+                        security,
+                        supports_ssh,
+                    );
+                }
                 ResolveResponse::ResolvedRsaAes {
                     host,
                     port,
@@ -1158,12 +1224,13 @@ impl Authority {
         })
     }
 
-    pub(super) async fn check(
+    pub(super) async fn check_kerberos(
         &self,
         run: RunId,
         connection: uuid::Uuid,
         generation: i64,
         transport: Transport,
+        kerberos: Option<super::kerberos::Binding>,
     ) -> Result<(), Failure> {
         let expected_transport = match transport {
             Transport::Direct => CheckRequestExpectedTransport::Direct,
@@ -1183,6 +1250,19 @@ impl Authority {
             },
             expected_generation: generation,
             expected_transport,
+            expected_credential_revision: kerberos.map(|binding| binding.revision),
+            expected_kdc_transport: kerberos.and_then(|binding| binding.kdc).map(
+                |route| match route {
+                    Transport::Direct => CheckRequestExpectedKdcTransport::Direct,
+                    Transport::Ssh {
+                        connection,
+                        generation,
+                    } => CheckRequestExpectedKdcTransport::Ssh {
+                        connection_id: connection.to_string(),
+                        generation,
+                    },
+                },
+            ),
         };
         match self
             .call(
@@ -1202,7 +1282,7 @@ impl Authority {
 
 /// Accept only bounded certificate blocks, never silently skip keys or junk.
 /// DER parsing and trust-anchor validation stay in the TLS library.
-fn custom_roots(bundle: Zeroizing<String>) -> Result<TrustRoots, Failure> {
+pub(super) fn custom_roots(bundle: Zeroizing<String>) -> Result<TrustRoots, Failure> {
     if bundle.len() > MAX_CA_BYTES || !bundle.is_ascii() {
         return Err(Failure::InvalidCredential);
     }

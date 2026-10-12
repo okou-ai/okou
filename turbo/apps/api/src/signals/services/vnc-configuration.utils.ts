@@ -20,6 +20,7 @@ import {
   type VncErrorCode,
 } from "@okouai/api-contracts/contracts/vnc-errors";
 import { safeSync } from "../utils";
+import type { vncConnections } from "@okouai/db/schema/vnc-connection";
 
 export type VncResult<T> =
   | { readonly ok: true; readonly value: T }
@@ -84,6 +85,11 @@ const failures = {
     kind: "bad_request",
     code: VNC_ERROR_CODES.INVALID_CLIENT_IDENTITY,
     message: "Invalid VNC client certificate identity",
+  },
+  invalidKerberosCredential: {
+    kind: "bad_request",
+    code: VNC_ERROR_CODES.INVALID_INPUT,
+    message: "Invalid Kerberos credential",
   },
   profileMismatch: {
     kind: "bad_request",
@@ -264,18 +270,40 @@ export function prepareVncTransport(
       };
 }
 
-export function prepareVncSecurity(security: VncSecurity): VncResult<{
+export type PreparedVncSecurity = {
   readonly securityType: VncSecurity["type"];
   readonly trustMode: "system" | "custom_ca" | "none";
   readonly caBundle: string | null;
   readonly x509ServerName: string | null;
   readonly rsaServerKeySha256: string | null;
-}> {
+} & Pick<
+  typeof vncConnections.$inferSelect,
+  | "kerberosService"
+  | "kdcTransportType"
+  | "kdcHost"
+  | "kdcPort"
+  | "kdcSshConnectionId"
+  | "kerberosTicketLifetimeSeconds"
+  | "kerberosRenewableLifetimeSeconds"
+>;
+const noKerberos = {
+  kerberosService: null,
+  kdcTransportType: null,
+  kdcHost: null,
+  kdcPort: null,
+  kdcSshConnectionId: null,
+  kerberosTicketLifetimeSeconds: null,
+  kerberosRenewableLifetimeSeconds: null,
+} as const;
+export function prepareVncSecurity(
+  security: VncSecurity,
+): VncResult<PreparedVncSecurity> {
   if ("serverKeySha256" in security) {
     return {
       ok: true,
       value: {
         securityType: security.type,
+        ...noKerberos,
         trustMode: "none",
         caBundle: null,
         x509ServerName: null,
@@ -293,6 +321,7 @@ export function prepareVncSecurity(security: VncSecurity): VncResult<{
       ok: true,
       value: {
         securityType: security.type,
+        ...noKerberos,
         trustMode: "none",
         caBundle: null,
         x509ServerName: null,
@@ -311,10 +340,42 @@ export function prepareVncSecurity(security: VncSecurity): VncResult<{
   if (serverName !== undefined && !serverName.ok) {
     return serverName;
   }
+  let kerberos: Pick<PreparedVncSecurity, keyof typeof noKerberos> = noKerberos;
+  if (security.type === "qemu_x509_gssapi") {
+    kerberos = { ...noKerberos, kerberosService: security.service };
+    if (security.kdc !== undefined) {
+      const kdcHost = canonicalizeVncHost(security.kdc.host);
+      if (!kdcHost.ok) {
+        return kdcHost;
+      }
+      const kdcTransport = prepareVncTransport(
+        security.kdc.transport,
+        kdcHost.value,
+      );
+      if (
+        !kdcTransport.ok ||
+        (security.kdc.transport.type === "ssh" &&
+          kdcHost.value !== "127.0.0.1" &&
+          kdcHost.value !== "::1")
+      ) {
+        return vncFailure("invalidHost");
+      }
+      kerberos = {
+        ...kerberos,
+        kdcHost: kdcHost.value,
+        kdcPort: security.kdc.port,
+        kdcTransportType: kdcTransport.value.transportType,
+        kdcSshConnectionId: kdcTransport.value.sshConnectionId,
+        kerberosTicketLifetimeSeconds: security.kdc.ticketLifetimeSeconds,
+        kerberosRenewableLifetimeSeconds: security.kdc.renewableLifetimeSeconds,
+      };
+    }
+  }
   return {
     ok: true,
     value: {
       securityType: security.type,
+      ...kerberos,
       ...trust.value,
       x509ServerName: serverName?.value ?? null,
       rsaServerKeySha256: null,
@@ -329,6 +390,9 @@ const securityByAuthentication = {
   vnc_password: "x509_vnc",
   username_password: "x509_plain",
   qemu_scram_sha256: "qemu_x509_sasl",
+  qemu_kerberos_ticket: "qemu_x509_gssapi",
+  qemu_kerberos_keytab: "qemu_x509_gssapi",
+  qemu_kerberos_password: "qemu_x509_gssapi",
   apple_dh_username_password: "apple_dh",
   apple_srp_username_password: "apple_srp",
   apple_rsa_srp_username_password: "apple_rsa_srp",

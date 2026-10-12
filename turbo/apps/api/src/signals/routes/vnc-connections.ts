@@ -94,7 +94,12 @@ const listCredentials$ = command(async ({ set }, signal: AbortSignal) => {
   }
   const credentials = await set(listVncCredentials$, context.owner, signal);
   signal.throwIfAborted();
-  return { status: 200 as const, body: { credentials } };
+  return {
+    status: 200 as const,
+    body: {
+      credentials,
+    },
+  };
 });
 
 const createCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -188,7 +193,12 @@ const listConnections$ = command(async ({ set }, signal: AbortSignal) => {
   }
   const connections = await set(listVncConnections$, context.owner, signal);
   signal.throwIfAborted();
-  return { status: 200 as const, body: { connections } };
+  return {
+    status: 200 as const,
+    body: {
+      connections,
+    },
+  };
 });
 
 const summary$ = command(async ({ set }, signal: AbortSignal) => {

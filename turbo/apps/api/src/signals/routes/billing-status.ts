@@ -56,9 +56,14 @@ async function loadConcurrencyUnitAmountCents(): Promise<number | undefined> {
   return price.unit_amount;
 }
 
+const billingStatusOrgId$ = computed((get) => {
+  return get(organizationAuthContext$).orgId;
+});
+
+const billingStatus$ = orgBillingStatus(billingStatusOrgId$);
+
 const getBillingStatusInner$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const body = await get(orgBillingStatus(auth.orgId));
+  const body = await get(billingStatus$);
   const concurrencyUnitAmountCents = body.canBuyConcurrency
     ? await loadConcurrencyUnitAmountCents()
     : undefined;

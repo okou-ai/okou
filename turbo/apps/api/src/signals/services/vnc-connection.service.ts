@@ -1,5 +1,6 @@
 import {
   vncConnectionResponseSchema,
+  vncSecuritySchema,
   type CreateVncConnectionRequest,
   type UpdateVncConnectionRequest,
   type VncConnectionResponse,
@@ -37,12 +38,19 @@ import {
 } from "./vnc-credential.service";
 import type { VncOwner } from "./vnc-owner-lifecycle.service";
 import { isVncRsaAesSecurityType } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
+import {
+  isVncKerberosMethod,
+  sameKerberosPrincipal,
+  vncKerberosAuthenticationSchema,
+} from "@okouai/api-contracts/contracts/vnc-kerberos";
 
 const vncCredentialMetadata = Object.freeze({
   id: vncCredentials.id,
   name: vncCredentials.name,
   username: vncCredentials.username,
   authMethod: vncCredentials.authMethod,
+  kerberosInitiator: vncCredentials.kerberosInitiator,
+  kerberosService: vncCredentials.kerberosService,
   revision: vncCredentials.revision,
   createdAt: vncCredentials.createdAt,
   updatedAt: vncCredentials.updatedAt,
@@ -62,6 +70,14 @@ const metadata = Object.freeze({
   trustMode: vncConnections.trustMode,
   caBundle: vncConnections.caBundle,
   rsaServerKeySha256: vncConnections.rsaServerKeySha256,
+  kerberosService: vncConnections.kerberosService,
+  kdcHost: vncConnections.kdcHost,
+  kdcPort: vncConnections.kdcPort,
+  kdcTransportType: vncConnections.kdcTransportType,
+  kdcSshConnectionId: vncConnections.kdcSshConnectionId,
+  kerberosTicketLifetimeSeconds: vncConnections.kerberosTicketLifetimeSeconds,
+  kerberosRenewableLifetimeSeconds:
+    vncConnections.kerberosRenewableLifetimeSeconds,
   generation: vncConnections.generation,
   createdAt: vncConnections.createdAt,
   updatedAt: vncConnections.updatedAt,
@@ -134,6 +150,33 @@ function responseSecurity(row: Metadata): VncConnectionResponse["security"] {
     row.trustMode === "custom_ca" && row.caBundle !== null
       ? ({ mode: "custom_ca", caBundle: row.caBundle } as const)
       : ({ mode: "system" } as const);
+  if (row.securityType === "qemu_x509_gssapi") {
+    return vncSecuritySchema.parse({
+      type: row.securityType,
+      trust,
+      service: row.kerberosService,
+      ...(row.x509ServerName === null
+        ? {}
+        : { serverName: row.x509ServerName }),
+      ...(row.kdcHost === null
+        ? {}
+        : {
+            kdc: {
+              host: row.kdcHost,
+              port: row.kdcPort,
+              transport:
+                row.kdcTransportType === "direct"
+                  ? { type: "direct" }
+                  : {
+                      type: "ssh",
+                      connectionId: row.kdcSshConnectionId,
+                    },
+              ticketLifetimeSeconds: row.kerberosTicketLifetimeSeconds,
+              renewableLifetimeSeconds: row.kerberosRenewableLifetimeSeconds,
+            },
+          }),
+    });
+  }
   if (
     row.securityType === "apple_vnc_password" ||
     row.securityType === "apple_dh" ||
@@ -181,6 +224,9 @@ function response(
     ...(row.authMethod === "rsa_aes_password" ||
     row.authMethod === "rsa_aes_username_password"
       ? { rsaAesAuthentication: row.authMethod }
+      : {}),
+    ...(isVncKerberosMethod(row.authMethod)
+      ? { kerberosAuthentication: row.authMethod }
       : {}),
     id: row.id,
     displayName: row.displayName,
@@ -269,12 +315,82 @@ function validCreateCredentialProfile(
 }
 
 function validSelectedCredentialProfile(
-  credential: CredentialMetadata | null,
-  securityType: Metadata["securityType"],
+  credential: Pick<
+    CredentialMetadata,
+    "authMethod" | "kerberosInitiator" | "kerberosService"
+  > | null,
+  security: Pick<Metadata, "securityType" | "kerberosService" | "kdcHost">,
 ): boolean {
-  return credential === null
-    ? securityType === "x509_none"
-    : isVncProfileCompatible(credential.authMethod, securityType);
+  if (credential === null) {
+    return security.securityType === "x509_none";
+  }
+  if (!isVncProfileCompatible(credential.authMethod, security.securityType)) {
+    return false;
+  }
+  if (!isVncKerberosMethod(credential.authMethod)) {
+    return true;
+  }
+  if (
+    credential.kerberosInitiator === null ||
+    security.kerberosService === null ||
+    credential.kerberosInitiator.realm !== security.kerberosService.realm
+  ) {
+    return false;
+  }
+  return credential.authMethod === "qemu_kerberos_ticket"
+    ? security.kdcHost === null &&
+        credential.kerberosService !== null &&
+        sameKerberosPrincipal(
+          credential.kerberosService,
+          security.kerberosService,
+        )
+    : security.kdcHost !== null;
+}
+
+function validInlineKerberosProfile(
+  authentication: unknown,
+  security: Pick<Metadata, "securityType" | "kerberosService" | "kdcHost">,
+) {
+  const parsed = vncKerberosAuthenticationSchema.safeParse(authentication);
+  if (!parsed.success) {
+    return false;
+  }
+  return validSelectedCredentialProfile(
+    {
+      authMethod: parsed.data.method,
+      kerberosInitiator: parsed.data.initiator,
+      kerberosService:
+        parsed.data.method === "qemu_kerberos_ticket"
+          ? parsed.data.service
+          : null,
+    },
+    security,
+  );
+}
+
+function invalidInlineCredential(
+  credential: CreateVncConnectionRequest["credential"] | undefined,
+  security: Pick<Metadata, "securityType" | "kerberosService" | "kdcHost">,
+) {
+  if (!credential || !("create" in credential)) {
+    return undefined;
+  }
+  const authentication = credential.create.authentication;
+  if (!isVncProfileCompatible(authentication.method, security.securityType)) {
+    return "profileMismatch" as const;
+  }
+  if (!validVncClientAuthentication(authentication)) {
+    return isVncKerberosMethod(authentication.method)
+      ? ("invalidKerberosCredential" as const)
+      : ("invalidClientIdentity" as const);
+  }
+  if (
+    isVncKerberosMethod(authentication.method) &&
+    !validInlineKerberosProfile(authentication, security)
+  ) {
+    return "profileMismatch" as const;
+  }
+  return undefined;
 }
 
 function credentialDatabaseValues(credential: CredentialMetadata | null) {
@@ -347,7 +463,8 @@ function inlineVncCredentialCtes(
   }).as(sql`
       insert into ${vncCredentials}
         (id, org_id, user_id, name, username, auth_method,
-         encrypted_password, encrypted_client_identity)
+         encrypted_password, encrypted_client_identity, encrypted_kerberos_credential,
+         kerberos_initiator, kerberos_service, kerberos_declared_expires_at)
       select ${credentialId},
         ${sql.param(owner.orgId, vncCredentials.orgId)},
         ${sql.param(owner.userId, vncCredentials.userId)},
@@ -355,9 +472,14 @@ function inlineVncCredentialCtes(
         ${sql.param(create.username, vncCredentials.username)},
         ${sql.param(create.authMethod, vncCredentials.authMethod)},
         ${sql.param(create.encryptedPassword, vncCredentials.encryptedPassword)},
-        ${sql.param(create.encryptedClientIdentity, vncCredentials.encryptedClientIdentity)}
+        ${sql.param(create.encryptedClientIdentity, vncCredentials.encryptedClientIdentity)},
+        ${sql.param(create.encryptedKerberosCredential, vncCredentials.encryptedKerberosCredential)},
+        ${sql.param(create.kerberosInitiator, vncCredentials.kerberosInitiator)},
+        ${sql.param(create.kerberosService, vncCredentials.kerberosService)},
+        ${sql.param(create.kerberosDeclaredExpiresAt, vncCredentials.kerberosDeclaredExpiresAt)}
       from ${parent}
-      returning id, name, username, auth_method, revision, created_at, updated_at
+      returning id, name, username, auth_method, kerberos_initiator, kerberos_service,
+        revision, created_at, updated_at
     `);
   const exhausted = qb
     .select({ count: count().as("count") })
@@ -410,11 +532,24 @@ const prepareCreateVncConnection$ = command(
     ) {
       return vncFailure("profileMismatch");
     }
-    if (
-      "create" in args.body.credential &&
-      !validVncClientAuthentication(args.body.credential.create.authentication)
-    ) {
-      return vncFailure("invalidClientIdentity");
+    const invalidCredential = invalidInlineCredential(
+      args.body.credential,
+      security.value,
+    );
+    if (invalidCredential) {
+      return vncFailure(invalidCredential);
+    }
+    if (security.value.kdcSshConnectionId !== null) {
+      const [ssh] = await set(writeDb$)
+        .select({ id: sshConnections.id })
+        .from(sshConnections)
+        .where(
+          ownedSshConnection(args.owner, security.value.kdcSshConnectionId),
+        );
+      signal.throwIfAborted();
+      if (!ssh) {
+        return vncFailure("sshConnectionNotFound");
+      }
     }
     const preparedCredential =
       "type" in args.body.credential
@@ -538,12 +673,7 @@ export const createVncConnection$ = command(
         if (credential === undefined) {
           return vncFailure("credentialNotFound");
         }
-        if (
-          !validSelectedCredentialProfile(
-            credential,
-            security.value.securityType,
-          )
-        ) {
+        if (!validSelectedCredentialProfile(credential, security.value)) {
           return vncFailure("profileMismatch");
         }
         const [created] = await db
@@ -625,22 +755,25 @@ const prepareUpdateVncConnection$ = command(
     if (!prospective.ok) {
       return prospective;
     }
-    if (
-      args.body.credential &&
-      "create" in args.body.credential &&
-      !isVncProfileCompatible(
-        args.body.credential.create.authentication.method,
-        prospective.value.securityType,
-      )
-    ) {
-      return vncFailure("profileMismatch");
+    const invalidCredential = invalidInlineCredential(
+      args.body.credential,
+      security?.value ?? initial,
+    );
+    if (invalidCredential) {
+      return vncFailure(invalidCredential);
     }
-    if (
-      args.body.credential &&
-      "create" in args.body.credential &&
-      !validVncClientAuthentication(args.body.credential.create.authentication)
-    ) {
-      return vncFailure("invalidClientIdentity");
+    const selectedSecurity = security?.value ?? initial;
+    if (selectedSecurity.kdcSshConnectionId !== null) {
+      const [ssh] = await db
+        .select({ id: sshConnections.id })
+        .from(sshConnections)
+        .where(
+          ownedSshConnection(args.owner, selectedSecurity.kdcSshConnectionId),
+        );
+      signal.throwIfAborted();
+      if (!ssh) {
+        return vncFailure("sshConnectionNotFound");
+      }
     }
     const preparedCredential =
       args.body.credential === undefined || "type" in args.body.credential
@@ -729,6 +862,9 @@ function referenceViolation(
     case "vnc_connections_ssh_owner_fk": {
       return "sshConnectionNotFound";
     }
+    case "vnc_connections_kdc_ssh_owner_fk": {
+      return "sshConnectionNotFound";
+    }
     case "vnc_connections_credential_owner_fk": {
       return "credentialNotFound";
     }
@@ -771,11 +907,19 @@ function inlineVncCredentialParts(
       ${sql.identifier(vncCredentials.username.name)},
       ${sql.identifier(vncCredentials.authMethod.name)},
       ${sql.identifier(vncCredentials.encryptedPassword.name)},
-      ${sql.identifier(vncCredentials.encryptedClientIdentity.name)}
+      ${sql.identifier(vncCredentials.encryptedClientIdentity.name)},
+      ${sql.identifier(vncCredentials.encryptedKerberosCredential.name)},
+      ${sql.identifier(vncCredentials.kerberosInitiator.name)},
+      ${sql.identifier(vncCredentials.kerberosService.name)},
+      ${sql.identifier(vncCredentials.kerberosDeclaredExpiresAt.name)}
     )
     SELECT ${updated.credentialId}, ${owner.orgId}, ${owner.userId},
       ${create.name}, ${create.username}, ${create.authMethod},
-      ${create.encryptedPassword}, ${create.encryptedClientIdentity}
+      ${create.encryptedPassword}, ${create.encryptedClientIdentity},
+      ${create.encryptedKerberosCredential},
+      ${sql.param(create.kerberosInitiator, vncCredentials.kerberosInitiator)},
+      ${sql.param(create.kerberosService, vncCredentials.kerberosService)},
+      ${create.kerberosDeclaredExpiresAt}
     FROM ${updated}
     RETURNING ${sql.join(Object.values(vncCredentialMetadata), sql`, `)}
   `);
@@ -800,6 +944,14 @@ function inlineVncCredentialParts(
         trustMode: updated.trustMode,
         caBundle: updated.caBundle,
         rsaServerKeySha256: updated.rsaServerKeySha256,
+        kerberosService: updated.kerberosService,
+        kdcHost: updated.kdcHost,
+        kdcPort: updated.kdcPort,
+        kdcTransportType: updated.kdcTransportType,
+        kdcSshConnectionId: updated.kdcSshConnectionId,
+        kerberosTicketLifetimeSeconds: updated.kerberosTicketLifetimeSeconds,
+        kerberosRenewableLifetimeSeconds:
+          updated.kerberosRenewableLifetimeSeconds,
         generation: updated.generation,
         createdAt: updated.createdAt,
         updatedAt: updated.updatedAt,
@@ -809,6 +961,8 @@ function inlineVncCredentialParts(
         name: created.name,
         username: created.username,
         authMethod: created.authMethod,
+        kerberosInitiator: created.kerberosInitiator,
+        kerberosService: created.kerberosService,
         revision: created.revision,
         createdAt: created.createdAt,
         updatedAt: created.updatedAt,
@@ -822,10 +976,9 @@ function inlineVncConnectionResult(
     | { readonly connection: Metadata; readonly credential: CredentialMetadata }
     | undefined,
 ): VncResult<VncConnectionResponse> {
-  if (!row) {
-    throw new Error("VNC connection update returned no row");
-  }
-  return { ok: true, value: response(row.connection, row.credential) };
+  return row
+    ? { ok: true, value: response(row.connection, row.credential) }
+    : vncFailure("generationConflict");
 }
 
 export const updateVncConnection$ = command(
@@ -844,6 +997,10 @@ export const updateVncConnection$ = command(
     const written = await settle(
       (async () => {
         const owner = args.owner;
+        const expectedConnection = and(
+          ownedConnection(owner, args.connectionId),
+          eq(vncConnections.generation, args.body.expectedGeneration),
+        );
         const [current] = await db
           .select(metadata)
           .from(vncConnections)
@@ -868,6 +1025,15 @@ export const updateVncConnection$ = command(
           return resolved;
         }
         const { newHost, newPort, transport, securityType } = resolved.value;
+        const selectedSecurity = security?.value ?? current;
+        const changes = {
+          displayName: args.body.displayName,
+          host: newHost,
+          port: newPort,
+          ...transport.value,
+          ...security?.value,
+          generation: sql`${vncConnections.generation} + 1`,
+        };
         if (transport.value.sshConnectionId !== null) {
           const [ssh] = await db
             .select({ id: sshConnections.id })
@@ -885,18 +1051,13 @@ export const updateVncConnection$ = command(
             db
               .update(vncConnections)
               .set({
-                displayName: args.body.displayName,
-                host: newHost,
-                port: newPort,
-                ...transport.value,
+                ...changes,
                 credentialId: newId.id,
                 authMethod: create.authMethod,
-                ...security?.value,
-                generation: sql`${vncConnections.generation} + 1`,
                 updatedAt: nowDate(),
               })
               .from(newId)
-              .where(ownedConnection(owner, args.connectionId))
+              .where(expectedConnection)
               .returning({ ...metadata }),
           );
           const parts = inlineVncCredentialParts(owner, create, updated);
@@ -921,25 +1082,20 @@ export const updateVncConnection$ = command(
         if (credential === undefined) {
           return vncFailure("credentialNotFound");
         }
-        if (!validSelectedCredentialProfile(credential, securityType)) {
+        if (!validSelectedCredentialProfile(credential, selectedSecurity)) {
           return vncFailure("profileMismatch");
         }
         const [updated] = await db
           .update(vncConnections)
           .set({
-            displayName: args.body.displayName,
-            host: newHost,
-            port: newPort,
-            ...transport.value,
+            ...changes,
             ...credentialDatabaseValues(credential),
-            ...security?.value,
-            generation: sql`${vncConnections.generation} + 1`,
             updatedAt: nowDate(),
           })
-          .where(ownedConnection(owner, args.connectionId))
+          .where(expectedConnection)
           .returning(metadata);
         if (!updated) {
-          throw new Error("VNC connection update returned no row");
+          return vncFailure("generationConflict");
         }
         return { ok: true as const, value: response(updated, credential) };
       })(),

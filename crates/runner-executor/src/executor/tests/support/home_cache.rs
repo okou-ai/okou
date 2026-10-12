@@ -78,7 +78,6 @@ pub(in crate::executor::tests) async fn seed_home_image_cache_with_fingerprints(
     let cache_key = scoped_home_image_cache_key(
         "",
         "vm0/default",
-        "test-rootfs",
         &reuse_key,
         u64::from(home_disk_mb) * 1024 * 1024,
     );

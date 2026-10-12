@@ -105,7 +105,7 @@ jobs:
       app_worker_version: ${{ steps.release.outputs['turbo/apps/app-worker--version'] }}
       desktop_version: ${{ steps.release.outputs['desktop--version'] }}
     steps:
-      - uses: okou-ai/release-please-action@1ecb7f79f39296ccfb1946837fac60d32b8cd2bc # vm0
+      - uses: okou-ai/release-please-action@654ab0234d1778a6983dc9c0f2e1ab5f2da30759 # v5.0.0-okou
         id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -366,7 +366,7 @@ jobs:
         with:
           ref: main
 
-      - uses: okou-ai/release-please-action@1ecb7f79f39296ccfb1946837fac60d32b8cd2bc # vm0
+      - uses: okou-ai/release-please-action@654ab0234d1778a6983dc9c0f2e1ab5f2da30759 # v5.0.0-okou
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json

@@ -153,12 +153,6 @@ pub struct HomeImagePromotionRequest<'a> {
     pub storage_fingerprints: StorageFingerprints,
 }
 
-/// Actual captured profile shape and artifact identity for inventory eligibility.
-#[derive(Clone, Copy, Debug)]
-pub struct HomeImageProfileIdentity<'a> {
-    pub rootfs_hash: &'a str,
-    pub image_size_bytes: u64,
-}
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FsStats {

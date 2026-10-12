@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   createMcpHandler,
   McpServer,
@@ -23,6 +24,7 @@ import {
   mcpGetChatIndicatorsOutputSchema,
   mcpRenameChatThreadInputSchema,
   mcpRevokeQueuedMessageInputSchema,
+  mcpRevokeQueuedMessageOutputSchema,
   mcpSendChatMessageInputSchema,
   mcpSendChatMessageOutputSchema,
   mcpUpdateChatThreadModelInputSchema,
@@ -315,7 +317,7 @@ function uncheckedInputSchema<Input extends Record<string, unknown>>(
   };
 }
 
-/** No response projection: only the MCP transport's content packaging differs. */
+/** Package operation data in the MCP transport's content formats. */
 function toolBody(body: unknown, isError = false): CallToolResult {
   return {
     ...(isError ? { isError: true } : {}),
@@ -468,8 +470,8 @@ async function getThreadSnapshot(
   return toolBody({
     snapshot,
     ...page,
-    events: page.events.map(({ chatThreadId, ...event }) => {
-      return { ...event, threadId: chatThreadId };
+    events: page.events.map(({ id, chatThreadId, ...event }) => {
+      return { ...event, eventId: id, threadId: chatThreadId };
     }),
   });
 }
@@ -529,8 +531,8 @@ async function getMessageSnapshot(
   return toolBody({
     snapshot,
     ...page,
-    rows: page.rows.map(({ chatThreadId, ...row }) => {
-      return { ...row, threadId: chatThreadId };
+    rows: page.rows.map(({ id, chatThreadId, ...row }) => {
+      return { ...row, eventId: id, threadId: chatThreadId };
     }),
   });
 }
@@ -583,7 +585,7 @@ function registerReadTools(
       name: "get_chat_thread",
       scope: "okou:chat:read",
       description:
-        "Get the organization conversation-list R2 snapshot pointer and one bounded lifecycle-event page with canonical threadId references. Omit sinceSeqId initially; continue with the last event's seqId when hasMore is true. Downloaded snapshots retain their native Web format. Does not download or reconstruct the snapshot.",
+        "Get the organization conversation-list R2 snapshot pointer and one bounded lifecycle-event page with canonical eventId and threadId references. Omit sinceSeqId initially; continue with the last event's seqId when hasMore is true. Downloaded snapshots retain their native Web format. Does not download or reconstruct the snapshot.",
       inputSchema: mcpGetChatThreadInputSchema,
       outputSchema: mcpGetChatThreadOutputSchema,
       annotations: readAnnotations,
@@ -600,7 +602,7 @@ function registerReadTools(
       name: "get_chat_messages",
       scope: "okou:chat:read",
       description:
-        "Get one conversation's R2 snapshot pointer (null before compaction) and one bounded raw event-row page with canonical threadId and nullable runId references. Event id, paired cursors and payloads keep their native meaning. Use the known threadId to check recent sends without relying on search. Omit the cursor initially; rows start after the snapshot boundary, or at zero when snapshot is null. To inspect archived events, download snapshot.url (gzip NDJSON); downloaded rows retain native Web format, including chatThreadId. While hasMore is true, continue with cursor.lastSeqId as sinceSeqId and cursor.lastEventId as sinceEventId. On 410, restart from a fresh snapshot. Does not download, decompress or reconstruct history.",
+        "Get one conversation's R2 snapshot pointer (null before compaction) and one bounded raw event-row page with canonical eventId, threadId and nullable runId references. Event identities, replacement references, paired cursors and payloads keep their native meaning. Use the known threadId to check recent sends without relying on search. Omit the cursor initially; rows start after the snapshot boundary, or at zero when snapshot is null. To inspect archived events, download snapshot.url (gzip NDJSON); downloaded rows retain native Web format, including id and chatThreadId. While hasMore is true, continue with cursor.lastSeqId as sinceSeqId and cursor.lastEventId as sinceEventId. On 410, restart from a fresh snapshot. Does not download, decompress or reconstruct history.",
       inputSchema: mcpGetChatMessagesInputSchema,
       outputSchema: mcpGetChatMessagesOutputSchema,
       annotations: readAnnotations,
@@ -617,7 +619,7 @@ function registerReadTools(
       name: "search_chat_messages",
       scope: "okou:chat:read",
       description:
-        "Search using the Web keyword, agentId and since filters. Hits and matchedMessage expose threadId; matchedMessage.runId is nullable. Hits expose stable agentId and nullable canonical displayName matching list_agents, for currently visible Agents. The index updates asynchronously: recent messages may be missing even after a Run completes, and an empty result does not prove absence. No index freshness signal or lag bound is returned. To confirm a recent send, use get_chat_messages with its known threadId and inspect the snapshot and event pages; do not resend solely because search is empty.",
+        "Search using the Web keyword, agentId and since filters. Selects up to 500 scoped keyword candidates without ordering, then sorts only those candidates by time and returns at most 100 messages. It does not guarantee the newest matches across all history. Pagination is not supported, and no continuation cursor or completeness signal is returned. Fewer than 100 results do not prove that all matches have been found. Hits and matchedMessage expose threadId; matchedMessage.runId is nullable. Hits expose stable agentId and nullable canonical displayName matching list_agents, for currently visible Agents. The index updates asynchronously: recent messages may be missing even after a Run completes, and an empty result does not prove absence. No index freshness signal or lag bound is returned. To confirm a recent send, use get_chat_messages with its known threadId and inspect the snapshot and event pages; do not resend solely because search is empty.",
       inputSchema: mcpChatSearchContract.search.query,
       outputSchema: mcpChatSearchContract.search.responses[200],
       annotations: readAnnotations,
@@ -739,17 +741,19 @@ function registerMutationTools(
       name: "send_chat_message",
       scope: "okou:chat:send",
       description:
-        "Send plain text through POST /api/chat/events. Uses Web validation and enqueue semantics. Returns threadId and nullable runId; it does not wait for a Run.",
+        "Send plain text through POST /api/chat/events using Web validation and enqueue semantics. Generates and returns the accepted input's eventId with threadId and createdAt. Use eventId with revoke_queued_message to recall it while queued. Does not wait for a Run or provide safe retries after a lost acknowledgement.",
       inputSchema: mcpSendChatMessageInputSchema,
       outputSchema: mcpSendChatMessageOutputSchema,
       annotations: writeAnnotations,
-      operation: (input, signal) => {
-        return requestWebApi(
+      operation: async (input, signal) => {
+        const eventId = randomUUID();
+        const response = await requestWebApi(
           access,
           chatEventsContract.send,
           {
             body: {
               ...input,
+              clientEventId: eventId,
               userMessage: {
                 version: 1,
                 parts: [{ type: "text", text: input.prompt }],
@@ -758,6 +762,15 @@ function registerMutationTools(
             },
           },
           signal,
+        );
+        if (!response.ok) {
+          return await toolResponse(response);
+        }
+        const body: unknown = await response.json();
+        signal.throwIfAborted();
+        const accepted = chatEventsContract.send.responses[201].parse(body);
+        return toolBody(
+          mcpSendChatMessageOutputSchema.parse({ ...accepted, eventId }),
         );
       },
     },
@@ -770,12 +783,17 @@ function registerMutationTools(
       name: "revoke_queued_message",
       scope: "okou:run:cancel",
       description:
-        "Append the ordinary Web recall event using revokesEventId directly. No original-input lookup or before/after state checks.",
+        "Recall the queued input identified by eventId through the ordinary Web recall event. Maps eventId to native revokesEventId; no original-input lookup or before/after state checks.",
       inputSchema: mcpRevokeQueuedMessageInputSchema,
-      outputSchema: mcpSendChatMessageOutputSchema,
+      outputSchema: mcpRevokeQueuedMessageOutputSchema,
       annotations: { ...writeAnnotations, destructiveHint: true },
-      operation: (body, signal) => {
-        return requestWebApi(access, chatEventsContract.send, { body }, signal);
+      operation: ({ eventId, ...body }, signal) => {
+        return requestWebApi(
+          access,
+          chatEventsContract.send,
+          { body: { ...body, revokesEventId: eventId } },
+          signal,
+        );
       },
     },
     requestSignal,

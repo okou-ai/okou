@@ -462,6 +462,116 @@ describe("canonical Discord ingress", () => {
     },
   );
 
+  it.each([403, 404, 502])(
+    "does not send or replay a terminal notice when Discord channel access fails with %s",
+    async (status) => {
+      const actor = await connected();
+      const provider = mockDiscordProvider(actor);
+      const message = discordMessageForTest(actor, {
+        channelId: provider.guildChannelId,
+        content: `<@${actor.botUserId}> handle a rejected thread creation`,
+      });
+      provider.messages.set(message.id, message);
+      server.use(
+        http.post(
+          `https://discord.com/api/v10/channels/${provider.guildChannelId}/messages/${message.id}/threads`,
+          () => {
+            provider.state.channelResponse = (channelId) => {
+              return channelId === provider.guildChannelId
+                ? HttpResponse.json(
+                    { message: "Channel unavailable" },
+                    { status },
+                  )
+                : undefined;
+            };
+            return HttpResponse.json(
+              { message: "Cannot create thread" },
+              { status: 400 },
+            );
+          },
+        ),
+      );
+
+      expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+        "accepted",
+      );
+      await flushWaitUntilForTest();
+      expect(provider.channels.has(message.id)).toBeFalsy();
+      expect(provider.sentMessages).toStrictEqual([]);
+      expect(
+        (
+          await postDiscordMessage(
+            context,
+            message,
+            `access-replay:${message.id}`,
+          )
+        ).body.outcome,
+      ).toBe("duplicate");
+      await flushWaitUntilForTest();
+      expect(provider.sentMessages).toStrictEqual([]);
+    },
+  );
+
+  it.each(["rate limited", "response lost"] as const)(
+    "does not resend a terminal notice when its delivery is %s",
+    async (failure) => {
+      const actor = await connected();
+      const provider = mockDiscordProvider(actor);
+      // Allow conversation access while denying the sender thread creation.
+      provider.state.everyonePermissions = "68608";
+      if (failure === "rate limited") {
+        provider.state.beforeMessageCreate = () => {
+          return HttpResponse.json(
+            { message: "Rate limited", retry_after: 1, global: false },
+            { status: 429 },
+          );
+        };
+      } else {
+        provider.state.afterMessageCreated = () => {
+          return HttpResponse.error();
+        };
+      }
+      const message = discordMessageForTest(actor, {
+        channelId: provider.guildChannelId,
+        content: `<@${actor.botUserId}> report the missing thread permission once`,
+      });
+      provider.messages.set(message.id, message);
+      expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+        "accepted",
+      );
+      await flushWaitUntilForTest();
+      const acceptedMessages = provider.sentMessages.map((sent) => {
+        return { channelId: sent.channel_id, content: sent.content };
+      });
+      expect(acceptedMessages).toStrictEqual(
+        failure === "rate limited"
+          ? []
+          : [
+              {
+                channelId: provider.guildChannelId,
+                content:
+                  "I couldn't process this Discord message. Please send it again.",
+              },
+            ],
+      );
+      expect(
+        (
+          await postDiscordMessage(
+            context,
+            message,
+            `notice-replay:${message.id}`,
+          )
+        ).body.outcome,
+      ).toBe("duplicate");
+      await flushWaitUntilForTest();
+      expect(
+        provider.sentMessages.map((sent) => {
+          return { channelId: sent.channel_id, content: sent.content };
+        }),
+      ).toStrictEqual(acceptedMessages);
+    },
+  );
+
   // Discord's CREATE_PUBLIC_THREADS bit, independent of ordinary conversation
   // permissions. The case data below are Discord role and overwrite payloads.
   const createPublicThreads = "34359738368";

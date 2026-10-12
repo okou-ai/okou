@@ -166,7 +166,6 @@ async fn external_home_cache_publication_and_removal_trigger_immediate_heartbeat
     let cache_key = runner_host::paths::scoped_home_image_cache_key(
         &group,
         "vm0/default",
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         reuse_key,
         16 * 1024 * 1024,
     );
@@ -245,7 +244,6 @@ async fn home_cache_change_while_draining_is_preserved_after_resume() {
     let cache_key = runner_host::paths::scoped_home_image_cache_key(
         &group,
         "vm0/default",
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         reuse_key,
         16 * 1024 * 1024,
     );
@@ -496,7 +494,6 @@ async fn startup_unclassified_cache_invalidated_after_scan_is_reconciled() {
     let cache_key = runner_host::paths::scoped_home_image_cache_key(
         &group,
         "vm0/default",
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         reuse_key,
         16 * 1024 * 1024,
     );
