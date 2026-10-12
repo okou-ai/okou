@@ -103,8 +103,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.ComposerTaskChips]: {
     maintainer: "bingjie@okou.ai",
     description: "Lightweight chat task chips and contextual starting ideas",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.ChatComposerLayout]: {
     maintainer: "bingjie@okou.ai",
@@ -383,8 +382,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     description:
       "Collapse the composer toolbar's attach, template and create workflow buttons into a single plus menu.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.ComposerAnchoredSuggestions]: {
     maintainer: "ethan@okou.ai",
