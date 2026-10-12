@@ -202,6 +202,9 @@ function TailscaleImpact({
   const { t } = useTranslation();
   const acknowledged = useGet(tailscaleAcknowledged$);
   const acknowledge = useSet(acknowledgeTailscale$);
+  if (preview.otherHostCount === 0) {
+    return null;
+  }
   return (
     <div className="grid gap-3 rounded-lg border p-4 text-sm">
       <p>
@@ -436,7 +439,8 @@ function useOperationBlocked(
     return (
       impact.state !== "hasData" ||
       !impact.data ||
-      acknowledged !== impact.data.impactSnapshot ||
+      (impact.data.otherHostCount > 0 &&
+        acknowledged !== impact.data.impactSnapshot) ||
       (kind === "delete" && impact.data.ownHostCount > 0)
     );
   }

@@ -605,7 +605,8 @@ function canConfirmTailscaleChange(
   ) {
     return (
       preview !== null &&
-      acknowledged === preview.impactSnapshot &&
+      (preview.otherHostCount === 0 ||
+        acknowledged === preview.impactSnapshot) &&
       (dialog.kind !== "delete" || preview.ownHostCount === 0)
     );
   }

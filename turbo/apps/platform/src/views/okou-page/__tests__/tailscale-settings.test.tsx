@@ -372,6 +372,65 @@ test("Shared deletion acknowledges fresh impact without exposing other host iden
   ]);
 });
 
+test.each([
+  { operation: "delete", label: "Delete Tailscale" },
+  { operation: "adopt", label: "Make personal" },
+] as const)(
+  "A zero-impact $operation needs no other-owner acknowledgement",
+  async ({ operation, label }) => {
+    const requests: unknown[] = [];
+    context.mocks.api(tailscaleContract.impactPreview, ({ respond }) => {
+      return respond(200, {
+        ...impact,
+        otherHostCount: 0,
+        affectedOwners: [],
+      });
+    });
+    if (operation === "delete") {
+      context.mocks.api(tailscaleContract.delete, ({ body, respond }) => {
+        requests.push(body);
+        return respond(204);
+      });
+    } else {
+      context.mocks.api(
+        tailscaleContract.convertToPersonal,
+        ({ body, respond }) => {
+          requests.push(body);
+          return respond(200, {
+            ...shared,
+            scope: "personal",
+            revision: 2,
+            generation: 2,
+          });
+        },
+      );
+    }
+    await page("admin");
+    const section = await networkSection();
+    await within(section).findByText(shared.name);
+    click(
+      getAction(
+        "button",
+        label,
+        within(section).getByRole("region", { name: "Organization" }),
+      ),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => {
+      return expect(getAction("button", label, dialog)).toBeEnabled();
+    });
+    expect(within(dialog).queryByRole("checkbox")).toBeNull();
+    expect(within(dialog).queryByText(/Affected:/u)).toBeNull();
+    click(getAction("button", label, dialog));
+    await waitFor(() => {
+      return expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(requests).toStrictEqual([
+      { expectedRevision: 1, impactSnapshot: impact.impactSnapshot },
+    ]);
+  },
+);
+
 test("A new shared revision cannot be deleted through an automatically refreshed impact preview", async () => {
   let current = shared;
   let currentImpact = impact;
