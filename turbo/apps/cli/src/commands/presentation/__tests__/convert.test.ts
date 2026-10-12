@@ -122,6 +122,7 @@ const state = {
   /** Text the fake renderer writes into the deck; differs to force a shortfall. */
   deckTexts: undefined as string[] | undefined,
   sourcePages: undefined as string[][] | undefined,
+  clippedSource: [] as { original: string; visible: string }[][],
   unsupported: [] as { page: number; tag: string; images: number }[],
   deckPages: undefined as string[][] | undefined,
   slideXml: undefined as string[] | undefined,
@@ -229,6 +230,7 @@ function fakeEval(expression: string): string {
           width: 1600,
           height: 900,
           texts,
+          clippedSource: state.clippedSource[index],
           tables: state.tables,
           orderedLists: index === 0 ? state.orderedLists : [],
           textBoxes: state.textBoxes,
@@ -387,6 +389,7 @@ describe("okou presentation convert", () => {
     state.pageTexts = ["Hello deck", "Second line"];
     state.deckTexts = undefined;
     state.sourcePages = undefined;
+    state.clippedSource = [[], []];
     state.unsupported = [];
     state.nativePaint = {};
     state.snapshotFailure = false;
@@ -419,6 +422,33 @@ describe("okou presentation convert", () => {
     await expect(convert(["--width", "0"])).rejects.toThrow(
       /positive number|process\.exit/u,
     );
+  });
+
+  it("reports clipped source text on its measured page", async () => {
+    const clipped = {
+      original: "Second line continues beyond the visible frame",
+      visible: "Second line",
+    };
+    state.clippedSource = [[], [clipped]];
+
+    await convert(["--json"]);
+
+    const output: unknown = JSON.parse(
+      String(vi.mocked(console.log).mock.calls.at(-1)?.[0]),
+    );
+    expect(output).toMatchObject({
+      layout: { clippedSource: [{ page: 2, texts: [clipped] }] },
+    });
+    expect(existsSync(outPath)).toBe(true);
+  });
+
+  it("rejects incomplete clipping measurements before writing a deck", async () => {
+    state.clippedSource = [];
+
+    await expect(convert([])).rejects.toThrow(/process\.exit/u);
+
+    expect(stderr()).toContain("clippedSource");
+    expect(existsSync(outPath)).toBe(false);
   });
 
   it("holds measured geometry fixed without shrinking text or changing unrelated parts", async () => {

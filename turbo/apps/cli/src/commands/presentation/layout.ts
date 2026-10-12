@@ -52,9 +52,9 @@ export const layoutSchema = z.object({
       textBoxes: z.array(textBoxSchema),
       roundedTextShapes: z.array(roundedTextSchema),
       texts: z.array(z.string()),
-      clippedSource: z
-        .array(z.object({ original: z.string(), visible: z.string() }))
-        .default([]),
+      clippedSource: z.array(
+        z.object({ original: z.string(), visible: z.string() }),
+      ),
     }),
   ),
   activated: z.number().int().nonnegative(),

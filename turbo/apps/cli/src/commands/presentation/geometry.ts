@@ -191,7 +191,7 @@ export function applyGeometry(
   layout: Layout,
   width: number,
   height: number,
-  nativePaint: NativePaint = {},
+  nativePaint: NativePaint,
 ): Buffer {
   const entries = pptxEntries(deck);
   for (let pageIndex = 0; pageIndex < layout.pages.length; pageIndex += 1) {
