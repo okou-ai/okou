@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+set -euo pipefail
+
 BIN_DIR=$1; JOB_REF=$2; GROUP="vm0/upgrade-${JOB_REF}"
 RUNNER_DIR_A="/var/lib/vm0-runner/runners/${JOB_REF}-upgrade-a"
 RUNNER_DIR_B="/var/lib/vm0-runner/runners/${JOB_REF}-upgrade-b"
@@ -75,8 +77,7 @@ wait_for_job_completion() {
     || fail "submission result did not confirm success for $run_id"
 }
 
-FAILED=0
-fail() { FAILED=1; echo "FAIL: $1"; exit 1; }
+fail() { echo "FAIL: $1"; exit 1; }
 
 cleanup_submit_pid() {
   local pid=$1
@@ -109,12 +110,13 @@ wait_for_exit() {
 }
 
 cleanup() {
+  local status=$?
   echo "--- Cleanup: uninstalling services ---"
   sudo "$BIN_DIR/runner" service uninstall --name "$SVC_A" --force 2>/dev/null || true
   sudo "$BIN_DIR/runner" service uninstall --name "$SVC_B" --force 2>/dev/null || true
   cleanup_submit_pid "$SUBMIT2_PID"
   cleanup_submit_pid "$SUBMIT1_PID"
-  if [ "$FAILED" -ne 0 ]; then
+  if [ "$status" -ne 0 ]; then
     if [ -n "$SYNC_DIR" ]; then
       cat "$SYNC_DIR/job1.json" "$SYNC_DIR/job2.json" 2>/dev/null || true
     fi
@@ -122,7 +124,9 @@ cleanup() {
     journalctl --unit "vm0-runner-${SVC_A}" --lines 50 --no-pager 2>/dev/null || true
     journalctl --unit "vm0-runner-${SVC_B}" --lines 50 --no-pager 2>/dev/null || true
   fi
-  [ -z "$SYNC_DIR" ] || rm -rf -- "$SYNC_DIR"
+  if [ -n "$SYNC_DIR" ]; then
+    rm -rf -- "$SYNC_DIR" || true
+  fi
 }
 trap cleanup EXIT
 
