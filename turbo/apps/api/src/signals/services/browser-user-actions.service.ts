@@ -1523,38 +1523,6 @@ export const preflightBrowserUserAction$ = command(
   },
 );
 
-async function claimBrowserUserAction(
-  db: Db,
-  located: RequestRow,
-): Promise<ServiceResult<RequestRow>> {
-  if (!(await requestHasLiveBrowser(db, located))) {
-    return expired();
-  }
-  if (located.status !== "pending") {
-    return conflict("Browser input has already been claimed");
-  }
-  const [claimed] = await db
-    .update(browserUserActionRequests)
-    .set({
-      status: "applying",
-      applyStartedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(
-          browserUserActionRequests.requestTokenHash,
-          located.requestTokenHash,
-        ),
-        eq(browserUserActionRequests.status, "pending"),
-      ),
-    )
-    .returning();
-  if (!claimed) {
-    return conflict("Browser input has already been claimed");
-  }
-  return { kind: "ok", value: claimed };
-}
-
 function browserApplyField(
   field: BrowserUserActionInputField,
   entry: SubmittedBrowserValue | undefined,
@@ -1743,14 +1711,37 @@ export const applyBrowserUserAction$ = command(
       fileContents = materialized.value;
     }
 
-    const claimed = await claimBrowserUserAction(db, located);
+    if (!(await requestHasLiveBrowser(db, located))) {
+      signal.throwIfAborted();
+      return expired();
+    }
+    if (located.status !== "pending") {
+      signal.throwIfAborted();
+      return conflict("Browser input has already been claimed");
+    }
+    const [claimed] = await db
+      .update(browserUserActionRequests)
+      .set({
+        status: "applying",
+        applyStartedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(
+            browserUserActionRequests.requestTokenHash,
+            located.requestTokenHash,
+          ),
+          eq(browserUserActionRequests.status, "pending"),
+        ),
+      )
+      .returning();
     signal.throwIfAborted();
-    if (claimed.kind === "error") {
-      return claimed;
+    if (!claimed) {
+      return conflict("Browser input has already been claimed");
     }
     const applied = await applyClaimedBrowserUserAction(
       db,
-      claimed.value,
+      claimed,
       payload,
       { values: valuesResult.value, fileContents },
       signal,
