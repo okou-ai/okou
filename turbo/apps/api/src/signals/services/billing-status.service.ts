@@ -1,4 +1,5 @@
 import { computed, type Computed } from "ccstate";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, desc, eq, gt, lte, sql, sum } from "drizzle-orm";
@@ -13,7 +14,7 @@ import {
   type ActiveConcurrencySubscription,
 } from "./org-concurrency-entitlements.service";
 import {
-  loadOrgPlanCapabilities,
+  orgPlanCapabilitiesFromRow,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 import { canRestorePlanSubscription } from "./billing-restore.service";
@@ -531,7 +532,44 @@ export function orgBillingStatus(
         )
         .orderBy(desc(creditExpiresRecord.createdAt)),
       activeConcurrencySubscriptions(db, orgId, currentTime),
-      loadOrgPlanCapabilities(db, orgId),
+      (async () => {
+        const query = db
+          .select({
+            planKey: orgPlanEntitlements.planKey,
+            status: orgPlanEntitlements.status,
+            baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
+            canBuyConcurrency: orgPlanEntitlements.canBuyConcurrency,
+            canBuyCredits: orgPlanEntitlements.canBuyCredits,
+            showUsagePack: orgPlanEntitlements.showUsagePack,
+            autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
+            restrictedBuiltInModels:
+              orgPlanEntitlements.restrictedBuiltInModels,
+            workflowWebhookAutomationAllowed:
+              orgPlanEntitlements.workflowWebhookTriggerAllowed,
+            audioLifetimeLimit: orgPlanEntitlements.audioLifetimeLimit,
+            audioDailyRateLimit: orgPlanEntitlements.audioDailyRateLimit,
+            audioDailyDurationSeconds:
+              orgPlanEntitlements.audioDailyDurationSeconds,
+          })
+          .from(orgPlanEntitlements)
+          .where(eq(orgPlanEntitlements.orgId, orgId))
+          .limit(1);
+        const [capabilityRow] = await query;
+        if (!capabilityRow) {
+          const orgQuery = db
+            .select({ orgId: orgMetadata.orgId })
+            .from(orgMetadata)
+            .where(eq(orgMetadata.orgId, orgId))
+            .limit(1);
+          const [existingOrg] = await orgQuery;
+          if (!existingOrg) {
+            return null;
+          }
+          throw new Error(`Missing org plan entitlement for ${orgId}`);
+        }
+
+        return orgPlanCapabilitiesFromRow(capabilityRow, orgId);
+      })(),
     ]);
 
     return billingStatusResponse({
