@@ -2283,6 +2283,8 @@ describe("Browser user-action route", () => {
         [200],
       );
       expect(pending.body.state).toBe("pending");
+      const pendingControl = await create();
+      expect(pendingControl.body.action.state).toBe("pending");
       const browserParams = { threadId: owned.current.threadId };
       const leased = await accept(
         client().leaseByThread({ headers, params: browserParams, body: {} }),
@@ -2299,14 +2301,16 @@ describe("Browser user-action route", () => {
       expect(cancelled.body.state).toBe("cancelled");
 
       mockNow(Date.parse(idleExpiresAt) + 1);
-      const expiredLease = await client().leaseByThread({
+      const expiredPending = await userActionClient().cancel({
         headers,
-        params: browserParams,
+        params: {
+          requestToken: pendingControl.body.action.requestToken,
+        },
         body: {},
       });
-      expect(expiredLease).toMatchObject({
-        status: 409,
-        body: { error: { code: "BROWSER_NOT_LIVE" } },
+      expect(expiredPending).toMatchObject({
+        status: 410,
+        body: { error: { code: "BROWSER_USER_ACTION_EXPIRED" } },
       });
       const repeated = await accept(
         userActionClient().cancel({ headers, params, body: {} }),
