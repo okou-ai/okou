@@ -27,11 +27,15 @@ const slackConnectionNotFound = Object.freeze({
   }),
 });
 
-const getSlackChannelsInner$ = computed(async (get) => {
+const slackInstallationInput$ = computed((get) => {
   const auth = get(organizationAuthContext$);
-  const installation = await get(
-    slackUserInstallation({ orgId: auth.orgId, userId: auth.userId }),
-  );
+  return { orgId: auth.orgId, userId: auth.userId } as const;
+});
+
+const slackInstallation$ = slackUserInstallation(slackInstallationInput$);
+
+const getSlackChannelsInner$ = computed(async (get) => {
+  const installation = await get(slackInstallation$);
   if (installation.kind === "not-installed") {
     return slackInstallationNotFound;
   }
