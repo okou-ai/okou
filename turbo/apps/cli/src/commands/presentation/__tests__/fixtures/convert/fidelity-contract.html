@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Native fidelity regression contract</title>
+    <style>
+      @font-face {
+        font-family: Geist;
+        src: url("fonts/geist-latin-variable.woff2") format("woff2");
+        font-weight: 100 900;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: "Geist Static";
+        src: url("fonts/geist-latin-regular.woff2") format("woff2");
+        font-weight: normal;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: "Geist Keyword Bold";
+        src: url("fonts/geist-latin-variable.ttf") format("truetype");
+        font-weight: bold;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: "Fixture CJK";
+        src: url("fonts/noto-cjk-fixture.woff2") format("woff2");
+        font-weight: 400;
+      }
+      @font-face {
+        font-family: "Fixture Collection";
+        src: url("fonts/collection-fixture.ttc") format("collection");
+        font-weight: 400;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #ddd;
+        font-family: Geist, Arial, sans-serif;
+      }
+      .slide {
+        position: relative;
+        isolation: isolate;
+        width: 1600px;
+        height: 900px;
+        background: white;
+        overflow: hidden;
+        padding: 80px;
+        margin: 20px 0;
+      }
+      .slide h1 {
+        font-size: 54px;
+        margin: 0 0 40px;
+        font-weight: 600;
+      }
+      .slide p {
+        font-size: 28px;
+      }
+      .backdrop {
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        background: #f8ecce;
+      }
+      .card {
+        position: relative;
+        width: 750px;
+        padding: 40px;
+        border-radius: 30px;
+        background: white;
+        box-shadow: 0 18px 35px #0003;
+      }
+      .context {
+        position: absolute;
+        left: 950px;
+        top: 320px;
+        width: 380px;
+        height: 300px;
+        background: #ddeaff;
+        z-index: 1;
+      }
+      .context .negative {
+        position: absolute;
+        inset: 25px;
+        background: #bce9cb;
+        z-index: -1;
+      }
+      .front {
+        position: absolute;
+        left: 1100px;
+        top: 450px;
+        width: 240px;
+        height: 80px;
+        z-index: 2;
+        background: #ffc670;
+        padding: 20px;
+      }
+      .images {
+        display: flex;
+        gap: 70px;
+      }
+      .images figure {
+        margin: 0;
+        text-align: center;
+      }
+      .images img {
+        width: 240px;
+        height: 200px;
+        object-fit: contain;
+      }
+      .images figcaption {
+        font-size: 23px;
+        margin-top: 35px;
+      }
+      table {
+        border-collapse: collapse;
+        width: 1350px;
+        table-layout: fixed;
+        font-size: 28px;
+      }
+      td,
+      th {
+        padding: 18px 20px;
+        border-bottom: 2px solid #aaa;
+        text-align: left;
+      }
+      th {
+        font-size: 22px;
+      }
+      td:not(:first-child) {
+        font-variant-numeric: tabular-nums;
+      }
+      th:first-child {
+        width: 460px;
+      }
+      .badge {
+        display: inline-block;
+        border: 3px solid #467553;
+        border-radius: 999px;
+        padding: 7px 22px;
+        font-size: 24px;
+        background: #e0f4e4;
+      }
+      .badge.outline {
+        background: transparent;
+      }
+      .badge-table td:first-child {
+        width: 230px;
+      }
+      .badge-table td {
+        padding: 22px;
+      }
+      .column-contract {
+        width: 1000px;
+        margin-top: 55px;
+        font: 21px/1.2 monospace;
+      }
+      .column-contract th:first-child,
+      .column-contract td:first-child {
+        width: 62%;
+      }
+      .sentence {
+        font-weight: 600;
+        font-size: 83.2px;
+        letter-spacing: -1.83px;
+        line-height: 1;
+        color: #202020;
+        width: 1376px;
+        margin-top: 145px;
+      }
+      .sentence span {
+        color: #488e20;
+      }
+      .weights {
+        display: flex;
+        gap: 45px;
+        margin-top: 80px;
+        font-size: 36px;
+      }
+      .note {
+        position: absolute;
+        bottom: 55px;
+        font-size: 22px;
+        color: #555;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="slide">
+      <div class="backdrop"></div>
+      <h1>F01 · Context-local paint order</h1>
+      <div class="card">
+        <p>Normal-flow text stays above the negative background.</p>
+        <p>The rounded card keeps its outer shadow.</p>
+      </div>
+      <div class="context">
+        <div class="negative"></div>
+        <p>Nested negative context</p>
+      </div>
+      <div class="front">Positive sibling</div>
+      <p class="note">
+        The green child stays within the blue stacking context; the orange
+        sibling stays on top.
+      </p>
+    </section>
+    <section class="slide">
+      <h1>F02 · Source image reflections</h1>
+      <div class="images">
+        <figure>
+          <img
+            alt="Asymmetric arrow"
+            src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='200'%3E%3Cpath fill='%230073b5' d='M20 20H150V0L235 75L150 150V120H20Z'/%3E%3Ccircle cx='35' cy='180' r='15' fill='%23e65100'/%3E%3C/svg%3E"
+          />
+          <figcaption>Original</figcaption>
+        </figure>
+        <figure>
+          <img
+            style="transform: scaleX(-1)"
+            alt="Horizontal reflection"
+            src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='200'%3E%3Cpath fill='%230073b5' d='M20 20H150V0L235 75L150 150V120H20Z'/%3E%3Ccircle cx='35' cy='180' r='15' fill='%23e65100'/%3E%3C/svg%3E"
+          />
+          <figcaption>Horizontal</figcaption>
+        </figure>
+        <figure>
+          <img
+            style="transform: scaleY(-1)"
+            alt="Vertical reflection"
+            src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='200'%3E%3Cpath fill='%230073b5' d='M20 20H150V0L235 75L150 150V120H20Z'/%3E%3Ccircle cx='35' cy='180' r='15' fill='%23e65100'/%3E%3C/svg%3E"
+          />
+          <figcaption>Vertical</figcaption>
+        </figure>
+        <figure style="transform: rotate(20deg)">
+          <img
+            style="transform: scaleX(-1); transform-origin: 20% 80%"
+            alt="Nested reflection"
+            src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='200'%3E%3Cpath fill='%230073b5' d='M20 20H150V0L235 75L150 150V120H20H20Z'/%3E%3Ccircle cx='35' cy='180' r='15' fill='%23e65100'/%3E%3C/svg%3E"
+          />
+          <figcaption>Nested rotation</figcaption>
+        </figure>
+      </div>
+    </section>
+    <section class="slide">
+      <h1>F03 · Browser-measured table lines</h1>
+      <table>
+        <tr>
+          <th>Metric</th>
+          <th>7D P50</th>
+          <th>7D N</th>
+          <th>1D N</th>
+          <th>Wrapped note</th>
+        </tr>
+        <tr>
+          <td>api_to_spawn</td>
+          <td>901</td>
+          <td>11,748</td>
+          <td>2,769</td>
+          <td>Two lines in this cell</td>
+        </tr>
+        <tr>
+          <td>last_event_to_complete</td>
+          <td>938</td>
+          <td>12126</td>
+          <td style="white-space: nowrap">11,709</td>
+          <td>Natural wrapping is retained</td>
+        </tr>
+      </table>
+      <table class="column-contract">
+        <colgroup>
+          <col style="width: 56%" />
+          <col style="width: 14%" />
+          <col style="width: 15%" />
+          <col style="width: 15%" />
+        </colgroup>
+        <tr>
+          <th>Fixed percentage tracks</th>
+          <th>Count</th>
+          <th>P50</th>
+          <th>P95</th>
+        </tr>
+        <tr>
+          <td>endpoint/path/shared-database/worker-runtime</td>
+          <td>11,748</td>
+          <td>901</td>
+          <td>2,769</td>
+        </tr>
+      </table>
+      <p class="note">
+        Numbers remain single-line; note wrapping and all row boundaries match
+        the browser.
+      </p>
+    </section>
+    <section class="slide">
+      <h1>F04 · Editable inline cell paint</h1>
+      <table class="badge-table">
+        <tr>
+          <td>
+            <span class="badge" style="display: inline-flex">Feature</span>
+          </td>
+          <td>Filled capsule with rounded border</td>
+        </tr>
+        <tr>
+          <td>
+            <span
+              class="badge outline"
+              style="
+                display: inline-flex;
+                border: 0;
+                box-shadow: inset 0 0 0 3px #487953;
+              "
+              >Fix</span
+            >
+          </td>
+          <td>
+            Outlined capsule and <a href="https://example.com">editable link</a>
+          </td>
+        </tr>
+        <tr>
+          <td><span class="badge">Refactor</span></td>
+          <td>
+            <strong>Bold text</strong>, regular text and a measured line
+            break<br />inside the same cell.
+          </td>
+        </tr>
+      </table>
+    </section>
+    <section class="slide">
+      <h1>F05 · Exact font instances and inline origins</h1>
+      <div class="sentence">
+        A tree is not decoration. <span>It is working infrastructure.</span>
+      </div>
+      <div class="weights">
+        <span style="font-weight: 400">400 AVATAR</span
+        ><span style="font-weight: 500">500 AVATAR</span
+        ><span style="font-weight: 600">600 AVATAR</span
+        ><span style="font-weight: 700">700 AVATAR</span>
+      </div>
+      <p
+        style="
+          font-family: &quot;Geist Static&quot;;
+          font-weight: 600;
+          margin-top: 65px;
+          font-synthesis-weight: none;
+        "
+      >
+        Synthesis disabled: a regular-only fallback stays regular.
+      </p>
+      <p
+        style="
+          font-family: Geist, &quot;Fixture CJK&quot;;
+          font-weight: 600;
+          margin-top: 8px;
+        "
+      >
+        中文备用字体保持可编辑 ·
+        <span style="font-family: &quot;Fixture Collection&quot;"
+          >中文字体</span
+        >
+      </p>
+      <p
+        class="note"
+        style="font-family: &quot;Missing Fixture Font&quot;, Geist, sans-serif"
+      >
+        Resolved fallback family: Geist. Text remains editable.
+      </p>
+    </section>
+    <section class="slide">
+      <h1>F06 · Unmaterialized table text and font keywords</h1>
+      <table style="transform: rotate(5deg); margin: 100px 0">
+        <tr>
+          <td>Rotated table cell</td>
+          <td>123456</td>
+        </tr>
+      </table>
+      <table>
+        <tr>
+          <td>Control table cell</td>
+          <td>654321</td>
+        </tr>
+      </table>
+      <p style="font-family: &quot;Geist Static&quot;; font-weight: 400">
+        The normal descriptor retains its embedded regular font.
+      </p>
+      <p style="font-family: &quot;Geist Keyword Bold&quot;; font-weight: 700">
+        The bold descriptor retains its embedded bold font.
+      </p>
+      <p class="note">
+        Both tables retain editable text exactly once; their grids retain one
+        owner. Font descriptors accept CSS keywords and numeric weights.
+      </p>
+    </section>
+  </body>
+</html>
