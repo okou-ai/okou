@@ -17,6 +17,11 @@ SANDBOX_ID=""
 TURN1_INVOCATION_ID=""
 PROMOTION_INVOCATION_ID=""
 RESTORE_INVOCATION_ID=""
+ORIGINAL_CONFIG="${RUNNER_DIR}/home-cache-original.yaml"
+ROOTFS_UPDATE_DIR="${RUNNER_DIR}/rootfs-update"
+UPDATED_ROOTFS_HASH=""
+UPDATED_SNAPSHOT_HASH=""
+UPDATED_IMAGE_DIR=""
 
 fail() { echo "FAIL: $1"; exit 1; }
 wait_for_unit_inactive() {
@@ -47,9 +52,63 @@ stop_active_attempt() {
 cleanup() {
   echo "--- Cleanup ---"
   stop_active_attempt
+  if [ -n "$UPDATED_IMAGE_DIR" ]; then
+    sudo rm -rf "$UPDATED_IMAGE_DIR"
+  fi
   sudo rm -rf "$GROUP_DIR" "$RUNNER_DIR"
 }
 trap cleanup EXIT
+
+sudo cp "$RUNNER_DIR/runner.yaml" "$ORIGINAL_CONFIG"
+
+prepare_updated_rootfs() {
+  if [ -z "$UPDATED_ROOTFS_HASH" ]; then
+    local original_hash original_image updated_image build_hashes
+    original_hash=$(sudo awk '$1 == "rootfs_hash:" {print $2}' "$ORIGINAL_CONFIG")
+    [[ "$original_hash" =~ ^[0-9a-f]{64}$ ]] || fail "original rootfs hash unavailable"
+    original_image="/var/lib/vm0-runner/images/${original_hash}/rootfs.ext4"
+    sudo mkdir -p "$ROOTFS_UPDATE_DIR"
+    sudo debugfs -R "dump /usr/local/bin/codex-mock ${ROOTFS_UPDATE_DIR}/codex-mock" "$original_image"
+    sudo test -s "$ROOTFS_UPDATE_DIR/codex-mock" || fail "original codex mock unavailable"
+    # Appending a fixture note preserves ELF execution while genuinely changing
+    # installed guest bytes and the production builder's rootfs identity.
+    printf '\n%s\n' "$RUN_KEY" | sudo tee -a "$ROOTFS_UPDATE_DIR/codex-mock" >/dev/null
+    sudo chmod 755 "$ROOTFS_UPDATE_DIR/codex-mock"
+    build_hashes=$(sudo "$BIN_DIR/runner" build --profile vm0/default \
+      --codex-mock "$ROOTFS_UPDATE_DIR/codex-mock" --dry-run)
+    UPDATED_ROOTFS_HASH=$(awk -F= '$1 == "rootfs_hash" {print $2}' <<<"$build_hashes")
+    UPDATED_SNAPSHOT_HASH=$(awk -F= '$1 == "snapshot_hash" {print $2}' <<<"$build_hashes")
+    [[ "$UPDATED_ROOTFS_HASH" =~ ^[0-9a-f]{64}$ ]] || fail "updated rootfs hash unavailable"
+    [[ "$UPDATED_SNAPSHOT_HASH" =~ ^[0-9a-f]{64}$ ]] || fail "updated snapshot hash unavailable"
+    [ "$UPDATED_ROOTFS_HASH" != "$original_hash" ] || fail "rootfs update did not change identity"
+    updated_image="/var/lib/vm0-runner/images/${UPDATED_ROOTFS_HASH}/rootfs.ext4"
+    # Cleanup owns only a directory created exclusively by this fixture, after
+    # proving its identity differs from the shared original.
+    sudo mkdir "$(dirname "$updated_image")"
+    UPDATED_IMAGE_DIR=$(dirname "$updated_image")
+    # Reuse the already-built system template without a second network build.
+    # Only the fixture's unique rootfs copy is edited, never the shared original.
+    sudo cp --reflink=auto --sparse=always "$original_image" "${updated_image}.staging"
+    sudo debugfs -w -R 'rm /usr/local/bin/codex-mock' "${updated_image}.staging"
+    sudo debugfs -w -R "write ${ROOTFS_UPDATE_DIR}/codex-mock /usr/local/bin/codex-mock" "${updated_image}.staging"
+    sudo debugfs -w -R 'set_inode_field /usr/local/bin/codex-mock mode 0100755' "${updated_image}.staging"
+    sudo debugfs -R "dump /usr/local/bin/codex-mock ${ROOTFS_UPDATE_DIR}/installed-codex-mock" "${updated_image}.staging"
+    sudo cmp "$ROOTFS_UPDATE_DIR/codex-mock" "$ROOTFS_UPDATE_DIR/installed-codex-mock"
+    if sudo test -f "/var/lib/vm0-runner/images/${original_hash}/okou-cli.json"; then
+      sudo cp "/var/lib/vm0-runner/images/${original_hash}/okou-cli.json" \
+        "$(dirname "$updated_image")/okou-cli.json"
+    fi
+    sudo mv "${updated_image}.staging" "$updated_image"
+    # Build a fresh native VM snapshot from the changed disk, with the owning
+    # production builder computing and validating its actual input identities.
+    sudo "$BIN_DIR/runner" build --profile vm0/default \
+      --codex-mock "$ROOTFS_UPDATE_DIR/codex-mock"
+  fi
+  sudo sed -E \
+    -e "s/^([[:space:]]*rootfs_hash:).*/\\1 ${UPDATED_ROOTFS_HASH}/" \
+    -e "s/^([[:space:]]*snapshot_hash:).*/\\1 ${UPDATED_SNAPSHOT_HASH}/" \
+    "$ORIGINAL_CONFIG" | sudo tee "$RUNNER_DIR/runner.yaml" >/dev/null
+}
 
 for ((ATTEMPT = 1; ATTEMPT <= MAX_ATTEMPTS; ATTEMPT++)); do
   SESSION_ID="e2e-home-cache-promotion-session-${RUN_KEY}-${ATTEMPT}"
@@ -64,6 +123,7 @@ for ((ATTEMPT = 1; ATTEMPT <= MAX_ATTEMPTS; ATTEMPT++)); do
   echo "--- Home cache promotion attempt ${ATTEMPT}/${MAX_ATTEMPTS} ---"
   sudo "$BIN_DIR/runner" service stop --name "$SVC" --force
   wait_for_unit_inactive
+  sudo cp "$ORIGINAL_CONFIG" "$RUNNER_DIR/runner.yaml"
   sudo rm -rf "$GROUP_DIR"
 
   echo "--- Starting runner ---"
@@ -280,6 +340,7 @@ sudo touch /home/user/workspace/nested/ephemeral'; then
 
   # Clear the drain drop-in before starting a fresh transient service.
   sudo "$BIN_DIR/runner" service stop --name "$SVC" --force
+  prepare_updated_rootfs
   sudo "$BIN_DIR/runner" service start --name "$SVC" \
     --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true
 
@@ -297,7 +358,7 @@ sudo touch /home/user/workspace/nested/ephemeral'; then
   done
   [ -n "$RESTORE_INVOCATION_ID" ] || fail "restore runner invocation ID unavailable"
 
-  echo "--- Turn 3: restore promoted home ---"
+  echo "--- Turn 3: restore promoted home into updated rootfs ${UPDATED_ROOTFS_HASH} ---"
   if sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
     --chat-thread-id "$CHAT_THREAD_ID" \
     --session-id "$SESSION_ID" \
@@ -309,7 +370,7 @@ test "$(cat /home/user/live-writer)" = completed-writer
 test "$(cat /home/user/home-cache-marker)" = ordinary-home-state
 test "$(cat /home/user/.npm/home-cache-marker)" = npm-home-state
 test ! -e /home/user/workspace/nested/ephemeral'; then
-    echo "PASS: home cache restored after terminal cleanup and freeze-based promotion"
+    echo "PASS: home cache restored across rootfs update after terminal cleanup and freeze-based promotion"
     PROMOTION_VERIFIED=true
     break
   fi
@@ -340,6 +401,9 @@ done
 
 sudo "$BIN_DIR/runner" service stop --name "$SVC" --force
 wait_for_unit_inactive
+if [ -n "$UPDATED_IMAGE_DIR" ]; then
+  sudo rm -rf "$UPDATED_IMAGE_DIR"
+fi
 sudo rm -rf "$GROUP_DIR" "$RUNNER_DIR"
 trap - EXIT
 

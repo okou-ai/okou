@@ -43,9 +43,9 @@ pub use types::{
     CacheBudget, FsStats, HomeCacheCheckoutResult, HomeCacheTerminalStatus,
     HomeImageCacheInspection, HomeImageCacheInspectionEntry, HomeImageCacheInspectionStatus,
     HomeImageCacheInspectionSummary, HomeImageLeaseIdentity, HomeImageLeaseRequest,
-    HomeImagePrepareLockPolicy, HomeImagePrepareRequest, HomeImageProfileIdentity,
-    HomeImagePromotionIdentity, HomeImagePromotionIdentityMismatch,
-    HomeImagePromotionIdentityRequest, HomeImagePromotionRequest,
+    HomeImagePrepareLockPolicy, HomeImagePrepareRequest, HomeImagePromotionIdentity,
+    HomeImagePromotionIdentityMismatch, HomeImagePromotionIdentityRequest,
+    HomeImagePromotionRequest,
 };
 pub use watcher::{HomeCacheChange, HomeCacheWatcher};
 

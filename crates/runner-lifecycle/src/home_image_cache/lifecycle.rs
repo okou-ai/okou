@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
 use nix::fcntl::Flock;
 use tokio::fs;
 use tracing::{info, warn};
@@ -33,9 +32,9 @@ use super::path_safety::{
 use super::types::{
     CacheBudget, HomeCacheCheckoutResult, HomeCacheLockDecision, HomeCacheLockOwner,
     HomeCacheTerminalStatus, HomeImageLeaseIdentity, HomeImageLeaseRequest,
-    HomeImagePrepareLockPolicy, HomeImagePrepareRequest, HomeImageProfileIdentity,
-    HomeImagePromotionIdentity, HomeImagePromotionIdentityMismatch,
-    HomeImagePromotionIdentityRequest, HomeImagePromotionRequest,
+    HomeImagePrepareLockPolicy, HomeImagePrepareRequest, HomeImagePromotionIdentity,
+    HomeImagePromotionIdentityMismatch, HomeImagePromotionIdentityRequest,
+    HomeImagePromotionRequest,
 };
 use super::{
     CACHE_FORMAT_VERSION, HOME_DRIVE_LAYOUT, HomeCacheLockRegistration, HomeImageCache,
@@ -61,6 +60,8 @@ pub struct HomeImageLease {
     previous_storage: Option<StorageFingerprints>,
     history_proof: Option<HomeCacheHistoryProofBinding>,
     pub(super) source_pin: Option<super::fs::PinnedImage>,
+    // A cross-rootfs seed stays protected from its producer's checkout and GC.
+    source_entry_lock: Option<HomeEntryLock>,
     entry_lock: Option<HomeEntryLock>,
     lock_decision: Option<HomeCacheLockDecision>,
 }
@@ -300,6 +301,7 @@ impl HomeImageLease {
             previous_storage: state.previous_storage,
             history_proof: state.history_proof,
             source_pin: None,
+            source_entry_lock: None,
             entry_lock: state.entry_lock,
             lock_decision: state.lock_decision,
         }
@@ -695,7 +697,7 @@ impl HomeImageCache {
         }
 
         let metadata_path = self.home_image_cache_metadata(&cache_key);
-        let hit = match self
+        let candidate = match self
             .read_valid_metadata(
                 &metadata_path,
                 common.profile_name,
@@ -706,13 +708,23 @@ impl HomeImageCache {
             )
             .await
         {
-            Ok(Some(metadata)) => {
+            Ok(Some(metadata)) => Ok(Some((cache_key.clone(), metadata, None))),
+            Ok(None) => Ok(self
+                .compatible_home_candidate(&cache_key, &common, reuse_key, working_dir)
+                .await
+                .map(|(key, metadata, guard)| (key, metadata, Some(guard)))),
+            Err(error) => Err(error),
+        };
+        let hit = match candidate {
+            Ok(Some((source_cache_key, metadata, source_entry_lock))) => {
+                let metadata_path = self.home_image_cache_metadata(&source_cache_key);
                 let previous = metadata.storage_fingerprints.clone();
                 match fs::remove_file(&metadata_path).await {
                     Ok(()) => {
                         info!(
                             run_id = %common.run_id,
                             cache_key,
+                            source_cache_key,
                             "home image cache hit checked out with move seed"
                         );
                     }
@@ -735,7 +747,7 @@ impl HomeImageCache {
                     }
                 }
                 let source = self
-                    .entry_paths(&cache_key)
+                    .entry_paths(&source_cache_key)
                     .image(&metadata.image_generation)
                     .ok_or_else(|| LifecycleError::Internal("invalid home generation".into()));
                 match source {
@@ -744,6 +756,7 @@ impl HomeImageCache {
                         previous,
                         metadata.history_proof,
                         metadata.current_image,
+                        source_entry_lock,
                     )),
                     Err(_) => None,
                 }
@@ -807,7 +820,7 @@ impl HomeImageCache {
         };
 
         match hit {
-            Some((source, previous, binding, expected_image)) => {
+            Some((source, previous, binding, expected_image, source_entry_lock)) => {
                 let pin = super::fs::PinnedImage::open(&source, common.image_size_bytes);
                 if !pin
                     .as_ref()
@@ -834,6 +847,7 @@ impl HomeImageCache {
                 );
                 lease.history_proof = binding;
                 lease.source_pin = pin.ok();
+                lease.source_entry_lock = source_entry_lock;
                 lease
             }
             None => home_drive(
@@ -848,9 +862,82 @@ impl HomeImageCache {
         }
     }
 
+    /// Producer-rootfs keys remain readable by older runners and GC. Rootfs
+    /// bytes do not constrain the independently mounted home of a new VM.
+    async fn compatible_home_candidate(
+        &self,
+        target_key: &str,
+        common: &HomeImageLeaseCommon<'_>,
+        reuse_key: &str,
+        working_dir: &str,
+    ) -> Option<(String, HomeCacheMetadata, HomeEntryLock)> {
+        let mut entries = fs::read_dir(self.home_image_cache_dir()).await.ok()?;
+        let mut candidates = Vec::new();
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            if !entry.file_type().await.is_ok_and(|kind| kind.is_dir()) {
+                continue;
+            }
+            let Some(key) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            if key == target_key || !is_cache_key_name(&key) {
+                continue;
+            }
+            // Preview is a discovery hint only; all authority is re-read under
+            // the source lock before consuming the immutable generation.
+            let Ok(metadata) = self
+                .read_metadata_file(&self.home_image_cache_metadata(&key))
+                .await
+            else {
+                continue;
+            };
+            if metadata.cache_scope == self.inner.cache_scope
+                && metadata.profile_name == common.profile_name
+                && metadata.reuse_key == reuse_key
+                && metadata.working_dir == working_dir
+                && metadata.logical_image_size_bytes == common.image_size_bytes
+                && self.metadata_matches_cache_key(&key, &metadata)
+            {
+                candidates.push((metadata.last_completed_at, key));
+            }
+        }
+        candidates.sort_unstable_by(|a, b| b.cmp(a));
+        for (_, key) in candidates {
+            // The destination entry is already locked. Never wait on another
+            // entry: two rootfs versions may be looking at each other's homes.
+            let Ok(runner_host::lock::TryLock::Acquired(guard)) =
+                runner_host::lock::try_acquire_or_busy(self.entry_lock_path(&key)).await
+            else {
+                continue;
+            };
+            let guard = HomeEntryLock::new(self, &key, guard, HomeCacheLockOwner::Active);
+            let path = self.home_image_cache_metadata(&key);
+            let Ok(metadata) = self.read_metadata_file(&path).await else {
+                continue;
+            };
+            if !self.metadata_matches_cache_key(&key, &metadata) {
+                continue;
+            }
+            if let Ok(Some(metadata)) = self
+                .read_valid_metadata(
+                    &path,
+                    common.profile_name,
+                    &metadata.rootfs_hash,
+                    reuse_key,
+                    working_dir,
+                    common.image_size_bytes,
+                )
+                .await
+            {
+                return Some((key, metadata, guard));
+            }
+        }
+        None
+    }
+
     pub async fn held_home_states_for_profiles(
         &self,
-        profile_image_sizes_bytes: &BTreeMap<&str, HomeImageProfileIdentity<'_>>,
+        profile_image_sizes_bytes: &BTreeMap<&str, u64>,
     ) -> Vec<HeldHomeState> {
         self.held_home_states_matching_profiles(Some(profile_image_sizes_bytes), None, false)
             .await
@@ -861,33 +948,14 @@ impl HomeImageCache {
     /// needed to connect subscribe-before-scan watcher state.
     pub async fn initial_held_home_states_for_profiles(
         &self,
-        profile_image_sizes_bytes: &BTreeMap<&str, HomeImageProfileIdentity<'_>>,
+        profile_image_sizes_bytes: &BTreeMap<&str, u64>,
     ) -> (Vec<HeldHomeState>, BTreeSet<String>, BTreeSet<String>) {
         let scan = self
             .held_home_states_matching_profiles(Some(profile_image_sizes_bytes), None, true)
             .await;
-        // The heartbeat projection omits cache keys, but startup needs the
-        // deterministic keys for the watcher handoff before publishing it.
-        let loaded_cache_keys = scan
-            .states
-            .iter()
-            .flat_map(|state| {
-                state.home_caches.iter().filter_map(|home_cache| {
-                    profile_image_sizes_bytes
-                        .get(home_cache.profile.as_str())
-                        .map(|image_size_bytes| {
-                            self.scoped_cache_key(
-                                &home_cache.profile,
-                                image_size_bytes.rootfs_hash,
-                                &state.reuse_key,
-                                CANONICAL_WORKING_DIR,
-                                image_size_bytes.image_size_bytes,
-                            )
-                        })
-                })
-            })
-            .collect();
-        (scan.states, scan.locked_commit_keys, loaded_cache_keys)
+        // The heartbeat projection omits producer rootfs and physical keys.
+        // Reconstructing keys from the consumer rootfs loses upgrade entries.
+        (scan.states, scan.locked_commit_keys, scan.loaded_cache_keys)
     }
 
     /// Waits for metadata-commit entry locks before performing the complete scan.
@@ -897,7 +965,7 @@ impl HomeImageCache {
     /// the validated observation is merged into that scan's bounded result.
     pub async fn held_home_states_for_profiles_after_commits(
         &self,
-        profile_image_sizes_bytes: &BTreeMap<&str, HomeImageProfileIdentity<'_>>,
+        profile_image_sizes_bytes: &BTreeMap<&str, u64>,
         committed_cache_keys: &BTreeSet<String>,
         deadline: tokio::time::Instant,
     ) -> Vec<HeldHomeState> {
@@ -920,7 +988,7 @@ impl HomeImageCache {
 
     async fn held_home_states_matching_profiles(
         &self,
-        profile_image_sizes_bytes: Option<&BTreeMap<&str, HomeImageProfileIdentity<'_>>>,
+        profile_image_sizes_bytes: Option<&BTreeMap<&str, u64>>,
         committed_cache_keys: Option<(&BTreeSet<String>, tokio::time::Instant)>,
         collect_locked_commits: bool,
     ) -> HeldHomeStateScan {
@@ -951,7 +1019,7 @@ impl HomeImageCache {
                     .publishable_held_home_state(cache_key, profile_image_sizes_bytes, &lock)
                     .await
                 {
-                    states.push(state);
+                    states.push((cache_key.clone(), state));
                     validated_cache_keys.insert(cache_key.clone());
                 }
                 drop(lock);
@@ -969,17 +1037,11 @@ impl HomeImageCache {
         let mut entries = match fs::read_dir(&root).await {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return HeldHomeStateScan {
-                    states: cap_held_home_states(states),
-                    locked_commit_keys,
-                };
+                return HeldHomeStateScan::new(states, locked_commit_keys);
             }
             Err(e) => {
                 warn!(error = %e, "failed to scan home image cache");
-                return HeldHomeStateScan {
-                    states: cap_held_home_states(states),
-                    locked_commit_keys,
-                };
+                return HeldHomeStateScan::new(states, locked_commit_keys);
             }
         };
         while let Ok(Some(entry)) = entries.next_entry().await {
@@ -1022,31 +1084,29 @@ impl HomeImageCache {
                 .publishable_held_home_state(cache_key, profile_image_sizes_bytes, &lock)
                 .await
             {
-                states.push(state);
+                states.push((cache_key.to_owned(), state));
             }
             drop(lock);
         }
         let observed_home_caches = states
             .iter()
-            .map(|state| state.home_caches.len())
+            .map(|(_, state)| state.home_caches.len())
             .sum::<usize>();
-        let states = cap_held_home_states(states);
-        let retained_home_caches = states
+        let scan = HeldHomeStateScan::new(states, locked_commit_keys);
+        let retained_home_caches = scan
+            .states
             .iter()
             .map(|state| state.home_caches.len())
             .sum::<usize>();
         if retained_home_caches < observed_home_caches {
             info!(
                 observed_home_caches,
-                retained_home_states = states.len(),
+                retained_home_states = scan.states.len(),
                 retained_home_caches,
                 "home cache state truncated"
             );
         }
-        HeldHomeStateScan {
-            states,
-            locked_commit_keys,
-        }
+        scan
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -1096,7 +1156,7 @@ impl HomeImageCache {
     async fn publishable_held_home_state(
         &self,
         cache_key: &str,
-        profile_image_sizes_bytes: Option<&BTreeMap<&str, HomeImageProfileIdentity<'_>>>,
+        profile_image_sizes_bytes: Option<&BTreeMap<&str, u64>>,
         _lock: &Flock<std::fs::File>,
     ) -> Option<HeldHomeState> {
         let metadata = self
@@ -1123,7 +1183,7 @@ impl HomeImageCache {
         &self,
         cache_key: &str,
         metadata: &HomeCacheMetadata,
-        profile_image_sizes_bytes: Option<&BTreeMap<&str, HomeImageProfileIdentity<'_>>>,
+        profile_image_sizes_bytes: Option<&BTreeMap<&str, u64>>,
     ) -> bool {
         metadata.format_version == CACHE_FORMAT_VERSION
             && metadata.cache_scope == self.inner.cache_scope
@@ -1134,10 +1194,7 @@ impl HomeImageCache {
             && profile_image_sizes_bytes.is_none_or(|profile_image_sizes_bytes| {
                 profile_image_sizes_bytes
                     .get(metadata.profile_name.as_str())
-                    .is_some_and(|identity| {
-                        identity.image_size_bytes == metadata.logical_image_size_bytes
-                            && identity.rootfs_hash == metadata.rootfs_hash
-                    })
+                    .is_some_and(|size| *size == metadata.logical_image_size_bytes)
             })
             && self.metadata_matches_cache_key(cache_key, metadata)
             && self
@@ -1390,6 +1447,50 @@ impl HomeImageCache {
 struct HeldHomeStateScan {
     states: Vec<HeldHomeState>,
     locked_commit_keys: BTreeSet<String>,
+    loaded_cache_keys: BTreeSet<String>,
+}
+
+impl HeldHomeStateScan {
+    fn new(observed: Vec<(String, HeldHomeState)>, locked_commit_keys: BTreeSet<String>) -> Self {
+        let states =
+            cap_held_home_states(observed.iter().map(|(_, state)| state.clone()).collect());
+        let mut newest_keys = BTreeMap::<(String, String), (String, String)>::new();
+        for (key, state) in observed {
+            for capability in state.home_caches {
+                let identity = (state.reuse_key.clone(), capability.profile);
+                let candidate = (state.last_completed_at.clone(), key.clone());
+                newest_keys
+                    .entry(identity)
+                    .and_modify(|current| {
+                        if candidate > *current {
+                            *current = candidate.clone();
+                        }
+                    })
+                    .or_insert(candidate);
+            }
+        }
+        // Keep the watcher handoff bounded by the same retained capabilities
+        // as the heartbeat, while preserving their actual producer keys.
+        let retained_profiles: BTreeSet<_> = states
+            .iter()
+            .flat_map(|state| {
+                state
+                    .home_caches
+                    .iter()
+                    .map(|capability| (state.reuse_key.clone(), capability.profile.clone()))
+            })
+            .collect();
+        let loaded_cache_keys = newest_keys
+            .into_iter()
+            .filter(|(identity, _)| retained_profiles.contains(identity))
+            .map(|(_, (_, key))| key)
+            .collect();
+        Self {
+            states,
+            locked_commit_keys,
+            loaded_cache_keys,
+        }
+    }
 }
 
 impl HomeImageLease {
@@ -1419,6 +1520,7 @@ impl HomeImageLease {
     pub fn discard_cached_image(&mut self) {
         self.source_image = None;
         self.source_pin = None;
+        self.source_entry_lock = None;
         self.history_proof = None;
         self.previous_storage = None;
         self.result = HomeCacheCheckoutResult::Miss;
