@@ -13,6 +13,9 @@ on:
 permissions:
   contents: read
 
+env:
+  npm_config_audit: "false"
+
 concurrency:
   group: diagnose-discord-gateway-${{ inputs.environment }}
   cancel-in-progress: false
