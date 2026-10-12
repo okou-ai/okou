@@ -5,6 +5,7 @@
  * These live server-side only so the frontend never sends stale seed skills.
  */
 export const SEED_SKILLS: readonly string[] = [
+  "artifact-layout",
   "computer-use",
   "gen",
   "office-files",

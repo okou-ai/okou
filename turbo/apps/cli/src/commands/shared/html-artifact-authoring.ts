@@ -101,6 +101,11 @@ export function createHtmlArtifactAuthoringInstructions(
     "- Derive keywords from the user prompt and search the index's `id`, `name`, and `description` fields.",
     "- Select resources only when they are useful for the request. There is no fixed selection count for any resource type.",
     "- Choose only IDs present in the index; do not invent resource IDs.",
+    ...(options.kind === "report"
+      ? [
+          "- For a report with no user-selected template or design system, keep `designSystems` empty and use the installed Okou `artifact-layout` package for visual layout. Select index resources only for an explicit choice or a needed content structure.",
+        ]
+      : []),
     "- Treat the selection JSON as internal working state, then continue to authoring.",
     "",
     "## Selection Output Schema",
@@ -166,7 +171,15 @@ export function createHtmlArtifactAuthoringInstructions(
     }),
     "",
     "## Authoring Rules",
-    "- Let the selected template define structure, the selected design system define visual language, and the selected skills define process.",
+    ...(options.kind === "report"
+      ? [
+          "- For a new report without a user-selected template or design system, read the installed `artifact-layout` skill. Its Okou-maintained recipes, themes, grids, and components are the report's layout source; use its HTML renderer or compose with its assets.",
+          "- Preserve explicitly selected templates, branding, and visual systems. Apply compatible layout components without replacing the user's choice. Layout guidance does not supply research, analysis, or facts.",
+        ]
+      : []),
+    options.kind === "report"
+      ? "- Use selected resources for requested structure or explicit visual choices; otherwise use `artifact-layout` for visual layout. Continue to use the existing analysis and quality workflows for content."
+      : "- Let the selected template define structure, the selected design system define visual language, and the selected skills define process.",
     "- Read the local codebase, brand assets, and existing design systems when the prompt depends on this repository.",
     "- Avoid generic AI design defaults: no stock SaaS gradients, no emoji-as-icons, no filler stats, no decorative chrome that does not help the artifact.",
     "- Build the actual artifact first, not a marketing explanation of the artifact.",
