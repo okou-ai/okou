@@ -6527,6 +6527,265 @@ describe("usage pack allocation management", () => {
     expect(context.mocks.stripe.invoices.createPreview).not.toHaveBeenCalled();
   });
 
+  async function preparePublicScheduledRestore(
+    lifecycle: PublicBillingScenario,
+  ) {
+    const helpers = createManagedUsagePackHelpers(lifecycle);
+    const userId = `user_${randomUUID()}`;
+    const fixture = await helpers.purchaseManagedUsagePack([
+      { userId, usagePackUsd: 50 },
+    ]);
+    const subscription = helpers.managedUsagePackSubscription(
+      fixture,
+      new Map([[TEST_PRICE_USAGE_PACK_50, 1]]),
+    );
+    const scheduleId = `sub_sched_${randomUUID()}`;
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(subscription);
+    context.mocks.stripe.subscriptionSchedules.create.mockResolvedValue({
+      id: scheduleId,
+    });
+    context.mocks.stripe.subscriptionSchedules.update.mockResolvedValue({
+      id: scheduleId,
+    });
+    helpers.mockUsagePackChangePreviews(0, 2000);
+    lifecycle.captureExternalState();
+    const client = setupApp({ context, routes: billingCheckoutRoutes })(
+      billingUsagePackManagementContract,
+    );
+    const preview = await lifecycle.run(() => {
+      return accept(
+        client.previewSubscriptionChange({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            targetTier: "pro",
+            memberUsagePacks: [{ memberId: userId, usagePackUsd: 20 }],
+          },
+        }),
+        [200],
+      );
+    });
+    const scheduled = await lifecycle.run(() => {
+      return accept(
+        client.confirmSubscriptionChange({
+          headers: { authorization: "Bearer clerk-session" },
+          body: { changeId: preview.body.changeId },
+        }),
+        [200],
+      );
+    });
+    expect(scheduled.body.status).toBe("scheduled");
+    const schedule = {
+      id: scheduleId,
+      end_behavior: "release",
+      current_phase: {
+        start_date: fixture.billingPeriod.start,
+        end_date: fixture.billingPeriod.end,
+      },
+      phases: [
+        {
+          start_date: fixture.billingPeriod.start,
+          end_date: fixture.billingPeriod.end,
+          items: [
+            { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
+            { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
+          ],
+        },
+        {
+          start_date: fixture.billingPeriod.end,
+          end_date: fixture.billingPeriod.end + 30 * 86_400,
+          items: [
+            { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
+            { price: TEST_PRICE_USAGE_PACK_20, quantity: 1 },
+          ],
+        },
+      ],
+    };
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+      ...subscription,
+      schedule: scheduleId,
+    });
+    context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue(
+      schedule,
+    );
+    helpers.mockUsagePackSubscriptionPackagePreviews({
+      immediateAmountCents: 0,
+      nextRecurringAmountCents: 5000,
+      sourcePriceId: TEST_PRICE_USAGE_PACK_50,
+      targetPriceId: TEST_PRICE_USAGE_PACK_50,
+      rejectScheduledSubscriptionRecurringPreview: true,
+    });
+    lifecycle.captureExternalState();
+    const restore = await lifecycle.run(() => {
+      return accept(
+        client.previewSubscriptionChange({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            targetTier: "pro",
+            memberUsagePacks: [{ memberId: userId, usagePackUsd: 50 }],
+          },
+        }),
+        [200],
+      );
+    });
+    return {
+      fixture,
+      userId,
+      client,
+      changeId: restore.body.changeId,
+      schedule,
+      helpers,
+    };
+  }
+
+  it("replays a completed package restoration with its original clock and organization", async () => {
+    const lifecycle = createPublicBillingScenario(context);
+    return await withNowScopeForTest(() => {
+      return lifecycle.run(async () => {
+        const restore = await preparePublicScheduledRestore(lifecycle);
+        const confirm = () => {
+          return accept(
+            restore.client.confirmSubscriptionChange({
+              headers: { authorization: "Bearer clerk-session" },
+              body: { changeId: restore.changeId },
+            }),
+            [200],
+          );
+        };
+        const completed = await lifecycle.run(confirm);
+        expect(completed.body.status).toBe("completed");
+        mockNow(now() + 60_000);
+        expect((await lifecycle.run(confirm)).body).toStrictEqual(
+          completed.body,
+        );
+        const otherUserId = `user_${randomUUID()}`;
+        const other = await restore.helpers.purchaseManagedUsagePack([
+          { userId: otherUserId, usagePackUsd: 20 },
+        ]);
+        const foreign = await lifecycle.run(() => {
+          return accept(
+            restore.client.confirmSubscriptionChange({
+              headers: { authorization: "Bearer clerk-session" },
+              body: { changeId: restore.changeId },
+            }),
+            [404],
+          );
+        });
+        expect(foreign.body).toStrictEqual({
+          error: {
+            code: "NOT_FOUND",
+            message: "Usage pack subscription not found",
+          },
+        });
+        expect(
+          (await restore.helpers.readManagedUsagePacks(other)).allocations,
+        ).toStrictEqual([
+          expect.objectContaining({
+            memberId: otherUserId,
+            usagePackUsd: 20,
+            pendingChange: null,
+          }),
+        ]);
+        authenticateOrg(restore.fixture);
+        mockClerkOrganization(restore.fixture);
+        lifecycle.captureExternalState();
+        expect((await lifecycle.run(confirm)).body).toStrictEqual(
+          completed.body,
+        );
+        expect(
+          (await restore.helpers.readManagedUsagePacks(restore.fixture))
+            .allocations,
+        ).toStrictEqual([
+          expect.objectContaining({
+            memberId: restore.userId,
+            usagePackUsd: 50,
+            pendingChange: null,
+          }),
+        ]);
+      });
+    });
+  });
+
+  it.each(["retrieve", "update"] as const)(
+    "retains a scheduled downgrade when application cancellation follows Stripe %s and permits restoration retry",
+    async (phase) => {
+      const lifecycle = createPublicBillingScenario(context);
+      return await withNowScopeForTest(() => {
+        return lifecycle.run(async () => {
+          const restore = await preparePublicScheduledRestore(lifecycle);
+          const controller = new AbortController();
+          const client = setupApp({
+            context,
+            routes: billingCheckoutRoutes,
+            signal: controller.signal,
+            rethrowErrors: true,
+          })(billingUsagePackManagementContract);
+          const method = context.mocks.stripe.subscriptionSchedules[phase];
+          retainBillingSequence(method, [
+            () => {
+              controller.abort(
+                new DOMException("Application stopped", "AbortError"),
+              );
+              return Promise.resolve(
+                phase === "retrieve"
+                  ? restore.schedule
+                  : { id: restore.schedule.id },
+              );
+            },
+          ]);
+          lifecycle.captureExternalState();
+          await expect(
+            lifecycle.run(() => {
+              return client.confirmSubscriptionChange({
+                headers: { authorization: "Bearer clerk-session" },
+                body: { changeId: restore.changeId },
+              });
+            }),
+          ).rejects.toThrow("Application stopped");
+          expect(
+            (await restore.helpers.readManagedUsagePacks(restore.fixture))
+              .allocations,
+          ).toStrictEqual([
+            expect.objectContaining({
+              memberId: restore.userId,
+              usagePackUsd: 50,
+              pendingChange: expect.objectContaining({
+                kind: "downgrade",
+                targetUsagePackUsd: 20,
+              }),
+            }),
+          ]);
+          context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue(
+            restore.schedule,
+          );
+          context.mocks.stripe.subscriptionSchedules.update.mockResolvedValue({
+            id: restore.schedule.id,
+          });
+          lifecycle.captureExternalState();
+          const retried = await lifecycle.run(() => {
+            return accept(
+              restore.client.confirmSubscriptionChange({
+                headers: { authorization: "Bearer clerk-session" },
+                body: { changeId: restore.changeId },
+              }),
+              [200],
+            );
+          });
+          expect(retried.body.status).toBe("completed");
+          expect(
+            (await restore.helpers.readManagedUsagePacks(restore.fixture))
+              .allocations,
+          ).toStrictEqual([
+            expect.objectContaining({
+              memberId: restore.userId,
+              usagePackUsd: 50,
+              pendingChange: null,
+            }),
+          ]);
+        });
+      });
+    },
+  );
+
   it("restores a scheduled package downgrade with billing-only phase metadata", async () => {
     const lifecycle = createPublicBillingScenario(context);
     const run = lifecycle.run;
