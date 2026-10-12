@@ -1,6 +1,7 @@
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import { i18n } from "../i18n/index.ts";
 import { localizedCloudflareAccessError } from "./cloudflare-access-error.ts";
+import { localizedTailscaleError } from "./tailscale-error.ts";
 
 export function localizedSshError(code: string): string | undefined {
   switch (code) {
@@ -60,7 +61,9 @@ export function localizedSshError(code: string): string | undefined {
       });
     }
     default: {
-      return localizedCloudflareAccessError(code);
+      return (
+        localizedCloudflareAccessError(code) ?? localizedTailscaleError(code)
+      );
     }
   }
 }

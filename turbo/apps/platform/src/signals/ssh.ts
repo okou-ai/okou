@@ -11,9 +11,20 @@ import {
 } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
+import { TAILSCALE_ERROR_CODES } from "@okouai/api-contracts/contracts/tailscale-errors";
 import { sshChangedPayloadSchema } from "@okouai/api-contracts/contracts/ssh-access";
 import { setAblyPayloadLoop$ } from "./realtime.ts";
-import { invalidateRemoteAccess$ } from "./remote-access-refresh.ts";
+import {
+  invalidateRemoteAccess$,
+  remoteHostDefaultsReload$,
+} from "./remote-access-refresh.ts";
+import {
+  invalidateTailscale$,
+  retryTailscale$,
+  tailscaleConfigs$,
+  tailscaleEnabled$,
+  tailscaleFieldsFromForm,
+} from "./tailscale.ts";
 import {
   sshConnectionsContract,
   type SshConnectionResponse,
@@ -21,7 +32,12 @@ import {
   updateSshConnectionRequestSchema,
   SSH_PRIVATE_KEY_MAX_LENGTH,
 } from "@okouai/api-contracts/contracts/ssh-connections";
-import { clerk$, currentOrgInfo$, user$ } from "./auth.ts";
+import {
+  authenticatedSessionKey$,
+  clerk$,
+  currentOrgInfo$,
+  user$,
+} from "./auth.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { apiClient$ } from "./api-client.ts";
 import {
@@ -55,12 +71,15 @@ export const cancelSshPrivateKeyFile$ = command(({ set }) => {
 });
 const resetFormSave$ = resetSignal();
 export const mountSshForm$ = onRef(
-  command(({ set }, form: HTMLFormElement, signal: AbortSignal) => {
+  command(({ get, set }, form: HTMLFormElement, signal: AbortSignal) => {
+    const mounted = get(dialog$);
     signal.addEventListener("abort", () => {
-      set(resetFormSave$);
-      set(abandonSshSave$);
       form.reset();
-      set(cancelSshPrivateKeyFile$);
+      if (get(dialog$) === mounted) {
+        set(resetFormSave$);
+        set(abandonSshSave$);
+        set(cancelSshPrivateKeyFile$);
+      }
     });
   }),
 );
@@ -165,6 +184,7 @@ const sshClients$ = computed(async (get) => {
 });
 export interface SshDialogState {
   readonly identity: string;
+  readonly sessionKey: string | null;
   readonly kind:
     | "create"
     | "edit"
@@ -256,21 +276,34 @@ const finishSshSave$ = command(
   },
 );
 
-const transportEditor$ = state<{ mode: string; configId: string | null }>({
+const transportEditor$ = state<{
+  mode: string;
+  configId: string | null;
+  tailscaleConfigId: string | null;
+}>({
   mode: "direct",
   configId: null,
+  tailscaleConfigId: null,
 });
 export const sshTransportEditor$ = computed((get) => {
   return get(transportEditor$);
 });
 export const chooseSshTransport$ = command(({ get, set }, mode: string) => {
-  if (mode === "direct" || mode === "cloudflare_access") {
+  if (mode === "tailscale" && !get(tailscaleEnabled$)) {
+    return;
+  }
+  if (
+    mode === "direct" ||
+    mode === "cloudflare_access" ||
+    mode === "tailscale"
+  ) {
     set(transportEditor$, (current) => {
       return { ...current, mode };
     });
     const conflict = get(conflict$);
     if (
       conflict === CLOUDFLARE_ACCESS_ERROR_CODES.NOT_FOUND ||
+      conflict === TAILSCALE_ERROR_CODES.NOT_FOUND ||
       (mode === "direct" &&
         conflict === CLOUDFLARE_ACCESS_ERROR_CODES.UNAVAILABLE)
     ) {
@@ -278,6 +311,26 @@ export const chooseSshTransport$ = command(({ get, set }, mode: string) => {
     }
   }
 });
+export const chooseSshTailscaleConfig$ = command(
+  ({ get, set }, configId: string | null) => {
+    if (
+      !get(tailscaleEnabled$) ||
+      configId === null ||
+      get(transportEditor$).tailscaleConfigId === configId
+    ) {
+      return;
+    }
+    set(transportEditor$, (current) => {
+      return {
+        ...current,
+        tailscaleConfigId: configId,
+      };
+    });
+    if (get(conflict$) === TAILSCALE_ERROR_CODES.NOT_FOUND) {
+      set(conflict$, null);
+    }
+  },
+);
 export const chooseSshAccessConfig$ = command(
   ({ get, set }, configId: string | null) => {
     if (configId !== null && configId !== get(transportEditor$).configId) {
@@ -353,10 +406,22 @@ export const sshConflict$ = computed((get) => {
 });
 export const sshDialog$ = computed(async (get) => {
   const dialog = get(dialog$);
+  if (!dialog || dialog.sessionKey !== get(authenticatedSessionKey$)) {
+    return null;
+  }
+  const hostEditor = dialog?.kind === "create" || dialog?.kind === "edit";
+  const tailscale =
+    dialog?.connection &&
+    "transport" in dialog.connection &&
+    dialog.connection.transport.type === "tailscale";
+  if (hostEditor && tailscale && !get(tailscaleEnabled$)) {
+    return null;
+  }
   return dialog?.identity === (await get(sshIdentity$)) ? dialog : null;
 });
 export const sshConnections$ = computed(async (get) => {
   get(reload$);
+  get(remoteHostDefaultsReload$);
   if (!(await get(sshIdentity$))) {
     return null;
   }
@@ -382,6 +447,7 @@ export const sshSummary$ = computed(async (get) => {
   return result.status === 200 ? result.body : null;
 });
 export const closeSshDialog$ = command(({ set }) => {
+  set(resetFormSave$);
   set(abandonSshSave$);
   set(cancelSshPrivateKeyFile$);
   set(conflict$, null);
@@ -426,7 +492,7 @@ export const invalidateSsh$ = command(({ set }) => {
 const initializeSshSelection$ = command(
   async (
     { get, set },
-    resource: "credential" | "access",
+    resource: "credential" | "access" | "tailscale",
     signal: AbortSignal,
   ) => {
     const dialog = get(dialog$);
@@ -437,7 +503,9 @@ const initializeSshSelection$ = command(
       waitForOperation<readonly { readonly id: string }[] | null>(
         resource === "credential"
           ? get(sshCredentials$)
-          : get(cloudflareAccessConfigs$),
+          : resource === "tailscale"
+            ? get(tailscaleConfigs$)
+            : get(cloudflareAccessConfigs$),
         signal,
       ),
       signal,
@@ -460,6 +528,13 @@ const initializeSshSelection$ = command(
           selection: current.selection ?? selection,
         };
       });
+    } else if (resource === "tailscale") {
+      set(transportEditor$, (current) => {
+        return {
+          ...current,
+          tailscaleConfigId: current.tailscaleConfigId ?? selection,
+        };
+      });
     } else {
       set(transportEditor$, (current) => {
         return {
@@ -475,11 +550,13 @@ const initializeSshSelections$ = command(
     await Promise.all([
       set(initializeSshSelection$, "credential", signal),
       set(initializeSshSelection$, "access", signal),
+      set(initializeSshSelection$, "tailscale", signal),
     ]);
   },
 );
 export const retrySsh$ = command(async ({ set }, signal: AbortSignal) => {
   set(retryCloudflareAccess$, signal);
+  set(retryTailscale$, signal);
   set(invalidateSsh$);
   await set(initializeSshSelections$, signal);
 });
@@ -522,12 +599,12 @@ export const openSshDialog$ = command(
     connection: SshConnectionResponse | null,
     signal: AbortSignal,
   ) => {
-    // The setup sibling owns Tailscale forms. Never treat a retained binding as Direct/Cloudflare.
     if (
       kind === "edit" &&
       connection &&
       "transport" in connection &&
-      connection.transport.type === "tailscale"
+      connection.transport.type === "tailscale" &&
+      !get(tailscaleEnabled$)
     ) {
       return;
     }
@@ -550,7 +627,17 @@ export const openSshDialog$ = command(
           ? connection.transport.type
           : "direct",
       configId:
-        connection && "transport" in connection
+        connection &&
+        "transport" in connection &&
+        connection.transport.type === "cloudflare_access"
+          ? "configId" in connection.transport
+            ? connection.transport.configId
+            : ""
+          : null,
+      tailscaleConfigId:
+        connection &&
+        "transport" in connection &&
+        connection.transport.type === "tailscale"
           ? "configId" in connection.transport
             ? connection.transport.configId
             : ""
@@ -558,6 +645,7 @@ export const openSshDialog$ = command(
     });
     set(dialog$, {
       identity,
+      sessionKey: get(authenticatedSessionKey$),
       kind,
       connection,
       credential: null,
@@ -593,6 +681,7 @@ export const openSshCredentialDialog$ = command(
     });
     set(dialog$, {
       identity,
+      sessionKey: get(authenticatedSessionKey$),
       kind,
       connection: null,
       credential,
@@ -646,7 +735,8 @@ export const acceptSshConflictReview$ = command(
       (current.kind === "edit" &&
         reviewed.connection !== null &&
         "transport" in reviewed.connection &&
-        reviewed.connection.transport.type === "tailscale")
+        reviewed.connection.transport.type === "tailscale" &&
+        (!get(tailscaleEnabled$) || get(transportEditor$).mode !== "tailscale"))
     ) {
       return;
     }
@@ -760,7 +850,11 @@ function hostFieldsFromForm(
   dialog: SshDialogState,
   form: HTMLFormElement,
   editor: { readonly selection: string | null; readonly method: string },
-  transport: { readonly mode: string; readonly configId: string | null },
+  transport: {
+    readonly mode: string;
+    readonly configId: string | null;
+    readonly tailscaleConfigId: string | null;
+  },
 ) {
   if (dialog.kind !== "create" && dialog.kind !== "edit") {
     return undefined;
@@ -785,7 +879,14 @@ function hostFieldsFromForm(
                 }
               : { configId: transport.configId }),
           }
-        : { type: "direct" },
+        : transport.mode === "tailscale"
+          ? {
+              type: "tailscale",
+              ...(transport.tailscaleConfigId === "new"
+                ? { create: tailscaleFieldsFromForm(form) }
+                : { configId: transport.tailscaleConfigId }),
+            }
+          : { type: "direct" },
     credential:
       editor.selection === "new"
         ? { create: credentialFromForm(form, editor) }
@@ -800,7 +901,142 @@ const invalidateAfterSshSave$ = command(
     });
     if (kind === "create" || kind === "edit" || kind === "delete") {
       set(invalidateCloudflareAccess$);
+      set(invalidateTailscale$);
     }
+  },
+);
+
+const reconcileSshCreation$ = command(
+  async (
+    { get, set },
+    dialog: SshDialogState,
+    id: string,
+    signal: AbortSignal,
+  ) => {
+    if (!get(sshSaveUncertain$) || get(transportEditor$).mode !== "tailscale") {
+      return false;
+    }
+    const clients = await get(sshClients$);
+    signal.throwIfAborted();
+    const current = await accept(
+      clients.connections.list({ fetchOptions: { signal } }),
+      [200],
+      signal,
+    );
+    if (get(dialog$) !== dialog) {
+      return true;
+    }
+    if (
+      !current.body.connections.some((connection) => {
+        return connection.id === id;
+      })
+    ) {
+      return false;
+    }
+    set(closeSshDialog$);
+    set(invalidateAfterSshSave$, dialog.kind);
+    return true;
+  },
+);
+
+const saveSshHost$ = command(
+  async (
+    { get, set },
+    dialog: SshDialogState,
+    form: HTMLFormElement,
+    signal: AbortSignal,
+  ) => {
+    const clients = await get(sshClients$);
+    signal.throwIfAborted();
+    if (clients.identity !== dialog.identity || get(dialog$) !== dialog) {
+      return false;
+    }
+    const editor = get(credentialEditor$);
+    const retrying = get(sshSaveUncertain$);
+    let conflicted: string | null = null;
+    const client = clients.connections;
+    const transport = get(transportEditor$);
+    if (
+      (dialog.kind === "create" || dialog.kind === "edit") &&
+      transport.mode === "tailscale" &&
+      !get(tailscaleEnabled$)
+    ) {
+      return false;
+    }
+    const fields = hostFieldsFromForm(dialog, form, editor, transport);
+    if (dialog.kind === "create") {
+      const id = set(getSshCreationId$);
+      if (await set(reconcileSshCreation$, dialog, id, signal)) {
+        return false;
+      }
+      const parsed = createSshConnectionRequestSchema.safeParse({
+        ...fields,
+        id,
+      });
+      if (!parsed.success) {
+        set(saveMessage$, SSH_ERROR_CODES.INVALID_INPUT);
+        return false;
+      }
+      const body = parsed.data;
+      set(beginSshSave$, dialog, id);
+      const result = await accept(
+        client.create({ body, fetchOptions: { signal } }),
+        [201, 204, 400, 404, 409, 500],
+        signal,
+      );
+      if (!set(finishSshSave$, dialog, result, retrying)) {
+        return false;
+      }
+    } else {
+      const connection = dialog.connection;
+      if (!connection) {
+        throw new Error("SSH edit requires a connection");
+      }
+      const params = { connectionId: connection.id };
+      if (dialog.kind === "delete") {
+        const result = await accept(
+          client.delete({ params, fetchOptions: { signal } }),
+          [204, 409],
+          signal,
+        );
+        conflicted = result.status === 409 ? result.body.error.code : null;
+      } else if (dialog.kind === "reset") {
+        const result = await accept(
+          client.resetHostKey({
+            params,
+            body: {
+              expectedGeneration:
+                get(reviewedVersion$) ?? connection.generation,
+            },
+            fetchOptions: { signal },
+          }),
+          [200, 409],
+          signal,
+        );
+        conflicted = result.status === 409 ? result.body.error.code : null;
+      } else {
+        const parsed = updateSshConnectionRequestSchema.safeParse({
+          expectedGeneration: get(reviewedVersion$) ?? connection.generation,
+          ...fields,
+        });
+        if (!parsed.success) {
+          set(saveMessage$, SSH_ERROR_CODES.INVALID_INPUT);
+          return false;
+        }
+        const body = parsed.data;
+        set(beginSshSave$, dialog, null);
+        const result = await accept(
+          client.update({ params, body, fetchOptions: { signal } }),
+          [200, 400, 404, 409, 500],
+          signal,
+        );
+        if (!set(finishSshSave$, dialog, result, retrying)) {
+          return false;
+        }
+      }
+    }
+
+    return conflicted;
   },
 );
 
@@ -841,67 +1077,11 @@ export const saveSsh$ = command(
         signal,
       );
     } else {
-      const client = clients.connections;
-      const transport = get(transportEditor$);
-      const fields = hostFieldsFromForm(dialog, form, editor, transport);
-      if (dialog.kind === "create") {
-        const id = set(getSshCreationId$);
-        const body = createSshConnectionRequestSchema.parse({
-          ...fields,
-          id,
-        });
-        set(beginSshSave$, dialog, id);
-        const result = await accept(
-          client.create({ body, fetchOptions: { signal } }),
-          [201, 204, 400, 404, 409, 500],
-          signal,
-        );
-        if (!set(finishSshSave$, dialog, result, retrying)) {
-          return;
-        }
-      } else {
-        const connection = dialog.connection;
-        if (!connection) {
-          throw new Error("SSH edit requires a connection");
-        }
-        const params = { connectionId: connection.id };
-        if (dialog.kind === "delete") {
-          const result = await accept(
-            client.delete({ params, fetchOptions: { signal } }),
-            [204, 409],
-            signal,
-          );
-          conflicted = result.status === 409 ? result.body.error.code : null;
-        } else if (dialog.kind === "reset") {
-          const result = await accept(
-            client.resetHostKey({
-              params,
-              body: {
-                expectedGeneration:
-                  get(reviewedVersion$) ?? connection.generation,
-              },
-              fetchOptions: { signal },
-            }),
-            [200, 409],
-            signal,
-          );
-          conflicted = result.status === 409 ? result.body.error.code : null;
-        } else {
-          const body = updateSshConnectionRequestSchema.parse({
-            expectedGeneration: get(reviewedVersion$) ?? connection.generation,
-            ...fields,
-          });
-          set(beginSshSave$, dialog, null);
-          const result = await accept(
-            client.update({ params, body, fetchOptions: { signal } }),
-            [200, 400, 404, 409, 500],
-            signal,
-          );
-          if (!set(finishSshSave$, dialog, result, retrying)) {
-            return;
-          }
-        }
+      const result = await set(saveSshHost$, dialog, form, signal);
+      if (result === false) {
+        return;
       }
+      conflicted = result;
     }
     signal.throwIfAborted();
     if (dialog.identity !== (await get(sshIdentity$))) {
