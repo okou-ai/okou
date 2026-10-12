@@ -30,10 +30,15 @@ export const SETTLE = `(async()=>{
     if(image.complete) resolve();
   });
   await wait(document.fonts.ready,"fonts");
-  await wait(
-    Promise.all(Array.from(document.images).filter(image=>!image.complete).map(image=>new Promise(resolve=>{image.onload=image.onerror=resolve}))),
-    "images"
-  );
+  // Offscreen lazy images otherwise never start while this wait is pending.
+  const images=Array.from(document.images);
+  for(const image of images) if(image.loading==="lazy") image.loading="eager";
+  await wait(Promise.all(images.map(image=>new Promise((resolve,reject)=>{
+    const done=()=>image.naturalWidth>0?resolve():reject(new Error("A presentation image failed to load"));
+    if(image.complete){done();return;}
+    image.addEventListener("load",done,{once:true});
+    image.addEventListener("error",done,{once:true});
+  }))),"images");
   const backgroundUrls=[...new Set(
     Array.from(document.querySelectorAll("*")).flatMap(node=>
       Array.from(

@@ -134,13 +134,13 @@ function CustomTemplateSourcePreview({
 }
 
 /**
- * An illustration, as the picture it was reversed from.
+ * An illustration, as the pictures its style draws.
  *
- * Its source is already something a browser can draw, so nothing renders it
- * but an `img`. The branch is chosen by the row's kind rather than by the
- * filename: the kind is what decided at publish that this source had to be an
- * image, so reading it back is reading the same decision, while sniffing the
- * extension here would be a second rule that can disagree with it.
+ * These are the template's preview assets: the examples the reverse run made
+ * from the extracted style and the member approved. A style is judged by what
+ * it produces, so the source a member uploaded is not what is shown. The branch is chosen by the row's kind rather
+ * than by a filename, because the kind is what decided at publish what these
+ * pictures are.
  */
 function CustomTemplateIllustration({
   detail,
@@ -148,25 +148,30 @@ function CustomTemplateIllustration({
   readonly detail: UserTemplateDetail;
 }) {
   const { t } = useTranslation();
-  const title = t(
+  const label = t(
     ($) => {
       return $.artifacts.preview.dialogLabel;
     },
-    { filename: detail.sourceFilename },
+    { filename: detail.title },
   );
   return (
-    // `contain` rather than `cover`: a reference is judged by its whole frame —
+    // `contain` rather than `cover`: a picture is judged by its whole frame —
     // how much of the sheet the art covers, where it sits, how wide the margin
     // is — and cropping to fill the dialog would take exactly those away. The
-    // muted ground behind it is what gives a picture on white paper, or one
+    // muted ground behind each is what gives a picture on white paper, or one
     // with a transparent corner, an edge to be seen against.
-    <div className="flex min-h-80 flex-1 items-center justify-center overflow-auto rounded-lg border border-border bg-muted p-6">
-      <img
-        src={detail.sourceUrl}
-        alt={title}
-        className="max-h-full max-w-full object-contain"
-        data-testid="custom-template-source-preview"
-      />
+    <div className="flex min-h-80 flex-1 flex-col items-center gap-4 overflow-auto rounded-lg border border-border bg-muted p-6">
+      {detail.previewAssets.map((asset) => {
+        return (
+          <img
+            key={asset.previewAssetId}
+            src={asset.url}
+            alt={label}
+            className="max-w-full object-contain"
+            data-testid="custom-template-example-preview"
+          />
+        );
+      })}
     </div>
   );
 }

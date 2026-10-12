@@ -252,6 +252,19 @@ of a control that carries `aria-pressed` or a selected state on the primary
 wash; keep `text-brand-text` for accent text that is the brand speaking, such as
 link and ghost button labels.
 
+The brand neutrals — `brand-charcoal`, `brand-dark-gray`, `brand-gray`,
+`brand-silver`, `brand-light-gray` and `brand-off-white` — are the neutral
+column of the brand guidelines' Color Shades, adopted verbatim. They are artwork
+colours rather than chrome: declared once at `:root`, they keep their value in
+Dark and under every colour theme, the way the brand mark keeps Amber. Reach for
+them where the brand itself is drawn, such as an illustration, a brand panel or
+marketing artwork reproduced in the App, and keep the gray ramp for surfaces,
+text and borders. The ramp already sits on the brand anchors (Off White at
+gray-100, Silver at gray-400, Charcoal at gray-950, each within ΔE 1 in OKLab).
+The in-between shades do not meet the ramp's rules — Gray is 2.6:1 on the
+`gray-200` sidebar rail, under the 3:1 UI floor, and Dark Gray is not neutral —
+so a brand neutral never stands in for a gray stop.
+
 Auxiliary controls and previews revealed by hover or keyboard focus change
 opacity immediately. Do not add opacity transitions to message actions, sidebar
 controls, card overlays, or similar contextual affordances; temporary

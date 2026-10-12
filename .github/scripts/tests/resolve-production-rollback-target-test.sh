@@ -22,7 +22,9 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "4646464646464646464646464646464646464646" ]; then
+    if [ "${3:-}" = "4747474747474747474747474747474747474747" ]; then
+      [ "${MOCK_NATIVE_BRIEF_MEMBER_RUNTIME_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "4646464646464646464646464646464646464646" ]; then
       [ "${MOCK_DESKTOP_MIGRATION_HOP_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4545454545454545454545454545454545454545" ]; then
       [ "${MOCK_COMPUTER_USE_HOST_SESSION_ONLY_FLOOR_VALID:-1}" = "1" ]
@@ -115,6 +117,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_DESKTOP_MIGRATION_HOP_COMMIT-4646464646464646464646464646464646464646}"
     elif [[ "$*" == *src/runtime/computer-use-host.ts* ]]; then
       printf '%s\n' "${MOCK_COMPUTER_USE_HOST_SESSION_ONLY_COMMIT-4545454545454545454545454545454545454545}"
+    elif [[ "$*" == *src/runtime/org-members-metadata.ts* ]]; then
+      printf '%s\n' "${MOCK_NATIVE_BRIEF_MEMBER_RUNTIME_COMMIT-4747474747474747474747474747474747474747}"
     elif [[ "$*" == *1255_retire_public_brand.sql* ]]; then
       printf '%s\n' "${MOCK_PUBLIC_BRAND_RETIREMENT_COMMIT-2222222222222222222222222222222222222222}"
     elif [[ "$*" == *1259_drop_agent_runs_last_heartbeat_at.sql* ]]; then
@@ -292,6 +296,8 @@ grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/m
 grep -Fxq "git merge-base --is-ancestor 3737373737373737373737373737373737373737 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the model route state floor"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1343_retire_pi_stable_context.sql" "${tmp_dir}/boundaries.log" || fail "Pi stable-context retirement floor must resolve the canonical main migration"
 grep -Fxq "git merge-base --is-ancestor 3838383838383838383838383838383838383838 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi stable-context retirement floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/runtime/org-members-metadata.ts" "${tmp_dir}/boundaries.log" || fail "Native member runtime floor must resolve the canonical preparation on main"
+grep -Fxq "git merge-base --is-ancestor 4747474747474747474747474747474747474747 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Native member runtime preparation floor"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1356_drop_organization_usage_allowance.sql" "${tmp_dir}/boundaries.log" || fail "Usage Allowance floor must resolve the canonical main migration"
 grep -Fxq "git merge-base --is-ancestor 4141414141414141414141414141414141414141 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Usage Allowance retirement floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
@@ -622,6 +628,24 @@ grep -Fq '4545454545454545454545454545454545454545' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/computer-use-host-floor.output" ] || fail "token-hash-dependent API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "host preparation floor must fail before artifact or host access"
+fi
+
+for preparation_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Native Morning Brief member runtime preparation" \
+    run_resolver "${tmp_dir}/native-brief-member-history.output" "MOCK_NATIVE_BRIEF_MEMBER_RUNTIME_COMMIT=${preparation_commit}"
+  [ ! -s "${tmp_dir}/native-brief-member-history.output" ] || fail "invalid Native member preparation history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid Native member preparation history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Native Morning Brief member runtime preparation" \
+  run_resolver "${tmp_dir}/native-brief-member-floor.output" MOCK_NATIVE_BRIEF_MEMBER_RUNTIME_FLOOR_VALID=0
+grep -Fq '4747474747474747474747474747474747474747' "${tmp_dir}/failure.err" || fail "Native member preparation rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/native-brief-member-floor.output" ] || fail "fence-dependent API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Native member runtime floor must fail before artifact or host access"
 fi
 
 for preparation_commit in "" invalid; do

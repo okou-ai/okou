@@ -145,6 +145,20 @@
   --color-brand-text-hover: hsl(var(--brand-text-hover));
 
   /* ===================================
+   * Brand neutrals
+   *
+   * Artwork colours from the brand guidelines, fixed across themes. Reach for
+   * them where the brand itself is drawn; UI surfaces, text and borders keep
+   * the gray ramp. See the primitive declarations for why.
+   * =================================== */
+  --color-brand-charcoal: hsl(var(--brand-charcoal));
+  --color-brand-dark-gray: hsl(var(--brand-dark-gray));
+  --color-brand-gray: hsl(var(--brand-gray));
+  --color-brand-silver: hsl(var(--brand-silver));
+  --color-brand-light-gray: hsl(var(--brand-light-gray));
+  --color-brand-off-white: hsl(var(--brand-off-white));
+
+  /* ===================================
    * Selected label
    *
    * The label of a control that is selected or pressed, painted on the
@@ -588,6 +602,24 @@
     --gray-800: 0 1.3% 30.2%; /* #4E4C4C - 7:1 tier */
     --gray-900: 30 1.9% 20.8%; /* #363534 */
     --gray-950: 40 4.3% 13.5%; /* #242321 */
+
+    /* Brand Neutrals. The neutral column of the brand guidelines' Color
+       Shades, adopted verbatim. Declared only here, so Dark inherits the same
+       values: these are artwork colours, like the Amber brand stop, and a brand
+       panel or drawing must read identically in both themes.
+
+       They are not a second UI ramp. The gray ramp already lands on the brand
+       anchors -- Off White is gray-100 within dE 0.3 (OKLab x100), Silver is
+       gray-400 within 0.5 and Charcoal is gray-950 within 0.7 -- and it keeps
+       the contrast and neutrality rules the in-between shades cannot: Gray is
+       2.6:1 on the gray-200 sidebar rail, under the 3:1 UI floor, and Dark Gray
+       carries more red than a ramp stop may. */
+    --brand-charcoal: 0 5.7% 13.7%; /* #252121 */
+    --brand-dark-gray: 0 4.6% 38.2%; /* #665D5D */
+    --brand-gray: 0 2.8% 58.4%; /* #989292 */
+    --brand-silver: 0 0% 80.8%; /* #CECECE */
+    --brand-light-gray: 0 0% 89.8%; /* #E5E5E5 */
+    --brand-off-white: 24 26.3% 96.3%; /* #F8F5F3 */
 
     /* Divider Color */
     /* The lightest neutral rule: dividers, separators, and resting rail ticks.
