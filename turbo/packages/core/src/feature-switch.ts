@@ -115,12 +115,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ChatComposerLayout]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Keep the chat header and input anchored, with a single bottom safe-area reserve.",
-    enabled: true,
-  },
   [FeatureSwitchKey.BrowserNativeInput]: {
     maintainer: "liangyou@okou.ai",
     description:

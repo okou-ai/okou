@@ -1,7 +1,4 @@
 import type { ReactNode } from "react";
-import { useGet } from "ccstate-react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 
 /**
  * Repaints the workspace canvas behind a surface that has to occlude scrolled
@@ -55,16 +52,13 @@ export function WorkspaceInset({
   readonly framed?: boolean;
   readonly className?: string;
 }) {
-  const fixedLayout =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatComposerLayout];
-
   return (
     <div
-      className={`relative z-0 flex min-h-0 min-w-0 flex-1 flex-col ${
+      className={`relative z-0 flex min-h-0 min-w-0 flex-1 flex-col md:overflow-clip ${
         framed
           ? "before:absolute before:inset-0 before:-z-1 before:bg-workspace-canvas before:bg-workspace-canvas-image before:bg-[length:100%_100%] before:content-[''] bg-background md:m-2 md:rounded-2xl md:border md:border-border [anchor-name:--workspace-canvas]"
           : "bg-transparent"
-      } ${fixedLayout ? "md:overflow-clip" : "md:overflow-hidden"} ${
+      } ${
         framed && beside === "chat-list" ? "md:ml-0" : ""
       } ${className ?? ""}`}
       data-testid="workspace-inset"
