@@ -7,7 +7,11 @@ import {
   chatThreadRenameContract,
   indicatorsSchema,
 } from "./chat-threads";
-import { mcpRunIdSchema, mcpThreadIdSchema } from "./mcp-identifiers";
+import {
+  mcpEventIdSchema,
+  mcpRunIdSchema,
+  mcpThreadIdSchema,
+} from "./mcp-identifiers";
 import { runsCancelContract } from "./run-routes";
 
 const normal = chatEventNormalSendBodySchema.shape;
@@ -17,16 +21,24 @@ export const mcpSendChatMessageInputSchema = z
     prompt: normal.prompt,
     threadId: mcpThreadIdSchema.optional(),
     model: normal.model,
-    clientEventId: normal.clientEventId,
   })
   .strict();
 
-export const mcpRevokeQueuedMessageInputSchema =
-  chatEventsContract.send.body.options[1].extend({
+export const mcpRevokeQueuedMessageInputSchema = z
+  .object({
+    agentId: chatEventsContract.send.body.options[1].shape.agentId,
     threadId: mcpThreadIdSchema,
-  });
+    eventId: mcpEventIdSchema,
+  })
+  .strict();
 
 export const mcpSendChatMessageOutputSchema =
+  chatEventsContract.send.responses[201].omit({ runId: true }).extend({
+    threadId: mcpThreadIdSchema,
+    eventId: mcpEventIdSchema,
+  });
+
+export const mcpRevokeQueuedMessageOutputSchema =
   chatEventsContract.send.responses[201].extend({
     threadId: mcpThreadIdSchema,
     runId: mcpRunIdSchema.nullable(),
@@ -43,11 +55,18 @@ export const mcpGetChatActivitySummaryOutputSchema =
 
 export const mcpRenameChatThreadInputSchema =
   chatThreadRenameContract.rename.body
-    .extend({ threadId: mcpThreadIdSchema })
+    .extend({
+      threadId: mcpThreadIdSchema,
+      eventId: mcpEventIdSchema.optional(),
+    })
     .strict();
 export const mcpUpdateChatThreadModelInputSchema =
   chatThreadModelSelectionContract.update.body
-    .extend({ threadId: mcpThreadIdSchema })
+    .extend({
+      threadId: mcpThreadIdSchema,
+      eventId: mcpEventIdSchema.optional(),
+      serviceTierEventId: mcpEventIdSchema.optional(),
+    })
     .strict();
 
 export const mcpCancelRunInputSchema = z
