@@ -2,7 +2,14 @@
 // embed desktop previews on the right; the legacy menu uses a separate flyout.
 // It renders inside the slash menu's popover shell from slash-workflow.tsx.
 import type { Ref } from "react";
-import { ChevronRight, Globe, Image, Presentation, Route } from "lucide-react";
+import {
+  ChevronRight,
+  Globe,
+  Image,
+  LayoutGrid,
+  Presentation,
+  Route,
+} from "lucide-react";
 import { cn, Popover, PopoverContent, useMediaQuery } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import {
@@ -482,6 +489,49 @@ function SlashPanelCategoryList({
   );
 }
 
+function SlashPanelBrowseAll({
+  reversed,
+  onBrowseAll,
+}: Pick<SlashTemplatePanelProps, "reversed" | "onBrowseAll">) {
+  const { t } = useTranslation();
+  return (
+    <div
+      className={
+        reversed ? "p-1 pt-1.5" : "shrink-0 border-t border-border/60 p-1"
+      }
+    >
+      <button
+        type="button"
+        className={cn(
+          "flex h-8 max-w-full items-center rounded-lg px-2 transition-colors hover:bg-state-hover",
+          reversed
+            ? "gap-2 text-[13px] text-muted-foreground hover:text-foreground"
+            : "w-full justify-between text-sm text-foreground",
+        )}
+        onClick={onBrowseAll}
+      >
+        {reversed && (
+          <span className="flex size-4 shrink-0 items-center justify-center">
+            <LayoutGrid size={14} strokeWidth={1.6} aria-hidden />
+          </span>
+        )}
+        <span className="truncate">
+          {t(($) => {
+            return $.chat.composer.slashPanel.browseAll;
+          })}
+        </span>
+        {!reversed && (
+          <ChevronRight
+            size={16}
+            className="shrink-0 text-muted-foreground"
+            aria-hidden
+          />
+        )}
+      </button>
+    </div>
+  );
+}
+
 export function SlashTemplatePanel({
   menuRef,
   categories,
@@ -542,29 +592,7 @@ export function SlashTemplatePanel({
     </div>
   );
   const browseAll = (
-    <div
-      className={cn(
-        "shrink-0 border-border/60 p-1",
-        reversed ? "border-b" : "border-t",
-      )}
-    >
-      <button
-        type="button"
-        className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-sm text-foreground transition-colors hover:bg-state-hover"
-        onClick={onBrowseAll}
-      >
-        <span className="truncate">
-          {t(($) => {
-            return $.chat.composer.slashPanel.browseAll;
-          })}
-        </span>
-        <ChevronRight
-          size={16}
-          className="shrink-0 text-muted-foreground"
-          aria-hidden
-        />
-      </button>
-    </div>
+    <SlashPanelBrowseAll reversed={reversed} onBrowseAll={onBrowseAll} />
   );
   return (
     <div
@@ -595,11 +623,11 @@ export function SlashTemplatePanel({
           left a row sliced in half under a pinned section label, and hid that
           the two groups are one index.
         */}
-        {reversed && browseAll}
         <div className="min-h-0 flex-1 overflow-y-auto pb-1">
           {reversed
             ? [workflowSection, makeSection]
             : [makeSection, workflowSection]}
+          {reversed && browseAll}
         </div>
         {!reversed && browseAll}
       </div>

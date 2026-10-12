@@ -391,13 +391,13 @@ test.each(COMPOSER_PATHS)(
     const editor = await findComposerEditor();
     await waitFor(() => {
       expect(slashMenuButtonNames()).toStrictEqual([
-        "Browse all templates",
         `/${THIRD_WORKFLOW_NAME}`,
         `/${SECOND_WORKFLOW_NAME}`,
         `/${WORKFLOW_NAME}`,
         "Website",
         "Illustration",
         "Presentation",
+        "Browse all templates",
       ]);
     });
     expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
@@ -435,11 +435,11 @@ test("Composer-anchored slash suggestions keep the strongest match at the bottom
   await screen.findByTestId("slash-workflow-menu");
   await waitFor(() => {
     expect(slashMenuButtonNames()).toStrictEqual([
-      "Browse all templates",
       "/a-x-i",
       "/daily-axi",
       "/axiom-red",
       "/axi",
+      "Browse all templates",
     ]);
   });
   expect(slashButton("/axi")).toHaveAttribute("data-active", "true");
