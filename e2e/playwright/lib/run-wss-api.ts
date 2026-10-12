@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect } from "@playwright/test";
+import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "../../../turbo/packages/api-contracts/src/contracts/chat-event-schema-version";
 
 import { authHeadersForToken } from "./onboarding";
 
@@ -40,7 +41,9 @@ export class RunnerWssApi {
       headers: {
         ...authHeadersForToken(this.token),
         "Content-Type": "application/json",
-        "X-Chat-Event-Schema-Version": "7",
+        "X-Chat-Event-Schema-Version": String(
+          CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+        ),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.any([
@@ -119,7 +122,7 @@ export class RunnerWssApi {
         async () => {
           const response = object(
             await this.request(
-              `/api/chat-threads/${threadId}/event-rows?limit=50`,
+              `/api/chat-threads/${threadId}/event-rows?sinceSeqId=0&limit=50`,
             ),
           );
           if (!Array.isArray(response.rows))

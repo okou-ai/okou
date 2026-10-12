@@ -10,6 +10,7 @@ import { test } from "node:test";
 import { promisify } from "node:util";
 import { chromium, type Browser, type Page } from "@playwright/test";
 import { WebSocketServer, type WebSocket } from "ws";
+import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "../../../turbo/packages/api-contracts/src/contracts/chat-event-schema-version";
 
 import { RunnerWssApi } from "./run-wss-api";
 import {
@@ -89,17 +90,27 @@ async function peer(options: PeerOptions = {}) {
       clientEventId = input.clientEventId;
       status = 201;
       body = { threadId: THREAD, runId: null };
-    } else if (path.endsWith("/event-rows"))
-      body = {
-        rows: [
-          {
-            eventType: "input.prompt",
-            revokesEventId: clientEventId,
-            runId: RUN,
-          },
-        ],
-      };
-    else if (path.endsWith("/runner"))
+    } else if (path.endsWith("/event-rows")) {
+      const query = new URL(request.url ?? "/", "https://peer.test")
+        .searchParams;
+      if (
+        query.get("sinceSeqId") !== "0" ||
+        request.headers["x-chat-event-schema-version"] !==
+          String(CURRENT_CHAT_EVENT_SCHEMA_VERSION)
+      ) {
+        status = 400;
+      } else {
+        body = {
+          rows: [
+            {
+              eventType: "input.prompt",
+              revokesEventId: clientEventId,
+              runId: RUN,
+            },
+          ],
+        };
+      }
+    } else if (path.endsWith("/runner"))
       body = {
         runnerId: RUNNER,
         runnerHostname: "runner.example.test",
