@@ -52,6 +52,14 @@ async fn codex_app_server_classifies_supported_structured_errors()
             expected_reason: Some(FailureReason::ProviderServerError),
         },
         StructuredErrorCase {
+            scenario: "runtime-turn-failed-provider-stream-server-error",
+            expected_reason: Some(FailureReason::ProviderServerError),
+        },
+        StructuredErrorCase {
+            scenario: "runtime-turn-failed-remote-compaction-server-error",
+            expected_reason: Some(FailureReason::ProviderServerError),
+        },
+        StructuredErrorCase {
             scenario: "runtime-turn-failed-response-too-many-failed-attempts",
             expected_reason: None,
         },

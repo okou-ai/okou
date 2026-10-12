@@ -36,6 +36,8 @@ pub(super) enum Scenario {
     RuntimeOutputTokenLimitError,
     RuntimeTurnFailedContextWindowExceeded,
     RuntimeTurnFailedInternalServerError,
+    RuntimeTurnFailedProviderStreamServerError,
+    RuntimeTurnFailedRemoteCompactionServerError,
     RuntimeTurnFailedResponseStreamConnectionFailed,
     RuntimeTurnFailedResponseStreamDisconnected,
     RuntimeTurnFailedResponseTooManyFailedAttempts,
@@ -152,6 +154,12 @@ impl Scenario {
                 "runtime-turn-failed-internal-server-error" => {
                     Ok(Self::RuntimeTurnFailedInternalServerError)
                 }
+                "runtime-turn-failed-provider-stream-server-error" => {
+                    Ok(Self::RuntimeTurnFailedProviderStreamServerError)
+                }
+                "runtime-turn-failed-remote-compaction-server-error" => {
+                    Ok(Self::RuntimeTurnFailedRemoteCompactionServerError)
+                }
                 "runtime-turn-failed-response-stream-connection-failed" => {
                     Ok(Self::RuntimeTurnFailedResponseStreamConnectionFailed)
                 }
@@ -263,6 +271,12 @@ impl Scenario {
                 Some(TurnFailure::ContextWindowExceeded)
             }
             Self::RuntimeTurnFailedInternalServerError => Some(TurnFailure::InternalServerError),
+            Self::RuntimeTurnFailedProviderStreamServerError => {
+                Some(TurnFailure::ProviderStreamServerError)
+            }
+            Self::RuntimeTurnFailedRemoteCompactionServerError => {
+                Some(TurnFailure::RemoteCompactionServerError)
+            }
             Self::RuntimeTurnFailedResponseStreamConnectionFailed => {
                 Some(TurnFailure::ResponseStreamConnectionFailed)
             }
@@ -310,6 +324,8 @@ pub(super) enum TurnFailure {
     OutputTokenLimit,
     ContextWindowExceeded,
     InternalServerError,
+    ProviderStreamServerError,
+    RemoteCompactionServerError,
     ResponseStreamConnectionFailed,
     ResponseStreamDisconnected,
     ResponseTooManyFailedAttempts,

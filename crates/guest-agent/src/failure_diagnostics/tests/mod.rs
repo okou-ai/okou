@@ -1519,6 +1519,47 @@ fn codex_rate_limit_reason_is_attached_without_changing_failure_class() {
 }
 
 #[test]
+fn codex_upstream_stream_reason_requires_selected_native_failure_provenance() {
+    const MESSAGE: &str = "stream disconnected before completion: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req_native in your message.";
+    for prefix in ["", "Error running remote compact task: "] {
+        let message = format!("{prefix}{MESSAGE}");
+        for framework in [
+            AgentFramework::Codex,
+            AgentFramework::ClaudeCode,
+            AgentFramework::Pi,
+        ] {
+            for source in [
+                FailureDetailSource::CodexJsonl,
+                FailureDetailSource::Stderr,
+                FailureDetailSource::ClaudeResult,
+                FailureDetailSource::PiResult,
+            ] {
+                let diagnostic = FailureDiagnostic::new(
+                    FailureClass::CliNonzero,
+                    framework,
+                    PromptMetadata::from_prompt("plain prompt"),
+                )
+                .with_cli_exit_code(1)
+                .with_failure_detail_source(source);
+                let failure_message = selected_failure_message(&message, source, None);
+                let diagnostic = with_cli_failure_reason(diagnostic, &failure_message);
+                let expected = (framework == AgentFramework::Codex
+                    && source == FailureDetailSource::CodexJsonl)
+                    .then_some(FailureReason::ProviderServerError);
+                assert_eq!(
+                    diagnostic.failure_reason, expected,
+                    "{framework:?}/{source:?}"
+                );
+                assert_eq!(diagnostic.failure_class, FailureClass::CliNonzero);
+                assert_eq!(diagnostic.cli_exit_code, Some(1));
+                assert_eq!(diagnostic.failure_detail_source, Some(source));
+                assert_eq!(failure_message.message, message);
+            }
+        }
+    }
+}
+
+#[test]
 fn cli_failure_reason_classifies_exact_codex_unsupported_model_envelope() {
     let message = r#"Codex failed: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account."}}"#;
 

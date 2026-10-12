@@ -330,6 +330,12 @@ fn classify_cli_failure_reason(
     {
         return Some(FailureReason::ProviderRateLimited);
     }
+    if framework == AgentFramework::Codex
+        && source == FailureDetailSource::CodexJsonl
+        && failure_patterns::is_codex_provider_server_error_message(failure_message)
+    {
+        return Some(FailureReason::ProviderServerError);
+    }
     if matches!(framework, AgentFramework::Codex)
         && source == FailureDetailSource::Stderr
         && is_codex_chatgpt_account_unsupported_model_run_error(failure_message)
