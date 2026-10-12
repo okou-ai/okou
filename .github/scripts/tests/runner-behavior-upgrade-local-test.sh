@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
-export UPGRADE_WORKER="$REPO_ROOT/.github/scripts/runner-behavior-upgrade-local-remote.sh"
+export UPGRADE_WORKER="${1:-$REPO_ROOT/.github/scripts/runner-behavior-upgrade-local-remote.sh}"
 
 # Exercise the standalone worker at the runner/systemd command boundary. Queue
 # requests, status/result files, FIFO readers/writers and submit processes are
@@ -345,6 +345,8 @@ def run_case(scenario, failure, case, binary):
     for file in case.glob('client-*.json'):
         client = json.loads(file.read_text())
         assert not alive(client['guest_pid']), f'{scenario}: FIFO workload leaked'
+    if scenario != 'cleanup-failure':
+        assert not any((case / f'{kind}-{owner}').exists() for kind in ('active', 'enabled') for owner in ('a', 'b')), f'{scenario}: service state leaked'
     if scenario == 'cleanup-directory-failure':
         assert any(e['kind'] == 'remove-results' for e in events), 'result cleanup not attempted'
 
