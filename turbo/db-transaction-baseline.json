@@ -732,11 +732,6 @@
       "owner": "persistDeferredSubscriptionChangeSchedule"
     },
     {
-      "id": "TX-0290",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
-      "owner": "failApplyingSubscriptionChange"
-    },
-    {
       "id": "TX-0293",
       "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
       "owner": "failExpiredPendingSubscriptionChange"
