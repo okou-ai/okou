@@ -1,8 +1,10 @@
-import { randomBytes } from "node:crypto";
-
 import { HttpResponse, http } from "msw";
 
 import { server } from "../../../../mocks/server";
+
+import { uniqueDiscordSnowflake as discordSnowflake } from "./discord";
+
+export { discordSnowflake };
 
 const DISCORD_API = "https://discord.com/api/v10";
 const FILE_CHANNEL_PERMISSIONS = (
@@ -26,12 +28,6 @@ interface ProviderAttachment {
   readonly size: number;
   readonly url: string;
   readonly content_type?: string;
-}
-
-export function discordSnowflake(): string {
-  return (
-    BigInt(`0x${randomBytes(8).toString("hex")}`) + 1_000_000_000_000_000_000n
-  ).toString();
 }
 
 export function discordFileMessage(args: {
@@ -58,7 +54,7 @@ export function discordFileMessage(args: {
   };
 }
 
-/** External Discord fixtures only; verified Okou bindings use A's guarded API. */
+/** External Discord fixtures only; Okou bindings use production public OAuth. */
 export function mockDiscordFileProvider(identity: DiscordFileProviderIdentity) {
   const channel = {
     id: identity.channelId,

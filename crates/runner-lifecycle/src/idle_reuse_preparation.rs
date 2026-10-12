@@ -3,11 +3,12 @@
 use std::time::Duration;
 
 use api_contracts::generated::constants::runners::paths::CANONICAL_GUEST_HOME_DIR;
-use guest_contracts::guest_binary::{AGENT_PATH, WORKSPACE_MOUNT_PATH};
+use guest_contracts::guest_binary::AGENT_PATH;
+use guest_contracts::home_mount::HOME_MOUNT_PATH;
 use guest_contracts::reuse_preparation::{
     REUSE_PREPARATION_EXIT_CLEANUP_FAILED, REUSE_PREPARATION_EXIT_CONTAINMENT_FAILED,
-    REUSE_PREPARATION_EXIT_INSPECTION_FAILED, REUSE_PREPARATION_EXIT_INVALID_REQUEST,
-    REUSE_PREPARATION_EXIT_WORKSPACE_MOUNT_FAILED, ReusePreparationReport, ReusePreparationRequest,
+    REUSE_PREPARATION_EXIT_HOME_MOUNT_FAILED, REUSE_PREPARATION_EXIT_INSPECTION_FAILED,
+    REUSE_PREPARATION_EXIT_INVALID_REQUEST, ReusePreparationReport, ReusePreparationRequest,
 };
 use sandbox::{EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, ExecResult, ExecTermination};
 use tracing::{info, warn};
@@ -15,7 +16,7 @@ use tracing::{info, warn};
 use crate::helper_exec::{
     format_helper_exec_failure, helper_exec_succeeded, helper_exec_termination_label,
 };
-use crate::workspace_mount::WORKSPACE_MOUNT_TIMEOUT;
+use crate::home_mount::HOME_MOUNT_TIMEOUT;
 use runner_types::ids::RunId;
 
 const REUSE_PREPARATION_TIMEOUT: Duration = Duration::from_secs(10);
@@ -28,7 +29,7 @@ enum ReuseRejectionReason {
     InspectionFailed,
     CleanupFailed,
     ContainmentFailed,
-    WorkspaceMountFailed,
+    HomeMountFailed,
     HelperFailed,
     InvalidReport,
     LowBytes,
@@ -43,7 +44,7 @@ impl ReuseRejectionReason {
             Self::InspectionFailed => "inspection_failed",
             Self::CleanupFailed => "cleanup_failed",
             Self::ContainmentFailed => "containment_failed",
-            Self::WorkspaceMountFailed => "workspace_mount_failed",
+            Self::HomeMountFailed => "home_mount_failed",
             Self::HelperFailed => "helper_failed",
             Self::InvalidReport => "invalid_report",
             Self::LowBytes => "low_bytes",
@@ -112,7 +113,7 @@ impl IdleReusePreparation {
             )
         })?;
         let helper_command = format!("{AGENT_PATH} prepare-for-reuse");
-        let command = compose_reuse_preparation_command(&helper_command, WORKSPACE_MOUNT_PATH);
+        let command = compose_reuse_preparation_command(&helper_command, HOME_MOUNT_PATH);
         Ok(Self {
             operation_run_id,
             sandbox_id: sandbox_id.to_owned(),
@@ -124,7 +125,7 @@ impl IdleReusePreparation {
     pub fn exec_request(&self) -> ExecRequest<'_> {
         ExecRequest {
             cmd: &self.command,
-            timeout: REUSE_PREPARATION_TIMEOUT + WORKSPACE_MOUNT_TIMEOUT,
+            timeout: REUSE_PREPARATION_TIMEOUT + HOME_MOUNT_TIMEOUT,
             env: &[],
             sudo: true,
             expected_exit_codes: &[],
@@ -199,7 +200,7 @@ impl IdleReusePreparation {
 
 fn compose_reuse_preparation_command(helper_command: &str, mount_command: &str) -> String {
     format!(
-        "set -e\n{helper_command}\nset +e\n(\nset -eu\n{mount_command}\n) >/dev/null\nmount_status=$?\nset -e\nif [ \"$mount_status\" -ne 0 ]; then\n  exit {REUSE_PREPARATION_EXIT_WORKSPACE_MOUNT_FAILED}\nfi"
+        "set -e\n{helper_command}\nset +e\n(\nset -eu\n{mount_command}\n) >/dev/null\nmount_status=$?\nset -e\nif [ \"$mount_status\" -ne 0 ]; then\n  exit {REUSE_PREPARATION_EXIT_HOME_MOUNT_FAILED}\nfi"
     )
 }
 
@@ -252,8 +253,8 @@ fn helper_failure_reason(result: &ExecResult) -> ReuseRejectionReason {
             exit_code: REUSE_PREPARATION_EXIT_CONTAINMENT_FAILED,
         } => ReuseRejectionReason::ContainmentFailed,
         ExecTermination::Exited {
-            exit_code: REUSE_PREPARATION_EXIT_WORKSPACE_MOUNT_FAILED,
-        } => ReuseRejectionReason::WorkspaceMountFailed,
+            exit_code: REUSE_PREPARATION_EXIT_HOME_MOUNT_FAILED,
+        } => ReuseRejectionReason::HomeMountFailed,
         ExecTermination::Exited { .. }
         | ExecTermination::TimedOut
         | ExecTermination::Cancelled
@@ -468,7 +469,7 @@ mod tests {
             .expect("reuse helper command");
         let mount_position = calls[0]
             .cmd
-            .find(WORKSPACE_MOUNT_PATH)
+            .find(HOME_MOUNT_PATH)
             .expect("workspace mount command");
         assert!(helper_position < mount_position);
         let request: ReusePreparationRequest = serde_json::from_slice(
@@ -627,7 +628,7 @@ mod tests {
         let (output, mount_ran) = run_composed_command(REUSE_PREPARATION_EXIT_SUCCESS, 1);
         assert_eq!(
             output.status.code(),
-            Some(REUSE_PREPARATION_EXIT_WORKSPACE_MOUNT_FAILED)
+            Some(REUSE_PREPARATION_EXIT_HOME_MOUNT_FAILED)
         );
         assert!(mount_ran, "mount stage should run after helper success");
     }
@@ -641,7 +642,7 @@ mod tests {
             REUSE_PREPARATION_EXIT_CLEANUP_FAILED,
             REUSE_PREPARATION_EXIT_CONTAINMENT_FAILED,
         ] {
-            assert_ne!(REUSE_PREPARATION_EXIT_WORKSPACE_MOUNT_FAILED, helper_status);
+            assert_ne!(REUSE_PREPARATION_EXIT_HOME_MOUNT_FAILED, helper_status);
         }
     }
 
@@ -669,10 +670,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn preparation_distinguishes_workspace_mount_failure() {
-        let sandbox = MockSandbox::new("workspace-mount-failure");
+    async fn preparation_distinguishes_home_mount_failure() {
+        let sandbox = MockSandbox::new("home-mount-failure");
         sandbox.push_exec_result(Ok(ExecResult::new(
-            REUSE_PREPARATION_EXIT_WORKSPACE_MOUNT_FAILED,
+            REUSE_PREPARATION_EXIT_HOME_MOUNT_FAILED,
             serde_json::to_vec(&healthy_reuse_preparation_report()).unwrap(),
             b"workspace mount failed".to_vec(),
         )));
@@ -689,7 +690,7 @@ mod tests {
                 .fields
                 .get("reason")
                 .map(String::as_str),
-            Some("workspace_mount_failed")
+            Some("home_mount_failed")
         );
     }
 

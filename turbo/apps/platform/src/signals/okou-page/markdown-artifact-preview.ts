@@ -28,21 +28,34 @@ export const openMarkdownArtifact$ = command(
         return;
       }
       case "video": {
-        set(openVideoLightbox$, { filename, url, preview: signals }, target);
+        set(
+          openVideoLightbox$,
+          { threadId, filename, url, preview: signals },
+          target,
+        );
         return;
       }
       case "audio": {
-        set(openAudioLightbox$, { filename, url, preview: signals }, target);
+        set(
+          openAudioLightbox$,
+          { threadId, filename, url, preview: signals },
+          target,
+        );
         return;
       }
       case "file": {
-        set(openFileLightbox$, { filename, url, preview: signals }, target);
+        set(
+          openFileLightbox$,
+          { threadId, filename, url, preview: signals },
+          target,
+        );
         return;
       }
       default: {
         set(
           openDocumentLightbox$,
           {
+            threadId,
             filename,
             url,
             kind,

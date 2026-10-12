@@ -1,65 +1,63 @@
-import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
-import { createAgentPhoneThreadPrompt } from "./thread-run-prompt/agentphone";
-import { createAutomationThreadPrompt } from "./thread-run-prompt/automation";
-import { createDiscordThreadPrompt } from "./thread-run-prompt/discord";
-import { createFeishuThreadPrompt } from "./thread-run-prompt/feishu";
-import { createRuntimePrompt } from "./thread-run-prompt/runtime";
 import {
-  mergeRunPromptAndSkills,
-  renderRunPromptAndSkills,
-  type RunPromptAndSkills,
-  type SkillVolume,
-} from "./run-prompt-and-skills";
-import { createRotatedPrompt } from "./thread-run-prompt/rotated";
-import { createConnectorsContext } from "./connectors-context.service";
-import { createSlackThreadPrompt } from "./thread-run-prompt/slack";
-import { createTeamsThreadPrompt } from "./thread-run-prompt/teams";
-import { createTelegramThreadPrompt } from "./thread-run-prompt/telegram";
-import { createWebThreadPrompt } from "./thread-run-prompt/web";
-import type {
-  PickedThreadInputEvent,
-  ThreadPromptSource,
-} from "./thread-run-prompt/types";
-import {
-  type FeishuThreadContext,
-  type TeamsThreadContext,
-  type TelegramThreadContext,
-  createSlackThreadContext,
-  createFeishuThreadContext,
-  createTeamsThreadContext,
-  createTelegramThreadContext,
-  createAgentPhoneThreadContext,
-} from "./thread-run-context.service";
-import { createThreadAutomationContext } from "./thread-automation-context.service";
-import {
-  AGENT_EXECUTION_TIMEOUT_SECONDS,
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
-  CANONICAL_CLAUDE_CONFIG_DIR,
-  CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
-  CANONICAL_CODEX_HOME_DIR,
-  CANONICAL_CODEX_MEMORY_MOUNT_PATH,
-  type ConnectorRuntimeTargetRegistration,
   DEFAULT_PROFILE,
-  PI_AGENT_DIR,
   PI_MEMORY_ROOT,
   PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-  PI_SKILLS_ROOT,
   type PiInstalledCliRequirement,
   type PiLaunchConfig,
   type PiMemoryRecallSelection,
   piMemoryRecallSelectionSchema,
   type PiModelConfig,
   type SecretConnectorMetadata,
-  type StorageMountEntry,
   type StoredExecutionContext,
-  type StoredStorageMountEntry,
 } from "@okouai/api-contracts/contracts/runners";
 import {
-  AUTO_RUN_KEY_VENDOR,
+  autoRunBillingProvider,
+  autoRunPricingLongContextMinTotalInputTokens,
   isAutoSelectedModel,
 } from "@okouai/core/auto-run-model";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
+import {
+  type ConnectorScopeSource,
+  type EffectiveConnectorScope,
+  isEmptyRunConnectorScope,
+  type RunConnectorCatalogSelection,
+  runConnectorCatalogSelection,
+} from "./thread-connected-accounts.signals";
+import {
+  pendingOkouTokenSecrets,
+  withoutLegacyAgentRunEnvironmentEntries,
+} from "./run-body-environment";
+import { createThreadContext } from "./thread-context.signals";
+import {
+  createOkouTokenInputSignals,
+  prepareOkouTokenEnvironment$,
+} from "./thread-okou-token.signals";
+import { createEnvironmentSignals } from "./thread-environment.signals";
+import {
+  emptyEnvironment,
+  type Environment,
+  environmentPermissionManifest,
+  mergeEnvironments,
+} from "./run-environment";
+import { createOfficialWorkflowSignals } from "./thread-official-workflow.signals";
+import { OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE } from "./official-workflow-constants";
+import type {
+  ThreadModelError,
+  ThreadModelSelection,
+} from "./thread-model.signals";
+import type {
+  FeishuThreadContext,
+  TeamsThreadContext,
+  TelegramThreadContext,
+} from "./thread-run-context.service";
+import {
+  createPromptAndSkillVolumesSignals,
+  type PromptAndSkillVolumes,
+  PromptAndSkillVolumesError,
+} from "./thread-run-prompt/prompt-and-skill-volumes";
+import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
 import {
   parseRawRows,
@@ -76,19 +74,11 @@ import {
   badRequestMessage,
   conflict,
   notFound,
-  insufficientCredits as pickChatRunModelInsufficientCredits,
   providerUnavailable,
 } from "../../lib/error";
 import { logger } from "../../lib/log";
-import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypass";
 
-import { now, nowDate } from "../../lib/time";
-import { previewAutomationBypass$ } from "../context/hono";
-import {
-  type SystemSkillStorageResolution,
-  systemSkillStorageResolution$,
-} from "../context/system-skill-storage-resolution";
-import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
+import { monotonicNow, now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import {
@@ -98,23 +88,14 @@ import {
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { safeSync, settle, tapError } from "../utils";
-import {
-  agentConnectorScopeFromRows,
-  type AgentConnectorScopeSnapshot,
-} from "./agent-connector-scope.service";
+import type { AgentConnectorScopeSnapshot } from "./agent-connector-scope.service";
 import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
-import {
-  type AgentRunContextSignals,
-  type BootstrapConnectorObservation,
-  createEagerConnectorCredentialContext,
-  matchAgentRunContextSignals,
-} from "./agent-run-context.signals";
+import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type {
   AgentRunModelPin,
   AgentRunPreCreateSource,
   AgentRunRequestAgent,
-  PermissionManifest,
   ResolvedModelProviderEnvironment,
   RunCallback,
 } from "./agent-run-contracts";
@@ -123,18 +104,16 @@ import {
   AdmissionAttemptTiming,
 } from "./api-dispatch-admission-timing.service";
 import {
-  builtInRoutePricingFromSnapshot,
   prepareModelUsageContext,
   runRoutePricingFromSnapshot,
 } from "./built-in-route-pricing";
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import { recordThreadRunActivationMarkers } from "./chat-first-assistant-event-metric.service";
-import {
-  isWebChatContextType,
-  type QueuedUserMessage,
-  type QueuedUserMessageContextType,
-  type QueueFirstRunAssociation,
-  type QueueFirstRunClaimResult,
+import type {
+  QueuedUserMessage,
+  QueuedUserMessageContextType,
+  QueueFirstRunAssociation,
+  QueueFirstRunClaimResult,
 } from "./chat-queued-event.service";
 import { finalizeClaimedRunUserMessage } from "./chat-run-event.service";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
@@ -142,52 +121,32 @@ import {
   type ExecutionCallback,
   prepareCallbacks$ as prepareExecutionCallbacks$,
 } from "./execution-callbacks.service";
-import type { ConnectorSourceSnapshot } from "./execution-connector-sources.service";
 import { encryptExecutionSecrets$ } from "./execution-secrets.service";
-import {
-  createResolvedExecutionStorageObjects,
-  type ExecutionStorageRequest,
-  PreparedExecutionStorageMount,
-  updateExecutionStoragePresignedUrlCache$,
-} from "./execution-storage.service";
+import { updateExecutionStoragePresignedUrlCache$ } from "./execution-storage.service";
 import {
   buildQueuedRunCommand,
   ChatCallbackPreCreateTimingCollector,
   type CreateQueuedChatRunInput,
   deliverQueuedPromptRejection$,
   deliverUnexpectedQueuedPromptRejection$,
-  buildComputerUseSystemPrompt,
   type QueuedChatPromptData,
   queuedChatRunCallbackInputs,
   queuedIntegrationLaunchFields,
   type QueuedLaunchMaterial,
   queuedMessageAdmissionFailure,
   type QueuedMessageAdmissionFailure,
-  type QueuedMessageModelRouteResolution,
   queuedMessageRejection,
   type QueuedPromptLaunchContext,
   type QueuedRunAdmissionFailureInput,
   recordQueuedPromptRunLaunch$,
   rejectedQueuedRunAdmissionFailure,
-  routeQueuedMessagePiExecution,
 } from "./internal-chat-run-callback.service";
-import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
 import type { ModelCatalog } from "./model-catalog.service";
-import {
-  prepareManagedModelEnvironment,
-  prepareSubscriptionModelEnvironment,
-} from "./model-provider.service";
-import {
-  managedSourceFromSnapshot,
-  memberAccountSourceFromSnapshot,
-} from "./model-source-context.service";
 import {
   morningBriefScheduleClaimBound$,
   morningBriefScheduleClaimSupersededCondition,
 } from "./morning-brief-schedule-claim.service";
 import {
-  acceptedRunCandidates,
-  assembleRunObservation,
   OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
   OfficialWorkflowRunAdmissionError,
   type OfficialWorkflowRunObservation,
@@ -215,10 +174,8 @@ import {
   pendingLaunchTailRowSchema as tailRow,
 } from "./pending-launch-tail-plan";
 import {
-  materializePreparedPiProvider,
   type PiModelPreparationInput,
   resolvePreparedPiModelConfig,
-  shouldUsePiExecution,
 } from "./pi-sandbox-config";
 import {
   checkCatalogRunRoute,
@@ -237,19 +194,9 @@ import {
   type ApiDispatchTimingDimensionsInput,
   measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
-import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { INITIAL_AUTONOMY_BUDGET } from "./autonomy-budget.constants";
+import { maxAutonomyBudget$ } from "../autonomy-budget-limit";
 import { childAutonomyBudget } from "./autonomy-budget.service";
-import {
-  type BuiltInModelRuntimeRoute,
-  builtInModelRuntimeRouteFromSnapshot,
-  isBuiltInModelRuntimeRoutePermitted,
-  unpricedBuiltInModelMessage,
-} from "./built-in-model-runtime-route.service";
-import {
-  type BuiltinConnectorCredentialAccess,
-  resolveBuiltinConnectorCredentialAccess,
-} from "./builtin-connector-credential-access.service";
+import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import {
   canonicalChatEventUserMessage,
   canonicalChatInputModelSelection,
@@ -264,70 +211,18 @@ import type {
   ChatQueueHeadContext,
   ChatQueueHeadRejection,
 } from "./chat-queue-run-assembly";
-import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
-import {
-  capturedChatThreadSessionSnapshot,
-  chatThreadSessionIdentity,
-  createChatThreadSessionRead,
-  type ChatThreadExecutionSnapshot,
-  type ChatThreadSessionResolution,
-  type ChatThreadSessionResolutionAction,
-  type ChatThreadSessionRoute,
-  resolveChatThreadSessionSnapshot,
+import type {
+  ChatThreadExecutionSnapshot,
+  ChatThreadSessionResolution,
+  ChatThreadSessionResolutionAction,
+  ChatThreadSessionRoute,
 } from "./chat-session-continuity.service";
-import { agentRunSourceAnnotation } from "./chat-user-message.service";
-import { connectorAccountTargetKey } from "./connector-account-resolution.service";
-import {
-  type ConnectorRuntimeMethod,
-  type ConnectorRuntimeSelection,
-  connectorScopeForRuntimeSnapshot,
-  getConnectorRuntimeConnector,
-} from "./connector-catalog-runtime.service";
-import {
-  allAllowPolicyForPermissions,
-  buildCustomConnectorRuntimeContext,
-  type BuildCustomConnectorRuntimeContextArgs,
-  collectPermissionNames,
-  compactRecord,
-  type CustomConnectorRuntimeContext,
-  type CustomConnectorRuntimeDataRows,
-  customConnectorRuntimeFirewall,
-  loadEffectiveCustomConnectorPermissionBundle,
-  resolveConnectorNetworkPolicy,
-  resolveCustomConnectorBaseUrlVars,
-  runtimeFirewall,
-} from "./connector-runtime-preparation.service";
-import {
-  type ConnectorServerFirewallExecutionMetadata,
-  type ConnectorServerFirewallPermissionIndex,
-  expandConnectorServerFirewallPolicies,
-} from "./connector-server-firewall-catalog.service";
-import {
-  customConnectorAccountAuthMethodIsCompatible,
-  type CustomConnectorRuntimeStorageRow,
-  customConnectorRuntimeStorageSnapshot,
-} from "./custom-connector-credential-access.service";
-import {
-  type CustomConnectorPermissionBundle,
-  customConnectorPermissionBundleDependencySlug,
-} from "./custom-connector-permission-bundle.service";
-import {
-  CUSTOM_CONNECTOR_OAUTH_ACCESS_TOKEN_SECRET_NAME,
-  CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
-  customConnectorManualAuthReferencesMemberField,
-  customConnectorMissingRequiredFieldKeys,
-  customConnectorValueMarkerKey,
-} from "./custom-connector.service";
+import { compactRecord } from "./connector-runtime-preparation.service";
 
 import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
-import {
-  isMemberSubscriptionRoute,
-  memberModelRouteContextFromAccounts,
-} from "./effective-model-route.service";
-import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
+import { isMemberSubscriptionRoute } from "./effective-model-route.service";
 
 import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
-import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import type { InternalRunCallbackKind } from "./internal-run-callback";
 import {
@@ -338,62 +233,22 @@ import {
 
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import type {
-  ConnectorAccountSelection,
-  ConnectorAccountTarget,
-} from "@okouai/api-contracts/contracts/connector-accounts";
-import {
-  type ConnectorAuthMethodId,
-  type ConnectorSlug,
-  connectorSlugSchema,
-} from "@okouai/api-contracts/contracts/connector-identity";
-import { isIntegrationManagedCustomConnectorProviderAdapter } from "@okouai/api-contracts/contracts/custom-connectors";
-import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
   getFrameworkForType,
-  getModelProviderFirewall,
   isBuiltInModelProviderType,
-  MODEL_PROVIDER_TYPES,
   type ModelProviderCredentialScope,
-  type ModelProviderType,
-  modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import {
-  DISABLED_PAID_TOOLS_ENV_VAR,
-  ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
-} from "@okouai/api-contracts/contracts/paid-tools";
-import {
-  type RunContextResponse,
-  runCreateBodySchema,
-} from "@okouai/api-contracts/contracts/run-routes";
+import { runCreateBodySchema } from "@okouai/api-contracts/contracts/run-routes";
 import {
   type CreateRunResponse,
   type RunStatus,
   unifiedRunRequestSchema,
 } from "@okouai/api-contracts/contracts/runs";
-import {
-  connectorAuthMethodRuntimeMetadata,
-  type ConnectorRuntimeBindingEntry,
-} from "@okouai/connectors/connector-auth-method";
-import {
-  type FirewallPermissionGrant,
-  permissionGrantsToFirewallPolicies,
-} from "@okouai/connectors/firewall-metadata/policy";
-import {
-  canonicalizeFirewallBaseUrlVarsForExecution,
-  type ExecutionFirewallEntry,
-  type ExecutionFirewalls,
-  type ExpandedFirewallConfig,
-  extractSecretNamesFromApis,
-  type Firewall,
-  FirewallBaseUrlResolutionError,
-  type FirewallPolicies,
-  type FirewallPolicy,
-  type NetworkPolicies,
-} from "@okouai/connectors/firewall-types";
+import type { FirewallPolicies } from "@okouai/connectors/firewall-types";
 import {
   type FeatureSwitchContext,
   getAllFeatureStates,
@@ -401,37 +256,14 @@ import {
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import {
-  getInstructionsFilename,
-  getValidatedFramework,
-  type SupportedFramework,
-} from "@okouai/core/frameworks";
-import { parseGitHubTreeUrl, resolveSkillRef } from "@okouai/core/github-url";
-import {
-  DEFAULT_IMAGE_MODEL,
-  type ImageModel,
-} from "@okouai/core/image-model-catalog";
-import { piCatalogModel } from "@okouai/core/pi-execution";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import type { SupportedFramework } from "@okouai/core/frameworks";
+import type { ImageModel } from "@okouai/core/image-model-catalog";
 import { isStaffOrg } from "@okouai/core/staff-org";
 import {
-  getCustomSkillStorageName,
   getInstructionsStorageName,
-  getSkillStorageName,
   MEMORY_ARTIFACT_NAME,
-  SYSTEM_ORG_ID,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
-import {
-  expandVariables,
-  expandVariablesInString,
-  extractAndGroupVariables,
-} from "@okouai/core/variable-expander";
-import {
-  isValidVersionPrefix,
-  MIN_VERSION_PREFIX_LENGTH,
-  VERSION_ID_LENGTH,
-} from "@okouai/core/version-id";
 import type {
   AgentRunFullLaunchSnapshot,
   AgentRunLaunchSnapshot,
@@ -439,7 +271,6 @@ import type {
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -453,17 +284,12 @@ import {
 
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
-
 import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
-import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
 
-import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/schema/workflow";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import {
   PI_AGENT_RUNTIME_VERSION,
@@ -473,67 +299,34 @@ import { command, type Command, computed, type Computed, state } from "ccstate";
 import {
   and,
   asc,
-  desc,
   eq,
   inArray,
   isNotNull,
-  isNull,
-  like,
   ne,
   notExists,
-  or,
   sql,
   type SQL,
   type SQLWrapper,
   type WithSubquery,
 } from "drizzle-orm";
-import { alias, QueryBuilder, unionAll } from "drizzle-orm/pg-core";
-import { randomUUID } from "node:crypto";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
-import { generateOkouToken } from "../auth/tokens";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
-import { buildAgentIdentityPrompt } from "./agent-identity-prompt.service";
 import {
   normalizeRunMetadata,
   type RunMetadataValues,
 } from "./agent-run-metadata-write.service";
 import {
-  buildAgentToolsPrompt,
-  buildAgentToolsPromptInputs,
-} from "./agent-tools-prompt.service";
-import {
   type ChatThreadRequestFacts,
   chatThreadRequestSelection,
 } from "./chat-thread-request-facts";
-import {
-  builtinConnectorRuntimeCredentialStatusWithMethod,
-  type ConnectorCredentialStatus,
-} from "./connector-credential-status.service";
-import {
-  cacheRowsFromProjection,
-  storageVersionCacheKeySql,
-} from "./execution-storage-cache-read.service";
-import { defaultFirewallPolicyForPermissionIndex } from "./firewall-network-policy.service";
 import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
-import {
-  isPersonalSubscriptionProviderType,
-  type MemberModelAccountSnapshot,
-} from "./model-provider-account.service";
-import {
-  type ModelFirstPin,
-  modelProviderWriteTypeForLaunch,
-  type ProviderModelSupport,
-  resolveQueuedModelSelectionPinFromSnapshot,
-} from "./model-selection.service";
+import { isPersonalSubscriptionProviderType } from "./model-provider-account.service";
+import { modelProviderWriteTypeForLaunch } from "./model-selection.service";
 import type { OfficialWorkflowContextFacts } from "./official-workflow-context.signals";
-import type { OfficialWorkflowReconciliationResult } from "./official-workflow-reconciliation.types";
-import { reconcileOfficialWorkflowInstallation$ } from "./official-workflow-reconciliation.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import { PiModelConfigurationError } from "./pi-model-configuration-error";
-import { additionalVolumesForRun } from "./presentation-template-data.service";
-import { createRunTemplates } from "./run-templates.service";
 import {
   environmentRecordToEntries,
   executionFirewallsToAxiomEntries,
@@ -551,25 +344,6 @@ import {
   isCompressedSessionHistoryBlobEncoding,
   normalizeSessionHistoryBlobEncoding,
 } from "./session-history-blobs";
-import {
-  exactStorageVersionsFromIndex,
-  mergeStorageIndexes,
-  readStorageBaseIndex,
-  type StorageIndex,
-  type StorageIndexEntry,
-  type StorageLookup,
-  type StorageRequest,
-  storageRequestKey,
-  type StorageVersionIndexEntry,
-} from "./storage-index.service";
-import { projectLegacyWritebackArtifacts } from "./storage-legacy-projection.service";
-import { normalizeMountOverlay } from "./storage-mount-overlay";
-import type {
-  StorageManifestCacheBranch,
-  StorageManifestCacheEntryKind,
-  SystemStoragePresignedUrlCacheStatus,
-  WorkflowSkillStoragePresignedUrlCacheStatus,
-} from "./system-storage-presigned-url-cache.service";
 import { teamsDeliveryTargetSchema } from "./teams-chat-callback-payload";
 
 import { telegramDeliveryTargetSchema } from "./telegram-chat-callback-payload";
@@ -578,6 +352,7 @@ import { isWebChatContextId } from "./web-chat-queue-context.service";
 
 import {
   EVENT_POLICY,
+  restoredWorkflowAutomationEventPayload,
   type WorkflowAutomationEventPayload,
   workflowAutomationEventTypeSchema,
 } from "./workflow-automation-context.service";
@@ -586,26 +361,30 @@ import {
   DueWorkflowAutomation,
 } from "./workflow-automation-enqueue.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
-import {
-  type RunWorkflowRef,
-  visibleWorkflowCondition,
-} from "./workflow-data.service";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
+import {
+  type AdditionalVolumeSources,
+  type AgentRunCreateAdditionalVolume,
+  type AgentRunCreateContextArtifact,
+  type ArtifactMissingRootPolicy,
+  AUTO_MEMORY_ARTIFACT_NAME,
+  type MaterializedAgentRunStorage,
+  OfficialWorkflowArtifactResolutionError,
+  type PreparedAgentRunStorage,
+  prepareRunOutputMetadata,
+  type ResolvedAgentExecution,
+  type ResolvedAgentRunStorage,
+  type ResolvedRunExecution,
+  resolvedSessionStorage,
+  StorageManifestBuildStats,
+} from "./run-storage-manifest.service";
+import { createStorageSignals, type Storage } from "./thread-storage.signals";
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
 
 export interface ThreadClaim {
   readonly orgId: string;
   readonly chatThreadId: string;
   readonly claimId: string;
-}
-
-interface QueuedModelInput {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly threadId: string;
-  readonly eventId: string;
-  readonly featureSwitchContext?: FeatureSwitchContext;
-  readonly providerModelSupport?: ProviderModelSupport;
 }
 
 interface QueuedPromptGraphInput {
@@ -616,39 +395,32 @@ interface QueuedPromptGraphInput {
 
 class QueuedPromptInputInvalidError extends Error {}
 
-function resolveQueuedOfficialWorkflowContext(args: {
+function assertQueuedPromptContext(args: {
   readonly contextType: QueuedUserMessageContextType;
   readonly contextId: string | null;
   readonly requiredOfficialWorkflowIds: readonly string[] | null;
-}) {
-  const hasClaim = args.requiredOfficialWorkflowIds !== null;
-  if (hasClaim && !isWebChatContextType(args.contextType)) {
-    throw new QueuedPromptInputInvalidError(
-      `Queued ${args.contextType} input cannot carry an Official Workflow source claim`,
+}): void {
+  if (args.requiredOfficialWorkflowIds !== null) {
+    throw new QueuedPromptLaunchUnavailableError(
+      OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE,
     );
   }
   const hasWebContextId = isWebChatContextId(args.contextId);
   if (args.contextType === "web" && !hasWebContextId) {
     throw new QueuedPromptInputInvalidError("Invalid Web chat context");
   }
-  // Official agent inputs use Web identity, never a source Run pointer. Their
-  // private claim and server-owned annotation retain source/budget authority.
-  const officialAgentClaim =
-    args.contextType === "agent_run" && hasWebContextId;
-  if ((officialAgentClaim && !hasClaim) || (hasClaim && !hasWebContextId)) {
-    throw new QueuedPromptInputInvalidError(
-      "Queued Official Workflow context and source claim do not match",
-    );
+  if (args.contextType === "agent_run" && hasWebContextId) {
+    throw new QueuedPromptInputInvalidError("Invalid Agent Run chat context");
   }
-  return officialAgentClaim;
 }
 
 function queuedUserMessageAutonomyBudget(
   contextType: QueuedUserMessageContextType,
   sourceAutonomyBudget: number | null,
+  maxAutonomyBudget: number,
 ): QueuedUserMessage["autonomyBudget"] {
   if (contextType !== "agent_run") {
-    return { kind: "ok", autonomyBudget: INITIAL_AUTONOMY_BUDGET };
+    return { kind: "ok", autonomyBudget: maxAutonomyBudget };
   }
   if (sourceAutonomyBudget === null) {
     return {
@@ -657,15 +429,6 @@ function queuedUserMessageAutonomyBudget(
     };
   }
   return childAutonomyBudget(sourceAutonomyBudget);
-}
-
-interface QueuedPromptAgent {
-  readonly agentId: string;
-  readonly expectedThreadAgentId?: string;
-  readonly producerBinding?: Extract<
-    ClaimProducerBinding,
-    { readonly kind: "reassign-agent" }
-  >;
 }
 
 function queuedFeishuDelivery(context: NonNullable<FeishuThreadContext>) {
@@ -725,8 +488,8 @@ function queuedTelegramDelivery(context: NonNullable<TelegramThreadContext>) {
 }
 
 class QueuedPromptLaunchUnavailableError extends Error {
-  constructor() {
-    super("This conversation is no longer available.");
+  constructor(message = "This conversation is no longer available.") {
+    super(message);
     this.name = "QueuedPromptLaunchUnavailableError";
   }
 }
@@ -734,72 +497,41 @@ class QueuedPromptLaunchUnavailableError extends Error {
 function queuedPromptRunInput(args: {
   readonly input: CreateQueuedChatRunInputArgs;
   readonly launch: QueuedLaunchMaterial;
-  readonly promptAndSkills: RunPromptAndSkills;
-  readonly userIdentity: string;
-  readonly model: Exclude<
-    QueuedMessageModelRouteResolution,
-    { readonly error: unknown }
-  >;
+  readonly promptAndSkills: PromptAndSkillVolumes;
+  readonly model: ThreadModelSelection;
   readonly session: ChatThreadSessionResolution;
   readonly host: CreateQueuedChatRunInput["computerUseHostGrant"];
   readonly capture: boolean;
   readonly features: FeatureSwitchContext;
-  readonly catalog: ModelCatalog;
 }): CreateQueuedChatRunInput {
-  const { input, launch } = args;
-  const prompt = renderRunPromptAndSkills(
-    mergeRunPromptAndSkills([
-      args.promptAndSkills,
-      {
-        systemPromptVariables: {
-          userIdentity: args.userIdentity,
-          computerUseContext: args.host
-            ? buildComputerUseSystemPrompt(args.host.displayName)
-            : "",
-        },
-        userPromptVariables: {},
-        skillVolumes: [],
-      },
-    ]),
-  );
+  const { input, launch, model } = args;
   if (input.queuedMessage.autonomyBudget.kind !== "ok") {
     throw new Error("Rejected autonomy input cannot become a run");
   }
-  const { piExecution, routedModel } = routeQueuedMessagePiExecution({
-    input,
-    modelRoute: args.model.route,
-  });
   return {
     orgId: input.agent.orgId,
     userId: input.userId,
     agentId: input.agent.id,
-    expectedThreadAgentId: input.expectedThreadAgentId,
     threadSessionResolution: args.session,
     featureSwitchContext: args.features,
-    prompt: prompt.userPrompt,
-    appendSystemPrompt: prompt.systemPrompt,
-    presentationTemplateVolumes: prompt.skillVolumes,
+    prompt: args.promptAndSkills.userPrompt,
     threadId: input.threadId,
     queuedMessage: input.queuedMessage,
     requiredOfficialWorkflowIds:
       input.queuedMessage.requiredOfficialWorkflowIds,
-    modelPin: routedModel.modelPin,
-    memberAccountSnapshot: routedModel.memberAccountSnapshot,
-    effectiveModelProvider: routedModel.effectiveModelProvider,
-    builtInModelRuntimeRoute: routedModel.builtInModelRuntimeRoute,
-    cliAgentType: routedModel.cliAgentType,
-    piExecution,
-    codexServiceTier: routedModel.codexServiceTier,
-    reasoningEffort: resolveReasoningEffortForDispatch({
-      catalog: args.catalog,
-      selectedModel: routedModel.modelPin.selectedModel,
-      modelProviderType: routedModel.effectiveModelProvider,
-      effort: routedModel.reasoningEffort ?? undefined,
-      runtimeProviderType:
-        routedModel.builtInModelRuntimeRoute?.providerType ??
-        routedModel.effectiveModelProvider,
-      piExecution,
-    }),
+    modelPin: {
+      modelProviderId: model.agentRunModelPin.modelProviderId,
+      modelProviderType: model.agentRunModelPin.modelProvider,
+      modelProviderCredentialScope:
+        model.agentRunModelPin.modelProviderCredentialScope,
+      selectedModel: model.selectedModelOverride,
+    },
+    effectiveModelProvider: model.modelProviderType,
+    builtInModelRuntimeRoute: model.builtInModelRuntimeRoute,
+    cliAgentType: model.cliAgentType,
+    piExecution: model.piExecution,
+    codexServiceTier: model.codexServiceTier,
+    reasoningEffort: model.reasoningEffort,
     computerUseHostGrant: args.host,
     triggerSource: launch.triggerSource,
     realAgentInPreview: isFeatureEnabled(
@@ -809,6 +541,23 @@ function queuedPromptRunInput(args: {
     captureNetworkBodies: args.capture,
     ...queuedIntegrationLaunchFields(launch, input.agent.id),
     autonomyBudget: input.queuedMessage.autonomyBudget.autonomyBudget,
+  };
+}
+
+/** Run command model fields, as selected for the picked event. */
+function threadRunModelFields(model: ThreadModelSelection) {
+  return {
+    agentRunModelPin: model.agentRunModelPin,
+    modelProviderId: model.modelProviderId,
+    modelProviderCredentialScope: model.modelProviderCredentialScope,
+    selectedModelOverride: model.selectedModelOverride,
+    builtInModelRuntimeRoute: model.builtInModelRuntimeRoute,
+    threadSessionRoute: {
+      selectedModel: model.selectedModelOverride,
+      cliAgentType: model.cliAgentType,
+    },
+    codexServiceTier: model.codexServiceTier,
+    piExecution: model.piExecution,
   };
 }
 
@@ -830,7 +579,8 @@ function queuedPromptPreparationRejection(
   if (
     !(error instanceof DiscordQueuedLaunchUnavailableError) &&
     !(error instanceof QueuedPromptLaunchUnavailableError) &&
-    !(error instanceof QueuedPromptInputInvalidError)
+    !(error instanceof QueuedPromptInputInvalidError) &&
+    !(error instanceof PromptAndSkillVolumesError)
   ) {
     throw error;
   }
@@ -840,29 +590,15 @@ function queuedPromptPreparationRejection(
       userId: head.userId,
       error: {
         code:
-          error instanceof DiscordQueuedLaunchUnavailableError
-            ? "DISCORD_ACCESS_REVOKED"
-            : error instanceof QueuedPromptInputInvalidError
-              ? "INTERNAL_ERROR"
-              : "CONFLICT",
+          error instanceof PromptAndSkillVolumesError
+            ? error.code
+            : error instanceof DiscordQueuedLaunchUnavailableError
+              ? "DISCORD_ACCESS_REVOKED"
+              : error instanceof QueuedPromptInputInvalidError
+                ? "INTERNAL_ERROR"
+                : "CONFLICT",
         message: error.message,
       },
-    },
-  };
-}
-
-function missingQueuedAgentRejection(
-  head: ChatQueueHeadContext,
-): ChatQueueRunAssembly {
-  return {
-    kind: "rejected",
-    rejection: {
-      userId: head.userId,
-      error: {
-        code: "BAD_REQUEST",
-        message: "The organization default agent is unavailable",
-      },
-      delivery: { kind: "source", head },
     },
   };
 }
@@ -897,7 +633,6 @@ type AutonomyBudgetResult =
     };
 
 function buildWorkflowAutomationQueuedLaunchMaterial(args: {
-  readonly prompt: RunPromptAndSkills;
   readonly workflowName: string | null;
   readonly eventType: string | null;
   readonly eventPayload: WorkflowAutomationEventPayload | null;
@@ -908,14 +643,13 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
   if (
     args.workflowName === null ||
     args.eventType === null ||
-    args.eventPayload === null
+    args.eventPayload === null ||
+    !restoredWorkflowAutomationEventPayload(args.eventPayload)
   ) {
     return null;
   }
   const eventType = workflowAutomationEventTypeSchema.parse(args.eventType);
   return {
-    prompt: renderRunPromptAndSkills(args.prompt).userPrompt,
-    appendSystemPrompt: undefined,
     callbacks: buildWorkflowAutomationCallbacks(
       args.automation,
       args.agentId,
@@ -935,37 +669,6 @@ type RunFailure =
   | { readonly kind: "conflict"; readonly message: string }
   | { readonly kind: "run_error"; readonly response: RunErrorResponse };
 
-function isActivePreviousRunStatus(status: string): boolean {
-  return status === "pending" || status === "running";
-}
-
-type ComputerUseHostGrant = {
-  readonly hostId: string;
-  readonly displayName: string;
-} | null;
-
-interface WorkflowAutomationRunInput {
-  readonly prompt: string;
-  readonly additionalVolumes: readonly AgentRunCreateAdditionalVolume[];
-  readonly appendSystemPrompt: string | undefined;
-  readonly callbacks: readonly InternalRunCallbackInput[];
-  readonly agentRunMetadata: ReturnType<typeof workflowAutomationRunMetadata>;
-}
-
-function appendComputerUseSystemPrompt(
-  prompt: string | undefined,
-  grant: ComputerUseHostGrant,
-): string | undefined {
-  if (!grant) {
-    return prompt;
-  }
-  return [
-    ...(prompt ? [prompt] : []),
-    "# Computer Use",
-    `Computer Use is enabled for this run on ${grant.displayName}.`,
-  ].join("\n\n");
-}
-
 function workflowAutomationRunMetadata(
   automation: AutomationRow,
   triggerBrief: string | undefined,
@@ -975,100 +678,6 @@ function workflowAutomationRunMetadata(
     workflowAutomationId: automation.id,
     triggerBrief,
     autonomyBudget,
-  };
-}
-
-type ModelContext =
-  | {
-      readonly ok: true;
-      readonly memberAccountSnapshot: MemberModelAccountSnapshot | null;
-      readonly modelPin: ModelFirstPin;
-      readonly effectiveModelProvider: string | null | undefined;
-      readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
-      readonly cliAgentType: string | null;
-      readonly codexServiceTier: "fast" | undefined;
-      readonly reasoningEffort: ReasoningEffort | null;
-      readonly piExecution: boolean;
-    }
-  | { readonly ok: false; readonly failure: RunFailure };
-
-function workflowModelContext(
-  catalog: ModelCatalog,
-  chatThreadId: string,
-  threadModelContext: QueuedModelContext,
-): ModelContext {
-  if ("status" in threadModelContext) {
-    return {
-      ok: false,
-      failure: {
-        kind: "run_error",
-        response: {
-          status: threadModelContext.status,
-          body: threadModelContext.body,
-        },
-      },
-    };
-  }
-
-  const { pin, providerAdmission, runCodexServiceTier } = threadModelContext;
-  if (providerAdmission.error) {
-    return {
-      ok: false,
-      failure: { kind: "run_error", response: providerAdmission.error },
-    };
-  }
-
-  const effectiveModelProvider = providerAdmission.effectiveModelProvider;
-  const selectedModel = pin.selectedModel;
-  const builtInModelRuntimeRoute = threadModelContext.builtInModelRuntimeRoute;
-  if (
-    isBuiltInModelProviderType(effectiveModelProvider) &&
-    !builtInModelRuntimeRoute
-  ) {
-    return {
-      ok: false,
-      failure: {
-        kind: "run_error",
-        response: {
-          status: 503,
-          body: {
-            error: {
-              code: "MODEL_PROVIDER_UNAVAILABLE",
-              message:
-                "Every built-in model route for this model is temporarily unavailable",
-            },
-          },
-        },
-      },
-    };
-  }
-
-  const piExecution = shouldUsePiExecution({
-    chatThreadId,
-    modelProviderType: effectiveModelProvider,
-    catalogModel: piCatalogModel(catalog, selectedModel),
-    codexServiceTier: runCodexServiceTier,
-    builtInModelRuntimeRoute: builtInModelRuntimeRoute ?? undefined,
-  });
-  return {
-    ok: true,
-    modelPin: pin,
-    memberAccountSnapshot: threadModelContext.memberAccountSnapshot,
-    effectiveModelProvider,
-    builtInModelRuntimeRoute: builtInModelRuntimeRoute ?? undefined,
-    cliAgentType: piExecution ? "pi" : providerAdmission.cliAgentType,
-    codexServiceTier: runCodexServiceTier,
-    reasoningEffort:
-      resolveReasoningEffortForDispatch({
-        catalog,
-        selectedModel,
-        modelProviderType: effectiveModelProvider,
-        effort: threadModelContext.reasoningEffort,
-        runtimeProviderType:
-          builtInModelRuntimeRoute?.providerType ?? effectiveModelProvider,
-        piExecution,
-      }) ?? null,
-    piExecution,
   };
 }
 
@@ -1082,13 +691,6 @@ interface AssembledWorkflowAutomationRun {
   readonly launchRecord: Extract<ClaimLaunchRecord, { kind: "automation" }>;
 }
 
-function workflowAutomationRunOwner(automation: {
-  readonly orgId: string;
-  readonly ownerUserId: string;
-}) {
-  return { orgId: automation.orgId, userId: automation.ownerUserId };
-}
-
 function automationSelectionCommand(
   args: Pick<
     AssembleWorkflowAutomationRunArgs,
@@ -1098,32 +700,31 @@ function automationSelectionCommand(
     | "triggerSource"
     | "connectorSourceId"
   >,
-  model: Extract<ModelContext, { readonly ok: true }>,
-  timing: ApiDispatchTimingCollector,
+  model: ThreadModelSelection,
+  identity: {
+    readonly timing: ApiDispatchTimingCollector;
+    readonly owner: { readonly orgId: string; readonly userId: string };
+    readonly agentId: string;
+  },
 ): ThreadRunSelection &
   Pick<
     ThreadRunCommand,
     "chatThreadId" | "queueFirstAssociation" | "agentRunModelPin"
   > {
-  const { automation, agentId, chatThreadId } = args.due;
+  const { automation, chatThreadId } = args.due;
+  const { timing } = identity;
   return {
-    owner: workflowAutomationRunOwner(automation),
+    owner: identity.owner,
     body: {
-      agentId,
-      ...workflowModelProviderBody(model.effectiveModelProvider),
+      agentId: identity.agentId,
+      ...workflowModelProviderBody(model.modelProviderType),
     },
     apiStartTime: args.apiStartTime,
     triggerSource: args.triggerSource ?? "automation-schedule",
     chatThreadId,
     connectorSourceId: args.connectorSourceId,
-    modelProviderId: model.modelPin.modelProviderId ?? undefined,
-    modelProviderCredentialScope:
-      model.modelPin.modelProviderCredentialScope ?? undefined,
-    selectedModelOverride: model.modelPin.selectedModel ?? undefined,
-    builtInModelRuntimeRoute: model.builtInModelRuntimeRoute,
-    threadSessionRoute: workflowThreadSessionRoute(model),
-    codexServiceTier: model.codexServiceTier,
-    reasoningEffort: model.reasoningEffort,
+    ...threadRunModelFields(model),
+    reasoningEffort: model.reasoningEffort ?? null,
     ...(automation.officialBlueprintKey === null
       ? {}
       : { requiredOfficialWorkflowIds: [automation.workflowId] }),
@@ -1131,13 +732,6 @@ function automationSelectionCommand(
       threadId: chatThreadId,
       eventId: args.queueEventId,
     },
-    agentRunModelPin: {
-      modelProvider: model.effectiveModelProvider ?? null,
-      modelProviderId: model.modelPin.modelProviderId,
-      modelProviderCredentialScope: model.modelPin.modelProviderCredentialScope,
-      selectedModel: model.modelPin.selectedModel,
-    },
-    piExecution: model.piExecution,
     timing,
   };
 }
@@ -1152,18 +746,6 @@ function workflowAutomationTiming(
     apiStartTime,
   );
   return timing;
-}
-
-function reconciliationConflictMessage(
-  reconciled: OfficialWorkflowReconciliationResult,
-): string {
-  // A `retry` result (a superseded reconciliation, or an event preparation or
-  // watch registration failure) rejects the head like any other failure; the
-  // next trigger reconciles again.
-  return reconciled.kind === "needs-reconfiguration" ||
-    reconciled.kind === "retry"
-    ? reconciled.message
-    : "Official Workflow automation no longer exists";
 }
 
 type RejectedQueueRunAssembly = Extract<
@@ -1206,16 +788,13 @@ function queuedAutomationLaunchArguments(args: {
     },
     queueEventId: event.id,
     apiStartTime: head.apiStartTime,
-    prompt: material.prompt,
     triggerBrief: event.triggerBrief ?? undefined,
     triggerSource,
     ...(event.connectorSourceId
       ? { connectorSourceId: event.connectorSourceId }
       : {}),
-    appendSystemPrompt: material.appendSystemPrompt,
     callbacks: material.callbacks,
     autonomyBudget,
-    activePreviousRunPolicy: material.activePreviousRunPolicy,
     recordLastRunId: material.recordLastRunId,
     recordLastRunAt: material.recordLastRunAt,
   };
@@ -1361,17 +940,10 @@ function finalizeClaimRunContext(
   };
 }
 
-type ClaimProducerBinding =
-  | { readonly kind: "automation"; readonly queueEventId: string }
-  | {
-      readonly kind: "reassign-agent";
-      readonly agentId: string;
-      readonly expectedAgentId: string;
-      readonly userId: string;
-      readonly threadId: string;
-      readonly orgId: string;
-    }
-  | null;
+type ClaimProducerBinding = {
+  readonly kind: "automation";
+  readonly queueEventId: string;
+} | null;
 
 type ClaimQueueRunCommandArgs = ThreadRunCommand;
 
@@ -1403,10 +975,7 @@ type ClaimLaunchRecord =
     };
 
 interface WorkflowAutomationQueuedLaunchMaterial {
-  readonly prompt: string;
-  readonly appendSystemPrompt: string | undefined;
   readonly callbacks: ReturnType<typeof buildWorkflowAutomationCallbacks>;
-  readonly activePreviousRunPolicy: "block" | "allow";
   readonly recordLastRunId: boolean;
   readonly recordLastRunAt: boolean;
   readonly allowClaimedOnceScheduleAutomation: boolean;
@@ -1459,13 +1028,10 @@ function buildWorkflowAutomationCallbacks(
 interface WorkflowAutomationLaunchArgs {
   readonly due: DueWorkflowAutomation;
   readonly apiStartTime: number;
-  readonly prompt: string;
   readonly triggerBrief?: string;
   readonly triggerSource?: TriggerSource;
   readonly connectorSourceId?: string;
-  readonly appendSystemPrompt: string | undefined;
   readonly callbacks: readonly InternalRunCallbackInput[];
-  readonly activePreviousRunPolicy: ActivePreviousRunPolicy;
   readonly autonomyBudget: number;
   readonly recordLastRunId: boolean;
   readonly recordLastRunAt: boolean;
@@ -1479,64 +1045,10 @@ type RunErrorResponse = {
   };
 };
 
-/**
- * A Built-in pin that found no route because every executable candidate
- * lacks usage pricing is rejected as unbillable (not as a temporary outage).
- */
-function unpricedBuiltInModelRejection(
-  args: Parameters<typeof builtInRoutePricingFromSnapshot>[0] & {
-    readonly catalog: ModelCatalog;
-    readonly model: string;
-  },
-  context: AgentRunContextSignals,
-) {
-  return computed(async (get): Promise<RunErrorResponse | undefined> => {
-    const message = unpricedBuiltInModelMessage(
-      args.catalog,
-      args.model,
-      builtInRoutePricingFromSnapshot(args, await get(context.modelPricing$)),
-    );
-    return message
-      ? {
-          status: 503,
-          body: { error: { code: "MODEL_PROVIDER_UNAVAILABLE", message } },
-        }
-      : undefined;
-  });
-}
-
 interface InternalRunCallbackInput {
   readonly internalKind: InternalRunCallbackKind;
   readonly payload: unknown;
 }
-
-type QueuedModelContext =
-  | RunErrorResponse
-  | {
-      readonly pin: ModelFirstPin;
-      readonly providerAdmission: {
-        readonly effectiveModelProvider: string | null | undefined;
-        readonly cliAgentType: string | null;
-        readonly error: RunErrorResponse | undefined;
-      };
-      readonly featureSwitchContext: FeatureSwitchContext;
-      readonly runCodexServiceTier: "fast" | undefined;
-      readonly reasoningEffort: ReasoningEffort | undefined;
-      readonly builtInModelRuntimeRoute:
-        BuiltInModelRuntimeRoute | null | undefined;
-      readonly memberAccountSnapshot: MemberModelAccountSnapshot | null;
-    };
-
-function workflowThreadSessionRoute(
-  modelContext: Extract<ModelContext, { readonly ok: true }>,
-) {
-  return {
-    selectedModel: modelContext.modelPin.selectedModel,
-    cliAgentType: modelContext.cliAgentType,
-  };
-}
-
-type ActivePreviousRunPolicy = "block" | "allow";
 
 function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
   return {
@@ -1594,118 +1106,6 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
 
 type RunnerInputResult =
   ReturnType<typeof prepareRunnerStorageInput> | CreateRunErrorResult | null;
-
-function customConnectorSourceStorageRows(
-  snapshot: ConnectorSourceSnapshot,
-): readonly CustomConnectorRuntimeStorageRow[] {
-  const { source, connection, customBinding: binding } = snapshot;
-  if (source.kind !== "custom" || !binding) {
-    return [];
-  }
-  const credentialId = (name: string) => {
-    return (
-      snapshot.credentials.find((credential) => {
-        return credential.name === name;
-      })?.id ?? null
-    );
-  };
-  const base = {
-    id: source.sourceId,
-    updatedAt: connection.updatedAt,
-    customConnectorId: source.customConnectorId,
-    storedAuthMethod: connection.authMethod,
-    storedStorageVersion: connection.storageVersion,
-    storedNeedsReconnect: connection.needsReconnect,
-    tokenExpiresAt: connection.tokenExpiresAt,
-    definitionAuthMethod: binding.definitionAuthMode,
-    definitionMcpTransport: binding.definitionMcpTransport,
-    definitionStorageVersion: binding.definitionStorageVersion,
-    oauthAccessTokenId: credentialId(
-      CUSTOM_CONNECTOR_OAUTH_ACCESS_TOKEN_SECRET_NAME,
-    ),
-    oauthRefreshTokenId: credentialId(
-      CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
-    ),
-    automaticOAuthBindingId: binding.automaticOAuthBindingId,
-  };
-  // Saved values only count for a compatible auth method at the exact current
-  // definition storage version; secrets never apply to unauthenticated access.
-  const current =
-    customConnectorAccountAuthMethodIsCompatible(
-      binding.definitionAuthMode,
-      connection.authMethod,
-    ) && connection.storageVersion === binding.definitionStorageVersion;
-  const values = current
-    ? [
-        ...(connection.authMethod === "none"
-          ? []
-          : snapshot.credentials.map((credential) => {
-              return {
-                kind: "secret" as const,
-                key: credential.name,
-                storedValue: credential.encryptedValue,
-              };
-            })),
-        ...Object.entries(snapshot.variables).map(([key, storedValue]) => {
-          return { kind: "variable" as const, key, storedValue };
-        }),
-      ]
-    : [];
-  return values.length === 0
-    ? [{ ...base, kind: null, key: null, storedValue: null }]
-    : values.map((value) => {
-        return { ...base, ...value };
-      });
-}
-
-/**
- * Provider admission shared by the chat and workflow-automation picks: model
- * support on the pinned provider, org plan admission (the member's own
- * subscription route is plan-exempt), then the Built-in credit balance.
- */
-async function resolveQueuedProviderAdmission(params: {
-  readonly catalog: ModelCatalog;
-  readonly pin: ModelFirstPin;
-  readonly providerModelSupport: ProviderModelSupport | undefined;
-  readonly personalSubscription: () => Promise<boolean>;
-  readonly capabilities: () => Parameters<
-    typeof checkOrgPlanRunAdmission
-  >[0]["capabilities"];
-  readonly creditBalance: () => Promise<{
-    readonly spendableCredits: number;
-    readonly usagePackCredits: number;
-  } | null>;
-}) {
-  const { catalog, pin } = params;
-  const effectiveModelProvider = pin.modelProviderType;
-  const parsed = modelProviderTypeSchema.safeParse(effectiveModelProvider);
-  const cliAgentType = parsed.success ? getFrameworkForType(parsed.data) : null;
-  const personalSubscription = await params.personalSubscription();
-  const error = checkOrgPlanRunAdmission({
-    catalog,
-    capabilities: params.capabilities(),
-    modelProviderType: effectiveModelProvider,
-    selectedModel: pin.selectedModel,
-    personalSubscription,
-  });
-  if (error || !isBuiltInModelProviderType(effectiveModelProvider)) {
-    return {
-      effectiveModelProvider,
-      cliAgentType,
-      error,
-      hasSpendableCredits: true,
-    };
-  }
-  const balance = await params.creditBalance();
-  return {
-    effectiveModelProvider,
-    cliAgentType,
-    error: balance ? undefined : pickChatRunModelInsufficientCredits(),
-    hasSpendableCredits:
-      balance !== null &&
-      (balance.usagePackCredits > 0 || balance.spendableCredits > 0),
-  };
-}
 
 type PendingClaimRun = {
   readonly kind: "pending";
@@ -1765,15 +1165,11 @@ export interface ThreadClaimRunObjects {
 /** The admission input with the instant its reads are taken. */
 export function createThreadClaimRunObjects(
   claim: ThreadClaim,
-  context: AgentRunContextSignals,
-  prefetchOutcome: "hit" | "not_provided" | "identity_mismatch",
+  bootstrap: AgentRunContextSignals,
   requestFacts?: ChatThreadRequestFacts,
 ): ThreadClaimRunObjects {
   // Re-resolve the queued pin against one current catalog snapshot per claim.
-  const orgModels$ = context.modelFacts$;
-  const claimCatalog$ = computed(async (get) => {
-    return (await get(orgModels$)).catalog;
-  });
+  const claimCatalog$ = bootstrap.modelCatalog$;
   const pickStartedAt$ = computed(() => {
     return now();
   });
@@ -1848,22 +1244,12 @@ export function createThreadClaimRunObjects(
       .where(
         and(
           eq(chatThreads.id, claim.chatThreadId),
-          eq(chatThreads.userId, context.userId),
-          eq(chatThreads.agentId, context.agentId),
+          eq(chatThreads.userId, bootstrap.userId),
+          eq(chatThreads.agentId, bootstrap.agentId),
         ),
       )
       .limit(1);
     return row ?? null;
-  });
-  const sessionOrgId = claim.orgId;
-  const sessionUserId = context.userId;
-  const sessionRead$ = createChatThreadSessionRead(
-    threadRow$,
-    sessionOrgId,
-    sessionUserId,
-  );
-  const session$ = computed(async (get) => {
-    return chatThreadSessionIdentity(await get(sessionRead$));
   });
   const pickedEvent$ = computed(
     async (get): Promise<PickedThreadInputEvent | null> => {
@@ -1933,107 +1319,28 @@ export function createThreadClaimRunObjects(
           : {}),
         userId: thread.userId,
         agentId: thread.agentId,
+        thread,
       };
     },
   );
-  const threadPromptSource$ = computed(
-    async (get): Promise<ThreadPromptSource | null> => {
-      const event = await get(pickedEvent$);
-      if (!event) {
-        return null;
-      }
-      return {
-        orgId: claim.orgId,
-        chatThreadId: claim.chatThreadId,
-        event,
-        featureSwitchContext: await get(context.featureSwitches$),
-      };
-    },
+  const threadContext = createThreadContext(bootstrap, pickedEvent$);
+  const okouTokenInput$ = createOkouTokenInputSignals(
+    bootstrap,
+    pickedEvent$,
+    threadContext,
   );
-  // Share channel reads between prompt and launch metadata.
-  const slackContext$ = createSlackThreadContext(threadPromptSource$);
-  const feishuContext$ = createFeishuThreadContext(threadPromptSource$);
-  const teamsContext$ = createTeamsThreadContext(threadPromptSource$);
-  const telegramContext$ = createTelegramThreadContext(threadPromptSource$);
-  const agentPhoneContext$ = createAgentPhoneThreadContext(threadPromptSource$);
-  const discordContext$ = createDiscordThreadContext(threadPromptSource$);
-  const automationContext$ = createThreadAutomationContext(threadPromptSource$);
-  const webPrompt$ = createWebThreadPrompt(threadPromptSource$);
-  const slackPrompt$ = createSlackThreadPrompt(
-    threadPromptSource$,
-    slackContext$,
-  );
-  const feishuPrompt$ = createFeishuThreadPrompt(
-    threadPromptSource$,
-    feishuContext$,
-  );
-  const teamsPrompt$ = createTeamsThreadPrompt(
-    threadPromptSource$,
-    teamsContext$,
-  );
-  const telegramPrompt$ = createTelegramThreadPrompt(
-    threadPromptSource$,
-    telegramContext$,
-  );
-  const agentPhonePrompt$ = createAgentPhoneThreadPrompt(
-    threadPromptSource$,
-    agentPhoneContext$,
-  );
-  const discordPrompt$ = createDiscordThreadPrompt(
-    threadPromptSource$,
-    discordContext$,
-  );
-  const automationPrompt$ = createAutomationThreadPrompt(
-    threadPromptSource$,
-    automationContext$,
-  );
-  const threadUserIdentity$ = computed(async (get) => {
-    const selected = (await get(isAutomation$))
-      ? await get(queuedIdentityContext$)
-      : await get(promptExecutionContext$);
-    const member = await get(selected.memberMetadata$);
-    return buildCurrentUserPrompt({
-      name: member.profile?.name ?? null,
-      email: member.profile?.email ?? null,
-      timezone: member.preferences?.timezone ?? null,
-    });
-  });
-  const selectedIntegrationPrompt$ = computed(async (get) => {
-    // Preserve canonical input validation before evaluating channel material.
-    const { queuedMessage } = await get(promptArgsArgs$);
-    switch (queuedMessage.contextType) {
-      case "web":
-      case "agent_run": {
-        return get(webPrompt$);
-      }
-      case "slack": {
-        return get(slackPrompt$);
-      }
-      case "feishu": {
-        return get(feishuPrompt$);
-      }
-      case "teams": {
-        return get(teamsPrompt$);
-      }
-      case "telegram": {
-        return get(telegramPrompt$);
-      }
-      case "agentphone": {
-        return get(agentPhonePrompt$);
-      }
-      case "discord": {
-        return get(discordPrompt$);
-      }
-      case "automation": {
-        throw new Error("Automation cannot enter the prompt assembler");
-      }
-    }
-  });
+  const slackContext$ = threadContext.slackContext$;
+  const feishuContext$ = threadContext.feishuContext$;
+  const teamsContext$ = threadContext.teamsContext$;
+  const telegramContext$ = threadContext.telegramContext$;
+  const agentPhoneContext$ = threadContext.agentPhoneContext$;
+  const discordContext$ = threadContext.discordContext$;
+  const automationContext$ = threadContext.automationContext$;
   // Per-claim dispatch timing collectors, created once per graph like the run
   // ids; commands record into them in their own order.
   const claimRunTiming$ = computed((get): ClaimRunTiming => {
     return {
-      run: new ApiDispatchTimingCollector(),
+      run: get(threadContext.dispatchTiming$),
       phase: new ApiDispatchPhaseCollector(get(pickStartedAt$)),
     };
   });
@@ -2041,319 +1348,26 @@ export function createThreadClaimRunObjects(
     return new ChatCallbackPreCreateTimingCollector();
   });
   // Generated once per claim graph; read after authorization admits the head.
-  const runIds$ = computed(() => {
-    return { runId: randomUUID(), newSessionId: randomUUID() };
-  });
-  const input$ = computed(async (get) => {
-    const head = await get(pickedEvent$);
-    if (!head) {
+  const runIds$ = threadContext.runIds$;
+  const head$ = computed(async (get): Promise<ChatQueueHeadContext> => {
+    const event = await get(pickedEvent$);
+    if (!event) {
       throw new Error("Claim has no picked event");
     }
-    return { orgId: claim.orgId, chatThreadId: claim.chatThreadId, head };
-  });
-  const queueHeadContext$ = computed(async (get) => {
-    const { head } = await get(input$);
     return {
-      contextType: head.contextType,
-      contextId: head.contextId,
-      userId: head.userId,
-      agentId: z.string().parse(head.agentId),
+      id: event.id,
+      chatThreadId: event.chatThreadId,
+      orgId: bootstrap.orgId,
+      apiStartTime: get(pickStartedAt$),
+      contextType: event.contextType,
+      contextId: event.contextId,
+      userId: bootstrap.userId,
+      agentId: bootstrap.agentId,
     };
   });
-  const head$ = computed(async (get) => {
-    const [input, context] = await Promise.all([
-      get(input$),
-      get(queueHeadContext$),
-    ]);
-    const apiStartTime = get(pickStartedAt$);
-    return context
-      ? {
-          id: input.head.id,
-          chatThreadId: claim.chatThreadId,
-          orgId: claim.orgId,
-          apiStartTime,
-          ...context,
-        }
-      : null;
-  });
-  // The head's model input: an automation's from its execution input, a
-  // prompt's from its prepared arguments and feature-switch context.
-  const queuedModelInputsInput$ = computed(
-    async (get): Promise<QueuedModelInput> => {
-      if ((await get(head$))?.contextType === "automation") {
-        const automation = await get(automationExecutionInput$);
-        if (!automation) {
-          throw new Error(
-            "Automation model resolution requires its automation",
-          );
-        }
-        return {
-          orgId: automation.due.automation.orgId,
-          userId: automation.due.automation.ownerUserId,
-          threadId: automation.due.chatThreadId,
-          eventId: automation.queueEventId,
-        };
-      }
-      const [args, features] = await Promise.all([
-        get(promptArgsArgs$),
-        get(promptFeaturesFeatures$),
-      ]);
-      return {
-        orgId: args.agent.orgId,
-        userId: args.userId,
-        threadId: args.threadId,
-        eventId: args.queuedMessage.id,
-        featureSwitchContext: features,
-        providerModelSupport: "trust-enqueued",
-      };
-    },
-  );
-  const queuedModelInputsSelection$ = computed(async (get) => {
-    const input = await get(queuedModelInputsInput$);
-    const head = await get(pickedEvent$);
-    if (head?.id !== input.eventId) {
-      throw new Error("Queued model selection must belong to the picked head");
-    }
-    return head.canonicalModelSelection;
-  });
-  const queuedModelInputsCapabilities$ = computed((get) => {
-    return get(context.plan$);
-  });
-  const queuedModelSources = {
-    input$: queuedModelInputsInput$,
-    selection$: queuedModelInputsSelection$,
-    capabilities$: queuedModelInputsCapabilities$,
-  };
-  const { input$: queuedMemberModelRoutesInput$ } = queuedModelSources;
-  const queuedMemberModelRoutesMemberAccountSnapshot$ = computed(
-    async (get) => {
-      const { orgId, userId } = await get(queuedMemberModelRoutesInput$);
-      const { accounts, providers } = await get(
-        (await get(queuedIdentityContext$)).memberModels$,
-      );
-      return { orgId, userId, accounts, providers };
-    },
-  );
-  const memberRoutes$ = computed(async (get) => {
-    const snapshot = await get(queuedMemberModelRoutesMemberAccountSnapshot$);
-    return memberModelRouteContextFromAccounts(
-      snapshot?.accounts.map((account) => {
-        return { ...account, providerId: account.modelProviderId };
-      }) ?? [],
-    );
-  });
-  const member = {
-    memberRoutes$: memberRoutes$,
-    memberAccountSnapshot$: queuedMemberModelRoutesMemberAccountSnapshot$,
-  };
-  const queuedModelRoutingInput$ = queuedModelSources.input$;
-  const queuedModelRoutingSelection$ = queuedModelSources.selection$;
-  const queuedModelRoutingMemberRoutes$ = member.memberRoutes$;
-  const queuedIdentityContext$ = computed(async (get) => {
-    const input = await get(queuedModelRoutingInput$);
-    return matchAgentRunContextSignals(
-      context,
-      input.userId,
-      input.orgId,
-      context.agentId,
-    );
-  });
-  const subscriptionModels$ = computed(async (get) => {
-    return memberSubscriptionModelRoutesFromCatalog(
-      await get(claimCatalog$),
-      await get(queuedModelRoutingMemberRoutes$),
-    );
-  });
-  const queuedModelRoutingModelPin$ = computed(async (get) => {
-    const selection = await get(queuedModelRoutingSelection$);
-    return selection
-      ? resolveQueuedModelSelectionPinFromSnapshot({
-          catalog: await get(claimCatalog$),
-          selectedModel: selection.selectedModel,
-          subscriptionModels: await get(subscriptionModels$),
-          memberProviderTypes: new Set(
-            (
-              await get(queuedMemberModelRoutesMemberAccountSnapshot$)
-            ).providers.map((provider) => {
-              return provider.type;
-            }),
-          ),
-        })
-      : badRequestMessage("Queued input is missing its model selection");
-  });
-  const routing = { modelPin$: queuedModelRoutingModelPin$ };
-  const { input$: queuedModelRuntimeInput$ } = queuedModelSources;
-  const { modelPin$: queuedModelRuntimeModelPin$ } = routing;
-  const queuedModelRuntimeFeatureSwitchContext$ = computed(
-    async (get): Promise<FeatureSwitchContext> => {
-      const input = await get(queuedModelRuntimeInput$);
-      if (input.featureSwitchContext) {
-        return input.featureSwitchContext;
-      }
-      return await get(context.featureSwitches$);
-    },
-  );
-  const modelKeyId$ = computed(async (get) => {
-    const rows = await get(context.managedModelKeys$);
-    return rows.find((row) => {
-      return row.vendor === AUTO_RUN_KEY_VENDOR;
-    })?.id;
-  });
-  const queuedModelRuntimeBuiltInRuntimeRoute$ = computed(async (get) => {
-    const pin = await get(queuedModelRuntimeModelPin$);
-    if (
-      "status" in pin ||
-      !isBuiltInModelProviderType(pin.modelProviderType) ||
-      !pin.selectedModel
-    ) {
-      return undefined;
-    }
-    const catalog = await get(claimCatalog$);
-    // A new run skips Built-in candidates that lack usage_pricing, like any
-    // unavailable one. Auto, the only Built-in model, has no service tier.
-    const routePricing = builtInRoutePricingFromSnapshot(
-      { serviceTier: undefined, resolution: get(usagePricingResolution$) },
-      await get(context.modelPricing$),
-    );
-    return builtInModelRuntimeRouteFromSnapshot({
-      catalog,
-      selectedModel: pin.selectedModel,
-      modelKeyId: await get(modelKeyId$),
-      routePricing,
-    });
-  });
-  const runtime = {
-    featureSwitchContext$: queuedModelRuntimeFeatureSwitchContext$,
-    builtInRuntimeRoute$: queuedModelRuntimeBuiltInRuntimeRoute$,
-  };
-  const credits = {
-    creditBalance$: computed(async (get) => {
-      return get((await get(queuedIdentityContext$)).credits$);
-    }),
-  };
-  const { input$: queuedProviderAdmissionInput$ } = queuedModelSources;
-  const { modelPin$: queuedProviderAdmissionModelPin$ } = routing;
-  const { creditBalance$: queuedProviderAdmissionCreditBalance$ } = credits;
-  /** The member's own valid subscription route is plan-exempt. */
-  const personalSubscription$ = computed(async (get) => {
-    const [pin, member, catalog] = await Promise.all([
-      get(queuedProviderAdmissionModelPin$),
-      get(queuedModelRoutingMemberRoutes$),
-      get(claimCatalog$),
-    ]);
-    return (
-      !("status" in pin) &&
-      isMemberSubscriptionRoute({
-        catalog,
-        member,
-        model: pin.selectedModel,
-        providerType: pin.modelProviderType,
-      })
-    );
-  });
-  const queuedProviderAdmissionProviderAdmission$ = computed(async (get) => {
-    const pin = await get(queuedProviderAdmissionModelPin$);
-    if ("status" in pin) {
-      throw new Error("Provider admission requires a valid queued model pin");
-    }
-    // Plan facts are prepared for every routed pin before admission.
-    const capabilities = await get(context.plan$);
-    return await resolveQueuedProviderAdmission({
-      catalog: await get(claimCatalog$),
-      pin,
-      providerModelSupport: (await get(queuedProviderAdmissionInput$))
-        .providerModelSupport,
-      personalSubscription: () => {
-        return get(personalSubscription$);
-      },
-      capabilities: () => {
-        return capabilities;
-      },
-      creditBalance: () => {
-        return get(queuedProviderAdmissionCreditBalance$);
-      },
-    });
-  });
-  const admission = {
-    providerAdmission$: queuedProviderAdmissionProviderAdmission$,
-  };
-  const { selection$, capabilities$ } = queuedModelSources;
-  const { modelPin$ } = routing;
-  const { memberAccountSnapshot$: queuedModelMemberAccountSnapshot$ } = member;
-  const {
-    featureSwitchContext$: queuedModelFeatureSwitchContext$,
-    builtInRuntimeRoute$,
-  } = runtime;
-  const { providerAdmission$ } = admission;
-  const queuedModelResolveQueuedModel$ = computed(async (get) => {
-    const [selection] = await Promise.all([
-      get(selection$),
-      get(capabilities$),
-      get(queuedModelFeatureSwitchContext$),
-    ]);
-    if (!selection) {
-      return badRequestMessage("Queued input is missing its model selection");
-    }
-    const pin = await get(modelPin$);
-    if ("status" in pin) {
-      return pin;
-    }
-    const [
-      admission,
-      featureSwitchContext,
-      builtInModelRuntimeRoute,
-      memberAccountSnapshot,
-    ] = await Promise.all([
-      get(providerAdmission$),
-      get(queuedModelFeatureSwitchContext$),
-      get(builtInRuntimeRoute$),
-      get(queuedModelMemberAccountSnapshot$),
-    ]);
-    // `null`: a Built-in pin with no available route.
-    const unpriced =
-      builtInModelRuntimeRoute === null && pin.selectedModel
-        ? await get(
-            unpricedBuiltInModelRejection(
-              {
-                catalog: await get(claimCatalog$),
-                model: pin.selectedModel,
-                serviceTier: undefined,
-                resolution: get(usagePricingResolution$),
-              },
-              context,
-            ),
-          )
-        : undefined;
-    return {
-      pin,
-      providerAdmission: {
-        effectiveModelProvider: admission.effectiveModelProvider,
-        cliAgentType: admission.cliAgentType,
-        error:
-          admission.error ??
-          unpriced ??
-          (admission.hasSpendableCredits
-            ? undefined
-            : pickChatRunModelInsufficientCredits()),
-      },
-      featureSwitchContext,
-      runCodexServiceTier: isAutoSelectedModel(pin.selectedModel)
-        ? undefined
-        : (selection.codexServiceTier ?? undefined),
-      reasoningEffort: isAutoSelectedModel(pin.selectedModel)
-        ? undefined
-        : (selection.reasoningEffort ?? undefined),
-      builtInModelRuntimeRoute,
-      memberAccountSnapshot,
-    };
-  });
-  const resolveQueuedModel$ = queuedModelResolveQueuedModel$;
   const promptInputInput$ = computed(
     async (get): Promise<QueuedPromptGraphInput> => {
       const head = await get(head$);
-      if (!head) {
-        throw new Error("Prompt preparation has no selected head");
-      }
       return {
         head,
         timing: get(promptTiming$),
@@ -2362,13 +1376,9 @@ export function createThreadClaimRunObjects(
     },
   );
   const promptQueuedEventQueuedEvent$ = computed(async (get) => {
-    const { head } = await get(promptInputInput$);
-    const picked = await get(pickedEvent$);
     // The picked head already excludes consumed and revoked inputs.
-    const event =
-      picked?.id === head.id && picked.eventType === "input.prompt"
-        ? picked
-        : null;
+    const picked = await get(pickedEvent$);
+    const event = picked?.eventType === "input.prompt" ? picked : null;
     if (!event) {
       return null;
     }
@@ -2389,7 +1399,7 @@ export function createThreadClaimRunObjects(
       );
     }
     const requiredOfficialWorkflowIds = parsedClaim.ok;
-    const officialAgentClaim = resolveQueuedOfficialWorkflowContext({
+    assertQueuedPromptContext({
       contextType: event.contextType,
       contextId: event.contextId,
       requiredOfficialWorkflowIds,
@@ -2399,7 +1409,6 @@ export function createThreadClaimRunObjects(
       userMessage: event.userMessage,
       contextType: event.contextType,
       requiredOfficialWorkflowIds,
-      officialAgentClaim,
     };
   });
   const promptSourceAutonomyBudgetSourceAutonomyBudget$ = computed(
@@ -2408,22 +1417,7 @@ export function createThreadClaimRunObjects(
       if (!event) {
         return null;
       }
-      if (!event.officialAgentClaim) {
-        return event.sourceAutonomyBudget;
-      }
-      const source = agentRunSourceAnnotation(event.userMessage);
-      if (!source) {
-        throw new QueuedPromptInputInvalidError(
-          "Queued Official agent input is missing its source Run annotation",
-        );
-      }
-      const db = get(db$);
-      const [run] = await db
-        .select({ autonomyBudget: agentRuns.autonomyBudget })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, source.runId))
-        .limit(1);
-      return run?.autonomyBudget ?? null;
+      return event.sourceAutonomyBudget;
     },
   );
   const promptQueuedMessageQueuedMessage$ = computed(
@@ -2447,86 +1441,27 @@ export function createThreadClaimRunObjects(
         autonomyBudget: queuedUserMessageAutonomyBudget(
           event.contextType,
           sourceBudget,
+          get(maxAutonomyBudget$),
         ),
       };
     },
   );
-  const promptAgentAgent$ = computed(
-    async (get): Promise<QueuedPromptAgent | null> => {
-      const { head } = await get(promptInputInput$);
-      if (
-        ![
-          "slack",
-          "feishu",
-          "teams",
-          "discord",
-          "telegram",
-          "agentphone",
-        ].includes(head.contextType ?? "")
-      ) {
-        return { agentId: head.agentId };
-      }
-      const agentId = (await get(context.orgMetadata$))?.defaultAgentId;
-      if (!agentId) {
-        return null;
-      }
-      if (agentId === head.agentId) {
-        return { agentId };
-      }
-      return {
-        agentId,
-        expectedThreadAgentId: head.agentId,
-        producerBinding: {
-          kind: "reassign-agent",
-          agentId,
-          expectedAgentId: head.agentId,
-          userId: head.userId,
-          threadId: head.chatThreadId,
-          orgId: head.orgId,
-        },
-      };
-    },
-  );
-  const promptExecutionContext$ = computed(async (get) => {
-    const [{ head }, agent] = await Promise.all([
-      get(promptInputInput$),
-      get(promptAgentAgent$),
-    ]);
-    if (!agent) {
-      throw new Error("Prompt preparation lost its selected Agent");
-    }
-    return matchAgentRunContextSignals(
-      context,
-      head.userId,
-      head.orgId,
-      agent.agentId,
-    );
-  });
   const promptArgsArgs$ = computed(
     async (get): Promise<CreateQueuedChatRunInputArgs> => {
       const { head, timing } = await get(promptInputInput$);
       const db = get(db$);
-      const [queuedMessage, agent] = await Promise.all([
-        get(promptQueuedMessageQueuedMessage$),
-        get(promptAgentAgent$),
-      ]);
-      if (!queuedMessage || queuedMessage.id !== head.id || !agent) {
-        throw new Error("Prompt preparation lost its selected head or agent");
+      const queuedMessage = await get(promptQueuedMessageQueuedMessage$);
+      if (!queuedMessage || queuedMessage.id !== head.id) {
+        throw new Error("Prompt preparation lost its selected head");
       }
       return {
         db,
         threadId: head.chatThreadId,
-        userId: head.userId,
-        agent: { id: agent.agentId, orgId: head.orgId },
-        expectedThreadAgentId: agent.expectedThreadAgentId,
+        userId: bootstrap.userId,
+        agent: { id: bootstrap.agentId, orgId: bootstrap.orgId },
         queuedMessage,
         timing,
       };
-    },
-  );
-  const promptFeaturesFeatures$ = computed(
-    (get): Promise<FeatureSwitchContext> => {
-      return get(context.featureSwitches$);
     },
   );
   const promptMaterialMaterial$ = computed(
@@ -2638,100 +1573,9 @@ export function createThreadClaimRunObjects(
       throw new QueuedPromptLaunchUnavailableError();
     },
   );
-  const promptModelModel$ = computed(async (get) => {
-    return await get(promptResolvePromptModelResolvePromptModel$);
-  });
-  const promptSessionSession$ = computed(
-    async (get): Promise<ChatThreadSessionResolution | null> => {
-      const [args, model] = await Promise.all([
-        get(promptArgsArgs$),
-        get(promptModelModel$),
-      ]);
-      if ("error" in model) {
-        return null;
-      }
-      const { routedModel } = routeQueuedMessagePiExecution({
-        input: args,
-        modelRoute: model.route,
-      });
-      const thread = await get(threadRow$);
-      if (
-        !thread ||
-        thread.id !== args.threadId ||
-        thread.userId !== args.userId ||
-        thread.agentId !== (args.expectedThreadAgentId ?? args.agent.id)
-      ) {
-        throw new Error(
-          "Chat thread not found while resolving session binding",
-        );
-      }
-      const agent = await get((await get(promptExecutionContext$)).agent$);
-      return resolveChatThreadSessionSnapshot(
-        capturedChatThreadSessionSnapshot(
-          thread,
-          await get(sessionRead$),
-          agent,
-        ),
-        {
-          route: {
-            selectedModel: routedModel.modelPin.selectedModel,
-            cliAgentType: routedModel.cliAgentType,
-          },
-        },
-      );
-    },
-  );
-  const rotatedPrompt$ = createRotatedPrompt(
-    pickedEvent$,
-    session$,
-    memberRoutes$,
-    claimCatalog$,
-  );
-  const templateOrgId = claim.orgId;
-  const runTemplates$ = createRunTemplates(
-    pickedEvent$,
-    templateOrgId,
-    promptFeaturesFeatures$,
-  );
-  const promptAndSkills$ = computed(async (get) => {
-    const [integration, continuation, templates] = await Promise.all([
-      get(selectedIntegrationPrompt$),
-      get(rotatedPrompt$),
-      get(runTemplates$),
-    ]);
-    if (!integration) {
-      return null;
-    }
-    if ("error" in templates) {
-      return templates;
-    }
-    return mergeRunPromptAndSkills([integration, continuation, templates]);
-  });
-  const promptHostHost$ = computed(async (get) => {
-    const [{ head }, thread] = await Promise.all([
-      get(promptInputInput$),
-      get(threadRow$),
-    ]);
-    if (!thread?.computerUseHostId) {
-      return null;
-    }
-    const [host] = await get(db$)
-      .select({
-        hostId: computerUseHosts.id,
-        displayName: computerUseHosts.displayName,
-      })
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.id, thread.computerUseHostId),
-          eq(computerUseHosts.orgId, head.orgId),
-          eq(computerUseHosts.userId, head.userId),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .limit(1);
-    return host ?? null;
-  });
+  const promptSessionSession$ = threadContext.threadSession$;
+  const runTemplates$ = threadContext.templates$;
+  const promptHostHost$ = threadContext.computerUseHostGrant$;
   const promptCaptureCapture$ = computed(async (get) => {
     const { head } = await get(promptInputInput$);
     if (requestFacts?.input.id === head.id) {
@@ -2749,32 +1593,17 @@ export function createThreadClaimRunObjects(
     async (
       get,
     ): Promise<CreateQueuedChatRunInput | QueuedMessageAdmissionFailure> => {
-      const [
-        args,
-        launch,
-        context,
-        userIdentity,
-        model,
-        session,
-        host,
-        capture,
-        features,
-      ] = await Promise.all([
-        get(promptArgsArgs$),
-        get(promptMaterialMaterial$),
-        get(promptAndSkills$),
-        get(threadUserIdentity$),
-        get(promptModelModel$),
-        get(promptSessionSession$),
-        get(promptHostHost$),
-        get(promptCaptureCapture$),
-        get(promptFeaturesFeatures$),
-      ]);
-      if (!context) {
-        throw args.queuedMessage.contextType === "discord"
-          ? new DiscordQueuedLaunchUnavailableError()
-          : new QueuedPromptLaunchUnavailableError();
-      }
+      const [args, launch, model, session, host, capture, features, templates] =
+        await Promise.all([
+          get(promptArgsArgs$),
+          get(promptMaterialMaterial$),
+          get(threadContext.modelSelection$),
+          get(promptSessionSession$),
+          get(promptHostHost$),
+          get(promptCaptureCapture$),
+          get(bootstrap.featureSwitches$),
+          get(runTemplates$),
+        ]);
       const autonomy = args.queuedMessage.autonomyBudget;
       if (autonomy.kind !== "ok") {
         return queuedMessageAdmissionFailure(args, launch, {
@@ -2788,21 +1617,35 @@ export function createThreadClaimRunObjects(
               : autonomy.message,
         });
       }
-      if ("error" in model) {
-        return queuedMessageAdmissionFailure(args, launch, model.error);
+      if ("status" in model) {
+        return queuedMessageAdmissionFailure(args, launch, model.body.error);
       }
-      if ("error" in context) {
-        return queuedMessageAdmissionFailure(args, launch, context.error);
+      if ("error" in templates) {
+        return queuedMessageAdmissionFailure(args, launch, templates.error);
+      }
+      const officialWorkflow = await get(officialWorkflow$);
+      if (isRouteError(officialWorkflow)) {
+        return queuedMessageAdmissionFailure(
+          args,
+          launch,
+          officialWorkflow.body.error,
+        );
+      }
+      const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
+      if (isRouteError(promptAndSkills)) {
+        return queuedMessageAdmissionFailure(
+          args,
+          launch,
+          promptAndSkills.body.error,
+        );
       }
       if (!session) {
         throw new Error("A valid prompt model is missing session preparation");
       }
       return queuedPromptRunInput({
-        catalog: await get(claimCatalog$),
         input: args,
         launch,
-        promptAndSkills: context,
-        userIdentity,
+        promptAndSkills,
         model,
         session,
         host,
@@ -2811,67 +1654,14 @@ export function createThreadClaimRunObjects(
       });
     },
   );
-  const promptResolvePromptModelResolvePromptModel$ = computed(
-    async (get): Promise<QueuedMessageModelRouteResolution> => {
-      const model = await get(resolveQueuedModel$);
-      if ("status" in model) {
-        return { error: model.body.error };
-      }
-      if (model.providerAdmission.error) {
-        return { error: model.providerAdmission.error.body.error };
-      }
-      if (
-        isBuiltInModelProviderType(
-          model.providerAdmission.effectiveModelProvider,
-        ) &&
-        !model.builtInModelRuntimeRoute
-      ) {
-        return {
-          error: {
-            code: "MODEL_PROVIDER_UNAVAILABLE",
-            message:
-              "Every built-in model route for this model is temporarily unavailable",
-          },
-        };
-      }
-      return {
-        route: {
-          modelPin: model.pin,
-          memberAccountSnapshot: model.memberAccountSnapshot,
-          effectiveModelProvider:
-            model.providerAdmission.effectiveModelProvider,
-          builtInModelRuntimeRoute: model.builtInModelRuntimeRoute ?? undefined,
-          piCatalogModel: piCatalogModel(
-            await get(claimCatalog$),
-            model.pin.selectedModel,
-          ),
-          cliAgentType: model.providerAdmission.cliAgentType,
-          codexServiceTier: model.runCodexServiceTier,
-          reasoningEffort: model.reasoningEffort,
-        },
-      };
-    },
-  );
   const internalEarlyAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly | null> => {
       const head = await get(head$);
-      if (!head) {
-        return { kind: "not-ready" };
-      }
-      const selected = await settle(
-        Promise.all([
-          get(promptQueuedMessageQueuedMessage$),
-          get(promptAgentAgent$),
-        ]),
-      );
+      const selected = await settle(get(promptQueuedMessageQueuedMessage$));
       if (!selected.ok) {
         return queuedPromptPreparationRejection(selected.error, head);
       }
-      const [queued, agent] = selected.value;
-      if (queued?.id !== head.id) {
-        return { kind: "not-ready" };
-      }
-      return agent ? null : missingQueuedAgentRejection(head);
+      return selected.value?.id === head.id ? null : { kind: "not-ready" };
     },
   );
   const initializeQueuedPrompt$ = command(
@@ -2927,17 +1717,13 @@ export function createThreadClaimRunObjects(
           rejection: queuedMessageRejection(runInput),
         };
       }
-      const agent = await get(promptAgentAgent$);
-      if (!agent) {
-        return missingQueuedAgentRejection(head);
-      }
       return {
         kind: "assembled",
         run: {
           ...buildQueuedRunCommand(runInput, head.apiStartTime),
           timing: input.runTiming,
         },
-        producerBinding: agent.producerBinding ?? null,
+        producerBinding: null,
         rejection: { kind: "prompt", runInput },
         launchRecord: {
           kind: "prompt",
@@ -2975,7 +1761,6 @@ export function createThreadClaimRunObjects(
       apiStartTime: head.apiStartTime,
       agentId: args.agent.id,
       chatThreadId: args.threadId,
-      expectedThreadAgentId: args.expectedThreadAgentId,
       queueFirstAssociation: {
         threadId: args.threadId,
         eventId: args.queuedMessage.id,
@@ -2989,15 +1774,11 @@ export function createThreadClaimRunObjects(
     }
     const [args, model] = await Promise.all([
       get(promptArgsArgs$),
-      get(promptModelModel$),
+      get(threadContext.modelSelection$),
     ]);
-    if ("error" in model || args.queuedMessage.autonomyBudget.kind !== "ok") {
+    if ("status" in model || args.queuedMessage.autonomyBudget.kind !== "ok") {
       return null;
     }
-    const { piExecution, routedModel } = routeQueuedMessagePiExecution({
-      input: args,
-      modelRoute: model.route,
-    });
     return {
       db: identity.db,
       timing: identity.timing,
@@ -3006,41 +1787,14 @@ export function createThreadClaimRunObjects(
         apiStartTime: identity.apiStartTime,
         body: {
           agentId: identity.agentId,
-          ...workflowModelProviderBody(routedModel.effectiveModelProvider),
+          ...workflowModelProviderBody(model.modelProviderType),
         },
         chatThreadId: args.threadId,
-        expectedThreadAgentId: args.expectedThreadAgentId,
         queueFirstAssociation: identity.queueFirstAssociation,
-        agentRunModelPin: {
-          modelProvider: routedModel.effectiveModelProvider ?? null,
-          modelProviderId: routedModel.modelPin.modelProviderId,
-          modelProviderCredentialScope:
-            routedModel.modelPin.modelProviderCredentialScope,
-          selectedModel: routedModel.modelPin.selectedModel,
-        },
-        modelProviderId: routedModel.modelPin.modelProviderId ?? undefined,
-        modelProviderCredentialScope:
-          routedModel.modelPin.modelProviderCredentialScope ?? undefined,
-        selectedModelOverride: routedModel.modelPin.selectedModel ?? undefined,
-        builtInModelRuntimeRoute: routedModel.builtInModelRuntimeRoute,
-        threadSessionRoute: {
-          selectedModel: routedModel.modelPin.selectedModel,
-          cliAgentType: routedModel.cliAgentType,
-        },
-        codexServiceTier: routedModel.codexServiceTier,
-        reasoningEffort: resolveReasoningEffortForDispatch({
-          catalog: await get(claimCatalog$),
-          selectedModel: routedModel.modelPin.selectedModel,
-          modelProviderType: routedModel.effectiveModelProvider,
-          effort: routedModel.reasoningEffort ?? undefined,
-          runtimeProviderType:
-            routedModel.builtInModelRuntimeRoute?.providerType ??
-            routedModel.effectiveModelProvider,
-          piExecution,
-        }),
+        ...threadRunModelFields(model),
+        reasoningEffort: model.reasoningEffort,
         requiredOfficialWorkflowIds:
           args.queuedMessage.requiredOfficialWorkflowIds,
-        piExecution,
         timing: identity.timing,
       },
     };
@@ -3059,7 +1813,7 @@ export function createThreadClaimRunObjects(
     async (get) => {
       return (await get(internalEarlyAssembly$))
         ? undefined
-        : await get(promptFeaturesFeatures$);
+        : await get(bootstrap.featureSwitches$);
     },
   );
   const availableMaterial$ = computed(async (get) => {
@@ -3094,83 +1848,10 @@ export function createThreadClaimRunObjects(
       ...queuedIntegrationLaunchFields(material, args.agent.id),
     });
   });
-  const promptExecutionResourcesConnectorSourceId$ = computed(async (get) => {
-    const head = await get(head$);
-    // Web/agent prompts never carry an integration account source. Do not wait
-    // for prompt material just to discover this already-known absence.
-    if (head?.contextType === "web" || head?.contextType === "agent_run") {
-      return undefined;
-    }
-    return (await get(availableMaterial$))?.connectorSourceId;
-  });
-  const promptExecutionResourcesStorageBody$ = computed(async (get) => {
-    if (await get(internalEarlyAssembly$)) {
-      return {};
-    }
-    const context = await settle(get(promptAndSkills$));
-    if (!context.ok) {
-      queuedPromptPreparationRejection(
-        context.error,
-        (await get(promptInputInput$)).head,
-      );
-      return {};
-    }
-    return !context.value || "error" in context.value
-      ? {}
-      : additionalVolumesForRun(
-          renderRunPromptAndSkills(context.value).skillVolumes,
-        );
-  });
-  const internalTargetRevision$ = state(0);
   const event$ = automationContext$;
-  const capturedAutomationTarget$ = computed(
-    async (get): Promise<LaunchTarget | null> => {
-      const event = await get(event$);
-      if (!event) {
-        return null;
-      }
-      const [row] = await get(db$)
-        .select({
-          automation: workflowAutomationColumns(),
-          agentId: workflows.agentId,
-        })
-        .from(workflowAutomations)
-        .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-        .where(eq(workflowAutomations.id, event.automationId))
-        .limit(1);
-      return row ?? null;
-    },
-  );
-  const target$ = computed(async (get): Promise<LaunchTarget | null> => {
-    if (get(internalTargetRevision$) === 0) {
-      return get(capturedAutomationTarget$);
-    }
-    const event = await get(event$);
-    if (!event) {
-      return null;
-    }
-    const [row] = await get(db$)
-      .select({
-        automation: workflowAutomationColumns(),
-        agentId: workflows.agentId,
-      })
-      .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-      .where(eq(workflowAutomations.id, event.automationId))
-      .limit(1);
-    return row ?? null;
-  });
-  const queuedAutomationRunSources = {
-    internalTargetRevision$: internalTargetRevision$,
-    event$: event$,
-    target$: target$,
-  };
-  const {
-    event$: queuedAutomationBudgetEvent$,
-    target$: queuedAutomationBudgetTarget$,
-  } = queuedAutomationRunSources;
+  const target$ = threadContext.automationTarget$;
   const queuedAutomationBudgetSourceAutonomyBudget$ = computed(async (get) => {
-    const event = await get(queuedAutomationBudgetEvent$);
+    const event = await get(event$);
     if (!event) {
       return null;
     }
@@ -3195,8 +1876,8 @@ export function createThreadClaimRunObjects(
   const autonomyBudget$ = computed(
     async (get): Promise<AutonomyBudgetResult> => {
       const [event, target, source] = await Promise.all([
-        get(queuedAutomationBudgetEvent$),
-        get(queuedAutomationBudgetTarget$),
+        get(event$),
+        get(target$),
         get(queuedAutomationBudgetSourceAutonomyBudget$),
       ]);
       if (!event || !target || !source) {
@@ -3248,25 +1929,12 @@ export function createThreadClaimRunObjects(
         : { kind: "ok", autonomyBudget: derived.autonomyBudget };
     },
   );
-  const budget = {
-    sourceAutonomyBudget$: queuedAutomationBudgetSourceAutonomyBudget$,
-    autonomyBudget$: autonomyBudget$,
-  };
-  const {
-    event$: queuedAutomationMaterialEvent$,
-    target$: queuedAutomationMaterialTarget$,
-  } = queuedAutomationRunSources;
   const launchMaterial$ = computed(async (get) => {
-    const [event, target, prompt] = await Promise.all([
-      get(queuedAutomationMaterialEvent$),
-      get(queuedAutomationMaterialTarget$),
-      get(automationPrompt$),
-    ]);
-    if (!event || !target || !prompt) {
+    const [event, target] = await Promise.all([get(event$), get(target$)]);
+    if (!event || !target) {
       return null;
     }
     return buildWorkflowAutomationQueuedLaunchMaterial({
-      prompt,
       workflowName: event.workflowName,
       eventType: event.eventType,
       eventPayload: event.eventPayload,
@@ -3275,34 +1943,7 @@ export function createThreadClaimRunObjects(
       chatThreadId: event.chatThreadId,
     });
   });
-  const material = { launchMaterial$: launchMaterial$ };
-  const {
-    internalTargetRevision$:
-      queuedAutomationReconciliationInternalTargetRevision$,
-  } = queuedAutomationRunSources;
-  const reconcileOfficialWorkflow$ = command(
-    async ({ set }, target: LaunchTarget, signal: AbortSignal) => {
-      const reconciled = await set(
-        reconcileOfficialWorkflowInstallation$,
-        {
-          orgId: target.automation.orgId,
-          member: { userId: target.automation.ownerUserId, role: "member" },
-          workflowId: target.automation.workflowId,
-          targetAutomationId: target.automation.id,
-        },
-        signal,
-      );
-      set(queuedAutomationReconciliationInternalTargetRevision$, (revision) => {
-        return revision + 1;
-      });
-      return reconciled;
-    },
-  );
-  const reconciliation = {
-    reconcileOfficialWorkflow$: reconcileOfficialWorkflow$,
-  };
-  // The admitted automation's launch arguments, derived from the same reads
-  // (after any reconciliation revision) that initializeQueuedAutomation used.
+  // The admitted automation's launch arguments use its captured target.
   const automationLaunchReadinessInput$ = computed(
     async (get): Promise<AssembleWorkflowAutomationRunArgs> => {
       const [head, event, target, launchMaterial, autonomyBudget] =
@@ -3314,7 +1955,6 @@ export function createThreadClaimRunObjects(
           get(autonomyBudget$),
         ]);
       if (
-        !head ||
         !event ||
         !target ||
         !launchMaterial ||
@@ -3331,192 +1971,7 @@ export function createThreadClaimRunObjects(
       });
     },
   );
-  const previousRunFailure$ = computed(
-    async (get): Promise<RunFailure | null> => {
-      const args = await get(automationLaunchReadinessInput$);
-      const { automation } = args.due;
-      if (args.activePreviousRunPolicy === "allow" || !automation.lastRunId) {
-        return null;
-      }
-      const [run] = await get(db$)
-        .select({ status: agentRuns.status })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, automation.lastRunId))
-        .limit(1);
-      return run && isActivePreviousRunStatus(run.status)
-        ? { kind: "conflict", message: "Previous run is still active" }
-        : null;
-    },
-  );
-  const ownerMember$ = computed(async (get) => {
-    const { automation } = (await get(automationLaunchReadinessInput$)).due;
-    const [member] = await get(db$)
-      .select({ role: orgMembersCache.role })
-      .from(orgMembersCache)
-      .where(
-        and(
-          eq(orgMembersCache.orgId, automation.orgId),
-          eq(orgMembersCache.userId, automation.ownerUserId),
-        ),
-      )
-      .limit(1);
-    return member ?? null;
-  });
-  const visibleTarget$ = computed(async (get) => {
-    const { automation } = (await get(automationLaunchReadinessInput$)).due;
-    const [target] = await get(db$)
-      .select({
-        agentId: workflows.agentId,
-        owner: agents.owner,
-        visibility: agents.visibility,
-      })
-      .from(workflows)
-      .innerJoin(agents, eq(workflows.agentId, agents.id))
-      .where(
-        and(
-          eq(workflows.orgId, automation.orgId),
-          eq(workflows.id, automation.workflowId),
-          visibleWorkflowCondition({
-            userId: automation.ownerUserId,
-            role: "member",
-          }),
-        ),
-      )
-      .limit(1);
-    return target ?? null;
-  });
-  const targetReadable$ = computed(async (get) => {
-    const { automation, agentId, allowClaimedOnceScheduleAutomation } = (
-      await get(automationLaunchReadinessInput$)
-    ).due;
-    const claimedOnceSchedule =
-      allowClaimedOnceScheduleAutomation === true &&
-      automation.kind === "schedule" &&
-      automation.scheduleType === "once" &&
-      automation.nextRunAt === null &&
-      automation.lastRunAt !== null;
-    if (
-      (!automation.enabled && !claimedOnceSchedule) ||
-      (automation.officialBlueprintKey !== null &&
-        automation.officialReconciliationStatus !== "current")
-    ) {
-      return false;
-    }
-    const [member, target] = await Promise.all([
-      get(ownerMember$),
-      get(visibleTarget$),
-    ]);
-    return (
-      member !== null &&
-      target !== null &&
-      target.agentId === agentId &&
-      (target.visibility === "public" ||
-        target.owner === automation.ownerUserId)
-    );
-  });
-  const automationLaunchReadinessReadiness$ = computed(
-    async (get): Promise<RunFailure | null> => {
-      const [previousFailure, readable] = await Promise.all([
-        get(previousRunFailure$),
-        get(targetReadable$),
-      ]);
-      return (
-        previousFailure ??
-        (readable
-          ? null
-          : {
-              kind: "conflict",
-              message: "Workflow automation is paused or no longer readable",
-            })
-      );
-    },
-  );
-  const workflowAutomationLaunchReadGraphSources = {
-    input$: automationLaunchReadinessInput$,
-    readiness$: automationLaunchReadinessReadiness$,
-  };
-  const {
-    input$: workflowAutomationLaunchReadGraphInput$,
-    readiness$: workflowAutomationLaunchReadGraphReadiness$,
-  } = workflowAutomationLaunchReadGraphSources;
-  const { input$: automationLaunchMaterialsInput$ } =
-    workflowAutomationLaunchReadGraphSources;
-  const automationLaunchMaterialsComputerUseHostGrant$ = computed(
-    async (get): Promise<ComputerUseHostGrant> => {
-      const { automation, chatThreadId } = (
-        await get(automationLaunchMaterialsInput$)
-      ).due;
-      const [host] = await get(db$)
-        .select({
-          hostId: computerUseHosts.id,
-          displayName: computerUseHosts.displayName,
-        })
-        .from(chatThreads)
-        .innerJoin(
-          computerUseHosts,
-          eq(chatThreads.computerUseHostId, computerUseHosts.id),
-        )
-        .where(
-          and(
-            eq(chatThreads.id, chatThreadId),
-            eq(chatThreads.userId, automation.ownerUserId),
-            eq(computerUseHosts.orgId, automation.orgId),
-            eq(computerUseHosts.userId, automation.ownerUserId),
-            isNull(computerUseHosts.revokedAt),
-          ),
-        )
-        .limit(1);
-      return host ?? null;
-    },
-  );
-  const automationLaunchMaterialsRunInput$ = computed(
-    async (get): Promise<WorkflowAutomationRunInput> => {
-      const args = await get(automationLaunchMaterialsInput$);
-      const computerUseHostGrant = await get(
-        automationLaunchMaterialsComputerUseHostGrant$,
-      );
-      const integration = await get(automationPrompt$);
-      if (!integration) {
-        throw new Error("Admitted automation is missing its prompt");
-      }
-      const prompt = renderRunPromptAndSkills(
-        mergeRunPromptAndSkills([
-          integration,
-          {
-            systemPromptVariables: {
-              userIdentity: await get(threadUserIdentity$),
-              computerUseContext:
-                appendComputerUseSystemPrompt(
-                  undefined,
-                  computerUseHostGrant,
-                ) ?? "",
-            },
-            userPromptVariables: {},
-            skillVolumes: [],
-          },
-        ]),
-      );
-      return {
-        prompt: prompt.userPrompt,
-        additionalVolumes: prompt.skillVolumes,
-        appendSystemPrompt: prompt.systemPrompt,
-        callbacks: args.callbacks,
-        agentRunMetadata: workflowAutomationRunMetadata(
-          args.due.automation,
-          args.triggerBrief,
-          args.autonomyBudget,
-        ),
-      };
-    },
-  );
-  const workflowAutomationLaunchReadGraphComputerUseHostGrant$ =
-    automationLaunchMaterialsComputerUseHostGrant$;
-  const workflowAutomationLaunchReadGraphRunInput$ =
-    automationLaunchMaterialsRunInput$;
-  // Both claim paths share one queued model graph; its input follows the head.
-  const automationLaunchEffectsResolveQueuedModel$ =
-    queuedModelResolveQueuedModel$;
-  const automationLaunchEffectsRecordQueuedWorkflowReward$ = command(
+  const recordQueuedWorkflowReward$ = command(
     async (
       { set },
       args: AssembleWorkflowAutomationRunArgs,
@@ -3535,37 +1990,33 @@ export function createThreadClaimRunObjects(
       signal.throwIfAborted();
     },
   );
-  const workflowAutomationLaunchReadGraphRecordQueuedWorkflowReward$ =
-    automationLaunchEffectsRecordQueuedWorkflowReward$;
-  const workflowAutomationLaunchReadGraphTiming$ = computed((get) => {
+  const timing$ = computed((get) => {
     return get(claimRunTiming$).run;
   });
-  const workflowAutomationLaunchReadGraphModel$ = computed(
-    async (get): Promise<ModelContext> => {
-      const args = await get(automationExecutionInput$);
-      if (!args) {
+  const workflowAutomationLaunchModel$ = computed(
+    async (get): Promise<ThreadModelSelection | RunFailure> => {
+      if (!(await get(automationExecutionInput$))) {
         return {
-          ok: false,
-          failure: {
-            kind: "conflict",
-            message: "Workflow automation no longer exists",
-          },
+          kind: "conflict",
+          message: "Workflow automation no longer exists",
         };
       }
-      return workflowModelContext(
-        await get(claimCatalog$),
-        args.due.chatThreadId,
-        await get(automationLaunchEffectsResolveQueuedModel$),
-      );
+      const model = await get(threadContext.modelSelection$);
+      return "status" in model
+        ? {
+            kind: "run_error",
+            response: { status: model.status, body: model.body },
+          }
+        : model;
     },
   );
   const automationExecutionInput$ = computed(async (get) => {
     const [head, event, target] = await Promise.all([
       get(head$),
       get(event$),
-      get(capturedAutomationTarget$),
+      get(target$),
     ]);
-    if (!head || !event || !target) {
+    if (!event || !target) {
       return null;
     }
     return {
@@ -3576,72 +2027,54 @@ export function createThreadClaimRunObjects(
       triggerSource: manualTriggerSource(target.automation),
     };
   });
-  const workflowAutomationLaunchReadGraphIdentityInput$ = computed(
-    async (get) => {
-      const args = await get(automationExecutionInput$);
-      if (!args) {
-        return null;
-      }
-      return {
-        timing: get(workflowAutomationLaunchReadGraphTiming$),
-        owner: workflowAutomationRunOwner(args.due.automation),
-        apiStartTime: args.apiStartTime,
-        agentId: args.due.agentId,
-        chatThreadId: args.due.chatThreadId,
-        queueFirstAssociation: {
-          threadId: args.due.chatThreadId,
-          eventId: args.queueEventId,
-        },
-      };
-    },
-  );
-  const workflowAutomationLaunchReadGraphSelectionInput$ = computed(
-    async (get) => {
-      const [identity, model, args] = await Promise.all([
-        get(workflowAutomationLaunchReadGraphIdentityInput$),
-        get(workflowAutomationLaunchReadGraphModel$),
-        get(automationExecutionInput$),
-      ]);
-      return identity && model.ok && args
-        ? {
-            timing: identity.timing,
-            command: automationSelectionCommand(args, model, identity.timing),
-          }
-        : null;
-    },
-  );
-  const workflowAutomationLaunchInput$ =
-    workflowAutomationLaunchReadGraphInput$;
-  const readiness$ = workflowAutomationLaunchReadGraphReadiness$;
-  const computerUseHostGrant$ =
-    workflowAutomationLaunchReadGraphComputerUseHostGrant$;
-  const workflowAutomationLaunchRunInput$ =
-    workflowAutomationLaunchReadGraphRunInput$;
-  const recordQueuedWorkflowReward$ =
-    workflowAutomationLaunchReadGraphRecordQueuedWorkflowReward$;
-  const timing$ = workflowAutomationLaunchReadGraphTiming$;
-  const workflowAutomationLaunchModel$ =
-    workflowAutomationLaunchReadGraphModel$;
-  const workflowAutomationLaunchIdentityInput$ =
-    workflowAutomationLaunchReadGraphIdentityInput$;
-  const workflowAutomationLaunchSelectionInput$ =
-    workflowAutomationLaunchReadGraphSelectionInput$;
+  const workflowAutomationLaunchIdentityInput$ = computed(async (get) => {
+    const args = await get(automationExecutionInput$);
+    if (!args) {
+      return null;
+    }
+    return {
+      timing: get(timing$),
+      owner: { orgId: bootstrap.orgId, userId: bootstrap.userId },
+      apiStartTime: args.apiStartTime,
+      agentId: bootstrap.agentId,
+      chatThreadId: args.due.chatThreadId,
+      queueFirstAssociation: {
+        threadId: args.due.chatThreadId,
+        eventId: args.queueEventId,
+      },
+    };
+  });
+  const workflowAutomationLaunchSelectionInput$ = computed(async (get) => {
+    const [identity, model, args] = await Promise.all([
+      get(workflowAutomationLaunchIdentityInput$),
+      get(workflowAutomationLaunchModel$),
+      get(automationExecutionInput$),
+    ]);
+    return identity && !("kind" in model) && args
+      ? {
+          timing: identity.timing,
+          command: automationSelectionCommand(args, model, identity),
+        }
+      : null;
+  });
   const assembleWorkflowAutomationRun$ = computed(
     async (get): Promise<AssembledWorkflowAutomationRun | RunFailure> => {
-      const args = await get(workflowAutomationLaunchInput$);
-      const [selection, model, computerUseHostGrant, runInput, readiness] =
-        await Promise.all([
-          get(workflowAutomationLaunchSelectionInput$),
-          get(workflowAutomationLaunchModel$),
-          get(computerUseHostGrant$),
-          get(workflowAutomationLaunchRunInput$),
-          get(readiness$),
-        ]);
-      if (readiness) {
-        return readiness;
+      const args = await get(automationLaunchReadinessInput$);
+      const [selection, model, computerUseHostGrant] = await Promise.all([
+        get(workflowAutomationLaunchSelectionInput$),
+        get(workflowAutomationLaunchModel$),
+        get(threadContext.computerUseHostGrant$),
+      ]);
+      if ("kind" in model) {
+        return model;
       }
-      if (!model.ok) {
-        return model.failure;
+      const officialWorkflow = await get(officialWorkflow$);
+      if (isRouteError(officialWorkflow)) {
+        return { kind: "run_error", response: officialWorkflow };
+      }
+      const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
+      if (isRouteError(promptAndSkills)) {
+        return { kind: "run_error", response: promptAndSkills };
       }
       if (!selection) {
         throw new Error(
@@ -3653,15 +2086,13 @@ export function createThreadClaimRunObjects(
         run: {
           ...selection.command,
           triggerSource: args.triggerSource ?? "automation-schedule",
-          body: {
-            ...selection.command.body,
-            prompt: runInput.prompt,
-            ...additionalVolumesForRun(runInput.additionalVolumes),
-          },
           computerUseHostId: computerUseHostGrant?.hostId,
-          appendSystemPrompt: runInput.appendSystemPrompt,
-          callbacks: runInput.callbacks,
-          agentRunMetadata: runInput.agentRunMetadata,
+          callbacks: args.callbacks,
+          agentRunMetadata: workflowAutomationRunMetadata(
+            args.due.automation,
+            args.triggerBrief,
+            args.autonomyBudget,
+          ),
         },
         producerBinding: {
           kind: "automation",
@@ -3701,25 +2132,14 @@ export function createThreadClaimRunObjects(
       return assembly.kind === "assembled" ? args : null;
     },
   );
-  const workflowAutomationLaunchAssembly$ = assembleWorkflowAutomationRun$;
-  const {
-    event$: queuedAutomationAssemblerEvent$,
-    target$: queuedAutomationAssemblerTarget$,
-  } = queuedAutomationRunSources;
-  const { launchMaterial$: queuedAutomationAssemblerLaunchMaterial$ } =
-    material;
   // A head whose automation input can no longer be read is rejected from its
-  // reads; rejections that depend on reconciliation are returned by the
-  // initialization command instead.
+  // captured reads.
   const queuedAutomationAssemblerInternalEarlyAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly | null> => {
       if (await get(automationExecutionInput$)) {
         return null;
       }
       const head = await get(head$);
-      if (!head) {
-        return { kind: "not-ready" };
-      }
       return {
         kind: "rejected",
         rejection: {
@@ -3732,20 +2152,6 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const {
-    event$: initializeQueuedAutomationEvent$,
-    target$: initializeQueuedAutomationTarget$,
-  } = queuedAutomationRunSources;
-  const {
-    sourceAutonomyBudget$: initializeQueuedAutomationSourceAutonomyBudget$,
-    autonomyBudget$: initializeQueuedAutomationAutonomyBudget$,
-  } = budget;
-  const { launchMaterial$: initializeQueuedAutomationLaunchMaterial$ } =
-    material;
-  const {
-    reconcileOfficialWorkflow$:
-      initializeQueuedAutomationReconcileOfficialWorkflow$,
-  } = reconciliation;
   const initializeAutomationExecution$ = command(
     (
       _store,
@@ -3761,7 +2167,7 @@ export function createThreadClaimRunObjects(
   );
   const initializeQueuedAutomationInitializeQueuedAutomation$ = command(
     async (
-      { get, set },
+      { get },
       head: ChatQueueHeadContext,
       signal: AbortSignal,
     ): Promise<QueuedAutomationLaunch> => {
@@ -3775,9 +2181,9 @@ export function createThreadClaimRunObjects(
         };
       };
       const [event, loadedTarget] = await Promise.all([
-        get(initializeQueuedAutomationEvent$),
-        get(initializeQueuedAutomationTarget$),
-        get(initializeQueuedAutomationSourceAutonomyBudget$),
+        get(event$),
+        get(target$),
+        get(queuedAutomationBudgetSourceAutonomyBudget$),
       ]);
       signal.throwIfAborted();
       if (!event || !loadedTarget) {
@@ -3789,43 +2195,20 @@ export function createThreadClaimRunObjects(
           ),
         );
       }
-      if (loadedTarget.automation.officialBlueprintKey !== null) {
-        const reconciled = await set(
-          initializeQueuedAutomationReconcileOfficialWorkflow$,
-          loadedTarget,
-          signal,
+      if (
+        loadedTarget.workflow.officialDefinitionName !== null &&
+        event.eventType === "manual"
+      ) {
+        return rejectedAutomationLaunch(
+          unreadable(OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE),
         );
-        if (reconciled.kind !== "current") {
-          return rejectedAutomationLaunch({
-            kind: "rejected",
-            rejection: {
-              error: {
-                code: "CONFLICT",
-                message: reconciliationConflictMessage(reconciled),
-              },
-              userId: loadedTarget.automation.ownerUserId,
-            },
-          });
-        }
       }
-      const [target, material, autonomyBudget] = await Promise.all([
-        get(initializeQueuedAutomationTarget$),
-        get(initializeQueuedAutomationLaunchMaterial$),
-        get(initializeQueuedAutomationAutonomyBudget$),
+      const target = loadedTarget;
+      const [material, autonomyBudget] = await Promise.all([
+        get(launchMaterial$),
+        get(autonomyBudget$),
       ]);
       signal.throwIfAborted();
-      if (!target) {
-        return rejectedAutomationLaunch({
-          kind: "rejected",
-          rejection: {
-            userId: loadedTarget.automation.ownerUserId,
-            error: {
-              code: "CONFLICT",
-              message: "Official Workflow automation no longer exists",
-            },
-          },
-        });
-      }
       if (!material) {
         return rejectedAutomationLaunch({
           kind: "rejected",
@@ -3885,12 +2268,12 @@ export function createThreadClaimRunObjects(
         return early;
       }
       const [assembled, target] = await Promise.all([
-        get(workflowAutomationLaunchAssembly$),
-        get(queuedAutomationAssemblerTarget$),
+        get(assembleWorkflowAutomationRun$),
+        get(target$),
       ]);
       if (!target) {
         throw new Error(
-          "Automation target disappeared within its captured revision",
+          "Automation target disappeared within its captured reads",
         );
       }
       if (assembled.kind !== "assembled") {
@@ -3927,29 +2310,14 @@ export function createThreadClaimRunObjects(
     if (await get(queuedAutomationAssemblerInternalEarlyAssembly$)) {
       return undefined;
     }
-    return (await get(queuedAutomationAssemblerLaunchMaterial$))?.callbacks;
-  });
-  const queuedAutomationAssemblerStorageBody$ = computed(async (get) => {
-    if (await get(queuedAutomationAssemblerInternalEarlyAssembly$)) {
-      return {};
-    }
-    const context = await get(automationPrompt$);
-    return context
-      ? additionalVolumesForRun(renderRunPromptAndSkills(context).skillVolumes)
-      : {};
-  });
-  const queuedAutomationAssemblerConnectorSourceId$ = computed(async (get) => {
-    return (
-      (await get(queuedAutomationAssemblerEvent$))?.connectorSourceId ??
-      undefined
-    );
+    return (await get(launchMaterial$))?.callbacks;
   });
   const queuedAutomationAssemblerCommand$ = computed(async (get) => {
     const assembly = await get(queuedAutomationAssemblerAssembly$);
     return assembly.kind === "assembled" ? assembly.run : null;
   });
   const isAutomation$ = computed(async (get) => {
-    return (await get(head$))?.contextType === "automation";
+    return (await get(head$)).contextType === "automation";
   });
   const assembly$ = computed(async (get) => {
     return get(
@@ -3989,24 +2357,10 @@ export function createThreadClaimRunObjects(
         : get(promptExecutionResourcesCallbackInputs$);
     },
   );
-  const storageBody$ = computed(async (get) => {
-    return get(
-      (await get(isAutomation$))
-        ? queuedAutomationAssemblerStorageBody$
-        : promptExecutionResourcesStorageBody$,
-    );
-  });
-  const connectorSourceId$ = computed(async (get) => {
-    return get(
-      (await get(isAutomation$))
-        ? queuedAutomationAssemblerConnectorSourceId$
-        : promptExecutionResourcesConnectorSourceId$,
-    );
-  });
   const threadSession$ = computed(
     async (get): Promise<ChatThreadSessionResolution | undefined> => {
       return (await get(isAutomation$))
-        ? get(preCreateThreadSessionThreadSession$)
+        ? ((await get(threadContext.threadSession$)) ?? undefined)
         : get(promptExecutionResourcesThreadSession$);
     },
   );
@@ -4030,7 +2384,6 @@ export function createThreadClaimRunObjects(
           apiStartTime: input.apiStartTime,
           body: { agentId: input.agentId },
           chatThreadId: input.chatThreadId,
-          expectedThreadAgentId: input.expectedThreadAgentId,
           queueFirstAssociation: input.queueFirstAssociation,
         },
       };
@@ -4049,22 +2402,10 @@ export function createThreadClaimRunObjects(
       },
     );
   });
-  const preCreateRequestObservationRequestObservation$ = computed(
-    async (get) => {
-      const { command } = await get(selectedIdentityInputIdentityInput$);
-      const agentId = await get(preCreateAgentIdAgentId$);
-      return agentId
-        ? matchingAuthorizedRequestObservation(command, agentId)
-        : undefined;
-    },
-  );
   const preCreateAgentAgent$ = computed(
     async (get): Promise<AgentRunRecord | null> => {
       const { timing } = await get(selectedIdentityInputIdentityInput$);
-      const [agentId, observation] = await Promise.all([
-        get(preCreateAgentIdAgentId$),
-        get(preCreateRequestObservationRequestObservation$),
-      ]);
+      const agentId = await get(preCreateAgentIdAgentId$);
       if (!agentId) {
         return null;
       }
@@ -4072,240 +2413,66 @@ export function createThreadClaimRunObjects(
         timing,
         "api_dispatch_pre_create_agent_load_agent",
         async () => {
-          if (observation) {
-            return observation.agent;
-          }
           // Authorization waits only for the context's Agent snapshot.
-          return await get((await get(executionContext$)).agent$);
-        },
-        {
-          authorized_request_agent_source:
-            observation === undefined ? "database" : "request_observation",
+          return await get(bootstrap.agent$);
         },
       );
     },
   );
-  const executionContext$ = computed(async (get) => {
-    const [{ command }, agentId] = await Promise.all([
-      get(selectedIdentityInputIdentityInput$),
-      get(preCreateAgentIdAgentId$),
-    ]);
-    if (!agentId) {
-      throw new Error("Execution context requires an Agent identity");
-    }
-    // Reconciled integrations may select a different default Agent. Preserve only
-    // groups whose authority key still matches, including their dependencies.
-    const supplied = (await get(isAutomation$))
-      ? await get(queuedIdentityContext$)
-      : await get(promptExecutionContext$);
-    return matchAgentRunContextSignals(
-      supplied,
-      command.owner.userId,
-      command.owner.orgId,
-      agentId,
-    );
-  });
-  const authorizedConnectors$ = computed(async (get) => {
-    return get((await get(executionContext$)).authorizedConnectors$);
-  });
-  const preCreateBootstrapMetadata$ = computed(async (get) => {
-    const startedAt = now();
-    const selected = await get(executionContext$);
-    const [
-      { timing },
-      selection,
-      memberMetadata,
-      permissionGrants,
-      workflows,
-      featureSwitchContext,
-    ] = await Promise.all([
-      get(selectedIdentityInputIdentityInput$),
-      get(selected.connectorSelection$),
-      get(selected.memberMetadata$),
-      get(selected.permissionGrants$),
-      get(selected.workflows$),
-      get(selected.featureSwitches$),
-    ]);
-    timing.recordElapsed(
-      "api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows",
-      "nested",
-      startedAt,
-      now(),
-      {
-        bootstrap_prefetch: prefetchOutcome === "hit" ? "hit" : "miss",
-        ...(prefetchOutcome === "hit"
-          ? {}
-          : { bootstrap_prefetch_miss_reason: prefetchOutcome }),
-      },
-    );
-    const connectorScope = agentConnectorScopeFromRows({
-      connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
-        return {
-          connectorSlug,
-        };
-      }),
-      customConnectorRows: selection.customConnectors,
-    });
-    const metadataSlugs = new Set(
-      selection.customConnectors.flatMap((connector) => {
-        const ref = connector.permissionBundleRef;
-        const dependency =
-          ref === null
-            ? null
-            : customConnectorPermissionBundleDependencySlug(ref);
-        return dependency === null ? [] : [dependency];
-      }),
-    );
-    return {
-      ...connectorScope,
-      userInfo: {
-        name: memberMetadata.profile?.name ?? null,
-        email: memberMetadata.profile?.email ?? null,
-        timezone: memberMetadata.preferences?.timezone ?? null,
-      },
-      featureSwitchContext,
-      workflows,
-      permissionGrants: permissionGrants.map(
-        ({ connectorSlug, permission, action }) => {
-          return {
-            connectorSlug,
-            permission,
-            action,
-          };
-        },
-      ),
-      connectorCatalogMetadataSlugs: [...metadataSlugs].sort(),
-    };
-  });
-  const preCreateBootstrapBootstrap$ = computed(async (get) => {
-    const { timing } = await get(selectedIdentityInputIdentityInput$);
-    const metadata = await get(preCreateBootstrapMetadata$);
-    return await measureAgentRunPreCreate(
-      timing,
-      "api_dispatch_pre_create_agent_materialize_bootstrap_context",
-      () => {
-        return metadata;
-      },
-      {
-        agent_run_bootstrap_workflow_winner_count_bucket: countBucket(
-          metadata.workflows.length,
-        ),
-      },
-    );
-  });
   const preCreateSubscriptionAccountSubscriptionAccount$ = computed(
-    async (
-      get,
-    ): Promise<
-      | {
-          readonly command: ThreadRunIdentity;
-        }
-      | ReturnType<typeof conflict>
-    > => {
-      const { command, timing } = await get(preCreateInput$);
-      const pin = command.agentRunModelPin;
-      if (
-        !pin ||
-        !pin.modelProvider ||
-        !isPersonalSubscriptionProviderType(pin.modelProvider)
-      ) {
-        return { command };
+    async (get) => {
+      const { command } = await get(preCreateInput$);
+      const model = await get(threadContext.subscriptionSelection$);
+      if ("status" in model) {
+        return model;
       }
-      const providerType = pin.modelProvider;
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_capture_subscription_account",
-        async () => {
-          const accountCandidates = personalSubscriptionAccountCandidates({
-            command,
-            providerType,
-            modelProviderId: pin.modelProviderId,
-            snapshot: await get((await get(executionContext$)).memberModels$),
-          });
-          const account =
-            accountCandidates.find((candidate) => {
-              return candidate.id === pin.modelProviderId;
-            }) ?? accountCandidates[0];
-          if (!account || account.type !== providerType) {
-            return conflict(
-              "The selected subscription account is unavailable. Reconnect it before starting another run.",
-            );
-          }
-          return {
-            command: {
-              ...command,
-              modelProviderId: account.id,
-              agentRunModelPin: { ...pin, modelProviderId: account.id },
-            },
-          };
+      return {
+        command: {
+          ...command,
+          modelProviderId: model.modelProviderId,
+          agentRunModelPin: model.agentRunModelPin,
         },
-      );
+      };
     },
   );
   const preCreateConnectorCatalogConnectorCatalog$ = computed(
     async (get): Promise<RunConnectorCatalogSelection> => {
-      const [catalog, metadata] = await Promise.all([
-        get((await get(executionContext$)).catalog$),
-        get(preCreateBootstrapMetadata$),
+      const [scope, catalog] = await Promise.all([
+        get(bootstrap.connectorScope$),
+        get(bootstrap.catalog$),
       ]);
-      if (isEmptyRunConnectorScope(metadata)) {
-        return { kind: "empty" };
-      }
-      if (!catalog) {
-        throw new Error("Scoped connector catalog is missing from bootstrap");
-      }
-      return { kind: "scoped", selection: catalog };
+      return runConnectorCatalogSelection(scope, catalog);
     },
   );
   const preCreatePermissionPoliciesPermissionPolicies$ = computed(
     async (get) => {
-      const { timing } = await get(selectedIdentityInputIdentityInput$);
-      const [bootstrap, catalog] = await Promise.all([
-        get(preCreateBootstrapMetadata$),
-        get(preCreateConnectorCatalogConnectorCatalog$),
-      ]);
-      return await measureAgentRunPreCreate(
-        timing,
+      return await get(threadContext.dispatchTiming$).measure(
         "api_dispatch_pre_create_agent_resolve_firewall_metadata",
+        "nested",
         async () => {
-          const stored = permissionGrantsToFirewallPolicies(
-            bootstrap.permissionGrants,
-          );
-          return catalog.kind === "empty"
-            ? stored
-            : await expandConnectorServerFirewallPolicies({
-                catalog: catalog.selection.serverFirewalls,
-                stored,
-                connectorSlugs: [...bootstrap.allowedConnectorSlugs],
-              });
+          return await get(bootstrap.permissionPolicies$);
         },
       );
     },
   );
-  const sessionPrompt$ = computed(async (get) => {
-    return (await get(selectedCommand$))?.appendSystemPrompt;
-  });
   const preCreatePostAuthorizationPostAuthorization$ = computed(
-    async (
-      get,
-    ): Promise<AgentRunAfterPreCreate | ReturnType<typeof conflict>> => {
+    async (get): Promise<AgentRunAfterPreCreate | CreateRunErrorResult> => {
       const { timing } = await get(preCreateInput$);
       const [
-        bootstrapResult,
+        connectorScope,
+        featureSwitchContext,
         agentResult,
         accountResult,
         catalogResult,
         policiesResult,
-        observationResult,
       ] = await Promise.all([
-        get(preCreateBootstrapBootstrap$),
+        get(bootstrap.connectorScope$),
+        get(bootstrap.featureSwitches$),
         get(preCreateAgentAgent$),
         get(preCreateSubscriptionAccountSubscriptionAccount$),
         get(preCreateConnectorCatalogConnectorCatalog$),
         get(preCreatePermissionPoliciesPermissionPolicies$),
-        get(preCreateRequestObservationRequestObservation$),
       ]);
-      const bootstrap = bootstrapResult;
       const agent = agentResult;
       const account = accountResult;
       if ("status" in account) {
@@ -4313,36 +2480,32 @@ export function createThreadClaimRunObjects(
       }
       const catalog = catalogResult;
       const policies = policiesResult;
-      const observation = observationResult;
       if (!agent) {
         throw new Error("Agent disappeared after preparation authorization");
       }
       return {
-        ...bootstrap,
+        ...connectorScope,
         ...account,
         agent,
         timing,
-        cloudBrowserEnabled: undefined,
         connectorCatalogSelection: catalog,
         runPermissionPolicies: policies,
-        authorizedRequestObservation: observation ?? {
+        authorizedRequestObservation: {
           userId: account.command.owner.userId,
           orgId: account.command.owner.orgId,
           agent,
-          featureSwitchContext: bootstrap.featureSwitchContext,
+          featureSwitchContext,
         },
       };
     },
   );
   const preCreatePreparedInput$ = computed(async (get) => {
-    const [input, resolution, appendSystemPrompt, fullCommand, catalog] =
-      await Promise.all([
-        get(preCreatePostAuthorizationPostAuthorization$),
-        get(threadSession$),
-        get(sessionPrompt$),
-        get(selectedCommand$),
-        get(claimCatalog$),
-      ]);
+    const [input, resolution, fullCommand, catalog] = await Promise.all([
+      get(preCreatePostAuthorizationPostAuthorization$),
+      get(threadSession$),
+      get(selectedCommand$),
+      get(claimCatalog$),
+    ]);
     if (!fullCommand) {
       return null;
     }
@@ -4363,10 +2526,8 @@ export function createThreadClaimRunObjects(
         modelProviderId: input.command.modelProviderId,
         agentRunModelPin: input.command.agentRunModelPin,
         body,
-        appendSystemPrompt,
       },
       threadSessionResolution: resolution,
-      cloudBrowserEnabled: resolution?.cloudBrowserEnabled,
     };
   });
   const preCreateRunArgsRunArgs$ = computed(async (get) => {
@@ -4374,1365 +2535,90 @@ export function createThreadClaimRunObjects(
     if (!input || "status" in input) {
       return input;
     }
-    return {
-      input,
-      args: await measureAgentRunPreCreate(
-        input.timing,
-        "api_dispatch_pre_create_agent_build_create_run_args",
-        () => {
-          return buildProductRunArgs(input);
-        },
-      ),
-    };
-  });
-  const preCreateExecutionInput$ = preCreateInput$;
-  const preCreateExecutionIdentityInput$ = selectedIdentityInputIdentityInput$;
-  const preCreateExecutionAgent$ = preCreateAgentAgent$;
-  const preCreateExecutionBootstrapMetadata$ = preCreateBootstrapMetadata$;
-  const preCreateExecutionSubscriptionAccount$ =
-    preCreateSubscriptionAccountSubscriptionAccount$;
-  const preCreateExecutionConnectorCatalog$ =
-    preCreateConnectorCatalogConnectorCatalog$;
-  const preCreateExecutionPermissionPolicies$ =
-    preCreatePermissionPoliciesPermissionPolicies$;
-  const preCreateExecutionWorkflows$ = computed(async (get) => {
-    return await get((await get(executionContext$)).workflows$);
-  });
-  const runDisabledPaidToolsSnapshot$ = computed(async (get) => {
-    const selected = await get(executionContext$);
-    return {
-      orgId: selected.orgId,
-      userId: selected.userId,
-      toolIds: await get(selected.disabledPaidTools$),
-    };
+    const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
+    if (isRouteError(promptAndSkills)) {
+      return promptAndSkills;
+    }
+    return { input, args: buildProductRunArgs(input, promptAndSkills) };
   });
   const runMemberSnapshot$ = computed(async (get) => {
-    const selected = await get(executionContext$);
+    const selected = bootstrap;
     return {
       orgId: selected.orgId,
       userId: selected.userId,
       member: (await get(selected.memberMetadata$)).preferences ?? undefined,
     };
   });
-  const runEnvironmentSnapshot$ = computed(async (get) => {
-    const selected = await get(executionContext$);
-    return {
-      orgId: selected.orgId,
-      userId: selected.userId,
-      variables: (await get(selected.environment$)).variables,
-    };
-  });
   const resources = {
-    disabledPaidTools$: runDisabledPaidToolsSnapshot$,
     member$: runMemberSnapshot$,
-    environment$: runEnvironmentSnapshot$,
   };
-  const providerInput$ = computed(
-    async (get): Promise<RunModelProviderReadInput | CreateRunErrorResult> => {
-      const input = await get(preCreateExecutionInput$);
-      const [agent, account] = await Promise.all([
-        get(preCreateExecutionAgent$),
-        get(preCreateExecutionSubscriptionAccount$),
-      ]);
-      if ("status" in account) {
-        return account;
-      }
-      if (!agent) {
-        throw new Error("Agent disappeared after preparation authorization");
-      }
-      return {
-        db: get(db$),
-        timing: input.timing,
-        args: {
-          ...selectedRunModelProviderArgs(account.command),
-          catalog: await get(claimCatalog$),
-        },
-      };
-    },
-  );
   const preCreateModelFeatureSwitchContext$ = computed(async (get) => {
     const observed = await get(featureSwitchContext$);
     return observed === undefined
-      ? (await get(preCreateExecutionBootstrapMetadata$)).featureSwitchContext
+      ? await get(bootstrap.featureSwitches$)
       : observed;
   });
-  const runFramework$ = computed(async (get) => {
-    const input = await get(providerInput$);
-    if (isRouteError(input)) {
-      return input;
-    }
-    const args = input.args;
-    if (args.modelProviderType && isModelProviderType(args.modelProviderType)) {
-      return getFrameworkForType(args.modelProviderType);
-    }
-    if (!args.modelProviderId) {
-      return getValidatedFramework(undefined);
-    }
-    const identity = await get(executionContext$);
-    const member = await get(identity.memberModels$);
-    const provider = member.providers.find((row) => {
-      return row.id === args.modelProviderId;
-    });
-    if (!provider) {
-      const account = member.accounts.find((account) => {
-        return account.id === args.modelProviderId;
-      });
-      return account && isModelProviderType(account.type)
-        ? getFrameworkForType(account.type)
-        : getValidatedFramework(undefined);
-    }
-    if (!provider || !isModelProviderType(provider.type)) {
-      return getValidatedFramework(undefined);
-    }
-    return getFrameworkForType(provider.type);
-  });
-  const providerContext$ = computed(async (get) => {
-    const input = await get(providerInput$);
-    if (isRouteError(input)) {
-      return input;
-    }
-    const requestedFramework = await get(runFramework$);
-    if (isRouteError(requestedFramework)) {
-      return requestedFramework;
-    }
-    const args = input.args;
-    const environmentArgs: ResolveModelProviderEnvironmentArgs = {
-      catalog: args.catalog,
-      orgId: args.orgId,
-      userId: args.userId,
-      framework: requestedFramework,
-      modelProviderId: args.modelProviderId,
-      modelProviderCredentialScope: args.modelProviderCredentialScope,
-      modelProviderType: args.modelProviderType,
-      selectedModelOverride: args.selectedModelOverride,
-      builtInModelRuntimeRoute: args.builtInModelRuntimeRoute,
-      piExecution: args.piExecution,
-    };
-    return {
-      input,
-      requestedFramework,
-      environmentArgs,
-    };
-  });
-  const pinnedContext$ = computed(async (get) => {
-    const context = await get(providerContext$);
-    if (isRouteError(context) || !context.input.args.queueFirstAssociation) {
-      return null;
-    }
-    return context;
-  });
-  const selectedModelSource$ = computed(async (get) => {
-    const context = await get(pinnedContext$);
-    if (!context) {
-      return null;
-    }
-    const args = context.environmentArgs;
-    const identity = await get(executionContext$);
-    if (identity.orgId !== args.orgId || identity.userId !== args.userId) {
-      throw new Error("Model source snapshot identity mismatch");
-    }
-    if (isBuiltInModelProviderType(args.modelProviderType)) {
-      const route = args.builtInModelRuntimeRoute;
-      if (
-        !route ||
-        route.selectedModel !== args.selectedModelOverride ||
-        !isBuiltInModelRuntimeRoutePermitted(route) ||
-        getFrameworkForType(route.providerType) !== args.framework
-      ) {
-        return null;
-      }
-      return managedSourceFromSnapshot(
-        (await get(identity.managedModelKeys$)).find((key) => {
-          return key.id === route.modelKeyId;
-        }),
-      );
-    }
-    if (
-      args.modelProviderId &&
-      args.modelProviderType &&
-      isPersonalSubscriptionProviderType(args.modelProviderType)
-    ) {
-      return memberAccountSourceFromSnapshot(
-        await get(identity.memberModels$),
-        args.modelProviderId,
-      );
-    }
-    return null;
-  });
-  // The selected source's model runtime. KMS decryption and captured
-  // managed-key values have no side effects, so the runtime is derived here
-  // (Ethan 2026-10-02); each graph resolves it once.
-  const preparedModelEnvironment$ = computed(
-    async (get): Promise<ResolvedModelProviderEnvironment | null> => {
-      const selection = await get(selectionInput$);
-      if (!selection) {
-        return null;
-      }
-      const [context, source] = await Promise.all([
-        get(pinnedContext$),
-        get(selectedModelSource$),
-      ]);
-      if (!context || !source) {
-        return null;
-      }
-      if (source.identity.kind === "built-in") {
-        return await prepareManagedModelEnvironment(
-          source,
-          context.environmentArgs,
-        );
-      }
-      const selectedModel = context.environmentArgs.selectedModelOverride;
-      const type = source.configuration.providerType;
-      if (
-        !selectedModel ||
-        !isPersonalSubscriptionProviderType(type) ||
-        getFrameworkForType(type) !== context.environmentArgs.framework ||
-        (context.environmentArgs.modelProviderType !== undefined &&
-          context.environmentArgs.modelProviderType !== type)
-      ) {
-        return null;
-      }
-      const sourceId = context.environmentArgs.modelProviderId;
-      if (!sourceId) {
-        throw new Error("Selected subscription source has no identity");
-      }
-      return await prepareSubscriptionModelEnvironment(source, selectedModel, {
-        catalog: await get(claimCatalog$),
-        userId: context.environmentArgs.userId,
-        sourceId,
-        piExecution: context.environmentArgs.piExecution,
-      });
-    },
+  const runFramework$ = threadContext.requestedFramework$;
+  const modelRoute$ = threadContext.modelRoute$;
+  const promptAndSkillVolumes$ = createPromptAndSkillVolumesSignals(
+    bootstrap,
+    pickedEvent$,
+    threadContext,
   );
-  const pinnedBuiltInProviderSnapshot$ = computed(async (get) => {
-    const context = await get(pinnedContext$);
-    return context &&
-      isBuiltInModelProviderType(context.environmentArgs.modelProviderType)
-      ? await get(preparedModelEnvironment$)
-      : null;
-  });
-  const environment$ = computed(
-    async (get): Promise<ResolvedModelProviderEnvironment | null> => {
-      const context = await get(pinnedContext$);
-      if (!context) {
-        return null;
-      }
-      const args = context.environmentArgs;
-      if (isBuiltInModelProviderType(args.modelProviderType)) {
-        return await get(pinnedBuiltInProviderSnapshot$);
-      }
-      if (
-        args.modelProviderType &&
-        isPersonalSubscriptionProviderType(args.modelProviderType)
-      ) {
-        // Member subscription accounts use the exact selected account source.
-        return await get(preparedModelEnvironment$);
-      }
-      return null;
-    },
-  );
-  const queuedModelRoute$ = computed(async (get) => {
-    const context = await get(providerContext$);
-    if (isRouteError(context)) {
-      return context;
-    }
-    return await context.input.timing.measure(
-      "api_dispatch_prepare_context_resolve_model_provider",
-      "nested",
-      async () => {
-        return (
-          (await get(environment$)) ??
-          providerUnavailable("No model provider is available for this run")
-        );
-      },
-    );
-  });
-  const runModelProviderModelRoute$ = computed(async (get) => {
-    const context = await get(providerContext$);
-    if (isRouteError(context)) {
-      return context;
-    }
-    const providerResult = await settle(get(queuedModelRoute$));
-    if (!providerResult.ok) {
-      return piConfigurationRouteError(providerResult.error);
-    }
-    const provider = providerResult.value;
-    if (isRouteError(provider)) {
-      return provider;
-    }
-    const materialized = safeSync(() => {
-      return materializePreparedPiProvider(
-        piModelPreparationInput(context.input.args),
-        provider,
-      );
-    });
-    return "ok" in materialized
-      ? materialized.ok
-      : piConfigurationRouteError(materialized.error);
-  });
-  const modelRoute$ = runModelProviderModelRoute$;
-  const connectorSkillsRoot$ = computed(async (get) => {
-    const [input, requestedFramework, modelProvider] = await Promise.all([
-      get(preCreateInput$),
-      get(runFramework$),
-      get(modelRoute$),
-    ]);
-    if (isRouteError(requestedFramework) || isRouteError(modelProvider)) {
-      throw new Error("Connector skills require a valid run model route");
-    }
-    const piSandbox = resolvePreparedPiModelConfig({
-      input: {
-        catalog: await get(claimCatalog$),
-        piExecution: selectedRunPiExecution(input.command),
-        codexServiceTier: input.command.codexServiceTier,
-        reasoningEffort: input.command.reasoningEffort,
-      },
-      modelProvider,
-    });
-    return skillsRootForRun(
-      modelProvider
-        ? modelProviderFramework(modelProvider)
-        : requestedFramework,
-      piSandbox,
-    );
-  });
-  const connectorsContext$ = createConnectorsContext(
-    authorizedConnectors$,
-    connectorSkillsRoot$,
-  );
-  const runtimePromptInput$ = computed(async (get) => {
-    const [requestedFramework, modelProvider, event, selectedImageModel] =
-      await Promise.all([
-        get(runFramework$),
-        get(modelRoute$),
-        get(pickedEvent$),
-        get(runMemberImageModel$),
-      ]);
-    if (
-      !event ||
-      isRouteError(requestedFramework) ||
-      isRouteError(modelProvider)
-    ) {
-      throw new Error("Runtime prompt requires a valid run model route");
-    }
-    return {
-      framework: modelProvider
-        ? modelProviderFramework(modelProvider)
-        : requestedFramework,
-      contextType: event.contextType,
-      chatThreadId: event.chatThreadId,
-      selectedImageModel,
-    };
-  });
-  const runtimePrompt$ = createRuntimePrompt(runtimePromptInput$);
-  const runtimePromptAndSkills$ = computed(async (get) => {
-    return mergeRunPromptAndSkills(
-      await Promise.all([get(connectorsContext$), get(runtimePrompt$)]),
-    );
-  });
-  const model = {
-    providerInput$: providerInput$,
-    featureSwitchContext$: preCreateModelFeatureSwitchContext$,
-    framework$: runFramework$,
-    modelRoute$: modelRoute$,
-  };
-  const connectorInput$ = computed(
-    async (get): Promise<RunConnectorReadInput> => {
-      const { command, timing } = await get(preCreateExecutionIdentityInput$);
-      const db = get(db$);
-      return {
-        db,
-        timing,
-        args: {
-          orgId: command.owner.orgId,
-          userId: command.owner.userId,
-          chatThreadId: command.chatThreadId,
-          includeOkouTokenSecret: true,
-        },
-      };
-    },
-  );
-  const preCreateConnectorScope$ = computed(
-    async (get): Promise<EffectiveConnectorScope> => {
-      const metadata = await get(preCreateExecutionBootstrapMetadata$);
-      return {
-        allowedConnectorSlugs: metadata.allowedConnectorSlugs,
-        allowedCustomConnectorIds: metadata.allowedCustomConnectorIds,
-        customConnectorGrants: metadata.customConnectorGrants,
-        source: isEmptyRunConnectorScope(metadata) ? "empty" : "stored_agent",
-      };
-    },
-  );
-  const preCreateConnectorFeatureSwitchContext$ = computed(async (get) => {
-    return (await get(preCreateExecutionBootstrapMetadata$))
-      .featureSwitchContext;
-  });
-  const runCustomConnectorDefinitionRows$ = computed(async (get) => {
-    const { timing } = await get(connectorInput$);
-    return await timing.measure(
-      "api_dispatch_prepare_context_load_custom_connector_rows",
-      "nested",
-      async () => {
-        return await get(
-          (await get(executionContext$)).customConnectorDefinitions$,
-        );
-      },
-    );
-  });
-  const runOwnedConnectorThread$ = computed(async (get) => {
-    const { args } = await get(connectorInput$);
-    if (args.chatThreadId === undefined) {
-      return null;
-    }
-    const [agent, { command }, thread] = await Promise.all([
-      get(preCreateAgentAgent$),
-      get(selectedIdentityInputIdentityInput$),
-      get(threadRow$),
-    ]);
-    if (!agent || agent.orgId !== args.orgId) {
-      return null;
-    }
-    return thread?.id === args.chatThreadId &&
-      thread.userId === args.userId &&
-      thread.agentId === (command.expectedThreadAgentId ?? agent.id)
-      ? { agentId: thread.agentId }
-      : null;
-  });
-  const runThreadSelectionRow$ = computed(
-    async (get): Promise<readonly ConnectorAccountSelection[]> => {
-      const { db, args } = await get(connectorInput$);
-      const thread = await get(runOwnedConnectorThread$);
-      if (!thread || args.chatThreadId === undefined) {
-        return [];
-      }
-      const rows = await db
-        .select({
-          connectorId: chatThreadConnectorSelections.connectorId,
-          connectorSlug: chatThreadConnectorSelections.connectorSlug,
-          customConnectorId: chatThreadConnectorSelections.customConnectorId,
-        })
-        .from(chatThreadConnectorSelections)
-        .where(
-          eq(chatThreadConnectorSelections.chatThreadId, args.chatThreadId),
-        )
-        .orderBy(
-          asc(chatThreadConnectorSelections.connectorSlug),
-          asc(chatThreadConnectorSelections.customConnectorId),
-        );
-      const scope = await get(preCreateConnectorScope$);
-      return rows
-        .map((row) => {
-          return {
-            connectionId: row.connectorId,
-            target: runConnectorTargetFromRow(row),
-          };
-        })
-        .filter((selection) => {
-          return runConnectorTargetIsAuthorized(scope, selection.target);
-        });
-    },
-  );
-  const runConnectorAccountRows$ = computed(async (get) => {
-    return (await get((await get(executionContext$)).connectors$))
-      .connectorAccounts;
-  });
-  const runThreadConnectorSelectionThreadSelections$ = computed(
-    async (
-      get,
-    ): Promise<
-      ThreadConnectorSelectionIds | CreateRunErrorResult | undefined
-    > => {
-      const { args } = await get(connectorInput$);
-      if (args.chatThreadId === undefined) {
-        return undefined;
-      }
-      const [thread, selections, accountRows, scope, connectorSourceId] =
-        await Promise.all([
-          get(runOwnedConnectorThread$),
-          get(runThreadSelectionRow$),
-          get(runConnectorAccountRows$),
-          get(preCreateConnectorScope$),
-          get(connectorSourceId$),
-        ]);
-      if (!thread) {
-        return badRequestMessage("Chat thread is no longer available");
-      }
-      const byId = new Map(
-        accountRows.map((row) => {
-          return [row.connectorId, row];
-        }),
-      );
-      const projectedSelections = selections.filter((selection) => {
-        const row = byId.get(selection.connectionId);
-        return (
-          row !== undefined &&
-          connectorAccountTargetKey(runConnectorTargetFromRow(row)) ===
-            connectorAccountTargetKey(selection.target) &&
-          (row.customConnectorId === null ||
-            (row.customDefinitionId !== null &&
-              !isIntegrationManagedCustomConnectorProviderAdapter(
-                row.providerAdapter,
-              )))
-        );
-      });
-      const sourceRow = connectorSourceId
-        ? byId.get(connectorSourceId)
-        : undefined;
-      const sourceTarget = sourceRow
-        ? runConnectorTargetFromRow(sourceRow)
-        : undefined;
-      const source =
-        sourceRow &&
-        sourceTarget &&
-        runConnectorTargetIsAuthorized(scope, sourceTarget)
-          ? { connectionId: sourceRow.connectorId, target: sourceTarget }
-          : null;
-      return runThreadConnectorCandidates(projectedSelections, source);
-    },
-  );
-  const runThreadConnectorSelectionAccountCandidates$ = computed(
-    async (get) => {
-      const [selections, rows, scope] = await Promise.all([
-        get(runThreadConnectorSelectionThreadSelections$),
-        get(runConnectorAccountRows$),
-        get(preCreateConnectorScope$),
-      ]);
-      return isRouteError(selections)
-        ? new Map<string, readonly string[]>()
-        : runConnectorAccountCandidatesFromRows({
-            requests: runConnectorAccountRequests(scope, selections),
-            rows,
-          });
-    },
-  );
-  const threadSelections$ = runThreadConnectorSelectionThreadSelections$;
-  const accountCandidates$ = runThreadConnectorSelectionAccountCandidates$;
-  const runConnectorSelection$ = computed(
-    async (get): Promise<RunConnectorSelection | CreateRunErrorResult> => {
-      const [connectorCatalogSelection, threadConnectorSelectionIds] =
-        await Promise.all([
-          get(preCreateExecutionConnectorCatalog$),
-          get(threadSelections$),
-        ]);
-      if (isRouteError(threadConnectorSelectionIds)) {
-        return threadConnectorSelectionIds;
-      }
-      const scope = await get(preCreateConnectorScope$);
-      return {
-        connectorCatalogSelection,
-        threadConnectorSelectionIds,
-        connectorScope:
-          connectorCatalogSelection.kind === "scoped"
-            ? connectorScopeForRuntimeSnapshot(
-                scope,
-                connectorCatalogSelection.selection,
-              )
-            : scope,
-      };
-    },
-  );
-  const runConnectorPreparation$ = computed(
-    async (get): Promise<RunConnectorPreparation | CreateRunErrorResult> => {
-      const input = await get(connectorInput$);
-      const selection = await get(runConnectorSelection$);
-      if (isRouteError(selection)) {
-        return selection;
-      }
-      const {
-        connectorCatalogSelection,
-        connectorScope,
-        threadConnectorSelectionIds,
-      } = selection;
-      if (connectorCatalogSelection.kind === "empty") {
-        return { selection, stored: null, custom: null };
-      }
-      const connectorCatalogSnapshot = connectorCatalogSelection.selection;
-      const allowedConnectorSlugs = [
-        ...new Set(
-          connectorScope.allowedConnectorSlugs.filter((slug) => {
-            return (
-              getConnectorRuntimeConnector(connectorCatalogSnapshot, slug)
-                ?.catalogConnector.mcp === undefined ||
-              input.args.includeOkouTokenSecret === true
-            );
-          }),
-        ),
-      ];
-      return {
-        selection,
-        stored:
-          allowedConnectorSlugs.length === 0
-            ? null
-            : {
-                orgId: input.args.orgId,
-                userId: input.args.userId,
-                allowedConnectorSlugs,
-                connectorIdCandidatesBySlug:
-                  threadConnectorSelectionIds?.connectorIdCandidatesBySlug,
-                scopeSource: connectorScope.source,
-                connectorCatalogSnapshot,
-              },
-        custom:
-          connectorScope.allowedCustomConnectorIds.length === 0
-            ? null
-            : {
-                orgId: input.args.orgId,
-                userId: input.args.userId,
-                allowedCustomConnectorIds:
-                  connectorScope.allowedCustomConnectorIds,
-                connectorIdCandidatesByCustomConnectorId:
-                  threadConnectorSelectionIds?.connectorIdCandidatesByCustomConnectorId,
-                customConnectorGrants: connectorScope.customConnectorGrants,
-                connectorCatalogSnapshot,
-              },
-      };
-    },
-  );
-  const runStoredConnectorRow$ = computed(
-    async (
-      get,
-    ): Promise<readonly StoredConnectorMaterializationSnapshotRow[]> => {
-      const bootstrap = await get((await get(executionContext$)).connectors$);
-      const byId = new Map(
-        bootstrap.connectorSources.flatMap((result) => {
-          return result.kind === "available"
-            ? [[result.snapshot.source.sourceId, result.snapshot] as const]
-            : [];
-        }),
-      );
-      return bootstrap.connectorAccounts.flatMap((row) => {
-        const source = byId.get(row.connectorId);
-        return row.connectorSlug !== null && source
-          ? [
-              {
-                ...row,
-                connectorSlug: row.connectorSlug,
-                secretNames: source.credentials.map((credential) => {
-                  return credential.name;
-                }),
-                variableValues: source.variables,
-              },
-            ]
-          : [];
-      });
-    },
-  );
-  const selectedStoredConnectorRows$ = computed(async (get) => {
-    const [preparation, rows, candidates] = await Promise.all([
-      get(runConnectorPreparation$),
-      get(runStoredConnectorRow$),
-      get(accountCandidates$),
-    ]);
-    if (isRouteError(preparation)) {
-      return preparation;
-    }
-    const args = preparation.stored;
-    if (!args) {
-      return null;
-    }
-    const available = new Set(
-      allowedStoredConnectorRows(
-        rows,
-        args.allowedConnectorSlugs,
-        args.connectorCatalogSnapshot,
-        nowDate(),
-      ).map((row) => {
-        return row.access.connectorId;
-      }),
-    );
-    const selectedIds = new Set(
-      args.allowedConnectorSlugs.flatMap((connectorSlug) => {
-        const ids =
-          candidates.get(
-            connectorAccountTargetKey({ kind: "builtin", connectorSlug }),
-          ) ?? [];
-        const id = ids.find((candidate) => {
-          return available.has(candidate);
-        });
-        return id ? [id] : [];
-      }),
-    );
-    return {
-      args,
-      rows: rows.filter((row) => {
-        return selectedIds.has(row.connectorId);
-      }),
-    };
-  });
-  const selectedStoredConnectorSources$ = computed(async (get) => {
-    const selected = await get(selectedStoredConnectorRows$);
-    if (!selected || isRouteError(selected)) {
-      return [];
-    }
-    const ids = new Set(
-      selected.rows.map((row) => {
-        return row.connectorId;
-      }),
-    );
-    return (
-      await get((await get(executionContext$)).connectors$)
-    ).connectorSources.filter((result) => {
-      const source =
-        result.kind === "available" ? result.snapshot.source : result.source;
-      return source.kind === "builtin" && ids.has(source.sourceId);
-    });
-  });
-  const runStoredConnectorSnapshot$ = computed(
-    async (
-      get,
-    ): Promise<
-      StoredConnectorMaterializationSnapshot | null | CreateRunErrorResult
-    > => {
-      const [selected, sources] = await Promise.all([
-        get(selectedStoredConnectorRows$),
-        get(selectedStoredConnectorSources$),
-      ]);
-      if (!selected || isRouteError(selected)) {
-        return selected;
-      }
-      const available = new Map(
-        sources.flatMap((result) => {
-          return result.kind === "available"
-            ? [[result.snapshot.source.sourceId, result.snapshot] as const]
-            : [];
-        }),
-      );
-      const rows = selected.rows.flatMap((row) => {
-        const source = available.get(row.connectorId);
-        return source
-          ? [
-              {
-                ...row,
-                variableValues: source.variables,
-                secretNames: source.credentials.map((credential) => {
-                  return credential.name;
-                }),
-              },
-            ]
-          : [];
-      });
-      return materializeStoredConnectorSnapshotRows(
-        {
-          rows,
-          allowedConnectorSlugs: selected.args.allowedConnectorSlugs,
-          connectorCatalogSnapshot: selected.args.connectorCatalogSnapshot,
-          timingDimensions: storedConnectorTimingDimensions({
-            scopeSource: selected.args.scopeSource,
-          }),
-        },
-        (await get(connectorInput$)).timing,
-      );
-    },
-  );
-  const runCustomConnectorSources$ = computed(async (get) => {
-    const [candidates, scope] = await Promise.all([
-      get(accountCandidates$),
-      get(preCreateConnectorScope$),
-    ]);
-    // Every candidate is an exact saved source; Thread still owns choosing the
-    // first admissible candidate per connector below.
-    const sources = scope.allowedCustomConnectorIds.flatMap(
-      (customConnectorId) => {
-        return (
-          candidates.get(
-            connectorAccountTargetKey({ kind: "custom", customConnectorId }),
-          ) ?? []
-        ).map((sourceId) => {
-          return { kind: "custom" as const, customConnectorId, sourceId };
-        });
-      },
-    );
-    const ids = new Set(
-      sources.map((source) => {
-        return source.sourceId;
-      }),
-    );
-    const context = await get((await get(executionContext$)).connectors$);
-    return {
-      sources: context.connectorSources.filter((result) => {
-        const source =
-          result.kind === "available" ? result.snapshot.source : result.source;
-        return source.kind === "custom" && ids.has(source.sourceId);
-      }),
-      observation: context.observation,
-      scopeSource: scope.source,
-      requestedCustomCount: scope.allowedCustomConnectorIds.length,
-    };
-  });
-  const runCustomConnectorStoredRows$ = computed(
-    async (get): Promise<readonly CustomConnectorRuntimeStorageRow[]> => {
-      const { timing } = await get(connectorInput$);
-      const startedAt = now();
-      const result = await get(runCustomConnectorSources$);
-      const finishedAt = now();
-      bestEffortTelemetry(() => {
-        const dimensions = connectorContextTimingDimensions(result);
-        timing.recordElapsed(
-          "api_dispatch_prepare_context_load_custom_connector_value_rows",
-          "nested",
-          startedAt,
-          finishedAt,
-          dimensions,
-        );
-        recordConnectorContextObservation(
-          timing,
-          result.observation,
-          dimensions,
-        );
-      });
-      const projectionStartedAt = performance.now();
-      const rows = result.sources.flatMap((source) => {
-        return source.kind === "available"
-          ? customConnectorSourceStorageRows(source.snapshot)
-          : [];
-      });
-      bestEffortTelemetry(() => {
-        timing.recordDuration(
-          "api_dispatch_prepare_context_project_custom_connector_value_rows",
-          "nested",
-          performance.now() - projectionStartedAt,
-          now(),
-          connectorContextTimingDimensions(result),
-        );
-      });
-      return rows;
-    },
-  );
-  const runCustomConnectorPermissionBundles$ = computed(async (get) => {
-    const [preparation, connectors, storageRows, candidates] =
-      await Promise.all([
-        get(runConnectorPreparation$),
-        get(runCustomConnectorDefinitionRows$),
-        get(runCustomConnectorStoredRows$),
-        get(accountCandidates$),
-      ]);
-    if (isRouteError(preparation) || !preparation.custom) {
-      return new Map<
-        string,
-        CustomConnectorPermissionBundle | null | undefined
-      >();
-    }
-    const snapshot = preparation.custom.connectorCatalogSnapshot;
-    const entries = await Promise.all(
-      connectors.map(async (connector) => {
-        const rows = customConnectorCandidateRuntimeRows({
-          connector,
-          storageRows,
-          candidateIds:
-            candidates.get(
-              connectorAccountTargetKey({
-                kind: "custom",
-                customConnectorId: connector.id,
-              }),
-            ) ?? [],
-        });
-        const row = rows.find((candidate) => {
-          return (
-            customConnectorNewRunRowIsAdmissible(candidate) &&
-            resolveCustomConnectorBaseUrlVars({
-              row: candidate,
-              provided: undefined,
-              hasProvided: false,
-            }) !== undefined
-          );
-        });
-        if (!row) {
-          return [connector.id, null] as const;
-        }
-        const bundle = await loadEffectiveCustomConnectorPermissionBundle({
-          row,
-          snapshot,
-        });
-        return [connector.id, bundle] as const;
-      }),
-    );
-    return new Map(entries);
-  });
-  const runCustomConnectorContext$ = computed(
-    async (
-      get,
-    ): Promise<CustomConnectorRuntimeContext | CreateRunErrorResult> => {
-      const [
-        preparation,
-        connectors,
-        storageRows,
-        candidates,
-        featureSwitchContext,
-        permissionBundlesByConnectorId,
-      ] = await Promise.all([
-        get(runConnectorPreparation$),
-        get(runCustomConnectorDefinitionRows$),
-        get(runCustomConnectorStoredRows$),
-        get(accountCandidates$),
-        get(preCreateConnectorFeatureSwitchContext$),
-        get(runCustomConnectorPermissionBundles$),
-      ]);
-      if (isRouteError(preparation)) {
-        return preparation;
-      }
-      if (!preparation.custom) {
-        return emptyCustomConnectorRuntimeContext();
-      }
-      const args = preparation.custom;
-      const chosenRows = await Promise.all(
-        connectors.map(async (connector) => {
-          const rows = customConnectorCandidateRuntimeRows({
-            connector,
-            storageRows,
-            candidateIds:
-              candidates.get(
-                connectorAccountTargetKey({
-                  kind: "custom",
-                  customConnectorId: connector.id,
-                }),
-              ) ?? [],
-          });
-          for (const row of rows) {
-            const context = await buildNewRunCustomConnectorRuntimeContext({
-              rows: [row],
-              permissionBundlesByConnectorId,
-              featureSwitchContext,
-              connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-              grants: args.customConnectorGrants,
-            });
-            if (context.targets.length > 0) {
-              return row;
-            }
-          }
-          return {
-            connector,
-            values: [],
-            credentialAccess: { kind: "absent" as const },
-          };
-        }),
-      );
-      return await (
-        await get(connectorInput$)
-      ).timing.measure(
-        "api_dispatch_prepare_context_build_custom_connector_firewalls",
-        "nested",
-        async () => {
-          return await buildNewRunCustomConnectorRuntimeContext({
-            rows: chosenRows,
-            permissionBundlesByConnectorId,
-            featureSwitchContext,
-            connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-            grants: args.customConnectorGrants,
-          });
-        },
-      );
-    },
-  );
-  const runConnectorReadConnectorSnapshot$ = computed(
-    async (
-      get,
-    ): Promise<RunConnectorContextSnapshot | CreateRunErrorResult> => {
-      const input = await get(connectorInput$);
-      const scope = await get(preCreateConnectorScope$);
-      return await input.timing.measure(
-        "api_dispatch_prepare_context_load_connector_contexts",
-        "nested",
-        async () => {
-          const [preparation, storedConnectorSnapshot, customConnectorContext] =
-            await Promise.all([
-              get(runConnectorPreparation$),
-              get(runStoredConnectorSnapshot$),
-              get(runCustomConnectorContext$),
-            ]);
-          if (isRouteError(preparation)) {
-            return preparation;
-          }
-          if (isRouteError(storedConnectorSnapshot)) {
-            return storedConnectorSnapshot;
-          }
-          if (isRouteError(customConnectorContext)) {
-            return customConnectorContext;
-          }
-          return {
-            storedConnectorSnapshot,
-            storedConnectorMetadataContext: storedConnectorContextFromSnapshot(
-              storedConnectorSnapshot,
-            ),
-            customConnectorContext,
-          };
-        },
-        storedConnectorTimingDimensions({
-          scopeSource: scope.source,
-        }),
-      );
-    },
-  );
-  const connectorSelection$ = runConnectorSelection$;
-  const connectorSnapshot$ = runConnectorReadConnectorSnapshot$;
-  const preCreateExecutionConnectors = {
-    connectorSelection$: connectorSelection$,
-    connectorSnapshot$: connectorSnapshot$,
-  };
-  const preCreateBodyEnvironmentEnvironment$ = computed(async (get) => {
-    const [agent, environment] = await Promise.all([
-      get(preCreateExecutionAgent$),
-      get(runEnvironmentSnapshot$),
-    ]);
-    if (!agent) {
-      throw new Error("Agent disappeared after preparation authorization");
-    }
-    if (isRouteError(environment)) {
-      return environment;
-    }
-    return resolveRunBodyEnvironment({
-      runVars: selectedAgentRunVariables(agent.id),
-      runSecrets: pendingOkouTokenSecrets(undefined),
-      persistedEnvironment: environment,
-      canonicalOkouRuntime: true,
-    });
-  });
-  const inputs$ = computed(
-    async (get): Promise<RunPreparedConnectorInputs | CreateRunErrorResult> => {
-      const [
-        input,
-        selection,
-        snapshot,
-        modelProvider,
-        body,
-        policies,
-        metadata,
-        agent,
-      ] = await Promise.all([
-        get(preCreateExecutionIdentityInput$),
-        get(connectorSelection$),
-        get(connectorSnapshot$),
-        get(modelRoute$),
-        get(preCreateBodyEnvironmentEnvironment$),
-        get(preCreateExecutionPermissionPolicies$),
-        get(preCreateExecutionBootstrapMetadata$),
-        get(preCreateExecutionAgent$),
-      ]);
-      if (isRouteError(body)) {
-        return body;
-      }
-      if (isRouteError(modelProvider)) {
-        return modelProvider;
-      }
-      if (isRouteError(selection)) {
-        return selection;
-      }
-      if (isRouteError(snapshot)) {
-        return snapshot;
-      }
-      if (!agent) {
-        throw new Error("Authorized selected run preparation is missing");
-      }
-      return {
-        db: get(db$),
-        timing: input.timing,
-        connectorScope: selection.connectorScope,
-        connectorCatalogSelection: selection.connectorCatalogSelection,
-        body: { ...body, permissionPolicies: policies ?? undefined },
-        modelProvider,
-        ...snapshot,
-        featureSwitchContext: metadata.featureSwitchContext,
-      };
-    },
-  );
-  const permissionManifest$ = computed(async (get) => {
-    const input = await get(inputs$);
-    return isRouteError(input)
-      ? input
-      : await input.timing.measure(
-          "api_dispatch_prepare_context_build_permission_manifest",
-          "nested",
-          async () => {
-            return await buildPreparedPermissionManifest(input);
-          },
-        );
-  });
-  const runConnectorEagerSecretPlan$ = computed(async (get) => {
-    const [input, permissionManifest] = await Promise.all([
-      get(inputs$),
-      get(permissionManifest$),
-    ]);
-    if (isRouteError(input)) {
-      return input;
-    }
-    if (isRouteError(permissionManifest)) {
-      return permissionManifest;
-    }
-    const snapshot = input.storedConnectorSnapshot;
-    const connectorContext =
-      storedConnectorExecutionContextFromSnapshot(snapshot);
-    const eagerInputs = eagerStoredConnectorSecretInputs({
-      modelProvider: input.modelProvider,
-      connectorContext,
-    });
-    const names = snapshot
-      ? eagerStoredConnectorSecretNames({
-          snapshot,
-          referencedEnvironmentSecretAliases:
-            eagerInputs.referencedEnvironmentSecretAliases,
-          storedEnvironment: eagerInputs.eagerStoredEnvironment,
-          environmentSecretPlaceholders:
-            permissionManifest?.environmentSecretPlaceholders,
-          overriddenSecretAliases: overriddenRuntimeSecretAliases([
-            input.modelProvider?.secrets,
-            input.modelProvider?.secretConnectorMap,
-            input.body.secrets,
-          ]),
-        })
-      : new Set<string>();
-    return {
-      input,
-      connectorContext,
-      permissionManifest,
-      names,
-      bindingSets:
-        snapshot?.bindingSets.filter((bindingSet) => {
-          return !bindingSet.isMcp;
-        }) ?? [],
-      timingDimensions: storedConnectorTimingDimensions({
-        scopeSource: input.connectorScope.source,
-        connectorCount: snapshot?.allowedConnectorRows.length ?? 0,
-      }),
-    };
-  });
-  const runConnectorEncryptedRows$ = computed(
-    async (get): Promise<readonly StoredConnectorEncryptedSecretRow[]> => {
-      const [plan, sources] = await Promise.all([
-        get(runConnectorEagerSecretPlan$),
-        get(selectedStoredConnectorSources$),
-      ]);
-      if (isRouteError(plan) || plan.names.size === 0) {
-        return [];
-      }
-      // Account identity, revision and values were captured in one statement.
-      // Only catalog-owned names from the selected binding sets may escape it.
-      const keys = new Set(
-        plan.bindingSets.flatMap((bindingSet) => {
-          return storedConnectorCredentialNames({
-            runtimeBindings: bindingSet.runtimeBindings,
-            kind: "secret",
-            names: plan.names,
-          }).map((name) => {
-            return JSON.stringify([bindingSet.access.connectorId, name]);
-          });
-        }),
-      );
-      return sources.flatMap((result) => {
-        return result.kind === "available"
-          ? result.snapshot.credentials.filter((credential) => {
-              return keys.has(
-                JSON.stringify([
-                  result.snapshot.source.sourceId,
-                  credential.name,
-                ]),
-              );
-            })
-          : [];
-      });
-    },
-  );
-  const eagerCredentialContext$ = computed(async (get) => {
-    const resolveStartedAt = performance.now();
-    return createEagerConnectorCredentialContext(
-      await get(runConnectorEncryptedRows$),
-      resolveStartedAt,
-    );
-  });
-  // Capture the exact eager plan before preloading its read-only context.
-  const preloadEagerCredentials$ = command(
-    async ({ get }, signal: AbortSignal): Promise<void> => {
-      if (!(await get(selectionInput$))) {
-        signal.throwIfAborted();
-        return;
-      }
-      const context = await get(eagerCredentialContext$);
-      signal.throwIfAborted();
-      waitUntil(settle(get(context.credentials$)));
-    },
-  );
-  // Stored connector secrets, decrypted once per graph; KMS decryption has no
-  // side effects (Ethan 2026-10-02).
-  const decryptedSecrets$ = computed(async (get) => {
-    const selection = await get(selectionInput$);
-    if (!selection) {
-      return {};
-    }
-    const [plan, rows] = await Promise.all([
-      get(runConnectorEagerSecretPlan$),
-      get(runConnectorEncryptedRows$),
-    ]);
-    if (isRouteError(plan)) {
-      return {};
-    }
-    const { credentials: decrypted } = await get(
-      (await get(eagerCredentialContext$)).credentials$,
-    );
-    return Object.fromEntries(
-      rows.map((row) => {
-        const result = decrypted.get(row.id);
-        if (!result) {
-          throw new Error(
-            "Selected connector credential is missing from bootstrap",
-          );
-        }
-        if (!result.ok) {
-          throw result.error;
-        }
-        return [row.name, result.value];
-      }),
-    );
-  });
-  const connectorContext$ = computed(
-    async (get): Promise<PreparedConnectorContext | CreateRunErrorResult> => {
-      const [plan, secrets] = await Promise.all([
-        get(runConnectorEagerSecretPlan$),
-        get(decryptedSecrets$),
-      ]);
-      if (isRouteError(plan)) {
-        return plan;
-      }
-      return {
-        connectorContext: {
-          ...plan.connectorContext,
-          secrets: mergeRecords(
-            plan.connectorContext.secrets,
-            resolveStoredConnectorSecrets(plan.bindingSets, secrets),
-          ),
-        },
-        permissionManifest: plan.permissionManifest,
-      };
-    },
-  );
-  const prepared = { connectorContext$: connectorContext$ };
-  const workflowInput$ = computed(
-    async (get): Promise<RunWorkflowReadInput> => {
-      const { command } = await get(preCreateExecutionInput$);
-      const db = get(db$);
-      const workflows = await get(preCreateExecutionWorkflows$);
-      return {
-        db,
-        args: {
-          catalog: await get(claimCatalog$),
-          orgId: command.owner.orgId,
-          userId: command.owner.userId,
-          injectSkillVolumes: { workflows },
-          requiredOfficialWorkflowIds: command.requiredOfficialWorkflowIds,
-          piExecution: selectedRunPiExecution(command),
-          codexServiceTier: command.codexServiceTier,
-          agentRunMetadata: { reasoningEffort: command.reasoningEffort },
-        },
-      };
-    },
-  );
-  const modelState$ = computed(async (get): Promise<RunWorkflowModelState> => {
-    const [requestedFramework, modelProvider] = await Promise.all([
-      get(runFramework$),
-      get(modelRoute$),
-    ]);
-    if (isRouteError(requestedFramework)) {
-      return requestedFramework;
-    }
-    if (isRouteError(modelProvider)) {
-      return modelProvider;
-    }
-    return { requestedFramework, modelProvider };
-  });
-  const candidates$ = computed(async (get) => {
-    const { args } = await get(workflowInput$);
-    const modelState = await get(modelState$);
-    if (modelState === undefined || isRouteError(modelState)) {
-      return [];
-    }
-    const { requestedFramework, modelProvider } = modelState;
-    const framework = modelProvider
-      ? modelProviderFramework(modelProvider)
-      : requestedFramework;
-    const piSandbox = resolvePreparedPiModelConfig({
-      input: piModelPreparationInput(args),
-      modelProvider,
-    });
-    return officialWorkflowRunCandidates(
-      args.injectSkillVolumes?.workflows ?? [],
-      skillsRootForRun(framework, piSandbox),
-      args.requiredOfficialWorkflowIds ?? [],
-    );
-  });
-  const acceptedRunCatalog$ = computed(async (get) => {
-    return (
-      (await get((await get(executionContext$)).officialWorkflows$))?.catalog ??
-      null
-    );
-  });
-  const acceptedCandidates$ = computed(async (get) => {
-    const [catalog, candidates] = await Promise.all([
-      get(acceptedRunCatalog$),
-      get(candidates$),
-    ]);
-    if (candidates.length === 0) {
-      return [];
-    }
-    if (!catalog) {
-      throw new OfficialWorkflowRunAdmissionError();
-    }
-    return acceptedRunCandidates(catalog, candidates);
-  });
-  const acceptedRunRevisions$ = computed(async (get) => {
-    const [facts, candidates] = await Promise.all([
-      get((await get(executionContext$)).officialWorkflows$),
-      get(acceptedCandidates$),
-    ]);
-    if (candidates.length === 0) {
-      return [];
-    }
-    if (!facts) {
-      throw new OfficialWorkflowRunAdmissionError();
-    }
-    const revisions = facts.revisions;
-    return candidates.map(({ accepted }) => {
-      return (
-        revisions.get(JSON.stringify([accepted.name, accepted.revision])) ??
-        null
-      );
-    });
-  });
-  const officialWorkflowRunObservation$ = computed(
-    async (get): Promise<OfficialWorkflowRunObservation | undefined> => {
-      const [catalog, candidates, revisions] = await Promise.all([
-        get(acceptedRunCatalog$),
-        get(acceptedCandidates$),
-        get(acceptedRunRevisions$),
-      ]);
-      return catalog && candidates.length > 0
-        ? assembleRunObservation(catalog, candidates, revisions)
-        : undefined;
-    },
-  );
-  const observation$ = officialWorkflowRunObservation$;
-  const runWorkflowReadOfficialWorkflow$ = computed(
-    async (get): Promise<PreparedOfficialWorkflow> => {
-      const result = await settle(
-        Promise.all([get(modelState$), get(observation$)]),
-      );
+  const preparedPromptAndSkillVolumes$ = computed(
+    async (get): Promise<PromptAndSkillVolumes | CreateRunErrorResult> => {
+      const result = await settle(get(promptAndSkillVolumes$));
       if (!result.ok) {
+        if (result.error instanceof PromptAndSkillVolumesError) {
+          // Source admission preserves the channel-specific rejection code;
+          // independent storage preparation must also return a failed result.
+          return result.error.code === "BAD_REQUEST"
+            ? badRequestMessage(result.error.message)
+            : conflict(result.error.message);
+        }
         if (result.error instanceof OfficialWorkflowRunAdmissionError) {
           return conflict(result.error.message);
         }
         throw result.error;
       }
-      const [model, observation] = result.value;
-      return isRouteError(model) ? model : observation;
+      return result.value;
     },
   );
-  const officialWorkflow$ = runWorkflowReadOfficialWorkflow$;
-  const workflow = {
-    officialWorkflow$: officialWorkflow$,
-    officialWorkflowFacts$: computed(async (get) => {
-      return await get((await get(executionContext$)).officialWorkflows$);
-    }),
+  const model = {
+    featureSwitchContext$: preCreateModelFeatureSwitchContext$,
+    framework$: runFramework$,
+    modelRoute$: modelRoute$,
   };
+  const connectorSelection$ = threadContext.connectorSelection$;
+  const connectorSnapshot$ = threadContext.connectorSnapshot$;
+  const preCreateExecutionConnectors = {
+    connectorSelection$,
+    connectorSnapshot$,
+  };
+  const preCreateBodyEnvironmentEnvironment$ = bootstrap.bodyEnvironment$;
+  const environment$ = createEnvironmentSignals(
+    bootstrap,
+    pickedEvent$,
+    threadContext,
+  );
+  // Start environment preparation, including credential decryption, before
+  // runner preparation awaits it.
+  const preloadEnvironment$ = command(
+    async ({ get }, signal: AbortSignal): Promise<void> => {
+      if (!(await get(selectionInput$))) {
+        signal.throwIfAborted();
+        return;
+      }
+      waitUntil(settle(get(environment$)));
+      signal.throwIfAborted();
+    },
+  );
+  const prepared = { environment$ };
+  const workflow = createOfficialWorkflowSignals(pickedEvent$, threadContext);
+  const { officialWorkflow$ } = workflow;
   const userTimezone$ = computed(async (get) => {
     return (
-      (await get(preCreateExecutionBootstrapMetadata$)).userInfo.timezone ??
-      undefined
+      (await get(bootstrap.memberMetadata$)).preferences?.timezone ?? undefined
     );
   });
   const shared = {
@@ -5751,488 +2637,27 @@ export function createThreadClaimRunObjects(
     agent$: preCreateAgentAgent$,
     threadSession$: threadSession$,
     runArgs$: preCreateRunArgsRunArgs$,
-    bootstrap$: preCreateBootstrapBootstrap$,
     shared: shared,
-    bootstrapMetadata$: preCreateBootstrapMetadata$,
   };
-  const preCreateThreadSessionThreadSession$ = computed(
-    async (get): Promise<ChatThreadSessionResolution | undefined> => {
-      const { command, timing } = await get(preCreateInput$);
-      if (!command.chatThreadId) {
-        return undefined;
-      }
-      const agent = await get(preCreateAgentAgent$);
-      if (!agent) {
-        throw new Error("Agent disappeared after preparation authorization");
-      }
-      const threadId = command.chatThreadId;
-      const route = command.threadSessionRoute;
-      if (!route) {
-        throw new Error("Thread-bound agent run is missing its model route");
-      }
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_resolve_thread_session",
-        async () => {
-          const thread = await get(threadRow$);
-          if (
-            !thread ||
-            thread.id !== threadId ||
-            thread.userId !== command.owner.userId ||
-            thread.agentId !== (command.expectedThreadAgentId ?? agent.id)
-          ) {
-            throw new Error(
-              "Chat thread not found while resolving session binding",
-            );
-          }
-          return resolveChatThreadSessionSnapshot(
-            capturedChatThreadSessionSnapshot(
-              thread,
-              await get(sessionRead$),
-              agent,
-            ),
-            {
-              route,
-            },
-          );
-        },
-      );
-    },
-  );
-  const capturedSelectedStorageInput$ = computed(
-    async (get): Promise<AgentRunStorageInput | CreateRunErrorResult> => {
-      const [
-        input,
-        agent,
-        session,
-        requestedFramework,
-        modelProvider,
-        officialWorkflowRun,
-        bootstrap,
-        body,
-      ] = await Promise.all([
-        get(preCreateInput$),
-        get(preCreateAgentAgent$),
-        get(threadSession$),
-        get(runFramework$),
-        get(modelRoute$),
-        get(officialWorkflow$),
-        get(preCreateBootstrapBootstrap$),
-        get(storageBody$),
-      ]);
-      if (!agent) {
-        throw new Error("Agent disappeared after preparation authorization");
-      }
-      if (isRouteError(requestedFramework)) {
-        return requestedFramework;
-      }
-      if (isRouteError(modelProvider)) {
-        return modelProvider;
-      }
-      if (isRouteError(officialWorkflowRun)) {
-        return officialWorkflowRun;
-      }
-      const resolved = selectedRunStorageExecution(agent, session);
-      if (isRouteError(resolved)) {
-        return resolved;
-      }
-      const framework = modelProvider
-        ? modelProviderFramework(modelProvider)
-        : requestedFramework;
-      const piSandbox = resolvePreparedPiModelConfig({
-        input: {
-          catalog: await get(claimCatalog$),
-          piExecution: selectedRunPiExecution(input.command),
-          codexServiceTier: input.command.codexServiceTier,
-          reasoningEffort: input.command.reasoningEffort,
-        },
-        modelProvider,
-      });
-      const metadata = prepareRunOutputMetadata({
-        createArgs: { injectSkillVolumes: { workflows: bootstrap.workflows } },
-        systemSkillStorageResolution: get(systemSkillStorageResolution$),
-        promptAndSkills: await get(runtimePromptAndSkills$),
-        framework,
-        piSandbox,
-        body,
-        resolved,
-        officialWorkflowRun,
-      });
-      return {
-        kind: "requested",
-        args: {
-          db: get(db$),
-          instructionsStorageName: resolved.instructionsStorageName,
-          agentOrgId: resolved.orgId,
-          runtimeOrgId: input.command.owner.orgId,
-          userId: input.command.owner.userId,
-          artifacts: metadata.artifacts,
-          additionalVolumes: metadata.additionalVolumes,
-          additionalVolumeSources: metadata.additionalVolumeSources,
-          framework: piSandbox === undefined ? framework : "pi",
-          persistedStorageMounts: resolved.persistedStorageMounts,
-          timing: input.timing,
-          stats: new StorageManifestBuildStats(),
-        },
-      };
-    },
-  );
-  const storageInput$ = computed(async (get): Promise<AgentRunStorageInput> => {
-    const input = await get(capturedSelectedStorageInput$);
-    if (isRouteError(input)) {
-      throw new Error("Rejected storage input cannot be materialized");
-    }
-    return input;
-  });
-  const storageSelection$ = computed(
-    async (get): Promise<AgentRunStorageSelection> => {
-      const input = await get(storageInput$);
-      const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-      if (input.kind === "captured") {
-        if (
-          input.args.mounts.some((mount) => {
-            return (
-              mount.version === undefined ||
-              !/^[0-9a-f]{64}$/u.test(mount.version)
-            );
-          })
-        ) {
-          throw new Error("Captured Pi storage must pin every version");
-        }
-        assertUniquePersistedMountPaths(input.args.mounts);
-        return {
-          kind: "captured",
-          args: input.args,
-          bucket,
-          requests: persistedStorageMountRequests(input.args.mounts),
-        };
-      }
-      const { artifacts, composeVolumes } = await resolveStorageManifestInputs(
-        input.args,
-      );
-      const { canonicalWritebackMounts, remainingArtifacts } =
-        resolveSessionStorageOverlay({
-          artifacts,
-          persistedStorageMounts: input.args.persistedStorageMounts,
-        });
-      const request = prepareRequestStorageResolution(
-        input.args,
-        bucket,
-        composeVolumes,
-        remainingArtifacts,
-      );
-      return {
-        kind: "requested",
-        args: input.args,
-        bucket,
-        request,
-        remainingArtifacts,
-        canonicalWritebackMounts,
-        requests: [
-          ...request.requests,
-          ...persistedStorageMountRequests(canonicalWritebackMounts),
-        ],
-      };
-    },
-  );
-  const capturedStorageBaseIndex$ = computed(async (get) => {
-    const selection = await get(storageSelection$);
-    const input = {
-      db: selection.args.db,
-      requests: selection.requests,
-      timing: selection.args.timing,
-    };
-    const prefetched = await get((await get(executionContext$)).storage$);
-    const ownedRequests = input.requests.filter((request) => {
-      return !prefetched.lookupKeys.has(
-        storageIndexKey(
-          request.lookup.orgId,
-          request.lookup.userId,
-          request.lookup.name,
-        ),
-      );
-    });
-    const index = mergeStorageIndexes(
-      prefetched.index,
-      await loadStorageBaseIndex(input.db, ownedRequests, input.timing),
-    );
-    // Keep the query and its selection together so dependent version reads
-    // reuse this snapshot without walking the same upstream graph again.
-    const capturedVersionKeys = new Set(
-      prefetched.requests.map(storageRequestKey),
-    );
-    return {
-      selection,
-      input: {
-        ...input,
-        requests: input.requests.filter((request) => {
-          return !capturedVersionKeys.has(storageRequestKey(request));
-        }),
-      },
-      index,
-    };
-  });
-  const capturedStorageIndex$ = computed(async (get) => {
-    const { selection, input, index } = await get(capturedStorageBaseIndex$);
-    return {
-      selection,
-      storageIndex: await withStoragePrefixVersions(
-        input.db,
-        input.requests,
-        index,
-      ),
-    };
-  });
-  const agentRunStorageStoragePlan$ = computed(
-    async (get): Promise<AgentRunStoragePlan> => {
-      const { selection, storageIndex } = await get(capturedStorageIndex$);
-      return await measureApiDispatchTiming(
-        selection.args.timing,
-        "api_dispatch_prepare_storage_manifest_resolve_plan",
-        "nested",
-        async () => {
-          if (selection.kind === "captured") {
-            return {
-              requested: await resolveValidatedPersistedStorageMounts({
-                ...selection.args,
-                bucket: selection.bucket,
-                storageIndex,
-                branch: "captured",
-              }),
-              sessionWriteback: undefined,
-              missingArtifacts: [],
-            };
-          }
-          const missingArtifacts = selection.remainingArtifacts.filter(
-            (artifact) => {
-              const entry = storageIndex.get(
-                storageIndexKey(
-                  selection.args.runtimeOrgId,
-                  selection.args.userId,
-                  artifact.name,
-                ),
-              );
-              return !entry || entry.headVersionId === null;
-            },
-          );
-          const missingNames = new Set(
-            missingArtifacts.map((artifact) => {
-              return artifact.name;
-            }),
-          );
-          const [requested, sessionWriteback] = await Promise.all([
-            resolveStorageEntries(
-              {
-                ...selection.request.input,
-                artifacts: selection.remainingArtifacts.filter((artifact) => {
-                  return !missingNames.has(artifact.name);
-                }),
-                storageIndex,
-              },
-              "requested",
-            ),
-            selection.canonicalWritebackMounts.length === 0
-              ? undefined
-              : resolveSessionWritebackStorageMounts({
-                  db: selection.args.db,
-                  bucket: selection.bucket,
-                  storageIndex,
-                  mounts: selection.canonicalWritebackMounts,
-                  timing: selection.args.timing,
-                  stats: selection.args.stats,
-                }),
-          ]);
-          return {
-            requested: {
-              ...requested,
-              input: {
-                ...requested.input,
-                artifacts: selection.remainingArtifacts,
-              },
-            },
-            sessionWriteback,
-            missingArtifacts,
-          };
-        },
-      );
-    },
-  );
-  const selectedStorageMetadata$ = computed(async (get) => {
-    const plan = await get(storagePlan$);
-    if (isRouteError(plan)) {
-      return plan;
-    }
-    if (plan.missingArtifacts.length > 0) {
-      throw new Error(
-        `Run storage must be initialized before execution: ${plan.missingArtifacts
-          .map((artifact) => {
-            return artifact.name;
-          })
-          .join(", ")}`,
-      );
-    }
-    const entries =
-      plan.sessionWriteback === undefined
-        ? storageEntriesMetadata(plan.requested)
-        : combinePreparedStorageEntries({
-            requested: storageEntriesMetadata(plan.requested),
-            sessionWriteback: storageEntriesMetadata(plan.sessionWriteback),
-          });
-    const metadata = await finalizePreparedStorage({ entries });
-    return { plan, entries, metadata };
-  });
-  const executionStorageObjects$ = computed(async (get) => {
-    const selected = await get(selectedStorageMetadata$);
-    if (isRouteError(selected)) {
-      return selected;
-    }
-    const mounts = selected.metadata.storageMounts.map(
-      (mount): ExecutionStorageRequest => {
-        const identity = {
-          orgId: mount.orgId,
-          userId: mount.userId,
-          storageId: mount.storageId,
-          versionId: mount.versionId,
-          name: mount.name,
-          mountPath: mount.mountPath,
-        };
-        return mount.writeback
-          ? {
-              ...identity,
-              mode: "writeback",
-              missingRootPolicy: mount.missingRootPolicy ?? "fail",
-            }
-          : {
-              ...identity,
-              mode: "readonly",
-              ...(mount.instructionsTargetFilename === undefined
-                ? {}
-                : {
-                    instructionsTargetFilename:
-                      mount.instructionsTargetFilename,
-                  }),
-            };
-      },
-    );
-    const storageIndex = mergeStorageIndexes(
-      selected.plan.requested.input.storageIndex,
-      selected.plan.sessionWriteback?.input.storageIndex ?? new Map(),
-    );
-    const cache = await get((await get(executionContext$)).storageCache$);
-    const versions = exactStorageVersionsFromIndex(mounts, storageIndex);
-    const rows = [
-      ...cache.rows,
-      ...[...storageIndex.values()].flatMap((entry) => {
-        return entry.cachedUrls ?? [];
-      }),
-    ];
-    return {
-      mounts,
-      objects: createResolvedExecutionStorageObjects(mounts, versions, rows),
-    };
-  });
-  const preparedStorage$ = computed(
-    async (
-      get,
-    ): Promise<MaterializedAgentRunStorage | CreateRunErrorResult | null> => {
-      if (!(await get(resourceAllowed$))) {
-        return null;
-      }
-      const [selected, storage] = await Promise.all([
-        get(selectedStorageMetadata$),
-        get(executionStorageObjects$),
-      ]);
-      if (isRouteError(selected)) {
-        return selected;
-      }
-      if (isRouteError(storage)) {
-        return storage;
-      }
-      const mounts = await measureApiDispatchTiming(
-        selected.plan.requested.input.timing,
-        "api_dispatch_prepare_storage_manifest_generate_compose_urls",
-        "nested",
-        () => {
-          return get(storage.objects.preparedMounts$);
-        },
-        { storage_manifest_signing_owner: "execution_storage" },
-      );
-      const byPath = new Map(
-        mounts.map((mount) => {
-          return [mount.mountPath, mount];
-        }),
-      );
-      const attach = (
-        mount: MaterializedAgentRunStorage["resolved"]["metadata"]["storageMounts"][number],
-      ) => {
-        const prepared = byPath.get(mount.mountPath);
-        if (!prepared) {
-          throw new Error("Selected storage mount has no prepared result");
-        }
-        return storedMountFromPrepared(
-          prepared,
-          mount.missingRootPolicy !== undefined,
-        );
-      };
-      const entries = {
-        ...selected.entries,
-        composeEntries: selected.entries.composeEntries.map((entry) => {
-          return {
-            ...entry,
-            storedMount: attach(entry.storedMount),
-          };
-        }),
-        additionalEntries: selected.entries.additionalEntries.map((entry) => {
-          return {
-            ...entry,
-            storedMount: attach(entry.storedMount),
-          };
-        }),
-        writebackEntries: selected.entries.writebackEntries.map((entry) => {
-          return {
-            ...entry,
-            storedMount: attach(entry.storedMount),
-          };
-        }),
-      };
-      const prepared = await finalizePreparedStorage({
-        entries,
-        timing: selected.plan.requested.input.timing,
-        stats: selected.plan.requested.input.stats,
-      });
-      return {
-        resolved: {
-          metadata: selected.metadata,
-          requested: selected.plan.requested,
-          sessionWriteback: selected.plan.sessionWriteback,
-        },
-        prepared,
-      };
-    },
+  const skillVolumeSources = [promptAndSkillVolumes$];
+  const storage$ = createStorageSignals(
+    bootstrap,
+    pickedEvent$,
+    threadContext,
+    skillVolumeSources,
   );
   const updatePresignedUrlCache$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      const storage = await get(executionStorageObjects$);
-      signal.throwIfAborted();
-      if (isRouteError(storage)) {
-        throw new Error(
-          "Committed execution is missing its storage preparation",
-        );
-      }
-      const prepared = await get(storage.objects.preparedMounts$);
+      const { presignedUrlCache } = await get(storage$);
       signal.throwIfAborted();
       await set(
         updateExecutionStoragePresignedUrlCache$,
-        storage.mounts,
-        prepared,
+        presignedUrlCache.mounts,
+        presignedUrlCache.prepared,
         signal,
       );
     },
   );
-  const storagePlan$ = computed(async (get) => {
-    const input = await get(capturedSelectedStorageInput$);
-    return isRouteError(input) ? input : get(agentRunStorageStoragePlan$);
-  });
   const {
     runArgs$: selectedRunContextRunArgs$,
     shared: selectedRunContextShared,
@@ -6242,19 +2667,9 @@ export function createThreadClaimRunObjects(
     if (!selected || "status" in selected) {
       throw new Error("Run context requires an authorized ready input");
     }
-    const previewAutomationBypass = get(previewAutomationBypass$);
-    const args = previewAutomationBypass
-      ? {
-          ...selected.args,
-          platformEnvironment: {
-            ...selected.args.platformEnvironment,
-            [VERCEL_AUTOMATION_BYPASS_ENV]: previewAutomationBypass,
-          },
-        }
-      : selected.args;
     return {
       db: get(db$),
-      args,
+      args: selected.args,
       timing: selected.input.timing,
     };
   });
@@ -6293,36 +2708,18 @@ export function createThreadClaimRunObjects(
     );
   });
   const body$ = computed(async (get) => {
-    const [input, resolved, persistedEnvironment, resolvedEnvironment] =
-      await Promise.all([
-        get(contextInput$),
-        get(execution$),
-        get(runEnvironmentSnapshot$),
-        selectedRunContextShared
-          ? get(selectedRunContextShared.bodyEnvironment$)
-          : undefined,
-      ]);
+    const [input, resolved, bodyEnvironment] = await Promise.all([
+      get(contextInput$),
+      get(execution$),
+      get(bootstrap.bodyEnvironment$),
+    ]);
     if (isRouteError(resolved)) {
       return resolved;
-    }
-    if (isRouteError(persistedEnvironment)) {
-      return persistedEnvironment;
     }
     if (resolved.orgId !== input.args.orgId) {
       return notFound("Resource not found");
     }
-    if (
-      resolvedEnvironment !== undefined &&
-      isRouteError(resolvedEnvironment)
-    ) {
-      return resolvedEnvironment;
-    }
-    return buildResolvedRunBody({
-      initialBody: initialRunBody(input.args),
-      persistedEnvironment,
-      canonicalOkouRuntime: input.args.includeOkouTokenSecret === true,
-      resolvedEnvironment,
-    });
+    return { ...initialRunBody(input.args), ...bodyEnvironment };
   });
   const runBodyBodyContext$ = computed(async (get) => {
     const [input, resolved, body, requestedFramework, featureSwitchContext] =
@@ -6351,8 +2748,7 @@ export function createThreadClaimRunObjects(
     };
   });
   const body = { bodyContext$: runBodyBodyContext$, framework$: runFramework$ };
-  const { connectorContext$: runRuntimeConnectorContext$ } =
-    selectedRunContextShared;
+  const { environment$: runRuntimeEnvironment$ } = selectedRunContextShared;
   const runRuntimeRuntimeContext$ = computed(async (get) => {
     const [
       bodyResult,
@@ -6365,13 +2761,13 @@ export function createThreadClaimRunObjects(
       get(modelRoute$),
       get(connectorSelection$),
       get(connectorSnapshot$),
-      get(runRuntimeConnectorContext$),
+      get(runRuntimeEnvironment$),
     ]);
     const selection = selectionResult;
     const bodyContext = bodyResult;
     const modelProvider = modelResult;
     const snapshot = snapshotResult;
-    const connectors = connectorResult;
+    const environment = connectorResult;
     if (isRouteError(bodyContext)) {
       return bodyContext;
     }
@@ -6384,21 +2780,20 @@ export function createThreadClaimRunObjects(
     if (isRouteError(snapshot)) {
       return snapshot;
     }
-    if (isRouteError(connectors)) {
-      return connectors;
+    if (isRouteError(environment)) {
+      return environment;
     }
     const catalog = await get(claimCatalog$);
     const usage = prepareModelUsageContext({
       catalog,
       modelProvider,
-      permissionManifest: connectors.permissionManifest,
+      permissionManifest: environmentPermissionManifest(environment),
       routePricing: runRoutePricingFromSnapshot(
         {
           modelProvider,
           serviceTier: (await get(contextInput$)).args.codexServiceTier,
-          resolution: get(usagePricingResolution$),
         },
-        await get((await get(executionContext$)).modelPricing$),
+        await get(bootstrap.modelPricing$),
       ),
     });
     if ("kind" in usage) {
@@ -6409,27 +2804,20 @@ export function createThreadClaimRunObjects(
         ? modelProviderFramework(modelProvider)
         : bodyContext.requestedFramework,
       modelProvider,
-      ...connectors,
-      customConnectorContext: snapshot.customConnectorContext,
+      environment,
       ...usage,
       connectorScope: selection.connectorScope,
       connectorCatalogSelection: selection.connectorCatalogSelection,
     };
   });
   const runContextRuntime = { runtimeContext$: runRuntimeRuntimeContext$ };
-  const runMemberUserTimezone$ = computed(async (get) => {
+  const runContextUserTimezone$ = computed(async (get) => {
     return selectedRunContextShared
       ? get(selectedRunContextShared.userTimezone$)
       : ((await get(runMemberSnapshot$)).member?.timezone ?? undefined);
   });
-  const runMemberImageModel$ = computed(async (get) => {
-    const stored = (await get(runMemberSnapshot$)).member?.selectedImageModel;
-    return isImageModelId(stored) ? stored : DEFAULT_IMAGE_MODEL;
-  });
-  const runContextUserTimezone$ = runMemberUserTimezone$;
-  const imageModel$ = runMemberImageModel$;
-  const disabledPaidTools$ = computed(async (get) => {
-    return (await get(selectedRunContextShared.disabledPaidTools$)).toolIds;
+  const imageModel$ = computed((get) => {
+    return get(bootstrap.selectedImageModel$);
   });
   const { officialWorkflow$: runContextOfficialWorkflow$ } =
     selectedRunContextShared;
@@ -6450,21 +2838,18 @@ export function createThreadClaimRunObjects(
       timezoneResult,
       imageResult,
       workflowResult,
-      paidToolsResult,
     ] = await Promise.all([
       get(bodyContext$),
       get(runtimeContext$),
       get(runContextUserTimezone$),
       get(imageModel$),
       get(runContextOfficialWorkflow$),
-      get(disabledPaidTools$),
     ]);
     const bodyContext = bodyResult;
     const runtimeContext = runtimeResult;
     const userTimezone = timezoneResult;
     const selectedImageModel = imageResult;
     const officialWorkflowRun = workflowResult;
-    const disabledPaidTools = paidToolsResult;
     if (isRouteError(bodyContext)) {
       return bodyContext;
     }
@@ -6487,43 +2872,30 @@ export function createThreadClaimRunObjects(
         cliAgentType: piSandbox ? "pi" : framework,
       },
     });
-    const validation = validateRunEnvironmentReferences({
-      body,
-      modelProvider,
-      connectorContext: runtimeContext.connectorContext,
-      customConnectorContext: runtimeContext.customConnectorContext,
-      permissionManifest: runtimeContext.permissionManifest,
-      validateEnvironmentReferences: args.validateEnvironmentReferences,
-    });
-    if (validation) {
-      return validation;
+    const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
+    if (isRouteError(promptAndSkills)) {
+      return promptAndSkills;
     }
     const metadata = prepareRunOutputMetadata({
-      createArgs: args,
-      systemSkillStorageResolution: get(systemSkillStorageResolution$),
-      promptAndSkills: await get(runtimePromptAndSkills$),
+      skillVolumes: promptAndSkills.skillVolumes,
+      officialWorkflow: officialWorkflowRun,
       framework,
       piSandbox,
       body,
       resolved,
-      officialWorkflowRun,
     });
     return {
-      disabledPaidTools,
       body,
       resolved,
       framework,
       piSandbox,
       modelProvider,
-      connectorContext: runtimeContext.connectorContext,
-      customConnectorContext: runtimeContext.customConnectorContext,
-      permissionManifest: runtimeContext.permissionManifest,
+      environment: runtimeContext.environment,
       billableFirewalls: runtimeContext.billableFirewalls,
       modelUsageProvider: runtimeContext.modelUsageProvider,
       modelUsageLongContextMinTotalInputTokens:
         runtimeContext.modelUsageLongContextMinTotalInputTokens,
       ...metadata,
-      officialWorkflowRun,
       officialWorkflowFacts: await get(
         selectedRunContextShared.officialWorkflowFacts$,
       ),
@@ -6557,8 +2929,7 @@ export function createThreadClaimRunObjects(
   const runAdmissionCheckCheckAdmission$ = command(
     async ({ get }, input: RunAdmissionInput, signal: AbortSignal) => {
       signal.throwIfAborted();
-      const identity = await get(queuedIdentityContext$);
-      signal.throwIfAborted();
+      const identity = bootstrap;
       const [models, memberModels] = await Promise.all([
         get(identity.modelFacts$),
         get(identity.memberModels$),
@@ -6612,7 +2983,7 @@ export function createThreadClaimRunObjects(
 
   const checkAdmission$ = runAdmissionCheckCheckAdmission$;
   const directSendInsufficientCreditsMessage$ = computed(async (get) => {
-    const capabilities = await get(context.plan$);
+    const capabilities = await get(bootstrap.plan$);
     const appUrl = env("APP_URL");
     return [
       "Insufficient credits. This workspace has no spendable credits right now.",
@@ -6676,6 +3047,7 @@ export function createThreadClaimRunObjects(
       const rejectedAt = new Date(
         Math.max(nowDate().getTime(), source.createdAt.getTime() + 1),
       );
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0261; new non-billing transactions are prohibited.
       return await set(writeDb$).transaction(async (tx) => {
         const rejected =
           parseRawRows(
@@ -7060,10 +3432,9 @@ export function createThreadClaimRunObjects(
       if (!(await get(selectionInput$))) {
         return null;
       }
-      const [selected, context, storagePlan] = await Promise.all([
+      const [selected, context] = await Promise.all([
         get(preCreateRunArgsRunArgs$),
         get(preparedRunPlan$),
-        get(storagePlan$),
         // Start session-based execution alongside firewall/body assembly,
         // rather than only after the completed create arguments are available.
         get(execution$),
@@ -7077,46 +3448,14 @@ export function createThreadClaimRunObjects(
       if ("status" in context) {
         return context;
       }
-      if (isRouteError(storagePlan)) {
-        return storagePlan;
-      }
       const { args, timing } = await get(contextInput$);
-      const finalAppendSystemPrompt =
-        args.piExecution && args.piSystemPrompt
-          ? bindStableAppendSystemPrompt(
-              args.piSystemPrompt.buildPrompt(),
-              args.body.appendSystemPrompt ??
-                args.piSystemPrompt.dynamicAppendSystemPrompt,
-            )
-          : args.body.appendSystemPrompt;
       const launchSnapshot = {
         schemaVersion: 3 as const,
         framework:
           context.piSandbox === undefined ? context.framework : ("pi" as const),
         runnerProfile: DEFAULT_PROFILE,
       };
-      const runtime = await get(runtimePromptAndSkills$);
-      const prompt = renderRunPromptAndSkills(
-        {
-          ...runtime,
-          systemPromptVariables: {
-            ...runtime.systemPromptVariables,
-            connectors:
-              args.includeOkouTokenSecret === true
-                ? runtime.systemPromptVariables.connectors
-                : undefined,
-          },
-        },
-        {
-          userPrompt: context.body.prompt,
-          systemPrompt: finalAppendSystemPrompt,
-        },
-      );
-      const body = {
-        ...context.body,
-        prompt: prompt.userPrompt,
-        appendSystemPrompt: prompt.systemPrompt,
-      };
+      const { body } = context;
       const {
         officialWorkflowRun,
         officialWorkflowFacts,
@@ -7148,6 +3487,7 @@ export function createThreadClaimRunObjects(
                 id: modelProvider.id,
                 type: modelProvider.type,
                 selectedModel: modelProvider.selectedModel,
+                upstreamModel: modelProvider.upstreamModel,
                 builtInModelRuntimeRoute:
                   modelProvider.builtInModelRuntimeRoute,
               }
@@ -7161,10 +3501,7 @@ export function createThreadClaimRunObjects(
           orgId: args.orgId,
           apiStartTime: args.apiStartTime,
           includeOkouTokenSecret: args.includeOkouTokenSecret,
-          okouTokenComputerUseHostId: args.okouTokenComputerUseHostId,
-          okouTokenCloudBrowserEnabled: args.okouTokenCloudBrowserEnabled,
           chatThreadId: args.chatThreadId,
-          platformEnvironment: args.platformEnvironment,
           // Thread launches carry no producer Pi launch options or
           // artifact root-policy override.
           piLaunchConfig: undefined,
@@ -7176,12 +3513,41 @@ export function createThreadClaimRunObjects(
   // Resource reads do not wait for credit admission: its failure is checked
   // with the prepared resources before anything is committed.
   const resourceAllowed$ = computed(async (get) => {
+    // Eager storage must not evaluate a Run plan for an automation source
+    // whose delegation admission already rejects it.
+    if (
+      (await get(isAutomation$)) &&
+      (await get(autonomyBudget$)).kind === "invalid"
+    ) {
+      return false;
+    }
     const [selection, validSource] = await Promise.all([
       get(selectionInput$),
       (await get(isAutomation$)) ? true : get(resourceValidation$),
     ]);
     return !!selection && validSource;
   });
+  // Storage is read only for an admitted source. Rejections come from the Run
+  // plan; storage runs alongside it and its failure matters only when the plan
+  // is ready.
+  const preparedStorage$ = computed(
+    async (get): Promise<Storage | CreateRunErrorResult | null> => {
+      if (!(await get(resourceAllowed$))) {
+        return null;
+      }
+      const [plan, storage] = await Promise.all([
+        get(runPlan$),
+        settle(get(storage$)),
+      ]);
+      if (!plan || isRouteError(plan)) {
+        return plan;
+      }
+      if (!storage.ok) {
+        throw storage.error;
+      }
+      return storage.value;
+    },
+  );
   /** Launch payload arguments without the run token; a pure read join. */
   const runnerArgs$ = computed(async (get) => {
     const [input, identity, allowed] = await Promise.all([
@@ -7216,9 +3582,13 @@ export function createThreadClaimRunObjects(
       if (!args || isRouteError(args)) {
         return args;
       }
+      const tokenInput = await get(okouTokenInput$);
+      signal.throwIfAborted();
+      const okouToken = set(prepareOkouTokenEnvironment$, tokenInput, signal);
       return prepareRunnerStorageInput({
         db: set(writeDb$),
         args,
+        okouToken,
         storageManifestStats: new StorageManifestBuildStats(),
       });
     },
@@ -7280,7 +3650,7 @@ export function createThreadClaimRunObjects(
   });
   const prepareRunnerStorage$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      await set(preloadEagerCredentials$, signal);
+      await set(preloadEnvironment$, signal);
       const [input, preparedStorage, piResources] = await Promise.all([
         set(prepareRunnerInput$, signal),
         get(preparedStorage$),
@@ -7300,84 +3670,24 @@ export function createThreadClaimRunObjects(
     if (!(await get(selectionInput$))) {
       return null;
     }
-    const [environment, connectors, model, snapshot] = await Promise.all([
+    const [body, environment] = await Promise.all([
       get(preCreateBodyEnvironmentEnvironment$),
-      get(connectorContext$),
-      get(modelRoute$),
-      get(connectorSnapshot$),
+      get(environment$),
     ]);
     if (isRouteError(environment)) {
       return environment;
     }
-    if (isRouteError(connectors)) {
-      return connectors;
-    }
-    if (isRouteError(model)) {
-      return model;
-    }
-    if (isRouteError(snapshot)) {
-      return snapshot;
-    }
     return {
-      secrets: buildStoredExecutionSecrets({
-        connectorContext: connectors.connectorContext,
-        modelProvider: model,
-        bodySecrets: environment.secrets,
-        customConnectorContext: snapshot.customConnectorContext,
-      }).secrets,
+      secrets: buildStoredExecutionSecrets(environment, body.secrets).secrets,
     };
   });
   const prepareEncryptedSecrets$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      await set(preloadEagerCredentials$, signal);
+      await set(preloadEnvironment$, signal);
       const input = await get(storedSecretsInput$);
       signal.throwIfAborted();
       if (!input || isRouteError(input)) {
         return input;
-      }
-      const { observation } = await get(
-        (await get(eagerCredentialContext$)).credentials$,
-      );
-      signal.throwIfAborted();
-      const plan = await get(runConnectorEagerSecretPlan$);
-      signal.throwIfAborted();
-      // One owned consumer records the original completed intervals, never preload.
-      if (observation && !isRouteError(plan)) {
-        bestEffortTelemetry(() => {
-          const dimensions = {
-            ...plan.timingDimensions,
-            connector_context_schema: "selected_eager_v1",
-            connector_context_builtin_decrypt_count:
-              observation.builtinDecryptCount,
-            connector_context_observation:
-              observation.builtinResolve && observation.builtinDecrypt
-                ? "complete"
-                : "partial",
-            connector_context_builtin_decrypt_count_bucket: countBucket(
-              observation.builtinDecryptCount,
-            ),
-          };
-          for (const [actionType, duration] of [
-            [
-              "api_dispatch_prepare_context_connector_context_builtin_resolve",
-              observation.builtinResolve,
-            ],
-            [
-              "api_dispatch_prepare_context_connector_context_builtin_decrypt",
-              observation.builtinDecrypt,
-            ],
-          ] as const) {
-            if (duration) {
-              plan.input.timing.recordDuration(
-                actionType,
-                "nested",
-                duration.durationMs,
-                duration.finishedAt,
-                dimensions,
-              );
-            }
-          }
-        });
       }
       const encryptedSecrets = await set(
         encryptExecutionSecrets$,
@@ -7459,9 +3769,6 @@ export function createThreadClaimRunObjects(
       signal.throwIfAborted();
       const head = await get(head$);
       signal.throwIfAborted();
-      if (!head) {
-        return null;
-      }
       if (head.contextType === "automation") {
         await set(initializeAutomationExecution$, head, timing.run, signal);
       } else {
@@ -7539,8 +3846,8 @@ export function createThreadClaimRunObjects(
         );
         signal.throwIfAborted();
         if (launch.kind === "rejected") {
-          // The automation input was rejected from its reads or its
-          // reconciliation; no launch read can change that, so none starts.
+          // The automation input was rejected from its captured reads;
+          // no launch read can change that, so none starts.
           return { kind: "rejected" as const, assembly: launch.assembly };
         }
         rewardArgs = await set(
@@ -7559,8 +3866,8 @@ export function createThreadClaimRunObjects(
         get(assembly$),
         get(runIdentity$),
         get(runMemberSnapshot$),
-        get(runDisabledPaidToolsSnapshot$),
-        get(runEnvironmentSnapshot$),
+        get(bootstrap.disabledPaidTools$),
+        get(bootstrap.bodyEnvironment$),
       ]);
       signal.throwIfAborted();
       return {
@@ -7578,8 +3885,8 @@ export function createThreadClaimRunObjects(
         await set(resolveAutomationModelSnapshot$, signal);
         signal.throwIfAborted();
       }
-      // Storage mounts and runtime-secret KMS do not read reconciled
-      // automation configuration, so they start before launch preparation.
+      // Storage mounts and runtime-secret KMS are independent of automation
+      // launch material, so they start before launch preparation.
       const [encrypted, admission, launch] = await Promise.all([
         set(prepareEncryptedSecrets$, signal),
         set(checkClaimAdmission$, signal),
@@ -7587,8 +3894,8 @@ export function createThreadClaimRunObjects(
         get(storageMounts$),
         // Connector reads start independently of prompt/model material. A
         // prefetch miss joins the same loader once for this selected identity.
-        get((await get(executionContext$)).connectors$),
-        get(runThreadSelectionRow$),
+        get(bootstrap.connectors$),
+        get(threadContext.connectorThreadSelections$),
       ]);
       signal.throwIfAborted();
       if (launch.kind === "rejected") {
@@ -7641,7 +3948,7 @@ export function createThreadClaimRunObjects(
     },
   );
   const claimAdmissionFacts$ = computed(async (get) => {
-    const selected = await get(executionContext$);
+    const selected = bootstrap;
     const [planCapabilities, featureSwitchContext] = await Promise.all([
       get(selected.plan$),
       get(selected.featureSwitches$),
@@ -7858,13 +4165,6 @@ export function createThreadClaimRunObjects(
     ): Promise<ClaimRunCommit> => {
       signal.throwIfAborted();
       const { input, identity, callbackRows, launch } = context;
-      if (
-        input.args.orgId !== claim.orgId ||
-        input.args.chatThreadId !== claim.chatThreadId ||
-        context.head.chatThreadId !== claim.chatThreadId
-      ) {
-        throw new Error("Prepared run does not belong to this thread claim");
-      }
       const commit: CommitPreparedLaunchArgs = {
         createArgs: input.args,
         enforceBuiltInCredits: input.enforceBuiltInCredits,
@@ -7894,16 +4194,20 @@ export function createThreadClaimRunObjects(
         "api_dispatch_insert_run_with_concurrency",
         "top_level",
         async () => {
-          const result = await set(
-            commitPreparedPendingLaunch$,
-            preparedCommit,
-            {
-              orgId: claim.orgId,
-              chatThreadId: claim.chatThreadId,
-              claimId: claim.claimId,
-              producer: context.producerBinding,
+          const result = await admissionTiming.capturePoolAcquisition(
+            async () => {
+              return await set(
+                commitPreparedPendingLaunch$,
+                preparedCommit,
+                {
+                  orgId: claim.orgId,
+                  chatThreadId: claim.chatThreadId,
+                  claimId: claim.claimId,
+                  producer: context.producerBinding,
+                },
+                signal,
+              );
             },
-            signal,
           );
           if ("kind" in result && result.kind === "pending") {
             set(internalCommittedRunId$, result.run.id);
@@ -7966,6 +4270,7 @@ export function createThreadClaimRunObjects(
           signal.throwIfAborted();
           // Only journaled occurrences require this post-commit lock. Read
           // supersession after acquiring it so a concurrent claim is visible.
+          // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0262; new non-billing transactions are prohibited.
           await database.transaction(async (tx) => {
             const [locked] = await tx
               .select({ id: workflowAutomations.id })
@@ -8083,1485 +4388,7 @@ export function createThreadClaimRunObjects(
   return { hasFirstPickableChatEvent$, startRun$ };
 }
 
-function isModelProviderType(type: string): type is ModelProviderType {
-  return Object.hasOwn(MODEL_PROVIDER_TYPES, type);
-}
-
 // --- Thread-private implementation: storage manifest ---
-
-interface AdditionalVolume {
-  readonly name: string;
-  readonly version?: string;
-  readonly mountPath: string;
-  readonly system?: boolean;
-  readonly expectedStorageId?: string;
-}
-
-interface PrepareAgentRunStorageManifestArgs {
-  readonly db: ReadonlyDb;
-  readonly instructionsStorageName: string;
-  readonly agentOrgId: string;
-  readonly runtimeOrgId: string;
-  readonly userId: string;
-  readonly artifacts: readonly ContextArtifact[];
-  readonly additionalVolumes: readonly AdditionalVolume[] | undefined;
-  readonly additionalVolumeSources:
-    readonly StorageManifestSource[] | undefined;
-  readonly framework: SupportedFramework | "pi";
-  /** Canonical session persistence replaces matching request writeback artifacts. */
-  readonly persistedStorageMounts?: readonly PersistedStorageMount[];
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly stats?: StorageManifestBuildStats;
-}
-
-interface ResolvedVolume {
-  readonly name: string;
-  readonly mountPath: string;
-  readonly vasStorageName: string;
-  readonly vasVersion: string;
-  readonly instructionsTargetFilename?: string;
-  readonly optional?: boolean;
-  readonly system?: boolean;
-}
-
-interface StorageManifestInputs {
-  readonly artifacts: readonly ContextArtifact[];
-  readonly composeVolumes: readonly ResolvedVolume[];
-}
-
-interface BuildStorageManifestEntriesArgs {
-  readonly db: ReadonlyDb;
-  readonly bucket: string;
-  readonly storageIndex: StorageIndex;
-  readonly agentOrgId: string;
-  readonly runtimeOrgId: string;
-  readonly userId: string;
-  readonly composeVolumes: readonly ResolvedVolume[];
-  readonly additionalVolumes: readonly AdditionalVolume[] | undefined;
-  readonly additionalVolumeSources:
-    readonly StorageManifestSource[] | undefined;
-  readonly artifacts: readonly ContextArtifact[];
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly stats?: StorageManifestBuildStats;
-}
-
-type UnindexedStorageManifestEntriesArgs = Omit<
-  BuildStorageManifestEntriesArgs,
-  "storageIndex"
->;
-
-interface PreparedRequestStorageResolution {
-  readonly input: UnindexedStorageManifestEntriesArgs;
-  readonly requests: readonly StorageRequest[];
-}
-
-interface StorageManifestEntryPhaseTimings {
-  readonly compose: StorageManifestEntryPhaseTiming;
-  readonly additional: StorageManifestEntryPhaseTiming;
-  readonly artifact: StorageManifestEntryPhaseTiming;
-}
-
-interface ResolvedStorageEntries {
-  readonly input: BuildStorageManifestEntriesArgs;
-  readonly branch: StorageManifestCacheBranch;
-  readonly phaseTimings: StorageManifestEntryPhaseTimings;
-  readonly resolved: ResolvedStorageManifestEntryPlans;
-}
-
-/** One immutable selection per attempt, including canonical session writeback. */
-interface ResolvedAgentRunStorage {
-  readonly metadata: PreparedAgentRunStorage<StorageMountMetadata>;
-  readonly requested: ResolvedStorageEntries;
-  readonly sessionWriteback: ResolvedStorageEntries | undefined;
-}
-
-/** Read-only selection. Missing writeback roots are initialized by materialization. */
-interface AgentRunStoragePlan {
-  readonly requested: ResolvedStorageEntries;
-  readonly sessionWriteback: ResolvedStorageEntries | undefined;
-  readonly missingArtifacts: readonly ContextArtifact[];
-}
-
-interface MaterializedAgentRunStorage {
-  readonly resolved: ResolvedAgentRunStorage;
-  readonly prepared: PreparedAgentRunStorage;
-}
-
-interface ResolvedStorageManifestEntryPlans {
-  readonly composePlans: readonly ResolvedManifestStoragePlan[];
-  readonly additionalPlans: readonly ResolvedManifestStoragePlan[];
-  readonly artifactInputs: readonly ResolvedManifestArtifactInput[];
-}
-
-interface ResolvedManifestStorageInput {
-  readonly name: string;
-  readonly mountPath: string;
-  readonly vasStorageName: string;
-  readonly instructionsTargetFilename?: string;
-  readonly optional?: boolean;
-  readonly resolved: StorageResolution;
-}
-
-interface ResolvedManifestStoragePlan extends ResolvedManifestStorageInput {
-  readonly entryKind: Extract<
-    StorageManifestEntryKind,
-    "compose" | "additional"
-  >;
-  readonly source: StorageManifestSource;
-}
-
-interface StorageManifestPhaseTimingWindow {
-  startedAt: number | undefined;
-  finishedAt: number | undefined;
-}
-
-class StorageManifestEntryPhaseTiming {
-  private readonly resolveWindow: StorageManifestPhaseTimingWindow = {
-    startedAt: undefined,
-    finishedAt: undefined,
-  };
-  private readonly generateWindow: StorageManifestPhaseTimingWindow = {
-    startedAt: undefined,
-    finishedAt: undefined,
-  };
-
-  constructor(
-    private readonly timing: ApiDispatchTimingCollector | undefined,
-    private readonly resolveActionType: ApiDispatchTimingActionType,
-    private readonly generateActionType: ApiDispatchTimingActionType,
-    private readonly resolveDimensions:
-      ApiDispatchTimingDimensionsInput | undefined,
-    private readonly generateDimensions:
-      ApiDispatchTimingDimensionsInput | undefined,
-  ) {}
-
-  async measureResolve<T>(operation: () => T | Promise<T>): Promise<T> {
-    return await this.measure(this.resolveWindow, operation);
-  }
-
-  async measureGenerate<T>(operation: () => Promise<T>): Promise<T> {
-    return await this.measure(this.generateWindow, operation);
-  }
-
-  flushResolve(): void {
-    this.record(
-      this.resolveActionType,
-      this.resolveWindow,
-      this.resolveDimensions,
-    );
-  }
-
-  flushGenerate(): void {
-    this.record(
-      this.generateActionType,
-      this.generateWindow,
-      this.generateDimensions,
-    );
-  }
-
-  private async measure<T>(
-    window: StorageManifestPhaseTimingWindow,
-    operation: () => T | Promise<T>,
-  ): Promise<T> {
-    if (!this.timing) {
-      return await operation();
-    }
-
-    const startedAt = now();
-    window.startedAt =
-      window.startedAt === undefined
-        ? startedAt
-        : Math.min(window.startedAt, startedAt);
-    const invoke = async () => {
-      return await operation();
-    };
-    return await invoke().finally(() => {
-      const finishedAt = now();
-      window.finishedAt =
-        window.finishedAt === undefined
-          ? finishedAt
-          : Math.max(window.finishedAt, finishedAt);
-    });
-  }
-
-  private record(
-    actionType: ApiDispatchTimingActionType,
-    window: StorageManifestPhaseTimingWindow,
-    dimensions: ApiDispatchTimingDimensionsInput | undefined,
-  ): void {
-    if (!this.timing) {
-      return;
-    }
-
-    const finishedAt = window.finishedAt ?? now();
-    this.timing.recordElapsed(
-      actionType,
-      "nested",
-      window.startedAt ?? finishedAt,
-      finishedAt,
-      dimensions,
-    );
-  }
-}
-
-function instructionsMountPath(framework: SupportedFramework | "pi"): string {
-  if (framework === "pi") {
-    return PI_AGENT_DIR;
-  }
-  return framework === "codex"
-    ? CANONICAL_CODEX_HOME_DIR
-    : CANONICAL_CLAUDE_CONFIG_DIR;
-}
-
-function instructionsFilename(framework: SupportedFramework | "pi"): string {
-  return framework === "pi" ? "AGENTS.md" : getInstructionsFilename(framework);
-}
-
-function runInstructionsVolume(args: {
-  readonly instructionsStorageName: string;
-  readonly framework: SupportedFramework | "pi";
-}): ResolvedVolume {
-  return {
-    name: args.instructionsStorageName,
-    mountPath: instructionsMountPath(args.framework),
-    vasStorageName: args.instructionsStorageName,
-    vasVersion: "latest",
-    instructionsTargetFilename: instructionsFilename(args.framework),
-  };
-}
-
-function dedupArtifacts(
-  artifacts: readonly ContextArtifact[],
-): readonly ContextArtifact[] {
-  const byName = new Map<string, ContextArtifact>();
-  for (const artifact of artifacts) {
-    byName.set(artifact.name, artifact);
-  }
-  return [...byName.values()];
-}
-
-function storageIndexKey(orgId: string, userId: string, name: string): string {
-  return JSON.stringify([orgId, userId, name]);
-}
-
-function artifactStorageLookup(
-  orgId: string,
-  userId: string,
-  name: string,
-): StorageLookup {
-  return { orgId, userId, name };
-}
-
-function isFullStorageVersionId(version: string): boolean {
-  return version.length === VERSION_ID_LENGTH && isValidVersionPrefix(version);
-}
-
-interface StoragePrefixVersionRequest {
-  readonly storageId: string;
-  readonly version: string;
-  readonly lookup: StorageLookup;
-}
-
-interface StoragePrefixVersionRow extends StorageVersionIndexEntry {
-  readonly storageId: string;
-  readonly cacheKey: string | null;
-  readonly cacheScope: string | null;
-  readonly presignedUrl: string | null;
-  readonly expiresAt: Date | null;
-}
-
-function storagePrefixVersionRequests(
-  requests: readonly StorageRequest[],
-  index: StorageIndex,
-): readonly StoragePrefixVersionRequest[] {
-  const unique = new Map<string, StoragePrefixVersionRequest>();
-  for (const request of requests) {
-    const version = request.version;
-    if (version === undefined || version === "latest") {
-      continue;
-    }
-    const storage = index.get(
-      storageIndexKey(
-        request.lookup.orgId,
-        request.lookup.userId,
-        request.lookup.name,
-      ),
-    );
-    if (
-      storage &&
-      storage.headVersion?.id !== version &&
-      !storage.exactVersions.has(version)
-    ) {
-      unique.set(JSON.stringify([storage.storageId, version]), {
-        storageId: storage.storageId,
-        version,
-        lookup: request.lookup,
-      });
-    }
-  }
-  return [...unique.values()];
-}
-
-function storageIndexWithPrefixVersions(
-  index: StorageIndex,
-  versions: readonly StoragePrefixVersionRow[],
-): StorageIndex {
-  if (versions.length === 0) {
-    return index;
-  }
-  const byStorage = new Map<string, Map<string, StorageVersionIndexEntry>>();
-  for (const version of versions) {
-    const entries =
-      byStorage.get(version.storageId) ??
-      new Map<string, StorageVersionIndexEntry>();
-    entries.set(version.id, version);
-    byStorage.set(version.storageId, entries);
-  }
-  return new Map(
-    [...index].map(([key, entry]) => {
-      const added = byStorage.get(entry.storageId);
-      return [
-        key,
-        added
-          ? {
-              ...entry,
-              exactVersions: new Map([...entry.exactVersions, ...added]),
-              cachedUrls: [
-                ...(entry.cachedUrls ?? []),
-                ...versions
-                  .filter((version) => {
-                    return version.storageId === entry.storageId;
-                  })
-                  .flatMap(cacheRowsFromProjection),
-              ],
-            }
-          : entry,
-      ];
-    }),
-  );
-}
-
-function resolveLatestVersion(
-  index: StorageIndex,
-  lookup: StorageLookup,
-): StorageResolution {
-  const entry = index.get(
-    storageIndexKey(lookup.orgId, lookup.userId, lookup.name),
-  );
-
-  if (!entry) {
-    throw new Error(`Storage "${lookup.name}" not found in database`);
-  }
-  if (!entry.headVersionId) {
-    throw new Error(`Storage "${lookup.name}" has no HEAD version`);
-  }
-  if (!entry.headVersion) {
-    throw new Error(`Storage "${lookup.name}" HEAD version not found`);
-  }
-
-  return storageResolutionFromVersion(entry, lookup, entry.headVersion);
-}
-
-function storageResolutionFromVersion(
-  storage: StorageIndexEntry,
-  lookup: StorageLookup,
-  version: StorageVersionIndexEntry,
-): StorageResolution {
-  return {
-    storageId: storage.storageId,
-    versionId: version.id,
-    s3Prefix: storage.s3Prefix,
-    s3Key: version.s3Key,
-    archiveSize: version.archiveSize,
-    fileCount: version.fileCount,
-    resolvedOrgId: lookup.orgId,
-    resolvedUserId: lookup.userId,
-  };
-}
-
-function resolvePreloadedExactVersion(
-  storage: StorageIndexEntry,
-  lookup: StorageLookup,
-  version: string,
-): StorageResolution | null {
-  const match =
-    storage.headVersion?.id === version
-      ? storage.headVersion
-      : storage.exactVersions.get(version);
-  return match ? storageResolutionFromVersion(storage, lookup, match) : null;
-}
-
-function resolvePinnedVersion(
-  index: StorageIndex,
-  lookup: StorageLookup,
-  version: string,
-): StorageResolution {
-  const storage = index.get(
-    storageIndexKey(lookup.orgId, lookup.userId, lookup.name),
-  );
-  if (!storage) {
-    throw new Error(`Storage "${lookup.name}" not found in database`);
-  }
-  const exactMatch = resolvePreloadedExactVersion(storage, lookup, version);
-  if (exactMatch) {
-    return exactMatch;
-  }
-  if (isFullStorageVersionId(version)) {
-    throw new Error(`Storage "${lookup.name}" version "${version}" not found`);
-  }
-  if (!isValidVersionPrefix(version)) {
-    throw new Error(
-      `Version prefix too short. Minimum ${MIN_VERSION_PREFIX_LENGTH} characters required.`,
-    );
-  }
-  const versions = new Map(storage.exactVersions);
-  if (storage.headVersion) {
-    versions.set(storage.headVersion.id, storage.headVersion);
-  }
-  const matches = [...versions.values()].filter((candidate) => {
-    return candidate.id.startsWith(version);
-  });
-  if (matches.length === 0) {
-    throw new Error(`Storage "${lookup.name}" version "${version}" not found`);
-  }
-  if (matches.length > 1) {
-    throw new Error(
-      `Ambiguous version prefix "${version}" for storage "${lookup.name}". Please use more characters.`,
-    );
-  }
-  const match = matches[0];
-  if (!match) {
-    throw new Error(`Storage "${lookup.name}" version "${version}" not found`);
-  }
-  return storageResolutionFromVersion(storage, lookup, match);
-}
-
-function resolveStorageVersion(
-  index: StorageIndex,
-  lookup: StorageLookup,
-  version: string | undefined,
-): StorageResolution {
-  return version === undefined || version === "latest"
-    ? resolveLatestVersion(index, lookup)
-    : resolvePinnedVersion(index, lookup, version);
-}
-
-function isMissingStorageError(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    (error.message.includes("not found in database") ||
-      error.message.includes("has no HEAD version"))
-  );
-}
-
-function volumeStorageName(volume: ResolvedVolume | AdditionalVolume): string {
-  return "vasStorageName" in volume ? volume.vasStorageName : volume.name;
-}
-
-function volumeVersion(
-  volume: ResolvedVolume | AdditionalVolume,
-): string | undefined {
-  return "vasVersion" in volume ? volume.vasVersion : volume.version;
-}
-
-function volumeStorageLookup(
-  orgId: string,
-  volume: ResolvedVolume | AdditionalVolume,
-): StorageLookup {
-  return {
-    orgId,
-    userId: VOLUME_ORG_USER_ID,
-    name: volumeStorageName(volume),
-  };
-}
-
-function resolveVolumeStorage(args: {
-  readonly db: ReadonlyDb;
-  readonly index: StorageIndex;
-  readonly volume: ResolvedVolume | AdditionalVolume;
-  readonly primaryOrgId: string;
-  readonly allowSystemFallback: boolean;
-}): StorageResolution | null {
-  if (args.allowSystemFallback && args.volume.system) {
-    const systemResult = safeSync(() => {
-      return resolveStorageVersion(
-        args.index,
-        volumeStorageLookup(SYSTEM_ORG_ID, args.volume),
-        volumeVersion(args.volume),
-      );
-    });
-    if ("ok" in systemResult) {
-      return systemResult.ok;
-    }
-    if (!isMissingStorageError(systemResult.error)) {
-      throw systemResult.error;
-    }
-  }
-
-  return resolveStorageVersion(
-    args.index,
-    volumeStorageLookup(args.primaryOrgId, args.volume),
-    volumeVersion(args.volume),
-  );
-}
-
-function resolveComposeStorageInput(args: {
-  readonly db: ReadonlyDb;
-  readonly index: StorageIndex;
-  readonly agentOrgId: string;
-  readonly volume: ResolvedVolume;
-}): ResolvedManifestStorageInput | null {
-  const resolvedResult = safeSync(() => {
-    return resolveVolumeStorage({
-      db: args.db,
-      index: args.index,
-      volume: args.volume,
-      primaryOrgId: args.agentOrgId,
-      allowSystemFallback: true,
-    });
-  });
-  if ("error" in resolvedResult) {
-    if (args.volume.optional && isMissingStorageError(resolvedResult.error)) {
-      return null;
-    }
-    throw resolvedResult.error;
-  }
-  if (!resolvedResult.ok) {
-    return null;
-  }
-  return {
-    name: args.volume.name,
-    mountPath: args.volume.mountPath,
-    vasStorageName: args.volume.vasStorageName,
-    instructionsTargetFilename: args.volume.instructionsTargetFilename,
-    optional: args.volume.optional,
-    resolved: resolvedResult.ok,
-  };
-}
-
-function resolveAdditionalStorageInput(args: {
-  readonly db: ReadonlyDb;
-  readonly index: StorageIndex;
-  readonly runtimeOrgId: string;
-  readonly volume: AdditionalVolume;
-  readonly source: StorageManifestSource;
-}): ResolvedManifestStorageInput | null {
-  const { source } = args;
-  if (source === "connector_skill" || source === "custom_connector_skill") {
-    return resolveConnectorSkillStorageInput({
-      index: args.index,
-      runtimeOrgId: args.runtimeOrgId,
-      volume: args.volume,
-      source,
-    });
-  }
-  if (source === "official_workflow") {
-    return resolveOfficialWorkflowStorageInput({
-      index: args.index,
-      volume: args.volume,
-    });
-  }
-  if (args.volume.expectedStorageId !== undefined) {
-    throw new Error("Exact Storage identity is unavailable for this source");
-  }
-  const resolvedResult = safeSync(() => {
-    return resolveVolumeStorage({
-      db: args.db,
-      index: args.index,
-      volume: args.volume,
-      primaryOrgId: args.runtimeOrgId,
-      allowSystemFallback: true,
-    });
-  });
-  if ("error" in resolvedResult) {
-    if (isMissingStorageError(resolvedResult.error)) {
-      return null;
-    }
-    throw resolvedResult.error;
-  }
-  if (!resolvedResult.ok) {
-    return null;
-  }
-  return {
-    name: args.volume.name,
-    mountPath: args.volume.mountPath,
-    vasStorageName: args.volume.name,
-    resolved: resolvedResult.ok,
-  };
-}
-
-const CONNECTOR_SKILL_REGISTRATION_ERROR =
-  "Connector skill registration is unavailable";
-
-const CUSTOM_CONNECTOR_SKILL_REGISTRATION_ERROR =
-  "Custom connector skill registration is unavailable";
-
-class OfficialWorkflowArtifactResolutionError extends Error {
-  constructor() {
-    super("Official Workflow artifact registration is unavailable");
-    this.name = "OfficialWorkflowArtifactResolutionError";
-  }
-}
-
-type ConnectorSkillStorageSource = Extract<
-  StorageManifestSource,
-  "connector_skill" | "custom_connector_skill"
->;
-
-function connectorSkillRegistrationError(
-  source: ConnectorSkillStorageSource,
-): Error {
-  return new Error(
-    source === "connector_skill"
-      ? CONNECTOR_SKILL_REGISTRATION_ERROR
-      : CUSTOM_CONNECTOR_SKILL_REGISTRATION_ERROR,
-  );
-}
-
-function resolveConnectorSkillStorageInput(args: {
-  readonly index: StorageIndex;
-  readonly runtimeOrgId: string;
-  readonly volume: AdditionalVolume;
-  readonly source: ConnectorSkillStorageSource;
-}): ResolvedManifestStorageInput {
-  const version = args.volume.version;
-  if (
-    (args.source === "connector_skill") !== (args.volume.system === true) ||
-    version === undefined ||
-    !/^[a-f0-9]{64}$/u.test(version)
-  ) {
-    throw connectorSkillRegistrationError(args.source);
-  }
-
-  const ownerOrgId =
-    args.source === "connector_skill" ? SYSTEM_ORG_ID : args.runtimeOrgId;
-  const lookup = volumeStorageLookup(ownerOrgId, args.volume);
-  const storage = args.index.get(
-    storageIndexKey(lookup.orgId, lookup.userId, lookup.name),
-  );
-  if (!storage) {
-    throw connectorSkillRegistrationError(args.source);
-  }
-  const resolved = resolvePreloadedExactVersion(storage, lookup, version);
-  if (!resolved) {
-    throw connectorSkillRegistrationError(args.source);
-  }
-
-  const expectedKey = `${resolved.s3Prefix}/${version}`;
-  if (
-    resolved.s3Key !== expectedKey ||
-    (args.source === "connector_skill" &&
-      resolved.s3Prefix !== `${SYSTEM_ORG_ID}/volume/${args.volume.name}`)
-  ) {
-    throw connectorSkillRegistrationError(args.source);
-  }
-
-  return {
-    name: args.volume.name,
-    mountPath: args.volume.mountPath,
-    vasStorageName: args.volume.name,
-    resolved,
-  };
-}
-
-function resolveOfficialWorkflowStorageInput(args: {
-  readonly index: StorageIndex;
-  readonly volume: AdditionalVolume;
-}): ResolvedManifestStorageInput {
-  const version = args.volume.version;
-  const expectedStorageId = args.volume.expectedStorageId;
-  if (
-    args.volume.system !== true ||
-    expectedStorageId === undefined ||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
-      expectedStorageId,
-    ) ||
-    version === undefined ||
-    !/^[a-f0-9]{64}$/u.test(version)
-  ) {
-    throw new OfficialWorkflowArtifactResolutionError();
-  }
-
-  const lookup = volumeStorageLookup(SYSTEM_ORG_ID, args.volume);
-  const storage = args.index.get(
-    storageIndexKey(lookup.orgId, lookup.userId, lookup.name),
-  );
-  if (!storage || storage.storageId !== expectedStorageId) {
-    throw new OfficialWorkflowArtifactResolutionError();
-  }
-  const resolved = resolvePreloadedExactVersion(storage, lookup, version);
-  if (!resolved || resolved.storageId !== expectedStorageId) {
-    throw new OfficialWorkflowArtifactResolutionError();
-  }
-
-  return {
-    name: args.volume.name,
-    mountPath: args.volume.mountPath,
-    vasStorageName: args.volume.name,
-    resolved,
-  };
-}
-
-function resolveArtifactStorageInput(args: {
-  readonly db: ReadonlyDb;
-  readonly index: StorageIndex;
-  readonly runtimeOrgId: string;
-  readonly userId: string;
-  readonly artifact: ContextArtifact;
-  readonly source: StorageManifestSource;
-}): ResolvedManifestArtifactInput {
-  const resolved = resolveStorageVersion(
-    args.index,
-    artifactStorageLookup(args.runtimeOrgId, args.userId, args.artifact.name),
-    args.artifact.version,
-  );
-  return { artifact: args.artifact, resolved, source: args.source };
-}
-
-function readOnlyStorageEntryMetadata(args: {
-  readonly plan: ResolvedManifestStoragePlan;
-}): PreparedReadOnlyStorageEntry<StorageMountMetadata> {
-  const archiveSize = knownArchiveSize(args.plan.resolved);
-  return {
-    storedMount: {
-      orgId: args.plan.resolved.resolvedOrgId,
-      userId: args.plan.resolved.resolvedUserId,
-      name: args.plan.vasStorageName,
-      storageId: args.plan.resolved.storageId,
-      versionId: args.plan.resolved.versionId,
-      mountPath: args.plan.mountPath,
-      ...(archiveSize === undefined ? {} : { archiveSize }),
-      ...(args.plan.instructionsTargetFilename
-        ? {
-            instructionsTargetFilename: args.plan.instructionsTargetFilename,
-          }
-        : {}),
-    },
-    persistedMount: {
-      orgId: args.plan.resolved.resolvedOrgId,
-      userId: args.plan.resolved.resolvedUserId,
-      name: args.plan.vasStorageName,
-      storageId: args.plan.resolved.storageId,
-      version: args.plan.resolved.versionId,
-      mountPath: args.plan.mountPath,
-      ...(args.plan.optional === undefined
-        ? {}
-        : { optional: args.plan.optional }),
-      ...(args.plan.instructionsTargetFilename === undefined
-        ? {}
-        : {
-            instructionsTargetFilename: args.plan.instructionsTargetFilename,
-          }),
-    },
-    runContextVolume: {
-      name: args.plan.name,
-      mountPath: args.plan.mountPath,
-      vasStorageName: args.plan.vasStorageName,
-      vasVersionId: args.plan.resolved.versionId,
-    },
-  };
-}
-
-async function buildComposeStorageEntry(args: {
-  readonly db: ReadonlyDb;
-  readonly index: StorageIndex;
-  readonly agentOrgId: string;
-  readonly volume: ResolvedVolume;
-  readonly phaseTiming: StorageManifestEntryPhaseTiming;
-  readonly stats?: StorageManifestBuildStats;
-}): Promise<ResolvedManifestStoragePlan | null> {
-  const input = await args.phaseTiming.measureResolve(() => {
-    return resolveComposeStorageInput({
-      db: args.db,
-      index: args.index,
-      agentOrgId: args.agentOrgId,
-      volume: args.volume,
-    });
-  });
-  if (input) {
-    args.stats?.recordResolvedEntry("compose", "compose_volume");
-  }
-  return input
-    ? { ...input, entryKind: "compose", source: "compose_volume" }
-    : null;
-}
-
-async function buildAdditionalStorageEntry(args: {
-  readonly db: ReadonlyDb;
-  readonly index: StorageIndex;
-  readonly runtimeOrgId: string;
-  readonly volume: AdditionalVolume;
-  readonly source: StorageManifestSource;
-  readonly phaseTiming: StorageManifestEntryPhaseTiming;
-  readonly stats?: StorageManifestBuildStats;
-}): Promise<ResolvedManifestStoragePlan | null> {
-  const input = await args.phaseTiming.measureResolve(() => {
-    return resolveAdditionalStorageInput({
-      db: args.db,
-      index: args.index,
-      runtimeOrgId: args.runtimeOrgId,
-      volume: args.volume,
-      source: args.source,
-    });
-  });
-  if (input) {
-    args.stats?.recordResolvedEntry("additional", args.source);
-  }
-  return input
-    ? { ...input, entryKind: "additional", source: args.source }
-    : null;
-}
-
-function additionalVolumeSourceAt(
-  sources: readonly StorageManifestSource[] | undefined,
-  index: number,
-): StorageManifestSource {
-  return sources?.[index] ?? "unknown";
-}
-
-function normalizeAdditionalVolumeSources(args: {
-  readonly volumes: readonly AdditionalVolume[] | undefined;
-  readonly sources: readonly StorageManifestSource[] | undefined;
-}): readonly StorageManifestSource[] | undefined {
-  if (!args.sources) {
-    return undefined;
-  }
-  if (args.sources.length !== (args.volumes?.length ?? 0)) {
-    throw new Error(
-      "Additional volume source count must match additional volume count",
-    );
-  }
-  return args.sources;
-}
-
-async function resolveStorageManifestInputs(
-  args: PrepareAgentRunStorageManifestArgs,
-): Promise<StorageManifestInputs> {
-  return await measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_prepare_storage_manifest_resolve_inputs",
-    "nested",
-    () => {
-      return {
-        artifacts: dedupArtifacts(args.artifacts),
-        composeVolumes: [runInstructionsVolume(args)],
-      };
-    },
-  );
-}
-
-function storageManifestRequests(args: {
-  readonly agentOrgId: string;
-  readonly runtimeOrgId: string;
-  readonly userId: string;
-  readonly composeVolumes: readonly ResolvedVolume[];
-  readonly additionalVolumes: readonly AdditionalVolume[] | undefined;
-  readonly additionalVolumeSources:
-    readonly StorageManifestSource[] | undefined;
-  readonly artifacts: readonly ContextArtifact[];
-}): readonly StorageRequest[] {
-  const requests: StorageRequest[] = [];
-
-  for (const volume of args.composeVolumes) {
-    const version = volumeVersion(volume);
-    if (volume.system) {
-      requests.push({
-        lookup: volumeStorageLookup(SYSTEM_ORG_ID, volume),
-        version,
-      });
-    }
-    requests.push({
-      lookup: volumeStorageLookup(args.agentOrgId, volume),
-      version,
-    });
-  }
-  for (const [index, volume] of (args.additionalVolumes ?? []).entries()) {
-    const version = volumeVersion(volume);
-    const source = additionalVolumeSourceAt(
-      args.additionalVolumeSources,
-      index,
-    );
-    if (
-      source === "connector_skill" ||
-      source === "custom_connector_skill" ||
-      source === "official_workflow"
-    ) {
-      requests.push({
-        lookup: volumeStorageLookup(
-          source === "connector_skill" || source === "official_workflow"
-            ? SYSTEM_ORG_ID
-            : args.runtimeOrgId,
-          volume,
-        ),
-        version,
-      });
-      continue;
-    }
-    if (volume.system) {
-      requests.push({
-        lookup: volumeStorageLookup(SYSTEM_ORG_ID, volume),
-        version,
-      });
-    }
-    requests.push({
-      lookup: volumeStorageLookup(args.runtimeOrgId, volume),
-      version,
-    });
-  }
-  for (const artifact of args.artifacts) {
-    requests.push({
-      lookup: artifactStorageLookup(
-        args.runtimeOrgId,
-        args.userId,
-        artifact.name,
-      ),
-      version: artifact.version,
-    });
-  }
-
-  return requests;
-}
-
-function createStorageManifestEntryPhaseTimings(args: {
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly stats?: StorageManifestBuildStats;
-}): StorageManifestEntryPhaseTimings {
-  return {
-    compose: new StorageManifestEntryPhaseTiming(
-      args.timing,
-      "api_dispatch_prepare_storage_manifest_resolve_compose_versions",
-      "api_dispatch_prepare_storage_manifest_generate_compose_urls",
-      undefined,
-      () => {
-        return args.stats?.generateDimensions("compose");
-      },
-    ),
-    additional: new StorageManifestEntryPhaseTiming(
-      args.timing,
-      "api_dispatch_prepare_storage_manifest_resolve_additional_versions",
-      "api_dispatch_prepare_storage_manifest_generate_additional_urls",
-      undefined,
-      () => {
-        return args.stats?.generateDimensions("additional");
-      },
-    ),
-    artifact: new StorageManifestEntryPhaseTiming(
-      args.timing,
-      "api_dispatch_prepare_storage_manifest_resolve_artifact_versions",
-      "api_dispatch_prepare_storage_manifest_generate_artifact_urls",
-      undefined,
-      () => {
-        return args.stats?.generateDimensions("artifact");
-      },
-    ),
-  };
-}
-
-function isResolvedManifestStoragePlan(
-  plan: ResolvedManifestStoragePlan | null,
-): plan is ResolvedManifestStoragePlan {
-  return plan !== null;
-}
-
-async function resolveStorageManifestEntryPlans(args: {
-  readonly input: BuildStorageManifestEntriesArgs;
-  readonly phaseTimings: StorageManifestEntryPhaseTimings;
-}): Promise<ResolvedStorageManifestEntryPlans> {
-  const input = args.input;
-  const [composePlans, additionalPlans, artifactInputs] = await Promise.all([
-    measureApiDispatchTiming(
-      input.timing,
-      "api_dispatch_prepare_storage_manifest_build_compose_entries",
-      "nested",
-      async () => {
-        return await Promise.all(
-          input.composeVolumes.map((volume) => {
-            return buildComposeStorageEntry({
-              db: input.db,
-              index: input.storageIndex,
-              agentOrgId: input.agentOrgId,
-              volume,
-              phaseTiming: args.phaseTimings.compose,
-              stats: input.stats,
-            });
-          }),
-        );
-      },
-    ),
-    measureApiDispatchTiming(
-      input.timing,
-      "api_dispatch_prepare_storage_manifest_build_additional_entries",
-      "nested",
-      async () => {
-        return await Promise.all(
-          (input.additionalVolumes ?? []).map((volume, index) => {
-            return buildAdditionalStorageEntry({
-              db: input.db,
-              index: input.storageIndex,
-              runtimeOrgId: input.runtimeOrgId,
-              volume,
-              source: additionalVolumeSourceAt(
-                input.additionalVolumeSources,
-                index,
-              ),
-              phaseTiming: args.phaseTimings.additional,
-              stats: input.stats,
-            });
-          }),
-        );
-      },
-    ),
-    measureApiDispatchTiming(
-      input.timing,
-      "api_dispatch_prepare_storage_manifest_build_artifact_entries",
-      "nested",
-      async () => {
-        return await Promise.all(
-          input.artifacts.map((artifact) => {
-            return args.phaseTimings.artifact.measureResolve(() => {
-              return resolveArtifactStorageInput({
-                db: input.db,
-                index: input.storageIndex,
-                runtimeOrgId: input.runtimeOrgId,
-                userId: input.userId,
-                artifact,
-                source: "artifact",
-              });
-            });
-          }),
-        );
-      },
-    ),
-  ]);
-
-  input.stats?.recordResolvedEntry(
-    "artifact",
-    "artifact",
-    artifactInputs.length,
-  );
-
-  return {
-    composePlans: composePlans.filter(isResolvedManifestStoragePlan),
-    additionalPlans: additionalPlans.filter(isResolvedManifestStoragePlan),
-    artifactInputs,
-  };
-}
-
-async function resolveStorageEntries(
-  input: BuildStorageManifestEntriesArgs,
-  branch: StorageManifestCacheBranch,
-): Promise<ResolvedStorageEntries> {
-  const phaseTimings = createStorageManifestEntryPhaseTimings(input);
-  const resolved = await resolveStorageManifestEntryPlans({
-    input,
-    phaseTimings,
-  }).finally(() => {
-    phaseTimings.compose.flushResolve();
-    phaseTimings.additional.flushResolve();
-    phaseTimings.artifact.flushResolve();
-  });
-  return { input, branch, phaseTimings, resolved };
-}
-
-/** Assemble runner mounts from immutable version plans and already signed URLs. */
-function storageEntriesMetadata(
-  plan: ResolvedStorageEntries,
-): PreparedStorageEntries<StorageMountMetadata> {
-  const finalPlans = mergeStorageEntries({
-    composeEntries: plan.resolved.composePlans,
-    additionalEntries: plan.resolved.additionalPlans,
-    mountPath: (entry) => {
-      return entry.mountPath;
-    },
-  });
-  return {
-    composeEntries: finalPlans
-      .filter((entry) => {
-        return entry.entryKind === "compose";
-      })
-      .map((entry) => {
-        return readOnlyStorageEntryMetadata({ plan: entry });
-      }),
-    additionalEntries: finalPlans
-      .filter((entry) => {
-        return entry.entryKind === "additional";
-      })
-      .map((entry) => {
-        return readOnlyStorageEntryMetadata({ plan: entry });
-      }),
-    writebackEntries: plan.resolved.artifactInputs.map(
-      writebackStorageEntryMetadata,
-    ),
-    resolvedComposeEntryCount: plan.resolved.composePlans.length,
-    resolvedAdditionalEntryCount: plan.resolved.additionalPlans.length,
-  };
-}
-
-function persistedMountIdentity(
-  mount: Pick<PersistedStorageMount, "name" | "mountPath">,
-): string {
-  return JSON.stringify([mount.name, mount.mountPath]);
-}
-
-function assertUniquePersistedMountPaths(
-  mounts: readonly PersistedStorageMount[],
-): void {
-  const paths = new Set<string>();
-  for (const mount of mounts) {
-    if (paths.has(mount.mountPath)) {
-      throw new Error(`Duplicate Storage mount path "${mount.mountPath}"`);
-    }
-    paths.add(mount.mountPath);
-  }
-}
-
-function persistedStorageMountRequests(
-  mounts: readonly PersistedStorageMount[],
-): readonly StorageRequest[] {
-  return mounts.map((mount) => {
-    return {
-      lookup: {
-        orgId: mount.orgId,
-        userId: mount.userId,
-        name: mount.name,
-      },
-      version: mount.version,
-    };
-  });
-}
-
-function resolvePersistedStorageMounts(args: {
-  readonly db: ReadonlyDb;
-  readonly index: StorageIndex;
-  readonly mounts: readonly PersistedStorageMount[];
-}): ResolvedStorageManifestEntryPlans {
-  const additionalPlans: ResolvedManifestStoragePlan[] = [];
-  const artifactInputs: ResolvedManifestArtifactInput[] = [];
-
-  for (const mount of args.mounts) {
-    if (mount.writeback && mount.orgId === SYSTEM_ORG_ID) {
-      throw new Error("System Storage cannot be mounted with writeback");
-    }
-    const lookup: StorageLookup = {
-      orgId: mount.orgId,
-      userId: mount.userId,
-      name: mount.name,
-    };
-    const storage = args.index.get(
-      storageIndexKey(lookup.orgId, lookup.userId, lookup.name),
-    );
-    if (!storage) {
-      if (mount.optional) {
-        continue;
-      }
-      throw new Error(`Storage "${mount.name}" not found in database`);
-    }
-    if (storage.storageId !== mount.storageId) {
-      throw new Error(`Storage "${mount.name}" identity does not match`);
-    }
-
-    const resolvedResult = safeSync(() => {
-      return resolveStorageVersion(args.index, lookup, mount.version);
-    });
-    if ("error" in resolvedResult) {
-      if (mount.optional && isMissingStorageError(resolvedResult.error)) {
-        continue;
-      }
-      throw resolvedResult.error;
-    }
-    const resolved = resolvedResult.ok;
-
-    if (mount.writeback) {
-      artifactInputs.push({
-        artifact: {
-          name: mount.name,
-          version: mount.version,
-          mountPath: mount.mountPath,
-          ...(mount.missingRootPolicy === undefined
-            ? {}
-            : { missingRootPolicy: mount.missingRootPolicy }),
-        },
-        resolved,
-        source: "artifact",
-      });
-      continue;
-    }
-
-    additionalPlans.push({
-      name: mount.name,
-      vasStorageName: mount.name,
-      mountPath: mount.mountPath,
-      ...(mount.optional === undefined ? {} : { optional: mount.optional }),
-      ...(mount.instructionsTargetFilename === undefined
-        ? {}
-        : {
-            instructionsTargetFilename: mount.instructionsTargetFilename,
-          }),
-      resolved,
-      entryKind: "additional",
-      source: "unknown",
-    });
-  }
-
-  return { composePlans: [], additionalPlans, artifactInputs };
-}
-
-function resolveValidatedPersistedStorageMounts(args: {
-  readonly db: ReadonlyDb;
-  readonly bucket: string;
-  readonly storageIndex: StorageIndex;
-  readonly mounts: readonly PersistedStorageMount[];
-  readonly branch: Extract<
-    StorageManifestCacheBranch,
-    "session_writeback" | "captured"
-  >;
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly stats?: StorageManifestBuildStats;
-}): ResolvedStorageEntries {
-  const phaseTimings = createStorageManifestEntryPhaseTimings(args);
-  const result = safeSync(() => {
-    const input: BuildStorageManifestEntriesArgs = {
-      db: args.db,
-      bucket: args.bucket,
-      storageIndex: args.storageIndex,
-      agentOrgId: "",
-      runtimeOrgId: "",
-      userId: "",
-      composeVolumes: [],
-      additionalVolumes: undefined,
-      additionalVolumeSources: undefined,
-      artifacts: [],
-      timing: args.timing,
-      stats: args.stats,
-    };
-    const resolved = resolvePersistedStorageMounts({
-      db: args.db,
-      index: args.storageIndex,
-      mounts: args.mounts,
-    });
-    args.stats?.recordResolvedEntry(
-      "additional",
-      "unknown",
-      resolved.additionalPlans.length,
-    );
-    args.stats?.recordResolvedEntry(
-      "artifact",
-      "artifact",
-      resolved.artifactInputs.length,
-    );
-    return { input, branch: args.branch, phaseTimings, resolved };
-  });
-  phaseTimings.compose.flushResolve();
-  phaseTimings.additional.flushResolve();
-  phaseTimings.artifact.flushResolve();
-  if ("error" in result) {
-    throw result.error;
-  }
-  return result.ok;
-}
-
-function resolveSessionWritebackStorageMounts(args: {
-  readonly db: ReadonlyDb;
-  readonly bucket: string;
-  readonly storageIndex: StorageIndex;
-  readonly mounts: readonly PersistedStorageMount[];
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly stats?: StorageManifestBuildStats;
-}): ResolvedStorageEntries {
-  assertUniquePersistedMountPaths(args.mounts);
-  return resolveValidatedPersistedStorageMounts({
-    ...args,
-    branch: "session_writeback",
-  });
-}
-
-function combinePreparedStorageEntries<
-  TMount extends StorageMountMetadata,
->(args: {
-  readonly requested: PreparedStorageEntries<TMount>;
-  readonly sessionWriteback: PreparedStorageEntries<TMount>;
-}): PreparedStorageEntries<TMount> {
-  return {
-    composeEntries: args.requested.composeEntries,
-    additionalEntries: [
-      ...args.requested.additionalEntries,
-      ...args.sessionWriteback.additionalEntries,
-    ],
-    writebackEntries: [
-      ...args.requested.writebackEntries,
-      ...args.sessionWriteback.writebackEntries,
-    ],
-    resolvedComposeEntryCount: args.requested.resolvedComposeEntryCount,
-    resolvedAdditionalEntryCount:
-      args.requested.resolvedAdditionalEntryCount +
-      args.sessionWriteback.resolvedAdditionalEntryCount,
-  };
-}
-
-interface SessionStorageOverlay {
-  readonly canonicalWritebackMounts: readonly PersistedStorageMount[];
-  readonly remainingArtifacts: readonly ContextArtifact[];
-}
-
-function resolveSessionStorageOverlay(args: {
-  readonly artifacts: readonly ContextArtifact[];
-  readonly persistedStorageMounts: readonly PersistedStorageMount[] | undefined;
-}): SessionStorageOverlay {
-  const canonicalWritebackByIdentity = new Map(
-    (args.persistedStorageMounts ?? []).map((mount) => {
-      if (!mount.writeback) {
-        throw new Error(
-          "Session Storage persistence may only contain writeback mounts",
-        );
-      }
-      return [persistedMountIdentity(mount), mount] as const;
-    }),
-  );
-  const canonicalWritebackMounts = args.artifacts.flatMap((artifact) => {
-    const mount = canonicalWritebackByIdentity.get(
-      persistedMountIdentity(artifact),
-    );
-    if (!mount) {
-      return [];
-    }
-    const {
-      version: _storedVersion,
-      missingRootPolicy: _storedMissingRootPolicy,
-      ...mountBase
-    } = mount;
-    return [
-      {
-        ...mountBase,
-        ...(artifact.version === undefined
-          ? {}
-          : { version: artifact.version }),
-        ...(artifact.missingRootPolicy === undefined
-          ? {}
-          : { missingRootPolicy: artifact.missingRootPolicy }),
-      },
-    ];
-  });
-  const remainingArtifacts = args.artifacts.filter((artifact) => {
-    return !canonicalWritebackByIdentity.has(persistedMountIdentity(artifact));
-  });
-  return { canonicalWritebackMounts, remainingArtifacts };
-}
-
-function prepareRequestStorageResolution(
-  args: PrepareAgentRunStorageManifestArgs,
-  bucket: string,
-  composeVolumes: readonly ResolvedVolume[],
-  artifacts: readonly ContextArtifact[],
-): PreparedRequestStorageResolution {
-  const additionalVolumeSources = normalizeAdditionalVolumeSources({
-    volumes: args.additionalVolumes,
-    sources: args.additionalVolumeSources,
-  });
-  args.stats?.recordRequestedInputs({
-    composeCount: composeVolumes.length,
-    additionalCount: args.additionalVolumes?.length ?? 0,
-    artifactCount: args.artifacts.length,
-    dedupedArtifactCount: artifacts.length,
-  });
-
-  const input: UnindexedStorageManifestEntriesArgs = {
-    db: args.db,
-    bucket,
-    agentOrgId: args.agentOrgId,
-    runtimeOrgId: args.runtimeOrgId,
-    userId: args.userId,
-    composeVolumes,
-    additionalVolumes: args.additionalVolumes,
-    additionalVolumeSources,
-    artifacts,
-    timing: args.timing,
-    stats: args.stats,
-  };
-  return {
-    input,
-    requests: storageManifestRequests(input),
-  };
-}
-
-interface CapturedAgentRunStorageArgs {
-  readonly db: ReadonlyDb;
-  readonly mounts: readonly PersistedStorageMount[];
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly stats?: StorageManifestBuildStats;
-}
-
-type AgentRunStorageInput =
-  | {
-      readonly kind: "requested";
-      readonly args: PrepareAgentRunStorageManifestArgs;
-    }
-  | { readonly kind: "captured"; readonly args: CapturedAgentRunStorageArgs };
-
-type AgentRunStorageSelection =
-  | {
-      readonly kind: "requested";
-      readonly args: PrepareAgentRunStorageManifestArgs;
-      readonly bucket: string;
-      readonly request: PreparedRequestStorageResolution;
-      readonly remainingArtifacts: readonly ContextArtifact[];
-      readonly canonicalWritebackMounts: readonly PersistedStorageMount[];
-      readonly requests: readonly StorageRequest[];
-    }
-  | {
-      readonly kind: "captured";
-      readonly args: CapturedAgentRunStorageArgs;
-      readonly bucket: string;
-      readonly requests: readonly StorageRequest[];
-    };
-
-const COUNT_BUCKET_DIMENSIONS = [
-  "0",
-  "1",
-  "2_4",
-  "5_8",
-  "9_16",
-  "17_plus",
-] as const;
-
-function frameworkSkillsMountPath(framework: SupportedFramework): string {
-  return framework === "codex"
-    ? `${CANONICAL_CODEX_HOME_DIR}/skills`
-    : `${CANONICAL_CLAUDE_CONFIG_DIR}/skills`;
-}
-
-function resolvedSessionStorage(session: {
-  readonly id: string;
-  readonly storageMounts: readonly PersistedStorageMount[] | null;
-}): Pick<ResolvedAgentExecution, "artifacts" | "persistedStorageMounts"> {
-  if (session.storageMounts === null) {
-    throw new Error(
-      `Agent session "${session.id}" is missing canonical Storage mounts`,
-    );
-  }
-  return {
-    artifacts: projectLegacyWritebackArtifacts(session.storageMounts),
-    persistedStorageMounts: session.storageMounts,
-  };
-}
-
-function countBucket(count: number): (typeof COUNT_BUCKET_DIMENSIONS)[number] {
-  if (count <= 0) {
-    return "0";
-  }
-  if (count === 1) {
-    return "1";
-  }
-  if (count <= 4) {
-    return "2_4";
-  }
-  if (count <= 8) {
-    return "5_8";
-  }
-  if (count <= 16) {
-    return "9_16";
-  }
-  return "17_plus";
-}
 
 function canonicalPiMemoryMount<
   T extends { readonly name: string; readonly mountPath: string },
@@ -9574,168 +4401,9 @@ function canonicalPiMemoryMount<
   });
 }
 
-function skillsRootForRun(
-  framework: SupportedFramework,
-  piSandbox: PiModelConfig | undefined,
-): string {
-  return piSandbox === undefined
-    ? frameworkSkillsMountPath(framework)
-    : PI_SKILLS_ROOT;
-}
-
 type AgentRunRecord = AgentRunRequestAgent;
 
-type RunStorageExecution = Pick<
-  ResolvedRunExecution,
-  | "orgId"
-  | "instructionsStorageName"
-  | "artifacts"
-  | "agentSessionId"
-  | "persistedStorageMounts"
-  | "additionalVolumes"
->;
-
-function selectedRunStorageExecution(
-  agent: AgentRunRecord,
-  session: ChatThreadSessionResolution | undefined,
-): RunStorageExecution | CreateRunErrorResult {
-  const common = {
-    orgId: agent.orgId,
-    instructionsStorageName: getInstructionsStorageName(agent.name),
-  };
-  if (!session?.sessionId) {
-    return { ...common, artifacts: [] };
-  }
-  const snapshot = session.executionSnapshot;
-  if (!snapshot) {
-    return notFound("Agent session not found");
-  }
-  if (!snapshot.agent) {
-    return notFound("Agent not found");
-  }
-  return {
-    ...common,
-    ...resolvedSessionStorage(snapshot.session),
-    agentSessionId: session.sessionId,
-  };
-}
-
-/**
- * Shared storage index read: storage rows with their HEAD and exact requested
- * versions in one fixed-shape statement. Prefix versions are a separate read
- * ({@link withStoragePrefixVersions}) so callers can depend on this snapshot.
- */
-async function loadStorageBaseIndex(
-  db: ReadonlyDb,
-  requests: readonly StorageRequest[],
-  timing: ApiDispatchTimingCollector | undefined,
-): Promise<StorageIndex> {
-  return await measureApiDispatchTiming(
-    timing,
-    "api_dispatch_prepare_storage_manifest_load_storage_index",
-    "nested",
-    () => {
-      return readStorageBaseIndex(db, requests);
-    },
-  );
-}
-
-/** Resolve requested version prefixes against an already loaded index. */
-async function withStoragePrefixVersions(
-  db: ReadonlyDb,
-  requests: readonly StorageRequest[],
-  index: StorageIndex,
-): Promise<StorageIndex> {
-  const queries = storagePrefixVersionRequests(requests, index).map(
-    (request) => {
-      return db
-        .select({
-          storageId: storageVersions.storageId,
-          id: storageVersions.id,
-          s3Key: storageVersions.s3Key,
-          archiveSize: storageVersions.archiveSize,
-          fileCount: storageVersions.fileCount,
-          cacheKey: systemStoragePresignedUrlCache.cacheKey,
-          cacheScope: systemStoragePresignedUrlCache.scope,
-          presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-          expiresAt: systemStoragePresignedUrlCache.expiresAt,
-        })
-        .from(storageVersions)
-        .leftJoin(
-          systemStoragePresignedUrlCache,
-          eq(
-            systemStoragePresignedUrlCache.cacheKey,
-            storageVersionCacheKeySql({
-              orgId: sql`${request.lookup.orgId}`,
-              userId: sql`${request.lookup.userId}`,
-              name: sql`${request.lookup.name}`,
-              versionId: sql`${storageVersions.id}`,
-              s3Key: sql`${storageVersions.s3Key}`,
-            }),
-          ),
-        )
-        .where(
-          and(
-            eq(storageVersions.storageId, request.storageId),
-            or(
-              eq(storageVersions.id, request.version),
-              isValidVersionPrefix(request.version)
-                ? like(storageVersions.id, `${request.version}%`)
-                : undefined,
-            ),
-          ),
-        )
-        .orderBy(desc(eq(storageVersions.id, request.version)))
-        .limit(2);
-    },
-  );
-  const [first, second, ...remaining] = queries;
-  const versions = first
-    ? await (second ? unionAll(first, second, ...remaining) : first)
-    : [];
-  return storageIndexWithPrefixVersions(index, versions);
-}
 // --- Thread-private implementation: launch persistence ---
-
-interface AgentRunCreateAdditionalVolume {
-  readonly name: string;
-  readonly version?: string;
-  readonly mountPath: string;
-  readonly system?: boolean;
-  readonly expectedStorageId?: string;
-}
-
-type StorageManifestSource =
-  | SkillVolume["source"]
-  | "compose_additional_volume"
-  | "compose_volume"
-  | "artifact"
-  | "unknown";
-
-type AdditionalVolumeSources = readonly StorageManifestSource[] | undefined;
-
-interface ResolvedAgentExecution {
-  readonly instructionsStorageName: string;
-  readonly agentId: string;
-  readonly ownerUserId: string;
-  readonly orgId: string;
-  readonly artifacts: readonly AgentRunCreateContextArtifact[];
-  readonly additionalVolumes?: readonly AgentRunCreateAdditionalVolume[];
-  readonly persistedStorageMounts?: readonly PersistedStorageMount[];
-  readonly agentSessionId?: string;
-  readonly continuedFromAgentSessionId?: string;
-  readonly resumeSession?: StoredExecutionContext["resumeSession"];
-  readonly resumeSessionIdentity?: SessionExecutionIdentity;
-}
-
-interface ResolvedUnboundExecution extends Omit<
-  ResolvedAgentExecution,
-  "agentId"
-> {
-  readonly agentId: null;
-}
-
-type ResolvedRunExecution = ResolvedAgentExecution | ResolvedUnboundExecution;
 
 interface AgentExecutionRequestObservation {
   readonly requestUserId: string;
@@ -9743,16 +4411,6 @@ interface AgentExecutionRequestObservation {
   readonly agentId: string;
   readonly ownerUserId: string;
   readonly agentOrgId: string;
-}
-
-type ConnectorScopeSource = "explicit" | "stored_agent" | "empty";
-
-interface EffectiveConnectorScope {
-  readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly allowedCustomConnectorIds: readonly string[];
-  readonly customConnectorGrants:
-    readonly AgentCustomConnectorGrant[] | undefined;
-  readonly source: ConnectorScopeSource;
 }
 
 interface ExplicitConnectorScope {
@@ -9881,6 +4539,7 @@ interface PendingRunContext {
     | "type"
     | "selectedModel"
     | "builtInModelRuntimeRoute"
+    | "upstreamModel"
   > | null;
 }
 
@@ -9902,18 +4561,6 @@ function timingDimensionsForCreateArgs(args: {
     run_preparation_retry_count: "0",
     ...args.timingDimensions,
   };
-}
-
-interface BuiltinConnectorRuntimeContext {
-  readonly secrets: Record<string, string> | undefined;
-  readonly vars: Record<string, string> | undefined;
-  readonly secretConnectorMap: Record<string, string> | undefined;
-  readonly secretConnectorMetadataMap:
-    Record<string, SecretConnectorMetadata> | undefined;
-  readonly connectorSlugs: readonly ConnectorSlug[];
-  readonly mcpConnectorSlugs: readonly ConnectorSlug[];
-  readonly connectorSourceIdBySlug: Readonly<Record<string, string>>;
-  readonly storedEnvironment: Record<string, string> | undefined;
 }
 
 function agentRunModelProviderValues(
@@ -9978,6 +4625,7 @@ interface LaunchRunRowsArgs {
     | "type"
     | "selectedModel"
     | "builtInModelRuntimeRoute"
+    | "upstreamModel"
   > | null;
   readonly agentRunModelPin: AgentRunModelPin | undefined;
   readonly selectedImageModel: ImageModel;
@@ -10048,22 +4696,31 @@ function launchRunValues(
   };
 }
 
-type BuiltInModelLaunchMetadataValues = Pick<
+type ModelLaunchMetadataValues = Pick<
   RunMetadataValues,
   "modelRuntimeProvider" | "modelRuntimeModel" | "builtInModelKeyId"
 >;
 
-function builtInModelLaunchMetadataValues(
+function modelLaunchMetadataValues(
   modelProvider: Pick<
     ResolvedModelProviderEnvironment,
-    "builtInModelRuntimeRoute"
+    "builtInModelRuntimeRoute" | "type" | "upstreamModel"
   > | null,
-): BuiltInModelLaunchMetadataValues {
+): ModelLaunchMetadataValues {
   const runtimeRoute = modelProvider?.builtInModelRuntimeRoute;
   if (!runtimeRoute) {
     return {
-      modelRuntimeProvider: null,
-      modelRuntimeModel: null,
+      // The compiled subscription environment and Runner use this same upstream.
+      // Failed preparation has no execution to capture; member keys are not managed keys.
+      modelRuntimeProvider:
+        modelProvider?.upstreamModel &&
+        isPersonalSubscriptionProviderType(modelProvider.type)
+          ? modelProvider.type
+          : null,
+      modelRuntimeModel:
+        modelProvider && isPersonalSubscriptionProviderType(modelProvider.type)
+          ? (modelProvider.upstreamModel ?? null)
+          : null,
       builtInModelKeyId: null,
     };
   }
@@ -10106,7 +4763,21 @@ function launchRunMetadataValues(args: LaunchRunRowsArgs): RunMetadataValues {
     modelProviderId: exactSubscriptionId ?? modelPin.modelProviderId,
     modelProviderCredentialScope: modelPin.modelProviderCredentialScope,
     selectedModel: modelPin.selectedModel,
-    ...builtInModelLaunchMetadataValues(args.modelProvider),
+    ...modelLaunchMetadataValues(args.modelProvider),
+    ...(args.modelProvider?.builtInModelRuntimeRoute &&
+    modelPin.selectedModel &&
+    isAutoSelectedModel(modelPin.selectedModel)
+      ? {
+          modelUsageProvider: autoRunBillingProvider(
+            modelPin.selectedModel,
+            args.modelProvider.builtInModelRuntimeRoute.upstreamModel,
+          ),
+          modelLongContextMinTotalInputTokens:
+            autoRunPricingLongContextMinTotalInputTokens(
+              modelPin.selectedModel,
+            ),
+        }
+      : {}),
     selectedImageModel: args.selectedImageModel,
     chatThreadId: args.chatThreadId ?? null,
     apiStartedAt: new Date(args.apiStartTime),
@@ -10516,797 +5187,6 @@ function committedAtomicLaunchResponse(args: {
 }
 // --- Thread-private implementation: connector context ---
 
-const CONNECTOR_SECRET_REF_PREFIX = "$secrets.";
-
-const CONNECTOR_VAR_REF_PREFIX = "$vars.";
-
-interface ThreadConnectorSelectionIds {
-  /** Candidates are ordered from run-scoped source to persisted preference. */
-  readonly connectorIdCandidatesBySlug: ReadonlyMap<
-    ConnectorSlug,
-    readonly string[]
-  >;
-  readonly connectorIdCandidatesByCustomConnectorId: ReadonlyMap<
-    string,
-    readonly string[]
-  >;
-}
-
-function isEmptyRunConnectorScope(scope: {
-  readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly allowedCustomConnectorIds: readonly string[];
-}): boolean {
-  return (
-    scope.allowedConnectorSlugs.length === 0 &&
-    scope.allowedCustomConnectorIds.length === 0
-  );
-}
-
-function emptyCustomConnectorRuntimeContext(): CustomConnectorRuntimeContext {
-  return {
-    firewalls: [],
-    reservedSecretAliases: undefined,
-    permissionPolicies: undefined,
-    targets: [],
-    customConnectorIdByFirewallName: {},
-    customConnectorSourceIdByFirewallName: {},
-  };
-}
-
-function connectorEnvironmentTemplate(
-  envName: string,
-  valueRef: string,
-): string {
-  if (valueRef.startsWith(CONNECTOR_SECRET_REF_PREFIX)) {
-    return `\${{ secrets.${envName} }}`;
-  }
-  if (valueRef.startsWith(CONNECTOR_VAR_REF_PREFIX)) {
-    return `\${{ vars.${envName} }}`;
-  }
-  return valueRef;
-}
-
-function addConnectorEnvironmentTemplate(
-  environment: Record<string, string>,
-  envName: string,
-  valueRef: string,
-): void {
-  if (envName in environment) {
-    return;
-  }
-  environment[envName] = connectorEnvironmentTemplate(envName, valueRef);
-}
-
-function effectiveStoredConnectorEnvironment(args: {
-  readonly additionalEnvironment: Record<string, string> | undefined;
-  readonly storedConnectorEnvironment: Record<string, string> | undefined;
-}): Record<string, string> | undefined {
-  if (!args.storedConnectorEnvironment) {
-    return undefined;
-  }
-
-  const overrides = args.additionalEnvironment;
-  if (!overrides) {
-    return args.storedConnectorEnvironment;
-  }
-
-  const environment: Record<string, string> = {};
-  for (const [key, value] of Object.entries(args.storedConnectorEnvironment)) {
-    if (overrides[key] === undefined) {
-      environment[key] = value;
-    }
-  }
-  return compactRecord(environment);
-}
-
-interface StoredConnectorRuntimeRow {
-  readonly automaticAuthType: "none" | "oauth" | null;
-  readonly access: BuiltinConnectorCredentialAccess;
-  readonly connectorSlug: ConnectorSlug;
-  readonly connectorStateRevision: bigint;
-  readonly authMethod: ConnectorAuthMethodId;
-  readonly runtimeMethod: ConnectorRuntimeMethod;
-  readonly isMcp: boolean;
-  readonly needsReconnect: boolean;
-  readonly tokenExpiresAt: Date | null;
-}
-
-interface StoredConnectorRuntimeRowCandidate {
-  readonly automaticAuthType: "none" | "oauth" | null;
-  readonly connectorId: string;
-  readonly connectorSlug: string;
-  readonly authMethod: string;
-  readonly connectorStateRevision: bigint;
-  readonly needsReconnect: boolean;
-  readonly orgId: string;
-  readonly storageVersion: number;
-  readonly tokenExpiresAt: Date | null;
-  readonly userId: string;
-}
-
-interface StoredConnectorMaterializationSnapshotRow extends StoredConnectorRuntimeRowCandidate {
-  readonly secretNames: readonly string[];
-  readonly variableValues: Readonly<Record<string, string>>;
-}
-
-interface ConnectorEnvBindingSet {
-  readonly access: BuiltinConnectorCredentialAccess;
-  readonly connectorSlug: ConnectorSlug;
-  readonly connectorStateRevision: bigint;
-  readonly authMethod: ConnectorAuthMethodId;
-  readonly runtimeBindings: readonly ConnectorRuntimeBindingEntry[];
-  readonly isMcp: boolean;
-}
-
-interface StoredConnectorRequirements {
-  readonly secretNames: Set<string>;
-  readonly variableNames: Set<string>;
-}
-
-interface StoredConnectorMaterializationPlan {
-  readonly allowedConnectorRows: readonly StoredConnectorRuntimeRow[];
-  readonly bindingSets: readonly ConnectorEnvBindingSet[];
-}
-
-interface StoredConnectorSecretRow {
-  readonly name: string;
-}
-
-interface StoredConnectorEncryptedSecretRow extends StoredConnectorSecretRow {
-  readonly id: string;
-  readonly encryptedValue: string;
-}
-
-interface StoredConnectorMaterializationSnapshot {
-  readonly allowedConnectorRows: readonly StoredConnectorRuntimeRow[];
-  readonly bindingSets: readonly ConnectorEnvBindingSet[];
-  readonly secretRows: readonly StoredConnectorSecretRow[];
-  readonly variableValues: Record<string, string>;
-}
-
-interface ResolvedStoredConnectorMetadata {
-  readonly vars: Record<string, string>;
-  readonly secretConnectorMap: Record<string, string>;
-  readonly secretConnectorMetadataMap: Record<string, SecretConnectorMetadata>;
-  readonly environment: Record<string, string>;
-}
-
-function emptyBuiltinConnectorRuntimeContext(): BuiltinConnectorRuntimeContext {
-  return {
-    secrets: undefined,
-    vars: undefined,
-    secretConnectorMap: undefined,
-    secretConnectorMetadataMap: undefined,
-    connectorSlugs: [],
-    mcpConnectorSlugs: [],
-    connectorSourceIdBySlug: {},
-    storedEnvironment: undefined,
-  };
-}
-
-function allowedStoredConnectorRows(
-  rows: readonly StoredConnectorRuntimeRowCandidate[],
-  allowedConnectorSlugs: readonly ConnectorSlug[],
-  snapshot: ConnectorRuntimeSelection,
-  now: Date,
-): readonly StoredConnectorRuntimeRow[] {
-  const validRows = rows.flatMap((row) => {
-    const accessResult = resolveBuiltinConnectorCredentialAccess({
-      snapshot,
-      stored: {
-        automaticAuthType: row.automaticAuthType,
-        authMethodId: row.authMethod,
-        connectorId: row.connectorId,
-        connectorSlug: row.connectorSlug,
-        orgId: row.orgId,
-        storageVersion: row.storageVersion,
-        userId: row.userId,
-      },
-    });
-    if (accessResult.kind !== "ok") {
-      return [];
-    }
-    const { access } = accessResult;
-    return [
-      {
-        access,
-        connectorSlug: access.runtimeMethod.connectorSlug,
-        connectorStateRevision: row.connectorStateRevision,
-        authMethod: access.runtimeMethod.authMethodId,
-        automaticAuthType: row.automaticAuthType,
-        runtimeMethod: access.runtimeMethod,
-        isMcp:
-          getConnectorRuntimeConnector(snapshot, row.connectorSlug)
-            ?.catalogConnector.mcp !== undefined,
-        needsReconnect: row.needsReconnect,
-        tokenExpiresAt: row.tokenExpiresAt,
-      },
-    ];
-  });
-  return validRows.filter((row) => {
-    return (
-      allowedConnectorSlugs.includes(row.connectorSlug) &&
-      storedConnectorRuntimeCredentialStatus(row, now) === "available"
-    );
-  });
-}
-
-function storedConnectorRuntimeCredentialStatus(
-  row: StoredConnectorRuntimeRow,
-  now: Date,
-): ConnectorCredentialStatus {
-  return builtinConnectorRuntimeCredentialStatusWithMethod({
-    method: row.runtimeMethod.method,
-    automaticAuthType: row.automaticAuthType,
-    storedNeedsReconnect: row.needsReconnect,
-    tokenExpiresAt: row.tokenExpiresAt,
-    now,
-  });
-}
-
-function connectorEnvBindingSets(
-  rows: readonly StoredConnectorRuntimeRow[],
-): readonly ConnectorEnvBindingSet[] {
-  return rows.map((row) => {
-    const metadata = connectorAuthMethodRuntimeMetadata(
-      row.runtimeMethod.method,
-    );
-    return {
-      access: row.access,
-      connectorSlug: row.connectorSlug,
-      connectorStateRevision: row.connectorStateRevision,
-      authMethod: row.authMethod,
-      runtimeBindings: metadata.runtimeBindings,
-      isMcp: row.isMcp,
-    };
-  });
-}
-
-function storedConnectorCredentialNames(args: {
-  readonly runtimeBindings: readonly ConnectorRuntimeBindingEntry[];
-  readonly kind: "secret" | "variable";
-  readonly names?: ReadonlySet<string>;
-}): readonly string[] {
-  return [
-    ...new Set(
-      args.runtimeBindings.flatMap(({ source }) => {
-        if (
-          (args.kind === "secret" && source.kind !== "connector-secret") ||
-          (args.kind === "variable" && source.kind !== "connector-variable") ||
-          (args.names !== undefined && !args.names.has(source.name))
-        ) {
-          return [];
-        }
-        return [source.name];
-      }),
-    ),
-  ];
-}
-
-function storedConnectorRequirementsByConnector(
-  bindingSets: readonly ConnectorEnvBindingSet[],
-): ReadonlyMap<string, StoredConnectorRequirements> {
-  return new Map(
-    bindingSets.map((bindingSet) => {
-      return [
-        bindingSet.access.connectorId,
-        {
-          secretNames: new Set(
-            storedConnectorCredentialNames({
-              runtimeBindings: bindingSet.runtimeBindings,
-              kind: "secret",
-            }),
-          ),
-          variableNames: new Set(
-            storedConnectorCredentialNames({
-              runtimeBindings: bindingSet.runtimeBindings,
-              kind: "variable",
-            }),
-          ),
-        },
-      ] as const;
-    }),
-  );
-}
-
-function storedConnectorRuntimeVariables(
-  bindingSets: readonly ConnectorEnvBindingSet[],
-  connectorVariables: Record<string, string>,
-): Record<string, string> {
-  const vars: Record<string, string> = {};
-  for (const { runtimeBindings } of bindingSets) {
-    for (const { envName, source } of runtimeBindings) {
-      if (source.kind !== "connector-variable") {
-        continue;
-      }
-      const value = connectorVariables[source.name];
-      if (value !== undefined) {
-        vars[envName] = value;
-      }
-    }
-  }
-  return vars;
-}
-
-function connectorSourceIdsBySlug(
-  bindingSets: readonly ConnectorEnvBindingSet[],
-): Readonly<Record<string, string>> {
-  return Object.fromEntries(
-    bindingSets.map((bindingSet) => {
-      return [bindingSet.connectorSlug, bindingSet.access.connectorId];
-    }),
-  );
-}
-
-function resolveStoredConnectorSecrets(
-  bindingSets: readonly ConnectorEnvBindingSet[],
-  connectorSecrets: Record<string, string>,
-): Record<string, string> {
-  const secrets: Record<string, string> = {};
-  for (const { runtimeBindings } of bindingSets) {
-    for (const { envName, source } of runtimeBindings) {
-      if (source.kind !== "connector-secret") {
-        continue;
-      }
-      const secretValue = connectorSecrets[source.name];
-      if (secretValue !== undefined) {
-        secrets[envName] = secretValue;
-      }
-    }
-  }
-  return secrets;
-}
-
-function resolveStoredConnectorMetadata(
-  bindingSets: readonly ConnectorEnvBindingSet[],
-  connectorVariables: Record<string, string>,
-  availableSecretNames: ReadonlySet<string>,
-): ResolvedStoredConnectorMetadata {
-  const vars: Record<string, string> = {};
-  const secretConnectorMap: Record<string, string> = {};
-  const secretConnectorMetadataMap: Record<string, SecretConnectorMetadata> =
-    {};
-  const environment: Record<string, string> = {};
-
-  for (const { access, connectorSlug, runtimeBindings, isMcp } of bindingSets) {
-    if (isMcp) {
-      // Resolve MCP bindings from the matched account at the firewall boundary.
-      // Global aliases could otherwise collide with another connector or a
-      // caller-owned sandbox secret.
-      continue;
-    }
-    for (const { envName, valueRef, optional, source } of runtimeBindings) {
-      switch (source.kind) {
-        case "connector-secret": {
-          if (availableSecretNames.has(source.name) || !optional) {
-            addConnectorEnvironmentTemplate(environment, envName, valueRef);
-          }
-          break;
-        }
-        case "connector-variable": {
-          const variableValue = connectorVariables[source.name];
-          if (variableValue !== undefined) {
-            vars[envName] = variableValue;
-          }
-          if (variableValue !== undefined || !optional) {
-            addConnectorEnvironmentTemplate(environment, envName, valueRef);
-          }
-          break;
-        }
-        case "platform-secret": {
-          break;
-        }
-      }
-    }
-
-    // Firewall auth templates can only reference env aliases from envBindings;
-    // store the alias that points at the connector runtime secret, not the
-    // backing secret name. Refreshability is resolved later from access metadata.
-    for (const { envName, source } of runtimeBindings) {
-      if (source.kind === "connector-secret") {
-        secretConnectorMap[envName] = connectorSlug;
-        secretConnectorMetadataMap[envName] = {
-          sourceType: "connector",
-          sourceId: access.connectorId,
-        };
-      } else if (source.kind === "platform-secret") {
-        secretConnectorMap[envName] = connectorSlug;
-        secretConnectorMetadataMap[envName] = { sourceType: "platform-secret" };
-      }
-    }
-  }
-
-  return {
-    vars,
-    secretConnectorMap,
-    secretConnectorMetadataMap,
-    environment,
-  };
-}
-
-function storedConnectorContextFromSnapshot(
-  snapshot: StoredConnectorMaterializationSnapshot | null,
-): BuiltinConnectorRuntimeContext {
-  if (!snapshot) {
-    return emptyBuiltinConnectorRuntimeContext();
-  }
-  return {
-    secrets: undefined,
-    vars: compactRecord(
-      storedConnectorRuntimeVariables(
-        snapshot.bindingSets,
-        snapshot.variableValues,
-      ),
-    ),
-    secretConnectorMap: undefined,
-    secretConnectorMetadataMap: undefined,
-    connectorSlugs: snapshot.allowedConnectorRows.map((row) => {
-      return row.connectorSlug;
-    }),
-    mcpConnectorSlugs: snapshot.allowedConnectorRows.flatMap((row) => {
-      return row.isMcp ? [row.connectorSlug] : [];
-    }),
-    connectorSourceIdBySlug: connectorSourceIdsBySlug(snapshot.bindingSets),
-    storedEnvironment: undefined,
-  };
-}
-
-function availableStoredConnectorSecretNames(
-  rows: readonly StoredConnectorSecretRow[],
-): ReadonlySet<string> {
-  return new Set(
-    rows.map((row) => {
-      return row.name;
-    }),
-  );
-}
-
-function storedConnectorExecutionContextFromSnapshot(
-  snapshot: StoredConnectorMaterializationSnapshot | null,
-): BuiltinConnectorRuntimeContext {
-  if (!snapshot) {
-    return emptyBuiltinConnectorRuntimeContext();
-  }
-  const resolved = resolveStoredConnectorMetadata(
-    snapshot.bindingSets,
-    snapshot.variableValues,
-    availableStoredConnectorSecretNames(snapshot.secretRows),
-  );
-  return {
-    ...storedConnectorContextFromSnapshot(snapshot),
-    vars: compactRecord(resolved.vars),
-    secretConnectorMap: compactRecord(resolved.secretConnectorMap),
-    secretConnectorMetadataMap: compactRecord(
-      resolved.secretConnectorMetadataMap,
-    ),
-    storedEnvironment: compactRecord(resolved.environment),
-  };
-}
-
-function referencedEnvironmentSecretAliases(
-  environment: Record<string, string> | undefined,
-): ReadonlySet<string> {
-  if (!environment) {
-    return new Set();
-  }
-  return new Set(
-    extractAndGroupVariables(environment).secrets.map((ref) => {
-      return ref.name;
-    }),
-  );
-}
-
-function eagerStoredConnectorSecretNames(args: {
-  readonly snapshot: StoredConnectorMaterializationSnapshot;
-  readonly storedEnvironment: Record<string, string> | undefined;
-  readonly referencedEnvironmentSecretAliases: ReadonlySet<string>;
-  readonly environmentSecretPlaceholders:
-    Readonly<Record<string, string>> | undefined;
-  readonly overriddenSecretAliases: ReadonlySet<string>;
-}): ReadonlySet<string> {
-  const names = new Set<string>();
-
-  for (const { runtimeBindings, isMcp } of args.snapshot.bindingSets) {
-    if (isMcp) {
-      continue;
-    }
-    for (const { envName, source } of runtimeBindings) {
-      const isNeededByStoredEnvironment =
-        args.storedEnvironment?.[envName] !== undefined;
-      const isNeededByExplicitEnvironment =
-        args.referencedEnvironmentSecretAliases.has(envName);
-      if (
-        source.kind !== "connector-secret" ||
-        (!isNeededByStoredEnvironment && !isNeededByExplicitEnvironment) ||
-        args.environmentSecretPlaceholders?.[envName] !== undefined ||
-        args.overriddenSecretAliases.has(envName)
-      ) {
-        continue;
-      }
-      names.add(source.name);
-    }
-  }
-  return names;
-}
-
-function eagerStoredConnectorSecretInputs(args: {
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-}): {
-  readonly eagerStoredEnvironment: Record<string, string> | undefined;
-  readonly referencedEnvironmentSecretAliases: ReadonlySet<string>;
-} {
-  const additionalEnvironment = args.modelProvider?.environment;
-  return {
-    eagerStoredEnvironment: effectiveStoredConnectorEnvironment({
-      additionalEnvironment,
-      storedConnectorEnvironment: args.connectorContext.storedEnvironment,
-    }),
-    referencedEnvironmentSecretAliases: referencedEnvironmentSecretAliases(
-      additionalEnvironment,
-    ),
-  };
-}
-
-function buildStoredConnectorMaterializationPlan(args: {
-  readonly connectorRows: readonly StoredConnectorRuntimeRowCandidate[];
-  readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
-}): StoredConnectorMaterializationPlan | null {
-  const allowedConnectorRows = allowedStoredConnectorRows(
-    args.connectorRows,
-    args.allowedConnectorSlugs,
-    args.connectorCatalogSnapshot,
-    nowDate(),
-  );
-  if (allowedConnectorRows.length === 0) {
-    return null;
-  }
-
-  const bindingSets = connectorEnvBindingSets(allowedConnectorRows);
-  return {
-    allowedConnectorRows,
-    bindingSets,
-  };
-}
-
-function materializeStoredConnectorSnapshotRows(
-  args: {
-    readonly rows: readonly StoredConnectorMaterializationSnapshotRow[];
-    readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-    readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
-    readonly timingDimensions: ApiDispatchTimingDimensions;
-  },
-  timing?: ApiDispatchTimingCollector,
-): StoredConnectorMaterializationSnapshot | null {
-  const startedAt = now();
-  const result = safeSync(() => {
-    const plan = buildStoredConnectorMaterializationPlan({
-      connectorRows: args.rows,
-      allowedConnectorSlugs: args.allowedConnectorSlugs,
-      connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-    });
-    if (!plan) {
-      return null;
-    }
-
-    const requirementsByConnector = storedConnectorRequirementsByConnector(
-      plan.bindingSets,
-    );
-    const secretRows: StoredConnectorSecretRow[] = [];
-    const variableValues: Record<string, string> = {};
-    for (const row of args.rows) {
-      const requirements = requirementsByConnector.get(row.connectorId);
-      if (!requirements) {
-        continue;
-      }
-      for (const name of row.secretNames) {
-        if (requirements.secretNames.has(name)) {
-          secretRows.push({ name });
-        }
-      }
-      for (const [name, value] of Object.entries(row.variableValues)) {
-        if (requirements.variableNames.has(name)) {
-          variableValues[name] = value;
-        }
-      }
-    }
-
-    return {
-      allowedConnectorRows: plan.allowedConnectorRows,
-      bindingSets: plan.bindingSets,
-      secretRows,
-      variableValues,
-    } satisfies StoredConnectorMaterializationSnapshot;
-  });
-  if ("error" in result) {
-    timing?.recordElapsed(
-      "api_dispatch_prepare_context_materialize_stored_connector_snapshot",
-      "nested",
-      startedAt,
-      now(),
-      {
-        ...args.timingDimensions,
-        stored_connector_candidate_count_bucket: countBucket(args.rows.length),
-      },
-    );
-    throw result.error;
-  }
-  const snapshot = result.ok;
-  timing?.recordElapsed(
-    "api_dispatch_prepare_context_materialize_stored_connector_snapshot",
-    "nested",
-    startedAt,
-    now(),
-    {
-      ...args.timingDimensions,
-      stored_connector_candidate_count_bucket: countBucket(args.rows.length),
-      stored_connector_count_bucket: countBucket(
-        snapshot?.allowedConnectorRows.length ?? 0,
-      ),
-      stored_connector_secret_count_bucket: countBucket(
-        snapshot?.secretRows.length ?? 0,
-      ),
-    },
-  );
-  return snapshot;
-}
-
-interface StoredConnectorMaterializationArgs {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly connectorIdCandidatesBySlug:
-    ReadonlyMap<ConnectorSlug, readonly string[]> | undefined;
-  readonly scopeSource: ConnectorScopeSource;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
-}
-
-function customConnectorRequiredMemberCredentialsAreComplete(
-  row: CustomConnectorRuntimeDataRows[number],
-): boolean {
-  return (
-    customConnectorMissingRequiredFieldKeys({
-      fields: row.connector.fields,
-      markers: row.values,
-    }).length === 0
-  );
-}
-
-function customConnectorNewRunRowIsAdmissible(
-  row: CustomConnectorRuntimeDataRows[number],
-): boolean {
-  return (
-    row.credentialAccess.kind === "current" &&
-    row.credentialAccess.runtimeAvailable &&
-    (row.connector.authMode !== "manual" ||
-      customConnectorManualAuthReferencesMemberField(row.connector)) &&
-    customConnectorRequiredMemberCredentialsAreComplete(row)
-  );
-}
-
-async function buildNewRunCustomConnectorRuntimeContext(
-  args: BuildCustomConnectorRuntimeContextArgs,
-): Promise<CustomConnectorRuntimeContext> {
-  // Active targets call the shared builder directly so credential loss does
-  // not remove their pinned firewall. Only new runs apply this admission gate.
-  return await buildCustomConnectorRuntimeContext({
-    ...args,
-    rows: args.rows.filter(customConnectorNewRunRowIsAdmissible),
-  });
-}
-
-function connectorContextTimingDimensions(args: {
-  readonly observation: BootstrapConnectorObservation | undefined;
-  readonly scopeSource: ConnectorScopeSource;
-  readonly requestedCustomCount: number;
-  readonly sources: readonly unknown[];
-}): ApiDispatchTimingDimensions {
-  const observation = args.observation;
-  return {
-    connector_context_schema: "shared_v2",
-    connector_value_rows_semantics: "shared_context_wait_v1",
-    connector_scope_source: args.scopeSource,
-    connector_context_requested_custom_count_bucket: countBucket(
-      args.requestedCustomCount,
-    ),
-    connector_context_candidate_custom_count_bucket: countBucket(
-      args.sources.length,
-    ),
-    connector_context_observation: !observation
-      ? "missing"
-      : observation.query && observation.materialize && observation.sources
-        ? "complete"
-        : "partial",
-    ...(observation
-      ? {
-          connector_context_returned_row_count_bucket: countBucket(
-            observation.returnedRowCount,
-          ),
-          connector_context_account_count_bucket: countBucket(
-            observation.accountCount,
-          ),
-          connector_context_custom_account_count_bucket: countBucket(
-            observation.customAccountCount,
-          ),
-          connector_context_stored_value_count_bucket: countBucket(
-            observation.storedValueCount,
-          ),
-          connector_context_pool_capture:
-            observation.acquisitions.length === 1
-              ? "single"
-              : observation.acquisitions.length === 0
-                ? "missing"
-                : "multiple",
-        }
-      : {}),
-  };
-}
-
-function recordConnectorContextObservation(
-  timing: ApiDispatchTimingCollector,
-  observation: BootstrapConnectorObservation | undefined,
-  dimensions: ApiDispatchTimingDimensions,
-): void {
-  if (!observation) {
-    return;
-  }
-  const stages = [
-    [
-      "api_dispatch_prepare_context_connector_context_environment_query",
-      observation.query,
-    ],
-    [
-      "api_dispatch_prepare_context_connector_context_environment_materialize",
-      observation.materialize,
-    ],
-    [
-      "api_dispatch_prepare_context_connector_context_sources_materialize",
-      observation.sources,
-    ],
-  ] as const;
-  for (const [actionType, duration] of stages) {
-    if (duration) {
-      timing.recordDuration(
-        actionType,
-        "nested",
-        duration.durationMs,
-        duration.finishedAt,
-        dimensions,
-      );
-    }
-  }
-  // This canonical statement should acquire exactly one client. Do not invent
-  // zero wait or combine multiple acquisition intervals if coverage differs.
-  const [acquisition] = observation.acquisitions;
-  if (observation.acquisitions.length === 1 && acquisition) {
-    timing.recordDuration(
-      "api_dispatch_prepare_context_connector_context_pool_acquire",
-      "nested",
-      acquisition.durationMs,
-      acquisition.finishedAt,
-      { ...dimensions, connector_context_pool_acquire_path: acquisition.path },
-    );
-  }
-}
-
-function storedConnectorTimingDimensions(args: {
-  readonly scopeSource: ConnectorScopeSource;
-  readonly connectorCount?: number;
-}): ApiDispatchTimingDimensions {
-  return {
-    connector_scope_source: args.scopeSource,
-    ...(args.connectorCount !== undefined
-      ? { stored_connector_count_bucket: countBucket(args.connectorCount) }
-      : {}),
-  };
-}
-
-interface PreparedConnectorContext {
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-  readonly permissionManifest: PermissionManifest | undefined;
-}
-
 function connectorScopeFromCreateArgs(args: {
   readonly connectorScope: ExplicitConnectorScope;
 }): EffectiveConnectorScope {
@@ -11321,276 +5201,12 @@ function connectorScopeFromCreateArgs(args: {
   };
 }
 
-interface RunPreparedConnectorInputs {
-  readonly db: ReadonlyDb;
-  readonly connectorScope: EffectiveConnectorScope;
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly body: Pick<CreateRunBody, "permissionPolicies" | "vars" | "secrets">;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly storedConnectorSnapshot: StoredConnectorMaterializationSnapshot | null;
-  readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly timing: ApiDispatchTimingCollector;
-}
-
-interface RunConnectorSelection {
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly threadConnectorSelectionIds: ThreadConnectorSelectionIds | undefined;
-  readonly connectorScope: EffectiveConnectorScope;
-}
-
-interface RunConnectorReadInput {
-  readonly db: ReadonlyDb;
-  readonly timing: ApiDispatchTimingCollector;
-  readonly args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly chatThreadId?: string;
-    /** Exact connector that delivered this run's durable integration input. */
-    readonly connectorSourceId?: string;
-    readonly includeOkouTokenSecret?: boolean;
-  };
-}
-
-interface RunConnectorContextSnapshot {
-  readonly storedConnectorSnapshot: StoredConnectorMaterializationSnapshot | null;
-  readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-}
-
-interface RunConnectorPreparation {
-  readonly selection: RunConnectorSelection;
-  readonly stored: StoredConnectorMaterializationArgs | null;
-  readonly custom: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly allowedCustomConnectorIds: readonly string[];
-    readonly connectorIdCandidatesByCustomConnectorId:
-      ReadonlyMap<string, readonly string[]> | undefined;
-    readonly customConnectorGrants:
-      readonly AgentCustomConnectorGrant[] | undefined;
-    readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
-  } | null;
-}
-
-interface RunThreadConnectorSelectionRow {
-  readonly connectorId: string;
-  readonly connectorSlug: string | null;
-  readonly customConnectorId: string | null;
-}
-
-function runConnectorTargetFromRow(
-  row: Pick<
-    RunThreadConnectorSelectionRow,
-    "connectorSlug" | "customConnectorId"
-  >,
-): ConnectorAccountTarget {
-  if (row.connectorSlug !== null && row.customConnectorId === null) {
-    return {
-      kind: "builtin",
-      connectorSlug: connectorSlugSchema.parse(row.connectorSlug),
-    };
-  }
-  if (row.customConnectorId !== null && row.connectorSlug === null) {
-    return { kind: "custom", customConnectorId: row.customConnectorId };
-  }
-  throw new Error("Expected exactly one thread connector selection target");
-}
-
-function runConnectorTargetIsAuthorized(
-  scope: EffectiveConnectorScope,
-  target: ConnectorAccountTarget,
-): boolean {
-  return target.kind === "builtin"
-    ? scope.allowedConnectorSlugs.includes(
-        connectorSlugSchema.parse(target.connectorSlug),
-      )
-    : scope.allowedCustomConnectorIds.includes(target.customConnectorId);
-}
-
-function runThreadConnectorCandidates(
-  selections: readonly ConnectorAccountSelection[],
-  source: ConnectorAccountSelection | null,
-): ThreadConnectorSelectionIds {
-  const candidates = new Map<string, readonly ConnectorAccountSelection[]>();
-  for (const selection of selections) {
-    candidates.set(connectorAccountTargetKey(selection.target), [selection]);
-  }
-  if (source) {
-    const key = connectorAccountTargetKey(source.target);
-    const selected = candidates.get(key)?.[0];
-    candidates.set(
-      key,
-      selected && selected.connectionId !== source.connectionId
-        ? [source, selected]
-        : [source],
-    );
-  }
-  const connectorIdCandidatesBySlug = new Map<
-    ConnectorSlug,
-    readonly string[]
-  >();
-  const connectorIdCandidatesByCustomConnectorId = new Map<
-    string,
-    readonly string[]
-  >();
-  for (const values of candidates.values()) {
-    const first = values[0];
-    if (!first) {
-      continue;
-    }
-    const ids = values.map((value) => {
-      return value.connectionId;
-    });
-    if (first.target.kind === "builtin") {
-      connectorIdCandidatesBySlug.set(
-        connectorSlugSchema.parse(first.target.connectorSlug),
-        ids,
-      );
-    } else {
-      connectorIdCandidatesByCustomConnectorId.set(
-        first.target.customConnectorId,
-        ids,
-      );
-    }
-  }
-  return {
-    connectorIdCandidatesBySlug,
-    connectorIdCandidatesByCustomConnectorId,
-  };
-}
-
-interface RunConnectorAccountRequest {
-  readonly target: ConnectorAccountTarget;
-  readonly sourceIds: readonly string[];
-}
-
-interface RunConnectorAccountRow {
-  readonly connectorId: string;
-  readonly connectorSlug: string | null;
-  readonly customConnectorId: string | null;
-  readonly isDefault: boolean;
-}
-
-function runConnectorAccountRequests(
-  scope: EffectiveConnectorScope,
-  selections: ThreadConnectorSelectionIds | undefined,
-): readonly RunConnectorAccountRequest[] {
-  return [
-    ...scope.allowedConnectorSlugs.map(
-      (connectorSlug): RunConnectorAccountRequest => {
-        return {
-          target: { kind: "builtin", connectorSlug },
-          sourceIds:
-            selections?.connectorIdCandidatesBySlug?.get(connectorSlug) ?? [],
-        };
-      },
-    ),
-    ...scope.allowedCustomConnectorIds.map(
-      (customConnectorId): RunConnectorAccountRequest => {
-        return {
-          target: { kind: "custom", customConnectorId },
-          sourceIds:
-            selections?.connectorIdCandidatesByCustomConnectorId?.get(
-              customConnectorId,
-            ) ?? [],
-        };
-      },
-    ),
-  ];
-}
-
-function runConnectorAccountCandidatesFromRows(args: {
-  readonly requests: readonly RunConnectorAccountRequest[];
-  readonly rows: readonly RunConnectorAccountRow[];
-}): ReadonlyMap<string, readonly string[]> {
-  const byId = new Map(
-    args.rows.map((row) => {
-      return [row.connectorId, row];
-    }),
-  );
-  const defaultsByTarget = new Map<string, string[]>();
-  for (const row of args.rows) {
-    if (!row.isDefault) {
-      continue;
-    }
-    const key = connectorAccountTargetKey(runConnectorTargetFromRow(row));
-    const ids = defaultsByTarget.get(key) ?? [];
-    ids.push(row.connectorId);
-    defaultsByTarget.set(key, ids);
-  }
-  return new Map(
-    args.requests.map((request) => {
-      const key = connectorAccountTargetKey(request.target);
-      const explicit = request.sourceIds.filter((id) => {
-        const row = byId.get(id);
-        return (
-          row !== undefined &&
-          connectorAccountTargetKey(runConnectorTargetFromRow(row)) === key
-        );
-      });
-      const defaults = defaultsByTarget.get(key) ?? [];
-      return [
-        key,
-        [...new Set([...explicit, ...(defaults.length === 1 ? defaults : [])])],
-      ];
-    }),
-  );
-}
-
-function customConnectorCandidateRuntimeRows(args: {
-  readonly connector: CustomConnectorRuntimeDataRows[number]["connector"];
-  readonly candidateIds: readonly string[];
-  readonly storageRows: readonly CustomConnectorRuntimeStorageRow[];
-}): CustomConnectorRuntimeDataRows {
-  const { connector } = args;
-  const declaredFields = new Set(
-    connector.fields.map(customConnectorValueMarkerKey),
-  );
-  const ids: readonly (string | undefined)[] = args.candidateIds.length
-    ? args.candidateIds
-    : [undefined];
-  return ids.map((id) => {
-    const storage = customConnectorRuntimeStorageSnapshot(
-      [connector],
-      args.storageRows,
-      new Map(id ? [[connector.id, id]] : []),
-    );
-    const credentialAccess = storage.accesses.get(connector.id);
-    if (!credentialAccess) {
-      throw new Error("Expected custom connector credential access");
-    }
-    return {
-      connector,
-      credentialAccess,
-      values: storage.values.filter((value) => {
-        return declaredFields.has(customConnectorValueMarkerKey(value));
-      }),
-    };
-  });
-}
 // --- Thread-private implementation: model provider environment ---
 
 function modelProviderFramework(
   modelProvider: ResolvedModelProviderEnvironment,
 ): SupportedFramework {
   return getFrameworkForType(modelProvider.type);
-}
-
-function piConfigurationRouteError(
-  error: unknown,
-): ReturnType<typeof badRequestMessage> {
-  if (error instanceof PiModelConfigurationError) {
-    return badRequestMessage(error.message);
-  }
-  throw error;
-}
-
-interface RunModelProviderReadInput {
-  readonly db: ReadonlyDb;
-  readonly timing: ApiDispatchTimingCollector;
-  readonly args: RunModelProviderArgs;
 }
 
 /** Post-reservation materializer. This never inserts a Run or invokes the API
@@ -11651,11 +5267,7 @@ interface ThreadRunOwner {
 /** The run-request facts Thread sets for a claimed queue head. */
 type ThreadRunBody = Pick<
   AgentRunCreateBody,
-  | "modelProvider"
-  | "prompt"
-  | "realAgentInPreview"
-  | "captureNetworkBodies"
-  | "sessionId"
+  "modelProvider" | "realAgentInPreview" | "captureNetworkBodies" | "sessionId"
 > & {
   /** The queue head's Agent; a Thread run always names it. */
   readonly agentId: string;
@@ -11667,13 +5279,11 @@ interface ThreadRunCommand {
   readonly body: ThreadRunBody;
   readonly apiStartTime: number;
   readonly triggerSource?: TriggerSource;
-  readonly appendSystemPrompt?: string;
   readonly callbacks?: readonly AgentRunsCreateRunCallback[];
   readonly chatThreadId: string;
   readonly connectorSourceId?: string;
   readonly threadSessionRoute?: ChatThreadSessionRoute;
   /** A producer may atomically move an integration thread to this run's agent. */
-  readonly expectedThreadAgentId?: string;
   readonly computerUseHostId?: string;
   readonly modelProviderId?: string;
   readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
@@ -11692,53 +5302,14 @@ interface ThreadRunCommand {
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
 }
 
-interface UserInfo {
-  readonly name: string | null;
-  readonly email: string | null;
-  readonly timezone: string | null;
-}
-
 /** The selection-time command: everything but the prompt-time facts. */
-type ThreadRunSelection = Omit<
-  ThreadRunCommand,
-  "body" | "appendSystemPrompt" | "callbacks"
-> & {
-  readonly body: Omit<ThreadRunBody, "prompt">;
+type ThreadRunSelection = Omit<ThreadRunCommand, "body" | "callbacks"> & {
+  readonly body: ThreadRunBody;
 };
 /** The identity read before Pi eligibility is decided. */
 type ThreadRunIdentity = Omit<ThreadRunSelection, "piExecution"> & {
   readonly piExecution?: boolean;
 };
-
-function personalSubscriptionAccountCandidates(args: {
-  readonly command: ThreadRunIdentity;
-  readonly providerType: string;
-  readonly modelProviderId: string | null;
-  readonly snapshot: MemberModelAccountSnapshot;
-}) {
-  const snapshot = args.snapshot;
-  if (
-    snapshot.orgId !== args.command.owner.orgId ||
-    snapshot.userId !== args.command.owner.userId ||
-    !isPersonalSubscriptionProviderType(args.providerType)
-  ) {
-    throw new Error("Subscription account snapshot identity mismatch");
-  }
-  return snapshot.accounts.filter((account) => {
-    if (
-      account.disconnectedAt !== null ||
-      account.orgId !== snapshot.orgId ||
-      account.userId !== snapshot.userId
-    ) {
-      return false;
-    }
-    const activeType = account.type === args.providerType && account.isActive;
-    return args.modelProviderId === null
-      ? activeType
-      : account.id === args.modelProviderId ||
-          (account.modelProviderId === args.modelProviderId && activeType);
-  });
-}
 
 function selectedRunPiExecution(command: ThreadRunIdentity): boolean {
   if (command.piExecution === undefined) {
@@ -11783,26 +5354,6 @@ function selectedRunModelProviderArgs(
 }
 // --- Thread-private implementation: Runner payload ---
 
-function withOkouTokenSecret(
-  body: CreateRunBody,
-  okouToken: string,
-): CreateRunBody {
-  return {
-    ...body,
-    secrets: {
-      ...withoutLegacyAgentRunEnvironmentEntries(body.secrets),
-      OKOU_TOKEN: okouToken,
-    },
-  };
-}
-
-function pendingOkouTokenSecrets(secrets: CreateRunBody["secrets"]) {
-  return {
-    ...withoutLegacyAgentRunEnvironmentEntries(secrets),
-    OKOU_TOKEN: "__pending_okou_token__",
-  };
-}
-
 interface StoredExecutionSecrets {
   // Runtime secret namespace encrypted into executionContext.encryptedSecrets.
   // Keys are the `NAME` in `${{ secrets.NAME }}`; connector/model-provider
@@ -11821,160 +5372,6 @@ type BuiltStoredExecutionContextDraft = Omit<
 > & {
   readonly context: Omit<StoredExecutionContext, "storageMounts">;
 };
-
-function expandEnvironment(args: {
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly additionalEnvironment: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    Readonly<Record<string, string>> | undefined;
-  readonly storedConnectorEnvironment: Record<string, string> | undefined;
-  readonly connectorVars: Record<string, string> | undefined;
-}): Record<string, string> | null {
-  const storedConnectorEnvironment = expandStoredConnectorEnvironment({
-    environment: effectiveStoredConnectorEnvironment({
-      additionalEnvironment: args.additionalEnvironment,
-      storedConnectorEnvironment: args.storedConnectorEnvironment,
-    }),
-    vars: args.connectorVars,
-    secrets: args.secrets,
-    environmentSecretPlaceholders: args.environmentSecretPlaceholders,
-  });
-  const mergedEnvironment = args.additionalEnvironment;
-  if (!mergedEnvironment) {
-    return storedConnectorEnvironment ?? null;
-  }
-
-  const { result } = expandVariables(mergedEnvironment, {
-    vars: args.vars,
-    secrets: {
-      ...args.secrets,
-      ...args.environmentSecretPlaceholders,
-    },
-  });
-  return mergeRecords(result, storedConnectorEnvironment) ?? null;
-}
-
-function expandStoredConnectorEnvironment(args: {
-  readonly environment: Record<string, string> | undefined;
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    Readonly<Record<string, string>> | undefined;
-}): Record<string, string> | undefined {
-  if (!args.environment) {
-    return undefined;
-  }
-
-  const expanded: Record<string, string> = {};
-  const secretSources = mergeRecords(
-    args.secrets,
-    args.environmentSecretPlaceholders,
-  );
-  for (const [key, value] of Object.entries(args.environment)) {
-    const expansion = expandVariablesInString(value, {
-      vars: args.vars,
-      secrets: secretSources,
-    });
-    if (expansion.missingVars.length > 0) {
-      throw new Error(
-        `Stored connector environment is missing required values: ${formatMissingReferences(expansion.missingVars)}`,
-      );
-    }
-    expanded[key] = expansion.result;
-  }
-  return compactRecord(expanded);
-}
-
-function formatMissingReferences(
-  refs: readonly { readonly source: string; readonly name: string }[],
-): string {
-  return refs
-    .map((ref) => {
-      return `${ref.source}.${ref.name}`;
-    })
-    .join(", ");
-}
-
-function withoutLegacyAgentRunEnvironmentEntries<T>(
-  values: Readonly<Record<string, T>> | undefined,
-): Record<string, T> | undefined {
-  if (!values) {
-    return undefined;
-  }
-  const canonical: Record<string, T> = {};
-  for (const [key, value] of Object.entries(values)) {
-    if (!key.startsWith("ZERO_")) {
-      canonical[key] = value;
-    }
-  }
-  return compactRecord(canonical);
-}
-
-function filterSecretConnectorMap(args: {
-  readonly secretConnectorMap: Record<string, string> | undefined;
-  readonly overriddenSecrets: readonly (
-    Readonly<Record<string, unknown>> | undefined
-  )[];
-}): Record<string, string> | undefined {
-  if (!args.secretConnectorMap) {
-    return undefined;
-  }
-
-  const overridden = new Set<string>();
-  for (const secrets of args.overriddenSecrets) {
-    for (const key of Object.keys(secrets ?? {})) {
-      overridden.add(key);
-    }
-  }
-  const filtered = Object.fromEntries(
-    Object.entries(args.secretConnectorMap).filter(([key]) => {
-      return !overridden.has(key);
-    }),
-  );
-  return compactRecord(filtered);
-}
-
-function filterSecretConnectorMetadataMap(args: {
-  readonly secretConnectorMetadataMap:
-    Record<string, SecretConnectorMetadata> | undefined;
-  readonly secretConnectorMap: Record<string, string> | undefined;
-}): Record<string, SecretConnectorMetadata> | undefined {
-  if (!args.secretConnectorMetadataMap || !args.secretConnectorMap) {
-    return undefined;
-  }
-
-  const filtered: Record<string, SecretConnectorMetadata> = {};
-  for (const key of Object.keys(args.secretConnectorMap)) {
-    const metadata = args.secretConnectorMetadataMap[key];
-    if (metadata) {
-      filtered[key] = metadata;
-    }
-  }
-  return compactRecord(filtered);
-}
-
-function overriddenRuntimeSecretAliases(
-  records: readonly (Record<string, string> | undefined)[],
-): ReadonlySet<string> {
-  const aliases = new Set<string>();
-  for (const record of records) {
-    for (const key of Object.keys(record ?? {})) {
-      aliases.add(key);
-    }
-  }
-  return aliases;
-}
-
-function storedConnectorRuntimeTargets(args: {
-  readonly permissionManifest: PermissionManifest | undefined;
-  readonly customTargets: readonly ConnectorRuntimeTargetRegistration[];
-}): ConnectorRuntimeTargetRegistration[] {
-  return [
-    ...(args.permissionManifest?.builtinRuntimeTargets ?? []),
-    ...args.customTargets,
-  ];
-}
 
 function buildStoredPlatformEnvironment(args: {
   readonly platformEnvironment: Record<string, string> | undefined;
@@ -12049,10 +5446,7 @@ function claimRunStoredContextDraft<
     {
       ...args,
       body,
-      platformEnvironment: withPaidToolPlatformEnvironment(
-        args,
-        platformEnvironment,
-      ),
+      platformEnvironment,
       runId: args.run.id,
     },
     encrypted.encryptedSecrets,
@@ -12070,9 +5464,7 @@ function buildStoredExecutionContextDraft(
     readonly framework: SupportedFramework;
     readonly piSandbox: PiModelConfig | undefined;
     readonly modelProvider: ResolvedModelProviderEnvironment | null;
-    readonly connectorContext: BuiltinConnectorRuntimeContext;
-    readonly customConnectorContext: CustomConnectorRuntimeContext;
-    readonly permissionManifest: PermissionManifest | undefined;
+    readonly environment: Environment;
     readonly billableFirewalls: readonly string[];
     readonly modelUsageProvider: string | undefined;
     readonly modelUsageLongContextMinTotalInputTokens: number;
@@ -12086,34 +5478,21 @@ function buildStoredExecutionContextDraft(
   },
   encryptedSecrets: BuiltStoredExecutionContextDraft["context"]["encryptedSecrets"],
 ): BuiltStoredExecutionContextDraft {
-  const permissions = args.permissionManifest;
-  const executionSecrets = buildStoredExecutionSecrets({
-    connectorContext: args.connectorContext,
-    modelProvider: args.modelProvider,
-    bodySecrets: args.body.secrets,
-    customConnectorContext: args.customConnectorContext,
-  });
+  const permissions = environmentPermissionManifest(args.environment);
+  const executionSecrets = buildStoredExecutionSecrets(
+    args.environment,
+    args.body.secrets,
+  );
   const secretNames = executionSecrets.secrets
     ? Object.keys(executionSecrets.secrets)
     : [];
   const secretValues = executionSecrets.secrets
     ? Object.values(executionSecrets.secrets)
     : [];
-  const connectorRuntimeTargets = storedConnectorRuntimeTargets({
-    permissionManifest: permissions,
-    customTargets: args.customConnectorContext.targets,
-  });
   // Newly constructed API context: remove the reserved namespace from the
   // fully expanded untrusted environment before the trusted overlay.
   const expandedEnvironment = withoutOkouNamespaceEntries(
-    expandEnvironment({
-      vars: args.body.vars,
-      secrets: executionSecrets.secrets,
-      additionalEnvironment: args.modelProvider?.environment,
-      environmentSecretPlaceholders: permissions?.environmentSecretPlaceholders,
-      storedConnectorEnvironment: args.connectorContext.storedEnvironment,
-      connectorVars: args.connectorContext.vars,
-    }),
+    args.environment.environment ?? null,
   );
   const platformEnvironment = buildStoredPlatformEnvironment({
     platformEnvironment: args.platformEnvironment,
@@ -12145,7 +5524,7 @@ function buildStoredExecutionContextDraft(
       environment,
       platformEnvironment,
       secretValueEnvironmentKeys,
-      vars: args.connectorContext.vars ?? null,
+      vars: args.environment.vars ?? null,
       resumeSession: args.resolved.resumeSession ?? null,
       encryptedSecrets,
       secretConnectorMap: executionSecrets.secretConnectorMap,
@@ -12157,7 +5536,7 @@ function buildStoredExecutionContextDraft(
       userTimezone: args.userTimezone,
       firewalls: permissions?.firewalls,
       networkPolicies: permissions?.networkPolicies,
-      connectorRuntimeTargets,
+      connectorRuntimeTargets: [...args.environment.runtimeTargets],
       disallowedTools: args.body.disallowedTools,
       tools: args.body.tools,
       settings: args.body.settings,
@@ -12185,65 +5564,26 @@ function resolveBuiltStoredExecutionContext(
   };
 }
 
-function buildStoredExecutionSecrets(args: {
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly bodySecrets: Record<string, string> | undefined;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-}): StoredExecutionSecrets {
-  const filteredConnectorMap = filterSecretConnectorMap({
-    secretConnectorMap: args.connectorContext.secretConnectorMap,
-    overriddenSecrets: [
-      args.modelProvider?.secrets,
-      args.modelProvider?.secretConnectorMap,
-      args.bodySecrets,
-      args.customConnectorContext.reservedSecretAliases,
-    ],
-  });
-  const filteredModelProviderMap = filterSecretConnectorMap({
-    secretConnectorMap: args.modelProvider?.secretConnectorMap,
-    overriddenSecrets: [
-      args.bodySecrets,
-      args.customConnectorContext.reservedSecretAliases,
-    ],
-  });
-  const filteredConnectorMetadataMap = filterSecretConnectorMetadataMap({
-    secretConnectorMetadataMap:
-      args.connectorContext.secretConnectorMetadataMap,
-    secretConnectorMap: filteredConnectorMap,
-  });
-  const filteredModelProviderMetadataMap = filterSecretConnectorMetadataMap({
-    secretConnectorMetadataMap: args.modelProvider?.secretConnectorMetadataMap,
-    secretConnectorMap: filteredModelProviderMap,
-  });
-  const secretConnectorMap =
-    mergeRecords(filteredConnectorMap, filteredModelProviderMap) ?? null;
-  const secretConnectorMetadataMap =
-    mergeRecords(
-      filteredConnectorMetadataMap,
-      filteredModelProviderMetadataMap,
-    ) ?? null;
-  const secrets = mergeRecords(
-    args.connectorContext.secrets,
-    args.modelProvider?.secrets,
-    args.bodySecrets,
-  );
-  // The merged map is the runtime `secrets.NAME` namespace consumed by firewall
-  // auth and environment expansion. Stored connectors and model providers enter
-  // this map under env binding aliases; raw DB storage names stay behind the
-  // access metadata used during refresh/lookup.
+/** Final runtime secret namespace: the Run environment plus body secrets. */
+function buildStoredExecutionSecrets(
+  environment: Environment,
+  bodySecrets: Record<string, string> | undefined,
+): StoredExecutionSecrets {
+  const merged = mergeEnvironments([
+    environment,
+    { ...emptyEnvironment(), secrets: bodySecrets },
+  ]);
   return {
     // An explicitly empty namespace still supports dynamic firewall secrets.
     secrets:
-      secrets ??
-      (args.bodySecrets !== undefined || secretConnectorMap ? {} : undefined),
-    secretConnectorMap,
-    secretConnectorMetadataMap,
+      merged.secrets ??
+      (bodySecrets !== undefined || merged.secretConnectorMap ? {} : undefined),
+    secretConnectorMap: merged.secretConnectorMap ?? null,
+    secretConnectorMetadataMap: merged.secretConnectorMetadataMap ?? null,
   };
 }
 
 interface BuildRunnerJobPayloadInput {
-  readonly disabledPaidTools: readonly string[];
   readonly capturedStorageMounts?: readonly PersistedStorageMount[];
   readonly deferredPiResources?: PreparedPiLaunchResources;
   readonly run: Pick<RunRecord, "id" | "sessionId" | "shouldCreateSession">;
@@ -12256,9 +5596,8 @@ interface BuildRunnerJobPayloadInput {
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly piSandbox: PiModelConfig | undefined;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly permissionManifest: PermissionManifest | undefined;
+  /** Connector and model-provider environment, before the Okou token. */
+  readonly environment: Environment;
   readonly billableFirewalls: readonly string[];
   readonly modelUsageProvider: string | undefined;
   readonly modelUsageLongContextMinTotalInputTokens: number;
@@ -12267,10 +5606,7 @@ interface BuildRunnerJobPayloadInput {
     readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly additionalVolumeSources: AdditionalVolumeSources;
   readonly includeOkouTokenSecret: boolean | undefined;
-  readonly okouTokenComputerUseHostId: string | undefined;
-  readonly okouTokenCloudBrowserEnabled: boolean | undefined;
   readonly chatThreadId: string | undefined;
-  readonly platformEnvironment: Record<string, string> | undefined;
   readonly userTimezone: string | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing: ApiDispatchTimingCollector;
@@ -12300,108 +5636,6 @@ function withPiMemoryRecallEpoch(
 
 function preparedRunnerGroup(): string {
   return officialRunnerGroup(optionalEnv("RUNNER_DEFAULT_GROUP"));
-}
-
-function preparedRunnerJobBody(
-  args: BuildRunnerJobPayloadInput,
-): CreateRunBody {
-  if (!args.includeOkouTokenSecret) {
-    return args.body;
-  }
-  const customConnectorSourceEntries =
-    args.customConnectorContext.targets.flatMap((target) => {
-      return target.kind === "custom" && target.sourceId
-        ? [[target.customConnectorId, target.sourceId] as const]
-        : [];
-    });
-  const builtinMcpSlugs = new Set(args.connectorContext.mcpConnectorSlugs);
-  const builtinConnectorSourceEntries = (
-    args.permissionManifest?.builtinRuntimeTargets ?? []
-  ).flatMap((target) => {
-    return target.kind === "builtin" &&
-      target.sourceId !== undefined &&
-      builtinMcpSlugs.has(target.connectorSlug)
-      ? [[target.connectorSlug, target.sourceId] as const]
-      : [];
-  });
-  const okouToken = generateOkouToken(
-    args.userId,
-    args.run.id,
-    args.orgId,
-    args.featureSwitchContext.overrides,
-    {
-      ...(args.okouTokenComputerUseHostId
-        ? { computerUseHostId: args.okouTokenComputerUseHostId }
-        : {}),
-      cloudBrowserEnabled: args.okouTokenCloudBrowserEnabled === true,
-      ...(customConnectorSourceEntries.length === 0
-        ? {}
-        : {
-            customConnectorSourceIds: Object.fromEntries(
-              customConnectorSourceEntries,
-            ),
-          }),
-      ...(builtinConnectorSourceEntries.length === 0
-        ? {}
-        : {
-            builtinConnectorSourceIds: Object.fromEntries(
-              builtinConnectorSourceEntries,
-            ),
-          }),
-    },
-  );
-  return withOkouTokenSecret(args.body, okouToken);
-}
-
-function okouTokenEnvironment(body: CreateRunBody): Record<string, string> {
-  const okouToken = body.secrets?.OKOU_TOKEN;
-  if (!okouToken) {
-    throw new Error("The Okou run token is missing from the run context");
-  }
-  return { OKOU_TOKEN: okouToken };
-}
-
-function withPaidToolPlatformEnvironment(
-  owner: Pick<
-    BuildRunnerJobPayloadInput,
-    "framework" | "modelProvider" | "piSandbox" | "disabledPaidTools"
-  >,
-  platformEnvironment: Record<string, string> | undefined,
-): Record<string, string> {
-  const disabledTools = owner.disabledPaidTools;
-  const environment: Record<string, string> = {
-    ...platformEnvironment,
-    [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(disabledTools),
-  };
-  if (shouldEnableFrameworkWebSearch(owner, disabledTools)) {
-    environment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR] = "true";
-  } else {
-    delete environment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR];
-  }
-  return environment;
-}
-
-function shouldEnableFrameworkWebSearch(
-  context: Pick<
-    BuildRunnerJobPayloadInput,
-    "framework" | "modelProvider" | "piSandbox"
-  >,
-  disabledTools: readonly string[],
-): boolean {
-  if (
-    context.piSandbox !== undefined ||
-    !disabledTools.includes("web-search") ||
-    (context.framework !== "claude-code" && context.framework !== "codex")
-  ) {
-    return false;
-  }
-
-  // A successful route without a stored provider uses the framework key
-  // supplied by current runtime sources; a personal subscription does too.
-  return (
-    context.modelProvider === null ||
-    !isBuiltInModelProviderType(context.modelProvider.type)
-  );
 }
 
 /**
@@ -12462,6 +5696,8 @@ function assembleRunnerLaunch(args: {
 interface StorageMaterializationInput {
   readonly db: Db;
   readonly args: BuildRunnerJobPayloadInput;
+  /** The Okou token source, merged last into body secrets and platform env. */
+  readonly okouToken: Environment;
   readonly storageManifestStats: StorageManifestBuildStats;
 }
 
@@ -12477,18 +5713,24 @@ function runnerWritebackArtifacts(args: BuildRunnerJobPayloadInput) {
 }
 
 function prepareRunnerStorageInput(input: StorageMaterializationInput) {
-  const { db, args, storageManifestStats } = input;
-  const body = preparedRunnerJobBody(args);
+  const { db, args, storageManifestStats, okouToken } = input;
   return {
     db,
     args,
     storageManifestStats,
-    body,
+    body: {
+      ...args.body,
+      secrets: {
+        ...withoutLegacyAgentRunEnvironmentEntries(args.body.secrets),
+        ...okouToken.secrets,
+      },
+    },
     writebackArtifacts: runnerWritebackArtifacts(args),
     group: preparedRunnerGroup(),
-    platformEnvironment: args.includeOkouTokenSecret
-      ? { ...args.platformEnvironment, ...okouTokenEnvironment(body) }
-      : args.platformEnvironment,
+    platformEnvironment: {
+      ...args.environment.platformEnvironment,
+      ...okouToken.platformEnvironment,
+    },
   };
 }
 
@@ -12496,43 +5738,6 @@ interface MaterializedRunnerStorage {
   readonly input: ReturnType<typeof prepareRunnerStorageInput>;
   readonly preparedStorage: MaterializedAgentRunStorage;
   readonly piResources: PreparedPiLaunchResources | undefined;
-}
-
-async function buildPreparedPermissionManifest(args: {
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly body: Pick<CreateRunBody, "permissionPolicies" | "vars" | "secrets">;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly timing: ApiDispatchTimingCollector;
-}): Promise<PermissionManifest | undefined | CreateRunErrorResult> {
-  const result = await settle(
-    buildPermissionManifest({
-      connectorCatalogSelection: args.connectorCatalogSelection,
-      modelProvider: args.modelProvider,
-      permissionPolicies: args.body.permissionPolicies,
-      vars: args.body.vars,
-      connectorVars: args.storedConnectorMetadataContext.vars,
-      connectorSlugs: args.storedConnectorMetadataContext.connectorSlugs,
-      connectorSourceIdBySlug:
-        args.storedConnectorMetadataContext.connectorSourceIdBySlug,
-      customConnectorFirewalls: args.customConnectorContext.firewalls,
-      customConnectorPermissionPolicies:
-        args.customConnectorContext.permissionPolicies,
-      customConnectorIdByFirewallName:
-        args.customConnectorContext.customConnectorIdByFirewallName,
-      customConnectorSourceIdByFirewallName:
-        args.customConnectorContext.customConnectorSourceIdByFirewallName,
-      timing: args.timing,
-    }),
-  );
-  if (result.ok) {
-    return result.value;
-  }
-  if (result.error instanceof FirewallBaseUrlResolutionError) {
-    return badRequestMessage(result.error.message);
-  }
-  throw result.error;
 }
 
 function finalizedMaterializedLaunch(
@@ -12576,16 +5781,6 @@ interface ResolveAgentExecutionOptions {
   readonly sessionSnapshot?: ChatThreadExecutionSnapshot;
 }
 
-interface PersistedRunEnvironmentVariable {
-  readonly name: string;
-  readonly value: string;
-  readonly userId: string;
-}
-
-interface PersistedRunEnvironmentSnapshot {
-  readonly variables: readonly PersistedRunEnvironmentVariable[];
-}
-
 function forbidden(message: string): ApiErrorResponse<403, "FORBIDDEN"> {
   return {
     status: 403,
@@ -12613,98 +5808,6 @@ function isRouteError(value: unknown): value is CreateRunErrorResult {
     typeof (value as { readonly status: unknown }).status === "number" &&
     (value as { readonly status: number }).status !== 201
   );
-}
-
-function missingEnvironmentReferences(args: {
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    Readonly<Record<string, string>> | undefined;
-  readonly additionalEnvironment: Record<string, string> | undefined;
-  readonly storedConnectorEnvironment: Record<string, string> | undefined;
-  readonly connectorVars: Record<string, string> | undefined;
-}): string[] {
-  assertStoredConnectorEnvironmentReferences({
-    environment: effectiveStoredConnectorEnvironment({
-      additionalEnvironment: args.additionalEnvironment,
-      storedConnectorEnvironment: args.storedConnectorEnvironment,
-    }),
-    vars: args.connectorVars,
-    secrets: args.secrets,
-    environmentSecretPlaceholders: args.environmentSecretPlaceholders,
-  });
-  const environment = args.additionalEnvironment;
-  const environmentMissing = missingReferencesInEnvironment({
-    environment,
-    vars: args.vars,
-    secrets: args.secrets,
-    environmentSecretPlaceholders: args.environmentSecretPlaceholders,
-  });
-  return environmentMissing;
-}
-
-function missingReferencesInEnvironment(args: {
-  readonly environment: Record<string, string> | undefined;
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    Readonly<Record<string, string>> | undefined;
-}): string[] {
-  if (!args.environment) {
-    return [];
-  }
-  const grouped = extractAndGroupVariables(args.environment);
-  const missingVars = grouped.vars
-    .filter((ref) => {
-      return args.vars?.[ref.name] === undefined;
-    })
-    .map((ref) => {
-      return `vars.${ref.name}`;
-    });
-  const missingSecrets = grouped.secrets
-    .filter((ref) => {
-      return (
-        args.secrets?.[ref.name] === undefined &&
-        args.environmentSecretPlaceholders?.[ref.name] === undefined
-      );
-    })
-    .map((ref) => {
-      return `secrets.${ref.name}`;
-    });
-  return [...missingVars, ...missingSecrets];
-}
-
-function assertStoredConnectorEnvironmentReferences(args: {
-  readonly environment: Record<string, string> | undefined;
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    Readonly<Record<string, string>> | undefined;
-}): void {
-  const missing = missingReferencesInEnvironment(args);
-  if (missing.length > 0) {
-    throw new Error(
-      `Stored connector environment is missing required values: ${missing.join(", ")}`,
-    );
-  }
-}
-
-function buildMergedVariables(args: {
-  readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
-  readonly runVars: Record<string, string> | undefined;
-}): Record<string, string> | undefined {
-  const orgVars: Record<string, string> = {};
-  const userVars: Record<string, string> = {};
-  for (const row of args.persistedEnvironment.variables) {
-    if (row.userId === ORG_SENTINEL_USER_ID) {
-      orgVars[row.name] = row.value;
-    } else {
-      userVars[row.name] = row.value;
-    }
-  }
-
-  const merged = { ...orgVars, ...userVars, ...args.runVars };
-  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 interface RunAgentObservation {
@@ -12911,53 +6014,6 @@ function initialRunBody(args: {
     : args.body;
 }
 
-function buildResolvedRunBody(args: {
-  readonly initialBody: CreateRunBody;
-  readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
-  readonly canonicalOkouRuntime: boolean;
-  readonly resolvedEnvironment?: RunBodyEnvironment;
-}): CreateRunBody {
-  const runVars = args.initialBody.vars;
-  const environment =
-    args.resolvedEnvironment ??
-    resolveRunBodyEnvironment({
-      runVars,
-      runSecrets: args.initialBody.secrets,
-      persistedEnvironment: args.persistedEnvironment,
-      canonicalOkouRuntime: args.canonicalOkouRuntime,
-    });
-  return {
-    ...args.initialBody,
-    ...environment,
-  };
-}
-
-type RunBodyEnvironment = Pick<CreateRunBody, "vars" | "secrets">;
-
-function resolveRunBodyEnvironment(args: {
-  readonly runVars: CreateRunBody["vars"];
-  readonly runSecrets: CreateRunBody["secrets"];
-  readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
-  readonly canonicalOkouRuntime: boolean;
-}): RunBodyEnvironment {
-  const mergedVars = buildMergedVariables({
-    persistedEnvironment: args.persistedEnvironment,
-    runVars: args.runVars,
-  });
-  // Inject only current Run credentials and authorized provider/connector
-  // bindings; unreferenced org/user secrets remain outside the sandbox.
-  const mergedSecrets = args.runSecrets;
-
-  return {
-    vars: args.canonicalOkouRuntime
-      ? withoutLegacyAgentRunEnvironmentEntries(mergedVars)
-      : mergedVars,
-    secrets: args.canonicalOkouRuntime
-      ? withoutLegacyAgentRunEnvironmentEntries(mergedSecrets)
-      : mergedSecrets,
-  };
-}
-
 // Emitted as the agent_run_origin observability dimension. The values name what
 // started the run, so the fallback is "direct" (not started by an automation)
 // rather than a restatement that this is an agent run.
@@ -12987,121 +6043,6 @@ function agentRunsCreateForbidden(
   };
 }
 
-function buildExecutionTimeLimitPrompt(): string {
-  const executionHours = AGENT_EXECUTION_TIMEOUT_SECONDS / (60 * 60);
-  const executionHourUnit = executionHours === 1 ? "hour" : "hours";
-  return [
-    "# Execution Time Limit",
-    "",
-    `A single agent run has a maximum execution time of ${executionHours} ${executionHourUnit}.`,
-    "Plan and prioritize the work so you can complete the most important in-scope tasks and provide a final response before the run ends.",
-  ].join("\n");
-}
-
-function buildCurrentUserPrompt(userInfo: UserInfo): string {
-  const lines = ["# Current User Info"];
-  if (userInfo.name) {
-    lines.push(`Name: ${userInfo.name}`);
-  }
-  if (userInfo.email) {
-    lines.push(`Email: ${userInfo.email}`);
-  }
-  lines.push(`Timezone: ${userInfo.timezone ?? "UTC"}`);
-  return lines.join("\n");
-}
-
-/** Agent-level system-prompt sections shared by every run of the agent. */
-interface AgentSystemPromptSections {
-  readonly agentIdentity: string;
-  readonly executionLimit: string;
-  readonly tools: string;
-}
-
-function buildAppendSystemPrompt(stable: AgentSystemPromptSections): string {
-  return [stable.agentIdentity, stable.executionLimit, stable.tools]
-    .filter((part): part is string => {
-      return Boolean(part);
-    })
-    .join("\n\n");
-}
-
-function buildStableAgentPrompt(args: {
-  readonly privateArtifactsEnabled: boolean;
-  readonly agent: AgentRunRecord;
-  readonly triggerSource: TriggerSource;
-  readonly cloudBrowserEnabled: boolean | undefined;
-  readonly browserNativeInputEnabled: boolean;
-  readonly bankingEnabled: boolean;
-  readonly vncEnabled: boolean;
-  readonly larkEnabled: boolean;
-  readonly discordEnabled: boolean;
-  readonly deliveryFormatGuidanceEnabled: boolean;
-  readonly presentationConvertEnabled: boolean;
-  readonly customConnectorMcpEnabled: boolean;
-}): AgentSystemPromptSections {
-  return {
-    agentIdentity: buildAgentIdentityPrompt(args.agent) ?? "",
-    executionLimit: buildExecutionTimeLimitPrompt(),
-    tools: buildAgentToolsPrompt({
-      privateArtifactsEnabled: args.privateArtifactsEnabled,
-      triggerSource: args.triggerSource,
-      cloudBrowserEnabled: args.cloudBrowserEnabled,
-      browserNativeInputEnabled: args.browserNativeInputEnabled,
-      bankingEnabled: args.bankingEnabled,
-      vncEnabled: args.vncEnabled,
-      larkEnabled: args.larkEnabled,
-      discordEnabled: args.discordEnabled,
-      deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
-      presentationConvertEnabled: args.presentationConvertEnabled,
-    }),
-  };
-}
-
-function buildAgentRunPlatformEnvironment(args: {
-  readonly agentId: string;
-  readonly triggerSource: TriggerSource;
-  readonly chatThreadId: string | undefined;
-  readonly codexServiceTier: "fast" | undefined;
-  readonly reasoningEffort?: ReasoningEffort | null;
-}): Record<string, string> {
-  const integrationByTriggerSource: Partial<Record<TriggerSource, string>> = {
-    web: "web",
-    agent: "web",
-    slack: "slack",
-    discord: "discord",
-    teams: "teams",
-    feishu: "feishu",
-    lark: "lark",
-    telegram: "telegram",
-    agentphone: "phone",
-    github: "github",
-  };
-  const currentIntegration = integrationByTriggerSource[args.triggerSource];
-  return {
-    OKOU_APP_URL: env("APP_URL"),
-    OKOU_AGENT_ID: args.agentId,
-    ...(currentIntegration
-      ? { OKOU_CURRENT_INTEGRATION: currentIntegration }
-      : {}),
-    ...(args.reasoningEffort !== null && args.reasoningEffort !== undefined
-      ? { OKOU_REASONING_EFFORT: args.reasoningEffort }
-      : {}),
-    // Chat-mode automation (and web) runs carry their thread id so the
-    // in-sandbox CLI can bind a newly created automation to it (the create
-    // flow reads $OKOU_CHAT_THREAD_ID when no thread is given).
-    ...(args.chatThreadId
-      ? {
-          OKOU_CHAT_THREAD_ID: args.chatThreadId,
-        }
-      : {}),
-    ...(args.codexServiceTier
-      ? {
-          OKOU_CODEX_SERVICE_TIER: args.codexServiceTier,
-        }
-      : {}),
-  };
-}
-
 function agentRunTimingDimensions(args: {
   readonly origin: AgentRunOrigin;
   readonly command: ThreadRunCommand;
@@ -13126,18 +6067,18 @@ function agentRunOrigin(args: {
 }
 
 function createRunBody(args: {
-  readonly body: AgentRunCreateBody;
+  readonly body: Omit<AgentRunCreateBody, "prompt">;
   readonly agent: AgentRunRecord;
-  readonly stablePrompt: AgentSystemPromptSections;
   readonly permissionPolicies: FirewallPolicies | null | undefined;
   readonly triggerSource: TriggerSource | undefined;
-  readonly appendSystemPrompt: string | undefined;
-  readonly standaloneIntegrationNote: string;
+  readonly prompt: Pick<
+    PromptAndSkillVolumes,
+    "userPrompt" | "appendedSystemPrompt"
+  >;
 }) {
   const triggerSource = args.triggerSource ?? "web";
-  const baseAppendSystemPrompt = buildAppendSystemPrompt(args.stablePrompt);
   return {
-    prompt: args.body.prompt,
+    prompt: args.prompt.userPrompt,
     agentId: args.agent.id,
     sessionId: args.body.sessionId,
     conversationId: args.body.conversationId,
@@ -13148,22 +6089,9 @@ function createRunBody(args: {
     settings: args.body.settings,
     permissionPolicies: args.permissionPolicies ?? undefined,
     triggerSource,
-    appendSystemPrompt: [
-      baseAppendSystemPrompt,
-      args.appendSystemPrompt,
-      args.appendSystemPrompt ? "" : args.standaloneIntegrationNote,
-    ]
-      .filter((part): part is string => {
-        return Boolean(part);
-      })
-      .join("\n\n"),
+    appendSystemPrompt: args.prompt.appendedSystemPrompt,
     disallowedTools: [...DISALLOWED_TOOLS],
-    vars: selectedAgentRunVariables(args.agent.id),
   };
-}
-
-function selectedAgentRunVariables(agentId: string) {
-  return { OKOU_AGENT_ID: agentId };
 }
 
 function measureAgentRunPreCreate<T>(
@@ -13181,11 +6109,10 @@ function measureAgentRunPreCreate<T>(
   );
 }
 
-interface AgentRunAfterBootstrap extends RunBootstrapContext {
+interface AgentRunAfterBootstrap extends AgentConnectorScopeSnapshot {
   readonly agent: AgentRunRecord;
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
   readonly timing: ApiDispatchTimingCollector;
-  readonly cloudBrowserEnabled: boolean | undefined;
   readonly command: ThreadRunIdentity;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
 }
@@ -13203,82 +6130,11 @@ interface ProductRunArgsInput {
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
   readonly runPermissionPolicies: FirewallPolicies | null | undefined;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly workflows: readonly RunWorkflowRef[];
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
   readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
   readonly timing: ApiDispatchTimingCollector;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
-  readonly cloudBrowserEnabled: boolean | undefined;
-  readonly featureSwitchContext: FeatureSwitchContext;
-}
-
-function emptyStablePrompt(): AgentSystemPromptSections {
-  return {
-    agentIdentity: "",
-    executionLimit: "",
-    tools: "",
-  };
-}
-
-/**
- * A run launched straight through the runs API has no conversational surface,
- * so nothing renders `# Current Integration` for the note to follow. Its
- * delivery rules still apply, so they close the caller-supplied prompt
- * instead. A run whose surface supplied an integration prompt already carries
- * the note inside that block.
- */
-function standaloneIntegrationNote(args: ProductRunArgsInput): string {
-  if (args.command.appendSystemPrompt) {
-    return "";
-  }
-  return resolveIntegrationNotePrompt({
-    triggerSource: args.command.triggerSource ?? "web",
-    featureSwitchContext: args.featureSwitchContext,
-  });
-}
-
-function buildStableRunPromptContext(args: ProductRunArgsInput): {
-  readonly initialStablePrompt: AgentSystemPromptSections;
-  readonly piSystemPrompt: PiSystemPromptInput;
-} {
-  const promptInputs = buildAgentToolsPromptInputs({
-    featureSwitchContext: args.featureSwitchContext,
-    triggerSource: args.command.triggerSource ?? "web",
-    cloudBrowserEnabled: args.cloudBrowserEnabled,
-  });
-  let stablePrompt: AgentSystemPromptSections | undefined;
-  const buildPrompt = () => {
-    stablePrompt ??= buildStableAgentPrompt({
-      ...promptInputs,
-      agent: args.agent,
-    });
-    return stablePrompt;
-  };
-  return {
-    initialStablePrompt: args.command.piExecution
-      ? emptyStablePrompt()
-      : buildPrompt(),
-    piSystemPrompt: {
-      buildPrompt,
-      dynamicAppendSystemPrompt: [
-        args.command.appendSystemPrompt,
-        standaloneIntegrationNote(args),
-      ]
-        .filter((part): part is string => {
-          return Boolean(part);
-        })
-        .join("\n\n"),
-    },
-  };
-}
-
-/** Pi system-prompt parts captured by the product entry point. */
-interface PiSystemPromptInput {
-  /** Agent identity, execution limit, and tool sections, built on demand. */
-  readonly buildPrompt: () => AgentSystemPromptSections;
-  /** Dynamic profile/channel text and explicit caller appendage, bound later. */
-  readonly dynamicAppendSystemPrompt: string;
 }
 
 /**
@@ -13300,44 +6156,36 @@ interface ProductRunArgs {
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
   readonly body: CreateRunBody;
   readonly apiStartTime: number;
-  readonly piSystemPrompt?: PiSystemPromptInput;
   readonly chatThreadId?: string;
   readonly connectorSourceId?: string;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
-  readonly platformEnvironment?: Record<string, string>;
   readonly callbacks?: readonly RunCallback[];
   readonly includeOkouTokenSecret?: boolean;
   readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
-  readonly okouTokenComputerUseHostId?: string;
-  readonly okouTokenCloudBrowserEnabled?: boolean;
   readonly enforceBuiltInCredits?: boolean;
-  readonly injectSkillVolumes?: RunSkillVolumeInjection;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly connectorScope: ExplicitConnectorScope;
-  readonly validateEnvironmentReferences?: boolean;
   readonly agentRunModelPin?: AgentRunModelPin;
   readonly timing?: ApiDispatchTimingCollector;
   readonly timingDimensions?: ApiDispatchTimingDimensions;
 }
 
-function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
+function buildProductRunArgs(
+  args: ProductRunArgsInput,
+  prompt: Pick<PromptAndSkillVolumes, "userPrompt" | "appendedSystemPrompt">,
+): ProductRunArgs {
   const command = args.command;
-  const { initialStablePrompt, piSystemPrompt } =
-    buildStableRunPromptContext(args);
   return {
     ...selectedRunModelProviderArgs(command),
     catalog: args.catalog,
     body: createRunBody({
       body: command.body,
       agent: args.agent,
-      stablePrompt: initialStablePrompt,
       permissionPolicies: args.runPermissionPolicies,
       triggerSource: command.triggerSource,
-      appendSystemPrompt: command.appendSystemPrompt,
-      standaloneIntegrationNote: standaloneIntegrationNote(args),
+      prompt,
     }),
     apiStartTime: command.apiStartTime,
-    piSystemPrompt,
     chatThreadId: command.chatThreadId,
     ...(command.connectorSourceId
       ? { connectorSourceId: command.connectorSourceId }
@@ -13345,13 +6193,6 @@ function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
     ...(args.threadSessionResolution
       ? { threadSessionResolution: args.threadSessionResolution }
       : {}),
-    platformEnvironment: buildAgentRunPlatformEnvironment({
-      agentId: args.agent.id,
-      triggerSource: command.triggerSource ?? "web",
-      chatThreadId: command.chatThreadId,
-      codexServiceTier: command.codexServiceTier,
-      reasoningEffort: command.reasoningEffort,
-    }),
     callbacks: command.callbacks,
     includeOkouTokenSecret: true,
     ...(args.authorizedRequestObservation
@@ -13365,10 +6206,7 @@ function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
           },
         }
       : {}),
-    okouTokenComputerUseHostId: command.computerUseHostId,
-    okouTokenCloudBrowserEnabled: args.cloudBrowserEnabled,
     enforceBuiltInCredits: true,
-    injectSkillVolumes: { workflows: args.workflows },
     requiredOfficialWorkflowIds: command.requiredOfficialWorkflowIds,
     connectorScope: {
       allowedConnectorSlugs: args.allowedConnectorSlugs,
@@ -13376,7 +6214,6 @@ function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
       customConnectorGrants: args.customConnectorGrants,
       source: "stored_agent",
     },
-    validateEnvironmentReferences: false,
     agentRunMetadata: {
       ...command.agentRunMetadata,
       codexServiceTier: command.codexServiceTier,
@@ -13396,20 +6233,12 @@ function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
   };
 }
 
-interface RunBootstrapContext extends AgentConnectorScopeSnapshot {
-  readonly userInfo: UserInfo;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly workflows: readonly RunWorkflowRef[];
-  readonly permissionGrants: readonly FirewallPermissionGrant[];
-  readonly connectorCatalogMetadataSlugs: readonly ConnectorSlug[];
-}
 interface AgentRunIdentityInput {
   readonly timing: ApiDispatchTimingCollector;
   readonly owner: ThreadRunOwner;
   readonly agentId: string;
   readonly apiStartTime: number;
   readonly chatThreadId: string;
-  readonly expectedThreadAgentId?: string;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
 }
 interface AgentRunGraphInput {
@@ -13417,343 +6246,7 @@ interface AgentRunGraphInput {
   readonly timing: ApiDispatchTimingCollector;
 }
 
-function matchingAuthorizedRequestObservation(
-  args: ThreadRunIdentity,
-  agentId: string,
-): AuthorizedAgentRunRequestObservation | undefined {
-  const observation = args.authorizedRequestObservation;
-  if (
-    !observation ||
-    observation.userId !== args.owner.userId ||
-    observation.orgId !== args.owner.orgId ||
-    observation.agent.id !== agentId ||
-    observation.agent.orgId !== args.owner.orgId ||
-    observation.featureSwitchContext.userId !== args.owner.userId ||
-    observation.featureSwitchContext.orgId !== args.owner.orgId
-  ) {
-    return undefined;
-  }
-  return observation;
-}
 // --- Thread-private implementation: execution context prompts ---
-
-/**
- * When set, system + workflow skill volumes are built and prepended in run
- * context preparation using the run's resolved (model-provider) framework.
- * Each workflow's volume is keyed by its id (storage name), while the skill
- * mounts at its slug. Slugs are not unique, so the id is required.
- */
-interface RunSkillVolumeInjection {
-  readonly workflows: readonly RunWorkflowRef[];
-}
-
-const AUTO_MEMORY_MISSING_ROOT_POLICY: ArtifactMissingRootPolicy =
-  "preserveParentVersion";
-
-interface RunArtifacts {
-  readonly artifacts: readonly AgentRunCreateContextArtifact[];
-}
-
-interface PreparedAdditionalVolumes {
-  readonly volumes: readonly AgentRunCreateAdditionalVolume[] | undefined;
-  readonly sources: AdditionalVolumeSources;
-}
-
-function skillMountPath(skillsRoot: string, skillName: string): string {
-  return `${skillsRoot}/${skillName}`;
-}
-
-// Legacy CLI runs use the framework resolved from the model provider, never
-// the runtime framework selected from the current model. Eligible Pi runs receive the
-// fixed Pi root before Storage resolves any versions or overlays.
-function buildLegacySystemSkillVolumes(
-  skillNames: readonly string[],
-  skillsRoot: string,
-  storageResolution: SystemSkillStorageResolution,
-): readonly AgentRunCreateAdditionalVolume[] {
-  return [...new Set(skillNames)].flatMap((skillName) => {
-    const url = resolveSkillRef(skillName);
-    const parsed = parseGitHubTreeUrl(url);
-    if (!parsed) {
-      return [];
-    }
-    return [
-      {
-        name:
-          storageResolution[skillName] ?? getSkillStorageName(parsed.fullPath),
-        mountPath: skillMountPath(skillsRoot, parsed.skillName),
-        system: true,
-      },
-    ];
-  });
-}
-
-function mountedWorkflowRefs(
-  workflows: readonly RunWorkflowRef[],
-): readonly RunWorkflowRef[] {
-  return workflows.filter((workflow) => {
-    return !SEED_SKILLS.includes(workflow.name);
-  });
-}
-
-function officialWorkflowRunCandidates(
-  workflows: readonly RunWorkflowRef[],
-  skillsRoot: string,
-  requiredWorkflowIds: readonly string[],
-): readonly {
-  readonly workflowId: string;
-  readonly workflowName: string;
-  readonly definitionName: string;
-  readonly mountPath: string;
-}[] {
-  for (const workflow of workflows) {
-    if (
-      workflow.officialDefinitionName !== null &&
-      SEED_SKILLS.includes(workflow.name)
-    ) {
-      throw new OfficialWorkflowRunAdmissionError();
-    }
-  }
-  const candidates = mountedWorkflowRefs(workflows).flatMap((workflow) => {
-    return workflow.officialDefinitionName === null
-      ? []
-      : [
-          {
-            workflowId: workflow.workflowId,
-            workflowName: workflow.name,
-            definitionName: workflow.officialDefinitionName,
-            mountPath: skillMountPath(skillsRoot, workflow.name),
-          },
-        ];
-  });
-  const candidateWorkflowIds = new Set(
-    candidates.map((candidate) => {
-      return candidate.workflowId;
-    }),
-  );
-  if (
-    new Set(requiredWorkflowIds).size !== requiredWorkflowIds.length ||
-    requiredWorkflowIds.some((workflowId) => {
-      return !candidateWorkflowIds.has(workflowId);
-    })
-  ) {
-    throw new OfficialWorkflowRunAdmissionError();
-  }
-  return candidates;
-}
-
-function buildWorkflowSkillVolumes(
-  workflows: readonly RunWorkflowRef[],
-  skillsRoot: string,
-  officialWorkflowRun: OfficialWorkflowRunObservation | undefined,
-): readonly SkillVolume[] {
-  return mountedWorkflowRefs(workflows).map((workflow) => {
-    if (workflow.officialDefinitionName !== null) {
-      const definition = officialWorkflowRun?.definitions.find((candidate) => {
-        return candidate.workflowId === workflow.workflowId;
-      });
-      if (!definition) {
-        throw new OfficialWorkflowRunAdmissionError();
-      }
-      return {
-        name: definition.artifact.storageName,
-        version: definition.artifact.storageVersion,
-        mountPath: definition.mountPath,
-        system: true,
-        expectedStorageId: definition.artifact.storageId,
-        source: "official_workflow" as const,
-      };
-    }
-    return {
-      // The volume is keyed by the workflow id; it mounts at the slug.
-      name: getCustomSkillStorageName(workflow.workflowId),
-      mountPath: skillMountPath(skillsRoot, workflow.name),
-      source: "workflow_skill" as const,
-    };
-  });
-}
-
-function buildInjectedSkillVolumes(
-  args: {
-    readonly injectSkillVolumes: RunSkillVolumeInjection | undefined;
-    readonly systemSkillStorageResolution: SystemSkillStorageResolution;
-    readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-  },
-  skillsRoot: string,
-): readonly SkillVolume[] | undefined {
-  if (!args.injectSkillVolumes) {
-    return undefined;
-  }
-  const systemSkillVolumes = buildLegacySystemSkillVolumes(
-    SEED_SKILLS,
-    skillsRoot,
-    args.systemSkillStorageResolution,
-  ).map((volume): SkillVolume => {
-    return { ...volume, source: "system_skill" };
-  });
-  return [
-    ...systemSkillVolumes,
-    ...buildWorkflowSkillVolumes(
-      args.injectSkillVolumes.workflows,
-      skillsRoot,
-      args.officialWorkflowRun,
-    ),
-  ];
-}
-
-function autoMemoryMountPath(
-  framework: SupportedFramework,
-  piSandbox: PiModelConfig | undefined,
-): string {
-  if (piSandbox !== undefined) {
-    return PI_MEMORY_ROOT;
-  }
-  return framework === "codex"
-    ? CANONICAL_CODEX_MEMORY_MOUNT_PATH
-    : CANONICAL_CLAUDE_MEMORY_MOUNT_PATH;
-}
-
-function artifactsForRun(args: {
-  readonly resolved: Pick<ResolvedRunExecution, "artifacts">;
-  readonly framework: SupportedFramework;
-  readonly piSandbox: PiModelConfig | undefined;
-}): RunArtifacts {
-  return {
-    artifacts: [
-      ...args.resolved.artifacts.filter((artifact) => {
-        return (
-          artifact.name !== AUTO_MEMORY_ARTIFACT_NAME &&
-          artifact.mountPath !==
-            autoMemoryMountPath(args.framework, args.piSandbox)
-        );
-      }),
-      {
-        name: AUTO_MEMORY_ARTIFACT_NAME,
-        mountPath: autoMemoryMountPath(args.framework, args.piSandbox),
-        missingRootPolicy: AUTO_MEMORY_MISSING_ROOT_POLICY,
-      },
-    ],
-  };
-}
-
-function validateRunEnvironmentReferences(args: {
-  readonly body: CreateRunBody;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly permissionManifest: PermissionManifest | undefined;
-  readonly validateEnvironmentReferences: boolean | undefined;
-}): CreateRunErrorResult | null {
-  const validationSecrets = buildStoredExecutionSecrets({
-    connectorContext: args.connectorContext,
-    modelProvider: args.modelProvider,
-    bodySecrets: args.body.secrets,
-    customConnectorContext: args.customConnectorContext,
-  });
-  if (args.validateEnvironmentReferences === false) {
-    return null;
-  }
-  const missing = missingEnvironmentReferences({
-    vars: args.body.vars,
-    secrets: validationSecrets.secrets,
-    environmentSecretPlaceholders:
-      args.permissionManifest?.environmentSecretPlaceholders,
-    additionalEnvironment: args.modelProvider?.environment,
-    storedConnectorEnvironment: args.connectorContext.storedEnvironment,
-    connectorVars: args.connectorContext.vars,
-  });
-  return missing.length === 0
-    ? null
-    : badRequestMessage(`Missing required values: ${missing.join(", ")}`);
-}
-
-function preparedRunAdditionalVolumes(args: {
-  readonly createArgs: {
-    readonly injectSkillVolumes?: RunSkillVolumeInjection;
-  };
-  readonly systemSkillStorageResolution: SystemSkillStorageResolution;
-  readonly promptAndSkills: RunPromptAndSkills;
-  readonly skillsRoot: string;
-  readonly body: Pick<CreateRunBody, "additionalVolumes">;
-  readonly resolved: Pick<ResolvedRunExecution, "additionalVolumes">;
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-}): PreparedAdditionalVolumes {
-  const bodyAdditionalVolumes = args.body.additionalVolumes;
-  const injectedSkillVolumes = buildInjectedSkillVolumes(
-    {
-      injectSkillVolumes: args.createArgs.injectSkillVolumes,
-      systemSkillStorageResolution: args.systemSkillStorageResolution,
-      officialWorkflowRun: args.officialWorkflowRun,
-    },
-    args.skillsRoot,
-  );
-  const promptAndSkills = mergeRunPromptAndSkills([
-    {
-      ...args.promptAndSkills,
-      skillVolumes: args.promptAndSkills.skillVolumes.filter((volume) => {
-        return (
-          args.createArgs.injectSkillVolumes !== undefined ||
-          volume.source !== "connector_skill"
-        );
-      }),
-    },
-    {
-      systemPromptVariables: {},
-      userPromptVariables: {},
-      skillVolumes: injectedSkillVolumes ?? [],
-    },
-  ]);
-  const rendered = renderRunPromptAndSkills(promptAndSkills);
-  const additionalVolumes =
-    bodyAdditionalVolumes ?? args.resolved.additionalVolumes ?? [];
-  return {
-    volumes: [...rendered.skillVolumes, ...additionalVolumes],
-    sources: [
-      ...rendered.skillVolumeSources,
-      ...additionalVolumes.map((): StorageManifestSource => {
-        return bodyAdditionalVolumes ? "request_additional_volume" : "unknown";
-      }),
-    ],
-  };
-}
-
-function prepareRunOutputMetadata(args: {
-  readonly createArgs: {
-    readonly injectSkillVolumes?: RunSkillVolumeInjection;
-  };
-  readonly systemSkillStorageResolution: SystemSkillStorageResolution;
-  readonly promptAndSkills: RunPromptAndSkills;
-  readonly framework: SupportedFramework;
-  readonly piSandbox: PiModelConfig | undefined;
-  readonly body: Pick<CreateRunBody, "additionalVolumes">;
-  readonly resolved: RunStorageExecution;
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-}): {
-  readonly artifacts: readonly AgentRunCreateContextArtifact[];
-  readonly additionalVolumes:
-    readonly AgentRunCreateAdditionalVolume[] | undefined;
-  readonly additionalVolumeSources: AdditionalVolumeSources;
-} {
-  const additionalVolumes = preparedRunAdditionalVolumes({
-    createArgs: args.createArgs,
-    systemSkillStorageResolution: args.systemSkillStorageResolution,
-    promptAndSkills: args.promptAndSkills,
-    skillsRoot: skillsRootForRun(args.framework, args.piSandbox),
-    body: args.body,
-    resolved: args.resolved,
-    officialWorkflowRun: args.officialWorkflowRun,
-  });
-  const artifacts = artifactsForRun({
-    resolved: args.resolved,
-    framework: args.framework,
-    piSandbox: args.piSandbox,
-  }).artifacts;
-  return {
-    additionalVolumes: additionalVolumes.volumes,
-    additionalVolumeSources: additionalVolumes.sources,
-    artifacts,
-  };
-}
 
 function resolveCompatibleDirectResumeSession(args: {
   readonly resolved: ResolvedRunExecution;
@@ -13765,32 +6258,6 @@ function resolveCompatibleDirectResumeSession(args: {
     : { ...args.resolved, resumeSession: undefined };
 }
 
-interface RunWorkflowReadInput {
-  readonly db: ReadonlyDb;
-  readonly args: Pick<
-    RunModelProviderArgs,
-    | "catalog"
-    | "orgId"
-    | "userId"
-    | "piExecution"
-    | "codexServiceTier"
-    | "agentRunMetadata"
-  > & {
-    readonly injectSkillVolumes?: RunSkillVolumeInjection;
-    readonly requiredOfficialWorkflowIds?: readonly string[];
-  };
-}
-
-type RunWorkflowModelState =
-  | {
-      readonly requestedFramework: SupportedFramework;
-      readonly modelProvider: ResolvedModelProviderEnvironment | null;
-    }
-  | CreateRunErrorResult
-  | undefined;
-
-type PreparedOfficialWorkflow =
-  OfficialWorkflowRunObservation | CreateRunErrorResult | undefined;
 // --- Thread-private implementation: Pi launch resources ---
 
 function noContentPiMemoryRecall(args: {
@@ -13813,21 +6280,6 @@ interface PreparePiLaunchResourcesArgs {
   readonly piLaunchConfig: PiLaunchConfigOverrides | undefined;
 }
 
-function bindStableAppendSystemPrompt(
-  prompt: AgentSystemPromptSections,
-  dynamicAppendSystemPrompt: string,
-): string {
-  return [
-    prompt.agentIdentity,
-    prompt.executionLimit,
-    prompt.tools,
-    dynamicAppendSystemPrompt,
-  ]
-    .filter((part) => {
-      return Boolean(part);
-    })
-    .join("\n\n");
-}
 // --- Thread-private implementation: launch admission ---
 
 type AtomicLaunchCommitAttempt =
@@ -13877,23 +6329,12 @@ function flushQueueFirstClaimLostTiming(args: {
 
 // --- Private implementation: launch persistence ---
 
-type ArtifactMissingRootPolicy = NonNullable<
-  StorageMountEntry["missingRootPolicy"]
->;
-
 type CreateRunBody = Omit<
   z.infer<typeof unifiedRunRequestSchema>,
   "triggerSource"
 > & {
   readonly triggerSource: TriggerSource;
 };
-
-interface AgentRunCreateContextArtifact {
-  readonly name: string;
-  readonly version?: string;
-  readonly mountPath: string;
-  readonly missingRootPolicy?: ArtifactMissingRootPolicy;
-}
 
 interface RunnerJobPayload {
   readonly runnerGroup: string;
@@ -13925,28 +6366,7 @@ function runnerJobPayload(args: {
 
 // --- Private implementation: connector context ---
 
-type RunConnectorCatalogSelection =
-  | { readonly kind: "empty" }
-  | {
-      readonly kind: "scoped";
-      readonly selection: ConnectorRuntimeSelection;
-    };
-
-function mergeRecords<T>(
-  ...records: readonly (Record<string, T> | undefined)[]
-): Record<string, T> | undefined {
-  const merged: Record<string, T> = {};
-  for (const record of records) {
-    if (record) {
-      Object.assign(merged, record);
-    }
-  }
-  return compactRecord(merged);
-}
 // --- Private implementation: Runner payload ---
-
-const DEFAULT_FIREWALL_SECRET_PLACEHOLDER =
-  "c0ffee5afe10ca1c0ffee5afe10ca1c0ffee5afe";
 
 interface BuiltStoredExecutionContext {
   readonly context: StoredExecutionContext;
@@ -13959,27 +6379,6 @@ interface BuiltStoredExecutionContext {
 
 function isOfficialRunnerGroup(group: string): boolean {
   return group.split("/")[0] === "vm0";
-}
-
-function firewallSecretPlaceholdersFromFirewalls(
-  firewalls: readonly ExpandedFirewallConfig[] | undefined,
-): Record<string, string> | undefined {
-  if (!firewalls || firewalls.length === 0) {
-    return undefined;
-  }
-
-  const placeholders: Record<string, string> = {};
-  for (const firewall of firewalls) {
-    const secretNames = extractSecretNamesFromApis(firewall.apis);
-    for (const name of secretNames) {
-      placeholders[name] = DEFAULT_FIREWALL_SECRET_PLACEHOLDER;
-    }
-    for (const [name, value] of Object.entries(firewall.placeholders ?? {})) {
-      placeholders[name] = value;
-    }
-  }
-
-  return Object.keys(placeholders).length > 0 ? placeholders : undefined;
 }
 
 function withoutOkouNamespaceEntries<T>(
@@ -13995,438 +6394,6 @@ function withoutOkouNamespaceEntries<T>(
     }
   }
   return compactRecord(untrusted) ?? null;
-}
-
-async function loadRequiredFirewallPermissionIndex(args: {
-  readonly snapshot: ConnectorRuntimeSelection;
-  readonly connectorSlug: string;
-}): Promise<ConnectorServerFirewallPermissionIndex> {
-  const index = await args.snapshot.serverFirewalls.loadPermissionIndex(
-    args.connectorSlug,
-  );
-  if (!index) {
-    throw new Error(
-      `Missing connector server firewall permission metadata: ${args.connectorSlug}`,
-    );
-  }
-  return index;
-}
-
-function getRequiredFirewallExecutionMetadata(
-  snapshot: ConnectorRuntimeSelection,
-  connectorSlug: string,
-): ConnectorServerFirewallExecutionMetadata {
-  const metadata = snapshot.serverFirewalls.getExecutionMetadata(connectorSlug);
-  if (!metadata) {
-    throw new Error(
-      `Missing connector server firewall execution metadata: ${connectorSlug}`,
-    );
-  }
-  return metadata;
-}
-
-const BASE_URL_VAR_PATTERN = /\$\{\{\s*vars\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
-
-const BASE_URL_VALIDATION_SECRET_TEMPLATE = [
-  "$",
-  "{{ secrets.__OKOU_FIREWALL_BASE_URL_VALIDATION }}",
-].join("");
-
-function builtinFirewallEntry(
-  firewall: ExpandedFirewallConfig,
-  vars: Record<string, string> | undefined,
-): ExecutionFirewallEntry {
-  const names = new Set<string>();
-  for (const api of firewall.apis) {
-    for (const match of api.base.matchAll(BASE_URL_VAR_PATTERN)) {
-      names.add(match[1]!);
-    }
-  }
-  if (names.size === 0) {
-    return { kind: "builtin", name: firewall.name };
-  }
-
-  const baseUrlVars = canonicalizeFirewallBaseUrlVarsForExecution(
-    [runtimeFirewall(firewall)],
-    vars,
-  );
-  return { kind: "builtin", name: firewall.name, baseUrlVars };
-}
-
-function baseUrlValidationAuth(
-  credentialed: boolean,
-): Firewall["apis"][number]["auth"] {
-  return credentialed
-    ? {
-        headers: {
-          Authorization: `Bearer ${BASE_URL_VALIDATION_SECRET_TEMPLATE}`,
-        },
-      }
-    : {};
-}
-
-function builtinFirewallEntryForMetadata(
-  metadata: ConnectorServerFirewallExecutionMetadata,
-  vars: Record<string, string> | undefined,
-  sourceId: string,
-): ExecutionFirewallEntry {
-  if (metadata.baseUrlVarNames.length === 0) {
-    return {
-      kind: "builtin",
-      name: metadata.connectorSlug,
-      sourceId,
-    };
-  }
-
-  const validationFirewall: Firewall = {
-    name: metadata.connectorSlug,
-    apis: metadata.baseUrlTemplates.map((template) => {
-      return {
-        base: template.base,
-        ...(template.hostPolicy !== undefined
-          ? { hostPolicy: template.hostPolicy }
-          : {}),
-        auth: baseUrlValidationAuth(template.credentialed),
-        permissions: [],
-      };
-    }),
-  };
-  const baseUrlVars = canonicalizeFirewallBaseUrlVarsForExecution(
-    [validationFirewall],
-    vars,
-  );
-  return {
-    kind: "builtin",
-    name: metadata.connectorSlug,
-    baseUrlVars,
-    sourceId,
-  };
-}
-
-function customConnectorInlineFirewallEntry(
-  firewall: ExpandedFirewallConfig,
-  customConnectorIdByFirewallName: Readonly<Record<string, string>>,
-  customConnectorSourceIdByFirewallName: Readonly<Record<string, string>>,
-): ExecutionFirewallEntry {
-  const customConnectorId = customConnectorIdByFirewallName[firewall.name];
-  if (!customConnectorId) {
-    throw new Error("Missing Custom connector identity for inline firewall");
-  }
-  return {
-    kind: "inline",
-    customConnectorId,
-    ...(customConnectorSourceIdByFirewallName[firewall.name] === undefined
-      ? {}
-      : { sourceId: customConnectorSourceIdByFirewallName[firewall.name] }),
-    firewall: customConnectorRuntimeFirewall(firewall),
-  };
-}
-
-function applyConnectorPolicies(
-  connectorFirewalls: readonly ExpandedFirewallConfig[],
-  policies: FirewallPolicies | undefined,
-  entryForFirewall: (
-    firewall: ExpandedFirewallConfig,
-  ) => ExecutionFirewallEntry,
-  defaultPolicyForFirewall: (
-    firewall: ExpandedFirewallConfig,
-    permissionNames: readonly string[],
-  ) => FirewallPolicy,
-): Pick<PermissionManifest, "firewalls" | "networkPolicies"> {
-  const firewalls: ExecutionFirewalls = [];
-  const networkPolicies: NetworkPolicies = {};
-
-  for (const firewall of connectorFirewalls) {
-    const policy = policies?.[firewall.name];
-    const permissionNames = collectPermissionNames(firewall.apis);
-    const defaultPolicy = defaultPolicyForFirewall(firewall, permissionNames);
-    firewalls.push(entryForFirewall(firewall));
-
-    networkPolicies[firewall.name] = resolveConnectorNetworkPolicy({
-      permissionNames,
-      defaultPolicy,
-      policy,
-    });
-  }
-
-  return { firewalls, networkPolicies };
-}
-
-function modelProviderPermissionManifest(
-  modelProvider: ResolvedModelProviderEnvironment | null,
-  vars: Record<string, string> | undefined,
-): PermissionManifest | undefined {
-  if (!modelProvider) {
-    return undefined;
-  }
-
-  const firewall = getModelProviderFirewall(
-    modelProvider.concreteType ?? modelProvider.type,
-  );
-  if (!firewall) {
-    return undefined;
-  }
-
-  const permissionNames = collectPermissionNames(firewall.apis);
-  const denySet = new Set(firewall.defaultPolicies?.deny ?? []);
-  const askSet = new Set(firewall.defaultPolicies?.ask ?? []);
-  return {
-    firewalls: [builtinFirewallEntry(firewall, vars)],
-    environmentSecretPlaceholders: firewallSecretPlaceholdersFromFirewalls([
-      firewall,
-    ]),
-    billableFirewalls: [],
-    networkPolicies: {
-      [firewall.name]: {
-        allow: permissionNames.filter((name) => {
-          return !denySet.has(name) && !askSet.has(name);
-        }),
-        deny: [...denySet],
-        ask: [...askSet],
-        unknownPolicy: firewall.defaultPolicies?.unknownPolicy ?? "allow",
-      },
-    },
-  };
-}
-
-interface BuiltinConnectorManifestSource {
-  readonly metadata: ConnectorServerFirewallExecutionMetadata;
-  readonly permissionIndex: ConnectorServerFirewallPermissionIndex;
-  readonly isMcp: boolean;
-}
-
-function applyBuiltinConnectorMetadataPolicies(
-  sources: readonly BuiltinConnectorManifestSource[],
-  policies: FirewallPolicies | undefined,
-  vars: Record<string, string> | undefined,
-  connectorSourceIdBySlug: Readonly<Record<string, string>>,
-): PermissionManifest {
-  const firewalls: ExecutionFirewalls = [];
-  const networkPolicies: NetworkPolicies = {};
-  const environmentSecretPlaceholders: Record<string, string> = {};
-  const billableFirewalls: string[] = [];
-
-  for (const source of sources) {
-    const name = source.metadata.connectorSlug;
-    const permissionNames = [...source.permissionIndex.permissionNames];
-    const defaultPolicy = defaultFirewallPolicyForPermissionIndex(
-      source.permissionIndex,
-    );
-    const policy = policies?.[name];
-    const sourceId = connectorSourceIdBySlug[name];
-    if (sourceId === undefined) {
-      throw new Error("Missing built-in connector source identity");
-    }
-    firewalls.push(
-      builtinFirewallEntryForMetadata(source.metadata, vars, sourceId),
-    );
-    if (!source.isMcp) {
-      Object.assign(
-        environmentSecretPlaceholders,
-        source.metadata.placeholderValues,
-      );
-    }
-    if (source.metadata.billable) {
-      billableFirewalls.push(name);
-    }
-
-    networkPolicies[name] = resolveConnectorNetworkPolicy({
-      permissionNames,
-      defaultPolicy,
-      policy,
-    });
-  }
-
-  return {
-    firewalls,
-    networkPolicies,
-    environmentSecretPlaceholders: compactRecord(environmentSecretPlaceholders),
-    billableFirewalls,
-  };
-}
-
-function builtinRuntimeTargetRegistration(
-  firewall: ExecutionFirewallEntry,
-): NonNullable<PermissionManifest["builtinRuntimeTargets"]>[number] {
-  if (firewall.kind !== "builtin") {
-    throw new Error("Builtin connector manifest contains an inline firewall");
-  }
-  return {
-    kind: "builtin",
-    connectorSlug: connectorSlugSchema.parse(firewall.name),
-    ...(firewall.baseUrlVars === undefined
-      ? {}
-      : { baseUrlVars: { ...firewall.baseUrlVars } }),
-    ...(firewall.sourceId === undefined ? {} : { sourceId: firewall.sourceId }),
-  };
-}
-
-function mergePermissionManifests(args: {
-  readonly connectorManifest: PermissionManifest;
-  readonly customConnectorManifest: Pick<
-    PermissionManifest,
-    "firewalls" | "networkPolicies"
-  >;
-  readonly providerManifest: PermissionManifest | undefined;
-  readonly customConnectorFirewalls: readonly ExpandedFirewallConfig[];
-}): PermissionManifest | undefined {
-  const builtinRuntimeTargets = args.connectorManifest.firewalls.map(
-    builtinRuntimeTargetRegistration,
-  );
-  const firewalls = [
-    ...(args.providerManifest?.firewalls ?? []),
-    ...args.connectorManifest.firewalls,
-    ...args.customConnectorManifest.firewalls,
-  ];
-
-  if (firewalls.length === 0) {
-    return undefined;
-  }
-
-  return {
-    firewalls,
-    builtinRuntimeTargets,
-    environmentSecretPlaceholders: mergeRecords(
-      args.providerManifest?.environmentSecretPlaceholders,
-      args.connectorManifest.environmentSecretPlaceholders,
-      firewallSecretPlaceholdersFromFirewalls(args.customConnectorFirewalls),
-    ),
-    billableFirewalls: [
-      ...(args.providerManifest?.billableFirewalls ?? []),
-      ...args.connectorManifest.billableFirewalls,
-    ],
-    networkPolicies: {
-      ...args.providerManifest?.networkPolicies,
-      ...args.connectorManifest.networkPolicies,
-      ...args.customConnectorManifest.networkPolicies,
-    },
-  };
-}
-
-interface BuildPermissionManifestArgs {
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly permissionPolicies: FirewallPolicies | undefined;
-  readonly vars: Record<string, string> | undefined;
-  readonly connectorVars?: Record<string, string>;
-  readonly connectorSlugs?: readonly ConnectorSlug[];
-  readonly connectorSourceIdBySlug?: Readonly<Record<string, string>>;
-  readonly customConnectorFirewalls?: readonly ExpandedFirewallConfig[];
-  readonly customConnectorPermissionPolicies?: FirewallPolicies;
-  readonly customConnectorIdByFirewallName?: Readonly<Record<string, string>>;
-  readonly customConnectorSourceIdByFirewallName?: Readonly<
-    Record<string, string>
-  >;
-  readonly timing?: ApiDispatchTimingCollector;
-}
-
-async function buildPermissionManifest(
-  args: BuildPermissionManifestArgs,
-): Promise<PermissionManifest | undefined> {
-  const connectorBaseUrlVars = mergeRecords(args.vars, args.connectorVars);
-  const customConnectorFirewalls = args.customConnectorFirewalls ?? [];
-
-  const builtinSources = await measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_prepare_context_load_builtin_permission_indexes",
-    "nested",
-    async () => {
-      if (args.connectorCatalogSelection.kind === "empty") {
-        return [];
-      }
-      const snapshot = args.connectorCatalogSelection.selection;
-      const builtinConnectorSlugs = (
-        args.connectorSlugs ?? Object.keys(args.permissionPolicies ?? {})
-      ).filter((connectorSlug) => {
-        return snapshot.serverFirewalls.has(connectorSlug);
-      });
-      return await Promise.all(
-        builtinConnectorSlugs.map(async (connectorSlug) => {
-          const metadata = getRequiredFirewallExecutionMetadata(
-            snapshot,
-            connectorSlug,
-          );
-          const permissionIndex = await loadRequiredFirewallPermissionIndex({
-            snapshot,
-            connectorSlug,
-          });
-          return {
-            metadata,
-            permissionIndex,
-            isMcp: snapshot.serverFirewalls.isMcp(connectorSlug),
-          };
-        }),
-      );
-    },
-  );
-
-  const connectorManifest = await measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_prepare_context_apply_builtin_permission_policies",
-    "nested",
-    () => {
-      return Promise.resolve(
-        applyBuiltinConnectorMetadataPolicies(
-          builtinSources,
-          args.permissionPolicies,
-          connectorBaseUrlVars,
-          args.connectorSourceIdBySlug ?? {},
-        ),
-      );
-    },
-  );
-  const customConnectorManifest = await measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_prepare_context_apply_custom_permission_policies",
-    "nested",
-    () => {
-      return Promise.resolve(
-        applyConnectorPolicies(
-          customConnectorFirewalls,
-          mergeRecords(
-            args.permissionPolicies,
-            args.customConnectorPermissionPolicies,
-          ),
-          (firewall) => {
-            return customConnectorInlineFirewallEntry(
-              firewall,
-              args.customConnectorIdByFirewallName ?? {},
-              args.customConnectorSourceIdByFirewallName ?? {},
-            );
-          },
-          (_firewall, permissionNames) => {
-            return allAllowPolicyForPermissions(permissionNames);
-          },
-        ),
-      );
-    },
-  );
-  const providerManifest = await measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_prepare_context_apply_model_provider_permission_policy",
-    "nested",
-    () => {
-      return Promise.resolve(
-        modelProviderPermissionManifest(args.modelProvider, args.vars),
-      );
-    },
-  );
-
-  return await measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_prepare_context_merge_permission_manifest",
-    "nested",
-    () => {
-      return Promise.resolve(
-        mergePermissionManifests({
-          connectorManifest,
-          customConnectorManifest,
-          providerManifest,
-          customConnectorFirewalls,
-        }),
-      );
-    },
-  );
 }
 
 function sanitizeEnvironment(
@@ -14600,725 +6567,8 @@ function assemblePiLaunchResources(args: {
 
 // Storage planning and explicit resource materialization.
 
-type StorageManifestEntryKind = StorageManifestCacheEntryKind;
-
-type StorageManifestCountBucket =
-  (typeof STORAGE_MANIFEST_COUNT_BUCKET_DIMENSIONS)[number];
-
-interface PresignCandidateInput {
-  readonly bucket: string;
-  readonly key: string;
-  readonly expiresIn: number;
-  readonly filename: string | undefined;
-  readonly usePublicEndpoint: boolean;
-}
-
-interface ContextArtifact {
-  readonly name: string;
-  readonly version?: string;
-  readonly mountPath: string;
-  readonly missingRootPolicy?: PersistedStorageMount["missingRootPolicy"];
-}
-
-interface StorageResolution {
-  readonly storageId: string;
-  readonly versionId: string;
-  readonly s3Prefix: string;
-  readonly s3Key: string;
-  readonly archiveSize: number;
-  readonly fileCount: number;
-  readonly resolvedOrgId: string;
-  readonly resolvedUserId: string;
-}
-
-/** Internal resolved identity, before transport URLs exist. Never persisted. */
-type StorageMountMetadata = Omit<StoredStorageMountEntry, "archiveUrl">;
-
-interface PreparedReadOnlyStorageEntry<
-  TMount extends StorageMountMetadata = StoredStorageMountEntry,
-> {
-  readonly storedMount: TMount;
-  readonly persistedMount: PersistedStorageMount;
-  readonly runContextVolume: RunContextResponse["volumes"][number];
-}
-
-interface PreparedWritebackStorageEntry<
-  TMount extends StorageMountMetadata = StoredStorageMountEntry,
-> {
-  readonly storedMount: TMount;
-  readonly persistedMount: PersistedStorageMount;
-  readonly runContextArtifact: NonNullable<RunContextResponse["artifact"]>;
-}
-
-interface PreparedStorageEntries<
-  TMount extends StorageMountMetadata = StoredStorageMountEntry,
-> {
-  readonly composeEntries: readonly PreparedReadOnlyStorageEntry<TMount>[];
-  readonly additionalEntries: readonly PreparedReadOnlyStorageEntry<TMount>[];
-  readonly writebackEntries: readonly PreparedWritebackStorageEntry<TMount>[];
-  readonly resolvedComposeEntryCount: number;
-  readonly resolvedAdditionalEntryCount: number;
-}
-
-interface RunContextStorageObservation {
-  readonly volumes: RunContextResponse["volumes"];
-  readonly artifact: RunContextResponse["artifact"];
-}
-
-interface PreparedAgentRunStorage<
-  TMount extends StorageMountMetadata = StoredStorageMountEntry,
-> {
-  readonly storageMounts: readonly TMount[];
-  readonly persistedStorageMounts: readonly PersistedStorageMount[];
-  readonly runContextStorage: RunContextStorageObservation;
-}
-
-interface ResolvedManifestArtifactInput {
-  readonly artifact: ContextArtifact;
-  readonly resolved: StorageResolution;
-  readonly source: StorageManifestSource;
-}
-
-const STORAGE_MANIFEST_COUNT_BUCKET_DIMENSIONS = [
-  "0",
-  "1",
-  "2_4",
-  "5_8",
-  "9_16",
-  "17_plus",
-] as const;
-
-const STORAGE_MANIFEST_SOURCES = [
-  "system_skill",
-  "connector_skill",
-  "custom_connector_skill",
-  "official_workflow",
-  "workflow_skill",
-  "request_additional_volume",
-  "compose_additional_volume",
-  "compose_volume",
-  "artifact",
-  "unknown",
-] as const satisfies readonly StorageManifestSource[];
-
-type StorageManifestSourceCounts = Record<StorageManifestSource, number>;
-
-type StorageManifestSourceCountsByKind = Record<
-  StorageManifestEntryKind,
-  StorageManifestSourceCounts
->;
-
-function storageManifestCountBucket(count: number): StorageManifestCountBucket {
-  if (count <= 0) {
-    return "0";
-  }
-  if (count === 1) {
-    return "1";
-  }
-  if (count <= 4) {
-    return "2_4";
-  }
-  if (count <= 8) {
-    return "5_8";
-  }
-  if (count <= 16) {
-    return "9_16";
-  }
-  return "17_plus";
-}
-
-function emptyStorageManifestSourceCounts(): StorageManifestSourceCounts {
-  return {
-    system_skill: 0,
-    connector_skill: 0,
-    custom_connector_skill: 0,
-    official_workflow: 0,
-    workflow_skill: 0,
-    request_additional_volume: 0,
-    compose_additional_volume: 0,
-    compose_volume: 0,
-    artifact: 0,
-    unknown: 0,
-  };
-}
-
-function emptyStorageManifestSourceCountsByKind(): StorageManifestSourceCountsByKind {
-  return {
-    compose: emptyStorageManifestSourceCounts(),
-    additional: emptyStorageManifestSourceCounts(),
-    artifact: emptyStorageManifestSourceCounts(),
-  };
-}
-
-class StorageManifestBuildStats {
-  private requestedComposeCount = 0;
-  private requestedAdditionalCount = 0;
-  private requestedArtifactCount = 0;
-  private dedupedArtifactCount = 0;
-  private resolvedComposeCount = 0;
-  private resolvedAdditionalCount = 0;
-  private resolvedArtifactCount = 0;
-  private finalStorageCount = 0;
-  private finalArtifactCount = 0;
-  private droppedComposeCount = 0;
-  private plannedComposePresignCount = 0;
-  private plannedAdditionalPresignCount = 0;
-  private plannedArtifactPresignCount = 0;
-  private systemResolvedStorageCount = 0;
-  private systemPresignCacheHitCount = 0;
-  private systemPresignCacheMissCount = 0;
-  private workflowSkillPresignCacheHitCount = 0;
-  private workflowSkillPresignCacheMissCount = 0;
-  private nonSystemPresignCount = 0;
-  private readonly resolvedSourceCounts = emptyStorageManifestSourceCounts();
-  private readonly plannedPresignSourceCounts =
-    emptyStorageManifestSourceCounts();
-  private readonly plannedPresignSourceCountsByKind =
-    emptyStorageManifestSourceCountsByKind();
-  private readonly nonSystemPresignSourceCounts =
-    emptyStorageManifestSourceCounts();
-  private readonly nonSystemPresignSourceCountsByKind =
-    emptyStorageManifestSourceCountsByKind();
-  private artifactEnsureAlreadyInitializedCount = 0;
-  private artifactEnsureMissingStorageCount = 0;
-  private artifactEnsureCreatedStorageCount = 0;
-  private artifactEnsureLostCreateRaceCount = 0;
-  private artifactEnsureMissingHeadVersionCount = 0;
-  private artifactEnsureInitializedEmptyVersionCount = 0;
-  private readonly presignCandidateCounts = new Map<string, number>();
-
-  recordRequestedInputs(args: {
-    readonly composeCount: number;
-    readonly additionalCount: number;
-    readonly artifactCount: number;
-    readonly dedupedArtifactCount: number;
-  }): void {
-    this.requestedComposeCount = args.composeCount;
-    this.requestedAdditionalCount = args.additionalCount;
-    this.requestedArtifactCount = args.artifactCount;
-    this.dedupedArtifactCount = args.dedupedArtifactCount;
-  }
-
-  recordResolvedEntry(
-    kind: StorageManifestEntryKind,
-    source: StorageManifestSource,
-    count = 1,
-  ): void {
-    switch (kind) {
-      case "compose": {
-        this.resolvedComposeCount += count;
-        break;
-      }
-      case "additional": {
-        this.resolvedAdditionalCount += count;
-        break;
-      }
-      case "artifact": {
-        this.resolvedArtifactCount += count;
-        break;
-      }
-    }
-    this.resolvedSourceCounts[source] += count;
-  }
-
-  recordPresignCandidate(
-    kind: StorageManifestEntryKind,
-    source: StorageManifestSource,
-    input: PresignCandidateInput,
-  ): void {
-    switch (kind) {
-      case "compose": {
-        this.plannedComposePresignCount += 1;
-        break;
-      }
-      case "additional": {
-        this.plannedAdditionalPresignCount += 1;
-        break;
-      }
-      case "artifact": {
-        this.plannedArtifactPresignCount += 1;
-        break;
-      }
-    }
-    this.plannedPresignSourceCounts[source] += 1;
-    this.plannedPresignSourceCountsByKind[kind][source] += 1;
-
-    const key = JSON.stringify([
-      input.bucket,
-      input.key,
-      input.expiresIn,
-      input.filename ?? "",
-      input.usePublicEndpoint ? "public" : "private",
-    ]);
-    this.presignCandidateCounts.set(
-      key,
-      (this.presignCandidateCounts.get(key) ?? 0) + 1,
-    );
-  }
-
-  recordSystemResolvedStorage(count = 1): void {
-    this.systemResolvedStorageCount += count;
-  }
-
-  recordSystemPresignCacheResult(
-    status: SystemStoragePresignedUrlCacheStatus,
-  ): void {
-    switch (status) {
-      case "hit": {
-        this.systemPresignCacheHitCount += 1;
-        return;
-      }
-      case "miss": {
-        this.systemPresignCacheMissCount += 1;
-        return;
-      }
-    }
-  }
-
-  recordWorkflowSkillPresignCacheResult(
-    status: WorkflowSkillStoragePresignedUrlCacheStatus,
-  ): void {
-    switch (status) {
-      case "hit": {
-        this.workflowSkillPresignCacheHitCount += 1;
-        return;
-      }
-      case "miss": {
-        this.workflowSkillPresignCacheMissCount += 1;
-        return;
-      }
-    }
-  }
-
-  recordNonSystemPresign(
-    kind: StorageManifestEntryKind,
-    source: StorageManifestSource,
-  ): void {
-    this.nonSystemPresignCount += 1;
-    this.nonSystemPresignSourceCounts[source] += 1;
-    this.nonSystemPresignSourceCountsByKind[kind][source] += 1;
-  }
-
-  recordArtifactEnsureAlreadyInitialized(): void {
-    this.artifactEnsureAlreadyInitializedCount += 1;
-  }
-
-  recordArtifactEnsureMissingStorage(): void {
-    this.artifactEnsureMissingStorageCount += 1;
-  }
-
-  recordArtifactEnsureCreatedStorage(): void {
-    this.artifactEnsureCreatedStorageCount += 1;
-  }
-
-  recordArtifactEnsureLostCreateRace(): void {
-    this.artifactEnsureLostCreateRaceCount += 1;
-  }
-
-  recordArtifactEnsureMissingHeadVersion(): void {
-    this.artifactEnsureMissingHeadVersionCount += 1;
-  }
-
-  recordArtifactEnsureInitializedEmptyVersion(): void {
-    this.artifactEnsureInitializedEmptyVersionCount += 1;
-  }
-
-  recordFinalStorage(args: {
-    readonly composeEntryCount: number;
-    readonly additionalEntryCount: number;
-    readonly finalReadOnlyEntryCount: number;
-    readonly finalWritebackEntryCount: number;
-    readonly resolvedComposeEntryCount?: number;
-    readonly resolvedAdditionalEntryCount?: number;
-  }): void {
-    this.finalStorageCount = args.finalReadOnlyEntryCount;
-    this.finalArtifactCount = args.finalWritebackEntryCount;
-    this.droppedComposeCount =
-      (args.resolvedComposeEntryCount ?? args.composeEntryCount) +
-      (args.resolvedAdditionalEntryCount ?? args.additionalEntryCount) -
-      args.finalReadOnlyEntryCount;
-  }
-
-  overallDimensions(): ApiDispatchTimingDimensions {
-    return {
-      storage_manifest_requested_compose_count_bucket:
-        storageManifestCountBucket(this.requestedComposeCount),
-      storage_manifest_requested_additional_count_bucket:
-        storageManifestCountBucket(this.requestedAdditionalCount),
-      storage_manifest_requested_artifact_count_bucket:
-        storageManifestCountBucket(this.requestedArtifactCount),
-      storage_manifest_deduped_artifact_count_bucket:
-        storageManifestCountBucket(this.dedupedArtifactCount),
-      storage_manifest_resolved_compose_count_bucket:
-        storageManifestCountBucket(this.resolvedComposeCount),
-      storage_manifest_resolved_additional_count_bucket:
-        storageManifestCountBucket(this.resolvedAdditionalCount),
-      storage_manifest_resolved_artifact_count_bucket:
-        storageManifestCountBucket(this.resolvedArtifactCount),
-      storage_manifest_final_storage_count_bucket: storageManifestCountBucket(
-        this.finalStorageCount,
-      ),
-      storage_manifest_final_artifact_count_bucket: storageManifestCountBucket(
-        this.finalArtifactCount,
-      ),
-      storage_manifest_dropped_compose_count_bucket: storageManifestCountBucket(
-        this.droppedComposeCount,
-      ),
-      storage_manifest_planned_presign_count_bucket: storageManifestCountBucket(
-        this.plannedPresignCount(),
-      ),
-      storage_manifest_duplicate_presign_candidate_count_bucket:
-        storageManifestCountBucket(this.duplicatePresignCandidateCount()),
-      ...this.sourceDimensions({
-        resolved: this.resolvedSourceCounts,
-        plannedPresign: this.plannedPresignSourceCounts,
-        nonSystemPresign: this.nonSystemPresignSourceCounts,
-      }),
-      ...this.systemPresignCacheDimensions(),
-      ...this.workflowSkillPresignCacheDimensions(),
-      ...this.artifactEnsureDimensions(),
-    };
-  }
-
-  artifactEnsureDimensions(): ApiDispatchTimingDimensions {
-    return {
-      storage_manifest_artifact_ensure_already_initialized_count_bucket:
-        storageManifestCountBucket(this.artifactEnsureAlreadyInitializedCount),
-      storage_manifest_artifact_ensure_missing_storage_count_bucket:
-        storageManifestCountBucket(this.artifactEnsureMissingStorageCount),
-      storage_manifest_artifact_ensure_created_storage_count_bucket:
-        storageManifestCountBucket(this.artifactEnsureCreatedStorageCount),
-      storage_manifest_artifact_ensure_lost_create_race_count_bucket:
-        storageManifestCountBucket(this.artifactEnsureLostCreateRaceCount),
-      storage_manifest_artifact_ensure_missing_head_version_count_bucket:
-        storageManifestCountBucket(this.artifactEnsureMissingHeadVersionCount),
-      storage_manifest_artifact_ensure_initialized_empty_version_count_bucket:
-        storageManifestCountBucket(
-          this.artifactEnsureInitializedEmptyVersionCount,
-        ),
-    };
-  }
-
-  buildEntriesDimensions(): ApiDispatchTimingDimensions {
-    return {
-      storage_manifest_resolved_compose_count_bucket:
-        storageManifestCountBucket(this.resolvedComposeCount),
-      storage_manifest_resolved_additional_count_bucket:
-        storageManifestCountBucket(this.resolvedAdditionalCount),
-      storage_manifest_resolved_artifact_count_bucket:
-        storageManifestCountBucket(this.resolvedArtifactCount),
-      storage_manifest_planned_presign_count_bucket: storageManifestCountBucket(
-        this.plannedPresignCount(),
-      ),
-      storage_manifest_duplicate_presign_candidate_count_bucket:
-        storageManifestCountBucket(this.duplicatePresignCandidateCount()),
-      ...this.sourceDimensions({
-        resolved: this.resolvedSourceCounts,
-        plannedPresign: this.plannedPresignSourceCounts,
-        nonSystemPresign: this.nonSystemPresignSourceCounts,
-      }),
-      ...this.systemPresignCacheDimensions(),
-      ...this.workflowSkillPresignCacheDimensions(),
-    };
-  }
-
-  generateDimensions(
-    kind: StorageManifestEntryKind,
-  ): ApiDispatchTimingDimensions {
-    switch (kind) {
-      case "compose": {
-        return {
-          storage_manifest_compose_planned_presign_count_bucket:
-            storageManifestCountBucket(this.plannedComposePresignCount),
-          ...this.sourceDimensions({
-            plannedPresign: this.plannedPresignSourceCountsByKind.compose,
-            nonSystemPresign: this.nonSystemPresignSourceCountsByKind.compose,
-          }),
-        };
-      }
-      case "additional": {
-        return {
-          storage_manifest_additional_planned_presign_count_bucket:
-            storageManifestCountBucket(this.plannedAdditionalPresignCount),
-          ...this.sourceDimensions({
-            plannedPresign: this.plannedPresignSourceCountsByKind.additional,
-            nonSystemPresign:
-              this.nonSystemPresignSourceCountsByKind.additional,
-          }),
-          ...this.workflowSkillPresignCacheDimensions(),
-        };
-      }
-      case "artifact": {
-        return {
-          storage_manifest_artifact_planned_presign_count_bucket:
-            storageManifestCountBucket(this.plannedArtifactPresignCount),
-          ...this.sourceDimensions({
-            plannedPresign: this.plannedPresignSourceCountsByKind.artifact,
-            nonSystemPresign: this.nonSystemPresignSourceCountsByKind.artifact,
-          }),
-        };
-      }
-    }
-  }
-
-  assembleDimensions(): ApiDispatchTimingDimensions {
-    return {
-      storage_manifest_final_storage_count_bucket: storageManifestCountBucket(
-        this.finalStorageCount,
-      ),
-      storage_manifest_final_artifact_count_bucket: storageManifestCountBucket(
-        this.finalArtifactCount,
-      ),
-      storage_manifest_dropped_compose_count_bucket: storageManifestCountBucket(
-        this.droppedComposeCount,
-      ),
-    };
-  }
-
-  private plannedPresignCount(): number {
-    return (
-      this.plannedComposePresignCount +
-      this.plannedAdditionalPresignCount +
-      this.plannedArtifactPresignCount
-    );
-  }
-
-  private duplicatePresignCandidateCount(): number {
-    let count = 0;
-    for (const candidateCount of this.presignCandidateCounts.values()) {
-      count += Math.max(0, candidateCount - 1);
-    }
-    return count;
-  }
-
-  private sourceDimensions(args: {
-    readonly resolved?: StorageManifestSourceCounts;
-    readonly plannedPresign?: StorageManifestSourceCounts;
-    readonly nonSystemPresign?: StorageManifestSourceCounts;
-  }): ApiDispatchTimingDimensions {
-    const dimensions: Record<string, string> = {};
-    for (const source of STORAGE_MANIFEST_SOURCES) {
-      if (args.resolved) {
-        dimensions[`storage_manifest_source_${source}_resolved_count_bucket`] =
-          storageManifestCountBucket(args.resolved[source]);
-      }
-      if (args.plannedPresign) {
-        dimensions[
-          `storage_manifest_source_${source}_planned_presign_count_bucket`
-        ] = storageManifestCountBucket(args.plannedPresign[source]);
-      }
-      if (args.nonSystemPresign) {
-        dimensions[
-          `storage_manifest_source_${source}_non_system_presign_count_bucket`
-        ] = storageManifestCountBucket(args.nonSystemPresign[source]);
-      }
-    }
-    return dimensions;
-  }
-
-  private systemPresignCacheDimensions(): ApiDispatchTimingDimensions {
-    return {
-      storage_manifest_system_resolved_storage_count_bucket:
-        storageManifestCountBucket(this.systemResolvedStorageCount),
-      storage_manifest_system_presign_cache_hit_count_bucket:
-        storageManifestCountBucket(this.systemPresignCacheHitCount),
-      storage_manifest_system_presign_cache_miss_count_bucket:
-        storageManifestCountBucket(this.systemPresignCacheMissCount),
-      storage_manifest_non_system_presign_count_bucket:
-        storageManifestCountBucket(this.nonSystemPresignCount),
-    };
-  }
-
-  private workflowSkillPresignCacheDimensions(): ApiDispatchTimingDimensions {
-    return {
-      storage_manifest_workflow_skill_presign_cache_hit_count_bucket:
-        storageManifestCountBucket(this.workflowSkillPresignCacheHitCount),
-      storage_manifest_workflow_skill_presign_cache_miss_count_bucket:
-        storageManifestCountBucket(this.workflowSkillPresignCacheMissCount),
-    };
-  }
-}
-
-function knownArchiveSize(resolved: StorageResolution): number | undefined {
-  return Number.isSafeInteger(resolved.archiveSize) && resolved.archiveSize > 0
-    ? resolved.archiveSize
-    : undefined;
-}
-
-function writebackStorageEntryMetadata(
-  input: ResolvedManifestArtifactInput,
-): PreparedWritebackStorageEntry<StorageMountMetadata> {
-  const { artifact, resolved } = input;
-  const storedMountBase = {
-    orgId: resolved.resolvedOrgId,
-    userId: resolved.resolvedUserId,
-    name: artifact.name,
-    storageId: resolved.storageId,
-    versionId: resolved.versionId,
-    mountPath: artifact.mountPath,
-    ...(artifact.missingRootPolicy === undefined
-      ? {}
-      : { missingRootPolicy: artifact.missingRootPolicy }),
-    writeback: true as const,
-  };
-  const preparedBase = {
-    persistedMount: {
-      orgId: resolved.resolvedOrgId,
-      userId: resolved.resolvedUserId,
-      name: artifact.name,
-      storageId: resolved.storageId,
-      version: resolved.versionId,
-      mountPath: artifact.mountPath,
-      writeback: true as const,
-      ...(artifact.missingRootPolicy === undefined
-        ? {}
-        : { missingRootPolicy: artifact.missingRootPolicy }),
-    },
-    runContextArtifact: {
-      mountPath: artifact.mountPath,
-      vasStorageName: artifact.name,
-      vasVersionId: resolved.versionId,
-    },
-  };
-  if (resolved.fileCount === 0) {
-    return {
-      ...preparedBase,
-      storedMount: {
-        ...storedMountBase,
-        empty: true,
-      },
-    };
-  }
-
-  const archiveSize = knownArchiveSize(resolved);
-  return {
-    ...preparedBase,
-    storedMount: {
-      ...storedMountBase,
-      ...(archiveSize === undefined ? {} : { archiveSize }),
-    },
-  };
-}
-
-function mergeStorageEntries<TEntry>(args: {
-  readonly composeEntries: readonly TEntry[];
-  readonly additionalEntries: readonly TEntry[];
-  readonly mountPath: (entry: TEntry) => string;
-}): readonly TEntry[] {
-  const additionalMountPaths = new Set(
-    args.additionalEntries.map((entry) => {
-      return args.mountPath(entry);
-    }),
-  );
-  return [
-    ...args.composeEntries.filter((entry) => {
-      return !additionalMountPaths.has(args.mountPath(entry));
-    }),
-    ...args.additionalEntries,
-  ];
-}
-
-async function finalizePreparedStorage<
-  TMount extends StorageMountMetadata,
->(args: {
-  readonly entries: PreparedStorageEntries<TMount>;
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly stats?: StorageManifestBuildStats;
-}): Promise<PreparedAgentRunStorage<TMount>> {
-  return await measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_prepare_storage_manifest_assemble",
-    "nested",
-    () => {
-      const readOnlyEntries = mergeStorageEntries({
-        composeEntries: args.entries.composeEntries,
-        additionalEntries: args.entries.additionalEntries,
-        mountPath(entry) {
-          return entry.storedMount.mountPath;
-        },
-      });
-      args.stats?.recordFinalStorage({
-        composeEntryCount: args.entries.composeEntries.length,
-        additionalEntryCount: args.entries.additionalEntries.length,
-        finalReadOnlyEntryCount: readOnlyEntries.length,
-        finalWritebackEntryCount: args.entries.writebackEntries.length,
-        resolvedComposeEntryCount: args.entries.resolvedComposeEntryCount,
-        resolvedAdditionalEntryCount: args.entries.resolvedAdditionalEntryCount,
-      });
-      const writebackEntry = args.entries.writebackEntries[0];
-      return {
-        runContextStorage: {
-          volumes: readOnlyEntries.map((entry) => {
-            return entry.runContextVolume;
-          }),
-          artifact: writebackEntry?.runContextArtifact ?? null,
-        },
-        storageMounts: normalizeMountOverlay([
-          ...readOnlyEntries.map((entry) => {
-            return entry.storedMount;
-          }),
-          ...args.entries.writebackEntries.map((entry) => {
-            return entry.storedMount;
-          }),
-        ]),
-        persistedStorageMounts: normalizeMountOverlay([
-          ...readOnlyEntries.map((entry) => {
-            return entry.persistedMount;
-          }),
-          ...args.entries.writebackEntries.map((entry) => {
-            return entry.persistedMount;
-          }),
-        ]),
-      };
-    },
-    () => {
-      return args.stats?.assembleDimensions();
-    },
-  );
-}
-
 // Execution context, launch preparation and pending atomic commit.
 
-const AUTO_MEMORY_ARTIFACT_NAME = MEMORY_ARTIFACT_NAME;
-
-/** Runner storage mount for one prepared exact execution storage mount. */
-function storedMountFromPrepared(
-  prepared: PreparedExecutionStorageMount,
-  preserveExplicitMissingRootPolicy: boolean,
-): StoredStorageMountEntry {
-  const identity = {
-    orgId: prepared.orgId,
-    userId: prepared.userId,
-    storageId: prepared.storageId,
-    versionId: prepared.versionId,
-    name: prepared.name,
-    mountPath: prepared.mountPath,
-  };
-  if (prepared.writeback) {
-    const policy = preserveExplicitMissingRootPolicy
-      ? { missingRootPolicy: prepared.missingRootPolicy }
-      : {};
-    return prepared.empty
-      ? { ...identity, writeback: true, empty: true, ...policy }
-      : {
-          ...identity,
-          writeback: true,
-          archiveUrl: prepared.archiveUrl,
-          ...(prepared.archiveSize > 0
-            ? { archiveSize: prepared.archiveSize }
-            : {}),
-          ...policy,
-        };
-  }
-  return {
-    ...identity,
-    archiveUrl: prepared.archiveUrl,
-    ...(prepared.archiveSize > 0 ? { archiveSize: prepared.archiveSize } : {}),
-    ...(prepared.instructionsTargetFilename === undefined
-      ? {}
-      : { instructionsTargetFilename: prepared.instructionsTargetFilename }),
-  };
-}
 // --- Private implementation: launch persistence ---
 
 interface AgentRunMetadata {
@@ -15363,12 +6613,13 @@ type CreateRunRouteResult =
     })
   | ApiErrorResponse<402, "INSUFFICIENT_CREDITS">
   | ApiErrorResponse<402, "PRO_REQUIRED">
-  | ApiErrorResponse<503, "PROVIDER_UNAVAILABLE">;
+  | ApiErrorResponse<
+      503,
+      "PROVIDER_UNAVAILABLE" | "MODEL_PROVIDER_UNAVAILABLE"
+    >;
 
-type CreateRunErrorResult = Exclude<
-  CreateRunRouteResult,
-  { readonly status: 201 }
->;
+type CreateRunErrorResult =
+  Exclude<CreateRunRouteResult, { readonly status: 201 }> | ThreadModelError;
 
 /** The model-selection facts of one run that its model environment reads. */
 interface RunModelProviderArgs {
@@ -15386,20 +6637,6 @@ interface RunModelProviderArgs {
   readonly codexServiceTier?: "fast";
   readonly agentRunMetadata?: AgentRunMetadata;
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
-}
-
-interface ResolveModelProviderEnvironmentArgs {
-  /** Loaded once per run and shared by every candidate route. */
-  readonly catalog: ModelCatalog;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly framework: SupportedFramework;
-  readonly modelProviderId?: string;
-  readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
-  readonly modelProviderType?: string;
-  readonly selectedModelOverride?: string;
-  readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
-  readonly piExecution: boolean;
 }
 
 // Pending persistence uses connection-free SQL plans owned by one command.
@@ -15437,15 +6674,11 @@ function tailFacts(
     requestMemory:
       Boolean(claim) &&
       isFeatureEnabled(FeatureSwitchKey.PiMemory, args.featureSwitchContext),
-    threadAgentId:
-      claim?.producer?.kind === "reassign-agent"
-        ? claim.producer.expectedAgentId
-        : args.context.resolved.agentId,
+    threadAgentId: args.context.resolved.agentId,
     threadBindingFencesOwnership:
       Boolean(admission.validatedThreadSession) &&
       admission.validatedThreadSession?.threadAgentId ===
-        args.context.resolved.agentId &&
-      claim?.producer?.kind !== "reassign-agent",
+        args.context.resolved.agentId,
     needsBinding:
       Boolean(args.createArgs.chatThreadId) &&
       !admission.validatedThreadSession,
@@ -15457,16 +6690,8 @@ function assertPendingLaunchClaim(
   args: PreparedCommitPreparedLaunchArgs,
   claim: PendingLaunchClaim | undefined,
 ) {
-  if (
-    claim &&
-    (args.createArgs.orgId !== claim.orgId ||
-      args.createArgs.chatThreadId !== claim.chatThreadId ||
-      args.createArgs.queueFirstAssociation?.threadId !== claim.chatThreadId ||
-      !args.createArgs.agentRunModelPin)
-  ) {
-    throw new Error(
-      "Chat run commit requires its captured input association and model pin",
-    );
+  if (claim && !args.createArgs.agentRunModelPin) {
+    throw new Error("Chat run commit requires its captured model pin");
   }
 }
 
@@ -15680,6 +6905,7 @@ export const commitPreparedPendingLaunch$ = command(
     signal.throwIfAborted();
     const { admissionTiming, timing } = args;
     assertPendingLaunchClaim(args, claim);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0263; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(
       async (tx): Promise<AtomicLaunchCommitAttempt> => {
         admissionTiming.transactionStarted();
@@ -15721,17 +6947,35 @@ export const commitPreparedPendingLaunch$ = command(
               admission,
               capabilities,
             );
-            const rowsPersisted = await timing.measure(
+            const rowsPersisted = await timing.measureDatabase(
               "api_dispatch_persist_atomic_launch",
-              "nested",
+              "api_dispatch_persist_atomic_launch_sql_call",
+              "api_dispatch_persist_atomic_launch_application_remainder",
               async () => {
                 const { rows, context } = prepared;
+                const buildStartedAt = monotonicNow();
                 const plan = pendingAtomicLaunchPlan(rows, context);
+                timing.recordDuration(
+                  "api_dispatch_persist_atomic_launch_build",
+                  "nested",
+                  monotonicNow() - buildStartedAt,
+                  now(),
+                );
                 const [row] = parseRawRows(
                   pendingLaunchRowSchema,
                   await tx.execute(plan),
                 );
-                return pendingAtomicLaunchResult(rows, context, row).persisted;
+                // ORM/schema decoding stays in the application remainder;
+                // this child measures only projection of the validated row.
+                const materializeStartedAt = monotonicNow();
+                const result = pendingAtomicLaunchResult(rows, context, row);
+                timing.recordDuration(
+                  "api_dispatch_persist_atomic_launch_materialize",
+                  "nested",
+                  monotonicNow() - materializeStartedAt,
+                  now(),
+                );
+                return result.persisted;
               },
             );
             if (claim) {

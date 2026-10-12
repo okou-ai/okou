@@ -1,5 +1,111 @@
 # Changelog
 
+## [0.106.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.106.1...guest-agent-v0.106.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* classify codex request processing failures ([#39173](https://github.com/okou-ai/okou/issues/39173)) ([f393900](https://github.com/okou-ai/okou/commit/f39390092d3d9808d8c10b1987b5fa53ec539b8a))
+
+## [0.106.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.106.0...guest-agent-v0.106.1) (2026-10-12)
+
+
+### Refactoring
+
+* **runner:** retire workspace protocol and application sql ([#38837](https://github.com/okou-ai/okou/issues/38837)) ([a932f1f](https://github.com/okou-ai/okou/commit/a932f1f86ae10eb624fa3ff3bccc851ba4809a7e))
+
+## [0.106.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.105.2...guest-agent-v0.106.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** complete home cache disk visibility ([#38775](https://github.com/okou-ai/okou/issues/38775)) ([30c5539](https://github.com/okou-ai/okou/commit/30c5539999b0a90dfb693f0cc92c2cd29e6882d2))
+
+
+### Bug Fixes
+
+* remove retired connector references from app and tests ([#38802](https://github.com/okou-ai/okou/issues/38802)) ([63a43d9](https://github.com/okou-ai/okou/commit/63a43d9219560c0dfe29048b023c7910417a9c50))
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+
+## [0.105.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.105.1...guest-agent-v0.105.2) (2026-10-10)
+
+
+### Refactoring
+
+* name native history and pi memory publications explicitly ([#38679](https://github.com/okou-ai/okou/issues/38679)) ([e5b1d4e](https://github.com/okou-ai/okou/commit/e5b1d4ed7bd2f8b54e01352e762e1f9eec5c3a39))
+* simplify pi memory results and finalization diagnostics ([#38765](https://github.com/okou-ai/okou/issues/38765)) ([cdd6a0a](https://github.com/okou-ai/okou/commit/cdd6a0abe3f5880e98a02da8df5143232d7632e1))
+
+
+### Performance Improvements
+
+* **test:** serialize invariant fixture fields once ([#38764](https://github.com/okou-ai/okou/issues/38764)) ([c0810bb](https://github.com/okou-ai/okou/commit/c0810bb46375e538ee1ad47dbf887aee494d97d0))
+
+## [0.105.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.105.0...guest-agent-v0.105.1) (2026-10-10)
+
+## [0.105.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.15...guest-agent-v0.105.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+## [0.104.15](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.14...guest-agent-v0.104.15) (2026-10-10)
+
+
+### Bug Fixes
+
+* classify codex model-access verification failures safely ([#38578](https://github.com/okou-ai/okou/issues/38578)) ([ac4f149](https://github.com/okou-ai/okou/commit/ac4f1498f0574326fff8f73991aabc100012c36c))
+
+
+### Performance Improvements
+
+* **test:** reduce fixture observation allocations ([#38473](https://github.com/okou-ai/okou/issues/38473)) ([65e3292](https://github.com/okou-ai/okou/commit/65e3292dcf4cc635182ab1ffb88354726aae7402))
+
+## [0.104.14](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.13...guest-agent-v0.104.14) (2026-10-10)
+
+## [0.104.13](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.12...guest-agent-v0.104.13) (2026-10-10)
+
+
+### Refactoring
+
+* remove generic checkpoint persistence and protocols ([#38399](https://github.com/okou-ai/okou/issues/38399)) ([0c926e3](https://github.com/okou-ai/okou/commit/0c926e34ca09edaf2840ffcbfa56f3dc07a4588d))
+
+
+### Performance Improvements
+
+* **test:** avoid rebuilding owned fixture buffers ([#38450](https://github.com/okou-ai/okou/issues/38450)) ([f5ad1ba](https://github.com/okou-ai/okou/commit/f5ad1ba1e2b4d6745ed80c869bf4fb9b222cfafc))
+
+## [0.104.12](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.11...guest-agent-v0.104.12) (2026-10-09)
+
+## [0.104.11](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.10...guest-agent-v0.104.11) (2026-10-09)
+
+
+### Documentation
+
+* keep reusable engineering standards and remove feature records ([#38387](https://github.com/okou-ai/okou/issues/38387)) ([6507d86](https://github.com/okou-ai/okou/commit/6507d86c83ca37e7a8790e4efd66eb6a84267295))
+
+
+### Performance Improvements
+
+* **test:** move owned json into large delivery fixtures ([#38379](https://github.com/okou-ai/okou/issues/38379)) ([f036aad](https://github.com/okou-ai/okou/commit/f036aad60540ea2c2e114a74dac57836b85ab52c))
+
+## [0.104.10](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.9...guest-agent-v0.104.10) (2026-10-09)
+
+
+### Bug Fixes
+
+* **guest-agent:** describe terminal event delivery failures accurately ([#38356](https://github.com/okou-ai/okou/issues/38356)) ([9a32460](https://github.com/okou-ai/okou/commit/9a3246062f207542dcc8d7af66dad9f97210b498))
+* **guest-agent:** mask pi live assistant text before publication ([#38354](https://github.com/okou-ai/okou/issues/38354)) ([6ecb76b](https://github.com/okou-ai/okou/commit/6ecb76be71ca5c32f978fdde334df7458764c663))
+
+
+### Performance Improvements
+
+* **test:** remove redundant http fixture body work ([#38320](https://github.com/okou-ai/okou/issues/38320)) ([b3e8b7c](https://github.com/okou-ai/okou/commit/b3e8b7c95fe75585247a972177e22d04d7f7639c))
+
 ## [0.104.9](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.8...guest-agent-v0.104.9) (2026-10-09)
 
 

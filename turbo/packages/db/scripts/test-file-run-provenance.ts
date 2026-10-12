@@ -11,6 +11,7 @@ await client.connect();
 const schema = `file_provenance_${randomUUID().replaceAll("-", "")}`;
 
 try {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0386; new non-billing transactions are prohibited.
   await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${schema}"`);
   await client.query(`SET LOCAL search_path TO "${schema}"`);
@@ -71,6 +72,7 @@ try {
     ),
     "utf8",
   );
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0387; new non-billing transactions are prohibited.
   await client.query("SAVEPOINT missing_association");
   await assert.rejects(client.query(migration), { code: "P0001" });
   await client.query("ROLLBACK TO SAVEPOINT missing_association");

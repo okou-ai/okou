@@ -123,7 +123,7 @@ async fn oversized_codex_input_writes_actionable_structured_failure()
     complete.assert_calls_async(1).await;
 
     let paths = guest_agent::paths::GuestPaths::from_runtime_dir(runtime_dir);
-    let error = std::fs::read_to_string(paths.checkpoint_error_file())?;
+    let error = std::fs::read_to_string(paths.finalization_error_file())?;
     assert!(error.contains("101 characters provided"));
     assert!(error.contains("maximum is 100 characters"));
     assert!(error.contains("Reduce the input and try again"));

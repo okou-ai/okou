@@ -23,7 +23,7 @@ teardown() {
     run runner_api_curl "/api/run-models"
     assert_success
     run jq -e '
-        .models[0].model == null and
+        .models[0].model == "auto" and
         any(.models[]?;
             .model == "claude-sonnet-5-5" and
             .memberEffective.providerType == "claude-code-oauth-token" and
@@ -74,7 +74,7 @@ EOF
     assert_success
     assert_output "$assistant_text"
 
-    run runner_api_curl "/api/runs/${RUN_ID}/context"
+    run runner_e2e_wait_for_run_context "$RUN_ID"
     assert_success
     run jq -e '
         .cliAgentType == "claude-code" and

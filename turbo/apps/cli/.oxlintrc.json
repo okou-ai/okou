@@ -10,11 +10,8 @@
     },
     {
       "files": [
-        "src/commands/run/__tests__/dynamic-volume.test.ts",
         "src/commands/run/__tests__/index.test.ts",
-        "src/commands/run/__tests__/volume-version.test.ts",
-        "src/lib/api/__tests__/config.test.ts",
-        "src/lib/computer-use/__tests__/desktop-server.test.ts"
+        "src/lib/api/__tests__/config.test.ts"
       ],
       "rules": {
         "import/first": "off"

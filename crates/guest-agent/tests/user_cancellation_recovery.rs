@@ -34,7 +34,7 @@ struct Scenario {
 }
 
 #[tokio::test]
-async fn user_cancellation_reports_checkpoint_with_completion()
+async fn user_cancellation_reports_finalization_with_completion()
 -> Result<(), Box<dyn std::error::Error>> {
     run_scenario(Scenario {
         run_id: SUCCESS_RUN_ID,
@@ -44,7 +44,7 @@ async fn user_cancellation_reports_checkpoint_with_completion()
         combined_completion_attempts: 1,
         fallback_completion_attempts: 0,
         expected_request_order: &["combined_complete"],
-        recovery_log: "Recovery checkpoint created",
+        recovery_log: "Recovery finalization created",
     })
     .await
 }
@@ -65,7 +65,7 @@ async fn user_cancellation_falls_back_after_combined_completion_failure()
             "combined_complete",
             "fallback_complete",
         ],
-        recovery_log: "Recovery checkpoint skipped:",
+        recovery_log: "Recovery finalization skipped:",
     })
     .await
 }
@@ -302,7 +302,7 @@ async fn run_scenario(scenario: Scenario) -> Result<(), Box<dyn std::error::Erro
             .unwrap_or_else(PoisonError::into_inner)
             .as_slice(),
         scenario.expected_request_order,
-        "checkpoint-less cancellation completion may only follow failed combined attempts"
+        "finalization-less cancellation completion may only follow failed combined attempts"
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);

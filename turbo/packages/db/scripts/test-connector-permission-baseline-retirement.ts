@@ -32,10 +32,10 @@ const contexts = [
 const client = new Client({ connectionString: databaseUrl });
 await client.connect();
 try {
-  await client.query("BEGIN");
+  await client.query("SET search_path TO pg_temp");
   // A temporary table isolates the transform from every real queued Run.
   await client.query(
-    "CREATE TEMP TABLE runner_job_queue (id integer PRIMARY KEY, execution_context jsonb NOT NULL) ON COMMIT DROP",
+    "CREATE TEMP TABLE runner_job_queue (id integer PRIMARY KEY, execution_context jsonb NOT NULL) ON COMMIT PRESERVE ROWS",
   );
   const rows = [
     { ...contexts[0], connectorPermissionBaseline: { version: 1 } },
@@ -62,7 +62,6 @@ try {
       "Retirement must preserve other fields and remain idempotent",
     );
   }
-  await client.query("ROLLBACK");
 } finally {
   await client.end();
 }

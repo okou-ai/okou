@@ -8,9 +8,13 @@ pub struct ExecAgentReadyTiming {
     pub containment_create_us: u32,
     /// Time spent creating the workload and tool placement brokers.
     pub placement_broker_setup_us: u32,
-    /// Time spent spawning the supervised shell child.
+    /// Time spent launching the controlled Guest Agent process.
+    ///
+    /// The historical `shell_spawn_us` name remains for protocol and timing-series
+    /// compatibility; direct Agent launch does not execute a shell.
     pub shell_spawn_us: u32,
-    /// Time from shell spawn through confirmed runtime-descriptor adoption.
+    /// Time after controlled Agent process launch until confirmed
+    /// runtime-descriptor adoption.
     pub bootstrap_ready_wait_us: u32,
 }
 

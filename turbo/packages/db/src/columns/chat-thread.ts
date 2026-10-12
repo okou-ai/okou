@@ -11,8 +11,6 @@ import { agents } from "../schema/agent";
 import { computerUseHosts } from "../schema/computer-use-host";
 import type { ModelSettings } from "@okouai/db/jsonb-contracts/chat-model-settings";
 
-import type { ChatThreadProvenance } from "../schema/chat-thread";
-
 /** Shared by the physical schema and the runtime application mapping. */
 export function chatThreadColumns() {
   return {
@@ -54,7 +52,9 @@ export function chatThreadColumns() {
      */
     lastReadAt: timestamp("last_read_at"),
     /** Per-thread selected model pin. Provider routing is resolved per run. */
-    selectedModel: varchar("selected_model", { length: 255 }),
+    selectedModel: varchar("selected_model", { length: 255 })
+      .default("auto")
+      .notNull(),
     /** Sparse per-model preferences copied from the member when created. */
     modelSettings: jsonb("model_settings")
       .$type<ModelSettings>()
@@ -108,16 +108,6 @@ export function chatThreadColumns() {
      * thread queries.
      */
     lastMessageAt: timestamp("last_message_at").defaultNow().notNull(),
-    /**
-     * Server-private thread origin. Never exposed in a Chat or Settings
-     * response and never supplied by a client. Nullable on purpose and
-     * deliberately without a column default: an older API version that does not
-     * know this column keeps creating unknown rows, which must not be read as
-     * ordinary. See {@link ChatThreadProvenance}.
-     */
-    provenance: varchar("provenance", {
-      length: 32,
-    }).$type<ChatThreadProvenance>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   };

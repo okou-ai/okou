@@ -19,7 +19,7 @@ import {
 
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const responsibility =
-  "Every Monday, sumarize open Zendesk tickets for the Acme account.\nFlag anything waiting more than 2 days and post it in #support-leads.";
+  "Every Monday, sumarize open Test Subdomain tickets for the Acme account.\nFlag anything waiting more than 2 days and post it in #support-leads.";
 const context = testContext();
 const mocks = createRouteMocks(context);
 
@@ -78,7 +78,7 @@ describe("POST /api/agent-setup-prompts", () => {
       const polished = [
         "Hi Support Scout, here is your responsibility:",
         "",
-        "- Every Monday, summarize open Zendesk tickets for the Acme account.",
+        "- Every Monday, summarize open Test Subdomain tickets for the Acme account.",
         "- Flag anything waiting more than 2 days and post it in #support-leads.",
         "",
         "Please update your description and instructions accordingly, then briefly confirm what you changed.",

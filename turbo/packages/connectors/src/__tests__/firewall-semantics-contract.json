@@ -544,8 +544,8 @@
     },
     {
       "name": "plain host parameter captures lowercase segment",
-      "host": "ACME.zendesk.com",
-      "pattern": "{subdomain}.zendesk.com",
+      "host": "ACME.example.com",
+      "pattern": "{subdomain}.example.com",
       "expected": {
         "kind": "match",
         "params": {
@@ -555,8 +555,8 @@
     },
     {
       "name": "plain host parameter rejects multiple leading segments",
-      "host": "a.b.zendesk.com",
-      "pattern": "{subdomain}.zendesk.com",
+      "host": "a.b.example.com",
+      "pattern": "{subdomain}.example.com",
       "expected": {
         "kind": "no-match"
       }

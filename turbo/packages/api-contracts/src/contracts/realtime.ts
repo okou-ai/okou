@@ -31,6 +31,39 @@ export function foregroundChannelName(userId: string, orgId: string): string {
   return `user-org-foreground:${userId}:${orgId}`;
 }
 
+export const computerUseCommandsChangedEvent = "commandsChanged";
+export const computerUseCommandResultChangedEvent = "resultChanged";
+
+/** One command's result; unrelated user and host events are outside this scope. */
+export function computerUseCommandResultChannelName(
+  userId: string,
+  orgId: string,
+  commandId: string,
+): string {
+  return `computer-use-result:${userId}:${orgId}:${commandId}`;
+}
+
+export function computerUseHostChannelScope(
+  userId: string,
+  orgId: string,
+): string {
+  return `computer-use-host:${userId}:${orgId}`;
+}
+
+export function computerUseHostChannelName(
+  userId: string,
+  orgId: string,
+  hostId: string,
+  connectionGeneration: number,
+): string {
+  return `${computerUseHostChannelScope(userId, orgId)}:${hostId}:${connectionGeneration}`;
+}
+
+export const computerUseCommandNotificationsSchema = z.object({
+  channelName: z.string().min(1),
+  eventName: z.literal(computerUseCommandsChangedEvent),
+});
+
 export const connectorChangedPayloadSchema = z.object({
   connectorSlug: connectorSlugSchema,
 });
@@ -119,6 +152,14 @@ export const ablyTokenRequestSchema = z.object({
   nonce: z.string(),
   mac: z.string(),
 });
+
+export const realtimeSubscriptionSchema = z.object({
+  channelName: z.string(),
+  eventName: z.string(),
+  tokenRequest: ablyTokenRequestSchema,
+});
+
+export type RealtimeSubscription = z.infer<typeof realtimeSubscriptionSchema>;
 
 /**
  * Runner realtime token contract for /api/runners/realtime/token

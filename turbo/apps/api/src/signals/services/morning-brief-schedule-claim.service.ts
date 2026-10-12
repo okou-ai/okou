@@ -153,7 +153,8 @@ export const isCanonicalMorningBriefAutomation$ = command(
       current.scheduleType === "cron" &&
       current.blueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY &&
       current.reconciliationStatus === "current" &&
-      current.resultEmailEnabled === true
+      // Both legacy completion mail and Agent-controlled delivery are valid.
+      current.resultEmailEnabled !== null
     );
   },
 );
@@ -402,6 +403,7 @@ const commitMorningBriefScheduleSettlement$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     const result = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0189; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const attempted = await attemptMorningBriefScheduleSettlement(tx, args);
         signal?.throwIfAborted();

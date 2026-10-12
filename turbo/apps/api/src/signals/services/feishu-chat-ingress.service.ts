@@ -144,6 +144,7 @@ export const ensureFeishuChatThreadRoute$ = command(
     );
     const candidateId = randomUUID();
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0159; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const existing = await loadFeishuChatThreadRoute(tx, args);
       if (existing) {
@@ -216,6 +217,7 @@ export const admitFeishuChatEvent$ = command(
     signal: AbortSignal,
   ): Promise<FeishuChatIngressAdmission | null> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0160; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const [receipt] = await tx
         .insert(feishuOrgEvents)

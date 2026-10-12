@@ -292,6 +292,7 @@ try {
       await blocker.connect();
       try {
         await blocker.query(
+          // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0420; new non-billing transactions are prohibited.
           "BEGIN; SELECT * FROM usage_pack_subscriptions FOR UPDATE",
         );
         const before = await catalog(client);
@@ -310,6 +311,7 @@ try {
       await blocker.connect();
       const applicationName = `domain_migration_${randomUUID()}`;
       await blocker.query(
+        // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0421; new non-billing transactions are prohibited.
         "BEGIN; UPDATE usage_pack_pending_snapshot_guards SET pending_snapshot_count = 2",
       );
       const outcome = apply(url, {

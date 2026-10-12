@@ -716,35 +716,46 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
       );
     },
 
-    async createCliToken(actor: ApiTestUser): Promise<{ token: string }> {
+    async createCliToken(
+      actor: ApiTestUser,
+      run: <T>(operation: () => Promise<T>) => Promise<T> = (operation) => {
+        return operation();
+      },
+    ): Promise<{ token: string }> {
       const deviceClient = setupAppWithRoutes({
         context,
         routes: authOrgRoutes,
       })(cliAuthDeviceContract);
-      const device = await accept(deviceClient.create({ body: {} }), [200]);
+      const device = await run(() => {
+        return accept(deviceClient.create({ body: {} }), [200]);
+      });
 
       const approvalClient = setupAppWithRoutes({
         context,
         routes: authOrgRoutes,
       })(cliAuthApproveContract);
-      await accept(
-        approvalClient.approve({
-          headers: authenticate(actor),
-          body: { device_code: device.body.device_code },
-        }),
-        [200],
-      );
+      await run(() => {
+        return accept(
+          approvalClient.approve({
+            headers: authenticate(actor),
+            body: { device_code: device.body.device_code },
+          }),
+          [200],
+        );
+      });
 
       const tokenClient = setupAppWithRoutes({
         context,
         routes: authOrgRoutes,
       })(cliAuthTokenContract);
-      const token = await accept(
-        tokenClient.exchange({
-          body: { device_code: device.body.device_code },
-        }),
-        [200],
-      );
+      const token = await run(() => {
+        return accept(
+          tokenClient.exchange({
+            body: { device_code: device.body.device_code },
+          }),
+          [200],
+        );
+      });
       return { token: token.body.access_token };
     },
 

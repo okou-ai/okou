@@ -6,6 +6,10 @@ import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import {
+  storagePublicationGenerations,
+  storagePublicationTokens,
+} from "@okouai/db/schema/storage-publication-fence";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { settle } from "../utils";
@@ -31,7 +35,6 @@ import {
   type ClerkDeletionScope,
   type ConversationDeletionReceipt,
 } from "./clerk-lifecycle-plan";
-import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 
 function idsOf(rows: readonly { readonly id: string }[]) {
   return rows.map((row) => {
@@ -44,6 +47,7 @@ const deleteClerkUserLifecycleData$ = command(
     signal.throwIfAborted();
     const db = set(writeDb$);
     const outcome = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0098; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const [jobs, ...usage] = usageCleanupTargets({
           scope: "user",
@@ -160,6 +164,7 @@ const deleteClerkOrganizationLifecycleData$ = command(
     signal.throwIfAborted();
     const db = set(writeDb$);
     const outcome = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0099; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         // Match Social settlement's job-before-parent mutations.
         const [jobs, ...usage] = usageCleanupTargets({
@@ -255,7 +260,6 @@ const deleteClerkOrganizationLifecycleData$ = command(
           await tx.execute(statement);
         }
         if (agentIds.length > 0) {
-          await tx.execute(purgeRetiredMorningBriefEmailSql());
           // Only Agents with no Run left under their Sessions; a late Run
           // (and its conversation) is never removed by the Agent cascade.
           await tx.execute(runFreeAgentDeleteSql(orgId, agentIds));
@@ -309,6 +313,31 @@ export const deleteClerkAgentLifecycleData$ = command(
   },
 );
 
+// Once entered, finish both writes before the caller observes cancellation,
+// matching the former transaction callback's cleanup phase.
+const deletePublicationFences$ = command(
+  async ({ set }, scope: ClerkDeletionScope): Promise<void> => {
+    const db = set(writeDb$);
+    await db
+      .delete(storagePublicationGenerations)
+      .where(
+        scope.kind === "organization"
+          ? eq(storagePublicationGenerations.orgId, scope.orgId)
+          : eq(storagePublicationGenerations.subject, scope.userId),
+      );
+    // Use a fresh statement snapshot to see tokens committed while the
+    // generation DELETE waited for an in-flight publisher. Always clear tokens,
+    // even when no generation remains; only both writes complete the cleanup.
+    await db
+      .delete(storagePublicationTokens)
+      .where(
+        scope.kind === "organization"
+          ? eq(storagePublicationTokens.orgId, scope.orgId)
+          : eq(storagePublicationTokens.subject, scope.userId),
+      );
+  },
+);
+
 export const deletePublicationFencesAfterAuthorityRemoval$ = command(
   async (
     { set },
@@ -316,12 +345,7 @@ export const deletePublicationFencesAfterAuthorityRemoval$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();
-    const db = set(writeDb$);
-    await db.transaction(async (tx) => {
-      for (const statement of clerkPublicationFenceCleanupSql(scope, [])) {
-        await tx.execute(statement);
-      }
-    });
+    await set(deletePublicationFences$, scope);
     signal.throwIfAborted();
   },
 );

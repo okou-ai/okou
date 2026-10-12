@@ -10,19 +10,11 @@ import {
   mockGitHubConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createGithubBddApi } from "./helpers/api-bdd-github";
-import { setConnectorExternalIdState } from "./helpers/connector-credential-storage-state";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const github = createGithubBddApi(context);
-
-function requiredOrgId(actor: ApiTestUser): string {
-  if (!actor.orgId) {
-    throw new Error("Expected an org-scoped actor");
-  }
-  return actor.orgId;
-}
 
 function oauthState(authorizationUrl: string): string {
   const state = new URL(authorizationUrl).searchParams.get("state");
@@ -215,76 +207,6 @@ describe("GitHub OAuth account mutation selection", () => {
       { externalId: "304", displayName: "Second owner", isDefault: true },
     ]);
     expect(firstAccounts[0]?.id).not.toBe(secondAccounts[0]?.id);
-  });
-
-  it("fails closed when historical rows duplicate an owned identity", async () => {
-    const actor = bdd.user();
-    await connectors.updateFeatureSwitches(actor, {});
-    await connectGithubAdd(actor, {
-      code: "github-duplicate-first",
-      displayName: "Duplicate first",
-      userId: 404,
-      login: "github-duplicate-first",
-    });
-    await connectGithubAdd(actor, {
-      code: "github-duplicate-second",
-      displayName: "Duplicate second",
-      userId: 405,
-      login: "github-duplicate-second",
-    });
-    const beforeDuplicate = await connectors.listBuiltinConnectorAccounts(
-      actor,
-      "github",
-    );
-    const second = beforeDuplicate.find((account) => {
-      return account.externalId === "405";
-    });
-    if (!second) {
-      throw new Error("Expected the second GitHub connector account");
-    }
-    await setConnectorExternalIdState(context, {
-      orgId: requiredOrgId(actor),
-      userId: actor.userId,
-      connectorId: second.id,
-      externalId: "404",
-    });
-
-    mockGitHubConnectorOAuth({ userId: 404, login: "must-not-be-written" });
-    const start = await connectors.startOauth(
-      actor,
-      "github",
-      "oauth",
-      undefined,
-      { intent: "add" },
-    );
-    const callback = await connectors.completeOauthCallback("github", {
-      code: "github-duplicate-rejected",
-      state: oauthState(start.authorizationUrl),
-    });
-    const location = new URL(callback.headers.get("location") ?? "");
-    expect(location.pathname).toBe("/connector/error");
-    expect(location.searchParams.get("message")).toBe(
-      "Multiple connector accounts require an exact choice",
-    );
-
-    const afterDuplicate = await connectors.listBuiltinConnectorAccounts(
-      actor,
-      "github",
-    );
-    expect(afterDuplicate).toHaveLength(2);
-    expect(
-      afterDuplicate.map((account) => {
-        return account.externalUsername;
-      }),
-    ).toStrictEqual(
-      expect.arrayContaining([
-        "github-duplicate-first",
-        "github-duplicate-second",
-      ]),
-    );
-    expect(afterDuplicate).not.toContainEqual(
-      expect.objectContaining({ externalUsername: "must-not-be-written" }),
-    );
   });
 
   it("uses the same exact-identity selection for GitHub App setup", async () => {

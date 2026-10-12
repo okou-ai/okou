@@ -2,6 +2,12 @@ import { normalizeRouteBindings, renderRustRoutes } from "../generate";
 import { type RustRouteBinding, rustRouteBindings } from "../routes";
 
 const expectedBindings = [
+  {
+    method: "POST",
+    path: "/api/runners/wss/tickets/consume",
+    rustModulePath: ["runners", "wss"],
+    rustConstName: "CONSUME",
+  },
   ...(["resolve", "check"] as const).map((action) => {
     return {
       method: "POST",
@@ -112,18 +118,6 @@ const expectedBindings = [
     path: "/api/webhooks/agent/session-output",
     rustModulePath: ["webhooks", "agent", "session_output"],
     rustConstName: "SEND",
-  },
-  {
-    method: "POST",
-    path: "/api/webhooks/agent/checkpoints",
-    rustModulePath: ["webhooks", "agent", "checkpoints"],
-    rustConstName: "CREATE",
-  },
-  {
-    method: "POST",
-    path: "/api/webhooks/agent/checkpoints/prepare-history",
-    rustModulePath: ["webhooks", "agent", "checkpoints", "prepare_history"],
-    rustConstName: "PREPARE",
   },
   {
     method: "POST",

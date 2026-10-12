@@ -298,7 +298,6 @@ interface LogDetailParams {
 }
 
 interface RunResult {
-  checkpointId?: string;
   agentSessionId?: string;
   conversationId?: string;
   artifact?: Record<string, string>;

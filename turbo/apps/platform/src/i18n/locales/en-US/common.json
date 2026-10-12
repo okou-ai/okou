@@ -122,20 +122,23 @@
         "title": "Log not found"
       },
       "runner": {
-        "cacheMiss": "No cached workspace matched the reuse key.",
+        "cacheMiss": "No cached home directory matched the reuse key.",
         "deviceLimitMismatch": "Idle pool entry exists but its device rate limiter state does not match.",
-        "diskPressure": "Workspace reuse was skipped because the runner was under disk pressure.",
+        "diskPressure": "Home directory reuse was skipped because the runner was under disk pressure.",
         "environment": "Environment",
         "featureDisabled": "Sandbox reuse is disabled for this run.",
         "framework": "Framework",
         "generation": "Generation",
+        "home": "Home",
+        "homeNoReuseKey": "No home reuse key was available.",
+        "homeReusedDescription": "Home was restored from the runner cache.",
         "hostname": "Hostname",
-        "invalidMetadata": "Cached workspace metadata was invalid.",
+        "invalidMetadata": "Cached home directory metadata was invalid.",
         "invalidWorkingDir": "The requested working directory could not be reused.",
-        "lockBusy": "Another run was preparing the same workspace.",
+        "lockBusy": "Another run was preparing the same home directory.",
         "noReuseKey": "No reuse key was available to match an idle sandbox.",
         "noSessionId": "Legacy result: the exact reason the sandbox was not reused is unavailable.",
-        "notConfigured": "Workspace reuse was not configured for this run.",
+        "notConfigured": "Home directory reuse was not configured for this run.",
         "notReused": "Not reused",
         "outcomeUnavailableDescription": "Additional details are unavailable.",
         "poolMiss": "No matching sandbox found in the idle pool.",
@@ -145,23 +148,20 @@
         "reusedDescription": "Sandbox was unparked from the idle pool.",
         "runnerId": "Runner ID",
         "sandbox": "Sandbox",
-        "sandboxPrepareFallback": "A cached workspace was found but could not be used after sandbox preparation.",
-        "sandboxReusedDescription": "Workspace remained available inside the reused sandbox.",
+        "sandboxPrepareFallback": "A cached home directory was found but could not be used after sandbox preparation.",
+        "sandboxReusedDescription": "The home directory remained available in the reused sandbox.",
         "startup": "Startup",
         "startupCold": "Cold start",
         "startupColdDescription": "A fresh sandbox and workspace were prepared.",
+        "startupHome": "Home reuse",
+        "startupHomeDescription": "A fresh sandbox restored a cached home directory.",
         "startupSandbox": "Sandbox reuse",
         "startupSandboxDescription": "The sandbox and its workspace were reused.",
         "startupUnknown": "Unknown",
         "startupUnknownDescription": "Startup reuse details are unavailable.",
-        "startupWorkspace": "Workspace reuse",
-        "startupWorkspaceDescription": "A fresh sandbox restored a cached workspace.",
         "unavailable": "Unavailable",
         "unparkFailed": "Unpark attempt failed; a fresh sandbox was provisioned.",
-        "version": "Version",
-        "workspace": "Workspace",
-        "workspaceNoReuseKey": "No workspace reuse key was available.",
-        "workspaceReusedDescription": "Workspace was restored from the runner cache."
+        "version": "Version"
       },
       "steps": {
         "matched": "({{matched}}/{{total}} matched)",
@@ -511,7 +511,7 @@
       "description": "Browse everything you have created here.",
       "emptyDescription": "Artifacts will appear here when they are available.",
       "emptyTitle": "No artifacts found",
-      "error": "Could not load artifacts.",
+      "error": "Couldn't load artifacts.",
       "filters": {
         "avatar": "Avatars",
         "avatarAria": "Show avatar artifacts",
@@ -908,20 +908,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Desktop is signed in. You can close this window.",
-        "connecting": "Connecting your desktop session.",
-        "consumed": "Finishing sign-in in Desktop. Keep this window open.",
-        "failed": "Sign-in could not finish. Start again from Desktop, or retry in this browser.",
-        "no-workspaces": "Create or join a workspace in the web app, then sign in again from Desktop.",
-        "pending": "Open Desktop to continue signing in.",
-        "selecting": "Choose a workspace for this computer."
-      },
-      "reopen": "Open Desktop",
-      "retry": "Try again",
-      "title": "Sign in to Desktop"
-    },
     "documentTitles": {
       "signIn": "Sign in",
       "signUp": "Sign up"
@@ -1707,6 +1693,9 @@
       "cancelled": "Request cancelled",
       "cancelling": "Cancelling…",
       "checkFailed": "Couldn't check the browser. Your entries are still here; retry before adding them.",
+      "checkingOutcome": "Checking browser status",
+      "checkingOutcomeDescription": "Waiting for the browser to confirm this request.",
+      "checkStatus": "Check status",
       "completed": "Information added",
       "confirmRangeValue": "Use current value",
       "continue": "Notify agent",
@@ -1722,6 +1711,8 @@
       "loadingDescription": "Checking this request…",
       "open": "Enter information",
       "optional": "(Optional)",
+      "outcomeNotConfirmed": "Outcome not confirmed",
+      "outcomeNotConfirmedDescription": "The browser may have finished this request. Check its status before trying again.",
       "required": "(Required)",
       "retry": "Retry",
       "site": "Site",
@@ -2132,8 +2123,6 @@
       "number": "number"
     },
     "sidebar": {
-      "allArchived": "All your chats are archived",
-      "allCaughtUp": "All caught up",
       "allChats": "All chats",
       "archive": "Archive chat",
       "archived": "Archived",
@@ -2144,7 +2133,9 @@
       "deleteTitle": "Delete chat?",
       "draft": "Draft",
       "empty": "Start a conversation and it'll show up here",
+      "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Inbox",
+      "inboxEmpty": "Your inbox is empty",
       "markUnread": "Mark unread",
       "movePinDown": "Move down",
       "movePinUp": "Move up",
@@ -2810,8 +2801,12 @@
       "resize": "Resize sidebar"
     },
     "toasts": {
+      "archived": "Chat archived.",
+      "archivedMuted": "Chat archived. It's muted, so new replies won't bring it back.",
       "copied": "Copied",
-      "deleted": "Chat deleted"
+      "deleted": "Chat deleted",
+      "unarchived": "Chat moved to Inbox",
+      "undo": "Undo"
     },
     "voice": {
       "checkingLimit": "Checking voice input limit",
@@ -3096,7 +3091,7 @@
         "loading": "Loading connectors…",
         "noCategoryMatches": "No connectors match in this category.",
         "noCustomMatches": "No custom connectors match your search.",
-        "retry": "Retry",
+        "retry": "Try again",
         "searchAll": "Search all connectors"
       },
       "empty": {
@@ -3815,6 +3810,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "Try again"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Request failed"
@@ -3927,22 +3925,6 @@
         "back": "Back",
         "continue": "Continue",
         "notNow": "Not now"
-      },
-      "compliance": {
-        "frameworks": {
-          "ccpa": "CCPA / CPRA",
-          "gdpr": "GDPR",
-          "hipaa": "HIPAA",
-          "iso27001": "ISO/IEC 27001",
-          "soc2": "SOC 2 Type II"
-        },
-        "link": "Security details",
-        "status": {
-          "aligned": "Aligned",
-          "compliant": "Compliant",
-          "inProgress": "In progress"
-        },
-        "title": "Okou’s compliance, built for your trust"
       },
       "documentTitles": {
         "experience": "Your AI experience",
@@ -4918,6 +4900,27 @@
           "title": "IndexedDB storage",
           "unavailable": "IndexedDB storage is unavailable."
         },
+        "morningBriefEmail": {
+          "checkStatus": "Check delivery status",
+          "description": "Send a fixed sample to your account email using the Morning Brief template. This does not run an Agent or change your schedule.",
+          "reasons": {
+            "delivery-failed": "Delivery failed. An earlier provider attempt may have been accepted.",
+            "expired": "Delivery expired. An earlier provider attempt may have been accepted.",
+            "no-email": "Skipped: your account has no email address.",
+            "suppressed": "Skipped: delivery to your account email is suppressed.",
+            "unsubscribed": "Skipped: your account is unsubscribed from email updates."
+          },
+          "requestFailed": "The request did not finish. Retry uses the same request to avoid a duplicate email.",
+          "retry": "Retry test email",
+          "send": "Send test email",
+          "sendAnother": "Send another test email",
+          "sending": "Sending…",
+          "status": {
+            "queued": "Queued for delivery. Check its status before sending another sample.",
+            "sent": "Accepted by the email provider. Check your inbox and spam folder; inbox delivery is not confirmed."
+          },
+          "title": "Morning Brief test email"
+        },
         "openrouterPreset": {
           "description": "Applies to new Auto and Okou 1.0 Built-in runs for the entire organization. Existing runs are unchanged.",
           "loading": "Loading…",
@@ -5150,6 +5153,22 @@
   },
   "shared": {
     "breadcrumb": "Breadcrumb",
+    "compliance": {
+      "frameworks": {
+        "ccpa": "CCPA / CPRA",
+        "gdpr": "GDPR",
+        "hipaa": "HIPAA",
+        "iso27001": "ISO/IEC 27001",
+        "soc2": "SOC 2 Type II"
+      },
+      "link": "Security details",
+      "status": {
+        "aligned": "Aligned",
+        "compliant": "Compliant",
+        "inProgress": "In progress"
+      },
+      "title": "Okou’s compliance, built for your trust"
+    },
     "errorBoundary": {
       "contactSupport": "support",
       "description": "Give it another try or reach out",
@@ -5317,6 +5336,14 @@
     },
     "clearSearch": "Clear search",
     "custom": "Custom",
+    "delete": {
+      "cancel": "Cancel",
+      "confirm": "Delete template",
+      "deleting": "Deleting...",
+      "description": "\"{{title}}\" will be removed for everyone who can see it. This action cannot be undone.",
+      "failed": "Couldn't delete the template. Try again.",
+      "title": "Delete template?"
+    },
     "detail": {
       "back": "Custom templates",
       "page": "Page {{number}}"
@@ -5331,7 +5358,7 @@
     "importHint": "Import a document, presentation or image.",
     "loadFailed": "Couldn't load templates.",
     "renameFailed": "Couldn't rename the template.",
-    "retry": "Retry",
+    "retry": "Try again",
     "sharedBy": "Shared by {{owner}}",
     "sharedByMember": "Shared by an organization member",
     "visibility": {
@@ -6299,22 +6326,31 @@
     "connected": "Connected",
     "connectedWithDetail": "Connected ({{detail}})",
     "discord": {
-      "accountSetup": "Your account is not connected. Connecting a new Discord account is not available yet.",
-      "adminSetup": "Server setup is not available yet. Existing verified configurations can continue to use Discord.",
+      "accountSetup": "Connect your Discord account through official browser consent.",
+      "adminSetup": "Install Okou to your Discord server, then connect your account.",
+      "approvalConfirmed": "Browser consent approved. Close this tab to finish in the original Works tab.",
+      "approvalFailed": "Approval failed. Sign in with the original Okou account and organization, or restart authorization.",
+      "approvalPrompt": "Confirm with the same Okou account and organization as the original Works tab. Approval alone does not connect your account.",
+      "approve": "Confirm Discord consent",
+      "approving": "Approving…",
+      "authorizationError": "Discord authorization could not be completed. Try again from this card.",
+      "authorizing": "Authorizing…",
+      "browserConsent": "Complete Discord consent and confirm with your Okou account in that tab. Closing it alone does not connect your account.",
       "chooseDmServer": "Choose a server",
       "description": "Mention Okou in a server or send the bot a direct message.",
       "disconnect": "Disconnect Discord",
       "dmServer": "Default server for direct messages",
+      "install": "Install to Discord",
       "limitedContext": "Limited context: Okou may not receive ordinary channel messages. Mention Okou and include the details it needs.",
-      "loadError": "Unable to load Discord status.",
-      "loading": "Loading Discord status…",
-      "memberSetup": "Ask an organization admin about Discord access. Server setup is not available yet.",
+      "memberSetup": "Ask an organization admin to install Okou to your Discord server.",
       "moreOptions": "More Discord options",
+      "pendingConsent": "This tab has no authorization proof. Close it and restart authorization from the original Works tab.",
+      "popupBlocked": "Allow popups to authorize Discord, then try again.",
       "retry": "Retry",
       "server": "Server: {{name}}",
       "suspended": "Discord is temporarily unavailable. Existing connections are kept.",
       "title": "Discord",
-      "unconfigured": "Discord is not available yet for this organization.",
+      "unconfigured": "Discord is not configured for this organization yet.",
       "uninstall": "Remove Discord",
       "uninstallDescription": "This disconnects everyone in this organization from Discord. Other organizations keep their connections.",
       "uninstallTitle": "Remove Discord from this organization?"

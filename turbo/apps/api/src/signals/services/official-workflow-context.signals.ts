@@ -1,4 +1,4 @@
-import { computed } from "ccstate";
+import { computed, type Computed } from "ccstate";
 import type { OfficialWorkflowAcceptedRevision } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { and, asc, eq, or, sql } from "drizzle-orm";
 import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
@@ -42,10 +42,11 @@ export function createOfficialWorkflowCatalog() {
 
 /** Catalog and exact published revisions are independent of model routing/mount paths. */
 export function createOfficialWorkflowFacts(
-  workflows: readonly SelectedAgentWorkflow[],
-  catalog: AcceptedOfficialWorkflowCatalog | null,
+  workflows$: Computed<Promise<readonly SelectedAgentWorkflow[]>>,
+  catalog$: ReturnType<typeof createOfficialWorkflowCatalog>,
 ) {
   return computed(async (get) => {
+    const workflows = await get(workflows$);
     const names = [
       ...new Set(
         workflows.flatMap((workflow) => {
@@ -58,6 +59,7 @@ export function createOfficialWorkflowFacts(
     if (names.length === 0) {
       return null;
     }
+    const catalog = await get(catalog$);
     if (!catalog) {
       throw new OfficialWorkflowRunAdmissionError();
     }

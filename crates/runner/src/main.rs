@@ -2,48 +2,38 @@ mod axiom_layer;
 mod cmd;
 mod config;
 mod deps;
-mod duration;
 mod error;
+#[cfg(test)]
+mod native_privacy;
 use runner_executor::executor;
 mod group;
 use runner_host::idle_prune_control;
-use runner_lifecycle::guest_timezone;
 use runner_lifecycle::idle_pool;
-#[cfg(test)]
-use runner_lifecycle::idle_reuse_preparation;
 use runner_provider::http;
 mod image_hash;
 mod io_limits;
+use runner_executor::pre_spawn_admission;
 use runner_host::live_runner_instances;
 use runner_lifecycle::lifecycle;
-mod network_log_http_adapter;
-use runner_executor::pre_spawn_admission;
 use runner_lifecycle::prefetch;
 mod profile;
-#[cfg(test)]
-mod provider_test_support;
 use runner_lifecycle::resource_budget;
-#[cfg(test)]
-use runner_lifecycle::restored_session_identity;
 mod run_resolution;
 mod runtime_overrides;
 use runner_lifecycle::status;
 mod status_file;
-use runner_executor::telemetry;
 #[cfg(test)]
 use runner_executor::test_fixtures;
 #[cfg(test)]
 mod test_fixtures_http_body;
-use runner_lifecycle::workspace_image_cache;
-use runner_lifecycle::workspace_mount;
-#[cfg(test)]
-use runner_lifecycle::workspace_promotion;
+use runner_lifecycle::home_image_cache;
+use runner_lifecycle::home_mount;
 
 use runner_network::{
     ca, dns, kmsg_log, network_log_drain, network_log_manager, network_logs, proxy,
 };
-use runner_remote::{guest_rpc, run_usage, ssh, vnc};
-use runner_storage::{r2_cache, storage_cache, storage_fingerprints};
+use runner_remote::{guest_rpc, run_usage, ssh, tailscale, vnc};
+use runner_storage::{r2_cache, storage_cache};
 
 #[cfg(test)]
 use sandbox::helper_exec;
@@ -142,8 +132,8 @@ enum Command {
     Kill(cmd::KillArgs),
     /// Clean up unused runner resources, artifacts, logs, and caches
     Gc(cmd::GcArgs),
-    /// Inspect and clean up workspace image cache entries
-    WorkspaceImageCache(cmd::WorkspaceImageCacheArgs),
+    /// Inspect and clean up home image cache entries
+    HomeImageCache(cmd::HomeImageCacheArgs),
     /// Runtime health diagnostics for all runners on the host
     Doctor(cmd::DoctorArgs),
     /// Local file-queue provider commands
@@ -185,7 +175,13 @@ fn init_tracing_with_file(
     axiom_layer: Option<axiom_layer::AxiomLayer>,
 ) -> Result<tracing_appender::non_blocking::WorkerGuard, Box<dyn std::error::Error>> {
     let home = runner_host::paths::HomePaths::new()?;
-    let log_dir = home.logs_dir();
+    init_tracing_at(home.logs_dir(), axiom_layer)
+}
+
+fn init_tracing_at(
+    log_dir: std::path::PathBuf,
+    axiom_layer: Option<axiom_layer::AxiomLayer>,
+) -> Result<tracing_appender::non_blocking::WorkerGuard, Box<dyn std::error::Error>> {
     runner_host::log_file::ensure_log_dir(&log_dir)
         .map_err(|e| format!("create {}: {e}", log_dir.display()))?;
 
@@ -207,9 +203,9 @@ fn init_tracing_with_file(
         .with_filter(RUNNER_FMT_MAX_LEVEL);
     let axiom_layer = axiom_layer.map(axiom_layer::with_ingest_filter);
     tracing_subscriber::registry()
-        .with(tracing_subscriber::filter::filter_fn(
-            ssh::safe_log_metadata,
-        ))
+        .with(tracing_subscriber::filter::filter_fn(|metadata| {
+            ssh::safe_log_metadata(metadata) && tailscale::safe_log_metadata(metadata)
+        }))
         .with(fmt_layer)
         .with(axiom_layer)
         .init();
@@ -230,12 +226,28 @@ fn init_tracing_stderr(axiom_layer: Option<axiom_layer::AxiomLayer>) {
         .with_filter(RUNNER_FMT_MAX_LEVEL);
     let axiom_layer = axiom_layer.map(axiom_layer::with_ingest_filter);
     tracing_subscriber::registry()
-        .with(tracing_subscriber::filter::filter_fn(
-            ssh::safe_log_metadata,
-        ))
+        .with(tracing_subscriber::filter::filter_fn(|metadata| {
+            ssh::safe_log_metadata(metadata) && tailscale::safe_log_metadata(metadata)
+        }))
         .with(fmt_layer)
         .with(axiom_layer)
         .init();
+}
+
+fn install_native_panic_hook() {
+    let prior_panic = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if tailscale::in_domain() {
+            // Stop the raw payload before stderr and Sentry's panic integration.
+            eprintln!("native Tailscale resource domain failed");
+            sentry::capture_message(
+                "native Tailscale resource domain failed",
+                sentry::Level::Error,
+            );
+        } else {
+            prior_panic(info);
+        }
+    }));
 }
 
 #[tokio::main]
@@ -249,6 +261,8 @@ async fn main() -> ExitCode {
             .default_integrations(false)
             .add_integration(sentry::integrations::panic::PanicIntegration::default()),
     ));
+
+    install_native_panic_hook();
 
     if !nix::unistd::getuid().is_root() {
         eprintln!("error: runner must be run as root");
@@ -317,7 +331,7 @@ async fn main() -> ExitCode {
         }
         Command::Service(args) => cmd::run_service(args).await.map(|()| ExitCode::SUCCESS),
         Command::Gc(args) => cmd::run_gc(args).await.map(|()| ExitCode::SUCCESS),
-        Command::WorkspaceImageCache(args) => cmd::run_workspace_image_cache(args)
+        Command::HomeImageCache(args) => cmd::run_home_image_cache(args)
             .await
             .map(|()| ExitCode::SUCCESS),
         Command::Doctor(args) => cmd::run_doctor(args).await,
@@ -563,6 +577,18 @@ mod tests {
         assert!(help.contains(API_URL_ENV));
         assert!(help.contains(TOKEN_ENV));
         assert_operator_values_hidden(&help);
+
+        let normalized_help = help.split_whitespace().collect::<Vec<_>>().join(" ");
+        for requirement in [
+            "absolute URL without credentials, query, or fragment",
+            "HTTPS is required except for HTTP hosts normalized to localhost, IPv4 loopback (127.0.0.0/8), or IPv6 loopback (::1)",
+            "Private network addresses require HTTPS",
+        ] {
+            assert!(
+                normalized_help.contains(requirement),
+                "runner {subcommand} help should document {requirement}: {normalized_help}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -692,27 +718,26 @@ mod tests {
     }
 
     #[test]
-    fn workspace_image_cache_command_is_registered() {
+    fn home_image_cache_commands_are_registered() {
         assert!(
-            Cli::try_parse_from(["runner", "workspace-image-cache", "info"]).is_ok(),
-            "workspace-image-cache info should be registered"
+            Cli::try_parse_from(["runner", "home-image-cache", "info"]).is_ok(),
+            "home-image-cache info should be registered"
         );
         assert!(
-            Cli::try_parse_from(["runner", "workspace-image-cache", "list", "--limit", "1"])
-                .is_ok(),
-            "workspace-image-cache list should be registered"
+            Cli::try_parse_from(["runner", "home-image-cache", "list", "--limit", "1"]).is_ok(),
+            "home-image-cache list should be registered"
         );
         assert!(
-            Cli::try_parse_from(["runner", "workspace-image-cache", "gc", "--dry-run"]).is_ok(),
-            "workspace-image-cache gc should be registered"
+            Cli::try_parse_from(["runner", "home-image-cache", "gc", "--dry-run"]).is_ok(),
+            "home-image-cache gc should be registered"
         );
     }
 
     #[test]
-    fn workspace_image_cache_help_documents_locked_entry_semantics() {
-        let info_error = Cli::try_parse_from(["runner", "workspace-image-cache", "info", "--help"])
+    fn home_image_cache_help_documents_locked_entry_semantics() {
+        let info_error = Cli::try_parse_from(["runner", "home-image-cache", "info", "--help"])
             .err()
-            .expect("workspace-image-cache info --help should exit through clap");
+            .expect("home-image-cache info --help should exit through clap");
         assert_eq!(info_error.kind(), clap::error::ErrorKind::DisplayHelp);
         let info_help = info_error
             .to_string()
@@ -727,9 +752,9 @@ mod tests {
             info_help.contains("status-category, temporary-path, and size values are lower bounds")
         );
 
-        let list_error = Cli::try_parse_from(["runner", "workspace-image-cache", "list", "--help"])
+        let list_error = Cli::try_parse_from(["runner", "home-image-cache", "list", "--help"])
             .err()
-            .expect("workspace-image-cache list --help should exit through clap");
+            .expect("home-image-cache list --help should exit through clap");
         assert_eq!(list_error.kind(), clap::error::ErrorKind::DisplayHelp);
         let list_help = list_error
             .to_string()
@@ -746,10 +771,10 @@ mod tests {
     }
 
     #[test]
-    fn workspace_image_cache_help_documents_gc_eviction_policy() {
-        let error = Cli::try_parse_from(["runner", "workspace-image-cache", "gc", "--help"])
+    fn home_image_cache_help_documents_gc_eviction_policy() {
+        let error = Cli::try_parse_from(["runner", "home-image-cache", "gc", "--help"])
             .err()
-            .expect("workspace-image-cache gc --help should exit through clap");
+            .expect("home-image-cache gc --help should exit through clap");
         assert_eq!(error.kind(), clap::error::ErrorKind::DisplayHelp);
         let help = error
             .to_string()

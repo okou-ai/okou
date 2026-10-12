@@ -262,6 +262,7 @@ function classifyAssistantErrorFromText(
 const STRUCTURED_RECOVERY_KIND = Object.freeze({
   session_history_limit: "new-chat-required",
   guest_root_filesystem_full: "provider-retryable",
+  guest_home_filesystem_full: "provider-retryable",
   execution_timeout: "execution-timeout",
   insufficient_credits: null,
   provider_insufficient_credits: "provider-settings",
@@ -725,8 +726,9 @@ function recoveryForAccount(
 }
 
 /**
- * Permanent failures never offer a blind retry. Every other failure retries on
- * the thread's current selection, which the card's model picker writes; the
+ * Failures requiring settings changes, a new chat, smaller input, or terms
+ * acceptance never offer a blind retry. Every other failure retries on the
+ * thread's current selection, which the card's model picker writes; the
  * card does not track which model failed, so switching models is the user's
  * call. A usage limit keeps its retry and shows when each window resets.
  */
@@ -738,8 +740,7 @@ function tryAgainAction(
     classified.kind === "provider-settings" ||
     classified.kind === "new-chat-required" ||
     classified.kind === "input-too-large" ||
-    classified.kind === "terms-acceptance-required" ||
-    classified.kind === "safety-policy-refusal"
+    classified.kind === "terms-acceptance-required"
   ) {
     return null;
   }

@@ -94,6 +94,16 @@ export const chatThreadEvents = pgTable(
   (table) => {
     return [
       check(
+        "chat_thread_events_canonical_selection_check",
+        sql`(${table.selectedModel} IS NULL OR (
+          ${table.selectedModel} NOT IN ('okou-1.0', 'okou-1.0-pro', 'okou-1.0-max') AND ${table.selectedModel} NOT LIKE '@preset/%'
+        )) AND (${table.kind} NOT IN ('created', 'model_selection_updated') OR ${table.selectedModel} IS NOT NULL)`,
+      ),
+      check(
+        "chat_thread_events_selected_model_check",
+        sql`${table.selectedModel} IS NULL OR char_length(${table.selectedModel}) > 0`,
+      ),
+      check(
         "chat_thread_events_computer_access_check",
         sql`NOT (${table.cloudBrowserEnabled} AND ${table.computerUseHostId} IS NOT NULL)`,
       ),

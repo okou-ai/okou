@@ -294,6 +294,30 @@ const persistedAttachmentSchema = z.object({
 
 export const indicatorSchema = z.enum(["active", "unread"]);
 
+/**
+ * Bounded presentation indicators for the caller's threads and visible Agents
+ * in the current organization, not authoritative per-Run lifecycle status.
+ * `active` reflects eligible pending/running Runs. `unread` reflects a Run
+ * terminal marker newer than the thread's read watermark, including completed,
+ * failed and cancelled outcomes; it does not establish successful completion.
+ * Thread active takes precedence over unread. At the Agent level unread takes
+ * precedence, so an unread Agent can still have an active thread.
+ *
+ * Reads are non-atomic and may observe different states during Run transitions.
+ * They cover up to 128 newest visible Agents, 50 active threads and 50 unread
+ * threads. Unread selection examines up to 128 newest unmuted candidate threads
+ * with messages after their read watermark within seven days, and terminal
+ * markers within that lookback. Missing entries do not prove inactivity,
+ * completion, complete output or that all messages are read. No refresh deadline
+ * or eventual appearance is guaranteed for excluded entries.
+ *
+ * To establish a known Run's outcome, inspect the known thread's public event
+ * rows for its matching runId and run.completed, run.failed or run.cancelled.
+ * Read the snapshot archive when present and follow paired-cursor pages through
+ * chatThreadEventsContract. If matching evidence is unavailable, retain
+ * uncertainty; an activity summary is not exact lifecycle evidence. Reading
+ * indicators or event history does not advance the thread's read watermark.
+ */
 export const indicatorsSchema = z.object({
   agents: z.record(z.string().uuid(), indicatorSchema),
   threads: z.record(z.string().uuid(), indicatorSchema),
@@ -316,7 +340,8 @@ const persistedChatThreadServiceTierSchema = z
   .default(null)
   .transform((tier) => {
     return tier === "priority" ? tier : null;
-  });
+  })
+  .pipe(chatThreadServiceTierSchema.nullable());
 
 const chatThreadSnapshotProjectionSchema = z.object({
   id: z.string().uuid(),
@@ -1118,7 +1143,7 @@ const chatNormalSendBodyShape = {
   captureNetworkBodies: z.boolean().optional(),
 } as const;
 
-const chatEventNormalSendBodySchema = z
+export const chatEventNormalSendBodySchema = z
   .object({
     ...chatNormalSendBodyShape,
     // Client-generated UUID used as the user event's primary key.
@@ -1858,6 +1883,17 @@ const chatSearchResponseSchema = z.object({
  * Chat search contract (GET /api/chat/search)
  * Searches chat messages within the caller's own threads in the caller's org.
  * Authorization is enforced at the DB query level via userId + orgId filters.
+ *
+ * The search index is updated asynchronously. Recent messages can be available
+ * in event history before search, including after their Run completes. Empty
+ * results do not prove absence. The response provides no index freshness signal
+ * or lag bound; candidate/result limits do not imply a complete or current view.
+ *
+ * Confirm recent sends using the known thread's chatThreadEventsContract
+ * snapshot and rows operations. Read the snapshot when present, then follow
+ * raw-row pages using their paired sequence/event cursor while hasMore is true.
+ * On 410, rebuild from a fresh snapshot. Do not resend solely because search
+ * returns no matches.
  */
 export const chatSearchContract = c.router({
   search: {

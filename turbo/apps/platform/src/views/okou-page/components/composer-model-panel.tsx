@@ -59,8 +59,7 @@ interface ComposerModelPanelProps {
 function ComposerModelPanelBody({
   value,
   onChange,
-  placeholder,
-}: Pick<ComposerModelPanelProps, "value" | "onChange" | "placeholder">) {
+}: Pick<ComposerModelPanelProps, "value" | "onChange">) {
   const { t } = useTranslation();
   const modelsLoadable = useLastLoadable(availableRunModels$);
   const catalogLoadable = useLastLoadable(modelCatalog$);
@@ -88,10 +87,6 @@ function ComposerModelPanelBody({
     value,
     modelsResponse,
     catalog,
-    placeholder,
-    fastLabel: t(($) => {
-      return $.settings.models.picker.fast;
-    }),
   });
   const selectedRunModel = state.models.find((runModel) => {
     return runModel.model === value.selectedModel;
@@ -230,7 +225,6 @@ function ComposerModelPanelTriggerLabel({
   value,
   placeholder,
 }: Pick<ComposerModelPanelProps, "value" | "placeholder">) {
-  const { t } = useTranslation();
   const { effort } = useChatEffort(value);
   const fast = value.codexServiceTier === "fast";
   return (
@@ -239,10 +233,6 @@ function ComposerModelPanelTriggerLabel({
         selection={value}
         placeholder={placeholder}
         mobileIcon
-        fastLabel={t(($) => {
-          return $.settings.models.picker.fast;
-        })}
-        fastShownByCaller
       />
       {effort !== undefined && (
         <span className="hidden shrink-0 composer-wide:inline">
@@ -321,11 +311,7 @@ export function ComposerModelPanel({
         })}
         className="flex max-h-[var(--available-height)] w-[304px] max-w-[calc(100vw-16px)] flex-col p-1"
       >
-        <ComposerModelPanelBody
-          value={value}
-          onChange={onChange}
-          placeholder={placeholder}
-        />
+        <ComposerModelPanelBody value={value} onChange={onChange} />
       </PopoverContent>
     </Popover>
   );

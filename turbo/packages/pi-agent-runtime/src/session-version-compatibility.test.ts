@@ -140,7 +140,7 @@ it("continues the official 0.84.1 branch and compaction fixture without replay o
   expect(reopened.getBranch().slice(0, originalBranch.length)).toEqual(
     originalBranch,
   );
-  expect(MemoryPiSession.fromJsonl(written).isSettledCheckpoint()).toBe(true);
+  expect(MemoryPiSession.fromJsonl(written).isSettledHistory()).toBe(true);
 });
 
 it("restores the same native compacted context and pending tools after a bounded Pi branch cut", async () => {
@@ -217,7 +217,7 @@ it("preserves a pre-compact assistant model and thinking setting when compact is
   const header = {
     type: "session",
     version: 3,
-    id: "pi-checkpoint-test",
+    id: "pi-native-history-test",
     cwd: root,
     timestamp: "2026-09-27T00:00:00Z",
   };
@@ -330,7 +330,7 @@ it("preserves a pre-compact assistant model and thinking setting when compact is
   expect(inspectPiSessionJsonl(settledCandidate)).toMatchObject({
     sessionId: header.id,
     hasPendingToolCalls: false,
-    isSettledCheckpoint: true,
+    isSettledHistory: true,
   });
 });
 
@@ -414,7 +414,7 @@ it("restores a Pi-written compaction with no kept pre-compact entries", async ()
   ).toEqual(["model", compactId, doneId]);
   expect(inspectPiSessionJsonl(candidateJsonl)).toMatchObject({
     sessionId: header.id,
-    isSettledCheckpoint: true,
+    isSettledHistory: true,
     hasPendingToolCalls: false,
   });
 });
@@ -516,7 +516,7 @@ it("preserves a cleared optional native session name after a bounded cut", async
   ).toEqual(["cleared_title", "kept", "compact", "done"]);
   expect(inspectPiSessionJsonl(boundedJsonl)).toMatchObject({
     sessionId: header.id,
-    isSettledCheckpoint: true,
+    isSettledHistory: true,
   });
 });
 
@@ -544,7 +544,7 @@ it("reads a 0.86.1-written session identically on 0.85.1 and projects its new sy
   // Positional readers stay correct with the system entry present.
   expect(memory.hasPendingToolCalls()).toBe(false);
   expect(memory.pendingToolIds()).toEqual([]);
-  expect(memory.isSettledCheckpoint()).toBe(true);
+  expect(memory.isSettledHistory()).toBe(true);
 
   // Rollback is readable, not lossless: an official 0.85.1 installation reads
   // this same file with the identical session id, 5 entries, 5 active-branch

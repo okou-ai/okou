@@ -5,11 +5,12 @@ import { gunzip } from "node:zlib";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { command } from "ccstate";
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
-import { writeDb$ } from "../external/db";
+import { db$ } from "../external/db";
 import { env } from "../../lib/env";
 import { downloadS3Buffer } from "../external/s3";
 import {
@@ -19,85 +20,91 @@ import {
 import { chatEventRowFromDbRow } from "./cron-snapshot-chat-events.service";
 
 const gunzipAsync = promisify(gunzip);
-const CHAT_EVENT_HISTORY_PAGE_SIZE = 1000;
 
 /** Shared-thread reader: capture the SQL snapshot before downloading immutable bytes. */
 export const readSharedThreadChatEventHistory$ = command(
   async (
-    { get, set },
+    { get },
     chatThreadId: string,
     signal: AbortSignal,
   ): Promise<readonly ChatEventRow[]> => {
-    const captured = await set(writeDb$).transaction(
-      async (tx) => {
-        const [head] = await tx
-          .select({
-            lastSeqId: chatEventSnapshots.lastSeqId,
-            terminalSeqId: chatEventSnapshots.terminalSeqId,
-            terminalEventId: chatEventSnapshots.terminalEventId,
-            objectKey: chatEventSnapshots.objectKey,
-            archiveSchemaVersion: chatEventSnapshots.archiveSchemaVersion,
-          })
-          .from(chatEventSnapshots)
-          .where(
-            and(
-              eq(chatEventSnapshots.chatThreadId, chatThreadId),
-              eq(
-                chatEventSnapshots.archiveSchemaVersion,
-                CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-              ),
-            ),
-          )
-          .limit(1);
-        signal.throwIfAborted();
-        if (
-          head &&
-          (head.lastSeqId <= 0 || head.objectKey.trim().length === 0)
-        ) {
-          throw new Error("Chat event snapshot head is not reusable");
-        }
-        const tail: ChatEventRow[] = [];
-        let cursor = head?.lastSeqId ?? 0;
-        for (;;) {
-          const rows = await tx
-            .select({
-              id: chatEvents.id,
-              chatThreadId: chatEvents.chatThreadId,
-              runId: chatEvents.runId,
-              revokesEventId: chatEvents.revokesEventId,
-              eventType: chatEvents.eventType,
-              payload: chatEvents.payload,
-              failureReason: chatEvents.failureReason,
-              contextType: chatEvents.contextType,
-              contextId: chatEvents.contextId,
-              runEventSequenceNumber: chatEvents.runEventSequenceNumber,
-              runEventId: chatEvents.runEventId,
-              seqId: chatEvents.seqId,
-              createdAt: chatEvents.createdAt,
-            })
-            .from(chatEvents)
-            .where(
-              and(
-                eq(chatEvents.chatThreadId, chatThreadId),
-                gt(chatEvents.seqId, cursor),
-              ),
-            )
-            .orderBy(asc(chatEvents.seqId))
-            .limit(CHAT_EVENT_HISTORY_PAGE_SIZE);
-          signal.throwIfAborted();
-          tail.push(...rows.map(chatEventRowFromDbRow));
-          const last = rows.at(-1);
-          if (last) {
-            cursor = last.seqId;
-          }
-          if (rows.length < CHAT_EVENT_HISTORY_PAGE_SIZE) {
-            return { head, tail };
-          }
-        }
-      },
-      { isolationLevel: "repeatable read", accessMode: "read only" },
-    );
+    const db = get(db$);
+    const thread = db
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .where(eq(chatThreads.id, chatThreadId))
+      .limit(1)
+      .as("shared_history_thread");
+    const head = db
+      .select({
+        lastSeqId: chatEventSnapshots.lastSeqId,
+        terminalSeqId: chatEventSnapshots.terminalSeqId,
+        terminalEventId: chatEventSnapshots.terminalEventId,
+        objectKey: chatEventSnapshots.objectKey,
+        archiveSchemaVersion: chatEventSnapshots.archiveSchemaVersion,
+      })
+      .from(chatEventSnapshots)
+      .where(
+        and(
+          eq(chatEventSnapshots.chatThreadId, thread.id),
+          eq(
+            chatEventSnapshots.archiveSchemaVersion,
+            CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+          ),
+        ),
+      )
+      .limit(1)
+      .as("shared_history_head");
+    const tail = db
+      .select({
+        id: chatEvents.id,
+        chatThreadId: chatEvents.chatThreadId,
+        runId: chatEvents.runId,
+        revokesEventId: chatEvents.revokesEventId,
+        eventType: chatEvents.eventType,
+        payload: chatEvents.payload,
+        failureReason: chatEvents.failureReason,
+        contextType: chatEvents.contextType,
+        contextId: chatEvents.contextId,
+        runEventSequenceNumber: chatEvents.runEventSequenceNumber,
+        runEventId: chatEvents.runEventId,
+        seqId: chatEvents.seqId,
+        createdAt: chatEvents.createdAt,
+      })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, thread.id),
+          gt(chatEvents.seqId, sql`coalesce(${head.lastSeqId}, 0)`),
+        ),
+      )
+      .as("shared_history_tail");
+    // The real parent and both optional children share one statement snapshot.
+    // Capture the entire tail, including gaps, before any immutable-object I/O.
+    const rows = await db
+      .select({
+        head: { ...head._.selectedFields },
+        row: { ...tail._.selectedFields },
+      })
+      .from(thread)
+      .leftJoinLateral(head, sql`true`)
+      .leftJoinLateral(tail, sql`true`)
+      .orderBy(asc(tail.seqId));
     signal.throwIfAborted();
+    const capturedHead = rows[0]?.head;
+    if (
+      capturedHead &&
+      (capturedHead.lastSeqId <= 0 ||
+        capturedHead.objectKey.trim().length === 0)
+    ) {
+      throw new Error("Chat event snapshot head is not reusable");
+    }
+    const captured = {
+      head: capturedHead,
+      tail: rows.flatMap(({ row }) => {
+        return row === null ? [] : [chatEventRowFromDbRow(row)];
+      }),
+    };
     if (!captured.head) {
       return captured.tail;
     }

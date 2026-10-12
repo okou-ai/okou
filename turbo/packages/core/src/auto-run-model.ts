@@ -6,15 +6,18 @@ export function isAutoSelectedModel(model: string | null | undefined): boolean {
   return model === AUTO_SELECTED_MODEL || model === AUTO_RUN_MODEL;
 }
 
-/** New preference copies keep explicit-model overrides, never Auto/preset effort.
- * Existing saved objects remain readable; #38114 owns historical conversion.
- */
+/** Keep personal effort preferences; retired Auto replacement keys are not models. */
 export function explicitModelSettings<T>(
   settings: Readonly<Record<string, T>>,
 ): Record<string, T> {
   return Object.fromEntries(
     Object.entries(settings).filter(([model]) => {
-      return !isAutoSelectedModel(model) && !model.startsWith("@preset/");
+      return (
+        !isAutoSelectedModel(model) &&
+        model !== "okou-1.0-pro" &&
+        model !== "okou-1.0-max" &&
+        !model.startsWith("@preset/")
+      );
     }),
   );
 }

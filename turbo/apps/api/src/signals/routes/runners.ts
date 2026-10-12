@@ -17,7 +17,6 @@ import {
   type ExecutionContext,
   type HeldSandboxState,
   type HeldHomeState,
-  type HeldWorkspaceState,
   type RunnerClaimCapabilities,
   type RunnerInstalledVersions,
   type RunnerPreference,
@@ -35,13 +34,12 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import {
-  runnerState,
-  type RunnerHeldSandboxState as PersistedRunnerHeldSandboxState,
-  type RunnerHeldHomeState as PersistedRunnerHeldHomeState,
-  type RunnerHeldWorkspaceState as PersistedRunnerHeldWorkspaceState,
-} from "@okouai/db/schema/runner-state";
-import { command, computed } from "ccstate";
+import { runnerState } from "@okouai/db/runtime/runner-state";
+import type {
+  RunnerHeldSandboxState as PersistedRunnerHeldSandboxState,
+  RunnerHeldHomeState as PersistedRunnerHeldHomeState,
+} from "@okouai/db/jsonb-contracts/runner-state";
+import { command } from "ccstate";
 import {
   and,
   desc,
@@ -58,6 +56,13 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { z } from "zod";
+import { normalizeBuildCommitSha } from "../../lib/build-info";
+import {
+  withPgPoolAcquisitionCapture,
+  withPgQueryExecutionCapture,
+  type PgPoolAcquisitionCapture,
+  type PgQueryExecutionCapture,
+} from "../../lib/db-instrumentation";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
@@ -67,7 +72,7 @@ import {
 import { env } from "../../lib/env";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
-import { now, nowDate } from "../../lib/time";
+import { monotonicNow, now, nowDate } from "../../lib/time";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { runnerAuth$, type RunnerAuthContext } from "../auth/runner-auth";
@@ -112,7 +117,6 @@ import { historyGenerationRunIdForStoredExecutionContext } from "../services/his
 import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
 import {
   resolveRunnerReusePreference$,
-  createClaimRunnerPreferenceProjection,
   runnerPreferenceTelemetryDimensions,
   runnerPreferenceTelemetryResolution,
   runnerReuseKeyTelemetryKind,
@@ -132,7 +136,7 @@ import {
   networkPolicyRefreshesRecord,
   resolveActiveNetworkPolicyRefreshes,
 } from "../services/user-permission-grants.service";
-import { settle, tapError } from "../utils";
+import { safeSync, settle, tapError } from "../utils";
 
 const L = logger("Runners");
 
@@ -239,6 +243,10 @@ type ClaimRouteTimingActionType =
   | "claim_route_request_to_response_ready"
   | "claim_route_request_prepare"
   | "claim_route_lookup_authorization"
+  | "claim_route_lookup_query"
+  | "claim_route_lookup_pool_acquire"
+  | "claim_route_lookup_sql_call"
+  | "claim_route_lookup_application_remainder"
   | "claim_route_context_parse"
   | "claim_route_secret_materialization"
   | "claim_route_response_assembly"
@@ -254,10 +262,88 @@ interface ClaimRouteTimingRecord {
   readonly timestamp: string;
   readonly fallbackReason?: "invalid_keys";
   readonly policyRefreshPath?: ClaimNetworkPolicyRefreshPath;
+  readonly dimensions?: Readonly<Record<string, string>>;
 }
 
 class ClaimRouteTimingCollector {
   private readonly records: ClaimRouteTimingRecord[] = [];
+
+  async measureLookup<T>(operation: () => Promise<T>): Promise<T> {
+    const pool: PgPoolAcquisitionCapture = { acquisitions: [] };
+    const query: PgQueryExecutionCapture = { executions: [] };
+    const startedAt = monotonicNow();
+    return await withPgPoolAcquisitionCapture(pool, async () => {
+      return await withPgQueryExecutionCapture(query, operation);
+    }).finally(() => {
+      safeSync(() => {
+        const durationMs = monotonicNow() - startedAt;
+        const timestamp = nowDate().toISOString();
+        const dimensions = {
+          db_pool_capture:
+            pool.acquisitions.length === 1
+              ? "single"
+              : pool.acquisitions.length === 0
+                ? "missing"
+                : "multiple",
+          db_query_capture:
+            query.executions.length === 1
+              ? "single"
+              : query.executions.length === 0
+                ? "missing"
+                : "multiple",
+        };
+        this.records.push({
+          actionType: "claim_route_lookup_query",
+          spanKind: "nested",
+          durationMs,
+          timestamp,
+          dimensions,
+        });
+        const [acquisition] = pool.acquisitions;
+        const [execution] = query.executions;
+        if (pool.acquisitions.length === 1 && acquisition) {
+          this.records.push({
+            actionType: "claim_route_lookup_pool_acquire",
+            spanKind: "nested",
+            durationMs: acquisition.durationMs,
+            timestamp: new Date(acquisition.finishedAt).toISOString(),
+            dimensions: {
+              ...dimensions,
+              db_pool_acquire_path: acquisition.path,
+            },
+          });
+        }
+        if (query.executions.length === 1 && execution) {
+          this.records.push({
+            actionType: "claim_route_lookup_sql_call",
+            spanKind: "nested",
+            durationMs: execution.durationMs,
+            timestamp: new Date(execution.finishedAt).toISOString(),
+            dimensions,
+          });
+        }
+        // The one lookup acquires once and executes once, sequentially. The
+        // remainder includes query construction and Drizzle result mapping.
+        // Missing/ambiguous coverage must not become zero wait or SQL time.
+        if (
+          pool.acquisitions.length === 1 &&
+          query.executions.length === 1 &&
+          acquisition &&
+          execution &&
+          durationMs >= acquisition.durationMs + execution.durationMs
+        ) {
+          this.records.push({
+            actionType: "claim_route_lookup_application_remainder",
+            spanKind: "nested",
+            durationMs:
+              durationMs - acquisition.durationMs - execution.durationMs,
+            timestamp,
+            dimensions,
+          });
+        }
+      });
+    });
+  }
 
   recordElapsed(
     actionType: ClaimRouteTimingActionType,
@@ -337,6 +423,10 @@ class ClaimRouteTimingCollector {
       profile: args.profile,
       auth_type: args.authType,
     };
+    const apiCommitSha = normalizeBuildCommitSha(env("GIT_COMMIT_SHA"));
+    if (apiCommitSha) {
+      dimensions.api_commit_sha = apiCommitSha;
+    }
     if (args.discoverySource) {
       dimensions.discovery_source = args.discoverySource;
     }
@@ -355,6 +445,7 @@ class ClaimRouteTimingCollector {
           timestamp: record.timestamp,
           dimensions: {
             ...dimensions,
+            ...record.dimensions,
             span_kind: record.spanKind,
             ...(record.spanKind === "nested"
               ? runnerClaimAttributionDimensions(args.runnerAttribution)
@@ -467,35 +558,6 @@ function canonicalizeHeldSandboxStates(
   });
 }
 
-function canonicalizeHeldWorkspaceStates(
-  states: readonly HeldWorkspaceState[],
-): PersistedRunnerHeldWorkspaceState[] {
-  return states.map((state) => {
-    const [firstWorkspaceCache, ...remainingWorkspaceCaches] =
-      state.workspaceCaches;
-    if (!firstWorkspaceCache) {
-      throw new Error("Held workspace state requires a workspace cache");
-    }
-    return {
-      reuseKey: state.reuseKey,
-      lastCompletedAt: new Date(state.lastCompletedAt).toISOString(),
-      workspaceCaches: [
-        {
-          profile: firstWorkspaceCache.profile,
-          workspaceAffinityVersion:
-            firstWorkspaceCache.workspaceAffinityVersion,
-        },
-        ...remainingWorkspaceCaches.map((workspaceCache) => {
-          return {
-            profile: workspaceCache.profile,
-            workspaceAffinityVersion: workspaceCache.workspaceAffinityVersion,
-          };
-        }),
-      ],
-    };
-  });
-}
-
 function canonicalizeHeldHomeStates(
   states: readonly HeldHomeState[],
 ): PersistedRunnerHeldHomeState[] {
@@ -545,18 +607,8 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const heldSandboxStates = canonicalizeHeldSandboxStates(
     body.data.heldSandboxStates,
   );
-  const heldWorkspaceStates = canonicalizeHeldWorkspaceStates(
-    body.data.heldWorkspaceStates,
-  );
-  // Rollout-only advertisement: retire with the independent DB stamps in
-  // PR5/#38139 after all accepted/rollback writers replace home state, including
-  // empty state, under the shared heartbeat order. It is not a permanent field.
-  const homeAffinityVersion =
-    auth.type === "official-runner" && body.data.homeAffinityVersion === 1
-      ? 1
-      : null;
   const heldHomeStates =
-    homeAffinityVersion === 1
+    auth.type === "official-runner"
       ? canonicalizeHeldHomeStates(body.data.heldHomeStates)
       : [];
   const admittableProfiles = body.data.admittableProfiles;
@@ -586,13 +638,7 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       runningCount: body.data.runningCount,
       admittableProfiles,
       heldSandboxStates,
-      heldWorkspaceStates,
       heldHomeStates,
-      homeAffinityVersion,
-      homeAffinityGeneration:
-        homeAffinityVersion === 1 ? snapshotOrder.generation : null,
-      homeAffinitySequence:
-        homeAffinityVersion === 1 ? snapshotOrder.sequence : null,
       activeReuseProducers: body.data.activeReuseProducers,
       mode: body.data.mode,
       wssIngressServiceActive,
@@ -615,13 +661,7 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         // rewriting them on every heartbeat.
         admittableProfiles: sql`CASE WHEN ${runnerState.admittableProfiles} IS DISTINCT FROM excluded.admittable_profiles THEN excluded.admittable_profiles ELSE ${runnerState.admittableProfiles} END`,
         heldSandboxStates: sql`CASE WHEN ${runnerState.heldSandboxStates} IS DISTINCT FROM excluded.held_sandbox_states THEN excluded.held_sandbox_states ELSE ${runnerState.heldSandboxStates} END`,
-        heldWorkspaceStates: sql`CASE WHEN ${runnerState.heldWorkspaceStates} IS DISTINCT FROM excluded.held_workspace_states THEN excluded.held_workspace_states ELSE ${runnerState.heldWorkspaceStates} END`,
         heldHomeStates: sql`CASE WHEN ${runnerState.heldHomeStates} IS DISTINCT FROM excluded.held_home_states THEN excluded.held_home_states ELSE ${runnerState.heldHomeStates} END`,
-        homeAffinityVersion,
-        homeAffinityGeneration:
-          homeAffinityVersion === 1 ? snapshotOrder.generation : null,
-        homeAffinitySequence:
-          homeAffinityVersion === 1 ? snapshotOrder.sequence : null,
         activeReuseProducers: sql`CASE WHEN ${runnerState.activeReuseProducers} IS DISTINCT FROM excluded.active_reuse_producers THEN excluded.active_reuse_producers ELSE ${runnerState.activeReuseProducers} END`,
         mode: body.data.mode,
         wssIngressServiceActive,
@@ -717,7 +757,6 @@ function recordPollTimingMetrics(args: {
 
 function runnerPollPriorityOrder(args: {
   readonly runnerId: string | undefined;
-  readonly homeReader: RunnerClaimIdentity | undefined;
   readonly runnerGroup: string;
   readonly currentDate: Date;
 }): SQL[] {
@@ -728,7 +767,6 @@ function runnerPollPriorityOrder(args: {
     desc(
       runnerReusePreferencePollPriority({
         runnerId: args.runnerId,
-        homeReader: args.homeReader,
         runnerGroup: args.runnerGroup,
         currentDate: args.currentDate,
       }),
@@ -741,7 +779,6 @@ const resolvePollRunnerReusePreference$ = command(
     { set },
     args: {
       readonly runId: string;
-      readonly homeReader: RunnerClaimIdentity | undefined;
       readonly runnerGroup: string;
       readonly profile: string;
       readonly reuseKey: string | null;
@@ -840,18 +877,8 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(writeDb$);
   const pendingJobLookupStartedAtMs = now();
   const currentDate = nowDate();
-  const homeReader =
-    auth.type === "official-runner" &&
-    body.data.runnerId &&
-    body.data.heartbeatGeneration
-      ? {
-          runnerId: body.data.runnerId,
-          heartbeatGeneration: body.data.heartbeatGeneration,
-        }
-      : undefined;
   const reusePreferencePriorityOrder = runnerPollPriorityOrder({
     runnerId: body.data.runnerId,
-    homeReader,
     runnerGroup: group,
     currentDate,
   });
@@ -867,7 +894,6 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const runnerPreference = await set(resolvePollRunnerReusePreference$, {
     runId: pendingJob.runId,
-    homeReader,
     runnerGroup: group,
     profile: pendingJob.profile,
     reuseKey: pendingJob.reuseKey,
@@ -911,20 +937,6 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const claimBody$ = bodyResultOf(runnersJobClaimContract.claim);
-const claimRunnerPreference$ = createClaimRunnerPreferenceProjection(
-  computed(async (get) => {
-    const body = await get(claimBody$);
-    if (!body.ok) {
-      return undefined;
-    }
-    return {
-      preference: body.data.telemetry?.runnerPreference,
-      reader: body.data.runnerIdentity,
-      runId: get(pathParamsOf(runnersJobClaimContract.claim)).id,
-      currentDate: nowDate(),
-    };
-  }),
-);
 const connectorRuntimeSyncBody$ = bodyResultOf(
   runnersConnectorRuntimeSyncContract.sync,
 );
@@ -1335,6 +1347,7 @@ async function failPoisonQueuedJob(
   errorMessage: string,
   signal: AbortSignal,
 ): Promise<PoisonJobResult> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0022; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const run = await lockClaimRun(tx, runId);
     signal.throwIfAborted();
@@ -2675,7 +2688,10 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
 
   const lookupAuthorizationStartedAt = now();
-  const jobWithRun = await getClaimableJob(db, runId, signal);
+  const jobWithRun = await claimRouteTiming.measureLookup(async () => {
+    return await getClaimableJob(db, runId, signal);
+  });
+  signal.throwIfAborted();
   if (!isClaimableJob(jobWithRun)) {
     return jobWithRun;
   }
@@ -2691,17 +2707,11 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const echoedPreference = body.data.telemetry?.runnerPreference;
   const runnerPreference =
-    auth.type === "official-runner"
-      ? await tapError(get(claimRunnerPreference$), (error) => {
-          L.warn("Failed to project optional claim preference telemetry", {
-            runId,
-            error,
-          });
-        })
-      : echoedPreference?.kind === "preference" &&
-          echoedPreference.tier === "homeCache"
-        ? undefined
-        : echoedPreference;
+    auth.type !== "official-runner" &&
+    echoedPreference?.kind === "preference" &&
+    echoedPreference.tier === "homeCache"
+      ? undefined
+      : echoedPreference;
   signal.throwIfAborted();
 
   return await set(

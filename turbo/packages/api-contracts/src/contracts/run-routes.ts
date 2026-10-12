@@ -21,7 +21,7 @@ import {
   runnerHostnameSchema,
   runnerVersionSchema,
   sandboxReuseResultSchema,
-  workspaceReuseResultSchema,
+  homeReuseResultSchema,
 } from "./runner-primitives";
 
 /**
@@ -273,7 +273,7 @@ export const runNetworkLogsContract = c.router({
  */
 const runRunnerResponseSchema = z.object({
   sandboxReuseResult: sandboxReuseResultSchema.nullable(),
-  workspaceReuseResult: workspaceReuseResultSchema.nullable().optional(),
+  homeReuseResult: homeReuseResultSchema.nullable().optional(),
   runnerHostname: runnerHostnameSchema.nullable().optional(),
   runnerVersion: runnerVersionSchema.nullable().optional(),
   runnerId: z.uuid().nullable().optional(),

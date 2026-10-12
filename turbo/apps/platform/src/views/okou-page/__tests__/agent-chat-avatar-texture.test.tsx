@@ -1,5 +1,5 @@
 /**
- * Boundary exception, per `docs/testing/testing-external-behavior.md`.
+ * Boundary exception, per `docs/testing.md#external-behavior`.
  *
  * These cases are driven entirely through the production chat page — the real
  * route and the real agent — but the thing under test is not page-observable.

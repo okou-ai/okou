@@ -21,6 +21,15 @@ use crate::{run_usage, ssh, vnc};
 const RUN_REQUEST_CAPACITY: usize = 8;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// Required host cleanup failed. No SDK/provider error or panic payload crosses this boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum CleanupError {
+    #[error("guest RPC owner failed during required cleanup")]
+    Owner,
+    #[error("native SSH resource cleanup was not confirmed")]
+    Native,
+}
+
 #[derive(Clone)]
 pub struct Runtime {
     pub ssh: Option<Arc<ssh::SshRuntime>>,
@@ -326,10 +335,35 @@ impl Run {
         }
     }
 
-    pub async fn shutdown(mut self) {
+    pub async fn shutdown(mut self) -> Result<(), CleanupError> {
         self.close();
-        if let Some(task) = self.task.take() {
-            let _ = task.await;
+        let task = self.task.take();
+        let Some(ssh) = &self.ssh else {
+            return match task {
+                Some(task) => task.await.map_err(|_| CleanupError::Owner),
+                None => Ok(()),
+            };
+        };
+        let Some(task) = task else {
+            return ssh.shutdown_native().await;
+        };
+        // Transfer join ownership before any cleanup await. Dropping this waiter
+        // cannot detach the ordinary serve epilogue or its retained native owners.
+        let mut joined = ssh.retain_cleanup(task);
+        let outcome = |result| match result {
+            Ok(true) => Ok(()),
+            _ => Err(CleanupError::Owner),
+        };
+        // A native failure must reach the executor at its five-second deadline,
+        // even if the ordinary serve epilogue is still waiting for host work.
+        let native = ssh.shutdown_native();
+        tokio::pin!(native);
+        tokio::select! {
+            result = &mut native => match result {
+                Ok(()) => outcome(joined.await),
+                Err(error) => Err(error),
+            },
+            result = &mut joined => native.await.and(outcome(result)),
         }
     }
 }

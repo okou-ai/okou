@@ -243,6 +243,7 @@ const claimWork$ = command(
     const currentTime = nowDate();
     // Candidate selection and lease assignment must commit together so parallel
     // workers cannot materialize the same lease. Keep the existing claim locks.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0231; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const rows = await tx
         .select({

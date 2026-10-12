@@ -1,3 +1,6 @@
+import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
+import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
+import { publicRunOwner } from "./helpers/public-run-owner";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { Buffer } from "node:buffer";
 import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
@@ -8,6 +11,7 @@ import {
   integrationsTelegramContract,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
+import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -15,7 +19,7 @@ import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { clearMockedEnv, mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { nowDate } from "../../../lib/time";
+import { mockNow, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
@@ -30,7 +34,6 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
@@ -58,6 +61,7 @@ interface TelegramPostFixture {
   readonly telegramBotId: string;
   readonly webhookSecret: string;
   readonly telegramUserId?: string;
+  readonly runs: ReturnType<typeof publicRunOwner>;
 }
 
 interface TelegramSendMessageBody {
@@ -235,21 +239,29 @@ async function createTelegramPostFixture(
   options: { readonly linkOfficial?: boolean } = {},
 ): Promise<TelegramPostFixture> {
   configureOfficialBotEnv();
+  runsApi.acceptTelemetryIngest();
   const actor = authOrgApi.user();
   if (!actor.orgId) {
     throw new Error("Expected an organization for the Telegram poster");
   }
-  await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
-    displayName: "Telegram post agent",
-  });
+  await authOrgApi.completeOnboarding(actor);
   const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
   if (!defaultAgentId) {
     throw new Error("Expected onboarding to create a default agent");
   }
+  await runsApi.grantProEntitlement(actor);
+  await runsApi.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   return {
     orgId: actor.orgId,
     userId: actor.userId,
     composeId: defaultAgentId,
+    runs: publicRunOwner(context, actor, {
+      afterRuns: async () => {
+        await deletePublicWorkspace(context, actor);
+      },
+    }),
     telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
     webhookSecret: OFFICIAL_WEBHOOK_SECRET,
     ...(options.linkOfficial === true
@@ -271,17 +283,30 @@ async function useNativeFableSubscription(
 
 /** The poster's newest run whose launch prompt contains `text`. */
 async function runForPrompt(fixture: TelegramPostFixture, text: string) {
-  return (
-    await runsApi.listAgentRuns(actorForFixture(fixture), { limit: 20 })
-  ).runs.find((run) => {
-    return run.prompt?.includes(text) === true;
+  const actor = actorForFixture(fixture);
+  const listed = await runReadsApi.requestListLogs(
+    actor,
+    { limit: 100 },
+    [200],
+  );
+  expect(listed.body.pagination.hasMore).toBeFalsy();
+  const run = listed.body.data.find((candidate) => {
+    return candidate.prompt.includes(text);
   });
+  return run
+    ? (await runReadsApi.requestReadLogById(actor, run.id, [200])).body
+    : undefined;
 }
 
-/** The number of runs the poster can list. */
+/** The number of Runs this unique actor can list, with a complete page. */
 async function runCountFor(fixture: TelegramPostFixture): Promise<number> {
-  return (await runsApi.listAgentRuns(actorForFixture(fixture), { limit: 100 }))
-    .runs.length;
+  const listed = await runReadsApi.requestListLogs(
+    actorForFixture(fixture),
+    { limit: 100 },
+    [200],
+  );
+  expect(listed.body.pagination.hasMore).toBeFalsy();
+  return listed.body.data.length;
 }
 
 /** The poster's single chat thread whose public events satisfy `matches`. */
@@ -429,9 +454,13 @@ function configureCanonicalTelegramRunner(): string {
   return runnerGroup;
 }
 
-async function claimTelegramRun(runId: string, runnerGroup: string) {
+async function claimTelegramRun(
+  runId: string,
+  runnerGroup: string,
+  fixture: TelegramPostFixture,
+) {
   await runsApi.heartbeatRunner(runnerGroup);
-  return await runsApi.claimRunnerJob(runId);
+  return await fixture.runs.claim(runId);
 }
 
 async function completeCanonicalChatRun(args: {
@@ -441,30 +470,18 @@ async function completeCanonicalChatRun(args: {
 }): Promise<string> {
   const cliAgentSessionId = `bdd-telegram-cli-${args.runId}`;
   const cliAgentSessionHistory = `bdd telegram history ${args.runId}`;
-  const cliAgentSessionHistoryHash = createHash("sha256")
-    .update(cliAgentSessionHistory)
-    .digest("hex");
-  const cliAgentSessionHistorySize = Buffer.byteLength(
-    cliAgentSessionHistory,
-    "utf8",
-  );
   const headers = { authorization: `Bearer ${args.sandboxToken}` };
-  await webhooksApi.requestAgentCheckpointPrepareHistory(
-    {
-      runId: args.runId,
-      hash: cliAgentSessionHistoryHash,
-      rawSize: cliAgentSessionHistorySize,
-      encodedSize: cliAgentSessionHistorySize,
-      encoding: "identity",
-    },
+  const cliAgentSessionHistoryHash = await prepareRunnerSessionHistory(
+    context,
+    args.runId,
     headers,
-    [200],
+    cliAgentSessionHistory,
   );
   await webhooksApi.requestAgentComplete(
     {
       runId: args.runId,
       exitCode: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: args.cliAgentType ?? "claude-code",
         cliAgentSessionId,
         cliAgentSessionHistoryHash,
@@ -572,10 +589,130 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     await expect(badJson.text()).resolves.toBe("Bad Request");
   });
 
+  it("keeps concurrent first Telegram DMs on one owner-scoped thread", async () => {
+    configureCanonicalTelegramRunner();
+    const fixture = await createTelegramPostFixture({ linkOfficial: true });
+    const outsider = await createTelegramPostFixture();
+    const actor = actorForFixture(fixture);
+    telegramApiMocks();
+    const before = await chatApi.requestThreadEvents(actor, {}, [200]);
+    if (before.status !== 200) {
+      throw new Error("Expected the owner's initial thread lifecycle");
+    }
+    const updates = [4701, 4702].map((messageId) => {
+      return {
+        update_id: messageId,
+        message: {
+          message_id: messageId,
+          chat: { id: Number(fixture.telegramUserId), type: "private" },
+          from: { id: Number(fixture.telegramUserId), first_name: "Alice" },
+          text: `concurrent Telegram DM ${messageId}`,
+        },
+      };
+    });
+    const responses = await Promise.all(
+      updates.map((body) => {
+        return postWebhook({
+          telegramBotId: fixture.telegramBotId,
+          secret: fixture.webhookSecret,
+          body,
+        });
+      }),
+    );
+    expect(
+      responses.map((response) => {
+        return response.status;
+      }),
+    ).toStrictEqual([200, 200]);
+    await flushWaitUntilForTest();
+
+    const lifecycle = await chatApi.requestThreadEvents(actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error("Expected the owner's Telegram DM thread lifecycle");
+    }
+    expect(lifecycle.body.hasMore).toBeFalsy();
+    const created = lifecycle.body.events.filter((event) => {
+      return (
+        event.kind === "created" &&
+        !before.body.events.some((previous) => {
+          return previous.id === event.id;
+        })
+      );
+    });
+    expect(created).toHaveLength(1);
+    const [thread] = created;
+    if (!thread) {
+      throw new Error("Expected one owner-scoped Telegram DM thread");
+    }
+    const { events } = await chatApi.listThreadEvents(
+      actor,
+      thread.chatThreadId,
+    );
+    const revokedIds = revokedChatEventIds(events);
+    const inputs = events
+      .filter((event) => {
+        return event.eventType === "input.prompt";
+      })
+      .filter((event) => {
+        return !revokedIds.has(event.id);
+      });
+    expect(inputs).toHaveLength(2);
+    for (const update of updates) {
+      const input = inputs.find((event) => {
+        return event.userMessage.parts.some((part) => {
+          return part.type === "text" && part.text === update.message.text;
+        });
+      });
+      if (!input) {
+        throw new Error("Expected the current Telegram DM input");
+      }
+      await expect(
+        threadIdWhere(fixture, (event) => {
+          return event.id === input.id;
+        }),
+      ).resolves.toBe(thread.chatThreadId);
+    }
+
+    expect(
+      (
+        await postWebhook({
+          telegramBotId: fixture.telegramBotId,
+          secret: fixture.webhookSecret,
+          body: updates[0],
+        })
+      ).status,
+    ).toBe(200);
+    await flushWaitUntilForTest();
+    const repeated = await chatApi.requestThreadEvents(actor, {}, [200]);
+    if (repeated.status !== 200) {
+      throw new Error("Expected the owner's lifecycle after DM replay");
+    }
+    expect(repeated.body.events).toStrictEqual(lifecycle.body.events);
+    const replayed = await chatApi.listThreadEvents(actor, thread.chatThreadId);
+    expect(replayed.events).toStrictEqual(events);
+    await chatApi.requestReadThreadMetadata(
+      actorForFixture(outsider),
+      thread.chatThreadId,
+      [404],
+    );
+    const isolated = await chatApi.requestThreadEvents(
+      actorForFixture(outsider),
+      {},
+      [200],
+    );
+    if (isolated.status !== 200) {
+      throw new Error("Expected the unrelated owner's thread lifecycle");
+    }
+    expect(
+      isolated.body.events.some((event) => {
+        return event.chatThreadId === thread.chatThreadId;
+      }),
+    ).toBeFalsy();
+  });
+
   it("snapshots thread reuse inputs before a CLI session exists", async () => {
     const runnerGroup = configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    await useNativeFableSubscription(fixture);
     telegramApiMocks();
     const prompt = "reuse this Telegram thread";
     expect(
@@ -648,7 +785,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       },
     });
 
-    const claim = await runsApi.claimRunnerJob(runId);
+    const claim = await fixture.runs.claim(runId);
     expect(claim.reuseKey).toBe(reuseKey);
     await runsApi.requestCancelRun(actorForFixture(fixture), runId, [200]);
   });
@@ -666,6 +803,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       orgId: actor.orgId,
       userId: actor.userId,
       composeId: defaultAgentId,
+      runs: publicRunOwner(context, actor),
       telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
       webhookSecret: OFFICIAL_WEBHOOK_SECRET,
       telegramUserId: await linkOfficialTelegramUser(actor),
@@ -708,7 +846,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     if (!firstRunId) {
       throw new Error("Expected the first Telegram run");
     }
-    const firstClaim = await claimTelegramRun(firstRunId, runnerGroup);
+    const firstClaim = await claimTelegramRun(firstRunId, runnerGroup, fixture);
     const threadId = await threadIdForRun(fixture, firstRunId);
 
     const queuedPrompt = "claim Telegram queue transport params";
@@ -762,7 +900,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     if (!queuedRunId) {
       throw new Error("Expected the queued Telegram run");
     }
-    const queuedClaim = await claimTelegramRun(queuedRunId, runnerGroup);
+    const queuedClaim = await claimTelegramRun(
+      queuedRunId,
+      runnerGroup,
+      fixture,
+    );
     expect(queuedClaim.prompt).toBe(queuedPrompt);
     // The queued launch keeps the conversation it was admitted with.
     expect(
@@ -794,9 +936,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       throw new Error("Expected an organization for Telegram onboarding");
     }
     await runsApi.grantProEntitlement(actor);
-    await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
-      displayName: "Telegram DM agent",
-    });
+    await authOrgApi.completeOnboarding(actor);
+    const ownedRuns = publicRunOwner(context, actor);
     await createBddIntegrationApi(context).configureNativeSubscriptionModels(
       actor,
     );
@@ -885,7 +1026,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       if (!run) {
         throw new Error("Expected a Telegram DM run");
       }
-      const claim = await claimTelegramRun(run.id, runnerGroup);
+      await runsApi.heartbeatRunner(runnerGroup);
+      const claim = await ownedRuns.claim(run.id);
       if (
         claim.cliAgentType !== "claude-code" &&
         claim.cliAgentType !== "codex"
@@ -1113,7 +1255,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   ) {
     const runnerGroup = configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    await useNativeFableSubscription(fixture);
     const telegramMocks = telegramApiMocks();
     const botUsername = OFFICIAL_BOT_USERNAME;
     const chatId = -77_201;
@@ -1165,7 +1306,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         `Message thread ID: ${messageThreadId}`,
       ].join("\n"),
     );
-    const firstClaim = await claimTelegramRun(firstRun.id, runnerGroup);
+    const firstClaim = await claimTelegramRun(
+      firstRun.id,
+      runnerGroup,
+      fixture,
+    );
     const cliAgentSessionId = await completeCanonicalChatRun({
       runId: firstRun.id,
       sandboxToken: firstClaim.sandboxToken,
@@ -1260,7 +1405,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     await expect(threadIdForRun(fixture, followUpRun.id)).resolves.toBe(
       firstThreadId,
     );
-    const followUpClaim = await claimTelegramRun(followUpRun.id, runnerGroup);
+    const followUpClaim = await claimTelegramRun(
+      followUpRun.id,
+      runnerGroup,
+      fixture,
+    );
     expect(followUpClaim.resumeSession?.sessionId).toBe(cliAgentSessionId);
     await completeCanonicalChatRun({
       runId: followUpRun.id,
@@ -1357,6 +1506,77 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     await runCanonicalTelegramForumScenario("callback");
   });
 
+  it("keeps Telegram completion terminal after provider delivery fails", async () => {
+    const runnerGroup = configureCanonicalTelegramRunner();
+    const fixture = await createTelegramPostFixture({ linkOfficial: true });
+    telegramApiMocks();
+    const attemptedMessages: TelegramSendMessageBody[] = [];
+    server.use(
+      http.post(
+        `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/sendMessage`,
+        async ({ request }) => {
+          attemptedMessages.push(
+            (await request.json()) as TelegramSendMessageBody,
+          );
+          return HttpResponse.json(
+            { ok: false, description: "Telegram temporarily unavailable" },
+            { status: 503 },
+          );
+        },
+      ),
+    );
+    const chatId = -77_202;
+    const prompt = `@${OFFICIAL_BOT_USERNAME} complete despite delivery failure`;
+    expect(
+      (
+        await postWebhook({
+          telegramBotId: fixture.telegramBotId,
+          secret: fixture.webhookSecret,
+          body: {
+            update_id: 204,
+            message: {
+              message_id: 2206,
+              chat: { id: chatId, type: "supergroup" },
+              from: { id: Number(fixture.telegramUserId), first_name: "Alice" },
+              text: prompt,
+              entities: [mentionEntity(OFFICIAL_BOT_USERNAME)],
+            },
+          },
+        })
+      ).status,
+    ).toBe(200);
+    await flushWaitUntilForTest();
+    const run = await runForPrompt(fixture, prompt);
+    if (!run) {
+      throw new Error("Expected the Telegram provider-failure run");
+    }
+    const claim = await claimTelegramRun(run.id, runnerGroup, fixture);
+    await completeCanonicalChatRun({
+      runId: run.id,
+      sandboxToken: claim.sandboxToken,
+    });
+    expect(attemptedMessages).toHaveLength(1);
+    expect(attemptedMessages[0]).toMatchObject({
+      chat_id: String(chatId),
+      text: expect.stringContaining("Task completed successfully."),
+    });
+    await expect(runForPrompt(fixture, prompt)).resolves.toMatchObject({
+      id: run.id,
+      status: "completed",
+    });
+    await webhooksApi.requestAgentComplete(
+      { runId: run.id, exitCode: 1, error: "late duplicate completion" },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(attemptedMessages).toHaveLength(1);
+    await expect(runForPrompt(fixture, prompt)).resolves.toMatchObject({
+      id: run.id,
+      status: "completed",
+    });
+  });
+
   it("preserves Telegram group reply chains and duplicate updates", async () => {
     expect.hasAssertions();
     await runCanonicalTelegramForumScenario("reply-chain");
@@ -1383,6 +1603,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         orgId: actor.orgId,
         userId: actor.userId,
         composeId: defaultAgentId,
+        runs: publicRunOwner(context, actor),
         telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
         webhookSecret: OFFICIAL_WEBHOOK_SECRET,
         telegramUserId: await linkOfficialTelegramUser(actor),
@@ -1461,7 +1682,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       if (!acceptedRun) {
         throw new Error("Expected the Telegram topic run");
       }
-      const claim = await claimTelegramRun(acceptedRun.id, runnerGroup);
+      const claim = await claimTelegramRun(
+        acceptedRun.id,
+        runnerGroup,
+        fixture,
+      );
       expect(claim.prompt).toContain(firstPrompt);
       expect(claim.prompt).toContain("topic-note.txt");
       const fileId = claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
@@ -1503,7 +1728,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     const runnerGroup = configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    await useNativeFableSubscription(fixture);
     const telegramMocks = telegramApiMocks();
 
     const response = await postWebhook({
@@ -1533,7 +1757,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     if (!run) {
       throw new Error("Expected the Telegram run");
     }
-    const claim = await claimTelegramRun(run.id, runnerGroup);
+    const claim = await claimTelegramRun(run.id, runnerGroup, fixture);
     await completeCanonicalChatRun({
       runId: run.id,
       sandboxToken: claim.sandboxToken,
@@ -1546,7 +1770,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
   it("preserves a mention-only Telegram request with the preceding group task", async () => {
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    await useNativeFableSubscription(fixture);
     const botUsername = OFFICIAL_BOT_USERNAME;
     telegramApiMocks();
 
@@ -1623,7 +1846,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     // dataset; mock that external query like the Runner-backed cases do.
     runsApi.acceptTelemetryIngest();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    await useNativeFableSubscription(fixture);
     telegramApiMocks(OFFICIAL_BOT_TOKEN);
 
     const response = await postWebhook({
@@ -1692,13 +1914,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(log.body.triggerSource).toBe("telegram");
   });
 
-  it("keeps an official-bot group mention routable after an overlapping model-key fixture releases", async () => {
-    const overlappingModelKey = await seedBuiltInDefaultModelKey(context);
+  it("routes an official-bot group mention with the member subscription", async () => {
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    // The poster's own operator key for the default model outlives the
-    // overlapping key fixture.
-    await seedBuiltInDefaultModelKey(context);
-    await overlappingModelKey.release();
     telegramApiMocks(OFFICIAL_BOT_TOKEN);
 
     const response = await postWebhook({
@@ -1730,6 +1947,175 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(run?.prompt).toBe(`@${OFFICIAL_BOT_USERNAME} help from a group`);
     expect(run?.appendSystemPrompt).toContain(
       "Bot username: @official_okou_bot",
+    );
+  });
+
+  it("publishes fresh Telegram group threads with ordered owner-scoped creation events", async () => {
+    const fixture = await createTelegramPostFixture({ linkOfficial: true });
+    const outsider = await createTelegramPostFixture();
+    const actor = actorForFixture(fixture);
+    telegramApiMocks();
+    const preference = await accept(
+      userModelPreferenceClient().update({
+        headers: authOrgApi.authenticate(actor),
+        body: {
+          selectedModel: "claude-fable-5-1",
+          serviceTier: null,
+          modelSettingsPatch: { model: "claude-fable-5-1", effort: "high" },
+        },
+      }),
+      [200],
+    );
+    const before = await chatApi.requestThreadEvents(actor, {}, [200]);
+    if (before.status !== 200) {
+      throw new Error("Expected the owner's initial thread lifecycle");
+    }
+    const createdAt = new Date("2026-10-10T02:00:00.123Z");
+    mockNow(createdAt);
+    const updates = [4601, 4602].map((messageId) => {
+      return {
+        update_id: messageId,
+        message: {
+          message_id: messageId,
+          chat: { id: -10_099_460, type: "supergroup" },
+          from: { id: Number(fixture.telegramUserId), first_name: "Alice" },
+          text: `@${OFFICIAL_BOT_USERNAME} fresh task ${messageId}`,
+          entities: [mentionEntity(OFFICIAL_BOT_USERNAME)],
+        },
+      };
+    });
+    const responses = await Promise.all(
+      updates.map((body) => {
+        return postWebhook({
+          telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+          secret: OFFICIAL_WEBHOOK_SECRET,
+          body,
+        });
+      }),
+    );
+    expect(
+      responses.map((response) => {
+        return response.status;
+      }),
+    ).toStrictEqual([200, 200]);
+    await flushWaitUntilForTest();
+
+    const lifecycle = await chatApi.requestThreadEvents(actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error("Expected the owner's Telegram thread lifecycle");
+    }
+    const created = lifecycle.body.events.filter((event) => {
+      return (
+        event.kind === "created" &&
+        !before.body.events.some((previous) => {
+          return previous.id === event.id;
+        })
+      );
+    });
+    expect(created).toHaveLength(2);
+    const [first, second] = created;
+    if (!first || !second) {
+      throw new Error("Expected both fresh Telegram thread creation events");
+    }
+    expect(first.chatThreadId).not.toBe(second.chatThreadId);
+    expect(first.seqId).toBeLessThan(second.seqId);
+    for (const event of created) {
+      expect(event).toMatchObject({
+        agentId: fixture.composeId,
+        title: null,
+        selectedModel: "claude-fable-5-1",
+        modelSettings: preference.body.modelSettings,
+        serviceTier: null,
+        computerUseHostId: null,
+        cloudBrowserEnabled: true,
+        createdAt: createdAt.toISOString(),
+      });
+      const thread = await chatApi.readThreadMetadata(
+        actor,
+        event.chatThreadId,
+      );
+      expect(thread).toMatchObject({
+        agentId: event.agentId,
+        selectedModel: event.selectedModel,
+        modelSettings: event.modelSettings,
+        serviceTier: event.serviceTier,
+        cloudBrowserEnabled: event.cloudBrowserEnabled,
+      });
+      expect(
+        (await chatApi.readThread(actor, event.chatThreadId)).lastReadAt,
+      ).toBe(event.createdAt);
+    }
+    for (const update of updates) {
+      await threadIdWhere(fixture, (event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.userMessage.parts.some((part) => {
+            return (
+              part.type === "text" && part.text.includes(update.message.text)
+            );
+          })
+        );
+      });
+    }
+    const tail = await chatApi.requestThreadEvents(
+      actor,
+      { sinceSeqId: first.seqId },
+      [200],
+    );
+    if (tail.status !== 200) {
+      throw new Error("Expected a retained Telegram thread lifecycle cursor");
+    }
+    expect(tail.body.events).toStrictEqual(
+      lifecycle.body.events.filter((event) => {
+        return event.seqId > first.seqId;
+      }),
+    );
+    expect(
+      replayChatThreadEvents(
+        replayChatThreadEvents(
+          [],
+          lifecycle.body.events.filter((event) => {
+            return event.seqId <= first.seqId;
+          }),
+        ),
+        tail.body.events,
+      ),
+    ).toStrictEqual(replayChatThreadEvents([], lifecycle.body.events));
+
+    expect(
+      (
+        await postWebhook({
+          telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+          secret: OFFICIAL_WEBHOOK_SECRET,
+          body: updates[0],
+        })
+      ).status,
+    ).toBe(200);
+    await flushWaitUntilForTest();
+    const repeated = await chatApi.requestThreadEvents(actor, {}, [200]);
+    if (repeated.status !== 200) {
+      throw new Error("Expected the owner's lifecycle after webhook replay");
+    }
+    expect(repeated.body.events).toStrictEqual(lifecycle.body.events);
+    const isolated = await chatApi.requestThreadEvents(
+      actorForFixture(outsider),
+      {},
+      [200],
+    );
+    if (isolated.status !== 200) {
+      throw new Error("Expected the unrelated owner's thread lifecycle");
+    }
+    expect(
+      isolated.body.events.some((event) => {
+        return created.some((owned) => {
+          return owned.chatThreadId === event.chatThreadId;
+        });
+      }),
+    ).toBeFalsy();
+    await chatApi.requestReadThreadMetadata(
+      actorForFixture(outsider),
+      first.chatThreadId,
+      [404],
     );
   });
 
@@ -1823,7 +2209,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     async (type) => {
       const fixture = await createTelegramPostFixture({ linkOfficial: true });
       const actor = actorForFixture(fixture);
-      await useNativeFableSubscription(fixture);
       const runnerGroup = configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
@@ -1879,14 +2264,19 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       });
       expect(response.status).toBe(200);
       await flushWaitUntilForTest();
-      const listed = await runsApi.listAgentRuns(actor, { limit: 20 });
-      const run = listed.runs.find((candidate) => {
+      const listed = await createRunReadsApi(context).requestListLogs(
+        actor,
+        { limit: 20 },
+        [200],
+      );
+      const run = listed.body.data.find((candidate) => {
         return candidate.prompt.includes("[Web file]");
       });
       if (!run) {
         throw new Error("Expected imported Telegram run");
       }
-      const claim = await claimTelegramRun(run.id, runnerGroup);
+      await runsApi.heartbeatRunner(runnerGroup);
+      const claim = await fixture.runs.claim(run.id);
       expect(claim.prompt).toContain("inspect imported telegram file");
       const fileId = claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
       if (!fileId) {
@@ -1981,7 +2371,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       );
       const fixture = await createTelegramPostFixture({ linkOfficial: true });
       const actor = actorForFixture(fixture);
-      await useNativeFableSubscription(fixture);
       const runnerGroup = configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
@@ -2046,12 +2435,17 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       if (!fileId) {
         throw new Error("Expected a failed Telegram file item");
       }
-      const listed = await runsApi.listAgentRuns(actor, { limit: 20 });
-      const run = listed.runs[0];
+      const listed = await createRunReadsApi(context).requestListLogs(
+        actor,
+        { limit: 20 },
+        [200],
+      );
+      const run = listed.body.data[0];
       if (!run) {
         throw new Error("Expected Telegram retry run");
       }
-      const claim = await claimTelegramRun(run.id, runnerGroup);
+      await runsApi.heartbeatRunner(runnerGroup);
+      const claim = await fixture.runs.claim(run.id);
       expect(claim.prompt).not.toContain("[Web file]");
       await postFile(5802);
       await expect(
@@ -2090,7 +2484,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     async (failure) => {
       const fixture = await createTelegramPostFixture({ linkOfficial: true });
       const actor = actorForFixture(fixture);
-      await useNativeFableSubscription(fixture);
       const runnerGroup = configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
@@ -2134,14 +2527,19 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       });
       expect(response.status).toBe(200);
       await flushWaitUntilForTest();
-      const listed = await runsApi.listAgentRuns(actor, { limit: 20 });
-      const run = listed.runs.find((candidate) => {
+      const listed = await createRunReadsApi(context).requestListLogs(
+        actor,
+        { limit: 20 },
+        [200],
+      );
+      const run = listed.body.data.find((candidate) => {
         return candidate.prompt.includes("inspect this large report");
       });
       if (!run) {
         throw new Error("Expected Telegram fallback run");
       }
-      const claim = await claimTelegramRun(run.id, runnerGroup);
+      await runsApi.heartbeatRunner(runnerGroup);
+      const claim = await fixture.runs.claim(run.id);
       expect(claim.prompt).toContain("[Telegram file]");
       expect(claim.prompt).toContain("[FILE_ID] oversized-file");
       expect(claim.prompt).not.toContain("[Web file]");

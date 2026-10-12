@@ -5,7 +5,7 @@ use runner_host::paths::HomePaths;
 use super::filesystem::{next_entry_warn_or_stop, read_dir_or_missing};
 use super::lock_file::{LockProbe, probe_lock, remove_unused_lock_after_probe};
 use super::report::GcReport;
-use super::workspaces::is_base_dir_lock_name;
+use runner_host::gc::workspaces::is_base_dir_lock_name;
 
 /// Remove unused lock files.
 ///

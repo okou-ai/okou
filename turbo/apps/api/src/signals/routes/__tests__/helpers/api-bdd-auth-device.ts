@@ -1,25 +1,14 @@
 import { mockClerkUsers } from "./clerk-users";
 import { Buffer } from "node:buffer";
 
-import type { z } from "zod";
 import { authContract } from "@okouai/api-contracts/contracts/auth";
 import {
   cliAuthApproveContract,
   cliAuthDeviceContract,
   cliAuthTokenContract,
 } from "@okouai/api-contracts/contracts/cli-auth";
-import {
-  cliAuthTestCodexOauthContract,
-  cliAuthTestConnectorContract,
-  cliAuthTestTokenContract,
-} from "@okouai/api-contracts/contracts/cli-auth-test";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
-import {
-  type DesktopAuthCallbackScheme,
-  desktopAuthConsumeContract,
-  desktopAuthHandoffContract,
-} from "@okouai/api-contracts/contracts/desktop-auth";
 import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import {
   type ClaudeCodeDeviceAuthScope,
@@ -33,14 +22,11 @@ import { http, HttpResponse } from "msw";
 
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
-import { createAppWithRoutes } from "../../../../app-factory-core";
 import { now } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
 import type { RouteEntry } from "../../../route-entry";
 import { authMeRoutes } from "../../auth-me";
 import { cliAuthRoutes } from "../../cli-auth";
-import { cliAuthTestRoutes } from "../../cli-auth-test";
-import { desktopAuthRoutes } from "../../desktop-auth";
 import { agentsRoutes } from "../../agents";
 import { billingStatusRoutes } from "../../billing-status";
 import { claudeCodeDeviceAuthRoutes } from "../../claude-code-device-auth";
@@ -57,22 +43,9 @@ interface CliApproveBody {
   readonly device_code: string;
   readonly timezone?: string;
 }
-
-interface TestEmailQuery {
-  readonly email?: string;
-}
-
-type SeedTestConnectorBody = z.infer<
-  (typeof cliAuthTestConnectorContract.create)["body"]
->;
-type SeedTestCodexOauthBody = z.infer<
-  (typeof cliAuthTestCodexOauthContract.create)["body"]
->;
 const authDeviceRoutes: readonly RouteEntry[] = [
   ...authMeRoutes,
   ...cliAuthRoutes,
-  ...cliAuthTestRoutes,
-  ...desktopAuthRoutes,
   ...agentsRoutes,
   ...billingStatusRoutes,
   ...claudeCodeDeviceAuthRoutes,
@@ -83,13 +56,6 @@ const authDeviceRoutes: readonly RouteEntry[] = [
 function authDeviceApp(context: TestContext) {
   return setupAppWithRoutes({
     context,
-    routes: authDeviceRoutes,
-  });
-}
-
-function authDeviceRawApp(context: TestContext) {
-  return createAppWithRoutes({
-    signal: context.signal,
     routes: authDeviceRoutes,
   });
 }
@@ -139,14 +105,6 @@ function setClerkReads(context: TestContext, actor: ApiTestUser): void {
       data: memberships,
     },
   );
-}
-
-function codeFromCallbackUrl(callbackUrl: string): string {
-  return new URL(callbackUrl).searchParams.get("code") ?? "";
-}
-
-function handoffIdFromCallbackUrl(callbackUrl: string): string {
-  return new URL(callbackUrl).searchParams.get("handoffId") ?? "";
 }
 
 function base64UrlEncode(input: string): string {
@@ -436,35 +394,7 @@ export function createAuthDeviceApiActions(context: TestContext) {
     return authHeaders(actor);
   }
 
-  async function postRawJson(
-    path: string,
-    body: string,
-    headers: Record<string, string> = {},
-  ): Promise<{ readonly status: number; readonly body: unknown }> {
-    const response = await authDeviceRawApp(context).request(path, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...headers },
-      body,
-    });
-    const contentType = response.headers.get("content-type") ?? "";
-    return {
-      status: response.status,
-      body: contentType.includes("application/json")
-        ? await response.json()
-        : await response.text(),
-    };
-  }
-
   return {
-    callbackCode: codeFromCallbackUrl,
-    callbackHandoffId: handoffIdFromCallbackUrl,
-
-    mockDesktopSignInToken(token: string): void {
-      context.mocks.clerk.signInTokens.createSignInToken.mockResolvedValue({
-        token,
-      });
-    },
-
     async startCliDevice() {
       const client = authDeviceApp(context)(cliAuthDeviceContract);
       const response = await accept(client.create({ body: {} }), [200]);
@@ -494,10 +424,6 @@ export function createAuthDeviceApiActions(context: TestContext) {
       );
     },
 
-    seedClerkDirectory(actor: ApiTestUser): void {
-      setClerkReads(context, actor);
-    },
-
     async requestCliApprovalWithBearer(
       token: string,
       body: CliApproveBody,
@@ -511,64 +437,6 @@ export function createAuthDeviceApiActions(context: TestContext) {
         }),
         statuses,
       );
-    },
-
-    async requestTestToken(
-      query: TestEmailQuery,
-      statuses: readonly (200 | 404)[],
-    ) {
-      const client = authDeviceApp(context)(cliAuthTestTokenContract);
-      return await accept(client.create({ query, body: {} }), statuses);
-    },
-
-    async requestTestTokenRaw(headers: Record<string, string> = {}) {
-      return await postRawJson(
-        "/api/cli/auth/test-token",
-        JSON.stringify({}),
-        headers,
-      );
-    },
-
-    async provisionTestOrg(actor: ApiTestUser): Promise<{
-      readonly accessToken: string;
-      readonly userId: string;
-    }> {
-      setClerkReads(context, actor);
-      const client = authDeviceApp(context)(cliAuthTestTokenContract);
-      const response = await accept(
-        client.create({ query: { email: actor.email }, body: {} }),
-        [200],
-      );
-      return {
-        accessToken: response.body.access_token,
-        userId: response.body.user_id,
-      };
-    },
-
-    async requestTestConnector(
-      query: TestEmailQuery,
-      body: SeedTestConnectorBody,
-      statuses: readonly (200 | 400 | 404)[],
-    ) {
-      const client = authDeviceApp(context)(cliAuthTestConnectorContract);
-      return await accept(client.create({ query, body }), statuses);
-    },
-
-    async requestTestConnectorRaw(rawBody: string) {
-      return await postRawJson("/api/cli/auth/test-connector", rawBody);
-    },
-
-    async requestTestCodexOauth(
-      query: TestEmailQuery,
-      body: SeedTestCodexOauthBody,
-      statuses: readonly (200 | 400 | 404)[],
-    ) {
-      const client = authDeviceApp(context)(cliAuthTestCodexOauthContract);
-      return await accept(client.create({ query, body }), statuses);
-    },
-
-    async requestTestCodexOauthRaw(rawBody: string) {
-      return await postRawJson("/api/cli/auth/test-codex-oauth", rawBody);
     },
 
     async readUserConnectors(actor: ApiTestUser, agentId: string) {
@@ -598,66 +466,6 @@ export function createAuthDeviceApiActions(context: TestContext) {
       const client = authDeviceApp(context)(authContract);
       return await accept(
         client.me({ headers: { authorization: `Bearer ${token}` } }),
-        statuses,
-      );
-    },
-
-    async requestDesktopHandoff(
-      actor: ApiTestUser | null,
-      body: { readonly callbackScheme?: DesktopAuthCallbackScheme } | undefined,
-      statuses: readonly (200 | 400 | 401 | 403 | 500)[],
-    ) {
-      const client = authDeviceApp(context)(desktopAuthHandoffContract);
-      return await accept(
-        client.create({ headers: authenticate(actor), body: body ?? {} }),
-        statuses,
-      );
-    },
-
-    async requestDesktopHandoffRaw(actor: ApiTestUser | null, rawBody: string) {
-      const headers = authenticate(actor);
-      return await postRawJson(
-        "/api/desktop-auth/handoff",
-        rawBody,
-        headers.authorization ? { authorization: headers.authorization } : {},
-      );
-    },
-
-    async requestDesktopConsume(
-      code: string,
-      statuses: readonly (200 | 400 | 500)[],
-    ) {
-      const client = authDeviceApp(context)(desktopAuthConsumeContract);
-      return await accept(client.consume({ body: { code } }), statuses);
-    },
-
-    async requestDesktopHandoffStatus(
-      actor: ApiTestUser | null,
-      handoffId: string,
-      statuses: readonly (200 | 401 | 404)[],
-    ) {
-      const client = authDeviceApp(context)(desktopAuthHandoffContract);
-      return await accept(
-        client.status({
-          params: { handoffId },
-          headers: authenticate(actor),
-        }),
-        statuses,
-      );
-    },
-
-    async requestDesktopHandoffComplete(
-      actor: ApiTestUser | null,
-      handoffId: string,
-      statuses: readonly (200 | 401 | 404)[],
-    ) {
-      const client = authDeviceApp(context)(desktopAuthHandoffContract);
-      return await accept(
-        client.complete({
-          params: { handoffId },
-          body: {},
-          headers: authenticate(actor),
-        }),
         statuses,
       );
     },

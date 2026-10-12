@@ -19,48 +19,50 @@ function Preview() {
   );
 }
 
-function App() {
+function App({ relocate = true }: { relocate?: boolean }) {
   const [fullscreen, setFullscreen] = useState(false);
   const [open, setOpen] = useState(true);
+  const preview = open ? (
+    <FullscreenPanel
+      as="aside"
+      aria-label="Preview"
+      fullscreen={fullscreen}
+      relocate={relocate}
+    >
+      <button
+        onClick={() => {
+          setFullscreen(!fullscreen);
+        }}
+      >
+        {fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+      </button>
+      <button
+        onClick={() => {
+          setOpen(false);
+        }}
+      >
+        Close preview
+      </button>
+      <Preview />
+    </FullscreenPanel>
+  ) : (
+    <p>Preview closed</p>
+  );
   return (
     <div id="root">
-      <section aria-label="Workspace">
-        {open ? (
-          <FullscreenPanel
-            as="aside"
-            aria-label="Preview"
-            fullscreen={fullscreen}
-          >
-            <button
-              onClick={() => {
-                setFullscreen(!fullscreen);
-              }}
-            >
-              {fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-            </button>
-            <button
-              onClick={() => {
-                setOpen(false);
-              }}
-            >
-              Close preview
-            </button>
-            <Preview />
-          </FullscreenPanel>
-        ) : (
-          <p>Preview closed</p>
-        )}
-      </section>
+      <section aria-label="Workspace">{relocate ? preview : null}</section>
+      {!relocate && preview}
     </div>
   );
 }
 
-function ReadingApp() {
+function ReadingApp({ relocate = true }: { relocate?: boolean }) {
   const [fullscreen, setFullscreen] = useState(false);
   return (
     <div id="root">
       <FullscreenPanel
         fullscreen={fullscreen}
+        relocate={relocate}
         scrollAnchor={{
           viewportSelector: '[aria-label="Document"]',
           anchorSelector: "li, p",
@@ -87,8 +89,8 @@ function ReadingApp() {
   );
 }
 
-function renderReflowingDocument() {
-  render(<ReadingApp />);
+function renderReflowingDocument(relocate = true) {
+  render(<ReadingApp relocate={relocate} />);
   const viewport = screen.getByRole("region", { name: "Document" });
   const paragraphs = Array.from(viewport.querySelectorAll("p"));
   // happy-dom has no layout engine. Model the browser geometry at the DOM
@@ -130,43 +132,52 @@ function readingOffset(viewport: HTMLElement, text: string) {
 }
 
 describe("FullscreenPanel", () => {
-  it("keeps the visible paragraph in place when fullscreen changes line wrapping", () => {
-    const viewport = renderReflowingDocument();
-    fireEvent.scroll(viewport, { target: { scrollTop: 190 } });
-    expect(readingOffset(viewport, "Paragraph 3")).toBe(10);
+  it.each([true, false])(
+    "keeps the visible paragraph in place when fullscreen changes line wrapping (relocate: %s)",
+    (relocate) => {
+      const viewport = renderReflowingDocument(relocate);
+      fireEvent.scroll(viewport, { target: { scrollTop: 190 } });
+      expect(readingOffset(viewport, "Paragraph 3")).toBe(10);
 
-    fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
-    expect(readingOffset(viewport, "Paragraph 3")).toBe(10);
-    expect(viewport.scrollTop).toBe(110);
+      fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
+      expect(readingOffset(viewport, "Paragraph 3")).toBe(10);
+      expect(viewport.scrollTop).toBe(110);
 
-    fireEvent.click(screen.getByRole("button", { name: "Exit fullscreen" }));
-    expect(readingOffset(viewport, "Paragraph 3")).toBe(10);
-    expect(viewport.scrollTop).toBe(190);
-  });
+      fireEvent.click(screen.getByRole("button", { name: "Exit fullscreen" }));
+      expect(readingOffset(viewport, "Paragraph 3")).toBe(10);
+      expect(viewport.scrollTop).toBe(190);
+    },
+  );
 
-  it("returns to the paragraph reached by scrolling in fullscreen", () => {
-    const viewport = renderReflowingDocument();
-    fireEvent.scroll(viewport, { target: { scrollTop: 190 } });
-    fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
-    fireEvent.scroll(viewport, { target: { scrollTop: 295 } });
-    expect(readingOffset(viewport, "Paragraph 6")).toBe(5);
+  it.each([true, false])(
+    "returns to the paragraph reached by scrolling in fullscreen (relocate: %s)",
+    (relocate) => {
+      const viewport = renderReflowingDocument(relocate);
+      fireEvent.scroll(viewport, { target: { scrollTop: 190 } });
+      fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
+      fireEvent.scroll(viewport, { target: { scrollTop: 295 } });
+      expect(readingOffset(viewport, "Paragraph 6")).toBe(5);
 
-    fireEvent.click(screen.getByRole("button", { name: "Exit fullscreen" }));
-    expect(readingOffset(viewport, "Paragraph 6")).toBe(5);
-    expect(viewport.scrollTop).toBe(495);
+      fireEvent.click(screen.getByRole("button", { name: "Exit fullscreen" }));
+      expect(readingOffset(viewport, "Paragraph 6")).toBe(5);
+      expect(viewport.scrollTop).toBe(495);
 
-    fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
-    expect(readingOffset(viewport, "Paragraph 6")).toBe(5);
-  });
+      fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
+      expect(readingOffset(viewport, "Paragraph 6")).toBe(5);
+    },
+  );
 
-  it("keeps a partially visible paragraph readable when reflow shortens it", () => {
-    const viewport = renderReflowingDocument();
-    fireEvent.scroll(viewport, { target: { scrollTop: 250 } });
-    expect(readingOffset(viewport, "Paragraph 3")).toBe(-50);
+  it.each([true, false])(
+    "keeps a partially visible paragraph readable when reflow shortens it (relocate: %s)",
+    (relocate) => {
+      const viewport = renderReflowingDocument(relocate);
+      fireEvent.scroll(viewport, { target: { scrollTop: 250 } });
+      expect(readingOffset(viewport, "Paragraph 3")).toBe(-50);
 
-    fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
-    expect(readingOffset(viewport, "Paragraph 3")).toBe(0);
-  });
+      fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
+      expect(readingOffset(viewport, "Paragraph 3")).toBe(0);
+    },
+  );
 
   it("escapes the workspace while retaining preview state and scroll position", () => {
     render(<App />);
@@ -203,16 +214,55 @@ describe("FullscreenPanel", () => {
     );
   });
 
-  it("removes a fullscreen preview when its owner unmounts", () => {
-    render(<App />);
+  it("keeps a shell-owned preview and its state in the same host across fullscreen", () => {
+    render(<App relocate={false} />);
+    const surface = screen.getByRole("complementary", { name: "Preview" });
+    const host = surface.parentElement;
+    fireEvent.click(screen.getByRole("button", { name: "Count: 0" }));
+    fireEvent.scroll(screen.getByRole("region", { name: "Preview content" }), {
+      target: { scrollTop: 120 },
+    });
+
     fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
+    expect(screen.getByRole("complementary", { name: "Preview" })).toBe(
+      surface,
+    );
+    expect(surface.parentElement).toBe(host);
     expect(
-      screen.getByRole("button", { name: "Exit fullscreen" }),
+      screen.getByRole("button", { name: "Count: 1" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Preview content" }).scrollTop,
+    ).toBe(120);
 
-    fireEvent.click(screen.getByRole("button", { name: "Close preview" }));
-
-    expect(screen.getByText("Preview closed")).toBeInTheDocument();
-    expect(screen.queryByRole("complementary", { name: "Preview" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Exit fullscreen" }));
+    expect(surface.parentElement).toBe(host);
+    expect(
+      screen.getByRole("button", { name: "Count: 1" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Preview content" }).scrollTop,
+    ).toBe(120);
+    expect(
+      screen.getByRole("region", { name: "Workspace" }),
+    ).not.toContainElement(surface);
   });
+
+  it.each([true, false])(
+    "removes a fullscreen preview when its owner unmounts (relocate: %s)",
+    (relocate) => {
+      render(<App relocate={relocate} />);
+      fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
+      expect(
+        screen.getByRole("button", { name: "Exit fullscreen" }),
+      ).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Close preview" }));
+
+      expect(screen.getByText("Preview closed")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("complementary", { name: "Preview" }),
+      ).toBeNull();
+    },
+  );
 });

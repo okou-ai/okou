@@ -1,7 +1,9 @@
 //! System metrics collection: CPU, memory, disk.
 //!
 //! Reads `/proc/stat` for CPU, `/proc/meminfo` for memory, and uses
-//! `libc::statvfs` for disk. Writes JSONL to the metrics log file.
+//! descriptor-pinned `libc::fstatvfs` for rootfs/home. Writes JSONL to the metrics log file.
+
+mod disk;
 
 use crate::constants;
 use crate::workload_containment::CgroupCpuStatPaths;
@@ -25,6 +27,10 @@ struct MetricsEntry {
     mem_total: u64,
     disk_used: u64,
     disk_total: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rootfs: Option<disk::FilesystemObservation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    home: Option<disk::FilesystemObservation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     control_cpu_usage_usec: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -287,25 +293,6 @@ fn parse_meminfo_value(s: &str) -> u64 {
         .unwrap_or(0)
 }
 
-/// Get disk usage for `/` via `libc::statvfs`. Returns (used, total) in bytes.
-fn get_disk_info() -> (u64, u64) {
-    let path = c"/";
-    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
-    let ret = unsafe { libc::statvfs(path.as_ptr(), &mut stat) };
-    if ret != 0 {
-        return (0, 0);
-    }
-    let block_size = stat.f_frsize;
-    disk_usage_from_blocks(stat.f_blocks, stat.f_bfree, block_size).unwrap_or((0, 0))
-}
-
-fn disk_usage_from_blocks(blocks: u64, free_blocks: u64, block_size: u64) -> Option<(u64, u64)> {
-    let total = blocks.checked_mul(block_size)?;
-    let free = free_blocks.checked_mul(block_size)?;
-    let used = total.saturating_sub(free);
-    Some((used, total))
-}
-
 fn elapsed_ms_since(scheduled_at: Instant) -> u64 {
     u64::try_from(
         Instant::now()
@@ -323,7 +310,11 @@ async fn collect_metrics(
 ) -> MetricsEntry {
     let cpu = cpu_tracker.get_cpu_percentages(&sources.proc_stat);
     let (mem_used, mem_total) = get_memory_info();
-    let (disk_used, disk_total) = get_disk_info();
+    let (rootfs, home) = disk::observe();
+    // Retain the legacy rootfs fields for independently deployed API readers.
+    let (disk_used, disk_total) = rootfs
+        .map(|fs| (fs.used_bytes, fs.total_bytes))
+        .unwrap_or((0, 0));
     let control_cpu = sources
         .cgroup_cpu_stat
         .as_ref()
@@ -353,6 +344,8 @@ async fn collect_metrics(
         mem_total,
         disk_used,
         disk_total,
+        rootfs,
+        home,
         control_cpu_usage_usec: control_cpu.map(|stat| stat.usage_usec),
         control_cpu_nr_throttled: control_cpu.map(|stat| stat.nr_throttled),
         control_cpu_throttled_usec: control_cpu.map(|stat| stat.throttled_usec),
@@ -598,21 +591,6 @@ mod tests {
     }
 
     #[test]
-    fn disk_usage_from_blocks_rejects_total_overflow() {
-        assert_eq!(disk_usage_from_blocks(u64::MAX / 2 + 1, 0, 2), None);
-    }
-
-    #[test]
-    fn disk_usage_from_blocks_rejects_free_overflow() {
-        assert_eq!(disk_usage_from_blocks(1, u64::MAX / 2 + 1, 2), None);
-    }
-
-    #[test]
-    fn disk_usage_from_blocks_saturates_used_when_free_exceeds_total() {
-        assert_eq!(disk_usage_from_blocks(1, 2, 1024), Some((0, 1024)));
-    }
-
-    #[test]
     fn cpu_tracker_multiple_reads_are_consistent() {
         let mut tracker = CpuTracker::new();
         for i in 0..5 {
@@ -638,13 +616,6 @@ mod tests {
             assert!(total > 0, "total memory should be > 0");
             assert!(used <= total, "used should be <= total");
         }
-    }
-
-    #[test]
-    fn get_disk_info_returns_valid_values() {
-        let (used, total) = get_disk_info();
-        assert!(total > 0, "total disk should be > 0");
-        assert!(used <= total, "used should be <= total");
     }
 
     #[tokio::test]

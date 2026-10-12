@@ -31,7 +31,7 @@ export interface DiscordChatThreadRouteBinding extends DiscordChatThreadRouteKey
   readonly destinationChannelId: string | null;
 }
 
-function discordChatThreadRouteWhere(key: DiscordChatThreadRouteKey) {
+export function discordChatThreadRouteWhere(key: DiscordChatThreadRouteKey) {
   return and(
     eq(discordChatThreadRoutes.connectionId, key.connectionId),
     key.sessionKey === INTEGRATION_DM_SESSION_KEY
@@ -42,11 +42,27 @@ function discordChatThreadRouteWhere(key: DiscordChatThreadRouteKey) {
   );
 }
 
-export async function refreshDiscordDirectMessageRouteDestination(
-  db: Pick<Db, "update">,
-  route: DiscordChatThreadRouteBinding,
-  channelId: string,
-): Promise<DiscordChatThreadRouteBinding> {
+export async function findDiscordChatThreadRoute(
+  db: Db,
+  key: DiscordChatThreadRouteKey,
+): Promise<DiscordChatThreadRouteBinding | undefined> {
+  const [route] = await db
+    .select({
+      id: discordChatThreadRoutes.id,
+      connectionId: discordChatThreadRoutes.connectionId,
+      channelId: discordChatThreadRoutes.channelId,
+      sessionKey: discordChatThreadRoutes.sessionKey,
+      userId: discordChatThreadRoutes.userId,
+      chatThreadId: discordChatThreadRoutes.chatThreadId,
+      destinationChannelId: discordChatThreadRoutes.destinationChannelId,
+    })
+    .from(discordChatThreadRoutes)
+    .where(discordChatThreadRouteWhere(key))
+    .limit(1);
+  if (!route) {
+    return undefined;
+  }
+  const channelId = key.channelId;
   if (
     route.sessionKey !== INTEGRATION_DM_SESSION_KEY ||
     (route.channelId === channelId &&
@@ -74,71 +90,6 @@ export async function refreshDiscordDirectMessageRouteDestination(
   return { ...route, ...updated };
 }
 
-async function loadDiscordChatThreadRoute(
-  db: Pick<Db, "select" | "update">,
-  key: DiscordChatThreadRouteKey,
-): Promise<DiscordChatThreadRouteBinding | undefined> {
-  const [route] = await db
-    .select({
-      id: discordChatThreadRoutes.id,
-      connectionId: discordChatThreadRoutes.connectionId,
-      channelId: discordChatThreadRoutes.channelId,
-      sessionKey: discordChatThreadRoutes.sessionKey,
-      userId: discordChatThreadRoutes.userId,
-      chatThreadId: discordChatThreadRoutes.chatThreadId,
-      destinationChannelId: discordChatThreadRoutes.destinationChannelId,
-    })
-    .from(discordChatThreadRoutes)
-    .where(discordChatThreadRouteWhere(key))
-    .limit(1);
-  return route
-    ? await refreshDiscordDirectMessageRouteDestination(
-        db,
-        route,
-        key.channelId,
-      )
-    : undefined;
-}
-
-export async function findDiscordChatThreadRoute(
-  db: Db,
-  key: DiscordChatThreadRouteKey,
-): Promise<DiscordChatThreadRouteBinding | undefined> {
-  return await loadDiscordChatThreadRoute(db, key);
-}
-
-/**
- * Read the chat thread behind the Discord channel an interaction came from:
- * the main DM conversation for a DM, or the server thread whose route session
- * is that thread channel. Interactions in a parent channel match no route.
- */
-export async function findDiscordInteractionChatThreadId(
-  db: Pick<Db, "select">,
-  args: {
-    readonly connectionId: string;
-    readonly userId: string;
-    readonly channelId: string;
-    readonly isDm: boolean;
-  },
-): Promise<string | undefined> {
-  const [route] = await db
-    .select({ chatThreadId: discordChatThreadRoutes.chatThreadId })
-    .from(discordChatThreadRoutes)
-    .where(
-      and(
-        eq(discordChatThreadRoutes.connectionId, args.connectionId),
-        eq(discordChatThreadRoutes.userId, args.userId),
-        eq(
-          discordChatThreadRoutes.sessionKey,
-          args.isDm ? INTEGRATION_DM_SESSION_KEY : args.channelId,
-        ),
-        eq(discordChatThreadRoutes.destinationChannelId, args.channelId),
-      ),
-    )
-    .limit(1);
-  return route?.chatThreadId;
-}
-
 interface CanonicalDiscordChatThreadRouteArgs extends DiscordChatThreadRouteKey {
   readonly orgId: string;
   readonly agentId: string;
@@ -156,6 +107,7 @@ export const ensureCanonicalDiscordChatThreadRoute$ = command(
   ): Promise<DiscordChatThreadRouteBinding | undefined> => {
     const db = set(writeDb$);
     const defaults = await set(loadNewChatThreadDefaults$, args, signal);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0149; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const [claim] = await tx
         .select({ routeId: discordChatIngress.routeId })
@@ -278,43 +230,13 @@ interface DiscordChatIngressAdmission {
   readonly status: DiscordChatIngressStatus;
 }
 
-export async function findCanonicalDiscordIngressByMessage(
-  db: Db,
+export function discordMessageReceiptDigest(
+  applicationId: string,
   messageId: string,
 ) {
-  const [ingress] = await db
-    .select({
-      id: discordChatIngress.id,
-      payload: discordChatIngress.payload,
-    })
-    .from(discordChatIngress)
-    .where(eq(discordChatIngress.messageId, messageId))
-    .limit(1);
-  return ingress;
-}
-
-function discordMessageReceiptDigest(applicationId: string, messageId: string) {
   return createHash("sha256")
     .update(JSON.stringify([applicationId, "MESSAGE_CREATE", messageId]))
     .digest("hex");
-}
-
-export async function hasCanonicalDiscordMessageReceipt(
-  db: Db,
-  applicationId: string,
-  messageId: string,
-): Promise<boolean> {
-  const [receipt] = await db
-    .select({ eventDigest: discordGatewayReceipts.eventDigest })
-    .from(discordGatewayReceipts)
-    .where(
-      eq(
-        discordGatewayReceipts.eventDigest,
-        discordMessageReceiptDigest(applicationId, messageId),
-      ),
-    )
-    .limit(1);
-  return Boolean(receipt);
 }
 
 export const admitCanonicalDiscordChatEvent$ = command(
@@ -335,6 +257,7 @@ export const admitCanonicalDiscordChatEvent$ = command(
       args.applicationId,
       args.messageId,
     );
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0150; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // This identity-only digest survives connection/chat deletion. Raw payloads
       // still cascade, while a lost ACK cannot launch the same message again

@@ -5,10 +5,14 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import {
+  sshConnectionNeedsRebind,
+  sshConnections,
+} from "@okouai/db/schema/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
@@ -36,7 +40,9 @@ export const currentRunnerVncAuthority$ = command(
         transportType: vncConnections.transportType,
         sshConnectionId: vncConnections.sshConnectionId,
         sshGeneration: sshConnections.generation,
-        sshNeedsRebind: sshConnections.needsRebind,
+        sshNeedsRebind: sql`${sshConnectionNeedsRebind}`.mapWith(
+          nullableDriverValueDecoder(sshConnections.legacyNeedsRebind),
+        ),
         sshAllowed: runThreadSshAccess(),
         x509ServerName: vncConnections.x509ServerName,
         securityType: vncConnections.securityType,

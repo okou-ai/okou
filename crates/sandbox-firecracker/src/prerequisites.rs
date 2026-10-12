@@ -46,17 +46,16 @@ impl PrerequisiteMode {
     }
 }
 
-const FACTORY_FRESH_COMMAND_GROUPS: &[&[&str]] =
-    &[NETWORK_COMMANDS, WORKSPACE_IMAGE_CREATE_COMMANDS];
+const FACTORY_FRESH_COMMAND_GROUPS: &[&[&str]] = &[NETWORK_COMMANDS, HOME_IMAGE_CREATE_COMMANDS];
 const FACTORY_SNAPSHOT_RESTORE_COMMAND_GROUPS: &[&[&str]] = &[
     NETWORK_COMMANDS,
     COW_POOL_SNAPSHOT_RESTORE_COMMANDS,
-    WORKSPACE_IMAGE_CREATE_COMMANDS,
+    HOME_IMAGE_CREATE_COMMANDS,
     SNAPSHOT_PRIVATE_MOUNT_RESTORE_COMMANDS,
 ];
 const SNAPSHOT_CREATE_COMMAND_GROUPS: &[&[&str]] = &[
     NETWORK_COMMANDS,
-    WORKSPACE_IMAGE_CREATE_COMMANDS,
+    HOME_IMAGE_CREATE_COMMANDS,
     SNAPSHOT_PRIVATE_MOUNT_CREATE_COMMANDS,
 ];
 
@@ -72,7 +71,7 @@ const DNS_INPUT_FILTER_COMMANDS: &[&str] = &["ip6tables", "ip6tables-save", "ip6
 const SNAPSHOT_PRIVATE_MOUNT_CREATE_COMMANDS: &[&str] = &["unshare", "bash", "mount"];
 const SNAPSHOT_PRIVATE_MOUNT_RESTORE_COMMANDS: &[&str] = &["unshare", "bash", "mount", "umount"];
 const COW_POOL_SNAPSHOT_RESTORE_COMMANDS: &[&str] = &["cp"];
-const WORKSPACE_IMAGE_CREATE_COMMANDS: &[&str] = &["mkfs.ext4"];
+const HOME_IMAGE_CREATE_COMMANDS: &[&str] = &["mkfs.ext4"];
 
 /// Return host commands required across Firecracker runtime modes.
 ///
@@ -406,7 +405,7 @@ mod tests {
                     memory_path,
                     cow_path,
                     drive_bind_path: PathBuf::from("/tmp/cow-device-bind"),
-                    workspace_drive_bind_path: PathBuf::from("/tmp/workspace-device-bind"),
+                    home_drive_bind_path: PathBuf::from("/tmp/home-device-bind"),
                     vsock_bind_dir: PathBuf::from("/tmp/vsock"),
                 },
             }
@@ -497,7 +496,7 @@ mod tests {
             memory_path: PathBuf::from("/tmp/memory.bin"),
             cow_path: PathBuf::from("/tmp/cow.img"),
             drive_bind_path: PathBuf::from("/tmp/cow-device-bind"),
-            workspace_drive_bind_path: PathBuf::from("/tmp/workspace-device-bind"),
+            home_drive_bind_path: PathBuf::from("/tmp/home-device-bind"),
             vsock_bind_dir: PathBuf::from("/tmp/vsock"),
         }
     }
@@ -555,7 +554,7 @@ mod tests {
     }
 
     #[test]
-    fn factory_fresh_commands_include_network_and_workspace_image_create() {
+    fn factory_fresh_commands_include_network_and_home_image_create() {
         let mode = PrerequisiteMode::FactoryFresh;
         assert_eq!(
             required_commands(&mode),

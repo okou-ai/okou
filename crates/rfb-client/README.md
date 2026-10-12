@@ -4,7 +4,7 @@ This internal, unpublished crate establishes an authenticated connection for the
 VNC engine tracked by [#34778](https://github.com/vm0-ai/okou/issues/34778).
 It provides verified authentication, framebuffer decoding and caller-driven
 capture/input sessions for the documented reference-server profile. Runner
-integrates this engine through [Run-owned guest RPC](../../docs/runner-vnc-execution.md)
+integrates this engine through [Run-owned guest RPC](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/runner-vnc-execution.md)
 and the private authority API. The CLI, owner configuration and Agent inventory
 compose those contracts without changing this engine; VNC remains disabled by
 default and product acceptance is recorded separately.
@@ -28,6 +28,22 @@ PEM decoding, encrypted-key passphrases, owner rotation, at-rest encryption and
 product authorization remain for [#37375](https://github.com/okou-ai/okou/issues/37375).
 Do not pass a TLS trust root as a substitute for the client's key or reverse the
 original target name merely because an SSH tunnel carries the supplied stream.
+
+`authenticate_qemu_gssapi` is a separate **engine-only** verified-X509263
+entry point with explicit same-realm Kerberos identities and ticket/password/keytab
+sources. TLS must verify before native credential delivery or GSS tokens. The
+sealed MIT worker cannot discover destinations/ambient credentials; explicit online
+KDC traffic requires separate current caller authority. Imported tickets never
+fall back online. RFC4752 selects no inner security layer over verified TLS, and
+ticket/GSS/Run/session expiry clamps the original stream and two-hour session cap.
+Renewal cannot extend established authentication; the outer owner must close idle
+sessions. Neither this engine nor its fixtures add a saved capability or enable VNC.
+Routine CI exercises Rust protocol tests, native containment and an independent
+MIT/KDC acceptor with a controlled RFB peer on both native targets. It does not
+build QEMU or require VM firmware/screenshots. This entry point retains its
+explicit 263 compatibility profile; it does not claim generic standards
+X509SASL264 support. Optional external-server checks are separate from protocol CI.
+See [`tests/QEMU_GSSAPI.md`](tests/QEMU_GSSAPI.md) for exact evidence and limits.
 
 `authenticate_apple_dh` is a separate entry point for Apple's legacy ARD
 security type 30. `authenticate_apple_vnc_password` separately selects the

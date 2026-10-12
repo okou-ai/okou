@@ -11,7 +11,10 @@ import {
   type TelegramMessageEntity,
 } from "@okouai/db/schema/telegram-message";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import { sameSelectedModel } from "@okouai/core/auto-run-model";
+import {
+  AUTO_SELECTED_MODEL,
+  sameSelectedModel,
+} from "@okouai/core/auto-run-model";
 import { command } from "ccstate";
 import { and, desc, eq } from "drizzle-orm";
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -1551,7 +1554,7 @@ const handleModelCommand$ = command(
       return {
         model: runModel.model,
         label: runModel.modelLabel,
-        isDefault: runModel.model === null,
+        isDefault: runModel.model === AUTO_SELECTED_MODEL,
       };
     });
     if (options.length === 0) {

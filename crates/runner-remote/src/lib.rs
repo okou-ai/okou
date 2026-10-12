@@ -1,9 +1,11 @@
-//! Assignment-bound guest RPC, remote usage, SSH, and VNC services.
+//! Assignment-bound guest RPC, remote usage, SSH, Tailscale, and VNC services.
 
 pub mod guest_duplex;
 pub mod guest_rpc;
 pub mod run_usage;
 pub mod ssh;
+pub mod tailscale;
+mod tls;
 pub mod vnc;
 
 /// Initialization failure confined to remote authority clients.

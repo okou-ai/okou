@@ -52,19 +52,20 @@ pub(in crate::executor::tests) async fn test_executor_config(dir: &Path) -> Exec
             .unwrap(),
         pre_spawn_admission: crate::pre_spawn_admission::PreSpawnAdmission::new(2).unwrap(),
         home: HomePaths::with_root(dir.to_path_buf()),
-        workspace_cache: None,
+        home_cache: None,
     }
 }
 
 pub(in crate::executor::tests) fn default_params() -> JobParams {
     JobParams {
         profile_name: "vm0/default".into(),
+        rootfs_hash: "test-rootfs".into(),
         vcpu: 2,
         memory_mb: 2048,
-        workspace_disk_mb: 16_384,
+        home_disk_mb: 16_384,
         restore_guest_state: false,
         device_rate_limits: None,
-        workspace_image_prepare_lock_policy: Default::default(),
+        home_image_prepare_lock_policy: Default::default(),
     }
 }
 

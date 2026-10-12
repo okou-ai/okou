@@ -10,11 +10,11 @@ use guest_control_server::{
     handle_connection_with_test_dns_readiness_program,
     handle_connection_with_test_guest_agent_program,
     handle_connection_with_test_guest_state_restore_program,
+    handle_connection_with_test_home_drive_mount_program,
     handle_connection_with_test_memory_snapshot_path,
     handle_connection_with_test_process_containment,
     handle_connection_with_test_process_containment_and_exec_drain_deadline,
     handle_connection_with_test_storage_manifest_program,
-    handle_connection_with_test_workspace_drive_mount_program,
 };
 
 use super::protocol::read_message_with_context;
@@ -69,12 +69,12 @@ pub(crate) fn start_guest_connection_with_storage_manifest_program(
     })
 }
 
-pub(crate) fn start_guest_connection_with_workspace_drive_mount_program(
+pub(crate) fn start_guest_connection_with_home_drive_mount_program(
     program: std::path::PathBuf,
     timeout_ms: u32,
 ) -> (GuestConnectionHandle, UnixStream) {
     start_guest_connection_with_handler(move |stream| {
-        handle_connection_with_test_workspace_drive_mount_program(stream, program, timeout_ms)
+        handle_connection_with_test_home_drive_mount_program(stream, program, timeout_ms)
     })
 }
 

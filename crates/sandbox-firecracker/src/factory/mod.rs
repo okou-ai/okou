@@ -25,13 +25,13 @@ use crate::factory::create_transaction::{
     rollback_create_transaction,
 };
 use crate::factory::leak_cleaner::LeakCleaner;
+use crate::home_drive_image::prepare_home_drive_image;
 use crate::host_cpu_cgroup::HostCpuCgroupManager;
 use crate::network::{NetnsPoolConfig, NetnsPoolHandle};
 use crate::paths::{FactoryPaths, RuntimePaths, SandboxPaths, SockPaths};
 use crate::prerequisites;
 use crate::runtime_dirs::prepare_runtime_socket_dir;
 use crate::sandbox::{FirecrackerSandbox, FirecrackerSandboxInit};
-use crate::workspace_drive_image::prepare_workspace_drive_image;
 
 pub(crate) use invariant::InvariantConfig;
 pub use invariant::{PREWARM_SCRIPT, config_hash};
@@ -239,16 +239,16 @@ impl FirecrackerFactory {
                 })?;
                 let sandbox_paths = SandboxPaths::new(target_workspace);
 
-                if let Some(workspace_drive) = config.workspace_drive.as_ref() {
+                if let Some(home_drive) = config.home_drive.as_ref() {
                     let stage_started = Instant::now();
-                    let prepare_result = prepare_workspace_drive_image(
-                        &sandbox_paths.workspace_image(),
-                        workspace_drive,
+                    let prepare_result = prepare_home_drive_image(
+                        &sandbox_paths.home_image(),
+                        home_drive,
                         Some(&mut timing),
                     )
                     .await;
                     timing.record_stage_result(
-                        SandboxCreateStage::WorkspaceDrivePrepare,
+                        SandboxCreateStage::HomeDrivePrepare,
                         stage_started,
                         prepare_result,
                     )?;
@@ -778,7 +778,7 @@ mod tests {
                 memory_mb: 512,
             },
             device_rate_limits: None,
-            workspace_drive: None,
+            home_drive: None,
         };
 
         let err = match factory.create(config).await {
@@ -812,7 +812,7 @@ mod tests {
                 memory_mb: 512,
             },
             device_rate_limits: None,
-            workspace_drive: None,
+            home_drive: None,
         };
         let err = match factory.create(config).await {
             Ok(_) => panic!("create should fail after shutdown"),

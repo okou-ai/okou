@@ -28,9 +28,10 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
-  deleteDiscordFixture,
+  removePublicDiscordBinding,
+  mockDiscordApplication,
   mockDiscordMemberships,
-  seedDiscordFixture,
+  createPublicDiscordBinding,
   uniqueDiscordSnowflake,
 } from "./helpers/discord";
 import {
@@ -53,7 +54,8 @@ import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const runsApi = createRunsApi(context);
 const track = createFixtureTracker<ConnectedDiscordActor>(async (actor) => {
-  await deleteDiscordFixture(context, actor.fixture);
+  mockDiscordMemberships(context, [actor]);
+  await removePublicDiscordBinding(context, actor.fixture);
   await deleteFeatureSwitchesForUser(context, actor);
 });
 
@@ -373,16 +375,6 @@ describe("canonical Discord ingress", () => {
       );
       expect(claim.appendSystemPrompt).toContain(
         "- Discord files: when the task explicitly asks to share a file in Discord, use `okou discord upload-file --help`",
-      );
-      // Native reads deny bot DMs, so the prompt must not steer runs there.
-      expect(claim.appendSystemPrompt).toContain(
-        "Bot DM content is not readable; you can only send or upload to your own bot DM.",
-      );
-      expect(claim.appendSystemPrompt).toContain(
-        "bot DM attachments cannot be downloaded",
-      );
-      expect(claim.appendSystemPrompt).toContain(
-        "bot DM content, including earlier DM messages and their attachments, is not readable",
       );
       expect(claim.appendSystemPrompt).not.toContain(
         "Only your own bot DM is accessible",
@@ -737,7 +729,8 @@ describe("canonical Discord ingress", () => {
     await expect(discordStatus(actor)).resolves.toMatchObject({
       isInstalled: false,
     });
-    const reinstalled = await seedDiscordFixture(context, {
+    const reinstalled = await createPublicDiscordBinding(context, {
+      flow: "install",
       userId: actor.userId,
       orgId: actor.orgId,
       orgRole: "org:admin",
@@ -800,7 +793,8 @@ describe("canonical Discord ingress", () => {
       }),
       [200],
     );
-    const reinstalled = await seedDiscordFixture(context, {
+    const reinstalled = await createPublicDiscordBinding(context, {
+      flow: "connect",
       userId: actor.userId,
       orgId: actor.orgId,
       orgRole: "org:admin",
@@ -1182,7 +1176,7 @@ describe("canonical Discord ingress", () => {
       { userId: second.userId, orgId: second.orgId, orgRole: "org:admin" },
     ]);
     // DM content never depends on the guild MESSAGE_CONTENT intent.
-    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
+    mockDiscordApplication(1 << 19);
     await selectDmOrganization(first);
     const firstDm = discordMessageForTest(first, {
       channelId: provider.dmChannelId,
@@ -1304,7 +1298,7 @@ describe("canonical Discord ingress", () => {
     );
     await flushWaitUntilForTest();
     expect(noticesTo(dmId)).toHaveLength(1);
-    expect(noticesTo(dmId)[0]?.content).toContain("/okou connect");
+    expect(noticesTo(dmId)[0]?.content).toContain("/connect");
     // A relay retry of the same event and a follow-up DM send nothing more.
     await postDiscordMessage(context, first);
     await postDiscordMessage(context, strangerDm("are you there?"));
@@ -1340,7 +1334,7 @@ describe("canonical Discord ingress", () => {
     expect(noticesTo(dmId)).toHaveLength(2);
   });
 
-  it("asks a DM sender with several workspaces to choose one with /okou org", async () => {
+  it("asks a DM sender with several workspaces to choose one with /connect", async () => {
     const first = await connected();
     const provider = mockDiscordProvider(first);
     const second = await track(
@@ -1368,7 +1362,7 @@ describe("canonical Discord ingress", () => {
     expect(provider.sentMessages).toHaveLength(1);
     expect(provider.sentMessages[0]).toMatchObject({
       channel_id: provider.dmChannelId,
-      content: expect.stringContaining("/okou org"),
+      content: expect.stringContaining("/connect"),
     });
     await expect(discordChatThreads(context, first)).resolves.toHaveLength(0);
     await expect(discordChatThreads(context, second)).resolves.toHaveLength(0);
@@ -1395,7 +1389,7 @@ describe("canonical Discord ingress", () => {
   it("imports refreshed attachment metadata while keeping context and signed URLs private", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
-    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
+    mockDiscordApplication(1 << 19);
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.DiscordIntegration]: true,
       [FeatureSwitchKey.PrivateArtifacts]: true,
@@ -1638,7 +1632,7 @@ describe("canonical Discord ingress", () => {
       await release.promise;
       return undefined;
     };
-    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
+    mockDiscordApplication(1 << 19);
     const message = discordMessageForTest(actor, {
       channelId: provider.guildChannelId,
       content: `<@${actor.botUserId}> do not launch after disconnect`,

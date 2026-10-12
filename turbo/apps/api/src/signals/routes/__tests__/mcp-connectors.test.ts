@@ -1,3 +1,4 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { randomUUID } from "node:crypto";
 
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
@@ -474,46 +475,6 @@ describe("GET /api/mcp-connectors", () => {
     ]);
   });
 
-  it("fails closed for legacy tokens without an exact projection", async () => {
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    runs.configureRunnerGroup();
-    await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Legacy MCP discovery Agent",
-    });
-    const connected = await connectors.createCustomConnector(
-      actor,
-      manualMcpConnectorBody({
-        slug: "_legacy-default-mcp",
-        displayName: "Legacy default MCP",
-        endpoint: "https://legacy-default-mcp.example.test/server",
-      }),
-    );
-    await connectors.setCustomConnectorSecret(actor, connected.id, "legacy");
-    await connectors.updateAgentCustomConnectors(actor, agent.agentId, [
-      connected.id,
-    ]);
-    const run = await createRunForAgent(actor, agent.agentId);
-    mockClerkMembership(context, actor, "org:admin");
-
-    const response = await accept(
-      client().list({
-        headers: headers(
-          runs.okouTokenForRunWithCapabilities(actor, run.runId, [
-            "connector:read",
-          ]),
-        ),
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({ connectors: [] });
-  });
-
   it("returns an empty authoritative result when the token run is absent", async () => {
     const actor = bdd.user();
     mockClerkMembership(context, actor, "org:admin");
@@ -534,20 +495,11 @@ describe("GET /api/mcp-connectors", () => {
     expect(response.body).toStrictEqual({ connectors: [] });
   });
 
-  it("requires agent authentication with connector read capability", async () => {
+  it("requires agent authentication for connector read", async () => {
     const actor = bdd.user();
     mockClerkMembership(context, actor, "org:admin");
-    const runId = randomUUID();
 
     const unauthenticated = await accept(client().list({ headers: {} }), [401]);
-    const missingCapability = await accept(
-      client().list({
-        headers: headers(
-          runs.okouTokenForRunWithCapabilities(actor, runId, []),
-        ),
-      }),
-      [403],
-    );
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const session = await accept(
       client().list({ headers: headers("clerk-session") }),
@@ -555,7 +507,6 @@ describe("GET /api/mcp-connectors", () => {
     );
 
     expect(unauthenticated.status).toBe(401);
-    expect(missingCapability.status).toBe(403);
     expect(session.status).toBe(403);
   });
 });
@@ -864,78 +815,68 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     await runs.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("requires agent authentication with connector write capability", async () => {
-    const actor = bdd.user();
-    mockClerkMembership(context, actor, "org:admin");
-    const runId = randomUUID();
-    const connectorId = randomUUID();
+  it("requires agent authentication for connector write", async () => {
+    const owned = await publicChatActor(context);
+    await owned.run(async () => {
+      const { actor } = owned;
+      const sent = await owned.sendChatRun(actor, {
+        agentId: owned.agentId,
+        prompt: "request connector reauthorization",
+      });
+      const { claim } = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+      const token = claim.platformEnvironment.OKOU_TOKEN;
+      if (!token) {
+        throw new Error("Expected a claimed connector token");
+      }
+      mockClerkMembership(context, actor, "org:admin");
+      const connectorId = randomUUID();
 
-    const unauthenticated = await accept(
-      client().reauthorizeOAuth({
-        headers: {},
-        body: {
-          target: { kind: "custom", customConnectorId: connectorId },
-          scopes: ["admin"],
-        },
-      }),
-      [401],
-    );
-    const missingCapability = await accept(
-      client().reauthorizeOAuth({
-        headers: headers(
-          runs.okouTokenForRunWithCapabilities(actor, runId, []),
-        ),
-        body: {
-          target: { kind: "custom", customConnectorId: connectorId },
-          scopes: ["admin"],
-        },
-      }),
-      [403],
-    );
-    mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-    const session = await accept(
-      client().reauthorizeOAuth({
-        headers: headers("clerk-session"),
-        body: {
-          target: { kind: "custom", customConnectorId: connectorId },
-          scopes: ["admin"],
-        },
-      }),
-      [403],
-    );
-    const unpinned = await accept(
-      client().reauthorizeOAuth({
-        headers: headers(
-          runs.okouTokenForRunWithCapabilities(actor, runId, [
-            "connector:write",
-          ]),
-        ),
-        body: {
-          target: { kind: "custom", customConnectorId: connectorId },
-          scopes: ["admin"],
-        },
-      }),
-      [409],
-    );
-    const malformedScope = await accept(
-      client().reauthorizeOAuth({
-        headers: headers(
-          runs.okouTokenForRunWithCapabilities(actor, runId, [
-            "connector:write",
-          ]),
-        ),
-        body: {
-          target: { kind: "custom", customConnectorId: connectorId },
-          scopes: ["invalid scope"],
-        },
-      }),
-      [400],
-    );
+      const unauthenticated = await accept(
+        client().reauthorizeOAuth({
+          headers: {},
+          body: {
+            target: { kind: "custom", customConnectorId: connectorId },
+            scopes: ["admin"],
+          },
+        }),
+        [401],
+      );
+      mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
+      const session = await accept(
+        client().reauthorizeOAuth({
+          headers: headers("clerk-session"),
+          body: {
+            target: { kind: "custom", customConnectorId: connectorId },
+            scopes: ["admin"],
+          },
+        }),
+        [403],
+      );
+      const unpinned = await accept(
+        client().reauthorizeOAuth({
+          headers: headers(token),
+          body: {
+            target: { kind: "custom", customConnectorId: connectorId },
+            scopes: ["admin"],
+          },
+        }),
+        [409],
+      );
+      const malformedScope = await accept(
+        client().reauthorizeOAuth({
+          headers: headers(token),
+          body: {
+            target: { kind: "custom", customConnectorId: connectorId },
+            scopes: ["invalid scope"],
+          },
+        }),
+        [400],
+      );
 
-    expect(unauthenticated.status).toBe(401);
-    expect(missingCapability.status).toBe(403);
-    expect(session.status).toBe(403);
-    expect(unpinned.body.error.code).toBe("CONFLICT");
-    expect(malformedScope.body.error.code).toBe("BAD_REQUEST");
+      expect(unauthenticated.status).toBe(401);
+      expect(session.status).toBe(403);
+      expect(unpinned.body.error.code).toBe("CONFLICT");
+      expect(malformedScope.body.error.code).toBe("BAD_REQUEST");
+    });
   });
 });

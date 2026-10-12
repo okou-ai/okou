@@ -1370,18 +1370,73 @@ mod tests {
             .collect()
     }
 
-    fn one_entry_per_batch_log_content(count: usize) -> String {
-        let mut log = one_entry_per_batch_log(0);
-        let mut content = Vec::new();
-        for sequence in 0..count {
-            *log.get_mut("sequence").unwrap() = json!(sequence);
-            serde_json::to_writer(&mut content, &log).unwrap();
-            content.push(b'\n');
+    fn sequenced_log_content(
+        log: &serde_json::Value,
+        sequences: impl IntoIterator<Item = usize>,
+    ) -> String {
+        let fields = log.as_object().unwrap();
+        assert!(fields.contains_key("sequence"));
+        let mut prefix = vec![b'{'];
+        let mut suffix = Vec::new();
+        let mut after_sequence = false;
+        for (index, (key, value)) in fields.iter().enumerate() {
+            let bytes = if after_sequence {
+                &mut suffix
+            } else {
+                &mut prefix
+            };
+            if index != 0 {
+                bytes.push(b',');
+            }
+            serde_json::to_writer(&mut *bytes, key).unwrap();
+            bytes.push(b':');
+            if key == "sequence" {
+                after_sequence = true;
+            } else {
+                serde_json::to_writer(bytes, value).unwrap();
+            }
         }
-        if count == 0 {
+        suffix.extend_from_slice(b"}\n");
+        let mut content = Vec::new();
+        for sequence in sequences {
+            content.extend_from_slice(&prefix);
+            serde_json::to_writer(&mut content, &sequence).unwrap();
+            content.extend_from_slice(&suffix);
+        }
+        if content.is_empty() {
             content.push(b'\n');
         }
         String::from_utf8(content).unwrap()
+    }
+
+    fn one_entry_per_batch_log_content(count: usize) -> String {
+        sequenced_log_content(&one_entry_per_batch_log(0), 0..count)
+    }
+
+    #[test]
+    fn sequenced_log_fixture_preserves_escaping_order_and_sequence_boundaries() {
+        for log in [
+            json!({"sequence":0}),
+            json!({"sequence":0,"body":"你好\"\\\n\0\"sequence\":0"}),
+            json!({"body":[null,true,19,{"sequence":0}],"sequence":0}),
+            json!({"before":{},"sequence":0,"after":{"z":[],"a":null}}),
+        ] {
+            let original = log.to_string();
+            for sequences in [vec![], vec![0], vec![1, 9, 10, 99, 100, usize::MAX]] {
+                let expected = sequences
+                    .iter()
+                    .map(|sequence| {
+                        let mut entry = log.clone();
+                        *entry.get_mut("sequence").unwrap() = json!(sequence);
+                        serde_json::to_string(&entry).unwrap()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    + "\n";
+                assert_eq!(sequenced_log_content(&log, sequences), expected);
+                assert_eq!(log.to_string(), original);
+            }
+        }
     }
 
     #[test]
@@ -1408,14 +1463,74 @@ mod tests {
         }
     }
 
+    struct SerializedByteCount(usize);
+
+    impl std::io::Write for SerializedByteCount {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 = self
+                .0
+                .checked_add(bytes.len())
+                .ok_or_else(|| std::io::Error::other("serialized fixture length overflow"))?;
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
     fn estimated_batch_bytes(run_id: &RunId, logs: &[serde_json::Value]) -> usize {
         logs.iter().fold(
             empty_batch_estimated_bytes(run_id),
             |estimated_bytes, log| {
-                estimated_bytes
-                    .saturating_add(estimated_entry_bytes(&serde_json::to_string(log).unwrap()))
+                let mut count = SerializedByteCount(0);
+                serde_json::to_writer(&mut count, log).unwrap();
+                estimated_bytes.saturating_add(
+                    count
+                        .0
+                        .saturating_add(NETWORK_LOG_UPLOAD_ENTRY_OVERHEAD_BYTES),
+                )
             },
         )
+    }
+
+    #[test]
+    fn counted_batch_fixture_preserves_canonical_bytes_and_budget_boundaries() {
+        let mut full_count = SerializedByteCount(usize::MAX);
+        let error = std::io::Write::write(&mut full_count, b"x").unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::Other);
+        assert_eq!(full_count.0, usize::MAX);
+
+        let run_id = RunId::from(uuid::Uuid::nil());
+        for logs in [
+            vec![],
+            vec![json!({"body":""})],
+            vec![
+                json!({"z-field":"你好\"\\\n\0", "a-field":[null, true, 19]}),
+                json!({"sequence":1, "body":{"nested":[[], {}, -1, 1.5]}}),
+            ],
+        ] {
+            let expected = logs
+                .iter()
+                .fold(empty_batch_estimated_bytes(&run_id), |bytes, log| {
+                    bytes
+                        .saturating_add(estimated_entry_bytes(&serde_json::to_string(log).unwrap()))
+                });
+            assert_eq!(estimated_batch_bytes(&run_id, &logs), expected);
+        }
+        let empty_log = json!({"body":"", "sequence":0});
+        let overhead =
+            empty_batch_estimated_bytes(&run_id) + estimated_entry_bytes(&empty_log.to_string());
+        for overflow in [0, 1] {
+            let logs = [json!({
+                "body":"x".repeat(NETWORK_LOG_UPLOAD_MAX_BATCH_BYTES - overhead + overflow),
+                "sequence":0,
+            })];
+            let expected =
+                empty_batch_estimated_bytes(&run_id) + estimated_entry_bytes(&logs[0].to_string());
+            assert_eq!(expected, NETWORK_LOG_UPLOAD_MAX_BATCH_BYTES + overflow);
+            assert_eq!(estimated_batch_bytes(&run_id, &logs), expected);
+        }
     }
 
     async fn capture_async_log_events<F>(future: F) -> (F::Output, Vec<CapturedEvent>)

@@ -22,7 +22,15 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "febec8a3399be74b0f14a89cb9f42e39dd5ce69f" ]; then
+    if [ "${3:-}" = "4747474747474747474747474747474747474747" ]; then
+      [ "${MOCK_NATIVE_BRIEF_MEMBER_RUNTIME_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "4646464646464646464646464646464646464646" ]; then
+      [ "${MOCK_DESKTOP_MIGRATION_HOP_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "4545454545454545454545454545454545454545" ]; then
+      [ "${MOCK_COMPUTER_USE_HOST_SESSION_ONLY_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "9fa8da0d3d25e75e0dcfdd3292e1e2bbe6fe262f" ]; then
+      [ "${MOCK_CHAT_THREAD_PROVENANCE_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "febec8a3399be74b0f14a89cb9f42e39dd5ce69f" ]; then
       [ "${MOCK_BLANK_RUNNER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6" ]; then
       [ "${MOCK_BALANCE_RUNNER_FLOOR_VALID:-1}" = "1" ]
@@ -46,6 +54,12 @@ case "${1:-}" in
       [ "${MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "77357abdb29ce96b2caf9ee679299602757844dc" ]; then
       [ "${MOCK_PI_MEMORY_LUNA_ROUTING_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "cdd6a0abe3f5880e98a02da8df5143232d7632e1" ]; then
+      [ "${MOCK_PI_MEMORY_JOB_RESULT_READER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "a635ec3afa20cdb5df9c8125afe6cec24ef53e16" ]; then
+      [ "${MOCK_PI_OPENROUTER_VERSIONED_WRITER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "b6919718b6d856dfa3a7c500b6e899dd3fde7674" ]; then
+      [ "${MOCK_MODEL_EXECUTION_CAPTURE_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "3d93ff8d4b4a07a5888e3030e69b340f40da0ad4" ]; then
       [ "${MOCK_CHAT_THREAD_SNAPSHOT_R2_ONLY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "2222222222222222222222222222222222222222" ]; then
@@ -64,8 +78,12 @@ case "${1:-}" in
       [ "${MOCK_RETIRED_PREFERENCE_COLUMNS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1" ]; then
       [ "${MOCK_CHAT_EVENT_V8_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "4242424242424242424242424242424242424242" ]; then
+      [ "${MOCK_CHECKPOINT_WRITER_PREPARATION_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1414141414141414141414141414141414141414" ]; then
       [ "${MOCK_BROWSER_SESSION_MUTATIONS_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "4343434343434343434343434343434343434343" ]; then
+      [ "${MOCK_COMPUTER_USE_COMMAND_NOTIFICATIONS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1212121212121212121212121212121212121212" ]; then
       [ "${MOCK_RETIRED_INTEGRATION_AGENT_TABLES_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ]; then
@@ -97,7 +115,13 @@ case "${1:-}" in
     fi
     ;;
   log)
-    if [[ "$*" == *1255_retire_public_brand.sql* ]]; then
+    if [[ "$*" == *desktop-electron-migration-release.ts* ]]; then
+      printf '%s\n' "${MOCK_DESKTOP_MIGRATION_HOP_COMMIT-4646464646464646464646464646464646464646}"
+    elif [[ "$*" == *src/runtime/computer-use-host.ts* ]]; then
+      printf '%s\n' "${MOCK_COMPUTER_USE_HOST_SESSION_ONLY_COMMIT-4545454545454545454545454545454545454545}"
+    elif [[ "$*" == *src/runtime/org-members-metadata.ts* ]]; then
+      printf '%s\n' "${MOCK_NATIVE_BRIEF_MEMBER_RUNTIME_COMMIT-4747474747474747474747474747474747474747}"
+    elif [[ "$*" == *1255_retire_public_brand.sql* ]]; then
       printf '%s\n' "${MOCK_PUBLIC_BRAND_RETIREMENT_COMMIT-2222222222222222222222222222222222222222}"
     elif [[ "$*" == *1259_drop_agent_runs_last_heartbeat_at.sql* ]]; then
       printf '%s\n' "${MOCK_AGENT_RUN_HEARTBEAT_DROP_COMMIT-3333333333333333333333333333333333333333}"
@@ -137,8 +161,12 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_USAGE_ALLOWANCE_COMMIT-4141414141414141414141414141414141414141}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
+    elif [[ "$*" == *pi-memory-phase2-input-revision.ts* ]]; then
+      printf '%s\n' "${MOCK_CHECKPOINT_WRITER_PREPARATION_COMMIT-4242424242424242424242424242424242424242}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
       printf '%s\n' "${MOCK_BROWSER_SESSION_MUTATIONS_COMMIT-1414141414141414141414141414141414141414}"
+    elif [[ "$*" == *computer-use-command-notifications* ]]; then
+      printf '%s\n' "${MOCK_COMPUTER_USE_COMMAND_NOTIFICATIONS_COMMIT-4343434343434343434343434343434343434343}"
     elif [[ "$*" == *1282_drop_retired_integration_agent_tables.sql* ]]; then
       printf '%s\n' "${MOCK_RETIRED_INTEGRATION_AGENT_TABLES_COMMIT-1212121212121212121212121212121212121212}"
     else
@@ -238,6 +266,7 @@ assert_failure() {
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
 grep -Fxq "git merge-base --is-ancestor 77357abdb29ce96b2caf9ee679299602757844dc ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must select Luna for memory"
+grep -Fxq "git merge-base --is-ancestor cdd6a0abe3f5880e98a02da8df5143232d7632e1 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must read the Pi memory Job result"
 grep -Fxq "git merge-base --is-ancestor 4558c9fac46ce1a96a25745b477b32b70dab7ae6 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft child-only writer floor"
 grep -Fxq "git merge-base --is-ancestor 7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft owner key floor"
 grep -Fxq "git merge-base --is-ancestor 2222222222222222222222222222222222222222 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the public_brand retirement floor"
@@ -270,6 +299,8 @@ grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/m
 grep -Fxq "git merge-base --is-ancestor 3737373737373737373737373737373737373737 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the model route state floor"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1343_retire_pi_stable_context.sql" "${tmp_dir}/boundaries.log" || fail "Pi stable-context retirement floor must resolve the canonical main migration"
 grep -Fxq "git merge-base --is-ancestor 3838383838383838383838383838383838383838 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi stable-context retirement floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/runtime/org-members-metadata.ts" "${tmp_dir}/boundaries.log" || fail "Native member runtime floor must resolve the canonical preparation on main"
+grep -Fxq "git merge-base --is-ancestor 4747474747474747474747474747474747474747 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Native member runtime preparation floor"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1356_drop_organization_usage_allowance.sql" "${tmp_dir}/boundaries.log" || fail "Usage Allowance floor must resolve the canonical main migration"
 grep -Fxq "git merge-base --is-ancestor 4141414141414141414141414141414141414141 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Usage Allowance retirement floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
@@ -278,6 +309,25 @@ grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version o
 grep -qx "runner_tag=runner-rs-v1.2.3" "$output_file" || fail "missing retained Runner tag output"
 runner_matrix=$(sed -n 's/^runner_matrix=//p' "$output_file")
 jq -e 'length == 2 and .[0].id == "arm64" and .[1].id == "x86_64"' >/dev/null <<<"$runner_matrix" || fail "unexpected Runner matrix"
+
+grep -Fxq "git merge-base --is-ancestor a635ec3afa20cdb5df9c8125afe6cec24ef53e16 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the versioned Pi OpenRouter writer floor"
+grep -Fxq "git merge-base --is-ancestor b6919718b6d856dfa3a7c500b6e899dd3fde7674 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the model execution capture writer floor"
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the model execution capture writer" \
+  run_resolver "${tmp_dir}/model-execution-capture-floor.output" MOCK_MODEL_EXECUTION_CAPTURE_WRITER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/model-execution-capture-floor.output" ] || fail "pre-capture writer must not publish rollback outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-capture writer must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the versioned Pi OpenRouter writer" \
+  run_resolver "${tmp_dir}/pi-openrouter-versioned-writer-floor.output" MOCK_PI_OPENROUTER_VERSIONED_WRITER_FLOOR_VALID=0
+grep -Fq 'a635ec3afa20cdb5df9c8125afe6cec24ef53e16' "${tmp_dir}/failure.err" || fail "Pi writer rejection must identify the permanent versioned writer commit"
+[ ! -s "${tmp_dir}/pi-openrouter-versioned-writer-floor.output" ] || fail "unversioned Pi writer must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "unversioned Pi writer must fail before artifact or host access"
+fi
 
 : >"${tmp_dir}/boundaries.log"
 assert_failure "Rollback target predates Pi memory Luna routing" \
@@ -539,6 +589,14 @@ if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "model route state floor must fail before artifact or host access"
 fi
 
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates Pi memory Job-result readers" \
+  run_resolver "${tmp_dir}/pi-memory-job-result-floor.output" MOCK_PI_MEMORY_JOB_RESULT_READER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/pi-memory-job-result-floor.output" ] || fail "receipt-dependent API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Pi memory reader floor must fail before artifact or host access"
+fi
+
 for drop_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"
   assert_failure "Cannot resolve the merged Pi stable-context retirement" \
@@ -555,6 +613,50 @@ grep -Fq '3838383838383838383838383838383838383838' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/pi-stable-context-floor.output" ] || fail "pre-retirement API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Pi stable-context retirement floor must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the chat thread provenance runtime removal" \
+  run_resolver "${tmp_dir}/chat-thread-provenance-floor.output" MOCK_CHAT_THREAD_PROVENANCE_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/chat-thread-provenance-floor.output" ] || fail "provenance-dependent API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "chat thread provenance floor must fail before artifact or host access"
+fi
+
+for preparation_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Computer Use session-only host mapping" \
+    run_resolver "${tmp_dir}/computer-use-host-history.output" "MOCK_COMPUTER_USE_HOST_SESSION_ONLY_COMMIT=${preparation_commit}"
+  [ ! -s "${tmp_dir}/computer-use-host-history.output" ] || fail "invalid host preparation history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid host preparation history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Computer Use session-only host mapping" \
+  run_resolver "${tmp_dir}/computer-use-host-floor.output" MOCK_COMPUTER_USE_HOST_SESSION_ONLY_FLOOR_VALID=0
+grep -Fq '4545454545454545454545454545454545454545' "${tmp_dir}/failure.err" || fail "host preparation rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/computer-use-host-floor.output" ] || fail "token-hash-dependent API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "host preparation floor must fail before artifact or host access"
+fi
+
+for preparation_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Native Morning Brief member runtime preparation" \
+    run_resolver "${tmp_dir}/native-brief-member-history.output" "MOCK_NATIVE_BRIEF_MEMBER_RUNTIME_COMMIT=${preparation_commit}"
+  [ ! -s "${tmp_dir}/native-brief-member-history.output" ] || fail "invalid Native member preparation history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid Native member preparation history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Native Morning Brief member runtime preparation" \
+  run_resolver "${tmp_dir}/native-brief-member-floor.output" MOCK_NATIVE_BRIEF_MEMBER_RUNTIME_FLOOR_VALID=0
+grep -Fq '4747474747474747474747474747474747474747' "${tmp_dir}/failure.err" || fail "Native member preparation rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/native-brief-member-floor.output" ] || fail "fence-dependent API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Native member runtime floor must fail before artifact or host access"
 fi
 
 for preparation_commit in "" invalid; do
@@ -625,6 +727,20 @@ if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Chat Event V8 floor must fail before artifact or host access"
 fi
 
+for preparation_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged checkpoint writer preparation" \
+    run_resolver "${tmp_dir}/checkpoint-writer-history.output" "MOCK_CHECKPOINT_WRITER_PREPARATION_COMMIT=${preparation_commit}"
+  [ ! -s "${tmp_dir}/checkpoint-writer-history.output" ] || fail "invalid checkpoint preparation history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates checkpoint writer preparation" \
+  run_resolver "${tmp_dir}/checkpoint-writer-floor.output" MOCK_CHECKPOINT_WRITER_PREPARATION_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/checkpoint-writer-floor.output" ] || fail "unprepared checkpoint writer must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "checkpoint writer floor must fail before artifact or host access"
+fi
+
 for mutation_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"
   assert_failure "Cannot resolve the merged Browser session mutation contract" \
@@ -637,6 +753,34 @@ assert_failure "Rollback target predates the Browser session mutation contract" 
 [ ! -s "${tmp_dir}/browser-session-mutations-floor.output" ] || fail "incompatible Browser mutation API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Browser mutation floor must fail before artifact or host access"
+fi
+
+for migration_hop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Desktop migration-hop policy" \
+    run_resolver "${tmp_dir}/desktop-migration-hop-history.output" "MOCK_DESKTOP_MIGRATION_HOP_COMMIT=${migration_hop_commit}"
+  [ ! -s "${tmp_dir}/desktop-migration-hop-history.output" ] || fail "invalid migration-hop history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the frozen Desktop migration-hop policy" \
+  run_resolver "${tmp_dir}/desktop-migration-hop-floor.output" MOCK_DESKTOP_MIGRATION_HOP_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/desktop-migration-hop-floor.output" ] || fail "dynamic Squirrel API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Desktop migration-hop floor must fail before artifact or host access"
+fi
+
+for notification_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Computer Use command notification contract" \
+    run_resolver "${tmp_dir}/computer-use-notifications-history.output" "MOCK_COMPUTER_USE_COMMAND_NOTIFICATIONS_COMMIT=${notification_commit}"
+  [ ! -s "${tmp_dir}/computer-use-notifications-history.output" ] || fail "invalid Computer Use notification history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Computer Use command notification contract" \
+  run_resolver "${tmp_dir}/computer-use-notifications-floor.output" MOCK_COMPUTER_USE_COMMAND_NOTIFICATIONS_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/computer-use-notifications-floor.output" ] || fail "incompatible Computer Use API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Computer Use notification floor must fail before artifact or host access"
 fi
 
 for drop_commit in "" invalid; do

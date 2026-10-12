@@ -183,7 +183,7 @@ pub(in crate::executor) fn log_agent_abnormal_exit_env_diagnostics(
             );
         };
     }
-    if resource_failure_kind == Some(ResourceFailureKind::GuestRootFilesystemFull) {
+    if resource_failure_kind.is_some_and(ResourceFailureKind::is_filesystem_full) {
         emit_diagnostics!(tracing::Level::INFO);
     } else {
         emit_diagnostics!(tracing::Level::WARN);
@@ -252,7 +252,10 @@ pub(in crate::executor) fn log_agent_bootstrap_abnormal_exit_diagnostics(
             );
         };
     }
-    if context.resource_failure_kind == Some(ResourceFailureKind::GuestRootFilesystemFull) {
+    if context
+        .resource_failure_kind
+        .is_some_and(ResourceFailureKind::is_filesystem_full)
+    {
         emit_diagnostics!(tracing::Level::INFO);
     } else {
         emit_diagnostics!(tracing::Level::WARN);

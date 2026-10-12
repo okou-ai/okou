@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { debugMorningBriefEmailTemplateSchema } from "../../lib/debug-morning-brief-email";
 
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { mailNotifications } from "@okouai/db/schema/mail-notification";
@@ -11,7 +12,19 @@ import { emailSuppressions } from "@okouai/db/schema/email-suppression";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { users } from "@okouai/db/schema/user";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { Resend } from "resend";
 import { delay } from "signal-timers";
 import { Webhook } from "svix";
@@ -19,6 +32,8 @@ import { z } from "zod";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import { apiBackendUrl } from "../../lib/api-backend-url";
+import { pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
+import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
@@ -97,6 +112,7 @@ function boundedUnicodeString(maxCharacters: number) {
 }
 
 const emailTemplateSchema = z.discriminatedUnion("template", [
+  debugMorningBriefEmailTemplateSchema,
   z
     .object({
       template: z.literal("agent-morning-brief"),
@@ -315,6 +331,7 @@ function renderTemplate(
   headers: Readonly<Record<string, string>> | undefined,
 ): RenderedEmailTemplate {
   switch (template.template) {
+    case "debug-morning-brief":
     case "agent-morning-brief": {
       return renderAgentMorningBriefEmail(
         template.props,
@@ -362,6 +379,7 @@ function fromAddressForTemplate(template: EmailTemplate): string {
       return buildTeamFromAddress();
     }
     case "data-export-ready":
+    case "debug-morning-brief":
     case "agent-morning-brief":
     case "agent-notification":
     case "official-automation-result": {
@@ -544,7 +562,8 @@ function notificationIsUnsubscribed(
 ): boolean {
   if (
     template.template !== "agent-notification" &&
-    template.template !== "agent-morning-brief"
+    template.template !== "agent-morning-brief" &&
+    template.template !== "debug-morning-brief"
   ) {
     return false;
   }
@@ -565,6 +584,7 @@ async function prepareNextOutboxItem(
   db: Db,
   currentTimeMs: number,
 ): Promise<PrepareOutcome> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0156; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const [selectedRow] = await tx
       .select(outboxRowSelection())
@@ -587,36 +607,6 @@ async function prepareNextOutboxItem(
       .for("update", { skipLocked: true });
     if (!selectedRow) {
       return { kind: "empty" };
-    }
-    // Retired Native intents never reach parsing, rendering or provider replay,
-    // including malformed payloads and requests committed by an older API.
-    if (
-      z
-        .object({ template: z.literal("morning-brief-result") })
-        .safeParse(selectedRow.template).success
-    ) {
-      await tx
-        .update(emailOutbox)
-        .set({
-          status: "failed",
-          lastError:
-            selectedRow.provider_request === null
-              ? "Native Morning Brief email retired"
-              : "Native Morning Brief email retired with unresolved provider outcome",
-          providerRequest: null,
-          template: {
-            template: "morning-brief-result",
-            props: {
-              title: "",
-              resultMarkdown: "",
-              threadUrl: "",
-              manageUrl: "",
-            },
-          },
-          nextRetryAt: null,
-        })
-        .where(eq(emailOutbox.id, selectedRow.id));
-      return { kind: "resolved" };
     }
     const row = outboxRowSchema.parse(selectedRow);
     const itemId = row.id;
@@ -751,6 +741,7 @@ async function completeOutboxItem(
               nextRetryAt: null,
             };
 
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0157; new non-billing transactions are prohibited.
   const completed = await db.transaction(async (tx) => {
     const [updated] = await tx
       .update(emailOutbox)
@@ -869,27 +860,30 @@ export const drainEmailOutboxBatch$ = command(
   },
 );
 
-async function cleanupExpiredEmailOutbox(
-  db: Db,
-  context: EmailOutboxDrainContext,
-  signal: AbortSignal,
-): Promise<number> {
-  const cutoff = new Date(context.currentTimeMs - OUTBOX_TTL_MS);
-  const deleted = await db.transaction(async (tx) => {
-    const removed = await tx
-      .delete(emailOutbox)
-      .where(
-        and(
-          lt(emailOutbox.createdAt, cutoff),
-          or(
-            eq(emailOutbox.status, "pending"),
-            eq(emailOutbox.status, "failed"),
+export const cleanupExpiredEmailOutbox$ = command(
+  async (
+    { set },
+    context: EmailOutboxDrainContext,
+    signal: AbortSignal,
+  ): Promise<number> => {
+    const db = set(writeDb$);
+    const cutoff = new Date(context.currentTimeMs - OUTBOX_TTL_MS);
+    const expiredOutbox = db.$with("expired_email_outbox").as(
+      db
+        .delete(emailOutbox)
+        .where(
+          and(
+            lt(emailOutbox.createdAt, cutoff),
+            or(
+              eq(emailOutbox.status, "pending"),
+              eq(emailOutbox.status, "failed"),
+            ),
           ),
-        ),
-      )
-      .returning({ id: emailOutbox.id });
-    if (removed.length > 0) {
-      await tx
+        )
+        .returning({ id: emailOutbox.id }),
+    );
+    const expiredReceipts = db.$with("expired_mail_notifications").as(
+      db
         .update(mailNotifications)
         .set({ status: "failed", reason: "expired" })
         .where(
@@ -897,32 +891,36 @@ async function cleanupExpiredEmailOutbox(
             eq(mailNotifications.status, "queued"),
             inArray(
               mailNotifications.outboxId,
-              removed.map((row) => {
-                return row.id;
-              }),
+              db.select({ id: expiredOutbox.id }).from(expiredOutbox),
             ),
+            // Exhaust the outbox DELETE before locking receipts, matching
+            // completion and erasure order rather than relying on CTE order.
+            gte(db.select({ count: count() }).from(expiredOutbox), 0),
           ),
-        );
+        )
+        .returning({ id: mailNotifications.id }),
+    );
+    const [deleted] = await db
+      .with(expiredOutbox, expiredReceipts)
+      .select({
+        cleaned: count().mapWith(
+          zodDriverValueDecoder(
+            pgInt8ToSafeIntegerSchema.pipe(z.number().nonnegative()),
+          ),
+        ),
+      })
+      .from(expiredOutbox);
+    // SQL has committed; cancellation stops the caller's remaining work.
+    signal.throwIfAborted();
+    if (!deleted) {
+      throw new Error("Expired email outbox count missing");
     }
-    return removed;
-  });
-  signal.throwIfAborted();
-
-  if (deleted.length > 0) {
-    log.debug("Cleaned up expired email outbox items", {
-      cleaned: deleted.length,
-    });
-  }
-  return deleted.length;
-}
-
-export const cleanupExpiredEmailOutbox$ = command(
-  async (
-    { set },
-    context: EmailOutboxDrainContext,
-    signal: AbortSignal,
-  ): Promise<number> => {
-    return await cleanupExpiredEmailOutbox(set(writeDb$), context, signal);
+    if (deleted.cleaned > 0) {
+      log.debug("Cleaned up expired email outbox items", {
+        cleaned: deleted.cleaned,
+      });
+    }
+    return deleted.cleaned;
   },
 );
 

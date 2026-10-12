@@ -14,14 +14,14 @@ import {
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
 
-const LEGACY_RUN = "a0000000-0000-4000-a000-000000000401";
-const LEGACY_WORK = "Collected yesterday's activity";
-const LEGACY_BRIEF = "Brief delivered by a Run";
-const NATIVE_BRIEF = "Brief delivered without a Run";
-const NATIVE_DELIVERED_AT = "2026-08-02T03:25:05.000Z";
+const PREVIOUS_RUN = "a0000000-0000-4000-a000-000000000401";
+const PREVIOUS_WORK = "Work performed during the previous Run";
+const PREVIOUS_RESPONSE = "Response from the previous Run";
+const RUNLESS_MESSAGE = "Message delivered without a Run";
+const MESSAGE_CREATED_AT = "2026-08-02T03:25:05.000Z";
 
 /**
- * A native Morning Brief delivery writes one bare `output.message`: no run id,
+ * An independent message is one bare `output.message`: no run id,
  * no run event id and no run event sequence number, and none of the input,
  * terminal or followup events a Run leaves around its answer.
  */
@@ -44,14 +44,13 @@ function runlessDelivery(args: {
 }
 
 /**
- * The thread's history before the first native delivery. Every message is
- * anchored to a Run, because the legacy Morning Brief executed as an Official
- * Workflow agent Run.
+ * A prior automation Run's input, work, answer and completion before an
+ * independent message is delivered to the same thread.
  */
 function runAnchoredHistory(): MockChatEventInput[] {
   return [
     {
-      id: "legacy-automation",
+      id: "previous-automation",
       role: "user",
       eventType: "input.automation",
       content: null,
@@ -60,46 +59,46 @@ function runAnchoredHistory(): MockChatEventInput[] {
         parts: [
           {
             type: "automation",
-            workflowName: "morning-brief",
-            automationBrief: "Morning Brief",
+            workflowName: "example-workflow",
+            automationBrief: "Scheduled update",
           },
         ],
       },
-      runId: LEGACY_RUN,
+      runId: PREVIOUS_RUN,
       seqId: 1,
       createdAt: "2026-08-01T03:25:00.000Z",
     },
     assistantEvent({
-      id: "legacy-work",
-      runId: LEGACY_RUN,
+      id: "previous-work",
+      runId: PREVIOUS_RUN,
       seqId: 2,
-      text: LEGACY_WORK,
+      text: PREVIOUS_WORK,
       createdAt: "2026-08-01T03:25:02.000Z",
     }),
     assistantEvent({
-      id: "legacy-brief",
-      runId: LEGACY_RUN,
+      id: "previous-response",
+      runId: PREVIOUS_RUN,
       seqId: 3,
-      text: LEGACY_BRIEF,
+      text: PREVIOUS_RESPONSE,
       createdAt: "2026-08-01T03:25:04.000Z",
     }),
     completedEvent({
-      id: "legacy-completed",
-      runId: LEGACY_RUN,
+      id: "previous-completed",
+      runId: PREVIOUS_RUN,
       seqId: 4,
       createdAt: "2026-08-01T03:25:05.000Z",
     }),
   ];
 }
 
-function nativeDeliveryAfterRunHistory(): MockChatEventInput[] {
+function deliveryAfterRunHistory(): MockChatEventInput[] {
   return [
     ...runAnchoredHistory(),
     runlessDelivery({
-      id: "native-brief",
+      id: "runless-message",
       seqId: 5,
-      text: NATIVE_BRIEF,
-      createdAt: NATIVE_DELIVERED_AT,
+      text: RUNLESS_MESSAGE,
+      createdAt: MESSAGE_CREATED_AT,
     }),
   ];
 }
@@ -118,36 +117,36 @@ test("renders a thread whose only message carries no run identity", async () => 
   installRunChat({
     chatEvents: [
       runlessDelivery({
-        id: "native-brief",
+        id: "runless-message",
         seqId: 1,
-        text: NATIVE_BRIEF,
-        createdAt: NATIVE_DELIVERED_AT,
+        text: RUNLESS_MESSAGE,
+        createdAt: MESSAGE_CREATED_AT,
       }),
     ],
   });
   await setupPage({ context, path: RUN_PATH });
   await readyChat();
 
-  await expect(screen.findByText(NATIVE_BRIEF)).resolves.toBeInTheDocument();
+  await expect(screen.findByText(RUNLESS_MESSAGE)).resolves.toBeInTheDocument();
 });
 
 test("renders a delivery that carries no run identity after a Run", async () => {
-  installRunChat({ chatEvents: nativeDeliveryAfterRunHistory() });
+  installRunChat({ chatEvents: deliveryAfterRunHistory() });
   await setupPage({ context, path: RUN_PATH });
   await readyChat();
 
-  await expect(screen.findByText(NATIVE_BRIEF)).resolves.toBeInTheDocument();
+  await expect(screen.findByText(RUNLESS_MESSAGE)).resolves.toBeInTheDocument();
 });
 
 test("keeps run work history off a delivery that has no Run", async () => {
-  installRunChat({ chatEvents: nativeDeliveryAfterRunHistory() });
+  installRunChat({ chatEvents: deliveryAfterRunHistory() });
   await setupPage({ context, path: RUN_PATH });
   await readyChat();
-  await screen.findByText(NATIVE_BRIEF);
+  await screen.findByText(RUNLESS_MESSAGE);
 
-  expectTextOrder(LEGACY_BRIEF, NATIVE_BRIEF);
-  const runResponse = assistantGroupFor(LEGACY_BRIEF);
-  const runlessResponse = assistantGroupFor(NATIVE_BRIEF);
+  expectTextOrder(PREVIOUS_RESPONSE, RUNLESS_MESSAGE);
+  const runResponse = assistantGroupFor(PREVIOUS_RESPONSE);
+  const runlessResponse = assistantGroupFor(RUNLESS_MESSAGE);
   // The delivery reads as a response of its own rather than as more of the
   // Run's answer, and only the Run offers the work behind its answer.
   expect(runlessResponse).not.toBe(runResponse);

@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { and, asc, eq, gt, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, gt, inArray, sql, type SQL } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { storages } from "@okouai/db/schema/storage";
@@ -186,7 +186,7 @@ function authorityIds(
 }
 
 /** Re-entry must always reacquire this terminal authority, never trust a saved authorization cursor. */
-export function userExportPublicationChecks(
+function userExportPublicationChecks(
   args: PublicationAuthority,
 ): readonly { readonly expected: SQL; readonly readable: SQL }[] {
   const db = new QueryBuilder();
@@ -260,4 +260,18 @@ export function userExportPublicationChecks(
       .getSQL(),
   });
   return checks;
+}
+
+export function userExportPublicationAuthoritySql(
+  args: PublicationAuthority,
+): SQL {
+  let authority = sql`select true as authorized`;
+  for (const check of userExportPublicationChecks(args)) {
+    // CASE retains the resource-lock order and stops at the first rejection.
+    authority = sql`select case when previous.authorized then
+      (select ${count()} from (${check.expected}) expected_resources) =
+      (select ${count()} from (${check.readable}) locked_resources)
+      else false end as authorized from (${authority}) previous`;
+  }
+  return authority;
 }

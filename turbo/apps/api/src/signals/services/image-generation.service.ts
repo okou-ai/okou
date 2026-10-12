@@ -17,12 +17,6 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { redactPresignedUrls } from "../../lib/presigned-url-redaction";
 import { safeJsonParse } from "../utils";
-import {
-  canonicalUsagePricingProvider,
-  resolveUsagePricingProvider,
-  usagePricingResolution$,
-  type UsagePricingResolution,
-} from "../context/usage-pricing-resolution";
 import { db$ } from "../external/db";
 import { checkBillableOperationCredits$ } from "./billable-operation-admission.service";
 import { storeGeneratedArtifactObject$ } from "./artifact-storage.service";
@@ -1224,13 +1218,10 @@ function mapPricingRows(
     readonly unitPrice: number;
     readonly unitSize: number;
   }[],
-  resolution: UsagePricingResolution,
 ): ImagePricing {
   const pricing = new Map<string, ImagePricingRow>();
   for (const row of rows) {
-    const model = resolveImageModel(
-      canonicalUsagePricingProvider(resolution, USAGE_KIND, row.provider),
-    );
+    const model = resolveImageModel(row.provider);
     if (model && includesString(IMAGE_PRICING_CATEGORIES, row.category)) {
       pricing.set(imagePricingKey(model, row.category), {
         unitPrice: row.unitPrice,
@@ -1244,10 +1235,6 @@ function mapPricingRows(
 export const imagePricing$: Computed<Promise<ImagePricing>> = computed(
   async (get): Promise<ImagePricing> => {
     const db = get(db$);
-    const resolution = get(usagePricingResolution$);
-    const lookupProviders = IMAGE_MODELS.map((provider) => {
-      return resolveUsagePricingProvider(resolution, USAGE_KIND, provider);
-    });
     const rows = await db
       .select({
         provider: usagePricing.provider,
@@ -1259,12 +1246,12 @@ export const imagePricing$: Computed<Promise<ImagePricing>> = computed(
       .where(
         and(
           eq(usagePricing.kind, USAGE_KIND),
-          inArray(usagePricing.provider, lookupProviders),
+          inArray(usagePricing.provider, IMAGE_MODELS),
           inArray(usagePricing.category, [...IMAGE_PRICING_CATEGORIES]),
         ),
       );
 
-    return mapPricingRows(rows, resolution);
+    return mapPricingRows(rows);
   },
 );
 

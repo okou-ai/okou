@@ -7,7 +7,6 @@ import {
   runnersPollContract,
 } from "../contracts/runners";
 import {
-  webhookCheckpointsPrepareHistoryContract,
   webhookSessionHistoryPrepareContract,
   webhookCompleteContract,
   webhookEventsContract,
@@ -18,6 +17,7 @@ import {
   webhookTelemetryContract,
   webhookUsageEventContract,
 } from "../contracts/webhooks";
+import { swiftRouteBindings } from "../swift-bindings/routes";
 
 export interface RuntimeApiRouteLike {
   readonly method?: unknown;
@@ -31,13 +31,22 @@ export interface RuntimeApiRouteLike {
   readonly responses?: unknown;
 }
 
+export const runtimeApiRouteOwners = [
+  "runner",
+  "guest-agent",
+  "mitm-addon",
+  "desktop",
+] as const;
+
+export type RuntimeApiRouteOwner = (typeof runtimeApiRouteOwners)[number];
+
 export interface RuntimeApiRouteBinding {
   readonly id: string;
-  readonly owner: "runner" | "guest-agent" | "mitm-addon";
+  readonly owner: RuntimeApiRouteOwner;
   readonly route: RuntimeApiRouteLike;
 }
 
-export const runtimeApiRouteBindings = [
+const runtimeServiceRouteBindings = [
   {
     id: "runners.poll",
     owner: "runner",
@@ -72,11 +81,6 @@ export const runtimeApiRouteBindings = [
     id: "webhooks.agent.events",
     owner: "guest-agent",
     route: webhookEventsContract.send,
-  },
-  {
-    id: "webhooks.agent.checkpoints.prepareHistory",
-    owner: "guest-agent",
-    route: webhookCheckpointsPrepareHistoryContract.prepare,
   },
   {
     id: "webhooks.agent.sessionHistory.prepare",
@@ -119,3 +123,19 @@ export const runtimeApiRouteBindings = [
     route: webhookUsageEventContract.send,
   },
 ] as const satisfies readonly RuntimeApiRouteBinding[];
+
+/**
+ * Desktop-consumed routes, derived from the Swift binding list so that list
+ * stays the single source of truth. Breaking changes on these routes are
+ * gated by `cli.ts lint --block-owner desktop`; see
+ * docs/deployment-compatibility.md#desktop-contract-gate.
+ */
+const desktopRouteBindings: readonly RuntimeApiRouteBinding[] =
+  swiftRouteBindings.map(({ swiftName, route }) => {
+    return { id: `desktop.${swiftName}`, owner: "desktop", route };
+  });
+
+export const runtimeApiRouteBindings: readonly RuntimeApiRouteBinding[] = [
+  ...runtimeServiceRouteBindings,
+  ...desktopRouteBindings,
+];

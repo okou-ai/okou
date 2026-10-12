@@ -37,7 +37,7 @@ teardown() {
     assert_success
     run jq -e '
         (.models | length == 1) and
-        .models[0].model == null and
+        .models[0].model == "auto" and
         .models[0].memberEffective.providerType == "built-in" and
         .models[0].memberEffective.credentialScope == "org" and
         .models[0].modelProviderId == null

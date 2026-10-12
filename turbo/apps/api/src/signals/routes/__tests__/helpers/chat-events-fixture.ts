@@ -1,12 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { gunzipSync, gzipSync, zstdDecompressSync } from "node:zlib";
-import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
-import { Header } from "tar";
-import { getInstructionsStorageName } from "@okouai/core/storage-names";
-import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
-import { readCanonicalAgentNameFixture } from "../../../../test-fixtures/canonical-agent-authority";
-import { createStoragesBddApi } from "./api-bdd-storages";
-import { storageTextFile } from "./api-bdd-storage-files";
+import { gunzipSync, zstdDecompressSync } from "node:zlib";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import {
@@ -26,9 +19,8 @@ import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/wor
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
-import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
-import { expect, onTestFinished } from "vitest";
+import { expect } from "vitest";
 import { z } from "zod";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
@@ -37,10 +29,6 @@ import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
 import { server } from "../../../../mocks/server";
 import { seededSystemSkillArchive } from "../../../../test-fixtures/seeded-system-skill-archive";
-import {
-  createUsagePricingFixture,
-  type UsagePricingFixture,
-} from "../../../../test-fixtures/usage-pricing";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { chatEventsRoutes } from "../../chat-events";
 import { chatThreadRoutes } from "../../chat-threads";
@@ -63,14 +51,11 @@ import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createConnectorBddApi } from "./api-bdd-connectors";
 import { createMiscRoutesApi } from "./api-bdd-misc";
 import { createRunsApi } from "./api-bdd-runs";
+import { mockPiCheckpointUploads } from "./api-bdd-pi-checkpoint-uploads";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { chatEventDisplayText } from "./chat-event";
 import { nowDate } from "../../../../lib/time";
 import { createRouteMocks } from "./route-test";
-import {
-  readRunLaunchSnapshotFixture,
-  seedBuiltInModelKey as seedBuiltInModelKeyState,
-} from "./runtime-state";
 const TEST_APP_ROUTES = Object.freeze([
   ...chatEventsRoutes,
   ...chatThreadRoutes,
@@ -82,13 +67,6 @@ const STAFF_ORG_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
 export const CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET =
   "okou web upload-file -f <path>";
 
-const PI_BASE_USAGE_CATEGORIES = [
-  "tokens.input",
-  "tokens.output",
-  "tokens.cache_read",
-  "tokens.cache_creation",
-] as const;
-
 export const GPT_PI_BDD_MODELS = [
   "gpt-6-luna",
   "gpt-6-sol",
@@ -96,8 +74,6 @@ export const GPT_PI_BDD_MODELS = [
 ] as const;
 
 export type PiGptBddModel = (typeof GPT_PI_BDD_MODELS)[number];
-
-const GPT_PI_USAGE_MODELS = GPT_PI_BDD_MODELS;
 
 export const USER_OWNED_GPT_FAST_BDD_ROUTES = GPT_PI_BDD_MODELS.map(
   (selectedModel) => {
@@ -111,42 +87,6 @@ export const USER_OWNED_GPT_FAST_BDD_ROUTES = GPT_PI_BDD_MODELS.map(
     } as const;
   },
 );
-
-const GPT_USAGE_PRICING = [
-  "tokens.input",
-  "tokens.output",
-  "tokens.cache_read",
-  "tokens.cache_creation",
-  "tokens.input.long_context",
-  "tokens.output.long_context",
-  "tokens.cache_read.long_context",
-  "tokens.cache_creation.long_context",
-  "tokens.input.fast",
-  "tokens.output.fast",
-  "tokens.cache_read.fast",
-  "tokens.cache_creation.fast",
-  "tokens.input.long_context.fast",
-  "tokens.output.long_context.fast",
-  "tokens.cache_read.long_context.fast",
-  "tokens.cache_creation.long_context.fast",
-].flatMap((category) => {
-  return GPT_PI_USAGE_MODELS.map((provider) => {
-    return {
-      kind: "model",
-      provider,
-      category,
-      unitPrice: 1,
-      unitSize: 1_000_000,
-    };
-  });
-});
-
-export type PiUsageProvider =
-  | "claude-fable-5-1"
-  | "deepseek-v4-flash"
-  | "deepseek-v4.1-flash"
-  | "okou-1.0"
-  | (typeof GPT_PI_USAGE_MODELS)[number];
 
 type UserMessage = Extract<
   ChatEvent,
@@ -220,50 +160,6 @@ export function requireOrgId(actor: ApiTestUser): string {
   return actor.orgId;
 }
 
-export async function createGptUsagePricingResolution(): Promise<
-  UsagePricingFixture["resolution"]
-> {
-  const pricing = await createUsagePricingFixture({
-    configured: GPT_USAGE_PRICING,
-  });
-  onTestFinished(pricing.cleanup);
-  return pricing.resolution;
-}
-
-export async function createPiUsagePricingResolution(
-  provider: PiUsageProvider,
-): Promise<UsagePricingFixture["resolution"]> {
-  if (
-    GPT_PI_USAGE_MODELS.some((model) => {
-      return model === provider;
-    })
-  ) {
-    return await createGptUsagePricingResolution();
-  }
-  const categories =
-    provider === "okou-1.0"
-      ? [
-          ...PI_BASE_USAGE_CATEGORIES,
-          ...PI_BASE_USAGE_CATEGORIES.map((category) => {
-            return `${category}.long_context`;
-          }),
-        ]
-      : PI_BASE_USAGE_CATEGORIES;
-  const pricing = await createUsagePricingFixture({
-    configured: categories.map((category) => {
-      return {
-        kind: "model",
-        provider,
-        category,
-        unitPrice: 1,
-        unitSize: 1_000_000,
-      };
-    }),
-  });
-  onTestFinished(pricing.cleanup);
-  return pricing.resolution;
-}
-
 export function claimEnvironment(claim: RunnerClaim): Record<string, string> {
   return {
     ...claim.environment,
@@ -283,15 +179,14 @@ export function okouTokenFromClaim(claim: RunnerClaim): string {
 }
 
 /**
- * Checkpoint + exitCode-0 complete (completing without a checkpoint fails the
- * run).
+ * Complete with native history and exitCode 0. Successful completion requires
+ * the native session identity and output references.
  */
 export interface ChatRunCompletionOptions {
   readonly cliAgentSessionId?: string;
   readonly cliAgentType?: "claude-code" | "codex" | "pi";
   readonly lastEventSequence?: number;
   readonly sessionHistory?: string;
-  readonly usagePricingResolution?: UsagePricingFixture["resolution"];
 }
 
 export function assistantMessages(
@@ -353,7 +248,7 @@ export function modelProviderSecretPlaceholder(
   return placeholder;
 }
 
-export interface PiCheckpointS3Command {
+export interface PiObjectStoreCommand {
   readonly constructor?: { readonly name?: string };
   readonly input?: {
     readonly Body?: unknown;
@@ -366,7 +261,7 @@ export interface PiCheckpointS3Command {
 }
 
 export function piS3ObjectKey(
-  candidate: PiCheckpointS3Command,
+  candidate: PiObjectStoreCommand,
 ): string | undefined {
   const bucket = candidate.input?.Bucket;
   const key = candidate.input?.Key;
@@ -377,7 +272,7 @@ export function piS3ObjectKey(
 
 function mockPiPutObject(
   objects: Map<string, Buffer>,
-  candidate: PiCheckpointS3Command,
+  candidate: PiObjectStoreCommand,
 ): Promise<unknown> | undefined {
   const objectKey = piS3ObjectKey(candidate);
   if (candidate.constructor?.name !== "PutObjectCommand" || !objectKey) {
@@ -396,7 +291,7 @@ function mockPiPutObject(
 
 function mockPiGetObject(
   objects: Map<string, Buffer>,
-  candidate: PiCheckpointS3Command,
+  candidate: PiObjectStoreCommand,
 ): Promise<unknown> | undefined {
   const objectKey = piS3ObjectKey(candidate);
   if (candidate.constructor?.name !== "GetObjectCommand" || !objectKey) {
@@ -415,7 +310,7 @@ function mockPiGetObject(
 
 function mockPiDeleteObjects(
   objects: Map<string, Buffer>,
-  candidate: PiCheckpointS3Command,
+  candidate: PiObjectStoreCommand,
 ): Promise<unknown> | undefined {
   const bucket = candidate.input?.Bucket;
   if (
@@ -472,8 +367,6 @@ export function createChatEventsFixture(context: TestContext) {
 
   const routeMocks = createRouteMocks(context);
 
-  const runStateStore = createStore();
-
   async function entitledChatActor(
     options: ApiTestUserOptions = {},
     tier: "pro" | "team" = "pro",
@@ -527,23 +420,6 @@ export function createChatEventsFixture(context: TestContext) {
     return { ...entitled, providerId };
   }
 
-  async function seedBuiltInModelKey(selectedModel: string): Promise<string> {
-    const fixture = await seedBuiltInModelKeyState(context, selectedModel);
-    return fixture.selectedModel;
-  }
-
-  /**
-   * Platform execution is fixed to Auto: seed its run model's keys and store
-   * the Auto (null) member preference. Personal subscriptions are separate.
-   */
-  async function configureBuiltInPiModel(
-    actor: ApiTestUser,
-    runModel: typeof AUTO_RUN_MODEL = AUTO_RUN_MODEL,
-  ): Promise<void> {
-    await seedBuiltInModelKey(runModel);
-    await api.updateUserModelPreference(actor, null);
-  }
-
   async function configureUserOwnedGptPiModel(
     actor: ApiTestUser,
     route: (typeof USER_OWNED_GPT_FAST_BDD_ROUTES)[number],
@@ -591,19 +467,9 @@ export function createChatEventsFixture(context: TestContext) {
     return { oauth, accountSourceId: completed.body.provider.id };
   }
 
-  /** Returns the Auto selection (null) a send names to run on OpenRouter. */
-  async function configureBuiltInPiModelOnOpenRouter(
-    actor: ApiTestUser,
-    runModel: typeof AUTO_RUN_MODEL = AUTO_RUN_MODEL,
-  ): Promise<null> {
-    await configureBuiltInPiModel(actor, runModel);
-    return null;
-  }
-
   async function sendChatRun(
     actor: ApiTestUser,
     body: ChatRunSendBody,
-    usagePricingResolution?: UsagePricingFixture["resolution"],
     options?: { readonly awaitEnqueuedPick: boolean },
   ): Promise<{ readonly runId: string; readonly threadId: string }> {
     const { template, ...canonicalBody } = body;
@@ -614,9 +480,7 @@ export function createChatEventsFixture(context: TestContext) {
         : { userMessage: userMessageWithTemplate(body.prompt, template) }),
       clientEventId: body.clientEventId ?? randomUUID(),
     };
-    const sent = await chat.requestSendEvent(actor, requestBody, [201], {
-      usagePricingResolution,
-    });
+    const sent = await chat.requestSendEvent(actor, requestBody, [201], {});
     if (sent.status !== 201) {
       throw new Error("Expected the entitled chat send to create a run");
     }
@@ -653,9 +517,8 @@ export function createChatEventsFixture(context: TestContext) {
   async function sendChatRunAfterPick(
     actor: ApiTestUser,
     body: ChatRunSendBody,
-    usagePricingResolution?: UsagePricingFixture["resolution"],
   ): Promise<{ readonly runId: string; readonly threadId: string }> {
-    return await sendChatRun(actor, body, usagePricingResolution, {
+    return await sendChatRun(actor, body, {
       awaitEnqueuedPick: true,
     });
   }
@@ -668,7 +531,6 @@ export function createChatEventsFixture(context: TestContext) {
   async function sendWaitingChatInput(
     actor: ApiTestUser,
     body: ChatRunSendBody,
-    usagePricingResolution?: UsagePricingFixture["resolution"],
   ): Promise<{
     readonly threadId: string;
     readonly launchedRun: () => Promise<{
@@ -688,7 +550,7 @@ export function createChatEventsFixture(context: TestContext) {
         clientEventId,
       },
       [201],
-      { usagePricingResolution },
+      {},
     );
     if (sent.status !== 201) {
       throw new Error("Expected the at-capacity chat send to be accepted");
@@ -840,7 +702,7 @@ export function createChatEventsFixture(context: TestContext) {
     if (options.sessionHistory !== undefined) {
       const historyBytes = Buffer.from(history, "utf8");
       context.sessionHistoryBlobs.set(historyHash, historyBytes);
-      await webhooks.requestAgentCheckpointPrepareHistory(
+      await webhooks.requestAgentSessionHistoryPrepare(
         {
           runId,
           hash: historyHash,
@@ -856,7 +718,7 @@ export function createChatEventsFixture(context: TestContext) {
       {
         runId,
         exitCode: 0,
-        checkpoint: {
+        completion: {
           cliAgentType: options.cliAgentType ?? "claude-code",
           cliAgentSessionId: options.cliAgentSessionId ?? `bdd-cli-${runId}`,
           cliAgentSessionHistoryHash: historyHash,
@@ -876,7 +738,6 @@ export function createChatEventsFixture(context: TestContext) {
       sandboxHeaders,
       [200],
       undefined,
-      options.usagePricingResolution,
     );
   }
 
@@ -905,13 +766,10 @@ export function createChatEventsFixture(context: TestContext) {
     }
   }
 
-  function chatEventsClient(
-    usagePricingResolution?: UsagePricingFixture["resolution"],
-  ) {
+  function chatEventsClient() {
     return setupApp({
       context,
       routes: chatEventsRoutes,
-      usagePricingResolution,
     })(chatEventsContract);
   }
 
@@ -982,13 +840,11 @@ export function createChatEventsFixture(context: TestContext) {
       readonly hasTextContent: boolean;
     },
     signal: AbortSignal = context.signal,
-    usagePricingResolution?: UsagePricingFixture["resolution"],
   ): Promise<{ readonly status: number; readonly body: unknown }> {
     const headers = sessionHeaders(actor);
     const app = createAppWithRoutes({
       signal,
       routes: TEST_APP_ROUTES,
-      usagePricingResolution,
     });
     const response = await app.request("/api/chat/events", {
       method: "POST",
@@ -1012,10 +868,9 @@ export function createChatEventsFixture(context: TestContext) {
       readonly userMessage?: UserMessageInputDocument;
     },
     statuses: readonly (201 | 400 | 401 | 403 | 404 | 409)[],
-    usagePricingResolution?: UsagePricingFixture["resolution"],
   ) {
     return await accept(
-      chatEventsClient(usagePricingResolution).send({
+      chatEventsClient().send({
         headers: { authorization: `Bearer ${token}` },
         body: {
           ...body,
@@ -1032,13 +887,10 @@ export function createChatEventsFixture(context: TestContext) {
     );
   }
 
-  function threadPiAutomationsClient(
-    usagePricingResolution?: UsagePricingFixture["resolution"],
-  ) {
+  function threadPiAutomationsClient() {
     return setupApp({
       context,
       routes: workflowAutomationsRoutes,
-      usagePricingResolution,
     })(workflowAutomationsContract);
   }
 
@@ -1047,14 +899,12 @@ export function createChatEventsFixture(context: TestContext) {
     readonly webhookSecret: string;
     readonly payload: string;
     readonly timestamp: number;
-    readonly usagePricingResolution?: UsagePricingFixture["resolution"];
   }) {
     const rawBody = JSON.stringify({ event: args.payload });
     const timestamp = args.timestamp;
     const response = await createAppWithRoutes({
       signal: context.signal,
       routes: webhooksWorkflowAutomationsRoutes,
-      usagePricingResolution: args.usagePricingResolution,
     }).request(new URL(args.webhookUrl).pathname, {
       method: "POST",
       headers: {
@@ -1105,11 +955,6 @@ export function createChatEventsFixture(context: TestContext) {
   ) {
     await waitForRunStatus(actor, runId, "completed");
     await flushWaitUntilForTest();
-    await expect(
-      readRunLaunchSnapshotFixture(context, runId),
-    ).resolves.toMatchObject({
-      launch_snapshot: { schemaVersion: 3, framework: "pi" },
-    });
     const page = await chat.listThreadEvents(actor, threadId);
     expect(
       page.events
@@ -1145,11 +990,12 @@ export function createChatEventsFixture(context: TestContext) {
     });
   }
 
-  function mockPiCheckpointObjectStore(): Map<string, Buffer> {
+  function mockPiObjectStore(): Map<string, Buffer> {
     const objects = new Map<string, Buffer>();
+    mockPiCheckpointUploads(context, objects);
     const fallback = context.mocks.s3.send.getMockImplementation();
     context.mocks.s3.send.mockImplementation((command: unknown) => {
-      const candidate = command as PiCheckpointS3Command;
+      const candidate = command as PiObjectStoreCommand;
       return (
         mockPiPutObject(objects, candidate) ??
         mockPiGetObject(objects, candidate) ??
@@ -1206,7 +1052,7 @@ export function createChatEventsFixture(context: TestContext) {
 
   function uploadedPiS3Object(objectKey: string): Buffer | undefined {
     for (const [command] of [...context.mocks.s3.send.mock.calls].reverse()) {
-      const candidate = command as PiCheckpointS3Command;
+      const candidate = command as PiObjectStoreCommand;
       if (
         candidate.constructor?.name === "PutObjectCommand" &&
         piS3ObjectKey(candidate) === objectKey
@@ -1238,79 +1084,6 @@ export function createChatEventsFixture(context: TestContext) {
       return seeded;
     }
     throw new Error(`Expected Pi S3 object ${objectKey}`);
-  }
-
-  // A generic Storage commit keeps this test-owned instruction version pending.
-  // Shared official skill versions may already be indexed by another test.
-  async function publishPendingPiInstructions(
-    actor: ApiTestUser,
-    agentId: string,
-  ): Promise<string> {
-    const storageName = getInstructionsStorageName(
-      await readCanonicalAgentNameFixture(agentId),
-    );
-    const content = `Pending resource fixture ${randomUUID()}`;
-    const bytes = Buffer.from(content);
-    const header = Buffer.alloc(512);
-    new Header({
-      path: "AGENTS.md",
-      size: bytes.length,
-      type: "File",
-      mode: 0o644,
-    }).encode(header);
-    const archive = gzipSync(
-      Buffer.concat([
-        header,
-        bytes,
-        Buffer.alloc((512 - (bytes.length % 512)) % 512),
-        Buffer.alloc(1024),
-      ]),
-    );
-    const storages = createStoragesBddApi(context);
-    const files = [storageTextFile("AGENTS.md", content)];
-    const prepared = await storages.prepareStorage(actor, {
-      storageName,
-      storageOwner: "organization",
-      files,
-    });
-    let upload: { Bucket: string; Key: string } | undefined;
-    const original = context.mocks.s3.send.getMockImplementation();
-    context.mocks.s3.send.mockImplementation((request: unknown) => {
-      if (request instanceof HeadObjectCommand) {
-        if (
-          request.input.Bucket &&
-          request.input.Key?.endsWith("/archive.tar.gz")
-        ) {
-          upload = { Bucket: request.input.Bucket, Key: request.input.Key };
-        }
-        return Promise.resolve({ ContentLength: archive.length });
-      }
-      if (!original) {
-        throw new Error("Expected the test object store");
-      }
-      return original(request);
-    });
-    await storages
-      .commitStorage(actor, {
-        storageName,
-        storageOwner: "organization",
-        files,
-        versionId: prepared.versionId,
-      })
-      .finally(() => {
-        if (original) {
-          context.mocks.s3.send.mockImplementation(original);
-        }
-      });
-    if (!upload) {
-      throw new Error(
-        "Expected the instruction fixture archive to be verified",
-      );
-    }
-    await context.mocks.s3.send(
-      new PutObjectCommand({ ...upload, Body: archive }),
-    );
-    return content;
   }
 
   function mockPiResourceArchiveDownloads(
@@ -1345,13 +1118,12 @@ export function createChatEventsFixture(context: TestContext) {
       readonly provider: "openai" | "openai-codex" | "deepseek" | "openrouter";
       readonly model: string;
     };
-    readonly checkpointObjects: Map<string, Buffer>;
+    readonly historyObjects: Map<string, Buffer>;
     readonly claim: Awaited<ReturnType<typeof claimChatRun>>;
     readonly prompt: string;
     readonly run: { readonly runId: string; readonly threadId: string };
-    readonly usagePricingResolution?: UsagePricingFixture["resolution"];
   }): Promise<void> {
-    const h0 = piSandboxBaseSession(args.claim.claim, args.checkpointObjects);
+    const h0 = piSandboxBaseSession(args.claim.claim, args.historyObjects);
     const session = MemoryPiSession.fromJsonl(h0.toString("utf8"));
     session.appendMessage({
       role: "user",
@@ -1377,7 +1149,7 @@ export function createChatEventsFixture(context: TestContext) {
     });
     const h2 = session.toJsonl();
     const h2Hash = createHash("sha256").update(h2).digest("hex");
-    await webhooks.requestAgentCheckpointPrepareHistory(
+    const prepared = await webhooks.requestAgentSessionHistoryPrepare(
       {
         runId: args.run.runId,
         hash: h2Hash,
@@ -1388,10 +1160,24 @@ export function createChatEventsFixture(context: TestContext) {
       args.claim.sandboxHeaders,
       [200],
     );
-    args.checkpointObjects.set(
-      `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h2Hash}.blob`,
-      Buffer.from(h2, "utf8"),
-    );
+    if (prepared.status !== 200) {
+      throw new Error("Expected checkpoint upload preparation to succeed");
+    }
+    if (!prepared.body.existing) {
+      if (!prepared.body.presignedUrl) {
+        throw new Error("Expected a prepared checkpoint upload URL");
+      }
+      const uploaded = await fetch(prepared.body.presignedUrl, {
+        method: "PUT",
+        headers: { "content-type": "application/octet-stream" },
+        body: h2,
+      });
+      if (!uploaded.ok) {
+        throw new Error(
+          `Expected checkpoint upload success, got ${uploaded.status}`,
+        );
+      }
+    }
     await webhooks.requestAgentEvents(
       {
         runId: args.run.runId,
@@ -1412,7 +1198,7 @@ export function createChatEventsFixture(context: TestContext) {
         runId: args.run.runId,
         exitCode: 0,
         lastEventSequence: 2,
-        checkpoint: {
+        completion: {
           cliAgentType: "pi",
           cliAgentSessionId: args.run.threadId,
           cliAgentSessionHistoryHash: h2Hash,
@@ -1421,113 +1207,69 @@ export function createChatEventsFixture(context: TestContext) {
       args.claim.sandboxHeaders,
       [200],
       undefined,
-      args.usagePricingResolution,
     );
     await waitForRunStatus(args.actor, args.run.runId, "completed");
     await flushWaitUntilForTest();
   }
 
-  /**
-   * Hold the organization's only run slot with a native anchor and send a Pi
-   * prompt on a new thread. At capacity the send is accepted without a run;
-   * `launch` completes the anchor so the org pick starts the queued thread
-   * head as the Pi run and returns that run.
-   */
-  async function queueCapabilityProvenPiRun(args: {
-    readonly actor: ApiTestUser;
-    readonly agentId: string;
-    readonly runnerGroup: string;
-    readonly prompt: string;
-    readonly codexServiceTier?: "fast";
-    /** The Auto run model whose keys and pricing are seeded. */
-    readonly selectedModel?: typeof AUTO_RUN_MODEL;
-  }): Promise<{
-    readonly anchor: { readonly runId: string; readonly threadId: string };
-    readonly anchorClaim: Awaited<ReturnType<typeof claimChatRun>>;
-    readonly threadId: string;
-    readonly usagePricingResolution: UsagePricingFixture["resolution"];
-    readonly launch: (
-      options?: ChatRunCompletionOptions,
-    ) => Promise<{ readonly runId: string; readonly threadId: string }>;
-  }> {
-    if (!args.actor.orgId) {
-      throw new Error("Expected entitled chat actor to have an org");
-    }
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    await api.heartbeatRunner(args.runnerGroup);
-    await api.ensurePersonalSubscriptionModel(args.actor, {
-      model: "claude-fable-5-1",
-    });
-    const anchor = await sendChatRun(args.actor, {
-      agentId: args.agentId,
-      prompt: "hold capacity for a capability-proven Pi launch",
-      // The anchor must stay on the native Runner while the waiting target
-      // proves Pi admission; Sonnet 5 now uses the Pi checkpoint format.
-      model: "claude-fable-5-1",
-    });
-    await flushWaitUntilForTest();
-    const anchorState = await api.readRun(args.actor, anchor.runId);
-    if (anchorState.status !== "pending") {
-      throw new Error(
-        `Expected pending capability anchor: ${JSON.stringify(anchorState)}`,
-      );
-    }
-    const anchorClaim = await claimChatRun(args.runnerGroup, anchor.runId);
-    const selectedModel = args.selectedModel ?? AUTO_RUN_MODEL;
-    const model = await configureBuiltInPiModelOnOpenRouter(
-      args.actor,
-      selectedModel,
-    );
-
-    const usagePricingResolution =
-      await createPiUsagePricingResolution(selectedModel);
-    const waiting = await sendWaitingChatInput(
-      args.actor,
-      {
-        agentId: args.agentId,
-        prompt: args.prompt,
-        model,
-        ...(args.codexServiceTier === undefined
-          ? {}
-          : { runOptions: { codexServiceTier: args.codexServiceTier } }),
-      },
-      usagePricingResolution,
-    );
-    const threadId = waiting.threadId;
-
-    const launch = async (
-      options: ChatRunCompletionOptions = {},
-    ): Promise<{ readonly runId: string; readonly threadId: string }> => {
-      // Do not flush background work here: callers may block the launched
-      // run's preparation and release it only after this returns.
-      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-        usagePricingResolution,
-        ...options,
-      });
-      return await waiting.launchedRun();
-    };
-    return { anchor, anchorClaim, threadId, usagePricingResolution, launch };
-  }
-
   return {
-    bdd,
-    api,
+    bdd: {
+      acceptAgentStorageWrites: bdd.acceptAgentStorageWrites,
+      completeOnboarding: bdd.completeOnboarding,
+      createAgent: bdd.createAgent,
+      readMe: bdd.readMe,
+      readOnboardingStatus: bdd.readOnboardingStatus,
+      updateAgentMetadata: bdd.updateAgentMetadata,
+      user: bdd.user,
+    },
+    api: {
+      acceptStorageDownloads: api.acceptStorageDownloads,
+      acceptTelemetryIngest: api.acceptTelemetryIngest,
+      claimRunnerJob: api.claimRunnerJob,
+      configureRunnerGroup: api.configureRunnerGroup,
+      createCliToken: api.createCliToken,
+      createPersonalModelProvider: api.createPersonalModelProvider,
+      createThreadRun: api.createThreadRun,
+      declareSteeredInput: api.declareSteeredInput,
+      enableAgentConnectors: api.enableAgentConnectors,
+      ensurePersonalSubscriptionModel: api.ensurePersonalSubscriptionModel,
+      grantProEntitlement: api.grantProEntitlement,
+      heartbeatRunner: api.heartbeatRunner,
+      nextSteerableInput: api.nextSteerableInput,
+      readBillingStatus: api.readBillingStatus,
+      readRun: api.readRun,
+      readRunQueue: api.readRunQueue,
+      requestCancelRun: api.requestCancelRun,
+      requestClaimRunnerJob: api.requestClaimRunnerJob,
+      requestClaimRunnerJobAs: api.requestClaimRunnerJobAs,
+      requestDeclareSteeredInputAs: api.requestDeclareSteeredInputAs,
+      requestNextSteerableInputAs: api.requestNextSteerableInputAs,
+      updateUserModelPreference: api.updateUserModelPreference,
+    },
     chat,
-    webhooks,
+    webhooks: {
+      configureClerkWebhookSecret: webhooks.configureClerkWebhookSecret,
+      requestAgentComplete: webhooks.requestAgentComplete,
+      requestAgentEvents: webhooks.requestAgentEvents,
+      requestAgentRunOutputs: webhooks.requestAgentRunOutputs,
+      requestAgentSessionHistoryPrepare:
+        webhooks.requestAgentSessionHistoryPrepare,
+      requestAgentStorageCommit: webhooks.requestAgentStorageCommit,
+      requestAgentStoragePrepare: webhooks.requestAgentStoragePrepare,
+      requestAgentUsageEvent: webhooks.requestAgentUsageEvent,
+      requestClerkWebhook: webhooks.requestClerkWebhook,
+      verifyNextClerkWebhook: webhooks.verifyNextClerkWebhook,
+    },
     chatCallbacks,
     connectors,
     misc,
     authDevice,
     authDeviceSupport,
     routeMocks,
-    runStateStore,
     entitledChatActor,
     entitledNativeChatActor,
-    seedBuiltInModelKey,
-    configureBuiltInPiModel,
     configureUserOwnedGptPiModel,
     configureSubscriptionPiModel,
-    configureBuiltInPiModelOnOpenRouter,
     sendChatRun,
     sendChatRunAfterPick,
     sendWaitingChatInput,
@@ -1551,14 +1293,12 @@ export function createChatEventsFixture(context: TestContext) {
     lastThreadPiAutomationRun,
     expectThreadPiTerminal,
     claimGptPiSandbox,
-    mockPiCheckpointObjectStore,
+    mockPiObjectStore,
     piSandboxBaseSession,
     uploadedPiS3Object,
     piS3Object,
-    publishPendingPiInstructions,
     mockPiResourceArchiveDownloads,
     completeSandboxFirstPiRun,
-    queueCapabilityProvenPiRun,
   };
 }
 

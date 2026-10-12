@@ -4,10 +4,17 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
-import { expireOrgCreditsInTransaction } from "./org-credit-expiration.service";
+import {
+  orgCreditExpirationOutcome,
+  orgCreditExpirationOutcomeRow,
+  orgCreditExpirationSql,
+  pendingOrgCreditExpirationQuery,
+  requireCompleteOrgCreditExpiration,
+} from "./org-credit-expiration";
 
 interface OrgCreditGrant {
   readonly orgId: string;
@@ -20,12 +27,12 @@ interface OrgCreditGrant {
 
 /**
  * The unique grant identity and its wallet increment commit together, once,
- * with no wallet row lock and no retry: the invoice receipt is admitted by
+ * after the existing wallet row lock, with no retry: the invoice is admitted by
  * INSERT … ON CONFLICT DO NOTHING (a replay is an idempotent no-op) and the
- * increment is atomic arithmetic. Expired remainder is cleared first by one
- * conditional statement in this transaction, so the grant is serially after
- * expiration; a lost clear throws OrgCreditExpirationConflict and rolls the
- * grant back for its caller (Stripe redelivery / reconcile cycle).
+ * increment is atomic arithmetic. Expiration clears the cohort and clamps the
+ * wallet, then checks a fresh statement snapshot when a lot changed. Remaining
+ * expired credit throws OrgCreditExpirationConflict before commit and rolls
+ * this operation back for its caller (Stripe redelivery / reconcile cycle).
  */
 export const grantPurchasedOrgCredits$ = command(
   async (
@@ -33,6 +40,7 @@ export const grantPurchasedOrgCredits$ = command(
     grant: OrgCreditGrant,
     signal: AbortSignal,
   ): Promise<void> => {
+    // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: expiration clear/clamp, accepted invoice receipt and wallet increment must commit together or fully roll back; single-statement alternative: an initial CTE snapshot cannot preserve the fresh expired-remainder rejection before commit.
     await set(writeDb$).transaction(async (tx) => {
       const [inserted] = await tx
         .insert(orgMetadataCanonicalWrites)
@@ -68,7 +76,27 @@ export const grantPurchasedOrgCredits$ = command(
         return;
       }
       const at = nowDate();
-      await expireOrgCreditsInTransaction(tx, grant.orgId, at);
+      // Cash writers acquire the wallet before grant/expiry-lot locks.
+      await tx
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, grant.orgId))
+        .for("update");
+      const outcome = orgCreditExpirationOutcome(
+        parseRawRows(
+          orgCreditExpirationOutcomeRow,
+          await tx.execute(orgCreditExpirationSql(grant.orgId, at)),
+        ),
+      );
+      // A fresh statement snapshot: a concurrent clear or extension that
+      // leaves no expired remainder is benign.
+      const [remaining] =
+        outcome.cleared === outcome.expected
+          ? []
+          : await tx
+              .select()
+              .from(pendingOrgCreditExpirationQuery(grant.orgId, at));
+      requireCompleteOrgCreditExpiration(grant.orgId, outcome, remaining);
       const [receipt] = await tx
         .insert(creditExpiresRecord)
         .values({

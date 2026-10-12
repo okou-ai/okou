@@ -30,9 +30,9 @@ import {
   chatEvents,
   type ChatEventAttachFileMetadata,
 } from "@okouai/db/schema/chat-event";
-import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
+import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
@@ -65,6 +65,7 @@ import {
   type ModelSelectionBootstrap,
 } from "./model-selection.service";
 import { queuedChatThreadEnqueuePlan } from "./queued-chat-thread.service";
+import { mcpClientDisplayName } from "./mcp-client-display-name.service";
 
 import {
   cancelRun$,
@@ -179,14 +180,6 @@ type OrganizationAuthContext = AuthContext & {
 interface NormalSendArgs {
   readonly body: NormalSendBody;
   readonly auth: OrganizationAuthContext;
-  /** Only the verified /mcp service supplies this; never read it from the send body. */
-  readonly mcpSource?: Extract<
-    UserMessageDocument["parts"][number],
-    {
-      type: "source";
-      kind: "mcp";
-    }
-  >;
   readonly userId: string;
   readonly orgId: string;
   readonly preloadedAgent?: AgentForChatSend;
@@ -649,7 +642,7 @@ const loadAuthorizedExistingSendThread$ = command(
  * enqueue; the pick launches that model after its credit admission.
  */
 interface ThreadRunSettings {
-  readonly selectedModel: string | null;
+  readonly selectedModel: string;
   readonly modelSettings: ModelSettings;
   readonly modelSettingsPatch: ModelSettingsPatch | undefined;
   readonly codexServiceTier: CodexServiceTier | null;
@@ -662,19 +655,18 @@ function requestedThreadRunSettings(
   catalog: ModelCatalog,
   body: NormalSendBody,
   current: {
-    readonly selectedModel: string | null;
+    readonly selectedModel: string;
     readonly modelSettings: ModelSettings;
     readonly codexServiceTier: CodexServiceTier | null;
   },
 ): ThreadRunSettings | ReturnType<typeof badRequestMessage> {
   // An explicit null selects Auto; omission keeps the current selection.
-  const requestedModel =
-    body.model === undefined ? current.selectedModel : body.model;
   const selectedModel =
-    body.model !== undefined &&
-    (requestedModel === null || isAutoSelectedModel(requestedModel))
-      ? AUTO_SELECTED_MODEL
-      : requestedModel;
+    body.model === undefined
+      ? current.selectedModel
+      : body.model === null || isAutoSelectedModel(body.model)
+        ? AUTO_SELECTED_MODEL
+        : body.model;
   const effort = resolveChatReasoningEffort({
     catalog,
     selectedModel,
@@ -904,7 +896,7 @@ const resolveSendThread$ = command(
         memberMetadata.preferences?.cloudBrowserEnabledByDefault ?? true,
     };
     const runSettings = requestedThreadRunSettings(args.catalog, args.body, {
-      selectedModel: initialModel?.selectedModel ?? null,
+      selectedModel: initialModel?.selectedModel ?? AUTO_SELECTED_MODEL,
       modelSettings: defaults.modelSettings,
       codexServiceTier:
         initialModel?.serviceTier === "priority" ? "fast" : null,
@@ -1144,11 +1136,21 @@ function normalSendUserMessage(
   if (agentRunSource !== null) {
     return withAgentRunSourceAnnotation(args.body.userMessage, agentRunSource);
   }
-  return args.mcpSource === undefined
+  return args.auth.tokenType !== "oauth"
     ? args.body.userMessage
     : {
         ...args.body.userMessage,
-        parts: [...args.body.userMessage.parts, args.mcpSource],
+        parts: [
+          ...args.body.userMessage.parts,
+          {
+            type: "source",
+            kind: "mcp",
+            clientId: args.auth.clientId,
+            ...(args.auth.clientName === undefined
+              ? {}
+              : { clientName: args.auth.clientName }),
+          },
+        ],
       };
 }
 /**
@@ -1408,6 +1410,7 @@ const appendNormalSendInput$ = command(
     signal: AbortSignal,
   ) => {
     const { thread, event, existingPlan, preferencePlan } = input;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0091; new non-billing transactions are prohibited.
     const inserted = await set(writeDb$).transaction(async (tx) => {
       if (thread.kind === "new") {
         const createdPlan = newSendThreadInsertPlan(args, thread);
@@ -1558,17 +1561,6 @@ const prepareNormalSend$ = command(
       })
     ) {
       return badRequestMessage("MCP source annotations are server-managed");
-    }
-    if (
-      args.mcpSource !== undefined &&
-      (args.auth.tokenType !== "oauth" ||
-        !("clientId" in args.auth) ||
-        args.auth.clientId !== args.mcpSource.clientId ||
-        args.body.userMessage.parts.some((part) => {
-          return part.type !== "text";
-        }))
-    ) {
-      return badRequestMessage("MCP source requires a verified OAuth client");
     }
     const existingThreadId = args.body.threadId;
     const authorized =
@@ -2009,7 +2001,7 @@ const recallRejected = Object.freeze({
   message: "Only queued user messages can be recalled",
 } satisfies Extract<AppendEventResult, { readonly ok: false }>);
 
-const appendRecallChatEvent$ = command(
+export const appendRecallChatEvent$ = command(
   async (
     { set },
     params: {
@@ -2188,7 +2180,7 @@ const validateNormalRevocationTarget$ = command(
     return undefined;
   },
 );
-const appendInterruptUserMessage$ = command(
+export const appendInterruptUserMessage$ = command(
   async (
     { set },
     params: {
@@ -2458,11 +2450,16 @@ export const handleSendChatEvent$ = command(
     if (!isNormalSendBody(body)) {
       return badRequestMessage("Prompt is required");
     }
+    const clientName =
+      auth.tokenType === "oauth"
+        ? await mcpClientDisplayName(auth.clientId, signal)
+        : undefined;
+    signal.throwIfAborted();
     return await set(
       sendNormalEvent$,
       {
         body,
-        auth,
+        auth: auth.tokenType === "oauth" ? { ...auth, clientName } : auth,
         userId: auth.userId,
         orgId: auth.orgId,
       },

@@ -51,7 +51,6 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 
 import { settle } from "../utils";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
@@ -473,13 +472,20 @@ function createIndicatorRows(args: IndicatorOwner) {
 }
 
 /**
- * Active and unread indicators for up to 128 visible agents in the current
- * organization. Agent IDs are loaded first and passed to the bounded thread
- * reads, so those reads do not join against or correlate to the agents table.
+ * Bounded, non-atomic presentation indicators, not per-Run lifecycle status.
+ * Active reflects eligible pending/running Runs; unread reflects unread terminal
+ * markers, including failed and cancelled Runs. Independent reads can observe
+ * different states during transitions. Missing entries do not prove inactivity
+ * or completion, and exclusions do not promise eventual appearance.
+ *
+ * Covers up to 128 visible agents in the current organization. Agent IDs are
+ * loaded first and passed to the bounded thread reads, so those reads do not
+ * join against or correlate to the agents table.
  * Each indicator source returns at most 50 rows. Only Run terminal markers
  * contribute unread indicators; they are resolved for at most 128 candidate
- * threads with uncorrelated reads. Unread agent state takes precedence over
- * active state.
+ * threads with uncorrelated reads. Active wins for a thread; unread wins for an
+ * agent, which can still have other active threads. See indicatorsSchema for
+ * the public bounds and outcome-observation contract.
  */
 export function chatIndicators(args: {
   readonly userId: string;
@@ -831,6 +837,7 @@ export const createChatThread$ = command(
         message: preparedConnectorSelections.message,
       };
     }
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0095; new non-billing transactions are prohibited.
     const thread = await set(writeDb$).transaction(async (tx) => {
       const initialRemoteAccessOverrides =
         args.initialRemoteAccessOverrides ?? [];
@@ -913,6 +920,7 @@ export const createChatThread$ = command(
       );
       for (const statement of initialWrites.connectors) {
         const inserted = await settle(
+          // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0096; new non-billing transactions are prohibited.
           tx.transaction(async (sp) => {
             await sp.execute(statement);
             signal.throwIfAborted();
@@ -983,6 +991,7 @@ const disabledAutomationSelection = Object.freeze({
 const deleteChatThreadContent$ = command(
   async ({ set }, args: DeleteChatThreadArgs, signal: AbortSignal) => {
     signal.throwIfAborted();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0097; new non-billing transactions are prohibited.
     const result = await set(writeDb$).transaction(async (tx) => {
       signal.throwIfAborted();
 
@@ -1081,9 +1090,6 @@ const deleteChatThreadContent$ = command(
       await tx
         .delete(chatEventSearchMessages)
         .where(eq(chatEventSearchMessages.chatThreadId, ownedThread.id));
-      signal.throwIfAborted();
-
-      await tx.execute(purgeRetiredMorningBriefEmailSql());
       signal.throwIfAborted();
 
       // Delete the thread after cleanup under its row lock. Cascades chat_events.

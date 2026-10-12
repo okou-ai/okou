@@ -3,6 +3,9 @@
 //! The successful claim transfers a typed resource to Runner's existing post-claim activation.
 //! Claim rejection and a mismatched returned run ID keep rollback with the admission owner.
 
+mod guarded;
+pub use guarded::{GuardedSpeculativeAdmission, GuardedSpeculativeRollback};
+
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::Instant;
@@ -14,6 +17,7 @@ use runner_executor::executor::{
 use runner_host::paths::short_digest;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_lifecycle::active_runs::{ActiveRunReuseProof, ActiveRuns};
+use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
 use runner_lifecycle::idle_pool::{
     IdlePoolSnapshot, ReservedIdleSandbox, RestoreReservedIdleResult, SpeculativeIdleSandbox,
     SpeculativeIdleUnparkResult, SpeculativeReparkResult,
@@ -21,23 +25,22 @@ use runner_lifecycle::idle_pool::{
 use runner_lifecycle::lifecycle::RunnerMode;
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::StatusTracker;
-use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapshot;
 use runner_provider::{
     ClaimedJob, JobCandidate, JobProvider, RunCancellationRegistration, RunCancellationRegistry,
     RunnerPreferenceRemovalReason, RunnerPreferenceTier,
 };
 use runner_types::ids::RunId;
-use runner_types::types::{HeldWorkspaceState, WORKSPACE_AFFINITY_VERSION, reuse_key_kind};
+use runner_types::types::{HOME_AFFINITY_VERSION, HeldHomeState, reuse_key_kind};
 use sandbox::SandboxId;
-use tokio::sync::{Notify, watch};
+use tokio::sync::{Notify, oneshot, watch};
 use tracing::{info, warn};
 
 use crate::blank_pool::BlankPoolDiagnostics;
 use crate::finalizing_admission::FinalizingAdmission;
 use crate::idle_lifecycle::{
     IdleDestroyTracker, IdlePressureRequest, IdlePressureSelection, ReservedIdleActivation,
-    SharedIdlePool, destroy_idle_jobs_and_wait, reserve_reusable_idle_for_spawn,
-    rollback_reserved_idle_for_spawn, select_idle_entries_for_pressure, set_idle_status_snapshot,
+    SharedIdlePool, reserve_reusable_idle_for_spawn, rollback_reserved_idle_for_spawn,
+    select_idle_entries_for_pressure, set_idle_status_snapshot,
 };
 
 /// Narrow, borrowed composition inputs required for the admission-to-claim transaction.
@@ -51,8 +54,8 @@ pub struct PreClaimResources<'a> {
     pub provider: &'a dyn JobProvider,
     pub budget: &'a Arc<ResourceBudget>,
     pub active_runs: &'a ActiveRuns,
-    pub workspace_cache_snapshot: &'a WorkspaceCacheStateSnapshot,
-    pub has_workspace_cache: bool,
+    pub home_cache_snapshot: &'a HomeCacheStateSnapshot,
+    pub has_home_cache: bool,
     pub idle_destroy_tracker: &'a IdleDestroyTracker,
     pub reuse_state_notify: &'a Notify,
     pub blank_pool_diagnostics: &'a BlankPoolDiagnostics,
@@ -133,7 +136,7 @@ pub struct PreClaimRequest<'a> {
     pub profile_name: &'a str,
     pub job_vcpu: u32,
     pub job_memory: u32,
-    pub workspace_disk_mb: u32,
+    pub home_disk_mb: u32,
     pub device_rate_limits: &'a Option<sandbox::DeviceRateLimits>,
 }
 
@@ -233,7 +236,7 @@ struct ClaimAdmissionRequest<'a> {
     profile_name: &'a str,
     job_vcpu: u32,
     job_memory: u32,
-    workspace_disk_mb: u32,
+    home_disk_mb: u32,
     device_rate_limits: &'a Option<sandbox::DeviceRateLimits>,
 }
 
@@ -261,17 +264,21 @@ impl LocalAdmission {
 }
 
 /// Prepare a candidate and complete its admission-to-claim transaction in one owner.
-/// The caller must await this operation in a non-interruptible discovery branch.
+/// Its owner must keep the transaction alive until claim settlement and resource
+/// handoff. Normal shutdown joins independently scheduled admissions, never aborts them.
+/// `admission_ready` signals after reservation/cancellation registration and before
+/// claim; an early rejection closes it so discovery can re-evaluate capacity.
 pub async fn admit_and_claim(
     request: PreClaimRequest<'_>,
     ctx: &PreClaimResources<'_>,
+    admission_ready: oneshot::Sender<()>,
 ) -> PreClaimOutcome {
     let PreClaimRequest {
         candidate,
         profile_name,
         job_vcpu,
         job_memory,
-        workspace_disk_mb,
+        home_disk_mb,
         device_rate_limits,
     } = request;
     let run_id = candidate.run_id();
@@ -298,10 +305,11 @@ pub async fn admit_and_claim(
             profile_name,
             job_vcpu,
             job_memory,
-            workspace_disk_mb,
+            home_disk_mb,
             device_rate_limits,
         },
         ctx,
+        admission_ready,
     )
     .await
     {
@@ -313,6 +321,7 @@ pub async fn admit_and_claim(
 async fn claim_with_local_admission(
     request: ClaimAdmissionRequest<'_>,
     ctx: &PreClaimResources<'_>,
+    admission_ready: oneshot::Sender<()>,
 ) -> Option<AdmittedClaim> {
     let ClaimAdmissionRequest {
         prepared,
@@ -320,7 +329,7 @@ async fn claim_with_local_admission(
         profile_name,
         job_vcpu,
         job_memory,
-        workspace_disk_mb,
+        home_disk_mb,
         device_rate_limits,
     } = request;
     let PreparedCandidate {
@@ -391,13 +400,17 @@ async fn claim_with_local_admission(
             return None;
         }
     }
-    // claim() runs in the branch handler: non-interruptible, so a valid
-    // successful claim is always paired with complete().
+    // The admission task is not aborted during normal shutdown. A valid
+    // successful claim must transfer to activation or complete-with-rollback.
     let LocalAdmission {
         resource,
         cancellation,
         blank_pool_selection,
     } = admission;
+    // Let discovery re-evaluate authoritative capacity only after this task
+    // reserved its resource and registered cancellation. A missing receiver
+    // means Reactor disappeared, not that this owned claim should be aborted.
+    let _ = admission_ready.send(());
     let claim_started_at = Instant::now();
     let (claimed, admitted_resource, claim_returned_at) = match resource {
         LocalAdmissionResource::Fresh(budget_lease) => {
@@ -459,7 +472,7 @@ async fn claim_with_local_admission(
         // runner, or the provider rejected the job. Release the reservation and
         // cancellation registration so the runner can continue.
         cancellation.unregister().await;
-        rollback_admitted_resource(admitted_resource, run_id, workspace_disk_mb, ctx).await;
+        rollback_admitted_resource(admitted_resource, run_id, home_disk_mb, ctx).await;
         return None;
     };
     if claimed.context().run_id != run_id {
@@ -469,7 +482,7 @@ async fn claim_with_local_admission(
             "provider returned claimed job with mismatched run_id"
         );
         cancellation.unregister().await;
-        rollback_admitted_resource(admitted_resource, run_id, workspace_disk_mb, ctx).await;
+        rollback_admitted_resource(admitted_resource, run_id, home_disk_mb, ctx).await;
         return None;
     }
 
@@ -664,11 +677,8 @@ async fn prepare_ranked_preference_candidate(
         return reusable_preparation(candidate, reservation);
     }
 
-    if ranked_preference_allows(
-        advertised_tier,
-        RunnerPreferenceTier::WorkspaceCache,
-        selected,
-    ) && has_compatible_workspace(reuse_key, profile_name, ctx)
+    if ranked_preference_allows(advertised_tier, RunnerPreferenceTier::HomeCache, selected)
+        && has_compatible_home(reuse_key, profile_name, ctx)
         && let Some(lease) = ResourceBudget::try_reserve_lease(ctx.budget, job_vcpu, job_memory)
     {
         return PreferencePreparation::Ready(PreparedCandidate {
@@ -693,18 +703,13 @@ fn ranked_preference_allows(
     }
 }
 
-fn has_compatible_workspace(
-    reuse_key: &str,
-    profile_name: &str,
-    ctx: &PreClaimResources<'_>,
-) -> bool {
-    current_local_held_workspace_states(ctx)
+fn has_compatible_home(reuse_key: &str, profile_name: &str, ctx: &PreClaimResources<'_>) -> bool {
+    current_local_held_home_states(ctx)
         .iter()
         .filter(|state| state.reuse_key == reuse_key)
-        .flat_map(|state| &state.workspace_caches)
-        .any(|workspace| {
-            workspace.profile == profile_name
-                && workspace.workspace_affinity_version == WORKSPACE_AFFINITY_VERSION
+        .flat_map(|state| &state.home_caches)
+        .any(|home| {
+            home.profile == profile_name && home.home_affinity_version == HOME_AFFINITY_VERSION
         })
 }
 
@@ -741,6 +746,7 @@ async fn exact_speculative_preparation(
             ctx.idle_pool,
             ctx.status,
             ctx.reuse_state_notify,
+            ctx.idle_destroy_tracker,
         )
         .await;
         return ordinary_preparation(candidate);
@@ -811,9 +817,9 @@ fn diagnostic_reuse_key_fingerprint(reuse_key: &str) -> String {
     short_digest(reuse_key)
 }
 
-fn current_local_held_workspace_states(ctx: &PreClaimResources<'_>) -> Vec<HeldWorkspaceState> {
-    ctx.workspace_cache_snapshot
-        .current_held_workspace_states(ctx.active_runs, None)
+fn current_local_held_home_states(ctx: &PreClaimResources<'_>) -> Vec<HeldHomeState> {
+    ctx.home_cache_snapshot
+        .current_held_home_states(ctx.active_runs, None)
 }
 
 async fn acquire_local_admission_resource(
@@ -824,10 +830,10 @@ async fn acquire_local_admission_resource(
     device_rate_limits: &Option<sandbox::DeviceRateLimits>,
     ctx: &PreClaimResources<'_>,
 ) -> Option<(LocalAdmissionResource, Option<BlankPoolSelection>)> {
-    let workspace_cache_possible = ctx.has_workspace_cache
+    let home_cache_possible = ctx.has_home_cache
         && candidate.reuse_key().is_some_and(|reuse_key| {
-            ctx.workspace_cache_snapshot
-                .might_contain_workspace_cache_reuse_key(reuse_key)
+            ctx.home_cache_snapshot
+                .might_contain_home_cache_reuse_key(reuse_key)
         });
     let (selection, blank_pool_selection) = select_idle_entries_for_pressure(
         ctx.idle_pool,
@@ -841,7 +847,7 @@ async fn acquire_local_admission_resource(
             profile_name,
             device_rate_limits,
             history_generation_run_id: None,
-            allow_compatible_blank: !workspace_cache_possible,
+            allow_compatible_blank: !home_cache_possible,
             blank_pool_diagnostics: Some(ctx.blank_pool_diagnostics),
             vcpu: job_vcpu,
             memory_mb: job_memory,
@@ -893,6 +899,7 @@ async fn rollback_untracked_resource(
                 ctx.idle_pool,
                 ctx.status,
                 ctx.reuse_state_notify,
+                ctx.idle_destroy_tracker,
             )
             .await;
         }
@@ -902,6 +909,7 @@ async fn rollback_untracked_resource(
                 ctx.idle_pool,
                 ctx.status,
                 ctx.reuse_state_notify,
+                ctx.idle_destroy_tracker,
             )
             .await;
         }
@@ -911,7 +919,7 @@ async fn rollback_untracked_resource(
 async fn rollback_admitted_resource(
     resource: AdmittedResource,
     run_id: RunId,
-    workspace_disk_mb: u32,
+    home_disk_mb: u32,
     ctx: &PreClaimResources<'_>,
 ) {
     let resource = match resource {
@@ -922,14 +930,14 @@ async fn rollback_admitted_resource(
         }
         AdmittedResource::Finalizing(_) => return,
     };
-    rollback_sandbox_admitted_resource(resource, run_id, workspace_disk_mb, ctx).await;
+    rollback_sandbox_admitted_resource(resource, run_id, home_disk_mb, ctx).await;
 }
 
 /// Recover a claimed resource only after the provider claim has been completed.
 pub async fn rollback_sandbox_admitted_resource(
     resource: SandboxAdmittedResource,
     run_id: RunId,
-    workspace_disk_mb: u32,
+    home_disk_mb: u32,
     ctx: &PreClaimResources<'_>,
 ) {
     match resource {
@@ -938,7 +946,7 @@ pub async fn rollback_sandbox_admitted_resource(
             rollback_untracked_resource(LocalAdmissionResource::Reusable(reservation), ctx).await;
         }
         SandboxAdmittedResource::ExactSpeculation(speculation) => {
-            rollback_exact_speculation(speculation, run_id, workspace_disk_mb, ctx).await;
+            rollback_exact_speculation(speculation, run_id, home_disk_mb, ctx).await;
         }
     }
 }
@@ -946,39 +954,43 @@ pub async fn rollback_sandbox_admitted_resource(
 async fn rollback_exact_speculation(
     speculation: ExactSpeculation,
     run_id: RunId,
-    workspace_disk_mb: u32,
+    home_disk_mb: u32,
     ctx: &PreClaimResources<'_>,
 ) {
-    rollback_exact_speculation_outcome(speculation.outcome, run_id, workspace_disk_mb, ctx).await;
+    rollback_exact_speculation_outcome(speculation.outcome, run_id, home_disk_mb, ctx).await;
 }
 
 /// Repark or destroy a prepared sandbox after the claimed job was completed without transfer.
 pub async fn rollback_exact_speculation_outcome(
     outcome: ExactSpeculationOutcome,
     run_id: RunId,
-    workspace_disk_mb: u32,
+    home_disk_mb: u32,
     ctx: &PreClaimResources<'_>,
 ) {
-    let destroy_job = match outcome {
+    let destroy_task = match outcome {
         ExactSpeculationOutcome::Prepared(sandbox) => {
             match sandbox
-                .repark_for_claim_rollback(run_id, u64::from(workspace_disk_mb) * 1024 * 1024)
+                .repark_for_claim_rollback(run_id, u64::from(home_disk_mb) * 1024 * 1024)
                 .await
             {
                 SpeculativeReparkResult::Reparked(reservation) => {
-                    let (restore_result, snapshot) = {
+                    let (destroy_task, snapshot) = {
                         let mut pool = ctx.idle_pool.lock().await;
                         let restore_result = pool.restore_reserved(*reservation);
                         let snapshot = pool.status_snapshot();
-                        (restore_result, snapshot)
+                        let destroy_task = match restore_result {
+                            RestoreReservedIdleResult::Restored => None,
+                            RestoreReservedIdleResult::Replaced(job)
+                            | RestoreReservedIdleResult::Rejected(job) => Some(
+                                ctx.idle_destroy_tracker
+                                    .spawn_job(*job, "speculative_exact_reuse_claim_rollback"),
+                            ),
+                        };
+                        (destroy_task, snapshot)
                     };
                     set_idle_status_snapshot(ctx.status, snapshot).await;
                     ctx.reuse_state_notify.notify_one();
-                    match restore_result {
-                        RestoreReservedIdleResult::Restored => None,
-                        RestoreReservedIdleResult::Replaced(destroy_job)
-                        | RestoreReservedIdleResult::Rejected(destroy_job) => Some(destroy_job),
-                    }
+                    destroy_task
                 }
                 SpeculativeReparkResult::Destroy {
                     destroy_job,
@@ -1001,7 +1013,10 @@ pub async fn rollback_exact_speculation_outcome(
                             "speculative exact-reuse rollback could not restore idle ownership"
                         );
                     }
-                    Some(destroy_job)
+                    Some(
+                        ctx.idle_destroy_tracker
+                            .spawn_job(*destroy_job, "speculative_exact_reuse_claim_rollback"),
+                    )
                 }
             }
         }
@@ -1011,12 +1026,16 @@ pub async fn rollback_exact_speculation_outcome(
                 error,
                 "speculative exact-reuse preparation failed before claim resolved"
             );
-            Some(destroy_job)
+            Some(
+                ctx.idle_destroy_tracker
+                    .spawn_job(*destroy_job, "speculative_exact_reuse_claim_rollback"),
+            )
         }
     };
-    if let Some(destroy_job) = destroy_job {
-        destroy_idle_jobs_and_wait(vec![*destroy_job], "speculative_exact_reuse_claim_rollback")
-            .await;
+    if let Some(mut task) = destroy_task {
+        if let Err(error) = task.join().await {
+            warn!(%error, "speculative exact rollback cleanup producer lost");
+        }
         ctx.reuse_state_notify.notify_one();
     }
 }
@@ -1089,11 +1108,11 @@ mod tests {
     #[test]
     fn ranked_preference_admission_matrix() {
         use RunnerPreferenceTier::{
-            ExactSandbox, FinalizingPredecessor, ReusableSandbox, WorkspaceCache,
+            ExactSandbox, FinalizingPredecessor, HomeCache, ReusableSandbox,
         };
 
         let tiers = [
-            WorkspaceCache,
+            HomeCache,
             ReusableSandbox,
             FinalizingPredecessor,
             ExactSandbox,

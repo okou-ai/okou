@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import homeStartupTelemetry from "./fixtures/runner-home-startup-telemetry.json";
+
 import {
   RESUME_SESSION_HISTORY_MAX_BYTES,
   SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
@@ -15,7 +17,6 @@ import {
   storageManifestFilesSchema,
 } from "../storages";
 import {
-  webhookCheckpointsContract,
   webhookCompleteContract,
   webhookEventsContract,
   webhookSessionOutputContract,
@@ -287,10 +288,10 @@ describe("Sandbox transient session output", () => {
   });
 });
 
-describe("workspace history restore telemetry", () => {
+describe("home history restore telemetry", () => {
   const operation = {
     ts: "2026-09-15T00:00:00Z",
-    action_type: "session_history_workspace_cache_guest_restore",
+    action_type: "session_history_home_cache_guest_restore",
     duration_ms: 1234,
     success: true,
   };
@@ -367,7 +368,7 @@ describe("workspace history restore telemetry", () => {
       action_type: "session_history_transfer",
       session_history_framework: "codex",
       session_history_restore_representation: "raw",
-      session_history_transfer_source: "workspace_cache",
+      session_history_transfer_source: "home_cache",
       session_history_wire_codec: "zstd",
       session_history_transfer_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
       session_history_wire_bytes: 144 * 1024 * 1024,
@@ -506,30 +507,46 @@ describe("Pi memory citation event transport", () => {
   });
 });
 
-describe("Run completion metadata generations", () => {
+describe("Run completion metadata", () => {
   const completion = {
     cliAgentType: "codex",
     cliAgentSessionId: "native-session",
     cliAgentSessionHistoryHash: manifestHash,
   };
   const body = { runId: "run", exitCode: 0 };
-  it("accepts current and draining Guests and metadata-free Runner fallback", () => {
-    for (const metadata of [{ completion }, { checkpoint: completion }, {}]) {
+  it("accepts Guest finalization and metadata-free Runner fallback", () => {
+    for (const metadata of [
+      { completion },
+      {
+        completion: {
+          cliAgentType: "codex",
+          cliAgentSessionId: "native-session",
+          cliAgentSessionHistoryDisposition: "unavailable",
+        },
+      },
+      {
+        completion: {
+          cliAgentType: "codex",
+          cliAgentSessionId: "native-session",
+          cliAgentSessionHistoryDisposition: "discarded_oversized",
+        },
+      },
+      {},
+    ]) {
       expect(
         webhookCompleteContract.complete.body.parse({ ...body, ...metadata }),
       ).toStrictEqual({ ...body, ...metadata });
     }
   });
-  it("rejects ambiguous metadata and preserves native history authority", () => {
-    expect(
-      webhookCompleteContract.complete.body.safeParse({
-        ...body,
-        completion,
-        checkpoint: completion,
-      }).success,
-    ).toBe(false);
-    for (const field of ["completion", "checkpoint"]) {
+  it("preserves native history authority", () => {
+    for (const field of ["completion"]) {
       for (const invalid of [
+        { ...completion, cliAgentSessionHistoryHash: undefined },
+        {
+          ...completion,
+          cliAgentSessionHistoryHash: undefined,
+          cliAgentSessionHistoryDisposition: "unknown",
+        },
         { ...completion, runId: "other-run" },
         { ...completion, cliAgentSessionHistoryDisposition: "unavailable" },
         { ...completion, cliAgentSessionHistoryHash: "A".repeat(64) },
@@ -542,91 +559,6 @@ describe("Run completion metadata generations", () => {
         ).toBe(false);
       }
     }
-  });
-});
-
-describe("agent checkpoint session history", () => {
-  const runId = "00000000-0000-4000-8000-000000000000";
-  const checkpointMetadata = {
-    cliAgentType: "codex",
-    cliAgentSessionId: "00000000-0000-4000-8000-000000000001",
-  };
-  const baseBody = { runId, ...checkpointMetadata };
-
-  it("accepts exactly one uploaded hash or historyless disposition", () => {
-    expect(
-      webhookCheckpointsContract.create.body.safeParse({
-        ...baseBody,
-        cliAgentSessionHistoryHash: manifestHash,
-      }).success,
-    ).toBe(true);
-    expect(
-      webhookCompleteContract.complete.body.safeParse({
-        runId,
-        exitCode: 0,
-        checkpoint: {
-          ...checkpointMetadata,
-          cliAgentSessionHistoryHash: manifestHash,
-        },
-      }).success,
-    ).toBe(true);
-    expect(
-      webhookCheckpointsContract.create.body.safeParse({
-        ...baseBody,
-        cliAgentSessionHistoryDisposition: "discarded_oversized",
-      }).success,
-    ).toBe(true);
-    expect(
-      webhookCheckpointsContract.create.body.safeParse({
-        ...baseBody,
-        cliAgentSessionHistoryDisposition: "unavailable",
-      }).success,
-    ).toBe(true);
-  });
-
-  it("rejects missing, conflicting, and unknown history dispositions", () => {
-    const invalidMetadata = [
-      checkpointMetadata,
-      {
-        ...checkpointMetadata,
-        cliAgentSessionHistoryHash: manifestHash,
-        cliAgentSessionHistoryDisposition: "discarded_oversized",
-      },
-      {
-        ...checkpointMetadata,
-        cliAgentSessionHistoryDisposition: "unknown",
-      },
-    ];
-
-    for (const checkpoint of invalidMetadata) {
-      expect(
-        webhookCheckpointsContract.create.body.safeParse({
-          runId,
-          ...checkpoint,
-        }).success,
-      ).toBe(false);
-      expect(
-        webhookCompleteContract.complete.body.safeParse({
-          runId,
-          exitCode: 0,
-          checkpoint,
-        }).success,
-      ).toBe(false);
-    }
-  });
-
-  it("keeps the outer completion run ID authoritative", () => {
-    expect(
-      webhookCompleteContract.complete.body.safeParse({
-        runId,
-        exitCode: 0,
-        checkpoint: {
-          runId,
-          ...checkpointMetadata,
-          cliAgentSessionHistoryDisposition: "unavailable",
-        },
-      }).success,
-    ).toBe(false);
   });
 });
 
@@ -726,8 +658,8 @@ describe("agent completion reuse outcomes", () => {
     }
   });
 
-  it("accepts coherent final sandbox and workspace outcomes", () => {
-    const workspaceMisses = [
+  it("accepts coherent final sandbox and home outcomes", () => {
+    const homeMisses = [
       "cacheMiss",
       "noReuseKey",
       "invalidWorkingDir",
@@ -740,17 +672,17 @@ describe("agent completion reuse outcomes", () => {
     const coherentPairs = [
       ["reused", "sandboxReused"],
       ["noReuseKey", "reused"],
-      ...workspaceMisses.map((workspaceResult) => {
-        return ["poolMiss", workspaceResult] as const;
+      ...homeMisses.map((homeResult) => {
+        return ["poolMiss", homeResult] as const;
       }),
     ] as const;
 
-    for (const [sandboxReuseResult, workspaceReuseResult] of coherentPairs) {
+    for (const [sandboxReuseResult, homeReuseResult] of coherentPairs) {
       expect(
         webhookCompleteContract.complete.body.safeParse({
           ...baseBody,
           sandboxReuseResult,
-          workspaceReuseResult,
+          homeReuseResult,
         }).success,
       ).toBe(true);
     }
@@ -758,18 +690,18 @@ describe("agent completion reuse outcomes", () => {
 
   it("rejects missing, legacy, or contradictory sandbox context", () => {
     const incoherentBodies = [
-      { workspaceReuseResult: "cacheMiss" },
+      { homeReuseResult: "cacheMiss" },
       {
         sandboxReuseResult: "reused",
-        workspaceReuseResult: "cacheMiss",
+        homeReuseResult: "cacheMiss",
       },
       {
         sandboxReuseResult: "poolMiss",
-        workspaceReuseResult: "sandboxReused",
+        homeReuseResult: "sandboxReused",
       },
       {
         sandboxReuseResult: "noSessionId",
-        workspaceReuseResult: "cacheMiss",
+        homeReuseResult: "cacheMiss",
       },
     ] as const;
 
@@ -794,6 +726,7 @@ describe("agent completion failure reasons", () => {
     expect(knownRunFailureReasonSchema.options).toStrictEqual([
       "session_history_limit",
       "guest_root_filesystem_full",
+      "guest_home_filesystem_full",
       "execution_timeout",
       "insufficient_credits",
       "provider_insufficient_credits",
@@ -1016,10 +949,17 @@ describe("webhook telemetry contract", () => {
     });
   });
 
+  it("accepts the actual Runner home-cache startup payload", () => {
+    expect(
+      webhookTelemetryContract.send.body.parse(homeStartupTelemetry),
+    ).toStrictEqual(homeStartupTelemetry);
+  });
+
   it("accepts bounded startup outcomes and keeps them optional", () => {
     const startupOutcomes = [
       ["sandbox", "reused"],
       ["workspace", "noReuseKey"],
+      ["home", "poolMiss"],
       ["cold", "poolMiss"],
       ["cold", "profileMismatch"],
       ["cold", "deviceLimitMismatch"],

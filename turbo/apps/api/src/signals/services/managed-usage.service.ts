@@ -29,11 +29,6 @@ import {
   pgInt8ToBigIntDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
-import {
-  resolveUsagePricingProvider,
-  usagePricingResolution$,
-  type UsagePricingResolution,
-} from "../context/usage-pricing-resolution";
 import { writeDb$, type Db } from "../external/db";
 import { processUsageEventKeys$ } from "./credit-usage.service";
 import {
@@ -108,14 +103,9 @@ export interface ManagedUsageCreditCheckArgs {
 export async function checkManagedCreditsSnapshotInDb(
   writeDb: Db,
   args: ManagedUsageCreditCheckArgs,
-  pricingResolution: UsagePricingResolution,
   signal: AbortSignal,
 ): Promise<ManagedUsageErrorResponse | null> {
-  const pricingProvider = resolveUsagePricingProvider(
-    pricingResolution,
-    args.resource.kind,
-    args.resource.provider,
-  );
+  const pricingProvider = args.resource.provider;
   const expired = writeDb.$with("expired").as(
     writeDb
       .select({
@@ -209,15 +199,10 @@ const checkManagedCreditBalance$ = command(
   async (
     { set },
     args: ManagedUsageCreditCheckArgs,
-    pricingResolution: UsagePricingResolution,
     signal: AbortSignal,
   ): Promise<ManagedUsageErrorResponse | null> => {
     const writeDb = set(writeDb$);
-    const pricingProvider = resolveUsagePricingProvider(
-      pricingResolution,
-      args.resource.kind,
-      args.resource.provider,
-    );
+    const pricingProvider = args.resource.provider;
     const expired = writeDb.$with("expired").as(
       writeDb
         .select({
@@ -325,16 +310,11 @@ const checkManagedCreditBalance$ = command(
 
 export const checkManagedCredits$ = command(
   async (
-    { get, set },
+    { set },
     args: ManagedUsageCreditCheckArgs,
     signal: AbortSignal,
   ): Promise<ManagedUsageErrorResponse | null> => {
-    return await set(
-      checkManagedCreditBalance$,
-      args,
-      get(usagePricingResolution$),
-      signal,
-    );
+    return await set(checkManagedCreditBalance$, args, signal);
   },
 );
 
@@ -374,6 +354,7 @@ export const recordManagedUsage$ = command(
       ...args,
       idempotencyKey: args.idempotencyKey ?? randomUUID(),
     };
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0178; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const [run] = args.actor.runId
         ? await tx.select().from(managedBillingRunQuery(args.actor.runId))

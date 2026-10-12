@@ -607,10 +607,6 @@ impl GuestProcessCancelHandle {
     }
 }
 
-/// Backend-owned future that resolves when a process-control message is acknowledged.
-pub type GuestProcessControlFuture =
-    Pin<Box<dyn Future<Output = io::Result<ProcessControlAck>> + Send + 'static>>;
-
 /// Backend-owned future that preserves a process-control delivery outcome.
 pub type GuestProcessControlOutcomeFuture =
     Pin<Box<dyn Future<Output = ProcessControlOutcome> + Send + 'static>>;
@@ -746,36 +742,11 @@ pub struct GuestProcessControlHandle {
 }
 
 impl GuestProcessControlHandle {
-    /// Construct a process-control handle from provider-owned send logic.
+    /// Construct a handle from provider logic that preserves delivery outcomes.
     ///
     /// The `sandbox` crate treats control payloads as opaque bytes. The
     /// provider and guest process define the payload schema and acknowledgement
     /// semantics for a given started process.
-    ///
-    /// Provider errors are conservatively exposed by the outcome methods as
-    /// [`ProcessControlWriteState::PossiblyWritten`]. Providers with precise
-    /// delivery evidence should use [`Self::new_with_outcome`].
-    pub fn new<F>(control: F) -> Self
-    where
-        F: Fn(String, Vec<u8>, Duration) -> GuestProcessControlFuture + Send + Sync + 'static,
-    {
-        let control = Arc::new(control);
-        Self::new_with_outcome(move |message_id, payload, timeout| {
-            let control = Arc::clone(&control);
-            Box::pin(async move {
-                match control(message_id, payload, timeout).await {
-                    Ok(ack) => ProcessControlOutcome::Delivered(ack),
-                    Err(error) => ProcessControlOutcome::Failed {
-                        kind: ProcessControlFailureKind::Operation,
-                        write_state: ProcessControlWriteState::PossiblyWritten,
-                        error,
-                    },
-                }
-            })
-        })
-    }
-
-    /// Construct a handle from provider logic that preserves delivery outcomes.
     ///
     /// The provider must classify unmatched failures relative to its write
     /// boundary and retain matched guest responses as structured outcomes.
@@ -791,7 +762,7 @@ impl GuestProcessControlHandle {
         }
     }
 
-    /// Send an opaque control payload to the live guest process.
+    /// Send an opaque control payload and preserve its terminal delivery outcome.
     ///
     /// `message_id` identifies the control message for provider
     /// acknowledgement. `timeout` bounds how long the provider should wait for
@@ -799,34 +770,6 @@ impl GuestProcessControlHandle {
     /// response allowance to retain the sink's deadline result: Firecracker
     /// waits for the wire-normalized Guest budget plus 250 ms after writing the
     /// request. This is not an end-to-end deadline covering write queuing.
-    pub async fn control(
-        &self,
-        message_id: &str,
-        payload: &[u8],
-        timeout: Duration,
-    ) -> io::Result<ProcessControlAck> {
-        self.control_outcome(message_id, payload, timeout)
-            .await
-            .into_ack()
-    }
-
-    /// Send an owned opaque control payload to the live guest process.
-    ///
-    /// This has the same behavior as [`Self::control`] but transfers ownership
-    /// of `message_id` and `payload` so callers that already own large request
-    /// data do not need to clone it for the provider callback.
-    pub async fn control_owned(
-        &self,
-        message_id: String,
-        payload: Vec<u8>,
-        timeout: Duration,
-    ) -> io::Result<ProcessControlAck> {
-        self.control_owned_outcome(message_id, payload, timeout)
-            .await
-            .into_ack()
-    }
-
-    /// Send an opaque control payload and preserve its terminal delivery outcome.
     ///
     /// Cancelling this future yields no outcome. A caller that needs to decide
     /// whether retry is safe must retain ownership until the future resolves.
@@ -843,7 +786,8 @@ impl GuestProcessControlHandle {
     /// Send owned control data and preserve its terminal delivery outcome.
     ///
     /// This has the same behavior as [`Self::control_outcome`] but transfers
-    /// ownership of `message_id` and `payload` to the provider callback.
+    /// ownership of `message_id` and `payload` to the provider callback so
+    /// callers that already own large request data do not need to clone it.
     pub async fn control_owned_outcome(
         &self,
         message_id: String,
@@ -1597,8 +1541,10 @@ mod tests {
 
     #[tokio::test]
     async fn guest_agent_process_handle_transfers_process_and_control() {
-        let control = GuestProcessControlHandle::new(|message_id, _, _| {
-            Box::pin(async move { Ok(ProcessControlAck { message_id }) })
+        let control = GuestProcessControlHandle::new_with_outcome(|message_id, _, _| {
+            Box::pin(
+                async move { ProcessControlOutcome::Delivered(ProcessControlAck { message_id }) },
+            )
         });
         let process = GuestProcessHandle::new(
             42,
@@ -1613,10 +1559,12 @@ mod tests {
             GuestAgentProcessHandle::try_from_process(process, guest_agent_start_timing()).unwrap();
         let (process, control) = agent.into_parts();
         assert_eq!(process.guest_pid, 42);
-        let ack = control
-            .control("message", b"payload", Duration::from_secs(1))
-            .await
-            .unwrap();
+        let outcome = control
+            .control_outcome("message", b"payload", Duration::from_secs(1))
+            .await;
+        let ProcessControlOutcome::Delivered(ack) = outcome else {
+            panic!("expected delivered process-control outcome, got {outcome:?}");
+        };
         assert_eq!(ack.message_id, "message");
     }
 

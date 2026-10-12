@@ -18,7 +18,7 @@ current component API before adding a parallel implementation.
 
 ## Styles
 
-[The App style guide](../../../docs/styles.md) defines token ownership,
+[The App style guide](../../../docs/app/styles.md) defines token ownership,
 Tailwind usage, and the exact global/third-party exception boundary. The actual
 theme contract lives in [globals.css](src/styles/globals.css). Keep palette and
 font values there instead of copying them into this README.

@@ -25,7 +25,7 @@
 //!   runner. Shared across snapshot variants on the same host.
 //! - `snapshot_hash` — host-local identity of the snapshot captured from that
 //!   rootfs. It includes `rootfs_hash` plus VM/snapshot shape inputs such as
-//!   `vcpu`, `memory_mb`, and `workspace_disk_mb`, along with
+//!   `vcpu`, `memory_mb`, and `home_disk_mb`, along with
 //!   Firecracker/kernel/provider config inputs. Snapshots are produced on each
 //!   runner by booting the rootfs and capturing state, since the captured
 //!   memory binds to host-specific state.
@@ -38,7 +38,9 @@
 //! # Schema changes
 //! Any change to the structs in this module is a change to the on-disk YAML
 //! contract operators write. Add fields behind `#[serde(default)]` with a
-//! sensible default; rename fields only with a migration plan.
+//! sensible default. The home-image cutover intentionally rejects old
+//! workspace-only profiles; operators rebuild paired Guest/Runner artifacts
+//! and regenerate YAML rather than reinterpreting an old writable image.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
@@ -130,11 +132,12 @@ pub struct FirecrackerConfig {
 /// See the module-level docs for the two-hash identity scheme
 /// (`rootfs_hash` covers the local rootfs, `snapshot_hash` is local-only).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProfileConfig {
     /// Local rootfs image identity, shared across snapshot variants on this host.
     pub rootfs_hash: String,
     /// Host-local snapshot identity, covering rootfs identity plus VM shape,
-    /// workspace disk size, and provider/runtime inputs.
+    /// home disk size, and provider/runtime inputs.
     pub snapshot_hash: String,
     /// Guest vCPU count. Must support Guest workload containment and be ≤ 1024.
     pub vcpu: u32,
@@ -143,9 +146,9 @@ pub struct ProfileConfig {
     /// Rootfs disk in MiB. Used to size the bootable rootfs image.
     /// Must be non-zero and ≤ 1 TiB.
     pub rootfs_disk_mb: u32,
-    /// Workspace disk in MiB. Used to size the writable workspace drive.
+    /// Home disk in MiB. Used to size the writable home drive.
     /// Must be non-zero and ≤ 1 TiB.
-    pub workspace_disk_mb: u32,
+    pub home_disk_mb: u32,
 }
 
 /// Sandbox-level knobs for concurrency and the idle-sandbox pool.
@@ -576,10 +579,10 @@ async fn validate(
         if profile.vcpu == 0
             || profile.memory_mb == 0
             || profile.rootfs_disk_mb == 0
-            || profile.workspace_disk_mb == 0
+            || profile.home_disk_mb == 0
         {
             return Err(RunnerError::Config(format!(
-                "profile {name}: vcpu, memory_mb, rootfs_disk_mb, and workspace_disk_mb must be non-zero"
+                "profile {name}: vcpu, memory_mb, rootfs_disk_mb, and home_disk_mb must be non-zero"
             )));
         }
         if profile.vcpu > MAX_VCPU {
@@ -618,10 +621,10 @@ async fn validate(
                 profile.rootfs_disk_mb
             )));
         }
-        if profile.workspace_disk_mb > MAX_DISK_MB {
+        if profile.home_disk_mb > MAX_DISK_MB {
             return Err(RunnerError::Config(format!(
-                "profile {name}: workspace_disk_mb ({}) exceeds maximum ({MAX_DISK_MB})",
-                profile.workspace_disk_mb
+                "profile {name}: home_disk_mb ({}) exceeds maximum ({MAX_DISK_MB})",
+                profile.home_disk_mb
             )));
         }
         if validate_image_artifacts {

@@ -68,6 +68,15 @@ interface SharedWorkerFailureTelemetry {
   readonly script_path: string;
 }
 
+interface BootstrapStylesheetTelemetry {
+  readonly event_name: "bootstrap.stylesheet";
+}
+
+interface SharedDatabaseWorkerUnavailableTelemetry {
+  readonly event_name: "shared_database.worker_unavailable";
+  readonly reason: string;
+}
+
 interface HttpRequestTelemetry {
   readonly event_name: "http.request";
   readonly method: HttpMethod;
@@ -88,6 +97,8 @@ export type ClientTelemetryOperation =
   | IndexedDbTransactionTelemetry
   | SharedDatabaseQueryTelemetry
   | SharedWorkerFailureTelemetry
+  | BootstrapStylesheetTelemetry
+  | SharedDatabaseWorkerUnavailableTelemetry
   | HttpRequestTelemetry
   | MarketingEventSendTelemetry;
 
@@ -101,6 +112,12 @@ function scopeName(operation: ClientTelemetryOperation): string {
   }
   if (operation.event_name === "shared_worker.failure") {
     return "okou-app/shared-worker";
+  }
+  if (operation.event_name === "shared_database.worker_unavailable") {
+    return "okou-app/shared-worker";
+  }
+  if (operation.event_name === "bootstrap.stylesheet") {
+    return "okou-app/bootstrap";
   }
   if (
     operation.event_name === "indexeddb.open" ||
@@ -134,7 +151,9 @@ function statusCode(
 function operationName(operation: ClientTelemetryOperation): string {
   if (
     operation.event_name === "shared_worker.failure" ||
-    operation.event_name === "marketing.event.send"
+    operation.event_name === "marketing.event.send" ||
+    operation.event_name === "bootstrap.stylesheet" ||
+    operation.event_name === "shared_database.worker_unavailable"
   ) {
     return operation.event_name;
   }
@@ -164,6 +183,11 @@ function operationAttributes(
     return {
       "okou.shared_worker.failure.phase": operation.phase,
       "okou.shared_worker.script_path": operation.script_path,
+    };
+  }
+  if (operation.event_name === "shared_database.worker_unavailable") {
+    return {
+      "okou.shared_database.unavailable.reason": operation.reason,
     };
   }
   if (operation.event_name === "indexeddb.open") {

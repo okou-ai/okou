@@ -1,7 +1,7 @@
 //! Byte-preserving parsing of Linux `/proc/<pid>/mountinfo`.
 //!
 //! Callers own filesystem reads, path normalization, and the policy for invalid
-//! records or empty tables. Only the mount identity, device, and target fields
+//! records or empty tables. Only mount identity, device, root and target fields
 //! are interpreted; no mount or privilege decisions are made here.
 
 use std::io;
@@ -13,6 +13,8 @@ pub struct Mount {
     pub id: u64,
     /// Filesystem device major and minor numbers.
     pub device: (u32, u32),
+    /// Decoded filesystem root exposed by this mount, including bind subtrees.
+    pub root: Vec<u8>,
     /// Decoded mountpoint bytes, without UTF-8 conversion or normalization.
     pub target: Vec<u8>,
 }
@@ -20,9 +22,9 @@ pub struct Mount {
 /// Parse nonempty LF-delimited mountinfo records independently.
 ///
 /// Fields are separated by ASCII spaces, so Unicode whitespace and non-UTF-8
-/// path bytes remain data. Target paths decode the kernel's `\040`, `\011`,
-/// `\012`, and `\134` escapes exactly once. Invalid record shapes, mount/device
-/// numbers, and target escapes produce [`io::ErrorKind::InvalidData`]. Other
+/// path bytes remain data. Root and target paths decode the kernel's `\040`,
+/// `\011`, `\012`, and `\134` escapes exactly once. Invalid record shapes,
+/// mount/device numbers and path escapes produce [`io::ErrorKind::InvalidData`]. Other
 /// fields, including optional fields, are not interpreted.
 ///
 /// Empty input yields no records. Consumers can collect into a `Result` to
@@ -42,7 +44,7 @@ fn parse_line(line: &[u8]) -> io::Result<Mount> {
     if separator < 6 || fields.len() != separator + 4 {
         return Err(invalid("invalid mountinfo fields"));
     }
-    let [id, _, device, _, target, ..] = fields.as_slice() else {
+    let [id, _, device, root, target, ..] = fields.as_slice() else {
         return Err(invalid("invalid mountinfo fields"));
     };
     let id = parse_number(id)?;
@@ -55,6 +57,7 @@ fn parse_line(line: &[u8]) -> io::Result<Mount> {
     Ok(Mount {
         id,
         device: (major, minor),
+        root: decode_path(root)?,
         target: decode_path(target)?,
     })
 }
@@ -68,7 +71,7 @@ fn parse_number<T: std::str::FromStr>(input: &[u8]) -> io::Result<T> {
 
 fn decode_path(input: &[u8]) -> io::Result<Vec<u8>> {
     if input.is_empty() {
-        return Err(invalid("empty mountinfo target"));
+        return Err(invalid("empty mountinfo path"));
     }
     let mut path = Vec::with_capacity(input.len());
     let mut index = 0;

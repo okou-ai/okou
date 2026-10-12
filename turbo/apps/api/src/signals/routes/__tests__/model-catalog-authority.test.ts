@@ -24,12 +24,12 @@ function authenticate() {
 }
 
 describe("fixed Auto catalog authority", () => {
-  it("exposes Auto without a workspace price or provider chooser", async () => {
+  it("exposes canonical Auto without a provider chooser", async () => {
     authenticate();
     const response = await accept(catalog().get({ headers }), [200]);
-    expect(response.body.systemDefaultModel).toBe("okou-1.0");
+    expect(response.body.systemDefaultModel).toBe("auto");
     expect(response.body.models[0]).toMatchObject({
-      model: "okou-1.0",
+      model: "auto",
       displayName: "Auto",
     });
     expect(

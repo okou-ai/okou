@@ -1275,7 +1275,7 @@ details > summary {
    `workspace-inset.tsx` is the one consumer they matched; the three consumers
    that carry `okou-app` on the canvas element itself keep the default canvas
    because their routes mount neither shell. Keying at `:root` widens that scope
-   on purpose — see "The workspace canvas" in docs/styles.md.
+   on purpose — see "The workspace canvas" in docs/app/styles.md.
    Each theme test is wrapped in `:where()` so it stays at the specificity of
    the rule it refines and source order decides between them. The retired dark
    rule also matched the paired `.dark` class; `applyTheme` always sets both,

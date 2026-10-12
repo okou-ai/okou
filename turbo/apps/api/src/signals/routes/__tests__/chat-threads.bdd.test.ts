@@ -1,3 +1,6 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { createPublicConnectorActor } from "./helpers/public-connector-actor";
+import { createPublicComputerUseHosts } from "./helpers/public-computer-use-hosts";
 import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import AdmZip from "adm-zip";
@@ -33,7 +36,6 @@ import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { readThreadMessagesAfterBackgroundWork } from "./helpers/chat-events-fixture";
-import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import {
   createConnectorBddApi,
   mockGoogleDriveArtifactUpload,
@@ -69,7 +71,6 @@ const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
-const cu = createComputerUseBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
 const authOrg = createAuthOrgAgentsBddApi(context);
 const routeMocks = createRouteMocks(context);
@@ -222,8 +223,8 @@ async function waitForRunStatus(
 }
 
 /**
- * Checkpoint + exitCode-0 complete (completing without a checkpoint fails the
- * run).
+ * Complete with native history and exitCode 0. Successful completion requires
+ * the native session identity and output references.
  */
 async function completeChatRunOk(
   runId: string,
@@ -244,7 +245,7 @@ async function completeChatRunOk(
     {
       runId,
       exitCode: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `bdd-cli-${runId}`,
         cliAgentSessionHistoryHash: historyHash,
@@ -407,7 +408,7 @@ async function sendNoCreditMessage(
 }
 
 /**
- * Runs a full chat run (send, runner claim, checkpoint + complete) so the
+ * Runs a full chat run (send, runner claim, output publication + completion) so the
  * thread gains its run-finished marker through the production callback path.
  */
 async function completeChatRunInThread(
@@ -1142,41 +1143,66 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
   );
 
   it("updates the Computer Use host binding on a chat thread", async () => {
-    const actor = bdd.user();
-    await api.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Computer-use thread agent",
+    const hosts = createPublicComputerUseHosts(context);
+    const owned = createPublicConnectorActor(context, {
+      beforeWorkspaceCleanup: hosts.cleanup,
     });
-    const thread = await chat.createThread(actor, {
-      agentId: agent.agentId,
-      title: "Computer Use",
+    const { actor } = owned;
+    await owned.run(() => {
+      return bdd.completeOnboarding(actor);
+    });
+    await owned.run(() => {
+      return api.ensurePersonalSubscriptionModel(actor);
+    });
+    const agent = await owned.run(() => {
+      return bdd.createAgent(actor, {
+        displayName: "Computer-use thread agent",
+      });
+    });
+    const thread = await owned.run(() => {
+      return chat.createThread(actor, {
+        agentId: agent.agentId,
+        title: "Computer Use",
+      });
     });
 
-    const host = await cu.startComputerUseHost(actor);
-    await chat.updateThreadComputerUseHost(actor, thread.id, host.hostId);
+    const host = await hosts.start(actor, owned.run);
+    await owned.run(() => {
+      return chat.updateThreadComputerUseHost(actor, thread.id, host.hostId);
+    });
 
-    const missingHost = await chat.requestUpdateThreadComputerUseHost(
-      actor,
-      thread.id,
-      randomUUID(),
-      [404],
-    );
+    const missingHost = await owned.run(() => {
+      return chat.requestUpdateThreadComputerUseHost(
+        actor,
+        thread.id,
+        randomUUID(),
+        [404],
+      );
+    });
     expectApiError(missingHost.body);
     expect(missingHost.body.error.message).toBe("Computer-use host not found");
 
     const peer = bdd.user({ orgId: actor.orgId });
-    const peerUpdate = await chat.requestUpdateThreadComputerUseHost(
-      peer,
-      thread.id,
-      host.hostId,
-      [404],
-    );
+    const peerUpdate = await owned.run(() => {
+      return chat.requestUpdateThreadComputerUseHost(
+        peer,
+        thread.id,
+        host.hostId,
+        [404],
+      );
+    });
     expectApiError(peerUpdate.body);
     expect(peerUpdate.body.error.message).toBe("Chat thread not found");
 
-    await chat.updateThreadComputerUseHost(actor, thread.id, null);
+    await owned.run(() => {
+      return chat.updateThreadComputerUseHost(actor, thread.id, null);
+    });
 
-    const hostEvents = (await allThreadEvents(actor)).filter((event) => {
+    const hostEvents = (
+      await owned.run(() => {
+        return allThreadEvents(actor);
+      })
+    ).filter((event) => {
       return (
         event.chatThreadId === thread.id &&
         event.kind === "computer_use_host_updated"
@@ -1189,12 +1215,14 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       }),
     ).toStrictEqual([host.hostId, null]);
 
-    const missingThread = await chat.requestUpdateThreadComputerUseHost(
-      actor,
-      randomUUID(),
-      null,
-      [404],
-    );
+    const missingThread = await owned.run(() => {
+      return chat.requestUpdateThreadComputerUseHost(
+        actor,
+        randomUUID(),
+        null,
+        [404],
+      );
+    });
     expectApiError(missingThread.body);
     expect(missingThread.body.error.message).toBe("Chat thread not found");
   });
@@ -1919,15 +1947,23 @@ describe("CHAT-01 chat search", () => {
     expectApiError(orgless.body);
     expect(orgless.body.error.code).toBe("UNAUTHORIZED");
 
-    const sandboxBearer = api.sandboxTokenForRun(bdd.user(), randomUUID());
-    const forbidden = await chat.searchChatWithBearer(
-      `Bearer ${sandboxBearer}`,
-      "hello",
-      [403],
-    );
-    expectApiError(forbidden.body);
-    expect(forbidden.body.error.code).toBe("FORBIDDEN");
-    expect(forbidden.body.error.message).toContain("chat-event:read");
+    const owned = await publicChatActor(context);
+    const source = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "check sandbox search authorization",
+    });
+    const { claim } = await owned.claimChatRun(owned.runnerGroup, source.runId);
+    await owned.run(async () => {
+      const sandboxBearer = claim.sandboxToken;
+      const forbidden = await chat.searchChatWithBearer(
+        `Bearer ${sandboxBearer}`,
+        "hello",
+        [403],
+      );
+      expectApiError(forbidden.body);
+      expect(forbidden.body.error.code).toBe("FORBIDDEN");
+      expect(forbidden.body.error.message).toContain("chat-event:read");
+    });
   });
 });
 

@@ -273,6 +273,7 @@ async function loadCustomSnapshot(args: {
     { readonly kind: "custom" }
   >[];
 }) {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0120; new non-billing transactions are prohibited.
   return await args.db.transaction(
     async (tx) => {
       const customConnectorIds = args.registrations.map((registration) => {

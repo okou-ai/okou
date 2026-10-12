@@ -1,13 +1,17 @@
 import { createHash } from "node:crypto";
 
 import { httpInstrumentationMiddleware } from "@hono/otel";
+import { DISCORD_OAUTH_CALLBACK_PATH } from "./lib/discord-oauth-telemetry";
 import * as Sentry from "@sentry/node";
+import { desktopResponseTransforms } from "@okouai/api-contracts/client-transforms/desktop";
+import type { ClientResponseTransform } from "@okouai/api-contracts/client-transforms/types";
 import {
   CLIENT_FORCE_UPGRADE_STATUS,
   CLIENT_REQUEST_ID_HEADER,
   CLIENT_SESSION_ID_HEADER,
   CLIENT_TYPE_APP,
   CLIENT_TYPE_HEADER,
+  CLIENT_TYPE_IOS,
   CLIENT_VERSION_HEADER,
 } from "@okouai/api-contracts/contracts/client-headers";
 import { serializeError } from "@okouai/core/log-utils";
@@ -20,6 +24,11 @@ import { matchedRoutes, routePath } from "hono/route";
 
 import { corsMiddleware } from "./lib/cors";
 import { env } from "./lib/env";
+import {
+  iosMinimumSupportedVersion,
+  iosUpgradeRequired,
+  isSupportedIosClientVersion,
+} from "./lib/ios-client-compatibility";
 import { flushLogs, logger } from "./lib/log";
 import {
   cookieHeaderValue,
@@ -38,8 +47,6 @@ import {
 } from "./signals/external/axiom";
 import type { RouteEntry } from "./signals/route-entry";
 import { configureChatRunFinishedEventDispatcher$ } from "./signals/services/chat-run-finished-event-registration.service";
-import type { UsagePricingResolution } from "./signals/context/usage-pricing-resolution";
-import type { SystemSkillStorageResolution } from "./signals/context/system-skill-storage-resolution";
 import {
   isAbortError,
   normalizeThrown,
@@ -412,7 +419,7 @@ function clientHeaderLogFields(context: Context): ClientHeaderLogFields {
   };
 }
 
-async function webClientCompatibilityMiddleware(
+async function clientCompatibilityMiddleware(
   context: Context,
   next: Next,
 ): Promise<Response | void> {
@@ -430,6 +437,22 @@ async function webClientCompatibilityMiddleware(
         "Cache-Control": "no-store",
       },
     );
+  }
+
+  if (clientType === CLIENT_TYPE_IOS && clientVersion) {
+    const minimumSupportedVersion = iosMinimumSupportedVersion();
+    if (
+      minimumSupportedVersion !== null &&
+      !isSupportedIosClientVersion(clientVersion)
+    ) {
+      return context.json(
+        iosUpgradeRequired(minimumSupportedVersion),
+        CLIENT_FORCE_UPGRADE_STATUS,
+        {
+          "Cache-Control": "no-store",
+        },
+      );
+    }
   }
 
   await next();
@@ -548,15 +571,14 @@ function handleError(error: unknown, context: Context): Response {
 interface CreateAppWithRoutesOptions {
   readonly signal: AbortSignal;
   readonly routes: readonly RouteEntry[];
-  readonly usagePricingResolution?: UsagePricingResolution;
-  readonly systemSkillStorageResolution?: SystemSkillStorageResolution;
+  // Defaults to the registered Desktop transforms; callers may inject another.
+  readonly clientResponseTransforms?: readonly ClientResponseTransform[];
 }
 
 export function createAppWithRoutes({
   routes,
   signal,
-  usagePricingResolution,
-  systemSkillStorageResolution,
+  clientResponseTransforms = desktopResponseTransforms,
 }: CreateAppWithRoutesOptions): Hono {
   const app = new Hono();
   app.onError(handleError);
@@ -570,7 +592,19 @@ export function createAppWithRoutes({
   // (db queries, outbound fetches) parent to it via standard context
   // propagation; correlate them to a route by their `trace_id`, not by
   // copying `http.route` onto each child span.
-  app.use("*", httpInstrumentationMiddleware({ serviceName: "vm0-api" }));
+  const instrumentHttpRequest = httpInstrumentationMiddleware({
+    serviceName: "vm0-api",
+    captureRequestHeaders: [],
+    captureResponseHeaders: [],
+  });
+  // @hono/otel captures url.full before handlers run. This callback carries
+  // provider code/state and returns a secret approval fragment in Location.
+  // Exclude it BEFORE span creation; its path/status Axiom log remains below.
+  app.use("*", (context, next) => {
+    return context.req.path.replace(/\/$/u, "") === DISCORD_OAUTH_CALLBACK_PATH
+      ? next()
+      : instrumentHttpRequest(context, next);
+  });
 
   app.use("*", async (c, next) => {
     const startedAt = now();
@@ -594,7 +628,7 @@ export function createAppWithRoutes({
     waitUntil(flushLogs());
   });
 
-  app.use("*", webClientCompatibilityMiddleware);
+  app.use("*", clientCompatibilityMiddleware);
 
   for (const path of AUTH_PATHS) {
     app.get(path, redirectToApp);
@@ -609,8 +643,9 @@ export function createAppWithRoutes({
     const { route } = entry;
     const routeHandler = honoSignalHandler(entry.handler, route, signal, {
       initializeServices$: initializeApiServices$,
-      usagePricingResolution,
-      systemSkillStorageResolution,
+
+      clientResponseTransforms,
+
       observeJsonResponse: entry.observeJsonResponse,
     });
     app.on(route.method, route.path, routeHandler);

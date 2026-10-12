@@ -46,9 +46,9 @@
 //! The idle-pool publication path in
 //! [`sandbox_finalization`](https://github.com/okou-ai/okou/blob/main/crates/runner/src/cmd/start/sandbox_finalization.rs#L809-L829)
 //! follows this ordering. The broader lifecycle is exercised by
-//! [`signals`](https://github.com/okou-ai/okou/blob/main/crates/runner/src/cmd/start/signals.rs#L213-L247),
+//! [`signals`](https://github.com/okou-ai/okou/blob/main/crates/runner-supervisor/src/reactor/signals.rs),
 //! [`provider cancellation`](https://github.com/okou-ai/okou/blob/main/crates/runner-provider/src/provider/api_ably_supervisor.rs),
-//! [`job discovery`](https://github.com/okou-ai/okou/blob/main/crates/runner/src/cmd/start/job_discovery.rs#L976-L1004),
+//! [`job discovery`](https://github.com/okou-ai/okou/blob/main/crates/runner-supervisor/src/reactor/job_discovery.rs),
 //! [`sandbox finalization`](https://github.com/okou-ai/okou/blob/main/crates/runner/src/cmd/start/sandbox_finalization.rs#L697-L732),
 //! and the focused
 //! [`cancellation tests`](https://github.com/okou-ai/okou/blob/main/crates/runner-provider/src/run_cancellation.rs).

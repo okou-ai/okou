@@ -99,6 +99,7 @@ export interface ApiTestMocks {
     readonly timeout: AbortSignalTimeoutMock;
   };
   readonly axiom: {
+    readonly useRealQuery: Mock<() => boolean>;
     readonly useRealTelemetry: Mock<() => boolean>;
     readonly clientError: Mock<(error: Error) => void>;
     readonly clients: AxiomSdkClientMock[];
@@ -129,6 +130,7 @@ export interface ApiTestMocks {
     readonly channelGet: Mock<(channelName: string) => void>;
     readonly batchPublish: Mock<AblyBatchPublish>;
     readonly useRealBatchPublish: Mock<() => boolean>;
+    readonly useRealPublish: Mock<() => boolean>;
     readonly publish: AsyncMock;
     readonly presenceGet: AsyncMock;
     readonly createTokenRequest: AsyncMock;
@@ -155,9 +157,6 @@ export interface ApiTestMocks {
       readonly getUserList: AsyncMock;
       readonly getOrganizationMembershipList: AsyncMock;
       readonly updateUserMetadata: AsyncMock;
-    };
-    readonly signInTokens: {
-      readonly createSignInToken: AsyncMock;
     };
     readonly m2m: {
       readonly createToken: AsyncMock;
@@ -197,12 +196,12 @@ export interface ApiTestMocks {
     readonly delay: SignalTimerDelayMock;
   };
   readonly slack: {
-    readonly assistant: {
-      readonly threads: {
-        readonly setStatus: AsyncMock;
-      };
-    };
+    readonly createClient: Mock<
+      (...args: SlackWebClientConstructorArguments) => void
+    >;
+    readonly apiCall: AsyncMock;
     readonly chat: {
+      readonly unfurl: AsyncMock;
       readonly getPermalink: AsyncMock;
       readonly postMessage: AsyncMock;
       readonly postEphemeral: AsyncMock;
@@ -341,12 +340,16 @@ interface ResendClientMock {
     readonly send: ApiTestMocks["resend"]["send"];
   };
 }
-type SlackWebClientMock = Omit<ApiTestMocks["slack"], "fetchFile">;
+type SlackWebClientMock = Omit<
+  ApiTestMocks["slack"],
+  "fetchFile" | "createClient"
+>;
 type AxiomLoggerMock = Omit<ApiTestMocks["axiomLogging"], "useRealTransport">;
 type AxiomJSTransportMock = Readonly<Record<string, never>>;
 
 const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
   const axiom = {
+    useRealQuery: vi.fn<() => boolean>(),
     useRealTelemetry: vi.fn<() => boolean>(),
     clientError: vi.fn<(error: Error) => void>(),
     clients: [],
@@ -407,21 +410,17 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
         vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       updateUserMetadata: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     },
-    signInTokens: {
-      createSignInToken: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
-    },
     m2m: {
       createToken: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     },
   };
 
   const slack = {
-    assistant: {
-      threads: {
-        setStatus: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
-      },
-    },
+    createClient:
+      vi.fn<(...args: SlackWebClientConstructorArguments) => void>(),
+    apiCall: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     chat: {
+      unfurl: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       getPermalink: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       postMessage: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       postEphemeral: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -567,6 +566,7 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
       channelGet: vi.fn<(channelName: string) => void>(),
       batchPublish: vi.fn<AblyBatchPublish>(),
       useRealBatchPublish: vi.fn<() => boolean>(),
+      useRealPublish: vi.fn<() => boolean>(),
       publish: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       presenceGet: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       createTokenRequest: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -1057,6 +1057,8 @@ vi.mock("signal-timers", async (importOriginal) => {
 vi.mock("ably", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ably")>();
   class MockRest {
+    private realPublishClient: InstanceType<typeof actual.Rest> | undefined;
+
     constructor(private readonly options: ClientOptions) {}
 
     readonly batchPublish: AblyBatchPublish = async (spec) => {
@@ -1084,6 +1086,10 @@ vi.mock("ably", async (importOriginal) => {
     readonly channels = {
       get: (channelName: string) => {
         apiTestMocks.ably.channelGet(channelName);
+        if (apiTestMocks.ably.useRealPublish()) {
+          this.realPublishClient ??= new actual.Rest(this.options);
+          return this.realPublishClient.channels.get(channelName);
+        }
         return {
           publish: apiTestMocks.ably.publish,
           presence: {
@@ -1210,14 +1216,12 @@ vi.mock("@slack/web-api", () => {
   return {
     WebClient: vi.fn<
       (...args: SlackWebClientConstructorArguments) => SlackWebClientMock
-    >(function () {
+    >(function (...args) {
+      apiTestMocks.slack.createClient(...args);
       const client: SlackWebClientMock = {
-        assistant: {
-          threads: {
-            setStatus: apiTestMocks.slack.assistant.threads.setStatus,
-          },
-        },
+        apiCall: apiTestMocks.slack.apiCall,
         chat: {
+          unfurl: apiTestMocks.slack.chat.unfurl,
           getPermalink: apiTestMocks.slack.chat.getPermalink,
           postMessage: apiTestMocks.slack.chat.postMessage,
           postEphemeral: apiTestMocks.slack.chat.postEphemeral,
@@ -1279,18 +1283,22 @@ vi.mock("../signals/external/axiom", async () => {
   >("../signals/external/axiom");
   return {
     ...actual,
-    // Wrap the underlying vi.fn() in a ccstate `computed` so `get(queryAxiom(apl))`
-    // resolves correctly. Tests configure responses via
-    // `context.mocks.axiom.query.mockResolvedValue(...)`. The optional
-    // The optional `options` second arg is forwarded so tests can assert on
-    // pagination options via `expect(...).toHaveBeenCalledWith(apl, opts)`.
-    queryAxiom: (apl: string, options?: unknown) => {
+    // HTTP contract cases exercise the production wrapper and SDK. Other cases
+    // configure external query responses through the shared mock.
+    queryAxiom: (
+      apl: string,
+      options?: Parameters<typeof actual.queryAxiom>[1],
+    ) => {
+      if (apiTestMocks.axiom.useRealQuery()) {
+        return actual.queryAxiom(apl, options);
+      }
       return computed(() => {
         return apiTestMocks.axiom.query(apl, options);
       });
     },
     getDatasetName: (name: string) => {
-      return apiTestMocks.axiom.useRealTelemetry()
+      return apiTestMocks.axiom.useRealQuery() ||
+        apiTestMocks.axiom.useRealTelemetry()
         ? actual.getDatasetName(name)
         : name;
     },
@@ -1319,7 +1327,10 @@ async function createAxiomSdkMock() {
         ...args: AxiomSdkConstructorArguments
       ) => AxiomSdkClientMock | AxiomSdkClient
     >(function (options) {
-      if (apiTestMocks.axiomLogging.useRealTransport()) {
+      if (
+        apiTestMocks.axiom.useRealQuery() ||
+        apiTestMocks.axiomLogging.useRealTransport()
+      ) {
         return new actual.Axiom(options);
       }
       apiTestMocks.axiom.clientError.mockImplementation((error: Error) => {
@@ -1483,11 +1494,15 @@ export function resetApiTestMocks(): void {
   apiTestMocks.ably.channelGet.mockReset();
   apiTestMocks.ably.batchPublish.mockReset();
   apiTestMocks.ably.useRealBatchPublish.mockReset();
+  apiTestMocks.ably.useRealPublish.mockReset();
+  apiTestMocks.ably.useRealPublish.mockReturnValue(false);
   apiTestMocks.ably.publish.mockReset();
   apiTestMocks.ably.publish.mockResolvedValue(undefined);
   apiTestMocks.ably.presenceGet.mockReset();
   apiTestMocks.ably.presenceGet.mockResolvedValue({ items: [] });
   apiTestMocks.ably.createTokenRequest.mockReset();
+  apiTestMocks.axiom.useRealQuery.mockReset();
+  apiTestMocks.axiom.useRealQuery.mockReturnValue(false);
   apiTestMocks.axiom.useRealTelemetry.mockReset();
   apiTestMocks.axiom.useRealTelemetry.mockReturnValue(false);
   apiTestMocks.axiom.clientError.mockReset();
@@ -1528,7 +1543,6 @@ export function resetApiTestMocks(): void {
   apiTestMocks.clerk.users.getUserList.mockResolvedValue({ data: [] });
   apiTestMocks.clerk.users.getOrganizationMembershipList.mockReset();
   apiTestMocks.clerk.users.updateUserMetadata.mockReset();
-  apiTestMocks.clerk.signInTokens.createSignInToken.mockReset();
   apiTestMocks.clerk.m2m.createToken.mockReset();
   apiTestMocks.s3.send.mockReset();
   apiTestMocks.s3.getSignedUrl.mockReset();
@@ -1542,7 +1556,8 @@ export function resetApiTestMocks(): void {
   apiTestMocks.nodeRequest.pinnedAddresses.length = 0;
   apiTestMocks.resend.send.mockReset();
   apiTestMocks.signalTimers.delay.mockReset();
-  apiTestMocks.slack.assistant.threads.setStatus.mockReset();
+  apiTestMocks.slack.apiCall.mockReset();
+  apiTestMocks.slack.chat.unfurl.mockReset();
   apiTestMocks.slack.chat.getPermalink.mockReset();
   apiTestMocks.slack.chat.postMessage.mockReset();
   apiTestMocks.slack.chat.postEphemeral.mockReset();

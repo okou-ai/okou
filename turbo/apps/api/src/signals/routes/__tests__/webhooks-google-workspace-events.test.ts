@@ -27,10 +27,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import {
-  clearWorkflowAutomationEventConnectorAsPreviousApi,
-  stageOfficialWorkflowAutomationFixture,
-} from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -862,38 +858,6 @@ describe("Google Workspace Events subscription lifecycle", () => {
     expect(fixture.provider.accounts.secondary.createdNames).toHaveLength(2);
   });
 
-  it("retains staged official subscriptions across default account changes", async () => {
-    const fixture = await setupFixture();
-    const staged = await createMeetAutomation(fixture, false);
-    await stageOfficialWorkflowAutomationFixture(
-      context,
-      staged.body.id,
-      "meet-transcript",
-    );
-    expect(fixture.provider.createdNames).toStrictEqual([]);
-
-    const secondaryConnectorId = await connectGoogleMeet(
-      fixture.actor,
-      fixture.provider,
-      "secondary",
-      fixture.agentId,
-      { intent: "add", displayName: "Secondary Google Meet" },
-    );
-    expect(fixture.provider.accounts.primary.createdNames).toHaveLength(1);
-    expect(fixture.provider.accounts.secondary.createdNames).toStrictEqual([]);
-
-    await accept(
-      connectorAccountsClient().setDefault({
-        headers: authHeaders(fixture.actor),
-        params: { connectionId: secondaryConnectorId },
-        body: { target: { kind: "builtin", connectorSlug: "google-meet" } },
-      }),
-      [200],
-    );
-    expect(fixture.provider.accounts.primary.deletedUrls).toHaveLength(1);
-    expect(fixture.provider.accounts.secondary.createdNames).toHaveLength(1);
-  });
-
   async function setupCopiedMeetAutomation() {
     const fixture = await setupFixture();
     const source = await createMeetAutomation(fixture);
@@ -979,26 +943,6 @@ describe("Google Workspace Events subscription lifecycle", () => {
     const copiedPush = await postWorkspaceEvent(copiedSubscription);
     expect(copiedPush.status).toBe(200);
     await expect(copiedPush.json()).resolves.toMatchObject({
-      watchStates: 1,
-      dispatched: 1,
-    });
-  });
-
-  it("repairs a legacy null account projection before dispatch", async () => {
-    const fixture = await setupFixture();
-    const created = await createMeetAutomation(fixture);
-    const subscriptionName = fixture.provider.createdNames[0];
-    if (!subscriptionName) {
-      throw new Error("Expected a Workspace Events subscription");
-    }
-    await clearWorkflowAutomationEventConnectorAsPreviousApi(
-      context,
-      created.body.id,
-    );
-
-    const repairedPush = await postWorkspaceEvent(subscriptionName);
-    expect(repairedPush.status).toBe(200);
-    await expect(repairedPush.json()).resolves.toMatchObject({
       watchStates: 1,
       dispatched: 1,
     });

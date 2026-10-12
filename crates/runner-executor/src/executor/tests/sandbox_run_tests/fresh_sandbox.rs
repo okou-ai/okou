@@ -766,7 +766,7 @@ async fn execute_new_sandbox_replaces_post_write_prefetch_timeout_before_workloa
     assert_eq!(overrides.destroy_call_count(), 1);
     assert_eq!(overrides.start_process_calls().len(), 1);
     assert_eq!(overrides.guest_state_restore_calls().len(), 2);
-    assert_eq!(overrides.workspace_drive_mount_calls(), 1);
+    assert_eq!(overrides.home_drive_mount_calls(), 1);
     assert_eq!(overrides.start_agent_process_calls().len(), 1);
     assert_telemetry_action(
         &telemetry,
@@ -822,7 +822,7 @@ async fn execute_new_sandbox_suppresses_prefetch_replacement_after_uncertain_cle
     ));
     assert_eq!(overrides.create_configs().len(), 1);
     assert_eq!(overrides.destroy_call_count(), 1);
-    assert_eq!(overrides.workspace_drive_mount_calls(), 0);
+    assert_eq!(overrides.home_drive_mount_calls(), 0);
     assert!(overrides.start_agent_process_calls().is_empty());
     assert_telemetry_action(
         &telemetry,
@@ -907,12 +907,12 @@ async fn execute_new_sandbox_handles_ordinary_prefetch_write_failures() {
                     ..
                 }))
             ));
-            assert_eq!(overrides.workspace_drive_mount_calls(), 0);
+            assert_eq!(overrides.home_drive_mount_calls(), 0);
             assert!(overrides.storage_manifest_calls().is_empty());
             assert!(overrides.start_agent_process_calls().is_empty());
         } else {
             assert_eq!(result.unwrap().exit_code(), 0);
-            assert_eq!(overrides.workspace_drive_mount_calls(), 1);
+            assert_eq!(overrides.home_drive_mount_calls(), 1);
             assert_eq!(overrides.start_agent_process_calls().len(), 1);
         }
         assert_telemetry_action(
@@ -1017,7 +1017,7 @@ async fn prefetch_partial_write_cannot_spend_a_second_preparation_retry() {
     assert_eq!(overrides.create_configs().len(), 2);
     assert_eq!(overrides.destroy_call_count(), 2);
     assert_eq!(overrides.start_process_calls().len(), 1);
-    assert_eq!(overrides.workspace_drive_mount_calls(), 0);
+    assert_eq!(overrides.home_drive_mount_calls(), 0);
     assert!(overrides.storage_manifest_calls().is_empty());
     assert!(overrides.start_agent_process_calls().is_empty());
     assert_telemetry_action(
@@ -1462,7 +1462,7 @@ async fn execute_new_sandbox_does_not_notify_after_post_start_prepare_failure() 
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let mut mount_result = ExecResult::new(64, Vec::new(), b"mount denied".to_vec());
     mount_result.guest_duration_ms = Some(31);
-    overrides.push_workspace_drive_mount_result(Ok(mount_result));
+    overrides.push_home_drive_mount_result(Ok(mount_result));
     let factory = MockSandboxFactory::with_overrides(overrides);
     let ctx = minimal_context();
     let notifications = Arc::new(AtomicUsize::new(0));
@@ -1501,21 +1501,21 @@ async fn execute_new_sandbox_does_not_notify_after_post_start_prepare_failure() 
     let operations = telemetry.pending_ops_with_duration_snapshot();
     let guest_exec = operations
         .iter()
-        .find(|operation| operation.0 == "workspace_drive_mount_guest_exec")
+        .find(|operation| operation.0 == "home_drive_mount_guest_exec")
         .unwrap_or_else(|| panic!("missing mount guest duration: {operations:?}"));
     assert_eq!(guest_exec.1, 31);
     assert!(!guest_exec.2);
 }
 
 #[tokio::test]
-async fn execute_job_workspace_mount_failure_drains_early_prefetch_before_destroy() {
+async fn execute_job_home_mount_failure_drains_early_prefetch_before_destroy() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let wait_gate = MockLifecycleGate::new();
     overrides.set_wait_process_lifecycle_gate(wait_gate.clone());
     overrides.set_process_cancel_releases_wait_gate(false);
-    overrides.push_workspace_drive_mount_result(Ok(ExecResult::new(
+    overrides.push_home_drive_mount_result(Ok(ExecResult::new(
         64,
         Vec::new(),
         b"mount denied".to_vec(),
@@ -1564,22 +1564,19 @@ async fn execute_job_workspace_mount_failure_drains_early_prefetch_before_destro
 
     assert_eq!(outcome.exit_code(), 1);
     let error = outcome.error().unwrap();
-    assert!(
-        error.contains("mount workspace drive failed"),
-        "got: {error}"
-    );
+    assert!(error.contains("mount home drive failed"), "got: {error}");
     assert!(error.contains("mount denied"), "got: {error}");
     let operations = telemetry.pending_ops_with_outcome_snapshot();
     let unavailable = operations
         .iter()
-        .find(|operation| operation.0 == "workspace_drive_mount_guest_exec_unavailable")
+        .find(|operation| operation.0 == "home_drive_mount_guest_exec_unavailable")
         .unwrap_or_else(|| panic!("missing unavailable mount guest duration: {operations:?}"));
     assert!(!unavailable.1);
     assert_eq!(unavailable.2.as_deref(), Some("unavailable"));
     assert!(
         operations
             .iter()
-            .all(|operation| operation.0 != "workspace_drive_mount_guest_exec")
+            .all(|operation| operation.0 != "home_drive_mount_guest_exec")
     );
     assert!(
         outcome.sandbox.is_none(),
@@ -1944,7 +1941,7 @@ async fn execute_inner_passes_device_rate_limits_to_sandbox_create() {
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let limits = test_device_rate_limits();
     let params = JobParams {
-        workspace_disk_mb: 512,
+        home_disk_mb: 512,
         device_rate_limits: Some(limits.clone()),
         ..default_params()
     };
@@ -1960,8 +1957,8 @@ async fn execute_inner_passes_device_rate_limits_to_sandbox_create() {
     assert_eq!(configs.len(), 1);
     assert_eq!(configs[0].device_rate_limits, Some(limits));
     assert_eq!(
-        configs[0].workspace_drive,
-        Some(sandbox::WorkspaceDriveConfig {
+        configs[0].home_drive,
+        Some(sandbox::HomeDriveConfig {
             size_mb: 512,
             seed_image: None,
         })

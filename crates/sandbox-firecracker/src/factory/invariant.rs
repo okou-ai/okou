@@ -7,7 +7,7 @@ const HASH_VCPU_COUNT: u32 = 1;
 const HASH_MEMORY_MB: u32 = 1;
 const HASH_KERNEL_PATH: &str = "/kernel";
 const HASH_ROOTFS_PATH: &str = "/rootfs";
-const HASH_WORKSPACE_PATH: &str = "/workspace";
+const HASH_HOME_PATH: &str = "/home-image";
 const HASH_VSOCK_PATH: &str = "/vsock";
 
 /// Shell command executed during snapshot creation to pre-warm guest state.
@@ -65,6 +65,7 @@ pub struct InvariantConfig {
 
 #[derive(serde::Serialize)]
 struct ConfigHashInput<'a> {
+    home_layout: &'a str,
     boot_config: &'a FirecrackerBootConfig,
     tap_mac: &'a str,
     prewarm_script: &'a str,
@@ -117,7 +118,7 @@ fn canonical_snapshot_boot_config(invariant: &InvariantConfig) -> FirecrackerBoo
         memory_mb: HASH_MEMORY_MB,
         kernel_path: HASH_KERNEL_PATH.to_owned(),
         rootfs_path: HASH_ROOTFS_PATH.to_owned(),
-        workspace_path: Some(HASH_WORKSPACE_PATH.to_owned()),
+        home_path: Some(HASH_HOME_PATH.to_owned()),
         vsock_path: HASH_VSOCK_PATH.to_owned(),
     })
 }
@@ -128,6 +129,7 @@ fn config_hash_for(
     prewarm_script: &str,
 ) -> Result<String, serde_json::Error> {
     let input = ConfigHashInput {
+        home_layout: guest_contracts::home_mount::HOME_DRIVE_LAYOUT,
         boot_config,
         tap_mac,
         prewarm_script,
@@ -170,7 +172,7 @@ mod tests {
                 .iter()
                 .map(|drive| drive.drive_id.as_str())
                 .collect::<Vec<_>>(),
-            ["rootfs", "workspace"]
+            ["rootfs", "home"]
         );
 
         let json = serde_json::to_value(config).unwrap();

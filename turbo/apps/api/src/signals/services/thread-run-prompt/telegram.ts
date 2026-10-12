@@ -1,18 +1,20 @@
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { computed, type Computed } from "ccstate";
 import { getOfficialTelegramBotConfig } from "../../external/telegram-official";
 import { resolveIntegrationNotePrompt } from "../integration-note-prompt.service";
 import { buildTelegramPrompt } from "../telegram-prompt";
 import type { TelegramThreadContext } from "../thread-run-context.service";
 import type { RunPromptAndSkills } from "../run-prompt-and-skills";
-import type { ThreadPromptSource } from "./types";
+import type { PickedThreadInputEvent } from "./types";
 
 export function createTelegramThreadPrompt(
-  source$: Computed<Promise<ThreadPromptSource | null>>,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   context$: Computed<Promise<TelegramThreadContext>>,
+  featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
 ): Computed<Promise<RunPromptAndSkills | null>> {
   return computed(async (get) => {
-    const source = await get(source$);
-    if (source?.event.contextType !== "telegram") {
+    const pickedEvent = await get(pickedEvent$);
+    if (pickedEvent?.contextType !== "telegram") {
       return null;
     }
     const context = await get(context$);
@@ -51,7 +53,7 @@ export function createTelegramThreadPrompt(
           },
           resolveIntegrationNotePrompt({
             triggerSource: "telegram",
-            featureSwitchContext: source.featureSwitchContext,
+            featureSwitchContext: await get(featureSwitches$),
           }),
           context.threadContext,
         ),

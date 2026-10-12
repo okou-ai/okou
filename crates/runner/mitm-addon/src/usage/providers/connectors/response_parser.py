@@ -1,6 +1,6 @@
 """Connector response parser result types."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import NamedTuple
 
 
@@ -59,6 +59,15 @@ class ConnectorResponseParser(NamedTuple):
     whose errors are permanent. Response decoding checks it after each parser
     callback and intentionally stops inspection once it returns false. Event-
     or line-scoped parsers that recover on later input must leave it unset.
+
+    ``feed_steps`` optionally replaces synchronous ``feed`` delivery with
+    cooperative inspection. Each yielded step must cover at most one already
+    bounded row (including identity/reporting), or one decoder-chunk-bounded
+    fragment; blank and failed rows must also yield. Response streaming shares
+    its quantum across all decoder feeds of a wire callback. The transport
+    joins pending steps before the next body event/read and before terminal
+    reporting. This capability requires ``finish_decode_error`` so canceled
+    inspection cannot become a successfully observed zero response.
     """
 
     feed: Callable[[bytes], None]
@@ -66,3 +75,4 @@ class ConnectorResponseParser(NamedTuple):
     finish: Callable[[], None] | None = None
     finish_decode_error: Callable[[str], None] | None = None
     should_continue: Callable[[], bool] | None = None
+    feed_steps: Callable[[bytes], Iterator[None]] | None = None

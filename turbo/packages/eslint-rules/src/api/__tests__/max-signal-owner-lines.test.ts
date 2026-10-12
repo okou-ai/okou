@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { RuleTester } from "@typescript-eslint/rule-tester";
 import { afterAll, describe, it } from "vitest";
 import { maxSignalOwnerLines } from "../rules/max-signal-owner-lines.ts";
@@ -139,6 +139,73 @@ afterAll(() => {
   rmSync(fixtureDirectory, { recursive: true, force: true });
 });
 const fixtureSources = {
+  "turbo/apps/api/src/signals/services/agent-run-context.signals.ts": `
+    export interface AgentRunContextSignals {
+      readonly userId: string;
+      readonly orgId: string;
+      readonly agentId: string;
+      readonly member$: Computed<Promise<unknown>>;
+    }
+  `,
+  "bootstrap-identity.ts": `
+    import type { AgentRunContextSignals as Bootstrap } from "./turbo/apps/api/src/signals/services/agent-run-context.signals";
+    import { computed } from "ccstate";
+    import { createLeaf } from "./leaf";
+    export function createRead(bootstrap: Bootstrap) {
+      const orgId = bootstrap.orgId;
+      const first$ = createLeaf(bootstrap.userId);
+      const second$ = computed(() => orgId + bootstrap.agentId);
+      return { first$, second$ };
+    }
+  `,
+  "bootstrap-signal-getter.ts": `
+    import type { AgentRunContextSignals } from "./turbo/apps/api/src/signals/services/agent-run-context.signals";
+    import { createLeaf } from "./leaf";
+    export function createRead(bootstrap: AgentRunContextSignals) {
+      return createLeaf(bootstrap.member$);
+    }
+  `,
+  "bootstrap-unknown-field.ts": `
+    import type { AgentRunContextSignals } from "./turbo/apps/api/src/signals/services/agent-run-context.signals";
+    import { createLeaf } from "./leaf";
+    export function createRead(bootstrap: AgentRunContextSignals) {
+      return createLeaf(bootstrap.unknown);
+    }
+  `,
+  "bootstrap-spoof-type.ts": `
+    import type { AgentRunContextSignals } from "./spoof-bootstrap";
+    import { createLeaf } from "./leaf";
+    export function createRead(bootstrap: AgentRunContextSignals) {
+      return createLeaf(bootstrap.orgId);
+    }
+  `,
+  "spoof-bootstrap.ts": `
+    export interface AgentRunContextSignals {
+      readonly userId: string;
+      readonly orgId: string;
+      readonly agentId: string;
+    }
+  `,
+  "fake/turbo/apps/api/src/signals/services/agent-run-context.signals.ts": `
+    export interface AgentRunContextSignals {
+      readonly userId: string;
+      readonly orgId: string;
+      readonly agentId: string;
+    }
+  `,
+  "bootstrap-spoof-path.ts": `
+    import type { AgentRunContextSignals } from "./fake/turbo/apps/api/src/signals/services/agent-run-context.signals";
+    import { createLeaf } from "./leaf";
+    export function createRead(bootstrap: AgentRunContextSignals) {
+      return createLeaf(bootstrap.orgId);
+    }
+  `,
+  "readonly-parameter.ts": `
+    import { createLeaf } from "./leaf";
+    export function createRead(input: { readonly source$: Computed<number> }) {
+      return createLeaf(input.source$);
+    }
+  `,
   "leaf.ts": `
     import { computed as read } from "ccstate";
     export function createLeaf(input$) {
@@ -224,9 +291,184 @@ const fixtureSources = {
       return createRead(input$);
     }
   `,
+  "record.ts": `
+    import { createLeaf as leaf } from "./leaf";
+    import { computed } from "ccstate";
+    export function createRead(inputs) {
+      const first$ = leaf(inputs.source$);
+      const channels = { first: first$, second: leaf(inputs.second$) };
+      return computed(get => get(channels.first) + get(channels.second));
+    }
+  `,
+  "forward-record.ts": `
+    import { createRead as read } from "./record";
+    function local(inputs) {
+      return read(inputs);
+    }
+    export function createRead(inputs) {
+      return local(inputs);
+    }
+  `,
+  "bundle.ts": `
+    import { createLeaf } from "./leaf";
+    import { computed } from "ccstate";
+    export function createRead(input$) {
+      const first$ = computed(get => get(input$));
+      const second$ = createLeaf(first$);
+      return { first$, second$ };
+    }
+  `,
+  "bundle-record.ts": `
+    import { computed } from "ccstate";
+    export function createRead(input$) {
+      const first$ = computed(get => get(input$));
+      const reads = { first$, second$: computed(get => get(first$)) };
+      return reads;
+    }
+  `,
+  "bundle-forward.ts": `
+    import { createRead as createBundle } from "./bundle";
+    import { createLeaf } from "./leaf";
+    export function createRead(input$) {
+      const bundle = createBundle(input$);
+      const first$ = bundle.first$;
+      const second$ = createLeaf(bundle.second$);
+      return { first$, second$ };
+    }
+  `,
+  "bundle-local.ts": `
+    import { computed } from "ccstate";
+    function createBundle(input$) {
+      return { first$: computed(get => get(input$)) };
+    }
+    export function createRead(input$) {
+      const bundle = createBundle(input$);
+      return { first$: bundle.first$ };
+    }
+  `,
+  "bundle-consumer.ts": `
+    import { createLeaf } from "./leaf";
+    export function createRead(inputs) {
+      const { first$: source$ } = inputs;
+      return createLeaf(source$);
+    }
+  `,
+  ...Object.fromEntries(
+    [
+      ["default", "{ first$ = readDatabase() }"],
+      ["rest", "{ first$, ...others }"],
+      ["nested", "{ first$: { value } }"],
+      ["key", "{ [readDatabase()]: first$ }"],
+      ["missing", "{ missing$ }"],
+    ].map(([name, binding]) => [
+      `bundle-destructure-${name}.ts`,
+      `
+        import { computed } from "ccstate";
+        export function createRead(inputs) {
+          const ${binding} = inputs;
+          return computed(() => 1);
+        }
+      `,
+    ]),
+  ),
+  "bundle-destructure-shadow.ts": `
+    import { computed } from "ccstate";
+    export function createRead(inputs) {
+      const { first$: computed } = inputs;
+      return computed(() => 1);
+    }
+  `,
+  ...Object.fromEntries(
+    [
+      ["getter", "{ get first$() { return readDatabase(); } }"],
+      ["method", "{ first$() { return readDatabase(); } }"],
+      ["spread", "{ ...input$ }"],
+      ["prototype", "{ __proto__: input$, first$ }"],
+      ["computed-key", "{ [readDatabase()]: first$ }"],
+      ["eager", "{ first$: readDatabase() }"],
+      ["command", "{ first$: command(() => 1) }"],
+      ["state", "{ first$: state(1) }"],
+      ["opaque-field", "{ first$: input$.first$ }"],
+      ["opaque-node", "{ first$: input$ }"],
+      ["literal", "{ first$: 1 }"],
+      ["nested", "{ reads: { first$ } }"],
+    ].map(([name, returned]) => [
+      `bundle-${name}.ts`,
+      `
+        import { computed, command, state } from "ccstate";
+        export function createRead(input$) {
+          const first$ = computed(get => get(input$));
+          return ${returned};
+        }
+      `,
+    ]),
+  ),
+  "bundle-mutated.ts": `
+    import { computed, state } from "ccstate";
+    export function createRead(input$) {
+      const first$ = computed(get => get(input$));
+      const bundle = { first$ };
+      const mutate$ = computed(() => { bundle.first$ = state(0); });
+      return bundle;
+    }
+  `,
+  "bundle-unknown-field.ts": `
+    import { createRead as createBundle } from "./bundle";
+    export function createRead(input$) {
+      const bundle = createBundle(input$);
+      return { first$: bundle.unknown$ };
+    }
+  `,
+  ...Object.fromEntries(
+    [
+      ["getter", "{ get first() { return readDatabase(); } }"],
+      ["method", "{ first() { return readDatabase(); } }"],
+      ["spread", "{ ...inputs }"],
+      ["computed-key", "{ [readDatabase()]: inputs.source$ }"],
+      ["prototype", "{ __proto__: inputs }"],
+      ["eager", "{ first: readDatabase() }"],
+      ["command", "{ first: command(() => 1) }"],
+      ["state", "{ first: state(1) }"],
+      ["nested-read", "{ first: inputs.source$.value }"],
+    ].map(([name, initializer]) => [
+      `record-map-${name}.ts`,
+      `
+        import { computed, command, state } from "ccstate";
+        export function createRead(inputs) {
+          const channels = ${initializer};
+          return computed(() => channels);
+        }
+      `,
+    ]),
+  ),
+  ...Object.fromEntries(
+    [
+      ["default", "inputs = readDatabase()"],
+      ["destructured", "{ source$ }"],
+      ["rest", "...inputs"],
+    ].map(([name, parameter]) => [
+      `record-parameter-${name}.ts`,
+      `
+        import { computed } from "ccstate";
+        export function createRead(${parameter}) {
+          return computed(() => 1);
+        }
+      `,
+    ]),
+  ),
+  "record-mutation.ts": `
+    import { createLeaf as leaf } from "./leaf";
+    import { computed } from "ccstate";
+    export function createRead(inputs) {
+      const result$ = leaf(inputs.source$);
+      return computed(() => { delete inputs.source$; return result$; });
+    }
+  `,
 };
 for (const [name, source] of Object.entries(fixtureSources)) {
-  writeFileSync(join(fixtureDirectory, name), source);
+  const path = join(fixtureDirectory, name);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, source);
 }
 
 function ownerCallingFactory(module: string, argument = "source$") {
@@ -253,8 +495,35 @@ ruleTester.run(
         filename: join(fixtureDirectory, "owner.ts"),
         code: ownerCallingFactory("nested"),
       },
+      ...["bundle", "bundle-record", "bundle-forward", "bundle-local"].map(
+        (module) => ({
+          name: `verifies computed-only output records through ${module}`,
+          options,
+          filename: join(fixtureDirectory, "owner.ts"),
+          code: ownerCallingFactory(module),
+        }),
+      ),
+      {
+        name: "allows only identity strings from the canonical bootstrap contract",
+        options,
+        filename: join(
+          fixtureDirectory,
+          "turbo/apps/api/src/signals/services/owner.ts",
+        ),
+        code: ownerCallingFactory("../../../../../../bootstrap-identity"),
+      },
     ],
     invalid: [
+      {
+        name: "rejects a duplicate bootstrap path outside the owner's API tree",
+        options,
+        filename: join(
+          fixtureDirectory,
+          "turbo/apps/api/src/signals/services/owner.ts",
+        ),
+        code: ownerCallingFactory("../../../../../../bootstrap-spoof-path"),
+        errors: [{ messageId: "tooLong" }],
+      },
       ...[
         "eager",
         "mutation",
@@ -267,6 +536,24 @@ ruleTester.run(
         "reassigned",
         "reassigned-helper",
         "missing",
+        "bundle-getter",
+        "bundle-method",
+        "bundle-spread",
+        "bundle-prototype",
+        "bundle-computed-key",
+        "bundle-eager",
+        "bundle-command",
+        "bundle-state",
+        "bundle-opaque-field",
+        "bundle-opaque-node",
+        "bundle-literal",
+        "bundle-nested",
+        "bundle-mutated",
+        "bundle-unknown-field",
+        "bootstrap-signal-getter",
+        "bootstrap-unknown-field",
+        "bootstrap-spoof-type",
+        "readonly-parameter",
       ].map((module) => ({
         name: `rejects unverified ${module} factory construction`,
         options,
@@ -281,6 +568,155 @@ ruleTester.run(
         code: ownerCallingFactory("nested", "readDatabase()"),
         errors: [{ messageId: "tooLong" }],
       },
+    ],
+  },
+);
+
+function ownerForwardingBundle(module = "bundle-consumer", extra = "") {
+  return `
+    import { computed } from "ccstate";
+    import { createRead as build } from "./bundle";
+    import { createRead as consume } from "./${module}";
+    function createClaimRunObjects() {
+      const source$ = computed(() => 1);
+      const inputs = build(source$);
+      const first$ = inputs.first$;
+      const second$ = computed(get => get(inputs.second$));
+      const result$ = consume(inputs);
+      ${extra}
+      return { first$, second$, result$ };
+    }
+  `;
+}
+
+ruleTester.run(
+  "max-signal-owner-lines forwards verified computed bundles",
+  maxSignalOwnerLines,
+  {
+    valid: [
+      {
+        name: "tracks constructed bundle fields through safe reads and destructuring",
+        options,
+        filename: join(fixtureDirectory, "owner.ts"),
+        code: ownerForwardingBundle(),
+      },
+    ],
+    invalid: [
+      ...["default", "rest", "nested", "key", "missing", "shadow"].map(
+        (name) => ({
+          name: `rejects unsafe bundle destructuring: ${name}`,
+          options,
+          filename: join(fixtureDirectory, "owner.ts"),
+          code: ownerForwardingBundle(`bundle-destructure-${name}`),
+          errors: [{ messageId: "tooLong" as const }],
+        }),
+      ),
+      ...[
+        "const alias = inputs;",
+        "const mutation$ = computed(() => { inputs.first$ = source$; });",
+        "const mutation$ = computed(() => { delete inputs.first$; });",
+        "const mutation$ = computed(() => { ({ first: inputs.first$ } = replacement); });",
+        "const mutation$ = computed(() => { for (inputs.first$ of replacements) {} });",
+        "const mutation$ = computed(() => Object.defineProperty(inputs, 'first$', { get: readDatabase }));",
+      ].map((extra) => ({
+        name: `rejects escaped or mutated bundles: ${extra}`,
+        options,
+        filename: join(fixtureDirectory, "owner.ts"),
+        code: ownerForwardingBundle("bundle-consumer", extra),
+        errors: [{ messageId: "tooLong" as const }],
+      })),
+    ],
+  },
+);
+
+function ownerCallingRecordFactory(
+  module = "record",
+  initializer = "{ source$, second$: source$ }",
+  extra = "",
+) {
+  return `
+    import { computed } from "ccstate";
+    import { createRead as build } from "./${module}";
+    function createClaimRunObjects(unknownInput) {
+      const source$ = computed(() => 1);
+      const inputs = ${initializer};
+      const result$ = build(inputs);
+      ${extra}
+      return { result$ };
+    }
+  `;
+}
+
+ruleTester.run(
+  "max-signal-owner-lines computed factories with flat input records",
+  maxSignalOwnerLines,
+  {
+    valid: [
+      ...["record", "forward-record"].map((module) => ({
+        name: `verifies own data fields and computed maps through ${module}`,
+        options,
+        filename: join(fixtureDirectory, "owner.ts"),
+        code: ownerCallingRecordFactory(module),
+      })),
+      {
+        name: "derives fields from the actual literal underneath a type assertion",
+        options,
+        filename: join(fixtureDirectory, "owner.ts"),
+        code: ownerCallingRecordFactory(
+          "record",
+          "{ source$, second$: source$ } as Inputs",
+        ),
+      },
+    ],
+    invalid: [
+      ...[
+        "{ get source$() { return readDatabase(); }, second$: source$ }",
+        "{ source$() { return readDatabase(); }, second$: source$ }",
+        "{ ...unknownInput, second$: source$ }",
+        "{ [readDatabase()]: source$, second$: source$ }",
+        "{ __proto__: unknownInput, source$, second$: source$ }",
+        "{ source$: readDatabase(), second$: source$ }",
+        "{ second$: source$ } as Inputs",
+        "unknownInput as Inputs",
+      ].map((initializer) => ({
+        name: `rejects unproven owner record ${initializer}`,
+        options,
+        filename: join(fixtureDirectory, "owner.ts"),
+        code: ownerCallingRecordFactory("record", initializer),
+        errors: [{ messageId: "tooLong" as const }],
+      })),
+      ...[
+        "const alias = inputs;",
+        "inputs.source$ = source$;",
+        "const mutation$ = computed(() => Object.defineProperty(inputs, 'source$', { get: readDatabase }));",
+        // Verifying the same factory with a record must not authorize opaque inputs.
+        "const unsafe$ = build(unknownInput);",
+      ].map((extra) => ({
+        name: `rejects escaped records or unsafe subsequent invocation: ${extra}`,
+        options,
+        filename: join(fixtureDirectory, "owner.ts"),
+        code: ownerCallingRecordFactory(
+          "record",
+          "{ source$, second$: source$ }",
+          extra,
+        ),
+        errors: [{ messageId: "tooLong" as const }],
+      })),
+      ...Object.keys(fixtureSources)
+        .filter((name) => {
+          return (
+            name.startsWith("record-map-") ||
+            name.startsWith("record-parameter-") ||
+            name === "record-mutation.ts"
+          );
+        })
+        .map((module) => ({
+          name: `rejects unverified construction in ${module}`,
+          options,
+          filename: join(fixtureDirectory, "owner.ts"),
+          code: ownerCallingRecordFactory(module),
+          errors: [{ messageId: "tooLong" as const }],
+        })),
     ],
   },
 );

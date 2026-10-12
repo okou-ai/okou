@@ -47,6 +47,7 @@ def _check_executor_after_shutdown_test(node_id: str) -> None:
         original.shutdown(wait=True)
 
 
+@pytest.mark.shard_cost(1)
 @pytest.mark.parametrize(
     "node_id",
     [

@@ -79,7 +79,7 @@ async function completePublicHistory(
     },
   );
   const webhooks = createWebhookCallbackApi(context);
-  await webhooks.requestAgentCheckpointPrepareHistory(
+  await webhooks.requestAgentSessionHistoryPrepare(
     {
       runId: run.runId,
       hash,
@@ -134,7 +134,7 @@ async function completePublicHistory(
       runId: run.runId,
       exitCode: 0,
       lastEventSequence: 2,
-      checkpoint: {
+      completion: {
         cliAgentType,
         cliAgentSessionId: run.threadId,
         cliAgentSessionHistoryHash: hash,

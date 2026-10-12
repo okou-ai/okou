@@ -4,7 +4,7 @@ use httpmock::prelude::*;
 use serde_json::json;
 
 #[tokio::test]
-async fn success_checkpoint_uses_captured_startup_environment() {
+async fn success_finalization_uses_captured_startup_environment() {
     let api = SharedApiMock::new().await;
     let server = api.server();
     let tmp = tempfile::tempdir().unwrap();
@@ -19,7 +19,7 @@ async fn success_checkpoint_uses_captured_startup_environment() {
     let payload_file = crate::common::write_run_payload_file_for_test(
         &runtime_dir,
         &guest_contracts::env::RunPayload {
-            prompt: "startup checkpoint prompt".to_string(),
+            prompt: "startup finalization prompt".to_string(),
             ..Default::default()
         },
     )
@@ -50,7 +50,7 @@ async fn success_checkpoint_uses_captured_startup_environment() {
             .json_body(json!({"success": true, "status": "completed"}));
     });
 
-    let mut command = checkpoint_child_command(
+    let mut command = finalization_child_command(
         "integration_cases::finalization::process_env::captured_startup_environment_child",
     )
     .unwrap();
@@ -79,7 +79,7 @@ async fn success_checkpoint_uses_captured_startup_environment() {
         )
         .env("HOME", tmp.path().join("home"))
         .env("OKOU_TEST_CLAUDE_CONFIG_DIR", &history_dir);
-    run_checkpoint_child(&mut command).await.unwrap();
+    run_finalization_child(&mut command).await.unwrap();
 
     prepare.assert_calls_async(1).await;
     upload.assert_calls_async(1).await;
@@ -97,14 +97,14 @@ async fn success_checkpoint_uses_captured_startup_environment() {
 #[ignore = "launched by the parent with the complete startup environment"]
 async fn captured_startup_environment_child() {
     let runtime = guest_agent::run_context::GuestRuntime::from_process_env().unwrap();
-    assert_eq!(runtime.config.prompt, "startup checkpoint prompt");
-    let checkpoint = guest_agent::finalization::prepare_finalization_for_runtime(
+    assert_eq!(runtime.config.prompt, "startup finalization prompt");
+    let finalization = guest_agent::finalization::prepare_finalization_for_runtime(
         &runtime,
-        &checkpoint_session_metadata(&runtime),
+        &finalization_session_metadata(&runtime),
     )
     .await
     .unwrap();
-    report_prepared_checkpoint(&runtime, 0, checkpoint)
+    report_prepared_finalization(&runtime, 0, finalization)
         .await
         .unwrap();
 }

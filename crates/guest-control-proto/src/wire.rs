@@ -107,11 +107,11 @@ pub const MSG_EXEC_AGENT_READY: u8 = 0x1C;
 /// Host-to-guest private multi-file write request.
 pub const MSG_WRITE_PRIVATE_FILES: u8 = 0x1D;
 
-/// Host-to-guest request to mount the fixed workspace drive.
-pub const MSG_WORKSPACE_DRIVE_MOUNT: u8 = 0x1E;
+/// Host-to-guest request to mount the fixed home drive.
+pub const MSG_HOME_DRIVE_MOUNT: u8 = 0x1E;
 
-/// Guest-to-host result of mounting the fixed workspace drive.
-pub const MSG_WORKSPACE_DRIVE_MOUNT_RESULT: u8 = 0x1F;
+/// Guest-to-host result of mounting the fixed home drive.
+pub const MSG_HOME_DRIVE_MOUNT_RESULT: u8 = 0x1F;
 
 /// Host-to-guest read-only file-write status query with an empty payload.
 pub const MSG_FILE_WRITE_STATUS: u8 = 0x20;
@@ -211,10 +211,10 @@ mod tests {
             ),
             ("MSG_EXEC_AGENT_READY", MSG_EXEC_AGENT_READY, 0x1C),
             ("MSG_WRITE_PRIVATE_FILES", MSG_WRITE_PRIVATE_FILES, 0x1D),
-            ("MSG_WORKSPACE_DRIVE_MOUNT", MSG_WORKSPACE_DRIVE_MOUNT, 0x1E),
+            ("MSG_HOME_DRIVE_MOUNT", MSG_HOME_DRIVE_MOUNT, 0x1E),
             (
-                "MSG_WORKSPACE_DRIVE_MOUNT_RESULT",
-                MSG_WORKSPACE_DRIVE_MOUNT_RESULT,
+                "MSG_HOME_DRIVE_MOUNT_RESULT",
+                MSG_HOME_DRIVE_MOUNT_RESULT,
                 0x1F,
             ),
             ("MSG_ERROR", MSG_ERROR, 0xFF),

@@ -14,10 +14,10 @@ use tokio::task::JoinHandle;
 use tracing::info;
 
 use crate::config::SnapshotConfig;
+use crate::home_drive_image::prepare_home_drive_image;
 use crate::network::NetnsPool;
 use crate::paths::{SandboxPaths, SnapshotOutputPaths, SockPaths};
 use crate::runtime_dirs::prepare_runtime_socket_dir;
-use crate::workspace_drive_image::prepare_workspace_drive_image;
 
 use super::SnapshotError;
 use super::cow::{SnapshotAttemptDirGuard, SnapshotCowDevice};
@@ -26,7 +26,7 @@ use super::output::remove_dir_all_if_exists_sync;
 use super::publish::SnapshotPublishAttempt;
 
 #[cfg(test)]
-use self::cleanup::{AttemptWorkspaceImage, SnapshotCleanupReport};
+use self::cleanup::{AttemptHomeImage, SnapshotCleanupReport};
 use self::cleanup::{SnapshotCleanupFinalizer, SnapshotCleanupResources};
 use self::process::SnapshotProcessSpawn;
 
@@ -80,7 +80,7 @@ impl SnapshotAttempt {
         output: SnapshotOutputPaths,
         device_pool: DevicePoolHandle,
         cow_device: SnapshotCowDevice,
-        workspace_image_path: PathBuf,
+        home_image_path: PathBuf,
         mut attempt_dir_guard: SnapshotAttemptDirGuard,
     ) -> Self {
         let attempt = Self {
@@ -90,7 +90,7 @@ impl SnapshotAttempt {
             cleanup_resources: SnapshotCleanupResources::new(
                 device_pool,
                 cow_device,
-                workspace_image_path,
+                home_image_path,
             ),
             #[cfg(test)]
             cleanup_complete_tx: None,
@@ -126,13 +126,13 @@ impl SnapshotAttempt {
         paths: SandboxPaths,
         sock_paths: SockPaths,
         output: SnapshotOutputPaths,
-        workspace_image_path: PathBuf,
+        home_image_path: PathBuf,
     ) -> Self {
         Self {
             paths,
             sock_paths: Some(sock_paths),
             output,
-            cleanup_resources: SnapshotCleanupResources::without_cow_for_test(workspace_image_path),
+            cleanup_resources: SnapshotCleanupResources::without_cow_for_test(home_image_path),
             #[cfg(test)]
             cleanup_complete_tx: None,
         }
@@ -172,8 +172,8 @@ impl SnapshotAttempt {
     }
 
     #[cfg(test)]
-    fn track_workspace_image_for_test(&mut self, workspace_image: PathBuf) {
-        self.cleanup_resources.workspace_image = AttemptWorkspaceImage::Owned(workspace_image);
+    fn track_home_image_for_test(&mut self, home_image: PathBuf) {
+        self.cleanup_resources.home_image = AttemptHomeImage::Owned(home_image);
     }
 
     #[cfg(test)]
@@ -230,45 +230,41 @@ impl SnapshotAttempt {
             return Err(SnapshotError::Setup(format!("create bind target: {e}")));
         }
 
-        let workspace_drive_bind = self.paths.workspace_device_bind();
-        if let Err(e) = tokio::fs::write(&workspace_drive_bind, b"").await {
+        let home_drive_bind = self.paths.home_device_bind();
+        if let Err(e) = tokio::fs::write(&home_drive_bind, b"").await {
             self.cleanup_resources
-                .destroy_cow_after_setup_error("create workspace bind target")
+                .destroy_cow_after_setup_error("create home bind target")
                 .await;
             return Err(SnapshotError::Setup(format!(
-                "create workspace bind target: {e}"
+                "create home bind target: {e}"
             )));
         }
 
-        let workspace_image_path =
-            match self.cleanup_resources.workspace_image.mark_create_started() {
-                Ok(path) => path,
-                Err(err) => {
-                    self.cleanup_resources
-                        .destroy_cow_after_setup_error("prepare workspace image state")
-                        .await;
-                    return Err(err);
-                }
-            };
-        if let Err(e) = prepare_workspace_drive_image(
-            &workspace_image_path,
-            &sandbox::WorkspaceDriveConfig {
-                size_mb: config.workspace_disk_mb,
+        let home_image_path = match self.cleanup_resources.home_image.mark_create_started() {
+            Ok(path) => path,
+            Err(err) => {
+                self.cleanup_resources
+                    .destroy_cow_after_setup_error("prepare home image state")
+                    .await;
+                return Err(err);
+            }
+        };
+        if let Err(e) = prepare_home_drive_image(
+            &home_image_path,
+            &sandbox::HomeDriveConfig {
+                size_mb: config.home_disk_mb,
                 seed_image: None,
             },
             None,
         )
         .await
         {
-            self.cleanup_resources.cleanup_workspace_image(
-                "failed to cleanup snapshot workspace image after prepare failure",
-            );
             self.cleanup_resources
-                .destroy_cow_after_setup_error("prepare workspace image")
+                .cleanup_home_image("failed to cleanup snapshot home image after prepare failure");
+            self.cleanup_resources
+                .destroy_cow_after_setup_error("prepare home image")
                 .await;
-            return Err(SnapshotError::Setup(format!(
-                "prepare workspace image: {e}"
-            )));
+            return Err(SnapshotError::Setup(format!("prepare home image: {e}")));
         }
 
         Ok(())
@@ -307,22 +303,22 @@ impl SnapshotAttempt {
     ) -> Result<(), SnapshotError> {
         let api_sock = self.sock_paths()?.api_sock();
         let drive_bind = self.paths.cow_device_bind();
-        let workspace_image = match self.cleanup_resources.workspace_image.path_for_spawn() {
+        let home_image = match self.cleanup_resources.home_image.path_for_spawn() {
             Ok(path) => path.to_path_buf(),
             Err(err) => {
                 self.cleanup_resources
                     .release_network(
-                        "failed to release netns after workspace image state error",
-                        "snapshot attempt missing netns pool after workspace image state error",
+                        "failed to release netns after home image state error",
+                        "snapshot attempt missing netns pool after home image state error",
                     )
                     .await;
                 self.cleanup_resources
-                    .destroy_cow_after_setup_error("workspace image state before spawn")
+                    .destroy_cow_after_setup_error("home image state before spawn")
                     .await;
                 return Err(err);
             }
         };
-        let workspace_drive_bind = self.paths.workspace_device_bind();
+        let home_drive_bind = self.paths.home_device_bind();
         let cow_device_path = self
             .cleanup_resources
             .cow_device
@@ -360,8 +356,8 @@ impl SnapshotAttempt {
             .spawn(SnapshotProcessSpawn {
                 cow_device_path: &cow_device_path,
                 drive_bind: &drive_bind,
-                workspace_image: &workspace_image,
-                workspace_drive_bind: &workspace_drive_bind,
+                home_image: &home_image,
+                home_drive_bind: &home_drive_bind,
                 network_name: &network_name,
                 binary_path: &config.binary_path,
                 api_sock: &api_sock,
@@ -483,7 +479,7 @@ impl Drop for SnapshotAttempt {
                     has_device_pool = presence.has_device_pool,
                     has_netns_pool = presence.has_netns_pool,
                     has_cow_device = presence.has_cow_device,
-                    has_workspace_image = presence.has_workspace_image,
+                    has_home_image = presence.has_home_image,
                     has_publish_attempt = presence.has_publish_attempt,
                     has_network = presence.has_network,
                     has_child = presence.has_child,
@@ -500,7 +496,7 @@ impl Drop for SnapshotAttempt {
                 has_device_pool = presence.has_device_pool,
                 has_netns_pool = presence.has_netns_pool,
                 has_cow_device = presence.has_cow_device,
-                has_workspace_image = presence.has_workspace_image,
+                has_home_image = presence.has_home_image,
                 has_publish_attempt = presence.has_publish_attempt,
                 has_network = presence.has_network,
                 has_child = presence.has_child,

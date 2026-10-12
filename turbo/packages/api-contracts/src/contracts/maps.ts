@@ -55,6 +55,8 @@ export const mapsSearchCitationSchema = z.object({
 export const mapsSearchUsageSchema = z.object({
   inputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
+  cachedInputTokens: z.number().int().nonnegative().safe().optional(),
+  mapsQueries: z.number().int().nonnegative().safe().optional(),
 });
 
 export const mapsSearchResponseSchema = z.object({
@@ -62,7 +64,7 @@ export const mapsSearchResponseSchema = z.object({
   location: mapsSearchLocationSchema.optional(),
   languageCode: mapsSearchLanguageCodeSchema.optional(),
   provider: z.literal("google-maps-grounding"),
-  model: z.literal("gemini-2.5-flash"),
+  model: z.string().min(1),
   billingCategory: z.literal("provider_cost_usd_micros"),
   billingQuantity: z.number().int().nonnegative(),
   providerCostUsd: z.number().finite().nonnegative(),

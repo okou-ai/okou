@@ -18,6 +18,7 @@
 #![allow(dead_code)] // consumed across multiple test binaries
 
 pub(crate) mod delivery_image;
+pub(crate) mod json_fixture;
 pub(crate) mod process_session;
 mod system_log;
 
@@ -1077,7 +1078,7 @@ pub unsafe fn clear_guest_agent_bootstrap_env_for_test() {
         guest_contracts::env::CANONICAL_API_TOKEN_ENV,
         guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
         guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-        guest_contracts::env::CANONICAL_WORKSPACE_REUSE_RESULT_ENV,
+        guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV,
         guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV,
         guest_contracts::env::CANONICAL_RESUME_SESSION_ID_ENV,
         guest_contracts::env::CANONICAL_API_START_TIME_ENV,

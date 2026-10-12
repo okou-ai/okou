@@ -396,6 +396,9 @@ fn owned_task_cgroup(path: &str, workload: &str) -> bool {
     {
         return true;
     }
+    if guest_contracts::managed_task::owned_task_path(path, workload) {
+        return true;
+    }
     path.strip_prefix(&format!("{workload}/tools/tool-"))
         .is_some_and(|suffix| {
             !suffix.is_empty()
@@ -694,6 +697,14 @@ mod tests {
                 "/vm0-exec/exec-281-10-3/workload/tools/tool-45-6",
                 "/vm0-exec/exec-281-10-3/workload",
             ),
+            (
+                "/vm0-exec/exec-281-10-3/workload/tools/task-00000000-0000-0000-0000-000000000001/runtime",
+                "/vm0-exec/exec-281-10-3/workload/tools/task-00000000-0000-0000-0000-000000000001/runtime",
+            ),
+            (
+                "/vm0-exec/exec-281-10-3/workload/tools/task-00000000-0000-0000-0000-000000000001/tools/tool-45",
+                "/vm0-exec/exec-281-10-3/workload/tools/task-00000000-0000-0000-0000-000000000001/tools/tool-45",
+            ),
             ("/vm0-exec/exec-281-10-3/control", "/vm0-exec/exec-281-10-3"),
         ] {
             for (constraint, trigger) in [("CONSTRAINT_NONE", "/"), ("CONSTRAINT_MEMCG", memcg)] {
@@ -713,6 +724,8 @@ mod tests {
             "vm0-exec/exec-281-10-3/workload/runtime",
             "//vm0-exec/exec-281-10-3/workload/runtime",
             "/vm0-exec/exec-281-10-3/workload/tools/tool-1/../runtime",
+            "/vm0-exec/exec-281-10-3/workload/tools/task-00000000-0000-0000-0000-000000000001/tools/tool-1/../runtime",
+            "/vm0-exec/exec-281-10-3/workload/tools/task-1/runtime",
         ] {
             let mut fixture = Fixture::new();
             fixture.record(&format!("6,10,2000,-;oom-kill:constraint=CONSTRAINT_NONE,task_memcg={path},task=node,pid=999999,uid=1000\n"));

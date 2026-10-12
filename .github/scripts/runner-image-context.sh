@@ -24,7 +24,7 @@ playwright-consumer:
 
 crates-consumer:
   Computes whether Crates runner tests are a runner image consumer from the
-  same change booleans used by crates.yml runner-build.
+  same change booleans used by crates.yml runner-test-prepare.
 
 image-inputs:
   Computes whether current commit inputs can change the produced runner image.

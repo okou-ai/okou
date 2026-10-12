@@ -2,14 +2,12 @@ import { sshConnectionObservationSchema } from "@okouai/api-contracts/contracts/
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { sshConnectionObservations } from "@okouai/db/schema/ssh-connection-observation";
 import { and, asc, eq } from "drizzle-orm";
-
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
 
 export const listSshConnectionObservations$ = command(
   async ({ set }, orgId: string, userId: string, signal: AbortSignal) => {
-    const db = set(writeDb$);
-    const rows = await db
+    const rows = await set(writeDb$)
       .select({
         connectionId: sshConnectionObservations.connectionId,
         generation: sshConnectionObservations.generation,

@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { http, HttpResponse } from "msw";
+import { vi } from "vitest";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
 import { createChatFilesBddApi } from "./api-bdd-chat-files";
@@ -8,7 +10,6 @@ import {
   billingStatusContract,
   billingUsagePackCreditsContract,
 } from "@okouai/api-contracts/contracts/billing";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import {
   cliAuthApproveContract,
   cliAuthDeviceContract,
@@ -55,15 +56,9 @@ import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../../app-factory-core";
-import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
+import { env, mockOptionalEnv } from "../../../../lib/env";
 import { now, withNowScopeForTest } from "../../../../lib/time";
-import { listAgentRunsFixture } from "../../../../test-fixtures/agent-runs";
-import {
-  generateSandboxToken,
-  signSandboxJwtForTests,
-} from "../../../auth/tokens";
-import type { SystemSkillStorageResolution } from "../../../context/system-skill-storage-resolution";
-import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
+import { server } from "../../../../mocks/server";
 import { mockStripeClient } from "../../../external/stripe-client";
 import { agentsRoutes } from "../../agents";
 import { billingStatusRoutes } from "../../billing-status";
@@ -85,19 +80,12 @@ import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 
 type AuthHeaders = { readonly authorization?: string };
-interface RunsListQuery {
-  readonly status?: string;
-  readonly agent?: string;
-  readonly since?: string;
-  readonly until?: string;
-  readonly limit?: number;
-}
 type RunnerJobClaimRequestBody = z.infer<
   (typeof runnersJobClaimContract.claim)["body"]
 >;
 /** Test claims advertise every current Pi model-config generation unless a scenario narrows them. */
 function defaultClaimCapabilities(): RunnerJobClaimRequestBody["capabilities"] {
-  return { piModelConfigGenerations: [1, 2, 3, 5] };
+  return { piModelConfigGenerations: [2, 3, 5] };
 }
 type RunnerJobClaimRequest = Omit<RunnerJobClaimRequestBody, "capabilities"> & {
   readonly capabilities?: RunnerJobClaimRequestBody["capabilities"];
@@ -173,16 +161,10 @@ const runRoutes = [
   ...userModelPreferenceRoutes,
 ] as const;
 
-function runApp(
-  context: TestContext,
-  usagePricingResolution?: UsagePricingResolution,
-  systemSkillStorageResolution?: SystemSkillStorageResolution,
-) {
+function runApp(context: TestContext) {
   return setupAppWithRoutes({
     context,
     routes: runRoutes,
-    ...(usagePricingResolution === undefined ? {} : { usagePricingResolution }),
-    systemSkillStorageResolution,
   });
 }
 
@@ -256,9 +238,7 @@ function runnerHeartbeatBody(
     readonly allocatedMemoryMb?: RunnerHeartbeatBody["allocatedMemoryMb"];
     readonly runningCount?: RunnerHeartbeatBody["runningCount"];
     readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
-    readonly heldWorkspaceStates?: RunnerHeartbeatBody["heldWorkspaceStates"];
     readonly heldHomeStates?: RunnerHeartbeatBody["heldHomeStates"];
-    readonly homeAffinityVersion?: RunnerHeartbeatBody["homeAffinityVersion"];
     readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
     readonly wssIngressServiceActive?: boolean;
     readonly mode?: RunnerHeartbeatBody["mode"];
@@ -277,11 +257,7 @@ function runnerHeartbeatBody(
     runningCount: args.runningCount ?? 0,
     admittableProfiles: args.admittableProfiles ?? ["vm0/default"],
     heldSandboxStates: args.heldSandboxStates ?? [],
-    heldWorkspaceStates: args.heldWorkspaceStates ?? [],
     heldHomeStates: args.heldHomeStates ?? [],
-    ...(args.homeAffinityVersion === undefined
-      ? {}
-      : { homeAffinityVersion: args.homeAffinityVersion }),
     activeReuseProducers: args.activeReuseProducers ?? [],
     ...(args.wssIngressServiceActive === undefined
       ? {}
@@ -290,10 +266,113 @@ function runnerHeartbeatBody(
   };
 }
 
-export function createRunsApi(
-  context: TestContext,
-  systemSkillStorageResolution?: SystemSkillStorageResolution,
+async function prepareStripeHttpEntitlement(
+  signal: AbortSignal,
+  fixture: {
+    readonly customer: { readonly id: string };
+    readonly subscription: { readonly id: string };
+    readonly priceId: string;
+    readonly productId: string;
+    readonly payload: string;
+    readonly tier: "pro" | "team";
+  },
 ) {
+  // The shared constructor is mocked; obtain only the external SDK's
+  // real implementation, then leave the production webhook route intact.
+  const { default: Stripe } =
+    await vi.importActual<typeof import("stripe")>("stripe");
+  signal.throwIfAborted();
+  const stripe = new Stripe("sk_test_bdd_stripe_http", {
+    // This real SDK transport reaches MSW without a socket handshake.
+    httpClient: Stripe.createFetchHttpClient(),
+    maxNetworkRetries: 0,
+  });
+  const price = {
+    id: fixture.priceId,
+    object: "price",
+    active: true,
+    currency: "usd",
+    type: "recurring",
+    unit_amount: 4200,
+    recurring: { interval: "month", interval_count: 1 },
+    product: {
+      id: fixture.productId,
+      object: "product",
+      active: true,
+      name: "BDD billing plan",
+      metadata: {},
+    },
+  };
+  const handlers = [
+    http.get(
+      `https://api.stripe.com/v1/customers/${fixture.customer.id}`,
+      () => {
+        return HttpResponse.json(fixture.customer);
+      },
+    ),
+    http.get(
+      `https://api.stripe.com/v1/subscriptions/${fixture.subscription.id}`,
+      () => {
+        return HttpResponse.json(fixture.subscription);
+      },
+    ),
+    http.get(
+      `https://api.stripe.com/v1/prices/${fixture.priceId}`,
+      ({ request }) => {
+        if (new URL(request.url).searchParams.get("expand[0]") !== "product") {
+          return;
+        }
+        return HttpResponse.json(price);
+      },
+    ),
+  ];
+  const concurrencyPriceId = env("OKOU_PRICE_CONCURRENCY")?.[0];
+  if (concurrencyPriceId) {
+    handlers.push(
+      http.get(`https://api.stripe.com/v1/prices/${concurrencyPriceId}`, () => {
+        return HttpResponse.json({
+          ...price,
+          id: concurrencyPriceId,
+          product: price.product.id,
+        });
+      }),
+    );
+  }
+  if (fixture.tier === "team") {
+    handlers.push(
+      http.get("https://api.stripe.com/v1/subscriptions", ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        if (
+          query.get("customer") !== fixture.customer.id ||
+          query.get("status") !== "all" ||
+          query.get("limit") !== "100"
+        ) {
+          return;
+        }
+        return HttpResponse.json({
+          object: "list",
+          data: [],
+          has_more: false,
+          url: "/v1/subscriptions",
+        });
+      }),
+    );
+  }
+  const restoreWebhook = () => {
+    mockStripeClient(stripe);
+    server.use(...handlers);
+  };
+  restoreWebhook();
+  return {
+    restoreWebhook,
+    signature: stripe.webhooks.generateTestHeaderString({
+      payload: fixture.payload,
+      secret: "whsec_bdd_stripe",
+    }),
+  };
+}
+
+export function createRunsApi(context: TestContext) {
   /**
    * A run started through the real Thread entrypoint: a chat send on a new
    * thread, picked once its enqueue-owned background work completes.
@@ -329,9 +408,6 @@ export function createRunsApi(
           : { captureNetworkBodies: body.captureNetworkBodies }),
       },
       [201],
-      systemSkillStorageResolution === undefined
-        ? {}
-        : { systemSkillStorageResolution },
     );
     if (sent.status !== 201) {
       throw new Error("Expected the Thread run send to be accepted");
@@ -408,8 +484,8 @@ export function createRunsApi(
   }
 
   /**
-   * A Thread send whose pick fails before creating a run: returns the pick's
-   * error message and the error the thread records on the rejected input.
+   * A Thread send whose launch fails before creating a run: observe the error
+   * recorded on its rejected input through the ordinary thread-events route.
    */
   async function readThreadLaunchFailure(
     actor: ApiTestUser,
@@ -421,7 +497,6 @@ export function createRunsApi(
       readonly threadId?: string;
     },
   ): Promise<{
-    readonly pickError: string;
     readonly inputError: string | undefined;
   }> {
     const chat = createChatFilesBddApi(context);
@@ -440,14 +515,10 @@ export function createRunsApi(
     if (sent.status !== 201 || sent.body.runId !== null) {
       throw new Error("Expected the Thread send to be queued without a run");
     }
-    const pickError = await flushWaitUntilForTest().then(
-      () => {
-        throw new Error("Expected the Thread pick to fail");
-      },
-      (error: unknown) => {
-        return error instanceof Error ? error.message : String(error);
-      },
-    );
+    // Drain the launch task; only the public input rejection is observed below.
+    await flushWaitUntilForTest().catch(() => {
+      return undefined;
+    });
     const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
     const rejection = events.find((event) => {
       return event.revokesEventId === clientEventId;
@@ -456,7 +527,6 @@ export function createRunsApi(
       throw new Error("Expected the failed pick to reject the input");
     }
     return {
-      pickError,
       inputError: "error" in rejection ? rejection.error : undefined,
     };
   }
@@ -522,19 +592,29 @@ export function createRunsApi(
         readonly periodEndUnix?: number;
         readonly subscriptionMetadata?: Record<string, string>;
         readonly cancelAtUnix?: number | null;
+        /** Exercise the real Stripe SDK and signed webhook through MSW. */
+        readonly stripeTransport?: "http";
+        readonly run?: <T>(operation: () => Promise<T>) => Promise<T>;
+        readonly onExternalStateReady?: (restoreWebhook: () => void) => void;
       } = {},
     ): Promise<{
       readonly customerId: string;
       readonly subscriptionId: string;
       readonly invoiceId: string;
     }> {
-      mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
-      mockEnv("OKOU_PRICE_PRO", "price_bdd_pro");
-      mockEnv("OKOU_PRICE_TEAM", "price_bdd_team");
-      mockEnv("ATOM_GRANT_PRICE", "price_bdd_atom_grant");
-      mockEnv("OKOU_PRICE_CONCURRENCY", "price_bdd_concurrency");
+      const run =
+        options.run ??
+        (<T>(operation: () => Promise<T>) => {
+          return operation();
+        });
       mockOptionalEnv("STRIPE_WEBHOOK_SECRET", "whsec_bdd_stripe");
       const tier = options.tier ?? "pro";
+      const priceId = env(
+        tier === "team" ? "OKOU_PRICE_TEAM" : "OKOU_PRICE_PRO",
+      )?.[0];
+      if (!priceId) {
+        throw new Error(`Expected a configured ${tier} subscription price`);
+      }
 
       // Stripe identities persist across files in the shared test database.
       const suffix = randomUUID();
@@ -543,12 +623,14 @@ export function createRunsApi(
       const invoiceId = `in_bdd_${suffix}`;
       const periodEndUnix =
         options.periodEndUnix ?? Math.floor(now() / 1000) + 30 * 86_400;
-      context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      const customer = {
         id: customerId,
+        object: "customer",
         metadata: { orgId: actor.orgId },
-      });
-      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+      };
+      const subscription = {
         id: subscriptionId,
+        object: "subscription",
         status: "active",
         customer: customerId,
         cancel_at_period_end: false,
@@ -557,23 +639,32 @@ export function createRunsApi(
         trial_end: null,
         metadata: options.subscriptionMetadata ?? {},
         items: {
+          object: "list",
+          has_more: false,
+          url: `/v1/subscription_items?subscription=${subscriptionId}`,
           data: [
             {
+              id: `si_bdd_${suffix}`,
+              object: "subscription_item",
               price: {
-                id: tier === "team" ? "price_bdd_team" : "price_bdd_pro",
+                id: priceId,
+                object: "price",
               },
+              current_period_start: periodEndUnix - 30 * 86_400,
+              current_period_end: periodEndUnix,
             },
           ],
         },
-      });
-      if (tier === "team") {
-        context.mocks.stripe.subscriptions.list.mockResolvedValue({ data: [] });
-      }
+      };
       const invoicePaidEvent = {
+        id: `evt_bdd_${suffix}`,
+        object: "event",
+        created: Math.floor(now() / 1000),
         type: "invoice.paid",
         data: {
           object: {
             id: invoiceId,
+            object: "invoice",
             customer: customerId,
             metadata: {},
             parent: { subscription_details: { subscription: subscriptionId } },
@@ -582,7 +673,7 @@ export function createRunsApi(
               data: [
                 {
                   price: {
-                    id: tier === "team" ? "price_bdd_team" : "price_bdd_pro",
+                    id: priceId,
                   },
                   parent: { type: "subscription_item_details" },
                   period: {
@@ -595,23 +686,68 @@ export function createRunsApi(
           },
         },
       };
-      context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(
-        invoicePaidEvent,
-      );
-      await accept(
-        runApp(context)(webhookStripeContract).post({
-          body: JSON.stringify(invoicePaidEvent),
-          extraHeaders: { "stripe-signature": "t=1,v1=bdd" },
-        }),
-        [200],
-      );
+      const payload = JSON.stringify(invoicePaidEvent);
+      let signature = "t=1,v1=bdd";
+      let restoreWebhook: () => void;
+      if (options.stripeTransport === "http") {
+        const external = await prepareStripeHttpEntitlement(context.signal, {
+          customer,
+          subscription,
+          priceId,
+          productId: `prod_bdd_${suffix}`,
+          payload,
+          tier,
+        });
+        restoreWebhook = external.restoreWebhook;
+        signature = external.signature;
+      } else {
+        mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
+        context.mocks.stripe.customers.retrieve.mockResolvedValue(customer);
+        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+          subscription,
+        );
+        if (tier === "team") {
+          context.mocks.stripe.subscriptions.list.mockResolvedValue({
+            data: [],
+          });
+        }
+        context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(
+          invoicePaidEvent,
+        );
+        restoreWebhook = () => {
+          context.mocks.stripe.webhooks.constructEvent.mockReset();
+          context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+            (received) => {
+              if (String(received) !== payload) {
+                throw new Error(
+                  "Unexpected Stripe webhook while draining actor setup",
+                );
+              }
+              return invoicePaidEvent;
+            },
+          );
+        };
+      }
+      // Retain the exact provider boundary if accepted setup outlives mock reset.
+      options.onExternalStateReady?.(restoreWebhook);
+      await run(() => {
+        return accept(
+          runApp(context)(webhookStripeContract).post({
+            body: payload,
+            extraHeaders: { "stripe-signature": signature },
+          }),
+          [200],
+        );
+      });
 
-      const billingStatus = await accept(
-        runApp(context)(billingStatusContract).get({
-          headers: authenticate(context, actor),
-        }),
-        [200],
-      );
+      const billingStatus = await run(() => {
+        return accept(
+          runApp(context)(billingStatusContract).get({
+            headers: authenticate(context, actor),
+          }),
+          [200],
+        );
+      });
       if (billingStatus.body.tier !== tier) {
         throw new Error(
           `Entitlement grant did not reach ${tier} tier: ${billingStatus.body.tier}`,
@@ -631,11 +767,15 @@ export function createRunsApi(
       // then creates a default agent without granting limited-free credits or
       // replacing metadata on an existing default agent.
       const bdd = createBddApi(context);
-      const onboarding = await bdd.readOnboardingStatus(actor);
+      const onboarding = await run(() => {
+        return bdd.readOnboardingStatus(actor);
+      });
       if (!onboarding.defaultAgentId) {
         throw new Error("Expected paid onboarding to create a default agent");
       }
-      const completed = await bdd.completeOnboarding(actor);
+      const completed = await run(() => {
+        return bdd.completeOnboarding(actor);
+      });
       if (completed.status !== 200) {
         throw new Error(
           `Expected paid onboarding completion, got ${completed.status}`,
@@ -868,58 +1008,6 @@ export function createRunsApi(
         }),
         statuses,
       );
-    },
-
-    /**
-     * Signs a sandbox webhook token for an API-created run, so sandbox
-     * report webhooks (heartbeat/complete/...) can act on runs that were
-     * never claimed by a runner.
-     */
-    sandboxTokenForRun(actor: ApiTestUser, runId: string): string {
-      if (!actor.orgId) {
-        throw new Error("Sandbox run tokens require an org-scoped actor");
-      }
-      return generateSandboxToken(actor.userId, runId, actor.orgId);
-    },
-
-    /** Mints a route-test token without changing production capability issuance. */
-    okouTokenForRunWithCapabilities(
-      actor: ApiTestUser,
-      runId: string,
-      capabilities: readonly Capability[],
-    ): string {
-      if (!actor.orgId) {
-        throw new Error("Agent run tokens require an org-scoped actor");
-      }
-      const seconds = Math.floor(now() / 1000);
-      return signSandboxJwtForTests({
-        scope: "okou",
-        userId: actor.userId,
-        orgId: actor.orgId,
-        runId,
-        capabilities: [...capabilities],
-        iat: seconds,
-        exp: seconds + 3600,
-      });
-    },
-
-    async listAgentRuns(actor: ApiTestUser, query: RunsListQuery) {
-      if (!actor.orgId) {
-        throw new Error("Agent run list service requires an organization");
-      }
-      const result = await listAgentRunsFixture({
-        userId: actor.userId,
-        orgId: actor.orgId,
-        status: query.status,
-        agent: query.agent,
-        since: query.since,
-        until: query.until,
-        limit: query.limit,
-      });
-      if (result.kind === "bad-request") {
-        throw new Error(result.message);
-      }
-      return result.body;
     },
 
     async applyUserPermissionGrant(
@@ -1170,13 +1258,11 @@ export function createRunsApi(
       actor: ApiTestUser | null,
       runId: string,
       statuses: readonly (200 | 400 | 401 | 403 | 404)[],
-      usagePricingResolution?: UsagePricingResolution,
     ) {
       return await accept(
-        runApp(
-          context,
-          usagePricingResolution,
-        )(runsCancelContract).cancel({
+        setupAppWithRoutes({ context, routes: runsCancelRoutes })(
+          runsCancelContract,
+        ).cancel({
           headers: authenticate(context, actor),
           params: { id: runId },
         }),
@@ -1244,9 +1330,7 @@ export function createRunsApi(
         readonly allocatedMemoryMb?: RunnerHeartbeatBody["allocatedMemoryMb"];
         readonly runningCount?: RunnerHeartbeatBody["runningCount"];
         readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
-        readonly heldWorkspaceStates?: RunnerHeartbeatBody["heldWorkspaceStates"];
         readonly heldHomeStates?: RunnerHeartbeatBody["heldHomeStates"];
-        readonly homeAffinityVersion?: RunnerHeartbeatBody["homeAffinityVersion"];
         readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
         readonly wssIngressServiceActive?: boolean;
         readonly mode?: RunnerHeartbeatBody["mode"];

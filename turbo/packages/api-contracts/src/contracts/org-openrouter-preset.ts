@@ -33,7 +33,9 @@ export const orgOpenrouterPresetContract = c.router({
     method: "PUT",
     path: "/api/org/openrouter-preset",
     headers: authHeadersSchema,
-    body: z.strictObject({ openrouterPreset: orgOpenrouterPresetSchema }),
+    body: z.strictObject({
+      openrouterPreset: orgOpenrouterPresetSchema.nullable(),
+    }),
     responses: {
       200: responseSchema,
       400: apiErrorSchema,

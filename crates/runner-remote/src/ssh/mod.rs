@@ -2,19 +2,21 @@
 
 mod access;
 mod authority;
-mod cache;
+pub(crate) mod cache;
 mod engine;
 mod files;
 mod forwarding;
 mod io;
 mod keys;
+mod native;
 mod network;
 mod observation;
 mod output;
 mod pool;
 mod sessions;
+use crate::tailscale;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use runner_rpc_proto::{Delivery, ErrorCode, Response, ResponseWriter};
 use serde::{Deserialize, Serialize};
@@ -84,6 +86,8 @@ pub struct SshRuntime {
     reports: Arc<Semaphore>,
     cache: cache::Cache,
     access_tls: Arc<rustls::ClientConfig>,
+    #[cfg(test)]
+    pub(crate) native_services: Mutex<Option<tailscale::TestServices>>,
 }
 
 impl SshRuntime {
@@ -134,7 +138,9 @@ impl SshRuntime {
             cpu: Arc::new(Semaphore::new(2)),
             reports: Arc::new(Semaphore::new(4)),
             cache: cache::Cache::new(),
-            access_tls: access::tls_config().map_err(|_| RemoteInitError::SshAccessTls)?,
+            access_tls: crate::tls::client_config().map_err(|_| RemoteInitError::SshAccessTls)?,
+            #[cfg(test)]
+            native_services: Mutex::new(None),
         })))
     }
 
@@ -408,10 +414,44 @@ impl SshRuntime {
     async fn open_socket(
         &self,
         lease: Arc<io::HostLease>,
-        host: &str,
-        port: u16,
+        credential: &PreparedCredential,
+        access: &cache::Access,
         scope: &Scope,
-    ) -> Result<tokio::net::TcpStream, FailureReason> {
+    ) -> Result<io::Carrier, FailureReason> {
+        if let authority::Transport::Tailscale(configuration) = &credential.transport {
+            let node =
+                access.native_configured(configuration.clone(), |configuration, journal| {
+                    #[cfg(test)]
+                    if let Some(services) = self
+                        .native_services
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .as_ref()
+                    {
+                        return services.work(configuration, journal);
+                    }
+                    tailscale::work(configuration, journal)
+                })?;
+            let stream = scope
+                .wait(node.dial_retained(
+                    &credential.host,
+                    credential.port,
+                    tailscale::Lease::new(lease),
+                ))
+                .await?
+                .map_err(|failure| match failure {
+                    tailscale::Failure::ResourceExhausted => FailureReason::ResourceExhausted,
+                    tailscale::Failure::Cancelled => FailureReason::Cancelled,
+                    _ => FailureReason::NetworkFailure,
+                })?;
+            access.check()?;
+            return Ok(io::Carrier::Native {
+                stream,
+                _node: node,
+            });
+        }
+        let host = &credential.host;
+        let port = credential.port;
         // System DNS can own blocking resolver work after its waiter is dropped.
         // Retain host capacity until resolution completes, independently of
         // the guest stream and its park reservation.
@@ -430,6 +470,7 @@ impl SshRuntime {
             .wait(self.network.connect(address))
             .await?
             .map_err(|_| FailureReason::NetworkFailure)
+            .map(io::Carrier::Public)
     }
 }
 
@@ -510,6 +551,21 @@ impl Run {
 
     pub(crate) async fn shutdown(&self) {
         self.sessions.shutdown().await;
+    }
+
+    pub(crate) async fn shutdown_native(&self) -> Result<(), crate::guest_rpc::CleanupError> {
+        self.sessions
+            .registration
+            .shutdown_native()
+            .await
+            .map_err(|_| crate::guest_rpc::CleanupError::Native)
+    }
+
+    pub(crate) fn retain_cleanup(
+        &self,
+        task: tokio::task::JoinHandle<()>,
+    ) -> tokio::sync::oneshot::Receiver<bool> {
+        self.sessions.registration.retain_cleanup(task)
     }
 
     pub(crate) async fn dispatch(&self, request: crate::guest_rpc::Request) {

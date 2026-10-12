@@ -16,6 +16,14 @@ import chalk from "chalk";
 const AGENT_ID = "11111111-1111-1111-1111-111111111111";
 const WORKFLOW_ID = "22222222-2222-2222-2222-222222222222";
 const PRIVATE_WORKFLOW_ID = "33333333-3333-4333-8333-333333333333";
+const OFFICIAL_WORKFLOW_ID = "44444444-4444-4444-8444-444444444444";
+
+const OFFICIAL_METADATA = {
+  definitionName: "tell-a-joke",
+  installationState: "installed",
+  definitionLifecycle: "active",
+  readOnly: true,
+};
 
 function workflowSummary(overrides: Record<string, unknown> = {}) {
   return {
@@ -71,6 +79,77 @@ describe("okou workflow view command", () => {
   });
 
   describe("successful view", () => {
+    it("resolves an ordinary name even when an older API marks it shadowed by an official installation", async () => {
+      server.use(
+        http.get("http://localhost:3000/api/workflows", () => {
+          return HttpResponse.json([
+            workflowSummary({
+              shadowedBy: {
+                id: OFFICIAL_WORKFLOW_ID,
+                name: "tell-a-joke",
+                displayName: "Official joke",
+              },
+            }),
+            workflowSummary({
+              id: OFFICIAL_WORKFLOW_ID,
+              visibility: "private",
+              official: OFFICIAL_METADATA,
+              canManage: false,
+            }),
+          ]);
+        }),
+        http.get(`http://localhost:3000/api/workflows/${WORKFLOW_ID}`, () => {
+          return HttpResponse.json({
+            ...workflowSummary(),
+            instruction: "Use the ordinary instructions.",
+            files: [],
+            fileContents: [],
+            automations: [],
+          });
+        }),
+      );
+
+      await viewCommand.parseAsync([
+        "node",
+        "cli",
+        "tell-a-joke",
+        "--agent",
+        AGENT_ID,
+      ]);
+
+      expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+        "Use the ordinary instructions.",
+      );
+    });
+
+    it("keeps explicit-ID access to an Official Workflow", async () => {
+      server.use(
+        http.get(
+          `http://localhost:3000/api/workflows/${OFFICIAL_WORKFLOW_ID}`,
+          () => {
+            return HttpResponse.json({
+              ...workflowSummary({
+                id: OFFICIAL_WORKFLOW_ID,
+                visibility: "private",
+                official: OFFICIAL_METADATA,
+                canManage: false,
+              }),
+              instruction: "Read the official instructions by ID.",
+              files: [],
+              fileContents: [],
+              automations: [],
+            });
+          },
+        ),
+      );
+
+      await viewCommand.parseAsync(["node", "cli", OFFICIAL_WORKFLOW_ID]);
+
+      expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+        "Read the official instructions by ID.",
+      );
+    });
+
     it("should display workflow with instruction", async () => {
       server.use(
         http.get(`http://localhost:3000/api/workflows/${WORKFLOW_ID}`, () => {
@@ -161,6 +240,41 @@ describe("okou workflow view command", () => {
   });
 
   describe("error handling", () => {
+    it("guides an official-only name reference toward explicit-ID management", async () => {
+      server.use(
+        http.get("http://localhost:3000/api/workflows", () => {
+          return HttpResponse.json([
+            workflowSummary({
+              id: OFFICIAL_WORKFLOW_ID,
+              visibility: "private",
+              official: OFFICIAL_METADATA,
+              canManage: false,
+            }),
+          ]);
+        }),
+      );
+
+      await expect(
+        viewCommand.parseAsync([
+          "node",
+          "cli",
+          "tell-a-joke",
+          "--agent",
+          AGENT_ID,
+        ]),
+      ).rejects.toThrow("process.exit called");
+
+      expect(mockConsoleError).toHaveBeenCalledWith(
+        expect.stringContaining("Ordinary workflow not found"),
+      );
+      expect(mockConsoleError).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "Use a workflow ID to view or manage an Official Workflow",
+        ),
+      );
+      expect(mockExit).toHaveBeenCalledWith(1);
+    });
+
     it("should reject invalid workflow refs before requiring agent scope", async () => {
       await expect(async () => {
         await viewCommand.parseAsync(["node", "cli", "/tell-a-joke"]);

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   CONNECTOR_ACCOUNT_INSPECTION_MAX_SELECTIONS,
   connectorAccountsContract,
+  type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import {
@@ -29,7 +30,11 @@ import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
 
-import { createBddApi } from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import {
+  createConnectorBddApi,
+  mockCustomConnectorOAuth2Provider,
+} from "./helpers/api-bdd-connectors";
 
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
@@ -773,9 +778,127 @@ describe("connector account lifecycle routes", () => {
     });
   });
 
-  it.each(["user", "organization"] as const)(
-    "renames only exact owned accounts across %s boundaries",
-    async (boundary) => {
+  async function createRenameAccount(
+    actor: ApiTestUser,
+    kind: "builtin" | "manual" | "oauth",
+  ): Promise<{
+    readonly connectionId: string;
+    readonly target: ConnectorAccountTarget;
+  }> {
+    if (kind === "builtin") {
+      const added = await accept(
+        connectorClient().connect({
+          headers: authHeaders(),
+          params: { connectorSlug: "openai" },
+          body: {
+            authMethod: "api-token",
+            account: { intent: "add", displayName: "Original" },
+            values: { apiKey: `sk-test-${randomUUID()}` },
+          },
+        }),
+        [200],
+      );
+      return {
+        connectionId: added.body.id,
+        target: { kind: "builtin", connectorSlug: "openai" },
+      };
+    }
+    const connectorApi = createConnectorBddApi(context);
+    const provider =
+      kind === "oauth"
+        ? mockCustomConnectorOAuth2Provider(context, { initialScope: "read" })
+        : null;
+    const definition = await connectorApi.createCustomConnector(actor, {
+      displayName: "Rename custom account",
+      prefixTemplates: [`https://${randomUUID()}.rename.example.test/`],
+      queryInjections: [],
+      ...(provider
+        ? {
+            authMode: "oauth",
+            fields: [],
+            headerInjections: [
+              {
+                name: "Authorization",
+                valueTemplate: "Bearer {{oauth.access_token}}",
+              },
+            ],
+            oauthConfig: {
+              providerAdapter: "standard",
+              clientId: "rename-client",
+              clientSecret: "rename-client-secret",
+              authorizationUrl: provider.authorizationUrl,
+              tokenUrl: provider.tokenUrl,
+              tokenEndpointAuthMethod: "client_secret_post",
+              pkceMethod: "none",
+              scopes: ["read"],
+              authorizationParams: {},
+            },
+          }
+        : {
+            fields: [
+              {
+                key: "secret",
+                label: "Secret",
+                kind: "secret",
+                required: true,
+              },
+            ],
+            headerInjections: [
+              {
+                name: "Authorization",
+                valueTemplate: "Bearer {{secrets.secret}}",
+              },
+            ],
+          }),
+    });
+    if (provider) {
+      const authorization = new URL(
+        await connectorApi.startCustomConnectorOAuth2AtBaseUrl(
+          actor,
+          definition.id,
+          "https://api.okou.ai",
+          { intent: "add", displayName: "Original" },
+        ),
+      );
+      const state = authorization.searchParams.get("state");
+      if (!state) {
+        throw new Error("Expected custom connector OAuth state");
+      }
+      await connectorApi.completeCustomConnectorOAuth2Callback(
+        { code: `rename-${randomUUID()}`, state },
+        { baseUrl: "https://api.okou.ai" },
+      );
+    } else {
+      await connectorApi.setCustomConnectorValues(
+        actor,
+        definition.id,
+        [{ key: "secret", kind: "secret", value: "rename-secret" }],
+        { intent: "add", displayName: "Original" },
+      );
+    }
+    const [account] = await connectorApi.listCustomConnectorAccounts(
+      actor,
+      definition.id,
+    );
+    if (!account) {
+      throw new Error("Expected a publicly connected custom account");
+    }
+    return {
+      connectionId: account.id,
+      target: { kind: "custom", customConnectorId: definition.id },
+    };
+  }
+
+  it.each([
+    ["user", "builtin"],
+    ["organization", "builtin"],
+    ["user", "manual"],
+    ["organization", "manual"],
+    ["user", "oauth"],
+    ["organization", "oauth"],
+  ] as const)(
+    "renames only exact owned accounts across %s boundaries for %s accounts",
+    async (boundary, kind) => {
       const bdd = createBddApi(context);
       const owner = bdd.user();
       const foreign =
@@ -798,20 +921,10 @@ describe("connector account lifecycle routes", () => {
           await bdd.completeOnboarding(ownerActor);
           await bdd.completeOnboarding(foreignActor);
           await activate(ownerActor);
-          const added = await accept(
-            connectorClient().connect({
-              headers: authHeaders(),
-              params: { connectorSlug: "openai" },
-              body: {
-                authMethod: "api-token",
-                account: { intent: "add", displayName: "Original" },
-                values: { apiKey: `sk-test-${randomUUID()}` },
-              },
-            }),
-            [200],
+          const { connectionId, target } = await createRenameAccount(
+            ownerActor,
+            kind,
           );
-          const connectionId = added.body.id;
-          const target = { kind: "builtin", connectorSlug: "openai" } as const;
           const readOwned = () => {
             return accept(
               accountClient().connection({
@@ -840,6 +953,15 @@ describe("connector account lifecycle routes", () => {
           for (const request of [
             { actor: foreignActor, connectionId, target },
             { actor: foreignActor, connectionId: randomUUID(), target },
+            { actor: ownerActor, connectionId: randomUUID(), target },
+            {
+              actor: ownerActor,
+              connectionId,
+              target: {
+                kind: "custom",
+                customConnectorId: randomUUID(),
+              } as const,
+            },
             {
               actor: ownerActor,
               connectionId,
@@ -872,7 +994,13 @@ describe("connector account lifecycle routes", () => {
               message: "Connector account not found",
             },
           };
-          expect(rejectedBodies).toStrictEqual([notFound, notFound, notFound]);
+          expect(rejectedBodies).toStrictEqual([
+            notFound,
+            notFound,
+            notFound,
+            notFound,
+            notFound,
+          ]);
           await activate(ownerActor);
           const unchanged = await readOwned();
           expect(unchanged.body).toStrictEqual(original.body);

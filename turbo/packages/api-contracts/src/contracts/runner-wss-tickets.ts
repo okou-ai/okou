@@ -48,6 +48,7 @@ export const runnerWssTicketsContract = c.router({
         orgId: z.string(),
         userId: z.string(),
         origin: z.string(),
+        digest: z.string().regex(/^[0-9a-f]{64}$/),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -55,20 +56,5 @@ export const runnerWssTicketsContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Atomically redeem a WSS ticket from an official Runner",
-  },
-  revoke: {
-    method: "POST",
-    path: "/api/runs/:runId/wss/revoke",
-    headers: authHeadersSchema,
-    pathParams: z.object({ runId: runIdSchema }),
-    body: z.undefined(),
-    responses: {
-      204: z.undefined(),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "Revoke all outstanding WSS tickets for an owned run",
   },
 });

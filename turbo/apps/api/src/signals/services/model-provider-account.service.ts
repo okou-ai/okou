@@ -16,6 +16,7 @@ import { command, computed, type Computed } from "ccstate";
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   inArray,
@@ -555,6 +556,7 @@ async function writePersonalAccount(
   },
   expiryBindings: Set<string | null>,
 ): Promise<UpsertPersonalAccountResult> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0185; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const provider = await logicalProvider(tx, args);
     const accounts = await applyClaudeIdentities(
@@ -771,50 +773,93 @@ export const activatePersonalModelProviderAccount$ = command(
     | ReturnType<typeof conflict>
   > => {
     const db = set(writeDb$);
-    // Deactivating siblings and activating the target must commit together.
-    const result = await withAccountConflict(
-      db.transaction(async (tx) => {
-        const [row] = await tx
-          .select({ account: modelProviderAccounts, provider: providerColumns })
-          .from(modelProviderAccounts)
-          .innerJoin(
-            modelProviders,
-            eq(modelProviderAccounts.modelProviderId, modelProviders.id),
-          )
-          .where(exactConnectedPersonalAccountCondition(args))
-          .limit(1);
-        const current = row ?? null;
-        if (
-          !current ||
-          !isPersonalSubscriptionProviderType(current.account.type)
-        ) {
-          return notFound("Resource not found");
-        }
-        await tx
+    const target = db.$with("activation_target").as(
+      db
+        .select({
+          id: modelProviderAccounts.id,
+          modelProviderId: modelProviderAccounts.modelProviderId,
+        })
+        .from(modelProviderAccounts)
+        .innerJoin(
+          modelProviders,
+          eq(modelProviderAccounts.modelProviderId, modelProviders.id),
+        )
+        .where(
+          and(
+            exactConnectedPersonalAccountCondition(args),
+            inArray(modelProviderAccounts.type, [CODEX_TYPE, CLAUDE_CODE_TYPE]),
+          ),
+        ),
+    );
+    const siblings = and(
+      inArray(
+        modelProviderAccounts.modelProviderId,
+        db.select({ id: target.modelProviderId }).from(target),
+      ),
+      eq(modelProviderAccounts.isActive, true),
+      ne(modelProviderAccounts.id, args.id),
+    );
+    const changedAt = nowDate();
+    const deactivated = db
+      .$with("deactivated_accounts")
+      .as(
+        db
           .update(modelProviderAccounts)
-          .set({ isActive: false, updatedAt: nowDate() })
-          .where(
-            and(
-              eq(modelProviderAccounts.modelProviderId, current.provider.id),
-              eq(modelProviderAccounts.isActive, true),
-              ne(modelProviderAccounts.id, current.account.id),
+          .set({ isActive: false, updatedAt: changedAt })
+          .where(siblings)
+          .returning({ id: modelProviderAccounts.id }),
+      );
+    const activated = db.$with("activated_account").as(
+      db
+        .update(modelProviderAccounts)
+        .set({ isActive: true, updatedAt: changedAt })
+        .where(
+          and(
+            exactConnectedPersonalAccountCondition(args),
+            inArray(modelProviderAccounts.type, [CODEX_TYPE, CLAUDE_CODE_TYPE]),
+            inArray(
+              modelProviderAccounts.modelProviderId,
+              db.select({ id: target.modelProviderId }).from(target),
             ),
-          );
-        const [account] = await tx
-          .update(modelProviderAccounts)
-          .set({ isActive: true, updatedAt: nowDate() })
-          .where(eq(modelProviderAccounts.id, current.account.id))
-          .returning();
-        return account
-          ? accountResponse({ account, provider: current.provider })
-          : notFound("Resource not found");
-      }),
+            // Consume the actual RETURNING before inserting the active index
+            // entry. At most one distinct sibling can be active. If a concurrent
+            // writer changed it, reject instead of adopting a stale switch.
+            eq(
+              db.select({ count: count() }).from(deactivated),
+              db
+                .select({ count: count() })
+                .from(modelProviderAccounts)
+                .where(siblings),
+            ),
+          ),
+        )
+        .returning(),
+    );
+    const rows = await withAccountConflict(
+      db
+        .with(target, deactivated, activated)
+        .select()
+        .from(target)
+        .leftJoin(activated, eq(activated.id, target.id)),
     );
     signal.throwIfAborted();
-    if (!("status" in result)) {
-      await publishPersonalModelProvidersChangedSafely(args.userId);
-      signal.throwIfAborted();
+    if ("status" in rows) {
+      return rows;
     }
+    const row = rows[0];
+    if (!row) {
+      return notFound("Resource not found");
+    }
+    const account = row.activated_account;
+    if (!account) {
+      return conflict(ACCOUNT_CONFLICT_MESSAGE);
+    }
+    const result = accountResponse({
+      account,
+      provider: { id: row.activation_target.modelProviderId },
+    });
+    await publishPersonalModelProvidersChangedSafely(args.userId);
+    signal.throwIfAborted();
     return result;
   },
 );
@@ -869,6 +914,7 @@ export const disconnectPersonalModelProviderAccounts$ = command(
         : null;
     signal.throwIfAborted();
     const result = await withAccountConflict(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0187; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         for (const account of await applyClaudeIdentities(
           tx,

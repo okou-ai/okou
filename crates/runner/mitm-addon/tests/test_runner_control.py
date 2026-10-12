@@ -91,6 +91,7 @@ def test_bad_length_closes_before_waiting_for_payload(tmp_path, control, size):
     assert exchange(tmp_path)["type"] == "result"
 
 
+@pytest.mark.shard_cost(5)
 def test_partial_client_cannot_block_status_and_expires(tmp_path, control):
     with control_connection(tmp_path) as connection:
         connection.sendall(b"\x00")

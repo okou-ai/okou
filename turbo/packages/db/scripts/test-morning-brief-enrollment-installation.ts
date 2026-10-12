@@ -20,6 +20,7 @@ assert.ok(databaseUrl, "DATABASE_URL is required");
 const client = new Client({ connectionString: databaseUrl });
 await client.connect();
 const schema = `morning_brief_ownership_${randomUUID().replaceAll("-", "")}`;
+let schemaCreated = false;
 
 async function statementsOf(name: string): Promise<readonly string[]> {
   const sql = await readFile(
@@ -56,9 +57,9 @@ async function ownedWorkflowIds(): Promise<
 }
 
 try {
-  await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${schema}"`);
-  await client.query(`SET LOCAL search_path TO "${schema}"`);
+  schemaCreated = true;
+  await client.query(`SET search_path TO "${schema}"`);
   await client.query(`
     CREATE TABLE org_metadata (
       org_id text PRIMARY KEY,
@@ -155,6 +156,11 @@ try {
 
   console.log("Morning Brief enrollment installation adoption rule passed");
 } finally {
-  await client.query("ROLLBACK");
-  await client.end();
+  try {
+    if (schemaCreated) {
+      await client.query(`DROP SCHEMA "${schema}" CASCADE`);
+    }
+  } finally {
+    await client.end();
+  }
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Toaster as Sonner, toast } from "sonner";
+import { Toaster as Sonner, toast, type ExternalToast } from "sonner";
 
 type ToasterProps = React.ComponentProps<typeof Sonner> & {
   readonly onReady?: () => void;
@@ -83,7 +83,7 @@ function Toaster({ onReady, ...props }: ToasterProps) {
         toastOptions={{
           classNames: {
             toast:
-              "group/toast font-family-sans group-data-[sonner-toaster]:!rounded-[10px] group-data-[sonner-toaster]:!text-sm group-data-[sonner-toaster]:!font-medium group-data-[sonner-toaster]:!w-auto group-data-[sonner-toaster]:!max-w-[calc(100dvw-2rem)] sm:group-data-[sonner-toaster]:!max-w-none group-data-[sonner-toaster]:!whitespace-normal sm:group-data-[sonner-toaster]:!whitespace-nowrap group-data-[sonner-toaster]:!left-auto group-data-[sonner-toaster]:!top-auto group-data-[sonner-toaster]:!relative [&_[data-icon]]:text-green-600 [&[data-type=error]_[data-icon]]:text-red-500",
+              "group/toast font-family-sans group-data-[sonner-toaster]:!rounded-xl group-data-[sonner-toaster]:!text-sm group-data-[sonner-toaster]:!font-medium group-data-[sonner-toaster]:!w-auto group-data-[sonner-toaster]:!max-w-[calc(100dvw-2rem)] sm:group-data-[sonner-toaster]:!max-w-none group-data-[sonner-toaster]:!whitespace-normal sm:group-data-[sonner-toaster]:!whitespace-nowrap group-data-[sonner-toaster]:!left-auto group-data-[sonner-toaster]:!top-auto group-data-[sonner-toaster]:!relative [&_[data-icon]]:text-green-600 [&[data-type=error]_[data-icon]]:text-red-500",
             // Sonner has no description-color variable or style slot. Preserve
             // its inherited foreground for rich-color and inverted surfaces.
             description:
@@ -111,4 +111,22 @@ function Toaster({ onReady, ...props }: ToasterProps) {
   return createPortal(toaster, document.body);
 }
 
-export { Toaster, toast };
+// A quiet text action for reversible feedback such as Undo, where the primary
+// fill would overstate the action. Sonner's button rules are unlayered, so the
+// colour rides on its per-toast style slot and the gap from a one-line message
+// needs an important margin.
+const TEXT_TOAST_ACTION = {
+  actionButtonStyle: {
+    background: "transparent",
+    color: "hsl(var(--foreground))",
+    fontSize: "inherit",
+    height: "auto",
+    lineHeight: "1.5",
+    padding: 0,
+  },
+  classNames: {
+    actionButton: "!ml-4 underline-offset-4 hover:underline active:opacity-80",
+  },
+} as const satisfies Pick<ExternalToast, "actionButtonStyle" | "classNames">;
+
+export { Toaster, toast, TEXT_TOAST_ACTION };

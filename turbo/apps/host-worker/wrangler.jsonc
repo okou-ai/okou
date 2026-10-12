@@ -17,6 +17,7 @@
     },
   ],
   "vars": {
+    "ARTIFACT_OG_API_ORIGIN": "https://api.okou.ai",
     "HOST_DOMAIN": "sites.vm0.io",
     "OKOU_HOST_DOMAIN": "okou.app",
     "PUBLIC_ARTIFACT_HOST": "a.okou.io",

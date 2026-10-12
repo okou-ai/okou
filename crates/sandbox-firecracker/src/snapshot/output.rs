@@ -18,9 +18,11 @@ use super::SnapshotError;
 ///
 /// The marker is the snapshot publication commit signal, not standalone proof
 /// of completeness: [`crate::FirecrackerSnapshotProvider`] also validates the
-/// required artifact files. Changing `v1` or any other byte is a compatibility
+/// required artifact files. The marker includes the paired home layout so old
+/// workspace snapshots cannot pass completeness under the home-drive reader.
+/// Changing the layout/version or any other byte is a compatibility
 /// change for independently deployed readers and writers.
-pub const SNAPSHOT_COMPLETE_MARKER_CONTENT: &[u8] = b"snapshot-complete-v1\n";
+pub const SNAPSHOT_COMPLETE_MARKER_CONTENT: &[u8] = b"snapshot-complete-v2:home-drive-v1\n";
 
 /// Result of validating a Firecracker snapshot output directory.
 #[derive(Debug, PartialEq, Eq)]
@@ -191,7 +193,7 @@ pub(super) fn cleanup_remove_file_result(
     }
 }
 
-pub(super) fn cleanup_workspace_image_file_sync(path: &Path, warning: &'static str) -> bool {
+pub(super) fn cleanup_home_image_file_sync(path: &Path, warning: &'static str) -> bool {
     cleanup_remove_file_result(std::fs::remove_file(path), path, warning)
 }
 

@@ -51,15 +51,15 @@ async fn sandbox_exec_lifecycle_gate_blocks_after_recording_call() {
 }
 
 #[tokio::test]
-async fn workspace_drive_mount_lifecycle_gate_blocks_after_recording_call() {
+async fn home_drive_mount_lifecycle_gate_blocks_after_recording_call() {
     let overrides = Arc::new(MockSandboxOverrides::new());
     let gate = MockLifecycleGate::new();
-    overrides.set_workspace_drive_mount_lifecycle_gate(gate.clone());
-    let sandbox = MockSandbox::with_overrides("gated-workspace-mount", Arc::clone(&overrides));
-    let mount = tokio::spawn(async move { sandbox.mount_workspace_drive().await });
+    overrides.set_home_drive_mount_lifecycle_gate(gate.clone());
+    let sandbox = MockSandbox::with_overrides("gated-home-mount", Arc::clone(&overrides));
+    let mount = tokio::spawn(async move { sandbox.mount_home_drive().await });
 
     gate.wait_entered(1, Duration::from_secs(5)).await.unwrap();
-    assert_eq!(overrides.workspace_drive_mount_calls(), 1);
+    assert_eq!(overrides.home_drive_mount_calls(), 1);
     assert!(!mount.is_finished());
     gate.release_one();
     assert_eq!(
@@ -155,19 +155,19 @@ async fn sandbox_queued_exec_results() {
 }
 
 #[tokio::test]
-async fn workspace_drive_mount_results_are_isolated_from_generic_exec() {
+async fn home_drive_mount_results_are_isolated_from_generic_exec() {
     let sandbox = MockSandbox::new("test-1");
-    sandbox.push_workspace_drive_mount_result(Ok(ExecResult::new(
+    sandbox.push_home_drive_mount_result(Ok(ExecResult::new(
         64,
         b"mount out".to_vec(),
         b"mount failed".to_vec(),
     )));
     sandbox.push_exec_result(Ok(ExecResult::new(7, b"exec out".to_vec(), Vec::new())));
 
-    let mount = sandbox.mount_workspace_drive().await.unwrap();
+    let mount = sandbox.mount_home_drive().await.unwrap();
     assert_eq!(mount.termination, ExecTermination::Exited { exit_code: 64 });
     assert_eq!(mount.stderr, b"mount failed");
-    assert_eq!(sandbox.workspace_drive_mount_calls(), 1);
+    assert_eq!(sandbox.home_drive_mount_calls(), 1);
 
     let exec = sandbox
         .exec(&ExecRequest {
@@ -186,9 +186,9 @@ async fn workspace_drive_mount_results_are_isolated_from_generic_exec() {
 }
 
 #[tokio::test]
-async fn shared_workspace_drive_mount_results_are_consumed_across_sandboxes() {
+async fn shared_home_drive_mount_results_are_consumed_across_sandboxes() {
     let overrides = Arc::new(MockSandboxOverrides::new());
-    overrides.push_workspace_drive_mount_result(Ok(ExecResult::new(
+    overrides.push_home_drive_mount_result(Ok(ExecResult::new(
         64,
         Vec::new(),
         b"first mount failed".to_vec(),
@@ -197,14 +197,14 @@ async fn shared_workspace_drive_mount_results_are_consumed_across_sandboxes() {
     let second = MockSandbox::with_overrides("second", Arc::clone(&overrides));
 
     assert_eq!(
-        first.mount_workspace_drive().await.unwrap().termination,
+        first.mount_home_drive().await.unwrap().termination,
         ExecTermination::Exited { exit_code: 64 }
     );
     assert_eq!(
-        second.mount_workspace_drive().await.unwrap().termination,
+        second.mount_home_drive().await.unwrap().termination,
         ExecTermination::Exited { exit_code: 0 }
     );
-    assert_eq!(overrides.workspace_drive_mount_calls(), 2);
+    assert_eq!(overrides.home_drive_mount_calls(), 2);
 }
 
 #[tokio::test]

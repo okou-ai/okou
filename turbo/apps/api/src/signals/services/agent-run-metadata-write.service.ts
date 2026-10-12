@@ -4,7 +4,7 @@ import type { SQL } from "drizzle-orm";
 
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
-import { INITIAL_AUTONOMY_BUDGET } from "./autonomy-budget.constants";
+import { AUTONOMY_BUDGET_CEILING } from "../autonomy-budget-limit";
 
 type StoredRunMetadataValues = Pick<
   typeof agentRuns.$inferSelect,
@@ -17,6 +17,8 @@ type StoredRunMetadataValues = Pick<
   | "selectedModel"
   | "modelRuntimeProvider"
   | "modelRuntimeModel"
+  | "modelUsageProvider"
+  | "modelLongContextMinTotalInputTokens"
   | "builtInModelKeyId"
   | "reasoningEffort"
   | "codexServiceTier"
@@ -44,11 +46,20 @@ type RunMetadataInput = Readonly<
     Partial<Omit<RunMetadataValues, "triggerSource">>
 >;
 
+// Execution/account/usage provenance is captured at launch, never repinned by
+// later display, timing or autonomy updates. Historical repair has its own CAS.
+type MutableRunMetadataValues = Pick<
+  RunMetadataValues,
+  | "autonomyBudget"
+  | "apiStartedAt"
+  | "firstAssistantEventAcknowledgedAt"
+  | "summary"
+>;
 type RunMetadataPatch = {
-  [Key in keyof RunMetadataValues]: Readonly<
-    Pick<RunMetadataValues, Key> & Partial<RunMetadataValues>
+  [Key in keyof MutableRunMetadataValues]: Readonly<
+    Pick<MutableRunMetadataValues, Key> & Partial<MutableRunMetadataValues>
   >;
-}[keyof RunMetadataValues];
+}[keyof MutableRunMetadataValues];
 
 interface RunMetadataWriteArgs {
   readonly patch: RunMetadataPatch;
@@ -70,6 +81,8 @@ function normalizeRunModelMetadata(
   | "selectedModel"
   | "modelRuntimeProvider"
   | "modelRuntimeModel"
+  | "modelUsageProvider"
+  | "modelLongContextMinTotalInputTokens"
   | "builtInModelKeyId"
   | "reasoningEffort"
   | "codexServiceTier"
@@ -83,6 +96,9 @@ function normalizeRunModelMetadata(
     selectedModel: input.selectedModel ?? null,
     modelRuntimeProvider: input.modelRuntimeProvider ?? null,
     modelRuntimeModel: input.modelRuntimeModel ?? null,
+    modelUsageProvider: input.modelUsageProvider ?? null,
+    modelLongContextMinTotalInputTokens:
+      input.modelLongContextMinTotalInputTokens ?? null,
     builtInModelKeyId: input.builtInModelKeyId ?? null,
     reasoningEffort: input.reasoningEffort ?? null,
     codexServiceTier: input.codexServiceTier ?? null,
@@ -94,7 +110,7 @@ export function normalizeRunMetadata(
 ): RunMetadataValues {
   return {
     triggerSource: input.triggerSource,
-    autonomyBudget: input.autonomyBudget ?? INITIAL_AUTONOMY_BUDGET,
+    autonomyBudget: input.autonomyBudget ?? AUTONOMY_BUDGET_CEILING,
     workflowAutomationId: input.workflowAutomationId ?? null,
     ...normalizeRunModelMetadata(input),
     selectedImageModel: input.selectedImageModel ?? null,

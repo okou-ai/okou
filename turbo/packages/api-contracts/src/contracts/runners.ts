@@ -33,9 +33,9 @@ export {
   runnerHostnameSchema,
   runnerVersionSchema,
   sandboxReuseResultSchema,
-  workspaceReuseResultSchema,
+  homeReuseResultSchema,
   type SandboxReuseResult,
-  type WorkspaceReuseResult,
+  type HomeReuseResult,
 } from "./runner-primitives";
 
 const c = initContract();
@@ -76,7 +76,6 @@ export const CANCELLATION_RECOVERY_STALE_AFTER_MS =
   RUNNER_CANCELLATION_RECOVERY_GRACE_MS + 30_000;
 export const BUILTIN_FIREWALL_CATALOG_CACHE_SCHEMA_VERSION = 1;
 export const RUNNER_BUILTIN_FIREWALL_RESOLVE_NAMES_MAX = 512;
-export const PI_MODEL_CONFIG_LEGACY_GENERATION = 1;
 // Existing versioned writers stay on generation 2 until their activation slice.
 export const PI_MODEL_CONFIG_CURRENT_GENERATION = 2;
 export const PI_MODEL_CONFIG_DIALECT_TIER_GENERATION = 3;
@@ -202,7 +201,6 @@ export const runnerPreferenceSchema = z.discriminatedUnion("kind", [
         "exactSandbox",
         "finalizingPredecessor",
         "reusableSandbox",
-        "workspaceCache",
         "homeCache",
       ]),
       expiresAt: z.string().datetime({ offset: true }),
@@ -453,8 +451,6 @@ export const DEFAULT_PROFILE = "vm0/default";
 
 const runnersPollBodySchema = z.object({
   runnerId: z.uuid().optional(),
-  // Additive process identity; never extend the strict claim capabilities.
-  heartbeatGeneration: runnerHeartbeatGenerationSchema.optional(),
   group: runnerGroupSchema,
   supportedProfiles: runnerSupportedProfileListSchema,
   excludedRunIds: z
@@ -479,11 +475,6 @@ export const jobSchema = z.object({
   runnerPreference: runnerPreferenceSchema,
 });
 
-const heldWorkspaceCacheSchema = z.object({
-  profile: z.string(),
-  workspaceAffinityVersion: z.literal(1),
-});
-
 export const heldSandboxStateSchema = z.object({
   reuseKey: z.string(),
   lastCompletedAt: z.string().datetime({ offset: true }),
@@ -497,12 +488,6 @@ export const activeReuseProducerSchema = z.object({
   runId: z.uuid(),
   reuseKey: z.string(),
   profile: z.string(),
-});
-
-export const heldWorkspaceStateSchema = z.object({
-  reuseKey: z.string(),
-  lastCompletedAt: z.string().datetime({ offset: true }),
-  workspaceCaches: z.array(heldWorkspaceCacheSchema).min(1).max(8),
 });
 
 export const heldHomeStateSchema = z.object({
@@ -541,7 +526,7 @@ export const runnersPollContract = c.router({
 
 const archiveSizeSchema = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
 
-// Optional internal checkpoint behavior for a missing artifact root. Absence
+// Optional internal artifact publication behavior for a missing artifact root. Absence
 // is equivalent to "fail".
 export const artifactMissingRootPolicySchema = z.enum([
   "fail",
@@ -847,30 +832,6 @@ export const piInstalledCliRequirementSchema = z
   .strict()
   .readonly();
 
-/**
- * Non-secret Pi model metadata forwarded to the Sandbox. `apiKeyEnv` names the
- * runtime environment entry used by the Sandbox, while `credentialSecretName`
- * names the API-owned encrypted secret that backs that entry.
- */
-
-export const piModelConfigLegacySchema = z
-  .object({
-    provider: z.enum(["openrouter", "codex"]),
-    baseUrl: z.url(),
-    model: z.string().min(1),
-    catalogModel: z.string().min(1).optional(),
-    thinkingLevel: z
-      .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
-      .optional(),
-    // Per-run provider request policy. This is not Pi session identity or
-    // persisted Pi JSONL metadata.
-    serviceTier: z.enum(["priority"]).optional(),
-    apiKeyEnv: z.enum(["OPENAI_API_KEY", "CHATGPT_ACCESS_TOKEN"]),
-    credentialSecretName: z.string().regex(/^[A-Z_][A-Z0-9_]*$/),
-  })
-  .strict()
-  .readonly();
-
 const piApiKeyCredentialSecretNameSchema = z.enum(["OPENROUTER_API_KEY"]);
 
 const piModelCredentialBindingSchema = z.discriminatedUnion("kind", [
@@ -1045,7 +1006,6 @@ export const piModelConfigV5Schema = z
   .readonly();
 
 export const piModelConfigSchema = z.union([
-  piModelConfigLegacySchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
   piModelConfigV5Schema,
@@ -1617,10 +1577,7 @@ export const heartbeatBodySchema = z
     runningCount: z.number().int().nonnegative(),
     admittableProfiles: runnerProfileListSchema,
     heldSandboxStates: z.array(heldSandboxStateSchema).max(1024),
-    heldWorkspaceStates: z.array(heldWorkspaceStateSchema).max(1024),
-    heldHomeStates: z.array(heldHomeStateSchema).max(1024).default([]),
-    // Capability exists even when a prepared Runner holds no home images.
-    homeAffinityVersion: z.literal(1).optional(),
+    heldHomeStates: z.array(heldHomeStateSchema).max(1024),
     activeReuseProducers: z.array(activeReuseProducerSchema).max(1024),
     // This shared endpoint also accepts PAT and older Runner heartbeats without
     // a host observation. Absence is a first-class unknown, never WSS-eligible.
@@ -1628,19 +1585,6 @@ export const heartbeatBodySchema = z
     mode: z.enum(["starting", "running", "draining", "stopping"]),
   })
   .superRefine((heartbeat, ctx) => {
-    const workspaceCacheCount = heartbeat.heldWorkspaceStates.reduce(
-      (count, state) => {
-        return count + state.workspaceCaches.length;
-      },
-      0,
-    );
-    if (workspaceCacheCount > 1024) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["heldWorkspaceStates"],
-        message: "heartbeat may contain at most 1024 workspace caches",
-      });
-    }
     const homeCacheCount = heartbeat.heldHomeStates.reduce((count, state) => {
       return count + state.homeCaches.length;
     }, 0);
@@ -1688,14 +1632,12 @@ export type RunnerPreferenceClaimState = z.infer<
 >;
 export type ActiveReuseProducer = z.infer<typeof activeReuseProducerSchema>;
 export type HeldSandboxState = z.infer<typeof heldSandboxStateSchema>;
-export type HeldWorkspaceState = z.infer<typeof heldWorkspaceStateSchema>;
 export type HeldHomeState = z.infer<typeof heldHomeStateSchema>;
 export type ExecutionContext = z.infer<typeof executionContextSchema>;
 export type StoredExecutionContext = z.infer<
   typeof storedExecutionContextSchema
 >;
 export type PiModelConfig = z.infer<typeof piModelConfigSchema>;
-export type PiModelConfigLegacy = z.infer<typeof piModelConfigLegacySchema>;
 export type PiModelConfigV2 = z.infer<typeof piModelConfigV2Schema>;
 export type PiModelConfigV3 = z.infer<typeof piModelConfigV3Schema>;
 export type PiModelConfigV5 = z.infer<typeof piModelConfigV5Schema>;

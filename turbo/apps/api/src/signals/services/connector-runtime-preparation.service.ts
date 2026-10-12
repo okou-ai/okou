@@ -52,6 +52,18 @@ export function compactRecord<T>(
   return Object.keys(values).length > 0 ? values : undefined;
 }
 
+export function mergeRecords<T>(
+  ...records: readonly (Record<string, T> | undefined)[]
+): Record<string, T> | undefined {
+  const merged: Record<string, T> = {};
+  for (const record of records) {
+    if (record) {
+      Object.assign(merged, record);
+    }
+  }
+  return compactRecord(merged);
+}
+
 export type CustomConnectorRuntimeDataRows = readonly {
   readonly connector: CustomConnectorExecutionDefinition;
   readonly values: readonly CustomConnectorStoredValueRow[];

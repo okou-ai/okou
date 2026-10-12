@@ -22,13 +22,11 @@ import {
 import { configureNativeCliArtifact } from "./helpers/chat-events-fixture";
 import { createRouteMocks } from "./helpers/route-test";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const runs = createRunsApi(context);
-const storages = createStoragesBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
 
 function objectStore() {
@@ -177,7 +175,9 @@ async function publishOwnedCleanupMemory(
   }
   const headers = { authorization: `Bearer ${execution.sandboxToken}` };
   const s3 = objectStore();
-  storages.mockStoragePresignedUrls();
+  context.mocks.s3.getSignedUrl.mockResolvedValue(
+    "https://r2.example.com/storages/presigned?sig=bdd",
+  );
   const files = [storageTextFile("content.txt", "retained storage content")];
   const prepared = await webhooks.requestAgentStoragePrepare(
     { runId: run.runId, storageId: memory.storageId, files },

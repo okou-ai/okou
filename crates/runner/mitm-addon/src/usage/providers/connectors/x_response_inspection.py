@@ -5,7 +5,7 @@ responses and publishes parser-owned flow metadata for X usage reporting.
 """
 
 import urllib.parse
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import TypedDict
 
 from mitmproxy import http
@@ -207,9 +207,21 @@ class _NdjsonExtractor:
         self._discarding_overlong_line = False
         self._finished = False
         self._on_row = on_row
+        self._row_extractor = _create_x_ndjson_row_extractor()
 
     def feed(self, chunk: bytes) -> None:
         """Process one decoded response-body chunk."""
+        for _ in self.feed_steps(chunk):
+            pass
+
+    def feed_steps(self, chunk: bytes) -> Iterator[None]:
+        """Yield after each bounded row or partial/discarded line fragment.
+
+        Response streaming shares a small step quantum across every decoded
+        feed in a wire callback. Counting blank and invalid lines also bounds
+        floods that never invoke the reporter. Each row retains its existing
+        syntax/identity limits; partial fragments are decoder-chunk bounded.
+        """
         start = 0
         while start < len(chunk):
             newline = chunk.find(b"\n", start)
@@ -218,9 +230,11 @@ class _NdjsonExtractor:
 
             if self._discarding_overlong_line:
                 if newline == -1:
+                    yield
                     return
                 self._discarding_overlong_line = False
                 start = newline + 1
+                yield
                 continue
 
             if len(self._line_buf) + fragment_len > _MAX_NDJSON_LINE_BYTES:
@@ -228,18 +242,22 @@ class _NdjsonExtractor:
                 self.state["lines_failed"] += 1
                 if newline == -1:
                     self._discarding_overlong_line = True
+                    yield
                     return
                 start = newline + 1
+                yield
                 continue
 
             self._line_buf.extend(chunk[start:end])
             if newline == -1:
+                yield
                 return
 
             line = bytes(self._line_buf)
             self._line_buf.clear()
             self._parse_line(line)
             start = newline + 1
+            yield
 
     def finish(self) -> None:
         """Finalize a complete trailing line that was not newline-terminated."""
@@ -260,9 +278,12 @@ class _NdjsonExtractor:
         line = raw_line.rstrip(b"\r")
         if not line:
             return  # keep-alive blank line
-        extractor = _create_x_ndjson_row_extractor()
+        # The observation configuration is fixed for this stream; each row
+        # still gets fresh syntax, observations, and work-budget state.
+        extractor = self._row_extractor
         extractor.feed(line)
         extracted = extractor.finish()
+        extractor.reset()
         if not extracted.complete:
             self.state["lines_failed"] += 1
             return
@@ -388,6 +409,7 @@ def create_response_parser(
 
             return ConnectorResponseParser(
                 feed=extractor.feed,
+                feed_steps=extractor.feed_steps,
                 report_on_interruption=True,
                 finish=extractor.finish,
                 finish_decode_error=finish_ndjson_decode_error,

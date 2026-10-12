@@ -259,20 +259,22 @@ describe("POST /api/billing/concurrency-checkout", () => {
     await fixture.run(async () => {
       mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
 
-      const response = await accept(
-        setupApp({
-          context,
-          routes: billingConcurrencyCheckoutRoutes,
-        })(billingConcurrencyCheckoutContract).create({
-          body: {
-            quantity: 3,
-            successUrl: `${APP_ORIGIN}/billing?concurrency=success`,
-            cancelUrl: `${APP_ORIGIN}/billing?concurrency=canceled`,
-          },
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [400],
-      );
+      const response = await fixture.run(() => {
+        return accept(
+          setupApp({
+            context,
+            routes: billingConcurrencyCheckoutRoutes,
+          })(billingConcurrencyCheckoutContract).create({
+            body: {
+              quantity: 3,
+              successUrl: `${APP_ORIGIN}/billing?concurrency=success`,
+              cancelUrl: `${APP_ORIGIN}/billing?concurrency=canceled`,
+            },
+            headers: { authorization: "Bearer clerk-session" },
+          }),
+          [400],
+        );
+      });
 
       expect(response.body).toStrictEqual({
         error: {

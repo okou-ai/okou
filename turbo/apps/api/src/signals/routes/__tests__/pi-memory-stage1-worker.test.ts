@@ -36,6 +36,6 @@ describe("Pi memory public boundaries", () => {
         .map(({ model }) => {
           return model;
         }),
-    ).toStrictEqual([null]);
+    ).toStrictEqual(["auto"]);
   });
 });

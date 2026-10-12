@@ -3,6 +3,7 @@ import type {
   TeamsInboundAttachment,
 } from "@okouai/api-contracts/contracts/teams-bot";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import type {
   ChatTeamsMessageFile,
   ChatTeamsMessageFiles,
@@ -809,7 +810,7 @@ const teamsModelPickerState$ = command(
           return {
             model: runModel.model,
             label: runModel.modelLabel,
-            isDefault: runModel.model === null,
+            isDefault: runModel.model === AUTO_SELECTED_MODEL,
           };
         })
         .slice(0, TEAMS_MODEL_PICKER_MAX_OPTIONS),

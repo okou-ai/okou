@@ -9,7 +9,7 @@ use crate::http::HttpClient;
 use crate::run_context::GuestRuntime;
 use crate::session_metadata::CapturedSessionMetadata;
 use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
-use api_contracts::generated::types::webhooks::agent::{checkpoints, complete};
+use api_contracts::generated::types::webhooks::agent::complete;
 use guest_telemetry::log_info;
 use guest_telemetry::telemetry::record_sandbox_op;
 use std::borrow::Cow;
@@ -34,7 +34,7 @@ impl FinalizationMode {
     fn log_label(self) -> &'static str {
         match self {
             Self::Success => "completion",
-            Self::Recovery => "recovery checkpoint",
+            Self::Recovery => "recovery finalization",
         }
     }
 
@@ -46,7 +46,7 @@ impl FinalizationMode {
 struct FinalizationInputs<'a> {
     run_id: &'a str,
     framework: env::Framework,
-    session_history_limits: session_history::CheckpointSessionHistoryLimits,
+    session_history_limits: session_history::SessionHistoryLimits,
     artifact_entries: &'a [env::ArtifactEnv],
     session_metadata: &'a CapturedSessionMetadata,
     final_session_history_identity_file: Cow<'a, str>,
@@ -62,7 +62,7 @@ impl<'a> FinalizationInputs<'a> {
         Self {
             run_id: &runtime.config.run_id,
             framework: runtime.config.framework,
-            session_history_limits: session_history::CheckpointSessionHistoryLimits::Production,
+            session_history_limits: session_history::SessionHistoryLimits::Production,
             artifact_entries: &runtime.config.artifacts,
             session_metadata,
             final_session_history_identity_file: Cow::Borrowed(
@@ -74,11 +74,11 @@ impl<'a> FinalizationInputs<'a> {
     }
 }
 
-/// Checkpoint metadata and local state awaiting atomic completion acknowledgement.
+/// Native history and output metadata and local state awaiting atomic completion acknowledgement.
 pub struct PreparedFinalization {
     request: complete::RequestCompletion,
     mode: FinalizationMode,
-    uploaded_history: Option<session_history::UploadedCheckpointSessionHistory>,
+    uploaded_history: Option<session_history::UploadedSessionHistory>,
     framework: env::Framework,
     final_session_history_identity_file: String,
     total_started_at: Instant,
@@ -126,7 +126,7 @@ impl PreparedFinalization {
     }
 }
 
-/// Prepare a checkpoint after a successful run using the explicit runtime snapshot.
+/// Prepare finalization after a successful run using the explicit runtime snapshot.
 pub async fn prepare_finalization_for_runtime(
     runtime: &GuestRuntime,
     session_metadata: &CapturedSessionMetadata,
@@ -135,24 +135,23 @@ pub async fn prepare_finalization_for_runtime(
     prepare_finalization_with_inputs(&runtime.http, &inputs).await
 }
 
-/// Prepare a checkpoint with bounded session-history limits for integration tests.
+/// Prepare finalization with bounded session-history limits for integration tests.
 #[doc(hidden)]
 pub async fn prepare_finalization_for_runtime_with_history_limits_for_test(
     runtime: &GuestRuntime,
     session_metadata: &CapturedSessionMetadata,
     candidate_max_bytes: u64,
-    checkpoint_max_bytes: u64,
+    history_max_bytes: u64,
 ) -> Result<PreparedFinalization, AgentError> {
     let mut inputs = FinalizationInputs::from_runtime(runtime, session_metadata);
-    inputs.session_history_limits =
-        session_history::CheckpointSessionHistoryLimits::BoundedForTest {
-            candidate_max_bytes,
-            checkpoint_max_bytes,
-        };
+    inputs.session_history_limits = session_history::SessionHistoryLimits::BoundedForTest {
+        candidate_max_bytes,
+        history_max_bytes,
+    };
     prepare_finalization_with_inputs(&runtime.http, &inputs).await
 }
 
-/// Prepare a best-effort recovery checkpoint using the explicit runtime snapshot.
+/// Prepare best-effort recovery finalization using the explicit runtime snapshot.
 pub async fn prepare_recovery_finalization_for_runtime(
     runtime: &GuestRuntime,
     session_metadata: &CapturedSessionMetadata,
@@ -161,20 +160,19 @@ pub async fn prepare_recovery_finalization_for_runtime(
     prepare_recovery_finalization_with_inputs(&runtime.http, &inputs).await
 }
 
-/// Prepare a recovery checkpoint with bounded session-history limits for integration tests.
+/// Prepare recovery finalization with bounded session-history limits for integration tests.
 #[doc(hidden)]
 pub async fn prepare_recovery_finalization_for_runtime_with_history_limits_for_test(
     runtime: &GuestRuntime,
     session_metadata: &CapturedSessionMetadata,
     candidate_max_bytes: u64,
-    checkpoint_max_bytes: u64,
+    history_max_bytes: u64,
 ) -> Result<PreparedFinalization, AgentError> {
     let mut inputs = FinalizationInputs::from_runtime(runtime, session_metadata);
-    inputs.session_history_limits =
-        session_history::CheckpointSessionHistoryLimits::BoundedForTest {
-            candidate_max_bytes,
-            checkpoint_max_bytes,
-        };
+    inputs.session_history_limits = session_history::SessionHistoryLimits::BoundedForTest {
+        candidate_max_bytes,
+        history_max_bytes,
+    };
     prepare_recovery_finalization_with_inputs(&runtime.http, &inputs).await
 }
 
@@ -214,20 +212,7 @@ async fn prepare_finalization_for_mode(
 
 struct PreparedFinalizationParts {
     request: complete::RequestCompletion,
-    uploaded_history: Option<session_history::UploadedCheckpointSessionHistory>,
-}
-
-fn completion_history_disposition(
-    disposition: checkpoints::RequestCliAgentSessionHistoryDisposition,
-) -> complete::RequestCompletionCliAgentSessionHistoryDisposition {
-    match disposition {
-        checkpoints::RequestCliAgentSessionHistoryDisposition::DiscardedOversized => {
-            complete::RequestCompletionCliAgentSessionHistoryDisposition::DiscardedOversized
-        }
-        checkpoints::RequestCliAgentSessionHistoryDisposition::Unavailable => {
-            complete::RequestCompletionCliAgentSessionHistoryDisposition::Unavailable
-        }
-    }
+    uploaded_history: Option<session_history::UploadedSessionHistory>,
 }
 
 fn completion_missing_root_policy(
@@ -243,19 +228,6 @@ fn completion_missing_root_policy(
     }
 }
 
-fn completion_artifact_snapshot(
-    snapshot: checkpoints::ArtifactSnapshot,
-) -> complete::RequestCompletionArtifactSnapshot {
-    complete::RequestCompletionArtifactSnapshot {
-        name: snapshot.name,
-        version: snapshot.version,
-        mount_path: snapshot.mount_path,
-        missing_root_policy: snapshot
-            .missing_root_policy
-            .map(completion_missing_root_policy),
-    }
-}
-
 async fn prepare_finalization_impl(
     http: &HttpClient,
     mode: FinalizationMode,
@@ -268,11 +240,10 @@ async fn prepare_finalization_impl(
     // path performs blocking local preparation before web API work; the
     // artifact path performs blocking file preparation before VAS work. Wait
     // for both results even after one fails so a started blocking operation is
-    // not detached from the checkpoint future.
-    let history_inputs =
-        session_history::CheckpointSessionHistoryInputs::from_checkpoint(mode, inputs);
-    let (artifact_snapshots, checkpoint_history) = tokio::join!(
-        artifact::snapshot_artifact_entries_for_checkpoint(
+    // not detached from the finalization future.
+    let history_inputs = session_history::SessionHistoryInputs::from_finalization(mode, inputs);
+    let (artifact_snapshots, finalization_history) = tokio::join!(
+        artifact::snapshot_artifact_entries(
             http,
             inputs.run_id,
             inputs.artifact_entries,
@@ -282,7 +253,7 @@ async fn prepare_finalization_impl(
         ),
         session_history::prepare_and_upload_session_history(http, inputs.run_id, history_inputs),
     );
-    let checkpoint_history = checkpoint_history?;
+    let finalization_history = finalization_history?;
     let artifact_snapshots = artifact_snapshots?;
 
     let cli_agent_type = inputs.framework.agent_type();
@@ -291,30 +262,26 @@ async fn prepare_finalization_impl(
         cli_agent_session_history_hash,
         cli_agent_session_history_disposition,
         uploaded_history,
-    ) = match checkpoint_history {
-        session_history::CheckpointSessionHistory::Uploaded(history) => {
+    ) = match finalization_history {
+        session_history::SessionHistoryOutcome::Uploaded(history) => {
             let session_id = history.cli_agent_session_id.clone();
             let history_hash = history.history_hash.clone();
             (session_id, Some(history_hash), None, Some(history))
         }
-        session_history::CheckpointSessionHistory::DiscardedOversized {
+        session_history::SessionHistoryOutcome::DiscardedOversized {
             cli_agent_session_id,
         } => (
             cli_agent_session_id,
             None,
-            Some(completion_history_disposition(
-                checkpoints::RequestCliAgentSessionHistoryDisposition::DiscardedOversized,
-            )),
+            Some(complete::RequestCompletionCliAgentSessionHistoryDisposition::DiscardedOversized),
             None,
         ),
-        session_history::CheckpointSessionHistory::Unavailable {
+        session_history::SessionHistoryOutcome::Unavailable {
             cli_agent_session_id,
         } => (
             cli_agent_session_id,
             None,
-            Some(completion_history_disposition(
-                checkpoints::RequestCliAgentSessionHistoryDisposition::Unavailable,
-            )),
+            Some(complete::RequestCompletionCliAgentSessionHistoryDisposition::Unavailable),
             None,
         ),
     };
@@ -323,12 +290,7 @@ async fn prepare_finalization_impl(
         cli_agent_session_id,
         cli_agent_session_history_hash,
         cli_agent_session_history_disposition,
-        artifact_snapshots: artifact_snapshots.map(|snapshots| {
-            snapshots
-                .into_iter()
-                .map(completion_artifact_snapshot)
-                .collect()
-        }),
+        artifact_snapshots,
         volume_versions_snapshot: None,
     };
     Ok(PreparedFinalizationParts {
@@ -350,26 +312,26 @@ mod tests {
     #[cfg(unix)]
     use tokio::io::{AsyncBufReadExt, BufReader};
 
-    struct CheckpointFilesGuard {
+    struct FinalizationFilesGuard {
         guest_paths: crate::paths::GuestPaths,
     }
 
-    impl CheckpointFilesGuard {
+    impl FinalizationFilesGuard {
         fn new(guest_paths: &crate::paths::GuestPaths) -> Self {
-            cleanup_checkpoint_files(guest_paths);
+            cleanup_finalization_files(guest_paths);
             Self {
                 guest_paths: guest_paths.clone(),
             }
         }
     }
 
-    impl Drop for CheckpointFilesGuard {
+    impl Drop for FinalizationFilesGuard {
         fn drop(&mut self) {
-            cleanup_checkpoint_files(&self.guest_paths);
+            cleanup_finalization_files(&self.guest_paths);
         }
     }
 
-    fn cleanup_checkpoint_files(guest_paths: &crate::paths::GuestPaths) {
+    fn cleanup_finalization_files(guest_paths: &crate::paths::GuestPaths) {
         let _ = std::fs::remove_file(guest_paths.session_id_file());
     }
 
@@ -397,12 +359,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn checkpoint_missing_mount_fails_before_final_completion() {
+    async fn finalization_missing_mount_fails_before_final_completion() {
         let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
         let server = MockServer::start();
         let dir = tempfile::tempdir().unwrap();
         let guest_paths = crate::paths::GuestPaths::from_runtime_dir(dir.path().join("runtime"));
-        let _files_guard = CheckpointFilesGuard::new(&guest_paths);
+        let _files_guard = FinalizationFilesGuard::new(&guest_paths);
 
         let _history_prepare = server.mock(|when, then| {
             when.method(POST)
@@ -436,12 +398,12 @@ mod tests {
             missing_root_policy: None,
         }];
         let session_metadata =
-            CapturedSessionMetadata::for_test("session-checkpoint-missing-mount", None);
+            CapturedSessionMetadata::for_test("session-finalization-missing-mount", None);
 
         let inputs = FinalizationInputs {
-            run_id: "checkpoint-missing-mount",
+            run_id: "finalization-missing-mount",
             framework: env::Framework::ClaudeCode,
-            session_history_limits: session_history::CheckpointSessionHistoryLimits::Production,
+            session_history_limits: session_history::SessionHistoryLimits::Production,
             artifact_entries: &entries,
             session_metadata: &session_metadata,
             final_session_history_identity_file: guest_paths
@@ -454,7 +416,7 @@ mod tests {
         let err = prepare_finalization_impl(&http, FinalizationMode::Success, &inputs)
             .await
             .err()
-            .expect("missing artifact mount should fail checkpoint preparation");
+            .expect("missing artifact mount should fail finalization preparation");
 
         assert!(
             err.to_string().contains("Failed to walk artifact files"),
@@ -488,7 +450,7 @@ mod tests {
         .unwrap();
         let dir = tempfile::tempdir().unwrap();
         let guest_paths = crate::paths::GuestPaths::from_runtime_dir(dir.path().join("runtime"));
-        let _files_guard = CheckpointFilesGuard::new(&guest_paths);
+        let _files_guard = FinalizationFilesGuard::new(&guest_paths);
         let memory_root = dir.path().join("memory");
         std::fs::create_dir_all(&memory_root).unwrap();
         std::fs::write(memory_root.join("MEMORY.md"), "partially applied").unwrap();
@@ -518,7 +480,7 @@ mod tests {
         let inputs = FinalizationInputs {
             run_id: "maintenance-run-success",
             framework: env::Framework::Pi,
-            session_history_limits: session_history::CheckpointSessionHistoryLimits::Production,
+            session_history_limits: session_history::SessionHistoryLimits::Production,
             artifact_entries: &entries,
             session_metadata: &session_metadata,
             final_session_history_identity_file: guest_paths
@@ -531,12 +493,12 @@ mod tests {
         let error = prepare_finalization_with_inputs(&http, &inputs)
             .await
             .err()
-            .expect("success checkpoint without a validation marker must fail");
+            .expect("success finalization without a validation marker must fail");
 
         assert!(
             error
                 .to_string()
-                .contains("maintenance checkpoint validation")
+                .contains("maintenance publication validation")
         );
         prepare.assert_calls(0);
         commit.assert_calls(0);
@@ -544,7 +506,7 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn maintenance_recovery_checkpoint_preserves_parent_after_partial_apply() {
+    async fn maintenance_recovery_finalization_preserves_parent_after_partial_apply() {
         let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
         let server = MockServer::start();
         let prepare = server.mock(|when, then| {
@@ -567,7 +529,7 @@ mod tests {
         .unwrap();
         let dir = tempfile::tempdir().unwrap();
         let guest_paths = crate::paths::GuestPaths::from_runtime_dir(dir.path().join("runtime"));
-        let _files_guard = CheckpointFilesGuard::new(&guest_paths);
+        let _files_guard = FinalizationFilesGuard::new(&guest_paths);
         let memory_root = dir.path().join("memory");
         std::fs::create_dir_all(memory_root.join("skills/interrupted")).unwrap();
         // Block in the shell itself so interruption cannot orphan a sleeper.
@@ -645,7 +607,7 @@ printf late > "$1/memory_summary.md""#,
         let inputs = FinalizationInputs {
             run_id: "maintenance-run-recovery",
             framework: env::Framework::Pi,
-            session_history_limits: session_history::CheckpointSessionHistoryLimits::Production,
+            session_history_limits: session_history::SessionHistoryLimits::Production,
             artifact_entries: &entries,
             session_metadata: &session_metadata,
             final_session_history_identity_file: guest_paths
@@ -671,7 +633,7 @@ printf late > "$1/memory_summary.md""#,
     }
 
     #[tokio::test]
-    async fn ordinary_recovery_checkpoint_still_snapshots_changed_artifacts() {
+    async fn ordinary_recovery_finalization_still_snapshots_changed_artifacts() {
         let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
         let server = MockServer::start();
         let prepare = server.mock(|when, then| {
@@ -694,7 +656,7 @@ printf late > "$1/memory_summary.md""#,
         .unwrap();
         let dir = tempfile::tempdir().unwrap();
         let guest_paths = crate::paths::GuestPaths::from_runtime_dir(dir.path().join("runtime"));
-        let _files_guard = CheckpointFilesGuard::new(&guest_paths);
+        let _files_guard = FinalizationFilesGuard::new(&guest_paths);
         let workspace_root = dir.path().join("workspace");
         std::fs::create_dir_all(&workspace_root).unwrap();
         std::fs::write(workspace_root.join("result.txt"), "recover me").unwrap();
@@ -709,7 +671,7 @@ printf late > "$1/memory_summary.md""#,
         let inputs = FinalizationInputs {
             run_id: "ordinary-recovery-run",
             framework: env::Framework::ClaudeCode,
-            session_history_limits: session_history::CheckpointSessionHistoryLimits::Production,
+            session_history_limits: session_history::SessionHistoryLimits::Production,
             artifact_entries: &entries,
             session_metadata: &session_metadata,
             final_session_history_identity_file: guest_paths
@@ -729,11 +691,11 @@ printf late > "$1/memory_summary.md""#,
     }
 
     #[tokio::test]
-    async fn checkpoint_reuses_codex_zstd_session_history() {
+    async fn finalization_reuses_codex_zstd_session_history() {
         let server = MockServer::start();
         let dir = tempfile::tempdir().unwrap();
         let guest_paths = crate::paths::GuestPaths::from_runtime_dir(dir.path().join("runtime"));
-        let _files_guard = CheckpointFilesGuard::new(&guest_paths);
+        let _files_guard = FinalizationFilesGuard::new(&guest_paths);
         let thread_id = "019e9154-c304-70f0-adde-36efb1be1701";
         let history =
             b"{\"type\":\"session_meta\",\"payload\":{\"timestamp\":\"2026-07-02T10:00:00Z\"}}\n";
@@ -757,7 +719,7 @@ printf late > "$1/memory_summary.md""#,
             when.method(POST)
                 .path("/api/webhooks/agent/session-history/prepare")
                 .json_body(json!({
-                    "runId": "checkpoint-codex-zstd-reuse",
+                    "runId": "finalization-codex-zstd-reuse",
                     "hash": history_hash,
                     "rawSize": history.len() as u64,
                     "encodedSize": compressed.len() as u64,
@@ -796,9 +758,9 @@ printf late > "$1/memory_summary.md""#,
             ),
         );
         let inputs = FinalizationInputs {
-            run_id: "checkpoint-codex-zstd-reuse",
+            run_id: "finalization-codex-zstd-reuse",
             framework: env::Framework::Codex,
-            session_history_limits: session_history::CheckpointSessionHistoryLimits::Production,
+            session_history_limits: session_history::SessionHistoryLimits::Production,
             artifact_entries: &[],
             session_metadata: &session_metadata,
             final_session_history_identity_file: guest_paths

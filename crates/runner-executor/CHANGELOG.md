@@ -1,5 +1,110 @@
 # Changelog
 
+## [0.10.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.0...runner-executor-v0.10.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* accept home startup telemetry and attribute rejections ([#39175](https://github.com/okou-ai/okou/issues/39175)) ([acda46d](https://github.com/okou-ai/okou/commit/acda46d74a3bd83fba38e0671cfd606f85ab8401))
+
+## [0.10.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.9.1...runner-executor-v0.10.0) (2026-10-12)
+
+
+### Features
+
+* **ssh:** integrate native tailscale saved-host transport ([#39018](https://github.com/okou-ai/okou/issues/39018)) ([e8f8c83](https://github.com/okou-ai/okou/commit/e8f8c83186b0d6881c546048b7198f6dd2d96181))
+
+
+### Refactoring
+
+* **runner-executor:** converge pre-spawn exit cleanup ([#39083](https://github.com/okou-ai/okou/issues/39083)) ([a877797](https://github.com/okou-ai/okou/commit/a877797d84fe928b7314ee2dda31ec94c35084ec))
+* **runner:** retire workspace protocol and application sql ([#38837](https://github.com/okou-ai/okou/issues/38837)) ([a932f1f](https://github.com/okou-ai/okou/commit/a932f1f86ae10eb624fa3ff3bccc851ba4809a7e))
+
+## [0.9.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.9.0...runner-executor-v0.9.1) (2026-10-11)
+
+## [0.9.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.8.2...runner-executor-v0.9.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** complete home cache disk visibility ([#38775](https://github.com/okou-ai/okou/issues/38775)) ([30c5539](https://github.com/okou-ai/okou/commit/30c5539999b0a90dfb693f0cc92c2cd29e6882d2))
+
+
+### Bug Fixes
+
+* remove retired connector references from app and tests ([#38802](https://github.com/okou-ai/okou/issues/38802)) ([63a43d9](https://github.com/okou-ai/okou/commit/63a43d9219560c0dfe29048b023c7910417a9c50))
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+
+## [0.8.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.8.1...runner-executor-v0.8.2) (2026-10-10)
+
+
+### Refactoring
+
+* name native history and pi memory publications explicitly ([#38679](https://github.com/okou-ai/okou/issues/38679)) ([e5b1d4e](https://github.com/okou-ai/okou/commit/e5b1d4ed7bd2f8b54e01352e762e1f9eec5c3a39))
+* **runner-storage:** centralize bounded object-download retry scheduling ([#38730](https://github.com/okou-ai/okou/issues/38730)) ([1e78c25](https://github.com/okou-ai/okou/commit/1e78c25bde7f27f07c062f28021f8e656d4dfebb))
+
+## [0.8.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.8.0...runner-executor-v0.8.1) (2026-10-10)
+
+## [0.8.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.7.4...runner-executor-v0.8.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+
+### Bug Fixes
+
+* **runner:** bound active-input shutdown under guest backpressure ([#38591](https://github.com/okou-ai/okou/issues/38591)) ([648671b](https://github.com/okou-ai/okou/commit/648671bd07f959e25864029a81dbab13edef83c7))
+
+## [0.7.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.7.3...runner-executor-v0.7.4) (2026-10-10)
+
+## [0.7.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.7.2...runner-executor-v0.7.3) (2026-10-10)
+
+## [0.7.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.7.1...runner-executor-v0.7.2) (2026-10-10)
+
+
+### Refactoring
+
+* **pi:** retire unversioned model config execution ([#38449](https://github.com/okou-ai/okou/issues/38449)) ([c628473](https://github.com/okou-ai/okou/commit/c62847319cb3ebbd41259d662f47905a1cb39863))
+
+
+### Performance Improvements
+
+* **test:** avoid rebuilding owned fixture buffers ([#38450](https://github.com/okou-ai/okou/issues/38450)) ([f5ad1ba](https://github.com/okou-ai/okou/commit/f5ad1ba1e2b4d6745ed80c869bf4fb9b222cfafc))
+
+## [0.7.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.7.0...runner-executor-v0.7.1) (2026-10-09)
+
+## [0.7.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.6.3...runner-executor-v0.7.0) (2026-10-09)
+
+
+### Features
+
+* **pi:** route openrouter through chat completions behind a switch ([#37987](https://github.com/okou-ai/okou/issues/37987)) ([df136ee](https://github.com/okou-ai/okou/commit/df136ee82546c76d79575e203c7257371ea5b3cb))
+* prepare model identity compatibility without switching writes ([#38092](https://github.com/okou-ai/okou/issues/38092)) ([21177df](https://github.com/okou-ai/okou/commit/21177dfd37bc19114098a628a094adb67fb60db0))
+
+
+### Bug Fixes
+
+* **guest-storage-apply:** fail run preparation on injection errors ([#38070](https://github.com/okou-ai/okou/issues/38070)) ([496599f](https://github.com/okou-ai/okou/commit/496599f7faf42b8c0ae425c7af3eea457a571fd0))
+* **runner:** reconcile retained state and scrub terminal private files ([#38153](https://github.com/okou-ai/okou/issues/38153)) ([9824493](https://github.com/okou-ai/okou/commit/9824493f88b89ad219b243438d635e6cd085514b))
+
+
+### Refactoring
+
+* assemble current run inputs without agent configuration ([#38004](https://github.com/okou-ai/okou/issues/38004)) ([22efd4b](https://github.com/okou-ai/okou/commit/22efd4b6b34872c0585a0d4c3778cb3b59d9d100))
+* remove all remaining custom model mode awareness ([#37856](https://github.com/okou-ai/okou/issues/37856)) ([f383835](https://github.com/okou-ai/okou/commit/f3838353ba0455ec7d57dfa2d0974e34a44796ff))
+* remove custom provider and gateway traces ([#37890](https://github.com/okou-ai/okou/issues/37890)) ([f59490d](https://github.com/okou-ai/okou/commit/f59490d298d2c0b3c3b903d005846e13524bc59e))
+* remove remaining model provider residue ([#37870](https://github.com/okou-ai/okou/issues/37870)) ([a93133b](https://github.com/okou-ai/okou/commit/a93133b0493858a39924a1206ff5a5677e43cad6))
+
+## [0.6.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.6.2...runner-executor-v0.6.3) (2026-10-09)
+
+## [0.6.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.6.1...runner-executor-v0.6.2) (2026-10-09)
+
 ## [0.6.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.6.0...runner-executor-v0.6.1) (2026-10-09)
 
 

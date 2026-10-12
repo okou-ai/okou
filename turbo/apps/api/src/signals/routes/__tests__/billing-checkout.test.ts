@@ -656,40 +656,44 @@ describe("POST /api/billing/checkout", () => {
           },
         };
       };
-      context.mocks.stripe.subscriptions.create
-        .mockRejectedValueOnce(new Error("Stripe subscription create failed"))
-        .mockImplementation((params) => {
-          const { customer } = z.object({ customer: z.string() }).parse(params);
-          context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-            id: subscriptionId,
-            customer,
-            status: "active",
-            metadata: {},
-            cancel_at_period_end: false,
-            cancel_at: null,
-            schedule: null,
-            trial_end: null,
-            items: {
-              data: [
-                {
-                  price: { id: TEST_PRICE_TEAM },
-                  current_period_end: periodEnd,
-                },
-              ],
-            },
-          });
-          context.mocks.stripe.invoices.pay.mockResolvedValue({
-            ...operationInvoice(customer),
-            status: "paid",
-          });
-          return Promise.resolve({
-            id: subscriptionId,
-            customer,
-            status: "incomplete",
-            metadata: {},
-            latest_invoice: operationInvoice(customer),
-          });
+      let creationFailed = false;
+      context.mocks.stripe.subscriptions.create.mockImplementation((params) => {
+        if (!creationFailed) {
+          creationFailed = true;
+          return Promise.reject(new Error("Stripe subscription create failed"));
+        }
+        const { customer } = z.object({ customer: z.string() }).parse(params);
+        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+          id: subscriptionId,
+          customer,
+          status: "active",
+          metadata: {},
+          cancel_at_period_end: false,
+          cancel_at: null,
+          schedule: null,
+          trial_end: null,
+          items: {
+            data: [
+              {
+                price: { id: TEST_PRICE_TEAM },
+                current_period_end: periodEnd,
+              },
+            ],
+          },
         });
+        context.mocks.stripe.invoices.pay.mockResolvedValue({
+          ...operationInvoice(customer),
+          status: "paid",
+        });
+        fixture.captureExternalState();
+        return Promise.resolve({
+          id: subscriptionId,
+          customer,
+          status: "incomplete",
+          metadata: {},
+          latest_invoice: operationInvoice(customer),
+        });
+      });
       const client = setupApp({ context, routes: billingCheckoutRoutes })(
         billingCheckoutContract,
       );
@@ -699,13 +703,15 @@ describe("POST /api/billing/checkout", () => {
         successUrl: `${APP_ORIGIN}/billing?billing=success`,
         cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
       };
-      const preview = await accept(
-        client.create({
-          body: purchaseBody,
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
+      const preview = await fixture.run(() => {
+        return accept(
+          client.create({
+            body: purchaseBody,
+            headers: { authorization: "Bearer clerk-session" },
+          }),
+          [200],
+        );
+      });
       if (!("previewToken" in preview.body)) {
         throw new Error("Expected a Plan purchase preview");
       }
@@ -714,15 +720,23 @@ describe("POST /api/billing/checkout", () => {
         headers: { authorization: "Bearer clerk-session" },
       };
 
-      await accept(client.create(confirmRequest), [500]);
+      await fixture.run(() => {
+        return accept(client.create(confirmRequest), [500]);
+      });
 
-      await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+      await expect(
+        fixture.run(() => {
+          return readBillingStatus(fixture);
+        }),
+      ).resolves.toMatchObject({
         tier: "pro",
         subscriptionStatus: "atom_grant",
         hasSubscription: false,
       });
 
-      const confirmation = await accept(client.create(confirmRequest), [200]);
+      const confirmation = await fixture.run(() => {
+        return accept(client.create(confirmRequest), [200]);
+      });
 
       expect(confirmation.body).toStrictEqual({
         status: "completed",
@@ -731,7 +745,11 @@ describe("POST /api/billing/checkout", () => {
       expect(context.mocks.stripe.subscriptions.create).toHaveBeenCalledTimes(
         2,
       );
-      await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+      await expect(
+        fixture.run(() => {
+          return readBillingStatus(fixture);
+        }),
+      ).resolves.toMatchObject({
         tier: "team",
         subscriptionStatus: "active",
         hasSubscription: true,

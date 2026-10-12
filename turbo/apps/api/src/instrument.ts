@@ -8,6 +8,11 @@ import {
 import { registerOTel } from "@vercel/otel";
 
 import { env } from "./lib/env";
+import {
+  filterDiscordOauthSentryBreadcrumb,
+  filterDiscordOauthSentryEvent,
+  isDiscordOauthTelemetryUrl,
+} from "./lib/discord-oauth-telemetry";
 
 const OTEL_SERVICE_NAME = "vm0-api";
 
@@ -50,11 +55,17 @@ function setupSentry() {
       },
     },
     integrations: [
-      httpIntegration({ spans: false, tracePropagation: false }),
+      httpIntegration({
+        spans: false,
+        tracePropagation: false,
+        ignoreIncomingRequestBody: isDiscordOauthTelemetryUrl,
+      }),
       nativeNodeFetchIntegration({ tracePropagation: false }),
     ],
     release,
     sendDefaultPii: false,
+    beforeSend: filterDiscordOauthSentryEvent,
+    beforeBreadcrumb: filterDiscordOauthSentryBreadcrumb,
     shutdownTimeout: 500,
     skipOpenTelemetrySetup: true,
     tracesSampleRate: 0,

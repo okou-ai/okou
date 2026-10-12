@@ -14,19 +14,23 @@ use tracing::{info, warn};
 
 use crate::SharedFactory;
 use crate::idle_lifecycle::{
-    IdleDestroyTracker, SharedIdlePool, set_idle_status_snapshot, spawn_idle_destroy_job,
+    IdleCleanupTask, IdleDestroyTracker, SharedIdlePool, set_idle_status_snapshot,
+    spawn_idle_destroy_job,
 };
 use runner_executor::executor::{BlankPoolSelection, BlankPoolSelectionReason};
 use runner_executor::pre_spawn_admission::{BackgroundPreSpawnAdmissionLease, PreSpawnAdmission};
+use runner_lifecycle::home_mount::ensure_home_drive_mounted;
 use runner_lifecycle::idle_pool::{
-    DestroyOutcome, IdleDestroyJob, IdlePool, ParkResult, ParkedIdleCandidate,
+    DestroyOutcome, IdlePool, ParkResult, ParkedIdleCandidate, RetainedIdleDestroyResult,
 };
 use runner_lifecycle::lifecycle::RunnerMode;
 use runner_lifecycle::resource_budget::{
     BudgetLease, ReservationWithHeadroomStatus, ResourceBudget,
 };
 use runner_lifecycle::status::StatusTracker;
-use runner_lifecycle::workspace_mount::ensure_workspace_drive_mounted;
+
+mod guarded;
+pub use guarded::GuardedBlankPoolRequest;
 
 const TARGET_PERCENT: usize = 10;
 const EXACT_IDLE_CAPACITY_YIELD_AGE: Duration = Duration::from_secs(30 * 60);
@@ -36,9 +40,11 @@ const EXACT_IDLE_CAPACITY_YIELD_AGE: Duration = Duration::from_secs(30 * 60);
 pub struct BlankProfile {
     pub vcpu: u32,
     pub memory_mb: u32,
-    pub workspace_disk_mb: u32,
+    pub rootfs_hash: String,
+    pub home_disk_mb: u32,
 }
 
+#[derive(Clone)]
 struct BlankPoolPlan {
     profile_name: String,
     profile: BlankProfile,
@@ -183,12 +189,17 @@ struct BlankPrepareInput {
     device_rate_limits: Option<sandbox::DeviceRateLimits>,
     budget: BlankPrepareBudget,
     pre_spawn_lease: BackgroundPreSpawnAdmissionLease,
-    idle_destroy_tracker: IdleDestroyTracker,
 }
 
 enum BlankPrepareBudget {
     Available(BudgetLease),
-    RetiringExact(Box<IdleDestroyJob>),
+    RetiringExact(IdleCleanupTask<RetainedIdleDestroyResult>),
+}
+
+enum BlankParkOutcome {
+    Parked,
+    Replaced,
+    Rejected,
 }
 
 #[derive(Clone, Copy)]
@@ -419,7 +430,9 @@ impl BlankPoolReplenisher {
                     (
                         inventory,
                         pre_spawn_lease,
-                        BlankPrepareBudget::RetiringExact(Box::new(job)),
+                        BlankPrepareBudget::RetiringExact(
+                            idle_destroy_tracker.spawn_job(job, "blank_pool_aged_exact"),
+                        ),
                         Some(snapshot),
                     )
                 }
@@ -438,7 +451,6 @@ impl BlankPoolReplenisher {
             device_rate_limits: plan.device_rate_limits.clone(),
             budget: prepare_budget,
             pre_spawn_lease,
-            idle_destroy_tracker: idle_destroy_tracker.clone(),
         };
         info!(
             profile = %input.profile_name,
@@ -479,7 +491,7 @@ impl BlankPoolReplenisher {
     ) {
         let Some(plan) = self.plan.as_ref() else {
             if let BlankPrepareResult::Ready { candidate, .. } = result {
-                destroy_candidate(*candidate, "blank_pool_disabled").await;
+                destroy_candidate(*candidate, idle_destroy_tracker, "blank_pool_disabled").await;
             }
             return;
         };
@@ -493,13 +505,33 @@ impl BlankPoolReplenisher {
                     let result = pool.park(*candidate);
                     let snapshot = matches!(result, ParkResult::Parked | ParkResult::Replaced(_))
                         .then(|| pool.status_snapshot());
+                    let result = match result {
+                        ParkResult::Parked => BlankParkOutcome::Parked,
+                        ParkResult::Replaced(job) => {
+                            spawn_idle_destroy_job(
+                                idle_destroy_tracker,
+                                job,
+                                "blank_pool_replaced",
+                            );
+                            BlankParkOutcome::Replaced
+                        }
+                        ParkResult::Rejected(rejected) => {
+                            let (payload, lease) = rejected.into_active_destroy_parts();
+                            drop(idle_destroy_tracker.spawn_payload_retaining_lease(
+                                payload,
+                                lease,
+                                "blank_pool_rejected",
+                            ));
+                            BlankParkOutcome::Rejected
+                        }
+                    };
                     (result, snapshot, pool.blank_len())
                 };
                 if let Some(snapshot) = snapshot {
                     set_idle_status_snapshot(status, snapshot).await;
                 }
                 match park_result {
-                    ParkResult::Parked => {
+                    BlankParkOutcome::Parked => {
                         self.diagnostics.ready();
                         info!(
                             target = plan.target,
@@ -512,7 +544,7 @@ impl BlankPoolReplenisher {
                             self.attempt_requested = true;
                         }
                     }
-                    ParkResult::Replaced(evicted) => {
+                    BlankParkOutcome::Replaced => {
                         self.diagnostics.ready();
                         info!(
                             target = plan.target,
@@ -521,13 +553,8 @@ impl BlankPoolReplenisher {
                             outcome = "replaced",
                             "blank sandbox refill completed"
                         );
-                        spawn_idle_destroy_job(
-                            idle_destroy_tracker,
-                            evicted,
-                            "blank_pool_replaced",
-                        );
                     }
-                    ParkResult::Rejected(rejected) => {
+                    BlankParkOutcome::Rejected => {
                         self.diagnostics.unknown();
                         info!(
                             target = plan.target,
@@ -535,16 +562,6 @@ impl BlankPoolReplenisher {
                             retired_exact,
                             outcome = "pool_rejected",
                             "blank sandbox refill suppressed"
-                        );
-                        let (payload, lease) = rejected.into_active_destroy_parts();
-                        idle_destroy_tracker.spawn_cleanup(
-                            async move {
-                                payload
-                                    .finalize_workspace_and_destroy("blank_pool_rejected")
-                                    .await;
-                                drop(lease);
-                            },
-                            "blank_pool_rejected",
                         );
                     }
                 }
@@ -574,14 +591,14 @@ impl BlankPoolReplenisher {
         }
     }
 
-    pub async fn shutdown(mut self) {
+    pub async fn shutdown(mut self, idle_destroy_tracker: &IdleDestroyTracker) {
         if let Some(cancel) = self.task_cancel.as_ref() {
             cancel.cancel();
         }
         if let Some(result) = self.wait_for_preparation().await
             && let BlankPrepareResult::Ready { candidate, .. } = result
         {
-            destroy_candidate(*candidate, "blank_pool_shutdown").await;
+            destroy_candidate(*candidate, idle_destroy_tracker, "blank_pool_shutdown").await;
         }
     }
 }
@@ -656,21 +673,13 @@ async fn prepare_blank_sandbox(
         device_rate_limits,
         budget,
         pre_spawn_lease,
-        idle_destroy_tracker,
     } = input;
     let retired_exact = matches!(&budget, BlankPrepareBudget::RetiringExact(_));
     let mut pre_spawn_lease = Some(pre_spawn_lease);
     let budget_lease = match budget {
         BlankPrepareBudget::Available(lease) => lease,
-        BlankPrepareBudget::RetiringExact(job) => {
-            match retire_exact_before_blank(
-                *job,
-                &cancel,
-                &mut pre_spawn_lease,
-                &idle_destroy_tracker,
-            )
-            .await
-            {
+        BlankPrepareBudget::RetiringExact(cleanup) => {
+            match retire_exact_before_blank(cleanup, &cancel, &mut pre_spawn_lease).await {
                 Ok(lease) => lease,
                 Err(failure) => return BlankPrepareResult::Failed(failure),
             }
@@ -684,8 +693,8 @@ async fn prepare_blank_sandbox(
             memory_mb: profile.memory_mb,
         },
         device_rate_limits: device_rate_limits.clone(),
-        workspace_drive: Some(sandbox::WorkspaceDriveConfig {
-            size_mb: profile.workspace_disk_mb,
+        home_drive: Some(sandbox::HomeDriveConfig {
+            size_mb: profile.home_disk_mb,
             seed_image: None,
         }),
     };
@@ -735,7 +744,7 @@ async fn prepare_blank_sandbox(
     }
 
     match run_background_stage(
-        ensure_workspace_drive_mounted(sandbox.as_ref(), sandbox_id),
+        ensure_home_drive_mounted(sandbox.as_ref(), sandbox_id),
         &cancel,
         &mut pre_spawn_lease,
     )
@@ -746,7 +755,7 @@ async fn prepare_blank_sandbox(
             drop(pre_spawn_lease.take());
             destroy_sandbox(&factory, sandbox).await;
             return BlankPrepareResult::Failed(BlankPrepareFailure {
-                stage: "workspace_mount",
+                stage: "home_mount",
                 error: Some(error.error.to_string()),
             });
         }
@@ -754,7 +763,7 @@ async fn prepare_blank_sandbox(
         | BackgroundStageResult::CancelledAfterStart(_) => {
             destroy_sandbox(&factory, sandbox).await;
             return BlankPrepareResult::Failed(BlankPrepareFailure {
-                stage: "workspace_mount",
+                stage: "home_mount",
                 error: None,
             });
         }
@@ -762,8 +771,8 @@ async fn prepare_blank_sandbox(
             drop(pre_spawn_lease.take());
             destroy_sandbox(&factory, sandbox).await;
             return BlankPrepareResult::Failed(BlankPrepareFailure {
-                stage: "workspace_mount",
-                error: Some("workspace drive mount panicked".into()),
+                stage: "home_mount",
+                error: Some("home drive mount panicked".into()),
             });
         }
     }
@@ -778,6 +787,7 @@ async fn prepare_blank_sandbox(
                     budget_lease,
                     sandbox_id,
                     profile_name,
+                    profile.rootfs_hash,
                     device_rate_limits,
                 )),
                 retired_exact,
@@ -819,24 +829,22 @@ async fn prepare_blank_sandbox(
 }
 
 async fn retire_exact_before_blank(
-    job: IdleDestroyJob,
+    mut cleanup: IdleCleanupTask<RetainedIdleDestroyResult>,
     cancel: &CancellationToken,
     pre_spawn_lease: &mut Option<BackgroundPreSpawnAdmissionLease>,
-    idle_destroy_tracker: &IdleDestroyTracker,
 ) -> Result<BudgetLease, BlankPrepareFailure> {
-    let cleanup = job.run_retaining_lease("blank_pool_aged_exact");
-    tokio::pin!(cleanup);
     let (cancelled, result) = tokio::select! {
         biased;
         _ = cancel.cancelled() => {
             drop(pre_spawn_lease.take());
-            (true, cleanup.await)
+            (true, cleanup.join().await)
         }
-        result = &mut cleanup => (false, result),
+        result = cleanup.join() => (false, result),
     };
-    if result.workspace_cache_promoted {
-        idle_destroy_tracker.notify_reuse_state();
-    }
+    let result = result.map_err(|error| BlankPrepareFailure {
+        stage: "retire_exact",
+        error: Some(format!("aged exact cleanup producer lost: {error}")),
+    })?;
     if cancelled || cancel.is_cancelled() {
         drop(result.budget_lease);
         return Err(BlankPrepareFailure {
@@ -927,10 +935,17 @@ async fn destroy_sandbox(factory: &SharedFactory, mut sandbox: Box<dyn Sandbox>)
     }
 }
 
-async fn destroy_candidate(candidate: ParkedIdleCandidate, context: &'static str) {
+async fn destroy_candidate(
+    candidate: ParkedIdleCandidate,
+    tracker: &IdleDestroyTracker,
+    context: &'static str,
+) {
     let (payload, lease) = candidate.into_active_destroy_parts();
-    payload.finalize_workspace_and_destroy(context).await;
-    drop(lease);
+    if let Err(error) =
+        crate::idle_lifecycle::destroy_idle_payload_and_wait(tracker, payload, lease, context).await
+    {
+        warn!(context, %error, "blank candidate cleanup producer lost");
+    }
 }
 
 #[cfg(test)]
@@ -944,8 +959,70 @@ mod tests {
         BlankProfile {
             vcpu,
             memory_mb,
-            workspace_disk_mb: 10240,
+            rootfs_hash: "test-rootfs".into(),
+            home_disk_mb: 10240,
         }
+    }
+
+    #[tokio::test]
+    async fn aged_exact_cleanup_is_owned_before_status_publication_or_preparation() {
+        let profiles = BTreeMap::from([("vm0/default".to_owned(), profile(2, 4096))]);
+        let factory: SharedFactory = Arc::new(Box::new(sandbox_mock::MockSandboxFactory::new()));
+        let factories = BTreeMap::from([("vm0/default".to_owned(), (factory, true))]);
+        let budget = Arc::new(ResourceBudget::new(32, 65_536, 1.0, 0));
+        let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+        let gate = sandbox_mock::MockLifecycleGate::new();
+        overrides.set_destroy_lifecycle_gate(gate.clone());
+        let exact_factory: SharedFactory = Arc::new(Box::new(
+            sandbox_mock::MockSandboxFactory::with_overrides(overrides),
+        ));
+        let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
+        let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 1 });
+        assert!(matches!(
+            pool.park_at_for_test(
+                ParkedIdleCandidateBuilder::new("aged-before-status", lease)
+                    .with_factory(exact_factory)
+                    .build(),
+                Instant::now() - Duration::from_secs(40 * 60)
+            ),
+            ParkResult::Parked
+        ));
+        let idle_pool = Arc::new(tokio::sync::Mutex::new(pool));
+        let dir = tempfile::tempdir().unwrap();
+        let status = StatusTracker::new(dir.path().join("status.json"), 1, None, None);
+        status.write_initial().await.unwrap();
+        let held = status.hold_state_for_test().await;
+        let tracker = IdleDestroyTracker::new(Arc::new(tokio::sync::Notify::new()));
+        let admission = PreSpawnAdmission::new(2).unwrap();
+        let mut replenisher = BlankPoolReplenisher::new(&profiles, &factories, &budget, 1, None);
+        {
+            let starting = replenisher.maybe_start(
+                RunnerMode::Running,
+                &idle_pool,
+                &budget,
+                &admission,
+                &status,
+                &tracker,
+            );
+            tokio::pin!(starting);
+            tokio::select! {
+                result = gate.wait_entered(1, Duration::from_secs(5)) => { result.unwrap(); }
+                () = &mut starting => panic!("status should remain blocked"),
+            }
+        }
+        assert!(!replenisher.is_preparing());
+        assert_eq!(budget.allocated().2, 1);
+        let shutdown = tracker.close_and_wait();
+        tokio::pin!(shutdown);
+        let retained = shutdown.as_mut().now_or_never().is_none();
+        gate.release_one();
+        tokio::time::timeout(Duration::from_secs(5), shutdown)
+            .await
+            .unwrap();
+        drop(held);
+        assert!(retained);
+        assert_eq!(budget.allocated(), (0, 0, 0));
+        assert!(idle_pool.lock().await.is_empty());
     }
 
     fn enabled_diagnostics() -> BlankPoolDiagnostics {
@@ -1242,7 +1319,7 @@ mod tests {
         }
         assert_eq!(budget.allocated(), (0, 0, 0));
         assert!(admission.try_acquire_background(4).unwrap().is_some());
-        replenisher.shutdown().await;
+        replenisher.shutdown(&idle_destroy_tracker).await;
         idle_destroy_tracker.close_and_wait().await;
     }
 
@@ -1360,7 +1437,7 @@ mod tests {
             job.run().await;
         }
         assert_eq!(budget.allocated(), (0, 0, 0));
-        replenisher.shutdown().await;
+        replenisher.shutdown(&idle_destroy_tracker).await;
         idle_destroy_tracker.close_and_wait().await;
     }
 
@@ -1420,7 +1497,7 @@ mod tests {
         assert!(blank_overrides.create_configs().is_empty());
         assert_eq!(budget.allocated(), (0, 0, 0));
         assert_eq!(idle_pool.lock().await.len(), 0);
-        replenisher.shutdown().await;
+        replenisher.shutdown(&idle_destroy_tracker).await;
         idle_destroy_tracker.close_and_wait().await;
     }
 
@@ -1508,7 +1585,7 @@ mod tests {
         drop(foreground);
         assert_eq!(budget.allocated(), (0, 0, 0));
         assert_eq!(idle_pool.lock().await.len(), 0);
-        replenisher.shutdown().await;
+        replenisher.shutdown(&idle_destroy_tracker).await;
         idle_destroy_tracker.close_and_wait().await;
     }
 }

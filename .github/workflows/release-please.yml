@@ -105,7 +105,7 @@ jobs:
       app_worker_version: ${{ steps.release.outputs['turbo/apps/app-worker--version'] }}
       desktop_version: ${{ steps.release.outputs['desktop--version'] }}
     steps:
-      - uses: okou-ai/release-please-action@420308b1502ae6728b0654ceb84f863eedf8e621 # vm0
+      - uses: okou-ai/release-please-action@1ecb7f79f39296ccfb1946837fac60d32b8cd2bc # vm0
         id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -170,8 +170,9 @@ jobs:
               ${{ toJSON(steps.release.outputs['crates/session-history-selector--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/runner-rpc-client--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-tool-exec--sha']) }},
+              ${{ toJSON(steps.release.outputs['crates/guest-task-exec--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-write-file--sha']) }},
-              ${{ toJSON(steps.release.outputs['crates/guest-workspace-mount--sha']) }},
+              ${{ toJSON(steps.release.outputs['crates/guest-home-mount--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/linux-mountinfo--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/nbd-cow--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/process-control-ipc--sha']) }},
@@ -193,6 +194,7 @@ jobs:
               ${{ toJSON(steps.release.outputs['crates/runner-rpc-proto--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/rfb-client--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/kerberos-credentials--sha']) }},
+              ${{ toJSON(steps.release.outputs['crates/kerberos-worker--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/tracing-test-support--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-control-server--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-control-client--sha']) }},
@@ -262,8 +264,9 @@ jobs:
               ${{ toJSON(steps.release.outputs['crates/session-history-selector--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/runner-rpc-client--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-tool-exec--tag_name']) }},
+              ${{ toJSON(steps.release.outputs['crates/guest-task-exec--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-write-file--tag_name']) }},
-              ${{ toJSON(steps.release.outputs['crates/guest-workspace-mount--tag_name']) }},
+              ${{ toJSON(steps.release.outputs['crates/guest-home-mount--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/linux-mountinfo--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/nbd-cow--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/process-control-ipc--tag_name']) }},
@@ -285,6 +288,7 @@ jobs:
               ${{ toJSON(steps.release.outputs['crates/runner-rpc-proto--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/rfb-client--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/kerberos-credentials--tag_name']) }},
+              ${{ toJSON(steps.release.outputs['crates/kerberos-worker--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/tracing-test-support--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-control-server--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-control-client--tag_name']) }},
@@ -362,7 +366,7 @@ jobs:
         with:
           ref: main
 
-      - uses: okou-ai/release-please-action@420308b1502ae6728b0654ceb84f863eedf8e621 # vm0
+      - uses: okou-ai/release-please-action@1ecb7f79f39296ccfb1946837fac60d32b8cd2bc # vm0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
@@ -426,7 +430,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Install AWS CLI for archive consumption
@@ -451,7 +455,7 @@ jobs:
           python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
           python3 ios/scripts/archive-promotion.py consume "$IOS_ARCHIVE_DIR"
       - name: Retain exact release-to-archive mapping
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-release-mapping-${{ needs.release-please.outputs.release_target }}
           path: ${{ env.IOS_ARCHIVE_DIR }}/release-mapping.json
@@ -485,7 +489,7 @@ jobs:
         run: node ios/scripts/testflight.mjs distribute
       - name: Retain release symbols
         if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-symbols-${{ needs.release-please.outputs.ios_version }}-${{ steps.prepare.outputs.build_number }}
           path: ${{ runner.temp }}/okou-ios-symbols
@@ -550,7 +554,7 @@ jobs:
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
@@ -789,11 +793,21 @@ jobs:
               --latest=false
           fi
 
-          gh release upload "$OKOU_RELEASE_TAG" \
+          # Signed bytes already published at a versioned URL are permanent.
+          # A rerun may finish a partial upload, but must retain existing assets.
+          release_assets=$(gh release view "$OKOU_RELEASE_TAG" \
+            --repo "${{ github.repository }}" --json assets --jq '.assets[].name')
+          for artifact in \
             "${{ steps.desktop-artifacts.outputs.okou_zip_path }}" \
-            "${{ steps.desktop-artifacts.outputs.okou_dmg_path }}" \
-            --repo "${{ github.repository }}" \
-            --clobber
+            "${{ steps.desktop-artifacts.outputs.okou_dmg_path }}"; do
+            asset_name=$(basename "$artifact")
+            if printf '%s\n' "$release_assets" | grep -qx "$asset_name"; then
+              echo "Retaining published Desktop asset: $asset_name"
+            else
+              gh release upload "$OKOU_RELEASE_TAG" "$artifact" \
+                --repo "${{ github.repository }}"
+            fi
+          done
 
       - name: Calculate duration
         id: duration
@@ -982,7 +996,7 @@ jobs:
       group: deploy-host-worker-production
       cancel-in-progress: false
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     permissions:
       contents: read
     environment: production
@@ -1115,7 +1129,7 @@ jobs:
       # rebuild CLI separately for Runner or use an older versioned manifest.
       - name: Upload canonical CLI build input for Runner
         if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: runner-release-cli-${{ github.run_id }}
           path: |
@@ -1181,7 +1195,7 @@ jobs:
       needs.release-please.outputs.releases_created == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     outputs:
       deployment_url: ${{ steps.deploy.outputs.url }}
       vercel_dashboard_url: ${{ steps.vercel-dashboard.outputs.url }}
@@ -1203,7 +1217,7 @@ jobs:
         run: pnpm --filter @okouai/api-contracts run build:runtime-api-schema -- --out "$GITHUB_WORKSPACE/turbo/runtime-api-schema.json"
 
       - name: Upload Runtime API Schema Artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: runtime-api-schema
           path: turbo/runtime-api-schema.json
@@ -1535,7 +1549,7 @@ jobs:
       contents: write
     steps:
       - name: Download Runtime API Schema Artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: runtime-api-schema
           path: /tmp/runtime-api-schema
@@ -1597,7 +1611,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     defaults:
       run:
         shell: bash
@@ -1981,7 +1995,7 @@ jobs:
     if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
     runs-on: ubuntu-latest-8-cores
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     defaults:
       run:
         shell: bash
@@ -1999,7 +2013,7 @@ jobs:
           ref: ${{ needs.release-please.outputs.release_target }}
 
       - name: Download canonical CLI build input
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: runner-release-cli-${{ github.run_id }}
           path: runner-cli-intermediate
@@ -2021,6 +2035,7 @@ jobs:
           echo "sccache_architecture=$sccache_architecture" >> "$GITHUB_OUTPUT"
 
       - name: Setup R2 sccache
+        id: sccache
         uses: ./.github/actions/setup-r2-sccache
         with:
           architecture: ${{ steps.target-metadata.outputs.sccache_architecture }}
@@ -2194,6 +2209,10 @@ jobs:
                   type: mrkdwn
                   text: "*Runner RS* ❌ Release asset publishing failed\n📦 Version: `${{ needs.release-please.outputs.runner_rs_version }}`\n🏗️ Target: `${{ matrix.target }}`\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/releases/tag/runner-rs-v${{ needs.release-please.outputs.runner_rs_version }}|View Release>\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
 
+      - name: Report sccache statistics
+        if: always() && steps.sccache.outputs.started == 'true'
+        run: .github/scripts/report-sccache-stats.sh
+
   runner-production-host-groups:
     needs: release-please
     if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
@@ -2258,7 +2277,7 @@ jobs:
     if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     permissions:
       contents: read
     environment: production
@@ -2508,7 +2527,7 @@ jobs:
        needs.promote-api-production.result == 'success')
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     permissions:
       contents: read
     environment: production
@@ -2697,7 +2716,7 @@ jobs:
     if: ${{ needs.release-please.outputs.releases_created == 'true' }}
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     permissions:
       contents: read
     steps:
@@ -2734,7 +2753,7 @@ jobs:
           MERGE_SCRIPT
 
       - name: Upload SBOM as workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom
           path: sbom.json

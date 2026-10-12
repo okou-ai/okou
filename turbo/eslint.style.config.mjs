@@ -28,37 +28,37 @@ function exactRegex(value) {
 // allowed — it is geometry that is not a boundary (a dashed drop target, a
 // spinner's ring, a switch track's inset), which is a different decision rather
 // than a competing value for this one. Selection is not on that list: see
-// "Stroke weight" in docs/styles.md.
+// "Stroke weight" in docs/app/styles.md.
 const ARBITRARY_BORDER_WIDTH_CLASS =
   "border(-[xytblrse])?-\\[[0-9.]+(px|rem|em)\\]";
 const strokeWidthRestrictions = [
   {
     selector: `Literal[value=/${ARBITRARY_BORDER_WIDTH_CLASS}/]`,
     message:
-      "Do not hand-write a border width. Use `border` for the shared hairline, or `border-(length:--border-width-emphasis)` for a line that is itself the signal. See docs/styles.md.",
+      "Do not hand-write a border width. Use `border` for the shared hairline, or `border-(length:--border-width-emphasis)` for a line that is itself the signal. See docs/app/styles.md.",
   },
   {
     selector: `TemplateElement[value.raw=/${ARBITRARY_BORDER_WIDTH_CLASS}/]`,
     message:
-      "Do not hand-write a border width. Use `border` for the shared hairline, or `border-(length:--border-width-emphasis)` for a line that is itself the signal. See docs/styles.md.",
+      "Do not hand-write a border width. Use `border` for the shared hairline, or `border-(length:--border-width-emphasis)` for a line that is itself the signal. See docs/app/styles.md.",
   },
   {
     selector:
       "Property[key.name=/^border(Block|Inline|Top|Right|Bottom|Left)?(Start|End)?Width$/]",
     message:
-      "A border width in a `style` prop is a second registry for a decision the stroke tokens own. Move it to a Tailwind utility. See docs/styles.md.",
+      "A border width in a `style` prop is a second registry for a decision the stroke tokens own. Move it to a Tailwind utility. See docs/app/styles.md.",
   },
   {
     selector:
       "Property[key.name='border'] Literal[value=/^[0-9.]+(px|rem|em)/]",
     message:
-      "A literal border width in a `style` prop is a second registry for a decision the stroke tokens own. Read a registered token instead, e.g. `var(--border-width-emphasis) solid …`. See docs/styles.md.",
+      "A literal border width in a `style` prop is a second registry for a decision the stroke tokens own. Read a registered token instead, e.g. `var(--border-width-emphasis) solid …`. See docs/app/styles.md.",
   },
   {
     selector:
       "Property[key.name='border'] TemplateElement[value.raw=/^[0-9.]+(px|rem|em)/]",
     message:
-      "A literal border width in a `style` prop is a second registry for a decision the stroke tokens own. Read a registered token instead, e.g. `var(--border-width-emphasis) solid …`. See docs/styles.md.",
+      "A literal border width in a `style` prop is a second registry for a decision the stroke tokens own. Read a registered token instead, e.g. `var(--border-width-emphasis) solid …`. See docs/app/styles.md.",
   },
 ];
 
@@ -133,7 +133,7 @@ export default [
     //
     // - `chat-card.tsx` pins a whole pixel because a fractional border visibly
     //   repaints when the card's content resolves, so the edge flickers as an
-    //   image or an iframe lands inside it. `docs/styles.md` records this.
+    //   image or an iframe lands inside it. `docs/app/styles.md` records this.
     // - `mermaid-diagram.tsx` pins one only to preserve the width the rule it
     //   replaced drew. That is a weaker argument than the flicker one and is
     //   worth re-examining on its own merits; it is carried unchanged here

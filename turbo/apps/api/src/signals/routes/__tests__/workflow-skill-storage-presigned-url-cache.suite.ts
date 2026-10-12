@@ -15,7 +15,6 @@ import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
 describe("workflow skill storage presigned URL cache", () => {
@@ -152,8 +151,7 @@ describe("workflow skill storage presigned URL cache", () => {
       throw new Error("Expected readonly cache test actor to have an org");
     }
     const api = createRunsApi(context);
-    const storages = createStoragesBddApi(context);
-    storages.mockStorageObjectsExist(2048);
+    context.mocks.s3.send.mockResolvedValue({ ContentLength: 2048 });
     // A custom connector's skill Storage is an ordinary organization-owned
     // read-only mount (readonly_storage scope) of the Agent's runs.
     const connectors = createConnectorBddApi(context);

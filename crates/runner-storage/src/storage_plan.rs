@@ -558,6 +558,13 @@ impl StoragePlan {
         std::mem::take(&mut self.decoded)
     }
 
+    pub(crate) fn decoded_file_count(&self) -> usize {
+        self.decoded
+            .iter()
+            .map(|(_, files)| files.files.len())
+            .sum()
+    }
+
     pub(crate) fn decoded_bytes(&self) -> usize {
         self.decoded
             .iter()

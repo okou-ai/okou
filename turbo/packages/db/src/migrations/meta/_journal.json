@@ -1961,6 +1961,125 @@
       "when": 1791517702020,
       "tag": "1357_prepare_home_affinity",
       "breakpoints": true
+    },
+    {
+      "idx": 1358,
+      "version": "7",
+      "when": 1791532512730,
+      "tag": "1358_furry_wind_dancer",
+      "breakpoints": true
+    },
+    {
+      "idx": 1359,
+      "version": "7",
+      "when": 1791541894946,
+      "tag": "1359_canonical_selected_model_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 1360,
+      "version": "7",
+      "when": 1791550108308,
+      "tag": "1360_retire_generic_run_checkpoints",
+      "breakpoints": true
+    },
+    {
+      "idx": 1361,
+      "version": "7",
+      "when": 1791553159886,
+      "tag": "1361_slow_living_mummy",
+      "breakpoints": true
+    },
+    {
+      "idx": 1362,
+      "version": "7",
+      "when": 1791563852629,
+      "tag": "1362_discord_oauth_onboarding",
+      "breakpoints": true
+    },
+    {
+      "idx": 1363,
+      "version": "7",
+      "when": 1791592027767,
+      "tag": "1363_capture_model_execution_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 1364,
+      "version": "7",
+      "when": 1791592037849,
+      "tag": "1364_prepare_canonical_auto_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 1365,
+      "version": "7",
+      "when": 1791596155319,
+      "tag": "1365_tailscale_private_ssh",
+      "breakpoints": true
+    },
+    {
+      "idx": 1366,
+      "version": "7",
+      "when": 1791603180551,
+      "tag": "1366_drop_chat_thread_provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 1367,
+      "version": "7",
+      "when": 1791615175795,
+      "tag": "1367_enforce_canonical_model_capture",
+      "breakpoints": true
+    },
+    {
+      "idx": 1368,
+      "version": "7",
+      "when": 1791615177394,
+      "tag": "1368_validate_canonical_model_capture",
+      "breakpoints": true
+    },
+    {
+      "idx": 1369,
+      "version": "7",
+      "when": 1791620818599,
+      "tag": "1369_prepare_computer_use_host_token_retirement",
+      "breakpoints": true
+    },
+    {
+      "idx": 1370,
+      "version": "7",
+      "when": 1791625914837,
+      "tag": "1370_drop_computer_use_host_token_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 1371,
+      "version": "7",
+      "when": 1791638276606,
+      "tag": "1371_retire_desktop_auth_handoff_storage",
+      "breakpoints": true
+    },
+    {
+      "idx": 1372,
+      "version": "7",
+      "when": 1791650995893,
+      "tag": "1372_trim_runner_wss_ticket_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 1373,
+      "version": "7",
+      "when": 1791773088975,
+      "tag": "1373_drop_native_morning_brief_member_fence",
+      "breakpoints": true
+    },
+    {
+      "idx": 1374,
+      "version": "7",
+      "when": 1791776374347,
+      "tag": "1374_prepare_pi_memory_storage_retirement",
+      "breakpoints": true
     }
   ]
 }

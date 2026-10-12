@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.23.4](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.3...guest-control-client-v0.23.4) (2026-10-12)
+
+## [0.23.3](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.2...guest-control-client-v0.23.3) (2026-10-11)
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+
+## [0.23.2](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.1...guest-control-client-v0.23.2) (2026-10-10)
+
+## [0.23.1](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.0...guest-control-client-v0.23.1) (2026-10-10)
+
+## [0.23.0](https://github.com/okou-ai/okou/compare/guest-control-client-v0.22.36...guest-control-client-v0.23.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+
+### Bug Fixes
+
+* **runner:** bound active-input shutdown under guest backpressure ([#38591](https://github.com/okou-ai/okou/issues/38591)) ([648671b](https://github.com/okou-ai/okou/commit/648671bd07f959e25864029a81dbab13edef83c7))
+
+## [0.22.36](https://github.com/okou-ai/okou/compare/guest-control-client-v0.22.35...guest-control-client-v0.22.36) (2026-10-10)
+
+## [0.22.35](https://github.com/okou-ai/okou/compare/guest-control-client-v0.22.34...guest-control-client-v0.22.35) (2026-10-10)
+
+## [0.22.34](https://github.com/okou-ai/okou/compare/guest-control-client-v0.22.33...guest-control-client-v0.22.34) (2026-10-10)
+
+## [0.22.33](https://github.com/okou-ai/okou/compare/guest-control-client-v0.22.32...guest-control-client-v0.22.33) (2026-10-09)
+
+## [0.22.32](https://github.com/okou-ai/okou/compare/guest-control-client-v0.22.31...guest-control-client-v0.22.32) (2026-10-09)
+
+## [0.22.31](https://github.com/okou-ai/okou/compare/guest-control-client-v0.22.30...guest-control-client-v0.22.31) (2026-10-09)
+
 ## [0.22.30](https://github.com/okou-ai/okou/compare/guest-control-client-v0.22.29...guest-control-client-v0.22.30) (2026-10-09)
 
 ## [0.22.29](https://github.com/okou-ai/okou/compare/guest-control-client-v0.22.28...guest-control-client-v0.22.29) (2026-10-09)

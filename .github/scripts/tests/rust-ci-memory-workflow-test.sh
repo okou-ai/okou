@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CRATES_WORKFLOW="${REPO_ROOT}/.github/workflows/crates.yml"
-RUNNER_IMAGE_WORKFLOW="${REPO_ROOT}/.github/workflows/runner-image.yml"
+RUNNER_IMAGE_WORKFLOW="${REPO_ROOT}/.github/workflows/runner-image-architecture.yml"
 ACTION="${REPO_ROOT}/.github/actions/report-memory-peak/action.yml"
 
 fail() {
@@ -19,7 +19,7 @@ action_json=$(yq -o=json '.' "$ACTION")
 
 jq -e '
   . as $workflow |
-  ["check", "coverage", "runner-firewall-contract-test", "host-cpu-fairness-build", "guest-rpc-firecracker-build", "nbd-cow-test"] |
+  ["check", "check-docs", "check-guest-production", "check-ably-smoke", "coverage", "runner-firewall-contract-test", "host-cpu-fairness-build", "guest-rpc-firecracker-build", "nbd-cow-test"] |
   all(.[];
     . as $job |
     ($workflow.jobs[$job].steps[-1] |

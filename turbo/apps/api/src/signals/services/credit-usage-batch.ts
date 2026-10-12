@@ -7,10 +7,6 @@ import {
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
-import {
-  resolveUsagePricingProvider,
-  type UsagePricingResolution,
-} from "../context/usage-pricing-resolution";
 
 export class UsageSettlementSnapshotConflict extends Error {}
 
@@ -27,10 +23,7 @@ export function usageSnapshotCondition(rows: readonly PendingUsageSnapshot[]) {
     ) ?? sql`false`
   );
 }
-export function settlementPricingKeys(
-  rows: readonly PendingUsageSnapshot[],
-  resolution: UsagePricingResolution,
-) {
+export function settlementPricingKeys(rows: readonly PendingUsageSnapshot[]) {
   return rows
     .filter(({ event }) => {
       return (
@@ -42,11 +35,7 @@ export function settlementPricingKeys(
     .map(({ event }) => {
       return {
         kind: event.kind,
-        provider: resolveUsagePricingProvider(
-          resolution,
-          event.kind,
-          event.provider,
-        ),
+        provider: event.provider,
         category: event.category,
       };
     });
@@ -105,9 +94,8 @@ export function reportCommittedSettlementPricing(
     readonly records: UsageEventRecord[];
     readonly prices: (typeof usagePricing.$inferSelect)[];
   },
-  resolution: UsagePricingResolution,
 ) {
-  priceUsageEvents(batch.records, batch.prices, orgId, resolution);
+  priceUsageEvents(batch.records, batch.prices, orgId);
 }
 
 export interface PreparedUsageBatch {

@@ -42,7 +42,6 @@ import {
   PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION,
   PI_MODEL_CONFIG_CURRENT_GENERATION,
   PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
-  PI_MODEL_CONFIG_LEGACY_GENERATION,
   RESUME_SESSION_HISTORY_MAX_BYTES,
   RUNNER_CANCELLATION_RECOVERY_GRACE_MS,
   RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX,
@@ -89,16 +88,16 @@ const canonicalWorkingDirDoc = [
 
 const canonicalPiSessionDirDoc = [
   "Official Pi JSONL session directory for the canonical guest workspace.",
-  "Guest checkpointing validates Pi session files under this directory and runner restore materializes resume history here.",
+  "Guest finalization validates Pi session files under this directory and runner restore materializes resume history here.",
 ] as const;
 
 const storageManifestMaxFilesDoc = [
   "Maximum file entries accepted in a storage manifest.",
-  "Guest artifact checkpointing and TypeScript storage webhook validation use this shared limit.",
+  "Guest artifact publication and TypeScript storage webhook validation use this shared limit.",
 ] as const;
 const storageManifestMaxPathBytesDoc = [
   "Maximum cumulative UTF-8 path bytes accepted in a storage manifest.",
-  "Guest artifact checkpointing and TypeScript storage webhook validation use this shared limit.",
+  "Guest artifact publication and TypeScript storage webhook validation use this shared limit.",
 ] as const;
 
 const resumeSessionHistoryMaxBytesDoc = [
@@ -323,12 +322,6 @@ const expectedBindings = [
     rustConstName: "PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION",
     value: rustU32(PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION),
     rustDoc: ["Additive Pi generation for OpenRouter Chat Completions routes."],
-  },
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "PI_MODEL_CONFIG_LEGACY_GENERATION",
-    value: rustU32(PI_MODEL_CONFIG_LEGACY_GENERATION),
-    rustDoc: ["Legacy unversioned Pi model configuration generation."],
   },
   {
     rustModulePath: ["runners"],

@@ -14,6 +14,7 @@ import { buildSlackConnectorOAuthStartUrl } from "./slack-connector-oauth-state"
 
 export const SLACK_BOT_SCOPES: readonly string[] = [
   "app_mentions:read",
+  "assistant:write",
   "chat:write",
   "channels:read",
   "channels:history",
@@ -28,6 +29,8 @@ export const SLACK_BOT_SCOPES: readonly string[] = [
   "reactions:write",
   "files:read",
   "files:write",
+  "links:read",
+  "links:write",
 ];
 
 function hasAllBotScopes(storedScopes: string | null): boolean {

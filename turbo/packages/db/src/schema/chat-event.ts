@@ -130,6 +130,29 @@ export const chatEvents = pgTable(
   },
   (table) => {
     return [
+      check(
+        "chat_events_canonical_selection_check",
+        sql`${table.modelSelection} IS NULL OR (
+          ${table.modelSelection} ->> 'selectedModel' NOT IN ('okou-1.0', 'okou-1.0-pro', 'okou-1.0-max') AND
+          ${table.modelSelection} ->> 'selectedModel' NOT LIKE '@preset/%'
+        )`,
+      ),
+      check(
+        "chat_events_canonical_annotation_check",
+        sql`NOT jsonb_path_exists(${table.payload}, '$.userMessage.parts[*] ? (@.type == "model" && (@.selectedModel == "okou-1.0" || @.selectedModel == "okou-1.0-pro" || @.selectedModel == "okou-1.0-max" || @.selectedModel starts with "@preset/"))')`,
+      ),
+      check(
+        "chat_events_model_selection_check",
+        sql`${table.modelSelection} IS NULL OR COALESCE((
+          jsonb_typeof(${table.modelSelection}) = 'object' AND
+          jsonb_typeof(${table.modelSelection} -> 'selectedModel') = 'string' AND
+          char_length(${table.modelSelection} ->> 'selectedModel') > 0
+        ), false)`,
+      ),
+      check(
+        "chat_events_model_annotation_check",
+        sql`NOT jsonb_path_exists(${table.payload}, '$.userMessage.parts[*] ? (@.type == "model" && (!exists(@.selectedModel) || @.selectedModel.type() != "string" || @.selectedModel == ""))')`,
+      ),
       index("idx_chat_events_created_at_id").on(table.createdAt, table.id),
       index("idx_chat_events_thread_created").on(
         table.chatThreadId,

@@ -8,7 +8,7 @@ use crate::sandbox::Sandbox;
 /// Low-cardinality stages inside sandbox factory creation.
 ///
 /// A provider can report only the stages that apply to its implementation. The
-/// workspace seed-copy and fresh-format stages are nested inside workspace
+/// home seed-copy and fresh-format stages are nested inside home
 /// drive preparation, and all NBD detail stages are nested inside NBD COW
 /// creation. Nested durations overlap their parent and must not be added to it
 /// as independent time.
@@ -18,19 +18,19 @@ pub enum SandboxCreateStage {
     CowPoolAcquire,
     /// Moves prepared COW backing files into the sandbox workspace.
     WorkspaceDirRename,
-    /// Prepares the configured workspace drive image.
+    /// Prepares the configured home drive image.
     ///
-    /// [`Self::WorkspaceSeedSparseCopy`] and
-    /// [`Self::WorkspaceFreshFormat`] are optional nested details.
-    WorkspaceDrivePrepare,
-    /// Copies a workspace seed image while preserving sparse regions.
+    /// [`Self::HomeSeedSparseCopy`] and
+    /// [`Self::HomeFreshFormat`] are optional nested details.
+    HomeDrivePrepare,
+    /// Copies a home seed image while preserving sparse regions.
     ///
-    /// This duration is nested inside [`Self::WorkspaceDrivePrepare`].
-    WorkspaceSeedSparseCopy,
-    /// Formats a newly allocated, unseeded workspace drive image.
+    /// This duration is nested inside [`Self::HomeDrivePrepare`].
+    HomeSeedSparseCopy,
+    /// Formats a newly allocated, unseeded home drive image.
     ///
-    /// This duration is nested inside [`Self::WorkspaceDrivePrepare`].
-    WorkspaceFreshFormat,
+    /// This duration is nested inside [`Self::HomeDrivePrepare`].
+    HomeFreshFormat,
     /// Prepares the sandbox runtime socket directory.
     SockDirPrepare,
     /// Acquires a network namespace from the provider pool.
@@ -51,9 +51,9 @@ impl SandboxCreateStage {
     pub const ALL: [Self; 8] = [
         Self::CowPoolAcquire,
         Self::WorkspaceDirRename,
-        Self::WorkspaceDrivePrepare,
-        Self::WorkspaceSeedSparseCopy,
-        Self::WorkspaceFreshFormat,
+        Self::HomeDrivePrepare,
+        Self::HomeSeedSparseCopy,
+        Self::HomeFreshFormat,
         Self::SockDirPrepare,
         Self::NetnsAcquire,
         Self::NbdCowCreate,
@@ -298,7 +298,7 @@ pub trait SandboxFactory: Send + Sync {
     fn config_hash(&self) -> String;
     /// Create a new sandbox instance with the given per-sandbox configuration.
     ///
-    /// If `config` uses [`crate::WorkspaceDriveSeedImage::Move`], this method
+    /// If `config` uses [`crate::HomeDriveSeedImage::Move`], this method
     /// may return an error after source ownership has transferred to the
     /// provider. Callers must not infer source availability from the final
     /// result.

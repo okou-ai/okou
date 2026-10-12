@@ -42,7 +42,7 @@ pub struct SnapshotConfig {
     /// Drive path recorded in the snapshot's Firecracker config (bind mount target).
     pub drive_bind_path: PathBuf,
     /// Workspace drive path recorded in the snapshot's Firecracker config.
-    pub workspace_drive_bind_path: PathBuf,
+    pub home_drive_bind_path: PathBuf,
     /// Vsock directory recorded in the snapshot's Firecracker config.
     ///
     /// Restore expects this to be the private runtime bind target

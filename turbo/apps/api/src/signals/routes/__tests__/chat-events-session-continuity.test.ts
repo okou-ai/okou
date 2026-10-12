@@ -15,7 +15,6 @@ import {
   assistantEvent,
   modelProviderSecretPlaceholder,
 } from "./helpers/chat-events-fixture";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 const context = testContext();
 const {
   bdd,
@@ -27,7 +26,6 @@ const {
   authDevice,
   authDeviceSupport,
   entitledChatActor,
-  seedBuiltInModelKey,
   sendChatRun,
   sendWaitingChatInput,
   expectThreadCreatedModelEvent,
@@ -440,7 +438,7 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(actor, second.runId);
   }, 90_000);
 
-  it("keeps incomplete context without rotating after a failure before the first native checkpoint", async () => {
+  it("keeps incomplete context without rotating after a failure before the first native history", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
@@ -454,7 +452,7 @@ describe("CHAT-02: run-level model overrides", () => {
     await failChatRun(
       first.runId,
       firstClaim.sandboxHeaders,
-      "Runtime failed before its first checkpoint",
+      "Runtime failed before its first history",
     );
     await waitForRunStatus(actor, first.runId, "failed");
 
@@ -500,7 +498,7 @@ describe("CHAT-02: run-level model overrides", () => {
         runId: first.runId,
         exitCode: 0,
         lastEventSequence: 0,
-        checkpoint: {
+        completion: {
           cliAgentType: "claude-code",
           cliAgentSessionId: `discarded-cli-${first.runId}`,
           cliAgentSessionHistoryDisposition: "discarded_oversized",
@@ -715,7 +713,7 @@ describe("CHAT-02: run-level model overrides", () => {
   it("rejects an explicit disconnected personal model instead of capturing Auto", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
+
     const sent = await chat.requestSendEvent(
       actor,
       {

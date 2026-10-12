@@ -6,14 +6,13 @@ import {
   type UserTemplatePreviewAsset,
 } from "@okouai/api-contracts/contracts/user-templates";
 import { userTemplates } from "@okouai/db/schema/user-template";
-import { and, eq } from "drizzle-orm";
+import { and, eq, getTableColumns, sql } from "drizzle-orm";
 
 import { notFound } from "../../lib/error";
-import { nowDate } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { clerk$, createClerkReadContext } from "../external/clerk";
+import { createClerkReadContext } from "../external/clerk";
 import { db$, writeDb$ } from "../external/db";
 import {
   publishPresentationTemplatesChangedForOrgSafely,
@@ -40,7 +39,7 @@ import {
   type PresentationTemplatePreviewPresignedUrlRequest,
 } from "../services/system-storage-presigned-url-cache.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import { loadUserDisplayNames } from "../services/user-profile-directory.service";
+import { loadUserDisplayNames$ } from "../services/user-profile-directory.service";
 import type { RouteEntry } from "../route-entry";
 
 const templateReadAuth = {
@@ -143,12 +142,6 @@ function userTemplatePreviewAssetsForRow(args: {
  * hands back to have one picture's URL reissued, and the detail this request
  * belongs to already carries the URL. Minting a second handle for a file the
  * reader has been handed anyway buys nothing.
- *
- * An illustration's source is separately a cover, and therefore does have an
- * asset id — one produced by `userTemplateCoverKeys`, which the resolve
- * endpoint reads too, so that handle is one it accepts. Both paths sign the
- * same object with the same version, so they share a cache key and the second
- * one costs nothing.
  */
 function userTemplateSourceRequest(args: {
   readonly row: UserTemplateRow;
@@ -223,13 +216,12 @@ function accessibleUserTemplatePreviewAssets(args: {
  */
 const ownerDisplayNames$ = command(
   async (
-    { get, set },
+    { set },
     rows: readonly UserTemplateRow[],
     signal: AbortSignal,
   ): Promise<ReadonlyMap<string, string>> => {
-    return await loadUserDisplayNames(
-      set(writeDb$),
-      get(clerk$),
+    return await set(
+      loadUserDisplayNames$,
       rows.map((row) => {
         return row.ownerUserId;
       }),
@@ -408,8 +400,8 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     urlsByCacheKey,
   );
   // Narrowed from the resolved covers rather than resolved again: for a deck
-  // the two lists are the same objects, and for an illustration the cover is
-  // the source, which is not a page and must not be stacked as one.
+  // the two lists are the same objects, and an illustration's covers are its
+  // examples, which are not pages and must not be stacked as them.
   const pageAssetIds = new Set(
     userTemplatePageKeys(row).map((pageKey) => {
       return userTemplatePreviewAssetId(row.id, pageKey);
@@ -567,48 +559,52 @@ const updateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!bodyResult.ok) {
     return bodyResult.response;
   }
-  const mutation = await set(writeDb$).transaction(async (tx) => {
-    const whereOwner = and(
-      eq(userTemplates.id, params.templateId),
-      eq(userTemplates.orgId, auth.orgId),
-      eq(userTemplates.ownerUserId, auth.userId),
+  const db = set(writeDb$);
+  const whereOwner = and(
+    eq(userTemplates.id, params.templateId),
+    eq(userTemplates.orgId, auth.orgId),
+    eq(userTemplates.ownerUserId, auth.userId),
+  );
+  // PG17 RETURNING exposes only the updated row. Keep the existing lock in
+  // this dependent read so a concurrent edit cannot leave the prior visibility
+  // at the statement snapshot and miss an organization-to-private retraction.
+  const previous = db
+    .$with("previous_template")
+    .as(
+      db
+        .select({ id: userTemplates.id, visibility: userTemplates.visibility })
+        .from(userTemplates)
+        .where(whereOwner)
+        .for("update")
+        .limit(1),
     );
-    const [previous] = await tx
-      .select({ visibility: userTemplates.visibility })
-      .from(userTemplates)
-      .where(whereOwner)
-      .for("update")
-      .limit(1);
-    if (!previous) {
-      return null;
-    }
-    const [row] = await tx
-      .update(userTemplates)
-      .set({
-        title: bodyResult.data.title,
-        visibility: bodyResult.data.visibility,
-        updatedAt: nowDate(),
-        updatedBy: auth.userId,
-      })
-      .where(whereOwner)
-      .returning();
-    if (!row) {
-      throw new Error(`User template disappeared: ${params.templateId}`);
-    }
-    // Either side of a visibility change has to reach the organization: making
-    // a template private must retract it from members who can still see it.
-    return {
-      row,
-      organizationVisible:
-        previous.visibility === "organization" ||
-        row.visibility === "organization",
-    };
-  });
+  const [mutation] = await db
+    .with(previous)
+    .update(userTemplates)
+    .set({
+      title: bodyResult.data.title,
+      visibility: bodyResult.data.visibility,
+      // Sample after the dependent lock-read, since clients use updatedAt to
+      // reject older edit responses. A bound request time can predate a writer
+      // this statement waited for.
+      updatedAt: sql`timezone('UTC', clock_timestamp())`,
+      updatedBy: auth.userId,
+    })
+    .from(previous)
+    .where(and(whereOwner, eq(userTemplates.id, previous.id)))
+    .returning({
+      ...getTableColumns(userTemplates),
+      previousVisibility: previous.visibility,
+    });
   signal.throwIfAborted();
   if (!mutation) {
     return templateNotFound(params.templateId);
   }
-  const { row, organizationVisible } = mutation;
+  const { previousVisibility, ...row } = mutation;
+  // Either side of a visibility change has to reach the organization: making
+  // a template private must retract it from members who can still see it.
+  const organizationVisible =
+    previousVisibility === "organization" || row.visibility === "organization";
   const coverUrl = await set(coverUrlFor$, { row, orgId: auth.orgId });
   signal.throwIfAborted();
   const ownerDisplayName = await set(ownerDisplayNameFor$, row, signal);

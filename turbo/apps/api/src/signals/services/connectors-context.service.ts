@@ -6,13 +6,9 @@ const MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT = 20;
 
 export function createConnectorsContext(
   authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>,
-  skillsRoot$: Computed<Promise<string>>,
 ): Computed<Promise<RunPromptAndSkills>> {
   return computed(async (get): Promise<RunPromptAndSkills> => {
-    const [connectors, skillsRoot] = await Promise.all([
-      get(authorizedConnectors$),
-      get(skillsRoot$),
-    ]);
+    const connectors = await get(authorizedConnectors$);
     const customVolumes: SkillVolume[] = [];
     const builtinVolumes: SkillVolume[] = [];
     for (const connector of connectors) {
@@ -22,7 +18,7 @@ export function createConnectorsContext(
       const volume = {
         name: connector.skill.storageName,
         version: connector.skill.versionId,
-        mountPath: `${skillsRoot}/${connector.skill.skillName}`,
+        skillName: connector.skill.skillName,
       };
       if (connector.kind === "custom") {
         customVolumes.push({ ...volume, source: "custom_connector_skill" });

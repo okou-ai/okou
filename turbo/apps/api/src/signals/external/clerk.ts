@@ -11,7 +11,7 @@ import { delay } from "signal-timers";
 import { z } from "zod";
 import { singleton } from "../../lib/singleton";
 import { env } from "../../lib/env";
-import { settle } from "../utils";
+import { safeJsonParse, settle } from "../utils";
 
 export interface ClerkOAuthIdentity {
   readonly userId: string;
@@ -51,6 +51,30 @@ const invalidOAuthTokenReasons: readonly string[] = Object.freeze([
   TokenVerificationErrorReason.JWKKidMismatch,
 ]);
 
+export class ClerkOAuthVerificationUnavailableError extends Error {
+  constructor() {
+    super("OAuth verification is temporarily unavailable");
+    this.name = "ClerkOAuthVerificationUnavailableError";
+  }
+}
+
+/** Choose a verifier only; an untrusted JWT header never authorizes a request. */
+export function isClerkOAuthAccessToken(token: string): boolean {
+  const header = token.split(".", 1)[0];
+  if (!header) {
+    return false;
+  }
+  const parsed = z
+    .object({ typ: z.string() })
+    .safeParse(
+      safeJsonParse(Buffer.from(header, "base64url").toString("utf8")),
+    );
+  return (
+    parsed.success &&
+    ["at+jwt", "application/at+jwt"].includes(parsed.data.typ.toLowerCase())
+  );
+}
+
 /** Full, signed OAuth claims; the provider's reduced token wrapper omits org/aud. */
 export async function verifyClerkOAuthAccessToken(
   token: string,
@@ -72,7 +96,7 @@ export async function verifyClerkOAuthAccessToken(
       return undefined;
     }
     // Key-service and configuration failures do not mean invalid credentials.
-    throw new Error("OAuth verification is temporarily unavailable");
+    throw new ClerkOAuthVerificationUnavailableError();
   }
   const parsed = oauthClaimsSchema.safeParse(verified.value);
   if (
@@ -278,13 +302,6 @@ export interface ClerkOrganizationsApi {
   deleteOrganization(organizationId: string): Promise<ClerkOrganization>;
 }
 
-export interface ClerkSignInTokensApi {
-  createSignInToken(params: {
-    userId: string;
-    expiresInSeconds: number;
-  }): Promise<{ readonly token: string }>;
-}
-
 export interface ClerkMachineToMachineApi {
   createToken(params: {
     machineSecretKey: string;
@@ -309,7 +326,6 @@ export interface ClerkClient {
   readonly sessions: ClerkSessionsApi;
   readonly users: ClerkUsersApi;
   readonly organizations: ClerkOrganizationsApi;
-  readonly signInTokens: ClerkSignInTokensApi;
   readonly m2m: ClerkMachineToMachineApi;
 }
 
@@ -766,11 +782,6 @@ const clerkClient = singleton((): ClerkClient => {
       },
       deleteOrganization: (organizationId) => {
         return sdk.organizations.deleteOrganization(organizationId);
-      },
-    },
-    signInTokens: {
-      createSignInToken: (params) => {
-        return sdk.signInTokens.createSignInToken(params);
       },
     },
     m2m: {

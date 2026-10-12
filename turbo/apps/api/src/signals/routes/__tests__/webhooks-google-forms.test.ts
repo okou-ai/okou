@@ -327,8 +327,15 @@ function eventContextFromAgentPrompt(prompt: string): Record<string, unknown> {
   if (markerIndex === -1) {
     throw new Error("Expected automation event payload in the agent prompt");
   }
+  const identityIndex = prompt.indexOf(
+    "\n\nAutomation identity:\n",
+    markerIndex + marker.length,
+  );
+  if (identityIndex === -1) {
+    throw new Error("Expected automation identity in the agent prompt");
+  }
   const parsed = JSON.parse(
-    prompt.slice(markerIndex + marker.length),
+    prompt.slice(markerIndex + marker.length, identityIndex),
   ) as unknown;
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw new Error("Expected automation event payload object");

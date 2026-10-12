@@ -12,8 +12,9 @@ fail() {
 }
 
 command -v yq >/dev/null || fail "yq is required"
-workflow_json=$(yq -o=json '.' "$WORKFLOW")
-action_json=$(yq -o=json '.' "$ACTION")
+architecture_json=$(yq -o=json '.' "${REPO_ROOT}/.github/workflows/runner-image-architecture.yml")
+workflow_json=$(yq -o=json '.' "$WORKFLOW" |
+  jq --argjson architecture "$architecture_json" '. + {architecture: $architecture}')
 
 jq -e '
   .jobs.prepare.steps as $steps |
@@ -128,6 +129,28 @@ grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
   fail "shared cache action changes must be recognized as runner image inputs"
 check_ci_detectors "$base_ref" "shared cache action" true
 
+# A reusable-owner-only edit must select every producer and CI consumer.
+base_ref=$(fixture_git rev-parse HEAD)
+mkdir -p "${test_root}/.github/workflows"
+cp "${REPO_ROOT}/.github/workflows/runner-image-architecture.yml" \
+  "${test_root}/.github/workflows/runner-image-architecture.yml"
+fixture_git add .github/workflows/runner-image-architecture.yml
+fixture_git commit --quiet -m architecture-workflow
+image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c "$image_input_step")
+grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
+  fail "architecture workflow changes must be recognized as runner image inputs"
+check_ci_detectors "$base_ref" "architecture workflow" true
+
+# The shared readiness guard is also an image input, without a crate edit.
+base_ref=$(fixture_git rev-parse HEAD)
+cp "${SCRIPT_DIR}/runner-image-architecture.sh" "${test_root}/.github/scripts/"
+fixture_git add .github/scripts/runner-image-architecture.sh
+fixture_git commit --quiet -m architecture-guard
+image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c "$image_input_step")
+grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
+  fail "architecture guard changes must be recognized as runner image inputs"
+check_ci_detectors "$base_ref" "architecture guard" true
+
 jq -e '
   .jobs.prepare.outputs["turbo-runner-consumer-needed"] ==
     "${{ steps.needed.outputs.turbo-runner-consumer-needed }}" and
@@ -162,10 +185,10 @@ jq -e '
 ' <<<"$workflow_json" >/dev/null || fail "merge-group consumers must stop before shared runner resources are rebuilt"
 
 jq -e '
-  [.jobs | to_entries[] | .value.steps[]? |
+  [.jobs, .architecture.jobs | to_entries[] | .value.steps[]? |
     select((.run // "") | startswith(".github/scripts/runner-binary-transport.sh "))
   ] as $transports |
-  ($transports | length) == 3 and
+  ($transports | length) == 2 and
   all($transports[];
     .env.CURRENT_RUN_ID == "${{ github.run_id }}" and
     .env.REPO == "${{ github.repository }}" and
@@ -192,20 +215,19 @@ jq -e '
 ' <<<"$workflow_json" >/dev/null || fail "prepare must publish cache references and the miss-only compile matrix"
 
 jq -e '
-  .jobs.compile["runs-on"] == "ubuntu-latest-8-cores" and
-  .jobs.compile.container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008" and
-  (.jobs.compile.if | contains("!cancelled()")) and
-  (.jobs.compile.if | contains("needs.prepare.result == '\''success'\''")) and
-  (.jobs.compile.if | contains("runner-binary-miss-count != '\''0'\''")) and
-  .jobs.compile.strategy.matrix.include == "${{ fromJSON(needs.prepare.outputs.runner-binary-compile-matrix) }}" and
-  any(.jobs.compile.steps[];
+  .architecture.jobs.compile["runs-on"] == "ubuntu-latest-8-cores" and
+  .architecture.jobs.compile.container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009" and
+  (.architecture.jobs.compile.if | contains("!cancelled()")) and
+  (.architecture.jobs.compile.if | contains("!inputs.cache-hit")) and
+  .architecture.jobs.compile.strategy.matrix.include == "${{ fromJSON(format('\''[{0}]'\'', inputs.architecture-json)) }}" and
+  any(.architecture.jobs.compile.steps[];
     .name == "Configure git safe directory" and
     .shell == "bash" and
     .run == "git config --global --add safe.directory \"$GITHUB_WORKSPACE\""
   ) and
-  ((.jobs.compile.steps | map(.uses // .name) | index("Configure git safe directory")) <
-    (.jobs.compile.steps | map(.uses // .name) | index("Build runner binary"))) and
-  any(.jobs.compile.steps[];
+  ((.architecture.jobs.compile.steps | map(.uses // .name) | index("Configure git safe directory")) <
+    (.architecture.jobs.compile.steps | map(.uses // .name) | index("Build runner binary"))) and
+  any(.architecture.jobs.compile.steps[];
     .name == "Setup R2 sccache" and
     .uses == "./.github/actions/setup-r2-sccache" and
     .with.architecture == "${{ matrix.id }}" and
@@ -214,9 +236,9 @@ jq -e '
     .with["r2-account-id"] == "${{ vars.R2_ACCOUNT_ID }}" and
     .with["r2-bucket-name"] == "${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"
   ) and
-  any(.jobs.compile.steps[]; (.uses // "") | startswith("Swatinem/rust-cache@")) and
-  any(.jobs.compile.steps[]; .run == ".github/scripts/runner-binary-build/build.sh build") and
-  any(.jobs.compile.steps[];
+  any(.architecture.jobs.compile.steps[]; (.uses // "") | startswith("Swatinem/rust-cache@")) and
+  any(.architecture.jobs.compile.steps[]; .run == ".github/scripts/runner-binary-build/build.sh build") and
+  any(.architecture.jobs.compile.steps[];
     .run == ".github/scripts/runner-binary-transport.sh publish" and
     .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.build.outputs.binary-input-digest }}" and
     .env.PRODUCER_RUN_ATTEMPT == "${{ github.run_attempt }}" and
@@ -224,153 +246,50 @@ jq -e '
   )
 ' <<<"$workflow_json" >/dev/null || fail "compile must be a required miss-only Rust/cache/build matrix"
 
-# The shared action owns the sccache version and complete startup interface.
 jq -e '
-  .runs.using == "composite" and
-  (.inputs | keys | sort) ==
-    ["architecture", "r2-access-key-id", "r2-account-id", "r2-bucket-name", "r2-secret-access-key"] and
-  all(.inputs[]; .required == true) and
-  any(.runs.steps[];
-    .name == "Install sccache" and
-    ((.uses // "") | startswith("mozilla-actions/sccache-action@")) and
-    .with.version == "v0.15.0"
-  ) and
-  any(.runs.steps[];
-    .name == "Configure R2 sccache" and
-    .shell == "bash" and
-    .env.AWS_ACCESS_KEY_ID == "${{ inputs.r2-access-key-id }}" and
-    .env.AWS_SECRET_ACCESS_KEY == "${{ inputs.r2-secret-access-key }}" and
-    .env.R2_ACCOUNT_ID == "${{ inputs.r2-account-id }}" and
-    .env.SCCACHE_ARCHITECTURE == "${{ inputs.architecture }}" and
-    .env.SCCACHE_BUCKET == "${{ inputs.r2-bucket-name }}" and
-    .env.SCCACHE_GHA_ENABLED == "false" and
-    .env.SCCACHE_IDLE_TIMEOUT == "0" and
-    .env.SCCACHE_REGION == "auto"
-  )
-' <<<"$action_json" >/dev/null || fail "shared cache action must retain its sccache version and explicit startup inputs"
-
-# Execute the action's configured startup boundary without contacting storage. The
-# server must receive R2 configuration, while later build steps receive only
-# compiler settings through GITHUB_ENV.
-cache_step=$(jq -c '.runs.steps[] | select(.name == "Configure R2 sccache")' <<<"$action_json")
-cache_script=$(jq -r '.run' <<<"$cache_step")
-cache_env_entries=$(jq -r '.env | to_entries[] | "\(.key)=\(.value)"' <<<"$cache_step")
-mapfile -t cache_env_templates <<<"$cache_env_entries"
-render_cache_env() {
-  local architecture=$1 index value
-  cache_env=()
-  for index in "${!cache_env_templates[@]}"; do
-    value=${cache_env_templates[$index]}
-    value=${value//"\${{ inputs.r2-access-key-id }}"/fixture-access}
-    value=${value//"\${{ inputs.r2-secret-access-key }}"/fixture-secret}
-    value=${value//"\${{ inputs.r2-account-id }}"/fixture-account}
-    value=${value//"\${{ inputs.r2-bucket-name }}"/fixture-bucket}
-    value=${value//"\${{ inputs.architecture }}"/$architecture}
-    cache_env+=("$value")
-  done
-}
-cache_dir="${test_root}/cache-startup"
-mkdir -p "$cache_dir"
-cat > "${cache_dir}/sccache" <<'BASH'
-#!/usr/bin/env bash
-set -euo pipefail
-[ "$#" = 1 ] && [ "$1" = --start-server ]
-[ "$AWS_ACCESS_KEY_ID" = fixture-access ]
-[ "$AWS_SECRET_ACCESS_KEY" = fixture-secret ]
-[ "$SCCACHE_BUCKET" = fixture-bucket ]
-[ "$SCCACHE_ENDPOINT" = https://fixture-account.r2.cloudflarestorage.com ]
-[ "$SCCACHE_REGION" = auto ]
-[ "$SCCACHE_S3_KEY_PREFIX" = "$EXPECTED_PREFIX" ]
-[ "$SCCACHE_GHA_ENABLED" = false ]
-[ "$SCCACHE_IDLE_TIMEOUT" = 0 ]
-[ -f "$SCCACHE_CONF" ]
-touch "$SERVER_STARTED"
-BASH
-chmod +x "${cache_dir}/sccache"
-for architecture in arm64 x86_64; do
-  render_cache_env "$architecture"
-  rm -f "${cache_dir}/github-env" "${cache_dir}/started"
-  cache_start_env=(env -i "PATH=$PATH" "RUNNER_TEMP=$cache_dir"
-    "GITHUB_ENV=${cache_dir}/github-env" "SCCACHE_PATH=${cache_dir}/sccache"
-    "SERVER_STARTED=${cache_dir}/started" "EXPECTED_PREFIX=runner-sccache/${architecture}/"
-    "${cache_env[@]}")
-  "${cache_start_env[@]}" bash -eo pipefail -c "$cache_script"
-  [ -f "${cache_dir}/started" ] || fail "R2 cache server did not start for $architecture"
-  grep -qx 'server_startup_timeout_ms = 60000' "${cache_dir}/sccache.toml" || \
-    fail "cache startup must retain its 60-second timeout"
-  if grep -Eq 'AWS_|R2_|SCCACHE_(BUCKET|ENDPOINT|S3_KEY_PREFIX)|fixture-(access|secret)' \
-    "${cache_dir}/github-env"; then
-    fail "cache startup must not export storage configuration or credentials to build steps"
-  fi
-  [ "$(wc -l < "${cache_dir}/github-env" | tr -d ' ')" = 3 ] || \
-    fail "cache startup must export only three compiler settings"
-  grep -qx 'CARGO_INCREMENTAL=0' "${cache_dir}/github-env" || fail "sccache builds must disable incremental compilation"
-  grep -qx "SCCACHE_CONF=${cache_dir}/sccache.toml" "${cache_dir}/github-env" || fail "builds must retain the cache config"
-  grep -qx 'RUSTC_WRAPPER=sccache' "${cache_dir}/github-env" || fail "builds must use the configured cache server"
-done
-
-render_cache_env arm64
-cache_start_env=(env -i "PATH=$PATH" "RUNNER_TEMP=$cache_dir"
-  "GITHUB_ENV=${cache_dir}/github-env" "SCCACHE_PATH=${cache_dir}/sccache"
-  "SERVER_STARTED=${cache_dir}/started" "EXPECTED_PREFIX=runner-sccache/arm64/"
-  "${cache_env[@]}")
-for missing in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID SCCACHE_BUCKET SCCACHE_ARCHITECTURE; do
-  rm -f "${cache_dir}/started"
-  if "${cache_start_env[@]}" "$missing=" bash -eo pipefail -c "$cache_script" \
-    >"${cache_dir}/out" 2>"${cache_dir}/err"; then
-    fail "cache startup must reject missing $missing"
-  fi
-  [ ! -e "${cache_dir}/started" ] || fail "missing R2 configuration must not start a local cache"
-done
-rm -f "${cache_dir}/started"
-if "${cache_start_env[@]}" SCCACHE_ARCHITECTURE=ppc64 bash -eo pipefail -c "$cache_script" \
-  >"${cache_dir}/out" 2>"${cache_dir}/err"; then
-  fail "cache startup must reject an unsupported architecture"
-fi
-[ ! -e "${cache_dir}/started" ] || fail "unsupported architecture must not start a local cache"
-
-jq -e '
-  ([.jobs | to_entries[] |
+  ([.jobs, .architecture.jobs | to_entries[] |
     select(any(.value.steps[]?; .uses == "./.github/actions/setup-r2-sccache")) |
-    .key] == ["compile", "prewarm-rust-cache"]) and
-  ([.jobs | to_entries[] |
-    select(any(.value.steps[]?; (.uses // "") | startswith("mozilla-actions/sccache-action@"))) |
-    .key] == []) and
-  ([.jobs | to_entries[] |
+    .key] | sort) == ["compile", "prewarm-rust-cache"] and
+  ([.jobs, .architecture.jobs | to_entries[] |
     select(any(.value.steps[]?; (.uses // "") | startswith("Swatinem/rust-cache@"))) |
-    .key] == ["compile", "prewarm-rust-cache"])
+    .key] | sort) == ["compile", "prewarm-rust-cache"]
 ' <<<"$workflow_json" >/dev/null || fail "compiler caches must stay in the miss-only compiler and main dependency prewarmer"
 
 jq -e '
-  .jobs.build.name == "Build runner image (${{ matrix.label }})" and
-  (.jobs.build.needs | sort) == ["compile", "prepare"] and
-  .jobs.build["runs-on"] == "ubuntu-latest" and
-  .jobs.build["timeout-minutes"] == 20 and
-  (.jobs.build | has("container") | not) and
-  .jobs.build.strategy.matrix.include == "${{ fromJSON(needs.prepare.outputs.runner-host-groups-matrix) }}" and
-  (.jobs.build.if | contains("needs.compile.result == '\''skipped'\''")) and
-  (.jobs.build.if | contains("needs.compile.result == '\''success'\''")) and
-  .jobs.build.env.GUEST_CLI_PATH == "runner-cli-intermediate/package.tgz" and
-  .jobs.build.env.GUEST_CLI_MANIFEST_PATH == "runner-cli-intermediate/manifest.json" and
-  any(.jobs.build.steps[];
+  .architecture.jobs.build.name == "Build runner image (${{ matrix.label }})" and
+  (.architecture.jobs.build.needs | sort) == ["compile"] and
+  .architecture.jobs.build["runs-on"] == "ubuntu-latest" and
+  .architecture.jobs.build["timeout-minutes"] == 20 and
+  (.architecture.jobs.build | has("container") | not) and
+  .architecture.jobs.build.strategy.matrix.include == "${{ fromJSON(format('\''[{0}]'\'', inputs.architecture-json)) }}" and
+  (.architecture.jobs.build.if | contains("always()")) and
+  (.architecture.jobs.build.if | contains("!cancelled()")) and
+  any(.architecture.jobs.build.steps[];
+    .run == ".github/scripts/runner-image-architecture.sh build-ready" and
+    .env.RUNNER_IMAGE_COMPILE_RESULT == "${{ needs.compile.result }}" and
+    .env.RUNNER_IMAGE_CACHE_HIT == "${{ inputs.cache-hit }}"
+  ) and
+  .architecture.jobs.build.env.GUEST_CLI_PATH == "runner-cli-intermediate/package.tgz" and
+  .architecture.jobs.build.env.GUEST_CLI_MANIFEST_PATH == "runner-cli-intermediate/manifest.json" and
+  any(.architecture.jobs.build.steps[];
     .name == "Download cached runner binary from R2" and
-    (.if | contains("runner-binary-hit-targets")) and
+    .if == "inputs.cache-hit" and
     .run == ".github/scripts/runner-binary-cache.sh download-reference" and
-    .env.CACHE_REFERENCE == "${{ toJSON(fromJSON(needs.prepare.outputs.runner-binary-hit-references)[matrix.target]) }}" and
+    .env.CACHE_REFERENCE == "${{ inputs.cache-reference }}" and
     .env.RESOLVE_OUTPUT_DIR == "runner-binary-transport/${{ matrix.target }}"
   ) and
-  any(.jobs.build.steps[];
+  any(.architecture.jobs.build.steps[];
     .run == ".github/scripts/runner-binary-transport.sh download" and
-    (.if | contains("!contains(")) and
+    (.if | contains("!inputs.cache-hit")) and
     .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.binary-input.outputs.binary-input-digest }}" and
     .env.OUTPUT_DIR == "runner-binary-transport/${{ matrix.target }}"
   ) and
-  any(.jobs.build.steps[];
+  any(.architecture.jobs.build.steps[];
     .run == ".github/scripts/prepare-runner-image.sh" and
     .env.RUNNER_PATH == "runner-binary-transport/${{ matrix.target }}/runner" and
     .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.binary-input.outputs.binary-input-digest }}"
   ) and
-  any(.jobs.build.steps[];
+  any(.architecture.jobs.build.steps[];
     .name == "Upload runner image manifest" and
     ((.uses // "") | startswith("actions/upload-artifact@")) and
     .with.name == "${{ steps.artifact.outputs.artifact-name }}" and
@@ -381,33 +300,45 @@ jq -e '
 ' <<<"$workflow_json" >/dev/null || fail "build must preserve host readiness and republish its verified manifest on retry"
 
 jq -e '
-  (.jobs.asset.needs | sort) == ["compile", "prepare"] and
-  (.jobs.asset.if | contains("runner-binary-miss-count != '\''0'\''")) and
-  .jobs.asset.strategy.matrix.include == "${{ fromJSON(needs.prepare.outputs.runner-binary-compile-matrix) }}" and
-  any(.jobs.asset.steps[];
-    .run == ".github/scripts/runner-binary-transport.sh download" and
-    .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.binary-input.outputs.binary-input-digest }}" and
-    .env.OUTPUT_DIR == "runner-binary-fresh"
+  .architecture.jobs.compile.steps as $steps |
+  ($steps | map(.id // "") | index("build")) as $build |
+  ($steps | map(.id // "") | index("fresh")) as $fresh |
+  ($steps | map(.id // "") | index("transport")) as $transport |
+  ($steps | map(.id // "") | index("shadow")) as $shadow |
+  ($steps | map(.id // "") | index("artifact")) as $artifact |
+  ($steps | map(.id // "") | index("manifest-upload")) as $upload |
+  (.architecture.jobs.compile | has("needs") | not) and
+  .architecture.jobs.compile.strategy["fail-fast"] == false and
+  .architecture.jobs.compile.permissions == {actions: "read", contents: "read"} and
+  ($build < $fresh and $fresh < $transport and $transport < $shadow and $shadow < $artifact and $artifact < $upload) and
+  all([$fresh, $transport, $shadow, $artifact][];
+    . as $index | ($steps[$index] | has("if") | not) and
+    ($steps[$index] | has("continue-on-error") | not)
   ) and
-  any(.jobs.asset.steps[];
-    .name == "Validate fresh runner binary" and
-    (. | has("if") | not) and
-    (. | has("continue-on-error") | not)
-  ) and
-  any(.jobs.asset.steps[];
-    .name == "Resolve reusable candidate in shadow mode" and
-    (. | has("if") | not)
-  ) and
-  any(.jobs.asset.steps[];
-    .name == "Upload reusable runner binary manifest" and
-    .with.path == "runner-binary-fresh/manifest.json" and
-    .with["retention-days"] == 7
-  )
-' <<<"$workflow_json" >/dev/null || fail "reusable publication must run only for compiled misses"
+  ($steps[$fresh].run | contains(".github/scripts/runner-binary-cache.sh fresh-validate")) and
+  $steps[$shadow].env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.build.outputs.binary-input-digest }}" and
+  $steps[$shadow].env.FRESH_METADATA_PATH == "runner-binary-fresh/metadata.json" and
+  $steps[$shadow].env.RUNNER_PATH == "runner-binary-fresh/runner" and
+  $steps[$shadow].env.GH_TOKEN == "${{ github.token }}" and
+  $steps[$shadow].env.CURRENT_RUN_ID == "${{ github.run_id }}" and
+  $steps[$shadow].env.CURRENT_EVENT == "${{ github.event_name }}" and
+  $steps[$shadow].env.CURRENT_PR_HEAD_REF == "${{ inputs.pr-head-ref }}" and
+  $steps[$shadow].env.CURRENT_PR_NUMBER == "${{ inputs.pr-number }}" and
+  ($steps[$shadow].run | contains(".github/scripts/runner-binary-cache.sh shadow-resolve")) and
+  $steps[$artifact].env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.build.outputs.binary-input-digest }}" and
+  $steps[$upload]["continue-on-error"] == true and
+  ($steps[$upload] | has("if") | not) and
+  $steps[$upload].with.path == ($steps[$transport].env.OUTPUT_DIR + "/manifest.json") and
+  $steps[$upload].with.name == "${{ steps.artifact.outputs.artifact-name }}" and
+  $steps[$upload].with["if-no-files-found"] == "error" and
+  $steps[$upload].with["retention-days"] == 7 and
+  ($steps[$upload].with | has("overwrite") | not) and
+  all($steps[]; (.name // "") != "Install GitHub CLI")
+' <<<"$workflow_json" >/dev/null || fail "each compiler must authorize its immutable index after verified publication and shadow auditing"
 
-prepare_consumers=$(jq -r '[.jobs | to_entries[] |
+prepare_consumers=$(jq -r '[.jobs, .architecture.jobs | to_entries[] |
   select(any(.value.steps[]?; .run == ".github/scripts/prepare-runner-image.sh")) |
   .key] | join(",")' <<<"$workflow_json")
-[ "$prepare_consumers" = "build" ] || fail "host preparation must run only in the all-target build job"
+[ "$prepare_consumers" = "build" ] || fail "host preparation must run only in the architecture-owned build job"
 
 echo "runner-image-workflow-test: ok"

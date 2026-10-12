@@ -76,8 +76,7 @@ impl ApiRun {
                 RunStart {
                     restore_guest_state: false,
                     reuse_result: SandboxReuseResult::PoolMiss,
-                    workspace_reuse_result:
-                        runner_types::types::WorkspaceReuseResult::NotConfigured,
+                    home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
                     prev_storage: None,
                 },
                 &mut telemetry,
@@ -258,7 +257,7 @@ async fn run_local_active_input_rejection(diagnostic: &str) -> Vec<CapturedEvent
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+                home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -362,7 +361,7 @@ async fn run_in_sandbox_forwards_local_active_inputs_in_order() {
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+                home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -578,7 +577,7 @@ async fn run_in_sandbox_retries_local_active_input_with_same_id_after_uncertain_
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+                home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -853,7 +852,7 @@ async fn assert_uncertain_delivery_is_suppressed(outcome: sandbox::ProcessContro
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+                home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,

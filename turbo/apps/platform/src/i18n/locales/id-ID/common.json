@@ -122,20 +122,23 @@
         "title": "Log tidak ditemukan"
       },
       "runner": {
-        "cacheMiss": "Tidak ada workspace dalam cache yang cocok dengan kunci penggunaan ulang.",
+        "cacheMiss": "Tidak ada direktori home dalam cache yang cocok dengan kunci penggunaan ulang.",
         "deviceLimitMismatch": "Entri pool idle ada, tetapi status rate limiter perangkatnya tidak cocok.",
-        "diskPressure": "Penggunaan ulang workspace dilewati karena runner mengalami tekanan disk.",
+        "diskPressure": "Penggunaan ulang direktori home dilewati karena runner mengalami tekanan disk.",
         "environment": "Lingkungan",
         "featureDisabled": "Penggunaan ulang sandbox dinonaktifkan untuk run ini.",
         "framework": "Framework",
         "generation": "Generasi",
+        "home": "Direktori home",
+        "homeNoReuseKey": "Tidak ada kunci penggunaan ulang direktori home yang tersedia.",
+        "homeReusedDescription": "Direktori home dipulihkan dari cache runner.",
         "hostname": "Nama host",
-        "invalidMetadata": "Metadata workspace dalam cache tidak valid.",
+        "invalidMetadata": "Metadata direktori home dalam cache tidak valid.",
         "invalidWorkingDir": "Direktori kerja yang diminta tidak dapat digunakan ulang.",
-        "lockBusy": "Run lain sedang menyiapkan workspace yang sama.",
+        "lockBusy": "Run lain sedang menyiapkan direktori home yang sama.",
         "noReuseKey": "Tidak ada kunci penggunaan ulang yang tersedia untuk mencocokkan sandbox idle.",
         "noSessionId": "Hasil lama: alasan pasti sandbox tidak digunakan ulang tidak tersedia.",
-        "notConfigured": "Penggunaan ulang workspace tidak dikonfigurasi untuk run ini.",
+        "notConfigured": "Penggunaan ulang direktori home tidak dikonfigurasi untuk run ini.",
         "notReused": "Tidak digunakan ulang",
         "outcomeUnavailableDescription": "Detail tambahan tidak tersedia.",
         "poolMiss": "Tidak ada sandbox yang cocok ditemukan di pool idle.",
@@ -145,23 +148,20 @@
         "reusedDescription": "Sandbox dibuka kembali dari pool idle.",
         "runnerId": "ID runner",
         "sandbox": "Sandbox",
-        "sandboxPrepareFallback": "Workspace dalam cache ditemukan, tetapi tidak dapat digunakan setelah persiapan sandbox.",
-        "sandboxReusedDescription": "Workspace tetap tersedia di dalam sandbox yang digunakan ulang.",
+        "sandboxPrepareFallback": "Direktori home dalam cache ditemukan, tetapi tidak dapat digunakan setelah persiapan sandbox.",
+        "sandboxReusedDescription": "Direktori home tetap tersedia di sandbox yang digunakan ulang.",
         "startup": "Startup",
         "startupCold": "Cold start",
         "startupColdDescription": "Sandbox dan workspace baru disiapkan.",
+        "startupHome": "Penggunaan ulang direktori home",
+        "startupHomeDescription": "Sandbox baru memulihkan direktori home yang di-cache.",
         "startupSandbox": "Penggunaan ulang sandbox",
         "startupSandboxDescription": "Sandbox dan workspace-nya digunakan kembali.",
         "startupUnknown": "Tidak diketahui",
         "startupUnknownDescription": "Detail penggunaan kembali saat startup tidak tersedia.",
-        "startupWorkspace": "Penggunaan ulang workspace",
-        "startupWorkspaceDescription": "Sandbox baru memulihkan workspace yang di-cache.",
         "unavailable": "Tidak tersedia",
         "unparkFailed": "Percobaan membuka kembali gagal; sandbox baru disediakan.",
-        "version": "Versi",
-        "workspace": "Workspace",
-        "workspaceNoReuseKey": "Tidak ada kunci penggunaan ulang workspace yang tersedia.",
-        "workspaceReusedDescription": "Workspace dipulihkan dari cache runner."
+        "version": "Versi"
       },
       "steps": {
         "matched": "({{matched}}/{{total}} cocok)",
@@ -907,20 +907,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Anda sudah masuk ke Desktop. Anda dapat menutup jendela ini.",
-        "connecting": "Menghubungkan sesi desktop Anda.",
-        "consumed": "Menyelesaikan proses masuk di Desktop. Biarkan jendela ini terbuka.",
-        "failed": "Proses masuk tidak dapat diselesaikan. Mulai lagi dari Desktop atau coba lagi di browser ini.",
-        "no-workspaces": "Buat atau bergabung dengan ruang kerja di aplikasi web, lalu masuk lagi dari Desktop.",
-        "pending": "Buka Desktop untuk melanjutkan masuk.",
-        "selecting": "Pilih ruang kerja untuk komputer ini."
-      },
-      "reopen": "Buka Desktop",
-      "retry": "Coba lagi",
-      "title": "Masuk ke Desktop"
-    },
     "documentTitles": {
       "signIn": "Masuk",
       "signUp": "Daftar"
@@ -1704,6 +1690,9 @@
       "cancelled": "Permintaan dibatalkan",
       "cancelling": "Membatalkan…",
       "checkFailed": "Browser tidak dapat diperiksa. Isian Anda tetap tersimpan; coba lagi sebelum mengirim.",
+      "checkingOutcome": "Memeriksa status browser",
+      "checkingOutcomeDescription": "Menunggu browser mengonfirmasi permintaan ini.",
+      "checkStatus": "Periksa status",
       "completed": "Informasi ditambahkan",
       "confirmRangeValue": "Gunakan nilai saat ini",
       "continue": "Beri tahu agen",
@@ -1719,6 +1708,8 @@
       "loadingDescription": "Memeriksa permintaan ini…",
       "open": "Masukkan informasi",
       "optional": "(Opsional)",
+      "outcomeNotConfirmed": "Hasil belum dikonfirmasi",
+      "outcomeNotConfirmedDescription": "Browser mungkin telah menyelesaikan permintaan ini. Periksa statusnya sebelum mencoba lagi.",
       "required": "(Wajib)",
       "retry": "Coba lagi",
       "site": "Situs",
@@ -2123,8 +2114,6 @@
       "number": "nomor"
     },
     "sidebar": {
-      "allArchived": "Semua chat Anda telah diarsipkan",
-      "allCaughtUp": "Semua sudah beres",
       "allChats": "Semua chat",
       "archive": "Arsipkan chat",
       "archived": "Diarsipkan",
@@ -2135,7 +2124,9 @@
       "deleteTitle": "Hapus chat?",
       "draft": "Draf",
       "empty": "Mulai percakapan dan percakapan itu akan muncul di sini",
+      "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Kotak masuk",
+      "inboxEmpty": "Kotak masuk Anda kosong",
       "markUnread": "Tandai belum dibaca",
       "movePinDown": "Pindahkan ke bawah",
       "movePinUp": "Pindahkan ke atas",
@@ -2799,8 +2790,12 @@
       "resize": "Ubah ukuran sidebar"
     },
     "toasts": {
+      "archived": "Chat diarsipkan.",
+      "archivedMuted": "Chat diarsipkan. Chat ini dibisukan, jadi balasan baru tidak akan mengembalikannya.",
       "copied": "Disalin",
-      "deleted": "Chat dihapus"
+      "deleted": "Chat dihapus",
+      "unarchived": "Chat dipindahkan ke Kotak masuk",
+      "undo": "Urungkan"
     },
     "voice": {
       "checkingLimit": "Memeriksa batas input suara",
@@ -3804,6 +3799,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "Coba lagi"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Permintaan gagal"
@@ -3916,22 +3914,6 @@
         "back": "Kembali",
         "continue": "Lanjutkan",
         "notNow": "Nanti saja"
-      },
-      "compliance": {
-        "frameworks": {
-          "ccpa": "CCPA / CPRA",
-          "gdpr": "GDPR",
-          "hipaa": "HIPAA",
-          "iso27001": "ISO/IEC 27001",
-          "soc2": "SOC 2 Type II"
-        },
-        "link": "Detail keamanan",
-        "status": {
-          "aligned": "Selaras",
-          "compliant": "Patuh",
-          "inProgress": "Berlangsung"
-        },
-        "title": "Kepatuhan Okou, dibangun untuk kepercayaan Anda"
       },
       "documentTitles": {
         "experience": "Pengalaman AI Anda",
@@ -4905,6 +4887,27 @@
           "title": "Penyimpanan IndexedDB",
           "unavailable": "Penyimpanan IndexedDB tidak tersedia."
         },
+        "morningBriefEmail": {
+          "checkStatus": "Periksa status pengiriman",
+          "description": "Kirim contoh tetap ke email akun Anda dengan templat Morning Brief. Ini tidak menjalankan Agent atau mengubah jadwal Anda.",
+          "reasons": {
+            "delivery-failed": "Pengiriman gagal. Percobaan sebelumnya mungkin telah diterima penyedia.",
+            "expired": "Pengiriman kedaluwarsa. Percobaan sebelumnya mungkin telah diterima penyedia.",
+            "no-email": "Dilewati: akun Anda tidak memiliki alamat email.",
+            "suppressed": "Dilewati: pengiriman ke email akun Anda diblokir.",
+            "unsubscribed": "Dilewati: akun Anda berhenti berlangganan pembaruan email."
+          },
+          "requestFailed": "Permintaan belum selesai. Percobaan ulang memakai permintaan yang sama untuk mencegah email duplikat.",
+          "retry": "Coba lagi email uji",
+          "send": "Kirim email uji",
+          "sendAnother": "Kirim email uji lain",
+          "sending": "Mengirim…",
+          "status": {
+            "queued": "Dalam antrean pengiriman. Periksa status sebelum mengirim contoh lain.",
+            "sent": "Diterima penyedia email. Periksa kotak masuk dan spam; kedatangan di kotak masuk belum dikonfirmasi."
+          },
+          "title": "Email uji Morning Brief"
+        },
         "openrouterPreset": {
           "description": "Berlaku untuk eksekusi Auto dan Okou 1.0 bawaan yang baru di seluruh organisasi. Eksekusi yang sudah ada tidak berubah.",
           "loading": "Memuat…",
@@ -5137,6 +5140,22 @@
   },
   "shared": {
     "breadcrumb": "Breadcrumb",
+    "compliance": {
+      "frameworks": {
+        "ccpa": "CCPA / CPRA",
+        "gdpr": "GDPR",
+        "hipaa": "HIPAA",
+        "iso27001": "ISO/IEC 27001",
+        "soc2": "SOC 2 Type II"
+      },
+      "link": "Detail keamanan",
+      "status": {
+        "aligned": "Selaras",
+        "compliant": "Patuh",
+        "inProgress": "Berlangsung"
+      },
+      "title": "Kepatuhan Okou, dibangun untuk kepercayaan Anda"
+    },
     "errorBoundary": {
       "contactSupport": "dukungan",
       "description": "Coba lagi atau hubungi kami",
@@ -5301,6 +5320,14 @@
     },
     "clearSearch": "Hapus pencarian",
     "custom": "Kustom",
+    "delete": {
+      "cancel": "Batal",
+      "confirm": "Hapus templat",
+      "deleting": "Menghapus...",
+      "description": "\"{{title}}\" akan dihapus untuk semua orang yang dapat melihatnya. Tindakan ini tidak dapat dibatalkan.",
+      "failed": "Templat tidak dapat dihapus. Coba lagi.",
+      "title": "Hapus templat?"
+    },
     "detail": {
       "back": "Templat kustom",
       "page": "Halaman {{number}}"
@@ -6282,22 +6309,31 @@
     "connected": "Terhubung",
     "connectedWithDetail": "Terhubung ({{detail}})",
     "discord": {
-      "accountSetup": "Akun Anda belum terhubung. Menghubungkan akun Discord baru belum tersedia.",
-      "adminSetup": "Penyiapan server belum tersedia. Konfigurasi yang sudah terverifikasi dapat terus menggunakan Discord.",
+      "accountSetup": "Hubungkan akun Discord Anda melalui persetujuan resmi di browser.",
+      "adminSetup": "Instal Okou ke server Discord Anda, lalu hubungkan akun Anda.",
+      "approvalConfirmed": "Persetujuan browser dikonfirmasi. Tutup tab ini untuk menyelesaikan di tab Works semula.",
+      "approvalFailed": "Konfirmasi gagal. Masuk dengan akun dan organisasi Okou semula atau mulai ulang otorisasi.",
+      "approvalPrompt": "Konfirmasi dengan akun dan organisasi Okou yang sama seperti tab Works semula. Konfirmasi saja belum menghubungkan akun Anda.",
+      "approve": "Konfirmasi persetujuan Discord",
+      "approving": "Mengonfirmasi…",
+      "authorizationError": "Otorisasi Discord tidak dapat diselesaikan. Coba lagi dari kartu ini.",
+      "authorizing": "Mengotorisasi…",
+      "browserConsent": "Selesaikan persetujuan Discord dan konfirmasi dengan akun Okou di tab tersebut. Menutup tab saja tidak menghubungkan akun Anda.",
       "chooseDmServer": "Pilih server",
       "description": "Tandai Okou di server atau kirim pesan langsung ke bot.",
       "disconnect": "Putuskan koneksi Discord",
       "dmServer": "Server default untuk pesan langsung",
+      "install": "Instal ke Discord",
       "limitedContext": "Konteks terbatas: Okou mungkin tidak menerima pesan biasa di kanal. Tandai Okou dan sertakan detail yang dibutuhkannya.",
-      "loadError": "Tidak dapat memuat status Discord.",
-      "loading": "Memuat status Discord…",
-      "memberSetup": "Tanyakan akses Discord kepada admin organisasi. Penyiapan server belum tersedia.",
+      "memberSetup": "Minta admin organisasi menginstal Okou ke server Discord Anda.",
       "moreOptions": "Opsi Discord lainnya",
+      "pendingConsent": "Tab ini tidak memiliki bukti otorisasi. Tutup dan mulai ulang otorisasi dari tab Works semula.",
+      "popupBlocked": "Izinkan popup untuk mengotorisasi Discord, lalu coba lagi.",
       "retry": "Coba lagi",
       "server": "Server: {{name}}",
       "suspended": "Discord untuk sementara tidak tersedia. Koneksi yang ada tetap disimpan.",
       "title": "Discord",
-      "unconfigured": "Discord belum tersedia untuk organisasi ini.",
+      "unconfigured": "Discord belum dikonfigurasi untuk organisasi ini.",
       "uninstall": "Hapus Discord",
       "uninstallDescription": "Ini memutuskan koneksi Discord untuk semua orang di organisasi ini. Organisasi lain tetap terhubung.",
       "uninstallTitle": "Hapus Discord dari organisasi ini?"

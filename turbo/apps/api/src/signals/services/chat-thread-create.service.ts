@@ -9,7 +9,7 @@ import {
   type ModelSettings,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
@@ -58,7 +58,7 @@ export function prepareChatThreadInsert(args: NewChatThreadArgs) {
         modelSettings: sql`COALESCE((
           SELECT jsonb_object_agg(key, value)
           FROM jsonb_each(${orgMembersMetadata.modelSettings})
-          WHERE key NOT IN ('auto', 'okou-1.0') AND key NOT LIKE '@preset/%'
+          WHERE key NOT IN ('auto', 'okou-1.0', 'okou-1.0-pro', 'okou-1.0-max') AND key NOT LIKE '@preset/%'
         ), '{}'::jsonb)`
           .mapWith(orgMembersMetadata.modelSettings)
           .as("model_settings"),

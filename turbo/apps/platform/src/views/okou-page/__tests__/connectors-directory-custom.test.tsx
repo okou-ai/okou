@@ -239,7 +239,7 @@ test("Do not turn Custom loading failure into an empty search result", async () 
   ).resolves.toBeVisible();
   expect(screen.queryByText(/No connectors matching/u)).toBeNull();
   failing = false;
-  click(getConnectorAction("button", "Retry", section));
+  click(getConnectorAction("button", "Try again", section));
   await waitFor(() => {
     expect(getConnectorCard("Recovered Service")).toBeVisible();
   });

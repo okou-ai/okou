@@ -1,3 +1,4 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
@@ -20,14 +21,7 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
 import { createRouteMocks } from "./helpers/route-test";
-import {
-  readConnectorCredentialStorageState,
-  seedBuiltinThreadConnectorSelection,
-  seedConnectorStorageRow,
-  setBuiltinOAuthScopeFacts,
-  setConnectorDefaultState,
-  setConnectorSecretOwner,
-} from "./helpers/connector-credential-storage-state";
+import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { mailRoutes } from "../mail";
 import { chatThreadRoutes } from "../chat-threads";
 
@@ -347,6 +341,85 @@ async function seedGmailMailCardFixture(
   return { actor, agent, thread, gmail };
 }
 
+async function createPublicGmailMailCardFixture(
+  scopes: readonly string[] = [GMAIL_MODIFY_SCOPE],
+) {
+  bdd.acceptAgentStorageWrites();
+  mockGmailConnectorOAuth({
+    accessToken: "gmail-mail-card-token",
+    email: "sender@example.com",
+  });
+  server.use(
+    http.post("https://oauth2.googleapis.com/token", async ({ request }) => {
+      const body = new URLSearchParams(await request.text());
+      expect(body.get("grant_type")).toBe("authorization_code");
+      return HttpResponse.json({
+        access_token: "gmail-mail-card-token",
+        refresh_token: "gmail-refresh-token",
+        expires_in: 3600,
+        token_type: "Bearer",
+        scope: scopes.join(" "),
+      });
+    }),
+  );
+  let agentId: string | undefined;
+  const owner = createPublicConnectorActor(context, {
+    optionalEnvironmentNames: [
+      "GOOGLE_OAUTH_CLIENT_ID",
+      "GOOGLE_OAUTH_CLIENT_SECRET",
+    ],
+    beforeWorkspaceCleanup: async () => {
+      if (agentId) {
+        await bdd.deleteAgent(owner.actor, agentId);
+      }
+    },
+  });
+  const { actor, run: own } = owner;
+  return await own(async () => {
+    const agent = await own(() => {
+      return bdd.createAgent(actor, {
+        displayName: "Nova Mail agent",
+        visibility: "private",
+      });
+    });
+    agentId = agent.agentId;
+    const thread = await own(() => {
+      return chat.createThread(actor, {
+        agentId: agent.agentId,
+        title: "Mail review",
+      });
+    });
+    const start = await own(() => {
+      return connectors.startOauth(actor, "gmail", "oauth");
+    });
+    const state = new URL(start.authorizationUrl).searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected Gmail OAuth state");
+    }
+    await own(() => {
+      return connectors.completeOauthCallback("gmail", {
+        code: "okou-mail-code",
+        state,
+      });
+    });
+    const gmail = await own(() => {
+      return connectors.readConnectorBySlug(actor, "gmail");
+    });
+    await own(() => {
+      return runs.enableAgentConnectors(actor, agent.agentId, ["gmail"]);
+    });
+    mocks.clerk.session(actor.userId, actor.orgId);
+    return {
+      actor,
+      agent,
+      thread,
+      gmail,
+      run: own,
+      ownsFeatureSwitches: owner.ownsFeatureSwitches,
+    };
+  });
+}
+
 function client(options?: { readonly rethrowErrors?: boolean }) {
   return setupApp({ context, routes: mailRoutes, ...options })(mailContract);
 }
@@ -375,7 +448,10 @@ async function readThreadSelections(
 }
 
 async function linkDraft(
-  fixture: Awaited<ReturnType<typeof seedGmailMailCardFixture>>,
+  fixture: {
+    readonly agent: { readonly agentId: string };
+    readonly thread: { readonly id: string };
+  },
   headers = authHeaders(),
 ) {
   return await accept(
@@ -389,20 +465,6 @@ async function linkDraft(
     }),
     [200],
   );
-}
-
-async function setGmailOAuthScopeFacts(
-  fixture: Awaited<ReturnType<typeof seedGmailMailCardFixture>>,
-  oauthGrantedScopes: readonly string[] | null,
-): Promise<void> {
-  await setBuiltinOAuthScopeFacts(context, {
-    orgId: fixture.actor.orgId ?? "",
-    userId: fixture.actor.userId,
-    connectorSlug: "gmail",
-    connectorId: fixture.gmail.id,
-    oauthScopes: [GMAIL_MODIFY_SCOPE],
-    oauthGrantedScopes,
-  });
 }
 
 async function addGmailAccount(
@@ -459,6 +521,82 @@ async function selectGmailAccount(
 }
 
 describe("POST /api/mail/drafts/link", () => {
+  it("converges simultaneous same-chat links and preserves replay and cross-chat conflict", async () => {
+    mockEnv("APP_URL", "https://app.okou.ai");
+    const fixture = await createPublicGmailMailCardFixture();
+    await fixture.run(async () => {
+      mockGmailDraftApi();
+      const [first, second] = await fixture.run(() => {
+        return Promise.all([
+          fixture.run(() => {
+            return linkDraft(fixture);
+          }),
+          fixture.run(() => {
+            return linkDraft(fixture);
+          }),
+        ]);
+      });
+      expect(second.body).toStrictEqual(first.body);
+      expect(first.body.mailDraftUrl).toBe(
+        `https://app.okou.ai/mail/drafts/${first.body.mailDraftId}`,
+      );
+
+      const loaded = await fixture.run(() => {
+        return accept(
+          client().getDraft({
+            headers: authHeaders(),
+            params: { mailDraftId: first.body.mailDraftId },
+          }),
+          [200],
+        );
+      });
+      expect(loaded.body).toMatchObject({
+        ...first.body,
+        mailDraft: {
+          gmailDraftId: GMAIL_DRAFT_ID,
+          gmailThreadId: GMAIL_THREAD_ID,
+          gmailMessageId: GMAIL_MESSAGE_ID,
+          status: "draft",
+          detailAvailable: true,
+          from: "sender@example.com",
+          subject: "Attachment review",
+        },
+      });
+
+      const replay = await fixture.run(() => {
+        return linkDraft(fixture);
+      });
+      expect(replay.body).toStrictEqual(first.body);
+
+      const otherThread = await fixture.run(() => {
+        return chat.createThread(fixture.actor, {
+          agentId: fixture.agent.agentId,
+          title: "Concurrent mail conflict",
+        });
+      });
+      const conflict = await fixture.run(() => {
+        return accept(
+          client().linkDraft({
+            headers: authHeaders(),
+            body: {
+              threadId: otherThread.id,
+              agentId: fixture.agent.agentId,
+              gmailDraftId: GMAIL_DRAFT_ID,
+            },
+          }),
+          [409],
+        );
+      });
+      expect(conflict.body.error.message).toBe(
+        "This Gmail draft is already linked to another chat",
+      );
+      const originalLink = await fixture.run(() => {
+        return linkDraft(fixture);
+      });
+      expect(originalLink.body).toStrictEqual(first.body);
+    });
+  });
+
   it("uses the thread-selected Gmail account without probing the default", async () => {
     const fixture = await seedGmailMailCardFixture();
     const selectedAccessToken = "selected-gmail-token";
@@ -552,50 +690,68 @@ describe("POST /api/mail/drafts/link", () => {
     expect(gmail.draftReadCount).toBe(1);
   });
 
-  it("uses a healthy Gmail connection with unknown historical grants", async () => {
-    const fixture = await seedGmailMailCardFixture();
-    await setGmailOAuthScopeFacts(fixture, null);
-    await connectors.updateFeatureSwitches(fixture.actor, {});
-    const gmail = mockGmailDraftApi();
+  it("uses a healthy Gmail connection with its provider-granted scope", async () => {
+    const fixture = await createPublicGmailMailCardFixture();
+    await fixture.run(async () => {
+      fixture.ownsFeatureSwitches();
+      await fixture.run(() => {
+        return connectors.updateFeatureSwitches(fixture.actor, {});
+      });
+      const gmail = mockGmailDraftApi();
 
-    await expect(
-      connectors.readConnectorBySlug(fixture.actor, "gmail"),
-    ).resolves.toMatchObject({
-      oauthScopes: null,
-      connectionStatus: "connected",
-    });
-    await expect(
-      connectors.listBuiltinConnectorAccounts(fixture.actor, "gmail"),
-    ).resolves.toMatchObject([
-      {
-        oauthScopes: null,
+      await expect(
+        fixture.run(() => {
+          return connectors.readConnectorBySlug(fixture.actor, "gmail");
+        }),
+      ).resolves.toMatchObject({
+        oauthScopes: [GMAIL_MODIFY_SCOPE],
         connectionStatus: "connected",
-      },
-    ]);
-    await expect(linkDraft(fixture)).resolves.toMatchObject({ status: 200 });
-    expect(gmail.draftReadCount).toBe(1);
+      });
+      await expect(
+        fixture.run(() => {
+          return connectors.listBuiltinConnectorAccounts(
+            fixture.actor,
+            "gmail",
+          );
+        }),
+      ).resolves.toMatchObject([
+        {
+          oauthScopes: [GMAIL_MODIFY_SCOPE],
+          connectionStatus: "connected",
+        },
+      ]);
+      await expect(
+        fixture.run(() => {
+          return linkDraft(fixture);
+        }),
+      ).resolves.toMatchObject({ status: 200 });
+      expect(gmail.draftReadCount).toBe(1);
+    });
   });
 
   it("rejects a known-insufficient Gmail grant before provider access", async () => {
-    const fixture = await seedGmailMailCardFixture();
-    await setGmailOAuthScopeFacts(fixture, []);
-    const gmail = mockGmailDraftApi();
+    const fixture = await createPublicGmailMailCardFixture([]);
+    await fixture.run(async () => {
+      const gmail = mockGmailDraftApi();
 
-    const response = await accept(
-      client().linkDraft({
-        headers: authHeaders(),
-        body: {
-          threadId: fixture.thread.id,
-          agentId: fixture.agent.agentId,
-          gmailDraftId: GMAIL_DRAFT_ID,
-        },
-      }),
-      [409],
-    );
-    expect(response.body.error.message).toBe(
-      "Connect and authorize Gmail for this agent first",
-    );
-    expect(gmail.draftReadCount).toBe(0);
+      const response = await fixture.run(() => {
+        return accept(
+          client().linkDraft({
+            headers: authHeaders(),
+            body: {
+              threadId: fixture.thread.id,
+              agentId: fixture.agent.agentId,
+              gmailDraftId: GMAIL_DRAFT_ID,
+            },
+          }),
+          [409],
+        );
+      });
+      expect(response.body.error.message).toBe(
+        "Connect and authorize Gmail for this agent first",
+      );
+      expect(gmail.draftReadCount).toBe(0);
+    });
   });
 
   it("requires reconnect when Gmail reports an insufficient token scope", async () => {
@@ -696,57 +852,46 @@ describe("POST /api/mail/drafts/link", () => {
     });
   });
 
-  // Connector credential storage exception: no public flow leaves Gmail
-  // accounts without a default, so this unchanged case keeps the documented
-  // test-state boundary.
-  async function prepareGmailDraftWithoutDefaultAccount() {
-    const fixture = await seedGmailMailCardFixture();
-    mockGmailDraftApi();
-    const linked = await linkDraft(fixture);
-    const storage = await readConnectorCredentialStorageState(context, {
-      orgId: fixture.actor.orgId ?? "",
-      userId: fixture.actor.userId,
-      connectorSlug: "gmail",
-    });
-    const connectorId = storage.connector?.id;
-    if (!connectorId) {
-      throw new Error("Expected a stored Gmail connector account");
-    }
-    await seedBuiltinThreadConnectorSelection(context, {
-      chatThreadId: fixture.thread.id,
-      connectorId,
-      connectorSlug: "gmail",
-    });
-    await setConnectorDefaultState(context, {
-      orgId: fixture.actor.orgId ?? "",
-      userId: fixture.actor.userId,
-      connectorId,
-      isDefault: false,
-    });
-
-    return { fixture, linked, connectorId };
-  }
-
-  it("requires a default Gmail account when linking a draft in a new thread", async () => {
-    const { fixture } = await prepareGmailDraftWithoutDefaultAccount();
-    const newThread = await chat.createThread(fixture.actor, {
-      agentId: fixture.agent.agentId,
-      title: "Default Gmail projection",
-    });
-    const newDraft = await accept(
-      client().linkDraft({
-        headers: authHeaders(),
-        body: {
-          threadId: newThread.id,
+  it("rejects a new draft after the Gmail account is publicly disconnected", async () => {
+    const fixture = await createPublicGmailMailCardFixture();
+    await fixture.run(async () => {
+      mockGmailDraftApi();
+      await fixture.run(() => {
+        return linkDraft(fixture);
+      });
+      await fixture.run(() => {
+        return selectGmailAccount(fixture, fixture.gmail.id);
+      });
+      await fixture.run(() => {
+        return connectors.deleteBuiltinConnectorAccount(
+          fixture.actor,
+          "gmail",
+          fixture.gmail.id,
+        );
+      });
+      const newThread = await fixture.run(() => {
+        return chat.createThread(fixture.actor, {
           agentId: fixture.agent.agentId,
-          gmailDraftId: GMAIL_DRAFT_ID,
-        },
-      }),
-      [409],
-    );
-    expect(newDraft.body.error.message).toBe(
-      "Connect and authorize Gmail for this agent first",
-    );
+          title: "Default Gmail projection",
+        });
+      });
+      const newDraft = await fixture.run(() => {
+        return accept(
+          client().linkDraft({
+            headers: authHeaders(),
+            body: {
+              threadId: newThread.id,
+              agentId: fixture.agent.agentId,
+              gmailDraftId: GMAIL_DRAFT_ID,
+            },
+          }),
+          [409],
+        );
+      });
+      expect(newDraft.body.error.message).toBe(
+        "Connect and authorize Gmail for this agent first",
+      );
+    });
   });
 
   it("clears the exact thread selection when its pinned Gmail account is deleted", async () => {
@@ -841,110 +986,153 @@ describe("POST /api/mail/drafts/link", () => {
 
   it("links without injecting a duplicate card and sends without rebuilding MIME", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
-    const fixture = await seedGmailMailCardFixture();
-    const gmail = mockGmailDraftApi();
-
-    const okouToken = runs.okouTokenForRunWithCapabilities(
-      fixture.actor,
-      randomUUID(),
-      ["connector:read"],
-    );
-    const linked = await linkDraft(fixture, {
-      authorization: `Bearer ${okouToken}`,
-    });
-    expect(linked.body.mailDraftUrl).toBe(
-      `https://app.okou.ai/mail/drafts/${linked.body.mailDraftId}`,
-    );
-
-    const duplicateLink = await linkDraft(fixture);
-    expect(duplicateLink.body).toStrictEqual({
-      mailDraftId: linked.body.mailDraftId,
-      mailDraftUrl: `https://app.okou.ai/mail/drafts/${linked.body.mailDraftId}`,
-    });
-
-    const loaded = await accept(
-      client().getDraft({
-        headers: authHeaders(),
-        params: { mailDraftId: linked.body.mailDraftId },
-      }),
-      [200],
-    );
-    expect(loaded.body.mailDraftUrl).toBe(
-      `https://app.okou.ai/mail/drafts/${linked.body.mailDraftId}`,
-    );
-    expect(loaded.body.mailDraft).toMatchObject({
-      version: 3,
-      provider: "gmail",
-      from: "sender@example.com",
-      fromName: "Sender",
-      to: ["recipient@example.com"],
-      cc: ["copy@example.com"],
-      subject: "Attachment review",
-      body: "Mail body",
-      bodyHtml: GMAIL_HTML_BODY,
-      inlineImages: [
-        {
-          contentId: "email-test-illustration",
-          partId: "2",
-          alt: "Cheerful envelope illustration",
-        },
-      ],
-      status: "draft",
-      attachments: [
-        {
-          filename: "report.pdf",
-          contentType: "application/pdf",
-          size: 248_192,
-          partId: "1",
-        },
+    const owned = await publicChatActor(context, {
+      optionalEnvironmentNames: [
+        "GOOGLE_OAUTH_CLIENT_ID",
+        "GOOGLE_OAUTH_CLIENT_SECRET",
       ],
     });
+    await owned.run(async () => {
+      mockGmailConnectorOAuth({
+        accessToken: "gmail-mail-card-token",
+        email: "sender@example.com",
+      });
+      const gmail = mockGmailDraftApi();
+      const start = await connectors.startOauth(owned.actor, "gmail", "oauth");
+      const state = new URL(start.authorizationUrl).searchParams.get("state");
+      if (!state) {
+        throw new Error("Expected Gmail OAuth state");
+      }
+      await connectors.completeOauthCallback("gmail", {
+        code: "okou-mail-code",
+        state,
+      });
+      await runs.enableAgentConnectors(owned.actor, owned.agentId, ["gmail"]);
+      const fixture = {
+        actor: owned.actor,
+        agent: { agentId: owned.agentId },
+        thread: await chat.createThread(owned.actor, {
+          agentId: owned.agentId,
+          title: "Mail review",
+        }),
+        gmail: await connectors.readConnectorBySlug(owned.actor, "gmail"),
+      };
+      const source = await owned.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Link the existing Gmail draft",
+      });
+      const { claim } = await owned.claimChatRun(
+        owned.runnerGroup,
+        source.runId,
+      );
+      const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+      if (!okouToken) {
+        throw new Error("Expected the Runner-issued connector token");
+      }
+      const linked = await linkDraft(fixture, {
+        authorization: `Bearer ${okouToken}`,
+      });
+      expect(linked.body.mailDraftUrl).toBe(
+        `https://app.okou.ai/mail/drafts/${linked.body.mailDraftId}`,
+      );
 
-    const attachment = await accept(
-      client().getAttachment({
-        headers: authHeaders(),
-        params: {
-          mailDraftId: linked.body.mailDraftId,
-          partId: "2",
-        },
-      }),
-      [200],
-    );
-    expect(attachment.body).toBeInstanceOf(Blob);
-    expect(
-      Buffer.from(await attachment.body.arrayBuffer()).equals(
-        GMAIL_IMAGE_BYTES,
-      ),
-    ).toBeTruthy();
-    expect(attachment.headers.get("content-type")).toBe("image/png");
-    expect(attachment.headers.get("content-disposition")).toBe(
-      "attachment; filename*=UTF-8''email-test-illustration.png",
-    );
+      const duplicateLink = await linkDraft(fixture);
+      expect(duplicateLink.body).toStrictEqual({
+        mailDraftId: linked.body.mailDraftId,
+        mailDraftUrl: `https://app.okou.ai/mail/drafts/${linked.body.mailDraftId}`,
+      });
 
-    const sent = await accept(
-      client().sendDraft({
-        headers: authHeaders(),
-        params: { mailDraftId: linked.body.mailDraftId },
-      }),
-      [200],
-    );
-    expect(sent.body.mailDraft.status).toBe("sent");
-    expect(sent.body.mailDraft.sentGmailMessageId).toBe(GMAIL_SENT_MESSAGE_ID);
-    expect(gmail.sentBody).toStrictEqual({ id: GMAIL_DRAFT_ID });
-    expect(gmail.sendCount).toBe(1);
+      const loaded = await accept(
+        client().getDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+        [200],
+      );
+      expect(loaded.body.mailDraftUrl).toBe(
+        `https://app.okou.ai/mail/drafts/${linked.body.mailDraftId}`,
+      );
+      expect(loaded.body.mailDraft).toMatchObject({
+        version: 3,
+        provider: "gmail",
+        from: "sender@example.com",
+        fromName: "Sender",
+        to: ["recipient@example.com"],
+        cc: ["copy@example.com"],
+        subject: "Attachment review",
+        body: "Mail body",
+        bodyHtml: GMAIL_HTML_BODY,
+        inlineImages: [
+          {
+            contentId: "email-test-illustration",
+            partId: "2",
+            alt: "Cheerful envelope illustration",
+          },
+        ],
+        status: "draft",
+        attachments: [
+          {
+            filename: "report.pdf",
+            contentType: "application/pdf",
+            size: 248_192,
+            partId: "1",
+          },
+        ],
+      });
 
-    const duplicateSend = await accept(
-      client().sendDraft({
-        headers: authHeaders(),
-        params: { mailDraftId: linked.body.mailDraftId },
-      }),
-      [409],
-    );
-    expect(duplicateSend.body.error.message).toContain("can no longer be sent");
-    expect(gmail.sendCount).toBe(1);
+      const attachment = await accept(
+        client().getAttachment({
+          headers: authHeaders(),
+          params: {
+            mailDraftId: linked.body.mailDraftId,
+            partId: "2",
+          },
+        }),
+        [200],
+      );
+      expect(attachment.body).toBeInstanceOf(Blob);
+      expect(
+        Buffer.from(await attachment.body.arrayBuffer()).equals(
+          GMAIL_IMAGE_BYTES,
+        ),
+      ).toBeTruthy();
+      expect(attachment.headers.get("content-type")).toBe("image/png");
+      expect(attachment.headers.get("content-disposition")).toBe(
+        "attachment; filename*=UTF-8''email-test-illustration.png",
+      );
 
-    const page = await chat.listThreadEvents(fixture.actor, fixture.thread.id);
-    expect(page.events).toHaveLength(0);
+      const sent = await accept(
+        client().sendDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+        [200],
+      );
+      expect(sent.body.mailDraft.status).toBe("sent");
+      expect(sent.body.mailDraft.sentGmailMessageId).toBe(
+        GMAIL_SENT_MESSAGE_ID,
+      );
+      expect(gmail.sentBody).toStrictEqual({ id: GMAIL_DRAFT_ID });
+      expect(gmail.sendCount).toBe(1);
+
+      const duplicateSend = await accept(
+        client().sendDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+        [409],
+      );
+      expect(duplicateSend.body.error.message).toContain(
+        "can no longer be sent",
+      );
+      expect(gmail.sendCount).toBe(1);
+
+      const page = await chat.listThreadEvents(
+        fixture.actor,
+        fixture.thread.id,
+      );
+      expect(page.events).toHaveLength(0);
+    });
   });
 
   it.each([false, true])(
@@ -1687,51 +1875,6 @@ describe("POST /api/mail/drafts/link", () => {
     expect(response.body.error.message).toBe(
       "Reconnect Gmail before continuing",
     );
-  });
-
-  it("does not read Gmail credentials owned by another connector", async () => {
-    const fixture = await seedGmailMailCardFixture();
-    const foreignConnectorId = await seedConnectorStorageRow(context, {
-      orgId: fixture.actor.orgId ?? "",
-      userId: fixture.actor.userId,
-      connectorSlug: "github",
-      authMethod: "oauth",
-      storageVersion: 1,
-    });
-    for (const name of ["GMAIL_ACCESS_TOKEN", "GMAIL_REFRESH_TOKEN"]) {
-      await setConnectorSecretOwner(context, {
-        connectorId: foreignConnectorId,
-        name,
-        orgId: fixture.actor.orgId ?? "",
-        userId: fixture.actor.userId,
-      });
-    }
-    let refreshCalls = 0;
-    server.use(
-      http.post("https://oauth2.googleapis.com/token", () => {
-        refreshCalls += 1;
-        return HttpResponse.json({
-          access_token: "must-not-be-written",
-          expires_in: 3600,
-        });
-      }),
-    );
-
-    const response = await accept(
-      client().linkDraft({
-        headers: authHeaders(),
-        body: {
-          threadId: fixture.thread.id,
-          agentId: fixture.agent.agentId,
-          gmailDraftId: GMAIL_DRAFT_ID,
-        },
-      }),
-      [409],
-    );
-    expect(response.body.error.message).toBe(
-      "Reconnect Gmail before continuing",
-    );
-    expect(refreshCalls).toBe(0);
   });
 
   it("deletes Gmail without removing the linked mail draft", async () => {

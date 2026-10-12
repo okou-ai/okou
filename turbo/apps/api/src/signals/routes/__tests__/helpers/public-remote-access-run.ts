@@ -227,7 +227,11 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
       status: "running",
     });
     await flushWaitUntilForTest();
-    return { ...run, runnerIdentity, sandboxToken };
+    const agentToken = response.body.platformEnvironment.OKOU_TOKEN;
+    if (!agentToken) {
+      throw new Error("Expected the claim's real Agent credential");
+    }
+    return { ...run, runnerIdentity, sandboxToken, agentToken };
   }
 
   async function finish(
@@ -270,7 +274,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
         }
         return previousStorage(command);
       });
-      await webhooks.requestAgentCheckpointPrepareHistory(
+      await webhooks.requestAgentSessionHistoryPrepare(
         {
           runId: run.runId,
           hash,
@@ -286,7 +290,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
           runId: run.runId,
           exitCode: 0,
           lastEventSequence: 0,
-          checkpoint: {
+          completion: {
             cliAgentType: "claude-code",
             cliAgentSessionId: `remote-access-${run.runId}`,
             cliAgentSessionHistoryHash: hash,

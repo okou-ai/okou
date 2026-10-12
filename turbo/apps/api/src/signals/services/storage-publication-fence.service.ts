@@ -5,7 +5,7 @@ import {
   storagePublicationGenerations,
   storagePublicationTokens,
 } from "@okouai/db/schema/storage-publication-fence";
-import { eq, sql, type SQL } from "drizzle-orm";
+import { count, eq, sql, type SQL } from "drizzle-orm";
 
 /**
  * Reserve-before-IO ordering for Agent instructions and workflow volume
@@ -104,6 +104,20 @@ export function lockPublicationScopeSql(
 
 export function completePublicationSql(fence: StoragePublicationFence): SQL {
   return sql`DELETE FROM ${storagePublicationTokens} WHERE ${publicationScopeCondition(fence)} AND EXISTS (SELECT 1 FROM ${storagePublicationGenerations} WHERE ${generationScopeCondition(fence.scope)})`;
+}
+
+/**
+ * Exhaust the scope UPDATE before deleting the exact instruction token.
+ * Zero updated scopes still permits settlement; scope existence is checked
+ * in this statement's snapshot, independently of the UPDATE receipt.
+ */
+export function settleInstructionPublicationSql(
+  fence: StoragePublicationFence,
+  at: Date,
+): SQL {
+  return sql`WITH locked_scope AS (
+    ${lockPublicationScopeSql(fence.scope, at)} RETURNING 1
+  ) ${completePublicationSql(fence)} AND (SELECT ${count()} FROM locked_scope) >= 0`;
 }
 
 export function retirePublicationSql(

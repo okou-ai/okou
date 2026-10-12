@@ -11,8 +11,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
-import { writeDb$ } from "../external/db";
-import { clerk$, createClerkReadContext } from "../external/clerk";
+import { createClerkReadContext } from "../external/clerk";
 import type { RouteEntry } from "../route-entry";
 import {
   createCloudflareAccessConfig$,
@@ -25,7 +24,7 @@ import {
   updateCloudflareAccessConfig$,
 } from "../services/cloudflare-access.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import { loadUserDisplayNames } from "../services/user-profile-directory.service";
+import { loadUserDisplayNames$ } from "../services/user-profile-directory.service";
 
 const ownerAuth = {
   requireOrganization: true,
@@ -226,9 +225,8 @@ const impactPreview$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
   const { value } = result;
-  const names = await loadUserDisplayNames(
-    set(writeDb$),
-    get(clerk$),
+  const names = await set(
+    loadUserDisplayNames$,
     value.affectedOwnerIds,
     createClerkReadContext(),
     signal,

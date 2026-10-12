@@ -18,7 +18,7 @@ async function openDebug(role: "admin" | "member" = "admin", debug = true) {
   await screen.findByRole("heading", { name: debug ? "Debug" : "Preference" });
 }
 
-test("shows only the four allowed presets and persists the administrator's selection", async () => {
+test("lets the administrator select a preset, restore the system default, and select another preset", async () => {
   await openDebug();
   const select = await screen.findByRole("combobox", {
     name: "OpenRouter preset",
@@ -34,6 +34,7 @@ test("shows only the four allowed presets and persists the administrator's selec
       return option.textContent;
     }),
   ).toStrictEqual([
+    "System default",
     "@preset/okou-1-0",
     "@preset/okou-1-0-dsf",
     "@preset/okou-experimental",
@@ -43,6 +44,18 @@ test("shows only the four allowed presets and persists the administrator's selec
   await waitFor(() => {
     expect(select).toBeEnabled();
     expect(select).toHaveTextContent("@preset/okou-1-0-dsf");
+  });
+  click(select);
+  click(await screen.findByRole("option", { name: "System default" }));
+  await waitFor(() => {
+    expect(select).toBeEnabled();
+    expect(select).toHaveTextContent("System default");
+  });
+  click(select);
+  click(await screen.findByRole("option", { name: "@preset/memory" }));
+  await waitFor(() => {
+    expect(select).toBeEnabled();
+    expect(select).toHaveTextContent("@preset/memory");
   });
   expect(screen.getByText(/for the entire organization/u)).toBeInTheDocument();
 });
@@ -65,43 +78,49 @@ test.each([
   },
 );
 
-test("keeps the saved preset on a failed update and permits retry", async () => {
-  let current = "@preset/okou-1-0";
-  let fail = true;
-  context.mocks.api(orgOpenrouterPresetContract.get, ({ respond }) => {
-    return respond(200, { openrouterPreset: current });
-  });
-  context.mocks.api(orgOpenrouterPresetContract.update, ({ body, respond }) => {
-    if (fail) {
-      fail = false;
-      return respond(403, {
-        error: { code: "FORBIDDEN", message: "Preset update denied" },
-      });
-    }
-    current = body.openrouterPreset;
-    return respond(200, { openrouterPreset: current });
-  });
-  await openDebug();
-  const select = await screen.findByRole("combobox", {
-    name: "OpenRouter preset",
-  });
-  await waitFor(() => {
-    return expect(select).toHaveTextContent(current);
-  });
-  click(select);
-  click(await screen.findByRole("option", { name: "@preset/memory" }));
-  await screen.findByText("Preset update denied");
-  await waitFor(() => {
-    expect(select).toBeEnabled();
-    expect(select).toHaveTextContent("@preset/okou-1-0");
-  });
-  click(select);
-  click(await screen.findByRole("option", { name: "@preset/memory" }));
-  await waitFor(() => {
-    expect(select).toBeEnabled();
-    expect(select).toHaveTextContent("@preset/memory");
-  });
-});
+test.each(["@preset/memory", "System default"])(
+  "keeps the saved preset when saving %s fails and permits retry",
+  async (selection) => {
+    let current: string | null = "@preset/okou-1-0";
+    let fail = true;
+    context.mocks.api(orgOpenrouterPresetContract.get, ({ respond }) => {
+      return respond(200, { openrouterPreset: current });
+    });
+    context.mocks.api(
+      orgOpenrouterPresetContract.update,
+      ({ body, respond }) => {
+        if (fail) {
+          fail = false;
+          return respond(403, {
+            error: { code: "FORBIDDEN", message: "Preset update denied" },
+          });
+        }
+        current = body.openrouterPreset;
+        return respond(200, { openrouterPreset: current });
+      },
+    );
+    await openDebug();
+    const select = await screen.findByRole("combobox", {
+      name: "OpenRouter preset",
+    });
+    await waitFor(() => {
+      return expect(select).toHaveTextContent("@preset/okou-1-0");
+    });
+    click(select);
+    click(await screen.findByRole("option", { name: selection }));
+    await screen.findByText("Preset update denied");
+    await waitFor(() => {
+      expect(select).toBeEnabled();
+      expect(select).toHaveTextContent("@preset/okou-1-0");
+    });
+    click(select);
+    click(await screen.findByRole("option", { name: selection }));
+    await waitFor(() => {
+      expect(select).toBeEnabled();
+      expect(select).toHaveTextContent(selection);
+    });
+  },
+);
 
 test("displays an existing operator preset without adding it to the selectable allowlist", async () => {
   context.mocks.api(orgOpenrouterPresetContract.get, ({ respond }) => {

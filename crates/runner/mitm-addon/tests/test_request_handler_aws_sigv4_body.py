@@ -576,7 +576,7 @@ async def test_sigv4_request_hook_header_field_count_fails_closed(
     assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
 
 
-async def test_payload_independent_sigv4_disconnect_during_auth_falls_back_without_credentials(
+async def test_payload_independent_sigv4_disconnect_during_auth_prepares_native_stream(
     tmp_path,
     real_flow,
     headers,
@@ -608,8 +608,6 @@ async def test_payload_independent_sigv4_disconnect_during_auth_falls_back_witho
         server_address=("93.184.216.34", 443),
         peername=("93.184.216.34", 443),
     )
-    original_headers = flow.request.headers.fields
-    original_url = flow.request.url
     auth_resolution_entered = asyncio.Event()
     release_auth_resolution = asyncio.Event()
 
@@ -637,14 +635,13 @@ async def test_payload_independent_sigv4_disconnect_during_auth_falls_back_witho
             release_auth_resolution.set()
             await cancel_pending_task(requestheaders_task)
 
-        assert flow.request.stream is False
-        assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
-        assert flow.request.headers.fields == original_headers
-        assert flow.request.url == original_url
+        assert callable(flow.request.stream)
+        assert flow.request.host == STS_HOST
+        assert flow.request.headers["Host"] == STS_HOST
+        assert f"Credential={RESOLVED_AWS_ACCESS_KEY_ID}/" in flow.request.headers["authorization"]
         assert RESOLVED_AWS_ACCESS_KEY_ID not in flow.request.url
-        assert aws_sigv4_body_admission.state_for_tests() == (1, 4)
-        assert metadata_keys.AWS_SIGV4_REQUEST_INSPECTION in flow.metadata
+        assert not flow.server_conn.connected
+        assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
         mitm_addon.error(flow)
 
     get_headers.assert_awaited_once()
@@ -1076,7 +1073,7 @@ async def test_payload_dependent_sigv4_cancellation_waits_for_hash_completion(
     assert metadata_keys.AWS_SIGV4_BODY_ADMISSION not in flow.metadata
 
 
-async def test_payload_dependent_sigv4_revalidates_upstream_after_hashing(
+async def test_payload_dependent_sigv4_selects_native_target_after_hash_wait_close(
     tmp_path,
     real_flow,
     headers,
@@ -1109,14 +1106,16 @@ async def test_payload_dependent_sigv4_revalidates_upstream_after_hashing(
             hasher.release.set()
             _ = await request_task
 
-            assert flow.response is not None
-            assert flow.response.status_code == 403
-            assert flow.response.content is not None
-            assert json.loads(flow.response.content)["error"] == "upstream_destination_unbound"
-            assert RESOLVED_AWS_ACCESS_KEY_ID not in flow.request.headers["authorization"]
+            assert flow.response is None
+            assert flow.request.host == STS_HOST
+            assert not flow.server_conn.connected
+            assert flow.request.raw_content == body
+            assert (
+                f"Credential={RESOLVED_AWS_ACCESS_KEY_ID}/" in flow.request.headers["authorization"]
+            )
             assert aws_sigv4_body_admission.state_for_tests() == (1, len(body))
 
-            mitm_addon.response(flow)
+            mitm_addon.error(flow)
         finally:
             hasher.release.set()
             await cancel_pending_task(request_task)

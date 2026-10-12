@@ -1,6 +1,6 @@
 # Pi Bash spool backpressure
 
-The version-pinned `@earendil-works/pi-coding-agent@0.87.1` patch fixes the
+The version-pinned `@earendil-works/pi-coding-agent@1.1.0` patch fixes the
 local backend used by `createBashTool` in `src/session-runtime.ts`. The runtime
 still selects `/usr/local/bin/guest-tool-exec`; its factory and the existing
 AgentSession/Photon patch behavior are unchanged.
@@ -9,7 +9,10 @@ The original #32637 evidence below was recorded against 0.84.1. The #32641
 upgrade ports all six Bash, accumulator and child-process JS/declaration hunks
 to official 0.86.1, retaining its shared shell factories, context working
 directory and configured spool prefix. The original contract fixtures remain
-unchanged and run against the installed 0.87.1 package after the later rebase.
+in use after the 1.1.0 rebase. Their nonzero-exit expectations now follow the
+native `isError` result and structured output contract. The accumulator keeps
+1.1.0's `readFullOutput()` API and its exclusive, user-only output-file factory;
+local drain/error/flush ownership is preserved around those upstream paths.
 
 This implements [#32637](https://github.com/vm0-ai/vm0/issues/32637). It does
 not establish the cause of the historical termination in
@@ -55,12 +58,14 @@ independent OS pipes.
 
 ## Signal-terminated tools
 
-The Bash operations contract uses a null exit code for a killed process. The
-tool rejects that result after normal output finalization, retaining available
-output and reporting `Command terminated by signal`. Native Pi records a failed
-tool result and can continue with another tool in the same session. The message
-does not identify the specific signal or claim OOM; cancellation and timeout
-retain their existing outcomes and take precedence when their owner aborts.
+The local shell backend normalizes a killed process to `128 + signal` (137 for
+SIGKILL and 143 for SIGTERM). After normal output finalization, the tool returns
+`isError: true`, available output, and `Command exited with code N`, together
+with structured output and the exit code. Native Pi persists a failed tool
+result and can continue with another tool in the same session. A custom backend
+that returns a null code retains upstream's `Command terminated without an exit
+code` error. None of these outcomes claims OOM; cancellation and timeout retain
+their existing outcomes and take precedence when their owner aborts.
 
 This fixes [#33855](https://github.com/vm0-ai/vm0/issues/33855) without changing
 the shared child-process helper, operations types, Guest tool placement, or

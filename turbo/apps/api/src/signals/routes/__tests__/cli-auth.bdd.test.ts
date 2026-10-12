@@ -1,7 +1,12 @@
+import { claimPublicToolRun } from "./helpers/public-tool-actor";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
+import { createPublicFirewallConnections } from "./helpers/public-firewall-connections";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { testContext } from "../../../__tests__/test-context";
 import { generateSandboxToken } from "../../auth/tokens";
@@ -21,15 +26,6 @@ const support = createAuthDeviceSupportApi(context);
 const connectors = createConnectorBddApi(context);
 
 const DEVICE_CODE_EXPIRY_MS = 16 * 60 * 1000;
-const DEFAULT_TEST_EMAIL = "dev+clerk_test+serial@vm0-e2e.ai";
-
-const LEGACY_CODEX_OAUTH_BODY = {
-  accessToken: "REAL-AT-7f3a82d1-9b4c-4e5f-a1b2-c3d4e5f60718",
-  refreshToken: "REAL-RT-1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
-  accountId: "ws_REAL_ACCOUNT_test",
-  idToken: "hdr.PAYLOAD.SIG",
-} as const;
-
 interface OAuthErrorBody {
   readonly error: string;
   readonly error_description: string;
@@ -65,9 +61,11 @@ function expectCliApprovalError(
   }
 }
 
-async function issueDevicePat(
-  actor: ReturnType<typeof bdd.user>,
-): Promise<{ readonly accessToken: string }> {
+async function issueDevicePat(actor: ReturnType<typeof bdd.user>): Promise<{
+  readonly accessToken: string;
+  readonly tokenType: string;
+  readonly expiresIn: number;
+}> {
   const started = await authDevice.startCliDevice();
   const approved = await authDevice.requestCliApproval(
     actor,
@@ -80,7 +78,11 @@ async function issueDevicePat(
   if (token.status !== 200) {
     throw new Error(`Expected CLI token exchange, got ${token.status}`);
   }
-  return { accessToken: token.body.access_token };
+  return {
+    accessToken: token.body.access_token,
+    tokenType: token.body.token_type,
+    expiresIn: token.body.expires_in,
+  };
 }
 
 afterEach(() => {
@@ -257,72 +259,17 @@ describe("AUTH-02: approve credential-type boundaries", () => {
   });
 });
 
-describe("CLI-TEST: test-token gating", () => {
-  it("hides test-token outside development without a valid preview bypass", async () => {
-    mockEnv("ENV", "production");
-    const productionResponse = await authDevice.requestTestToken({}, [404]);
-    expect(productionResponse.body).toBe("Not found");
-
-    mockEnv("ENV", "preview");
-    mockOptionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
-
-    const missingHeader = await authDevice.requestTestTokenRaw();
-    expect(missingHeader.status).toBe(404);
-    expect(missingHeader.body).toBe("Not found");
-
-    const wrongHeader = await authDevice.requestTestTokenRaw({
-      "x-vercel-protection-bypass": "wrong-secret",
-    });
-    expect(wrongHeader.status).toBe(404);
-    expect(wrongHeader.body).toBe("Not found");
-
+describe("CLI credentials acquired through normal user flows", () => {
+  it("uses a device-approved PAT for me and reads a normally activated Pro subscription", async () => {
     const actor = bdd.user();
-    authDevice.seedClerkDirectory(actor);
-    const bypassed = await authDevice.requestTestTokenRaw({
-      "x-vercel-protection-bypass": "preview-secret",
-    });
-    expect(bypassed.status).toBe(200);
-    expect(bypassed.body).toMatchObject({
-      token_type: "Bearer",
-      user_id: actor.userId,
-    });
-
-    mockOptionalEnv("USE_MOCK_CLAUDE", "true");
-    const rewritten = await authDevice.requestTestToken({}, [200]);
-    if (rewritten.status !== 200) {
-      throw new Error(
-        `Expected preview-rewrite test token, got ${rewritten.status}`,
-      );
-    }
-    expect(rewritten.body.access_token).toMatch(/^vm0_pat_/);
-    expect(rewritten.body.user_id).toBe(actor.userId);
-  });
-});
-
-describe("CLI-TEST: test-token provisioning", () => {
-  it("provisions a pro test org whose pat works against me and billing", async () => {
-    const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected actor with an active organization");
-    }
-    authDevice.seedClerkDirectory(actor);
-
-    const issued = await authDevice.requestTestToken({}, [200]);
-    if (issued.status !== 200) {
-      throw new Error(`Expected test token issuance, got ${issued.status}`);
-    }
-    expect(issued.body).toMatchObject({
-      token_type: "Bearer",
-      expires_in: 90 * 24 * 60 * 60,
-      user_id: actor.userId,
-    });
-    expect(issued.body.access_token).toMatch(/^vm0_pat_/);
-    expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledWith({
-      emailAddress: [DEFAULT_TEST_EMAIL],
-    });
-
+    await publicPlanLifecycle(context, actor).update("active");
+    await bdd.completeOnboarding(actor);
+    const issued = await issueDevicePat(actor);
+    expect(issued.accessToken).toMatch(/^vm0_pat_/);
+    expect(issued.tokenType).toBe("Bearer");
+    expect(issued.expiresIn).toBe(90 * 24 * 60 * 60);
     const me = await authDevice.readMeWithBearer(
-      issued.body.access_token,
+      issued.accessToken,
       actor,
       [200],
     );
@@ -331,241 +278,102 @@ describe("CLI-TEST: test-token provisioning", () => {
       email: actor.email,
       orgId: actor.orgId,
     });
-
-    const billing = await authDevice.readBillingStatus(actor);
-    expect(billing.tier).toBe("pro");
-    expect(billing.credits).toBe(100_000);
-
-    const reIssued = await authDevice.requestTestToken({}, [200]);
-    if (reIssued.status !== 200) {
-      throw new Error(
-        `Expected repeated test token issuance, got ${reIssued.status}`,
-      );
-    }
-    expect(reIssued.body.user_id).toBe(actor.userId);
-
-    await authDevice.requestTestToken({ email: "custom@test.com" }, [200]);
-    expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledWith({
-      emailAddress: ["custom@test.com"],
-    });
-
-    context.mocks.clerk.users.getUserList.mockResolvedValue({ data: [] });
-    const unresolved = await authDevice.requestTestTokenRaw();
-    expect(unresolved.status).toBe(500);
+    expect((await authDevice.readBillingStatus(actor)).tier).toBe("pro");
   });
 
-  it("refreshes recreated users and serves downstream setup from cache", async () => {
-    const firstActor = bdd.user();
-    authDevice.seedClerkDirectory(firstActor);
-    const first = await authDevice.requestTestToken(
-      { email: firstActor.email },
-      [200],
-    );
-    if (first.status !== 200) {
-      throw new Error(`Expected first test token, got ${first.status}`);
-    }
-    expect(first.body.user_id).toBe(firstActor.userId);
-
-    const recreatedActor = bdd.user({ email: firstActor.email });
-    authDevice.seedClerkDirectory(recreatedActor);
-    const refreshed = await authDevice.requestTestToken(
-      { email: firstActor.email },
-      [200],
-    );
-    if (refreshed.status !== 200) {
-      throw new Error(`Expected refreshed test token, got ${refreshed.status}`);
-    }
-    expect(refreshed.body.user_id).toBe(recreatedActor.userId);
-
-    context.mocks.clerk.users.getUserList.mockRejectedValue(
-      new Error("Clerk rate limited"),
-    );
-    context.mocks.clerk.users.getOrganizationMembershipList.mockRejectedValue(
-      new Error("Clerk rate limited"),
-    );
-    const seeded = await authDevice.requestTestConnector(
-      { email: firstActor.email },
-      {
-        connectorSlug: "github",
-        authMethod: "oauth",
-        accessToken: "cached-identity-access-token",
-      },
-      [200],
-    );
-    if (seeded.status !== 200) {
-      throw new Error(`Expected cached identity seed, got ${seeded.status}`);
-    }
-    expect(seeded.body.orgId).toBe(recreatedActor.orgId);
-  });
-});
-
-describe("CLI-TEST: test-connector", () => {
-  const githubOauthBody = {
-    connectorSlug: "github",
-    authMethod: "oauth",
-    accessToken: "github-access-token",
-  } as const;
-
-  it("hides test-connector in production", async () => {
-    mockEnv("ENV", "production");
-    const response = await authDevice.requestTestConnector(
-      {},
-      githubOauthBody,
-      [404],
-    );
-    expect(response.body).toBe("Not found");
-  });
-
-  it("rejects malformed and unsupported connector seeds", async () => {
-    const invalidJson = await authDevice.requestTestConnectorRaw("{ not json");
-    expect(invalidJson.status).toBe(400);
-    expect(invalidJson.body).toStrictEqual({ error: "Invalid JSON body" });
-
-    const missingFields = await authDevice.requestTestConnectorRaw(
-      JSON.stringify({ connectorSlug: "github" }),
-    );
-    expect(missingFields.status).toBe(400);
-    expect(missingFields.body).toStrictEqual({
-      error: "connectorSlug, authMethod, and accessToken are required",
-    });
-
-    const emptyRefreshToken = await authDevice.requestTestConnector(
-      {},
-      { ...githubOauthBody, refreshToken: "" },
-      [400],
-    );
-    expect(emptyRefreshToken.body).toStrictEqual({
-      error: "connectorSlug, authMethod, and accessToken are required",
-    });
-
-    const malformedSlug = await authDevice.requestTestConnector(
-      {},
-      { ...githubOauthBody, connectorSlug: "not a connector slug" },
-      [400],
-    );
-    expect(malformedSlug.body).toStrictEqual({
-      error: 'Unknown connector slug: "not a connector slug"',
-    });
-
-    const unknownSlug = await authDevice.requestTestConnector(
-      {},
-      { ...githubOauthBody, connectorSlug: "unknown-connector" },
-      [400],
-    );
-    expect(unknownSlug.body).toStrictEqual({
-      error: 'Unknown connector slug: "unknown-connector"',
-    });
-
-    const freshActor = bdd.user();
-    authDevice.seedClerkDirectory(freshActor);
-    const noOrg = await authDevice.requestTestConnector(
-      { email: freshActor.email },
-      githubOauthBody,
-      [400],
-    );
-    expect(noOrg.body).toStrictEqual({
-      error: "Test user has no org — run test-token first",
-    });
-
+  it("reads normally connected OAuth and API-method accounts with their expiry", async () => {
     const actor = bdd.user();
-    await authDevice.provisionTestOrg(actor);
-
-    const wrongGrantKind = await authDevice.requestTestConnector(
-      { email: actor.email },
-      {
-        connectorSlug: "cloudinary",
-        authMethod: "api-token",
-        accessToken: "cloudinary-access-token",
-      },
-      [400],
-    );
-    expect(wrongGrantKind.body).toStrictEqual({
-      error:
-        "cloudinary connector auth method api-token does not use an auth-code or device-auth grant",
-    });
-
-    const unconfiguredMethod = await authDevice.requestTestConnector(
-      { email: actor.email },
-      { ...githubOauthBody, authMethod: "api-token" },
-      [400],
-    );
-    expect(unconfiguredMethod.body).toStrictEqual({
-      error: "github connector does not configure auth method api-token",
-    });
-  });
-
-  it("seeds connector state readable through the connectors API", async () => {
-    const actor = bdd.user();
-    await authDevice.provisionTestOrg(actor);
+    await bdd.completeOnboarding(actor);
     await support.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.TestOauthConnector]: true,
     });
-
-    const seeded = await authDevice.requestTestConnector(
-      { email: actor.email },
-      {
-        connectorSlug: "test-oauth",
-        authMethod: "oauth",
-        accessToken: "test-oauth-access-token",
-        refreshToken: "test-oauth-refresh-token",
-        expiresIn: -60,
-      },
-      [200],
-    );
-    expect(seeded.body).toStrictEqual({
-      ok: true,
-      connectorSlug: "test-oauth",
-      orgId: actor.orgId,
+    const connections = createPublicFirewallConnections(context);
+    const kmsKey = env("SECRETS_KMS_KEY_ID");
+    onTestFinished(async () => {
+      mockEnv("SECRETS_KMS_KEY_ID", kmsKey);
+      for (const account of await connectors.listBuiltinConnectorAccounts(
+        actor,
+        "test-oauth",
+      )) {
+        await connectors.deleteBuiltinConnectorAccount(
+          actor,
+          "test-oauth",
+          account.id,
+        );
+      }
     });
-
+    await connections.testOAuth(actor, {
+      accessToken: "test-oauth-access-token",
+      refreshToken: "test-oauth-refresh-token",
+      expiresIn: -60,
+    });
     const oauthState = await support.readConnectorBySlug(actor, "test-oauth");
     expect(oauthState).toMatchObject({
       authMethod: "oauth",
       externalUsername: "e2e-test-oauth",
     });
     if (!oauthState.tokenExpiresAt) {
-      throw new Error("Expected seeded connector token expiry");
+      throw new Error("Expected the provider's token expiry");
     }
     expect(Date.parse(oauthState.tokenExpiresAt)).toBeLessThan(now());
-
-    const reSeeded = await authDevice.requestTestConnector(
-      { email: actor.email },
+    await connections.testOAuth(
+      actor,
       {
-        connectorSlug: "test-oauth",
-        authMethod: "api",
         accessToken: "test-oauth-api-access-token",
         refreshToken: "test-oauth-api-refresh-token",
       },
-      [200],
+      "api",
     );
-    expect(reSeeded.body).toStrictEqual({
-      ok: true,
-      connectorSlug: "test-oauth",
-      orgId: actor.orgId,
-    });
-    const accounts = await connectors.listBuiltinConnectorAccounts(
-      actor,
-      "test-oauth",
-    );
-    expect(accounts).toStrictEqual(
+    await expect(
+      connectors.listBuiltinConnectorAccounts(actor, "test-oauth"),
+    ).resolves.toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: oauthState.id, authMethod: "oauth" }),
         expect.objectContaining({ authMethod: "api" }),
       ]),
     );
-
-    await authDevice.requestTestConnector(
-      { email: "custom@test.com" },
-      githubOauthBody,
-      [200],
-    );
-    expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledWith({
-      emailAddress: ["custom@test.com"],
-    });
   });
 });
 
-describe("CLI-TEST: test-codex-oauth", () => {
+describe("Codex auth.json through the personal model-provider API", () => {
+  function codexActor() {
+    const actor = bdd.user();
+    const owned = new Set<string>();
+    const kmsKey = env("SECRETS_KMS_KEY_ID");
+    onTestFinished(async () => {
+      mockEnv("SECRETS_KMS_KEY_ID", kmsKey);
+      for (const id of owned) {
+        await support.deletePersonalModelProviderAccount(actor, id);
+      }
+    });
+    return {
+      actor,
+      ownProvider(id: string) {
+        owned.add(id);
+      },
+      async paste(
+        authJson: string,
+        statuses: readonly (200 | 201 | 400)[] = [200, 201],
+      ) {
+        const response = await createMiscRoutesApi(
+          context,
+        ).upsertPersonalModelProvider(
+          actor,
+          {
+            type: "codex-oauth-token",
+            authMethod: "auth_json",
+            secrets: { CODEX_AUTH_JSON: authJson },
+          },
+          statuses,
+        );
+        if (response.status === 200 || response.status === 201) {
+          owned.add(response.body.provider.id);
+        }
+        return response;
+      },
+    };
+  }
+
   async function readCodexProvider(actor: ReturnType<typeof bdd.user>) {
     const providers = await support.listPersonalModelProviders(actor, [200]);
     if (!("modelProviders" in providers.body)) {
@@ -582,207 +390,53 @@ describe("CLI-TEST: test-codex-oauth", () => {
 
   function expectAuthJsonShapeError(body: unknown, message: string): void {
     expect(body).toStrictEqual({
-      error: `auth.json shape invalid: ${message}`,
+      error: { code: "CODEX_AUTH_JSON_SHAPE_INVALID", message },
     });
   }
 
-  it("hides test-codex-oauth in production and allows preview rewrites", async () => {
-    const actor = bdd.user();
-    await authDevice.provisionTestOrg(actor);
-
-    mockEnv("ENV", "production");
-    const hidden = await authDevice.requestTestCodexOauth(
-      {},
-      LEGACY_CODEX_OAUTH_BODY,
-      [404],
-    );
-    expect(hidden.body).toBe("Not found");
-
-    mockEnv("ENV", "preview");
-    mockOptionalEnv("USE_MOCK_CLAUDE", "true");
-    mockOptionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
-    const rewritten = await authDevice.requestTestCodexOauth(
-      { email: actor.email },
-      LEGACY_CODEX_OAUTH_BODY,
-      [200],
-    );
-    if (rewritten.status !== 200) {
-      throw new Error(
-        `Expected preview-rewrite codex seed, got ${rewritten.status}`,
-      );
-    }
-    expect(rewritten.body.orgId).toBe(actor.orgId);
-
-    await support.deletePersonalModelProvider(
-      actor,
-      "codex-oauth-token",
-      [204],
-    );
-  });
-
-  it("rejects malformed codex bodies and unprovisioned users", async () => {
-    const invalidJson = await authDevice.requestTestCodexOauthRaw("{ not json");
-    expect(invalidJson.status).toBe(400);
-    expect(invalidJson.body).toStrictEqual({ error: "Invalid JSON body" });
-
-    const invalidShape = await authDevice.requestTestCodexOauthRaw(
-      JSON.stringify({ accessToken: "missing-others" }),
-    );
-    expect(invalidShape.status).toBe(400);
-    expect(invalidShape.body).toStrictEqual({ error: "Invalid body shape" });
-
-    const freshActor = bdd.user();
-    authDevice.seedClerkDirectory(freshActor);
-    const noOrg = await authDevice.requestTestCodexOauth(
-      { email: freshActor.email },
-      LEGACY_CODEX_OAUTH_BODY,
-      [400],
-    );
-    expect(noOrg.body).toStrictEqual({
-      error: "Test user has no org — run test-token first",
-    });
-  });
-
-  it("seeds codex provider state visible through the model-providers API", async () => {
-    const actor = bdd.user();
-    await authDevice.provisionTestOrg(actor);
-
-    const legacySeed = await authDevice.requestTestCodexOauth(
-      {},
-      {
-        ...LEGACY_CODEX_OAUTH_BODY,
-        // Keep seeding-state inspection outside the automatic refresh window.
-        // Refresh/expiry behavior has separate credential-lifecycle coverage.
-        expiresIn: 3600,
-        needsReconnect: true,
-        lastRefreshErrorCode: "refresh_token_invalidated",
-      },
-      [200],
-    );
-    if (legacySeed.status !== 200) {
-      throw new Error(`Expected codex legacy seed, got ${legacySeed.status}`);
-    }
-    expect(legacySeed.body.ok).toBeTruthy();
-    expect(legacySeed.body.orgId).toBe(actor.orgId);
-    expect(legacySeed.body.tokenExpiresAt).toBeDefined();
-    expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledWith({
-      emailAddress: [DEFAULT_TEST_EMAIL],
-    });
-
-    const legacyProvider = await readCodexProvider(actor);
-    expect(legacyProvider).toMatchObject({
-      needsReconnect: true,
-      lastRefreshErrorCode: "refresh_token_invalidated",
-    });
-
-    const preExpired = await authDevice.requestTestCodexOauth(
-      {},
-      { ...LEGACY_CODEX_OAUTH_BODY, expiresIn: -60 },
-      [200],
-    );
-    if (preExpired.status !== 200) {
-      throw new Error(`Expected pre-expired seed, got ${preExpired.status}`);
-    }
-    if (!preExpired.body.tokenExpiresAt) {
-      throw new Error("Expected pre-expired tokenExpiresAt in response");
-    }
-    expect(Date.parse(preExpired.body.tokenExpiresAt)).toBeLessThan(now());
-
-    const authJsonSeed = await authDevice.requestTestCodexOauth(
-      {},
-      { authJson: makeCodexAuthJson() },
-      [200],
-    );
-    if (authJsonSeed.status !== 200) {
-      throw new Error(`Expected auth.json seed, got ${authJsonSeed.status}`);
-    }
-    expect(authJsonSeed.body.tokenExpiresAt).toBeDefined();
-    const pastedProvider = await readCodexProvider(actor);
-    expect(pastedProvider).toMatchObject({
+  it("reads pasted Codex metadata and rejects malformed JSON and free subscriptions", async () => {
+    const { actor, paste } = codexActor();
+    await paste(makeCodexAuthJson());
+    await expect(readCodexProvider(actor)).resolves.toMatchObject({
       workspaceName: "Acme",
       planType: "plus",
       needsReconnect: false,
       lastRefreshErrorCode: null,
     });
-
-    await authDevice.requestTestCodexOauth(
-      {},
-      {
-        authJson: makeCodexAuthJson({
-          workspaceName: "Acme Preserved",
-          planType: "business",
-        }),
-      },
-      [200],
+    await paste(
+      makeCodexAuthJson({
+        workspaceName: "Acme Updated",
+        planType: "business",
+      }),
     );
-    await authDevice.requestTestCodexOauth(
-      {},
-      {
-        ...LEGACY_CODEX_OAUTH_BODY,
-        // Preservation is scoped to the same subscription account, not an
-        // organization-wide provider that can mix identities.
-        accountId: "ws_acct_id_token",
-        expiresIn: 3600,
-      },
-      [200],
-    );
-    const preservedProvider = await readCodexProvider(actor);
-    expect(preservedProvider).toMatchObject({
-      workspaceName: "Acme Preserved",
+    await expect(readCodexProvider(actor)).resolves.toMatchObject({
+      workspaceName: "Acme Updated",
       planType: "business",
       needsReconnect: false,
       lastRefreshErrorCode: null,
     });
-
-    const malformed = await authDevice.requestTestCodexOauth(
-      {},
-      { authJson: "{ not json" },
-      [400],
+    expectAuthJsonShapeError(
+      (await paste("{ not json", [400])).body,
+      "auth.json is not valid JSON",
     );
-    expect(malformed.body).toStrictEqual({
-      error: "auth.json shape invalid: auth.json is not valid JSON",
+    expect(
+      (await paste(makeCodexAuthJson({ planType: "free" }), [400])).body,
+    ).toStrictEqual({
+      error: {
+        code: "CODEX_FREE_PLAN_REJECTED",
+        message:
+          "ChatGPT free plan is not supported — upgrade to Plus or higher.",
+      },
     });
-
-    const freePlan = await authDevice.requestTestCodexOauth(
-      {},
-      { authJson: makeCodexAuthJson({ planType: "free" }) },
-      [400],
-    );
-    expect(freePlan.body).toStrictEqual({
-      error: "Free plan rejected by parser",
-    });
-
-    await authDevice.requestTestCodexOauth(
-      { email: "custom@test.com" },
-      LEGACY_CODEX_OAUTH_BODY,
-      [200],
-    );
-    expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledWith({
-      emailAddress: ["custom@test.com"],
-    });
-
-    await support.deletePersonalModelProvider(
-      actor,
-      "codex-oauth-token",
-      [204],
-    );
   });
 
-  it("accepts pasted auth.json claim variants through public API state", async () => {
-    const actor = bdd.user();
-    await authDevice.provisionTestOrg(actor);
-
-    await authDevice.requestTestCodexOauth(
-      {},
-      { authJson: makeCodexAuthJson({ withApiKey: true }) },
-      [200],
-    );
-    const organizationTitleProvider = await readCodexProvider(actor);
-    expect(organizationTitleProvider).toMatchObject({
+  it("accepts all pasted auth.json workspace claim variants", async () => {
+    const { actor, paste } = codexActor();
+    await paste(makeCodexAuthJson({ withApiKey: true }));
+    await expect(readCodexProvider(actor)).resolves.toMatchObject({
       workspaceName: "Acme",
       planType: "plus",
     });
-
     for (const variant of [
       {
         workspaceClaim: "workspace.name" as const,
@@ -793,149 +447,109 @@ describe("CLI-TEST: test-codex-oauth", () => {
         workspaceName: "Legacy Workspace Claim",
       },
     ]) {
-      await authDevice.requestTestCodexOauth(
-        {},
-        { authJson: makeCodexAuthJson(variant) },
-        [200],
-      );
-      const variantProvider = await readCodexProvider(actor);
-      expect(variantProvider).toMatchObject({
+      await paste(makeCodexAuthJson(variant));
+      await expect(readCodexProvider(actor)).resolves.toMatchObject({
         workspaceName: variant.workspaceName,
         planType: "plus",
       });
     }
-
-    await authDevice.requestTestCodexOauth(
-      {},
-      { authJson: makeCodexAuthJson({ workspaceName: null }) },
-      [200],
-    );
-    const missingWorkspaceProvider = await readCodexProvider(actor);
-    expect(missingWorkspaceProvider).toMatchObject({
+    await paste(makeCodexAuthJson({ workspaceName: null }));
+    await expect(readCodexProvider(actor)).resolves.toMatchObject({
       workspaceName: null,
       planType: "plus",
     });
-
-    await support.deletePersonalModelProvider(
-      actor,
-      "codex-oauth-token",
-      [204],
-    );
   });
 
-  it("derives pasted auth.json expiry from API inputs", async () => {
-    const actor = bdd.user();
-    await authDevice.provisionTestOrg(actor);
-
+  it("derives pasted auth.json expiry from access tokens and the id-token fallback", async () => {
+    const { actor, paste, ownProvider } = codexActor();
+    await publicPlanLifecycle(context, actor).update("active");
+    await bdd.completeOnboarding(actor);
+    const run = await claimPublicToolRun(context, actor, onTestFinished);
+    ownProvider(run.providerId);
+    const firewall = createFirewallApi(context);
+    const cacheExpiry = async (sourceId: string) => {
+      const response = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${run.claim.sandboxToken}` },
+        {
+          encryptedSecrets: firewall.encryptedSecretsBody({}),
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
+          },
+          secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
+          secretConnectorMetadataMap: {
+            CHATGPT_ACCESS_TOKEN: {
+              sourceType: "model-provider",
+              sourceUserId: actor.userId,
+              sourceId,
+              metadataKey: "codex-oauth-token",
+            },
+          },
+        },
+        [200],
+      );
+      if (response.status !== 200) {
+        throw new Error("Expected authenticated Runner credential resolution");
+      }
+      expect(response.body.refreshedConnectors).toStrictEqual([]);
+      return response.body.expiresAt;
+    };
     const accessExp = Math.floor(now() / 1000) + 7200;
-    const accessExpiry = await authDevice.requestTestCodexOauth(
-      {},
-      {
-        authJson: makeCodexAuthJson({
-          accessToken: makeCodexJwt({ exp: accessExp, sub: "user" }),
-          idTokenExpiresAt: accessExp - 3600,
-        }),
-      },
-      [200],
+    const accessExpiry = await paste(
+      makeCodexAuthJson({
+        accessToken: makeCodexJwt({ exp: accessExp, sub: "user" }),
+        idTokenExpiresAt: accessExp - 3600,
+      }),
     );
-    if (accessExpiry.status !== 200) {
-      throw new Error(
-        `Expected access expiry seed, got ${accessExpiry.status}`,
-      );
+    if (accessExpiry.status !== 200 && accessExpiry.status !== 201) {
+      throw new Error("Expected successful access-token paste");
     }
-    if (!accessExpiry.body.tokenExpiresAt) {
-      throw new Error("Expected access tokenExpiresAt in response");
-    }
-    expect(Date.parse(accessExpiry.body.tokenExpiresAt)).toBe(accessExp * 1000);
-
+    await expect(cacheExpiry(accessExpiry.body.provider.id)).resolves.toBe(
+      accessExp - 60,
+    );
     const idTokenExp = accessExp + 3600;
-    const fallbackExpiry = await authDevice.requestTestCodexOauth(
-      {},
-      {
-        authJson: makeCodexAuthJson({
-          accessToken: "opaque-access-token",
-          idTokenExpiresAt: idTokenExp,
-        }),
-      },
-      [200],
+    const fallback = await paste(
+      makeCodexAuthJson({
+        accessToken: "opaque-access-token",
+        idTokenExpiresAt: idTokenExp,
+      }),
     );
-    if (fallbackExpiry.status !== 200) {
-      throw new Error(
-        `Expected fallback expiry seed, got ${fallbackExpiry.status}`,
-      );
+    if (fallback.status !== 200 && fallback.status !== 201) {
+      throw new Error("Expected successful fallback paste");
     }
-    if (!fallbackExpiry.body.tokenExpiresAt) {
-      throw new Error("Expected fallback tokenExpiresAt in response");
-    }
-    expect(Date.parse(fallbackExpiry.body.tokenExpiresAt)).toBe(
-      idTokenExp * 1000,
-    );
-
-    await support.deletePersonalModelProvider(
-      actor,
-      "codex-oauth-token",
-      [204],
+    await expect(cacheExpiry(fallback.body.provider.id)).resolves.toBe(
+      idTokenExp - 60,
     );
   });
 
-  it("maps invalid pasted auth.json inputs to endpoint errors", async () => {
+  it("maps all malformed pasted auth.json inputs to endpoint errors", async () => {
     expect.hasAssertions();
-    const actor = bdd.user();
-    await authDevice.provisionTestOrg(actor);
-
-    const missingTokens = await authDevice.requestTestCodexOauth(
-      {},
-      { authJson: JSON.stringify({ OPENAI_API_KEY: "sk-test" }) },
-      [400],
-    );
-    expectAuthJsonShapeError(
-      missingTokens.body,
-      "auth.json shape unrecognized — your codex CLI may need updating",
-    );
-
-    const invalidIdToken = await authDevice.requestTestCodexOauth(
-      {},
-      { authJson: makeCodexAuthJson({ idToken: "not-a-jwt-at-all" }) },
-      [400],
-    );
-    expectAuthJsonShapeError(
-      invalidIdToken.body,
-      "auth.json id_token claims unparsable",
-    );
-
-    const missingClaims = await authDevice.requestTestCodexOauth(
-      {},
-      { authJson: makeCodexAuthJson({ accountId: null }) },
-      [400],
-    );
-    expectAuthJsonShapeError(
-      missingClaims.body,
-      "auth.json id_token missing required claims",
-    );
-
-    const missingExp = await authDevice.requestTestCodexOauth(
-      {},
-      {
-        authJson: makeCodexAuthJson({
+    const { paste } = codexActor();
+    for (const [authJson, message] of [
+      [
+        JSON.stringify({ OPENAI_API_KEY: "sk-test" }),
+        "auth.json shape unrecognized — your codex CLI may need updating",
+      ],
+      [
+        makeCodexAuthJson({ idToken: "not-a-jwt-at-all" }),
+        "auth.json id_token claims unparsable",
+      ],
+      [
+        makeCodexAuthJson({ accountId: null }),
+        "auth.json id_token missing required claims",
+      ],
+      [
+        makeCodexAuthJson({
           accessToken: makeCodexJwt({ sub: "user" }),
           idTokenExpiresAt: null,
         }),
-      },
-      [400],
-    );
-    expectAuthJsonShapeError(
-      missingExp.body,
-      "auth.json access_token has no exp claim",
-    );
-
-    const oversized = await authDevice.requestTestCodexOauth(
-      {},
-      { authJson: " ".repeat(17 * 1024) + makeCodexAuthJson() },
-      [400],
-    );
-    expectAuthJsonShapeError(
-      oversized.body,
-      "auth.json is unexpectedly large — paste only the contents of ~/.codex/auth.json",
-    );
+        "auth.json access_token has no exp claim",
+      ],
+      [
+        " ".repeat(17 * 1024) + makeCodexAuthJson(),
+        "auth.json is unexpectedly large — paste only the contents of ~/.codex/auth.json",
+      ],
+    ] as const) {
+      expectAuthJsonShapeError((await paste(authJson, [400])).body, message);
+    }
   });
 });

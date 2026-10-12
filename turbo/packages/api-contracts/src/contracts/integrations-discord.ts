@@ -21,7 +21,7 @@ export const discordOrgStatusSchema = z.object({
   defaultAgentId: z.string().nullable(),
   defaultAgentName: z.string().nullable(),
   contextMode: discordContextModeSchema,
-  onboarding: z.literal("oauth_deferred"),
+  onboarding: z.literal("oauth"),
   dmSelectionConnectionId: z.uuid().nullable(),
   /** Only the caller's verified connections for their current Discord sender. */
   dmBindings: z.array(

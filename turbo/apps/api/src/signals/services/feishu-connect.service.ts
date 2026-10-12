@@ -651,6 +651,7 @@ export const disconnectFeishuConnection$ = command(
       return false;
     }
     let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0161; new non-billing transactions are prohibited.
     const rows = await db.transaction(async (tx) => {
       await disconnectFeishuCustomConnectorOAuthConnection(
         tx,

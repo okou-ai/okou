@@ -148,7 +148,7 @@ impl TelemetryPaths {
 /// pass, or consume it as-is because no next pass is coming.
 ///
 /// `Live` is used while the producer is still actively writing the log
-/// files — both periodic ticks and the pre-checkpoint flush. The trailing
+/// files — both periodic ticks and the pre-finalization flush. The trailing
 /// bytes after the last newline are left in place so the next pass can
 /// pick them up once the producer completes the line.
 ///
@@ -217,7 +217,7 @@ fn save_positions_with_warning(positions: [Option<(&str, u64)>; 3], warning: &st
 /// `UploadMode::Final` should be used only for the very last upload before
 /// the agent exits. It consumes a trailing fragment as-is only when the
 /// fragment fits inside this pass's bounded read. Every earlier upload
-/// (periodic tick and the pre-checkpoint `flush(UploadMode::Live)`) must use
+/// (periodic tick and the pre-finalization `flush(UploadMode::Live)`) must use
 /// `UploadMode::Live` so a later pass can safely pick up the tail once the
 /// producer completes the line.
 async fn upload_telemetry(

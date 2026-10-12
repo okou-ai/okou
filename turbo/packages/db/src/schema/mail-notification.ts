@@ -14,7 +14,8 @@ export const mailNotifications = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
-    sourceRunId: uuid("source_run_id").notNull(),
+    // Debug samples are requested by a signed-in user without an Agent Run.
+    sourceRunId: uuid("source_run_id"),
     idempotencyKey: text("idempotency_key").notNull(),
     payloadHash: text("payload_hash").notNull(),
     outboxId: uuid("outbox_id"),

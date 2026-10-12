@@ -1360,6 +1360,7 @@ export const deleteBuiltinConnectorLocalState$ = command(
           )
         : null;
     let postCommitAbort: unknown = null;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0116; new non-billing transactions are prohibited.
     const deleteResult = await writeDb.transaction(async (tx) => {
       return await deleteBuiltinConnectorAccountLocalState(
         tx,
@@ -1728,6 +1729,7 @@ export const connectManualGrantBuiltinConnector$ = command(
     );
     signal.throwIfAborted();
     let postCommitAbort: unknown = null;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0117; new non-billing transactions are prohibited.
     const committed = await set(writeDb$).transaction(async (tx) => {
       return await commitManualGrantConnector(
         tx,
@@ -1797,6 +1799,7 @@ export const connectNoAuthBuiltinConnector$ = command(
     let mutationFailure: ConnectorConnectionMutationFailure | null = null;
     let postCommitAbort: unknown = null;
 
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0118; new non-billing transactions are prohibited.
     await writeDb.transaction(async (tx) => {
       const resolution = await resolveConnectorConnectionMutation(tx, {
         orgId: args.orgId,
@@ -2737,6 +2740,7 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
       signal,
     );
     let postCommitAbort: unknown = null;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0119; new non-billing transactions are prohibited.
     const connectionResult = await writeDb.transaction(async (tx) => {
       const [insertedWallet] = await tx
         .insert(orgMetadataCanonicalWrites)

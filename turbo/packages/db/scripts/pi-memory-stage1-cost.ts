@@ -34,9 +34,8 @@ const query = await readFile(
 const client = new Client({ connectionString: process.env.DATABASE_URL });
 await client.connect();
 try {
-  await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
   await client.query(
-    "SET LOCAL TIME ZONE 'UTC'; SET LOCAL lock_timeout = '1s'; SET LOCAL statement_timeout = '5s'",
+    "SET default_transaction_read_only = on; SET TIME ZONE 'UTC'; SET lock_timeout = '1s'; SET statement_timeout = '5s'",
   );
   const result = await client.query(query, [
     values.day,
@@ -44,7 +43,6 @@ try {
     values["user-id"] ?? null,
     {},
   ]);
-  await client.query("COMMIT");
   console.log(JSON.stringify(result.rows[0].report, null, 2));
 } finally {
   await client.end();

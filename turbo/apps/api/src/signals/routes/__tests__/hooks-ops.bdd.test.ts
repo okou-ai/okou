@@ -27,7 +27,7 @@ import { featureSwitchesRoutes } from "../feature-switches";
 helper gap: HOOK-01 signed callbacks still need API-visible builders for
 run/chat/schedule/integration source state before they can avoid DB fixtures.
 helper gap: HOOK-02 external provider webhooks still need visible source-state
-builders for Stripe, Clerk, GitHub, storage, checkpoints, and generation runs.
+builders for Stripe, Clerk, GitHub, storage, run outputs, and generation runs.
 */
 
 const context = testContext();

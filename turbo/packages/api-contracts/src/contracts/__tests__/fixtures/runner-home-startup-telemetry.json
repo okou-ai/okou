@@ -1,0 +1,22 @@
+{
+  "runId": "00000000-0000-0000-0000-000000000000",
+  "runnerVersion": "0.224.2",
+  "sandboxOperations": [
+    {
+      "ts": "2026-01-15T10:00:00.000Z",
+      "action_type": "api_to_spawn",
+      "duration_ms": 125,
+      "success": true,
+      "runner_startup_path": "home",
+      "sandbox_reuse_result": "poolMiss"
+    },
+    {
+      "ts": "2026-01-15T10:00:00.000Z",
+      "action_type": "api_to_agent_ready",
+      "duration_ms": 150,
+      "success": true,
+      "runner_startup_path": "home",
+      "sandbox_reuse_result": "poolMiss"
+    }
+  ]
+}

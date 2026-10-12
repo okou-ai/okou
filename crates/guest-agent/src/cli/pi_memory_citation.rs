@@ -464,21 +464,153 @@ mod tests {
     }
 
     #[test]
-    fn bounds_entry_counts_and_field_bytes() {
-        let mut entries = (0..65)
+    fn bounds_entry_count() {
+        let entries = (0..65)
             .map(|index| format!("p{index}:1-1|note=[n]"))
             .collect::<Vec<_>>();
-        entries.push(format!("{}:1-1|note=[n]", "界".repeat(342)));
-        entries.push(format!("x:1-1|note=[{}]", "界".repeat(683)));
         let envelope = format!(
             "{OPEN}<citation_entries>{}</citation_entries>{CLOSE}",
             entries.join("\n")
         );
         let projection = project_segments(&[&envelope]);
         assert_eq!(
-            projection.citation.expect("citation").entries.len(),
-            MAX_ENTRIES
+            projection,
+            CitationProjection {
+                visible_segments: vec![String::new()],
+                citation: Some(PiMemoryCitation {
+                    entries: (0..64)
+                        .map(|index| PiMemoryCitationEntry {
+                            path: format!("p{index}"),
+                            line_start: 1,
+                            line_end: 1,
+                            note: "n".into(),
+                        })
+                        .collect(),
+                    rollout_ids: vec![],
+                }),
+                diagnostics: CitationDiagnostics {
+                    envelopes: 1,
+                    valid_entries: 64,
+                    invalid_entries: 1,
+                    ..CitationDiagnostics::default()
+                },
+            }
         );
-        assert_eq!(projection.diagnostics.invalid_entries, 3);
+    }
+
+    #[test]
+    fn bounds_path_bytes_independently_of_entry_count() {
+        for (case, path) in [
+            ("ascii", "p".repeat(1024)),
+            ("multibyte", format!("{}p", "界".repeat(341))),
+        ] {
+            let oversized_path = format!("{path}p");
+            assert_eq!(path.len(), 1024, "{case}");
+            assert_eq!(oversized_path.len(), 1025, "{case}");
+            // Four entries leave room below the count cap even if the byte guard breaks.
+            let envelope = format!(
+                "before{OPEN}<citation_entries>\
+                 before:1-1|note=[kept]\n\
+                 {path}:2-4|note=[boundary]\n\
+                 {oversized_path}:2-4|note=[overflow]\n\
+                 after:5-6|note=[kept]\
+                 </citation_entries>{CLOSE}after"
+            );
+            let projection = project_segments(&[&envelope]);
+            assert_eq!(
+                projection,
+                CitationProjection {
+                    visible_segments: vec!["beforeafter".into()],
+                    citation: Some(PiMemoryCitation {
+                        entries: vec![
+                            PiMemoryCitationEntry {
+                                path: "before".into(),
+                                line_start: 1,
+                                line_end: 1,
+                                note: "kept".into(),
+                            },
+                            PiMemoryCitationEntry {
+                                path,
+                                line_start: 2,
+                                line_end: 4,
+                                note: "boundary".into(),
+                            },
+                            PiMemoryCitationEntry {
+                                path: "after".into(),
+                                line_start: 5,
+                                line_end: 6,
+                                note: "kept".into(),
+                            },
+                        ],
+                        rollout_ids: vec![],
+                    }),
+                    diagnostics: CitationDiagnostics {
+                        envelopes: 1,
+                        valid_entries: 3,
+                        invalid_entries: 1,
+                        ..CitationDiagnostics::default()
+                    },
+                },
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn bounds_note_bytes_independently_of_entry_count() {
+        for (case, note) in [
+            ("ascii", "n".repeat(2048)),
+            ("multibyte", format!("{}nn", "界".repeat(682))),
+        ] {
+            let oversized_note = format!("{note}n");
+            assert_eq!(note.len(), 2048, "{case}");
+            assert_eq!(oversized_note.len(), 2049, "{case}");
+            // Keep paths short so only the note guard can reject the oversized entry.
+            let envelope = format!(
+                "before{OPEN}<citation_entries>\
+                 before:1-1|note=[kept]\n\
+                 boundary:2-4|note=[{note}]\n\
+                 overflow:2-4|note=[{oversized_note}]\n\
+                 after:5-6|note=[kept]\
+                 </citation_entries>{CLOSE}after"
+            );
+            let projection = project_segments(&[&envelope]);
+            assert_eq!(
+                projection,
+                CitationProjection {
+                    visible_segments: vec!["beforeafter".into()],
+                    citation: Some(PiMemoryCitation {
+                        entries: vec![
+                            PiMemoryCitationEntry {
+                                path: "before".into(),
+                                line_start: 1,
+                                line_end: 1,
+                                note: "kept".into(),
+                            },
+                            PiMemoryCitationEntry {
+                                path: "boundary".into(),
+                                line_start: 2,
+                                line_end: 4,
+                                note,
+                            },
+                            PiMemoryCitationEntry {
+                                path: "after".into(),
+                                line_start: 5,
+                                line_end: 6,
+                                note: "kept".into(),
+                            },
+                        ],
+                        rollout_ids: vec![],
+                    }),
+                    diagnostics: CitationDiagnostics {
+                        envelopes: 1,
+                        valid_entries: 3,
+                        invalid_entries: 1,
+                        ..CitationDiagnostics::default()
+                    },
+                },
+                "{case}"
+            );
+        }
     }
 }

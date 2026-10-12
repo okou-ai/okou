@@ -57,8 +57,10 @@ function handleSharedDatabaseWorkerUnavailable(
     return;
   }
 
-  throw new Error(
-    "Shared database worker is unavailable after an IndexedDB version change",
+  recordClientTelemetry(
+    startClientTelemetryMeasurement(),
+    { event_name: "shared_database.worker_unavailable", reason },
+    "error",
   );
 }
 

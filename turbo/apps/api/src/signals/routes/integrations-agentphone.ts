@@ -37,8 +37,8 @@ import {
   publishAgentPhoneUserChanged,
   publishAgentPhoneUserLinked,
   resolveAgentPhoneUserLinkForEvent,
-  sendAgentPhoneText,
-  storeInboundAgentPhoneMessage,
+  sendAgentPhoneText$,
+  storeInboundAgentPhoneMessage$,
   verifyAgentPhoneConnectSignature,
   verifyAgentPhoneWebhook,
   type AgentPhoneRecentHistoryMessage,
@@ -323,6 +323,7 @@ const sendAgentPhoneVerificationText$ = command(
     },
     signal: AbortSignal,
   ) => {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0019; new non-billing transactions are prohibited.
     const sendResult = await set(writeDb$).transaction(async (tx) => {
       const sentAt = new Date(now());
       const cooldownCutoff = sentAt.getTime() - VERIFICATION_SEND_COOLDOWN_MS;
@@ -1320,10 +1321,10 @@ const handleAgentPhoneConnectionCode$ = command(
             },
             signal,
           )
-        : sendAgentPhoneText(
+        : set(
+            sendAgentPhoneText$,
             event,
             agentPhoneConnectionCodeFailureReply(result),
-            undefined,
             signal,
           ),
       (error) => {
@@ -1411,10 +1412,14 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   const userLink = await resolveAgentPhoneUserLinkForEvent(writeDb, event);
   signal.throwIfAborted();
 
-  const stored = await storeInboundAgentPhoneMessage(writeDb, {
-    event: agentPhoneEventForStorage(event, userLink),
-    userLinkId: userLink?.id ?? null,
-  });
+  const stored = await set(
+    storeInboundAgentPhoneMessage$,
+    {
+      event: agentPhoneEventForStorage(event, userLink),
+      userLinkId: userLink?.id ?? null,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if (!stored.dispatch) {
     return okText();

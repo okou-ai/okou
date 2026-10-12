@@ -11,7 +11,7 @@ event_source = "${{ github.sha }}"
 
 e2e_jobs = jobs.keys.select { |name| name.start_with?("cli-e2e-") }
 raise "missing CLI E2E source consumers" if e2e_jobs.empty?
-(%w[deploy-api deploy-cli deploy-app] + e2e_jobs).each do |name|
+(%w[lint-eslint deploy-api deploy-cli deploy-app] + e2e_jobs).each do |name|
   checkouts = jobs.fetch(name).fetch("steps").select do |step|
     step.fetch("uses", "").start_with?("actions/checkout@")
   end

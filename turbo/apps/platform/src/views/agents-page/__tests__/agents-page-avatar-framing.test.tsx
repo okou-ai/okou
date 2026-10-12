@@ -1,5 +1,5 @@
 /**
- * Boundary exception, per `docs/testing/testing-external-behavior.md`.
+ * Boundary exception, per `docs/testing.md#external-behavior`.
  *
  * These cases are set up entirely through the production page — the real
  * Agents route and the real agent list — but they cannot be verified through

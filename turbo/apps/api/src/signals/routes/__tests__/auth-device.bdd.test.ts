@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
-import { mockNow, now } from "../../../lib/time";
+import { now } from "../../../lib/time";
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
 import {
@@ -165,205 +165,6 @@ describe("AUTH-02: CLI device authorization", () => {
   });
 });
 
-describe("AUTH-02: desktop auth handoff", () => {
-  it("requires a session, returns a safe dev callback URL, and consumes the handoff once", async () => {
-    authDevice.mockDesktopSignInToken("ticket_desktop_bdd");
-
-    const unauthenticated = await authDevice.requestDesktopHandoff(
-      null,
-      {},
-      [401],
-    );
-    expectApiError(unauthenticated.body);
-    expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
-
-    const actor = bdd.user();
-    const handoff = await authDevice.requestDesktopHandoff(
-      actor,
-      { callbackScheme: "ai.okou.desktop.dev" },
-      [200],
-    );
-    if (handoff.status !== 200) {
-      throw new Error(
-        `Expected desktop handoff to succeed, got ${handoff.status}`,
-      );
-    }
-    const callbackUrl = new URL(handoff.body.callbackUrl);
-    expect(callbackUrl.protocol).toBe("ai.okou.desktop.dev:");
-    expect(callbackUrl.hostname).toBe("auth");
-    expect(callbackUrl.pathname).toBe("/callback");
-    expect(handoff.body.callbackUrl).not.toContain("ticket");
-    expect(handoff.body.callbackUrl).not.toContain("token");
-    expect(handoff.body.handoffId).not.toBe("");
-    expect(authDevice.callbackHandoffId(handoff.body.callbackUrl)).toBe(
-      handoff.body.handoffId,
-    );
-
-    const code = authDevice.callbackCode(handoff.body.callbackUrl);
-    expect(code).not.toBe("");
-
-    const consumed = await authDevice.requestDesktopConsume(code, [200]);
-    expect(consumed.body).toStrictEqual({ token: "ticket_desktop_bdd" });
-
-    const reused = await authDevice.requestDesktopConsume(code, [400]);
-    expectApiError(reused.body);
-    expect(reused.body.error.message).toBe(
-      "Desktop sign-in link is invalid or expired.",
-    );
-
-    const patternInvalid = await authDevice.requestDesktopConsume(
-      "bad code with spaces!",
-      [400],
-    );
-    expectApiError(patternInvalid.body);
-    expect(patternInvalid.body.error.message).toBe(
-      "Desktop sign-in link is invalid or expired.",
-    );
-
-    const missingCode = await authDevice.requestDesktopConsume("", [400]);
-    expectApiError(missingCode.body);
-    expect(missingCode.body.error.code).toBe("BAD_REQUEST");
-  });
-
-  it("rejects a retired Zero callback scheme", async () => {
-    const retired = await authDevice.requestDesktopHandoffRaw(
-      bdd.user(),
-      JSON.stringify({ callbackScheme: "ai.vm0.zero.desktop" }),
-    );
-    expect(retired.status).toBe(400);
-    expectApiError(retired.body);
-    expect(retired.body.error.code).toBe("BAD_REQUEST");
-  });
-
-  it("creates and consumes an Okou desktop auth callback", async () => {
-    authDevice.mockDesktopSignInToken("ticket_okou_desktop_bdd");
-
-    const handoff = await authDevice.requestDesktopHandoff(
-      bdd.user(),
-      { callbackScheme: "ai.okou.desktop" },
-      [200],
-    );
-    if (handoff.status !== 200) {
-      throw new Error(
-        `Expected Okou desktop handoff to succeed, got ${handoff.status}`,
-      );
-    }
-
-    const callbackUrl = new URL(handoff.body.callbackUrl);
-    expect(callbackUrl.protocol).toBe("ai.okou.desktop:");
-    expect(callbackUrl.hostname).toBe("auth");
-    expect(callbackUrl.pathname).toBe("/callback");
-
-    const code = authDevice.callbackCode(handoff.body.callbackUrl);
-    const consumed = await authDevice.requestDesktopConsume(code, [200]);
-    expect(consumed.body).toStrictEqual({ token: "ticket_okou_desktop_bdd" });
-  });
-
-  it("makes an unused handoff unavailable when its one-time code expires", async () => {
-    const startedAt = new Date("2026-09-20T00:00:00Z").getTime();
-    mockNow(startedAt);
-    const actor = bdd.user();
-    const handoff = await authDevice.requestDesktopHandoff(actor, {}, [200]);
-    if (handoff.status !== 200) {
-      throw new Error(
-        `Expected desktop handoff to succeed, got ${handoff.status}`,
-      );
-    }
-
-    mockNow(startedAt + 59_999);
-    const pending = await authDevice.requestDesktopHandoffStatus(
-      actor,
-      handoff.body.handoffId,
-      [200],
-    );
-    expect(pending.body).toStrictEqual({ status: "pending" });
-
-    mockNow(startedAt + 60_000);
-    const expired = await authDevice.requestDesktopHandoffStatus(
-      actor,
-      handoff.body.handoffId,
-      [404],
-    );
-    expectApiError(expired.body);
-    expect(expired.body.error.code).toBe("NOT_FOUND");
-
-    const rejected = await authDevice.requestDesktopConsume(
-      authDevice.callbackCode(handoff.body.callbackUrl),
-      [400],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.message).toBe(
-      "Desktop sign-in link is invalid or expired.",
-    );
-  });
-
-  it("tracks a consumed handoff through completion for its owner after code expiry", async () => {
-    authDevice.mockDesktopSignInToken("ticket_desktop_status_bdd");
-    const startedAt = new Date("2026-09-20T00:00:00Z").getTime();
-    mockNow(startedAt);
-
-    const actor = bdd.user();
-    const handoff = await authDevice.requestDesktopHandoff(actor, {}, [200]);
-    if (handoff.status !== 200) {
-      throw new Error(
-        `Expected desktop handoff to succeed, got ${handoff.status}`,
-      );
-    }
-    const handoffId = handoff.body.handoffId;
-
-    const pending = await authDevice.requestDesktopHandoffStatus(
-      actor,
-      handoffId,
-      [200],
-    );
-    expect(pending.body).toStrictEqual({ status: "pending" });
-
-    const foreignStatus = await authDevice.requestDesktopHandoffStatus(
-      bdd.user(),
-      handoffId,
-      [404],
-    );
-    expectApiError(foreignStatus.body);
-    expect(foreignStatus.body.error.code).toBe("NOT_FOUND");
-
-    const unconsumedComplete = await authDevice.requestDesktopHandoffComplete(
-      actor,
-      handoffId,
-      [404],
-    );
-    expectApiError(unconsumedComplete.body);
-    expect(unconsumedComplete.body.error.code).toBe("NOT_FOUND");
-
-    const code = authDevice.callbackCode(handoff.body.callbackUrl);
-    const consumed = await authDevice.requestDesktopConsume(code, [200]);
-    expect(consumed.body).toStrictEqual({
-      token: "ticket_desktop_status_bdd",
-    });
-
-    mockNow(startedAt + 60_000);
-    const consumedStatus = await authDevice.requestDesktopHandoffStatus(
-      actor,
-      handoffId,
-      [200],
-    );
-    expect(consumedStatus.body).toStrictEqual({ status: "consumed" });
-
-    const completed = await authDevice.requestDesktopHandoffComplete(
-      actor,
-      handoffId,
-      [200],
-    );
-    expect(completed.body).toStrictEqual({ status: "completed" });
-
-    const completedStatus = await authDevice.requestDesktopHandoffStatus(
-      actor,
-      handoffId,
-      [200],
-    );
-    expect(completedStatus.body).toStrictEqual({ status: "completed" });
-  });
-});
-
 describe("AUTH-02: platform realtime token", () => {
   function orgCapability(actor: {
     readonly userId: string;
@@ -375,6 +176,7 @@ describe("AUTH-02: platform realtime token", () => {
       [`user-org:${actor.userId}:${actor.orgId}`]: ["subscribe"],
       [`user-org-foreground:${actor.userId}:${actor.orgId}`]: ["presence"],
       [`run-output:${actor.userId}:${actor.orgId}:*`]: ["subscribe"],
+      [`computer-use-host:${actor.userId}:${actor.orgId}:*`]: ["subscribe"],
     };
   }
 

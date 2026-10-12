@@ -644,7 +644,7 @@ assert.equal(
 assert.equal(metaContent(okouPage.html, "property", "og:image:alt"), okouTitle);
 assert.equal(
   metaContent(okouPage.html, "property", "og:image"),
-  "https://static.okou.io/web/okou-og-image-373c892e.png",
+  "https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png",
 );
 assert.equal(metaContent(okouPage.html, "name", "twitter:title"), okouTitle);
 assert.equal(
@@ -653,7 +653,7 @@ assert.equal(
 );
 assert.equal(
   metaContent(okouPage.html, "name", "twitter:image"),
-  "https://static.okou.io/web/okou-og-image-373c892e.png",
+  "https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png",
 );
 assert.equal(
   tagAttribute(okouPage.html, "link", "rel", "canonical", "href"),
@@ -661,12 +661,12 @@ assert.equal(
 );
 assert.ok(
   tagAttributeValues(okouPage.html, "link", "href").includes(
-    "https://static.okou.io/public/okou-favicon-adaptive-b4eda9221bb7.svg",
+    "https://static.okou.io/public/okou-favicon-adaptive-602cc090ab4e.svg",
   ),
 );
 assert.equal(
   tagAttribute(okouPage.html, "link", "rel", "apple-touch-icon", "href"),
-  "https://static.okou.io/platform/okou-pwa-be0be646-180.png",
+  "https://static.okou.io/platform/icons/okou-apple-touch-icon-180-af89cace7029.png",
 );
 assert.equal(
   tagAttributeValues(okouPage.html, "link", "href").some(
@@ -1462,11 +1462,11 @@ assert.equal(
 );
 assert.equal(
   metaContent(previewHtml, "property", "og:image"),
-  "https://static.okou.io/web/okou-og-image-373c892e.png",
+  "https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png",
 );
 assert.equal(
   metaContent(previewHtml, "name", "twitter:image"),
-  "https://static.okou.io/web/okou-og-image-373c892e.png",
+  "https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png",
 );
 assert.equal(
   tagAttribute(previewHtml, "link", "rel", "canonical", "href"),
@@ -1546,4 +1546,79 @@ for (const path of [
   assert.doesNotMatch(await artifactHandoff.text(), /<iframe/iu);
 }
 
+for (const state of [
+  "public",
+  "disabled",
+  "private",
+  "missing",
+  "unavailable",
+]) {
+  const artifactWorker = workerModule.createWorker(
+    embeddedShell,
+    undefined,
+    async (input, options) => {
+      const url = new URL(input);
+      assert.equal(url.origin, "https://api.okou.ai");
+      assert.equal(url.pathname, "/api/artifact-og/metadata");
+      assert.equal(options.headers.get("Cookie"), null);
+      assert.equal(options.headers.get("Authorization"), null);
+      assert.equal(options.cache, "no-store");
+      if (state === "unavailable") return new Response(null, { status: 503 });
+      return Response.json(
+        state === "public"
+          ? {
+              available: true,
+              title: 'Published <report> & "review"',
+              description: "Published summary",
+              imageUrl:
+                "https://api.okou.ai/api/artifact-og/image?kind=reference&id=abc123abcd&version=one",
+              url: "https://app.okou.ai/artifacts/abc123abcd.html",
+            }
+          : { available: false },
+      );
+    },
+  );
+  const response = await artifactWorker.fetch(
+    new Request(
+      "https://app.okou.ai/artifacts/abc123abcd.html?tracking=private",
+      {
+        headers: {
+          Cookie: "owner-session",
+          Authorization: "Bearer owner-token",
+        },
+      },
+    ),
+    assetEnvironment(),
+  );
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Cache-Control"), "private, no-store");
+  assert.equal(response.headers.get("Referrer-Policy"), "no-referrer");
+  assert.doesNotMatch(html, /tracking=private/u);
+  assert.ok(html.indexOf('property="og:image"') < html.indexOf("</head>"));
+  assert.ok(html.includes('type="module"'));
+  assert.equal(
+    metaContent(html, "property", "og:title"),
+    state === "public"
+      ? "Published &lt;report&gt; &amp; &quot;review&quot;"
+      : okouTitle,
+  );
+  assert.equal(
+    metaContent(html, "property", "og:url"),
+    state === "public"
+      ? "https://app.okou.ai/artifacts/abc123abcd.html"
+      : "https://app.okou.ai/",
+  );
+  if (state !== "public") {
+    assert.equal(
+      metaContent(html, "property", "og:image"),
+      "https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png",
+    );
+    assert.equal(
+      metaContent(html, "property", "og:description"),
+      okouDescription,
+    );
+    assert.doesNotMatch(html, /artifact-og\/image|Shared artifact/u);
+  }
+}
 console.log("okou app worker tests passed");

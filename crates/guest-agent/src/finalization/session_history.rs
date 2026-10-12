@@ -1,4 +1,4 @@
-//! Checkpoint-specific session-history preparation and persistence.
+//! Native session-history preparation and upload for Run finalization.
 
 use super::{FinalizationInputs, FinalizationMode, LOG_TAG};
 use crate::constants;
@@ -95,15 +95,15 @@ fn record_session_history_prune(
 }
 
 #[derive(Clone, Copy)]
-pub(super) enum CheckpointSessionHistoryLimits {
+pub(super) enum SessionHistoryLimits {
     Production,
     BoundedForTest {
         candidate_max_bytes: u64,
-        checkpoint_max_bytes: u64,
+        history_max_bytes: u64,
     },
 }
 
-impl CheckpointSessionHistoryLimits {
+impl SessionHistoryLimits {
     fn pi_compact_trigger_bytes(self) -> u64 {
         match self {
             Self::Production => PI_COMPACT_GENERATION_MAX_BYTES,
@@ -114,13 +114,12 @@ impl CheckpointSessionHistoryLimits {
         }
     }
 
-    fn checkpoint_max_bytes(self) -> u64 {
+    fn history_max_bytes(self) -> u64 {
         match self {
             Self::Production => RESUME_SESSION_HISTORY_MAX_BYTES,
             Self::BoundedForTest {
-                checkpoint_max_bytes,
-                ..
-            } => checkpoint_max_bytes,
+                history_max_bytes, ..
+            } => history_max_bytes,
         }
     }
 
@@ -226,7 +225,7 @@ impl NativeSessionHistoryCandidate for PiHistoryCandidate {
 }
 
 pub(super) enum PreparedLiveHistory {
-    MatchesCheckpoint,
+    MatchesPreparedHistory,
     NativeCandidate {
         kind: NativeHistoryKind,
         replacement: Option<PendingNativeHistoryReplacement>,
@@ -357,13 +356,13 @@ fn build_session_history_upload(
 
 fn zstd_session_history(history_bytes: &[u8]) -> Result<Vec<u8>, AgentError> {
     let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), SESSION_HISTORY_ZSTD_LEVEL)
-        .map_err(|error| AgentError::Checkpoint(format!("zstd session history: {error}")))?;
+        .map_err(|error| AgentError::Finalization(format!("zstd session history: {error}")))?;
     encoder
         .write_all(history_bytes)
-        .map_err(|error| AgentError::Checkpoint(format!("zstd session history: {error}")))?;
+        .map_err(|error| AgentError::Finalization(format!("zstd session history: {error}")))?;
     encoder
         .finish()
-        .map_err(|error| AgentError::Checkpoint(format!("finish zstd session history: {error}")))
+        .map_err(|error| AgentError::Finalization(format!("finish zstd session history: {error}")))
 }
 
 fn fail_preserving_error(op: &str, start: std::time::Instant, error: AgentError) -> AgentError {
@@ -374,7 +373,7 @@ fn fail_preserving_error(op: &str, start: std::time::Instant, error: AgentError)
 fn history_failure(op: &str, start: std::time::Instant, message: impl Into<String>) -> AgentError {
     let message = message.into();
     record_history_failure(op, start, &message);
-    AgentError::Checkpoint(message)
+    AgentError::Finalization(message)
 }
 
 fn record_history_failure(op: &str, start: std::time::Instant, message: &str) {
@@ -382,16 +381,19 @@ fn record_history_failure(op: &str, start: std::time::Instant, message: &str) {
     record_sandbox_op(op, start.elapsed(), false, Some(message));
 }
 
-pub(super) struct CheckpointSessionHistoryInputs {
+pub(super) struct SessionHistoryInputs {
     mode: FinalizationMode,
     framework: env::Framework,
-    limits: CheckpointSessionHistoryLimits,
+    limits: SessionHistoryLimits,
     cli_agent_session_id: String,
     history_source: Option<SessionHistorySourceRef>,
 }
 
-impl CheckpointSessionHistoryInputs {
-    pub(super) fn from_checkpoint(mode: FinalizationMode, inputs: &FinalizationInputs<'_>) -> Self {
+impl SessionHistoryInputs {
+    pub(super) fn from_finalization(
+        mode: FinalizationMode,
+        inputs: &FinalizationInputs<'_>,
+    ) -> Self {
         Self {
             mode,
             framework: inputs.framework,
@@ -402,7 +404,7 @@ impl CheckpointSessionHistoryInputs {
     }
 }
 
-pub(super) struct UploadedCheckpointSessionHistory {
+pub(super) struct UploadedSessionHistory {
     pub(super) cli_agent_session_id: String,
     pub(super) history_source: SessionHistorySourceRef,
     pub(super) history_hash: String,
@@ -410,15 +412,15 @@ pub(super) struct UploadedCheckpointSessionHistory {
     pub(super) live_history: PreparedLiveHistory,
 }
 
-pub(super) enum CheckpointSessionHistory {
-    Uploaded(UploadedCheckpointSessionHistory),
+pub(super) enum SessionHistoryOutcome {
+    Uploaded(UploadedSessionHistory),
     DiscardedOversized { cli_agent_session_id: String },
     Unavailable { cli_agent_session_id: String },
 }
 
 enum PreparedFinalizationSessionHistory {
     Upload {
-        checkpoint: Box<UploadedCheckpointSessionHistory>,
+        history: Box<UploadedSessionHistory>,
         upload: SessionHistoryUpload,
     },
     DiscardedOversized {
@@ -484,7 +486,7 @@ enum SessionHistoryUploadOutcome {
 /// `session_history_prepare` and `session_history_s3_upload` to match the
 /// pre-parallelization op names. Content-addressed uploads make at most three
 /// attempts with the same bytes. Exhausted uploads leave history unavailable so
-/// the remaining checkpoint can still persist where the framework permits missing
+/// the remaining finalization can still persist where the framework permits missing
 /// history.
 async fn upload_session_history(
     http: &HttpClient,
@@ -493,7 +495,7 @@ async fn upload_session_history(
     history_upload: SessionHistoryUpload,
 ) -> Result<SessionHistoryUploadOutcome, AgentError> {
     let prep_start = std::time::Instant::now();
-    let url = http.checkpoint_prepare_history_url()?;
+    let url = http.session_history_prepare_url()?;
     let requested_encoding = history_upload.requested_encoding();
     let requested_encoding_label = session_history_encoding_label(requested_encoding);
     let encoded_size = history_upload.encoded_size();
@@ -521,12 +523,12 @@ async fn upload_session_history(
                     false,
                     Some(message),
                 );
-                return Err(AgentError::Checkpoint(message.into()));
+                return Err(AgentError::Finalization(message.into()));
             }
         },
         Ok(None) => {
             record_sandbox_op("session_history_prepare", prep_start.elapsed(), false, None);
-            return Err(AgentError::Checkpoint(
+            return Err(AgentError::Finalization(
                 "Empty prepare-history response".into(),
             ));
         }
@@ -552,7 +554,7 @@ async fn upload_session_history(
     if requested_encoding == prepare_history::SessionHistoryEncoding::Zstd
         && !zstd_response_encoding_is_compatible
     {
-        return Err(AgentError::Checkpoint(
+        return Err(AgentError::Finalization(
             "Prepare-history response did not acknowledge zstd session history".into(),
         ));
     }
@@ -569,7 +571,7 @@ async fn upload_session_history(
     }
 
     let presigned_url = prep_resp.presigned_url.ok_or_else(|| {
-        AgentError::Checkpoint("No presignedUrl in prepare-history response".into())
+        AgentError::Finalization("No presignedUrl in prepare-history response".into())
     })?;
 
     let upload_bytes = history_upload.into_bytes();
@@ -598,7 +600,7 @@ async fn upload_session_history(
         log_info!(
             LOG_TAG,
             "Session history upload failed after {SESSION_HISTORY_UPLOAD_MAX_ATTEMPTS} attempts; \
-             continuing checkpoint without history: {error}"
+             continuing finalization without history: {error}"
         );
         return Ok(SessionHistoryUploadOutcome::Unavailable);
     }
@@ -615,7 +617,7 @@ async fn upload_session_history(
 fn prepare_session_history(
     mode: FinalizationMode,
     framework: env::Framework,
-    limits: CheckpointSessionHistoryLimits,
+    limits: SessionHistoryLimits,
     cli_agent_session_id: &str,
     history_source: &SessionHistorySourceRef,
     history_read_start: std::time::Instant,
@@ -639,7 +641,7 @@ fn prepare_session_history(
                     .ok();
                     log_info!(
                         LOG_TAG,
-                        "Selected Claude compact generation for checkpoint \
+                        "Selected Claude compact generation for finalization \
                          (source_size={source_size}, candidate_size={candidate_size})"
                     );
                     record_session_history_prune(
@@ -677,7 +679,7 @@ fn prepare_session_history(
                 Err(error) => {
                     log_warn!(
                         LOG_TAG,
-                        "Claude session history selector failed; using ordinary checkpoint path: {error}"
+                        "Claude session history selector failed; using ordinary finalization path: {error}"
                     );
                     record_session_history_prune(
                         prune_start,
@@ -703,7 +705,7 @@ fn prepare_session_history(
                     .ok();
                     log_info!(
                         LOG_TAG,
-                        "Selected Codex compact generation for checkpoint \
+                        "Selected Codex compact generation for finalization \
                          (source_size={source_size}, candidate_size={candidate_size})"
                     );
                     record_session_history_prune(
@@ -741,7 +743,7 @@ fn prepare_session_history(
                 Err(error) => {
                     log_warn!(
                         LOG_TAG,
-                        "Codex session history selector failed; using ordinary checkpoint path: \
+                        "Codex session history selector failed; using ordinary finalization path: \
                          {error}"
                     );
                     record_session_history_prune(
@@ -764,20 +766,20 @@ fn prepare_session_history(
         }
     }
 
-    let checkpoint_max_bytes = limits.checkpoint_max_bytes();
+    let history_max_bytes = limits.history_max_bytes();
     let pi_source_size = if mode.can_prune_history() && framework == env::Framework::Pi {
         Some(resolved.encoded_len()?)
     } else {
         None
     };
     if pi_source_size.is_some_and(|size| size > limits.pi_compact_trigger_bytes()) {
-        let original_fits_checkpoint =
-            pi_source_size.is_some_and(|size| size <= checkpoint_max_bytes);
+        let original_fits_upload_limit =
+            pi_source_size.is_some_and(|size| size <= history_max_bytes);
         let prune_start = std::time::Instant::now();
         if let Some(file) = resolved.plain_file_mut() {
             match limits.select_pi(file, cli_agent_session_id) {
                 Ok(PiHistorySelection::Candidate(candidate)) => {
-                    if candidate.candidate_size() > checkpoint_max_bytes {
+                    if candidate.candidate_size() > history_max_bytes {
                         return Err(AgentError::PiCompactGenerationUnavailable {
                             reason: "candidate_too_large",
                         });
@@ -807,7 +809,7 @@ fn prepare_session_history(
                                 Some(SessionHistoryPruneReason::ReplacementStageFailed),
                             );
                             log_warn!(LOG_TAG, "Pi history replacement staging failed: {error}");
-                            if !original_fits_checkpoint {
+                            if !original_fits_upload_limit {
                                 return Err(AgentError::PiCompactGenerationUnavailable {
                                     reason: "replacement_stage_failed",
                                 });
@@ -821,7 +823,7 @@ fn prepare_session_history(
                         SessionHistoryPruneOutcome::Ineligible,
                         Some(SessionHistoryPruneReason::Selector(reason.as_str())),
                     );
-                    if !original_fits_checkpoint {
+                    if !original_fits_upload_limit {
                         return Err(AgentError::PiCompactGenerationUnavailable {
                             reason: reason.as_str(),
                         });
@@ -834,7 +836,7 @@ fn prepare_session_history(
                         Some(SessionHistoryPruneReason::SelectorIo),
                     );
                     log_warn!(LOG_TAG, "Pi session history selection failed: {error}");
-                    if !original_fits_checkpoint {
+                    if !original_fits_upload_limit {
                         return Err(AgentError::PiCompactGenerationUnavailable {
                             reason: "selector_io",
                         });
@@ -845,17 +847,17 @@ fn prepare_session_history(
         // A valid original below the upload cap remains usable when pruning fails.
     }
     let source = resolved
-        .into_checkpoint_source_bounded(checkpoint_max_bytes)
+        .into_upload_source_bounded(history_max_bytes)
         .map_err(|error| {
             fail_preserving_error("session_history_read", history_read_start, error)
         })?;
     match source {
-        history::SessionHistoryCheckpointSource::Decoded(history_bytes) => {
+        history::SessionHistoryUploadSource::Decoded(history_bytes) => {
             prepare_raw_session_history(history_read_start, history_bytes)
                 .map(PreparedSessionHistoryOutcome::Upload)
         }
-        history::SessionHistoryCheckpointSource::CodexZstd { encoded } => {
-            prepare_reused_zstd_session_history(history_read_start, encoded, checkpoint_max_bytes)
+        history::SessionHistoryUploadSource::CodexZstd { encoded } => {
+            prepare_reused_zstd_session_history(history_read_start, encoded, history_max_bytes)
                 .map(PreparedSessionHistoryOutcome::Upload)
         }
     }
@@ -937,16 +939,16 @@ fn finalize_raw_session_history(
         hash: history_hash,
         raw_size: history_size,
         upload_source: PreparedSessionHistoryUploadSource::Raw(history_bytes),
-        live_history: PreparedLiveHistory::MatchesCheckpoint,
+        live_history: PreparedLiveHistory::MatchesPreparedHistory,
     }
 }
 
 fn prepare_reused_zstd_session_history(
     history_read_start: std::time::Instant,
     zstd_bytes: Vec<u8>,
-    checkpoint_max_bytes: u64,
+    history_max_bytes: u64,
 ) -> Result<PreparedSessionHistory, AgentError> {
-    let analysis = analyze_zstd_session_history(&zstd_bytes, checkpoint_max_bytes)
+    let analysis = analyze_zstd_session_history(&zstd_bytes, history_max_bytes)
         .map_err(|e| fail_preserving_error("session_history_read", history_read_start, e))?;
 
     if let Some(msg) = &analysis.invalid_utf8 {
@@ -995,7 +997,7 @@ fn prepare_reused_zstd_session_history(
         hash: analysis.sha256_hex,
         raw_size: analysis.raw_size,
         upload_source: PreparedSessionHistoryUploadSource::ReusedCodexZstd(zstd_bytes),
-        live_history: PreparedLiveHistory::MatchesCheckpoint,
+        live_history: PreparedLiveHistory::MatchesPreparedHistory,
     })
 }
 
@@ -1004,7 +1006,7 @@ fn analyze_zstd_session_history(
     max_bytes: u64,
 ) -> Result<DecodedSessionHistoryAnalysis, AgentError> {
     let decoder = zstd::stream::read::Decoder::new(zstd_bytes).map_err(|error| {
-        AgentError::Checkpoint(format!(
+        AgentError::Finalization(format!(
             "Failed to decompress zstd session history: {error}"
         ))
     })?;
@@ -1030,7 +1032,7 @@ fn analyze_decoded_session_history_reader(
     loop {
         line.clear();
         let bytes_read = reader.read_until(b'\n', &mut line).map_err(|error| {
-            AgentError::Checkpoint(format!(
+            AgentError::Finalization(format!(
                 "Failed to decompress zstd session history: {error}"
             ))
         })?;
@@ -1090,9 +1092,9 @@ fn strip_jsonl_line_ending(line: &[u8]) -> &[u8] {
 }
 
 fn prepare_finalization_session_history(
-    inputs: CheckpointSessionHistoryInputs,
+    inputs: SessionHistoryInputs,
 ) -> Result<PreparedFinalizationSessionHistory, AgentError> {
-    let CheckpointSessionHistoryInputs {
+    let SessionHistoryInputs {
         mode,
         framework,
         limits,
@@ -1133,7 +1135,7 @@ fn prepare_finalization_session_history(
             } = prepared_history;
             let upload = upload_source.into_upload(history_size)?;
             Ok(PreparedFinalizationSessionHistory::Upload {
-                checkpoint: Box::new(UploadedCheckpointSessionHistory {
+                history: Box::new(UploadedSessionHistory {
                     cli_agent_session_id,
                     history_source,
                     history_hash,
@@ -1159,14 +1161,14 @@ fn pi_history_preparation_is_fatal(
     framework == env::Framework::Pi
         && (matches!(error, AgentError::PiCompactGenerationUnavailable { .. })
             || (mode.can_prune_history()
-                && matches!(error, AgentError::CheckpointHistoryTooLarge { .. })))
+                && matches!(error, AgentError::SessionHistoryTooLarge { .. })))
 }
 
 pub(super) async fn prepare_and_upload_session_history(
     http: &HttpClient,
     run_id: &str,
-    inputs: CheckpointSessionHistoryInputs,
-) -> Result<CheckpointSessionHistory, AgentError> {
+    inputs: SessionHistoryInputs,
+) -> Result<SessionHistoryOutcome, AgentError> {
     if inputs.cli_agent_session_id.is_empty() {
         return Err(history_failure(
             "session_id_read",
@@ -1177,32 +1179,33 @@ pub(super) async fn prepare_and_upload_session_history(
     let cli_agent_session_id = inputs.cli_agent_session_id.clone();
     let framework = inputs.framework;
     let mode = inputs.mode;
-    let prepared =
-        match run_session_history_blocking(move || prepare_finalization_session_history(inputs))
-            .await?
-        {
-            Ok(prepared) => prepared,
-            Err(error) => {
-                if pi_history_preparation_is_fatal(mode, framework, &error) {
-                    return Err(error);
-                }
-                log_warn!(
-                    LOG_TAG,
-                    "Session history is unavailable; continuing checkpoint without history: {error}"
-                );
-                return Ok(CheckpointSessionHistory::Unavailable {
-                    cli_agent_session_id,
-                });
+    let prepared = match run_session_history_blocking(move || {
+        prepare_finalization_session_history(inputs)
+    })
+    .await?
+    {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            if pi_history_preparation_is_fatal(mode, framework, &error) {
+                return Err(error);
             }
-        };
+            log_warn!(
+                LOG_TAG,
+                "Session history is unavailable; continuing finalization without history: {error}"
+            );
+            return Ok(SessionHistoryOutcome::Unavailable {
+                cli_agent_session_id,
+            });
+        }
+    };
     match prepared {
-        PreparedFinalizationSessionHistory::Upload { checkpoint, upload } => {
-            match upload_session_history(http, run_id, &checkpoint.history_hash, upload).await? {
+        PreparedFinalizationSessionHistory::Upload { history, upload } => {
+            match upload_session_history(http, run_id, &history.history_hash, upload).await? {
                 SessionHistoryUploadOutcome::Uploaded => {
-                    Ok(CheckpointSessionHistory::Uploaded(*checkpoint))
+                    Ok(SessionHistoryOutcome::Uploaded(*history))
                 }
                 SessionHistoryUploadOutcome::Unavailable => {
-                    Ok(CheckpointSessionHistory::Unavailable {
+                    Ok(SessionHistoryOutcome::Unavailable {
                         cli_agent_session_id,
                     })
                 }
@@ -1210,7 +1213,7 @@ pub(super) async fn prepare_and_upload_session_history(
         }
         PreparedFinalizationSessionHistory::DiscardedOversized {
             cli_agent_session_id,
-        } => Ok(CheckpointSessionHistory::DiscardedOversized {
+        } => Ok(SessionHistoryOutcome::DiscardedOversized {
             cli_agent_session_id,
         }),
     }
@@ -1219,7 +1222,7 @@ pub(super) async fn prepare_and_upload_session_history(
 pub(super) fn reconcile_live_history_after_finalization(live_history: PreparedLiveHistory) -> bool {
     let started_at = std::time::Instant::now();
     match live_history {
-        PreparedLiveHistory::MatchesCheckpoint => true,
+        PreparedLiveHistory::MatchesPreparedHistory => true,
         PreparedLiveHistory::NativeCandidate {
             kind,
             replacement: Some(replacement),
@@ -1247,7 +1250,7 @@ pub(super) fn reconcile_live_history_after_finalization(live_history: PreparedLi
                 log_warn!(
                     LOG_TAG,
                     "Failed to reconcile committed {} compact generation into live session \
-                     history; next resume will restore checkpoint history",
+                     history; next resume will restore uploaded history",
                     kind.label()
                 );
                 false
@@ -1266,7 +1269,7 @@ pub(super) fn reconcile_live_history_after_finalization(live_history: PreparedLi
             log_warn!(
                 LOG_TAG,
                 "Failed to reconcile committed {} compact generation into live session \
-                 history; next resume will restore checkpoint history",
+                 history; next resume will restore uploaded history",
                 kind.label()
             );
             false
@@ -1377,21 +1380,21 @@ mod tests {
     use crate::error::AgentError;
 
     #[test]
-    fn checkpoint_failure_recording_preserves_typed_history_limit_error() {
+    fn finalization_failure_recording_preserves_typed_history_limit_error() {
         let error = fail_preserving_error(
             "session_history_read",
             std::time::Instant::now(),
-            AgentError::CheckpointHistoryTooLarge { max_bytes: 1 },
+            AgentError::SessionHistoryTooLarge { max_bytes: 1 },
         );
         assert!(matches!(
             error,
-            AgentError::CheckpointHistoryTooLarge { max_bytes: 1 }
+            AgentError::SessionHistoryTooLarge { max_bytes: 1 }
         ));
     }
 
     #[test]
     fn pi_success_does_not_downgrade_a_late_history_size_failure() {
-        let too_large = AgentError::CheckpointHistoryTooLarge { max_bytes: 128 };
+        let too_large = AgentError::SessionHistoryTooLarge { max_bytes: 128 };
         assert!(pi_history_preparation_is_fatal(
             FinalizationMode::Success,
             env::Framework::Pi,
@@ -1410,7 +1413,7 @@ mod tests {
     }
 
     #[test]
-    fn zstd_checkpoint_analysis_returns_typed_history_limit_error() {
+    fn zstd_finalization_analysis_returns_typed_history_limit_error() {
         let encoded = zstd_session_history(b"{}\n").unwrap();
         let error = match analyze_zstd_session_history(&encoded, 1) {
             Ok(_) => panic!("expected zstd history to exceed the decoded limit"),
@@ -1418,7 +1421,7 @@ mod tests {
         };
         assert!(matches!(
             error,
-            AgentError::CheckpointHistoryTooLarge { max_bytes: 1 }
+            AgentError::SessionHistoryTooLarge { max_bytes: 1 }
         ));
     }
 

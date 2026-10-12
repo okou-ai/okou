@@ -480,6 +480,7 @@ const compactUsageEventBatch$ = command(
   > => {
     const db = set(writeDb$);
     const rawSeedLimit = USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0129; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const lockWaitMs = 0;
       signal.throwIfAborted();

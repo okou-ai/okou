@@ -17,6 +17,7 @@ import {
   gitHubPullRequestReviewActionSchema,
   gitHubPullRequestReviewEventSchema,
   gitHubPullRequestEventSchema,
+  gitHubWorkflowJobActionSchema,
   gitHubWorkflowJobEventSchema,
   gitHubWorkflowRunEventSchema,
   handleGithubDeploymentStatusEvent$,
@@ -197,6 +198,15 @@ const postGithubWorkflowJobWebhook$ = command(
     args: GithubBackgroundWebhookArgs,
     signal: AbortSignal,
   ): Response => {
+    const action = gitHubWorkflowJobActionSchema.safeParse(args.payload);
+    if (!action.success) {
+      L.error("Invalid workflow_job event payload", { error: action.error });
+      return jsonError("Invalid payload structure", 400);
+    }
+    if (action.data.action !== "completed") {
+      return new Response("OK", { status: 200 });
+    }
+
     const parsed = gitHubWorkflowJobEventSchema.safeParse(args.payload);
     if (!parsed.success) {
       L.error("Invalid workflow_job event payload", { error: parsed.error });

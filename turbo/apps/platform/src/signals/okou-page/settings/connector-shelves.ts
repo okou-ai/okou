@@ -4,7 +4,7 @@ import type { ConnectorCategorySection } from "./connector-categories.ts";
  * A shelf is one category shown a few cards deep, closed by a cell that names
  * what is behind it. It exists because a catalog of four thousand connectors
  * cannot be browsed by a filter: the person opening it does not know the
- * product's name, so the surface has to say "Lark, Zendesk and 321 more"
+ * product's name, so the surface has to say "Lark, Intercom and 321 more"
  * rather than "327".
  */
 export interface ConnectorShelf<T> {

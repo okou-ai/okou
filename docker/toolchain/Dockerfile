@@ -47,6 +47,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && unzstd --version \
     && rm -rf /var/lib/apt/lists/*
 
+# Preinstall a pinned stable sccache release. Select the executable for the
+# image's native host, independently of the Rust compilation target.
+ARG SCCACHE_VERSION=0.18.0
+ARG SCCACHE_AMD64_SHA256=45f1447fbe231e3037bde351ef70677dd212216c8d62ae7ca409fecc4d6acc89
+ARG SCCACHE_ARM64_SHA256=2b3284d5da3b46a47dc4229e75bb7b88ac4aa99c8d754fb7d2f84997e5a4354a
+RUN ARCH=$(dpkg --print-architecture) \
+    && case "$ARCH" in \
+        amd64) SCCACHE_ARCH="x86_64"; SCCACHE_SHA256="$SCCACHE_AMD64_SHA256" ;; \
+        arm64) SCCACHE_ARCH="aarch64"; SCCACHE_SHA256="$SCCACHE_ARM64_SHA256" ;; \
+        *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;; \
+    esac \
+    && SCCACHE_RELEASE="sccache-v${SCCACHE_VERSION}-${SCCACHE_ARCH}-unknown-linux-musl" \
+    && curl -fsSL --retry 3 "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/${SCCACHE_RELEASE}.tar.gz" -o /tmp/sccache.tar.gz \
+    && echo "${SCCACHE_SHA256}  /tmp/sccache.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/sccache.tar.gz --strip-components=1 -C /tmp "${SCCACHE_RELEASE}/sccache" \
+    && install -m 0755 /tmp/sccache /usr/local/bin/sccache \
+    && rm -f /tmp/sccache.tar.gz /tmp/sccache \
+    && sccache --version \
+    && test "$(sccache --version)" = "sccache ${SCCACHE_VERSION}"
+
 # Install Rust toolchain with runner Linux musl targets.
 # Used for building runner and guest binaries for Firecracker VMs.
 ENV RUSTUP_HOME=/usr/local/rustup \

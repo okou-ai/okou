@@ -402,3 +402,30 @@ test.each(["okou.ai.evil.example", "app.okou.ai.evil.example"])(
     ]);
   },
 );
+
+test("Workspace switching waits for a refreshed token before navigating home", async () => {
+  const clerk = context.mocks.clerk();
+  const freshToken = context.mocks.deferred<string>();
+  const requested = context.mocks.deferred<void>();
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: "/agents",
+  });
+  await screen.findByRole("heading", { name: "Agents" });
+  mockedClerk.sessionGetToken.mockImplementation((options) => {
+    if (options?.skipCache) {
+      requested.resolve();
+      return freshToken.promise;
+    }
+    return Promise.resolve("current-web-token");
+  });
+  clerk.organization({ activeOrg: { id: "org_beta", name: "Beta" } });
+  clerk.stateChanged();
+  await requested.promise;
+  expect(location.pathname).toBe("/agents");
+  freshToken.resolve("fresh-web-token");
+  await vi.waitFor(() => {
+    expect(location.pathname).toBe("/");
+  });
+});

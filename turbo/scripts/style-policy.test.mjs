@@ -69,7 +69,7 @@ function runPolicy(root, args = []) {
 function assertRejected(result, diagnostic) {
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.match(result.stderr, diagnostic);
-  assert.match(result.stderr, /Read docs\/styles\.md/);
+  assert.match(result.stderr, /Read docs\/app\/styles\.md/);
 }
 
 // An allowlist that authorizes one class dependency, for the tests that need a

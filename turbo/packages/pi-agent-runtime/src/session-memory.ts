@@ -144,11 +144,10 @@ export class MemoryPiSession {
     return this.pendingToolIds().length > 0;
   }
 
-  isSettledCheckpoint(): boolean {
+  isSettledHistory(): boolean {
     const lastMessage = this.buildSessionContext().messages.at(-1);
     return (
       lastMessage?.role === "assistant" &&
-      lastMessage.stopReason !== "error" &&
       lastMessage.stopReason !== "aborted" &&
       !this.hasPendingToolCalls()
     );

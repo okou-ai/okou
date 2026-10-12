@@ -2,16 +2,22 @@ import indexHtml from "../../index.html?raw";
 
 const APP_BOOTSTRAP_SKELETON_ID = "app-bootstrap-skeleton";
 
-function readDeployedSkeleton(): HTMLElement {
+function readDeployedElement(id: string): HTMLElement {
   const page = new DOMParser().parseFromString(indexHtml, "text/html");
-  const element = page.getElementById(APP_BOOTSTRAP_SKELETON_ID);
+  const element = page.getElementById(id);
   if (!element) {
-    throw new Error("index.html is missing the bootstrap skeleton");
+    throw new Error(`index.html is missing #${id}`);
   }
   return element;
 }
 
-const skeleton = readDeployedSkeleton();
+const skeleton = readDeployedElement(APP_BOOTSTRAP_SKELETON_ID);
+const root = readDeployedElement("root");
+
+/** Preserve the deployed root's startup interaction boundary in page tests. */
+export function createBootstrapRoot(): HTMLElement {
+  return document.importNode(root, true);
+}
 
 /** Mounts the deployed first-paint skeleton, with document disposal owned by the test. */
 export function installBootstrapSkeleton(signal: AbortSignal): void {

@@ -3,6 +3,7 @@ import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads
 import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { aroundEach, it, describe, beforeEach } from "vitest";
+import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -179,10 +180,12 @@ async function createScheduleAutomation(
 
 async function postWorkflowWebhook(
   automation: WebhookAutomation,
-  payload: string,
+  payload: string | Readonly<Record<string, unknown>>,
   signal: AbortSignal = context.signal,
 ): Promise<{ readonly status: number; readonly body: unknown }> {
-  const rawBody = JSON.stringify({ event: payload });
+  const rawBody = JSON.stringify(
+    typeof payload === "string" ? { event: payload } : payload,
+  );
   const timestamp = Math.floor(now() / 1000);
   const response = await createApp({ signal, routes: TEST_APP_ROUTES }).request(
     `/api/webhooks/workflow-automations/${automation.token}`,
@@ -349,7 +352,7 @@ async function requestRunCompletionThroughSandbox(
     {
       runId,
       exitCode: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `workflow-queue-cli-${runId}`,
         cliAgentSessionHistoryHash: createHash("sha256")
@@ -414,6 +417,57 @@ async function runAutomationNow(automationId: string) {
 }
 
 describe("workflow queue", () => {
+  it("gives separate manual requests distinct stable identities at the same timestamp", async () => {
+    const scenario = await setup();
+    const automation = await createScheduleAutomation(scenario);
+    mockNow(now());
+    const requestedAt = new Date(now()).toISOString();
+
+    const first = await runAutomationNow(automation.automationId);
+    const firstRunId = await latestThreadRunId(first.body.chatThreadId);
+    const firstRun = await runsApi.readRun(scenario.actor, firstRunId);
+    const firstIdentityBlock = firstRun.prompt.match(
+      /Automation identity:\n(\{[^}]+\})/u,
+    )?.[1];
+    if (!firstIdentityBlock) {
+      throw new Error("Expected the first automation's source identity");
+    }
+    const identitySchema = z.object({
+      automationId: z.uuid(),
+      automationEventId: z.uuid(),
+    });
+    const firstIdentityData: unknown = JSON.parse(firstIdentityBlock);
+    const firstIdentity = identitySchema.parse(firstIdentityData);
+    expect(firstIdentity.automationId).toBe(automation.automationId);
+    expect(firstRun.prompt).toContain(`"requestedAt": "${requestedAt}"`);
+    await runsApi.requestCancelRun(scenario.actor, firstRunId, [200]);
+    await flushWaitUntilForTest();
+
+    const second = await runAutomationNow(automation.automationId);
+    const secondRunId = await latestThreadRunId(second.body.chatThreadId);
+    expect(secondRunId).not.toBe(firstRunId);
+    const secondRun = await runsApi.readRun(scenario.actor, secondRunId);
+    const secondIdentityBlock = secondRun.prompt.match(
+      /Automation identity:\n(\{[^}]+\})/u,
+    )?.[1];
+    if (!secondIdentityBlock) {
+      throw new Error("Expected the second automation's source identity");
+    }
+    const secondIdentityData: unknown = JSON.parse(secondIdentityBlock);
+    const secondIdentity = identitySchema.parse(secondIdentityData);
+    expect(secondIdentity.automationId).toBe(firstIdentity.automationId);
+    expect(secondIdentity.automationEventId).not.toBe(
+      firstIdentity.automationEventId,
+    );
+    expect(secondRun.prompt).toContain(`"requestedAt": "${requestedAt}"`);
+    await expect(
+      runsApi.readRun(scenario.actor, firstRunId),
+    ).resolves.toMatchObject({
+      prompt: firstRun.prompt,
+    });
+    await runsApi.requestCancelRun(scenario.actor, secondRunId, [200]);
+  });
+
   it("queues concurrent webhook events and drains each exactly once", async () => {
     const scenario = await setup();
     const automation = await createWebhookAutomation(scenario);
@@ -502,13 +556,26 @@ describe("workflow queue", () => {
     await bdd.readMe(scenario.actor);
     const automation = await createWebhookAutomation(scenario);
 
+    // Ordinary webhook bodies exercise nested key order through real JSONB
+    // persistence, both before and after queue drain.
+    const firstBody = {
+      event: "first friendly event",
+      details: { zebra: "first", a: 1 },
+      items: [
+        { z: "second", a: 2 },
+        { longer: true, b: null },
+      ],
+    };
+    const secondBody = {
+      event: "queued friendly event",
+      items: [{ zebra: "queued", a: false }, ["last", "first"]],
+      details: { longer: { zebra: 3, a: 4 }, b: null },
+    };
     const firstRunId = await expectAcceptedRunId(
-      await postWorkflowWebhook(automation, "first friendly event"),
+      await postWorkflowWebhook(automation, firstBody),
       automation.threadId,
     );
-    expectAccepted(
-      await postWorkflowWebhook(automation, "queued friendly event"),
-    );
+    expectAccepted(await postWorkflowWebhook(automation, secondBody));
 
     const automationEvents = await wf.readThreadEvents(automation.threadId);
     const claimedEvent = automationEvents.find((event) => {
@@ -560,6 +627,25 @@ describe("workflow queue", () => {
     expect(secondClaim.appendSystemPrompt).toContain(
       `Email: ${scenario.actor.email}`,
     );
+
+    for (const [runId, claim, body] of [
+      [firstRunId, firstClaim, firstBody],
+      [runIds[1]!, secondClaim, secondBody],
+    ] as const) {
+      const publicRun = await runsApi.readRun(scenario.actor, runId);
+      expect(claim.prompt).toBe(publicRun.prompt);
+      const eventData = claim.prompt.match(
+        /\nEvent data:\n([\s\S]*?)\n\nAutomation identity:\n/u,
+      )?.[1];
+      if (!eventData) {
+        throw new Error("Expected the Runner's public automation event data");
+      }
+      const parsedEvent: unknown = JSON.parse(eventData);
+      const event = z.object({ parsedJson: z.unknown() }).parse(parsedEvent);
+      // Structural equality ignores object key order; compare exact JSON.
+      expect(JSON.stringify(event.parsedJson)).toBe(JSON.stringify(body));
+      expect(claim.prompt).not.toContain(automation.secret);
+    }
 
     await runsApi.requestCancelRun(scenario.actor, runIds[1]!, [200]);
   });
@@ -624,6 +710,48 @@ describe("workflow queue", () => {
       const runIds = await workflowRunIds(automation.threadId);
       await runsApi.requestCancelRun(scenario.actor, runIds[1]!, [200]);
     });
+  });
+
+  it("executes an admitted automation event after the automation is paused", async () => {
+    const scenario = await setup();
+    const automation = await createWebhookAutomation(scenario);
+    const firstRunId = await expectAcceptedRunId(
+      await postWorkflowWebhook(automation, "running before pause"),
+      automation.threadId,
+    );
+    expectAccepted(
+      await postWorkflowWebhook(automation, "admitted before pause"),
+    );
+    await expect(
+      pendingAutomationEvents(automation.threadId),
+    ).resolves.toHaveLength(1);
+
+    const paused = await accept(
+      automationsClient().disable({
+        headers: authHeaders(),
+        params: { id: automation.automationId },
+      }),
+      [200],
+    );
+    expect(paused.body.enabled).toBeFalsy();
+    await completeRunThroughSandbox(scenario, firstRunId);
+    await flushWaitUntilForTest();
+
+    const runIds = await workflowRunIds(automation.threadId);
+    expect(runIds).toHaveLength(2);
+    await expect(
+      pendingAutomationEvents(automation.threadId),
+    ).resolves.toStrictEqual([]);
+    const events = await readProjectedChatEvents(context, {
+      threadId: automation.threadId,
+      headers: authHeaders(),
+    });
+    expect(
+      events.some((event) => {
+        return event.eventType === "output.error";
+      }),
+    ).toBeFalsy();
+    await runsApi.requestCancelRun(scenario.actor, runIds[1]!, [200]);
   });
 
   it("keeps automation events queued until cancellation recovery completes", async () => {
@@ -840,6 +968,16 @@ describe("workflow queue", () => {
         null,
         2,
       ),
+    );
+    expect(scheduleRun.prompt).toContain(
+      `Automation identity:\n${JSON.stringify(
+        {
+          automationId: scheduleAutomation.automationId,
+          automationEventId: scheduleEvent.id,
+        },
+        null,
+        2,
+      )}`,
     );
     await runsApi.requestCancelRun(scenario.actor, scheduleRunId, [200]);
   });

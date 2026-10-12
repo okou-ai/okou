@@ -28,24 +28,6 @@ import {
 const L = logger("InternalCallbacksTeamsChat");
 const TEAMS_THINKING_REACTION_TYPE = "1f4ad_thoughtballoon";
 
-async function markDelivered(db: Db, callbackId: string): Promise<void> {
-  await db
-    .update(agentRunCallbacks)
-    .set({ status: "delivered", deliveredAt: nowDate() })
-    .where(eq(agentRunCallbacks.id, callbackId));
-}
-
-async function markFailed(
-  db: Db,
-  callbackId: string,
-  error: string,
-): Promise<void> {
-  await db
-    .update(agentRunCallbacks)
-    .set({ status: "failed", lastError: error.slice(0, 4000) })
-    .where(eq(agentRunCallbacks.id, callbackId));
-}
-
 function recordDelivery(args: {
   readonly runId: string;
   readonly startedAt: number;
@@ -65,28 +47,6 @@ function recordDelivery(args: {
 interface ClaimedTeamsChatDelivery {
   readonly runId: string;
   readonly payload: unknown;
-}
-
-async function claimTeamsChatDelivery(
-  db: Db,
-  callbackId: string,
-): Promise<ClaimedTeamsChatDelivery | undefined> {
-  const [callback] = await db
-    .update(agentRunCallbacks)
-    .set({ attempts: 1, lastAttemptAt: nowDate() })
-    .where(
-      and(
-        eq(agentRunCallbacks.id, callbackId),
-        eq(agentRunCallbacks.internalKind, "teams:chat"),
-        eq(agentRunCallbacks.status, "pending"),
-        eq(agentRunCallbacks.attempts, 0),
-      ),
-    )
-    .returning({
-      runId: agentRunCallbacks.runId,
-      payload: agentRunCallbacks.payload,
-    });
-  return callback;
 }
 
 async function loadTeamsChatDeliveryContext(
@@ -329,7 +289,21 @@ export async function dispatchTeamsChatDeliveryOnce(
 ): Promise<void> {
   const startedAt = now();
   signal.throwIfAborted();
-  const callback = await claimTeamsChatDelivery(db, callbackId);
+  const [callback] = await db
+    .update(agentRunCallbacks)
+    .set({ attempts: 1, lastAttemptAt: nowDate() })
+    .where(
+      and(
+        eq(agentRunCallbacks.id, callbackId),
+        eq(agentRunCallbacks.internalKind, "teams:chat"),
+        eq(agentRunCallbacks.status, "pending"),
+        eq(agentRunCallbacks.attempts, 0),
+      ),
+    )
+    .returning({
+      runId: agentRunCallbacks.runId,
+      payload: agentRunCallbacks.payload,
+    });
   if (!callback) {
     return;
   }
@@ -348,7 +322,10 @@ export async function dispatchTeamsChatDeliveryOnce(
       delivery.error instanceof Error
         ? delivery.error.message
         : "Unknown error";
-    await markFailed(db, callbackId, message);
+    await db
+      .update(agentRunCallbacks)
+      .set({ status: "failed", lastError: message.slice(0, 4000) })
+      .where(eq(agentRunCallbacks.id, callbackId));
     recordDelivery({
       runId: callback.runId,
       startedAt,
@@ -363,7 +340,10 @@ export async function dispatchTeamsChatDeliveryOnce(
     return;
   }
 
-  await markDelivered(db, callbackId);
+  await db
+    .update(agentRunCallbacks)
+    .set({ status: "delivered", deliveredAt: nowDate() })
+    .where(eq(agentRunCallbacks.id, callbackId));
   recordDelivery({
     runId: callback.runId,
     startedAt,

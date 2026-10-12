@@ -77,12 +77,6 @@ const SCHEMA = {
   CRON_SECRET: z.string().min(1),
   // Activate only after the entire API fleet understands expiry receipts.
   WORKFLOW_SCHEDULE_EXPIRY_ENABLED: z.enum(["true", "false"]).default("false"),
-  MORNING_BRIEF_WORKER_CONCURRENCY: z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(20)
-    .default(4),
   R2_ACCESS_KEY_ID: z.string().min(1),
   R2_ACCOUNT_ID: z.string().min(1),
   R2_SECRET_ACCESS_KEY: z.string().min(1),
@@ -154,6 +148,7 @@ const SCHEMA = {
   TELEGRAM_OFFICIAL_BOT_USERNAME: z.string().optional(),
   TELEGRAM_OFFICIAL_WEBHOOK_SECRET: z.string().optional(),
   SLACK_OAUTH_CLIENT_ID: z.string().optional(),
+  DISCORD_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
   DISCORD_BOT_TOKEN: z.string().min(1).optional(),
   DISCORD_APPLICATION_ID: z
     .string()
@@ -164,7 +159,6 @@ const SCHEMA = {
     .regex(/^[a-fA-F0-9]{64}$/)
     .optional(),
   DISCORD_GATEWAY_SECRET: z.string().min(32).optional(),
-  DISCORD_MESSAGE_CONTENT_ENABLED: z.enum(["true", "false"]).default("false"),
   MICROSOFT_OAUTH_CLIENT_ID: z.string().min(1).optional(),
   MICROSOFT_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
   MICROSOFT_TEAMS_BOT_APP_ID: z.string().min(1).optional(),

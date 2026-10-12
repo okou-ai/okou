@@ -361,6 +361,7 @@ const activateCandidate$ = command(
     let registeringDefinitionName: string | undefined;
     // The accepted pointer, immutable registrations, artifact heads and repair work commit together.
     const activation = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0195; new non-billing transactions are prohibited.
       set(writeDb$).transaction(async (tx) => {
         const [state] = await tx
           .select(catalogPointerFields)

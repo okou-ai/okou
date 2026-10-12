@@ -18,7 +18,7 @@ import {
   sessionHistoryEncodingSchema,
   sessionHistorySizeBucketSchema,
   secretConnectorMetadataMapSchema,
-  workspaceReuseResultSchema,
+  homeReuseResultSchema,
 } from "./runners";
 import {
   eventSequenceNumberSchema,
@@ -33,9 +33,9 @@ import {
 
 export {
   sandboxReuseResultSchema,
-  workspaceReuseResultSchema,
+  homeReuseResultSchema,
   type SandboxReuseResult,
-  type WorkspaceReuseResult,
+  type HomeReuseResult,
 } from "./runners";
 
 const c = initContract();
@@ -384,14 +384,6 @@ export const runCompletionMetadataSchema = z
   .strict()
   .superRefine(requireCompletionHistory);
 
-const webhookCheckpointCreateBodySchema = z
-  .object({
-    runId: z.string().min(1, "runId is required"),
-    ...runCompletionMetadataShape,
-  })
-  .strict()
-  .superRefine(requireCompletionHistory);
-
 const webhookCompleteBodySchema = z
   .object({
     runId: z.string().min(1, "runId is required"),
@@ -404,35 +396,26 @@ const webhookCompleteBodySchema = z
     // the 255-char cap matches the DB column (defense in depth).
     sandboxId: z.string().max(255).optional(),
     sandboxReuseResult: sandboxReuseResultSchema.optional(),
-    workspaceReuseResult: workspaceReuseResultSchema.optional(),
+    homeReuseResult: homeReuseResultSchema.optional(),
     completion: runCompletionMetadataSchema.optional(),
-    // Adapter for Guest binaries deployed before checkpoint retirement.
-    checkpoint: runCompletionMetadataSchema.optional(),
   })
   .superRefine((body, context) => {
-    if (body.completion !== undefined && body.checkpoint !== undefined) {
-      context.addIssue({
-        code: "custom",
-        path: ["completion"],
-        message: "Only one completion metadata payload is allowed",
-      });
-    }
-    const workspaceResult = body.workspaceReuseResult;
-    if (workspaceResult === undefined) {
+    const homeResult = body.homeReuseResult;
+    if (homeResult === undefined) {
       return;
     }
     const sandboxResult = body.sandboxReuseResult;
     const coherentSandboxReuse =
-      sandboxResult === "reused" && workspaceResult === "sandboxReused";
+      sandboxResult === "reused" && homeResult === "sandboxReused";
     const coherentSandboxMiss =
       sandboxResult !== undefined &&
       currentSandboxReuseMissSchema.safeParse(sandboxResult).success &&
-      workspaceResult !== "sandboxReused";
+      homeResult !== "sandboxReused";
     if (!coherentSandboxReuse && !coherentSandboxMiss) {
       context.addIssue({
         code: "custom",
-        path: ["workspaceReuseResult"],
-        message: "workspace reuse result does not match sandbox reuse result",
+        path: ["homeReuseResult"],
+        message: "home reuse result does not match sandbox reuse result",
       });
     }
   });
@@ -703,45 +686,14 @@ export const webhookCompleteContract = c.router({
 });
 
 /**
- * Legacy declaration for the retired standalone checkpoint endpoint.
- * @deprecated No current Guest producer calls this endpoint; remove in release 2 of #38124.
- */
-export const webhookCheckpointsContract = c.router({
-  /**
-   * POST /api/webhooks/agent/checkpoints
-   * Create a recoverable checkpoint for an agent run.
-   */
-  create: {
-    method: "POST",
-    path: "/api/webhooks/agent/checkpoints",
-    headers: authHeadersSchema,
-    body: webhookCheckpointCreateBodySchema,
-    responses: {
-      200: z.object({
-        checkpointId: z.string(),
-        agentSessionId: z.string(),
-        conversationId: z.string(),
-        artifacts: artifactSnapshotsSchema.optional(),
-        volumes: z.record(z.string(), z.string()).optional(),
-      }),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      404: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Create checkpoint for agent run",
-  },
-});
-
-/**
- * Webhook checkpoint prepare-history contract for /api/webhooks/agent/checkpoints/prepare-history
+ * Native CLI history upload preparation, independent of file publication.
  * Returns a presigned URL for uploading session history directly to S3,
  * bypassing Vercel's 4.5MB body size limit.
  */
-export const webhookCheckpointsPrepareHistoryContract = c.router({
+export const webhookSessionHistoryPrepareContract = c.router({
   prepare: {
     method: "POST",
-    path: "/api/webhooks/agent/checkpoints/prepare-history",
+    path: "/api/webhooks/agent/session-history/prepare",
     headers: authHeadersSchema,
     body: z.object({
       runId: z.string().min(1, "runId is required"),
@@ -770,14 +722,6 @@ export const webhookCheckpointsPrepareHistoryContract = c.router({
       500: apiErrorSchema,
     },
     summary: "Get presigned URL for uploading session history to S3",
-  },
-});
-
-/** Native CLI history upload preparation, independent of file publication. */
-export const webhookSessionHistoryPrepareContract = c.router({
-  prepare: {
-    ...webhookCheckpointsPrepareHistoryContract.prepare,
-    path: "/api/webhooks/agent/session-history/prepare",
   },
 });
 
@@ -815,6 +759,29 @@ export const webhookHeartbeatContract = c.router({
   },
 });
 
+const filesystemCounterSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(Number.MAX_SAFE_INTEGER);
+const filesystemObservationSchema = z
+  .object({
+    used_bytes: filesystemCounterSchema,
+    total_bytes: filesystemCounterSchema,
+    available_bytes: filesystemCounterSchema,
+    used_inodes: filesystemCounterSchema,
+    total_inodes: filesystemCounterSchema,
+    available_inodes: filesystemCounterSchema,
+  })
+  .refine((fs) => {
+    return (
+      fs.used_bytes <= fs.total_bytes &&
+      fs.available_bytes <= fs.total_bytes - fs.used_bytes &&
+      fs.used_inodes <= fs.total_inodes &&
+      fs.available_inodes <= fs.total_inodes - fs.used_inodes
+    );
+  });
+
 /**
  * Metric data point schema
  */
@@ -832,6 +799,9 @@ const metricDataSchema = z.object({
   mem_total: z.number(),
   disk_used: z.number(),
   disk_total: z.number(),
+  // A bad optional filesystem sample must not reject the telemetry batch.
+  rootfs: filesystemObservationSchema.optional().catch(undefined),
+  home: filesystemObservationSchema.optional().catch(undefined),
   control_cpu_usage_usec: z.number().optional(),
   control_cpu_nr_throttled: z.number().optional(),
   control_cpu_throttled_usec: z.number().optional(),
@@ -893,7 +863,12 @@ const sandboxOperationDownloadSourceSchema = z
   }, sessionHistoryDownloadSourceSchema.optional())
   .optional();
 
-export const runnerStartupPathSchema = z.enum(["sandbox", "workspace", "cold"]);
+export const runnerStartupPathSchema = z.enum([
+  "sandbox",
+  "workspace",
+  "home",
+  "cold",
+]);
 
 export type RunnerStartupPath = z.infer<typeof runnerStartupPathSchema>;
 
@@ -965,7 +940,7 @@ export type ArchiveConnectionAttempt = z.infer<
 >;
 
 /**
- * Sandbox operation schema for internal sandbox operations (init, storage, cli, checkpoint, cleanup)
+ * Sandbox operation schema for internal sandbox operations (init, storage, cli, finalization, cleanup)
  */
 const sandboxOperationSchema = z.object({
   ts: z.string(),
@@ -1037,7 +1012,7 @@ const sandboxOperationSchema = z.object({
     .enum(["raw_source", "retained_zstd", "codex_pruning_guard"])
     .optional(),
   session_history_transfer_source: z
-    .enum(["workspace_cache", "home_cache", "downloaded", "inline"])
+    .enum(["home_cache", "downloaded", "inline"])
     .optional(),
   session_history_wire_codec: z.enum(["none", "zstd"]).optional(),
   session_history_codec_decision: z
@@ -1223,9 +1198,6 @@ export type WebhookBuiltInGenerationFalContract =
   typeof webhookBuiltInGenerationFalContract;
 export type WebhookFirewallAuthContract = typeof webhookFirewallAuthContract;
 export type WebhookCompleteContract = typeof webhookCompleteContract;
-export type WebhookCheckpointsContract = typeof webhookCheckpointsContract;
-export type WebhookCheckpointsPrepareHistoryContract =
-  typeof webhookCheckpointsPrepareHistoryContract;
 export type WebhookHeartbeatContract = typeof webhookHeartbeatContract;
 export type WebhookTelemetryContract = typeof webhookTelemetryContract;
 export type WebhookStoragesPrepareContract =

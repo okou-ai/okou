@@ -444,10 +444,6 @@
           "support-ticket-router": {
             "description": "Tiket masuk ke Notion dan yang mendesak memberi ping ke Slack",
             "title": "Pengarah tiket dukungan"
-          },
-          "zendesk-notion-knowledge-base": {
-            "description": "Ekstrak pertanyaan Zendesk yang sering diajukan dan tambahkan otomatis ke FAQ Notion",
-            "title": "Basis pengetahuan Zendesk → Notion"
           }
         },
         "title": "Dukungan"

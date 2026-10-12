@@ -2,7 +2,6 @@ import type { ChatLayoutSignals } from "../../signals/chat-page/chat-layout.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import type {
   CSSProperties,
-  PointerEvent as ReactPointerEvent,
   ReactNode,
   TransitionEvent as ReactTransitionEvent,
 } from "react";
@@ -15,9 +14,8 @@ import {
   CHAT_THREAD_SIDEBAR_MIN_WIDTH,
   chatThreadSidebarResizing$,
   chatThreadSidebarWidth$,
-  startChatThreadSidebarResize$,
+  chatThreadSidebarResizeHandleRef$,
 } from "../../signals/chat-page/chat-thread-sidebar-layout.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
 import { syncActiveBrowserFitAction$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 
 function chatThreadSidebarLayout(
@@ -40,17 +38,7 @@ function chatThreadSidebarLayout(
 
 function ChatThreadSidebarResizeHandle() {
   const { t } = useTranslation();
-  const startResize = useSet(startChatThreadSidebarResize$);
-  const pageSignal = useGet(pageSignal$);
-
-  function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>): void {
-    const container = event.currentTarget.parentElement;
-    if (!container) {
-      return;
-    }
-    event.preventDefault();
-    startResize(container, pageSignal);
-  }
+  const resizeHandleRef = useSet(chatThreadSidebarResizeHandleRef$);
 
   return (
     <div
@@ -59,8 +47,8 @@ function ChatThreadSidebarResizeHandle() {
       aria-label={t(($) => {
         return $.chat.threadSidebar.resize;
       })}
-      className="group relative hidden w-1 shrink-0 cursor-col-resize items-stretch justify-center xl:flex"
-      onPointerDown={handlePointerDown}
+      className="group relative hidden w-1 shrink-0 cursor-col-resize touch-none items-stretch justify-center xl:flex"
+      ref={resizeHandleRef}
     >
       <span
         aria-hidden="true"
@@ -76,12 +64,20 @@ export function ChatThreadSidebarShell({
   animateEntry,
   open,
   sidebar,
+  workspace,
 }: {
   readonly children: ReactNode;
   readonly layout: ChatLayoutSignals;
   readonly animateEntry: boolean;
   readonly open: boolean;
   readonly sidebar: ReactNode;
+  readonly workspace?: {
+    readonly beside: "chat-list" | "nav-rail";
+    readonly header: ReactNode;
+    readonly footer: ReactNode;
+    readonly pwaNavigation: boolean;
+    readonly fullscreen: boolean;
+  };
 }) {
   const transitionRef = useSet(layout.transitionOnRef$);
   const syncActiveBrowserFitAction = useSet(syncActiveBrowserFitAction$);
@@ -103,12 +99,8 @@ export function ChatThreadSidebarShell({
     syncActiveBrowserFitAction();
   }
 
-  return withChatScrollLayout(
-    <div
-      ref={transitionRef}
-      className="flex flex-1 min-h-0 bg-transparent"
-      style={style}
-    >
+  const panes = (
+    <>
       <div
         className={cn(
           "min-w-0 min-h-0",
@@ -124,6 +116,10 @@ export function ChatThreadSidebarShell({
         onTransitionEnd={handleSidebarTransitionEnd}
         className={cn(
           "flex min-h-0 min-w-0 overflow-hidden",
+          workspace && "md:rounded-2xl xl:rounded-l-none",
+          workspace?.pwaNavigation &&
+            !workspace.fullscreen &&
+            "[--okou-safe-b:0px]",
           transition,
           open && animateEntry && "duration-[180ms]",
           open
@@ -134,6 +130,35 @@ export function ChatThreadSidebarShell({
       >
         {sidebar}
       </div>
+    </>
+  );
+
+  return withChatScrollLayout(
+    <div
+      ref={transitionRef}
+      // The shell frame must not establish a stacking context or containing
+      // block: its sidebar's fixed surface needs to compete inside #root.
+      className={`${cn(
+        "flex flex-1 min-h-0",
+        workspace &&
+          "min-w-0 flex-col md:m-2 md:rounded-2xl md:border md:border-border [anchor-name:--workspace-canvas]",
+        workspace?.beside === "chat-list" && "md:ml-0",
+      )} ${
+        workspace
+          ? "bg-workspace-canvas bg-workspace-canvas-image bg-[length:100%_100%]"
+          : "bg-transparent"
+      }`}
+      style={style}
+    >
+      {workspace ? (
+        <>
+          {workspace.header}
+          <div className="flex min-h-0 min-w-0 flex-1">{panes}</div>
+          {workspace.footer}
+        </>
+      ) : (
+        panes
+      )}
     </div>,
   );
 }

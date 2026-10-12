@@ -1,5 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["scripts/check-db-transactions.mts"],
   "workspaces": {
     "apps/cli": {
       "entry": [
@@ -23,10 +24,9 @@
         "src/signals/external/stripe-client.ts",
         "src/signals/external/env.ts",
         "src/scripts/**/*.ts",
-        "src/**/*.{test,spec}.ts",
-        "scripts/chat-event-*/acceptance.ts"
+        "src/**/*.{test,spec}.ts"
       ],
-      "project": ["src/**/*.ts", "scripts/chat-event-*/*.ts"],
+      "project": ["src/**/*.ts"],
       "ignoreDependencies": ["@hono/node-server-v1", "clerk"],
       "ignoreBinaries": ["openssl"]
     },
@@ -83,6 +83,7 @@
     "packages/api-contracts": {
       "entry": [
         "src/runtime-api-schema/cli.ts",
+        "src/swift-bindings/generate.ts",
         "src/**/__tests__/**/*.{test,spec}.ts",
         "src/**/*.{test,spec}.ts"
       ],

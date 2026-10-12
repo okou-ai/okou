@@ -336,6 +336,7 @@ function isHappyDomTestEnvironment(): boolean {
 interface ChatComposerProps {
   readonly signals: ComposerSignals;
   readonly showPendingItems?: boolean;
+  readonly anchorSuggestionsToComposer?: boolean;
 }
 
 interface ComposerComputerUseHost {
@@ -3456,7 +3457,7 @@ function TemplatePickerCategoryNav({
                   onClick={
                     selected && value === "custom" ? onReopenCustom : undefined
                   }
-                  className="group h-9 w-full justify-start gap-2.5 rounded-lg px-2.5 text-left font-normal leading-5 text-gray-800 data-active:bg-gray-50 data-active:font-medium data-active:text-foreground data-active:shadow-none focus-visible:ring-inset"
+                  className="group h-9 w-full justify-start gap-2.5 rounded-lg px-2.5 text-left font-normal leading-5 text-gray-800 data-active:bg-state-selected data-active:font-medium data-active:text-foreground data-active:!shadow-none focus-visible:ring-inset"
                 >
                   <Icon
                     className={cn(
@@ -5286,9 +5287,9 @@ function TemplatePickerDialog({
   };
 
   const handleCategoryChange = (nextCategory: string) => {
-    if (nextCategory === "custom") {
-      resetCustomTemplatePicker();
-    }
+    // Returning to Custom keeps the catalog it already has. Publishes and
+    // mutations refresh it on their own, and a forced reload here blanked the
+    // whole pane until the request came back.
     setCategory(nextCategory);
     if (!isPreviewing) {
       prewarmTemplatePreviewsForCategory(nextCategory);
@@ -5508,7 +5509,7 @@ function TemplatePickerCategoryContent({
 }) {
   if (selectedCategory === "custom") {
     return (
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col px-5 pb-6 sm:px-7">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <CustomTemplatePickerPane
           signals={signals}
           onSelect={onSelectCustom}
@@ -8041,10 +8042,12 @@ function ComposerInputSlot({
   signals,
   actions,
   minimumHeightClassName,
+  anchorSuggestionsToComposer,
 }: {
   signals: ComposerSignals;
   actions: ComposerActions;
   minimumHeightClassName: string;
+  anchorSuggestionsToComposer: boolean;
 }) {
   const sending = useLastResolved(signals.submission.sending$) ?? false;
   const notifyDraftChanged = useComposerDraftChange(signals);
@@ -8166,6 +8169,7 @@ function ComposerInputSlot({
     >
       <TiptapWorkflowComposer
         signals={signals}
+        anchorSuggestionsToComposer={anchorSuggestionsToComposer}
         onDraftChange={notifyDraftChanged}
         sending={sending}
         onKeyDown={handleKeyDown}
@@ -9187,7 +9191,13 @@ function containsFiles(dataTransfer: DataTransfer): boolean {
   );
 }
 
-function ComposerCard({ signals }: { signals: ComposerSignals }) {
+function ComposerCard({
+  signals,
+  anchorSuggestionsToComposer,
+}: {
+  signals: ComposerSignals;
+  anchorSuggestionsToComposer: boolean;
+}) {
   const actions = useComposerActions(signals);
   const connectorActions = useComposerConnectorActions(signals.connector);
   const hasTemplateAttachment = useGet(signals.template.hasTemplateAttachment$);
@@ -9246,6 +9256,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
             signals={signals}
             actions={actions}
             minimumHeightClassName={layoutHeightClassNames.input}
+            anchorSuggestionsToComposer={anchorSuggestionsToComposer}
           />
           {/* Voice states share 8px/12px outer tray spacing and 12px/8px
               inner padding so their surfaces stay aligned through handoff. */}
@@ -9263,6 +9274,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
 export function ChatComposer({
   signals,
   showPendingItems = true,
+  anchorSuggestionsToComposer = false,
 }: ChatComposerProps) {
   const setImageAnnotationLifecycleRef = useSet(
     signals.setImageAnnotationLifecycleRef$,
@@ -9278,7 +9290,10 @@ export function ChatComposer({
         className="@container/composer relative flex w-full min-w-0 flex-col"
       >
         {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
-        <ComposerCard signals={signals} />
+        <ComposerCard
+          signals={signals}
+          anchorSuggestionsToComposer={anchorSuggestionsToComposer}
+        />
         <ComposerNoticeSlot signals={signals} />
         <ImageAnnotationEditor signals={signals.imageAnnotation} />
       </div>

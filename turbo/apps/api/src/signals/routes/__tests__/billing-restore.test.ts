@@ -295,6 +295,21 @@ describe("POST /api/billing/restore", () => {
     const status = await readBillingStatus();
     expect(status.body.cancelAtPeriodEnd).toBeFalsy();
     expect(status.body.scheduledChange).toBeNull();
+    expect(status.body.canRestorePlan).toBeFalsy();
+
+    const repeated = await accept(
+      client.create({
+        body: {},
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [409],
+    );
+    expect(repeated.body).toStrictEqual({
+      error: {
+        message: "Subscription has no scheduled billing change",
+        code: "CONFLICT",
+      },
+    });
   });
 
   it("records a restore that Stripe applied while the organization row was rewritten", async () => {

@@ -57,7 +57,6 @@ jq -ce \
           version: $tag.version,
           url: .html_url,
           published_at: .published_at,
-          body: (.body // ""),
           priority: (
             if $tag.artifact == "app" then 0
             elif $tag.artifact == "api" then 1
@@ -79,37 +78,8 @@ published_at=$(jq -r 'map(.published_at) | max' "$normalized_releases_file")
 singapore_time=$(TZ=Asia/Singapore date -d "$published_at" '+%m-%d-%Y %H:%M:%S')
 sf_time=$(TZ=America/Los_Angeles date -d "$published_at" '+%m-%d-%Y %H:%M:%S')
 sf_zone=$(TZ=America/Los_Angeles date -d "$published_at" '+%Z')
-jq -r '.[] | [.artifact, .version, .url, (.body | @base64)] | @tsv' \
+jq -r '.[] | [.artifact, .version, .url] | @tsv' \
   "$normalized_releases_file" >"$release_rows_file"
-
-format_changelog() {
-  awk '
-    NR == 1 && /^## \[/ {
-      skip_leading_blanks = 1
-      next
-    }
-    skip_leading_blanks && /^[[:space:]]*$/ { next }
-    { skip_leading_blanks = 0 }
-    /^```/ {
-      in_fence = !in_fence
-      if (!skip_dependencies) print
-      next
-    }
-    !in_fence && /^###[[:space:]]+Dependencies[[:space:]]*$/ {
-      skip_dependencies = 1
-      next
-    }
-    !in_fence && skip_dependencies && /^###[[:space:]]+/ {
-      skip_dependencies = 0
-    }
-    skip_dependencies { next }
-    !in_fence && /^#/ {
-      print "#" $0
-      next
-    }
-    { print }
-  '
-}
 
 new_entry_file="${entries_dir}/000.md"
 {
@@ -119,20 +89,8 @@ new_entry_file="${entries_dir}/000.md"
   printf '* RevertId: `%s`\n' "$target_commit"
   printf '* %s %s\n\n' "$sf_zone" "$sf_time"
 
-  while IFS=$'\t' read -r artifact version url encoded_body; do
-    printf '### [%s](%s): `%s`\n' "$artifact" "$url" "$version"
-
-    changelog=$(printf '%s' "$encoded_body" | base64 --decode)
-    if [ -n "$changelog" ]; then
-      formatted_changelog=$(printf '%s\n' "$changelog" | format_changelog)
-    else
-      formatted_changelog='_No changelog provided._'
-    fi
-    if [ -n "$formatted_changelog" ]; then
-      printf '\n**Change Log**\n\n'
-      printf '%s\n' "$formatted_changelog"
-    fi
-    printf '\n'
+  while IFS=$'\t' read -r artifact version url; do
+    printf '### [%s](%s): `%s`\n\n' "$artifact" "$url" "$version"
   done <"$release_rows_file"
 
   printf '</details>\n'
@@ -173,17 +131,10 @@ normalize_retained_entry() {
     }
     /^```/ {
       in_fence = !in_fence
-      if (!skip_dependencies) {
-        if (pending_changelog) {
-          print "**Change Log**"
-          print ""
-          pending_changelog = 0
-        }
-        print
-      }
       next
     }
-    !in_fence && /^## .* Asia\/Singapore · .* SF · RollbackId:/ {
+    in_fence { next }
+    /^## .* Asia\/Singapore · .* SF · RollbackId:/ {
       singapore_time = $0
       sub(/^## /, "", singapore_time)
       sub(/ Asia\/Singapore ·.*$/, "", singapore_time)
@@ -201,45 +152,22 @@ normalize_retained_entry() {
       converted = 1
       next
     }
-    !in_fence && /^\*\*Change Log\*\*$/ {
-      pending_changelog = 1
+    /^<details>$/ || /^\* RevertId: `[0-9a-f]+`$/ {
+      print
       next
     }
-    !in_fence && pending_changelog && /^[[:space:]]*$/ { next }
-    !in_fence && /^####[[:space:]]+Dependencies[[:space:]]*$/ {
-      skip_dependencies = 1
+    /^<summary>.*<\/summary>$/ || /^\* (PDT|PST) / ||
+    /^### \[.*\]\(.*\): `.*`$/ {
+      print
+      print ""
       next
     }
-    !in_fence && skip_dependencies &&
-      (/^#[[:space:]]/ ||
-       /^##[[:space:]]/ ||
-       /^###[[:space:]]/ ||
-       /^####[[:space:]]/) {
-      skip_dependencies = 0
-    }
-    !in_fence && skip_dependencies &&
-      (/^<\/details>$/ ||
-       /^<!-- ROLLBACK_ENTRY_END -->$/) {
-      skip_dependencies = 0
-    }
-    skip_dependencies { next }
-    pending_changelog {
-      if (/^###[[:space:]]+\[/ ||
-          /^<\/details>$/ ||
-          /^<!-- ROLLBACK_ENTRY_END -->$/) {
-        pending_changelog = 0
-      } else {
-        print "**Change Log**"
-        print ""
-        pending_changelog = 0
-      }
-    }
+    /^<\/details>$/ { print; next }
     /^<!-- ROLLBACK_ENTRY_END -->$/ {
       if (converted) print "</details>"
       print
       next
     }
-    { print }
   ' "$entry_file" >"$normalized_entry_file"
 
   mv "$normalized_entry_file" "$entry_file"

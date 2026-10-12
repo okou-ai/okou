@@ -686,8 +686,8 @@ mod tests {
         assert_eq!(new_pos, 5);
     }
 
-    /// Regression for the pre-checkpoint flush UTF-8 bug: the
-    /// pre-checkpoint flush (`UploadMode::Live`) must not consume an
+    /// Regression for the pre-finalization flush UTF-8 bug: the
+    /// pre-finalization flush (`UploadMode::Live`) must not consume an
     /// in-flight UTF-8 byte sequence. Simulates the real sequence — Live
     /// flush (newline-aligned), producer continues writing, Final
     /// catch-up flush (consumes EOF).
@@ -700,7 +700,7 @@ mod tests {
         partial.push(0xE4);
         fixture.write_file(&partial);
 
-        // Pre-checkpoint Live flush: newline-aligned, defers the orphan byte.
+        // Pre-finalization Live flush: newline-aligned, defers the orphan byte.
         let (content, new_pos) = fixture.read_text_parts(UploadMode::Live);
         assert_eq!(content, "log\n");
         assert_eq!(new_pos, 4);

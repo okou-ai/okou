@@ -10,19 +10,28 @@ import {
   isFeatureEnabled,
 } from "@okouai/core/feature-switch";
 import { command } from "ccstate";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { queryOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { agentExists } from "../services/agent-data.service";
 import {
   isConnectorCatalogUnavailableError,
-  listConnectedConnectorBriefs,
+  connectorBriefsFromRows,
 } from "../services/connector-catalog-reader.service";
+import { connectorCatalogDisplayColumns } from "../services/connector-catalog-columns";
+import {
+  connectorCatalogCurrentWhere,
+  connectorCatalogSlugJoin,
+} from "../services/connector-catalog-slug-source.service";
 import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
 import { loadCurrentMembershipId } from "../services/morning-brief-membership.service";
 import {
@@ -33,52 +42,19 @@ import {
 import { settle } from "../utils";
 
 /**
- * Label and icon for the connectors the cards name, read from the per-connector
- * projection for just those slugs. An unavailable catalog only drops the chips:
- * the cards are still worth showing without them.
+ * Preserve card order while deduplicating syntactically valid connector names.
  */
-async function recommendationConnectors(
-  args: {
-    readonly db: ReadonlyDb;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly overrides: Record<string, boolean>;
-    readonly recommendations: readonly HomeTaskRecommendation[];
-  },
-  signal: AbortSignal,
-): Promise<HomeTaskRecommendationConnector[] | undefined> {
-  const connectorSlugs = [
+function recommendationConnectorSlugs(
+  recommendations: readonly HomeTaskRecommendation[],
+) {
+  return [
     ...new Set(
-      args.recommendations.flatMap((recommendation) => {
+      recommendations.flatMap((recommendation) => {
         return recommendation.connectors;
       }),
     ),
   ].filter((slug) => {
     return connectorSlugSchema.safeParse(slug).success;
-  });
-  if (connectorSlugs.length === 0) {
-    return [];
-  }
-  const briefs = await settle(
-    listConnectedConnectorBriefs({
-      db: args.db,
-      featureStates: getAllFeatureStates({
-        orgId: args.orgId,
-        userId: args.userId,
-        overrides: args.overrides,
-      }),
-      connectorSlugs,
-    }),
-    signal,
-  );
-  if (!briefs.ok) {
-    if (isConnectorCatalogUnavailableError(briefs.error)) {
-      return undefined;
-    }
-    throw briefs.error;
-  }
-  return briefs.value.map(({ slug, label, icon }) => {
-    return { slug, label, icon };
   });
 }
 
@@ -138,19 +114,54 @@ const list$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  const connectors = await recommendationConnectors(
-    {
-      db: get(db$),
-      orgId: auth.orgId,
-      userId: auth.userId,
-      overrides,
-      recommendations: body.recommendations,
-    },
+  const connectorSlugs = recommendationConnectorSlugs(body.recommendations);
+  if (connectorSlugs.length === 0) {
+    return { status: 200 as const, body: { ...body, connectors: [] } };
+  }
+  const featureStates = getAllFeatureStates({
+    orgId: auth.orgId,
+    userId: auth.userId,
+    overrides,
+  });
+  const briefs = await settle(
+    (async () => {
+      const rows = await get(db$)
+        .select({
+          current: {
+            schemaVersion: connectorCatalog.schemaVersion,
+            hash: connectorCatalog.hash,
+          },
+          entry: connectorCatalogDisplayColumns,
+        })
+        .from(connectorCatalog)
+        .leftJoin(
+          connectorCatalogEntries,
+          connectorCatalogSlugJoin(connectorSlugs),
+        )
+        .where(connectorCatalogCurrentWhere());
+      return connectorBriefsFromRows({
+        rows,
+        featureStates,
+        connectorSlugs,
+      });
+    })(),
     signal,
+  );
+  if (!briefs.ok) {
+    if (isConnectorCatalogUnavailableError(briefs.error)) {
+      // The cards remain useful when their optional connector chips are unavailable.
+      return { status: 200 as const, body };
+    }
+    throw briefs.error;
+  }
+  const connectors: HomeTaskRecommendationConnector[] = briefs.value.map(
+    ({ slug, label, icon }) => {
+      return { slug, label, icon };
+    },
   );
   return {
     status: 200 as const,
-    body: connectors === undefined ? body : { ...body, connectors },
+    body: { ...body, connectors },
   };
 });
 

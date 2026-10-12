@@ -7,11 +7,8 @@ import {
   loadRightThread$,
 } from "./chat-thread-panes.ts";
 import type { ChatPanelSignals } from "./chat-panel-signals.ts";
-import {
-  pinChatThread$,
-  setChatThreadArchived$,
-  unpinChatThread$,
-} from "./chat-event.ts";
+import { pinChatThread$, unpinChatThread$ } from "./chat-event.ts";
+import { setChatThreadArchivedWithFeedback$ } from "./chat-thread-archive.ts";
 import {
   clearChatThreadEmojiFromThreadMeta$,
   openRenameChatThreadDialogFromThreadMeta$,
@@ -395,7 +392,7 @@ const setupChatPageShortcutActions$ = command(
             const threadId = menuThreadId(event.target) ?? thread?.threadId;
             if (threadId) {
               await set(
-                setChatThreadArchived$,
+                setChatThreadArchivedWithFeedback$,
                 {
                   threadId,
                   archived: !get(chatThreadMetaMap$).get(threadId)?.archived,

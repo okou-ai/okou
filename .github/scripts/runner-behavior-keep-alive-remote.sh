@@ -50,104 +50,154 @@ sudo rm -rf "$GROUP_DIR"
 
 # Exercise the fixed helper against real guest mounts, before starting the
 # multi-turn service. These checks are confined to one disposable benchmark VM.
-echo "--- Workspace mount helper boundaries ---"
+echo "--- Home mount helper boundaries ---"
 MOUNT_CHECKS=$(cat <<'GUEST_CHECKS'
 set -eu
 cd /tmp
-helper=/sbin/guest-workspace-mount
-workspace=/home/user/workspace
+helper=/sbin/guest-home-mount
+home=/home/user
+workspace=$home/workspace
+account=$(printf '%s:%s' "$(id -u user)" "$(id -g user)")
 expect_rejection() {
   if "$helper"; then
-    echo "unsafe workspace accepted: $1" >&2
+    echo "unsafe home accepted: $1" >&2
     exit 1
   fi
 }
 
-# Matching existing mount repairs only the root, not its children.
-touch "$workspace/owner-marker"
-chown root:root "$workspace" "$workspace/owner-marker"
+# The actual rebuilt Guest exposes the whole ext4 root, canonical cwd and shape.
 "$helper"
-test "$(stat -c %u:%g "$workspace")" = "$(id -u user):$(id -g user)"
-test "$(stat -c %u:%g "$workspace/owner-marker")" = 0:0
+test "$(findmnt -rn -o FSROOT --mountpoint "$home")" = /
+test "$(mountpoint -d "$home")" = "$(mountpoint -x /dev/vdb)"
+test "$(blockdev --getsize64 /dev/vdb)" -eq 25769803776
+test "$(blockdev --getsize64 /dev/vda)" -eq 12884901888
+test "$(stat -c %u:%g "$home")" = "$account"
+test "$(stat -c %u:%g "$workspace")" = "$account"
+test "$(cd "$workspace" && pwd)" = /home/user/workspace
+for name in .bashrc .profile .bash_logout; do test -f "$home/$name"; done
+
+# Only the home mount root may be repaired. Ordinary children and custom shell
+# bytes remain intact; repeated and detached hits do not backfill used homes.
+printf 'ordinary-home-marker\n' > "$home/owner-marker"
+printf 'ordinary-cwd-marker\n' > "$workspace/cwd-marker"
+printf 'custom shell bytes\n' > "$home/.bashrc"
+rm "$home/.profile"
+chown root:root "$home" "$home/owner-marker" "$workspace/cwd-marker"
+"$helper"
+test "$(stat -c %u:%g "$home")" = "$account"
+test "$(stat -c %u:%g "$home/owner-marker")" = 0:0
+test "$(stat -c %u:%g "$workspace/cwd-marker")" = 0:0
+test "$(cat "$home/.bashrc")" = 'custom shell bytes'
+test ! -e "$home/.profile"
 
 # Unrelated mount targets may contain all four mountinfo path escapes.
-escaped=$(mktemp -d "$(printf '/tmp/workspace space\tline\nbackslash\\.XXXXXX')")
+escaped=$(mktemp -d "$(printf '/tmp/home space\tline\nbackslash\\.XXXXXX')")
 mount -t tmpfs -o size=1m tmpfs "$escaped"
 "$helper"
 umount "$escaped"
 rmdir "$escaped"
 
-# Fresh mount recreates a missing directory and preserves populated ext4 data.
-umount "$workspace"
-rmdir "$workspace"
+# Reattach populated ext4 after the rootfs mountpoint is absent. The hidden used
+# rootfs home is not recursively copied into the persisted writable image.
+umount "$home"
+test ! -e /home/keepalive-owned-rootfs-home
+printf 'must-not-be-copied\n' > "$home/rootfs-only-marker"
+mv "$home" /home/keepalive-owned-rootfs-home
 "$helper"
-test -f "$workspace/owner-marker"
-test "$(mountpoint -d "$workspace")" = "$(mountpoint -x /dev/vdb)"
+test -f "$home/owner-marker"
+test -f "$workspace/cwd-marker"
+test ! -e "$home/rootfs-only-marker"
+test "$(cat "$home/.bashrc")" = 'custom shell bytes'
+test ! -e "$home/.profile"
 
-# The visible mount matters, including a same-device bind and a stacked tmpfs.
-mkdir "$workspace/bind-source"
-mount --bind "$workspace/bind-source" "$workspace"
+# Same-device subtree binds cannot stand in for the whole image. A complete-root
+# bind is still revalidated by its current visible mount ID and device.
+mkdir "$home/bind-source"
+mount --bind "$home/bind-source" "$home"
+expect_rejection same-device-subtree
+umount "$home"
 "$helper"
-mount -t tmpfs -o size=1m tmpfs "$workspace"
+mount --bind "$home" "$home"
+"$helper"
+mount -t tmpfs -o size=1m tmpfs "$home"
 expect_rejection stacked-tmpfs
-umount "$workspace"
+umount "$home"
 "$helper"
-umount "$workspace"
+umount "$home"
 
-outside=$(mktemp -d /tmp/workspace-mount-test.XXXXXX)
-mount --move "$workspace" "$outside"
+outside=$(mktemp -d /tmp/home-mount-test.XXXXXX)
+mount --move "$home" "$outside"
 expect_rejection device-mounted-elsewhere
-mount --move "$outside" "$workspace"
+mount --move "$outside" "$home"
 rmdir "$outside"
 
-umount "$workspace"
-rmdir "$workspace"
-outside=$(mktemp -d /tmp/workspace-mount-symlink.XXXXXX)
-ln -s "$outside" "$workspace"
+# Neither the target nor an ancestor may redirect containment elsewhere.
+umount "$home"
+rmdir "$home"
+outside=$(mktemp -d /tmp/home-mount-symlink.XXXXXX)
+ln -s "$outside" "$home"
 expect_rejection symlink-target
 test -z "$(ls -A "$outside")"
-unlink "$workspace"
+unlink "$home"
 rmdir "$outside"
-
-# An ancestor symlink is rejected too, without changing its target.
-mv /home/user /home/mount-test-user
-ln -s /home/mount-test-user /home/user
+"$helper"
+test ! -e /tmp/keepalive-owned-home-parent
+mv /home /tmp/keepalive-owned-home-parent
+ln -s /tmp/keepalive-owned-home-parent /home
 expect_rejection symlink-parent
-unlink /home/user
-mv /home/mount-test-user /home/user
+unlink /home
+mv /tmp/keepalive-owned-home-parent /home
 "$helper"
 
-# Mountinfo must be available and parseable; no filesystem change on failure.
+# Cwd must stay on the pinned home mount, without following or repairing an
+# existing symlink, foreign mount, or incorrectly owned execution directory.
+chown root:root "$workspace"
+expect_rejection wrongly-owned-cwd
+test "$(stat -c %u:%g "$workspace")" = 0:0
+chown "$account" "$workspace"
+mount -t tmpfs -o size=1m tmpfs "$workspace"
+chown "$account" "$workspace"
+expect_rejection foreign-cwd-mount
+umount "$workspace"
+mv "$workspace" "$home/kept-workspace"
+ln -s /root "$workspace"
+expect_rejection symlink-cwd
+unlink "$workspace"
+mv "$home/kept-workspace" "$workspace"
+"$helper"
+
+# Block-device and parse failures precede any mount or initialization effects.
 unshare --mount --propagation private sh -eu -c '
   mount -t tmpfs -o size=1m tmpfs /dev
   touch /dev/vdb
-  if /sbin/guest-workspace-mount; then exit 1; fi
+  if /sbin/guest-home-mount; then exit 1; fi
   test -f /dev/vdb
 '
 unshare --mount --propagation private sh -eu -c '
   mount -t tmpfs -o size=1m tmpfs /proc
   mkdir /proc/self
-  if /sbin/guest-workspace-mount; then exit 1; fi
+  if /sbin/guest-home-mount; then exit 1; fi
   printf "invalid mount record\n" > /proc/self/mountinfo
-  if /sbin/guest-workspace-mount; then exit 1; fi
+  if /sbin/guest-home-mount; then exit 1; fi
   : > /proc/self/mountinfo
-  if /sbin/guest-workspace-mount; then exit 1; fi
+  if /sbin/guest-home-mount; then exit 1; fi
 '
 "$helper"
-test -f "$workspace/owner-marker"
-# A real mount-tool error is propagated without changing the target owner.
-# This is the disposable VM's attached workspace, never the metal host disk.
-umount "$workspace"
-chown root:root "$workspace"
+test "$(cat "$home/owner-marker")" = ordinary-home-marker
+test "$(cat "$workspace/cwd-marker")" = ordinary-cwd-marker
+# Destructive negative control is ONLY this disposable benchmark VM's attached
+# home image, never a host disk, retained cache entry or existing user resource.
+umount "$home"
+chown root:root "$home"
 dd if=/dev/zero of=/dev/vdb bs=1M count=4 conv=notrunc status=none
 expect_rejection invalid-ext4
-test "$(stat -c %u:%g "$workspace")" = 0:0
-echo "PASS: native workspace mount boundaries"
+test "$(stat -c %u:%g "$home")" = 0:0
+echo "PASS: native home mount boundaries"
 GUEST_CHECKS
 )
 sudo "$BIN_DIR/runner" benchmark --config "$RUNNER_DIR/runner.yaml" \
   --profile vm0/default --sudo "$MOUNT_CHECKS" \
-  || fail "Workspace mount helper boundaries failed"
+  || fail "Home mount helper boundaries failed"
 
 # Start transient runner service
 echo "--- Starting runner ---"
@@ -169,7 +219,7 @@ sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --chat-thread-id "$CHAT_THREAD_ID" \
   --session-id "$SESSION_ID" \
   --feature-flag sandboxReuse=true \
-  --prompt 'touch /tmp/keepalive-marker && echo turn1-done' \
+  --prompt 'touch /tmp/keepalive-marker /home/user/keepalive-home-marker /home/user/workspace/keepalive-cwd-marker && echo turn1-done' \
   || fail "Turn 1 failed"
 
 # Turn 2: submit with the same chat thread — should reuse the sandbox.
@@ -180,7 +230,7 @@ sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --chat-thread-id "$CHAT_THREAD_ID" \
   --session-id "$SESSION_ID" \
   --feature-flag sandboxReuse=true \
-  --prompt 'test -f /tmp/keepalive-marker' \
+  --prompt 'test -f /tmp/keepalive-marker && test -f /home/user/keepalive-home-marker && test -f /home/user/workspace/keepalive-cwd-marker' \
   || fail "Turn 2: marker file not found — sandbox was not reused"
 echo "PASS: Turn 2 completed (sandbox reused, filesystem persisted)"
 
@@ -191,15 +241,15 @@ sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --chat-thread-id "$ISOLATED_CHAT_THREAD_ID" \
   --session-id "$SESSION_ID" \
   --feature-flag sandboxReuse=true \
-  --prompt 'test ! -f /tmp/keepalive-marker' \
+  --prompt 'test ! -f /tmp/keepalive-marker && test ! -f /home/user/keepalive-home-marker && test ! -f /home/user/workspace/keepalive-cwd-marker' \
   || fail "Turn 3: marker file found — chat thread isolation broken"
 echo "PASS: Turn 3 completed (new sandbox for different chat thread)"
 
-# A privileged guest can stack an unrelated mount over the canonical workspace
-# after a turn starts. Idle admission must reject that sandbox, so the next turn
-# receives a fresh sandbox whose workspace is backed by /dev/vdb.
+# A privileged guest can stack an unrelated mount over the home after a
+# turn starts. Idle admission must reject that sandbox; the next turn receives
+# a fresh home mount backed by /dev/vdb.
 TAMPER_SESSION_ID="e2e-keepalive-tampered-mount"
-echo "--- Tamper turn 1: replace canonical workspace mount before idle admission ---"
+echo "--- Tamper turn 1: replace home mount before idle admission ---"
 sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --chat-thread-id "$TAMPER_CHAT_THREAD_ID" \
   --session-id "$TAMPER_SESSION_ID" \
@@ -207,7 +257,7 @@ sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --prompt 'set -eu
 touch /tmp/keepalive-tampered-mount-marker
 cd /tmp
-sudo mount -t tmpfs -o size=1m tmpfs /home/user/workspace' \
+sudo mount -t tmpfs -o size=1m tmpfs /home/user' \
   || fail "Tamper turn 1 failed"
 
 echo "--- Tamper turn 2: rejected sandbox is replaced with a valid fresh mount ---"
@@ -219,8 +269,8 @@ sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
 test ! -f /tmp/keepalive-tampered-mount-marker
 source=$(findmnt -rn -o SOURCE --target /home/user/workspace)
 test "$(readlink -f "$source")" = /dev/vdb' \
-  || fail "Tamper turn 2 reused an unsafe sandbox or exposed the wrong workspace device"
-echo "PASS: tampered workspace mount was rejected before reuse"
+  || fail "Tamper turn 2 reused an unsafe sandbox or exposed the wrong home device"
+echo "PASS: tampered home mount was rejected before reuse"
 
 # Hold an independently owned runner-exec normal operation while the supervised
 # turn completes. The atomic final-operation reservation must fail busy, and the

@@ -1,4 +1,7 @@
 export interface SystemPromptVariables {
+  readonly agentIdentity?: string;
+  readonly executionLimit?: string;
+  readonly tools?: string;
   readonly userIdentity?: string;
   readonly channelUserIdentity?: string;
   readonly integrationContext?: string;
@@ -24,14 +27,27 @@ type SkillVolumeSource =
   // Template guidance packages keep their existing storage provenance.
   | "request_additional_volume";
 
-export interface SkillVolume {
+interface SkillVolumeStorage {
   readonly name: string;
   readonly version?: string;
-  readonly mountPath: string;
   readonly system?: boolean;
   readonly expectedStorageId?: string;
-  readonly source: SkillVolumeSource;
 }
+
+export type SkillVolume = SkillVolumeStorage &
+  (
+    | {
+        readonly source: Exclude<
+          SkillVolumeSource,
+          "request_additional_volume"
+        >;
+        readonly skillName: string;
+      }
+    | {
+        readonly source: "request_additional_volume";
+        readonly mountPath: string;
+      }
+  );
 
 /** Prompt text and skill or template guidance packages for one run. */
 export interface RunPromptAndSkills {
@@ -87,31 +103,54 @@ export function mergeRunPromptAndSkills(
   };
 }
 
-export interface RenderedRunPromptAndSkills {
-  readonly userPrompt: string;
-  readonly systemPrompt: string;
-  readonly skillVolumes: readonly Omit<SkillVolume, "source">[];
-  readonly skillVolumeSources: readonly SkillVolumeSource[];
+interface ResolvedSkillVolume extends SkillVolumeStorage {
+  readonly mountPath: string;
 }
 
-/** Stable/Pi prompt binding may supply an already-rendered prefix. */
-export function renderRunPromptAndSkills(
-  part: RunPromptAndSkills,
-  base: { readonly userPrompt?: string; readonly systemPrompt?: string } = {},
-): RenderedRunPromptAndSkills {
-  const variables = part.systemPromptVariables;
-  const skillVolumes: Omit<SkillVolume, "source">[] = [];
+/** Bind runtime skill paths at run assembly; template paths are already fixed. */
+export function resolveRunSkillVolumes(
+  volumes: readonly SkillVolume[],
+  skillsRoot?: string,
+): {
+  readonly skillVolumes: readonly ResolvedSkillVolume[];
+  readonly skillVolumeSources: readonly SkillVolumeSource[];
+} {
+  const skillVolumes: ResolvedSkillVolume[] = [];
   const skillVolumeSources: SkillVolumeSource[] = [];
-  for (const { source, ...volume } of part.skillVolumes) {
-    skillVolumes.push(volume);
-    skillVolumeSources.push(source);
+  for (const volume of volumes) {
+    if (volume.source === "request_additional_volume") {
+      const { source, ...fixedVolume } = volume;
+      skillVolumes.push(fixedVolume);
+      skillVolumeSources.push(source);
+    } else {
+      if (skillsRoot === undefined) {
+        throw new Error("Runtime skills require a mount root at run assembly");
+      }
+      const { source, skillName, ...storage } = volume;
+      skillVolumes.push({
+        ...storage,
+        mountPath: `${skillsRoot}/${skillName}`,
+      });
+      skillVolumeSources.push(source);
+    }
   }
+  return { skillVolumes, skillVolumeSources };
+}
+
+interface RenderedRunPrompts {
+  readonly userPrompt: string;
+  readonly systemPrompt: string;
+}
+
+/** Render the complete prompt contributions in their stable injection order. */
+export function renderRunPrompts(part: RunPromptAndSkills): RenderedRunPrompts {
+  const variables = part.systemPromptVariables;
   return {
-    userPrompt: [base.userPrompt, part.userPromptVariables.message]
-      .filter(Boolean)
-      .join("\n\n"),
+    userPrompt: part.userPromptVariables.message ?? "",
     systemPrompt: [
-      base.systemPrompt,
+      variables.agentIdentity,
+      variables.executionLimit,
+      variables.tools,
       [variables.userIdentity, variables.channelUserIdentity]
         .filter(Boolean)
         .join("\n"),
@@ -127,7 +166,5 @@ export function renderRunPromptAndSkills(
     ]
       .filter(Boolean)
       .join("\n\n"),
-    skillVolumes,
-    skillVolumeSources,
   };
 }

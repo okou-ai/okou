@@ -1,17 +1,10 @@
 import {
-  DESKTOP_UPDATE_LINE_LEGACY_OKOU,
   DESKTOP_UPDATE_LINE_OKOU,
-  DESKTOP_UPDATE_LINE_ZERO,
   type DesktopUpdateArchitecture,
   type DesktopUpdateChannel,
-  type DesktopUpdateLine,
   type DesktopUpdatePlatform,
-  type SquirrelMacReleases,
 } from "@okouai/api-contracts/contracts/desktop-updates";
-import {
-  DESKTOP_PRODUCTS,
-  DESKTOP_PRODUCT_OKOU,
-} from "@okouai/api-contracts/contracts/client-headers";
+import { DESKTOP_PRODUCT_OKOU } from "@okouai/api-contracts/contracts/client-headers";
 import { delay } from "signal-timers";
 import { z } from "zod";
 
@@ -38,6 +31,8 @@ const DESKTOP_RELEASE_DOWNLOAD_URL_PREFIX =
   "https://github.com/okou-ai/okou/releases/download";
 const DESKTOP_RELEASE_PAGE_URL_PREFIX =
   "https://github.com/okou-ai/okou/releases/tag";
+const DESKTOP_UPDATE_MANIFEST_URL =
+  "https://github.com/okou-ai/okou/releases/download/ai-okou-desktop-updates/ai-okou-desktop-update-manifest.json";
 const MIN_DESKTOP_DMG_VERSION = "0.12.0";
 
 const DESKTOP_UPDATE_MANIFEST_CACHE_TTL_MS = 60_000;
@@ -127,28 +122,10 @@ const DESKTOP_ARTIFACT_NAME = "Okou";
 const DESKTOP_RELEASE_TAG_PREFIX = "okou-desktop-v";
 
 /**
- * The update lines whose manifest this service can still name.
- *
- * Narrower than `DesktopUpdateLine` and wider than what actually reaches here:
- * the Zero line is excluded so the compiler rejects any future caller that
- * tries to resolve a Zero artifact, while `okou` remains nameable but is
- * rejected by every `:product` route before it gets this far. Only
- * `ai-okou-desktop` is served in practice.
+ * Only the current Okou update line resolves release artifacts. The routes
+ * reject retired product lines before calling this service.
  */
-type ResolvableDesktopUpdateLine = Exclude<
-  DesktopUpdateLine,
-  typeof DESKTOP_UPDATE_LINE_ZERO
->;
-
-function desktopUpdateManifestUrl(line: ResolvableDesktopUpdateLine): string {
-  if (line === DESKTOP_UPDATE_LINE_LEGACY_OKOU) {
-    return "https://github.com/okou-ai/okou/releases/download/okou-desktop-updates/okou-desktop-update-manifest.json";
-  }
-  if (line === DESKTOP_UPDATE_LINE_OKOU) {
-    return "https://github.com/okou-ai/okou/releases/download/ai-okou-desktop-updates/ai-okou-desktop-update-manifest.json";
-  }
-  return line satisfies never;
-}
+type ResolvableDesktopUpdateLine = typeof DESKTOP_UPDATE_LINE_OKOU;
 
 const desktopUpdateAssetSchema = z.object({
   url: z.string().url(),
@@ -172,7 +149,7 @@ const desktopUpdateChannelSchema = z.object({
 
 const desktopUpdateManifestSchema = z.object({
   schemaVersion: z.literal(1),
-  product: z.enum(DESKTOP_PRODUCTS).optional(),
+  product: z.literal(DESKTOP_PRODUCT_OKOU),
   channels: z.record(z.string(), desktopUpdateChannelSchema),
   releases: z.record(z.string(), desktopUpdateReleaseSchema),
 });
@@ -204,17 +181,6 @@ const desktopUpdateManifestCache = testOverride<
 >(() => {
   return {};
 });
-
-const desktopUpdateManifestOverride = testOverride<
-  Partial<Record<ResolvableDesktopUpdateLine, DesktopUpdateManifest>>
->(() => {
-  return {};
-});
-
-export function clearDesktopUpdateManifestCacheForTest(): void {
-  desktopUpdateManifestCache.clear();
-  desktopUpdateManifestOverride.clear();
-}
 
 function compareDesktopVersions(left: string, right: string): number {
   const leftParts = left.split(/[+-]/, 1)[0]?.split(".").map(Number) ?? [];
@@ -250,19 +216,24 @@ function assetForRelease(
   return actualAssetName === expectedAssetName ? asset : null;
 }
 
-function squirrelRelease(
+export interface DesktopUpdateRelease {
+  readonly version: string;
+  readonly name: string;
+  readonly notes: string;
+  readonly pubDate: string;
+  readonly url: string;
+}
+
+function desktopUpdateRelease(
   release: DesktopUpdateManifest["releases"][string],
   asset: { readonly url: string },
-) {
+): DesktopUpdateRelease {
   return {
     version: release.version,
-    updateTo: {
-      name: release.name ?? `${DESKTOP_ARTIFACT_NAME} ${release.version}`,
-      version: release.version,
-      pub_date: release.pubDate,
-      url: asset.url,
-      notes: release.notes ?? "",
-    },
+    name: release.name ?? `${DESKTOP_ARTIFACT_NAME} ${release.version}`,
+    pubDate: release.pubDate,
+    url: asset.url,
+    notes: release.notes ?? "",
   };
 }
 
@@ -325,21 +296,6 @@ function selectDesktopRelease(
   return { release: fallback, asset };
 }
 
-function buildDesktopUpdateFeed(
-  manifest: DesktopUpdateManifest,
-  request: DesktopUpdateFeedRequest,
-): SquirrelMacReleases | null {
-  const selected = selectDesktopRelease(manifest, request);
-  if (!selected) {
-    return null;
-  }
-
-  return {
-    currentRelease: selected.release.version,
-    releases: [squirrelRelease(selected.release, selected.asset)],
-  };
-}
-
 /**
  * One manifest read. A retryable outage is returned so the caller can decide
  * whether any attempts remain; every other failure throws, because no number
@@ -354,7 +310,6 @@ type DesktopUpdateManifestFetchResult =
     };
 
 async function fetchDesktopUpdateManifestOnce(
-  line: ResolvableDesktopUpdateLine,
   signal: AbortSignal,
 ): Promise<DesktopUpdateManifestFetchResult> {
   // The attempt gets its own deadline, but `settle` is given the caller's
@@ -365,7 +320,7 @@ async function fetchDesktopUpdateManifestOnce(
     AbortSignal.timeout(DESKTOP_UPDATE_MANIFEST_ATTEMPT_TIMEOUT_MS),
   ]);
   const fetched = await settle(
-    fetch(desktopUpdateManifestUrl(line), {
+    fetch(DESKTOP_UPDATE_MANIFEST_URL, {
       headers: { accept: "application/json" },
       signal: attemptSignal,
     }),
@@ -401,13 +356,6 @@ async function fetchDesktopUpdateManifestOnce(
   }
 
   const manifest = desktopUpdateManifestSchema.parse(body.value);
-  // Fail closed: a manifest that does not declare the Okou product is not
-  // served, including one that omits the field entirely.
-  if (manifest.product !== DESKTOP_PRODUCT_OKOU) {
-    throw new Error(
-      `Desktop update manifest product mismatch: expected ${DESKTOP_PRODUCT_OKOU}, received ${manifest.product ?? "none"}`,
-    );
-  }
   return { ok: true, manifest };
 }
 
@@ -415,13 +363,8 @@ async function fetchDesktopUpdateManifest(
   line: ResolvableDesktopUpdateLine,
   signal: AbortSignal,
 ): Promise<DesktopUpdateManifest> {
-  const override = desktopUpdateManifestOverride.get()[line];
-  if (override) {
-    return override;
-  }
-
   for (let attempt = 1; ; attempt += 1) {
-    const result = await fetchDesktopUpdateManifestOnce(line, signal);
+    const result = await fetchDesktopUpdateManifestOnce(signal);
     if (result.ok) {
       if (attempt > 1) {
         L.debug("Desktop update manifest fetch recovered on retry", {
@@ -502,12 +445,15 @@ async function loadDesktopUpdateManifest(
   return fetched.value;
 }
 
-export async function loadDesktopUpdateFeed(
+export async function loadDesktopUpdateRelease(
   request: DesktopUpdateFeedRequest,
   signal: AbortSignal,
-): Promise<SquirrelMacReleases | null> {
+): Promise<DesktopUpdateRelease | null> {
   const manifest = await loadDesktopUpdateManifest(request.line, signal);
-  return buildDesktopUpdateFeed(manifest, request);
+  const selected = selectDesktopRelease(manifest, request);
+  return selected
+    ? desktopUpdateRelease(selected.release, selected.asset)
+    : null;
 }
 
 export async function loadDesktopReleasePageUrl(

@@ -295,12 +295,19 @@ pub struct EventDeliveryDiagnostic {
     pub total_events: u64,
     /// Logical delivery batches started.
     pub total_batches: u64,
-    /// Logical batches whose HTTP retry budget was exhausted.
+    /// Logical batches that completed with a terminal delivery failure,
+    /// including non-retryable rejection and exhausted HTTP retry attempts.
+    ///
+    /// A batch interrupted by the global drain deadline is reported in
+    /// `drain_timeout` instead of being counted as a completed failed batch.
     pub failed_batches: u64,
     /// Highest contiguous event sequence acknowledged by the API.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_acknowledged_sequence: Option<u32>,
-    /// First logical batch whose retry budget was exhausted.
+    /// First logical batch that completed with a terminal delivery failure.
+    ///
+    /// Includes non-retryable rejection and exhausted HTTP retry attempts;
+    /// the recorded attempt and status details establish the failure path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_failed_batch: Option<EventDeliveryFailedBatchDiagnostic>,
     /// Final delivery state captured at the global drain deadline.
@@ -308,7 +315,13 @@ pub struct EventDeliveryDiagnostic {
     pub drain_timeout: Option<EventDeliveryDrainTimeoutDiagnostic>,
 }
 
-/// First logical event batch whose HTTP retry budget was exhausted.
+/// First logical event batch that completed with a terminal delivery failure.
+///
+/// This includes non-retryable rejection and exhausted HTTP retry attempts.
+/// Inspect `attempts` and their failure/status details to distinguish the path;
+/// this diagnostic alone does not imply retry exhaustion. A batch interrupted
+/// by the global drain deadline is reported separately in
+/// [`EventDeliveryDrainTimeoutDiagnostic::active_batch`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EventDeliveryFailedBatchDiagnostic {
@@ -665,8 +678,8 @@ pub enum FailureClass {
     ClaudeZeroTurnNoHistory,
     /// Uploading events failed.
     EventUploadFailed,
-    /// Creating or uploading a checkpoint failed.
-    CheckpointFailed,
+    /// Publishing session history or artifacts during Run finalization failed.
+    FinalizationFailed,
 }
 
 impl FailureClass {
@@ -679,7 +692,7 @@ impl FailureClass {
             Self::CliNonzero => "cli_nonzero",
             Self::ClaudeZeroTurnNoHistory => "claude_zero_turn_no_history",
             Self::EventUploadFailed => "event_upload_failed",
-            Self::CheckpointFailed => "checkpoint_failed",
+            Self::FinalizationFailed => "finalization_failed",
         }
     }
 }
@@ -688,7 +701,7 @@ impl FailureClass {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FailureReason {
-    /// The session history exceeded the checkpoint size limit.
+    /// The session history exceeded the native-history upload size limit.
     SessionHistoryLimit,
     /// The run reached its execution time limit.
     ExecutionTimeout,
@@ -861,7 +874,7 @@ impl AgentFramework {
 /// When a probe runs, these states describe whether a producer could resolve a
 /// target and inspect its metadata. `Unknown` also covers diagnostics created
 /// before a probe can run. No status proves that the target is readable or can
-/// support a recovery checkpoint.
+/// support recovery finalization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionHistoryStatus {
@@ -1440,7 +1453,11 @@ mod tests {
     }
 
     #[test]
-    fn failure_diagnostic_serializes_session_history_limit_reason() {
+    fn failure_diagnostic_serializes_finalization_class_and_history_limit_reason() {
+        assert_eq!(
+            FailureClass::FinalizationFailed.as_str(),
+            "finalization_failed"
+        );
         assert_eq!(
             FailureReason::SessionHistoryLimit.as_str(),
             "session_history_limit"
@@ -1448,7 +1465,7 @@ mod tests {
 
         for framework in [AgentFramework::Codex, AgentFramework::ClaudeCode] {
             let diagnostic = FailureDiagnostic::new(
-                FailureClass::CheckpointFailed,
+                FailureClass::FinalizationFailed,
                 framework,
                 PromptMetadata::from_prompt("continue"),
             )
@@ -1456,6 +1473,7 @@ mod tests {
             .with_failure_reason(FailureReason::SessionHistoryLimit);
 
             let json = serde_json::to_value(&diagnostic).unwrap();
+            assert_eq!(json["failureClass"], "finalization_failed");
             assert_eq!(json["failureReason"], "session_history_limit");
 
             let round_trip: FailureDiagnostic = serde_json::from_value(json).unwrap();

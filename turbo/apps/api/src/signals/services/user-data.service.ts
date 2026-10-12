@@ -27,7 +27,7 @@ import {
   withModelReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { and, eq, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$, type Db } from "../external/db";

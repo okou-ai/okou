@@ -20,28 +20,72 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
+    expect(FeatureSwitchKey.CodexExecution).toBe("_codexExecution");
     expect(FeatureSwitchKey.ChatThreadArchiving).toBe("chatThreadArchiving");
     expect(FeatureSwitchKey.BrowserNativeInput).toBe("browserNativeInput");
   });
 });
 
 describe("isFeatureEnabled", () => {
-  it("keeps artifact previews off for staff and external users until explicitly enabled", () => {
+  it("defaults stable preview fullscreen on only for staff and honors explicit overrides", () => {
+    const key = FeatureSwitchKey.StablePreviewFullscreen;
+    for (const [context, enabled] of [
+      [{}, false],
+      [{ orgId: "org_external" }, false],
+      [{ email: "bingjie@okou.ai", orgId: "org_external" }, false],
+      [{ orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }, true],
+    ] as const) {
+      expect(isFeatureEnabled(key, context)).toBe(enabled);
+      expect(getAllFeatureStates(context)[key]).toBe(enabled);
+      for (const override of [true, false]) {
+        const overrideContext = {
+          ...context,
+          overrides: { [key]: override },
+        };
+        expect(isFeatureEnabled(key, overrideContext)).toBe(override);
+        expect(getAllFeatureStates(overrideContext)[key]).toBe(override);
+      }
+    }
+    expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("beta");
+  });
+
+  it("keeps Codex execution test-only and off for everyone without an override", () => {
+    const key = FeatureSwitchKey.CodexExecution;
+    expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");
     for (const context of [
       {},
       { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-      { orgId: "external-org" },
+      { userId: "external-user", orgId: "external-org" },
+      { email: "liangyou@okou.ai", orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
     ]) {
+      expect(getAllFeatureStates(context)[key]).toBe(false);
+      for (const enabled of [true, false]) {
+        expect(
+          isFeatureEnabled(key, {
+            ...context,
+            overrides: { [key]: enabled },
+          }),
+        ).toBe(enabled);
+      }
+    }
+  });
+
+  it("enables artifact previews for staff and honors explicit overrides", () => {
+    for (const [context, enabled] of [
+      [{}, false],
+      [{ orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }, true],
+      [{ orgId: "external-org" }, false],
+    ] as const) {
       expect(
         getAllFeatureStates(context)[FeatureSwitchKey.ArtifactPreviews],
-      ).toBe(false);
-      for (const enabled of [true, false]) {
+      ).toBe(enabled);
+      for (const override of [true, false]) {
         expect(
           isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, {
             ...context,
-            overrides: { [FeatureSwitchKey.ArtifactPreviews]: enabled },
+            overrides: { [FeatureSwitchKey.ArtifactPreviews]: override },
           }),
-        ).toBe(enabled);
+        ).toBe(override);
       }
     }
   });
@@ -221,37 +265,6 @@ describe("isFeatureEnabled", () => {
         userId: "some-user",
       }),
     ).toBe(false);
-  });
-
-  it("enables the Plaud MCP connector for staff and honors explicit overrides", () => {
-    expect(FeatureSwitchKey.PlaudConnector).toBe("plaudConnector");
-    for (const context of [{}, { orgId: "org_nonexistent" }]) {
-      expect(isFeatureEnabled(FeatureSwitchKey.PlaudConnector, context)).toBe(
-        false,
-      );
-    }
-    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.PlaudConnector, staffContext),
-    ).toBe(true);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.PlaudConnector, {
-        ...staffContext,
-        overrides: { [FeatureSwitchKey.PlaudConnector]: false },
-      }),
-    ).toBe(false);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.PlaudConnector, {
-        overrides: { [FeatureSwitchKey.PlaudConnector]: true },
-      }),
-    ).toBe(true);
-    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.PlaudConnector]).toEqual(
-      {
-        maintainer: "liangyou@okou.ai",
-        description: "Enable the Plaud MCP connector",
-        rolloutStage: "beta",
-      },
-    );
   });
 
   it("should return true when orgId hash matches enabledOrgIdHashes", () => {

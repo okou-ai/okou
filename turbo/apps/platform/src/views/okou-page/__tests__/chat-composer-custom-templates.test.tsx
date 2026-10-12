@@ -14,6 +14,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   AGENT_ID,
   THREAD_ID,
@@ -184,6 +185,22 @@ function buttonByName(name: string, container: ParentNode = document.body) {
       candidate.getAttribute("aria-label") === name
     );
   });
+}
+
+function kindLabels(filters: HTMLElement): string[] {
+  return queryAllByRoleFast("radio", filters).map((radio) => {
+    return radio.textContent?.trim() ?? "";
+  });
+}
+
+function kindByName(name: string, filters: HTMLElement): HTMLElement {
+  const kind = queryAllByRoleFast("radio", filters).find((radio) => {
+    return radio.textContent?.trim() === name;
+  });
+  if (!kind) {
+    throw new Error(`Expected a kind named "${name}"`);
+  }
+  return kind;
 }
 
 function menuItemByName(name: string): HTMLElement {
@@ -389,24 +406,24 @@ test("Kind filters combine with search without an All option", async () => {
   ]);
 
   const { dialog } = await openCustomPanel();
-  const filters = await within(dialog).findByRole("group", {
+  const filters = await within(dialog).findByRole("radiogroup", {
     name: "Template categories",
   });
 
-  click(buttonByName("Document", filters)!);
+  click(kindByName("Document", filters));
   await expect(
     within(dialog).findByText("Brand report"),
   ).resolves.toBeInTheDocument();
   expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
   expect(within(dialog).queryByText("Market day")).not.toBeInTheDocument();
 
-  click(buttonByName("Presentation", filters)!);
+  click(kindByName("Presentation", filters));
   await expect(
     within(dialog).findByText("Q3 board review"),
   ).resolves.toBeInTheDocument();
   expect(within(dialog).queryByText("Brand report")).not.toBeInTheDocument();
 
-  click(buttonByName("Image", filters)!);
+  click(kindByName("Image", filters));
   await expect(
     within(dialog).findByText("Market day"),
   ).resolves.toBeInTheDocument();
@@ -417,12 +434,9 @@ test("Kind filters combine with search without an All option", async () => {
   await expect(
     within(dialog).findByText("No matches"),
   ).resolves.toBeInTheDocument();
-  expect(buttonByName("Image", filters)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  expect(kindByName("Image", filters)).toBeChecked();
 
-  click(buttonByName("Document", filters)!);
+  click(kindByName("Document", filters));
   await expect(
     within(dialog).findByText("Brand report"),
   ).resolves.toBeInTheDocument();
@@ -435,37 +449,70 @@ test("Kind filters combine with search without an All option", async () => {
   ).resolves.toBeInTheDocument();
   expect(within(dialog).queryByText("Market day")).not.toBeInTheDocument();
   expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
-  expect(buttonByName("All", filters)).toBeUndefined();
+  expect(kindLabels(filters)).toStrictEqual([
+    "Document",
+    "Presentation",
+    "Image",
+  ]);
 });
 
-test("An empty kind hides filters and Custom reopens the available catalog", async () => {
+test("An empty kind keeps the search and kind filters in place", async () => {
   mockCustomTemplates([customTemplate()]);
   const { dialog } = await openCustomPanel();
-  const filters = await within(dialog).findByRole("group", {
+  const filters = await within(dialog).findByRole("radiogroup", {
     name: "Template categories",
   });
-  click(buttonByName("Image", filters)!);
+  click(kindByName("Image", filters));
   await expect(
     within(dialog).findByText("No images yet"),
   ).resolves.toBeInTheDocument();
-  expect(
-    within(dialog).queryByLabelText("Search templates"),
-  ).not.toBeInTheDocument();
-  expect(
-    within(dialog).queryByRole("group", { name: "Template categories" }),
-  ).not.toBeInTheDocument();
+  // The toolbar does not change shape between kinds: the search stays, and
+  // the kind filters remain so the member can leave the empty kind.
+  expect(within(dialog).getByLabelText("Search templates")).toBeInTheDocument();
+  const emptyKindFilters = within(dialog).getByRole("radiogroup", {
+    name: "Template categories",
+  });
+  expect(kindByName("Image", emptyKindFilters)).toBeChecked();
   expect(within(dialog).getAllByLabelText("Import template")).toHaveLength(1);
-  click(tabByText("Custom"));
+  click(kindByName("Presentation", emptyKindFilters));
   await expect(
     within(dialog).findByText("Q3 board review"),
   ).resolves.toBeInTheDocument();
-  const restoredFilters = within(dialog).getByRole("group", {
-    name: "Template categories",
+  expect(kindByName("Presentation", emptyKindFilters)).toBeChecked();
+});
+
+test("Returning to Custom shows the loaded catalog without waiting on the network", async () => {
+  // Once the member has left Custom, any further catalog request stays
+  // unanswered for the rest of the test, as on a slow connection.
+  const slowNetwork = createDeferredPromise<void>(context.signal);
+  let answerCatalog = true;
+  context.mocks.api(userTemplatesContract.list, async ({ respond }) => {
+    if (!answerCatalog) {
+      await slowNetwork.promise;
+    }
+    const {
+      pageUrls: _pageUrls,
+      sourceUrl: _sourceUrl,
+      ...entry
+    } = customTemplate();
+    return respond(200, [entry]);
   });
-  expect(buttonByName("Presentation", restoredFilters)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+
+  const { dialog } = await openCustomPanel();
+  await within(dialog).findByText("Q3 board review");
+
+  answerCatalog = false;
+  click(tabByText("Presentation"));
+  await waitFor(() => {
+    expect(within(dialog).queryByText("Q3 board review")).toBeNull();
+  });
+  click(tabByText("Custom"));
+
+  // Reloading on every return blanked the pane until the request answered.
+  await expect(
+    within(dialog).findByText("Q3 board review"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Search templates")).toBeInTheDocument();
 });
 
 test("An empty catalog leads with the upload entry instead of showing no matches", async () => {
@@ -658,6 +705,8 @@ test("A PDF template opens in the browser's own viewer", async () => {
 
 const ILLUSTRATION_SOURCE_URL =
   "https://storage.example.test/private-artifacts/market-day.png?signature=abc";
+const MARKET_DAY_EXAMPLE_URL =
+  "https://storage.example.test/private-artifacts/ref-market-day.png?signature=def";
 
 function illustrationTemplate(
   overrides: Partial<UserTemplateDetail> = {},
@@ -667,51 +716,99 @@ function illustrationTemplate(
     title: "Market day",
     sourceFilename: "market-day.png",
     kind: "illustration",
-    // The source is the cover, so unlike a document this kind has one without
-    // anything having been rendered for it.
-    coverUrl: ILLUSTRATION_SOURCE_URL,
     coverHasMorePages: false,
     pageCount: null,
     pageUrls: [],
     sourceUrl: ILLUSTRATION_SOURCE_URL,
+    // Covered by the example its style produced, never by its source.
+    coverUrl: MARKET_DAY_EXAMPLE_URL,
+    previewAssets: [previewAsset("example-1", MARKET_DAY_EXAMPLE_URL)],
     ...overrides,
   });
 }
 
-test("An illustration template is tiled by the picture it was reversed from", async () => {
-  mockCustomTemplates([illustrationTemplate()]);
+function previewAsset(name: string, url: string) {
+  return {
+    previewAssetId: `utp:44444444-4444-4444-8444-444444444444:${name}`,
+    url,
+    expiresAt: "2026-12-31T00:00:00.000Z",
+  };
+}
+
+const EXAMPLE_URLS = [
+  "https://storage.example.test/private-artifacts/ref-agenda.png?signature=1",
+  "https://storage.example.test/private-artifacts/ref-approval.png?signature=2",
+  "https://storage.example.test/private-artifacts/ref-access.png?signature=3",
+] as const;
+
+/** An image template published with the examples its style produced. */
+function exampledIllustrationTemplate(
+  urls: readonly string[] = EXAMPLE_URLS,
+): UserTemplateDetail {
+  return illustrationTemplate({
+    title: "Quiet UI mockup",
+    sourceFilename: "design-review.png",
+    coverUrl: urls[0],
+    previewAssets: urls.map((url, index) => {
+      return previewAsset(`example-${(index + 1).toString()}`, url);
+    }),
+  });
+}
+
+function exampleStrip(dialog: HTMLElement): HTMLElement[] {
+  return queryAllByRoleFast("button", dialog).filter((button) => {
+    return /^Show variant \d+$/.test(button.getAttribute("aria-label") ?? "");
+  });
+}
+
+test("An image template is shown by the examples its style produced, not its source", async () => {
+  mockCustomTemplateStore([exampledIllustrationTemplate()]);
 
   const { dialog } = await openCustomPanel();
-  click(tabByText("Custom"));
+  await within(dialog).findByText("Quiet UI mockup");
 
-  await within(dialog).findByText("Market day");
-  // A document with no cover falls back to a format badge. An illustration
-  // never reaches that branch: its source is already a picture.
-  expect(within(dialog).queryByText("PNG")).not.toBeInTheDocument();
-  const cover = buttonByName("Preview Market day", dialog)?.querySelector(
-    "img",
+  const hero = () => {
+    return buttonByName("Preview Quiet UI mockup", dialog)?.querySelector(
+      "img",
+    );
+  };
+  expect(hero()).toHaveAttribute("src", EXAMPLE_URLS[0]);
+  const strip = exampleStrip(dialog);
+  expect(
+    strip.map((button) => {
+      return button.querySelector("img")?.getAttribute("src");
+    }),
+  ).toStrictEqual([...EXAMPLE_URLS]);
+  expect(strip[0]).toHaveAttribute("aria-pressed", "true");
+
+  click(strip[1]!);
+  await waitFor(() => {
+    expect(hero()).toHaveAttribute("src", EXAMPLE_URLS[1]);
+  });
+  expect(exampleStrip(dialog)[1]).toHaveAttribute("aria-pressed", "true");
+
+  click(buttonByName("Preview Quiet UI mockup", dialog)!);
+  const pictures = await screen.findAllByTestId(
+    "custom-template-example-preview",
   );
-  expect(cover).toHaveAttribute("src", ILLUSTRATION_SOURCE_URL);
+  expect(
+    pictures.map((picture) => {
+      return picture.getAttribute("src");
+    }),
+  ).toStrictEqual([...EXAMPLE_URLS]);
 });
 
-test("Opening an illustration template shows the source picture itself", async () => {
-  mockCustomTemplateStore([illustrationTemplate()]);
+test("An image template with one example has nothing to choose between", async () => {
+  mockCustomTemplateStore([exampledIllustrationTemplate([EXAMPLE_URLS[0]])]);
 
   const { dialog } = await openCustomPanel();
-  click(tabByText("Custom"));
-  await within(dialog).findByText("Market day");
-  click(buttonByName("Preview Market day", dialog)!);
+  await within(dialog).findByText("Quiet UI mockup");
 
-  // No viewer and no iframe: the browser draws this source, so it is drawn.
-  const picture = await screen.findByTestId("custom-template-source-preview");
-  expect(picture.tagName).toBe("IMG");
-  expect(picture).toHaveAttribute("src", ILLUSTRATION_SOURCE_URL);
-
-  // The same management column a document's dialog carries, and the catalog
-  // still mounted behind it.
-  const preview = previewDialogAround(picture);
-  expect(buttonByName("Use this template", preview)).toBeTruthy();
-  expect(within(dialog).getByText("Market day")).toBeInTheDocument();
+  expect(
+    buttonByName("Preview Quiet UI mockup", dialog)?.querySelector("img"),
+  ).toHaveAttribute("src", EXAMPLE_URLS[0]);
+  expect(exampleStrip(dialog)).toStrictEqual([]);
+  expect(within(dialog).getByText("Private")).toBeInTheDocument();
 });
 
 async function openDetail(
@@ -882,11 +979,87 @@ test("Deleting a template removes only its card", async () => {
     expect(menuItemByName("Delete")).toBeInTheDocument();
   });
   click(menuItemByName("Delete"));
+  // Removal cannot be undone, so the menu asks first and changes nothing yet.
+  const confirm = await screen.findByRole("dialog", {
+    name: "Delete template?",
+  });
+  expect(within(dialog).getByText(board.title)).toBeInTheDocument();
+  click(buttonByName("Delete template", confirm)!);
 
   await waitFor(() => {
     expect(within(dialog).queryByText(board.title)).not.toBeInTheDocument();
   });
   expect(within(dialog).getByText(renewal.title)).toBeInTheDocument();
+});
+
+test("Cancelling the delete confirmation keeps the template", async () => {
+  mockCustomTemplateStore([customTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+  await within(dialog).findByText("Q3 board review");
+
+  click(buttonByName("Actions for Q3 board review", dialog)!);
+  await waitFor(() => {
+    expect(menuItemByName("Delete")).toBeInTheDocument();
+  });
+  click(menuItemByName("Delete"));
+  const confirm = await screen.findByRole("dialog", {
+    name: "Delete template?",
+  });
+  click(buttonByName("Cancel", confirm)!);
+
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Delete template?" }),
+    ).not.toBeInTheDocument();
+  });
+  expect(within(dialog).getByText("Q3 board review")).toBeInTheDocument();
+});
+
+test("A failed deletion is not reported again on the next confirmation", async () => {
+  let deletions = 0;
+  mockCustomTemplateStore([customTemplate()], {
+    delete: () => {
+      deletions += 1;
+      return deletions === 1 ? "fail" : undefined;
+    },
+  });
+
+  const { dialog } = await openCustomPanel();
+  await within(dialog).findByText("Q3 board review");
+
+  const askToDelete = async () => {
+    click(buttonByName("Actions for Q3 board review", dialog)!);
+    await waitFor(() => {
+      expect(menuItemByName("Delete")).toBeInTheDocument();
+    });
+    click(menuItemByName("Delete"));
+    return await screen.findByRole("dialog", { name: "Delete template?" });
+  };
+
+  const first = await askToDelete();
+  click(buttonByName("Delete template", first)!);
+  await expect(
+    within(first).findByText("Couldn't delete the template. Try again."),
+  ).resolves.toBeInTheDocument();
+  click(buttonByName("Cancel", first)!);
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Delete template?" }),
+    ).not.toBeInTheDocument();
+  });
+
+  // The next question is about a request that has not been made yet.
+  const second = await askToDelete();
+  expect(within(second).getByText(/Q3 board review/)).toBeInTheDocument();
+  expect(
+    within(second).queryByText("Couldn't delete the template. Try again."),
+  ).not.toBeInTheDocument();
+
+  click(buttonByName("Delete template", second)!);
+  await waitFor(() => {
+    expect(within(dialog).queryByText("Q3 board review")).toBeNull();
+  });
 });
 
 test.each(["visibility change", "deletion"] as const)(
@@ -908,6 +1081,10 @@ test.each(["visibility change", "deletion"] as const)(
       await shareWithOrganization();
     } else {
       click(buttonByName("Delete")!);
+      const confirm = await screen.findByRole("dialog", {
+        name: "Delete template?",
+      });
+      click(buttonByName("Delete template", confirm)!);
     }
 
     await expect(

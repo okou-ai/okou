@@ -1,5 +1,7 @@
 """Cumulative measurements through real request/response hooks and private reads."""
 
+import asyncio
+import gzip
 import json
 from concurrent.futures import ThreadPoolExecutor
 
@@ -769,3 +771,64 @@ async def test_websocket_usage_without_lifecycle_cannot_claim_complete_coverage(
     result = read_usage(control)
     assert result["totals"]["total"] == (0 if zero_usage else 70)
     assert result["complete"] is False
+
+
+@pytest.mark.parametrize("terminal", ["complete", "cancel-checkpoint", "cancel-terminal"])
+@pytest.mark.parametrize("accepted_prefix", [False, True])
+async def test_cooperative_sse_completion_or_cancellation_has_explicit_snapshot_coverage(
+    tmp_path, control, real_flow, mitm_ctx, fake_firewall_headers, terminal, accepted_prefix
+):
+    path = write_registration(tmp_path)
+    with mitm_ctx(registry_path=str(path)), fake_firewall_headers():
+        flow = await admit(real_flow)
+        flow.response = tutils.tresp(
+            headers=header_map({"content-type": "text/event-stream", "content-encoding": "gzip"})
+        )
+        mitm_addon.responseheaders(flow)
+        prefix = (
+            b"data: "
+            + json.dumps({"type": "provider.future_event", "response": payload()}).encode()
+            + b"\n\n"
+            if accepted_prefix
+            else b""
+        )
+        last = (
+            b"data: "
+            + json.dumps(
+                {"type": "response.completed", "response": payload(output_tokens=999)}
+            ).encode()
+            + b"\n\n"
+        )
+        wire = gzip.compress(prefix + b"\n" * 100 + last)
+        assert response_stream(flow)(wire) == wire
+        first = read_usage(control)
+        assert first["totals"]["total"] == (70 if accepted_prefix else 0)
+        assert first["outstandingResponses"] == 1
+        if terminal == "complete":
+            await mitm_addon.responseinspection(flow)
+        else:
+            completion = (
+                mitm_addon.responseinspection(flow)
+                if terminal == "cancel-checkpoint"
+                else mitm_addon.response(flow)
+            )
+            assert completion is not None
+            task = asyncio.ensure_future(completion)
+            asyncio.get_running_loop().call_soon(task.cancel)
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        completion = mitm_addon.response(flow)
+        if completion is not None:
+            await completion
+    result = read_usage(control)
+    assert result["outstandingResponses"] == 0
+    if terminal == "complete":
+        assert result["complete"] is True
+        assert result["totals"]["total"] == 1049
+        assert result["observedResponses"] == 1
+    else:
+        assert result["complete"] is False
+        assert result["totals"]["total"] == (70 if accepted_prefix else 0)
+        assert result["observedResponses"] == int(accepted_prefix)
+        assert "parse_error" in result["reasons"]
+        assert "interrupted" in result["reasons"]

@@ -12,8 +12,6 @@ import { settle } from "../utils";
 import { morningBriefTimezoneTargetSql } from "./morning-brief-preference-sql";
 import { calculateNextRun } from "./time-automation";
 
-class StaleMorningBriefTimezone extends Error {}
-
 const timezoneTarget = z.object({
   workflowId: z.string(),
   timezone: z.string().nullable(),
@@ -54,64 +52,67 @@ export const synchronizeMorningBriefTimezone$ = command(
     const owner = { orgId: args.orgId, userId: args.member.userId };
     const db = set(writeDb$);
     signal.throwIfAborted();
-    const outcome = await settle(
-      db.transaction(async (tx) => {
-        const [target] = parseRawRows(
-          timezoneTarget,
-          await tx.execute(morningBriefTimezoneTargetSql(owner)),
-        );
-        if (!target?.timezone || !isValidTimeZone(target.timezone)) {
-          return;
-        }
-        const { workflowId, timezone } = target;
-        const automations = await tx
-          .select({
-            row: workflowAutomations,
-            version: sql`${workflowAutomations}.xmin::text`.mapWith(
-              pgTextDecoder,
-            ),
-          })
-          .from(workflowAutomations)
-          .where(
-            and(
-              eq(workflowAutomations.workflowId, workflowId),
-              eq(
-                workflowAutomations.officialBlueprintKey,
-                MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-              ),
-            ),
-          );
-        const at = nowDate();
-        for (const { row, version } of automations) {
-          const values = automationTimezoneValues(row, timezone, at);
-          if (values === undefined) {
-            continue;
-          }
-          const [applied] = await tx
-            .update(workflowAutomations)
-            .set(values)
-            .where(
-              and(
-                eq(workflowAutomations.id, row.id),
-                sql`${workflowAutomations}.xmin::text = ${version}`,
-              ),
-            )
-            .returning({ id: workflowAutomations.id });
-          if (applied === undefined) {
-            throw new StaleMorningBriefTimezone();
-          }
-        }
-        signal.throwIfAborted();
-      }),
-      signal,
+    const [target] = parseRawRows(
+      timezoneTarget,
+      await db.execute(morningBriefTimezoneTargetSql(owner)),
     );
     signal.throwIfAborted();
-    if (outcome.ok) {
+    if (!target?.timezone || !isValidTimeZone(target.timezone)) {
       return "synchronized";
     }
-    if (outcome.error instanceof StaleMorningBriefTimezone) {
-      return "conflict";
+    const { workflowId, timezone } = target;
+    const automationsOutcome = await settle(
+      db
+        .select({
+          row: workflowAutomations,
+          version: sql`${workflowAutomations}.xmin::text`.mapWith(
+            pgTextDecoder,
+          ),
+        })
+        .from(workflowAutomations)
+        .where(
+          and(
+            eq(workflowAutomations.workflowId, workflowId),
+            eq(
+              workflowAutomations.officialBlueprintKey,
+              MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+            ),
+          ),
+        ),
+      signal,
+    );
+    if (!automationsOutcome.ok) {
+      throw automationsOutcome.error;
     }
-    throw outcome.error;
+    const at = nowDate();
+    // The partial unique index allows at most one row for this non-null key.
+    for (const { row, version } of automationsOutcome.value) {
+      const values = automationTimezoneValues(row, timezone, at);
+      if (values === undefined) {
+        continue;
+      }
+      const appliedOutcome = await settle(
+        db
+          .update(workflowAutomations)
+          .set(values)
+          .where(
+            and(
+              eq(workflowAutomations.id, row.id),
+              sql`${workflowAutomations}.xmin::text = ${version}`,
+            ),
+          )
+          .returning({ id: workflowAutomations.id }),
+        signal,
+      );
+      if (!appliedOutcome.ok) {
+        throw appliedOutcome.error;
+      }
+      const [applied] = appliedOutcome.value;
+      if (applied === undefined) {
+        return "conflict";
+      }
+    }
+    signal.throwIfAborted();
+    return "synchronized";
   },
 );

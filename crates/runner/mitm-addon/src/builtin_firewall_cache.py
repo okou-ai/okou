@@ -114,8 +114,11 @@ class BuiltinFirewallCatalogSnapshot:
     snapshot, not a preliminary path stat. `reuse_by_identity` is true only for
     success or deterministic size/decode/schema/validation rejection. I/O and
     open/trust failures must be retried even if the identity is unchanged.
-    Both the loader and dependent registry snapshots use `can_reuse()`; the
-    diagnostic reason alone does not establish reuse eligibility.
+    Both the loader and dependent registry snapshots use `can_reuse()` for
+    identity-only reuse; the diagnostic reason alone does not establish it.
+    After a fresh load, the registry may retain already-rejected enforcement
+    when the complete unavailable snapshot is unchanged. This never skips a
+    retryable catalog probe.
     """
 
     dependency_file_key: CatalogFileKey | None

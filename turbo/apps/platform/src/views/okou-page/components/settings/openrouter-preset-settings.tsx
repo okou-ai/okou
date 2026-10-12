@@ -23,17 +23,33 @@ import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { PreferenceCardRow } from "./preference-card-row.tsx";
 
-const items = ORG_OPENROUTER_PRESETS.map((value) => {
+const SYSTEM_DEFAULT = "system-default";
+const presetItems = ORG_OPENROUTER_PRESETS.map((value) => {
   return { value, label: value };
 });
 
 function PresetSelect() {
   const { t } = useTranslation();
+  const items = [
+    {
+      value: SYSTEM_DEFAULT,
+      label: t(($) => {
+        return $.settings.preferences.debug.openrouterPreset.systemDefault;
+      }),
+    },
+    ...presetItems,
+  ];
   const preset = useLoadable(orgOpenrouterPreset$);
   const [save, update] = useLoadableSet(updateOrgOpenrouterPreset$);
   const signal = useGet(pageSignal$);
   const current = preset.state === "hasData" ? preset.data : null;
   const parsed = orgOpenrouterPresetSchema.safeParse(current);
+  const selectedValue =
+    preset.state === "hasData" && current === null
+      ? SYSTEM_DEFAULT
+      : parsed.success
+        ? parsed.data
+        : null;
   const title = t(($) => {
     return $.settings.preferences.debug.openrouterPreset.title;
   });
@@ -62,16 +78,19 @@ function PresetSelect() {
       <div className="w-full shrink-0 sm:w-64">
         <Select
           items={items}
-          value={parsed.success ? parsed.data : null}
+          value={selectedValue}
           disabled={preset.state !== "hasData" || save.state === "loading"}
           onValueChange={(value, details) => {
             if (
               value === null ||
-              (value === current && details.reason === "none")
+              (value === selectedValue && details.reason === "none")
             ) {
               return;
             }
-            const selection = orgOpenrouterPresetSchema.parse(value);
+            const selection =
+              value === SYSTEM_DEFAULT
+                ? null
+                : orgOpenrouterPresetSchema.parse(value);
             detach(update(selection, signal), Reason.DomCallback);
           }}
         >

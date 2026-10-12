@@ -50,7 +50,7 @@ pub(super) struct SessionOutputChunk {
 
 /// Boundaries for the run's first published chunk: `pi_first_session_output`
 /// from the Pi startup boundary, and `api_to_first_session_output` from the
-/// API start time. See docs/chat-first-output-latency.md.
+/// API start time.
 #[derive(Default)]
 pub(super) struct FirstSessionOutputTiming {
     pub(super) pi_startup_succeeded_at: Option<Arc<OnceLock<Instant>>>,

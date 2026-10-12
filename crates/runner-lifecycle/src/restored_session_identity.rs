@@ -2,7 +2,7 @@
 //!
 //! An incoming hash-backed resume request produces a requested
 //! [`RestoredSessionIdentity`] without verifier provenance. Final metadata read
-//! after a successful checkpoint produces a retained identity with the history
+//! after successful Run finalization produces a retained identity with the history
 //! size and paths needed to verify the parked sandbox's current history.
 //!
 //! The comparison layers intentionally answer different questions. Structural
@@ -135,18 +135,6 @@ pub struct RestoredSessionFinalMetadataVerification<'a> {
     pub history_size_bytes: u64,
 }
 
-/// Size-bearing identity fields used by workspace-cache sidecars.
-///
-/// This projection requires a stored history size but does not require
-/// final-metadata verifier provenance.
-pub struct RestoredSessionIdentityFields<'a> {
-    pub framework: SessionHistoryFramework,
-    pub session_id_hash: &'a str,
-    pub history_ref_kind: SessionHistoryRefKind,
-    pub history_hash: &'a str,
-    pub history_size_bytes: u64,
-}
-
 /// Retained history hash and size offered for later prefix verification.
 ///
 /// These fields identify the possible prefix; they are not proof that the
@@ -180,7 +168,7 @@ impl RestoredSessionIdentity {
         }
     }
 
-    /// Builds a retained identity from validated final checkpoint metadata.
+    /// Builds a retained identity from validated final session-history metadata.
     ///
     /// Returns `None` when the metadata is invalid or the supplied metadata
     /// path and runtime directory cannot form a usable verification
@@ -267,20 +255,6 @@ impl RestoredSessionIdentity {
                 })
             }
         }
-    }
-
-    /// Returns the size-bearing fields used to publish or validate a sidecar.
-    ///
-    /// Unlike [`Self::final_metadata_verification`], this does not require
-    /// verifier provenance or retained guest paths.
-    pub fn cache_fields(&self) -> Option<RestoredSessionIdentityFields<'_>> {
-        Some(RestoredSessionIdentityFields {
-            framework: self.framework,
-            session_id_hash: &self.session_id_hash,
-            history_ref_kind: self.history_ref_kind,
-            history_hash: &self.history_hash,
-            history_size_bytes: self.history_size_bytes?,
-        })
     }
 
     /// Returns whether final-metadata verification inputs are available.

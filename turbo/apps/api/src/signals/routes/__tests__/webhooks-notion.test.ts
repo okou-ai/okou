@@ -6,7 +6,10 @@ import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/wor
 import { HttpResponse, http } from "msw";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createApiTestKmsClient } from "../../../__tests__/secret-kms";
+import { setSecretKmsClientForTests } from "../../../lib/secret-kms-client";
 import { server } from "../../../mocks/server";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
@@ -269,10 +272,11 @@ function configureNotionDatabaseMock(entities: NotionEntities): void {
   );
 }
 
-function notionSignature(rawBody: string): string {
-  return `sha256=${createHmac("sha256", NOTION_WEBHOOK_TOKEN)
-    .update(rawBody)
-    .digest("hex")}`;
+function notionSignature(
+  rawBody: string,
+  token = NOTION_WEBHOOK_TOKEN,
+): string {
+  return `sha256=${createHmac("sha256", token).update(rawBody).digest("hex")}`;
 }
 
 function notionPageEvent(args: {
@@ -352,6 +356,254 @@ async function verifyNotionWebhook(): Promise<void> {
 }
 
 describe("POST /api/webhooks/notion", () => {
+  it("publishes the first verification token and preserves its signing authority", async () => {
+    const event = notionPageEvent({
+      entities: newNotionEntities(),
+      type: "page.created",
+      timestamp: "2026-07-13T04:00:00.000Z",
+    });
+    const signedEvent = {
+      rawBody: event.rawBody,
+      signature: notionSignature(event.rawBody),
+    };
+    await expect(
+      postNotionWebhook({ ...signedEvent, isolatePg: true }),
+    ).resolves.toStrictEqual({
+      status: 503,
+      body: { error: "Notion webhook verification token is not configured" },
+    });
+
+    await verifyNotionWebhook();
+    const replacementToken = "replacement-verification-token";
+    await expect(
+      postNotionWebhook({
+        rawBody: JSON.stringify({ verification_token: replacementToken }),
+      }),
+    ).resolves.toStrictEqual({
+      status: 401,
+      body: { error: "Unauthorized" },
+    });
+    await expect(
+      postNotionWebhook({
+        rawBody: event.rawBody,
+        signature: notionSignature(event.rawBody, replacementToken),
+      }),
+    ).resolves.toStrictEqual({
+      status: 401,
+      body: { error: "Unauthorized" },
+    });
+    await expect(postNotionWebhook(signedEvent)).resolves.toStrictEqual({
+      status: 200,
+      body: {
+        success: true,
+        kind: "event",
+        pending: 0,
+        refreshed: 0,
+        duplicates: 0,
+      },
+    });
+  });
+
+  it("retires the prior token before publishing an already-admitted handshake", async () => {
+    const kms = createApiTestKmsClient();
+    const preparations = [
+      {
+        started: createDeferredPromise<void>(context.signal),
+        release: createDeferredPromise<void>(context.signal),
+      },
+      {
+        started: createDeferredPromise<void>(context.signal),
+        release: createDeferredPromise<void>(context.signal),
+      },
+    ] as const;
+    let preparationIndex = 0;
+    setSecretKmsClientForTests({
+      ...kms,
+      async generateDataKey(request) {
+        const preparation = preparations[preparationIndex++];
+        if (!preparation) {
+          throw new Error("Unexpected KMS key generation");
+        }
+        preparation.started.resolve();
+        await preparation.release.promise;
+        return await kms.generateDataKey(request);
+      },
+    });
+    const app = await setupApp({
+      context,
+      routes: webhooksNotionRoutes,
+      isolatePg: true,
+    });
+    const client = app(webhookNotionContract);
+    const firstToken = NOTION_WEBHOOK_TOKEN;
+    const secondToken = "second-admitted-verification-token";
+    const verificationResponse = {
+      status: 200,
+      body: {
+        success: true,
+        kind: "verification",
+        pending: 0,
+        refreshed: 0,
+        duplicates: 0,
+      },
+    };
+    // Both provider handshakes pass admission while external KMS is pending.
+    const first = client.post({
+      body: JSON.stringify({ verification_token: firstToken }),
+    });
+    const outcomes = [Promise.allSettled([first])];
+    const publication = await settleIncludingAbort(async () => {
+      await preparations[0].started.promise;
+      const second = client.post({
+        body: JSON.stringify({ verification_token: secondToken }),
+      });
+      outcomes.push(Promise.allSettled([second]));
+      await preparations[1].started.promise;
+      preparations[0].release.resolve();
+      await expect(first).resolves.toMatchObject(verificationResponse);
+      preparations[1].release.resolve();
+      await expect(second).resolves.toMatchObject(verificationResponse);
+    });
+    for (const preparation of preparations) {
+      if (!preparation.started.settled()) {
+        preparation.started.resolve();
+      }
+      if (!preparation.release.settled()) {
+        preparation.release.resolve();
+      }
+    }
+    await Promise.all(outcomes);
+    if (!publication.ok) {
+      throw publication.error;
+    }
+    const event = notionPageEvent({
+      entities: newNotionEntities(),
+      type: "page.created",
+      timestamp: "2026-07-13T04:00:00.000Z",
+    });
+    await expect(
+      postNotionWebhook({
+        rawBody: event.rawBody,
+        signature: notionSignature(event.rawBody, firstToken),
+      }),
+    ).resolves.toStrictEqual({
+      status: 401,
+      body: { error: "Unauthorized" },
+    });
+    await expect(
+      postNotionWebhook({
+        rawBody: event.rawBody,
+        signature: notionSignature(event.rawBody, secondToken),
+      }),
+    ).resolves.toStrictEqual({
+      status: 200,
+      body: {
+        success: true,
+        kind: "event",
+        pending: 0,
+        refreshed: 0,
+        duplicates: 0,
+      },
+    });
+  });
+
+  it("leaves verification unconfigured when KMS encryption fails", async () => {
+    const event = notionPageEvent({
+      entities: newNotionEntities(),
+      type: "page.created",
+      timestamp: "2026-07-13T04:00:00.000Z",
+    });
+    const kms = createApiTestKmsClient();
+    setSecretKmsClientForTests({
+      ...kms,
+      generateDataKey() {
+        return Promise.reject(new Error("KMS unavailable"));
+      },
+    });
+    await expect(
+      postNotionWebhook({
+        rawBody: JSON.stringify({ verification_token: NOTION_WEBHOOK_TOKEN }),
+        isolatePg: true,
+      }),
+    ).rejects.toThrow(
+      "Unknown response status 500 for POST /api/webhooks/notion",
+    );
+    await expect(
+      postNotionWebhook({
+        rawBody: event.rawBody,
+        signature: notionSignature(event.rawBody),
+      }),
+    ).resolves.toStrictEqual({
+      status: 503,
+      body: { error: "Notion webhook verification token is not configured" },
+    });
+    setSecretKmsClientForTests(kms);
+    await verifyNotionWebhook();
+  });
+
+  it("does not publish verification after the application owner aborts during KMS preparation", async () => {
+    const event = notionPageEvent({
+      entities: newNotionEntities(),
+      type: "page.created",
+      timestamp: "2026-07-13T04:00:00.000Z",
+    });
+    const kms = createApiTestKmsClient();
+    const controller = new AbortController();
+    const started = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    setSecretKmsClientForTests({
+      ...kms,
+      async generateDataKey(request) {
+        started.resolve();
+        await release.promise;
+        return await kms.generateDataKey(request);
+      },
+    });
+    const app = await setupApp({
+      context,
+      routes: webhooksNotionRoutes,
+      isolatePg: true,
+      signal: AbortSignal.any([context.signal, controller.signal]),
+    });
+    const outcome = Promise.allSettled([
+      app(webhookNotionContract).post({
+        extraHeaders: { "content-type": "application/json" },
+        body: JSON.stringify({ verification_token: NOTION_WEBHOOK_TOKEN }),
+      }),
+    ]);
+    const cancellation = await settleIncludingAbort(async () => {
+      await started.promise;
+      controller.abort();
+      release.resolve();
+      const [result] = await outcome;
+      expect(result).toMatchObject({
+        status: "rejected",
+        reason: {
+          message: "Unknown response status 500 for POST /api/webhooks/notion",
+        },
+      });
+    });
+    controller.abort();
+    if (!release.settled()) {
+      release.resolve();
+    }
+    await outcome;
+    if (!cancellation.ok) {
+      throw cancellation.error;
+    }
+    setSecretKmsClientForTests(kms);
+    await expect(
+      postNotionWebhook({
+        rawBody: event.rawBody,
+        signature: notionSignature(event.rawBody),
+      }),
+    ).resolves.toStrictEqual({
+      status: 503,
+      body: { error: "Notion webhook verification token is not configured" },
+    });
+    await verifyNotionWebhook();
+  });
+
   async function setupFixture(): Promise<{
     readonly fixture: WorkflowsFixture;
     readonly actor: ApiTestUser;

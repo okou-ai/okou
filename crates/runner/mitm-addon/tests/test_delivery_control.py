@@ -142,6 +142,7 @@ async def test_quiescence_reports_real_delivery_outcomes_and_retained_retry(
     assert all(body == bodies[0] for body in bodies)
 
 
+@pytest.mark.shard_cost(4)
 async def test_drain_overload_deadline_and_disconnect_leave_http_delivery_owned(
     tmp_path, control, fresh_usage_executor
 ):
@@ -173,6 +174,7 @@ async def test_drain_overload_deadline_and_disconnect_leave_http_delivery_owned(
         assert api.request_count == 1
 
 
+@pytest.mark.shard_cost(4)
 async def test_blocked_flush_owner_coalesces_wakes_and_hands_off_to_shutdown(
     tmp_path, control, fresh_usage_executor
 ):

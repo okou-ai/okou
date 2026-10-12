@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.22.36](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.35...claude-mock-v0.22.36) (2026-10-12)
+
+## [0.22.35](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.34...claude-mock-v0.22.35) (2026-10-11)
+
+## [0.22.34](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.33...claude-mock-v0.22.34) (2026-10-10)
+
+## [0.22.33](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.32...claude-mock-v0.22.33) (2026-10-10)
+
+## [0.22.32](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.31...claude-mock-v0.22.32) (2026-10-10)
+
+## [0.22.31](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.30...claude-mock-v0.22.31) (2026-10-10)
+
+## [0.22.30](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.29...claude-mock-v0.22.30) (2026-10-10)
+
+## [0.22.29](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.28...claude-mock-v0.22.29) (2026-10-09)
+
+## [0.22.28](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.27...claude-mock-v0.22.28) (2026-10-09)
+
 ## [0.22.27](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.26...claude-mock-v0.22.27) (2026-10-09)
 
 ## [0.22.26](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.25...claude-mock-v0.22.26) (2026-10-09)

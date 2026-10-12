@@ -2,7 +2,7 @@
 //!
 //! State files handled here are local runner coordination files such as the
 //! proxy registry, mitm-addon flush state, live runner instance records,
-//! workspace cache metadata reads, and diagnostic config reads. The helper
+//! home cache metadata reads, and diagnostic config reads. The helper
 //! centralizes size-bounded reads and filesystem checks for paths that come
 //! from local process or runner state.
 //!
@@ -25,7 +25,7 @@ use std::path::Path;
 use crate::error::{HostError, HostResult};
 
 pub const PROXY_REGISTRY_MAX_BYTES: u64 = 16 * 1024 * 1024;
-pub const WORKSPACE_METADATA_MAX_BYTES: u64 = 1024 * 1024;
+pub const HOME_METADATA_MAX_BYTES: u64 = 1024 * 1024;
 
 /// Ownership and write-trust policy for reading a runner state file.
 #[derive(Debug, Clone, Copy)]

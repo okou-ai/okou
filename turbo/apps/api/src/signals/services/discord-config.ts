@@ -13,7 +13,6 @@ export interface DiscordAppConfig {
   readonly botToken: string;
   readonly publicKey: string;
   readonly gatewaySecret: string;
-  readonly messageContentEnabled: boolean;
 }
 
 /** App-wide configuration; binding material must never contain credentials. */
@@ -30,7 +29,6 @@ export function getDiscordAppConfig(): DiscordAppConfig | null {
     botToken,
     publicKey,
     gatewaySecret,
-    messageContentEnabled: env("DISCORD_MESSAGE_CONTENT_ENABLED") === "true",
   };
 }
 

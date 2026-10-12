@@ -111,6 +111,6 @@ export function inspectPiSessionJsonl(jsonl: string): PiSessionInspection {
     messageCount: session.buildSessionContext().messages.length,
     hasPendingToolCalls: session.hasPendingToolCalls(),
     pendingToolIds: session.pendingToolIds(),
-    isSettledCheckpoint: session.isSettledCheckpoint(),
+    isSettledHistory: session.isSettledHistory(),
   };
 }

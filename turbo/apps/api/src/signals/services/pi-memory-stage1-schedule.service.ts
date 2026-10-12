@@ -150,8 +150,8 @@ const readThreadSource$ = command(
     ) {
       return { reason: "old_source" as const };
     }
-    // Choose the latest activity BEFORE checking source kind/snapshot/checkpoint.
-    // A failed, excluded or checkpoint-less continuation cannot expose an older run.
+    // Choose the latest activity BEFORE checking source kind or native history.
+    // A failed, excluded or history-less continuation cannot expose an older run.
     const [latest] = await db
       .select(sourceRunColumns)
       .from(agentRuns)
@@ -373,6 +373,7 @@ const commitSelectedPiMemoryStage1Day$ = command(
     const { request, currentTime, chosen, skips } = input;
     // Day consumption, candidate/reference replacement, legacy watermarks and
     // frozen slots form one atomic decision under the original lock order.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0227; new non-billing transactions are prohibited.
     await set(writeDb$).transaction(async (tx) => {
       // Sorted source Threads -> Storage -> user/day -> candidates -> blobs.
       if (chosen.length) {
@@ -424,8 +425,8 @@ const commitSelectedPiMemoryStage1Day$ = command(
         if (!ownerEnabled(args, featureRows)) {
           continue;
         }
-        const [checkpoint] = await tx.select().from(sourcePlan(args));
-        if (!admissionHistoryBacked(checkpoint)) {
+        const [admissionSource] = await tx.select().from(sourcePlan(args));
+        if (!admissionHistoryBacked(admissionSource)) {
           continue;
         }
         const [existing] = await tx.select().from(existingStorage(args));
@@ -444,7 +445,7 @@ const commitSelectedPiMemoryStage1Day$ = command(
             storageId = requireStorage(winner);
           }
         }
-        const values = candidateValues(args, storageId, checkpoint);
+        const values = candidateValues(args, storageId, admissionSource);
         const [created] = await tx
           .insert(candidates)
           .values([values])
@@ -455,8 +456,8 @@ const commitSelectedPiMemoryStage1Day$ = command(
         if (!created) {
           const [current] = await tx
             .select()
-            .from(currentCandidate(storageId, checkpoint));
-          const decision = decideReplacement(current, args, checkpoint);
+            .from(currentCandidate(storageId, admissionSource));
+          const decision = decideReplacement(current, args, admissionSource);
           if (decision.kind === "stale_source") {
             continue;
           }

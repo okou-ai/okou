@@ -1,30 +1,33 @@
-import { computed, type Computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import { connectorOauthCompletions } from "@okouai/db/schema/connector-oauth-state";
 import { and, eq, gt } from "drizzle-orm";
 
 import { connectorOAuthStateExpiresAt } from "../../lib/connector-oauth-state";
 import { nowDate } from "../../lib/time";
-import { db$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 
-export async function recordConnectorOAuthCompletion(
-  db: Db,
-  args: {
-    readonly attemptId: string;
-    readonly connectionId: string;
-    readonly orgId: string;
-    readonly userId: string;
+export const recordConnectorOAuthCompletion$ = command(
+  async (
+    { set },
+    args: {
+      readonly attemptId: string;
+      readonly connectionId: string;
+      readonly orgId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const { attemptId, connectionId, orgId, userId } = args;
+    await set(writeDb$).insert(connectorOauthCompletions).values({
+      id: attemptId,
+      connectionId,
+      orgId,
+      userId,
+      expiresAt: connectorOAuthStateExpiresAt(),
+    });
+    signal.throwIfAborted();
   },
-  signal: AbortSignal,
-): Promise<void> {
-  await db.insert(connectorOauthCompletions).values({
-    id: args.attemptId,
-    connectionId: args.connectionId,
-    orgId: args.orgId,
-    userId: args.userId,
-    expiresAt: connectorOAuthStateExpiresAt(),
-  });
-  signal.throwIfAborted();
-}
+);
 
 export function connectorOAuthCompletionReceipt(
   scope$: Computed<{

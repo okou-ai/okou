@@ -34,6 +34,7 @@ fn make_blank_candidate(profile_name: &str, vcpu: u32, memory_mb: u32) -> Parked
         make_budget_lease(vcpu, memory_mb),
         sandbox_id,
         profile_name.to_owned(),
+        "test-rootfs".into(),
         None,
     )
 }

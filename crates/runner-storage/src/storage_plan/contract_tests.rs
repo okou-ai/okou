@@ -62,6 +62,69 @@ fn run_plan(plan: super::StoragePlan) {
 }
 
 #[test]
+fn canonical_home_state_roundtrip_rematerializes_changed_removed_tainted_and_empty_inputs() {
+    let dir = tempfile::tempdir().unwrap();
+    let changed = dir.path().join("changed");
+    let removed = dir.path().join("removed");
+    let empty = dir.path().join("empty-artifact");
+    let ordinary = dir.path().join("ordinary.txt");
+    for path in [&changed, &removed, &empty] {
+        fs::create_dir(path).unwrap();
+        fs::write(path.join("stale.txt"), b"stale managed input").unwrap();
+    }
+    fs::write(&ordinary, b"ordinary user file").unwrap();
+    let archive = write_archive(
+        dir.path(),
+        "current.tar.gz",
+        &[("current.txt", b"captured current bytes")],
+    );
+    let mut empty_entry = artifact(&empty, "output", "empty", String::new());
+    empty_entry.archive_url = None;
+    empty_entry.empty = Some(true);
+    let current = StorageManifest {
+        storages: vec![storage(&changed, "current", "v2", archive, None)],
+        artifacts: vec![empty_entry],
+    };
+    let previous = StorageFingerprints {
+        storages: HashMap::from([
+            (
+                changed.to_string_lossy().into_owned(),
+                StorageFingerprint::new("current", "v1"),
+            ),
+            (
+                removed.to_string_lossy().into_owned(),
+                StorageFingerprint::tainted(),
+            ),
+        ]),
+        artifacts: HashMap::from([(
+            empty.to_string_lossy().into_owned(),
+            StorageFingerprint::new("output", "v1"),
+        )]),
+    };
+    let captured = StorageFingerprints::from_manifest(&current);
+    let tainted = captured.tainted_paths_including(Some(&previous));
+    let canonical: StorageFingerprints =
+        serde_json::from_slice(&serde_json::to_vec(&tainted).unwrap()).unwrap();
+    assert_eq!(canonical, tainted);
+    let plan = build_storage_plan(
+        &current,
+        dir.path().join("runtime").to_string_lossy().as_ref(),
+        Some(&canonical),
+    )
+    .unwrap();
+    run_plan(plan);
+    assert!(!changed.join("stale.txt").exists());
+    assert_eq!(
+        fs::read(changed.join("current.txt")).unwrap(),
+        b"captured current bytes"
+    );
+    assert!(!removed.exists());
+    assert!(empty.is_dir());
+    assert_eq!(fs::read_dir(&empty).unwrap().count(), 0);
+    assert_eq!(fs::read(&ordinary).unwrap(), b"ordinary user file");
+}
+
+#[test]
 fn reused_empty_fingerprints_replace_stale_storage_contents() {
     let dir = tempfile::tempdir().unwrap();
     let mount = dir.path().join("data");

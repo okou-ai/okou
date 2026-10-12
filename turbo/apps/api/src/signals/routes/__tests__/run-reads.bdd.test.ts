@@ -1,3 +1,4 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
 import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import { createHash, randomUUID } from "node:crypto";
@@ -8,12 +9,14 @@ import {
   SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
   SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT,
 } from "@okouai/api-contracts/contracts/runners";
-import { createStore } from "ccstate";
+
 import { describe, expect, it, onTestFinished } from "vitest";
+import { HttpResponse, http } from "msw";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now, nowDate, withMockNowForTest } from "../../../lib/time";
+import { now, withMockNowForTest } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -29,16 +32,9 @@ import {
 } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
-import {
-  deleteUsageStateFixture$,
-  seedCompose$,
-  seedRun$,
-  seedUsageStateFixture$,
-} from "./helpers/usage-state";
 
 /*
  * RUN-03/RUN-04 read surfaces for agent runs (list/read/queue/cancel,
@@ -48,8 +44,8 @@ import {
  * pinning, concurrency caps, and the production capture gate).
  *
  * Direct runs are constructed through createAgentRun$; route boundaries cover
- * runner claims and sandbox webhooks (events/checkpoint/complete). Axiom reads
- * are answered by an APL-dispatching mock.
+ * runner claims and sandbox webhooks (events/outputs/complete). Axiom reads
+ * use an APL-dispatching mock, with HTTP coverage for context freshness.
  */
 
 // The sanitizer accepts the literal IANA name; built by parts to satisfy
@@ -64,7 +60,6 @@ const webhooks = createWebhookCallbackApi(context);
 const reads = createRunReadsApi(context);
 const chat = createChatFilesBddApi(context);
 const workflows = createWorkflowsBddApi(context);
-const store = createStore();
 
 function mustOk<TResponse extends { readonly status: number }>(
   response: TResponse,
@@ -93,7 +88,7 @@ async function createThreadAgent(
   actor: ApiTestUser,
   prefix: string,
 ): Promise<{ readonly agentId: string }> {
-  // The Claude Code route (no Pi route), matching completeRun's checkpoints.
+  // The Claude Code route (no Pi route), matching completeRun's native history.
   await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
@@ -211,7 +206,8 @@ function s3BytesBody(bytes: Buffer): AsyncIterable<Buffer> {
 
 /**
  * Marks a claimed run completed through the sandbox webhooks. Successful
- * completion requires a checkpoint, so one is included atomically.
+ * completion includes the required native session identity and history references
+ * atomically.
  */
 async function completeRun(
   runId: string,
@@ -223,7 +219,7 @@ async function completeRun(
     {
       runId,
       exitCode: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `bdd-cli-${runId}`,
         cliAgentSessionHistoryHash: createHash("sha256")
@@ -400,63 +396,6 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
         }),
       ).toContain(sourceRun.runId);
     }
-  });
-
-  it("keeps lifecycle-only logs visible without product metadata", async () => {
-    const actor = await entitledActor();
-    const compose = await createThreadAgent(actor, "lifecycle-only-log");
-    if (!actor.orgId) {
-      throw new Error("Lifecycle-only log reads require an org-scoped actor");
-    }
-    const lifecycleRun = await store.set(
-      seedRun$,
-      {
-        orgId: actor.orgId,
-        userId: actor.userId,
-        composeId: compose.agentId,
-        prompt: "accepted lifecycle-only history",
-        status: "failed",
-        completedAt: nowDate(),
-        lifecycleOnly: true,
-      },
-      context.signal,
-    );
-
-    const listed = await reads.requestListLogs(actor, {}, [200]);
-    mustOk(listed, "the lifecycle-only log list");
-    expect(
-      listed.body.data.find((entry) => {
-        return entry.id === lifecycleRun.runId;
-      }),
-    ).toMatchObject({
-      id: lifecycleRun.runId,
-      status: "failed",
-      triggerSource: null,
-    });
-
-    const detail = await reads.requestReadLogById(
-      actor,
-      lifecycleRun.runId,
-      [200],
-    );
-    expect(detail.body).toMatchObject({
-      id: lifecycleRun.runId,
-      triggerSource: null,
-      modelProvider: null,
-      selectedModel: null,
-    });
-
-    const productFiltered = await reads.requestListLogs(
-      actor,
-      { triggerSource: "test" },
-      [200],
-    );
-    mustOk(productFiltered, "the product-metadata log filter");
-    expect(
-      productFiltered.body.data.map((entry) => {
-        return entry.id;
-      }),
-    ).not.toContain(lifecycleRun.runId);
   });
 
   it("lists and reads runs through public logs with status, agent, and since filters", async () => {
@@ -748,11 +687,11 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
 
     const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
-      prompt: "create compressed checkpoint",
+      prompt: "create compressed history",
     });
     const claim = await api.claimRunnerJob(run.runId);
     const headers = sandboxHeaders(claim.sandboxToken);
-    const prepared = await webhooks.requestAgentCheckpointPrepareHistory(
+    const prepared = await webhooks.requestAgentSessionHistoryPrepare(
       {
         runId: run.runId,
         hash: historyHash,
@@ -767,18 +706,17 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       existing: false,
       encoding: "gzip",
     });
-    const duplicatePrepared =
-      await webhooks.requestAgentCheckpointPrepareHistory(
-        {
-          runId: run.runId,
-          hash: historyHash,
-          rawSize: Buffer.byteLength(history, "utf8"),
-          encodedSize: compressedHistory.length + 1,
-          encoding: "gzip",
-        },
-        headers,
-        [200],
-      );
+    const duplicatePrepared = await webhooks.requestAgentSessionHistoryPrepare(
+      {
+        runId: run.runId,
+        hash: historyHash,
+        rawSize: Buffer.byteLength(history, "utf8"),
+        encodedSize: compressedHistory.length + 1,
+        encoding: "gzip",
+      },
+      headers,
+      [200],
+    );
     expect(duplicatePrepared.body).toStrictEqual({
       existing: true,
       encoding: "gzip",
@@ -787,7 +725,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       {
         runId: run.runId,
         exitCode: 0,
-        checkpoint: {
+        completion: {
           cliAgentType: "claude-code",
           cliAgentSessionId: `bdd-cli-${run.runId}`,
           cliAgentSessionHistoryHash: historyHash,
@@ -846,11 +784,11 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
 
     const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
-      prompt: "create zstd compressed checkpoint",
+      prompt: "create zstd compressed history",
     });
     const claim = await api.claimRunnerJob(run.runId);
     const headers = sandboxHeaders(claim.sandboxToken);
-    const prepared = await webhooks.requestAgentCheckpointPrepareHistory(
+    const prepared = await webhooks.requestAgentSessionHistoryPrepare(
       {
         runId: run.runId,
         hash: historyHash,
@@ -865,18 +803,17 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       existing: false,
       encoding: "zstd",
     });
-    const duplicatePrepared =
-      await webhooks.requestAgentCheckpointPrepareHistory(
-        {
-          runId: run.runId,
-          hash: historyHash,
-          rawSize: Buffer.byteLength(history, "utf8"),
-          encodedSize: compressedHistory.length + 1,
-          encoding: "zstd",
-        },
-        headers,
-        [200],
-      );
+    const duplicatePrepared = await webhooks.requestAgentSessionHistoryPrepare(
+      {
+        runId: run.runId,
+        hash: historyHash,
+        rawSize: Buffer.byteLength(history, "utf8"),
+        encodedSize: compressedHistory.length + 1,
+        encoding: "zstd",
+      },
+      headers,
+      [200],
+    );
     expect(duplicatePrepared.body).toStrictEqual({
       existing: true,
       encoding: "zstd",
@@ -885,7 +822,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       {
         runId: run.runId,
         exitCode: 0,
-        checkpoint: {
+        completion: {
           cliAgentType: "claude-code",
           cliAgentSessionId: `bdd-cli-${run.runId}`,
           cliAgentSessionHistoryHash: historyHash,
@@ -937,25 +874,24 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
     });
     const claim = await api.claimRunnerJob(run.runId);
     const headers = sandboxHeaders(claim.sandboxToken);
-    const compressedPrepare =
-      await webhooks.requestAgentCheckpointPrepareHistory(
-        {
-          runId: run.runId,
-          hash: historyHash,
-          rawSize: Buffer.byteLength(history, "utf8"),
-          encodedSize: gzipSync(Buffer.from(history, "utf8")).length,
-          encoding: "gzip",
-        },
-        headers,
-        [200],
-      );
+    const compressedPrepare = await webhooks.requestAgentSessionHistoryPrepare(
+      {
+        runId: run.runId,
+        hash: historyHash,
+        rawSize: Buffer.byteLength(history, "utf8"),
+        encodedSize: gzipSync(Buffer.from(history, "utf8")).length,
+        encoding: "gzip",
+      },
+      headers,
+      [200],
+    );
     expect(compressedPrepare.body).toMatchObject({
       existing: false,
       encoding: "gzip",
     });
 
     const mismatchedEncodedSize =
-      await webhooks.requestAgentCheckpointPrepareHistory(
+      await webhooks.requestAgentSessionHistoryPrepare(
         {
           runId: run.runId,
           hash: historyHash,
@@ -971,7 +907,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       "Session history encoded size does not match the existing blob",
     );
 
-    const compressedRetry = await webhooks.requestAgentCheckpointPrepareHistory(
+    const compressedRetry = await webhooks.requestAgentSessionHistoryPrepare(
       {
         runId: run.runId,
         hash: historyHash,
@@ -987,7 +923,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       encoding: "gzip",
     });
 
-    const identityRepair = await webhooks.requestAgentCheckpointPrepareHistory(
+    const identityRepair = await webhooks.requestAgentSessionHistoryPrepare(
       {
         runId: run.runId,
         hash: historyHash,
@@ -1028,25 +964,24 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
     });
     const claim = await api.claimRunnerJob(run.runId);
     const headers = sandboxHeaders(claim.sandboxToken);
-    const compressedPrepare =
-      await webhooks.requestAgentCheckpointPrepareHistory(
-        {
-          runId: run.runId,
-          hash: historyHash,
-          rawSize: Buffer.byteLength(history, "utf8"),
-          encodedSize: compressedHistory.length,
-          encoding: "zstd",
-        },
-        headers,
-        [200],
-      );
+    const compressedPrepare = await webhooks.requestAgentSessionHistoryPrepare(
+      {
+        runId: run.runId,
+        hash: historyHash,
+        rawSize: Buffer.byteLength(history, "utf8"),
+        encodedSize: compressedHistory.length,
+        encoding: "zstd",
+      },
+      headers,
+      [200],
+    );
     expect(compressedPrepare.body).toMatchObject({
       existing: false,
       encoding: "zstd",
     });
 
     const mismatchedEncodedSize =
-      await webhooks.requestAgentCheckpointPrepareHistory(
+      await webhooks.requestAgentSessionHistoryPrepare(
         {
           runId: run.runId,
           hash: historyHash,
@@ -1063,7 +998,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
     );
 
     const mismatchedEncodingRepair =
-      await webhooks.requestAgentCheckpointPrepareHistory(
+      await webhooks.requestAgentSessionHistoryPrepare(
         {
           runId: run.runId,
           hash: historyHash,
@@ -1079,7 +1014,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       "Compressed session history upload encoding must match the existing blob",
     );
 
-    const identityRepair = await webhooks.requestAgentCheckpointPrepareHistory(
+    const identityRepair = await webhooks.requestAgentSessionHistoryPrepare(
       {
         runId: run.runId,
         hash: historyHash,
@@ -1101,7 +1036,6 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
     await fixture.run(async () => {
       mockEnv("S3_ENDPOINT", undefined);
       mockEnv("S3_PUBLIC_ENDPOINT", undefined);
-      const storages = createStoragesBddApi(context);
       const actor = fixture.actor;
       bdd.acceptAgentStorageWrites();
       api.acceptStorageDownloads();
@@ -1112,10 +1046,14 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         model: "claude-fable-5-1",
       });
       const volumeArchiveSize = 12_345;
-      storages.mockStoragePresignedUrls();
+      context.mocks.s3.getSignedUrl.mockResolvedValue(
+        "https://r2.example.com/storages/presigned?sig=bdd",
+      );
       // An Agent workflow's exact Storage version is the run's volume; its
       // archive is recorded at the mocked object size.
-      storages.mockStorageObjectsExist(volumeArchiveSize);
+      context.mocks.s3.send.mockResolvedValue({
+        ContentLength: volumeArchiveSize,
+      });
       const agent = await bdd.createAgent(actor, {
         displayName: "BDD resume agent",
         visibility: "private",
@@ -1154,9 +1092,11 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       if (!workflowVersion) {
         throw new Error("Expected the workflow's actual archive publication");
       }
-      storages.mockStoragePresignedUrls();
+      context.mocks.s3.getSignedUrl.mockResolvedValue(
+        "https://r2.example.com/storages/presigned?sig=bdd",
+      );
 
-      // The session-history blob for checkpointed conversations is hash-only
+      // The session-history blob for persisted conversations is hash-only
       // in R2 — answer the GetObject for it while keeping other s3 sends inert.
       const history = '{"type":"init"}\n{"type":"human","text":"hi"}\n';
       const historyHash = createHash("sha256").update(history).digest("hex");
@@ -1237,7 +1177,9 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         "bdd volume payload",
       );
       const memoryHeaders = sandboxHeaders(claim1.sandboxToken);
-      storages.mockStorageObjectsExist(volumeArchiveSize);
+      context.mocks.s3.send.mockResolvedValue({
+        ContentLength: volumeArchiveSize,
+      });
       const prepared = await webhooks.requestAgentStoragePrepare(
         { runId: r1.runId, storageId: memory1.storageId, files: [volumeFile] },
         memoryHeaders,
@@ -1315,7 +1257,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         {
           runId: r1.runId,
           exitCode: 0,
-          checkpoint: {
+          completion: {
             cliAgentType: "claude-code",
             cliAgentSessionId,
             cliAgentSessionHistoryHash: historyHash,
@@ -1339,7 +1281,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       const continued = await api.createThreadRun(actor, {
         agentId: agent.agentId,
         threadId: r1.threadId,
-        prompt: "continue the checkpointed session",
+        prompt: "continue the persisted session",
       });
       fixture.registerRun(continued.runId);
       const continuedClaim = await api.claimRunnerJob(continued.runId);
@@ -2251,12 +2193,12 @@ describe("RUN-04: agent run telemetry families", () => {
       {
         name: "legacy no session ID",
         sandboxResult: "noSessionId",
-        workspaceResult: undefined,
+        homeResult: undefined,
       },
       {
         name: "no reuse key",
         sandboxResult: "noReuseKey",
-        workspaceResult: "reused",
+        homeResult: "reused",
       },
     ] as const;
 
@@ -2272,7 +2214,7 @@ describe("RUN-04: agent run telemetry families", () => {
         {
           runId: run.runId,
           exitCode: 0,
-          checkpoint: {
+          completion: {
             cliAgentType: "claude-code",
             cliAgentSessionId: `bdd-cli-${run.runId}`,
             cliAgentSessionHistoryHash: createHash("sha256")
@@ -2280,7 +2222,7 @@ describe("RUN-04: agent run telemetry families", () => {
               .digest("hex"),
           },
           sandboxReuseResult: scenario.sandboxResult,
-          workspaceReuseResult: scenario.workspaceResult,
+          homeReuseResult: scenario.homeResult,
         },
         headers,
         [200],
@@ -2293,7 +2235,7 @@ describe("RUN-04: agent run telemetry families", () => {
       const runner = await api.requestRunRunner(actor, run.runId, [200]);
       expect(runner.body).toStrictEqual({
         sandboxReuseResult: scenario.sandboxResult,
-        workspaceReuseResult: scenario.workspaceResult ?? null,
+        homeReuseResult: scenario.homeResult ?? null,
         runnerHostname: null,
         runnerVersion: null,
         runnerId: expect.any(String),
@@ -2302,71 +2244,7 @@ describe("RUN-04: agent run telemetry families", () => {
     }
   });
 
-  it("drops invalid persisted reuse outcomes independently", async () => {
-    const fixture = await store.set(
-      seedUsageStateFixture$,
-      undefined,
-      context.signal,
-    );
-    onTestFinished(async () => {
-      await store.set(deleteUsageStateFixture$, fixture, context.signal);
-    });
-    const compose = await store.set(seedCompose$, fixture, context.signal);
-    const actor = bdd.user(fixture);
-    const invalidSandbox = await store.set(
-      seedRun$,
-      {
-        ...fixture,
-        composeId: compose.agentId,
-        status: "completed",
-        completedAt: nowDate(),
-        sandboxReuseResult: "unknownSandboxResult",
-        workspaceReuseResult: "reused",
-      },
-      context.signal,
-    );
-    const invalidWorkspace = await store.set(
-      seedRun$,
-      {
-        ...fixture,
-        composeId: compose.agentId,
-        status: "completed",
-        completedAt: nowDate(),
-        sandboxReuseResult: "poolMiss",
-        workspaceReuseResult: "unknownWorkspaceResult",
-      },
-      context.signal,
-    );
-
-    const sandboxResult = await api.requestRunRunner(
-      actor,
-      invalidSandbox.runId,
-      [200],
-    );
-    expect(sandboxResult.body).toStrictEqual({
-      sandboxReuseResult: null,
-      workspaceReuseResult: "reused",
-      runnerHostname: null,
-      runnerVersion: null,
-      runnerId: null,
-      runnerHeartbeatGeneration: null,
-    });
-    const workspaceResult = await api.requestRunRunner(
-      actor,
-      invalidWorkspace.runId,
-      [200],
-    );
-    expect(workspaceResult.body).toStrictEqual({
-      sandboxReuseResult: "poolMiss",
-      workspaceReuseResult: null,
-      runnerHostname: null,
-      runnerVersion: null,
-      runnerId: null,
-      runnerHeartbeatGeneration: null,
-    });
-  });
-
-  it("bounds run context Axiom scans around the run creation time", async () => {
+  it("reads fresh run context within the creation-time window after a cached miss", async () => {
     const actor = await entitledActor();
     await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
@@ -2390,13 +2268,47 @@ describe("RUN-04: agent run telemetry families", () => {
     if (!Number.isFinite(runCreatedAtMs)) {
       throw new Error("Expected the created run to have a valid creation time");
     }
-    dispatchAxiomQueries({
-      [agentRun.runId]: {
-        runContext: [{ runId: agentRun.runId, sessionId: "bdd-bounded" }],
-      },
-    });
-    const queryStartIndex = axiomCallCount();
+    context.mocks.axiom.useRealQuery.mockReturnValue(true);
+    let snapshotVisible = false;
+    const queryRequests: {
+      readonly body: unknown;
+      readonly noCache: string | null;
+    }[] = [];
+    server.use(
+      http.post(
+        "https://api.axiom.co/v1/datasets/_apl",
+        async ({ request }) => {
+          const noCache = new URL(request.url).searchParams.get("nocache");
+          queryRequests.push({ body: await request.json(), noCache });
+          // Cached reads retain the initial miss after the snapshot is ingested.
+          return HttpResponse.json({
+            matches:
+              noCache === "true" && snapshotVisible
+                ? [
+                    {
+                      _time: runCreatedAt,
+                      data: {
+                        runId: agentRun.runId,
+                        sessionId: "bdd-bounded",
+                      },
+                    },
+                  ]
+                : [],
+          });
+        },
+      ),
+    );
 
+    const pendingContext = await api.requestRunContext(
+      actor,
+      agentRun.runId,
+      [404],
+    );
+    expect(pendingContext.body).toStrictEqual({
+      error: { message: "Run context not available", code: "NOT_FOUND" },
+    });
+
+    snapshotVisible = true;
     const contextRead = await api.requestRunContext(
       actor,
       agentRun.runId,
@@ -2411,16 +2323,17 @@ describe("RUN-04: agent run telemetry families", () => {
       sessionId: "bdd-bounded",
     });
 
-    const runContextQueries = context.mocks.axiom.query.mock.calls
-      .slice(queryStartIndex)
-      .filter(([apl]) => {
-        return typeof apl === "string" && apl.includes("['run-context']");
-      });
-    expect(runContextQueries).toHaveLength(1);
-    expect(runContextQueries[0]?.[1]).toStrictEqual({
-      startTime: new Date(runCreatedAtMs - HOUR_MS).toISOString(),
-      endTime: new Date(runCreatedAtMs + HOUR_MS).toISOString(),
-    });
+    const expectedQuery = {
+      noCache: "true",
+      body: {
+        apl: `['vm0-run-context-dev']
+| where runId == "${agentRun.runId}"
+| limit 1`,
+        startTime: new Date(runCreatedAtMs - HOUR_MS).toISOString(),
+        endTime: new Date(runCreatedAtMs + HOUR_MS).toISOString(),
+      },
+    };
+    expect(queryRequests).toStrictEqual([expectedQuery, expectedQuery]);
   });
 
   it("maps agent run context, network, and runner metadata from axiom snapshots", async () => {
@@ -2445,7 +2358,7 @@ describe("RUN-04: agent run telemetry families", () => {
       {
         runId: agentRun.runId,
         exitCode: 0,
-        checkpoint: {
+        completion: {
           cliAgentType: "claude-code",
           cliAgentSessionId: `bdd-cli-${agentRun.runId}`,
           cliAgentSessionHistoryHash: createHash("sha256")
@@ -2453,7 +2366,7 @@ describe("RUN-04: agent run telemetry families", () => {
             .digest("hex"),
         },
         sandboxReuseResult: "reused",
-        workspaceReuseResult: "sandboxReused",
+        homeReuseResult: "sandboxReused",
       },
       headers,
       [200],
@@ -2994,7 +2907,7 @@ describe("RUN-04: agent run telemetry families", () => {
     const runner = await api.requestRunRunner(actor, runId, [200]);
     expect(runner.body).toStrictEqual({
       sandboxReuseResult: "reused",
-      workspaceReuseResult: "sandboxReused",
+      homeReuseResult: "sandboxReused",
       runnerHostname: null,
       runnerVersion: null,
       runnerId: expect.any(String),
@@ -3003,7 +2916,7 @@ describe("RUN-04: agent run telemetry families", () => {
     const bareRunner = await api.requestRunRunner(actor, bareRun.runId, [200]);
     expect(bareRunner.body).toStrictEqual({
       sandboxReuseResult: null,
-      workspaceReuseResult: null,
+      homeReuseResult: null,
       runnerHostname: null,
       runnerVersion: null,
       runnerId: null,
@@ -3259,42 +3172,49 @@ describe("RUN-04/OPS-01: agent run logs", () => {
   });
 
   it("returns pending and failed run-log detail residue", async () => {
-    const { actor, agentOne } = await setupRunLogFixture();
-    const pendingRun = await api.createThreadRun(actor, {
-      agentId: agentOne.agentId,
-      prompt: "pending detail run",
-    });
-    const pendingDetail = await reads.requestReadLogById(
-      actor,
-      pendingRun.runId,
-      [200],
-    );
-    expect(pendingDetail.body).toMatchObject({
-      id: pendingRun.runId,
-      status: "pending",
-      sessionId: null,
-      completedAt: null,
-    });
-    await api.requestCancelRun(actor, pendingRun.runId, [200]);
+    const owned = await publicChatActor(context);
+    const { actor, agentId } = owned;
+    await owned.run(async () => {
+      const pendingRun = await owned.sendChatRun(actor, {
+        agentId,
+        prompt: "pending detail run",
+      });
+      const pendingDetail = await reads.requestReadLogById(
+        actor,
+        pendingRun.runId,
+        [200],
+      );
+      expect(pendingDetail.body).toMatchObject({
+        id: pendingRun.runId,
+        status: "pending",
+        sessionId: null,
+        completedAt: null,
+      });
+      await api.requestCancelRun(actor, pendingRun.runId, [200]);
 
-    const failedRun = await api.createThreadRun(actor, {
-      agentId: agentOne.agentId,
-      prompt: "failed detail run",
-    });
-    await webhooks.requestAgentComplete(
-      { runId: failedRun.runId, exitCode: 1, error: "bdd failure" },
-      sandboxHeaders(api.sandboxTokenForRun(actor, failedRun.runId)),
-      [200],
-    );
-    const failedDetail = await reads.requestReadLogById(
-      actor,
-      failedRun.runId,
-      [200],
-    );
-    expect(failedDetail.body).toMatchObject({
-      id: failedRun.runId,
-      status: "failed",
-      error: "bdd failure",
+      const failedRun = await owned.sendChatRun(actor, {
+        agentId,
+        prompt: "failed detail run",
+      });
+      const { claim } = await owned.claimChatRun(
+        owned.runnerGroup,
+        failedRun.runId,
+      );
+      await webhooks.requestAgentComplete(
+        { runId: failedRun.runId, exitCode: 1, error: "bdd failure" },
+        sandboxHeaders(claim.sandboxToken),
+        [200],
+      );
+      const failedDetail = await reads.requestReadLogById(
+        actor,
+        failedRun.runId,
+        [200],
+      );
+      expect(failedDetail.body).toMatchObject({
+        id: failedRun.runId,
+        status: "failed",
+        error: "bdd failure",
+      });
     });
   });
 

@@ -44,15 +44,32 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.StablePreviewFullscreen]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Stable preview fullscreen",
+    description:
+      "Keep thread sidebars in a shell-owned host and expand artifact previews without moving DOM nodes.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ArtifactSidebarPreview]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Artifact sidebar preview",
+    description:
+      "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ArtifactPreviews]: {
     maintainer: "bingjie@okou.ai",
     description: "Capture and publish sandbox covers for HTML artifacts.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.NotifyMail]: {
-    maintainer: "lancy@okou.ai",
-    description: "Allow agents to send Okou email notifications to their user",
+  [FeatureSwitchKey.SlackLinkUnfurls]: {
+    maintainer: "bingjie@okou.ai",
+    description: "Show public artifact covers in Slack link previews.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.HomeTaskRecommendations]: {
     maintainer: "yuma@okou.ai",
@@ -90,13 +107,19 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ChatHomeCompliance]: {
+    maintainer: "tongx@okou.ai",
+    displayName: "Chat home compliance",
+    description:
+      "Show the compliance status badges at the bottom of the chat home.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ChatComposerLayout]: {
     maintainer: "bingjie@okou.ai",
     description:
       "Keep the chat header and input anchored, with a single bottom safe-area reserve.",
-    enabled: false,
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
-    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+    enabled: true,
   },
   [FeatureSwitchKey.BrowserNativeInput]: {
     maintainer: "liangyou@okou.ai",
@@ -114,12 +137,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     description: "Enable the Ahrefs SEO connector",
     enabled: false,
-  },
-  [FeatureSwitchKey.PlaudConnector]: {
-    maintainer: "liangyou@okou.ai",
-    description: "Enable the Plaud MCP connector",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.BillConnector]: {
     maintainer: "yuma@okou.ai",
@@ -286,6 +303,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Send preview chat runs through real agent CLIs instead of preview mock runners.",
     enabled: false,
   },
+  [FeatureSwitchKey.CodexExecution]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Codex execution (test only)",
+    description:
+      "Test-only override to use Codex instead of Pi for Auto and supported ChatGPT subscription runs.",
+    enabled: false,
+  },
   [FeatureSwitchKey.PiMemory]: {
     maintainer: "lancy@okou.ai",
     description:
@@ -389,8 +413,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Sync presentation artifacts to Drive as native Google Slides decks instead of storing the uploaded file.",
     enabled: false,
-    // Narrowed to the maintainer while conversion fidelity is only measured
-    // against hand-built decks; the template corpus has not been checked yet.
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },

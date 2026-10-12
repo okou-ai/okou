@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   discordAttachmentSchema,
+  discordMessageReferenceSchema,
   discordSnowflakeSchema,
   discordUserSchema,
 } from "../signals/external/discord-client";
@@ -13,6 +14,7 @@ export const discordMessageCreateSchema = z.object({
   content: z.string().max(4000),
   mentions: z.array(discordUserSchema).max(100),
   attachments: z.array(discordAttachmentSchema).max(10),
+  message_reference: discordMessageReferenceSchema.optional(),
   webhook_id: discordSnowflakeSchema.optional(),
   type: z.number().int(),
   edited_timestamp: z.string().nullable().optional(),

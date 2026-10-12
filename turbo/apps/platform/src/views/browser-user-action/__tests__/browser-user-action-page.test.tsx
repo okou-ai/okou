@@ -23,6 +23,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { navigateTo$ } from "../../../signals/route.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
@@ -73,6 +74,32 @@ function action(
         chatThreadSortEventId: CANCEL_SORT_ID,
       },
     },
+  };
+}
+
+function sensitiveAction(
+  state: BrowserUserActionResponse["state"],
+): Extract<BrowserUserActionResponse, { kind: "input" }> {
+  const request = action(state);
+  return {
+    ...request,
+    fields: [
+      ...request.fields,
+      {
+        key: "password",
+        label: "Password",
+        fieldKind: "password",
+        required: true,
+        control: { tagName: "INPUT", inputType: "password" },
+      },
+      {
+        key: "code",
+        label: "Verification code",
+        fieldKind: "one_time_code",
+        required: false,
+        control: { tagName: "INPUT", inputType: "number" },
+      },
+    ],
   };
 }
 
@@ -2160,19 +2187,8 @@ test("Changed site constraints require a fresh preflight without losing ordinary
   expect(within(form).getByLabelText(/Remembered answer/u)).toHaveValue("abcd");
 });
 
-test("Returning to a pending standalone form keeps its password draft", async () => {
-  const pending = {
-    ...action("pending"),
-    fields: [
-      {
-        key: "password",
-        label: "Password",
-        fieldKind: "password" as const,
-        required: true,
-        control: { tagName: "INPUT" as const, inputType: "password" as const },
-      },
-    ],
-  };
+test("Tab return keeps password and code drafts in an active standalone form", async () => {
+  const pending = sensitiveAction("pending");
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, pending);
   });
@@ -2189,11 +2205,56 @@ test("Returning to a pending standalone form keeps its password draft", async ()
 
   const password = await screen.findByLabelText("Password");
   await fill(password, "temporary-secret");
+  await fill(screen.getByLabelText("Verification code"), "012345");
   act(() => {
     window.dispatchEvent(new Event("focus"));
   });
-  expect(screen.getByLabelText("Password")).toBe(password);
-  expect(password).toHaveValue("temporary-secret");
+  expect(screen.getByLabelText("Password")).toHaveValue("temporary-secret");
+  expect(screen.getByLabelText("Verification code")).toHaveValue("012345");
+  act(() => {
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  expect(screen.getByLabelText("Password")).toHaveValue("temporary-secret");
+  expect(screen.getByLabelText("Verification code")).toHaveValue("012345");
+});
+
+test("Leaving and returning to a standalone form clears password and code drafts", async () => {
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, sensitiveAction("pending"));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, sensitiveAction("pending"));
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  await fill(within(form).getByLabelText("Password"), "synthetic-password");
+  await fill(within(form).getByLabelText("Verification code"), "012345");
+  const home = queryAllByRoleFast("link").find((link) => {
+    return link.getAttribute("href") === "/connectors";
+  });
+  if (!home) {
+    throw new Error("Missing product home link");
+  }
+  click(home);
+  await waitFor(() => {
+    expect(window.location.pathname).toBe("/connectors");
+    expect(form).not.toBeInTheDocument();
+  });
+  act(() => {
+    window.history.back();
+  });
+  const returned = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  expect(within(returned).getByLabelText("Password")).toHaveValue("");
+  expect(within(returned).getByLabelText("Verification code")).toHaveValue("");
 });
 
 test("The standalone form records cancellation before notifying the agent", async () => {
@@ -2345,6 +2406,343 @@ test("Retry after a failed standalone request also runs preflight", async () => 
   await screen.findByRole("form", { name: "Enter information in browser" });
   expect(reads).toBe(2);
   expect(checks).toBe(1);
+});
+
+test.each(["apply", "cancel"] as const)(
+  "Reconciles a lost %s response before offering a stable callback retry",
+  async (operation) => {
+    let current: BrowserUserActionResponse["state"] = "pending";
+    let notificationFailed = false;
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return respond(200, sensitiveAction(current));
+    });
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      return respond(200, sensitiveAction("pending"));
+    });
+    context.mocks.http.post(
+      `*${browserUserActionsContract[operation].path.replace(":requestToken", REQUEST_TOKEN)}`,
+      () => {
+        expect(current).toBe("pending");
+        current = operation === "apply" ? "succeeded" : "cancelled";
+        return HttpResponse.error();
+      },
+    );
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      expect(body.prompt).toBe(
+        operation === "apply"
+          ? CALLBACK_PROMPT
+          : "The user cancelled the browser input request.",
+      );
+      expect(body.clientEventId).toBe(
+        operation === "apply" ? SUCCESS_CLIENT_ID : CANCEL_CLIENT_ID,
+      );
+      expect(body.chatThreadSortEventId).toBe(
+        operation === "apply" ? SUCCESS_SORT_ID : CANCEL_SORT_ID,
+      );
+      if (!notificationFailed) {
+        notificationFailed = true;
+        return respond(503, {
+          error: { code: "CHAT_UNAVAILABLE", message: "Chat unavailable" },
+        });
+      }
+      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    });
+
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    const form = await screen.findByRole("form", {
+      name: "Enter information in browser",
+    });
+    await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
+    await fill(within(form).getByLabelText("Password"), "synthetic-password");
+    await fill(within(form).getByLabelText("Verification code"), "012345");
+    click(button(operation === "apply" ? "Add to browser" : "Cancel"));
+
+    await expect(
+      screen.findByText(
+        operation === "apply" ? "Information added" : "Request cancelled",
+      ),
+    ).resolves.toBeInTheDocument();
+    expect(screen.queryByDisplayValue("owner@example.test")).toBeNull();
+    expect(screen.queryByDisplayValue("synthetic-password")).toBeNull();
+    expect(screen.queryByDisplayValue("012345")).toBeNull();
+    click(button("Notify agent"));
+    await waitFor(() => {
+      expect(screen.getByText("Agent not notified.")).toBeInTheDocument();
+      expect(button("Retry")).toBeEnabled();
+    });
+    click(button("Retry"));
+    await expect(
+      screen.findByText("Agent notified"),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
+test.each([
+  ["stale", "Fields changed"],
+  ["uncertain", "Check the browser"],
+  ["expired", "Request expired"],
+] as const)(
+  "A populated standalone form removes sensitive inputs after %s feedback",
+  async (outcome, title) => {
+    let current: BrowserUserActionResponse["state"] = "pending";
+    let expired = false;
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return expired
+        ? respond(410, {
+            error: { code: "BROWSER_USER_ACTION_EXPIRED", message: "Expired" },
+          })
+        : respond(200, sensitiveAction(current));
+    });
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      return respond(200, sensitiveAction("pending"));
+    });
+    context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
+      if (outcome === "expired") {
+        expired = true;
+        return respond(410, {
+          error: { code: "BROWSER_USER_ACTION_EXPIRED", message: "Expired" },
+        });
+      }
+      current = outcome;
+      return respond(200, sensitiveAction(current));
+    });
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    const form = await screen.findByRole("form", {
+      name: "Enter information in browser",
+    });
+    await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
+    await fill(within(form).getByLabelText("Password"), "synthetic-password");
+    await fill(within(form).getByLabelText("Verification code"), "012345");
+    click(button("Add to browser"));
+    await expect(screen.findByText(title)).resolves.toBeInTheDocument();
+    expect(screen.queryByRole("form")).toBeNull();
+    expect(screen.queryByDisplayValue("synthetic-password")).toBeNull();
+    expect(screen.queryByDisplayValue("012345")).toBeNull();
+  },
+);
+
+test("An authoritative pending recovery rechecks the form before an explicit retry", async () => {
+  let responseLost = false;
+  let current: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, action(current));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    const pending = action("pending");
+    return respond(200, {
+      ...pending,
+      fields: pending.fields.map((field) => {
+        return responseLost && field.key === "email"
+          ? { ...field, label: "Confirmed email" }
+          : field;
+      }),
+    });
+  });
+  context.mocks.http.post(
+    `*${browserUserActionsContract.apply.path.replace(":requestToken", REQUEST_TOKEN)}`,
+    () => {
+      if (!responseLost) {
+        responseLost = true;
+        return HttpResponse.error();
+      }
+      current = "succeeded";
+      return HttpResponse.json(action(current));
+    },
+  );
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
+  await fill(
+    within(form).getByLabelText("Remembered answer"),
+    "Keep this draft",
+  );
+  click(button("Add to browser"));
+
+  await expect(
+    screen.findByLabelText(/Confirmed email/u),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByLabelText("Remembered answer")).toHaveValue(
+    "Keep this draft",
+  );
+  expect(screen.queryByText("Information added")).toBeNull();
+  click(button("Add to browser"));
+  await expect(
+    screen.findByText("Agent notified"),
+  ).resolves.toBeInTheDocument();
+});
+
+test.each([
+  ["succeeded", "Information added"],
+  ["cancelled", "Request cancelled"],
+  ["stale", "Fields changed"],
+  ["uncertain", "Check the browser"],
+] as const)(
+  "An initially applying action reaches %s",
+  async (terminal, title) => {
+    let applying = true;
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      const response = action(applying ? "applying" : terminal);
+      applying = false;
+      return respond(200, response);
+    });
+
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+
+    await expect(screen.findByText(title)).resolves.toBeInTheDocument();
+    expect(screen.queryByRole("form")).toBeNull();
+  },
+);
+
+test("An unresolved applying action stops waiting and offers a read-only check", async () => {
+  let current: BrowserUserActionResponse["state"] = "applying";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, action(current));
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+
+  await expect(
+    screen.findByText("Outcome not confirmed"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByRole("form")).toBeNull();
+  current = "uncertain";
+  click(button("Check status"));
+  await expect(
+    screen.findByText("Check the browser"),
+  ).resolves.toBeInTheDocument();
+});
+
+test(
+  "A stalled recovery read reaches its deadline and permits another status check",
+  // This verifies the real 90-second owner deadline without replacing the clock.
+  { timeout: 120_000 },
+  async () => {
+    const started = createDeferredPromise<AbortSignal>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    let initial = true;
+    let available = false;
+    context.mocks.api(
+      browserUserActionsContract.get,
+      async ({ request, respond }) => {
+        if (initial) {
+          initial = false;
+          return respond(200, action("applying"));
+        }
+        if (!available) {
+          started.resolve(request.signal);
+          await release.promise;
+        }
+        return respond(200, action("uncertain"));
+      },
+    );
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    const readSignal = await started.promise;
+    await expect(
+      screen.findByText("Outcome not confirmed", {}, { timeout: 100_000 }),
+    ).resolves.toBeInTheDocument();
+    expect(readSignal.aborted).toBeTruthy();
+    available = true;
+    await act(async () => {
+      release.resolve(undefined);
+      await release.promise;
+    });
+    click(button("Check status"));
+    await expect(
+      screen.findByText("Check the browser"),
+    ).resolves.toBeInTheDocument();
+    expect(screen.queryByRole("form")).toBeNull();
+  },
+);
+
+test("A recovery read is cancelled when the route changes and its late result stays stale", async () => {
+  const nextToken = `vm0_browser_user_action_${"c".repeat(43)}`;
+  const started = createDeferredPromise<AbortSignal>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  let initial = true;
+  context.mocks.api(
+    browserUserActionsContract.get,
+    async ({ params, request, respond }) => {
+      if (params.requestToken === nextToken) {
+        return respond(200, {
+          ...action("cancelled"),
+          requestToken: nextToken,
+        });
+      }
+      if (initial) {
+        initial = false;
+        return respond(200, action("applying"));
+      }
+      started.resolve(request.signal);
+      await release.promise;
+      return respond(200, action("pending"));
+    },
+  );
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const readSignal = await started.promise;
+  await act(async () => {
+    const next = new URL(
+      route().replace(REQUEST_TOKEN, nextToken),
+      window.location.origin,
+    );
+    await context.store.set(
+      navigateTo$,
+      "/browser/actions/:browserActionToken",
+      {
+        pathParams: { browserActionToken: nextToken },
+        searchParams: next.searchParams,
+      },
+      context.signal,
+    );
+  });
+  await expect(
+    screen.findByText("Request cancelled"),
+  ).resolves.toBeInTheDocument();
+  expect(readSignal.aborted).toBeTruthy();
+  await act(async () => {
+    release.resolve(undefined);
+    await release.promise;
+  });
+  expect(screen.getByText("Request cancelled")).toBeInTheDocument();
+  expect(screen.queryByRole("form")).toBeNull();
 });
 
 test("A terminal standalone action retries only its stable callback", async () => {

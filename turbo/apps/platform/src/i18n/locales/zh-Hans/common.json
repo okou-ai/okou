@@ -122,20 +122,23 @@
         "title": "未找到日志"
       },
       "runner": {
-        "cacheMiss": "没有缓存的工作区匹配该复用键。",
+        "cacheMiss": "没有缓存的主目录匹配该复用键。",
         "deviceLimitMismatch": "空闲池中有对应条目，但它的设备限流状态不匹配。",
-        "diskPressure": "运行器磁盘空间紧张，已跳过工作区复用。",
+        "diskPressure": "运行器磁盘空间紧张，已跳过主目录复用。",
         "environment": "环境",
         "featureDisabled": "本次运行已禁用沙箱复用。",
         "framework": "框架",
         "generation": "代次",
+        "home": "主目录",
+        "homeNoReuseKey": "没有可用的主目录复用键。",
+        "homeReusedDescription": "主目录已从运行器缓存恢复。",
         "hostname": "主机名",
-        "invalidMetadata": "缓存的工作区元数据无效。",
+        "invalidMetadata": "缓存的主目录元数据无效。",
         "invalidWorkingDir": "请求的工作目录无法复用。",
-        "lockBusy": "另一次运行正在准备同一个工作区。",
+        "lockBusy": "另一次运行正在准备同一个主目录。",
         "noReuseKey": "没有可用的复用键来匹配空闲沙箱。",
         "noSessionId": "历史记录：无法获知沙箱未被复用的具体原因。",
-        "notConfigured": "本次运行未配置工作区复用。",
+        "notConfigured": "本次运行未配置主目录复用。",
         "notReused": "未复用",
         "outcomeUnavailableDescription": "暂无更多详情。",
         "poolMiss": "空闲池中没有匹配的沙箱。",
@@ -145,23 +148,20 @@
         "reusedDescription": "沙箱已从空闲池中唤醒。",
         "runnerId": "运行器 ID",
         "sandbox": "沙箱",
-        "sandboxPrepareFallback": "找到了缓存的工作区，但沙箱准备完成后无法使用。",
-        "sandboxReusedDescription": "工作区在复用的沙箱中依然可用。",
+        "sandboxPrepareFallback": "找到了缓存的主目录，但沙箱准备完成后无法使用。",
+        "sandboxReusedDescription": "主目录在复用的沙箱中保持可用。",
         "startup": "启动",
         "startupCold": "冷启动",
         "startupColdDescription": "已准备全新的沙箱和工作区。",
+        "startupHome": "主目录复用",
+        "startupHomeDescription": "全新的沙箱恢复了缓存的主目录。",
         "startupSandbox": "沙箱复用",
         "startupSandboxDescription": "沙箱及其工作区都被复用。",
         "startupUnknown": "未知",
         "startupUnknownDescription": "暂无启动复用详情。",
-        "startupWorkspace": "工作区复用",
-        "startupWorkspaceDescription": "全新的沙箱恢复了缓存的工作区。",
         "unavailable": "不可用",
         "unparkFailed": "唤醒失败，已置备全新的沙箱。",
-        "version": "版本",
-        "workspace": "工作区",
-        "workspaceNoReuseKey": "没有可用的工作区复用键。",
-        "workspaceReusedDescription": "工作区已从运行器缓存恢复。"
+        "version": "版本"
       },
       "steps": {
         "matched": "（匹配 {{matched}}/{{total}}）",
@@ -907,20 +907,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Desktop已登录，可以关闭这个窗口了。",
-        "connecting": "正在连接你的Desktop会话。",
-        "consumed": "正在Desktop中完成登录，请保持这个窗口打开。",
-        "failed": "登录没能完成。请从Desktop重新开始，或在这个浏览器里重试。",
-        "no-workspaces": "请先在网页端创建或加入一个工作区，然后从Desktop重新登录。",
-        "pending": "打开Desktop继续登录。",
-        "selecting": "为这台电脑选择一个工作区。"
-      },
-      "reopen": "打开Desktop",
-      "retry": "重试",
-      "title": "登录Desktop"
-    },
     "documentTitles": {
       "signIn": "登录",
       "signUp": "注册"
@@ -1704,6 +1690,9 @@
       "cancelled": "请求已取消",
       "cancelling": "正在取消…",
       "checkFailed": "无法检查浏览器。填写内容已保留，请重试后提交。",
+      "checkingOutcome": "正在检查浏览器状态",
+      "checkingOutcomeDescription": "正在等待浏览器确认此请求。",
+      "checkStatus": "检查状态",
       "completed": "信息已添加",
       "confirmRangeValue": "使用当前值",
       "continue": "通知 Agent",
@@ -1719,6 +1708,8 @@
       "loadingDescription": "正在检查这个请求…",
       "open": "输入信息",
       "optional": "（选填）",
+      "outcomeNotConfirmed": "结果尚未确认",
+      "outcomeNotConfirmedDescription": "浏览器可能已经完成此请求。请先检查状态，再决定是否重试。",
       "required": "（必填）",
       "retry": "重试",
       "site": "网站",
@@ -2123,8 +2114,6 @@
       "number": "数字"
     },
     "sidebar": {
-      "allArchived": "你的聊天都已归档",
-      "allCaughtUp": "已全部看完",
       "allChats": "全部聊天",
       "archive": "归档聊天",
       "archived": "已归档",
@@ -2135,7 +2124,9 @@
       "deleteTitle": "删除聊天？",
       "draft": "草稿",
       "empty": "发起对话后，会显示在这里",
+      "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "收件箱",
+      "inboxEmpty": "收件箱是空的",
       "markUnread": "标为未读",
       "movePinDown": "下移",
       "movePinUp": "上移",
@@ -2799,8 +2790,12 @@
       "resize": "调整侧边栏宽度"
     },
     "toasts": {
+      "archived": "聊天已归档",
+      "archivedMuted": "聊天已归档，已静音的聊天有新回复也不会回来",
       "copied": "已复制",
-      "deleted": "聊天已删除"
+      "deleted": "聊天已删除",
+      "unarchived": "聊天已移回收件箱",
+      "undo": "撤销"
     },
     "voice": {
       "checkingLimit": "正在检查语音输入额度",
@@ -3804,6 +3799,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "重试"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "请求失败"
@@ -3916,22 +3914,6 @@
         "back": "返回",
         "continue": "继续",
         "notNow": "暂不"
-      },
-      "compliance": {
-        "frameworks": {
-          "ccpa": "CCPA / CPRA",
-          "gdpr": "GDPR",
-          "hipaa": "HIPAA",
-          "iso27001": "ISO/IEC 27001",
-          "soc2": "SOC 2 Type II"
-        },
-        "link": "安全详情",
-        "status": {
-          "aligned": "已对标",
-          "compliant": "已合规",
-          "inProgress": "进行中"
-        },
-        "title": "Okou 的合规进展，让你用得放心"
       },
       "documentTitles": {
         "experience": "你的AI使用经验",
@@ -4905,6 +4887,27 @@
           "title": "IndexedDB存储",
           "unavailable": "IndexedDB存储不可用。"
         },
+        "morningBriefEmail": {
+          "checkStatus": "检查投递状态",
+          "description": "使用 Morning Brief 模板向你的账号邮箱发送固定样例。不会运行 Agent，也不会改变早报计划。",
+          "reasons": {
+            "delivery-failed": "投递失败；此前的发送尝试仍可能已被邮件服务接受。",
+            "expired": "投递已过期；此前的发送尝试仍可能已被邮件服务接受。",
+            "no-email": "已跳过：你的账号没有邮箱地址。",
+            "suppressed": "已跳过：你的账号邮箱已被列入投递屏蔽名单。",
+            "unsubscribed": "已跳过：你的账号已退订邮件更新。"
+          },
+          "requestFailed": "请求未完成。重试会复用原请求，避免重复发送。",
+          "retry": "重试测试邮件",
+          "send": "发送测试邮件",
+          "sendAnother": "再发送一封测试邮件",
+          "sending": "正在发送…",
+          "status": {
+            "queued": "已排队。再次发送样例前，请检查投递状态。",
+            "sent": "邮件服务已接受。请检查收件箱和垃圾邮件；尚未确认实际到达。"
+          },
+          "title": "Morning Brief 测试邮件"
+        },
         "openrouterPreset": {
           "description": "对整个组织后续新建的 Auto 和 Okou 1.0 内置模型运行生效，不影响已有运行。",
           "loading": "加载中…",
@@ -5137,6 +5140,22 @@
   },
   "shared": {
     "breadcrumb": "面包屑导航",
+    "compliance": {
+      "frameworks": {
+        "ccpa": "CCPA / CPRA",
+        "gdpr": "GDPR",
+        "hipaa": "HIPAA",
+        "iso27001": "ISO/IEC 27001",
+        "soc2": "SOC 2 Type II"
+      },
+      "link": "安全详情",
+      "status": {
+        "aligned": "已对标",
+        "compliant": "已合规",
+        "inProgress": "进行中"
+      },
+      "title": "Okou 的合规进展，让你用得放心"
+    },
     "errorBoundary": {
       "contactSupport": "客服",
       "description": "再试一次，或者联系我们",
@@ -5301,6 +5320,14 @@
     },
     "clearSearch": "清除搜索",
     "custom": "自定义",
+    "delete": {
+      "cancel": "取消",
+      "confirm": "删除模板",
+      "deleting": "正在删除...",
+      "description": "「{{title}}」将对所有可以看到它的人移除。此操作无法撤销。",
+      "failed": "无法删除模板，请重试。",
+      "title": "删除模板？"
+    },
     "detail": {
       "back": "自定义模板",
       "page": "第{{number}}页"
@@ -6282,22 +6309,31 @@
     "connected": "已连接",
     "connectedWithDetail": "已连接（{{detail}}）",
     "discord": {
-      "accountSetup": "你的账号尚未连接。暂时无法连接新的Discord账号。",
-      "adminSetup": "服务器设置功能暂未开放。现有已验证的配置仍可继续使用Discord。",
+      "accountSetup": "通过Discord官方浏览器授权连接你的账号。",
+      "adminSetup": "将Okou安装到你的Discord服务器，再连接账号。",
+      "approvalConfirmed": "已确认浏览器授权。请关闭此标签页，在原先的Works标签页中完成连接。",
+      "approvalFailed": "确认失败。请使用原先的Okou账号和组织登录，或重新发起授权。",
+      "approvalPrompt": "请使用与原先Works标签页相同的Okou账号和组织进行确认。仅确认授权不会连接账号。",
+      "approve": "确认Discord授权",
+      "approving": "正在确认…",
+      "authorizationError": "未能完成Discord授权。请在此卡片重试。",
+      "authorizing": "正在授权…",
+      "browserConsent": "完成Discord授权，并在该标签页使用Okou账号确认。仅关闭标签页不会连接账号。",
       "chooseDmServer": "选择服务器",
       "description": "在服务器中提及Okou，或给机器人发送私信。",
       "disconnect": "断开Discord连接",
       "dmServer": "私信默认服务器",
+      "install": "安装到Discord",
       "limitedContext": "上下文受限：Okou可能无法接收频道中的普通消息。请提及Okou，并提供所需的详细信息。",
-      "loadError": "无法加载Discord状态。",
-      "loading": "正在加载Discord状态…",
-      "memberSetup": "请向组织管理员了解Discord访问权限。服务器设置功能暂未开放。",
+      "memberSetup": "请组织管理员将Okou安装到你的Discord服务器。",
       "moreOptions": "更多Discord选项",
+      "pendingConsent": "此标签页已无授权凭据。请关闭它，并从原先的Works标签页重新发起授权。",
+      "popupBlocked": "请允许弹出窗口以授权Discord，然后重试。",
       "retry": "重试",
       "server": "服务器：{{name}}",
       "suspended": "Discord暂时不可用。现有连接会保留。",
       "title": "Discord",
-      "unconfigured": "此组织暂时无法使用Discord。",
+      "unconfigured": "此组织尚未配置Discord。",
       "uninstall": "移除Discord",
       "uninstallDescription": "这会断开此组织所有成员与Discord的连接。其他组织的连接会保留。",
       "uninstallTitle": "从此组织移除Discord？"

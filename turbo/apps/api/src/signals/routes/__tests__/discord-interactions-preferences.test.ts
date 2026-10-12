@@ -39,11 +39,21 @@ import { userModelPreferenceRoutes } from "../user-model-preference";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
-  deleteDiscordFixture,
+  removePublicDiscordBinding,
+  mockDiscordApplication,
   mockDiscordMemberships,
-  seedDiscordFixture,
+  createPublicDiscordBinding,
   uniqueDiscordSnowflake,
 } from "./helpers/discord";
+import {
+  DISCORD_TEST_APPLICATION_ID,
+  discordChatThreads,
+  discordMessageForTest,
+  mockDiscordProvider,
+  postDiscordMessage,
+  setupConnectedDiscordActor,
+} from "./helpers/discord-fixture";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
@@ -56,7 +66,7 @@ const publicKey = keys.publicKey
   .export({ format: "der", type: "spki" })
   .subarray(-32)
   .toString("hex");
-const applicationId = "1464000000000000101";
+const applicationId = DISCORD_TEST_APPLICATION_ID;
 
 const messageComponentSchema = z.discriminatedUnion("type", [
   z.object({
@@ -123,50 +133,103 @@ async function enableDiscord(owner: Actor, enabled = true): Promise<void> {
 async function fixture(
   owner = actor(),
   discordUserId = uniqueDiscordSnowflake(),
-  history?: Parameters<typeof seedDiscordFixture>[1]["history"],
 ) {
   mockDiscordMemberships(context, [owner]);
-  const binding = await seedDiscordFixture(context, {
+  await enableDiscord(owner);
+  const binding = await createPublicDiscordBinding(context, {
+    flow: "install",
     userId: owner.userId,
     orgId: owner.orgId,
     orgRole: owner.orgRole,
     botUserId: applicationId,
     discordUserId,
     guildName: `Guild ${owner.orgId}`,
-    ...(history ? { history } : {}),
   });
   onTestFinished(async () => {
     mockDiscordMemberships(context, [owner]);
-    await deleteDiscordFixture(context, binding);
+    await removePublicDiscordBinding(context, binding);
     await deleteFeatureSwitchesForUser(context, owner);
   });
-  await enableDiscord(owner);
   return {
     owner,
     binding,
-    channelId: history?.channelId ?? uniqueDiscordSnowflake(),
+    channelId: uniqueDiscordSnowflake(),
   };
 }
 
-type Fixture = Awaited<ReturnType<typeof fixture>>;
+type Fixture = Awaited<ReturnType<typeof fixture>> & {
+  readonly parentChannelId?: string;
+};
 
-async function routedModelFixture(owner = actor()): Promise<Fixture> {
-  mockDiscordMemberships(context, [owner]);
-  await configureModelPreferences({ owner });
-  const agent = await accountApi.createAgent(owner, {
-    displayName: "Model picker thread agent",
+async function routedModelFixture(owner = actor()) {
+  const connected = await setupConnectedDiscordActor(context, {
+    userId: owner.userId,
+    orgId: owner.orgId,
   });
-  const thread = await createChatFilesBddApi(context).createThread(owner, {
-    agentId: agent.agentId,
-    model: "claude-fable-5-1",
+  // The Gateway fixture configures the bot; this suite owns interaction signing.
+  mockEnv("DISCORD_PUBLIC_KEY", publicKey);
+  onTestFinished(async () => {
+    mockDiscordMemberships(context, [owner]);
+    await removePublicDiscordBinding(context, connected.fixture);
+    await deleteFeatureSwitchesForUser(context, owner);
   });
-  const channelId = uniqueDiscordSnowflake();
-  return await fixture(owner, uniqueDiscordSnowflake(), {
-    chatThreadId: thread.id,
-    channelId,
-    messageId: channelId,
-    messageText: "Start the routed model picker thread",
+  const { headers, preference } = await configureModelPreferences({ owner });
+  await accept(
+    preference.update({
+      headers,
+      body: { selectedModel: "claude-fable-5-1", serviceTier: null },
+    }),
+    [200],
+  );
+  const provider = mockDiscordProvider(connected);
+  const message = discordMessageForTest(connected, {
+    channelId: provider.guildChannelId,
+    content: `<@${connected.botUserId}> Start the routed model picker thread`,
   });
+  provider.messages.set(message.id, message);
+  await postDiscordMessage(context, message);
+  await flushWaitUntilForTest();
+  const [thread] = await discordChatThreads(context, connected);
+  if (!thread) {
+    throw new Error(
+      "Expected Gateway admission to create the Discord conversation",
+    );
+  }
+  const chat = createChatFilesBddApi(context);
+  const { events } = await chat.listThreadEvents(connected.actor, thread.id);
+  const input = events.find((event) => {
+    return event.eventType === "input.prompt" && event.runId !== undefined;
+  });
+  if (!input?.runId) {
+    throw new Error("Expected the Discord conversation to admit a Run");
+  }
+  const runs = createRunsApi(context);
+  await runs.heartbeatRunner(connected.runnerGroup);
+  const claim = await runs.claimRunnerJob(input.runId);
+  await createWebhookCallbackApi(context).requestAgentComplete(
+    {
+      runId: input.runId,
+      exitCode: 1,
+      error: "The task could not be completed",
+    },
+    { authorization: `Bearer ${claim.sandboxToken}` },
+    [200],
+  );
+  await flushWaitUntilForTest();
+  await accept(
+    preference.update({
+      headers,
+      body: { selectedModel: null, serviceTier: null },
+    }),
+    [200],
+  );
+  return {
+    owner,
+    binding: connected.fixture,
+    channelId: message.id,
+    parentChannelId: provider.guildChannelId,
+    threadId: thread.id,
+  };
 }
 
 function guildSender(scope: Fixture): DiscordSender {
@@ -179,7 +242,7 @@ function guildSender(scope: Fixture): DiscordSender {
 
 function commandPayload(
   sender: DiscordSender,
-  name: DiscordCommandInteraction["data"]["options"][0]["name"],
+  name: DiscordCommandInteraction["data"]["name"],
 ): DiscordCommandInteraction {
   return {
     id: uniqueDiscordSnowflake(),
@@ -197,8 +260,7 @@ function commandPayload(
     data: {
       id: uniqueDiscordSnowflake(),
       type: 1,
-      name: "okou",
-      options: [{ type: 1, name }],
+      name,
     },
   };
 }
@@ -274,7 +336,11 @@ function discordHttp(fixtures: readonly Fixture[], dm?: DiscordSender) {
             recipients: [{ id: dm.discordUserId, username: "sender" }],
           });
         }
-        const scope = byChannel.get(String(params.channelId));
+        const scope =
+          byChannel.get(String(params.channelId)) ??
+          fixtures.find((value) => {
+            return value.parentChannelId === String(params.channelId);
+          });
         if (!scope) {
           return HttpResponse.json(
             { code: 10_003, message: "Unknown Channel" },
@@ -282,8 +348,22 @@ function discordHttp(fixtures: readonly Fixture[], dm?: DiscordSender) {
           );
         }
         return HttpResponse.json({
-          id: scope.channelId,
-          type: 0,
+          id: String(params.channelId),
+          type:
+            scope.parentChannelId && params.channelId === scope.channelId
+              ? 11
+              : 0,
+          ...(scope.parentChannelId && params.channelId === scope.channelId
+            ? {
+                parent_id: scope.parentChannelId,
+                thread_metadata: {
+                  archived: false,
+                  locked: false,
+                  auto_archive_duration: 60,
+                  archive_timestamp: new Date(now()).toISOString(),
+                },
+              }
+            : {}),
           guild_id: scope.binding.guildId,
           permission_overwrites: [],
         });
@@ -317,7 +397,7 @@ function discordHttp(fixtures: readonly Fixture[], dm?: DiscordSender) {
           {
             id: scope.binding.guildId,
             name: "@everyone",
-            permissions: "68608",
+            permissions: "274877975552",
             position: 0,
           },
         ]);
@@ -460,6 +540,7 @@ beforeEach(() => {
   mockEnv("DISCORD_PUBLIC_KEY", publicKey);
   mockEnv("DISCORD_BOT_TOKEN", randomBytes(32).toString("hex"));
   mockEnv("DISCORD_GATEWAY_SECRET", randomBytes(32).toString("hex"));
+  mockDiscordApplication(0);
   accountApi.acceptAgentStorageWrites();
 });
 
@@ -497,6 +578,26 @@ describe("Discord account preferences through private controls", () => {
     expect((await readStatus(second.owner)).isConnected).toBeTruthy();
   });
 
+  it.each(["server", "DM"])(
+    "shows the account connection status in a %s with one workspace",
+    async (surface) => {
+      const scope = await fixture();
+      const sender = {
+        discordUserId: scope.binding.discordUserId,
+        channelId: scope.channelId,
+        ...(surface === "server" ? { guildId: scope.binding.guildId } : {}),
+      };
+      const discord = discordHttp(
+        [scope],
+        surface === "DM" ? sender : undefined,
+      );
+      const message = await discord.send(commandPayload(sender, "connect"));
+
+      expect(message.content).toContain("already has a verified connection");
+      expect(message.components).toStrictEqual([]);
+    },
+  );
+
   it("requires and saves an explicit workspace choice for a sender with multiple DM bindings", async () => {
     const first = await fixture();
     const second = await fixture(
@@ -510,7 +611,7 @@ describe("Discord account preferences through private controls", () => {
     };
     const discord = discordHttp([first, second], sender);
 
-    const undecided = await discord.send(commandPayload(sender, "org"));
+    const undecided = await discord.send(commandPayload(sender, "connect"));
     const choice = selectMenu(undecided);
     expect(undecided.content).toContain("Choose your workspace for bot DMs");
     expect(
@@ -533,9 +634,65 @@ describe("Discord account preferences through private controls", () => {
       second.binding.connectionId,
     );
     expect(
-      preselected(await discord.send(commandPayload(sender, "org"))),
+      preselected(await discord.send(commandPayload(sender, "connect"))),
     ).toStrictEqual([second.binding.connectionId]);
   });
+
+  it.each([
+    "sender",
+    "channel",
+    "expired",
+    "disconnect",
+    "feature",
+    "membership",
+  ] as const)(
+    "keeps the selected DM workspace when an org control changes %s authority",
+    async (changed) => {
+      const first = await fixture();
+      const second = await fixture(
+        actor(undefined, first.owner.userId),
+        first.binding.discordUserId,
+      );
+      mockDiscordMemberships(context, [first.owner, second.owner]);
+      const sender = {
+        discordUserId: first.binding.discordUserId,
+        channelId: uniqueDiscordSnowflake(),
+      };
+      const discord = discordHttp([first, second], sender);
+      const menu = selectMenu(
+        await discord.send(commandPayload(sender, "connect")),
+      );
+      await discord.send(
+        selectPayload(sender, menu.custom_id, first.binding.connectionId),
+      );
+      if (changed === "disconnect") {
+        await disconnect(second.owner);
+      } else if (changed === "feature") {
+        await enableDiscord(second.owner, false);
+      } else if (changed === "membership") {
+        mockDiscordMemberships(context, [first.owner]);
+      } else if (changed === "expired") {
+        mockNow(now() + 15 * 60 * 1000);
+      }
+      const moved = {
+        ...sender,
+        ...(changed === "sender"
+          ? { discordUserId: uniqueDiscordSnowflake() }
+          : {}),
+        ...(changed === "channel"
+          ? { channelId: uniqueDiscordSnowflake() }
+          : {}),
+      };
+      const rejected = await discord.send(
+        selectPayload(moved, menu.custom_id, second.binding.connectionId),
+      );
+
+      expect(rejected.content).toContain("expired or your access has changed");
+      expect((await readStatus(first.owner)).dmSelectionConnectionId).toBe(
+        first.binding.connectionId,
+      );
+    },
+  );
 
   it("preselects the effective model and the selected DM workspace", async () => {
     const first = await fixture();
@@ -550,7 +707,7 @@ describe("Discord account preferences through private controls", () => {
       channelId: uniqueDiscordSnowflake(),
     };
     const discord = discordHttp([first, second], sender);
-    const workspaces = await discord.send(commandPayload(sender, "org"));
+    const workspaces = await discord.send(commandPayload(sender, "connect"));
     expect(preselected(workspaces)).toStrictEqual([]);
     await discord.send(
       selectPayload(
@@ -560,7 +717,7 @@ describe("Discord account preferences through private controls", () => {
       ),
     );
     expect(
-      preselected(await discord.send(commandPayload(sender, "org"))),
+      preselected(await discord.send(commandPayload(sender, "connect"))),
     ).toStrictEqual([first.binding.connectionId]);
 
     const models = await discord.send(commandPayload(sender, "model"));
@@ -572,22 +729,9 @@ describe("Discord account preferences through private controls", () => {
     const owner = actor();
     mockDiscordMemberships(context, [owner]);
     const { headers, preference } = await configureModelPreferences({ owner });
-    const agent = await accountApi.createAgent(owner, {
-      displayName: "Discord thread agent",
-    });
     const chat = createChatFilesBddApi(context);
-    const thread = await chat.createThread(owner, {
-      agentId: agent.agentId,
-      model: "claude-fable-5-1",
-    });
-    // A Discord thread started from a message shares that message's ID.
-    const threadChannelId = uniqueDiscordSnowflake();
-    const scope = await fixture(owner, uniqueDiscordSnowflake(), {
-      chatThreadId: thread.id,
-      channelId: threadChannelId,
-      messageId: threadChannelId,
-      messageText: "Start the routed Discord thread",
-    });
+    const scope = await routedModelFixture(owner);
+    const thread = { id: scope.threadId };
     const discord = discordHttp([scope]);
     const sender = guildSender(scope);
 
@@ -621,21 +765,9 @@ describe("Discord account preferences through private controls", () => {
     const owner = actor();
     mockDiscordMemberships(context, [owner]);
     await configureModelPreferences({ owner });
-    const agent = await accountApi.createAgent(owner, {
-      displayName: "Discord Auto thread agent",
-    });
     const chat = createChatFilesBddApi(context);
-    const thread = await chat.createThread(owner, {
-      agentId: agent.agentId,
-      model: "claude-fable-5-1",
-    });
-    const threadChannelId = uniqueDiscordSnowflake();
-    const scope = await fixture(owner, uniqueDiscordSnowflake(), {
-      chatThreadId: thread.id,
-      channelId: threadChannelId,
-      messageId: threadChannelId,
-      messageText: "Start the routed Discord Auto thread",
-    });
+    const scope = await routedModelFixture(owner);
+    const thread = { id: scope.threadId };
     const discord = discordHttp([scope]);
     const sender = guildSender(scope);
 

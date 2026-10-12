@@ -1,15 +1,14 @@
 import { config, oxlint } from "@okouai/eslint-config/base";
-import { apiLintPlugin, sqlSourceParser } from "@okouai/eslint-rules/api";
+import {
+  apiLintPlugin,
+  sqlSourceParser,
+  transactionSqlParser,
+} from "@okouai/eslint-rules/api";
 
 export default [
   ...config,
   {
-    ignores: [
-      "**/dist/**",
-      "scripts/migrations/00*/**",
-      "scripts/migrations/01[0-2]*/**",
-      "scripts/migrations/014-goal-archive-search/**",
-    ],
+    ignores: ["**/dist/**"],
   },
   {
     files: ["src/**/*.ts", "scripts/**/*.ts"],
@@ -24,7 +23,6 @@ export default [
       "**/*.test.ts",
       "**/*.spec.ts",
       "**/test-*.ts",
-      "scripts/migrations/**/test.ts",
     ],
     rules: { "api/no-database-trigger": "error" },
   },
@@ -56,6 +54,25 @@ export default [
       "src/migrations/1217_chat_event_sequence_bridge.sql",
     ],
     rules: { "api/no-database-trigger": "off" },
+  },
+  {
+    files: ["**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"],
+    plugins: { api: apiLintPlugin },
+    linterOptions: { reportUnusedDisableDirectives: "error" },
+    rules: {
+      "api/no-db-transaction": "error",
+      "api/db-transaction-exemptions": "error",
+    },
+  },
+  {
+    files: ["**/*.sql"],
+    languageOptions: { parser: transactionSqlParser },
+    plugins: { api: apiLintPlugin },
+    linterOptions: { reportUnusedDisableDirectives: "error" },
+    rules: {
+      "api/no-db-transaction": "error",
+      "api/db-transaction-exemptions": "error",
+    },
   },
   // Public package entry points may aggregate implementation modules.
   {

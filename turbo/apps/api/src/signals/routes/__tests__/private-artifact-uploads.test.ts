@@ -1,5 +1,6 @@
 import { mockNow } from "../../../lib/time";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
@@ -16,7 +17,7 @@ import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -28,8 +29,10 @@ import { uploadsMultipartRoutes } from "../uploads-multipart";
 import { webFileUrlRoutes } from "../web-file-url";
 import { webDownloadRoutes } from "../web-download";
 import { artifactReferenceRoutes } from "../artifact-references";
+import { artifactCatalogRoutes } from "../artifact-catalog";
 import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 import { createRouteMocks } from "./helpers/route-test";
+import { createDeferredPromise } from "../../utils";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -48,6 +51,7 @@ const routes = Object.freeze([
   ...webFileUrlRoutes,
   ...webDownloadRoutes,
   ...artifactReferenceRoutes,
+  ...artifactCatalogRoutes,
 ]);
 
 function api() {
@@ -121,6 +125,191 @@ beforeEach(() => {
 });
 
 describe("private artifact uploads", () => {
+  it("cancels private completion during storage verification and permits a fresh replay", async () => {
+    await setPrivateArtifacts(true);
+    const prepared = await accept(
+      api()(uploadsContract).prepare({
+        headers,
+        body: { ...body, purpose: "artifact" },
+      }),
+      [200],
+    );
+    mockStoredFile(prepared.body.id);
+    const owner = new AbortController();
+    const started = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      owner.abort();
+      if (!release.settled()) {
+        release.resolve(undefined);
+      }
+    });
+    const storage = context.mocks.s3.send.getMockImplementation()!;
+    context.mocks.s3.send.mockImplementation(async (command) => {
+      if (command instanceof HeadObjectCommand) {
+        started.resolve(undefined);
+        await release.promise;
+      }
+      return await storage(command);
+    });
+    const request = { headers, body: { id: prepared.body.id } };
+    const cancelled = (async () => {
+      await expect(
+        setupApp({
+          context,
+          routes,
+          signal: owner.signal,
+          rethrowErrors: true,
+        })(uploadsContract).complete(request),
+      ).rejects.toMatchObject({ name: "AbortError" });
+    })();
+    await started.promise;
+    owner.abort();
+    release.resolve(undefined);
+    await cancelled;
+    const before = await accept(
+      api()(artifactCatalogContract).list({ headers }),
+      [200],
+    );
+    expect(before.body.artifacts).toStrictEqual([]);
+    context.mocks.s3.send.mockImplementation(storage);
+    await accept(api()(uploadsContract).complete(request), [200]);
+    const after = await accept(
+      api()(artifactCatalogContract).list({ headers }),
+      [200],
+    );
+    expect(after.body.artifacts).toStrictEqual([
+      expect.objectContaining({ kind: "file", title: body.filename }),
+    ]);
+  });
+
+  it("keeps one downloadable catalog artifact after concurrent completion and replay", async () => {
+    await setPrivateArtifacts(true);
+    const prepared = await accept(
+      api()(uploadsContract).prepare({
+        headers,
+        body: { ...body, purpose: "artifact" },
+      }),
+      [200],
+    );
+    mockStoredFile(prepared.body.id);
+    const completions = await Promise.all([
+      api()(uploadsContract).complete({
+        headers,
+        body: { id: prepared.body.id },
+      }),
+      api()(uploadsContract).complete({
+        headers,
+        body: { id: prepared.body.id },
+      }),
+    ]);
+    for (const completed of completions) {
+      expect(completed.status).toBe(200);
+      expect(completed.body).toMatchObject({
+        id: prepared.body.id,
+        url: prepared.body.url,
+        size: 13,
+      });
+    }
+    const listed = await accept(
+      api()(artifactCatalogContract).list({ headers }),
+      [200],
+    );
+    expect(listed.body.artifacts).toStrictEqual([
+      expect.objectContaining({ kind: "file", title: body.filename }),
+    ]);
+    const artifact = listed.body.artifacts[0]!;
+    await accept(
+      api()(uploadsContract).complete({
+        headers,
+        body: { id: prepared.body.id },
+      }),
+      [200],
+    );
+    const replayed = await accept(
+      api()(artifactCatalogContract).list({ headers }),
+      [200],
+    );
+    expect(replayed.body.artifacts).toStrictEqual([
+      expect.objectContaining({
+        id: artifact.id,
+        createdAt: artifact.createdAt,
+      }),
+    ]);
+    const detail = await accept(
+      api()(artifactCatalogContract).get({
+        headers,
+        params: { artifactId: artifact.id },
+      }),
+      [200],
+    );
+    expect(detail.body).toMatchObject({
+      kind: "file",
+      file: { id: prepared.body.id, url: prepared.body.url, size: 13 },
+    });
+    const download = await accept(
+      api()(webFilesContract).download({
+        headers,
+        query: { file_id: prepared.body.id },
+      }),
+      [200],
+    );
+    expect(download.body).toBe("private bytes");
+  });
+
+  it.each(["missing", "unknown-size"] as const)(
+    "publishes only verified private bytes after a %s storage response and replay",
+    async (failure) => {
+      await setPrivateArtifacts(true);
+      const prepared = await accept(
+        api()(uploadsContract).prepare({
+          headers,
+          body: { ...body, purpose: "artifact" },
+        }),
+        [200],
+      );
+      const storage = context.mocks.s3.send.getMockImplementation()!;
+      context.mocks.s3.send.mockImplementation((command) => {
+        if (command instanceof HeadObjectCommand) {
+          if (failure === "missing") {
+            return Promise.reject(
+              Object.assign(new Error("Missing private object"), {
+                name: "NotFound",
+              }),
+            );
+          }
+          return Promise.resolve({ ContentType: body.contentType });
+        }
+        return storage(command);
+      });
+      const failed = await api()(uploadsContract).complete({
+        headers,
+        body: { id: prepared.body.id },
+      });
+      expect(failed.status).toBe(failure === "missing" ? 404 : 500);
+      const unavailable = await accept(
+        api()(artifactCatalogContract).list({ headers }),
+        [200],
+      );
+      expect(unavailable.body.artifacts).toStrictEqual([]);
+      mockStoredFile(prepared.body.id);
+      await accept(
+        api()(uploadsContract).complete({
+          headers,
+          body: { id: prepared.body.id },
+        }),
+        [200],
+      );
+      const recovered = await accept(
+        api()(artifactCatalogContract).list({ headers }),
+        [200],
+      );
+      expect(recovered.body.artifacts).toStrictEqual([
+        expect.objectContaining({ kind: "file", title: body.filename }),
+      ]);
+    },
+  );
+
   it("keeps a guarded upload private after the creation switch is disabled", async () => {
     installSharedThreadStorage(context);
     await setPrivateArtifacts(true);

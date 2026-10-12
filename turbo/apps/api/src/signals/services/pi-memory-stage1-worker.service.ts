@@ -18,10 +18,6 @@ import {
 } from "./feature-switch-scope";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import {
-  usagePricingResolution$,
-  type UsagePricingResolution,
-} from "../context/usage-pricing-resolution";
-import {
   observePiMemoryStage1Cost$,
   observePiMemoryStage1MissingUsage,
 } from "./pi-memory-stage1-cost.service";
@@ -296,6 +292,7 @@ const claimPiMemoryStage1Selection$ = command(
   ): Promise<SelectionClaim> => {
     // Frozen selection/source authority and lease publication commit together,
     // taking Thread -> Storage -> day -> candidate locks in order.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0229; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(
       async (tx): Promise<SelectionClaim> => {
         const selection = row.selection;
@@ -834,6 +831,7 @@ const validatePreparedWork$ = command(
   ): Promise<void> => {
     const currentTime = nowDate();
     const selection = work.selection;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0230; new non-billing transactions are prohibited.
     const valid = await set(writeDb$).transaction(async (tx) => {
       if (selection.day !== piMemoryStage1UtcDay(currentTime)) {
         return false;
@@ -929,7 +927,6 @@ const recordObservedUsage$ = command(
     prepared: RoutedWork,
     observedResult: PiMemoryStage1ProviderResult,
     requestId: string,
-    pricingResolution: UsagePricingResolution,
   ) => {
     const usageArgs = {
       memoryStorageId: prepared.work.memoryStorageId,
@@ -949,7 +946,6 @@ const recordObservedUsage$ = command(
       observePiMemoryStage1Cost$,
       usageArgs,
       recordedUsage.ok ? recordedUsage.value : null,
-      pricingResolution,
     );
     return recordedUsage;
   },
@@ -957,7 +953,6 @@ const recordObservedUsage$ = command(
 
 interface ProcessPreparedWorkArgs {
   readonly prepared: RoutedWork;
-  readonly pricingResolution: UsagePricingResolution;
 }
 
 const checkPreparedStage1Request$ = command(
@@ -1069,7 +1064,6 @@ const settlePreparedWork$ = command(
         args.prepared,
         observedResult,
         requestId,
-        args.pricingResolution,
       );
       if (!recordedUsage.ok) {
         return await set(
@@ -1188,7 +1182,7 @@ function logBatchResult(
 
 export const executePiMemoryStage1Work$ = command(
   async (
-    { get, set },
+    { set },
     input: PiMemoryStage1WorkerInput,
     signal: AbortSignal,
   ): Promise<PiMemoryStage1WorkerResult> => {
@@ -1283,7 +1277,6 @@ export const executePiMemoryStage1Work$ = command(
             processPreparedWork$,
             {
               prepared: item,
-              pricingResolution: get(usagePricingResolution$),
             },
             signal,
           );

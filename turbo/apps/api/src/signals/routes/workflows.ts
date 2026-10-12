@@ -111,7 +111,10 @@ import {
 } from "../services/workflow-data.service";
 import type { RouteEntry } from "../route-entry";
 import { sendNormalEvent$ } from "../services/chat-events.command";
-import { OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE } from "../services/official-workflow-constants";
+import {
+  OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE,
+  OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE,
+} from "../services/official-workflow-constants";
 import {
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
@@ -257,7 +260,7 @@ const listComposerWorkflowsInner$ = computed(async (get) => {
     body: workflows.flatMap((workflow) => {
       // A private override shadows the public workflow of the same name, so
       // only the override is a command the composer can offer.
-      return workflow.shadowedBy
+      return workflow.official || workflow.shadowedBy
         ? []
         : [
             {
@@ -357,6 +360,7 @@ const commitPreparedWorkflow$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0045; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // Publication reads Agent permissions without changing the Agent. SHARE
       // keeps them stable while independent workflows publish concurrently.
@@ -1056,8 +1060,8 @@ const publishCopiedWorkflow$ = command(
     args: CopiedWorkflowPublicationInput,
     signal: AbortSignal,
   ) => {
-    // Read a coherent source in a short transaction, then release every lock
-    // before KMS and object storage work. Publication rechecks that exact source.
+    // Prepare with ordinary reads before KMS and object storage work. Concurrent
+    // source changes may conflict; publication rechecks that exact source.
     const snapshot = await set(readWorkflowCopySnapshot$, args, signal);
     signal.throwIfAborted();
     if (snapshot.kind === "conflict") {
@@ -1392,6 +1396,9 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (agent.visibility === "private" && agent.owner !== auth.userId) {
     return forbidden("Only the private agent owner can run this agent");
   }
+  if (workflow.officialDefinitionName !== null) {
+    return conflict(OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE);
+  }
 
   const currentTime = nowDate();
   const apiStartTime = currentTime.getTime();
@@ -1460,9 +1467,6 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       preloadedAgent: agent,
       agentRunPreCreateSource: "workflow_slash_command",
       getStartedWorkflowId: workflow.id,
-      ...(workflow.officialDefinitionName === null
-        ? {}
-        : { requiredOfficialWorkflowIds: [workflow.id] }),
     },
     signal,
   );
@@ -1504,6 +1508,7 @@ const applyWorkflowVisibility$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0046; new non-billing transactions are prohibited.
     const visibilityChanged = await db.transaction(async (tx) => {
       const [agent] = await tx
         .select({ id: agents.id })

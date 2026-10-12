@@ -57,6 +57,14 @@ fn text_failure_reason(message: &str) -> Option<FailureReason> {
         .strip_prefix("unknown: ")
         .or_else(|| semantic_message.strip_prefix("invalid_request_error: "))
         .unwrap_or(normalized);
+    // Verification is unavailable, not an entitlement denial. Require the full
+    // provider retry instruction at this terminal failed-result boundary.
+    if semantic_message == "unable to verify model access right now. please retry." {
+        return Some(FailureReason::ProviderServerError);
+    }
+    if is_request_processing_failure(semantic_message) {
+        return Some(FailureReason::ProviderServerError);
+    }
     if semantic_message == "our servers are currently overloaded. please try again later."
         || semantic_message == "selected model is at capacity. please try a different model."
     {
@@ -137,6 +145,24 @@ fn text_failure_reason(message: &str) -> Option<FailureReason> {
         return Some(FailureReason::ContextWindowExceeded);
     }
     None
+}
+
+fn is_request_processing_failure(message: &str) -> bool {
+    // Require the provider's complete retry/support instruction, not generic error prose.
+    const PREFIX: &str = concat!(
+        "an error occurred while processing your request. ",
+        "you can retry your request, or contact us through our help center at help.openai.com if the error persists.",
+    );
+    let Some(suffix) = message.strip_prefix(PREFIX) else {
+        return false;
+    };
+    suffix.is_empty()
+        || suffix
+            .strip_prefix(" please include the request id ")
+            .and_then(|detail| detail.strip_suffix(" in your message."))
+            .is_some_and(|request_id| {
+                !request_id.is_empty() && !request_id.chars().any(char::is_whitespace)
+            })
 }
 
 fn is_daybreak_cyber_safety_refusal(message: &str) -> bool {

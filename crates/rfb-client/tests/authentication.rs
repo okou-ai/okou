@@ -898,10 +898,12 @@ async fn rejects_a_ready_security_result_when_the_deadline_has_already_elapsed()
     server.write_u32(0).await.unwrap();
     server.flush().await.unwrap();
 
-    // Deliberately leave the client future unpolled until its real deadline.
-    // This reproduces a delayed caller with both result and timeout ready;
-    // the timer is the behavior under test, not a synchronization delay.
-    tokio::time::sleep_until(end).await;
+    // Complete real TLS I/O before controlling only the deadline clock. Keep
+    // the client future unpolled until both its result and timeout are ready.
+    tokio::time::pause();
+    tokio::time::advance(end.saturating_duration_since(Instant::now())).await;
+    assert!(Instant::now() >= end);
+    tokio::time::resume();
     let result = authentication.await;
     match result {
         Err(Error::AuthenticationDeadlineExceeded {

@@ -1,4 +1,11 @@
+import { permissionGrantsToFirewallPolicies } from "@okouai/connectors/firewall-metadata/policy";
+import type { FirewallPolicies } from "@okouai/connectors/firewall-types";
 import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
+import {
+  DEFAULT_IMAGE_MODEL,
+  type ImageModel,
+} from "@okouai/core/image-model-catalog";
 import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
@@ -34,6 +41,8 @@ import {
   type ConnectorSourceRow,
 } from "./execution-connector-sources.service";
 import type { ExecutionStorageCacheRows } from "./execution-storage-cache-read.service";
+import type { MemberModelRouteContext } from "./effective-model-route.service";
+import type { ModelCatalog } from "./model-catalog.service";
 import {
   modelFactsFromSnapshot,
   type MemberModelBootstrap,
@@ -44,11 +53,6 @@ import {
   createManagedModelKeys,
   createModelPricing,
 } from "./model-source-context.service";
-import {
-  createOfficialWorkflowCatalog,
-  createOfficialWorkflowFacts,
-  type OfficialWorkflowContextFacts,
-} from "./official-workflow-context.signals";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { readStorageBaseIndex } from "./storage-index.service";
 import { variables } from "@okouai/db/schema/variable";
@@ -57,7 +61,17 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import { db$ } from "../external/db";
 
 import { createConnectorRuntimeSelection } from "./connector-catalog-entries.service";
-import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
+import {
+  agentConnectorScopeFromRows,
+  type AgentConnectorScopeSnapshot,
+} from "./agent-connector-scope.service";
+import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
+import {
+  pendingOkouTokenSecrets,
+  resolveRunBodyEnvironment,
+  type RunBodyEnvironment,
+  selectedAgentRunVariables,
+} from "./run-body-environment";
 import {
   createAuthorizedConnectors,
   type AuthorizedConnectors,
@@ -125,18 +139,25 @@ export interface AgentRunContextSignals {
   readonly concurrencyCapacity$: Computed<Promise<number>>;
   readonly credits$: Computed<Promise<ExecutionCreditBalance | null>>;
   readonly modelFacts$: Computed<Promise<OrgModelBootstrap>>;
+  readonly modelCatalog$: Computed<Promise<ModelCatalog>>;
   readonly memberModels$: Computed<Promise<MemberModelBootstrap>>;
+  readonly memberRoutes$: Computed<Promise<MemberModelRouteContext>>;
   readonly managedModelKeys$: ReturnType<typeof createManagedModelKeys>;
   readonly modelPricing$: ReturnType<typeof createModelPricing>;
   readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
+  readonly selectedImageModel$: Computed<Promise<ImageModel>>;
   readonly connectorSelection$: Computed<Promise<AgentConnectorSelection>>;
+  /** Connectors the Agent may use, derived from its connector selection. */
+  readonly connectorScope$: Computed<Promise<AgentConnectorScopeSnapshot>>;
+  /** The Agent's permission grants, expanded into firewall policies. */
+  readonly permissionPolicies$: Computed<Promise<FirewallPolicies | null>>;
+  /** The Run body's own variables and placeholder secrets for this Agent. */
+  readonly bodyEnvironment$: Computed<Promise<RunBodyEnvironment>>;
   readonly authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>;
   readonly permissionGrants$: Computed<
     Promise<readonly ConnectorPermissionGrant[]>
   >;
   readonly workflows$: Computed<Promise<readonly SelectedAgentWorkflow[]>>;
-  readonly officialCatalog$: ReturnType<typeof createOfficialWorkflowCatalog>;
-  readonly officialWorkflows$: Computed<Promise<OfficialWorkflowContextFacts>>;
   readonly storage$: Computed<Promise<AgentStorageContext>>;
   readonly storageCache$: Computed<
     Promise<{
@@ -265,18 +286,6 @@ export function matchAgentRunContextSignals(
   return createIdentityContext(userId, orgId, agentId, supplied);
 }
 
-function reusedOfficialCatalog(supplied: AgentRunContextSignals | undefined) {
-  return supplied?.officialCatalog$ ?? createOfficialWorkflowCatalog();
-}
-
-function hasSelectedOfficialWorkflow(
-  workflows: readonly SelectedAgentWorkflow[],
-) {
-  return workflows.some((workflow) => {
-    return workflow.officialDefinitionName !== null;
-  });
-}
-
 function contextAgentSelection() {
   return {
     id: agents.id,
@@ -329,6 +338,11 @@ function createModelSourceGroups(
   }
   return {
     memberModels$: providers.memberModels$,
+    memberRoutes$:
+      sharedMember?.memberRoutes$ ??
+      computed(async (get) => {
+        return (await get(providers.memberModels$)).member;
+      }),
     managedModelKeys$: globalReferences.managedModelKeys$,
     modelPricing$: globalReferences.modelPricing$,
     globalReferences,
@@ -427,8 +441,24 @@ function createOrgContext(
     modelFacts$,
     globalReferences,
     memberModels$,
-    modelSources,
+    modelSources: {
+      ...modelSources,
+      modelCatalog$:
+        sharedOrg?.modelCatalog$ ??
+        computed(async (get) => {
+          return (await get(modelFacts$)).catalog;
+        }),
+    },
   };
+}
+
+function createSelectedImageModel(
+  memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>,
+) {
+  return computed(async (get) => {
+    const stored = (await get(memberMetadata$)).preferences?.selectedImageModel;
+    return isImageModelId(stored) ? stored : DEFAULT_IMAGE_MODEL;
+  });
 }
 
 function createIdentityContext(
@@ -436,7 +466,7 @@ function createIdentityContext(
   orgId: string,
   agentId: string,
   supplied?: AgentRunContextSignals,
-): AgentRunContextSignals {
+): OwnedAgentRunContext {
   const scope = { userId, orgId, agentId };
   const memberContext = createExecutionMemberContext(scope);
   const {
@@ -471,25 +501,16 @@ function createIdentityContext(
       return executionCreditBalance(org, executionExpiredCredits(rows), pack);
     });
   const connectorContext = createConnectorContextGroups(userId, orgId, agentId);
-  const { permissionGrants$, workflows$ } = connectorContext;
-  const officialCatalog$ = reusedOfficialCatalog(supplied);
-  const officialWorkflows$ = computed(async (get) => {
-    const workflows = await get(workflows$);
-    return hasSelectedOfficialWorkflow(workflows)
-      ? await get(
-          createOfficialWorkflowFacts(workflows, await get(officialCatalog$)),
-        )
-      : null;
-  });
+  const { workflows$ } = connectorContext.signals;
   const storage$ = computed(async (get): Promise<AgentStorageContext> => {
     const plan = agentStorageReadPlan(
       scope,
       await Promise.all([
         get(agent$),
         get(workflows$),
-        get(connectorContext.connectorSelection$),
-        get(connectorContext.catalog$),
-        get(officialWorkflows$),
+        get(connectorContext.signals.connectorSelection$),
+        get(connectorContext.signals.catalog$),
+        null,
       ]),
     );
     return captureAgentStorageContext(
@@ -516,7 +537,7 @@ function createIdentityContext(
     const snapshot = await get(connectorContext.environmentSnapshot$);
     return { variables: snapshot.variables };
   });
-  const context: OwnedAgentRunContext = {
+  return {
     [globalModelOwner]: globalReferences.catalog$,
     ...scope,
     agent$,
@@ -529,22 +550,16 @@ function createIdentityContext(
     memberModels$,
     ...modelSources,
     memberMetadata$,
-    connectorSelection$: connectorContext.connectorSelection$,
-    authorizedConnectors$: connectorContext.authorizedConnectors$,
-    permissionGrants$,
-    workflows$,
-    officialCatalog$,
-    officialWorkflows$,
+    selectedImageModel$:
+      sharedMember?.selectedImageModel$ ??
+      createSelectedImageModel(memberMetadata$),
+    ...connectorContext.signals,
     storage$,
     storageCache$,
     featureSwitches$: featureSwitchContext$,
     disabledPaidTools$,
     environment$,
-    customConnectorDefinitions$: connectorContext.customConnectorDefinitions$,
-    catalog$: connectorContext.catalog$,
-    connectors$: connectorContext.connectors$,
   };
-  return context;
 }
 
 /**
@@ -569,12 +584,14 @@ export const preloadAgentRunContext$ = command(
       signals.concurrencyCapacity$,
       signals.credits$,
       signals.modelFacts$,
+      signals.modelCatalog$,
       signals.memberModels$,
+      signals.memberRoutes$,
       signals.memberMetadata$,
+      signals.selectedImageModel$,
       signals.connectorSelection$,
       signals.permissionGrants$,
       signals.workflows$,
-      signals.officialWorkflows$,
       signals.storageCache$,
       signals.featureSwitches$,
       signals.disabledPaidTools$,
@@ -987,14 +1004,20 @@ function createConnectorContextGroups(
     ]);
     return bootstrapConnectorSnapshot(userId, orgId, snapshot, definitions);
   });
-  const requested$ = computed(async (get) => {
+  const connectorScope$ = computed(async (get) => {
     const selection = await get(connectorSelection$);
-    const scope = agentConnectorScopeFromRows({
+    return agentConnectorScopeFromRows({
       connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
         return { connectorSlug };
       }),
       customConnectorRows: selection.customConnectors,
     });
+  });
+  const requested$ = computed(async (get) => {
+    const [selection, scope] = await Promise.all([
+      get(connectorSelection$),
+      get(connectorScope$),
+    ]);
     if (
       scope.allowedConnectorSlugs.length === 0 &&
       scope.allowedCustomConnectorIds.length === 0
@@ -1019,14 +1042,54 @@ function createConnectorContextGroups(
       observation: snapshot.observation,
     };
   });
+  const bodyEnvironment$ = computed(async (get) => {
+    const snapshot = await get(environmentSnapshot$);
+    return resolveRunBodyEnvironment({
+      runVars: selectedAgentRunVariables(agentId),
+      runSecrets: pendingOkouTokenSecrets(undefined),
+      persistedEnvironment: { variables: snapshot.variables },
+      canonicalOkouRuntime: true,
+    });
+  });
+  const permissionPolicies$ = computed(async (get) => {
+    const [grants, scope, catalog] = await Promise.all([
+      get(permissionGrants$),
+      get(connectorScope$),
+      get(catalog$),
+    ]);
+    const stored = permissionGrantsToFirewallPolicies(
+      grants.map(({ connectorSlug, permission, action }) => {
+        return { connectorSlug, permission, action };
+      }),
+    );
+    if (
+      scope.allowedConnectorSlugs.length === 0 &&
+      scope.allowedCustomConnectorIds.length === 0
+    ) {
+      return stored;
+    }
+    if (!catalog) {
+      throw new Error("Scoped connector catalog is missing from bootstrap");
+    }
+    return await expandConnectorServerFirewallPolicies({
+      catalog: catalog.serverFirewalls,
+      stored,
+      connectorSlugs: [...scope.allowedConnectorSlugs],
+    });
+  });
   return {
-    connectorSelection$,
-    authorizedConnectors$,
-    permissionGrants$,
-    workflows$,
     environmentSnapshot$,
-    customConnectorDefinitions$,
-    catalog$,
-    connectors$,
+    signals: {
+      connectorSelection$,
+      connectorScope$,
+      authorizedConnectors$,
+      permissionGrants$,
+      workflows$,
+      customConnectorDefinitions$,
+      catalog$,
+      connectors$,
+      bodyEnvironment$,
+      permissionPolicies$,
+    },
   };
 }

@@ -505,10 +505,14 @@ async function compatibility() {
     { stdout: "out", stderr: "err", code: 0, killed: false },
   );
   const failed = await execute("printf failure; exit 7");
+  assert.ifError(failed.error);
+  assert.equal(failed.result.isError, true);
   assert.match(
-    failed.error.message,
+    failed.result.content[0].text,
     /failure[\s\S]*Command exited with code 7/,
   );
+  assert.equal(failed.result.structuredContent.output, "failure");
+  assert.equal(failed.result.structuredContent.exit_code, 7);
 }
 
 async function quietDescendant() {

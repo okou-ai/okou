@@ -1551,6 +1551,7 @@ function FileChipBody({
 }
 
 export function FileAttachmentChip({
+  threadId,
   contentType,
   filename,
   preview,
@@ -1562,6 +1563,7 @@ export function FileAttachmentChip({
   preview?: AttachmentPreviewSignals;
   shareAvailable?: boolean;
   url: string;
+  threadId?: string;
 }) {
   const { t } = useTranslation();
   const downloadAttachment = useSet(downloadAttachment$);
@@ -1574,6 +1576,7 @@ export function FileAttachmentChip({
       onClick={() => {
         if (previewOfficeDocument) {
           openFileLightbox({
+            threadId,
             filename,
             url,
             ...(preview ? { preview } : {}),
@@ -1615,6 +1618,7 @@ export function FileAttachmentChip({
 }
 
 export function PreviewableFileAttachmentChip({
+  threadId,
   filename,
   kind,
   preview,
@@ -1630,6 +1634,7 @@ export function PreviewableFileAttachmentChip({
   splitViewAvailable?: boolean;
   text$?: TextPreviewComputed;
   url: string;
+  threadId?: string;
 }) {
   const { t } = useTranslation();
   const openDocumentLightbox = useSet(openDocumentLightbox$);
@@ -1663,6 +1668,7 @@ export function PreviewableFileAttachmentChip({
       type="button"
       onClick={() => {
         openDocumentLightbox({
+          threadId,
           kind,
           url,
           filename,
@@ -1694,6 +1700,7 @@ export function PreviewableFileAttachmentChip({
 }
 
 export function PreviewableAudioAttachmentChip({
+  threadId,
   contentType,
   filename,
   preview,
@@ -1707,6 +1714,7 @@ export function PreviewableAudioAttachmentChip({
   shareAvailable?: boolean;
   splitViewAvailable?: boolean;
   url: string;
+  threadId?: string;
 }) {
   const { t } = useTranslation();
   const openAudioLightbox = useSet(openAudioLightbox$);
@@ -1716,6 +1724,7 @@ export function PreviewableAudioAttachmentChip({
       type="button"
       onClick={() => {
         openAudioLightbox({
+          threadId,
           url,
           filename,
           ...(preview ? { preview } : {}),

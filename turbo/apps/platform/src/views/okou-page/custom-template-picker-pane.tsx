@@ -5,19 +5,24 @@ import {
   FileText,
   Image as ImageIcon,
   Layers,
-  Lock,
   Presentation,
   Upload,
-  Users,
   Search,
   Trash2,
   User,
 } from "lucide-react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   Button,
   buttonVariants,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -27,8 +32,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   Input,
-  Toggle,
-  ToggleGroup,
+  SegmentControl,
+  SegmentControlItem,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -50,14 +55,20 @@ import {
   CustomTemplatesLoadError,
 } from "./custom-template-preview-dialog.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
+import { TEMPLATE_CARD_SHADOW, TEMPLATE_TILE_SCRIM } from "./template-tile.ts";
 import {
+  cancelDeleteCustomTemplate$,
+  customTemplateActiveExample$,
   customTemplateSearchQuery$,
   customTemplateCatalog$,
   deleteCustomTemplate$,
   openCustomTemplate$,
+  pendingCustomTemplateDeletion$,
+  requestDeleteCustomTemplate$,
   setCustomTemplateSearchQuery$,
   projectCustomTemplatePicker$,
   setCustomTemplateKindFilter$,
+  showCustomTemplateExample$,
   updateCustomTemplate$,
 } from "../../signals/okou-page/custom-template-library.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
@@ -70,8 +81,10 @@ import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
 /** The tile metrics the rest of the picker's grids already use. */
+// `isolate` keeps the shared scrim's z-index inside the cover, so the Use and
+// actions controls beside it still paint over it in tree order.
 const CARD_MEDIA =
-  "relative block aspect-video w-full overflow-hidden rounded-xl border border-border bg-muted";
+  "relative isolate block aspect-video w-full overflow-hidden rounded-xl border border-border bg-muted";
 
 /**
  * One sheet of paper lying in a tile.
@@ -180,29 +193,6 @@ function CustomTemplateMeta({
       <SharedByLabel ownerDisplayName={template.ownerDisplayName} />
     </span>
   );
-  if (template.kind === "illustration") {
-    const Icon = !template.canManage
-      ? User
-      : template.visibility === "private"
-        ? Lock
-        : Users;
-    return (
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <span
-              tabIndex={0}
-              className="shrink-0 rounded-sm text-muted-foreground"
-            >
-              <Icon size={13} aria-hidden />
-              <span className="sr-only">{label}</span>
-            </span>
-          }
-        />
-        <TooltipContent>{label}</TooltipContent>
-      </Tooltip>
-    );
-  }
   return <div className="min-w-0 text-xs text-muted-foreground">{label}</div>;
 }
 
@@ -233,7 +223,11 @@ function CustomTemplateActions({
                 },
                 { title: template.title },
               )}
-              className="bg-background/90 hover:bg-background"
+              // Over cover art, which looks the same in both themes, so the
+              // chip does too: literal white and Ink rather than tokens that
+              // flip, which sank a dark chip into dark covers. The ring and
+              // shadow keep its edge on a white cover.
+              className="bg-[#ffffff]/90 text-[#363534] shadow-[0_1px_2px_rgb(0_0_0/0.12)] ring-1 ring-[rgb(0_0_0/0.06)] hover:bg-[#ffffff] hover:text-[#242321] active:bg-[#f0ecea]"
             />
           }
         >
@@ -286,6 +280,176 @@ function CustomTemplateActions({
   );
 }
 
+/**
+ * The same strip as the built-in Illustration card: a thumbnail per picture,
+ * the shown one marked, chosen with a pressed button.
+ */
+function CustomTemplateExampleStrip({
+  templateId,
+  pictures,
+  shown,
+}: {
+  readonly templateId: string;
+  readonly pictures: readonly string[];
+  readonly shown: number;
+}) {
+  const { t } = useTranslation();
+  const showExample = useSet(showCustomTemplateExample$);
+  return (
+    <div
+      data-custom-illustration-examples=""
+      className="flex items-center gap-2 overflow-x-auto px-3 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
+      {pictures.map((picture, index) => {
+        const active = index === shown;
+        return (
+          <button
+            key={picture}
+            type="button"
+            aria-label={t(
+              ($) => {
+                return $.artifacts.templates.showVariant;
+              },
+              { variantNumber: index + 1 },
+            )}
+            aria-pressed={active}
+            className={cn(
+              "relative h-12 w-12 shrink-0 overflow-hidden rounded-md border-(length:--border-width-emphasis) bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              active ? "border-primary" : "border-border",
+            )}
+            onClick={() => {
+              showExample({ templateId, index });
+            }}
+          >
+            <img
+              src={picture}
+              alt=""
+              loading="lazy"
+              className="h-full w-full object-cover"
+            />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * An image template, shown the way the built-in Illustration tab shows a
+ * style: the picture it draws, the other pictures beneath it, then the name.
+ *
+ * The pictures are the template's preview assets: the examples its style
+ * produced and the member approved. A style is judged by what it makes, so
+ * the source a member uploaded never represents it. One picture needs no
+ * strip to choose from, so it gets none.
+ */
+function CustomTemplateIllustrationCard({
+  template,
+  onSelect,
+}: {
+  readonly template: UserTemplateCatalogEntry;
+  readonly onSelect: (template: UserTemplateCatalogEntry) => void;
+}) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const openTemplate = useSet(openCustomTemplate$);
+  const updateTemplate = useSet(updateCustomTemplate$);
+  const requestDelete = useSet(requestDeleteCustomTemplate$);
+  const activeExample = useGet(customTemplateActiveExample$);
+  const pictures = template.previewAssets.map((asset) => {
+    return asset.url;
+  });
+  const shown = Math.min(
+    activeExample(template.id),
+    Math.max(0, pictures.length - 1),
+  );
+  const hero = pictures[shown];
+  return (
+    <div className="mb-6 break-inside-avoid">
+      <div
+        data-custom-illustration-card=""
+        className={cn(
+          "group/tile overflow-hidden rounded-xl border border-border bg-card",
+          TEMPLATE_CARD_SHADOW,
+        )}
+      >
+        <div className="relative isolate">
+          <button
+            type="button"
+            className="block w-full cursor-pointer bg-muted"
+            aria-label={t(
+              ($) => {
+                return $.templates.actions.preview;
+              },
+              { title: template.title },
+            )}
+            onClick={() => {
+              openTemplate({ templateId: template.id, kind: template.kind });
+            }}
+          >
+            {hero ? (
+              <img
+                src={hero}
+                alt=""
+                loading="lazy"
+                className="block h-auto w-full"
+              />
+            ) : null}
+          </button>
+          {template.canManage ? (
+            <CustomTemplateActions
+              template={template}
+              onVisibilityChange={(visibility) => {
+                detach(
+                  updateTemplate(
+                    { templateId: template.id, body: { visibility } },
+                    pageSignal,
+                  ),
+                  Reason.DomCallback,
+                );
+              }}
+              onDelete={() => {
+                requestDelete({ id: template.id, title: template.title });
+              }}
+            />
+          ) : null}
+        </div>
+        {pictures.length > 1 ? (
+          <CustomTemplateExampleStrip
+            templateId={template.id}
+            pictures={pictures}
+            shown={shown}
+          />
+        ) : null}
+        <div className="flex items-center justify-between gap-3 px-3.5 py-3">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <p
+              className="min-w-0 truncate text-sm font-semibold text-foreground"
+              title={template.title}
+            >
+              {template.title}
+            </p>
+            <CustomTemplateMeta template={template} />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={() => {
+              onSelect(template);
+            }}
+          >
+            {t(($) => {
+              return $.artifacts.templates.use;
+            })}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CustomTemplateCard({
   template,
   onSelect,
@@ -297,29 +461,18 @@ function CustomTemplateCard({
   const pageSignal = useGet(pageSignal$);
   const openTemplate = useSet(openCustomTemplate$);
   const updateTemplate = useSet(updateCustomTemplate$);
-  const deleteTemplate = useSet(deleteCustomTemplate$);
+  const requestDelete = useSet(requestDeleteCustomTemplate$);
   const open = () => {
     openTemplate({ templateId: template.id, kind: template.kind });
   };
   return (
-    <div
-      className={cn(
-        "group/tile flex min-w-0 flex-col",
-        template.kind === "illustration" && "mb-6 break-inside-avoid",
-      )}
-    >
+    <div className="group/tile flex min-w-0 flex-col">
       {/* Positioned tree order paints the cover, then the scrim, then the
           sibling Use and More actions, including during opacity transitions. */}
       <div className="relative">
         <button
           type="button"
-          className={cn(
-            CARD_MEDIA,
-            "cursor-pointer",
-            template.kind === "illustration" &&
-              template.coverUrl &&
-              "aspect-auto",
-          )}
+          className={cn(CARD_MEDIA, "cursor-pointer")}
           aria-label={t(
             ($) => {
               return $.templates.actions.preview;
@@ -338,11 +491,7 @@ function CustomTemplateCard({
               src={template.coverUrl}
               alt=""
               loading="lazy"
-              className={
-                template.kind === "illustration"
-                  ? "block h-auto w-full"
-                  : "absolute inset-0 h-full w-full object-cover object-top"
-              }
+              className="absolute inset-0 h-full w-full object-cover object-top"
             />
           ) : (
             // A template with no rendered cover is named by its file instead.
@@ -356,7 +505,7 @@ function CustomTemplateCard({
               <FilePreviewIcon filename={template.sourceFilename} size="lg" />
             </span>
           )}
-          <span className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-black/45 to-transparent opacity-0 transition-opacity group-hover/tile:opacity-100" />
+          <span className={TEMPLATE_TILE_SCRIM} />
         </button>
         {/* Beside the preview rather than inside it: the tile opens the
             template, and using it is a different decision from looking at
@@ -388,22 +537,12 @@ function CustomTemplateCard({
               );
             }}
             onDelete={() => {
-              detach(
-                deleteTemplate(template.id, pageSignal),
-                Reason.DomCallback,
-              );
+              requestDelete({ id: template.id, title: template.title });
             }}
           />
         ) : null}
       </div>
-      <div
-        className={cn(
-          "flex min-w-0 gap-1 px-0.5 pb-1 pt-2",
-          template.kind === "illustration"
-            ? "items-center justify-between gap-2"
-            : "flex-col",
-        )}
-      >
+      <div className="flex min-w-0 flex-col gap-1 px-0.5 pb-1 pt-2">
         <p
           className="min-w-0 truncate text-sm font-medium leading-5 text-foreground"
           title={template.title}
@@ -436,8 +575,10 @@ function CustomTemplateImportButton({
         render={
           <label
             className={cn(
-              buttonVariants({ variant: "outline", size: "sm" }),
-              "max-[374px]:px-2 max-[374px]:text-xs has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2",
+              buttonVariants({ variant: "outline" }),
+              // A phone keeps the icon only, so the search beside it keeps
+              // room for its placeholder; the input still carries the name.
+              "max-sm:w-9 max-sm:px-0 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2",
             )}
           >
             <input
@@ -459,7 +600,7 @@ function CustomTemplateImportButton({
               }}
             />
             <Upload aria-hidden />
-            {label}
+            <span className="max-sm:sr-only">{label}</span>
           </label>
         }
       />
@@ -500,31 +641,31 @@ function CustomTemplateKindFilters({
     },
   ] as const;
   return (
-    <ToggleGroup<UserTemplateKind>
-      value={[kind]}
-      onValueChange={(value) => {
-        // Reapplying the projected kind also pins the initial catalog default.
-        setKind(value[0] ?? kind);
+    // Three fixed, mutually exclusive kinds are a segment control: one bounded
+    // control at the band's h-9, whose raised segment says which kind is shown.
+    // A phone gives it the full row, so its segments split the width evenly.
+    <SegmentControl<UserTemplateKind>
+      value={kind}
+      onValueChange={(value: UserTemplateKind) => {
+        setKind(value);
       }}
       aria-label={t(($) => {
         return $.artifacts.templates.categories;
       })}
-      className="w-full gap-1 lg:w-auto"
+      className="max-sm:w-full"
     >
       {options.map(({ value, label }) => {
         return (
-          <Toggle
+          <SegmentControlItem
             key={value}
             value={value}
-            variant="quiet"
-            size="sm"
-            className="flex-1 max-[374px]:px-2 max-[374px]:text-xs lg:flex-none"
+            className="max-sm:flex-1 max-sm:px-2 max-[374px]:text-xs"
           >
             {label}
-          </Toggle>
+          </SegmentControlItem>
         );
       })}
-    </ToggleGroup>
+    </SegmentControl>
   );
 }
 
@@ -532,14 +673,10 @@ function CustomTemplatesEmpty({
   kind,
   isEmptyCatalog,
   hasQuery,
-  signals,
-  onImported,
 }: {
   readonly kind: UserTemplateKind;
   readonly isEmptyCatalog: boolean;
   readonly hasQuery: boolean;
-  readonly signals: ComposerSignals;
-  readonly onImported: () => void;
 }) {
   const { t } = useTranslation();
   const setQuery = useSet(setCustomTemplateSearchQuery$);
@@ -612,15 +749,104 @@ function CustomTemplatesEmpty({
             return $.templates.clearSearch;
           })}
         </Button>
-      ) : !isEmptyCatalog ? (
-        <div className="mt-6">
-          <CustomTemplateImportButton
-            signals={signals}
-            onImported={onImported}
-          />
-        </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Asks once before a template is removed, because removal cannot be undone.
+ *
+ * Both the tile menu and the open template's column request a deletion, so the
+ * confirmation lives beside the picker rather than inside either of them. It
+ * mounts per request, keyed by the template, so one request's failure is never
+ * shown on the next. It stays open while the delete is in flight and closes
+ * only on success.
+ */
+function CustomTemplateDeleteConfirmSlot() {
+  const pending = useGet(pendingCustomTemplateDeletion$);
+  return pending ? (
+    <CustomTemplateDeleteConfirm
+      key={pending.id}
+      templateId={pending.id}
+      title={pending.title}
+    />
+  ) : null;
+}
+
+function CustomTemplateDeleteConfirm({
+  templateId,
+  title,
+}: {
+  readonly templateId: string;
+  readonly title: string;
+}) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const cancel = useSet(cancelDeleteCustomTemplate$);
+  const [deleteLoadable, deleteTemplate] = useLoadableSet(
+    deleteCustomTemplate$,
+  );
+  const deleting = deleteLoadable.state === "loading";
+  return (
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !deleting) {
+          cancel();
+        }
+      }}
+    >
+      <DialogContent smMaxWidth={420}>
+        <DialogHeader className="min-w-0 pr-8">
+          <DialogTitle className="break-words leading-tight">
+            {t(($) => {
+              return $.templates.delete.title;
+            })}
+          </DialogTitle>
+          <DialogDescription className="break-words">
+            {t(
+              ($) => {
+                return $.templates.delete.description;
+              },
+              { title },
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        {deleteLoadable.state === "hasError" ? (
+          <p role="alert" className="text-sm text-destructive">
+            {t(($) => {
+              return $.templates.delete.failed;
+            })}
+          </p>
+        ) : null}
+        <DialogFooter className="min-w-0">
+          <Button variant="outline" disabled={deleting} onClick={cancel}>
+            {t(($) => {
+              return $.templates.delete.cancel;
+            })}
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={deleting}
+            onClick={() => {
+              detach(
+                deleteTemplate(templateId, pageSignal),
+                Reason.DomCallback,
+              );
+            }}
+          >
+            {deleting
+              ? t(($) => {
+                  return $.templates.delete.deleting;
+                })
+              : t(($) => {
+                  return $.templates.delete.confirm;
+                })}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -641,58 +867,58 @@ export function CustomTemplatePickerPane({
   const projectPicker = useGet(projectCustomTemplatePicker$);
   const view = catalog.state === "hasData" ? projectPicker(catalog.data) : null;
   const hasQuery = query.trim().length > 0;
-  const showToolbar = view !== null && (view.templates.length > 0 || hasQuery);
-  const showHeaderImport = showToolbar || view?.isEmptyCatalog === true;
+  // A non-empty catalog always shows its search and kind filters, including
+  // when the selected kind is empty, so neither moves while a member switches
+  // kinds and an empty kind can be left from here.
+  const showFilters = view !== null && !view.isEmptyCatalog;
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      {showHeaderImport ? (
-        <div
-          className={cn(
-            "relative shrink-0 pb-5 sm:pt-[68px] lg:flex lg:items-center lg:gap-4",
-            !showToolbar && "pb-0",
-          )}
-        >
-          {showToolbar && view ? (
-            <>
-              <div className="mb-3.5 w-full min-w-0 lg:mb-0 lg:w-56 lg:shrink">
-                <div className="relative">
-                  <Search
-                    className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                    aria-hidden
-                  />
-                  <Input
-                    aria-label={t(($) => {
-                      return $.artifacts.templates.searchConnectors;
-                    })}
-                    placeholder={t(($) => {
-                      return $.artifacts.templates.searchConnector;
-                    })}
-                    className="h-9 pl-9 text-sm"
-                    value={query}
-                    onChange={(event) => {
-                      setQuery(event.target.value);
-                    }}
-                  />
-                </div>
-              </div>
-              <CustomTemplateKindFilters kind={view.kind} />
-            </>
+      {/* The 68px band the workflow search uses, so the band keeps the same
+          height and axis in both categories and the import clears the
+          dialog's close button. The kind comes first because it scopes what
+          the search looks through; the search and the import are the tools
+          on the right. The band renders before the catalog resolves, so it
+          never collapses while a request is pending. Below lg the tools take
+          a second row instead of overflowing the dialog. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-3 px-6 py-4 sm:pr-14 lg:h-[68px] lg:flex-nowrap lg:py-0">
+        {showFilters ? <CustomTemplateKindFilters kind={view.kind} /> : null}
+        <div className="flex w-full min-w-0 items-center gap-3 lg:ml-auto lg:w-auto">
+          {showFilters ? (
+            <div className="relative min-w-0 flex-1 lg:w-56 lg:flex-none">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                aria-label={t(($) => {
+                  return $.artifacts.templates.searchConnectors;
+                })}
+                placeholder={t(($) => {
+                  return $.artifacts.templates.searchConnector;
+                })}
+                className="h-9 pl-9 text-sm"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                }}
+              />
+            </div>
           ) : null}
-          <div className="absolute -top-[50px] right-0 shrink-0 sm:right-9 sm:top-[18px]">
+          <div className="ml-auto shrink-0">
             <CustomTemplateImportButton
               signals={signals}
               onImported={onImported}
             />
           </div>
         </div>
-      ) : null}
+      </div>
       <div
         role="region"
         aria-label={t(($) => {
           return $.templates.detail.back;
         })}
-        className="relative flex min-h-0 flex-1 flex-col overflow-y-auto"
+        className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6"
       >
         {catalog.state === "hasError" ? (
           <CustomTemplatesLoadError />
@@ -701,8 +927,6 @@ export function CustomTemplatePickerPane({
             kind={view.kind}
             isEmptyCatalog={view.isEmptyCatalog}
             hasQuery={hasQuery}
-            signals={signals}
-            onImported={onImported}
           />
         ) : (
           <div
@@ -713,7 +937,13 @@ export function CustomTemplatePickerPane({
             }
           >
             {view.templates.map((template) => {
-              return (
+              return template.kind === "illustration" ? (
+                <CustomTemplateIllustrationCard
+                  key={template.id}
+                  template={template}
+                  onSelect={onSelect}
+                />
+              ) : (
                 <CustomTemplateCard
                   key={template.id}
                   template={template}
@@ -725,6 +955,7 @@ export function CustomTemplatePickerPane({
         )}
       </div>
       <CustomTemplatePreviewDialog onSelect={onSelect} />
+      <CustomTemplateDeleteConfirmSlot />
     </div>
   );
 }

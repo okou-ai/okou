@@ -302,8 +302,11 @@ test("A newly available thread appears after a thread-list event", async () => {
 });
 
 test("Returning to an interrupted chat does not reuse abandoned details", async () => {
+  const serviceWorker = context.mocks.browser.serviceWorker();
   const unavailableThreadList = context.mocks.deferred<void>();
+  const abandonedDetailsRequested = context.mocks.deferred<void>();
   const abandonedDetails = context.mocks.deferred<void>();
+  const returningDetailsRequested = context.mocks.deferred<void>();
   const returningDetails = context.mocks.deferred<void>();
   let metadataRequestNumber = 0;
   const user = userEvent.setup({ delay: null });
@@ -320,12 +323,14 @@ test("Returning to an interrupted chat does not reuse abandoned details", async 
   context.mocks.api(chatThreadMetadataContract.get, async ({ respond }) => {
     metadataRequestNumber += 1;
     if (metadataRequestNumber === 1) {
+      abandonedDetailsRequested.resolve();
       await abandonedDetails.promise;
       return respond(
         200,
         threadMetadata(FIRST_THREAD_ID, "Abandoned visit title"),
       );
     }
+    returningDetailsRequested.resolve();
     await returningDetails.promise;
     return respond(404, {
       error: {
@@ -335,10 +340,27 @@ test("Returning to an interrupted chat does not reuse abandoned details", async 
     });
   });
 
-  await startPage({
+  const page = await startPage({
     context,
-    path: `/chats/${FIRST_THREAD_ID}`,
+    path: "/agents",
     auth: isolatedAuth(),
+  });
+  await page.content;
+  await expect(
+    screen.findByRole("heading", { name: "Agents" }),
+  ).resolves.toBeInTheDocument();
+
+  // Enter the pending chat after startup: the initial skeleton intentionally
+  // prevents navigation through the page while its root is inert.
+  serviceWorker.dispatchMessage({
+    type: "NOTIFICATION_CLICK",
+    url: `/chats/${FIRST_THREAD_ID}`,
+  });
+  await abandonedDetailsRequested.promise;
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("heading", { name: "Agents" }),
+    ).not.toBeInTheDocument();
   });
 
   const agentsLink = await findLink("Agents");
@@ -352,6 +374,7 @@ test("Returning to an interrupted chat does not reuse abandoned details", async 
   expect(document.title).toBe("Agents | Okou");
 
   window.history.back();
+  await returningDetailsRequested.promise;
 
   await waitFor(() => {
     expect(

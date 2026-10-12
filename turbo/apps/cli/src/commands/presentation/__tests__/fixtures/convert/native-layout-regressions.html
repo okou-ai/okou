@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Native layout regression contracts</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Liberation Sans", sans-serif;
+        color: #14243e;
+      }
+      .slide {
+        position: relative;
+        width: 1600px;
+        height: 900px;
+        padding: 72px;
+        overflow: hidden;
+        background: #f4f7fb;
+      }
+      h1 {
+        font-size: 44px;
+        margin: 0 0 42px;
+      }
+      p,
+      li {
+        font-size: 30px;
+        line-height: 1.4;
+      }
+      footer {
+        position: absolute;
+        left: 72px;
+        right: 72px;
+        bottom: 40px;
+        border-top: 2px solid #94a3b8;
+        padding-top: 15px;
+        font-size: 22px;
+      }
+      .row {
+        display: flex;
+        gap: 40px;
+      }
+      .box {
+        width: 430px;
+        height: 260px;
+        padding: 30px;
+        font-size: 30px;
+      }
+      .steps {
+        counter-reset: step;
+      }
+      .step {
+        counter-increment: step;
+        position: relative;
+        margin: 24px 0;
+        padding-left: 90px;
+        font-size: 32px;
+      }
+      .step::before {
+        content: counter(step, decimal-leading-zero);
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 65px;
+        height: 50px;
+        background: #2563eb;
+        color: white;
+        border-radius: 14px;
+        text-align: center;
+      }
+      .step::after {
+        content: attr(data-label);
+        margin-left: 25px;
+        color: #0d9488;
+        font-size: 25px;
+      }
+      li::marker {
+        color: #2563eb;
+        font-size: 34px;
+      }
+      .arrow {
+        position: relative;
+        background: #2563eb;
+        width: 200px;
+        height: 8px;
+        margin: 60px;
+      }
+      .arrow::after {
+        content: "";
+        position: absolute;
+        right: -35px;
+        top: -16px;
+        width: 0;
+        height: 0;
+        border-top: 20px solid transparent;
+        border-bottom: 20px solid transparent;
+        border-left: 40px solid #2563eb;
+      }
+      .tile {
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%232563eb'/%3E%3Ccircle cx='30' cy='40' r='22' fill='%23f59e0b'/%3E%3C/svg%3E");
+      }
+    </style>
+  </head>
+  <body>
+    <section class="slide">
+      <h1>R01 / resolved counters and independently owned markers</h1>
+      <div class="row">
+        <div style="width: 700px" class="steps">
+          <div class="step" data-label="Ready">Plan</div>
+          <div class="step" data-label="Running">Build</div>
+          <div class="step" data-label="Done">Review</div>
+        </div>
+        <div>
+          <ol start="8">
+            <li>
+              Parent eight
+              <ol>
+                <li>Nested one</li>
+              </ol>
+            </li>
+            <li>Parent nine</li>
+          </ol>
+          <ol reversed start="3" style="list-style-type: upper-roman">
+            <li>Third</li>
+            <li>Second</li>
+            <li>First</li>
+          </ol>
+          <ol start="-1">
+            <li>Negative</li>
+            <li>Zero</li>
+          </ol>
+        </div>
+      </div>
+      <footer>
+        01 / 02 / 03 occur once; suffixes follow the real inline flow.
+      </footer>
+    </section>
+    <section class="slide">
+      <h1>R02 / accumulated transforms and native shape paths</h1>
+      <div
+        style="
+          position: relative;
+          transform: translate(80px, 10px) scale(0.85);
+          transform-origin: 20% 30%;
+          width: 1000px;
+          height: 560px;
+          background: #cbd5e1;
+        "
+      >
+        <p style="margin: 0; padding: 25px">Scaled parent title</p>
+        <div
+          style="
+            position: absolute;
+            left: 180px;
+            top: 160px;
+            width: 460px;
+            height: 260px;
+            background: #2563eb;
+            color: white;
+            transform: rotate(9deg);
+            border-radius: 50px;
+            padding: 35px;
+            font-size: 40px;
+          "
+        >
+          Scaled and rotated native text
+        </div>
+        <p
+          style="
+            position: absolute;
+            left: 620px;
+            top: 80px;
+            white-space: nowrap;
+          "
+        >
+          Positioned label
+        </p>
+      </div>
+      <div
+        style="
+          position: absolute;
+          right: 90px;
+          top: 220px;
+          width: 280px;
+          height: 320px;
+          transform: skewX(-12deg);
+          background: #f43f5e;
+        "
+      ></div>
+      <footer>
+        Child local 460 × 260 becomes 391 × 221; font scales with its parent.
+      </footer>
+    </section>
+    <section class="slide">
+      <h1>R04 / native gradients, borders, corners and triangles</h1>
+      <div class="row">
+        <div
+          class="box"
+          style="
+            color: white;
+            border-radius: 10px 90px 30px 60px;
+            background: linear-gradient(135deg, #2563eb, #f43f5e);
+          "
+        >
+          Asymmetric corners
+        </div>
+        <div
+          class="box"
+          style="
+            background: repeating-linear-gradient(
+              90deg,
+              #dbeafe 0px,
+              #dbeafe 24px,
+              #0d9488 24px,
+              #0d9488 48px
+            );
+            clip-path: polygon(
+              20% 0,
+              80% 0,
+              100% 50%,
+              80% 100%,
+              20% 100%,
+              0 50%
+            );
+          "
+        >
+          Repeated stripes
+        </div>
+        <div
+          class="box"
+          style="
+            border-top: 12px solid #2563eb;
+            border-right: 18px solid #f43f5e;
+            border-bottom: 12px double #0d9488;
+            border-left: 18px solid #f59e0b;
+            outline: 5px solid #14243e;
+            outline-offset: 12px;
+          "
+        >
+          Independent borders
+        </div>
+      </div>
+      <div class="row">
+        <div class="arrow"></div>
+        <div
+          style="
+            margin: 55px;
+            width: 0;
+            height: 0;
+            border-left: 70px solid transparent;
+            border-right: 70px solid transparent;
+            border-bottom: 110px solid #f43f5e;
+          "
+        ></div>
+        <div
+          style="
+            margin: 40px;
+            width: 300px;
+            height: 130px;
+            border-radius: 50%;
+            background: #0d9488;
+          "
+        ></div>
+      </div>
+      <footer>
+        Every decoration remains a native editable shape. No synthetic picture.
+      </footer>
+    </section>
+    <section class="slide">
+      <h1>R05 / text paint, underline and source picture tiling</h1>
+      <p
+        style="
+          font-size: 64px;
+          font-weight: bold;
+          background: linear-gradient(90deg, #2563eb, #f43f5e);
+          background-clip: text;
+          color: transparent;
+        "
+      >
+        GRADIENT TEXT
+      </p>
+      <p
+        style="
+          font-size: 60px;
+          color: transparent;
+          -webkit-text-stroke: 2px #0d9488;
+        "
+      >
+        OUTLINED TYPE
+      </p>
+      <p>
+        <span style="text-decoration: underline; text-decoration-color: #f43f5e"
+          >Dark text, red underline</span
+        >
+        ·
+        <a
+          href="https://example.com"
+          style="text-decoration: none; color: #2563eb"
+          >Link without underline</a
+        >
+      </p>
+      <div class="row">
+        <div
+          class="tile"
+          style="
+            width: 600px;
+            height: 170px;
+            background-size: 120px 80px;
+            background-repeat: repeat;
+            background-position: 30px 15px;
+          "
+        ></div>
+        <div
+          class="tile"
+          style="
+            width: 600px;
+            height: 170px;
+            background-color: #cbd5e1;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+          "
+        ></div>
+      </div>
+      <footer>
+        Source assets remain pictures; image tiles preserve CSS size, position
+        and repeat.
+      </footer>
+    </section>
+    <section class="slide">
+      <h1>R08 / browser paint order before DOM materialization</h1>
+      <div
+        style="
+          position: relative;
+          width: 1200px;
+          height: 520px;
+          background: #dbeafe;
+        "
+      >
+        <div
+          style="
+            position: absolute;
+            left: 400px;
+            top: 150px;
+            width: 520px;
+            height: 260px;
+            background: #0d9488;
+            color: white;
+            padding: 40px;
+            font-size: 35px;
+          "
+        >
+          Positioned green above orange
+        </div>
+        <div style="margin-left: 650px; padding-top: 280px">
+          <div
+            style="
+              width: 500px;
+              height: 120px;
+              background: #f59e0b;
+              padding: 20px;
+              font-size: 30px;
+            "
+          >
+            Normal-flow orange
+          </div>
+        </div>
+        <div
+          style="
+            position: absolute;
+            left: 30px;
+            top: 40px;
+            width: 430px;
+            height: 100px;
+            background: #2563eb;
+            color: white;
+            z-index: 3;
+            font-size: 32px;
+            padding: 25px;
+          "
+        >
+          Positive stacking context
+        </div>
+      </div>
+      <footer>
+        Green stays in front of orange regardless of their DOM positions.
+      </footer>
+    </section>
+    <div
+      style="
+        background: linear-gradient(135deg, #14243e, #0d9488);
+        padding: 40px;
+      "
+    >
+      <section class="slide" style="background: transparent; color: white">
+        <h1>R06 / selected page inherits projected ancestor paint</h1>
+        <p>
+          The gradient belongs to the larger ancestor, not this selected slide.
+        </p>
+        <p
+          style="
+            width: 600px;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+          "
+        >
+          An intentionally clipped title with hidden source words at its right
+          edge.
+        </p>
+        <div
+          style="
+            width: 600px;
+            border-left: 8px solid #f59e0b;
+            padding: 24px;
+            font-size: 32px;
+            box-shadow: 10px 12px 18px rgba(0, 0, 0, 0.25);
+          "
+        >
+          A native quote line and an outer shadow.
+        </div>
+        <footer>
+          Gradient coordinates stay tied to the original painting area.
+        </footer>
+      </section>
+    </div>
+  </body>
+</html>

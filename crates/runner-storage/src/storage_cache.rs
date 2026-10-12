@@ -70,10 +70,11 @@ use crate::archive_connection_attempt::{
     ArchiveConnectionAttempt, ConnectionAttemptLayer, ConnectionAttemptObserver,
 };
 use crate::error::{StorageError as RunnerError, StorageResult as RunnerResult};
+#[cfg(test)]
+use crate::object_download_policy::{OBJECT_DOWNLOAD_BUDGET, OBJECT_DOWNLOAD_RETRY_DELAY};
 use crate::object_download_policy::{
-    OBJECT_DOWNLOAD_BUDGET, OBJECT_DOWNLOAD_MAX_ATTEMPTS, OBJECT_DOWNLOAD_RETRY_DELAY,
-    OBJECT_DOWNLOAD_TIMEOUT, object_download_http_retry_after,
-    object_download_transient_transport_kind,
+    OBJECT_DOWNLOAD_MAX_ATTEMPTS, OBJECT_DOWNLOAD_TIMEOUT, ObjectDownloadRetryBudget,
+    object_download_http_retry_after, object_download_transient_transport_kind,
 };
 use crate::storage_plan::{ArchiveHandle, CacheArchiveCandidate, StoragePlan};
 #[cfg(test)]
@@ -1791,6 +1792,10 @@ fn reuse_decoded(
     let Some(files) = files else {
         return Ok(false);
     };
+    // Apply the active producer policy only after validating the positive entry.
+    if !decoded::admitted_for_delivery(&files) {
+        return Ok(false);
+    }
     // An archive may still be required by another target sharing this key,
     // such as an instruction storage. Admit its ordinary targets without
     // changing archive delivery for that other consumer.
@@ -1828,6 +1833,8 @@ fn reuse_decoded(
         .sum::<usize>();
     if plan.decoded_bytes() + added + 4 > guest_contracts::storage_files::MAX_PAYLOAD_BYTES
         || plan.decoded_mount_count() + mounts.len() > guest_contracts::storage_files::MAX_MOUNTS
+        || plan.decoded_file_count() + files.files.len() * mounts.len()
+            > guest_contracts::storage_files::MAX_TOTAL_FILES
     {
         return Ok(false);
     }
@@ -3062,60 +3069,43 @@ async fn fetch_fresh_archive(
     representative: ArchiveHandle,
     phase_records: &FreshArchivePhaseRecords,
 ) -> Result<(Bytes, FreshArchiveSizeSource), FreshArchiveFetchError> {
-    let deadline = tokio::time::Instant::now() + OBJECT_DOWNLOAD_BUDGET;
-    tokio::time::timeout_at(deadline, async {
-        let mut attempt = 1usize;
-        loop {
-            // Timeout polls its inner future first. Recheck the deadline so
-            // overdue backoff cannot start another request or accept late bytes.
-            if tokio::time::Instant::now() >= deadline {
-                return Err(FreshArchiveFetchError::permanent("timeout"));
-            }
-            let result = fetch_fresh_archive_once(
+    let mut budget = ObjectDownloadRetryBudget::default();
+    loop {
+        let result = budget
+            .run_attempt(fetch_fresh_archive_once(
                 http,
                 archive_url,
                 expected_size,
                 representative,
                 phase_records,
-            )
-            .await;
-            if tokio::time::Instant::now() >= deadline {
-                return Err(FreshArchiveFetchError::permanent("timeout"));
-            }
-            match result {
-                Ok(download) => return Ok(download),
-                Err(error) => {
-                    let Some(retry_after) = error.retry_after else {
-                        return Err(error);
-                    };
-                    if attempt >= OBJECT_DOWNLOAD_MAX_ATTEMPTS {
-                        return Err(error);
-                    }
-                    let backoff = OBJECT_DOWNLOAD_RETRY_DELAY * (1 << (attempt - 1));
-                    let delay = backoff.max(retry_after);
-                    if delay >= deadline.saturating_duration_since(tokio::time::Instant::now()) {
-                        return Err(error);
-                    }
-                    info!(
-                        action = "storage_cache_fresh_delivery_retry",
-                        r2_key = crate::r2_download::key_from_url(archive_url).as_deref(),
-                        attempt,
-                        max_attempts = OBJECT_DOWNLOAD_MAX_ATTEMPTS,
-                        reason = error.reason,
-                        http_status = error.http_status,
-                        retry_delay_ms = delay.as_millis() as u64,
-                        "retrying runner-owned archive download"
-                    );
-                    // The enclosing task's cancellation owns this sleep and
-                    // the next request. Partial bodies never leave an attempt.
-                    tokio::time::sleep(delay).await;
-                    attempt += 1;
-                }
+            ))
+            .await
+            .map_err(|_| FreshArchiveFetchError::permanent("timeout"))?;
+        match result {
+            Ok(download) => return Ok(download),
+            Err(error) => {
+                let Some(retry) = budget.next_retry(error.retry_after) else {
+                    return Err(error);
+                };
+                info!(
+                    action = "storage_cache_fresh_delivery_retry",
+                    r2_key = crate::r2_download::key_from_url(archive_url).as_deref(),
+                    attempt = retry.attempt(),
+                    max_attempts = OBJECT_DOWNLOAD_MAX_ATTEMPTS,
+                    reason = error.reason,
+                    http_status = error.http_status,
+                    retry_delay_ms = retry.delay().as_millis() as u64,
+                    "retrying runner-owned archive download"
+                );
+                // The enclosing task's cancellation owns this wait and the
+                // next request. Partial bodies never leave an attempt.
+                retry
+                    .wait()
+                    .await
+                    .map_err(|_| FreshArchiveFetchError::permanent("timeout"))?;
             }
         }
-    })
-    .await
-    .unwrap_or_else(|_| Err(FreshArchiveFetchError::permanent("timeout")))
+    }
 }
 
 async fn fetch_fresh_archive_once(
@@ -4364,6 +4354,7 @@ mod tests {
     mod archive_retries;
     mod decoded_observation;
     mod http_reuse;
+    mod large_selection;
     mod phase_diagnostics;
     mod rejected_observation;
 

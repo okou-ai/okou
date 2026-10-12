@@ -822,8 +822,8 @@ describe("validateBaseUrl", () => {
   it("should skip template base URLs", () => {
     expect(() => {
       return validateBaseUrl(
-        "https://${{ vars.ZENDESK_SUBDOMAIN }}.zendesk.com",
-        "zendesk",
+        "https://${{ vars.SUBDOMAIN_TEST_SUBDOMAIN }}.example.com",
+        "test-subdomain",
       );
     }).not.toThrow();
   });
@@ -857,7 +857,10 @@ describe("validateBaseUrl", () => {
 
   it("should accept base URL with single host param", () => {
     expect(() => {
-      return validateBaseUrl("https://{subdomain}.zendesk.com", "zendesk");
+      return validateBaseUrl(
+        "https://{subdomain}.example.com",
+        "test-subdomain",
+      );
     }).not.toThrow();
   });
 
@@ -1293,13 +1296,13 @@ describe("validateBaseUrl", () => {
 
   it("should reject malformed parameterized authorities", () => {
     expect(() => {
-      return validateBaseUrl("https://user@{sub}.zendesk.com", "fw");
+      return validateBaseUrl("https://user@{sub}.example.com", "fw");
     }).toThrow("must not contain userinfo");
     expect(() => {
-      return validateBaseUrl("https://{sub}.zendesk.com:bad", "fw");
+      return validateBaseUrl("https://{sub}.example.com:bad", "fw");
     }).toThrow("not a valid URL authority");
     expect(() => {
-      return validateBaseUrl("https://{sub}.zendesk.com:99999", "fw");
+      return validateBaseUrl("https://{sub}.example.com:99999", "fw");
     }).toThrow("not a valid URL authority");
     expect(() => {
       return validateBaseUrl("https://{sub}.api%20example.com", "fw");
@@ -1489,7 +1492,7 @@ describe("expandHostWildcardsInBaseUrl", () => {
 
 describe("hasBaseUrlParams", () => {
   it("returns true for host params", () => {
-    expect(hasBaseUrlParams("https://{sub}.zendesk.com")).toBe(true);
+    expect(hasBaseUrlParams("https://{sub}.example.com")).toBe(true);
   });
 
   it("returns true for path params", () => {
@@ -1519,7 +1522,9 @@ describe("hasBaseUrlParams", () => {
 describe("hasBaseUrlVars", () => {
   it("returns true for template base URLs", () => {
     expect(
-      hasBaseUrlVars("https://${{ vars.ZENDESK_SUBDOMAIN }}.zendesk.com"),
+      hasBaseUrlVars(
+        "https://${{ vars.SUBDOMAIN_TEST_SUBDOMAIN }}.example.com",
+      ),
     ).toBe(true);
   });
 
@@ -1538,23 +1543,23 @@ describe("resolveFirewallBaseUrlTemplate", () => {
   it("resolves host template variables without requiring a firewall API auth object", () => {
     expect(
       resolveFirewallBaseUrlTemplate({
-        serviceName: "zendesk",
-        base: "https://${{ vars.ZENDESK_SUBDOMAIN }}.zendesk.com",
-        vars: { ZENDESK_SUBDOMAIN: "acme" },
+        serviceName: "test-subdomain",
+        base: "https://${{ vars.SUBDOMAIN_TEST_SUBDOMAIN }}.example.com",
+        vars: { SUBDOMAIN_TEST_SUBDOMAIN: "acme" },
         credentialed: true,
       }),
-    ).toBe("https://acme.zendesk.com");
+    ).toBe("https://acme.example.com");
   });
 
   it("throws when required template variables are missing", () => {
     expect(() => {
       return resolveFirewallBaseUrlTemplate({
-        serviceName: "zendesk",
-        base: "https://${{ vars.ZENDESK_SUBDOMAIN }}.zendesk.com",
+        serviceName: "test-subdomain",
+        base: "https://${{ vars.SUBDOMAIN_TEST_SUBDOMAIN }}.example.com",
         vars: {},
         credentialed: true,
       });
-    }).toThrow('requires variable "ZENDESK_SUBDOMAIN"');
+    }).toThrow('requires variable "SUBDOMAIN_TEST_SUBDOMAIN"');
   });
 
   it("enforces https for credentialed resolved template bases", () => {
@@ -1580,14 +1585,14 @@ describe("resolveFirewallBaseUrlTemplate", () => {
 });
 
 describe("resolveFirewallBaseUrlVars", () => {
-  const zendeskFirewall = {
-    name: "zendesk",
+  const testSubdomainFirewall = {
+    name: "test-subdomain",
     apis: [
       {
-        base: "https://${{ vars.ZENDESK_SUBDOMAIN }}.zendesk.com",
+        base: "https://${{ vars.SUBDOMAIN_TEST_SUBDOMAIN }}.example.com",
         auth: {
           headers: {
-            Authorization: "Bearer ${{ secrets.ZENDESK_API_TOKEN }}",
+            Authorization: "Bearer ${{ secrets.SUBDOMAIN_TEST_API_TOKEN }}",
           },
         },
       },
@@ -1787,31 +1792,31 @@ describe("resolveFirewallBaseUrlVars", () => {
     );
     expect(staticResult[0]!.apis[0]!.base).toBe("https://☃.example/v1");
 
-    const resolvedResult = resolveFirewallBaseUrlVars([zendeskFirewall], {
-      ZENDESK_SUBDOMAIN: "münich",
+    const resolvedResult = resolveFirewallBaseUrlVars([testSubdomainFirewall], {
+      SUBDOMAIN_TEST_SUBDOMAIN: "münich",
     });
     expect(resolvedResult[0]!.apis[0]!.base).toBe(
-      "https://xn--mnich-kva.zendesk.com",
+      "https://xn--mnich-kva.example.com",
     );
   });
 
   it("canonicalizes only hostname-bearing built-in variable values", () => {
     const result = canonicalizeFirewallBaseUrlVarsForExecution(
       [
-        zendeskFirewall,
+        testSubdomainFirewall,
         strapiFirewall,
         embeddedHostFirewall,
         tenantPathFirewall,
       ],
       {
-        ZENDESK_SUBDOMAIN: "münich",
+        SUBDOMAIN_TEST_SUBDOMAIN: "münich",
         STRAPI_BASE_URL: "https://☃.example/v1",
         HOST_TENANT: "%55S-East",
         TENANT: "café",
       },
     );
     expect(result).toEqual({
-      ZENDESK_SUBDOMAIN: "xn--mnich-kva",
+      SUBDOMAIN_TEST_SUBDOMAIN: "xn--mnich-kva",
       STRAPI_BASE_URL: "https://xn--n3h.example/v1",
       HOST_TENANT: "us-east",
       TENANT: "café",
@@ -1841,10 +1846,10 @@ describe("resolveFirewallBaseUrlVars", () => {
   });
 
   it("resolves template base URL with provided vars", () => {
-    const result = resolveFirewallBaseUrlVars([zendeskFirewall], {
-      ZENDESK_SUBDOMAIN: "mycompany",
+    const result = resolveFirewallBaseUrlVars([testSubdomainFirewall], {
+      SUBDOMAIN_TEST_SUBDOMAIN: "mycompany",
     });
-    expect(result[0]!.apis[0]!.base).toBe("https://mycompany.zendesk.com");
+    expect(result[0]!.apis[0]!.base).toBe("https://mycompany.example.com");
   });
 
   it("rejects fixed provider suffix variables that escape the authority", () => {
@@ -2087,36 +2092,36 @@ describe("resolveFirewallBaseUrlVars", () => {
 
   it("leaves static base URLs unchanged", () => {
     const result = resolveFirewallBaseUrlVars([staticFirewall], {
-      ZENDESK_SUBDOMAIN: "mycompany",
+      SUBDOMAIN_TEST_SUBDOMAIN: "mycompany",
     });
     expect(result[0]!.apis[0]!.base).toBe("https://api.github.com");
   });
 
   it("resolves mixed static and template firewalls", () => {
     const result = resolveFirewallBaseUrlVars(
-      [staticFirewall, zendeskFirewall],
-      { ZENDESK_SUBDOMAIN: "acme" },
+      [staticFirewall, testSubdomainFirewall],
+      { SUBDOMAIN_TEST_SUBDOMAIN: "acme" },
     );
     expect(result[0]!.apis[0]!.base).toBe("https://api.github.com");
-    expect(result[1]!.apis[0]!.base).toBe("https://acme.zendesk.com");
+    expect(result[1]!.apis[0]!.base).toBe("https://acme.example.com");
   });
 
   it("throws when required variable is missing", () => {
     expect(() => {
-      return resolveFirewallBaseUrlVars([zendeskFirewall], {});
-    }).toThrow('requires variable "ZENDESK_SUBDOMAIN"');
+      return resolveFirewallBaseUrlVars([testSubdomainFirewall], {});
+    }).toThrow('requires variable "SUBDOMAIN_TEST_SUBDOMAIN"');
   });
 
   it("throws when vars is undefined", () => {
     expect(() => {
-      return resolveFirewallBaseUrlVars([zendeskFirewall], undefined);
-    }).toThrow('requires variable "ZENDESK_SUBDOMAIN"');
+      return resolveFirewallBaseUrlVars([testSubdomainFirewall], undefined);
+    }).toThrow('requires variable "SUBDOMAIN_TEST_SUBDOMAIN"');
   });
 
   it("validates resolved URL is well-formed", () => {
     expect(() => {
-      return resolveFirewallBaseUrlVars([zendeskFirewall], {
-        ZENDESK_SUBDOMAIN: "bad value with spaces",
+      return resolveFirewallBaseUrlVars([testSubdomainFirewall], {
+        SUBDOMAIN_TEST_SUBDOMAIN: "bad value with spaces",
       });
     }).toThrow("must not contain whitespace");
   });
@@ -2151,11 +2156,11 @@ describe("resolveFirewallBaseUrlVars", () => {
   });
 
   it("preserves auth headers unchanged", () => {
-    const result = resolveFirewallBaseUrlVars([zendeskFirewall], {
-      ZENDESK_SUBDOMAIN: "mycompany",
+    const result = resolveFirewallBaseUrlVars([testSubdomainFirewall], {
+      SUBDOMAIN_TEST_SUBDOMAIN: "mycompany",
     });
     expect(result[0]!.apis[0]!.auth.headers!.Authorization).toBe(
-      "Bearer ${{ secrets.ZENDESK_API_TOKEN }}",
+      "Bearer ${{ secrets.SUBDOMAIN_TEST_API_TOKEN }}",
     );
   });
 
@@ -2201,7 +2206,7 @@ describe("firewallBaseUrlTemplateNeedsHostPolicy", () => {
   it("ignores fixed provider suffix and path-only dynamic templates", () => {
     expect(
       firewallBaseUrlTemplateNeedsHostPolicy(
-        "https://${{ vars.ZENDESK_SUBDOMAIN }}.zendesk.com",
+        "https://${{ vars.SUBDOMAIN_TEST_SUBDOMAIN }}.example.com",
       ),
     ).toBe(false);
     expect(

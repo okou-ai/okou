@@ -16,7 +16,7 @@ describe("Auto and personal-subscription Pi execution", () => {
     } as const;
     expect(isPiExecutionRoute(args)).toBe(true);
     expect(piRouteCatalogIdentities(args)).toStrictEqual([
-      { provider: "openrouter", model: "okou-1.0" },
+      { provider: "openrouter", model: "auto" },
     ]);
   });
 
@@ -32,6 +32,21 @@ describe("Auto and personal-subscription Pi execution", () => {
       ).toBe(true);
     }
   });
+
+  it.each(["auto", "gpt-6.1-sol", "gpt-6-luna"])(
+    "uses the native Codex harness for %s only when requested",
+    (model) => {
+      const builtIn = model === "auto";
+      const args = {
+        catalogModel: piCatalogModel(SEEDED_MODEL_CATALOG, model),
+        modelProviderType: builtIn ? "built-in" : "codex-oauth-token",
+        runtimeProviderType: builtIn ? "openrouter-codex" : "codex-oauth-token",
+        codexServiceTier: undefined,
+      } as const;
+      expect(isPiExecutionRoute({ ...args, codexExecution: false })).toBe(true);
+      expect(isPiExecutionRoute({ ...args, codexExecution: true })).toBe(false);
+    },
+  );
 
   it("keeps personal Claude subscriptions on the vendor harness", () => {
     expect(

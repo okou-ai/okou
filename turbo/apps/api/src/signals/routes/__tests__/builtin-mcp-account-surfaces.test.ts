@@ -22,7 +22,6 @@ import {
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
@@ -318,7 +317,7 @@ describe("builtin MCP account surfaces", () => {
       "R2_USER_STORAGES_BUCKET_NAME",
       `test-mcp-selection-${randomUUID()}`,
     );
-    await installApiTestConnectorCatalog({ ifAbsent: true });
+
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const actor = bdd.user();

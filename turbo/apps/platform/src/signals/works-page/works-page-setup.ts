@@ -6,6 +6,7 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
 import { initSlackOrg$, watchSlackConnection$ } from "../okou-page/slack.ts";
 import { watchDiscordConnection$ } from "../okou-page/discord.ts";
+import { ownDiscordApprovalRoute$ } from "../okou-page/discord-oauth-approval.ts";
 import { watchTeamsConnection$ } from "../okou-page/teams.ts";
 import { watchGithubIntegration$ } from "../okou-page/github.ts";
 import {
@@ -40,6 +41,7 @@ const initWorksRedirect$ = command(({ get, set }) => {
 });
 
 export const setupWorksPage$ = command(async ({ set }, signal: AbortSignal) => {
+  set(ownDiscordApprovalRoute$, signal);
   set(setAgentPhoneConnectDialogOpen$, false);
   set(updatePage$, createElement(WorksPage), "sidebar");
   set(

@@ -7,12 +7,10 @@ import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
 import * as deviceCodesSchema from "./schema/device-codes";
 import * as cliTokensSchema from "./schema/cli-tokens";
-import * as desktopAuthHandoffCodeSchema from "./schema/desktop-auth-handoff-code";
 import * as agentSchema from "./schema/agent";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
 import * as conversationSchema from "./schema/conversation";
-import * as checkpointSchema from "./schema/checkpoint";
 import * as agentSessionSchema from "./schema/agent-session";
 import * as storageSchema from "./schema/storage";
 import * as storagePublicationFenceSchema from "./schema/storage-publication-fence";
@@ -21,7 +19,7 @@ import * as blobSchema from "./schema/blob";
 
 import * as sandboxTelemetrySchema from "./schema/sandbox-telemetry";
 import * as runnerSchema from "./schema/runner-job-queue";
-import * as runnerStateSchema from "./schema/runner-state";
+import * as runnerStateSchema from "./runtime/runner-state";
 import * as runnerWssTicketSchema from "./schema/runner-wss-ticket";
 import * as chatAgentRunContextSchema from "./schema/chat-agent-run-context";
 import * as chatNetworkBodyCaptureSchema from "./schema/chat-network-body-capture";
@@ -71,6 +69,8 @@ import * as slackOrgInstallationSchema from "./schema/slack-org-installation";
 import * as slackOrgConnectionSchema from "./schema/slack-org-connection";
 import * as slackChatThreadRouteSchema from "./schema/slack-chat-thread-route";
 import * as slackChatIngressSchema from "./schema/slack-chat-ingress";
+import * as discordOrgGrantSchema from "./schema/discord-org-grant";
+import * as discordOauthStateSchema from "./schema/discord-oauth-state";
 import * as discordOrgInstallationSchema from "./schema/discord-org-installation";
 import * as discordOrgConnectionSchema from "./schema/discord-org-connection";
 import * as discordChatThreadRouteSchema from "./schema/discord-chat-thread-route";
@@ -89,7 +89,7 @@ import * as orgPlanEntitlementSchema from "./runtime/org-plan-entitlement";
 import * as orgConcurrencyEntitlementSchema from "./schema/org-concurrency-entitlement";
 import * as orgConcurrencySubscriptionSchema from "./schema/org-concurrency-subscription";
 import * as orgCacheSchema from "./schema/org-cache";
-import * as orgMembersSchema from "./schema/org-members-metadata";
+import * as orgMembersSchema from "./runtime/org-members-metadata";
 import * as orgMembersCacheSchema from "./schema/org-members-cache";
 import * as userCacheSchema from "./schema/user-cache";
 import * as exportJobSchema from "./schema/export-job";
@@ -107,10 +107,11 @@ import * as builtInModelKeySchema from "./schema/built-in-model-key";
 import * as workflowSchema from "./schema/workflow";
 import * as workflowScheduleSkipSchema from "./schema/workflow-schedule-skip";
 import * as computerUseHostSchema from "./schema/computer-use-host";
+import * as computerUseHostRuntime from "./runtime/computer-use-host";
 import * as userFeatureSwitchesSchema from "./schema/user-feature-switches";
 import * as userDisabledPaidToolsSchema from "./schema/user-disabled-paid-tools";
 import * as userBehaviorCountSchema from "./schema/user-behavior-count";
-import * as chatThreadSchema from "./schema/chat-thread";
+import * as chatThreadSchema from "./runtime/chat-thread";
 import * as chatEventSequenceSchema from "./schema/chat-event-sequence";
 import * as chatEventSchema from "./schema/chat-event";
 import * as chatEventSearchSchema from "./schema/chat-event-search";
@@ -150,14 +151,14 @@ import * as userTemplateSchema from "./schema/user-template";
 import * as piResourceVersionIndexSchema from "./schema/pi-resource-version-index";
 import * as memorySummaryProjectionSchema from "./schema/memory-summary-projection";
 import * as piMemoryStage1CandidateSchema from "./schema/pi-memory-stage1-candidate";
-import * as piMemoryPhase2JobSchema from "./schema/pi-memory-phase2-job";
-import * as piMemoryPhase2CheckpointSchema from "./schema/pi-memory-phase2-checkpoint";
+import * as piMemoryPhase2JobSchema from "./runtime/pi-memory-phase2-job";
 import * as piMemoryPublicationProvenanceSchema from "./schema/pi-memory-publication-provenance";
 import * as sshConnectionSchema from "./schema/ssh-connection";
 import * as sshCredentialSchema from "./schema/ssh-credential";
 import * as vncCredentialSchema from "./schema/vnc-credential";
 import * as vncConnectionSchema from "./schema/vnc-connection";
 import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
+import * as tailscaleConfigSchema from "./schema/tailscale-config";
 
 export const schema = {
   ...mailNotificationSchema,
@@ -168,12 +169,10 @@ export const schema = {
   ...artifactShareSchema,
   ...deviceCodesSchema,
   ...cliTokensSchema,
-  ...desktopAuthHandoffCodeSchema,
   ...agentSchema,
   ...agentRunSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,
   ...conversationSchema,
-  ...checkpointSchema,
   ...agentSessionSchema,
   ...storageSchema,
   ...storagePublicationFenceSchema,
@@ -203,6 +202,8 @@ export const schema = {
   ...slackOrgConnectionSchema,
   ...slackChatThreadRouteSchema,
   ...slackChatIngressSchema,
+  ...discordOrgGrantSchema,
+  ...discordOauthStateSchema,
   ...discordOrgInstallationSchema,
   ...discordOrgConnectionSchema,
   ...discordChatThreadRouteSchema,
@@ -269,6 +270,7 @@ export const schema = {
   ...workflowSchema,
   ...workflowScheduleSkipSchema,
   ...computerUseHostSchema,
+  ...computerUseHostRuntime,
   ...userFeatureSwitchesSchema,
   ...userDisabledPaidToolsSchema,
   ...userBehaviorCountSchema,
@@ -313,13 +315,13 @@ export const schema = {
   ...memorySummaryProjectionSchema,
   ...piMemoryStage1CandidateSchema,
   ...piMemoryPhase2JobSchema,
-  ...piMemoryPhase2CheckpointSchema,
   ...piMemoryPublicationProvenanceSchema,
   ...sshConnectionSchema,
   ...sshCredentialSchema,
   ...vncCredentialSchema,
   ...vncConnectionSchema,
   ...cloudflareAccessConfigSchema,
+  ...tailscaleConfigSchema,
 };
 
 export type DatabaseSchema = typeof schema;

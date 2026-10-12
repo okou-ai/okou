@@ -122,20 +122,23 @@
         "title": "Protokoll nicht gefunden"
       },
       "runner": {
-        "cacheMiss": "Kein zwischengespeicherter Arbeitsbereich entsprach dem Wiederverwendungsschlüssel.",
+        "cacheMiss": "Kein zwischengespeichertes Home-Verzeichnis entsprach dem Wiederverwendungsschlüssel.",
         "deviceLimitMismatch": "Der Leerlauf-Pool-Eintrag ist vorhanden, aber der Geräteratenbegrenzerstatus stimmt nicht überein.",
-        "diskPressure": "Die Wiederverwendung des Arbeitsbereichs wurde wegen Speicherdrucks auf dem Runner übersprungen.",
+        "diskPressure": "Die Wiederverwendung des Home-Verzeichnisses wurde wegen Speicherdrucks auf dem Runner übersprungen.",
         "environment": "Umgebung",
         "featureDisabled": "Die Wiederverwendung von Sandboxen ist für diese Ausführung deaktiviert.",
         "framework": "Framework",
         "generation": "Generation",
+        "home": "Home-Verzeichnis",
+        "homeNoReuseKey": "Es war kein Wiederverwendungsschlüssel für das Home-Verzeichnis verfügbar.",
+        "homeReusedDescription": "Das Home-Verzeichnis wurde aus dem Runner-Cache wiederhergestellt.",
         "hostname": "Hostname",
-        "invalidMetadata": "Die Metadaten des zwischengespeicherten Arbeitsbereichs waren ungültig.",
+        "invalidMetadata": "Die Metadaten des zwischengespeicherten Home-Verzeichnisses waren ungültig.",
         "invalidWorkingDir": "Das angeforderte Arbeitsverzeichnis konnte nicht wiederverwendet werden.",
-        "lockBusy": "Eine andere Ausführung bereitete denselben Arbeitsbereich vor.",
+        "lockBusy": "Eine andere Ausführung bereitete dasselbe Home-Verzeichnis vor.",
         "noReuseKey": "Es war kein Wiederverwendungsschlüssel verfügbar, um eine inaktive Sandbox abzugleichen.",
         "noSessionId": "Altes Ergebnis: Der genaue Grund, warum die Sandbox nicht wiederverwendet wurde, ist nicht verfügbar.",
-        "notConfigured": "Die Wiederverwendung des Arbeitsbereichs war für diese Ausführung nicht konfiguriert.",
+        "notConfigured": "Die Wiederverwendung des Home-Verzeichnisses war für diese Ausführung nicht konfiguriert.",
         "notReused": "Nicht wiederverwendet",
         "outcomeUnavailableDescription": "Weitere Details sind nicht verfügbar.",
         "poolMiss": "Im Leerlaufpool wurde keine passende Sandbox gefunden.",
@@ -145,23 +148,20 @@
         "reusedDescription": "Sandbox wurde aus dem Ruhepool entparkt.",
         "runnerId": "Runner-ID",
         "sandbox": "Sandbox",
-        "sandboxPrepareFallback": "Ein zwischengespeicherter Arbeitsbereich wurde gefunden, konnte aber nach der Sandbox-Vorbereitung nicht verwendet werden.",
-        "sandboxReusedDescription": "Der Arbeitsbereich blieb in der wiederverwendeten Sandbox verfügbar.",
+        "sandboxPrepareFallback": "Ein zwischengespeichertes Home-Verzeichnis wurde gefunden, konnte aber nach der Sandbox-Vorbereitung nicht verwendet werden.",
+        "sandboxReusedDescription": "Das Home-Verzeichnis blieb in der wiederverwendeten Sandbox verfügbar.",
         "startup": "Start",
         "startupCold": "Kaltstart",
         "startupColdDescription": "Eine neue Sandbox und ein neuer Arbeitsbereich wurden vorbereitet.",
+        "startupHome": "Wiederverwendung des Home-Verzeichnisses",
+        "startupHomeDescription": "Eine neue Sandbox stellte ein zwischengespeichertes Home-Verzeichnis wieder her.",
         "startupSandbox": "Sandbox-Wiederverwendung",
         "startupSandboxDescription": "Die Sandbox und ihr Arbeitsbereich wurden wiederverwendet.",
         "startupUnknown": "Unbekannt",
         "startupUnknownDescription": "Details zur Wiederverwendung beim Start sind nicht verfügbar.",
-        "startupWorkspace": "Arbeitsbereich-Wiederverwendung",
-        "startupWorkspaceDescription": "Eine neue Sandbox stellte einen zwischengespeicherten Arbeitsbereich wieder her.",
         "unavailable": "Nicht verfügbar",
         "unparkFailed": "Entparkversuch fehlgeschlagen; Eine neue Sandbox wurde bereitgestellt.",
-        "version": "Version",
-        "workspace": "Arbeitsbereich",
-        "workspaceNoReuseKey": "Es war kein Wiederverwendungsschlüssel für den Arbeitsbereich verfügbar.",
-        "workspaceReusedDescription": "Der Arbeitsbereich wurde aus dem Runner-Cache wiederhergestellt."
+        "version": "Version"
       },
       "steps": {
         "matched": "({{matched}}/{{total}} stimmt überein)",
@@ -908,20 +908,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Sie sind bei Desktop angemeldet. Sie können dieses Fenster schließen.",
-        "connecting": "Ihre Desktop-Sitzung wird verbunden.",
-        "consumed": "Die Anmeldung in Desktop wird abgeschlossen. Lassen Sie dieses Fenster geöffnet.",
-        "failed": "Die Anmeldung konnte nicht abgeschlossen werden. Starten Sie erneut über Desktop oder versuchen Sie es in diesem Browser noch einmal.",
-        "no-workspaces": "Erstellen Sie in der Web-App einen Arbeitsbereich oder treten Sie einem bei. Melden Sie sich dann erneut über Desktop an.",
-        "pending": "Öffnen Sie Desktop, um die Anmeldung fortzusetzen.",
-        "selecting": "Wählen Sie einen Arbeitsbereich für diesen Computer."
-      },
-      "reopen": "Desktop öffnen",
-      "retry": "Erneut versuchen",
-      "title": "Bei Desktop anmelden"
-    },
     "documentTitles": {
       "signIn": "Anmelden",
       "signUp": "Registrieren"
@@ -1707,6 +1693,9 @@
       "cancelled": "Anfrage abgebrochen",
       "cancelling": "Wird abgebrochen…",
       "checkFailed": "Der Browser konnte nicht überprüft werden. Ihre Eingaben bleiben erhalten; versuchen Sie es vor dem Senden erneut.",
+      "checkingOutcome": "Browserstatus wird geprüft",
+      "checkingOutcomeDescription": "Warten auf die Bestätigung dieser Anfrage durch den Browser.",
+      "checkStatus": "Status prüfen",
       "completed": "Informationen hinzugefügt",
       "confirmRangeValue": "Aktuellen Wert verwenden",
       "continue": "Agent benachrichtigen",
@@ -1722,6 +1711,8 @@
       "loadingDescription": "Anfrage wird geprüft…",
       "open": "Informationen eingeben",
       "optional": "(Optional)",
+      "outcomeNotConfirmed": "Ergebnis nicht bestätigt",
+      "outcomeNotConfirmedDescription": "Der Browser hat diese Anfrage möglicherweise abgeschlossen. Prüfe den Status, bevor du es erneut versuchst.",
       "required": "(Erforderlich)",
       "retry": "Erneut versuchen",
       "site": "Website",
@@ -2132,8 +2123,6 @@
       "number": "Nummer"
     },
     "sidebar": {
-      "allArchived": "Alle deine Chats sind archiviert",
-      "allCaughtUp": "Alles erledigt",
       "allChats": "Alle Chats",
       "archive": "Chat archivieren",
       "archived": "Archiviert",
@@ -2144,7 +2133,9 @@
       "deleteTitle": "Chat löschen?",
       "draft": "Entwurf",
       "empty": "Starten Sie eine Konversation; sie wird dann hier angezeigt",
+      "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Posteingang",
+      "inboxEmpty": "Dein Posteingang ist leer",
       "markUnread": "Als ungelesen markieren",
       "movePinDown": "Nach unten verschieben",
       "movePinUp": "Nach oben verschieben",
@@ -2810,8 +2801,12 @@
       "resize": "Größe der Seitenleiste ändern"
     },
     "toasts": {
+      "archived": "Chat archiviert.",
+      "archivedMuted": "Chat archiviert. Er ist stummgeschaltet, neue Antworten holen ihn nicht zurück.",
       "copied": "Kopiert",
-      "deleted": "Chat gelöscht"
+      "deleted": "Chat gelöscht",
+      "unarchived": "Chat in den Posteingang verschoben",
+      "undo": "Rückgängig"
     },
     "voice": {
       "checkingLimit": "Überprüfung des Spracheingabelimits",
@@ -3823,6 +3818,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "Erneut versuchen"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Die Anfrage ist fehlgeschlagen"
@@ -3935,22 +3933,6 @@
         "back": "Zurück",
         "continue": "Weiter",
         "notNow": "Jetzt nicht"
-      },
-      "compliance": {
-        "frameworks": {
-          "ccpa": "CCPA / CPRA",
-          "gdpr": "GDPR",
-          "hipaa": "HIPAA",
-          "iso27001": "ISO/IEC 27001",
-          "soc2": "SOC 2 Type II"
-        },
-        "link": "Sicherheitsdetails",
-        "status": {
-          "aligned": "Ausgerichtet",
-          "compliant": "Konform",
-          "inProgress": "In Arbeit"
-        },
-        "title": "Okous Compliance – gebaut für dein Vertrauen"
       },
       "documentTitles": {
         "experience": "Deine KI-Erfahrung",
@@ -4926,6 +4908,27 @@
           "title": "IndexedDB-Speicher",
           "unavailable": "IndexedDB-Speicher ist nicht verfügbar."
         },
+        "morningBriefEmail": {
+          "checkStatus": "Zustellstatus prüfen",
+          "description": "Sende ein festes Beispiel mit der Morning Brief-Vorlage an deine Konto-E-Mail-Adresse. Dabei wird kein Agent ausgeführt und dein Zeitplan bleibt unverändert.",
+          "reasons": {
+            "delivery-failed": "Die Zustellung ist fehlgeschlagen. Ein früherer Versuch wurde möglicherweise vom Anbieter angenommen.",
+            "expired": "Die Zustellfrist ist abgelaufen. Ein früherer Versuch wurde möglicherweise vom Anbieter angenommen.",
+            "no-email": "Übersprungen: Dein Konto hat keine E-Mail-Adresse.",
+            "suppressed": "Übersprungen: Die Zustellung an deine Konto-E-Mail-Adresse ist gesperrt.",
+            "unsubscribed": "Übersprungen: Dein Konto hat E-Mail-Updates abbestellt."
+          },
+          "requestFailed": "Die Anfrage wurde nicht abgeschlossen. Beim erneuten Versuch wird dieselbe Anfrage verwendet, um eine doppelte E-Mail zu vermeiden.",
+          "retry": "Test-E-Mail erneut versuchen",
+          "send": "Test-E-Mail senden",
+          "sendAnother": "Weitere Test-E-Mail senden",
+          "sending": "Wird gesendet…",
+          "status": {
+            "queued": "Zur Zustellung eingereiht. Prüfe den Status, bevor du ein weiteres Beispiel sendest.",
+            "sent": "Vom E-Mail-Anbieter angenommen. Prüfe Posteingang und Spamordner; die Ankunft im Posteingang ist nicht bestätigt."
+          },
+          "title": "Morning Brief-Test-E-Mail"
+        },
         "openrouterPreset": {
           "description": "Gilt für neue Auto- und integrierte Okou 1.0-Ausführungen in der gesamten Organisation. Bestehende Ausführungen bleiben unverändert.",
           "loading": "Wird geladen…",
@@ -5158,6 +5161,22 @@
   },
   "shared": {
     "breadcrumb": "Brotkrümelnavigation",
+    "compliance": {
+      "frameworks": {
+        "ccpa": "CCPA / CPRA",
+        "gdpr": "GDPR",
+        "hipaa": "HIPAA",
+        "iso27001": "ISO/IEC 27001",
+        "soc2": "SOC 2 Type II"
+      },
+      "link": "Sicherheitsdetails",
+      "status": {
+        "aligned": "Ausgerichtet",
+        "compliant": "Konform",
+        "inProgress": "In Arbeit"
+      },
+      "title": "Okous Compliance – gebaut für dein Vertrauen"
+    },
     "errorBoundary": {
       "contactSupport": "Support",
       "description": "Versuchen Sie es noch einmal oder kontaktieren Sie uns",
@@ -5325,6 +5344,14 @@
     },
     "clearSearch": "Suche löschen",
     "custom": "Eigene",
+    "delete": {
+      "cancel": "Abbrechen",
+      "confirm": "Vorlage löschen",
+      "deleting": "Wird gelöscht...",
+      "description": "\"{{title}}\" wird für alle entfernt, die sie sehen können. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "failed": "Die Vorlage konnte nicht gelöscht werden. Versuchen Sie es erneut.",
+      "title": "Vorlage löschen?"
+    },
     "detail": {
       "back": "Eigene Vorlagen",
       "page": "Seite {{number}}"
@@ -6307,22 +6334,31 @@
     "connected": "Verbunden",
     "connectedWithDetail": "Verbunden ({{detail}})",
     "discord": {
-      "accountSetup": "Ihr Konto ist nicht verbunden. Neue Discord-Konten können noch nicht verbunden werden.",
-      "adminSetup": "Die Servereinrichtung ist noch nicht verfügbar. Bereits überprüfte Konfigurationen können Discord weiterhin nutzen.",
+      "accountSetup": "Verbinden Sie Ihr Discord-Konto über die offizielle Zustimmung im Browser.",
+      "adminSetup": "Installieren Sie Okou auf Ihrem Discord-Server und verbinden Sie dann Ihr Konto.",
+      "approvalConfirmed": "Die Browser-Zustimmung wurde bestätigt. Schließen Sie diesen Tab, um im ursprünglichen Works-Tab abzuschließen.",
+      "approvalFailed": "Bestätigung fehlgeschlagen. Melden Sie sich mit dem ursprünglichen Okou-Konto und der Organisation an oder starten Sie die Autorisierung erneut.",
+      "approvalPrompt": "Bestätigen Sie mit demselben Okou-Konto und derselben Organisation wie im ursprünglichen Works-Tab. Die Bestätigung allein verbindet Ihr Konto noch nicht.",
+      "approve": "Discord-Zustimmung bestätigen",
+      "approving": "Bestätigung…",
+      "authorizationError": "Die Discord-Autorisierung konnte nicht abgeschlossen werden. Versuchen Sie es über diese Karte erneut.",
+      "authorizing": "Autorisierung läuft…",
+      "browserConsent": "Erteilen Sie die Discord-Zustimmung und bestätigen Sie dort mit Ihrem Okou-Konto. Das Schließen allein verbindet Ihr Konto nicht.",
       "chooseDmServer": "Server auswählen",
       "description": "Erwähnen Sie Okou auf einem Server oder senden Sie dem Bot eine Direktnachricht.",
       "disconnect": "Verbindung zu Discord trennen",
       "dmServer": "Standardserver für Direktnachrichten",
+      "install": "Auf Discord installieren",
       "limitedContext": "Begrenzter Kontext: Okou empfängt möglicherweise keine normalen Kanalnachrichten. Erwähnen Sie Okou und geben Sie die benötigten Details an.",
-      "loadError": "Der Discord-Status konnte nicht geladen werden.",
-      "loading": "Discord-Status wird geladen…",
-      "memberSetup": "Fragen Sie einen Organisationsadministrator nach dem Discord-Zugang. Die Servereinrichtung ist noch nicht verfügbar.",
+      "memberSetup": "Bitten Sie einen Organisationsadministrator, Okou auf Ihrem Discord-Server zu installieren.",
       "moreOptions": "Weitere Discord-Optionen",
+      "pendingConsent": "Dieser Tab hat keinen Autorisierungsnachweis. Schließen Sie ihn und starten Sie die Autorisierung im ursprünglichen Works-Tab erneut.",
+      "popupBlocked": "Erlauben Sie Pop-ups für die Discord-Autorisierung und versuchen Sie es erneut.",
       "retry": "Erneut versuchen",
       "server": "Server: {{name}}",
       "suspended": "Discord ist vorübergehend nicht verfügbar. Bestehende Verbindungen bleiben erhalten.",
       "title": "Discord",
-      "unconfigured": "Discord ist für diese Organisation noch nicht verfügbar.",
+      "unconfigured": "Discord ist für diese Organisation noch nicht eingerichtet.",
       "uninstall": "Discord entfernen",
       "uninstallDescription": "Dadurch wird die Discord-Verbindung für alle in dieser Organisation getrennt. Die Verbindungen anderer Organisationen bleiben bestehen.",
       "uninstallTitle": "Discord aus dieser Organisation entfernen?"

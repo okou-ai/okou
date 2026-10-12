@@ -89,6 +89,16 @@ class TestNdjsonExtractor:
         flow = self._stream_flow(real_flow)
         return response_stream(flow), flow.metadata[metadata_keys.X_NDJSON_STATE]
 
+    def _cooperative_stream_parser(self, real_flow):
+        flow = self._stream_flow(real_flow)
+
+        async def parse(chunk):
+            forwarded = response_stream(flow)(chunk)
+            await mitm_addon.responseinspection(flow)
+            return forwarded
+
+        return parse, flow.metadata[metadata_keys.X_NDJSON_STATE]
+
     def test_single_line(self, real_flow):
         parse, state = self._stream_parser(real_flow)
         parse(b'{"data":{"id":"1"},"includes":{"users":[{"id":"u1"}]}}\n')
@@ -223,8 +233,8 @@ class TestNdjsonExtractor:
         assert state["data_count"] == 1
         assert state["includes"] == {"users": 1}
 
-    def test_byte_cap_line_with_bulk_discarded_string_is_accepted(self, real_flow):
-        parse, state = self._stream_parser(real_flow)
+    async def test_byte_cap_line_with_bulk_discarded_string_is_accepted(self, real_flow):
+        parse, state = self._cooperative_stream_parser(real_flow)
         prefix = b'{"data":{"id":"1"},"discarded":"'
         suffix = b'"}'
         line = (
@@ -233,7 +243,7 @@ class TestNdjsonExtractor:
         body = line + b"\n"
 
         assert len(line) == LARGE_RESPONSE_DECOMPRESS_LIMIT
-        assert parse(body) == body
+        assert await parse(body) == body
         assert state["lines_failed"] == 0
         assert state["lines_parsed"] == 1
         assert state["data_count"] == 1
@@ -304,13 +314,14 @@ class TestNdjsonExtractor:
 
         assert state == finalized
 
-    def test_oversized_line_tail_not_counted_on_finish(self, real_flow):
+    async def test_oversized_line_tail_not_counted_on_finish(self, real_flow):
         flow = self._stream_flow(real_flow)
         parse = response_stream(flow)
         state = flow.metadata[metadata_keys.X_NDJSON_STATE]
         big = b"x" * _OVERSIZED_NDJSON_LINE_BYTES
 
         parse(big)
+        await mitm_addon.responseinspection(flow)
         parse(b'{"data":{"id":"tail"}}')
         response_streaming.finalize_connector_response_state(flow)
 
@@ -325,34 +336,34 @@ class TestNdjsonExtractor:
         parse(b"")
         assert state["data_count"] == 1
 
-    def test_oversized_line_dropped(self, real_flow):
+    async def test_oversized_line_dropped(self, real_flow):
         """Oversized line is dropped; subsequent lines parse normally."""
-        parse, state = self._stream_parser(real_flow)
+        parse, state = self._cooperative_stream_parser(real_flow)
         big = b"x" * _OVERSIZED_NDJSON_LINE_BYTES
-        parse(big)
-        parse(b"\n")
-        parse(b'{"data":{"id":"after"}}\n')
+        await parse(big)
+        await parse(b"\n")
+        await parse(b'{"data":{"id":"after"}}\n')
         assert state["data_count"] == 1
         assert state["lines_parsed"] == 1
         assert state["lines_failed"] == 1
 
-    def test_oversized_line_discards_until_newline(self, real_flow):
+    async def test_oversized_line_discards_until_newline(self, real_flow):
         """A valid-looking tail of an overlong line must not be counted as its own row."""
-        parse, state = self._stream_parser(real_flow)
+        parse, state = self._cooperative_stream_parser(real_flow)
         big = b"x" * _OVERSIZED_NDJSON_LINE_BYTES
-        parse(big)
-        parse(b'{"data":{"id":"tail"}}\n')
-        parse(b'{"data":{"id":"next"}}\n')
+        await parse(big)
+        await parse(b'{"data":{"id":"tail"}}\n')
+        await parse(b'{"data":{"id":"next"}}\n')
 
         assert state["data_count"] == 1
         assert state["lines_parsed"] == 1
         assert state["lines_failed"] == 1
 
-    def test_oversized_line_with_newline_continues_in_same_chunk(self, real_flow):
+    async def test_oversized_line_with_newline_continues_in_same_chunk(self, real_flow):
         """Dropping an overlong row should not discard valid later rows in the same chunk."""
-        parse, state = self._stream_parser(real_flow)
+        parse, state = self._cooperative_stream_parser(real_flow)
         big = b"x" * _OVERSIZED_NDJSON_LINE_BYTES
-        parse(big + b'\n{"data":{"id":"after"}}\n')
+        await parse(big + b'\n{"data":{"id":"after"}}\n')
 
         assert state["data_count"] == 1
         assert state["lines_parsed"] == 1

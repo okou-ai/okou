@@ -105,21 +105,21 @@ class TestFirewallRequestBaseMatching:
         fw_configs = wrap_firewalls(
             [
                 {
-                    "base": "https://{subdomain}.zendesk.com",
+                    "base": "https://{subdomain}.example.com",
                     "auth": {"headers": {"Authorization": "Basic ${{ secrets.AUTH }}"}},
                     "permissions": [{"name": "tickets", "rules": ["GET /api/v2/tickets"]}],
                 }
             ],
-            name="zendesk",
+            name="test-subdomain",
         )
         result = match_request_with_raw_firewalls(
-            "https://acme.zendesk.com/api/v2/tickets",
+            "https://acme.example.com/api/v2/tickets",
             "GET",
             fw_configs,
             network_policies=grant_all(fw_configs),
         )
         assert isinstance(result, matching.FirewallAllow)
-        assert result.name == "zendesk"
+        assert result.name == "test-subdomain"
         assert result.permission == "tickets"
         assert result.params == {"subdomain": "acme"}
 
@@ -128,28 +128,28 @@ class TestFirewallRequestBaseMatching:
         fw_configs = wrap_firewalls(
             [
                 {
-                    "base": "https://{subdomain}.zendesk.com",
+                    "base": "https://{subdomain}.example.com",
                     "auth": {"headers": {}},
                     "permissions": [{"name": "tickets", "rules": ["GET /api/v2/tickets"]}],
                 }
             ],
-            name="zendesk",
+            name="test-subdomain",
         )
         result = match_request_with_raw_firewalls(
-            "https://acme.zendesk.com/api/v2/users",
+            "https://acme.example.com/api/v2/users",
             "GET",
             fw_configs,
             network_policies=grant_all(fw_configs),
         )
         assert isinstance(result, matching.FirewallBlock)
-        assert result.name == "zendesk"
+        assert result.name == "test-subdomain"
 
     def test_parameterized_host_no_match_returns_none(self):
         """Different domain entirely → None (pass-through)."""
         fw_configs = wrap_firewalls(
             [
                 {
-                    "base": "https://{subdomain}.zendesk.com",
+                    "base": "https://{subdomain}.example.com",
                     "auth": {"headers": {}},
                     "permissions": [{"name": "p", "rules": ["ANY /{path+}"]}],
                 }
@@ -254,10 +254,10 @@ class TestFirewallRequestBaseMatching:
                 ],
             },
             {
-                "name": "zendesk",
+                "name": "test-subdomain",
                 "apis": [
                     {
-                        "base": "https://{sub}.zendesk.com",
+                        "base": "https://{sub}.example.com",
                         "auth": {"headers": {}},
                         "permissions": [{"name": "p", "rules": ["ANY /{path+}"]}],
                     }
@@ -274,13 +274,13 @@ class TestFirewallRequestBaseMatching:
         assert gh.name == "github"
 
         zd = match_request_with_raw_firewalls(
-            "https://acme.zendesk.com/api/v2/tickets",
+            "https://acme.example.com/api/v2/tickets",
             "GET",
             fw_configs,
             network_policies=grant_all(fw_configs),
         )
         assert isinstance(zd, matching.FirewallAllow)
-        assert zd.name == "zendesk"
+        assert zd.name == "test-subdomain"
         assert zd.params["sub"] == "acme"
 
     def test_parameterized_host_with_query_string(self):
@@ -288,14 +288,14 @@ class TestFirewallRequestBaseMatching:
         fw_configs = wrap_firewalls(
             [
                 {
-                    "base": "https://{sub}.zendesk.com",
+                    "base": "https://{sub}.example.com",
                     "auth": {"headers": {}},
                     "permissions": [{"name": "tickets", "rules": ["GET /api/v2/tickets"]}],
                 }
             ]
         )
         result = match_request_with_raw_firewalls(
-            "https://acme.zendesk.com/api/v2/tickets?page=2",
+            "https://acme.example.com/api/v2/tickets?page=2",
             "GET",
             fw_configs,
             network_policies=grant_all(fw_configs),
@@ -308,14 +308,14 @@ class TestFirewallRequestBaseMatching:
         fw_configs = wrap_firewalls(
             [
                 {
-                    "base": "https://{sub}.zendesk.com",
+                    "base": "https://{sub}.example.com",
                     "auth": {"headers": {}},
                     "permissions": [{"name": "p", "rules": ["ANY /{path+}"]}],
                 }
             ]
         )
         result = match_request_with_raw_firewalls(
-            "https://acme.zendesk.com:8443/api",
+            "https://acme.example.com:8443/api",
             "GET",
             fw_configs,
             network_policies=grant_all(fw_configs),

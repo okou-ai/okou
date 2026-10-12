@@ -46,6 +46,20 @@ readonly VIDEO_GENERATION_RETIREMENT_COMMIT=45b537a596a153a91b76c3bc7223187840f5
 # #38129 moved both memory stages to Luna. DeepSeek route retirement makes
 # earlier APIs unsafe: they would admit work with a deleted execution binding.
 readonly PI_MEMORY_LUNA_ROUTING_COMMIT=77357abdb29ce96b2caf9ee679299602757844dc
+# #38765 reads the Job result rather than compatibility receipts/columns.
+# Storage-independent writers require this reader even before physical DROP.
+readonly PI_MEMORY_JOB_RESULT_READER_COMMIT=cdd6a0abe3f5880e98a02da8df5143232d7632e1
+# #38096 permanently moved OpenRouter Pi captures to generation 5. Current
+# API/Runner/CLI readers no longer execute unversioned contexts, so a rollback
+# must not restore the generation 1 writer or its disabled-switch path.
+readonly PI_OPENROUTER_VERSIONED_WRITER_COMMIT=a635ec3afa20cdb5df9c8125afe6cec24ef53e16
+# #38477 captures personal runtime and independent managed usage provenance.
+# Final capture checks reject earlier personal writers; normalized histories
+# must never regain selected-dependent usage interpretation after rollback.
+readonly MODEL_EXECUTION_CAPTURE_WRITER_COMMIT=b6919718b6d856dfa3a7c500b6e899dd3fde7674
+# #38431 removed chat_threads.provenance from runtime and root-schema SQL.
+# The later physical contraction cannot serve earlier implicit column lists.
+readonly CHAT_THREAD_PROVENANCE_REMOVAL_COMMIT=9fa8da0d3d25e75e0dcfdd3292e1e2bbe6fe262f
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
 readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1260_personal_subscription_account_only.sql
@@ -53,7 +67,12 @@ readonly CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH=turbo/packages/db/src/migrations/1
 readonly STRIPE_PORTAL_PURPOSE_ONLY_PATH=.github/rollback-floors/stripe-portal-purpose-only
 readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-event-schema-header-retired
 readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
+readonly CHECKPOINT_WRITER_PREPARATION_PATH=turbo/apps/api/src/signals/services/pi-memory-phase2-input-revision.ts
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
+readonly DESKTOP_MIGRATION_HOP_PATH=turbo/apps/api/src/signals/services/desktop-electron-migration-release.ts
+readonly COMPUTER_USE_COMMAND_NOTIFICATIONS_PATH=.github/rollback-floors/computer-use-command-notifications
+readonly COMPUTER_USE_HOST_SESSION_ONLY_PATH=turbo/packages/db/src/runtime/computer-use-host.ts
+readonly NATIVE_BRIEF_MEMBER_RUNTIME_PATH=turbo/packages/db/src/runtime/org-members-metadata.ts
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
 readonly RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH=turbo/packages/db/src/migrations/1282_drop_retired_integration_agent_tables.sql
 readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1283_drop_retired_video_model_columns.sql
@@ -108,6 +127,33 @@ if [ -z "$release_tags" ]; then
   fail "Target commit has no release tags: ${TARGET_COMMIT}"
 fi
 
+if ! git merge-base --is-ancestor "$CHAT_THREAD_PROVENANCE_REMOVAL_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the chat thread provenance runtime removal: ${CHAT_THREAD_PROVENANCE_REMOVAL_COMMIT}."
+fi
+
+# The preparation clears retired host hashes without deleting devices or chat
+# bindings. Only the session-only runtime mapping can overlap the later DROP;
+# older APIs still name token_hash in implicit reads and writes.
+computer_use_host_session_only_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$COMPUTER_USE_HOST_SESSION_ONLY_PATH" | sed -n '1p')
+if [[ ! "$computer_use_host_session_only_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Computer Use session-only host mapping on main."
+fi
+if ! git merge-base --is-ancestor "$computer_use_host_session_only_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Computer Use session-only host mapping: ${computer_use_host_session_only_commit}."
+fi
+
+# #38737 removed the Native collection fence from every member SQL projection.
+# Earlier APIs still include it in implicit INSERT, SELECT and RETURNING.
+native_brief_member_runtime_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$NATIVE_BRIEF_MEMBER_RUNTIME_PATH" | sed -n '1p')
+if [[ ! "$native_brief_member_runtime_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Native Morning Brief member runtime preparation on main."
+fi
+if ! git merge-base --is-ancestor "$native_brief_member_runtime_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Native Morning Brief member runtime preparation: ${native_brief_member_runtime_commit}."
+fi
+
 # The draft contraction requires every draft row to carry its owner and a
 # document. Only APIs with the child-only draft writer satisfy that.
 if ! git merge-base --is-ancestor "$CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT" "$TARGET_COMMIT"; then
@@ -139,6 +185,16 @@ if ! git merge-base --is-ancestor "$VIDEO_GENERATION_RETIREMENT_COMMIT" "$TARGET
 fi
 if ! git merge-base --is-ancestor "$PI_MEMORY_LUNA_ROUTING_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates Pi memory Luna routing: ${PI_MEMORY_LUNA_ROUTING_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$PI_MEMORY_JOB_RESULT_READER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Pi memory Job-result readers: ${PI_MEMORY_JOB_RESULT_READER_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$PI_OPENROUTER_VERSIONED_WRITER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the versioned Pi OpenRouter writer: ${PI_OPENROUTER_VERSIONED_WRITER_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$MODEL_EXECUTION_CAPTURE_WRITER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the model execution capture writer: ${MODEL_EXECUTION_CAPTURE_WRITER_COMMIT}."
 fi
 
 # The preparatory catalog release stops writing/reading payload and removes it
@@ -412,6 +468,40 @@ if [[ ! "$browser_session_mutations_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$browser_session_mutations_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Browser session mutation contract: ${browser_session_mutations_commit}."
+fi
+
+# Installed Native Desktop versions use Ably wakeups and heartbeat hints rather
+# than periodic claims. Earlier APIs cannot authorize or recover that protocol.
+computer_use_command_notifications_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$COMPUTER_USE_COMMAND_NOTIFICATIONS_PATH" | sed -n '1p')
+if [[ ! "$computer_use_command_notifications_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Computer Use command notification contract on main."
+fi
+if ! git merge-base --is-ancestor "$computer_use_command_notifications_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Computer Use command notification contract: ${computer_use_command_notifications_commit}."
+fi
+
+# Bridge-free Native ZIPs are safe only while dormant Squirrel clients receive
+# the retained migration hop. Earlier APIs would restore mutable latest selection.
+# Resolve the merged preparation, never this bridge-removal branch's SHA.
+desktop_migration_hop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$DESKTOP_MIGRATION_HOP_PATH" | sed -n '1p')
+if [[ ! "$desktop_migration_hop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Desktop migration-hop policy on main."
+fi
+if ! git merge-base --is-ancestor "$desktop_migration_hop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the frozen Desktop migration-hop policy: ${desktop_migration_hop_commit}."
+fi
+
+# Generic checkpoint contraction requires the already deployed explicit-column
+# memory revision writer. Resolve its actual merged preparation commit.
+checkpoint_writer_preparation_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$CHECKPOINT_WRITER_PREPARATION_PATH" | sed -n '1p')
+if [[ ! "$checkpoint_writer_preparation_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged checkpoint writer preparation on main."
+fi
+if ! git merge-base --is-ancestor "$checkpoint_writer_preparation_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates checkpoint writer preparation: ${checkpoint_writer_preparation_commit}."
 fi
 
 # Migration 1282 drops the retired integration agent preference and

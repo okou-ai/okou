@@ -8,7 +8,7 @@ import { settleIncludingAbort } from "../../utils";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
-import { deleteDiscordFixture } from "./helpers/discord";
+import { removePublicDiscordBinding } from "./helpers/discord";
 import {
   discordChatThreads,
   discordMessageForTest,
@@ -115,7 +115,7 @@ describe("Discord chat-write rollout compatibility", () => {
         },
         flushWaitUntilForTest,
         async () => {
-          await deleteDiscordFixture(context, actor.fixture);
+          await removePublicDiscordBinding(context, actor.fixture);
         },
         async () => {
           await deleteFeatureSwitchesForUser(context, actor);

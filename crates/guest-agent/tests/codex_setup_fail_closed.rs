@@ -55,7 +55,7 @@ async fn codex_setup_failure_exits_before_cli_spawn() -> TestResult {
         "guest-agent must not launch Codex after setup fails"
     );
 
-    let error_path = guest_contracts::runtime_paths::checkpoint_error_file(&runtime_dir);
+    let error_path = guest_contracts::runtime_paths::finalization_error_file(&runtime_dir);
     let error = std::fs::read_to_string(error_path)?;
     assert!(
         error.contains("Codex setup failed"),
@@ -144,7 +144,7 @@ async fn codex_setup_rejects_symlinked_home_before_model_catalog_write() -> Test
         "Codex setup must not write model catalog through symlinked CODEX_HOME"
     );
 
-    let error_path = guest_contracts::runtime_paths::checkpoint_error_file(&runtime_dir);
+    let error_path = guest_contracts::runtime_paths::finalization_error_file(&runtime_dir);
     let error = std::fs::read_to_string(error_path)?;
     assert!(
         error.contains("Codex setup failed"),

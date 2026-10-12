@@ -127,7 +127,7 @@ const cleanPage$ = command(
     }
     const prefix = `${target.value.replace(/\/+$/, "")}/`;
     const page = await get(
-      listS3ObjectsPage(bucket, prefix, PAGE_SIZE, signal),
+      listS3ObjectsPage(bucket, prefix, PAGE_SIZE, undefined, signal),
     );
     signal.throwIfAborted();
     if (

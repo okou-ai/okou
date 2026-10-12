@@ -43,7 +43,10 @@ pub struct ConfigArgs {
     #[arg(long, default_value_t = DEFAULT_CONCURRENCY_FACTOR)]
     concurrency_factor: f64,
 
-    /// Okou API URL (`OKOU_API_BACKEND_URL`)
+    /// Okou API URL (`OKOU_API_BACKEND_URL`).
+    /// Must be an absolute URL without credentials, query, or fragment.
+    /// HTTPS is required except for HTTP hosts normalized to localhost, IPv4 loopback
+    /// (127.0.0.0/8), or IPv6 loopback (::1). Private network addresses require HTTPS.
     #[arg(long, env = "OKOU_API_BACKEND_URL", hide_env_values = true)]
     api_url: String,
     /// Runner authentication token (`OKOU_RUNNER_TOKEN`)
@@ -122,7 +125,7 @@ async fn run_config_with_home(args: ConfigArgs, paths: HomePaths) -> RunnerResul
                 vcpu: def.vcpu,
                 memory_mb: def.memory_mb,
                 rootfs_disk_mb: def.rootfs_disk_mb,
-                workspace_disk_mb: def.workspace_disk_mb,
+                home_disk_mb: def.home_disk_mb,
             },
         );
     }
@@ -470,7 +473,7 @@ mod tests {
         assert_eq!(profile.rootfs_hash, rootfs_hash);
         assert_eq!(profile.snapshot_hash, snapshot_hash);
         assert_eq!(profile.rootfs_disk_mb, 12288);
-        assert_eq!(profile.workspace_disk_mb, 16384);
+        assert_eq!(profile.home_disk_mb, 24576);
         assert_eq!(runner_config.hostname.as_deref(), Some("prod-1.aws.vm3.ai"));
     }
 

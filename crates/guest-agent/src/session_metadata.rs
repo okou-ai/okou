@@ -161,7 +161,7 @@ impl CapturedSessionMetadata {
         self.history_source.as_ref()
     }
 
-    /// Build captured metadata for integration tests that exercise checkpoint entry points.
+    /// Build captured metadata for integration tests that exercise finalization entry points.
     #[doc(hidden)]
     pub fn for_test(
         cli_agent_session_id: impl Into<String>,
@@ -180,7 +180,7 @@ pub struct SessionMetadataStore(Arc<OnceLock<CapturedSessionMetadata>>);
 
 impl SessionMetadataStore {
     /// A private maintenance launch has no public CLI session event or history.
-    /// Its authenticated launch ID is sufficient for the generic checkpoint;
+    /// Its authenticated launch ID is sufficient for Run completion;
     /// artifact validation remains an independent prerequisite.
     pub(crate) fn capture_maintenance_launch(&self, session_id: &str) -> bool {
         let Some(metadata) = SessionHistoryLaunchSource::Pi.capture(session_id, None) else {
@@ -198,7 +198,7 @@ impl SessionMetadataStore {
         self.0.set(metadata).is_ok()
     }
 
-    /// Preload metadata for integration tests that call checkpoint directly.
+    /// Preload metadata for integration tests that call finalization directly.
     #[doc(hidden)]
     pub fn capture_for_test(&self, metadata: CapturedSessionMetadata) -> bool {
         self.capture(metadata)

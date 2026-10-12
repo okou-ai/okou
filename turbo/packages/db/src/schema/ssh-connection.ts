@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sshCredentials } from "./ssh-credential";
 import { cloudflareAccessConfigs } from "./cloudflare-access-config";
+import { tailscaleConfigs } from "./tailscale-config";
 
 export const sshConnections = pgTable(
   "ssh_connections",
@@ -26,7 +27,15 @@ export const sshConnections = pgTable(
     port: integer("port").notNull().default(22),
     credentialId: uuid("credential_id").notNull(),
     cloudflareAccessId: uuid("cloudflare_access_id"),
-    needsRebind: boolean("needs_rebind").default(false).notNull(),
+    tailscaleId: uuid("tailscale_id"),
+    transport: text("transport", {
+      enum: ["direct", "cloudflare_access", "tailscale"],
+    }).notNull(),
+    // Outgoing Cloudflare readers still consume this physical column. New
+    // writers mirror canonical state; old writers must drain before migration.
+    // Remove this shadow and its check only after all serving/rollback readers
+    // stop consuming it (separate contract-phase follow-up under #36137).
+    legacyNeedsRebind: boolean("needs_rebind").default(false).notNull(),
     learnedHostKeyAlgorithm: varchar("learned_host_key_algorithm", {
       length: 64,
     }),
@@ -55,17 +64,31 @@ export const sshConnections = pgTable(
           cloudflareAccessConfigs.orgId,
         ],
       }).onDelete("restrict"),
+      foreignKey({
+        name: "ssh_connections_tailscale_org_fk",
+        columns: [table.tailscaleId, table.orgId],
+        foreignColumns: [tailscaleConfigs.id, tailscaleConfigs.orgId],
+      }).onDelete("restrict"),
+      index("idx_ssh_connections_tailscale").on(table.tailscaleId, table.id),
+      check(
+        "chk_ssh_connections_transport",
+        sql`${table.transport} IN ('direct', 'cloudflare_access', 'tailscale')`,
+      ),
+      check(
+        "chk_ssh_connections_transport_binding",
+        sql`(${table.transport} = 'direct' AND ${table.cloudflareAccessId} IS NULL AND ${table.tailscaleId} IS NULL) OR (${table.transport} = 'cloudflare_access' AND ${table.tailscaleId} IS NULL) OR (${table.transport} = 'tailscale' AND ${table.cloudflareAccessId} IS NULL)`,
+      ),
       index("idx_ssh_connections_cloudflare_access").on(
         table.cloudflareAccessId,
         table.id,
       ),
       check(
         "chk_ssh_connections_cloudflare_access_destination",
-        sql`(${table.cloudflareAccessId} IS NULL AND NOT ${table.needsRebind}) OR (${table.port} = 443 AND ${table.host} ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$' AND ${table.host} !~ '^[0-9.]+$')`,
+        sql`${table.transport} <> 'cloudflare_access' OR (${table.port} = 443 AND ${table.host} ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$' AND ${table.host} !~ '^[0-9.]+$')`,
       ),
       check(
-        "chk_ssh_connections_needs_rebind_unbound",
-        sql`NOT ${table.needsRebind} OR ${table.cloudflareAccessId} IS NULL`,
+        "chk_ssh_connections_legacy_needs_rebind",
+        sql`${table.legacyNeedsRebind} = ((${table.transport} = 'cloudflare_access' AND ${table.cloudflareAccessId} IS NULL) OR (${table.transport} = 'tailscale' AND ${table.tailscaleId} IS NULL))`,
       ),
       foreignKey({
         name: "ssh_connections_credential_owner_fk",
@@ -100,3 +123,10 @@ export const sshConnections = pgTable(
     ];
   },
 );
+
+// Preserve PostgreSQL's nullable left-join result; do not coerce a missing host
+// to false. The stored legacy flag supplies only its boolean decoder.
+export const sshConnectionNeedsRebind = sql<boolean>`
+  (${sshConnections.transport} = 'cloudflare_access' AND ${sshConnections.cloudflareAccessId} IS NULL)
+  OR (${sshConnections.transport} = 'tailscale' AND ${sshConnections.tailscaleId} IS NULL)
+`.mapWith(sshConnections.legacyNeedsRebind);

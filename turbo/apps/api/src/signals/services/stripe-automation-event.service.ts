@@ -754,6 +754,7 @@ const recordStripeInvoiceFanout$ = command(
     // Invoice arrays have no size bound; normalize them before opening the transaction.
     const snapshot = invoiceSnapshot(event);
     // Candidate locks, delivery receipts and their health writes commit together.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0255; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const accountId = snapshot.event.connectedAccountId;
       const mappedPlan = stripeMappedConnectorsReadPlan(accountId);
@@ -913,32 +914,28 @@ const dispatchStripeDeauthorization$ = command(
       });
       return { kind: "bad_request" };
     }
-    // Keep rollback when cancellation arrives during the UPDATE, before commit.
-    const updated = await db.transaction(async (tx) => {
-      const rows = await tx
-        .update(connectors)
-        .set({
-          needsReconnect: true,
-          reconnectReason: "authorization_expired_or_revoked",
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(connectors.connectorSlug, "stripe"),
-            eq(connectors.authMethod, "oauth"),
-            eq(connectors.externalId, parsed.data.account),
-          ),
-        )
-        .returning({ id: connectors.id });
-      signal.throwIfAborted();
-      return rows.length;
-    });
+    signal.throwIfAborted();
+    const updated = await db
+      .update(connectors)
+      .set({
+        needsReconnect: true,
+        reconnectReason: "authorization_expired_or_revoked",
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(connectors.connectorSlug, "stripe"),
+          eq(connectors.authMethod, "oauth"),
+          eq(connectors.externalId, parsed.data.account),
+        ),
+      )
+      .returning({ id: connectors.id });
     signal.throwIfAborted();
     log.debug("Processed Stripe workflow ingress", {
       eventType: "account.application.deauthorized",
       mode: "live",
       outcome: "deauthorized",
-      deauthorizedConnectors: updated,
+      deauthorizedConnectors: updated.length,
     });
     return {
       kind: "ok",
@@ -1364,6 +1361,7 @@ const finishDelivery$ = command(
   ): Promise<boolean> => {
     signal.throwIfAborted();
     // Fence the terminal outcome and commit its health together, delivery first.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0257; new non-billing transactions are prohibited.
     const finished = await set(writeDb$).transaction(async (tx) => {
       const currentTime = nowDate();
       const [updated] = await tx

@@ -91,6 +91,8 @@ describe("selected and runtime Auto identities", () => {
     const settings = {
       auto: { effort: "high" },
       "okou-1.0": { effort: "max" },
+      "okou-1.0-pro": { effort: "high" },
+      "okou-1.0-max": { effort: "xhigh" },
       "@preset/okou-1-0": { effort: "high" },
       "claude-sonnet-5-5": { effort: "extra" },
       "gpt-6.1-sol": { effort: "medium" },

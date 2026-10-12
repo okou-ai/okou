@@ -7,8 +7,8 @@ BALLOON_DRIVER="$REPO_ROOT/.github/scripts/runner-behavior-balloon.sh"
 BALLOON_REMOTE_WORKER="$REPO_ROOT/.github/scripts/runner-behavior-balloon-remote.sh"
 DRAIN_DRIVER="$REPO_ROOT/.github/scripts/runner-behavior-drain-resume.sh"
 DRAIN_REMOTE_WORKER="$REPO_ROOT/.github/scripts/runner-behavior-drain-resume-remote.sh"
-WORKSPACE_DRIVER="$REPO_ROOT/.github/scripts/runner-behavior-workspace-cache-promotion.sh"
-WORKSPACE_REMOTE_WORKER="$REPO_ROOT/.github/scripts/runner-behavior-workspace-cache-promotion-remote.sh"
+HOME_DRIVER="$REPO_ROOT/.github/scripts/runner-behavior-home-cache-promotion.sh"
+HOME_REMOTE_WORKER="$REPO_ROOT/.github/scripts/runner-behavior-home-cache-promotion-remote.sh"
 BENCHMARK_DRIVER="$REPO_ROOT/.github/scripts/runner-behavior-benchmark.sh"
 BENCHMARK_REMOTE_WORKER="$REPO_ROOT/.github/scripts/runner-behavior-benchmark-remote.sh"
 CANCEL_DRIVER="$REPO_ROOT/.github/scripts/runner-behavior-cancel.sh"
@@ -396,7 +396,7 @@ run_driver_case() {
 
 run_driver_case balloon "$BALLOON_DRIVER" "$BALLOON_REMOTE_WORKER" 1 0
 run_driver_case drain-resume "$DRAIN_DRIVER" "$DRAIN_REMOTE_WORKER" 1 0
-run_driver_case workspace-cache-promotion "$WORKSPACE_DRIVER" "$WORKSPACE_REMOTE_WORKER" 1 1
+run_driver_case home-cache-promotion "$HOME_DRIVER" "$HOME_REMOTE_WORKER" 1 1
 run_driver_case benchmark "$BENCHMARK_DRIVER" "$BENCHMARK_REMOTE_WORKER" 1 0
 run_driver_case cancel "$CANCEL_DRIVER" "$CANCEL_REMOTE_WORKER" 1 1
 run_driver_case exec "$EXEC_DRIVER" "$EXEC_REMOTE_WORKER" 1 0

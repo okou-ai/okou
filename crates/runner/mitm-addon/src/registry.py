@@ -272,6 +272,7 @@ def _classify_registry_sandboxes(
     raw_registry: dict,
     *,
     builtin_firewall_catalog_cache_path: str | None,
+    builtin_catalog_snapshot: registry_firewalls.BuiltinFirewallCatalogSnapshot | None = None,
 ) -> tuple[
     dict,
     dict[str, InvalidSandboxEntry],
@@ -288,7 +289,6 @@ def _classify_registry_sandboxes(
     ] = {}
     omitted_builtin_firewalls: dict[str, frozenset[str]] = {}
     omitted_custom_connector_ids: dict[str, frozenset[str]] = {}
-    builtin_catalog_snapshot: registry_firewalls.BuiltinFirewallCatalogSnapshot | None = None
     for client_ip, sandbox in raw_registry.items():
         if not isinstance(sandbox, dict):
             invalid_sandboxes[client_ip] = InvalidSandboxEntry(
@@ -523,8 +523,10 @@ def _load_registry_state(registry_path: str) -> RegistryState:
     successful snapshot while valid entries remain in ``sandboxes`` and stay
     available for enforcement. They do not make the whole registry unavailable;
     requests for an invalid entry are blocked as ``invalid_registry_sandbox``.
-    A catalog dependency also owns its reuse eligibility: retryable catalog
-    failures rebuild the registry even when neither file identity has changed.
+    A catalog dependency owns its identity-only reuse eligibility. Retryable
+    failures are freshly probed before reusing an unchanged registry. Equal
+    unavailable snapshots preserve already-rejected enforcement without another
+    registry read or compilation; changed results rebuild using that exact probe.
 
     ``stat_failed`` covers failures before a file identity is available, and
     later calls retry opening the path while the stat warning guard suppresses
@@ -540,6 +542,7 @@ def _load_registry_state(registry_path: str) -> RegistryState:
     path_key = _path_key(path)
     state = _state_for_path(path_key)
     builtin_catalog_cache_path = _builtin_firewall_catalog_cache_path()
+    builtin_catalog_snapshot: registry_firewalls.BuiltinFirewallCatalogSnapshot | None = None
 
     try:
         opened_file = state_file.open_state_file(path, description="proxy registry")
@@ -556,16 +559,26 @@ def _load_registry_state(registry_path: str) -> RegistryState:
     with opened_file:
         key = opened_file.identity
         loaded_catalog_snapshot = state.snapshot.builtin_firewall_catalog_snapshot
-        if key == state.snapshot.loaded_key and (
-            loaded_catalog_snapshot is None
-            or loaded_catalog_snapshot.can_reuse(
+        if key == state.snapshot.loaded_key:
+            reusable = loaded_catalog_snapshot is None or loaded_catalog_snapshot.can_reuse(
                 registry_firewalls.catalog_file_key(builtin_catalog_cache_path)
             )
-        ):
-            state.unavailable = None
-            state.stat_error_logged = False
-            state.read_error_key = None
-            return state.snapshot
+            if loaded_catalog_snapshot is not None and not reusable:
+                builtin_catalog_snapshot = registry_firewalls.load_catalog_snapshot(
+                    builtin_catalog_cache_path
+                )
+                # Retry the dependency, not the unchanged registry. Only an equal
+                # failed result can retain enforcement that already excludes it.
+                reusable = (
+                    loaded_catalog_snapshot.catalog is None
+                    and builtin_catalog_snapshot.catalog is None
+                    and builtin_catalog_snapshot == loaded_catalog_snapshot
+                )
+            if reusable:
+                state.unavailable = None
+                state.stat_error_logged = False
+                state.read_error_key = None
+                return state.snapshot
         if key == state.failed_key:
             return state.unavailable or _mark_unavailable(
                 state,
@@ -611,6 +624,7 @@ def _load_registry_state(registry_path: str) -> RegistryState:
     ) = _classify_registry_sandboxes(
         raw_registry,
         builtin_firewall_catalog_cache_path=builtin_catalog_cache_path,
+        builtin_catalog_snapshot=builtin_catalog_snapshot,
     )
     if invalid_sandboxes and (
         key != state.snapshot.loaded_key or invalid_sandboxes != state.snapshot.invalid_sandboxes

@@ -4,7 +4,7 @@ import {
   prepareGetStartedInvitation$,
   revokeGetStartedInvitation$,
 } from "../services/get-started-invitation.service";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { usagePackSubscriptions } from "@okouai/db/schema/usage-pack-subscription";
@@ -27,7 +27,7 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { requestSignal$ } from "../context/hono";
 import { clerk$, clerkOrganizationInvitationConflict } from "../external/clerk";
-import { db$, writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { getStripeClient } from "../external/stripe-client";
 import { parseBillingPaymentMethodPreviewToken } from "../services/billing-purchase-preview-token.service";
 import {
@@ -40,7 +40,7 @@ import {
   revokeUsagePackInvitationPurchase$,
   type UsagePackInvitationPurchaseConflictReason,
 } from "../services/usage-pack-invitation-purchase.service";
-import { activeUsagePackBillingContext } from "../services/usage-pack-subscription.service";
+import { TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES } from "../services/usage-pack-subscription.service";
 import {
   revalidateBillingPurchase,
   routeBillingPurchasePreview,
@@ -530,58 +530,88 @@ const purchasePreviewInner$ = command(
   },
 );
 
-async function revalidateInvitationPurchasePreview(
-  args: {
-    readonly db: ReadonlyDb;
-    readonly orgId: string;
-    readonly purchaseId: string;
-    readonly paymentMethodPreviewToken: string;
-  },
-  signal: AbortSignal,
-): Promise<
-  | {
-      readonly kind: "continue";
-      readonly paymentMethod?: BillingPurchasePaymentMethod;
-    }
-  | { readonly kind: "invalid_preview" }
-> {
-  const preview = parseBillingPaymentMethodPreviewToken(
-    args.paymentMethodPreviewToken,
-  );
-  const billing = await activeUsagePackBillingContext(args.db, args.orgId);
-  signal.throwIfAborted();
-  if (
-    !preview ||
-    !billing ||
-    preview.operation !== "usage_pack_invitation" ||
-    preview.operationId !== args.purchaseId ||
-    preview.orgId !== args.orgId ||
-    preview.customerId !== billing.stripeCustomerId ||
-    preview.subscriptionId !== billing.stripeSubscriptionId ||
-    new Date(preview.expiresAt) <= nowDate()
-  ) {
-    return { kind: "invalid_preview" };
-  }
-  const revalidated = await revalidateBillingPurchase(
-    {
-      stripe: getStripeClient(),
-      orgId: args.orgId,
-      customerId: preview.customerId,
-      subscriptionId: preview.subscriptionId,
-      paymentMethodId: preview.paymentMethodId,
-      operation: preview.operation,
-      operationId: preview.operationId,
-      returnUrl: preview.returnUrl,
+const activeInvitationUsagePackBillingContext$ = computed(async (get) => {
+  const db = get(db$);
+  const orgId = get(organizationAuthContext$).orgId;
+  const [subscription] = await db
+    .select({
+      usagePackSubscriptionId: usagePackSubscriptions.id,
+      stripeCustomerId: usagePackSubscriptions.stripeCustomerId,
+      stripeSubscriptionId: usagePackSubscriptions.stripeSubscriptionId,
+    })
+    .from(usagePackSubscriptions)
+    .where(
+      and(
+        eq(usagePackSubscriptions.orgId, orgId),
+        isNotNull(usagePackSubscriptions.stripeSubscriptionId),
+        notInArray(usagePackSubscriptions.subscriptionStatus, [
+          ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
+        ]),
+      ),
+    )
+    .orderBy(desc(usagePackSubscriptions.updatedAt))
+    .limit(1);
+  return subscription?.stripeSubscriptionId
+    ? {
+        usagePackSubscriptionId: subscription.usagePackSubscriptionId,
+        stripeCustomerId: subscription.stripeCustomerId,
+        stripeSubscriptionId: subscription.stripeSubscriptionId,
+      }
+    : null;
+});
+
+const revalidateInvitationPurchasePreview$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly purchaseId: string;
+      readonly token: string;
     },
-    signal,
-  );
-  if (revalidated.kind === "invalid_preview") {
-    return { kind: "invalid_preview" };
-  }
-  return revalidated.kind === "hosted_invoice"
-    ? { kind: "continue" }
-    : { kind: "continue", paymentMethod: revalidated };
-}
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly kind: "continue";
+        readonly paymentMethod?: BillingPurchasePaymentMethod;
+      }
+    | { readonly kind: "invalid_preview" }
+  > => {
+    const preview = parseBillingPaymentMethodPreviewToken(args.token);
+    const billing = await get(activeInvitationUsagePackBillingContext$);
+    signal.throwIfAborted();
+    if (
+      !preview ||
+      !billing ||
+      preview.operation !== "usage_pack_invitation" ||
+      preview.operationId !== args.purchaseId ||
+      preview.orgId !== args.orgId ||
+      preview.customerId !== billing.stripeCustomerId ||
+      preview.subscriptionId !== billing.stripeSubscriptionId ||
+      new Date(preview.expiresAt) <= nowDate()
+    ) {
+      return { kind: "invalid_preview" };
+    }
+    const revalidated = await revalidateBillingPurchase(
+      {
+        stripe: getStripeClient(),
+        orgId: args.orgId,
+        customerId: preview.customerId,
+        subscriptionId: preview.subscriptionId,
+        paymentMethodId: preview.paymentMethodId,
+        operation: preview.operation,
+        operationId: preview.operationId,
+        returnUrl: preview.returnUrl,
+      },
+      signal,
+    );
+    if (revalidated.kind === "invalid_preview") {
+      return { kind: "invalid_preview" };
+    }
+    return revalidated.kind === "hosted_invoice"
+      ? { kind: "continue" }
+      : { kind: "continue", paymentMethod: revalidated };
+  },
+);
 
 const purchaseConfirmInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -607,12 +637,12 @@ const purchaseConfirmInner$ = command(
     const { purchaseId } = get(pathParamsOf(orgInviteContract.confirmPurchase));
     let paymentMethod: BillingPurchasePaymentMethod | undefined;
     if (body.data.paymentMethodPreviewToken) {
-      const revalidated = await revalidateInvitationPurchasePreview(
+      const revalidated = await set(
+        revalidateInvitationPurchasePreview$,
         {
-          db,
           orgId: auth.orgId,
           purchaseId,
-          paymentMethodPreviewToken: body.data.paymentMethodPreviewToken,
+          token: body.data.paymentMethodPreviewToken,
         },
         signal,
       );

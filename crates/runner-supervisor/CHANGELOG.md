@@ -1,5 +1,121 @@
 # Changelog
 
+## [0.9.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.9.0...runner-supervisor-v0.9.1) (2026-10-12)
+
+## [0.9.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.8.0...runner-supervisor-v0.9.0) (2026-10-12)
+
+
+### Features
+
+* **runner:** retain guarded ordinary activation cleanup owners ([#39073](https://github.com/okou-ai/okou/issues/39073)) ([9d380c4](https://github.com/okou-ai/okou/commit/9d380c4e66d449bc99663447dac4aca71e1e5547))
+
+
+### Refactoring
+
+* **runner:** retire workspace protocol and application sql ([#38837](https://github.com/okou-ai/okou/issues/38837)) ([a932f1f](https://github.com/okou-ai/okou/commit/a932f1f86ae10eb624fa3ff3bccc851ba4809a7e))
+
+## [0.8.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.7.0...runner-supervisor-v0.8.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** guard pool replacement and aged conversion ([#39020](https://github.com/okou-ai/okou/issues/39020)) ([cf992ee](https://github.com/okou-ai/okou/commit/cf992ee7d799e1aa6a2c40e0d79f2da15a218812))
+* **runner:** persist wss sockets in shared home ([#38992](https://github.com/okou-ai/okou/issues/38992)) ([3ac8fdc](https://github.com/okou-ai/okou/commit/3ac8fdc9211315897c7c159f91d69bad107db2df))
+
+## [0.7.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.6.2...runner-supervisor-v0.7.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** add one-use ticket wss admission ([#37114](https://github.com/okou-ai/okou/issues/37114)) ([0eece1f](https://github.com/okou-ai/okou/commit/0eece1f399b9e1b357fa1b3c1b4a6d0699d21088))
+* **runner:** admit fenced pool retirement before detach ([#38853](https://github.com/okou-ai/okou/issues/38853)) ([3a314cc](https://github.com/okou-ai/okou/commit/3a314cc4ebbf508aea4a9f2c4ae4f5be7d3d3618))
+* **runner:** complete home cache disk visibility ([#38775](https://github.com/okou-ai/okou/issues/38775)) ([30c5539](https://github.com/okou-ai/okou/commit/30c5539999b0a90dfb693f0cc92c2cd29e6882d2))
+* **runner:** guard captured idle retirement batches ([#38909](https://github.com/okou-ai/okou/issues/38909)) ([fd104c1](https://github.com/okou-ai/okou/commit/fd104c1aa7a59f32c234f007338be49f21e47036))
+* **runner:** guard logical idle substitution ([#39001](https://github.com/okou-ai/okou/issues/39001)) ([31aee7e](https://github.com/okou-ai/okou/commit/31aee7e614d11f2fed54e5cb42078fedb5aa0670))
+* **runner:** own guarded idle terminal phases ([#38823](https://github.com/okou-ai/okou/issues/38823)) ([909af6b](https://github.com/okou-ai/okou/commit/909af6b56aa1e45ac6d2ddef1ab7e2d4c7a99771))
+
+
+### Bug Fixes
+
+* **runner:** retain accepted idle cleanup through caller cancellation ([#38770](https://github.com/okou-ai/okou/issues/38770)) ([5feb5d6](https://github.com/okou-ai/okou/commit/5feb5d66c39f43d06d05c6f087c54bd6c4e8e658))
+
+## [0.6.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.6.1...runner-supervisor-v0.6.2) (2026-10-10)
+
+
+### Refactoring
+
+* name native history and pi memory publications explicitly ([#38679](https://github.com/okou-ai/okou/issues/38679)) ([e5b1d4e](https://github.com/okou-ai/okou/commit/e5b1d4ed7bd2f8b54e01352e762e1f9eec5c3a39))
+* simplify pi memory results and finalization diagnostics ([#38765](https://github.com/okou-ai/okou/issues/38765)) ([cdd6a0a](https://github.com/okou-ai/okou/commit/cdd6a0abe3f5880e98a02da8df5143232d7632e1))
+
+## [0.6.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.6.0...runner-supervisor-v0.6.1) (2026-10-10)
+
+## [0.6.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.5.2...runner-supervisor-v0.6.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+
+### Bug Fixes
+
+* **runner:** bound active-input shutdown under guest backpressure ([#38591](https://github.com/okou-ai/okou/issues/38591)) ([648671b](https://github.com/okou-ai/okou/commit/648671bd07f959e25864029a81dbab13edef83c7))
+
+## [0.5.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.5.1...runner-supervisor-v0.5.2) (2026-10-10)
+
+## [0.5.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.5.0...runner-supervisor-v0.5.1) (2026-10-10)
+
+## [0.5.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.4.1...runner-supervisor-v0.5.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** add passive host memory observation and calibration ([#38370](https://github.com/okou-ai/okou/issues/38370)) ([851e18c](https://github.com/okou-ai/okou/commit/851e18cbe272e59863a06cb3193c3c4e92891c1a))
+
+
+### Refactoring
+
+* **pi:** retire unversioned model config execution ([#38449](https://github.com/okou-ai/okou/issues/38449)) ([c628473](https://github.com/okou-ai/okou/commit/c62847319cb3ebbd41259d662f47905a1cb39863))
+
+## [0.4.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.4.0...runner-supervisor-v0.4.1) (2026-10-09)
+
+
+### Documentation
+
+* reorganize engineering guides and align testing policies ([#38421](https://github.com/okou-ai/okou/issues/38421)) ([60f5783](https://github.com/okou-ai/okou/commit/60f57836b2877b5e065bf27b7adf75c2f633b95d))
+
+## [0.4.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.3.1...runner-supervisor-v0.4.0) (2026-10-09)
+
+
+### Features
+
+* **api:** prepare home cache affinity and runner state ([#38314](https://github.com/okou-ai/okou/issues/38314)) ([21ce097](https://github.com/okou-ai/okou/commit/21ce0978ad9a5bc7eddb94bc9d2bc25f1897095f))
+
+
+### Bug Fixes
+
+* **runner:** reconcile retained state and scrub terminal private files ([#38153](https://github.com/okou-ai/okou/issues/38153)) ([9824493](https://github.com/okou-ai/okou/commit/9824493f88b89ad219b243438d635e6cd085514b))
+
+
+### CI
+
+* use 20261008 toolchain images ([#37988](https://github.com/okou-ai/okou/issues/37988)) ([367fd6b](https://github.com/okou-ai/okou/commit/367fd6b83334f5b8f0f833e255854e1a3927c6bb))
+
+
+### Refactoring
+
+* assemble current run inputs without agent configuration ([#38004](https://github.com/okou-ai/okou/issues/38004)) ([22efd4b](https://github.com/okou-ai/okou/commit/22efd4b6b34872c0585a0d4c3778cb3b59d9d100))
+* **runner:** move runtime reactor into runner-supervisor ([#38393](https://github.com/okou-ai/okou/issues/38393)) ([a5a1dd3](https://github.com/okou-ai/okou/commit/a5a1dd3ae25f19d65baed071cb15fa2a456cfb0a))
+
+## [0.3.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.3.0...runner-supervisor-v0.3.1) (2026-10-09)
+
+## [0.3.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.30...runner-supervisor-v0.3.0) (2026-10-09)
+
+
+### Features
+
+* **api:** prepare home cache affinity and runner state ([#38314](https://github.com/okou-ai/okou/issues/38314)) ([21ce097](https://github.com/okou-ai/okou/commit/21ce0978ad9a5bc7eddb94bc9d2bc25f1897095f))
+
 ## [0.2.30](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.29...runner-supervisor-v0.2.30) (2026-10-09)
 
 

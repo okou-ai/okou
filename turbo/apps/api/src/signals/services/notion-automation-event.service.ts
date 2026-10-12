@@ -24,6 +24,7 @@ import { command } from "ccstate";
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   exists,
@@ -279,20 +280,30 @@ const storeVerificationToken$ = command(
       args.token,
     );
     signal.throwIfAborted();
-    await db.transaction(async (tx) => {
-      await tx
-        .update(notionWebhookSecrets)
-        .set({ active: false, updatedAt: currentTime })
-        .where(eq(notionWebhookSecrets.active, true));
-      signal.throwIfAborted();
-      await tx.insert(notionWebhookSecrets).values({
-        encryptedVerificationToken,
+    const retiredSecrets = db
+      .$with("retired_secrets")
+      .as(
+        db
+          .update(notionWebhookSecrets)
+          .set({ active: false, updatedAt: currentTime })
+          .where(eq(notionWebhookSecrets.active, true))
+          .returning({ id: notionWebhookSecrets.id }),
+      );
+    await db
+      .with(retiredSecrets)
+      .insert(notionWebhookSecrets)
+      .values({
+        // Consume the retirement before checking the single-active unique index.
+        // The aggregate yields one value even when there is no previous secret.
+        encryptedVerificationToken: sql`(
+        SELECT ${encryptedVerificationToken}
+        FROM (SELECT ${count()} FROM ${retiredSecrets}) AS retirement
+      )`,
         active: true,
         createdAt: currentTime,
         updatedAt: currentTime,
       });
-      signal.throwIfAborted();
-    });
+    signal.throwIfAborted();
   },
 );
 
@@ -525,8 +536,9 @@ const repairNotionAutomationProjection$ = command(
             automation.eventConfig,
             eventConnectorId,
           );
-    await db.transaction(async (tx) => {
-      const [retargeted] = await tx
+    const currentTime = nowDate();
+    const retargeted = db.$with("retargeted_notion_automation").as(
+      db
         .update(workflowAutomations)
         .set({
           eventConnectorId,
@@ -542,28 +554,27 @@ const repairNotionAutomationProjection$ = command(
             sql`(${selectionSql}) IS NOT DISTINCT FROM ${eventConnectorId}::uuid`,
           ),
         )
-        .returning({ id: workflowAutomations.id });
-      signal.throwIfAborted();
-      if (!retargeted) {
-        return;
-      }
-      const currentTime = nowDate();
-      await tx
-        .update(notionWorkflowPendingEvents)
-        .set({
-          status: "skipped",
-          skipReason: NOTION_ACCOUNT_CHANGED_SKIP_REASON,
-          processedAt: currentTime,
-          updatedAt: currentTime,
-        })
-        .where(
-          and(
-            eq(notionWorkflowPendingEvents.automationId, automation.id),
-            inArray(notionWorkflowPendingEvents.status, ["pending", "running"]),
+        .returning({ id: workflowAutomations.id }),
+    );
+    await db
+      .with(retargeted)
+      .update(notionWorkflowPendingEvents)
+      .set({
+        status: "skipped",
+        skipReason: NOTION_ACCOUNT_CHANGED_SKIP_REASON,
+        processedAt: currentTime,
+        updatedAt: currentTime,
+      })
+      .where(
+        and(
+          inArray(
+            notionWorkflowPendingEvents.automationId,
+            db.select({ id: retargeted.id }).from(retargeted),
           ),
-        );
-      signal.throwIfAborted();
-    });
+          inArray(notionWorkflowPendingEvents.status, ["pending", "running"]),
+        ),
+      );
+    signal.throwIfAborted();
   },
 );
 
@@ -824,6 +835,7 @@ const publishNotionPendingEvent$ = command(
       eq(workflowAutomations.eventConnectorId, args.connectorId),
     );
     const published = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0193; new non-billing transactions are prohibited.
       db.transaction(async (tx): Promise<NotionPendingPublication> => {
         const [current] = await tx
           .select({

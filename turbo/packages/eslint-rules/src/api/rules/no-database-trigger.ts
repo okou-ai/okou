@@ -19,7 +19,7 @@ export const noDatabaseTrigger = createRule({
     schema: [],
     messages: {
       databaseTrigger:
-        "Do not create database triggers. Keep write orchestration explicit in application transactions, and use database constraints for invariants.",
+        "Do not create database triggers. Keep write orchestration explicit in application SQL, and use database constraints for invariants. See docs/api/database.md#database-triggers.",
     },
   },
   create(context) {

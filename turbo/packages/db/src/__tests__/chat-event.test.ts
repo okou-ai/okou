@@ -111,6 +111,8 @@ describe("chatEvents schema", () => {
       return check.name;
     });
     expect([...checkNames].sort()).toStrictEqual([
+      "chat_events_canonical_annotation_check",
+      "chat_events_canonical_selection_check",
       "chat_events_context_pair_check",
       "chat_events_context_type_check",
       "chat_events_event_type_check",
@@ -118,6 +120,8 @@ describe("chatEvents schema", () => {
       "chat_events_input_context_type_check",
       "chat_events_input_payload_content_check",
       "chat_events_input_user_message_payload_check",
+      "chat_events_model_annotation_check",
+      "chat_events_model_selection_check",
       "chat_events_official_workflow_queue_claim_check",
     ]);
     const officialWorkflowQueueClaimCheck = config.checks.find((check) => {

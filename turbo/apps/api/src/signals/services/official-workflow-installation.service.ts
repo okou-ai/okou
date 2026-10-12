@@ -23,7 +23,7 @@ import {
   officialWorkflowCatalogReleases,
 } from "@okouai/db/schema/official-workflow-catalog";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
@@ -33,7 +33,7 @@ import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { safeSync, settle, settleIncludingAbort } from "../utils";
-import { INITIAL_AUTONOMY_BUDGET } from "./autonomy-budget.constants";
+import { AUTONOMY_BUDGET_CEILING } from "../autonomy-budget-limit";
 import { deleteWorkflow$ } from "./workflow-delete.service";
 import {
   acceptedCatalogFromRow,
@@ -444,7 +444,7 @@ function resolveBlueprint(
     (typeof autonomyBudget !== "number" ||
       !Number.isSafeInteger(autonomyBudget) ||
       autonomyBudget < 0 ||
-      autonomyBudget > INITIAL_AUTONOMY_BUDGET)
+      autonomyBudget > AUTONOMY_BUDGET_CEILING)
   ) {
     return {
       ok: false,
@@ -921,6 +921,7 @@ interface InstallationCompletion {
 }
 const activateInstallation$ = command(
   async ({ set }, args: InstallationCompletion, signal: AbortSignal) => {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0196; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(async (tx) => {
       // SHARE conflicts with catalog pointer publication until activation commits.
       await tx
@@ -1189,7 +1190,7 @@ type OfficialAutomationPatchResult =
 
 function officialPatchMetadata(resolved: ResolvedBlueprint, currentTime: Date) {
   return {
-    autonomyBudget: resolved.autonomyBudget ?? INITIAL_AUTONOMY_BUDGET,
+    autonomyBudget: resolved.autonomyBudget ?? AUTONOMY_BUDGET_CEILING,
     officialAppliedFingerprint: resolved.blueprint.fingerprint,
     officialParameterBindings: [...resolved.bindings],
     officialResultEmailEnabled: resolved.blueprint.runtime.resultEmail,

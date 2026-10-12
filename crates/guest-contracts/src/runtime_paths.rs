@@ -171,19 +171,16 @@ pub fn session_id_file(run_dir: impl AsRef<Path>) -> PathBuf {
     file(run_dir, "session-id")
 }
 
-/// Return the run-root `checkpoint-error` file.
-pub fn checkpoint_error_file(run_dir: impl AsRef<Path>) -> PathBuf {
-    file(run_dir, "checkpoint-error")
+/// Return the run-root Guest error file.
+///
+/// Runner and Guest share this private path within their coupled artifact.
+pub fn finalization_error_file(run_dir: impl AsRef<Path>) -> PathBuf {
+    file(run_dir, "finalization-error")
 }
 
 /// Return the run-root `final-session-history-identity.json` file.
 pub fn final_session_history_identity_file(run_dir: impl AsRef<Path>) -> PathBuf {
     file(run_dir, "final-session-history-identity.json")
-}
-
-/// Return the run-root session-history sidecar export file.
-pub fn session_history_sidecar_export_file(run_dir: impl AsRef<Path>) -> PathBuf {
-    file(run_dir, "session-history-sidecar")
 }
 
 /// Return the run-root `failure-diagnostic.json` file.
@@ -1256,9 +1253,13 @@ mod tests {
     fn canonical_paths_are_not_under_tmp() {
         let run_dir =
             run_dir_for_home("/home/user", "00000000-0000-0000-0000-000000000001").unwrap();
+        assert_eq!(
+            finalization_error_file(&run_dir),
+            run_dir.join("finalization-error")
+        );
         let files = [
             session_id_file(&run_dir),
-            checkpoint_error_file(&run_dir),
+            finalization_error_file(&run_dir),
             final_session_history_identity_file(&run_dir),
             failure_diagnostic_file(&run_dir),
             system_log_file(&run_dir),

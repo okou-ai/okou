@@ -881,7 +881,7 @@ function RewardsNote() {
     <div className="mt-2">
       <button
         type="button"
-        className="flex w-full items-center gap-1 rounded-lg px-3 pb-2.5 pt-2 text-left text-xs text-muted-foreground transition-colors hover:bg-state-hover [&_svg]:size-3 [&_svg]:shrink-0"
+        className="flex w-full items-center gap-1 rounded-lg px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-state-hover [&_svg]:size-3 [&_svg]:shrink-0"
         onClick={() => {
           setOpen(!open);
         }}

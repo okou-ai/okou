@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { config, oxlint } from "@okouai/eslint-config/base";
-import { apiLintPlugin } from "@okouai/eslint-rules/api";
+import { apiLintPlugin, transactionSqlParser } from "@okouai/eslint-rules/api";
 import ccstatePlugin from "@okouai/eslint-rules/ccstate";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -126,17 +126,224 @@ const promiseChainAllowlist = [
   "src/signals/context/wait-until.ts",
 ];
 
-const apiTestExternalBehaviorMessage =
-  "API tests must exercise external behavior through API endpoints. Do not test internal implementation details. See docs/testing/testing-external-behavior.md.";
+// Test-boundary exception lists name exact files (#37440). A missing path is a
+// stale entry, so loading this config fails instead of letting dead
+// exemptions accumulate. Globs would silently admit new files; reject them.
+function exactTestPaths(label, files) {
+  for (const file of files) {
+    if (/[*?{}[\]]/.test(file)) {
+      throw new Error(`${label} must list exact files, not globs: ${file}`);
+    }
+    if (!fs.existsSync(resolve(packageRoot, file))) {
+      throw new Error(
+        `${label} lists a missing file: ${file}. Remove the stale entry; see docs/api/api-testing.md#test-lint-exceptions.`,
+      );
+    }
+  }
+  return files;
+}
 
-const apiTestDirectDbImportMessage =
-  "API tests must not import DB handles directly. Exercise setup and assertions through API endpoints; add a test route only when an external-behavior exception is justified.";
+// API tests, suites, cases, benchmarks, fixtures, their helpers and
+// executable acceptance entrypoints; mirrors isTestModule in
+// @okouai/eslint-rules. They construct and observe cases only through production
+// interfaces; see docs/api/api-testing.md#no-private-state-access.
+const apiTestModuleFiles = [
+  "src/**/__tests__/**/*.ts",
+  "src/**/__benches__/**/*.ts",
+  "src/**/*.bench.ts",
+  "src/**/*.test.ts",
+  "src/**/*.spec.ts",
+  "src/**/*.suite.ts",
+  "src/**/*.cases.ts",
+  "src/**/test-fixtures/**/*.ts",
+  "scripts/**/acceptance.ts",
+  "scripts/**/fixture.ts",
+];
+
+// Exact infrastructure files that own a specific private dependency. Each
+// entry states its responsibility; none may construct or observe business
+// state. Never add a scenario fixture here.
+const apiTestInfrastructure = [
+  {
+    file: "src/__tests__/global-setup.ts",
+    kinds: ["db-driver"],
+    reason:
+      "Applies the fixed SQL seed files once per run with one short-lived pg client and checks the UTC session.",
+  },
+  {
+    file: "src/__tests__/pglite-setup.ts",
+    kinds: ["db-handle"],
+    reason:
+      "Binds the centralized DB transport to the current case's database; production SQL is unchanged.",
+  },
+  {
+    file: "src/__tests__/test-context.ts",
+    kinds: ["db-handle"],
+    reason: "Final case disposal closes the connection pool.",
+  },
+  {
+    file: "src/test-fixtures/pglite-database.ts",
+    kinds: ["db-driver"],
+    reason:
+      "Sole PGlite engine owner (api/no-test-database-binding); builds the isolated case engine.",
+  },
+  {
+    file: "src/test-fixtures/connector-catalog.ts",
+    kinds: ["service"],
+    reason:
+      "Reads the connector catalog source configuration only to restore the external S3 mock.",
+  },
+  // Self-tests of the API database library itself, kept pending Ethan's
+  // decision on moving them to an owning package. They do not exercise
+  // business scenarios.
+  {
+    file: "src/lib/__tests__/db.test.ts",
+    kinds: ["db-driver", "db-handle"],
+    reason: "Self-test of the DB handle and Drizzle wiring in src/lib/db.ts.",
+  },
+  {
+    file: "src/lib/__tests__/db-instrumentation.test.ts",
+    kinds: ["db-driver"],
+    reason: "Self-test of the pg query instrumentation in src/lib.",
+  },
+].map((entry) => {
+  exactTestPaths("apiTestInfrastructure", [entry.file]);
+  return entry;
+});
+
+// Files that already forged credentials when the ratchet was introduced
+// (#37440). This list may only shrink: a file leaves it by obtaining
+// credentials through the real flow. Never add a file.
+const credentialForgingLegacyConsumers = exactTestPaths(
+  "credentialForgingLegacyConsumers",
+  [
+    "src/signals/auth/__tests__/tokens.test.ts",
+    "src/signals/routes/__tests__/agent-custom-connectors.test.ts",
+    "src/signals/routes/__tests__/agents-by-id.test.ts",
+    "src/signals/routes/__tests__/agents-create.test.ts",
+    "src/signals/routes/__tests__/agents-update.test.ts",
+    "src/signals/routes/__tests__/artifact-catalog.bdd.test.ts",
+    "src/signals/routes/__tests__/artifact-downloads.test.ts",
+    "src/signals/routes/__tests__/artifact-shares.test.ts",
+    "src/signals/routes/__tests__/builtin-mcp-discovery.test.ts",
+    "src/signals/routes/__tests__/chat-events-auth.test.ts",
+    "src/signals/routes/__tests__/chat-events-identity.test.ts",
+    "src/signals/routes/__tests__/chat-thread-indicators.test.ts",
+    "src/signals/routes/__tests__/chat-threads-archive.test.ts",
+    "src/signals/routes/__tests__/chat-threads-create.test.ts",
+    "src/signals/routes/__tests__/chat-threads-get.test.ts",
+    "src/signals/routes/__tests__/chat-threads-model-selection.test.ts",
+    "src/signals/routes/__tests__/chat-threads-pin-order.test.ts",
+    "src/signals/routes/__tests__/chat-threads-rename.test.ts",
+    "src/signals/routes/__tests__/chat-threads.bdd.test.ts",
+    "src/signals/routes/__tests__/cli-auth.bdd.test.ts",
+    "src/signals/routes/__tests__/connector-accounts.test.ts",
+    "src/signals/routes/__tests__/connector-catalog.test.ts",
+    "src/signals/routes/__tests__/connector-check.test.ts",
+    "src/signals/routes/__tests__/connectors-by-slug-get.test.ts",
+    "src/signals/routes/__tests__/connectors-scope-diff.test.ts",
+    "src/signals/routes/__tests__/connectors-search.test.ts",
+    "src/signals/routes/__tests__/email-subscription.test.ts",
+    "src/signals/routes/__tests__/finance.test.ts",
+    "src/signals/routes/__tests__/helpers/api-bdd-firewall.ts",
+    "src/signals/routes/__tests__/helpers/api-bdd-user-config.ts",
+    "src/signals/routes/__tests__/helpers/api-bdd-webhooks.ts",
+    "src/signals/routes/__tests__/helpers/api-bdd.ts",
+    "src/signals/routes/__tests__/helpers/billing-checkout-fixture.ts",
+    "src/signals/routes/__tests__/image-io-generate.test.ts",
+    "src/signals/routes/__tests__/integrations-feishu-message.test.ts",
+    "src/signals/routes/__tests__/integrations-github-files.test.ts",
+    "src/signals/routes/__tests__/integrations-slack-message.test.ts",
+    "src/signals/routes/__tests__/integrations-slack-read.test.ts",
+    "src/signals/routes/__tests__/integrations-slack-upload-init.test.ts",
+    "src/signals/routes/__tests__/integrations-slack.test.ts",
+    "src/signals/routes/__tests__/integrations-teams.test.ts",
+    "src/signals/routes/__tests__/integrations-telegram-message.test.ts",
+    "src/signals/routes/__tests__/integrations-telegram-upload-complete.test.ts",
+    "src/signals/routes/__tests__/integrations-telegram.test.ts",
+    "src/signals/routes/__tests__/lark-integration.test.ts",
+    "src/signals/routes/__tests__/mcp-connectors.test.ts",
+    "src/signals/routes/__tests__/membership-refresh.test.ts",
+    "src/signals/routes/__tests__/model-catalog.test.ts",
+    "src/signals/routes/__tests__/paid-tools.test.ts",
+    "src/signals/routes/__tests__/run-lifecycle.bdd.cases.ts",
+    "src/signals/routes/__tests__/shared-thread-attachments.test.ts",
+    "src/signals/routes/__tests__/skill-import.bdd.test.ts",
+    "src/signals/routes/__tests__/social-status.test.ts",
+    "src/signals/routes/__tests__/ssh-access.test.ts",
+    "src/signals/routes/__tests__/subscription-controls.test.ts",
+    "src/signals/routes/__tests__/teams-bot.test.ts",
+    "src/signals/routes/__tests__/uploads-complete.test.ts",
+    "src/signals/routes/__tests__/uploads-prepare.test.ts",
+    "src/signals/routes/__tests__/vnc-access.test.ts",
+    "src/signals/routes/__tests__/web-download.test.ts",
+    "src/signals/routes/__tests__/web-file-url.test.ts",
+    "src/signals/routes/__tests__/web-search.test.ts",
+    "src/signals/routes/__tests__/webhooks-agent-health-usage-telemetry.test.ts",
+    "src/signals/routes/__tests__/webhooks-agent-session-output.test.ts",
+    "src/signals/routes/__tests__/webhooks-github-workflow.test.ts",
+    "src/signals/routes/__tests__/welcome-chat-threads.test.ts",
+  ],
+);
+
+// Production `*ForTest(s)` exports that tests may use. Each is a boundary
+// control, not a way to construct business state; see
+// docs/api/api-testing.md#boundary-test-controls.
+const boundaryTestControls = [
+  {
+    file: "src/lib/log.ts",
+    exports: ["__resetForTest"],
+    reason: "Resets process logger state between cases; asserts nothing.",
+  },
+  {
+    file: "src/lib/secret-kms-client.ts",
+    exports: ["setSecretKmsClientForTests"],
+    reason: "Installs the external KMS client mock.",
+  },
+  {
+    file: "src/lib/time.ts",
+    exports: ["withMockNowForTest", "withNowScopeForTest"],
+    reason: "Scoped application clock control owned by one case.",
+  },
+  {
+    file: "src/signals/context/wait-until.ts",
+    exports: ["flushWaitUntilForTest"],
+    reason: "Drains tracked waitUntil work before observing effects.",
+  },
+  {
+    file: "src/signals/utils.ts",
+    exports: ["acknowledgeDetachedForTest", "collectAllDetachedErrorsForTest"],
+    reason: "Detached-error ownership hooks for case teardown.",
+  },
+  {
+    file: "src/signals/autonomy-budget-limit.ts",
+    exports: ["updateMaxAutonomyBudgetForTest$"],
+    reason:
+      "Ethan-approved exception (#37440): lets tests drive the real delegation chain with a tiny limit instead of 32 hops; production stays at 32.",
+  },
+  {
+    file: "src/signals/auth/tokens.ts",
+    exports: [
+      "signPatJwtForTests",
+      "signSandboxJwtForTests",
+      "signSkillImportJwtForTests",
+    ],
+    reason:
+      "Credential signers kept only for credentialForgingLegacyConsumers; no new consumer may import them.",
+  },
+].map((entry) => {
+  exactTestPaths("boundaryTestControls", [entry.file]);
+  return entry;
+});
 
 const apiTestLoggerImportMessage =
-  "API tests must not observe the logger. Assert HTTP responses and effects instead; see docs/testing/testing-external-behavior.md.";
+  "API tests must not observe the logger. Assert HTTP responses and effects instead; see docs/api/api-testing.md#no-diagnostics-observation.";
 
 const apiTestDiagnosticsMessage =
-  "API tests must not observe the logger or telemetry; assert HTTP responses and effects. See docs/testing/testing-external-behavior.md";
+  "API tests must not observe the logger or telemetry; assert HTTP responses and effects. See docs/api/api-testing.md#no-diagnostics-observation.";
+
+const apiServiceDirectoryTestMessage =
+  "API service-directory tests are prohibited. Exercise behavior through production entry points under routes/__tests__. See docs/api/api-testing.md#file-location.";
 
 const apiTestDiagnosticsSyntax = [
   {
@@ -153,73 +360,8 @@ const apiTestDiagnosticsSyntax = [
   },
 ];
 
-const productionRouteTestImportMessage =
-  "Production source must not import test-only routes. Mount required test fixture routes explicitly from tests through setupApp().";
-
 const lowerLayerRouteImportMessage =
   "Lower layers must not import HTTP route or bootstrap aggregation modules. Move shared behavior to lib, command, computed, external, or service modules.";
-
-const apiTestDirectDbImportPatterns = [
-  "./lib/db",
-  "./lib/db.ts",
-  "./external/db",
-  "./external/db.ts",
-  "../lib/db",
-  "../lib/db.ts",
-  "../external/db",
-  "../external/db.ts",
-  "../signals/external/db",
-  "../signals/external/db.ts",
-  "../../lib/db",
-  "../../lib/db.ts",
-  "../../external/db",
-  "../../external/db.ts",
-  "../../signals/external/db",
-  "../../signals/external/db.ts",
-  "../../../lib/db",
-  "../../../lib/db.ts",
-  "../../../external/db",
-  "../../../external/db.ts",
-  "../../../signals/external/db",
-  "../../../signals/external/db.ts",
-  "../../../../lib/db",
-  "../../../../lib/db.ts",
-  "../../../../external/db",
-  "../../../../external/db.ts",
-  "../../../../signals/external/db",
-  "../../../../signals/external/db.ts",
-  "src/lib/db",
-  "src/lib/db.ts",
-  "src/signals/external/db",
-  "src/signals/external/db.ts",
-];
-
-const apiTestServiceImportPatterns = [
-  "./*.service",
-  "./*.service.ts",
-  "./services/*",
-  "./services/**/*",
-  "../*.service",
-  "../*.service.ts",
-  "../services/*",
-  "../services/**/*",
-  "../signals/services/*",
-  "../signals/services/**/*",
-  "../../services/*",
-  "../../services/**/*",
-  "../../signals/services/*",
-  "../../signals/services/**/*",
-  "../../../services/*",
-  "../../../services/**/*",
-  "../../../signals/services/*",
-  "../../../signals/services/**/*",
-  "../../../../services/*",
-  "../../../../services/**/*",
-  "../../../../signals/services/*",
-  "../../../../signals/services/**/*",
-  "src/signals/services/*",
-  "src/signals/services/**/*",
-];
 
 const apiTestLoggerImportPatterns = ["**/lib/log", "**/lib/log.js"];
 
@@ -277,15 +419,31 @@ export default [
     rules: { "api/no-new-advisory-lock": "error" },
   },
   {
+    files: ["**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"],
+    plugins: { api: apiLintPlugin },
+    linterOptions: { reportUnusedDisableDirectives: "error" },
+    rules: {
+      "api/no-db-transaction": "error",
+      "api/db-transaction-exemptions": "error",
+    },
+  },
+  {
+    files: ["**/*.sql"],
+    languageOptions: { parser: transactionSqlParser },
+    plugins: { api: apiLintPlugin },
+    linterOptions: { reportUnusedDisableDirectives: "error" },
+    rules: {
+      "api/no-db-transaction": "error",
+      "api/db-transaction-exemptions": "error",
+    },
+  },
+  {
     files: ["src/**/*.ts", "scripts/**/*.ts"],
     ignores: [
       "**/__tests__/**",
       "**/test-fixtures/**",
       "**/*.test.ts",
       "**/*.spec.ts",
-      "**/test-*.ts",
-      "scripts/chat-event-context/acceptance.ts",
-      "scripts/chat-event-auxiliary/acceptance.ts",
     ],
     rules: { "api/no-database-trigger": "error" },
   },
@@ -304,7 +462,6 @@ export default [
       "src/**/*.spec.ts",
       "src/**/*.bench.ts",
       "src/**/test-context.ts",
-      "src/signals/routes/test-*.ts",
       "src/scripts/**",
     ],
     rules: {
@@ -320,7 +477,6 @@ export default [
       "src/**/test-fixtures/**",
       "src/**/*.test.ts",
       "src/**/*.spec.ts",
-      "src/signals/routes/test-*.ts",
       "src/signals/services/agent-run-metadata-write.service.ts",
       "src/signals/services/agent-run-terminal-transition.service.ts",
     ],
@@ -553,7 +709,6 @@ export default [
       "src/**/*.test.ts",
       "src/**/*.spec.ts",
       "src/**/test-context.ts",
-      "src/signals/routes/test-*.ts",
     ],
     rules: {
       "okou/no-abort-signal-in-object-params": [
@@ -621,8 +776,10 @@ export default [
     ignores: [
       "src/lib/env.ts",
       "src/lib/time.ts",
-      "src/__tests__/env-stub.ts",
-      "src/__tests__/global-setup-env.ts",
+      ...exactTestPaths("restricted-syntax bootstrap exemptions", [
+        "src/__tests__/env-stub.ts",
+        "src/__tests__/global-setup-env.ts",
+      ]),
     ],
     rules: {
       "no-restricted-syntax": [
@@ -643,14 +800,20 @@ export default [
       "src/**/*.test.ts",
       ...promiseChainAllowlist,
     ],
-    ignores: ["src/__tests__/env-stub.ts", "src/__tests__/global-setup-env.ts"],
+    ignores: exactTestPaths("restricted-syntax bootstrap exemptions", [
+      "src/__tests__/env-stub.ts",
+      "src/__tests__/global-setup-env.ts",
+    ]),
     rules: {
       "no-restricted-syntax": ["error", ...restrictedSyntax],
     },
   },
   {
     files: ["src/**/__tests__/**/*.ts", "src/**/*.test.ts"],
-    ignores: ["src/__tests__/env-stub.ts", "src/__tests__/mocks.ts"],
+    ignores: exactTestPaths("no-test-vi-mocks exemptions", [
+      "src/__tests__/env-stub.ts",
+      "src/__tests__/mocks.ts",
+    ]),
     rules: {
       "api/no-test-vi-mocks": "error",
     },
@@ -670,7 +833,6 @@ export default [
       "src/**/__tests__/**/*.ts",
       "src/**/*.test.ts",
       "src/test-fixtures/**/*.ts",
-      "src/signals/routes/test-*.ts",
     ],
     rules: {
       "api/no-cross-test-time-staggering": "error",
@@ -684,117 +846,6 @@ export default [
     ignores: ["**/dist/**", ".vercel/**"],
   },
   ...oxlint.buildFromOxlintConfigFile("./.oxlintrc.json"),
-  {
-    files: ["src/signals/services/**/*.test.ts"],
-    rules: {
-      "no-restricted-syntax": [
-        "error",
-        {
-          selector: "Program",
-          message:
-            "Service-directory tests must live behind API endpoint boundaries. Put coverage under routes/__tests__ or document a narrow exception in services/__tests__.",
-        },
-      ],
-    },
-  },
-  {
-    // Keep finite persisted/state-machine contract matrices as narrow
-    // exceptions. Route tests cover constructible behavior, while these exact
-    // transition inputs are not available through production APIs. Being an
-    // exception to the service-directory ban is not an exception to the
-    // diagnostics gate, so these files carry those selectors too.
-    files: [
-      // Bounded job ownership needs real row-lock competition, expired leases,
-      // handler-version skew and publication rollback unavailable through HTTP.
-      "src/signals/services/__tests__/background-job.service.test.ts",
-      // The Morning Brief source budget is a deployed 20-second constant, not
-      // a request input, and shortening it through the preview endpoint would
-      // ship a debug parameter. This suite drives the route's own admission
-      // and collection composition so the deadline and a caller's
-      // cancellation can reach a provider body that is still streaming; every
-      // other reader contract stays on the Gmail preview endpoint.
-      "src/signals/services/__tests__/morning-brief-connector-reader.service.test.ts",
-      // Morning Brief composition reduces five providers to one bounded
-      // request. The preview route can only exercise the sources an owner
-      // has actually connected, so these exact byte, deadline, identity,
-      // retention and language-precedence boundaries have no HTTP ingress.
-      "src/signals/services/__tests__/morning-brief-composition.test.ts",
-      // Hosting trigger coexistence, ownership locks and allocation rollback
-      // require isolated PostgreSQL schemas; route suites cover product APIs.
-      "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
-      "src/signals/services/__tests__/workflow-automation-context.test.ts",
-      // #34693 and #34711 need the persisted membership fence in both
-      // overlapping commit orders, the foreign-key cascades that invalidate a
-      // copy, account deletion and the refresh outcome, none of which any
-      // production endpoint exposes. The Settings routes cover the rest.
-      "src/signals/services/__tests__/morning-brief-preference-projection.service.test.ts",
-      // #34815 needs both commit orders of a Morning Brief classification and a
-      // collection, an Agent transfer arriving mid-read, and the automation
-      // binding and queue admission producers. No endpoint suspends a
-      // transaction at a row lock or fires an automation into a chosen thread;
-      // the preview route suite owns every constructible case.
-      "src/signals/services/__tests__/morning-brief-chat-collection.service.test.ts",
-      // #35016 needs both commit orders of a Morning Brief binding reuse and a
-      // thread deletion over the two row locks their cycle ran through. The one
-      // endpoint that reaches an existing binding continues into queue
-      // admission once its binding transaction commits, so it cannot be
-      // suspended at that boundary; deletion stays the real endpoint and the
-      // route suite owns the constructible reuse cases.
-    ],
-    rules: {
-      "no-restricted-syntax": [
-        "error",
-        ...restrictedSyntax,
-        ...apiTestDiagnosticsSyntax,
-      ],
-    },
-  },
-  {
-    files: ["src/**/*.ts"],
-    ignores: [
-      "src/**/__tests__/**/*.ts",
-      "src/signals/routes/test-*.ts",
-      "src/signals/routes/cli-auth-test.ts",
-      "src/signals/route.ts",
-    ],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          patterns: [
-            {
-              group: ["**/routes/test-*", "**/routes/test-*/**"],
-              message: productionRouteTestImportMessage,
-            },
-            {
-              group: ["**/routes/cli-auth-test"],
-              message: productionRouteTestImportMessage,
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    files: ["src/signals/route.ts"],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          patterns: [
-            {
-              group: ["**/routes/test-*", "**/routes/test-*/**"],
-              message: productionRouteTestImportMessage,
-            },
-            {
-              group: ["**/routes/cli-auth-test"],
-              message: productionRouteTestImportMessage,
-            },
-          ],
-        },
-      ],
-    },
-  },
   {
     files: [
       "src/lib/**/*.ts",
@@ -836,66 +887,11 @@ export default [
   },
   {
     files: ["src/**/__tests__/**/*.ts", "src/**/*.test.ts"],
-    ignores: [
-      // Central test lifecycle owns connection-pool teardown; it does not
-      // construct or assert API behavior.
-      "src/__tests__/test-context.ts",
-      // A finite event-type matrix locks persisted payload rendering and
-      // policy lookup byte-for-byte; individual provider routes cannot cover
-      // every lookup-table row without duplicating the contract under test.
-      "src/signals/services/__tests__/workflow-automation-context.test.ts",
-      // Bounded job ownership needs row locks, expired leases, handler-version
-      // skew and transaction rollback that callers cannot construct via HTTP.
-      "src/signals/services/__tests__/background-job.service.test.ts",
-      // Hosting trigger coexistence, ownership locks and allocation rollback
-      // require isolated PostgreSQL schemas; route suites cover product APIs.
-      "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
-      // The logger is the subject here, not a diagnostic: this suite covers the
-      // app factory's log wiring and flush ownership, which no route exposes.
-      "src/__tests__/app-factory.test.ts",
-      // #34693 and #34711's persisted membership fence, foreign-key cascades,
-      // account deletion and refresh outcome have no HTTP ingress; the Settings
-      // routes own everything else.
-      "src/signals/services/__tests__/morning-brief-preference-projection.service.test.ts",
-      // The source budget is a deployed 20-second constant, not a request
-      // input, and shortening it through the endpoint would ship a debug
-      // parameter. This suite drives the route's own admission and collection
-      // composition so a deadline and a cancellation can reach a provider body
-      // that is still streaming; every other reader contract stays on the
-      // Gmail preview endpoint.
-      "src/signals/services/__tests__/morning-brief-connector-reader.service.test.ts",
-      // #34815's classification/read commit orders, mid-read Agent transfer and
-      // workflow-driven provenance producers need suspended PostgreSQL
-      // transactions and a chosen destination thread, neither of which an HTTP
-      // caller can construct; the preview route suite owns the rest.
-      "src/signals/services/__tests__/morning-brief-chat-collection.service.test.ts",
-      // #35016's binding reuse and thread deletion have to arrive in both
-      // orders on the same two rows, which needs a suspended PostgreSQL
-      // transaction; the reuse route suite owns the constructible cases.
-    ],
     rules: {
       "no-restricted-imports": [
         "error",
         {
-          paths: [
-            {
-              name: "@okouai/db/schema",
-              message: apiTestExternalBehaviorMessage,
-            },
-          ],
           patterns: [
-            {
-              group: ["@okouai/db/schema/*", "@okouai/db/runtime/*"],
-              message: apiTestExternalBehaviorMessage,
-            },
-            {
-              group: apiTestServiceImportPatterns,
-              message: apiTestExternalBehaviorMessage,
-            },
-            {
-              group: apiTestDirectDbImportPatterns,
-              message: apiTestDirectDbImportMessage,
-            },
             {
               group: apiTestLoggerImportPatterns,
               message: apiTestLoggerImportMessage,
@@ -905,21 +901,42 @@ export default [
       ],
     },
   },
+  {
+    files: apiTestModuleFiles,
+    plugins: { api: apiLintPlugin },
+    rules: {
+      "api/no-test-private-access": [
+        "error",
+        { infrastructure: apiTestInfrastructure },
+      ],
+      "api/no-test-credential-forging": [
+        "error",
+        { legacyConsumers: credentialForgingLegacyConsumers },
+      ],
+    },
+  },
+  {
+    files: ["src/**/*.ts", "scripts/**/*.ts"],
+    plugins: { api: apiLintPlugin },
+    rules: {
+      "api/no-test-only-routes": "error",
+      "api/test-control-allowlist": [
+        "error",
+        { controls: boundaryTestControls },
+      ],
+    },
+  },
   // Diagnostics gate: API tests must not reach the logger or telemetry stubs
   // through `context.mocks`. This is the last `no-restricted-syntax` config for
   // the files it matches, so it carries `restrictedSyntax` forward; files in
   // `ignores` fall back to the shared test block above.
   {
     files: ["src/**/__tests__/**/*.ts", "src/**/*.test.ts"],
-    ignores: [
+    ignores: exactTestPaths("diagnostics exemptions", [
       // Bootstrap-only module: it owns the process.env and vi.stubEnv usage
       // that `restrictedSyntax` bans everywhere else.
       "src/__tests__/env-stub.ts",
       "src/__tests__/global-setup-env.ts",
-      // Service-directory tests are answered by their own blocks above: the
-      // file is either banned outright or is a named exception that carries
-      // these selectors alongside the shared ones.
-      "src/signals/services/**/*.test.ts",
       // The stub definition site installs the logger and telemetry mocks that
       // this rule stops tests from reading; it asserts nothing itself.
       "src/__tests__/mocks.ts",
@@ -929,15 +946,29 @@ export default [
       "src/lib/__tests__/log-axiom-transport.test.ts",
       // The telemetry SDK client is the subject of this suite.
       "src/signals/external/__tests__/axiom.test.ts",
-      // The app factory's log wiring and flush ownership is the subject here,
-      // and no route exposes it.
-      "src/__tests__/app-factory.test.ts",
-    ],
+    ]),
     rules: {
       "no-restricted-syntax": [
         "error",
         ...restrictedSyntax,
         ...apiTestDiagnosticsSyntax,
+      ],
+    },
+  },
+  // Last `no-restricted-syntax` config for these files, so no later test
+  // override can replace it. The ban has no file exceptions.
+  {
+    files: [
+      "src/signals/services/**/__tests__/**/*.ts",
+      "src/signals/services/**/*.test.ts",
+      "src/signals/services/**/*.spec.ts",
+      "src/signals/services/**/*.suite.ts",
+      "src/signals/services/**/*.cases.ts",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        { selector: "Program", message: apiServiceDirectoryTestMessage },
       ],
     },
   },

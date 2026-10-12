@@ -8,6 +8,7 @@ members = [
     "session-history-selector",
     "runner-rpc-client",
     "guest-tool-exec",
+    "guest-task-exec",
     "process-control-ipc",
     "process-launch",
     "guest-telemetry",
@@ -17,9 +18,10 @@ members = [
     "codex-mock",
     "guest-state-restore",
     "guest-write-file",
-    "guest-workspace-mount",
+    "guest-home-mount",
     "linux-mountinfo",
     "kerberos-credentials",
+    "kerberos-worker",
     "nbd-cow",
     "runner",
     "runner-executor",
@@ -57,6 +59,7 @@ guest-contracts = { path = "guest-contracts" }
 session-history-selector = { path = "session-history-selector" }
 runner-rpc-client = { path = "runner-rpc-client" }
 guest-tool-exec = { path = "guest-tool-exec" }
+guest-task-exec = { path = "guest-task-exec" }
 process-control-ipc = { path = "process-control-ipc" }
 process-launch = { path = "process-launch" }
 guest-telemetry = { path = "guest-telemetry" }
@@ -66,9 +69,10 @@ claude-mock = { path = "claude-mock" }
 codex-mock = { path = "codex-mock" }
 guest-state-restore = { path = "guest-state-restore" }
 guest-write-file = { path = "guest-write-file" }
-guest-workspace-mount = { path = "guest-workspace-mount" }
+guest-home-mount = { path = "guest-home-mount" }
 linux-mountinfo = { path = "linux-mountinfo" }
 kerberos-credentials = { path = "kerberos-credentials" }
+kerberos-worker = { path = "kerberos-worker" }
 nbd-cow = { path = "nbd-cow" }
 runner-host = { path = "runner-host" }
 runner-executor = { path = "runner-executor" }
@@ -186,7 +190,8 @@ codegen-units = 1
 # Production runner releases still use the release profile.
 [profile.ci]
 inherits = "release"
-lto = "thin"
+# Retain thin local LTO while avoiding cross-crate LTO in these rebuilds.
+lto = false
 codegen-units = 4
 
 [workspace.lints.rust]

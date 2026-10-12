@@ -1,0 +1,19 @@
+{
+  "role": "assistant",
+  "api": "openai-codex-responses",
+  "provider": "openai-codex",
+  "model": "gpt-6-luna",
+  "content": [],
+  "stopReason": "error",
+  "errorMessage": "Codex error: Unable to verify model access right now. Please retry.",
+  "diagnostics": [
+    {
+      "type": "okou_model_request",
+      "details": {
+        "transportAttempts": 1,
+        "httpStatus": 200,
+        "failureReason": "provider_server_error"
+      }
+    }
+  ]
+}

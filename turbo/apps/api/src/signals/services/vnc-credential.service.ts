@@ -8,7 +8,7 @@ import type {
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { command } from "ccstate";
 import { safeSqlStateCode } from "../../lib/pg-errors";
@@ -375,30 +375,39 @@ export const updateVncCredential$ = command(
             args.featureContext,
           );
     signal.throwIfAborted();
+    const invalidate = encrypted !== undefined && hosts.length > 0;
+    const rotatedHosts = db.$with("rotated_hosts").as(
+      db
+        .update(vncConnections)
+        .set({
+          generation: sql`${vncConnections.generation} + 1`,
+          updatedAt: nowDate(),
+        })
+        .where(referencingConnections(owner, args.credentialId))
+        .returning({ id: vncConnections.id }),
+    );
     // The profile FK pins each bound host to its credential's auth method.
     const written = await settle(
-      db.transaction(async (tx) => {
-        if (encrypted !== undefined && hosts.length > 0) {
-          await tx
-            .update(vncConnections)
-            .set({
-              generation: sql`${vncConnections.generation} + 1`,
-              updatedAt: nowDate(),
-            })
-            .where(referencingConnections(owner, args.credentialId));
-        }
-        const [row] = await tx
-          .update(vncCredentials)
-          .set({
-            name: args.body.name,
-            ...encrypted,
-            revision: sql`${vncCredentials.revision} + 1`,
-            updatedAt: nowDate(),
-          })
-          .where(ownedCredential(owner, args.credentialId))
-          .returning(vncCredentialMetadata);
-        return row;
-      }),
+      db
+        .with(...(invalidate ? [rotatedHosts] : []))
+        .update(vncCredentials)
+        .set({
+          name: args.body.name,
+          ...encrypted,
+          revision: sql`${vncCredentials.revision} + 1`,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            ownedCredential(owner, args.credentialId),
+            // Consume all host updates before publishing the credential, even
+            // when the initially observed hosts have disappeared or rebound.
+            invalidate
+              ? gte(db.select({ count: count() }).from(rotatedHosts), 0)
+              : undefined,
+          ),
+        )
+        .returning(vncCredentialMetadata),
       signal,
     );
     if (!written.ok) {
@@ -407,13 +416,14 @@ export const updateVncCredential$ = command(
       }
       throw written.error;
     }
-    if (!written.value) {
+    const [updated] = written.value;
+    if (!updated) {
       return vncFailure("credentialNotFound");
     }
     return {
       ok: true,
       value: response(
-        written.value,
+        updated,
         hosts.map(({ id, displayName }) => {
           return { id, displayName };
         }),

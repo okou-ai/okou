@@ -18,10 +18,11 @@ async function migration(name: string) {
   ).replaceAll('"public".', `"${testSchema}".`);
 }
 
+let schemaOwned = false;
 try {
-  await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${testSchema}"`);
-  await client.query(`SET LOCAL search_path TO "${testSchema}"`);
+  schemaOwned = true;
+  await client.query(`SET search_path TO "${testSchema}"`);
   await client.query(
     "CREATE TABLE agents (id uuid PRIMARY KEY, org_id text, owner text, description text)",
   );
@@ -77,8 +78,8 @@ try {
   assert.match(dropSql, /DROP TABLE "agent_ssh_access";/);
   assert.match(dropSql, /DROP TABLE "agent_vnc_access";/);
   assert.doesNotMatch(dropSql, /\bCASCADE\b/i);
-  await client.query("SET LOCAL lock_timeout = '1s'");
-  await client.query("SET LOCAL statement_timeout = '10s'");
+  await client.query("SET lock_timeout = '1s'");
+  await client.query("SET statement_timeout = '10s'");
   await client.query(dropSql);
 
   for (const table of ["agent_ssh_access", "agent_vnc_access"]) {
@@ -102,6 +103,11 @@ try {
     "Retired Agent grants dropped; SSH/VNC hosts and credentials retained",
   );
 } finally {
-  await client.query("ROLLBACK");
-  await client.end();
+  try {
+    if (schemaOwned) {
+      await client.query(`DROP SCHEMA "${testSchema}" CASCADE`);
+    }
+  } finally {
+    await client.end();
+  }
 }

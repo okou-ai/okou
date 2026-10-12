@@ -44,8 +44,8 @@ type StderrBuf = Arc<Mutex<VecDeque<String>>>;
 pub(super) struct SnapshotProcessSpawn<'a> {
     pub(super) cow_device_path: &'a Path,
     pub(super) drive_bind: &'a Path,
-    pub(super) workspace_image: &'a Path,
-    pub(super) workspace_drive_bind: &'a Path,
+    pub(super) home_image: &'a Path,
+    pub(super) home_drive_bind: &'a Path,
     pub(super) network_name: &'a str,
     pub(super) binary_path: &'a Path,
     pub(super) api_sock: &'a Path,
@@ -87,7 +87,7 @@ impl SnapshotProcess {
         let command = build_command(
             SnapshotMountMode::Creation {
                 rootfs: BindMount::new(spawn.cow_device_path, spawn.drive_bind),
-                workspace: BindMount::new(spawn.workspace_image, spawn.workspace_drive_bind),
+                home: BindMount::new(spawn.home_image, spawn.home_drive_bind),
             },
             spawn.network_name,
             spawn.binary_path,
@@ -537,7 +537,7 @@ mod tests {
             memory_path: "/tmp/memory.bin".into(),
             cow_path: "/tmp/cow.img".into(),
             drive_bind_path: "/tmp/cow-device-bind".into(),
-            workspace_drive_bind_path: "/tmp/workspace-device-bind".into(),
+            home_drive_bind_path: "/tmp/home-device-bind".into(),
             vsock_bind_dir: "/tmp/vsock".into(),
         }
     }

@@ -9,7 +9,7 @@ root = ARGV.fetch(0)
 workflow = YAML.load_file(File.join(root, ".github/workflows/crates.yml"))
 jobs = workflow.fetch("jobs")
 groups = jobs.fetch("runner-host-groups")
-selected = jobs.fetch("runner-build")
+selected = jobs.fetch("runner-test-prepare")
 remaining = jobs.fetch("runner-image-architecture-manifest")
 gate = jobs.fetch("ci-gate-crates")
 group_step = groups.fetch("steps").find { |step| step["id"] == "groups" }
@@ -29,7 +29,7 @@ end
   end
 end
 %w[runner-behavior-lane-a runner-behavior-lane-b runner-behavior-lane-c runner-behavior-lane-d].each do |name|
-  raise "#{name} must depend only on selected target readiness" unless jobs.fetch(name).fetch("needs") == ["runner-build"]
+  raise "#{name} must depend only on selected target readiness" unless jobs.fetch(name).fetch("needs") == ["runner-test-prepare"]
 end
 %w[host-cpu-fairness-build guest-rpc-firecracker-build].each do |name|
   build = jobs.fetch(name)
@@ -38,7 +38,7 @@ end
     raise "#{name} must compile for the planned target without waiting for an image"
   end
 end
-unless jobs.fetch("guest-rpc-firecracker-test").fetch("needs") == ["runner-build", "guest-rpc-firecracker-build"]
+unless jobs.fetch("guest-rpc-firecracker-test").fetch("needs") == ["runner-test-prepare", "guest-rpc-firecracker-build"]
   raise "native RPC execution must wait for both the selected image and its test binary"
 end
 unless group_step.dig("env", "SELECTION_KEY") == '${{ needs.detect.outputs.runner-image-job-ref }}' &&
@@ -59,12 +59,19 @@ def check_gate(root, gate, step, matrix:, needed: "true", cpu_needed: "true", re
   script = step.fetch("run").gsub(/\$\{\{ needs\.([a-z-]+)\.result \}\}/) { values.fetch(Regexp.last_match(1)) }
   raise "unresolved gate expression" if script.include?("${{")
   env = {"IS_RELEASE" => release, "RUNNER_IMAGE_NEEDED" => needed,
+         "CHECKS_NEEDED" => "true", "CI_CHANGED" => "true",
+         "GUEST_CONTROL_CHANGED" => "false", "ABLY_CHANGED" => "false",
          "COVERAGE_NEEDED" => "true", "FIREWALL_CONTRACT_NEEDED" => "false",
+         "NATIVE_KERBEROS_NEEDED" => "true", "NATIVE_GSSAPI_PEER_NEEDED" => "true",
          "CPU_FAIRNESS_NEEDED" => cpu_needed, "IMAGE_VALIDATION_MATRIX" => matrix}
   run_step(root, env, script, success: success)
 end
 
-Dir.mktmpdir("crates-image-waiters") do |dir|
+target = File.join(root, "crates/target")
+raise "test target must not be a symlink" if File.symlink?(target)
+FileUtils.mkdir_p(target)
+raise "test target must be canonical" unless File.realpath(target) == target
+Dir.mktmpdir("crates-image-waiters", target) do |dir|
   bin = File.join(dir, "bin")
   FileUtils.mkdir_p(bin)
   ssh = File.join(bin, "ssh")
@@ -92,7 +99,7 @@ Dir.mktmpdir("crates-image-waiters") do |dir|
       other = JSON.parse(outputs.fetch("validation-matrix"))
       target = outputs.fetch("selected-target")
       raise "image validation must partition the full matrix" unless other == full.reject { |entry| entry.fetch("target") == target }
-      raise "one selected target must be covered by runner-build" unless full.count { |entry| entry.fetch("target") == target } == 1
+      raise "one selected target must be covered by runner-test-prepare" unless full.count { |entry| entry.fetch("target") == target } == 1
       env["EXPECTED_TARGET"] = target
       env["GITHUB_OUTPUT"] = File.join(dir, "selected.out")
       run_step(root, env, select_step.fetch("run"))
@@ -113,7 +120,7 @@ Dir.mktmpdir("crates-image-waiters") do |dir|
   raise "host-only tests need both targets" unless JSON.parse(outputs.fetch("matrix")).length == 2
 end
 
-%w[runner-host-groups runner-build runner-image-architecture-manifest
+%w[runner-host-groups runner-test-prepare runner-image-architecture-manifest
    host-cpu-fairness-build host-cpu-fairness-test
    guest-rpc-firecracker-build guest-rpc-firecracker-test].each do |job|
   %w[failure cancelled skipped].each do |result|
@@ -128,13 +135,14 @@ end
 end
 optional_cpu = %w[host-cpu-fairness-build host-cpu-fairness-test].to_h { |name| [name, "skipped"] }
 check_gate(root, gate, gate_step, matrix: "[]", cpu_needed: "false", results: optional_cpu)
-check_gate(root, gate, gate_step, matrix: "[]", results: {"runner-build" => "skipped", "runner-image-architecture-manifest" => "skipped"}, success: false)
+check_gate(root, gate, gate_step, matrix: "[]", results: {"runner-test-prepare" => "skipped", "runner-image-architecture-manifest" => "skipped"}, success: false)
 check_gate(root, gate, gate_step, matrix: "", results: {"runner-image-architecture-manifest" => "skipped"}, success: false)
-unselected = %w[runner-host-groups runner-build runner-image-architecture-manifest
+unselected = %w[runner-host-groups runner-test-prepare runner-image-architecture-manifest
                 host-cpu-fairness-build host-cpu-fairness-test
                 guest-rpc-firecracker-build guest-rpc-firecracker-test].to_h { |name| [name, "skipped"] }
 check_gate(root, gate, gate_step, matrix: "", needed: "false", cpu_needed: "false", results: unselected)
-check_gate(root, gate, gate_step, matrix: "", release: "true", results: gate.fetch("needs").to_h { |name| [name, "skipped"] })
+release_results = gate.fetch("needs").to_h { |name| [name, "skipped"] }.merge("detect-release" => "success")
+check_gate(root, gate, gate_step, matrix: "", release: "true", results: release_results)
 
 puts "crates-runner-image-waiters-test: ok"
 RUBY

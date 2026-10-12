@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Native box shadow contracts</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        color: #14243e;
+        font-family: "Liberation Sans", sans-serif;
+      }
+      .slide {
+        width: 1600px;
+        height: 900px;
+        background: #f4f7fb;
+        padding: 64px;
+        position: relative;
+        overflow: hidden;
+      }
+      h1 {
+        font-size: 38px;
+        margin: 0 0 44px;
+      }
+      h2 {
+        font-size: 25px;
+        margin: 0;
+      }
+      p {
+        font-size: 22px;
+        line-height: 1.5;
+      }
+      .row {
+        display: flex;
+        gap: 78px;
+        padding: 34px;
+      }
+      .box {
+        width: 380px;
+        height: 370px;
+        padding: 28px;
+        border: 3px solid #dce5f0;
+        border-radius: 24px;
+        background: white;
+      }
+      .grid {
+        background: repeating-linear-gradient(
+          90deg,
+          #fef3c7 0,
+          #fef3c7 42px,
+          #dbeafe 42px,
+          #dbeafe 84px
+        );
+      }
+      .caption {
+        position: absolute;
+        bottom: 45px;
+        left: 64px;
+        right: 64px;
+        font-size: 21px;
+      }
+      .clip {
+        position: relative;
+        width: 600px;
+        height: 430px;
+        overflow: hidden;
+        border: 4px solid #94a3b8;
+        padding: 70px;
+      }
+      .small {
+        width: 180px;
+        height: 220px;
+        padding: 20px;
+      }
+      .small p {
+        font-size: 18px;
+        line-height: 1.35;
+      }
+      .small h2 {
+        font-size: 22px;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="slide" data-case="S01">
+      <h1>S01 · CSS shadow layers keep their order and independent geometry</h1>
+      <div class="row">
+        <div
+          class="box"
+          style="box-shadow: 22px 25px 20px rgba(15, 23, 42, 0.3)"
+        >
+          <h2>Single outer shadow</h2>
+        </div>
+        <div
+          class="box"
+          style="box-shadow: inset 0 0 40px rgba(37, 99, 235, 0.6)"
+        >
+          <h2>Inset shadow</h2>
+        </div>
+        <div
+          class="box"
+          style="
+            box-shadow:
+              12px 12px 0 #14b8a6,
+              25px 25px 0 #c7d2fe;
+          "
+        >
+          <h2>Two outer layers</h2>
+          <p>Green must appear above the blue layer.</p>
+        </div>
+      </div>
+      <p class="caption">
+        Both outer layers must remain visible. The original single-shadow
+        control must not change.
+      </p>
+    </section>
+    <section class="slide grid" data-case="S02">
+      <h1>
+        S02 · A box casts its full silhouette even with no opaque background
+      </h1>
+      <div class="row">
+        <div
+          class="box"
+          style="
+            background: transparent;
+            box-shadow: 20px 16px 0 10px rgba(20, 184, 166, 0.65);
+          "
+        >
+          <h2>Clear interior</h2>
+          <p>The grid inside this box stays unchanged.</p>
+        </div>
+        <div
+          class="box"
+          style="
+            background: rgba(255, 255, 255, 0.4);
+            box-shadow: -20px 24px 14px rgba(37, 99, 235, 0.55);
+          "
+        >
+          <h2>Translucent fill</h2>
+          <p>No white shadow carrier may leak through.</p>
+        </div>
+        <div
+          class="box"
+          style="
+            background: transparent;
+            box-shadow:
+              inset 12px -10px 0 16px rgba(244, 63, 94, 0.7),
+              20px 20px 0 #14b8a6;
+          "
+        >
+          <h2>Inset and outer</h2>
+          <p>Inset stays inside the padding edge.</p>
+        </div>
+      </div>
+      <p class="caption">
+        Shadows are editable native paths, not screenshots or replacement
+        images.
+      </p>
+    </section>
+    <section class="slide" data-case="S03">
+      <h1>S03 · Spread, zero offsets and mixed blurred layers</h1>
+      <div class="row">
+        <div
+          class="box"
+          style="
+            border-radius: 36px;
+            box-shadow:
+              0 0 0 16px #14b8a6,
+              0 0 0 30px #c7d2fe;
+          "
+        >
+          <h2>Positive spread</h2>
+        </div>
+        <div
+          class="box"
+          style="
+            box-shadow:
+              0 28px 0 -14px #f59e0b,
+              -12px -16px 0 -6px #2563eb;
+          "
+        >
+          <h2>Negative spread</h2>
+        </div>
+        <div
+          class="box"
+          style="
+            box-shadow:
+              10px 12px 12px rgba(15, 23, 42, 0.3),
+              -20px 26px 22px rgba(37, 99, 235, 0.4),
+              inset 0 0 0 8px #14b8a6;
+          "
+        >
+          <h2>Two blurred layers</h2>
+          <p>
+            Both external effects survive, below the inset layer and the
+            content.
+          </p>
+        </div>
+      </div>
+      <p class="caption">
+        Spread changes the silhouette, not the original box or its text layout.
+      </p>
+    </section>
+    <section class="slide" data-case="S04">
+      <h1>S04 · Transformed shadows respect ancestor and self clipping</h1>
+      <div class="row">
+        <div class="clip">
+          <div
+            class="box"
+            style="
+              transform: rotate(13deg) scale(0.85);
+              box-shadow:
+                26px 30px 0 12px #14b8a6,
+                45px 45px 0 #c7d2fe;
+            "
+          >
+            <h2>Clipped rotated box</h2>
+          </div>
+        </div>
+        <div
+          class="box"
+          style="
+            margin-top: 36px;
+            transform: rotate(-9deg) scale(0.85);
+            box-shadow: 20px 22px 18px rgba(15, 23, 42, 0.35);
+          "
+        >
+          <h2>Native transformed blur</h2>
+        </div>
+        <div
+          class="box small"
+          style="
+            clip-path: polygon(0 0, 100% 0, 80% 100%, 0 80%);
+            box-shadow:
+              inset 0 0 22px #2563eb,
+              18px 18px 0 #14b8a6;
+          "
+        >
+          <h2>Self clip</h2>
+        </div>
+      </div>
+      <p class="caption">
+        The clipped container must not gain paint outside its border. The text
+        remains editable.
+      </p>
+    </section>
+    <section class="slide" data-case="S05">
+      <h1>S05 · Asymmetric radii and collapsed spread</h1>
+      <div class="row">
+        <div
+          class="box"
+          style="
+            border-radius: 8px 90px 25px 55px / 15px 60px 50px 90px;
+            box-shadow:
+              22px 22px 0 12px #14b8a6,
+              38px 40px 0 #c7d2fe;
+          "
+        >
+          <h2>Different corners</h2>
+        </div>
+        <div
+          class="box"
+          style="
+            border-width: 5px 18px 9px 30px;
+            box-shadow: inset 14px -18px 0 20px rgba(37, 99, 235, 0.55);
+          "
+        >
+          <h2>Unequal border widths</h2>
+        </div>
+        <div
+          class="box small"
+          style="
+            box-shadow:
+              20px 20px 0 -100px #f43f5e,
+              8px 8px 0 #14b8a6;
+          "
+        >
+          <h2>Collapsed layer</h2>
+          <p>The red layer has no area.</p>
+        </div>
+      </div>
+      <p class="caption">
+        A collapsed layer must not discard the other valid shadow layers.
+      </p>
+    </section>
+    <section class="slide" data-case="S06">
+      <h1>S06 · Spread respects the original used corner radii</h1>
+      <div class="row">
+        <div
+          class="box"
+          style="border-radius: 0; box-shadow: 0 0 0 22px #14b8a6"
+        >
+          <h2>Sharp corners stay sharp</h2>
+        </div>
+        <div
+          class="box"
+          style="border-radius: 8px; box-shadow: 16px 18px 0 30px #c7d2fe"
+        >
+          <h2>Small radius, large spread</h2>
+        </div>
+        <div
+          class="box"
+          style="
+            border-radius: 80% 20% 70% 15%;
+            box-shadow: 20px 20px 0 14px #14b8a6;
+          "
+        >
+          <h2>Normalize overlapping radii first</h2>
+        </div>
+      </div>
+      <p class="caption">
+        The original border box is unchanged. Only each shadow silhouette is
+        expanded.
+      </p>
+    </section>
+  </body>
+</html>

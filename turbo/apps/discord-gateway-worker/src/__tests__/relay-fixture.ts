@@ -145,6 +145,7 @@ export interface Delivery {
 export class RelayFixture {
   readonly connections = new Events<GatewayConnection>();
   readonly discoveries = new Events<{ authorization: string | null }>();
+  readonly applications = new Events<{ authorization: string | null }>();
   readonly deliveries = new Events<Delivery>();
   readonly forwarded: Delivery[] = [];
   readonly opened: GatewayConnection[] = [];
@@ -154,6 +155,11 @@ export class RelayFixture {
   };
   // Overrides Discord's /gateway/bot response when set.
   gatewayReply: (() => Response) | null = null;
+  applicationReply: (() => Response) | null = null;
+  applicationMetadata: { id: string; flags?: number; flags_new?: string } = {
+    id: APPLICATION_ID,
+    flags: 0,
+  };
   gatewayMetadata = {
     url: "wss://gateway.discord.gg",
     shards: 1,
@@ -206,6 +212,15 @@ export class RelayFixture {
         authorization: request.headers.get("Authorization"),
       });
       return this.gatewayReply?.() ?? Response.json(this.gatewayMetadata);
+    }
+    if (request.url === "https://discord.com/api/v10/applications/@me") {
+      expect(request.headers.get("Authorization")).toBe(`Bot ${BOT_TOKEN}`);
+      this.applications.push({
+        authorization: request.headers.get("Authorization"),
+      });
+      return (
+        this.applicationReply?.() ?? Response.json(this.applicationMetadata)
+      );
     }
     if (request.url === "https://gateway.discord.gg/?v=10&encoding=json") {
       expect(request.headers.get("Upgrade")).toBe("websocket");
@@ -286,7 +301,6 @@ export async function createRelay(bindings: Record<string, string> = {}) {
     DISCORD_GATEWAY_ENABLED: "true",
     DISCORD_GATEWAY_SHARD_ID: "0",
     DISCORD_GATEWAY_SHARD_COUNT: "1",
-    DISCORD_GATEWAY_MESSAGE_CONTENT: "false",
     DISCORD_APPLICATION_ID: APPLICATION_ID,
     DISCORD_BOT_TOKEN: BOT_TOKEN,
     DISCORD_GATEWAY_SECRET: GATEWAY_SECRET,

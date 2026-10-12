@@ -1,5 +1,62 @@
 # Changelog
 
+## [0.47.2](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.1...sandbox-firecracker-v0.47.2) (2026-10-12)
+
+## [0.47.1](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.0...sandbox-firecracker-v0.47.1) (2026-10-11)
+
+## [0.47.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.46.2...sandbox-firecracker-v0.47.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** add one-use ticket wss admission ([#37114](https://github.com/okou-ai/okou/issues/37114)) ([0eece1f](https://github.com/okou-ai/okou/commit/0eece1f399b9e1b357fa1b3c1b4a6d0699d21088))
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+* **runner-network:** decouple dns readiness constants from firecracker ([#38859](https://github.com/okou-ai/okou/issues/38859)) ([78ce425](https://github.com/okou-ai/okou/commit/78ce4259eb3679b088a55c507c9d4962c263df4c))
+
+## [0.46.2](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.46.1...sandbox-firecracker-v0.46.2) (2026-10-10)
+
+## [0.46.1](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.46.0...sandbox-firecracker-v0.46.1) (2026-10-10)
+
+## [0.46.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.45.1...sandbox-firecracker-v0.46.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+## [0.45.1](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.45.0...sandbox-firecracker-v0.45.1) (2026-10-10)
+
+## [0.45.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.44.16...sandbox-firecracker-v0.45.0) (2026-10-10)
+
+
+### Features
+
+* **sandbox:** retain provider-owned backing exit capability ([#38484](https://github.com/okou-ai/okou/issues/38484)) ([945dc1c](https://github.com/okou-ai/okou/commit/945dc1c3debea81f5ec5ef089b3eae3f2206f487))
+
+## [0.44.16](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.44.15...sandbox-firecracker-v0.44.16) (2026-10-10)
+
+## [0.44.15](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.44.14...sandbox-firecracker-v0.44.15) (2026-10-09)
+
+## [0.44.14](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.44.13...sandbox-firecracker-v0.44.14) (2026-10-09)
+
+
+### Refactoring
+
+* **ci:** rename runner image waiter to test prepare ([#38382](https://github.com/okou-ai/okou/issues/38382)) ([0955640](https://github.com/okou-ai/okou/commit/095564075558fc1deed004294f398fcddcac1163))
+
+## [0.44.13](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.44.12...sandbox-firecracker-v0.44.13) (2026-10-09)
+
+
+### Refactoring
+
+* **ci:** rename runner image waiter to test prepare ([#38382](https://github.com/okou-ai/okou/issues/38382)) ([0955640](https://github.com/okou-ai/okou/commit/095564075558fc1deed004294f398fcddcac1163))
+
+## [0.44.12](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.44.11...sandbox-firecracker-v0.44.12) (2026-10-09)
+
 ## [0.44.11](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.44.10...sandbox-firecracker-v0.44.11) (2026-10-09)
 
 ## [0.44.10](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.44.9...sandbox-firecracker-v0.44.10) (2026-10-09)

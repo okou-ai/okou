@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.53.1](https://github.com/okou-ai/okou/compare/desktop-v0.53.0...desktop-v0.53.1) (2026-10-12)
+
+
+### Refactoring
+
+* **desktop:** retire the legacy squirrel relaunch bridge ([#38771](https://github.com/okou-ai/okou/issues/38771)) ([9124b11](https://github.com/okou-ai/okou/commit/9124b11fb9a7ba04abe56b2c8a0455e12fd7b9df))
+
+## [0.53.0](https://github.com/okou-ai/okou/compare/desktop-v0.52.2...desktop-v0.53.0) (2026-10-10)
+
+
+### Features
+
+* **desktop:** generate swift constants, routes, and response types from the api contracts ([#38691](https://github.com/okou-ai/okou/issues/38691)) ([0199845](https://github.com/okou-ai/okou/commit/0199845f1829a890f32eb9768f44ef85723ea56e))
+
+
+### Bug Fixes
+
+* replace okou branding with final rudy logo assets ([#38732](https://github.com/okou-ai/okou/issues/38732)) ([0207873](https://github.com/okou-ai/okou/commit/020787385355dd03548bda3ea621bf414f159cf5))
+
+
+### Performance Improvements
+
+* **desktop:** replace session polling with clerk events ([#38699](https://github.com/okou-ai/okou/issues/38699)) ([1a41d94](https://github.com/okou-ai/okou/commit/1a41d94a2ea196546330d34fc3b5bced68d21c12))
+
+## [0.52.2](https://github.com/okou-ai/okou/compare/desktop-v0.52.1...desktop-v0.52.2) (2026-10-10)
+
+
+### Performance Improvements
+
+* **computer-use:** replace desktop command polling with ably wakeups ([#38610](https://github.com/okou-ai/okou/issues/38610)) ([ff8cd53](https://github.com/okou-ai/okou/commit/ff8cd536be6edd610413923204b26c35e76b9ec4))
+
+## [0.52.1](https://github.com/okou-ai/okou/compare/desktop-v0.52.0...desktop-v0.52.1) (2026-10-09)
+
+
+### Documentation
+
+* keep reusable engineering standards and remove feature records ([#38387](https://github.com/okou-ai/okou/issues/38387)) ([6507d86](https://github.com/okou-ai/okou/commit/6507d86c83ca37e7a8790e4efd66eb6a84267295))
+
 ## [0.52.0](https://github.com/okou-ai/okou/compare/desktop-v0.51.0...desktop-v0.52.0) (2026-10-08)
 
 

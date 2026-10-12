@@ -1733,7 +1733,7 @@ export function createPiMemoryTools(args: CreatePiMemoryToolsArgs) {
     name: "add_ad_hoc_note",
     label: "Add Ad Hoc Note",
     description:
-      "Create one append-only ad-hoc memory note only after the user explicitly asks Pi to remember, forget, or update something. Use this tool, not Bash or a generic filesystem tool, for memory updates. Success means only sandbox-local staging; durable retention depends on the terminal artifact checkpoint.",
+      "Create one append-only ad-hoc memory note only after the user explicitly asks Pi to remember, forget, or update something. Use this tool, not Bash or a generic filesystem tool, for memory updates. Success means only sandbox-local staging; durable retention depends on successful artifact publication at the end of the run.",
     parameters: ADD_AD_HOC_NOTE_PARAMETERS,
     executionMode: "sequential",
     async execute(_toolCallId, params, signal) {

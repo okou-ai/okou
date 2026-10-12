@@ -1,5 +1,5 @@
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
-import { mcpGetChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-threads";
+import { mcpGetChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-snapshots";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { http, HttpResponse } from "msw";
 import { z } from "zod";
@@ -13,10 +13,7 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mcpServerRoutes } from "../mcp-server";
 import type { ApiTestUser } from "./helpers/api-bdd";
-import {
-  createChatEventsFixture,
-  userMessages,
-} from "./helpers/chat-events-fixture";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createRouteMocks } from "./helpers/route-test";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { modelCatalogRoutes } from "../model-catalog";
@@ -36,7 +33,6 @@ const {
   claimChatRun,
   waitForThreadMessages,
   cancelChatRun,
-  seedBuiltInModelKey,
   configureSubscriptionPiModel,
 } = createChatEventsFixture(context);
 
@@ -89,7 +85,7 @@ function mcpAccessToken(actor: ApiTestUser): string {
   return `${input}.${sign("RSA-SHA256", Buffer.from(input), keys.privateKey).toString("base64url")}`;
 }
 
-/** The thread as projected by the MCP `get_chat_thread` tool. */
+/** The persisted creation event returned by the conversation-list aggregation. */
 async function mcpThread(actor: ApiTestUser, threadId: string) {
   const token = mcpAccessToken(actor);
   const response = await accept(
@@ -107,7 +103,7 @@ async function mcpThread(actor: ApiTestUser, threadId: string) {
         method: "tools/call",
         params: {
           name: "get_chat_thread",
-          arguments: { threadId },
+          arguments: {},
           _meta: {
             "io.modelcontextprotocol/protocolVersion": MCP_PROTOCOL_VERSION,
             "io.modelcontextprotocol/clientCapabilities": {},
@@ -133,7 +129,15 @@ async function mcpThread(actor: ApiTestUser, threadId: string) {
   const { result } = z
     .object({ result: z.object({ structuredContent: z.unknown() }) })
     .parse(rpc);
-  return mcpGetChatThreadOutputSchema.parse(result.structuredContent).thread;
+  const created = mcpGetChatThreadOutputSchema
+    .parse(result.structuredContent)
+    .events.find((event) => {
+      return event.chatThreadId === threadId && event.kind === "created";
+    });
+  if (!created) {
+    throw new Error("Expected the thread's creation event");
+  }
+  return created;
 }
 
 function requireOrgId(actor: ApiTestUser): string {
@@ -141,29 +145,6 @@ function requireOrgId(actor: ApiTestUser): string {
     throw new Error("Expected an organization-scoped actor");
   }
   return actor.orgId;
-}
-
-/** Wait for the pick of a queued input and return the run it launched. */
-async function pickedRunId(
-  actor: ApiTestUser,
-  threadId: string,
-  clientEventId: string,
-): Promise<string> {
-  await flushWaitUntilForTest();
-  const page = await waitForThreadMessages(actor, threadId, (events) => {
-    return userMessages(events).some((message) => {
-      return (
-        message.revokesEventId === clientEventId && message.runId !== undefined
-      );
-    });
-  });
-  const runId = userMessages(page.events).find((message) => {
-    return message.revokesEventId === clientEventId;
-  })?.runId;
-  if (runId === undefined) {
-    throw new Error("Expected the queued input to launch a run");
-  }
-  return runId;
 }
 
 /** The thread snapshot and its one model event name the final successor. */
@@ -231,9 +212,9 @@ describe("GET /api/model-catalog", () => {
       ).get({ headers: { authorization: "Bearer clerk-session" } }),
       [200],
     );
-    expect(response.body.systemDefaultModel).toBe("okou-1.0");
+    expect(response.body.systemDefaultModel).toBe("auto");
     expect(response.body.models).toContainEqual(
-      expect.objectContaining({ model: "okou-1.0", displayName: "Auto" }),
+      expect.objectContaining({ model: "auto", displayName: "Auto" }),
     );
     expect(
       response.body.routes.filter((route) => {
@@ -241,7 +222,7 @@ describe("GET /api/model-catalog", () => {
       }),
     ).toStrictEqual([
       expect.objectContaining({
-        model: "okou-1.0",
+        model: "auto",
         providerType: "built-in",
         concreteProviderType: "openrouter-codex",
         upstreamModel: "@preset/okou-1-0",
@@ -345,12 +326,7 @@ describe("public selections of replaced models", () => {
     });
 
     const projected = await mcpThread(actor, thread.id);
-    expect(projected.model).toStrictEqual({
-      selectedModel: "claude-fable-5-1",
-      effectiveModel: "claude-fable-5-1",
-      source: "thread",
-      admission: "checked_on_send",
-    });
+    expect(projected.selectedModel).toBe("claude-fable-5-1");
 
     const run = await sendChatRun(actor, {
       agentId,
@@ -365,10 +341,9 @@ describe("public selections of replaced models", () => {
     ).resolves.toMatchObject({
       selectedModel: "claude-fable-5-1",
     });
-    expect((await mcpThread(actor, thread.id)).model).toMatchObject({
-      selectedModel: "claude-fable-5-1",
-      effectiveModel: "claude-fable-5-1",
-    });
+    expect((await mcpThread(actor, thread.id)).selectedModel).toBe(
+      "claude-fable-5-1",
+    );
     await cancelChatRun(actor, run.runId);
   }, 90_000);
 
@@ -462,7 +437,7 @@ describe("public selections of replaced models", () => {
     );
   }, 90_000);
 
-  it("projects a publicly pinned model as unavailable after its provider is disconnected", async () => {
+  it("retains the persisted model in raw lifecycle events after its provider is disconnected", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     const thread = await chat.createThread(actor, {
       agentId,
@@ -474,39 +449,7 @@ describe("public selections of replaced models", () => {
       [204],
     );
     const projected = await mcpThread(actor, thread.id);
-    expect(projected.model).toStrictEqual({
-      selectedModel: "claude-fable-5-1",
-      effectiveModel: null,
-      source: null,
-      admission: "checked_on_send",
-    });
-  }, 90_000);
-
-  it("keeps the queued Auto selection when the active run releases its slot", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
-    await seedBuiltInModelKey("okou-1.0");
-    const active = await sendChatRun(actor, {
-      agentId,
-      model: null,
-      prompt: "keep the thread busy",
-    });
-    const clientEventId = randomUUID();
-    await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: active.threadId,
-        model: null,
-        prompt: "queued Auto",
-        clientEventId,
-      },
-      [201],
-    );
-    await flushWaitUntilForTest();
-    await cancelChatRun(actor, active.runId);
-    const runId = await pickedRunId(actor, active.threadId, clientEventId);
-    expect((await api.readRun(actor, runId)).source.model).toBe("auto");
-    await cancelChatRun(actor, runId);
+    expect(projected.selectedModel).toBe("claude-fable-5-1");
   }, 90_000);
 
   it("stores an explicitly requested replaced model as its successor on the thread and member preference", async () => {

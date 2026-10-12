@@ -1,6 +1,7 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { zstdDecompressSync } from "node:zlib";
 
 import { fauxAssistantMessage, normalizeContext } from "@earendil-works/pi-ai";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -22,6 +23,7 @@ import { piModelFailureReason } from "./model-request-diagnostics";
 import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 import cyberSafetyRefusal from "./test/fixtures/codex-cyber-safety-refusal.json";
+import modelAccessVerification from "./test/fixtures/codex-model-access-verification.json";
 
 /**
  * The provider body from the incident in #35577. It carries no status, no
@@ -105,6 +107,27 @@ function successResponse(text?: string) {
   );
 }
 
+const verificationMessage = modelAccessVerification.errorMessage.slice(
+  "Codex error: ".length,
+);
+
+function verificationFailureResponse(
+  type: "error" | "response.failed",
+  code?: string,
+  message = verificationMessage,
+) {
+  const error = { message, ...(code ? { code } : {}) };
+  const event =
+    type === "error"
+      ? { type, ...error }
+      : { type, response: { status: "failed", error } };
+  // Let EOF terminate the final frame, as in successResponse, so every body
+  // observer is drained before the adapter settles a terminal event.
+  return new HttpResponse(`data: ${JSON.stringify(event)}`, {
+    headers: { "content-type": "text/event-stream" },
+  });
+}
+
 /** One model turn through the production route, without any session budget. */
 function turn() {
   const model = resolvePiAgentModel(route);
@@ -153,8 +176,350 @@ async function session(compaction?: {
     if (event.type === "message_end" && event.message.role === "assistant")
       answers.push(event.message);
   });
-  return { created, retries, answers };
+  return { created, retries, answers, directory };
 }
+
+describe("Codex model-access verification recovery", () => {
+  it.each(["error", "response.failed"] as const)(
+    "recovers an HTTP-200 %s with the same model and credentials",
+    async (type) => {
+      const requests: {
+        body: unknown;
+        authorization: string | null;
+        account: string | null;
+      }[] = [];
+      server.use(
+        http.post(endpoint, async ({ request }) => {
+          const bytes = Buffer.from(await request.arrayBuffer());
+          const body: unknown = JSON.parse(
+            (request.headers.get("content-encoding") === "zstd"
+              ? zstdDecompressSync(bytes)
+              : bytes
+            ).toString("utf8"),
+          );
+          requests.push({
+            body,
+            authorization: request.headers.get("authorization"),
+            account: request.headers.get("chatgpt-account-id"),
+          });
+          return requests.length === 1
+            ? verificationFailureResponse(type)
+            : successResponse("recovered");
+        }),
+      );
+      const { created, retries, answers } = await session();
+      await created.session.prompt("hello");
+      expect(requests).toHaveLength(2);
+      for (const request of requests) {
+        expect(request).toMatchObject({
+          body: { model: route.model },
+          authorization: `Bearer ${route.apiKey}`,
+          account: route.accountId,
+        });
+      }
+      expect(retries).toStrictEqual([{ attempt: 1, maxAttempts: 2 }]);
+      const first = answers[0];
+      if (!first) throw new Error("Missing first failed assistant result");
+      expect(piModelFailureReason(first)).toBe("provider_server_error");
+      expect(answers.at(-1)).toMatchObject({
+        stopReason: "stop",
+        content: [{ type: "text", text: "recovered" }],
+      });
+    },
+  );
+
+  it.each(["error", "response.failed"] as const)(
+    "exhausts only the existing session budget for %s",
+    async (type) => {
+      let requests = 0;
+      server.use(
+        http.post(endpoint, () => {
+          requests++;
+          return verificationFailureResponse(type);
+        }),
+      );
+      const { created, retries, answers } = await session();
+      await created.session.prompt("hello");
+      expect(requests).toBe(3);
+      expect(retries).toStrictEqual([
+        { attempt: 1, maxAttempts: 2 },
+        { attempt: 2, maxAttempts: 2 },
+      ]);
+      expect(answers).toHaveLength(3);
+      expect(answers.at(-1)).toMatchObject({
+        ...modelAccessVerification,
+        errorMessage:
+          type === "error"
+            ? modelAccessVerification.errorMessage
+            : verificationMessage,
+      });
+    },
+  );
+
+  it("keeps a disabled recovery failed with the original provider text", async () => {
+    let requests = 0;
+    server.use(
+      http.post(endpoint, () => {
+        requests++;
+        return verificationFailureResponse("error");
+      }),
+    );
+    const { created, retries, answers } = await session();
+    created.session.setAutoRetryEnabled(false);
+    await created.session.prompt("hello");
+    expect(requests).toBe(1);
+    expect(retries).toStrictEqual([]);
+    expect(answers.at(-1)).toMatchObject(modelAccessVerification);
+  });
+
+  it("cancels the scheduled recovery without another provider request", async () => {
+    let requests = 0;
+    server.use(
+      http.post(endpoint, () => {
+        requests++;
+        return verificationFailureResponse("error");
+      }),
+    );
+    const { created, retries, answers } = await session();
+    const scheduled = new Promise<void>((resolve) => {
+      created.session.subscribe((event) => {
+        if (event.type === "auto_retry_start") resolve();
+      });
+    });
+    const prompt = created.session.prompt("hello");
+    await Promise.race([
+      scheduled,
+      prompt.then(() => {
+        throw new Error("No recovery was scheduled");
+      }),
+    ]);
+    await created.session.abort();
+    await prompt;
+    expect(requests).toBe(1);
+    expect(retries).toStrictEqual([{ attempt: 1, maxAttempts: 2 }]);
+    expect(answers.at(-1)).toMatchObject(modelAccessVerification);
+  });
+
+  it.each(["error", "response.failed"] as const)(
+    "keeps known terminal codes authoritative for %s",
+    async (type) => {
+      for (const { code, reason } of [
+        { code: "invalid_api_key", reason: "invalid_api_key" },
+        { code: "authentication_error", reason: "invalid_credentials" },
+        { code: "model_not_found", reason: "unsupported_model" },
+        { code: "unsupported_model", reason: "unsupported_model" },
+        { code: "usage_limit_reached", reason: "usage_limit" },
+        { code: "usage_not_included", reason: "usage_limit" },
+        { code: "content_policy_violation", reason: "safety_policy_refusal" },
+        { code: "context_length_exceeded", reason: "context_window_exceeded" },
+        { code: "insufficient_quota", reason: "provider_insufficient_credits" },
+      ]) {
+        let requests = 0;
+        server.use(
+          http.post(endpoint, () => {
+            requests++;
+            return verificationFailureResponse(type, code);
+          }),
+        );
+        const result = await retryAssistantCall(
+          () => {
+            return turn().result();
+          },
+          { enabled: true, maxRetries: 2, baseDelayMs: 1 },
+          undefined,
+        );
+        expect(requests, code).toBe(1);
+        expect(result.stopReason).toBe("error");
+        expect(result.errorMessage).toBe(
+          type === "error"
+            ? modelAccessVerification.errorMessage
+            : verificationMessage,
+        );
+        expect(piModelFailureReason(result), code).toBe(reason);
+      }
+    },
+  );
+
+  it("keeps a terminal code above incidental native retry text", async () => {
+    let requests = 0;
+    const message = "server error 503; please retry your request";
+    server.use(
+      http.post(endpoint, () => {
+        requests++;
+        return verificationFailureResponse("error", "model_not_found", message);
+      }),
+    );
+    const result = await retryAssistantCall(
+      () => {
+        return turn().result();
+      },
+      { enabled: true, maxRetries: 2, baseDelayMs: 1 },
+      undefined,
+    );
+    expect(requests).toBe(1);
+    expect(result.errorMessage).toBe(`Codex error: ${message}`);
+    expect(piModelFailureReason(result)).toBe("unsupported_model");
+    const codeDiagnostic = result.diagnostics?.find((diagnostic) => {
+      return diagnostic.type === "okou_codex_provider_error";
+    });
+    expect(codeDiagnostic?.details).toStrictEqual({ code: "model_not_found" });
+    expect(codeDiagnostic?.error).toBeUndefined();
+    expect(JSON.stringify(codeDiagnostic)).not.toContain(message);
+  });
+
+  it("keeps queue expiry above a preserved generic server code", async () => {
+    let requests = 0;
+    server.use(
+      http.post(endpoint, () => {
+        requests++;
+        return verificationFailureResponse(
+          "error",
+          "server_error",
+          queueTimeout,
+        );
+      }),
+    );
+    const result = await retryAssistantCall(
+      () => {
+        return turn().result();
+      },
+      { enabled: true, maxRetries: 2, baseDelayMs: 1 },
+      undefined,
+    );
+    expect(requests).toBe(1);
+    expect(piModelFailureReason(result)).toBe("provider_queue_timeout");
+  });
+
+  it("does not retain an unknown private provider code", async () => {
+    const code = "private-provider-code-with-account-context";
+    server.use(
+      http.post(endpoint, () => {
+        return verificationFailureResponse("error", code);
+      }),
+    );
+    const result = await turn().result();
+    expect(result).toMatchObject(modelAccessVerification);
+    expect(JSON.stringify(result.diagnostics)).not.toContain(code);
+  });
+
+  it("does not classify successful output quoting the provider phrase", async () => {
+    let requests = 0;
+    server.use(
+      http.post(endpoint, () => {
+        requests++;
+        return successResponse(modelAccessVerification.errorMessage);
+      }),
+    );
+    const { created, retries, answers } = await session();
+    await created.session.prompt("hello");
+    expect(requests).toBe(1);
+    expect(retries).toStrictEqual([]);
+    expect(answers.at(-1)).toMatchObject({
+      stopReason: "stop",
+      content: [{ type: "text", text: modelAccessVerification.errorMessage }],
+    });
+    const final = answers.at(-1);
+    if (!final) throw new Error("Missing successful assistant result");
+    expect(piModelFailureReason(final)).toBeUndefined();
+  });
+
+  it("does not repeat a completed file edit when the following call recovers", async () => {
+    const { created, retries, answers, directory } = await session();
+    const effect = join(directory, "effect.txt");
+    await writeFile(effect, "before");
+    const item = {
+      type: "function_call",
+      id: "fc_effect",
+      call_id: "call_effect",
+      name: "edit",
+      arguments: JSON.stringify({
+        path: effect,
+        oldText: "before",
+        newText: "after",
+      }),
+      status: "completed",
+    };
+    const requests: unknown[] = [];
+    server.use(
+      http.post(endpoint, async ({ request }) => {
+        const bytes = Buffer.from(await request.arrayBuffer());
+        const body: unknown = JSON.parse(
+          (request.headers.get("content-encoding") === "zstd"
+            ? zstdDecompressSync(bytes)
+            : bytes
+          ).toString("utf8"),
+        );
+        requests.push(body);
+        if (requests.length === 1) {
+          return new HttpResponse(
+            [
+              {
+                type: "response.created",
+                response: {
+                  id: "resp_effect",
+                  status: "in_progress",
+                  output: [],
+                },
+              },
+              {
+                type: "response.output_item.added",
+                output_index: 0,
+                item: { ...item, arguments: "", status: "in_progress" },
+              },
+              {
+                type: "response.function_call_arguments.delta",
+                output_index: 0,
+                item_id: item.id,
+                delta: item.arguments,
+              },
+              { type: "response.output_item.done", output_index: 0, item },
+              {
+                type: "response.completed",
+                response: {
+                  id: "resp_effect",
+                  status: "completed",
+                  output: [item],
+                  usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+                },
+              },
+            ]
+              .map((event) => {
+                return `data: ${JSON.stringify(event)}\n\n`;
+              })
+              .join("")
+              .trimEnd(),
+            {
+              headers: { "content-type": "text/event-stream" },
+            },
+          );
+        }
+        return requests.length === 2
+          ? verificationFailureResponse("error")
+          : successResponse("done");
+      }),
+    );
+    await created.session.prompt("record the effect, then finish");
+    expect(await readFile(effect, "utf8")).toBe("after");
+    expect(requests).toHaveLength(3);
+    // Retrying projects the same completed tool context, not another execution.
+    expect(requests[2]).toStrictEqual(requests[1]);
+    expect(requests[2]).toMatchObject({
+      model: route.model,
+      input: expect.arrayContaining([
+        expect.objectContaining({
+          type: "function_call",
+          call_id: "call_effect",
+        }),
+        expect.objectContaining({
+          type: "function_call_output",
+          call_id: "call_effect",
+        }),
+      ]),
+    });
+    expect(retries).toStrictEqual([{ attempt: 1, maxAttempts: 2 }]);
+    expect(answers.at(-1)).toMatchObject({ stopReason: "stop" });
+  });
+});
 
 describe("Codex structured retry classification", () => {
   it("retries a provider-authored 503 the text classifier cannot read", async () => {

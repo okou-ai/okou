@@ -11,6 +11,7 @@ const c = initContract();
 export const sendDiscordMessageBodySchema = z.object({
   guildId: discordSnowflakeSchema.optional(),
   channelId: discordSnowflakeSchema,
+  replyToMessageId: discordSnowflakeSchema.optional(),
   text: z
     .string()
     .min(1)

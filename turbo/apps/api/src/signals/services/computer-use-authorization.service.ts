@@ -1,22 +1,22 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
-import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { z } from "zod";
 import type {
   ComputerUseAuthorizationSource,
   ComputerUseHostListResponse,
 } from "@okouai/api-contracts/contracts/computer-use";
+import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import {
-  computerUseAuthorizationRequests,
-  computerUseHosts,
-} from "@okouai/db/schema/computer-use-host";
+import { computerUseAuthorizationRequests } from "@okouai/db/schema/computer-use-host";
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
 
 import { env } from "../../lib/env";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
@@ -197,7 +197,7 @@ const onlineHostExists$ = command(
     const [host] = await get(db$)
       .select({
         appVersion: computerUseHosts.appVersion,
-        tokenHash: computerUseHosts.tokenHash,
+        sessionId: computerUseHosts.sessionId,
         lastSeenAt: computerUseHosts.lastSeenAt,
         revokedAt: computerUseHosts.revokedAt,
         status: computerUseHosts.status,
@@ -362,44 +362,51 @@ const applyChatAuthorizationScope$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    // Successful preference and durable event writes commit together.
-    const applied = await set(writeDb$).transaction(async (tx) => {
-      const [thread] = await tx
-        .update(chatThreads)
-        .set({
-          computerUseHostId: args.computerUseHostId,
-          cloudBrowserEnabled: false,
-          updatedAt: args.now,
-        })
-        .where(
-          and(
-            eq(chatThreads.id, requiredChatThreadId(args.request)),
-            eq(chatThreads.userId, args.userId),
-          ),
-        )
-        .returning({
-          id: chatThreads.id,
-          agentId: chatThreads.agentId,
-        });
-      if (!thread?.agentId) {
-        return false;
-      }
-      await tx.execute(
-        chatThreadEventInsertSql({
-          kind: "computer_use_host_updated",
-          userId: args.userId,
-          orgId: args.orgId,
-          chatThreadId: thread.id,
-          agentId: thread.agentId,
-          computerUseHostId: args.computerUseHostId,
-          cloudBrowserEnabled: false,
-          createdAt: args.now,
-        }),
-      );
-      return true;
-    });
+    const db = set(writeDb$);
+    const chatThreadId = requiredChatThreadId(args.request);
+    const updatedThread = db
+      .update(chatThreads)
+      .set({
+        computerUseHostId: args.computerUseHostId,
+        cloudBrowserEnabled: false,
+        updatedAt: args.now,
+      })
+      .where(
+        and(
+          eq(chatThreads.id, chatThreadId),
+          eq(chatThreads.userId, args.userId),
+        ),
+      )
+      .returning({ id: chatThreads.id, agentId: chatThreads.agentId });
+    // A nullable agent still commits the preference, without reserving an event.
+    const eligibleThread = sql`EXISTS (SELECT 1 FROM updated_thread WHERE agent_id IS NOT NULL)`;
+    const [result] = parseRawRows(
+      z.object({ applied: z.boolean() }),
+      await db.execute(
+        chatThreadEventInsertSql(
+          {
+            kind: "computer_use_host_updated",
+            userId: args.userId,
+            orgId: args.orgId,
+            chatThreadId,
+            computerUseHostId: args.computerUseHostId,
+            cloudBrowserEnabled: false,
+            createdAt: args.now,
+          },
+          {
+            cte: sql`updated_thread AS (${updatedThread.getSQL()})`,
+            gate: eligibleThread,
+            agentId: sql`(SELECT agent_id FROM updated_thread)`,
+            result: sql`SELECT ${eligibleThread} AS applied`,
+          },
+        ),
+      ),
+    );
     signal.throwIfAborted();
-    return applied;
+    if (!result) {
+      throw new Error("Chat authorization statement returned no outcome");
+    }
+    return result.applied;
   },
 );
 
@@ -436,68 +443,74 @@ const applyTeamsAuthorizationScope$ = command(
     }
     signal.throwIfAborted();
 
-    // Keep route authority, preference and durable event in this transaction.
-    const applied = await set(writeDb$).transaction(async (tx) => {
-      const [existing] = await tx
-        .select({
-          id: chatThreads.id,
-          agentId: chatThreads.agentId,
-          computerUseHostId: chatThreads.computerUseHostId,
-        })
-        .from(teamsChatThreadRoutes)
-        .innerJoin(
-          chatThreads,
-          eq(chatThreads.id, teamsChatThreadRoutes.chatThreadId),
-        )
-        .where(
-          teamsChatThreadCondition({
-            connectionId,
-            conversationId,
-            threadId,
-            userId: args.userId,
-          }),
-        )
-        .limit(1);
-      if (!existing) {
-        return false;
-      }
-      const [thread] = await tx
-        .update(chatThreads)
-        .set({
-          computerUseHostId: args.computerUseHostId,
-          cloudBrowserEnabled: false,
-          updatedAt: args.now,
-        })
-        .where(
-          and(
-            eq(chatThreads.id, existing.id),
-            eq(chatThreads.userId, args.userId),
-            isNotNull(chatThreads.agentId),
-          ),
-        )
-        .returning({
-          id: chatThreads.id,
-          agentId: chatThreads.agentId,
-        });
-      if (!thread?.agentId) {
-        return false;
-      }
-      await tx.execute(
-        chatThreadEventInsertSql({
-          kind: "computer_use_host_updated",
+    const db = set(writeDb$);
+    const selectedRoute = db
+      .select({
+        id: chatThreads.id,
+        agentId: chatThreads.agentId,
+        computerUseHostId: chatThreads.computerUseHostId,
+      })
+      .from(teamsChatThreadRoutes)
+      .innerJoin(
+        chatThreads,
+        eq(chatThreads.id, teamsChatThreadRoutes.chatThreadId),
+      )
+      .where(
+        teamsChatThreadCondition({
+          connectionId,
+          conversationId,
+          threadId,
           userId: args.userId,
-          orgId: args.orgId,
-          chatThreadId: thread.id,
-          agentId: thread.agentId,
-          computerUseHostId: args.computerUseHostId,
-          cloudBrowserEnabled: false,
-          createdAt: args.now,
         }),
-      );
-      return true;
-    });
+      )
+      .limit(1);
+    const updatedThread = db
+      .update(chatThreads)
+      .set({
+        computerUseHostId: args.computerUseHostId,
+        cloudBrowserEnabled: false,
+        updatedAt: args.now,
+      })
+      .where(
+        and(
+          eq(chatThreads.id, sql`(SELECT id FROM selected_route)`),
+          eq(chatThreads.userId, args.userId),
+          isNotNull(chatThreads.agentId),
+        ),
+      )
+      .returning({
+        id: chatThreads.id,
+        agentId: chatThreads.agentId,
+      });
+    // Route selection, preference and durable event share one statement.
+    const [result] = parseRawRows(
+      z.object({ applied: z.boolean() }),
+      await db.execute(
+        chatThreadEventInsertSql(
+          {
+            kind: "computer_use_host_updated",
+            userId: args.userId,
+            orgId: args.orgId,
+            chatThreadId: sql`(SELECT id FROM updated_thread)`,
+            computerUseHostId: args.computerUseHostId,
+            cloudBrowserEnabled: false,
+            createdAt: args.now,
+          },
+          {
+            cte: sql`selected_route AS (${selectedRoute.getSQL()}),
+            updated_thread AS (${updatedThread.getSQL()})`,
+            gate: sql`EXISTS (SELECT 1 FROM updated_thread)`,
+            agentId: sql`(SELECT agent_id FROM updated_thread)`,
+            result: sql`SELECT EXISTS (SELECT 1 FROM updated_thread) AS applied`,
+          },
+        ),
+      ),
+    );
     signal.throwIfAborted();
-    return applied;
+    if (!result) {
+      throw new Error("Teams authorization statement returned no outcome");
+    }
+    return result.applied;
   },
 );
 

@@ -4,8 +4,7 @@
 //! process from the logical CPU count reported by `host::cpu_count()`. Its
 //! production capacity is half that count (integer division), clamped to a
 //! minimum of one and a maximum of four permits. The pool is stored in the
-//! shared `ExecutorConfig`, so downloaded history, workspace-sidecar history,
-//! and inline Codex timestamp extraction contend for the same CPU budget.
+//! shared `ExecutorConfig`, so downloaded history, inline Codex timestamp extraction contend for the same CPU budget.
 //!
 //! `SessionHistoryCpuPool::materialize` acquires an owned semaphore permit
 //! before spawning the blocking task and moves that permit into
@@ -28,8 +27,7 @@
 //! decompress when needed, verify SHA-256, and extract a Codex timestamp when
 //! applicable. The inline Codex path performs the UTF-8 and timestamp work
 //! through the same pool. The downloaded-history materializer in
-//! `session_history_download.rs` and the workspace-sidecar materializer in
-//! `workspace_session_history_materializer.rs` use the pool for their raw,
+//! `session_history_download.rs` use the pool for their raw,
 //! gzip, and zstd jobs; `agent_run.rs` uses it for inline Codex history.
 
 use std::fmt;
@@ -450,10 +448,6 @@ impl SessionHistoryCpuJob {
 }
 
 impl SessionHistoryCpuTimings {
-    pub(super) fn admission_wait(self) -> Duration {
-        self.admission_wait
-    }
-
     pub(super) fn validation(self) -> Option<SessionHistoryCpuPhaseTiming> {
         self.validation
     }
@@ -1511,13 +1505,44 @@ mod tests {
     use super::*;
 
     fn raw_job(history: Vec<u8>, framework: EffectiveCliFramework) -> SessionHistoryCpuJob {
+        let expected_raw_size = history.len() as u64;
+        let expected_hash = hex::encode(Sha256::digest(&history));
         SessionHistoryCpuJob::raw(
             "sess-123".into(),
-            history.clone(),
-            history.len() as u64,
-            hex::encode(Sha256::digest(&history)),
+            history,
+            expected_raw_size,
+            expected_hash,
             framework,
         )
+    }
+
+    #[test]
+    fn owned_raw_job_fixture_preserves_payload_and_validation_metadata() {
+        for history in [Vec::new(), b"abc".to_vec(), b"\0\xffraw\r\n".to_vec()] {
+            let expected_hash = hex::encode(Sha256::digest(&history));
+            for framework in [
+                EffectiveCliFramework::ClaudeCode,
+                EffectiveCliFramework::Codex,
+            ] {
+                let job = raw_job(history.clone(), framework);
+                let SessionHistoryCpuJobKind::Raw {
+                    cli_agent_session_id,
+                    bytes,
+                    expected_raw_size,
+                    expected_hash: actual_hash,
+                    framework: actual_framework,
+                } = job.kind
+                else {
+                    panic!("raw fixture must select a raw job");
+                };
+                assert_eq!(cli_agent_session_id, "sess-123");
+                assert_eq!(bytes, history);
+                assert_eq!(expected_raw_size, history.len() as u64);
+                assert_eq!(actual_hash, expected_hash);
+                assert_eq!(actual_framework, framework);
+                assert!(job.prefix_attribution.is_none());
+            }
+        }
     }
 
     fn codex_zstd_job(history: &[u8]) -> SessionHistoryCpuJob {

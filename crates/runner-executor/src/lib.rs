@@ -12,8 +12,8 @@ pub use error::{ExecutorError, ExecutorResult};
 pub mod test_fixtures;
 
 use runner_lifecycle::{
-    guest_timezone, idle_pool, resource_budget, restored_session_identity, workspace_image_cache,
-    workspace_mount, workspace_promotion,
+    guest_timezone, home_image_cache, home_mount, home_promotion, idle_pool, resource_budget,
+    restored_session_identity,
 };
 use runner_network::{dns, network_log_drain, network_log_manager, network_logs, proxy};
 use runner_remote::guest_rpc;

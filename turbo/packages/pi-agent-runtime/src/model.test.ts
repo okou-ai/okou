@@ -221,8 +221,16 @@ describe("Pi agent model adapter", () => {
             baseUrl: provider.baseUrl,
             model: runtimeModel,
             ...(catalogModel === undefined ? {} : { catalogModel }),
-            apiKeyEnv: "OPENAI_API_KEY",
-            credentialSecretName: "OPENROUTER_API_KEY",
+            schemaVersion: 2,
+            dialect: "openai-responses",
+            transport: "sse",
+            credentialBindings: [
+              {
+                kind: "api-key",
+                environment: "OPENAI_API_KEY",
+                secretName: "OPENROUTER_API_KEY",
+              },
+            ],
           },
           resolveCredential: () => {
             return "selected-public-key";
@@ -278,8 +286,16 @@ describe("Pi agent model adapter", () => {
       const materialized = await materializePiAgentModelConfig({
         config: piModelConfigSchema.parse({
           ...config,
-          apiKeyEnv: "OPENAI_API_KEY",
-          credentialSecretName: "OPENROUTER_API_KEY",
+          schemaVersion: 2,
+          dialect: "openai-responses",
+          transport: "sse",
+          credentialBindings: [
+            {
+              kind: "api-key",
+              environment: "OPENAI_API_KEY",
+              secretName: "OPENROUTER_API_KEY",
+            },
+          ],
         }),
         resolveCredential: () => {
           return "test-key";

@@ -26,7 +26,7 @@ packages use `Okou`, `ai.okou.desktop`, and the live Clerk publishable key. Set
 `CLERK_PUBLISHABLE_KEY` when building; the generated runtime configuration is
 ignored and removed from the source tree after packaging. Open the resulting
 app in `desktop/out/` to exercise the real UI. `--smoke-test` verifies packaged
-configuration, helper presence, and the upgrade bridge without signing in or
+configuration, helper presence, and bundled resources without signing in or
 registering a host.
 
 `--auth-smoke-test` separately initializes the real Clerk SDK and reports its
@@ -47,6 +47,28 @@ The builder signs all nested native code, submits the app ZIP, staples the app,
 and creates, signs, notarizes, and staples a DMG. Archives retain the names
 `Okou-darwin-arm64-VERSION.zip` and `.dmg`.
 
+## Generated bindings
+
+`Okou/Core/Generated/` holds Swift generated from the TypeScript API contracts:
+`ApiConstants.swift` (client header names, the Desktop client type, the force-upgrade
+status, the update line, and error codes the app compares), `ApiRoutes.swift`
+(the method and path of every route the app calls, with percent-encoded path
+parameters), and `ApiTypes.swift` (the response bodies the app decodes). Do not
+edit these files; change the binding lists in
+`turbo/packages/api-contracts/src/swift-bindings/` and regenerate:
+
+```bash
+cd turbo && pnpm -F @okouai/api-contracts generate:swift
+```
+
+The Crates workflow regenerates the bindings and fails when the committed output
+drifts, so a contract change that touches a bound schema must ship its regenerated
+Swift and compile against the app. String enums render as `RawRepresentable`
+structs with constants for the known values, so an unknown wire value decodes with
+its raw string instead of failing. Request bodies, command results, and the realtime
+token stay `JSONValue`: the native helper and Ably author or consume them, not the
+app.
+
 ## Existing installations
 
 The bundle ID, URL scheme, Developer ID team, and Application Support directory
@@ -58,14 +80,17 @@ native launches and upgrades retain the new native session. The native applicati
 reads `desktop-preferences.json` and preserves the existing
 `computerUseInstallationId`, `keepAwakeEnabled`, and unrelated settings.
 
-The legacy `RELEASES.json` endpoint and mutable release manifest continue serving
-the same ZIP. Old Electron/Squirrel versions replace the entire `.app`. On
-macOS 11+, their relaunch step executes
-`Contents/Frameworks/Squirrel.framework/Resources/ShipIt ___launch___ APP` inside
-the new app. `LegacyRelaunch/` supplies that path with a small native Swift
-launcher. The minimal framework envelope is only for code-signing compatibility;
-the app does not load it. Keep the bridge in future native releases because old
-installations can skip versions.
+The legacy `RELEASES.json` endpoint pins the retained signed Native 0.52.2
+migration ZIP. Installed Electron/Squirrel clients replace the entire `.app`
+and execute `Contents/Frameworks/Squirrel.framework/Resources/ShipIt` inside
+that retained package to relaunch. Keep the original 0.52.2 release assets
+available without replacing their bytes or redirecting their URLs. The API's
+fixed migration policy is independent of the mutable Native release manifest.
+
+Current Native packages omit the Squirrel framework and relaunch bridge. Before
+publishing these packages, the frozen-feed API must be deployed, old serving
+APIs must drain, and rollback targets must contain the frozen migration policy.
+The migration and automatic-update acceptance remains tracked in #37888.
 
 Subsequent native updates use Sparkle 2.10, the API's `appcast.xml`, and the same
 Developer ID designated requirement. Code-signing-only validation is supported
@@ -80,8 +105,11 @@ input is never replayed after a timeout. Background updates also wait until the
 host has been idle for 30 minutes. Required upgrades bypass that grace while
 still waiting for claimed commands, completion reports, and host cleanup.
 
-See [the minimum version policy](../docs/desktop-version-policy.md) for the
-default-disabled deployment floor, visible upgrade states, and activation gates.
+The current admission floor is owned by
+[the API policy](../turbo/apps/api/src/lib/desktop-compatibility.json).
+[The historical policy guide](https://github.com/okou-ai/okou/blob/97be706f45fc34d0ae9f9f408b9c48a58da03b19/docs/desktop-version-policy.md)
+records rollout and acceptance rationale; revalidate the live policy before
+applying those instructions.
 
 ## Release
 
@@ -92,8 +120,9 @@ unsigned app under its exact commit SHA in R2. The production promotion job
 downloads and verifies that artifact, signs and notarizes it without rebuilding,
 publishes `okou-desktop-v*` ZIP/DMG assets, and updates the existing manifest only
 after both Desktop promotion and API deployment succeed. This keeps the first
-native ZIP behind deployment of its appcast route. Both updater formats share
-channel/blocked-version selection in the canonical API service.
+native ZIP behind deployment of its appcast route. Native releases use the
+canonical API's channel/blocked-version selection; the legacy Squirrel feed
+always returns the retained migration hop.
 
 ## Session authentication
 
@@ -109,5 +138,5 @@ Local sign-out drains claimed work before ending the SDK session. Remote
 revocation can prevent result reporting: the local command log retains the
 execution result, the server command times out, and native input is never replayed.
 
-See [the authentication contract](../docs/desktop-session-auth.md) for remote
+See [the authentication contract](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/desktop-session-auth.md) for remote
 revocation, mixed-version behavior, and acceptance steps.

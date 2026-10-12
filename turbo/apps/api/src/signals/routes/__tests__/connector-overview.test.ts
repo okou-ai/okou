@@ -4,10 +4,7 @@ import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
-import {
-  computerUseHeartbeatContract,
-  computerUseHostsContract,
-} from "@okouai/api-contracts/contracts/computer-use";
+
 import {
   customConnectorByIdContract,
   customConnectorProposalContract,
@@ -16,6 +13,7 @@ import {
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 
+import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
@@ -197,31 +195,20 @@ test("overview projects connected connector briefs and default accounts for one 
       );
     }),
   );
-  const host = await accept(
-    client(computerUseHostsContract).start({
-      headers,
-      body: {
-        installationId: randomUUID(),
-        hostName: "Composer test desktop",
-        appVersion: "0.1.0",
-        osVersion: "macOS 15",
-        supportedCapabilities: [],
-        permissions: { accessibility: true, screenRecording: true },
-      },
-    }),
-    [200],
+  const computerUse = createComputerUseBddApi(context);
+  const host = await computerUse.startComputerUseHost(
+    { userId, orgId, orgRole: "org:admin", email: "composer@example.com" },
+    {
+      hostName: "Composer test desktop",
+      supportedCapabilities: [],
+    },
   );
   await trackCleanup(
     Promise.resolve(async () => {
-      await accept(
-        client(computerUseHeartbeatContract).stop({
-          headers: { authorization: `Bearer ${host.body.hostToken}` },
-          body: {},
-        }),
-        [200],
-      );
+      await computerUse.stopComputerUseHost(host.connection);
     }),
   );
+  mocks.clerk.session(userId, orgId);
 
   const overview = await accept(
     client(connectorOverviewContract).overview({ headers }),
@@ -255,7 +242,7 @@ test("overview projects connected connector briefs and default accounts for one 
   );
   expect(overview.body.computerUseHosts).toContainEqual(
     expect.objectContaining({
-      id: host.body.hostId,
+      id: host.hostId,
       hostName: "Composer test desktop",
       status: "online",
     }),

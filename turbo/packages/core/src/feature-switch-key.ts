@@ -4,7 +4,6 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
-  NotifyMail = "notifyMail",
   Dummy = "_dummy",
   AhrefsConnector = "ahrefsConnector",
   BillConnector = "billConnector",
@@ -24,7 +23,6 @@ export enum FeatureSwitchKey {
   WebflowConnector = "webflowConnector",
   CloseConnector = "closeConnector",
   PayPalConnector = "payPalConnector",
-  PlaudConnector = "plaudConnector",
   RampConnector = "rampConnector",
   ResendConnector = "resendConnector",
   SpotifyConnector = "spotifyConnector",
@@ -42,6 +40,9 @@ export enum FeatureSwitchKey {
   ZapierConnector = "zapierConnector",
   PrivateArtifacts = "privateArtifacts",
   ArtifactPreviews = "artifactPreviews",
+  SlackLinkUnfurls = "slackLinkUnfurls",
+  ArtifactSidebarPreview = "artifactSidebarPreview",
+  StablePreviewFullscreen = "stablePreviewFullscreen",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",
   FeishuIntegration = "_feishuIntegration",
@@ -49,7 +50,9 @@ export enum FeatureSwitchKey {
   DiscordIntegration = "discordIntegration",
   VncAccess = "vncAccess",
   PiMemory = "piMemory",
+  CodexExecution = "_codexExecution",
   ComposerTaskChips = "composerTaskChips",
+  ChatHomeCompliance = "chatHomeCompliance",
   ChatComposerLayout = "chatComposerLayout",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",

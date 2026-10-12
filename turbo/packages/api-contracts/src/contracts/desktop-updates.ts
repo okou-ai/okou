@@ -11,31 +11,22 @@ export const desktopUpgradeRequiredSchema = apiErrorSchema.extend({
 /**
  * Every desktop update line the `:product` routes accept.
  *
- * `ai-okou-desktop` is the only line the API still serves. `okou` and `zero`
- * are retired and their `:product` routes answer 404; `zero` is retired harder,
- * because the API can no longer name its manifest at all. They stay in the
- * union for installed Electron clients. Keeping them here lets a retired line
- * answer a truthful 404 rather than
- * a path-param validation error.
+ * `ai-okou-desktop` is the only line the API serves. The retired `okou` line
+ * stays in the union for installed Electron clients so its routes keep
+ * returning 404 rather than a path-param validation error. Its compatibility
+ * retirement is tracked separately in #37888.
  */
-const DESKTOP_UPDATE_LINES = ["zero", "okou", "ai-okou-desktop"] as const;
-export const DESKTOP_UPDATE_LINE_ZERO = DESKTOP_UPDATE_LINES[0];
-export const DESKTOP_UPDATE_LINE_LEGACY_OKOU = DESKTOP_UPDATE_LINES[1];
-export const DESKTOP_UPDATE_LINE_OKOU = DESKTOP_UPDATE_LINES[2];
+export const DESKTOP_UPDATE_LINE_LEGACY_OKOU = "okou";
+export const DESKTOP_UPDATE_LINE_OKOU = "ai-okou-desktop";
+const DESKTOP_UPDATE_LINES = [
+  DESKTOP_UPDATE_LINE_LEGACY_OKOU,
+  DESKTOP_UPDATE_LINE_OKOU,
+] as const;
 
 const desktopUpdateChannelSchema = z.enum(["stable"]);
 const desktopUpdatePlatformSchema = z.enum(["darwin"]);
 const desktopUpdateArchitectureSchema = z.enum(["arm64"]);
 const desktopUpdateLineSchema = z.enum(DESKTOP_UPDATE_LINES);
-export const desktopZeroMigrationRolloutModeSchema = z.enum([
-  "off",
-  "soft",
-  "hard",
-]);
-export const desktopZeroMigrationPolicySchema = z.object({
-  schemaVersion: z.literal(1),
-  mode: desktopZeroMigrationRolloutModeSchema,
-});
 
 export type DesktopUpdateChannel = z.infer<typeof desktopUpdateChannelSchema>;
 export type DesktopUpdatePlatform = z.infer<typeof desktopUpdatePlatformSchema>;
@@ -43,12 +34,6 @@ export type DesktopUpdateArchitecture = z.infer<
   typeof desktopUpdateArchitectureSchema
 >;
 export type DesktopUpdateLine = z.infer<typeof desktopUpdateLineSchema>;
-export type DesktopZeroMigrationRolloutMode = z.infer<
-  typeof desktopZeroMigrationRolloutModeSchema
->;
-export type DesktopZeroMigrationPolicy = z.infer<
-  typeof desktopZeroMigrationPolicySchema
->;
 
 const squirrelMacReleaseSchema = z.object({
   version: z.string(),
@@ -69,12 +54,13 @@ const squirrelMacReleasesSchema = z.object({
 export type SquirrelMacReleases = z.infer<typeof squirrelMacReleasesSchema>;
 
 /**
- * Every route that resolves a release reads the same upstream release-asset
- * manifest, so they all share the same `503`: the manifest host was
+ * Native appcast and release/download routes read the same upstream release-asset
+ * manifest, so they share the same `503`: the manifest host was
  * unreachable, the API retried within its bound, and no manifest recent enough
  * to serve was cached. It is deliberately distinct from `404` ("this feed
  * resolves to no release") and from `500` ("the manifest is missing or
- * invalid"), which stay loud because they need a human.
+ * invalid"), which stay loud because they need a human. The frozen Squirrel
+ * migration feed is independent of this mutable manifest.
  */
 export const desktopUpdatesContract = c.router({
   compatibility: {
@@ -109,14 +95,6 @@ export const desktopUpdatesContract = c.router({
       503: apiErrorSchema,
     },
     summary: "Get the native desktop Sparkle update feed",
-  },
-  migrationPolicy: {
-    method: "GET",
-    path: "/api/desktop/migration-policy",
-    responses: {
-      200: desktopZeroMigrationPolicySchema,
-    },
-    summary: "Get the remotely controlled Zero Desktop migration policy",
   },
   releasePage: {
     method: "GET",
@@ -195,6 +173,6 @@ export const desktopUpdatesContract = c.router({
       404: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "Get an identity-specific desktop auto-update feed",
+    summary: "Get the fixed Electron-to-Native desktop migration feed",
   },
 });

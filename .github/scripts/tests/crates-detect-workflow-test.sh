@@ -33,6 +33,8 @@ jq -e '
   {
     "any-changed": "${{ steps.detect.outputs.any-changed }}",
     "ci-changed": "${{ steps.detect.outputs.ci-changed }}",
+    "native-kerberos-needed": "${{ steps.detect.outputs.native-kerberos-needed }}",
+    "native-gssapi-peer-needed": "${{ steps.detect.outputs.native-gssapi-peer-needed }}",
     "mitm-addon-test-inputs-changed": "${{ steps.detect.outputs.mitm-addon-test-inputs-changed }}",
     "mitm-addon-pricing-seed-changed": "${{ steps.detect.outputs.mitm-addon-pricing-seed-changed }}",
     "runner-firewall-contract-inputs-changed": "${{ steps.detect.outputs.runner-firewall-contract-inputs-changed }}",
@@ -82,7 +84,7 @@ jq -e '
   ) and
   ($host_cpu.needs | sort) == ([
     "detect",
-    "runner-build",
+    "runner-test-prepare",
     "host-cpu-fairness-build"
   ] | sort) and
   $host_cpu_build.needs == ["detect", "runner-host-groups"] and
@@ -90,16 +92,16 @@ jq -e '
   $host_cpu_build.env.TEST_NAME == "host_cpu_fairness" and
   ($host_cpu_build.if | contains("needs.detect.outputs.sandbox-firecracker-changed")) and
   ($host_cpu_build.if | contains("needs.detect.outputs.ci-changed")) and
-  ($host_cpu.if | contains("needs.runner-build.result")) and
+  ($host_cpu.if | contains("needs.runner-test-prepare.result")) and
   ($host_cpu.if | contains("needs.host-cpu-fairness-build.result")) and
   ($host_cpu.if | contains("needs.runner-behavior-lane-") | not) and
   ($host_cpu.if | contains("needs.detect.outputs.sandbox-firecracker-changed")) and
   ($host_cpu.if | contains("needs.detect.outputs.ci-changed")) and
   ([$lane_a, $lane_b, $lane_c, $lane_d] |
-    all(.[]; .needs == ["runner-build"])) and
+    all(.[]; .needs == ["runner-test-prepare"])) and
   behavior_commands($lane_a) == [
     ".github/scripts/runner-behavior-balloon.sh",
-    ".github/scripts/runner-behavior-workspace-cache-promotion.sh"
+    ".github/scripts/runner-behavior-home-cache-promotion.sh"
   ] and
   behavior_commands($lane_b) == [
     ".github/scripts/runner-behavior-exec.sh",
@@ -115,7 +117,7 @@ jq -e '
     ".github/scripts/runner-behavior-keep-alive.sh",
     ".github/scripts/runner-behavior-upgrade-local.sh"
   ] and
-  $host_cpu.env.TARGET_TRIPLE == "${{ needs.runner-build.outputs.target }}" and
+  $host_cpu.env.TARGET_TRIPLE == "${{ needs.runner-test-prepare.outputs.target }}" and
   any($host_cpu_build.steps[]?;
     .run == "bash .github/scripts/runner-native-test-artifact.sh build"
   ) and

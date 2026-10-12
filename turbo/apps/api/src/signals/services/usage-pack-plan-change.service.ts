@@ -791,21 +791,6 @@ function restorableScheduleId(
     : null;
 }
 
-async function scheduledAllocationChanges(
-  db: Pick<Db, "select">,
-  subscriptionId: string,
-): Promise<readonly UsagePackAllocationChangeRow[]> {
-  return await db
-    .select()
-    .from(usagePackAllocationChanges)
-    .where(
-      and(
-        eq(usagePackAllocationChanges.usagePackSubscriptionId, subscriptionId),
-        eq(usagePackAllocationChanges.status, "scheduled"),
-      ),
-    );
-}
-
 function replacementScheduleId(
   changes: readonly UsagePackAllocationChangeRow[],
 ): string | null {
@@ -1334,6 +1319,7 @@ const persistSubscriptionChangePreview$ = command(
   ): Promise<UsagePackSubscriptionChangeRow | "plan_ending" | null> => {
     const db = set(writeDb$);
     const { context } = args.prepared;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0286; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       // This only publishes an unpaid quote. A competing unique quote can
       // reject this transaction; payment confirmation revalidates its source.
@@ -2018,6 +2004,7 @@ async function persistDeferredSubscriptionChangeSchedule(
     stored.allocationChanges.some((change) => {
       return change.kind === "downgrade" || change.kind === "removal";
     });
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0287; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     const [root] = await tx
       .select()
@@ -2048,7 +2035,18 @@ async function persistDeferredSubscriptionChangeSchedule(
     const unrecordedReplacementScheduleId =
       stored.allocationChanges.length === 0
         ? restorableScheduleId(
-            await scheduledAllocationChanges(tx, stored.subscription.id),
+            await tx
+              .select()
+              .from(usagePackAllocationChanges)
+              .where(
+                and(
+                  eq(
+                    usagePackAllocationChanges.usagePackSubscriptionId,
+                    stored.subscription.id,
+                  ),
+                  eq(usagePackAllocationChanges.status, "scheduled"),
+                ),
+              ),
           )
         : null;
     if (
@@ -2126,6 +2124,7 @@ async function storeDeferredScheduleRequest(
   stored: StoredSubscriptionChange,
   request: UsagePackDeferredSchedule,
 ): Promise<UsagePackSubscriptionChangeRow> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0288; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const [root] = await tx
       .select()
@@ -2353,6 +2352,7 @@ const markPreparedChangeApplying$ = command(
     signal: AbortSignal,
   ): Promise<UsagePackSubscriptionChangeRow | null> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0289; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       // Accepted Plan intent is a real preview -> applying transition. The
       // existing active-org unique index arbitrates Plan operations; observed
@@ -2466,6 +2466,7 @@ async function failApplyingSubscriptionChange(
   failureReason: string,
 ): Promise<void> {
   const completedAt = nowDate();
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0290; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     const [failed] = await tx
       .update(usagePackSubscriptionChanges)
@@ -2654,6 +2655,7 @@ async function recordImmediateSubscriptionChangeInvoice(
   pendingPayment: boolean,
 ): Promise<void> {
   const updatedAt = nowDate();
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0291; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     await tx
       .update(usagePackSubscriptionChanges)
@@ -3221,10 +3223,18 @@ async function restoreScheduledSubscriptionChange(
   subscription: StripeSubscription,
   signal: AbortSignal,
 ): Promise<UsagePackSubscriptionChangeConfirmResult> {
-  const scheduledChanges = await scheduledAllocationChanges(
-    db,
-    stored.subscription.id,
-  );
+  const scheduledChanges = await db
+    .select()
+    .from(usagePackAllocationChanges)
+    .where(
+      and(
+        eq(
+          usagePackAllocationChanges.usagePackSubscriptionId,
+          stored.subscription.id,
+        ),
+        eq(usagePackAllocationChanges.status, "scheduled"),
+      ),
+    );
   signal.throwIfAborted();
   const scheduleId = restorableScheduleId(scheduledChanges);
   const stripeScheduleId = stripeObjectId(subscription.schedule);
@@ -3253,6 +3263,7 @@ async function restoreScheduledSubscriptionChange(
     signal.throwIfAborted();
   }
   const completedAt = nowDate();
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0292; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     const [completed] = await tx
       .update(usagePackSubscriptionChanges)
@@ -3631,7 +3642,20 @@ async function replacesScheduledPackageChange(
   }
   return (
     stored.allocationChanges.length === 0 &&
-    (await scheduledAllocationChanges(db, stored.subscription.id)).length > 0
+    (
+      await db
+        .select()
+        .from(usagePackAllocationChanges)
+        .where(
+          and(
+            eq(
+              usagePackAllocationChanges.usagePackSubscriptionId,
+              stored.subscription.id,
+            ),
+            eq(usagePackAllocationChanges.status, "scheduled"),
+          ),
+        )
+    ).length > 0
   );
 }
 
@@ -3745,6 +3769,7 @@ async function failExpiredPendingSubscriptionChange(
   root: UsagePackSubscriptionChangeRow,
 ): Promise<void> {
   const completedAt = nowDate();
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0293; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     await tx
       .update(usagePackSubscriptionChanges)

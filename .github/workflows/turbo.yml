@@ -310,7 +310,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     outputs:
       job-ref: ${{ steps.set-job-ref.outputs.job-ref }}
       runner-image-job-ref: ${{ steps.set-job-ref.outputs.runner-image-job-ref }}
@@ -390,7 +390,7 @@ jobs:
             echo "crates-changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-          if printf '%s\n' "$CHANGED_FILES" | grep -qE "^\.github/workflows/(turbo|staging|benchmark|crates|runner-image)\.yml$|^\.github/actions/(setup-r2-sccache|setup-ssh-tunnel|provision)/|^\.github/scripts/|^ansible/"; then
+          if printf '%s\n' "$CHANGED_FILES" | grep -qE "^\.github/workflows/(turbo|staging|benchmark|crates|runner-image(-architecture)?)\.yml$|^\.github/actions/(setup-r2-sccache|setup-ssh-tunnel|provision)/|^\.github/scripts/|^ansible/"; then
             echo "CI workflow changes detected"
             echo "ci-changed=true" >> "$GITHUB_OUTPUT"
           else
@@ -547,14 +547,25 @@ jobs:
     timeout-minutes: 10
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 1
       - uses: ./.github/actions/toolchain-init
       - name: Check DB ownership boundary
         run: .github/scripts/check-db-boundary.sh
+      - name: Check deletion-only database transaction inventory
+        working-directory: turbo
+        shell: bash
+        env:
+          TRANSACTION_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$TRANSACTION_BASE_SHA" =~ ^[a-f0-9]{40}$ ]] || { echo 'Missing base/main SHA' >&2; exit 1; }
+          git fetch --no-tags --depth=1 origin "$TRANSACTION_BASE_SHA"
+          pnpm lint:transactions "$TRANSACTION_BASE_SHA"
       - name: Validate oxlintrc.json react allowImportNames
         working-directory: turbo
         run: |
@@ -574,7 +585,7 @@ jobs:
     timeout-minutes: 10
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -590,7 +601,7 @@ jobs:
     timeout-minutes: 15
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -611,7 +622,7 @@ jobs:
     env:
       TSC_CHECKERS: "2"
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -670,7 +681,7 @@ jobs:
     env:
       TSC_CHECKERS: "2"
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -727,7 +738,7 @@ jobs:
     timeout-minutes: 8
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -741,7 +752,7 @@ jobs:
     timeout-minutes: 10
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -757,7 +768,7 @@ jobs:
     # Only run when migration, schema, persistent JSONB contract, or database script files changed
     if: github.event_name != 'push' && needs.prepare.outputs.migration-changed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     services:
       postgres:
         image: ghcr.io/${{ github.repository_owner }}/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
@@ -851,6 +862,8 @@ jobs:
             echo "Create a NEW migration instead of modifying existing ones."
             exit 1
           fi
+      - name: Install PostgreSQL client for audit script tests
+        run: apt-get update && apt-get install -y --no-install-recommends postgresql-client
       - name: Test Migration Consistency
         working-directory: turbo/packages/db
         env:
@@ -863,7 +876,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -899,7 +912,7 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -938,7 +951,7 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     services:
       postgres:
         image: ghcr.io/${{ github.repository_owner }}/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
@@ -990,7 +1003,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -1028,7 +1041,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -1038,9 +1051,18 @@ jobs:
       - name: Test Connectors
         working-directory: turbo
         run: pnpm -F @okouai/connectors exec vitest run --reporter=default
+      - name: Test App Worker
+        working-directory: turbo
+        run: pnpm -F @okouai/app-worker test
+      - name: Test artifact OG in Workers runtime
+        working-directory: turbo
+        run: pnpm test:artifact-og-workers
       - name: Test ESLint Config
         working-directory: turbo
         run: pnpm -F @okouai/eslint-config test
+      - name: Test database transaction policy
+        working-directory: turbo
+        run: pnpm -F @okouai/eslint-rules exec vitest run src/api/__tests__/no-db-transaction.test.ts src/api/__tests__/db-transaction-policy.test.ts --maxWorkers=1
       - name: Upload coverage to Codecov
         if: success() || failure()
         continue-on-error: true
@@ -1069,7 +1091,7 @@ jobs:
       group: deploy-api-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     needs: [prepare]
     # Deploy if job-ref is set (PR or main), not a release-please commit, and anything
     # that needs a live API preview or E2E API token changed.
@@ -1280,51 +1302,6 @@ jobs:
           API_DEPLOYMENT_URL: ${{ steps.api-deploy.outputs.url }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
-      # Preview cron does not run automatically. Seed the same bounded official
-      # catalog projection against the deployed API's capability configuration;
-      # do not call the production full-catalog synchronizer here.
-      - name: Seed preview onboarding connector catalog
-        env:
-          API_DEPLOYMENT_URL: ${{ steps.api-deploy.outputs.url }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-        run: |
-          set -euo pipefail
-
-          response=""
-          for attempt in 1 2 3; do
-            if ! response=$(curl \
-              --fail-with-body \
-              --show-error \
-              --silent \
-              --max-time 120 \
-              -H "Authorization: Bearer ${CRON_SECRET}" \
-              -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
-              "${API_DEPLOYMENT_URL}/api/cron/seed-preview-onboarding-catalog"); then
-              echo "::warning::Preview catalog seed request failed (attempt ${attempt}/3)"
-            elif summary=$(jq -c '{catalogVersion, catalogDigest, connectorSlugs}' <<< "$response"); then
-              echo "Preview onboarding catalog: ${summary}"
-
-              if jq -e '
-                (.catalogVersion | type == "string" and length > 0)
-                and (.catalogDigest | test("^sha256:[a-f0-9]{64}$"))
-                and (.connectorSlugs | type == "array" and length > 0)
-              ' <<< "$response" >/dev/null; then
-                exit 0
-              fi
-              echo "::warning::Preview onboarding catalog is not ready (attempt ${attempt}/3)"
-            else
-              echo "::warning::Preview catalog seed returned invalid JSON (attempt ${attempt}/3)"
-            fi
-
-            if [ "$attempt" -lt 3 ]; then
-              sleep 2
-            fi
-          done
-
-          echo "::error::Preview catalog seed did not produce an onboarding projection"
-          exit 1
-
       - name: Create API Vercel Alias
         id: api-alias
         if: vars.PREVIEW_DOMAIN != ''
@@ -1360,7 +1337,7 @@ jobs:
       group: deploy-app-${{ github.sha }}
       cancel-in-progress: false
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     if: >-
       ${{
         !cancelled() &&
@@ -1834,7 +1811,7 @@ jobs:
           # E2E sources follow the same captured merge source as preview components.
           ref: ${{ github.sha }}
           submodules: recursive
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Install E2E dependencies
@@ -1897,7 +1874,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           submodules: recursive
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
       - name: Install pnpm
@@ -1938,7 +1915,7 @@ jobs:
       - name: Upload Playwright blob report
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-blob-chat-smoke
           path: e2e/playwright/blob-report/
@@ -1958,7 +1935,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
       - name: Install pnpm
@@ -1966,7 +1943,7 @@ jobs:
       - name: Install E2E dependencies
         run: cd e2e && pnpm install --frozen-lockfile
       - name: Download Playwright blob reports
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: playwright-blob-*
           path: e2e/all-blob-reports
@@ -1978,7 +1955,7 @@ jobs:
       - name: Upload Playwright HTML report
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report
           path: e2e/playwright-report/
@@ -1996,7 +1973,7 @@ jobs:
       group: deploy-cli-${{ github.sha }}
       cancel-in-progress: false
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     if: >-
       ${{
         !cancelled() &&
@@ -2026,7 +2003,7 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10.33.4
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm
@@ -2190,12 +2167,9 @@ jobs:
           set -euo pipefail
           cdn_dir="$(mktemp -d)"
           for filename in package.tgz manifest.json ready.json; do
-            curl -fsSL \
-              --retry 5 \
-              --retry-delay 2 \
-              --retry-all-errors \
+            bash .github/scripts/download-okou-cli-cdn-file.sh \
               "${CLI_STATIC_BASE_URL}/${ARTIFACT_PREFIX}/${filename}" \
-              --output "${cdn_dir}/${filename}"
+              "${cdn_dir}/${filename}"
           done
           bash .github/scripts/verify-okou-cli-artifact.sh \
             "$cdn_dir" \
@@ -2204,7 +2178,7 @@ jobs:
             "$cdn_dir/package.tgz"
 
       - name: Upload CLI artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cli-package
           path: /tmp/okou-cli-artifact/package.tgz
@@ -2233,11 +2207,11 @@ jobs:
         with:
           ref: ${{ github.sha }}
           submodules: recursive
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Download CLI artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: cli-package
           path: /tmp/cli-package
@@ -2284,7 +2258,7 @@ jobs:
       - name: Upload JUnit XML artifact
         if: ${{ !cancelled() }}
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-serial-junit-xml
           path: e2e/results/
@@ -2448,13 +2422,15 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10.33.4
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
       - name: Install E2E dependencies
         run: cd e2e && pnpm install --frozen-lockfile
       - name: Check runner E2E model selection
         run: cd e2e && pnpm exec tsx --test scripts/runner-model-selection.test.ts scripts/runner-model-bootstrap.test.mjs scripts/runner-chat-model-default.test.mjs
+      - name: Check runner E2E manual grant diagnostics
+        run: cd e2e && pnpm exec tsx --test scripts/runner-manual-grant.test.mjs
       - name: Generate runner E2E shard matrix
         id: shards
         shell: bash
@@ -2475,7 +2451,7 @@ jobs:
           JOB_REF: ${{ needs.prepare.outputs.job-ref }}
       - name: Upload runner Clerk resource records
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-runner-clerk-resources-${{ github.run_attempt }}
           path: /tmp/e2e-clerk-runner/*.json
@@ -2500,7 +2476,7 @@ jobs:
       - name: Upload runner E2E sign-in diagnostics
         if: failure()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: runner-e2e-sign-in-diagnostics
           path: /tmp/e2e-runner-sign-in-diagnostics
@@ -2508,14 +2484,14 @@ jobs:
           retention-days: 1
       - name: Upload runner E2E Checkout diagnostics
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: runner-e2e-checkout-diagnostics
           path: /tmp/e2e-runner-checkout-diagnostics
           if-no-files-found: ignore
           retention-days: 1
       - name: Upload runner E2E API tokens
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: e2e-tokens
           path: |
@@ -2547,7 +2523,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
       - name: Download runner E2E API tokens
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: e2e-tokens
           path: /tmp
@@ -2624,13 +2600,13 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10.33.4
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
       - name: Install E2E dependencies
         run: cd e2e && pnpm install --frozen-lockfile
       - name: Download runner E2E API tokens
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: e2e-tokens
           path: /tmp
@@ -2720,7 +2696,7 @@ jobs:
         if: ${{ !cancelled() }}
         # JUnit artifacts are diagnostic; the BATS step determines test success.
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: e2e-runner-junit-${{ matrix.index }}
           path: e2e/results/runner-${{ matrix.index }}/
@@ -2779,7 +2755,7 @@ jobs:
         if: steps.cleanup-scope.outputs.scope == 'generation' || steps.cleanup-scope.outputs.scope == 'run'
         with:
           version: 10.33.4
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         if: steps.cleanup-scope.outputs.scope == 'generation' || steps.cleanup-scope.outputs.scope == 'run'
         with:
           node-version: 22
@@ -2788,7 +2764,7 @@ jobs:
         run: cd e2e && pnpm install --frozen-lockfile
       - name: Download runner Clerk resource records
         if: steps.cleanup-scope.outputs.scope == 'generation' || steps.cleanup-scope.outputs.scope == 'run'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: e2e-runner-clerk-resources-*
           path: /tmp/e2e-clerk-runner
@@ -2831,66 +2807,140 @@ jobs:
     timeout-minutes: 8
     needs: [detect-release, detect-turbo-ts-checks]
     if: github.event_name != 'push' && needs.detect-release.outputs.skip != 'true' && needs.detect-turbo-ts-checks.outputs.ios-only == 'false'
-    # Report-only: this surfaces schema generation/compat issues without blocking CI.
-    continue-on-error: true
+    # Blocking for Desktop-owned routes (docs/deployment-compatibility.md#desktop-contract-gate);
+    # Runner, Guest Agent, and MITM findings only warn.
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          # The base commit supplies the base Desktop floor and base schema.
+          fetch-depth: 2
       - uses: ./.github/actions/toolchain-init
 
       - name: Download online runtime API schema
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
           SCHEMA_RELEASE_TAG: runtime-api-schema-prod
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/runtime-api-schema
+          schema_dir=/tmp/runtime-api-schema
+          mkdir -p "$schema_dir"
 
-          if gh release view "$SCHEMA_RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            if gh release download "$SCHEMA_RELEASE_TAG" \
-              --repo "${{ github.repository }}" \
-              --pattern current.json \
-              --dir /tmp/runtime-api-schema \
-              --clobber; then
-              echo "Downloaded online runtime API schema"
-            else
-              echo "::warning::Runtime API schema release exists, but current.json is not available yet."
-            fi
-          else
+          # The toolchain image ships curl and jq but not gh.
+          status=$(curl -sS --retry 3 -o "$schema_dir/release.json" -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/releases/tags/$SCHEMA_RELEASE_TAG")
+          if [ "$status" = "404" ]; then
             echo "::warning::Runtime API schema release $SCHEMA_RELEASE_TAG does not exist yet; compatibility report will be skipped."
+            exit 0
+          fi
+          if [ "$status" != "200" ]; then
+            echo "::error::Reading runtime API schema release $SCHEMA_RELEASE_TAG returned HTTP $status."
+            exit 1
           fi
 
-      - name: Check runtime API compatibility (report only)
-        working-directory: turbo
+          asset_url=$(jq -r '.assets[] | select(.name == "current.json") | .url' "$schema_dir/release.json")
+          if [ -z "$asset_url" ]; then
+            echo "::warning::Runtime API schema release exists, but current.json is not available yet."
+            exit 0
+          fi
+          curl -fsSL --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/octet-stream" \
+            -o "$schema_dir/current.json" \
+            "$asset_url"
+          echo "Downloaded online runtime API schema"
+
+      - name: Prepare base branch inputs
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHECKOUT_REF: ${{ github.ref }}
+          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/runtime-api-schema
+          # The main commit this candidate merges onto: HEAD^1 of the PR merge
+          # ref, or the merge group base. Not the branch's own fork point.
+          base_sha=$(.github/scripts/changed-base-ref.sh)
+          echo "Base commit: $base_sha"
+          git show "$base_sha:turbo/apps/api/src/lib/desktop-compatibility.json" \
+            > /tmp/runtime-api-schema/desktop-base-floor.json
 
-          pnpm --filter @okouai/api-contracts run build:runtime-api-schema -- --out /tmp/runtime-api-schema/candidate.json
-
-          if [ -f /tmp/runtime-api-schema/current.json ]; then
-            pnpm --filter @okouai/api-contracts run lint-runtime-api-compat -- \
-              --against /tmp/runtime-api-schema/current.json \
-              --current /tmp/runtime-api-schema/candidate.json \
-              --report-out /tmp/runtime-api-schema/report.json \
-              --warn-only
-          else
-            echo "::warning::No online runtime API schema found. Generated candidate schema only."
-            printf '{"findings":[],"skipped":"online schema not found"}\n' > /tmp/runtime-api-schema/report.json
+          # Findings the base already has against production were proven by the
+          # change that introduced them and must not block this one.
+          base_src=turbo/packages/api-contracts/.compat-base
+          mkdir -p "$base_src"
+          git archive "$base_sha" \
+            turbo/packages/api-contracts/package.json \
+            turbo/packages/api-contracts/src |
+            tar -x --strip-components=3 -C "$base_src"
+          if ! (cd turbo/packages/api-contracts &&
+            pnpm exec tsx .compat-base/src/runtime-api-schema/cli.ts build \
+              --out /tmp/runtime-api-schema/base.json); then
+            echo "::warning::Base runtime API schema could not be built; every Desktop finding is treated as new."
+            rm -f /tmp/runtime-api-schema/base.json
           fi
+          rm -rf "$base_src"
+
+      - name: Read published Desktop version
+        id: desktop-release
+        shell: bash
+        run: |
+          set -euo pipefail
+          url=https://api.okou.ai/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/RELEASES.json
+          # A missing version only fails PRs that raise the Desktop floor or
+          # rely on a transform maxVersion; the lint names this oracle.
+          if releases=$(curl -fsS --retry 2 --max-time 20 "$url") &&
+            version=$(printf '%s' "$releases" | jq -er '.currentRelease | strings'); then
+            echo "Published Desktop version: $version"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Published Desktop version unavailable from $url"
+          fi
+
+      - name: Check runtime API compatibility
+        working-directory: turbo
+        shell: bash
+        env:
+          DESKTOP_PUBLISHED_VERSION: ${{ steps.desktop-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          schema_dir=/tmp/runtime-api-schema
+
+          pnpm --filter @okouai/api-contracts run build:runtime-api-schema -- --out "$schema_dir/candidate.json"
+
+          args=(
+            --against "$schema_dir/current.json"
+            --current "$schema_dir/candidate.json"
+            --report-out "$schema_dir/report.json"
+            --block-owner desktop
+            --desktop-floor "$PWD/apps/api/src/lib/desktop-compatibility.json"
+            --desktop-base-floor "$schema_dir/desktop-base-floor.json"
+          )
+          if [ -f "$schema_dir/base.json" ]; then
+            args+=(--base-schema "$schema_dir/base.json")
+          fi
+          if [ -n "$DESKTOP_PUBLISHED_VERSION" ]; then
+            args+=(--desktop-published-version "$DESKTOP_PUBLISHED_VERSION")
+          fi
+          pnpm --filter @okouai/api-contracts run lint-runtime-api-compat -- "${args[@]}"
 
       - name: Upload runtime API compatibility report
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: runtime-api-compat-report
           path: |
+            /tmp/runtime-api-schema/base.json
             /tmp/runtime-api-schema/candidate.json
             /tmp/runtime-api-schema/current.json
             /tmp/runtime-api-schema/report.json
@@ -2918,6 +2968,7 @@ jobs:
       - lint-format
       - lint-knip
       - test-migrate
+      - lint-runtime-api-compat
       - test-cli
       - test-app
       - test-api
@@ -2994,8 +3045,13 @@ jobs:
             RUNNER_E2E_SKIP_ALLOWED=""
           fi
           CF_APP_SKIP_ALLOWED=""
+          RUNTIME_API_COMPAT_SKIP_ALLOWED=""
           if [ "${{ needs.detect-turbo-ts-checks.outputs.ios-only }}" = "true" ]; then
             CF_APP_SKIP_ALLOWED="true"
+            RUNTIME_API_COMPAT_SKIP_ALLOWED="skipped"
+          fi
+          if [ "$EVENT_NAME" = "push" ]; then
+            RUNTIME_API_COMPAT_SKIP_ALLOWED="skipped"
           fi
           if [ "${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}" = "true" ]; then
             # External fork PRs cannot access runner infra secrets, so their
@@ -3045,6 +3101,8 @@ jobs:
           check_result "test-api" "${{ needs.test-api.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-other" "${{ needs.test-other.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-discord-gateway" "${{ needs.test-discord-gateway.result }}" "$TS_CHECK_SKIP_ALLOWED"
+          # Same skip conditions as the job: pure iOS change sets and staging.
+          check_result "lint-runtime-api-compat" "${{ needs.lint-runtime-api-compat.result }}" "$RUNTIME_API_COMPAT_SKIP_ALLOWED"
 
           # May-skip: 'success' or 'skipped' are both acceptable
           check_result "test-migrate" "${{ needs.test-migrate.result }}" "true"

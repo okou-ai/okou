@@ -100,7 +100,7 @@ const DropdownMenuContent = React.forwardRef<
             data-slot="dropdown-menu-content"
             className={cn(
               anchoredPopupTransitionClassName,
-              "max-h-[var(--available-height)] min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-[12px] border border-[hsl(var(--gray-400))] bg-card p-1 text-foreground shadow-lg outline-none dark:shadow-[0_8px_40px_-8px_rgba(0,0,0,0.6)]",
+              "max-h-[var(--available-height)] min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-xl border border-[hsl(var(--gray-400))] bg-card p-1 text-foreground shadow-lg outline-none dark:shadow-[0_8px_40px_-8px_rgba(0,0,0,0.6)]",
               className,
             )}
             {...props}

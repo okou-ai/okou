@@ -1,3 +1,4 @@
+import ChatData
 import SwiftUI
 
 @main
@@ -95,7 +96,9 @@ private struct WorkspaceRootView: View {
     self.workspaceID = workspaceID
     self.userID = userID
     _accountError = accountError
-    let client = APIClient(baseURL: configuration.apiURL) {
+    let client = APIClient(
+      baseURL: configuration.apiURL, clientVersion: configuration.appVersion
+    ) {
       try await authentication.accessToken(workspaceID: workspaceID, scopeID: scopeID)
     }
     _store = State(

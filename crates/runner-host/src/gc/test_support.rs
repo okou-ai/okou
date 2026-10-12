@@ -3,6 +3,15 @@ use std::time::{Duration, SystemTime};
 
 use crate::paths::HomePaths;
 
+/// Immutable counts for testing a caller's workspace report projection.
+pub fn workspace_gc_report(
+    workspaces_cleaned: u32,
+    bytes_freed: u64,
+    base_dir_locks_removed: u64,
+) -> super::workspaces::WorkspaceGcReport {
+    super::workspaces::report_for_test(workspaces_cleaned, bytes_freed, base_dir_locks_removed)
+}
+
 /// Inject a single directory iteration error after the selected number of entries.
 pub fn dir_entry_reader_failing_after(successful_entries: usize) -> super::GcDirEntryReader {
     super::filesystem::GcDirEntryReader::failing_after(successful_entries)

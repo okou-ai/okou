@@ -1221,7 +1221,7 @@ function SelfDemoteAction({
         <DropdownMenuContent
           align="end"
           className="w-max min-w-48 max-w-[calc(100vw-2rem)]"
-          finalFocus={false}
+          finalFocus={open ? false : undefined}
         >
           {showUsagePack && <AdjustUsagePackMenuItem />}
           {canSelfDemote && (
@@ -1350,7 +1350,7 @@ function MemberActions({
         <DropdownMenuContent
           align="end"
           className="w-max min-w-48 max-w-[calc(100vw-2rem)]"
-          finalFocus={false}
+          finalFocus={open ? false : undefined}
         >
           {showUsagePack && <AdjustUsagePackMenuItem />}
           <DropdownMenuItem
@@ -1551,7 +1551,7 @@ function PendingInvitationRow({
               <DropdownMenuContent
                 align="end"
                 className="w-48"
-                finalFocus={false}
+                finalFocus={open ? false : undefined}
               >
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"

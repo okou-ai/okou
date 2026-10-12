@@ -1,6 +1,5 @@
 import type { BrowserClerk, UserResource } from "@clerk/shared/types";
 import { command, computed, state } from "ccstate";
-import { isDesktopAuthFlow } from "../lib/desktop-auth-flow.ts";
 import {
   derivePlatformServiceOrigin,
   isOkouProductionHostname,
@@ -568,9 +567,7 @@ export const watchOrgSwitch$ = command(
           return;
         }
 
-        // Desktop owns navigation until fresh-token IPC and handoff acknowledgement.
-        // Check both sides of the token wait: a route can change while it is pending.
-        if (signal.aborted || isDesktopAuthFlow()) {
+        if (signal.aborted) {
           return;
         }
         await bestEffort(
@@ -578,7 +575,7 @@ export const watchOrgSwitch$ = command(
             return await clerk.session?.getToken({ skipCache: true });
           })(),
         );
-        if (!signal.aborted && !isDesktopAuthFlow()) {
+        if (!signal.aborted) {
           location.href = needsOnboarding ? ONBOARDING_PATH : "/";
         }
       }),

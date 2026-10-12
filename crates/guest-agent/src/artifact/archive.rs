@@ -29,12 +29,12 @@ pub(crate) const ARTIFACT_TRAVERSAL_MAX_DEPTH: u64 = 256;
 #[cfg(target_os = "linux")]
 pub(crate) const ARTIFACT_TRAVERSAL_MAX_PATH_BYTES: u64 = 64 * 1024;
 
-/// Collect a best-effort manifest of regular files readable at checkpoint time.
+/// Collect a best-effort manifest of regular files readable at finalization time.
 ///
 /// Artifact membership is intentionally based on what the walk can read and
 /// hash. An unreadable descendant is not part of the artifact for this
-/// checkpoint; omitting it lets other readable files be saved instead of
-/// failing the entire checkpoint. A new version may therefore omit paths that
+/// finalization; omitting it lets other readable files be saved instead of
+/// failing the entire finalization. A new version may therefore omit paths that
 /// were present in the mounted parent version.
 ///
 /// On Linux, access to the configured artifact root is strict: the root must be
@@ -48,7 +48,7 @@ pub(crate) const ARTIFACT_TRAVERSAL_MAX_PATH_BYTES: u64 = 64 * 1024;
 /// Every successfully yielded directory entry consumes a separate traversal
 /// budget, including excluded and non-regular entries. Exceeding that budget,
 /// the directory-depth limit, or the active relative-path limit is a hard
-/// checkpoint failure rather than a best-effort omission.
+/// finalization failure rather than a best-effort omission.
 ///
 /// Entries named `.git` or `.vm0`, symlinks, FIFOs, and other non-regular
 /// entries are intentionally excluded. The root and descendant descriptors use
@@ -61,9 +61,9 @@ pub(crate) const ARTIFACT_TRAVERSAL_MAX_PATH_BYTES: u64 = 64 * 1024;
 /// The exclusion and hardlink behavior is covered by
 /// `walk_dir_skips_symlinks`, `walk_dir_does_not_follow_directory_symlink`,
 /// `walk_dir_skips_fifo`, `collect_file_metadata_excludes_git_and_vm0`, and
-/// `walk_dir_handles_hardlinks` in this module's tests. The checkpoint caller
+/// `walk_dir_handles_hardlinks` in this module's tests. The finalization caller
 /// that consumes the resulting list is
-/// `crate::checkpoint::artifact::snapshot_artifact_entries`.
+/// `crate::finalization::artifact::snapshot_artifact_entries`.
 #[cfg(target_os = "linux")]
 pub(super) fn collect_file_metadata(dir_path: &str) -> Result<Vec<FileEntry>, ArchiveError> {
     let mut files = Vec::new();
@@ -101,7 +101,7 @@ fn walk_dir(
     path_bytes: &mut u64,
 ) -> Result<(), ArchiveError> {
     // An unreadable descendant subtree contributes no artifact files. Keep
-    // walking the rest of the root rather than failing the checkpoint.
+    // walking the rest of the root rather than failing the finalization.
     let entries = match current.read_dir() {
         Ok(e) => e,
         Err(_) => return Ok(()),
@@ -127,7 +127,7 @@ fn walk_entries(
     out: &mut Vec<FileEntry>,
     path_bytes: &mut u64,
 ) -> Result<(), ArchiveError> {
-    // A failed directory entry cannot be included in this checkpoint's
+    // A failed directory entry cannot be included in this finalization's
     // artifact, but it should not prevent other entries from being saved.
     for entry in entries.flatten() {
         let candidate_entries = observed_entries.saturating_add(1);
@@ -304,7 +304,7 @@ pub(super) enum ArchiveError {
     )]
     NonUtf8PathComponent { parent: String, component: String },
     #[error(
-        "artifact checkpoint traversal limit exceeded: observed entries {observed_entries}/{max_entries}, directory depth {observed_depth}/{max_depth}, active UTF-8 path bytes {observed_path_bytes}/{max_path_bytes}"
+        "artifact finalization traversal limit exceeded: observed entries {observed_entries}/{max_entries}, directory depth {observed_depth}/{max_depth}, active UTF-8 path bytes {observed_path_bytes}/{max_path_bytes}"
     )]
     TraversalLimitExceeded {
         observed_entries: u64,
@@ -315,7 +315,7 @@ pub(super) enum ArchiveError {
         max_path_bytes: u64,
     },
     #[error(
-        "artifact checkpoint manifest limit exceeded: candidate files {observed_files}/{max_files}, candidate UTF-8 path bytes {observed_path_bytes}/{max_path_bytes}"
+        "artifact finalization manifest limit exceeded: candidate files {observed_files}/{max_files}, candidate UTF-8 path bytes {observed_path_bytes}/{max_path_bytes}"
     )]
     ManifestLimitExceeded {
         observed_files: u64,

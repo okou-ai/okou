@@ -1,8 +1,9 @@
 """Shared model-provider SSE usage integration-test mechanics."""
 
+import asyncio
 import gzip
 import zlib
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractContextManager
 from pathlib import Path
 
@@ -49,12 +50,18 @@ def compress_zlib_sse(body: bytes, encoding: str) -> bytes:
     return zlib.compress(body)
 
 
+async def _join_completion(completion: Awaitable[None]) -> None:
+    await completion
+
+
 def run_response(
     flow: http.HTTPFlow,
     usage_webhook_api: UsageWebhookApi,
 ) -> UsageWebhookServer:
     with usage_webhook_api() as webhook:
-        mitm_addon.response(flow)
+        completion = mitm_addon.response(flow)
+        if completion is not None:
+            asyncio.run(_join_completion(completion))
         usage.flush_usage_events(trigger="test")
     return webhook
 
@@ -64,7 +71,9 @@ def run_error(
     usage_webhook_api: UsageWebhookApi,
 ) -> UsageWebhookServer:
     with usage_webhook_api() as webhook:
-        mitm_addon.error(flow)
+        completion = mitm_addon.error(flow)
+        if completion is not None:
+            asyncio.run(_join_completion(completion))
         usage.flush_usage_events(trigger="test")
     return webhook
 

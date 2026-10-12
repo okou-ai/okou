@@ -82,7 +82,7 @@ async fn run_in_sandbox_runs_guest_storage_apply_for_cached_instruction_normaliz
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+            home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
             prev_storage: Some(&prev_storage),
         },
         &mut telemetry,
@@ -158,7 +158,7 @@ async fn run_in_sandbox_applies_decoded_artifact_before_agent_spawn() {
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+                home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -246,7 +246,7 @@ async fn run_in_sandbox_starts_deferred_cache_fill_after_agent_spawn() {
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+                home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -382,7 +382,7 @@ async fn run_in_sandbox_drops_deferred_cache_fill_when_agent_spawn_fails() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+            home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -438,7 +438,7 @@ async fn run_in_sandbox_drops_deferred_cache_fill_when_guest_storage_apply_fails
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+            home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -497,7 +497,7 @@ async fn run_in_sandbox_records_storage_manifest_no_work_timing_without_guest_st
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+            home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
             prev_storage: Some(&prev_storage),
         },
         &mut telemetry,
@@ -558,7 +558,7 @@ async fn run_in_sandbox_records_storage_manifest_guest_storage_apply_failure_tim
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::Reused,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+                home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
                 prev_storage: Some(&prev_storage),
             },
             &mut telemetry,
@@ -618,7 +618,7 @@ async fn run_in_sandbox_rejects_non_empty_artifact_without_archive_url() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+            home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,

@@ -4,7 +4,7 @@ import {
   connectorAccountsContract,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -252,6 +252,9 @@ test.each(["http", "mcp"] as const)(
             transport: "streamable-http",
           },
     );
+    onTestFinished(async () => {
+      await connectors.deleteCustomConnector(actor, connector.id);
+    });
     const target = { kind: "custom", customConnectorId: connector.id } as const;
     const started = await connectors.requestStartCustomConnectorOAuth2(
       actor,
@@ -338,6 +341,90 @@ test.each(["http", "mcp"] as const)(
       error: { code: "NOT_FOUND", message: "OAuth completion not found" },
     });
     expect(deleted.headers.get("cache-control")).toBe("no-store");
-    await connectors.deleteCustomConnector(actor, connector.id);
+
+    const removedAgent = await bdd.createAgent(actor);
+    onTestFinished(async () => {
+      await bdd.requestDeleteAgent(actor, removedAgent.agentId, [204, 404]);
+    });
+    const rejected = await connectors.requestStartCustomConnectorOAuth2(
+      actor,
+      connector.id,
+      [200],
+      removedAgent.agentId,
+    );
+    if (rejected.status !== 200 || rejected.body.result !== "authorization") {
+      throw new Error("Expected custom OAuth with agent authorization");
+    }
+    await bdd.deleteAgent(actor, removedAgent.agentId);
+    const rejectedCallback =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "removed-agent",
+        state: state(rejected.body),
+      });
+    expect(rejectedCallback.body).toStrictEqual({
+      status: "error",
+      message: "OAuth connected, but the requested agent was not found",
+    });
+    const rejectedReceipt = await receipt(
+      actor,
+      rejected.body.oauthAttemptId,
+      target,
+    );
+    expect(rejectedReceipt.status).toBe(404);
+    expect(rejectedReceipt.body).toStrictEqual(deleted.body);
+    expect(rejectedReceipt.headers.get("cache-control")).toBe("no-store");
+    const accounts = await connectors.listCustomConnectorAccounts(
+      actor,
+      connector.id,
+    );
+    expect(accounts).toHaveLength(1);
+    const [persistedAccount] = accounts;
+    if (!persistedAccount) {
+      throw new Error("Expected the account connected before agent rejection");
+    }
+
+    const survivingAgent = await bdd.createAgent(actor);
+    onTestFinished(async () => {
+      await bdd.deleteAgent(actor, survivingAgent.agentId);
+    });
+    const retry = await connectors.requestStartCustomConnectorOAuth2(
+      actor,
+      connector.id,
+      [200],
+      survivingAgent.agentId,
+      { intent: "reconnect", connectionId: persistedAccount.id },
+    );
+    if (retry.status !== 200 || retry.body.result !== "authorization") {
+      throw new Error("Expected custom OAuth retry with agent authorization");
+    }
+    const retriedCallback =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "surviving-agent",
+        state: state(retry.body),
+      });
+    expect(retriedCallback.body).toStrictEqual({
+      status: "success",
+      username: null,
+    });
+    const retriedReceipt = await receipt(
+      actor,
+      retry.body.oauthAttemptId,
+      target,
+    );
+    expect(retriedReceipt.status).toBe(200);
+    expect(retriedReceipt.body).toStrictEqual({
+      connectionId: persistedAccount.id,
+    });
+    expect(retriedReceipt.headers.get("cache-control")).toBe("no-store");
+    await expect(
+      connectors.readAgentCustomConnectors(actor, survivingAgent.agentId),
+    ).resolves.toStrictEqual([connector.id]);
+    const afterRetry = await receipt(
+      actor,
+      rejected.body.oauthAttemptId,
+      target,
+    );
+    expect(afterRetry.status).toBe(404);
+    expect(afterRetry.body).toStrictEqual(rejectedReceipt.body);
   },
 );

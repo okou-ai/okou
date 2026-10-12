@@ -98,6 +98,7 @@ describe("auth tokens", () => {
       userId: "user_okou",
       runId: "run_okou",
       orgId: "org_okou",
+      capabilities: expect.arrayContaining(["notify:write"]),
     });
   });
 

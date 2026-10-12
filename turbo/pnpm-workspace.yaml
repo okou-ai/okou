@@ -74,9 +74,9 @@ patchedDependencies:
   # Remove when Base UI fixes empty trigger refs and preserves the focused
   # composite item index after DOM reordering. Regression: connector account defaults.
   "@base-ui/react@1.7.0": patches/@base-ui__react@1.7.0.patch
-  "@earendil-works/pi-agent-core@0.87.1": patches/@earendil-works__pi-agent-core@0.87.1.patch
-  "@earendil-works/pi-ai@0.87.1": patches/@earendil-works__pi-ai@0.87.1.patch
-  "@earendil-works/pi-coding-agent@0.87.1": patches/@earendil-works__pi-coding-agent@0.87.1.patch
+  "@earendil-works/pi-agent-core@1.1.0": patches/@earendil-works__pi-agent-core@1.1.0.patch
+  "@earendil-works/pi-ai@1.1.0": patches/@earendil-works__pi-ai@1.1.0.patch
+  "@earendil-works/pi-coding-agent@1.1.0": patches/@earendil-works__pi-coding-agent@1.1.0.patch
   # Remove when upstream jest-dom declarations support Vitest 5's Matchers.
   "@testing-library/jest-dom@6.9.1": patches/@testing-library__jest-dom@6.9.1.patch
 

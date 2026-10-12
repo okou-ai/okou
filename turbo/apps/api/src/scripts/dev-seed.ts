@@ -2,7 +2,7 @@
 
 import { pathToFileURL } from "node:url";
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, sql, type SQL } from "drizzle-orm";
 import { escapeLiteral } from "pg";
 import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import { MANAGED_SOCIALKIT_BILLING_CATEGORY } from "@okouai/api-contracts/contracts/social";
@@ -17,15 +17,18 @@ import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { skills } from "@okouai/db/schema/skill";
 import { storages } from "@okouai/db/schema/storage";
-import { createStore } from "ccstate";
+import { command, createStore } from "ccstate";
 
 import { closeDbPool, db } from "../lib/db";
+import { pgIntegerDecoder } from "../lib/db-structured-result";
 import { optionalEnv } from "../lib/env";
 import { nowDate } from "../lib/time";
+import { writeDb$ } from "../signals/external/db";
 import { immutableCatalogHash$ } from "../signals/services/connector-catalog-immutable.service";
 import { syncConnectorCatalog$ } from "../signals/services/connector-catalog-sync.service";
 import { seedPreviewConnectorCatalog$ } from "../signals/services/preview-connector-catalog.service";
 import { onRejection } from "../signals/utils";
+import { DEV_SEED_SENTINEL_MANAGED_MODEL_KEY } from "./dev-seed-managed-model-key";
 import rawDevSeedSkillVolumes from "./dev-seed-skill-volumes.json";
 
 function writeLine(message: string): void {
@@ -38,7 +41,8 @@ function writeLine(message: string): void {
  * Pricing convention: 1 USD = 1000 credits.
  * Token prices use integer credits with a per-row token unit size.
  *
- * The managed OpenRouter Auto key is read from DEV_MODEL_OPENROUTER_KEY.
+ * The managed OpenRouter Auto key is read from DEV_MODEL_OPENROUTER_KEY; the
+ * fake sentinel key is seeded when it is not configured.
  */
 
 /** 1 USD = 1000 credits */
@@ -82,7 +86,6 @@ const PREVIEW_E2E_VOLUME_SKILL_NAMES: readonly string[] = [
   "github",
   "slack",
   "discord-webhook",
-  "zendesk",
   "serpapi",
   "replicate",
 ];
@@ -352,10 +355,9 @@ function buildSkillSeedSql(
 `;
 }
 
-async function seedOfficialSkillVolumes(
-  database: ReturnType<typeof db>,
+function buildOfficialSkillVolumesSeedSql(
   seedSkillVolumes: readonly DevSeedSkillVolume[],
-): Promise<number> {
+): SQL {
   const seedVolumes = escapeLiteral(JSON.stringify(seedSkillVolumes));
   const systemOrgId = escapeLiteral(SYSTEM_ORG_ID);
   const volumeOrgUserId = escapeLiteral(VOLUME_ORG_USER_ID);
@@ -388,9 +390,7 @@ BEGIN
 ${buildStorageSeedSql(systemOrgId, volumeOrgUserId)}
 ${buildSkillSeedSql(systemOrgId, volumeOrgUserId)}
 END`;
-  await database.execute(sql.raw(`DO ${escapeLiteral(body)}`));
-
-  return seedSkillVolumes.length;
+  return sql.raw(`DO ${escapeLiteral(body)}`);
 }
 
 export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
@@ -711,7 +711,11 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
 type OptionalEnvReader = (name: string) => string | undefined;
 type LineWriter = (message: string) => void;
 
-/** Build the managed OpenRouter built_in_model_keys row from the environment. */
+/**
+ * Build the managed OpenRouter built_in_model_keys row from the environment.
+ * Without a configured key, seed the obvious fake sentinel so the managed
+ * route exists locally; the provider rejects it like any invalid key.
+ */
 export function buildBuiltInModelKeys(
   readEnv: OptionalEnvReader = optionalEnv,
   logLine: LineWriter = writeLine,
@@ -719,8 +723,16 @@ export function buildBuiltInModelKeys(
   const envVar = "DEV_MODEL_OPENROUTER_KEY";
   const apiKey = readEnv(envVar);
   if (!apiKey) {
-    logLine(`Skipping ${AUTO_RUN_KEY_VENDOR}: ${envVar} is not configured`);
-    return [];
+    logLine(
+      `Seeding the fake ${AUTO_RUN_KEY_VENDOR} sentinel key: ${envVar} is not configured`,
+    );
+    return [
+      {
+        vendor: AUTO_RUN_KEY_VENDOR,
+        apiKey: DEV_SEED_SENTINEL_MANAGED_MODEL_KEY,
+        label: "dev-seed sentinel",
+      },
+    ];
   }
   return [{ vendor: AUTO_RUN_KEY_VENDOR, apiKey, label: "dev-seed" }];
 }
@@ -733,6 +745,61 @@ export function devSeedUsagePricing(environment: string | undefined) {
   }
   return USAGE_PRICING;
 }
+
+const seedMetadataOnlySkills$ = command(
+  async (
+    { set },
+    fallbackSkillValues: (typeof skills.$inferInsert)[],
+    fallbackStorageNames: string[],
+    timestamp: Date,
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    const database = set(writeDb$);
+    const upsertedSkills = database.$with("upserted_skills").as(
+      database
+        .insert(skills)
+        .values(fallbackSkillValues)
+        .onConflictDoUpdate({
+          target: skills.url,
+          set: {
+            name: sql`excluded.name`,
+            fullPath: sql`excluded.full_path`,
+            storageId: null,
+            versionHash: null,
+            commitSha: null,
+            frontmatter: sql`excluded.frontmatter`,
+            s3Key: null,
+            size: 0,
+            fileCount: 0,
+            syncedAt: null,
+            updatedAt: timestamp,
+          },
+        })
+        .returning({ id: skills.id }),
+    );
+    const clearedStorages = database.$with("cleared_storages").as(
+      database.delete(storages).where(
+        and(
+          eq(storages.orgId, SYSTEM_ORG_ID),
+          eq(storages.userId, VOLUME_ORG_USER_ID),
+          inArray(storages.name, fallbackStorageNames),
+          // Consume every upsert before deleting volumes whose skill FK was cleared.
+          gte(database.select({ count: count() }).from(upsertedSkills), sql`0`),
+        ),
+      ),
+    );
+    const [result] = await database
+      .with(upsertedSkills, clearedStorages)
+      .select({ insertedCount: count() })
+      .from(upsertedSkills);
+    signal.throwIfAborted();
+    if (!result) {
+      throw new Error("Metadata-only skill seed did not return its count");
+    }
+    return result.insertedCount;
+  },
+);
 
 async function devSeed() {
   const pricing = devSeedUsagePricing(optionalEnv("ENV"));
@@ -757,15 +824,34 @@ async function devSeed() {
     });
   writeLine(`Seeded ${pricing.length} usage pricing entries`);
 
-  // --- built_in_model_keys (transactional replace) ---
+  // --- built_in_model_keys (atomic replace) ---
   writeLine("Seeding built_in_model_keys");
   const apiKeys = buildBuiltInModelKeys();
-  await database.transaction(async (tx) => {
-    await tx.delete(builtInModelKeys);
-    if (apiKeys.length > 0) {
-      await tx.insert(builtInModelKeys).values(apiKeys);
-    }
-  });
+  if (apiKeys.length > 0) {
+    const deletedKeys = database
+      .$with("deleted_keys")
+      .as(
+        database
+          .delete(builtInModelKeys)
+          .returning({ deleted: sql`1`.mapWith(pgIntegerDecoder) }),
+      );
+    await database
+      .with(deletedKeys)
+      .insert(builtInModelKeys)
+      .values(
+        apiKeys.map((key) => {
+          return {
+            ...key,
+            // Consume the complete deletion before checking insert uniqueness.
+            // The aggregate also yields one key when the old pool is empty.
+            apiKey: sql`(select ${sql.param(key.apiKey, builtInModelKeys.apiKey)}
+              from ${deletedKeys} having ${gte(count(), sql`0`)})`,
+          };
+        }),
+      );
+  } else {
+    await database.delete(builtInModelKeys);
+  }
   for (const k of apiKeys) {
     writeLine(`Seeded built-in model key entry: ${k.vendor}`);
   }
@@ -774,12 +860,11 @@ async function devSeed() {
   // --- skills (published volumes + seed-skill metadata fallback) ---
   const seedSkillVolumes = getDevSeedSkillVolumes();
   writeLine("Seeding official skill volumes");
-  const seededVolumeCount = await seedOfficialSkillVolumes(
-    database,
-    seedSkillVolumes,
-  );
-  writeLine(`Seeded ${seededVolumeCount} official skill volume entries`);
+  await database.execute(buildOfficialSkillVolumesSeedSql(seedSkillVolumes));
+  writeLine(`Seeded ${seedSkillVolumes.length} official skill volume entries`);
 
+  const store = createStore();
+  const signal = new AbortController().signal;
   const fallbackSkillValues = buildSeedSkillValues(
     getMetadataOnlySeedSkillNames(SEED_SKILLS, seedSkillVolumes),
   );
@@ -788,48 +873,19 @@ async function devSeed() {
     const fallbackStorageNames = fallbackSkillValues.map((skill) => {
       return getSkillStorageName(skill.fullPath);
     });
-    let insertedCount = 0;
-    await database.transaction(async (tx) => {
-      const inserted = await tx
-        .insert(skills)
-        .values(fallbackSkillValues)
-        .onConflictDoUpdate({
-          target: skills.url,
-          set: {
-            name: sql`excluded.name`,
-            fullPath: sql`excluded.full_path`,
-            storageId: null,
-            versionHash: null,
-            commitSha: null,
-            frontmatter: sql`excluded.frontmatter`,
-            s3Key: null,
-            size: 0,
-            fileCount: 0,
-            syncedAt: null,
-            updatedAt: timestamp,
-          },
-        })
-        .returning({ id: skills.id });
-      insertedCount = inserted.length;
-
-      await tx
-        .delete(storages)
-        .where(
-          and(
-            eq(storages.orgId, SYSTEM_ORG_ID),
-            eq(storages.userId, VOLUME_ORG_USER_ID),
-            inArray(storages.name, fallbackStorageNames),
-          ),
-        );
-    });
+    const insertedCount = await store.set(
+      seedMetadataOnlySkills$,
+      fallbackSkillValues,
+      fallbackStorageNames,
+      timestamp,
+      signal,
+    );
     writeLine(
       `Seeded ${insertedCount} metadata-only skills and cleared stale volumes`,
     );
   }
 
   // --- connector catalog (validated R2 publication -> pointer + entries) ---
-  const store = createStore();
-  const signal = new AbortController().signal;
   // The flag keeps its historical name because the CI preview workflow passes
   // it; it initializes the complete official catalog.
   if (process.argv.includes("--preview-onboarding-catalog")) {

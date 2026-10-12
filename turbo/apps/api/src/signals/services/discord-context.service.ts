@@ -23,6 +23,18 @@ export function projectDiscordMessage(
     content: message.content,
     author: message.author,
     timestamp: message.timestamp,
+    ...(message.message_reference?.message_id &&
+    (message.message_reference.type === undefined ||
+      message.message_reference.type === 0)
+      ? {
+          replyTo: {
+            messageId: message.message_reference.message_id,
+            ...(message.message_reference.channel_id !== undefined && {
+              channelId: message.message_reference.channel_id,
+            }),
+          },
+        }
+      : {}),
     url: discordMessageUrl({
       guildId,
       channelId: message.channel_id,
@@ -96,6 +108,48 @@ export const readDiscordHistoryPage$ = command(
       binding: access.binding,
       messages,
       nextBefore: messages.length === args.limit ? messages.at(-1)!.id : null,
+    };
+  },
+);
+
+/** An explicitly referenced message shares the history permission boundary. */
+export const readDiscordContextMessage$ = command(
+  async (
+    { set },
+    args: {
+      orgId: string;
+      userId: string;
+      guildId?: string;
+      channelId: string;
+      messageId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const access = await set(requireDiscordRunReadAccess$, args, signal);
+    if (access.kind === "denied") {
+      return access;
+    }
+    const result = await discordClient.fetchDiscordMessage(
+      {
+        botToken: access.botToken,
+        channelId: args.channelId,
+        messageId: args.messageId,
+      },
+      signal,
+    );
+    if (result.kind !== "ok") {
+      return { kind: "denied" as const, response: discordApiFailure(result) };
+    }
+    if (
+      result.data.channel_id !== args.channelId ||
+      result.data.id !== args.messageId
+    ) {
+      throw new Error("Discord context message has another message identity");
+    }
+    return {
+      kind: "ok" as const,
+      binding: access.binding,
+      message: result.data,
     };
   },
 );

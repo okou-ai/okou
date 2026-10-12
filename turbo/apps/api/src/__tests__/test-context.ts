@@ -5,10 +5,13 @@ import {
   expect,
   onTestFinished,
 } from "vitest";
+import { createStore } from "ccstate";
 
 import { closeDbPool } from "../lib/db";
 import desktopCompatibilityConfig from "../lib/desktop-compatibility.json";
 import { clearMockedEnv } from "../lib/env";
+import iosClientCompatibilityConfig from "../lib/ios-client-compatibility.json";
+import { updateMaxAutonomyBudgetForTest$ } from "../signals/autonomy-budget-limit";
 import { clearMockListStripeInvoices } from "../signals/external/stripe-client";
 import { clearAllDetached, settleIncludingAbort } from "../signals/utils";
 import { flushWaitUntilForTest } from "../signals/context/wait-until";
@@ -25,6 +28,11 @@ export const desktopCompatibility: { minimumSupportedVersion: string | null } =
   desktopCompatibilityConfig;
 const shippedDesktopMinimumVersion =
   desktopCompatibility.minimumSupportedVersion;
+
+export const iosClientCompatibility: {
+  minimumSupportedVersion: string | null;
+} = iosClientCompatibilityConfig;
+const shippedIosMinimumVersion = iosClientCompatibility.minimumSupportedVersion;
 
 function formatBody(body: unknown): string {
   if (typeof body === "string") {
@@ -66,6 +74,9 @@ export function testContext(): TestContext {
   };
 
   beforeEach(() => {
+    // General route fixtures model the disabled compatibility window. Policy
+    // tests explicitly select the shipped or activated floor through this input.
+    desktopCompatibility.minimumSupportedVersion = null;
     const closeDatabase = beginCaseDatabase();
     // Vitest runs finished callbacks in reverse registration order. Register
     // first so case-owned API cleanup finishes before the database is closed.
@@ -97,8 +108,10 @@ export function testContext(): TestContext {
     await clearAllDetached();
     context.sessionHistoryBlobs.clear();
     clearMockedEnv();
+    createStore().set(updateMaxAutonomyBudgetForTest$, undefined);
     clearMockListStripeInvoices();
     desktopCompatibility.minimumSupportedVersion = shippedDesktopMinimumVersion;
+    iosClientCompatibility.minimumSupportedVersion = shippedIosMinimumVersion;
   });
 
   afterAll(async () => {

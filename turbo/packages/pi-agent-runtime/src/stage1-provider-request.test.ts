@@ -331,15 +331,10 @@ describe.each(routes)(
       if (model.dialect === "openai-completions") {
         expect(requests[0]?.headers.get("x-session-id")).toBe(AFFINITY_ID);
       }
+      expect(requests[0]?.headers.get("user-agent")).toBe("okou-pi-agent/1.0");
       if (model.dialect === "openai-codex-responses") {
-        // The native SDK owns its User-Agent, overriding custom route headers.
-        expect(requests[0]?.headers.get("user-agent")).toMatch(/^pi \(/u);
         expect(requests[0]?.headers.get("chatgpt-account-id")).toBe(
           model.accountId,
-        );
-      } else {
-        expect(requests[0]?.headers.get("user-agent")).toBe(
-          "okou-pi-agent/1.0",
         );
       }
     });

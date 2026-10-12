@@ -117,6 +117,8 @@ export function runContext(
     const createdAtMs = run.createdAt.getTime();
     const results = (await get(
       queryAxiom(apl, {
+        // Late-ingested snapshots must not be hidden by a cached empty result.
+        noCache: true,
         startTime: new Date(
           createdAtMs - RUN_CONTEXT_QUERY_PADDING_MS,
         ).toISOString(),

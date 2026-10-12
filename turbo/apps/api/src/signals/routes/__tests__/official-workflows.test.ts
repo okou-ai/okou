@@ -1,3 +1,11 @@
+import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
+import {
+  createChatEventsFixture,
+  okouTokenFromClaim,
+} from "./helpers/chat-events-fixture";
+import { readPublishedArchive } from "./helpers/published-archive";
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { claimBudgetRun } from "./helpers/public-autonomy-budget";
 import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 import {
   DeleteObjectsCommand,
@@ -6,7 +14,10 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
-import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
+import {
+  cronExecuteWorkflowAutomationsContract,
+  cronOfficialWorkflowCatalogContract,
+} from "@okouai/api-contracts/contracts/cron";
 import { logsListContract } from "@okouai/api-contracts/contracts/logs";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import {
@@ -19,8 +30,6 @@ import {
   officialWorkflowInstallationsContract,
   officialWorkflowsContract,
 } from "@okouai/api-contracts/contracts/official-workflows";
-import { testOfficialWorkflowCatalogStateContract } from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
-import { testSystemStoragePresignedUrlCacheStateContract } from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
 
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import {
@@ -28,12 +37,13 @@ import {
   workflowsCollectionContract,
   workflowsDetailContract,
   workflowVisibilityContract,
+  type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   getCustomSkillStorageName,
-  VOLUME_ORG_USER_ID,
+  getOfficialWorkflowDefinitionStorageName,
 } from "@okouai/core/storage-names";
 
 import { http, HttpResponse } from "msw";
@@ -42,7 +52,7 @@ import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now, withMockNowForTest } from "../../../lib/time";
+import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -58,8 +68,6 @@ import { featureSwitchesRoutes } from "../feature-switches";
 import { logsRoutes } from "../logs";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { officialWorkflowRoutes } from "../official-workflows";
-import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
-import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
 
 import { userPreferencesRoutes } from "../user-preferences";
 import { workflowAutomationsRoutes } from "../workflow-automations";
@@ -73,7 +81,10 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 
-import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   createWorkflowsBddApi,
@@ -84,7 +95,6 @@ import {
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { holdSecretKms } from "./helpers/hold-secret-kms";
 import { createRouteMocks } from "./helpers/route-test";
-import { readWorkflowAutomationAutonomyFixture } from "./helpers/runtime-state";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -819,23 +829,6 @@ function activeDefinition(
   };
 }
 
-function retiredDefinition(
-  name: string,
-): Extract<
-  OfficialWorkflowSourceDefinition,
-  { readonly lifecycle: "retired" }
-> {
-  return {
-    name,
-    lifecycle: "retired",
-    presentation: {
-      category: "retired",
-      order: 99,
-      marketingCopy: "Retired Official Workflow.",
-    },
-  };
-}
-
 async function syncClient(candidate: unknown) {
   const app = await setupApp({
     context,
@@ -881,38 +874,45 @@ async function syncDeployedCatalog() {
   );
 }
 
-function stateClient() {
-  return setupApp({
-    context,
-    routes: testOfficialWorkflowCatalogStateRoutes,
-  })(testOfficialWorkflowCatalogStateContract);
-}
-
-async function runOfficialWorkflowReconciliationWorker() {
-  const response = await accept(
-    stateClient().action({
-      body: { action: "run-reconciliation-worker" },
-    }),
+async function executeAutomationCron() {
+  await accept(
+    setupApp({ context, routes: cronExecuteWorkflowAutomationsRoutes })(
+      cronExecuteWorkflowAutomationsContract,
+    ).execute({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
     [200],
   );
-  if (!response.body.worker) {
-    throw new Error(
-      "Official Workflow reconciliation worker result is missing",
-    );
+}
+
+async function fireOfficialSchedule(
+  actor: ApiTestUser,
+  automation: Pick<WorkflowAutomationSummary, "id" | "nextRunAt">,
+) {
+  if (!automation.nextRunAt) {
+    throw new Error("Expected a scheduled Official Automation");
   }
-  return response.body.worker;
-}
-
-async function readOfficialWorkflowReconciliationState(args: {
-  readonly definitionName?: string;
-  readonly workflowId?: string;
-}) {
-  return await accept(
-    stateClient().action({
-      body: { action: "read", ...args },
+  await withMockNowForTest(
+    new Date(automation.nextRunAt).getTime(),
+    async () => {
+      await executeAutomationCron();
+      await flushWaitUntilForTest();
+    },
+  );
+  const current = await accept(
+    automationClient().get({
+      headers: authHeaders(actor),
+      params: { id: automation.id },
     }),
     [200],
   );
+  const chatThreadId = current.body.chatThreadId;
+  if (!chatThreadId) {
+    throw new Error("Expected the Official Automation thread");
+  }
+  const runId = await launchedAutomationRunId(actor, chatThreadId);
+  if (!runId) {
+    throw new Error("Expected the scheduled Official Automation Run");
+  }
+  return { chatThreadId, runId };
 }
 
 function officialClient() {
@@ -955,13 +955,6 @@ function automationClient() {
   return setupApp({ context, routes: workflowAutomationsRoutes })(
     workflowAutomationsContract,
   );
-}
-
-function storageClient() {
-  return setupApp({
-    context,
-    routes: testSystemStoragePresignedUrlCacheStateRoutes,
-  })(testSystemStoragePresignedUrlCacheStateContract);
 }
 
 async function allThreadEventRows(actor: ApiTestUser, chatThreadId: string) {
@@ -1028,27 +1021,13 @@ async function cancelAgentRunsThroughLogs(
 // one second, so a minute later the retry is due without touching the work row.
 const RECONCILIATION_RETRY_DUE_MS = 60_000;
 
-async function runDueOfficialWorkflowReconciliationRetry() {
+async function executeDueAutomationCron() {
   return await withMockNowForTest(
     now() + RECONCILIATION_RETRY_DUE_MS,
     async () => {
-      return await runOfficialWorkflowReconciliationWorker();
+      return await executeAutomationCron();
     },
   );
-}
-
-async function readAcceptedDefinitionFixture(definitionName: string) {
-  const response = await accept(
-    stateClient().action({ body: { action: "read", definitionName } }),
-    [200],
-  );
-  if (!response.body.definition || !response.body.storage) {
-    throw new Error(`Accepted Definition is unavailable: ${definitionName}`);
-  }
-  return {
-    definition: response.body.definition,
-    storage: response.body.storage,
-  };
 }
 
 function s3BodyBuffer(body: unknown): Buffer {
@@ -1191,24 +1170,6 @@ function installCatalogStorageFixture() {
   };
 }
 
-function officialQueueHeaders(
-  actor: ApiTestUser,
-  sourceRunId: string,
-  queueCase: {
-    readonly origin: "web" | "agent_run";
-  },
-) {
-  return queueCase.origin === "web"
-    ? authHeaders(actor)
-    : {
-        authorization: `Bearer ${runs.okouTokenForRunWithCapabilities(
-          actor,
-          sourceRunId,
-          ["agent:write"],
-        )}`,
-      };
-}
-
 async function setOfficialWorkflowsEnabled(
   actor: ApiTestUser,
   enabled: boolean,
@@ -1324,7 +1285,9 @@ async function connectGoogleMeetForOfficialWorkflow(
   }
 }
 
-async function installOfficialWorkflowLifecycleScenario() {
+async function installOfficialWorkflowLifecycleScenario(
+  onceAtTime = "2099-01-01T00:00:00Z",
+) {
   installCatalogStorageFixture();
   const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
   const definitionName = `api-test-lifecycle-${suffix}`;
@@ -1365,7 +1328,7 @@ async function installOfficialWorkflowLifecycleScenario() {
       {
         blueprintKey: "one-shot",
         bindings: [
-          { key: "at-time", value: "2099-01-01T00:00:00Z" },
+          { key: "at-time", value: onceAtTime },
           { key: "callback-url", value: "https://example.com/callback" },
           {
             key: "correlation-id",
@@ -1409,75 +1372,28 @@ async function installOfficialWorkflowLifecycleScenario() {
   };
 }
 
-async function installIdleOfficialWorkflowScenario() {
-  const definitionName = `api-test-idle-official-${randomUUID()}`;
-  const sourceDefinitionName = `api-test-idle-source-${randomUUID()}`;
-  installCatalogStorageFixture();
-  await syncCatalog(
-    catalog([
-      activeDefinition(definitionName, []),
-      activeDefinition(sourceDefinitionName, [loopBlueprint()]),
-    ]),
-  );
-  const { actor } = await workflowBdd.setupWorkflowOrg({
-    model: "claude-fable-5-1",
+async function ordinaryDelegationScenario() {
+  const owned = await publicChatActor(context);
+  return await owned.run(async () => {
+    await runs.updateUserModelPreference(owned.actor, "claude-fable-5-1");
+    const workflowId = await workflowBdd.createWorkflow(owned.actor, {
+      agentId: owned.agentId,
+      name: `ordinary-delegation-${randomUUID().slice(0, 8)}`,
+    });
+    const detail = await accept(
+      workflowClient().get({
+        headers: authHeaders(owned.actor),
+        params: { workflowId },
+      }),
+      [200],
+    );
+    const sent = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "Delegate a workflow",
+    });
+    const source = await claimBudgetRun(context, owned, sent);
+    return { owned, actor: owned.actor, workflow: detail.body, source };
   });
-  const { agentId } = await workflowBdd.createAgent(actor);
-  await setOfficialWorkflowsEnabled(actor, true);
-  const installation = await accept(
-    officialClient().install({
-      headers: authHeaders(actor),
-      params: { definitionName },
-      body: { agentId, blueprints: [] },
-    }),
-    [201],
-  );
-  onTestFinished(async () => {
-    installCatalogStorageFixture();
-    await cancelAgentRunsThroughLogs(actor, agentId);
-    await flushWaitUntilForTest();
-  });
-  runs.configureRunnerGroup();
-  runs.acceptStorageDownloads();
-
-  // The source's public Blueprint grants one delegation hop to the target.
-  const sourceInstallation = await accept(
-    officialClient().install({
-      headers: authHeaders(actor),
-      params: { definitionName: sourceDefinitionName },
-      body: {
-        agentId,
-        blueprints: [
-          {
-            blueprintKey: "pulse",
-            bindings: [
-              { key: "interval-seconds", value: 3600 },
-              { key: "autonomy-budget", value: 1 },
-            ],
-          },
-        ],
-      },
-    }),
-    [201],
-  );
-  const sourceAutomation = sourceInstallation.body.workflow.automations[0];
-  if (!sourceAutomation) {
-    throw new Error("Expected a one-hop Official source Automation");
-  }
-  const source = await accept(
-    automationClient().run({
-      headers: authHeaders(actor),
-      params: { id: sourceAutomation.id },
-    }),
-    [201],
-  );
-  expect(source.body.runId).toBeNull();
-  const sourceThreadId = source.body.chatThreadId;
-  const sourceRunId = await launchedAutomationRunId(actor, sourceThreadId);
-  if (!sourceRunId) {
-    throw new Error("Expected the Official source Automation Run");
-  }
-  return { actor, installation, sourceRunId, sourceThreadId };
 }
 
 beforeEach(() => {
@@ -1485,6 +1401,213 @@ beforeEach(() => {
 });
 
 describe("Morning Brief preference", () => {
+  it.each([true, false])(
+    "retains the public automation toggle choice %s after uninstall",
+    async (enabled) => {
+      const { actor } = await prepareBriefMember();
+      await initializeBriefMember(actor, "Asia/Shanghai");
+      const headers = authHeaders(actor);
+      await accept(
+        morningBriefPreferenceClient().update({
+          headers,
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const [installation] = await listMorningBriefInstallations(actor);
+      if (!installation) {
+        throw new Error("Expected the preference installation");
+      }
+      const [automation] = await readMorningBriefAutomations(
+        actor,
+        installation.id,
+      );
+      if (!automation) {
+        throw new Error("Expected the Morning Brief automation");
+      }
+      const paused = await accept(
+        automationClient().disable({ headers, params: { id: automation.id } }),
+        [200],
+      );
+      expect(paused.body).toMatchObject({
+        id: automation.id,
+        enabled: false,
+        nextRunAt: null,
+        official: { intendedEnabled: false, reconciliationStatus: "current" },
+      });
+      const toggled = await accept(
+        (enabled ? automationClient().enable : automationClient().disable)({
+          headers,
+          params: { id: automation.id },
+        }),
+        [200],
+      );
+      expect(toggled.body).toMatchObject({
+        id: automation.id,
+        enabled,
+        official: {
+          intendedEnabled: enabled,
+          parameterBindings: automation.official?.parameterBindings,
+        },
+      });
+      if (enabled) {
+        expect(toggled.body.nextRunAt).toStrictEqual(expect.any(String));
+      } else {
+        expect(toggled.body.nextRunAt).toBeNull();
+      }
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled,
+        status: enabled ? "enabled" : "paused",
+      });
+      await accept(
+        installationClient().uninstall({
+          headers,
+          params: { workflowId: installation.id },
+        }),
+        [204],
+      );
+      // With no installation, the preference exposes the durable enrollment choice.
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled,
+        status: enabled ? "preparing" : "paused",
+      });
+    },
+  );
+
+  it("preserves a paused preference during Official Morning Brief materialization", async () => {
+    installCatalogStorageFixture();
+    await syncDeployedCatalog();
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
+    const headers = authHeaders(actor);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    const onboarding = await bdd.readOnboardingStatus(actor);
+    if (!onboarding.defaultAgentId) {
+      throw new Error("Expected the default Agent");
+    }
+    await setOfficialWorkflowsEnabled(actor, true);
+    const workflowId = await installMorningBriefFromCatalog(
+      actor,
+      onboarding.defaultAgentId,
+    );
+    await expect(
+      readMorningBriefAutomations(actor, workflowId),
+    ).resolves.toMatchObject([
+      {
+        enabled: true,
+        official: { intendedEnabled: true, reconciliationStatus: "current" },
+      },
+    ]);
+    const removed = await syncCatalog(
+      catalog([
+        activeDefinition("morning-brief", []),
+        {
+          name: "connector-doctor",
+          lifecycle: "retired",
+          presentation: { category: "productivity" },
+        },
+      ]),
+    );
+    expect(removed.body).toMatchObject({
+      outcome: "accepted",
+      diagnostics: [],
+    });
+    await executeAutomationCron();
+    await expect(
+      readMorningBriefAutomations(actor, workflowId),
+    ).resolves.toHaveLength(0);
+    await syncDeployedCatalog();
+    await executeAutomationCron();
+    await expect(
+      readMorningBriefAutomations(actor, workflowId),
+    ).resolves.toMatchObject([
+      {
+        enabled: true,
+        official: { intendedEnabled: true, reconciliationStatus: "current" },
+      },
+    ]);
+    await accept(
+      installationClient().reconfigure({
+        headers,
+        params: { workflowId },
+        body: {
+          blueprints: [{ blueprintKey: "daily-delivery", bindings: [] }],
+        },
+      }),
+      [200],
+    );
+    await accept(
+      installationClient().uninstall({ headers, params: { workflowId } }),
+      [204],
+    );
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: false,
+      status: "paused",
+    });
+  });
+
+  it("publishes one choice for overlapping Morning Brief disable requests", async () => {
+    const { actor } = await prepareBriefMember();
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    const headers = authHeaders(actor);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const [installation] = await listMorningBriefInstallations(actor);
+    if (!installation) {
+      throw new Error("Expected the preference installation");
+    }
+    const [automation] = await readMorningBriefAutomations(
+      actor,
+      installation.id,
+    );
+    if (!automation) {
+      throw new Error("Expected the Morning Brief automation");
+    }
+    const responses = await Promise.all([
+      accept(
+        automationClient().disable({ headers, params: { id: automation.id } }),
+        [200, 409],
+      ),
+      accept(
+        automationClient().disable({ headers, params: { id: automation.id } }),
+        [200, 409],
+      ),
+    ]);
+    expect(
+      responses.some((response) => {
+        return response.status === 200;
+      }),
+    ).toBeTruthy();
+    await expect(
+      readMorningBriefAutomations(actor, installation.id),
+    ).resolves.toMatchObject([
+      { enabled: false, nextRunAt: null, official: { intendedEnabled: false } },
+    ]);
+    await accept(
+      installationClient().uninstall({
+        headers,
+        params: { workflowId: installation.id },
+      }),
+      [204],
+    );
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: false,
+      status: "paused",
+    });
+  });
+
   it("preserves enable intent while timezone is unavailable", async () => {
     const missingTimezone = await workflowBdd.setupWorkflowOrg();
     const timezoneHeaders = authHeaders(missingTimezone.actor);
@@ -2002,6 +2125,339 @@ describe("Morning Brief explicit installation", () => {
   });
 });
 
+describe("Official schedule expiry", () => {
+  function pendingAutomationInputs(
+    events: Awaited<ReturnType<typeof allThreadEventRows>>,
+  ) {
+    return events.filter((event) => {
+      return (
+        event.eventType === "input.automation" &&
+        !events.some((candidate) => {
+          return candidate.revokesEventId === event.id;
+        })
+      );
+    });
+  }
+
+  async function readAutomation(actor: ApiTestUser, id: string) {
+    const response = await accept(
+      automationClient().get({ headers: authHeaders(actor), params: { id } }),
+      [200],
+    );
+    return response.body;
+  }
+
+  it("advances expired cron and loop obligations, disables once, and preserves the result across competing and repeated ticks", async () => {
+    await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+      mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+      const { actor, agentId, installed } =
+        await installOfficialWorkflowLifecycleScenario("2030-01-01T23:00:00Z");
+      const at = new Date("2030-01-01T23:30:00.001Z");
+      mockNow(at);
+      await Promise.all([executeAutomationCron(), executeAutomationCron()]);
+      await flushWaitUntilForTest();
+      const expectedNextRuns = {
+        daily: "2030-01-02T23:00:00.000Z",
+        pulse: "2030-01-02T00:30:00.001Z",
+        "one-shot": null,
+      };
+      const advanced = [];
+      for (const automation of installed.body.workflow.automations) {
+        const current = await readAutomation(actor, automation.id);
+        const key = automation.official?.blueprintKey;
+        if (key !== "daily" && key !== "pulse" && key !== "one-shot") {
+          throw new Error("Expected the installed schedule Blueprint");
+        }
+        expect(current).toMatchObject({
+          nextRunAt: expectedNextRuns[key],
+          enabled: key !== "one-shot",
+          lastRunAt: null,
+        });
+        advanced.push(current);
+      }
+      await expect(listAgentRunLogIds(actor, agentId)).resolves.toStrictEqual(
+        [],
+      );
+      mockNow(at.getTime() + 60_000);
+      await executeAutomationCron();
+      for (const automation of advanced) {
+        await expect(
+          readAutomation(actor, automation.id),
+        ).resolves.toStrictEqual(automation);
+      }
+      await expect(listAgentRunLogIds(actor, agentId)).resolves.toStrictEqual(
+        [],
+      );
+    });
+  });
+
+  it.each(["pulse", "one-shot"] as const)(
+    "claims the %s obligation at exactly thirty minutes instead of expiring it",
+    async (blueprintKey) => {
+      await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+        mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+        const { actor, agentId, installed } =
+          await installOfficialWorkflowLifecycleScenario(
+            "2030-01-01T01:00:00Z",
+          );
+        const target = installed.body.workflow.automations.find(
+          (automation) => {
+            return automation.official?.blueprintKey === blueprintKey;
+          },
+        );
+        if (!target?.nextRunAt) {
+          throw new Error("Expected the installed obligation");
+        }
+        const runnerGroup = runs.configureRunnerGroup();
+        runs.acceptStorageDownloads();
+        await runs.heartbeatRunner(runnerGroup);
+        onTestFinished(async () => {
+          await cancelAgentRunsThroughLogs(actor, agentId);
+          await flushWaitUntilForTest();
+        });
+        const at = new Date(Date.parse(target.nextRunAt) + 30 * 60_000);
+        mockNow(at);
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        await expect(readAutomation(actor, target.id)).resolves.toMatchObject({
+          lastRunAt: at.toISOString(),
+          nextRunAt: null,
+        });
+        const runIds = await listAgentRunLogIds(actor, agentId);
+        expect(runIds).toHaveLength(1);
+        const runId = runIds[0];
+        if (!runId) {
+          throw new Error("Expected the grace-boundary Run");
+        }
+        const claim = await runs.claimRunnerJob(runId);
+        await webhooks.requestAgentComplete(
+          { runId, exitCode: 1, error: "Grace-boundary Run completed" },
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          [200],
+        );
+        await flushWaitUntilForTest();
+        await expect(readAutomation(actor, target.id)).resolves.toMatchObject({
+          enabled: blueprintKey === "pulse",
+          nextRunAt:
+            blueprintKey === "pulse"
+              ? new Date(at.getTime() + 3_600_000).toISOString()
+              : null,
+        });
+      });
+    },
+  );
+
+  it("rejects manual inputs and expires an unclaimed obligation while another Run is active", async () => {
+    await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+      mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+      const { actor, agentId, installed, headers } =
+        await installOfficialWorkflowLifecycleScenario();
+      const pulse = installed.body.workflow.automations.find((automation) => {
+        return automation.official?.blueprintKey === "pulse";
+      });
+      if (!pulse?.nextRunAt) {
+        throw new Error("Expected the loop obligation");
+      }
+      const runnerGroup = runs.configureRunnerGroup();
+      runs.acceptStorageDownloads();
+      await runs.heartbeatRunner(runnerGroup);
+      const first = await runs.createThreadRun(actor, {
+        agentId,
+        prompt:
+          "Keep the Agent occupied while the scheduled obligation expires.",
+      });
+      const runId = first.runId;
+      const claim = await runs.claimRunnerJob(runId);
+      onTestFinished(async () => {
+        await webhooks.requestAgentComplete(
+          { runId, exitCode: 1, error: "Claimed Run cleanup" },
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          [200],
+        );
+        await flushWaitUntilForTest();
+        await cancelAgentRunsThroughLogs(actor, agentId);
+        await flushWaitUntilForTest();
+      });
+      const denied = await accept(
+        automationClient().run({ headers, params: { id: pulse.id } }),
+        [409],
+      );
+      expect(denied.body.error.message).toBe(
+        "Official Workflows can only run through their automatic triggers",
+      );
+      await flushWaitUntilForTest();
+      const pending = pendingAutomationInputs(
+        await allThreadEventRows(actor, first.threadId),
+      );
+      expect(pending).toStrictEqual([]);
+      mockNow(Date.parse(pulse.nextRunAt) + 30 * 60_000 + 1);
+      const advancedNextRunAt = new Date(now() + 3_600_000).toISOString();
+      await executeAutomationCron();
+      await expect(readAutomation(actor, pulse.id)).resolves.toMatchObject({
+        nextRunAt: advancedNextRunAt,
+        enabled: true,
+      });
+      mockNow(now() + 60_000);
+      await executeAutomationCron();
+      await expect(readAutomation(actor, pulse.id)).resolves.toMatchObject({
+        nextRunAt: advancedNextRunAt,
+        enabled: true,
+      });
+      expect(
+        pendingAutomationInputs(
+          await allThreadEventRows(actor, first.threadId),
+        ),
+      ).toStrictEqual(pending);
+      await expect(listAgentRunLogIds(actor, agentId)).resolves.toStrictEqual([
+        runId,
+      ]);
+      await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
+        status: "running",
+      });
+      await webhooks.requestAgentComplete(
+        { runId, exitCode: 1, error: "Claimed Run completed" },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      await cancelAgentRunsThroughLogs(actor, agentId);
+      await flushWaitUntilForTest();
+    });
+  });
+
+  it("retains the user's new recurrence when reconfiguration overlaps an expired tick", async () => {
+    await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+      mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+      const { actor, agentId, installed, dailyAutomation, headers } =
+        await installOfficialWorkflowLifecycleScenario();
+      mockNow(new Date("2030-01-01T23:31:00Z"));
+      await Promise.all([
+        executeAutomationCron(),
+        accept(
+          installationClient().reconfigure({
+            headers,
+            params: { workflowId: installed.body.workflow.id },
+            body: {
+              blueprints: [
+                {
+                  blueprintKey: "daily",
+                  bindings: [
+                    { key: "cron-expression", value: "0 10 * * *" },
+                    { key: "include-weekends", value: true },
+                  ],
+                },
+              ],
+            },
+          }),
+          [200],
+        ),
+      ]);
+      await expect(
+        readAutomation(actor, dailyAutomation.id),
+      ).resolves.toMatchObject({
+        enabled: true,
+        nextRunAt: "2030-01-02T02:00:00.000Z",
+        schedule: {
+          type: "cron",
+          cronExpression: "0 10 * * *",
+          timezone: "Asia/Shanghai",
+        },
+      });
+      await executeAutomationCron();
+      await expect(
+        readAutomation(actor, dailyAutomation.id),
+      ).resolves.toMatchObject({
+        nextRunAt: "2030-01-02T02:00:00.000Z",
+      });
+      await expect(listAgentRunLogIds(actor, agentId)).resolves.toStrictEqual(
+        [],
+      );
+    });
+  });
+
+  it("preserves a claimed Morning Brief occurrence across later ticks and duplicate Runner completion", async () => {
+    await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+      installCatalogStorageFixture();
+      await syncDeployedCatalog();
+      const { actor } = await workflowBdd.setupWorkflowOrg({
+        timezone: "Asia/Shanghai",
+      });
+      await connectBriefSource(actor);
+      await accept(
+        morningBriefPreferenceClient().update({
+          headers: authHeaders(actor),
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const [installation] = await listMorningBriefInstallations(actor);
+      if (!installation?.agentId) {
+        throw new Error("Expected the member's Morning Brief Agent");
+      }
+      const [automation] = await readMorningBriefAutomations(
+        actor,
+        installation.id,
+      );
+      if (!automation?.nextRunAt) {
+        throw new Error("Expected the Morning Brief anchor");
+      }
+      const runnerGroup = runs.configureRunnerGroup();
+      runs.acceptStorageDownloads();
+      await runs.heartbeatRunner(runnerGroup);
+      mockNow(Date.parse(automation.nextRunAt) + 30 * 60_000);
+      await executeAutomationCron();
+      await flushWaitUntilForTest();
+      const runIds = await listAgentRunLogIds(actor, installation.agentId);
+      expect(runIds).toHaveLength(1);
+      const runId = runIds[0];
+      if (!runId) {
+        throw new Error("Expected the scheduled Morning Brief Run");
+      }
+      const claim = await runs.claimRunnerJob(runId);
+      const completion = () => {
+        return webhooks.requestAgentComplete(
+          { runId, exitCode: 1, error: "Morning Brief Runner completion" },
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          [200],
+        );
+      };
+      onTestFinished(async () => {
+        await completion();
+      });
+      mockNow(now() + 60 * 60_000);
+      await executeAutomationCron();
+      await expect(readAutomation(actor, automation.id)).resolves.toMatchObject(
+        {
+          enabled: true,
+          nextRunAt: null,
+        },
+      );
+      await expect(
+        listAgentRunLogIds(actor, installation.agentId),
+      ).resolves.toStrictEqual(runIds);
+      await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
+        status: "running",
+      });
+      await completion();
+      await flushWaitUntilForTest();
+      const settled = await readAutomation(actor, automation.id);
+      expect(settled.nextRunAt).not.toBeNull();
+      if (!settled.nextRunAt) {
+        throw new Error("Expected the successor Morning Brief anchor");
+      }
+      expect(Date.parse(settled.nextRunAt)).toBeGreaterThan(now());
+      await completion();
+      await executeAutomationCron();
+      await expect(readAutomation(actor, automation.id)).resolves.toStrictEqual(
+        settled,
+      );
+      await expect(
+        listAgentRunLogIds(actor, installation.agentId),
+      ).resolves.toStrictEqual(runIds);
+    });
+  });
+});
+
 describe("Official Workflow installations", () => {
   it("names a new Morning Brief thread in the default locale", async () => {
     installCatalogStorageFixture();
@@ -2036,23 +2492,11 @@ describe("Official Workflow installations", () => {
 
     runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
-    const started = await accept(
-      automationClient().run({
-        headers,
-        params: { id: automation.id },
-      }),
-      [201],
-    );
+    const started = await fireOfficialSchedule(actor, automation);
     await expect(
-      chat.readThreadMetadata(actor, started.body.chatThreadId),
+      chat.readThreadMetadata(actor, started.chatThreadId),
     ).resolves.toMatchObject({ title: "Okou Morning Brief" });
-    const startedRunId = await launchedAutomationRunId(
-      actor,
-      started.body.chatThreadId,
-    );
-    if (startedRunId) {
-      await runs.requestCancelRun(actor, startedRunId, [200, 400]);
-    }
+    await runs.requestCancelRun(actor, started.runId, [200, 400]);
   });
 
   it("requires a Preference timezone only when a schedule Blueprint omits one", async () => {
@@ -2171,9 +2615,7 @@ describe("Official Workflow installations", () => {
     );
     expect(installed.body.workflow.automations).toHaveLength(2);
     for (const automation of installed.body.workflow.automations) {
-      await expect(
-        readWorkflowAutomationAutonomyFixture(context, automation.id),
-      ).resolves.toMatchObject({ autonomyBudget: 32, enabled: true });
+      expect(automation.enabled).toBeTruthy();
     }
   });
 
@@ -2473,7 +2915,7 @@ describe("Official Workflow installations", () => {
   });
 
   it("projects installed Official Workflow state and accepted definition content", async () => {
-    const { dailyAutomation, definitionName, headers, installed, orgId } =
+    const { dailyAutomation, definitionName, headers, installed } =
       await installOfficialWorkflowLifecycleScenario();
     const firstWorkflowId = installed.body.workflow.id;
     expect(installed.body.workflow.automations).toHaveLength(3);
@@ -2539,38 +2981,6 @@ describe("Official Workflow installations", () => {
       },
     });
     expect(dailyAutomation.official?.parameterBindings).toHaveLength(2);
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, dailyAutomation.id),
-    ).resolves.toMatchObject({
-      autonomyBudget: 4,
-      enabled: true,
-      officialBlueprintKey: "daily",
-      officialResultEmailEnabled: true,
-    });
-    for (const automation of installed.body.workflow.automations) {
-      if (automation.id === dailyAutomation.id) {
-        continue;
-      }
-      await expect(
-        readWorkflowAutomationAutonomyFixture(context, automation.id),
-      ).resolves.toMatchObject({
-        officialBlueprintKey: automation.official?.blueprintKey,
-        officialResultEmailEnabled: false,
-      });
-    }
-
-    const customStorage = await accept(
-      storageClient().action({
-        body: {
-          action: "read-storage-state",
-          org_id: orgId,
-          user_id: VOLUME_ORG_USER_ID,
-          storage_name: getCustomSkillStorageName(firstWorkflowId),
-        },
-      }),
-      [200],
-    );
-    expect(customStorage.body.storage_state).toBeNull();
   });
 
   it("reads the accepted Official Workflow instruction after a catalog revision", async () => {
@@ -3681,9 +4091,7 @@ describe("Official Workflow installations", () => {
           ]),
         ]),
       );
-      await expect(
-        runOfficialWorkflowReconciliationWorker(),
-      ).resolves.toMatchObject({ completed: 1, installations: 1, retried: 0 });
+      await executeAutomationCron();
 
       const reconciled = await accept(
         installationClient().get({
@@ -3787,9 +4195,7 @@ describe("Official Workflow installations", () => {
     );
     // The pause commits while the new form watch is being prepared; the
     // reconfiguration observed the enabled row and must not overwrite it.
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toMatchObject({ completed: 0, retried: 1 });
+    await executeAutomationCron();
     expect(pausedDuringReconfiguration).toBeTruthy();
 
     const reconciled = await accept(
@@ -3976,9 +4382,7 @@ describe("Official Workflow installations", () => {
     await syncCatalog(
       catalog([activeDefinition(definitionName, [googleMeetBlueprint(7)])]),
     );
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toMatchObject({ completed: 1, installations: 1, retried: 0 });
+    await executeAutomationCron();
 
     const reconciled = await accept(
       installationClient().get({
@@ -3995,9 +4399,6 @@ describe("Official Workflow installations", () => {
       official: { reconciliationStatus: "current" },
     });
     expect(current?.official?.appliedFingerprint).not.toBe(initialFingerprint);
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, initial.id),
-    ).resolves.toMatchObject({ autonomyBudget: 7, enabled: true });
     expect(meet.createCalls).toBe(1);
   });
 
@@ -4124,15 +4525,7 @@ describe("Official Workflow installations", () => {
           appliedFingerprint: initialPulse.official.appliedFingerprint,
         },
       });
-      await expect(
-        runOfficialWorkflowReconciliationWorker(),
-      ).resolves.toStrictEqual({
-        claimed: 1,
-        completed: 1,
-        advanced: 0,
-        retried: 0,
-        installations: 1,
-      });
+      await executeAutomationCron();
       const afterPulse = await accept(
         installationClient().get({ headers, params: { workflowId } }),
         [200],
@@ -4184,7 +4577,7 @@ describe("Official Workflow installations", () => {
           activeDefinition(unrelatedDefinitionName, [unrelatedInitial]),
         ]),
       );
-      await runOfficialWorkflowReconciliationWorker();
+      await executeAutomationCron();
       const activation = await syncCatalog(
         catalog([
           activeDefinition(definitionName, [
@@ -4200,11 +4593,7 @@ describe("Official Workflow installations", () => {
         );
       }
       expect(activation.body).toMatchObject({ outcome: "accepted" });
-      const work = await readOfficialWorkflowReconciliationState({});
-      expect(work.body.reconciliationWork).toMatchObject([
-        { definitionName, state: "pending" },
-      ]);
-      await runOfficialWorkflowReconciliationWorker();
+      await executeAutomationCron();
       const evolved = await accept(
         installationClient().get({ headers, params: { workflowId } }),
         [200],
@@ -4236,9 +4625,6 @@ describe("Official Workflow installations", () => {
           return binding.key === "include-weekends";
         }),
       ).toBeFalsy();
-      await expect(
-        readWorkflowAutomationAutonomyFixture(context, initialDaily.id),
-      ).resolves.toMatchObject({ autonomyBudget: 7, enabled: false });
     });
 
     it("recovers unresolved required Blueprint bindings", async () => {
@@ -4263,7 +4649,7 @@ describe("Official Workflow installations", () => {
           activeDefinition(unrelatedDefinitionName, [unrelatedInitial]),
         ]),
       );
-      await runOfficialWorkflowReconciliationWorker();
+      await executeAutomationCron();
       await syncCatalog(
         catalog([
           activeDefinition(definitionName, [
@@ -4274,7 +4660,7 @@ describe("Official Workflow installations", () => {
         ]),
       );
       await setOfficialWorkflowsEnabled(actor, false);
-      await runOfficialWorkflowReconciliationWorker();
+      await executeAutomationCron();
       const unresolved = await accept(
         installationClient().get({ headers, params: { workflowId } }),
         [200],
@@ -4344,7 +4730,9 @@ describe("Official Workflow installations", () => {
     const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
     const definitionName = `api-test-materialize-${suffix}`;
     await syncCatalog(
-      catalog([activeDefinition(definitionName, [gmailBlueprint()])]),
+      catalog([
+        activeDefinition(definitionName, [gmailBlueprint(), loopBlueprint()]),
+      ]),
     );
     const setup = await workflowBdd.setupWorkflowOrg();
     const { actor } = setup;
@@ -4380,13 +4768,21 @@ describe("Official Workflow installations", () => {
         params: { definitionName },
         body: {
           agentId,
-          blueprints: [{ blueprintKey: "gmail-trigger", bindings: [] }],
+          blueprints: [
+            { blueprintKey: "gmail-trigger", bindings: [] },
+            {
+              blueprintKey: "pulse",
+              bindings: [{ key: "interval-seconds", value: 3600 }],
+            },
+          ],
         },
       }),
       [201],
     );
     const workflowId = installed.body.workflow.id;
-    const automation = installed.body.workflow.automations[0];
+    const automation = installed.body.workflow.automations.find((candidate) => {
+      return candidate.official?.blueprintKey === "gmail-trigger";
+    });
     if (!automation) {
       throw new Error("Expected Official Gmail Automation");
     }
@@ -4400,26 +4796,20 @@ describe("Official Workflow installations", () => {
 
     runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
-    const historical = await accept(
-      automationClient().run({
-        headers,
-        params: { id: automation.id },
-      }),
-      [201],
-    );
-    const historicalRunId = await launchedAutomationRunId(
-      actor,
-      historical.body.chatThreadId,
-    );
-    if (!historicalRunId) {
-      throw new Error("Expected historical Official Automation Run");
+    const schedule = installed.body.workflow.automations.find((candidate) => {
+      return candidate.official?.blueprintKey === "pulse";
+    });
+    if (!schedule) {
+      throw new Error("Expected the Workflow's scheduled trigger");
     }
+    const historical = await fireOfficialSchedule(actor, schedule);
+    const historicalRunId = historical.runId;
     await runs.requestCancelRun(actor, historicalRunId, [200, 400]);
     const history = await listAgentRunLogIds(actor, agentId);
     expect(history).toContain(historicalRunId);
 
     await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-    await runOfficialWorkflowReconciliationWorker();
+    await executeAutomationCron();
     const removed = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4429,7 +4819,7 @@ describe("Official Workflow installations", () => {
     await syncCatalog(
       catalog([activeDefinition(definitionName, [gmailBlueprint()])]),
     );
-    await runOfficialWorkflowReconciliationWorker();
+    await executeAutomationCron();
     const restored = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4553,15 +4943,7 @@ describe("Official Workflow installations", () => {
         ]),
       ]),
     );
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual({
-      claimed: 1,
-      completed: 0,
-      advanced: 0,
-      retried: 1,
-      installations: 0,
-    });
+    await executeAutomationCron();
     const compensated = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4581,11 +4963,7 @@ describe("Official Workflow installations", () => {
     );
 
     watch.watchShouldFail = false;
-    await expect(
-      runDueOfficialWorkflowReconciliationRetry(),
-    ).resolves.toStrictEqual(
-      expect.objectContaining({ claimed: 1, completed: 1, installations: 1 }),
-    );
+    await executeDueAutomationCron();
     const promoted = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4630,11 +5008,7 @@ describe("Official Workflow installations", () => {
         ]),
       ]),
     );
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual(
-      expect.objectContaining({ claimed: 1, completed: 1, installations: 1 }),
-    );
+    await executeAutomationCron();
     const reconfigured = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4710,7 +5084,7 @@ describe("Official Workflow installations", () => {
       ]),
     );
     const kms = holdSecretKms(1, context.signal);
-    const reconciling = runOfficialWorkflowReconciliationWorker();
+    const reconciling = executeAutomationCron();
     const settled = settleIncludingAbort(reconciling);
     pendingPreparation.current = { release: kms.release, settled };
     await kms.entered;
@@ -4741,7 +5115,7 @@ describe("Official Workflow installations", () => {
       subscriptionId,
       tier: "team",
     });
-    await runDueOfficialWorkflowReconciliationRetry();
+    await executeDueAutomationCron();
     const transitioned = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4771,7 +5145,7 @@ describe("Official Workflow installations", () => {
         ]),
       ]),
     );
-    await runOfficialWorkflowReconciliationWorker();
+    await executeAutomationCron();
     const preserved = await accept(
       automationClient().revealWebhookSecret({
         headers,
@@ -4852,17 +5226,8 @@ describe("Official Workflow installations", () => {
 
     runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
-    const historical = await accept(
-      automationClient().run({ headers, params: { id: automationId } }),
-      [201],
-    );
-    const historicalRunId = await launchedAutomationRunId(
-      actor,
-      historical.body.chatThreadId,
-    );
-    if (!historicalRunId) {
-      throw new Error("Expected historical Official Automation Run");
-    }
+    const historical = await fireOfficialSchedule(actor, original);
+    const historicalRunId = historical.runId;
     await runs.requestCancelRun(actor, historicalRunId, [200, 400]);
     const history = await listAgentRunLogIds(actor, agentId);
     expect(history).toContain(historicalRunId);
@@ -4874,11 +5239,7 @@ describe("Official Workflow installations", () => {
         ]),
       ]),
     );
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual(
-      expect.objectContaining({ claimed: 1, completed: 1, installations: 1 }),
-    );
+    await executeAutomationCron();
     const scheduledToEvent = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4905,7 +5266,7 @@ describe("Official Workflow installations", () => {
         ]),
       ]),
     );
-    await runOfficialWorkflowReconciliationWorker();
+    await executeAutomationCron();
     const eventToScheduled = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4929,7 +5290,7 @@ describe("Official Workflow installations", () => {
         ]),
       ]),
     );
-    await runOfficialWorkflowReconciliationWorker();
+    await executeAutomationCron();
     watchShouldFail = true;
     await syncCatalog(
       catalog([
@@ -4938,15 +5299,7 @@ describe("Official Workflow installations", () => {
         ]),
       ]),
     );
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual({
-      claimed: 1,
-      completed: 0,
-      advanced: 0,
-      retried: 1,
-      installations: 0,
-    });
+    await executeAutomationCron();
     const compensated = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4967,11 +5320,7 @@ describe("Official Workflow installations", () => {
     );
 
     watchShouldFail = false;
-    await expect(
-      runDueOfficialWorkflowReconciliationRetry(),
-    ).resolves.toStrictEqual(
-      expect.objectContaining({ claimed: 1, completed: 1, installations: 1 }),
-    );
+    await executeDueAutomationCron();
     const eventTypeTransition = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -5076,15 +5425,7 @@ describe("Official Workflow installations", () => {
         activeDefinition(definitionName, [evolvedGmailLabelBlueprint()]),
       ]),
     );
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual({
-      claimed: 1,
-      completed: 0,
-      advanced: 0,
-      retried: 1,
-      installations: 0,
-    });
+    await executeAutomationCron();
     const compensatedUpdate = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -5101,15 +5442,7 @@ describe("Official Workflow installations", () => {
     });
 
     watchShouldFail = false;
-    await expect(
-      runDueOfficialWorkflowReconciliationRetry(),
-    ).resolves.toStrictEqual({
-      claimed: 1,
-      completed: 1,
-      advanced: 0,
-      retried: 0,
-      installations: 1,
-    });
+    await executeDueAutomationCron();
     const reconciledUpdate = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -5126,15 +5459,7 @@ describe("Official Workflow installations", () => {
     });
 
     await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual({
-      claimed: 1,
-      completed: 1,
-      advanced: 0,
-      retried: 0,
-      installations: 1,
-    });
+    await executeAutomationCron();
     const removed = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -5145,273 +5470,352 @@ describe("Official Workflow installations", () => {
 });
 
 describe("Official Workflow Run admission", () => {
-  it("pins exact active and retained-retired artifacts without org shadowing", async () => {
+  it("selects the exact official trigger while ordinary Runs retain their same-name Workflow", async () => {
+    const name = `api-test-run-scope-${randomUUID().slice(0, 8)}`;
+    const unrelatedName = `api-test-unrelated-${randomUUID().slice(0, 8)}`;
     installCatalogStorageFixture();
-    const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
-    const firstName = `api-test-run-a-${suffix}`;
-    const secondName = `api-test-run-b-${suffix}`;
     await syncCatalog(
       catalog([
-        activeDefinition(firstName, [], "accepted first revision"),
-        activeDefinition(secondName, [], "accepted retained revision"),
+        activeDefinition(name, [loopBlueprint()]),
+        activeDefinition(unrelatedName, []),
       ]),
     );
-
-    const setup = await workflowBdd.setupWorkflowOrg({
-      model: "claude-fable-5-1",
-    });
-    const { actor } = setup;
-    if (!actor.orgId) {
-      throw new Error("Expected organization-scoped actor");
-    }
-    const { agentId } = await workflowBdd.createAgent(actor);
-    const headers = authHeaders(actor);
-    await setOfficialWorkflowsEnabled(actor, true);
-    const ordinaryWorkflowId = await workflowBdd.createWorkflow(actor, {
-      agentId,
-      name: firstName,
-      visibility: "public",
-    });
-    const firstInstallation = await accept(
-      officialClient().install({
-        headers,
-        params: { definitionName: firstName },
-        body: { agentId, blueprints: [] },
-      }),
-      [201],
-    );
-    await accept(
-      officialClient().install({
-        headers,
-        params: { definitionName: secondName },
-        body: { agentId, blueprints: [] },
-      }),
-      [201],
-    );
-
-    const firstAccepted = await readAcceptedDefinitionFixture(firstName);
-    const secondAccepted = await readAcceptedDefinitionFixture(secondName);
-    const shadowStorageId = randomUUID();
-    const shadowVersion = "e".repeat(64);
-    await accept(
-      storageClient().action({
-        body: {
-          action: "claim-owned-storages",
-          storages: [
-            {
-              storage_id: shadowStorageId,
-              org_id: actor.orgId,
-              user_id: VOLUME_ORG_USER_ID,
-              storage_name: firstAccepted.definition.artifact.storageName,
-              s3_prefix: `official-shadow/${shadowStorageId}`,
-            },
-          ],
-        },
-      }),
-      [200],
-    );
-    await accept(
-      storageClient().action({
-        body: {
-          action: "seed-owned-storage-version",
-          storage_id: shadowStorageId,
-          version_id: shadowVersion,
-          s3_key: `official-shadow/${shadowStorageId}/${shadowVersion}`,
-          archive_size: 1,
-        },
-      }),
-      [200],
-    );
-
-    const runnerGroup = runs.configureRunnerGroup();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    await runs.heartbeatRunner(runnerGroup);
-    await setOfficialWorkflowsEnabled(actor, false);
-    const direct = await accept(
-      workflowClient().run({
-        headers,
-        params: { workflowId: firstInstallation.body.workflow.id },
-      }),
-      [200],
-    );
-    expect(direct.body.runId).toBeNull();
-    const firstRunId = await launchedAutomationRunId(
-      actor,
-      direct.body.chatThreadId,
-    );
-    if (!firstRunId) {
-      throw new Error("Expected direct Official Workflow Run");
-    }
-
-    await syncCatalog(
-      catalog([
-        activeDefinition(firstName, [], "accepted second revision"),
-        retiredDefinition(secondName),
-      ]),
-    );
-    const nextFirstAccepted = await readAcceptedDefinitionFixture(firstName);
-    expect(nextFirstAccepted.definition.revision).not.toBe(
-      firstAccepted.definition.revision,
-    );
-
-    const firstClaim = await runs.claimRunnerJob(firstRunId);
-    if (
-      !firstClaim.storageManifest ||
-      !("storageMounts" in firstClaim.storageManifest)
-    ) {
-      throw new Error("Expected canonical Run storage manifest");
-    }
-    expect(firstClaim.storageManifest.storageMounts).toStrictEqual(
-      expect.arrayContaining(
-        [firstAccepted.definition, secondAccepted.definition].map(
-          (definition) => {
-            return expect.objectContaining({
-              storageId: definition.artifact.storageId,
-              versionId: definition.artifact.storageVersion,
-            });
+    const owned = await publicChatActor(context);
+    owned.ownsFeatureSwitches();
+    const setup = await owned.run(async () => {
+      await selectPersonalDefaultModel(owned.actor);
+      const ordinaryWorkflowId = await workflowBdd.createWorkflow(owned.actor, {
+        agentId: owned.agentId,
+        name,
+        visibility: "public",
+        instruction: "Use the user's ordinary Workflow instructions.",
+      });
+      await setOfficialWorkflowsEnabled(owned.actor, true);
+      const headers = authHeaders(owned.actor);
+      const installed = await accept(
+        officialClient().install({
+          headers,
+          params: { definitionName: name },
+          body: {
+            agentId: owned.agentId,
+            blueprints: [
+              {
+                blueprintKey: "pulse",
+                bindings: [{ key: "interval-seconds", value: 3600 }],
+              },
+            ],
           },
-        ),
-      ),
-    );
-    expect(firstClaim.storageManifest.storageMounts).not.toContainEqual(
-      expect.objectContaining({ storageId: shadowStorageId }),
-    );
-
-    await webhooks.requestAgentComplete(
-      { runId: firstRunId, exitCode: 1 },
-      { authorization: `Bearer ${firstClaim.sandboxToken}` },
-      [200],
-    );
-
-    const later = await runs.createThreadRun(actor, {
-      agentId,
-      prompt: "resolve the newly accepted Official Definition revision",
+        }),
+        [201],
+      );
+      await accept(
+        officialClient().install({
+          headers,
+          params: { definitionName: unrelatedName },
+          body: { agentId: owned.agentId, blueprints: [] },
+        }),
+        [201],
+      );
+      const automation = installed.body.workflow.automations[0];
+      if (!automation) {
+        throw new Error("Expected the official scheduled trigger");
+      }
+      const composer = await accept(
+        workflowCollectionClient().composer({
+          headers,
+          query: { agentId: owned.agentId },
+        }),
+        [200],
+      );
+      expect(
+        composer.body.map((workflow) => {
+          return workflow.id;
+        }),
+      ).toStrictEqual([ordinaryWorkflowId]);
+      return { ordinaryWorkflowId, installation: installed.body, automation };
     });
-    const laterClaim = await runs.claimRunnerJob(later.runId);
-    const laterManifest = laterClaim.storageManifest;
-    if (!laterManifest || !("storageMounts" in laterManifest)) {
-      throw new Error("Expected current Official storage mounts");
-    }
-    expect(laterManifest.storageMounts).toStrictEqual(
-      expect.arrayContaining(
-        [nextFirstAccepted.definition, secondAccepted.definition].map(
-          (definition) => {
-            return expect.objectContaining({
-              storageId: definition.artifact.storageId,
-              versionId: definition.artifact.storageVersion,
-            });
-          },
-        ),
-      ),
+    const ordinary = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: `/${name}`,
+    });
+    const assertOrdinaryMounts = async (runId: string) => {
+      const { claim } = await owned.claimChatRun(owned.runnerGroup, runId);
+      const mounts = expectCanonicalStorageManifest(
+        claim.storageManifest,
+      )?.storageMounts;
+      expect(mounts).toContainEqual(
+        expect.objectContaining({
+          name: getCustomSkillStorageName(setup.ordinaryWorkflowId),
+        }),
+      );
+      expect(mounts).not.toContainEqual(
+        expect.objectContaining({
+          name: getOfficialWorkflowDefinitionStorageName(name),
+        }),
+      );
+      expect(mounts).not.toContainEqual(
+        expect.objectContaining({
+          name: getOfficialWorkflowDefinitionStorageName(unrelatedName),
+        }),
+      );
+      return claim;
+    };
+    const ordinaryClaim = await assertOrdinaryMounts(ordinary.runId);
+    await owned.run(async () => {
+      const agentToken = okouTokenFromClaim(ordinaryClaim);
+      for (const headers of [
+        authHeaders(owned.actor),
+        { authorization: `Bearer ${agentToken}` },
+      ]) {
+        const workflow = await accept(
+          workflowClient().run({
+            headers,
+            extraHeaders: { origin: "https://app.okou.ai" },
+            params: { workflowId: setup.installation.workflow.id },
+          }),
+          [409],
+        );
+        const automation = await accept(
+          automationClient().run({
+            headers,
+            params: { id: setup.automation.id },
+          }),
+          [409],
+        );
+        for (const response of [workflow, automation]) {
+          expect(response.body.error.message).toBe(
+            "Official Workflows can only run through their automatic triggers",
+          );
+        }
+      }
+      await expect(
+        listAgentRunLogIds(owned.actor, owned.agentId),
+      ).resolves.toStrictEqual([ordinary.runId]);
+      await webhooks.requestAgentComplete(
+        { runId: ordinary.runId, exitCode: 1 },
+        { authorization: `Bearer ${ordinaryClaim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+    });
+    const ordinaryAutomation = await owned.run(async () => {
+      const created = await accept(
+        automationClient().create({
+          headers: authHeaders(owned.actor),
+          params: { workflowId: setup.ordinaryWorkflowId },
+          body: { schedule: { type: "loop", intervalSeconds: 7200 } },
+        }),
+        [201],
+      );
+      const started = await accept(
+        automationClient().run({
+          headers: authHeaders(owned.actor),
+          params: { id: created.body.id },
+        }),
+        [201],
+      );
+      const runId = await launchedAutomationRunId(
+        owned.actor,
+        started.body.chatThreadId,
+      );
+      if (!runId) {
+        throw new Error("Expected the ordinary Automation Run");
+      }
+      return runId;
+    });
+    const ordinaryAutomationClaim =
+      await assertOrdinaryMounts(ordinaryAutomation);
+    await owned.run(async () => {
+      await webhooks.requestAgentComplete(
+        { runId: ordinaryAutomation, exitCode: 1 },
+        { authorization: `Bearer ${ordinaryAutomationClaim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+    });
+    const official = await owned.run(() => {
+      return fireOfficialSchedule(owned.actor, setup.automation);
+    });
+    const { claim } = await owned.claimChatRun(
+      owned.runnerGroup,
+      official.runId,
     );
-    await runs.requestCancelRun(actor, later.runId, [200, 400]);
-    expect(ordinaryWorkflowId).not.toBe(firstInstallation.body.workflow.id);
+    const mounts = expectCanonicalStorageManifest(
+      claim.storageManifest,
+    )?.storageMounts;
+    expect(
+      mounts?.filter((mount) => {
+        return mount.mountPath.endsWith(`/${name}`);
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        name: getOfficialWorkflowDefinitionStorageName(name),
+        versionId: expect.stringMatching(/^[0-9a-f]{64}$/),
+      }),
+    ]);
+    expect(mounts).not.toContainEqual(
+      expect.objectContaining({
+        name: getCustomSkillStorageName(setup.ordinaryWorkflowId),
+      }),
+    );
+    expect(mounts).not.toContainEqual(
+      expect.objectContaining({
+        name: getOfficialWorkflowDefinitionStorageName(unrelatedName),
+      }),
+    );
+    expect(claim.prompt).toContain(`/${name}`);
+    expect(claim.prompt).toContain('"automationId"');
+    await owned.run(async () => {
+      await webhooks.requestAgentComplete(
+        { runId: official.runId, exitCode: 1 },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+    });
+    const later = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      threadId: ordinary.threadId,
+      prompt: `/${name}`,
+    });
+    await assertOrdinaryMounts(later.runId);
   });
 
-  it("launches an idle Official agent-run input with source annotations", async () => {
-    const { actor, installation, sourceRunId, sourceThreadId } =
-      await installIdleOfficialWorkflowScenario();
-    const sourceClaim = await runs.claimRunnerJob(sourceRunId);
-    await webhooks.requestAgentComplete(
-      { runId: sourceRunId, exitCode: 1 },
-      { authorization: `Bearer ${sourceClaim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-
-    const launched = await accept(
-      workflowClient().run({
-        headers: officialQueueHeaders(actor, sourceRunId, {
-          origin: "agent_run",
-        }),
-        extraHeaders: { origin: "https://app.okou.ai" },
-        params: { workflowId: installation.body.workflow.id },
-      }),
-      [200],
-    );
-    expect(launched.body.runId).toBeNull();
-    const launchedRunId = await launchedAutomationRunId(
-      actor,
-      launched.body.chatThreadId,
-    );
-    if (!launchedRunId) {
-      throw new Error("Expected the idle Official input to dispatch itself");
+  it("pins ordinary Workflow publications across a normal revision", async () => {
+    const owned = await publicChatActor(context);
+    const fixture = createChatEventsFixture(context);
+    await owned.run(() => {
+      return fixture.api.updateUserModelPreference(
+        owned.actor,
+        "claude-fable-5-1",
+      );
+    });
+    const published: {
+      workflowId: string;
+      archive: ReturnType<typeof readPublishedArchive>;
+    }[] = [];
+    for (const name of ["first", "retained"]) {
+      const start = context.mocks.s3.send.mock.calls.length;
+      const workflowId = await owned.run(() => {
+        return workflowBdd.createWorkflow(owned.actor, {
+          agentId: owned.agentId,
+          name: `published-${name}-${randomUUID().slice(0, 8)}`,
+          instruction: `Read the ${name} publication.`,
+        });
+      });
+      published.push({
+        workflowId,
+        archive: readPublishedArchive(context, start),
+      });
     }
-    expect(launchedRunId).not.toBe(sourceRunId);
-    expect(launched.body.chatThreadId).not.toBe(sourceThreadId);
-    const claim = await runs.claimRunnerJob(launchedRunId);
-    expect(claim.prompt).toBe(`/${installation.body.workflow.name}`);
-    expect(claim.appendSystemPrompt).toContain(`SOURCE_RUN_ID: ${sourceRunId}`);
-    expect(claim.appendSystemPrompt).toContain(
-      `SOURCE_THREAD_ID: ${sourceThreadId}`,
-    );
+    const firstWorkflow = published[0];
+    const retainedWorkflow = published[1];
+    if (!firstWorkflow || !retainedWorkflow) {
+      throw new Error("Expected two published Workflows");
+    }
+    const first = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "Use both original Workflow publications",
+    });
+    const updateStart = context.mocks.s3.send.mock.calls.length;
+    await owned.run(() => {
+      return accept(
+        workflowClient().update({
+          headers: authHeaders(owned.actor),
+          params: { workflowId: firstWorkflow.workflowId },
+          body: {
+            instruction: "Read the revised first publication.",
+            files: [],
+          },
+        }),
+        [200],
+      );
+    });
+    const updated = readPublishedArchive(context, updateStart);
+    expect(updated.versionId).not.toBe(firstWorkflow.archive.versionId);
+    const check = async (runId: string, expected: typeof published) => {
+      const { claim, sandboxHeaders } = await owned.claimChatRun(
+        owned.runnerGroup,
+        runId,
+      );
+      const mounts =
+        expectCanonicalStorageManifest(
+          claim.storageManifest,
+        )?.storageMounts.filter((mount) => {
+          return expected.some((workflow) => {
+            return (
+              mount.name === getCustomSkillStorageName(workflow.workflowId)
+            );
+          });
+        }) ?? [];
+      expect(mounts).toHaveLength(2);
+      for (const workflow of expected) {
+        expect(mounts).toContainEqual(
+          expect.objectContaining({
+            name: getCustomSkillStorageName(workflow.workflowId),
+            versionId: workflow.archive.versionId,
+            archiveSize: workflow.archive.archiveSize,
+            archiveUrl: expect.any(String),
+          }),
+        );
+      }
+      await owned.run(() => {
+        return fixture.failChatRun(
+          runId,
+          sandboxHeaders,
+          "Workflow publications inspected",
+        );
+      });
+      await owned.run(flushWaitUntilForTest);
+    };
+    await check(first.runId, published);
+    const later = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "Use the updated and retained Workflow publications",
+    });
+    await check(later.runId, [
+      { ...firstWorkflow, archive: updated },
+      retainedWorkflow,
+    ]);
   });
 
-  it("spends the last inherited hop of an idle Official input and rejects the next hop", async () => {
-    // Configure the source's last hop through a public Blueprint binding instead
-    // of spending 31 prerequisite hops. The target must inherit, not refill it.
-    const { actor, installation, sourceRunId } =
-      await installIdleOfficialWorkflowScenario();
-    const sourceClaim = await runs.claimRunnerJob(sourceRunId);
-    await webhooks.requestAgentComplete(
-      { runId: sourceRunId, exitCode: 1 },
-      { authorization: `Bearer ${sourceClaim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-
-    const launched = await accept(
-      workflowClient().run({
-        headers: officialQueueHeaders(actor, sourceRunId, {
-          origin: "agent_run",
+  it("launches an idle ordinary workflow input with source annotations", async () => {
+    const { owned, actor, workflow, source } =
+      await ordinaryDelegationScenario();
+    const sourceRunId = source.runId;
+    const sourceThreadId = source.threadId;
+    await owned.run(async () => {
+      const launched = await accept(
+        workflowClient().run({
+          headers: { authorization: `Bearer ${source.token}` },
+          extraHeaders: { origin: "https://app.okou.ai" },
+          params: { workflowId: workflow.id },
         }),
-        extraHeaders: { origin: "https://app.okou.ai" },
-        params: { workflowId: installation.body.workflow.id },
-      }),
-      [200],
-    );
-    expect(launched.body.runId).toBeNull();
-    const launchedRunId = await launchedAutomationRunId(
-      actor,
-      launched.body.chatThreadId,
-    );
-    if (!launchedRunId) {
-      throw new Error("Expected the final inherited hop to launch");
-    }
-    expect(launchedRunId).not.toBe(sourceRunId);
-    const claim = await runs.claimRunnerJob(launchedRunId);
-
-    const denied = await accept(
-      workflowClient().run({
-        headers: officialQueueHeaders(actor, launchedRunId, {
-          origin: "agent_run",
-        }),
-        extraHeaders: { origin: "https://app.okou.ai" },
-        params: { workflowId: installation.body.workflow.id },
-      }),
-      [200],
-    );
-    expect(denied.body.runId).toBeNull();
-    expect(denied.body.chatThreadId).toBe(launched.body.chatThreadId);
-    // The exhausted hop is rejected by the pick once the thread is idle.
-    await webhooks.requestAgentComplete(
-      { runId: launchedRunId, exitCode: 1 },
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    const events = await allThreadEventRows(actor, denied.body.chatThreadId);
-    const rejections = events.filter((event) => {
-      return event.eventType === "input.rejected";
+        [200],
+      );
+      expect(launched.body.runId).toBeNull();
+      const launchedRunId = await launchedAutomationRunId(
+        actor,
+        launched.body.chatThreadId,
+      );
+      if (!launchedRunId) {
+        throw new Error(
+          "Expected the idle ordinary workflow input to dispatch itself",
+        );
+      }
+      expect(launchedRunId).not.toBe(sourceRunId);
+      expect(launched.body.chatThreadId).not.toBe(sourceThreadId);
+      const { claim } = await owned.claimChatRun(
+        owned.runnerGroup,
+        launchedRunId,
+      );
+      expect(claim.prompt).toBe(`/${workflow.name}`);
+      expect(claim.appendSystemPrompt).toContain(
+        `SOURCE_RUN_ID: ${sourceRunId}`,
+      );
+      expect(claim.appendSystemPrompt).toContain(
+        `SOURCE_THREAD_ID: ${sourceThreadId}`,
+      );
     });
-    expect(rejections).toHaveLength(1);
-    expect(rejections[0]).toMatchObject({
-      runId: null,
-      payload: { error: "autonomy_budget_exhausted" },
-    });
-    await expect(
-      launchedAutomationRunId(actor, denied.body.chatThreadId),
-    ).resolves.toBe(launchedRunId);
   });
 });

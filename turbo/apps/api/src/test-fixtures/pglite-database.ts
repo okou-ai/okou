@@ -4,8 +4,10 @@ import { readFile, readdir } from "node:fs/promises";
 import { MemoryFS, PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { btree_gin } from "@electric-sql/pglite/contrib/btree_gin";
+import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
 import { Parser } from "tar";
+import { API_DATABASE_SEED_FILES } from "./database-seeds";
 import { singleton } from "../lib/singleton";
 import { settleIncludingAbort } from "../signals/utils";
 
@@ -43,11 +45,9 @@ const driverParsers = Object.freeze({
 });
 
 /** Build the migrated, seeded baseline once in the run's global setup. */
-export async function createPgliteSnapshot(
-  seed: (database: PgliteDatabase) => Promise<void>,
-): Promise<Blob> {
+export async function createPgliteSnapshot(): Promise<Blob> {
   const engine = new PGlite({
-    extensions: { pgcrypto, btree_gin },
+    extensions: { pgcrypto, btree_gin, btree_gist },
     parsers: driverParsers,
   });
   return await releaseAfter(
@@ -121,7 +121,9 @@ export async function createPgliteSnapshot(
         );
       }
       await engine.exec("SET search_path TO public; SET timezone TO 'UTC'");
-      await seed(drizzle(engine));
+      for (const file of API_DATABASE_SEED_FILES) {
+        await engine.exec(await readFile(file, "utf8"));
+      }
       // Checkpoint the seeded baseline to reduce WAL recovery when restoring cases.
       await engine.exec("CHECKPOINT");
       return await engine.dumpDataDir();
@@ -248,7 +250,7 @@ export async function createPgliteDatabase(
   snapshotPath: string,
 ): Promise<PgliteTestDatabase> {
   const engine = new PGlite({
-    extensions: { pgcrypto, btree_gin },
+    extensions: { pgcrypto, btree_gin, btree_gist },
     fs: new SnapshotMemoryFS(await snapshotFiles(snapshotPath)),
     parsers: driverParsers,
   });

@@ -1,7 +1,8 @@
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { randomUUID } from "node:crypto";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { createStore } from "ccstate";
-import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
@@ -11,12 +12,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import {
-  deleteOrgPlanEntitlementFixture,
-  upsertOrgPlanEntitlementFixture,
-} from "../../../test-fixtures/org-plan-entitlement";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
@@ -504,30 +500,21 @@ describe("POST /api/uploads/prepare", () => {
     });
   });
 
-  it("normalizes staff entitlement lifecycle statuses for suspension checks", async () => {
+  it("normalizes Stripe subscription lifecycle statuses for suspension checks", async () => {
     const userId = `user_${randomUUID()}`;
-    const orgId = createUniqueStaffOrgIdFixture();
+    const orgId = `org_${randomUUID()}`;
     context.mocks.s3.getSignedUrl.mockResolvedValue(
-      "https://r2.example.com/upload?sig=staff-entitlement",
+      "https://r2.example.com/upload?sig=subscription-lifecycle",
     );
     const client = setupApp({ context, routes: uploadsTestRoutes })(
       uploadsContract,
     );
     mocks.clerk.session(userId, orgId);
-    onTestFinished(async () => {
-      await deleteOrgPlanEntitlementFixture(orgId);
-    });
-
-    await seedOrgMetadata({
-      orgId,
-      tier: "pro",
-      credits: 0,
-    });
+    const actor = createBddApi(context).user({ userId, orgId });
+    await createBddApi(context).completeOnboarding(actor);
+    const plan = publicPlanLifecycle(context, actor);
     for (const status of ["trialing", "past_due"] as const) {
-      await upsertOrgPlanEntitlementFixture({
-        orgId,
-        status,
-      });
+      await plan.update(status);
       await accept(
         client.prepare({
           body: validBody(),
@@ -536,16 +523,7 @@ describe("POST /api/uploads/prepare", () => {
         [200],
       );
     }
-
-    await seedOrgMetadata({
-      orgId,
-      tier: "pro",
-      credits: 1000,
-    });
-    await upsertOrgPlanEntitlementFixture({
-      orgId,
-      status: "canceled",
-    });
+    await plan.update("canceled");
     const response = await accept(
       client.prepare({
         body: validBody(),

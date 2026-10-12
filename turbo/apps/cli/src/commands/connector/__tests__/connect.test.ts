@@ -73,7 +73,12 @@ describe("okou connector connect command", () => {
     vi.unstubAllEnvs();
   });
 
-  it.each(["zendesk", "Zendesk", "builtin:zendesk", "builtin:Zendesk"])(
+  it.each([
+    "test-subdomain",
+    "Test Subdomain",
+    "builtin:test-subdomain",
+    "builtin:Test Subdomain",
+  ])(
     "connects builtin selector %s and sends explicit add",
     async (selector) => {
       let receivedBody: unknown;
@@ -89,7 +94,7 @@ describe("okou connector connect command", () => {
         http.post(
           "http://localhost:3000/api/connectors/:connectorSlug/manual-grant",
           async ({ params, request }) => {
-            expect(params.connectorSlug).toBe("zendesk");
+            expect(params.connectorSlug).toBe("test-subdomain");
             receivedBody = await request.json();
             return HttpResponse.json(
               connectorResponse(String(params.connectorSlug)),
@@ -120,8 +125,8 @@ describe("okou connector connect command", () => {
         },
       });
       const output = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(output).toContain("Zendesk connected");
-      expect(output).toContain("okou connector status zendesk");
+      expect(output).toContain("Test Subdomain connected");
+      expect(output).toContain("okou connector status test-subdomain");
       expect(output).not.toContain("secret-token");
     },
   );
@@ -351,7 +356,9 @@ describe("okou connector connect command", () => {
     expect(errorOutput).toContain(
       "At least one --value NAME=VALUE is required",
     );
-    expect(errorOutput).toContain("okou connector connect zendesk");
+    expect(errorOutput).toContain(
+      "okou connector connect openai --value apiKey=token",
+    );
   });
 
   it("fails before the request for malformed values", async () => {
@@ -584,7 +591,7 @@ describe("okou connector connect command", () => {
       connectCommand.parseAsync([
         "node",
         "cli",
-        "zendesk",
+        "test-subdomain",
         "--add",
         "--value",
         "apiToken=secret-token",
@@ -618,7 +625,7 @@ describe("okou connector connect command", () => {
       connectCommand.parseAsync([
         "node",
         "cli",
-        "zendesk",
+        "test-subdomain",
         "--add",
         "--value",
         "apiToken=secret-token",
@@ -654,7 +661,7 @@ describe("okou connector connect command", () => {
       connectCommand.parseAsync([
         "node",
         "cli",
-        "zendesk",
+        "test-subdomain",
         "--add",
         "--value",
         "apiToken=secret-token",

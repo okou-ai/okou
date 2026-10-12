@@ -5,12 +5,14 @@ import { schema } from "../index";
 import { sshCredentials } from "../schema/ssh-credential";
 import { sshConnections } from "../schema/ssh-connection";
 import { cloudflareAccessConfigs } from "../schema/cloudflare-access-config";
+import { tailscaleConfigs } from "../schema/tailscale-config";
 
 describe("SSH connection schema", () => {
   it("exports the standalone SSH tables", () => {
     expect(schema.sshConnections).toBe(sshConnections);
     expect(schema.sshCredentials).toBe(sshCredentials);
     expect(schema.cloudflareAccessConfigs).toBe(cloudflareAccessConfigs);
+    expect(schema.tailscaleConfigs).toBe(tailscaleConfigs);
   });
 
   it("defines bounded owner-scoped connection storage", () => {
@@ -28,6 +30,8 @@ describe("SSH connection schema", () => {
       "port",
       "credential_id",
       "cloudflare_access_id",
+      "tailscale_id",
+      "transport",
       "needs_rebind",
       "learned_host_key_algorithm",
       "learned_host_key_fingerprint",
@@ -44,6 +48,7 @@ describe("SSH connection schema", () => {
         };
       }),
     ).toStrictEqual([
+      { name: "idx_ssh_connections_tailscale", unique: false },
       { name: "idx_ssh_connections_cloudflare_access", unique: false },
       { name: "idx_ssh_connections_credential", unique: false },
       { name: "idx_ssh_connections_owner_created", unique: false },
@@ -56,14 +61,28 @@ describe("SSH connection schema", () => {
       }),
     );
     expect(Object.keys(checks)).toStrictEqual([
+      "chk_ssh_connections_transport",
+      "chk_ssh_connections_transport_binding",
       "chk_ssh_connections_cloudflare_access_destination",
-      "chk_ssh_connections_needs_rebind_unbound",
+      "chk_ssh_connections_legacy_needs_rebind",
       "chk_ssh_connections_display_name",
       "chk_ssh_connections_host",
       "chk_ssh_connections_port",
       "chk_ssh_connections_generation",
       "chk_ssh_connections_learned_host_key_pair",
     ]);
+    expect(sshConnections.transport.notNull).toBe(true);
+    expect(sshConnections.transport.hasDefault).toBe(false);
+    expect(sshConnections.transport.default).toBeUndefined();
+    expect(checks.chk_ssh_connections_transport).toContain(
+      "IN ('direct', 'cloudflare_access', 'tailscale')",
+    );
+    expect(checks.chk_ssh_connections_transport_binding).toContain(
+      '"tailscale_id" IS NULL',
+    );
+    expect(checks.chk_ssh_connections_legacy_needs_rebind).toContain(
+      '"needs_rebind" =',
+    );
     expect(checks.chk_ssh_connections_port).toContain("BETWEEN 1 AND 65535");
     expect(checks.chk_ssh_connections_generation).toContain("> 0");
     expect(checks.chk_ssh_connections_learned_host_key_pair).toContain(
@@ -87,7 +106,7 @@ describe("SSH connection schema", () => {
         return column.name;
       }),
     ).toStrictEqual(["id", "org_id"]);
-    expect(sshConnections.needsRebind.notNull).toBe(true);
+    expect(sshConnections.legacyNeedsRebind.notNull).toBe(true);
     expect(cloudflareAccessConfigs.scope.default).toBe("personal");
     expect(cloudflareAccessConfigs.userId.notNull).toBe(false);
     expect(
@@ -95,6 +114,28 @@ describe("SSH connection schema", () => {
         return check.name;
       }),
     ).toContain("chk_cloudflare_access_configs_scope_owner");
+  });
+
+  it("restricts deletion of a referenced same-organization Tailscale configuration", () => {
+    const config = getTableConfig(sshConnections);
+    const tailscaleForeignKey = config.foreignKeys.find((key) => {
+      return key.getName() === "ssh_connections_tailscale_org_fk";
+    });
+    expect(tailscaleForeignKey?.onDelete).toBe("restrict");
+    expect(tailscaleForeignKey?.reference().foreignTable).toBe(
+      tailscaleConfigs,
+    );
+    expect(
+      tailscaleForeignKey?.reference().columns.map((column) => {
+        return column.name;
+      }),
+    ).toStrictEqual(["tailscale_id", "org_id"]);
+    expect(
+      tailscaleForeignKey?.reference().foreignColumns.map((column) => {
+        return column.name;
+      }),
+    ).toStrictEqual(["id", "org_id"]);
+    expect(sshConnections.tailscaleId.notNull).toBe(false);
   });
 
   it("requires a same-owner credential and restricts deletion while referenced", () => {

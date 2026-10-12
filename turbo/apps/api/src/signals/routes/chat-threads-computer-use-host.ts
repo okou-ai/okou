@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { chatThreadComputerUseHostContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
+import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";

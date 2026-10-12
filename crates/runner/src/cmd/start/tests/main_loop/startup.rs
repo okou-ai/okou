@@ -1,10 +1,7 @@
 use super::super::super::*;
-use super::super::support::{
-    assert_run_exits_within, mock_run_config, mock_run_config_with_runtime, shutdown,
-    test_profiles, wait_status_mode,
-};
 use async_trait::async_trait;
 use runner_provider::{ClaimedJob, CompletionAuth, JobCandidate};
+use runner_supervisor::test_support::ShutdownRecordingRuntime;
 use runner_types::types::HeartbeatState;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -39,47 +36,6 @@ impl runner_provider::JobProvider for ShutdownRecordingProvider {
     }
 }
 
-struct ShutdownRecordingRuntime {
-    shutdowns: Arc<AtomicUsize>,
-}
-
-#[async_trait]
-impl sandbox::SandboxRuntime for ShutdownRecordingRuntime {
-    async fn create_factory(
-        &self,
-        _config: sandbox::FactoryConfig,
-    ) -> sandbox::Result<Box<dyn sandbox::SandboxFactory>> {
-        panic!("publish failure cleanup test does not create factories")
-    }
-
-    async fn shutdown(&mut self) {
-        self.shutdowns.fetch_add(1, Ordering::SeqCst);
-    }
-}
-
-struct FactoryFailingRuntime {
-    create_calls: Arc<AtomicUsize>,
-    shutdowns: Arc<AtomicUsize>,
-}
-
-#[async_trait]
-impl sandbox::SandboxRuntime for FactoryFailingRuntime {
-    async fn create_factory(
-        &self,
-        _config: sandbox::FactoryConfig,
-    ) -> sandbox::Result<Box<dyn sandbox::SandboxFactory>> {
-        self.create_calls.fetch_add(1, Ordering::SeqCst);
-        Err(sandbox::SandboxError::Initialization {
-            phase: sandbox::SandboxInitializationPhase::Factory,
-            message: "factory failed".into(),
-        })
-    }
-
-    async fn shutdown(&mut self) {
-        self.shutdowns.fetch_add(1, Ordering::SeqCst);
-    }
-}
-
 struct CountingRuntimeProvider {
     create_calls: Arc<AtomicUsize>,
 }
@@ -91,9 +47,10 @@ impl sandbox::RuntimeProvider for CountingRuntimeProvider {
         _config: sandbox::RuntimeConfig,
     ) -> sandbox::Result<Box<dyn sandbox::SandboxRuntime>> {
         self.create_calls.fetch_add(1, Ordering::SeqCst);
-        Ok(Box::new(ShutdownRecordingRuntime {
-            shutdowns: Arc::new(AtomicUsize::new(0)),
-        }))
+        Ok(Box::new(ShutdownRecordingRuntime::new(
+            Arc::new(AtomicUsize::new(0)),
+            Arc::new(AtomicUsize::new(0)),
+        )))
     }
 }
 
@@ -110,14 +67,24 @@ enum DnsStartupEvent {
     ReadinessActivated {
         id: usize,
     },
+    ReadinessFailed {
+        id: usize,
+    },
     RuntimeShutdown {
         id: usize,
     },
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DnsStartupTestFailure {
+    MissingInterfacePattern,
+    Readiness,
+}
+
 struct DnsStartupRecordingProvider {
     next_id: AtomicUsize,
     events: Arc<Mutex<Vec<DnsStartupEvent>>>,
+    failure: Option<DnsStartupTestFailure>,
 }
 
 impl DnsStartupRecordingProvider {
@@ -125,6 +92,7 @@ impl DnsStartupRecordingProvider {
         Self {
             next_id: AtomicUsize::new(0),
             events,
+            failure: None,
         }
     }
 }
@@ -132,6 +100,8 @@ impl DnsStartupRecordingProvider {
 struct DnsStartupRecordingRuntime {
     id: usize,
     events: Arc<Mutex<Vec<DnsStartupEvent>>>,
+    dns_port: u16,
+    failure: Option<DnsStartupTestFailure>,
 }
 
 #[async_trait]
@@ -144,10 +114,20 @@ impl sandbox::SandboxRuntime for DnsStartupRecordingRuntime {
     }
 
     async fn dns_interface_pattern(&self) -> Option<String> {
-        Some("vm0-ve-test-*".into())
+        (self.failure != Some(DnsStartupTestFailure::MissingInterfacePattern))
+            .then(|| "vm0-ve-test-*".into())
     }
 
     async fn activate_dns_readiness(&self) -> sandbox::Result<()> {
+        if self.failure == Some(DnsStartupTestFailure::Readiness) {
+            self.events
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DnsStartupEvent::ReadinessFailed { id: self.id });
+            return Err(sandbox::SandboxError::BackendUnavailable {
+                message: "scripted DNS readiness failure".into(),
+            });
+        }
         self.events
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -156,6 +136,12 @@ impl sandbox::SandboxRuntime for DnsStartupRecordingRuntime {
     }
 
     async fn shutdown(&mut self) {
+        if self.failure == Some(DnsStartupTestFailure::MissingInterfacePattern) {
+            let tcp_error = std::net::TcpListener::bind(("0.0.0.0", self.dns_port)).unwrap_err();
+            assert_eq!(tcp_error.kind(), std::io::ErrorKind::AddrInUse);
+            let udp_error = std::net::UdpSocket::bind(("0.0.0.0", self.dns_port)).unwrap_err();
+            assert_eq!(udp_error.kind(), std::io::ErrorKind::AddrInUse);
+        }
         self.events
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -190,6 +176,8 @@ impl sandbox::RuntimeProvider for DnsStartupRecordingProvider {
         Ok(Box::new(DnsStartupRecordingRuntime {
             id,
             events: Arc::clone(&self.events),
+            dns_port,
+            failure: self.failure,
         }))
     }
 }
@@ -223,61 +211,6 @@ fn scripted_dns_starter(
 fn test_host_cpu_placement() -> sandbox::HostCpuPlacementConfig {
     sandbox::HostCpuPlacementConfig::new(1, 1, sandbox::HostCpuPlacementMode::PreferManaged)
         .unwrap()
-}
-
-struct BlockingFactoryRuntime {
-    entered: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
-    release: tokio::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
-}
-
-impl BlockingFactoryRuntime {
-    fn new(
-        entered: tokio::sync::oneshot::Sender<()>,
-        release: tokio::sync::oneshot::Receiver<()>,
-    ) -> Self {
-        Self {
-            entered: Mutex::new(Some(entered)),
-            release: tokio::sync::Mutex::new(Some(release)),
-        }
-    }
-}
-
-#[async_trait]
-impl sandbox::SandboxRuntime for BlockingFactoryRuntime {
-    async fn create_factory(
-        &self,
-        _config: sandbox::FactoryConfig,
-    ) -> sandbox::Result<Box<dyn sandbox::SandboxFactory>> {
-        if let Some(entered) = self
-            .entered
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
-        {
-            let _ = entered.send(());
-        }
-        let release = {
-            let mut guard = self.release.lock().await;
-            guard.take().expect("factory release should be configured")
-        };
-        let _ = release.await;
-        Ok(Box::new(sandbox_mock::MockSandboxFactory::new()))
-    }
-
-    async fn shutdown(&mut self) {}
-}
-
-async fn status_mode_if_exists(status_path: &std::path::Path) -> Option<String> {
-    let raw = match tokio::fs::read_to_string(status_path).await {
-        Ok(raw) => raw,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
-        Err(e) => panic!("failed to read status file {}: {e}", status_path.display()),
-    };
-    let status: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    status
-        .get("mode")
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_string)
 }
 
 #[tokio::test]
@@ -494,6 +427,169 @@ async fn non_port_dns_failure_cleans_owned_startup_resources_without_retry() {
 }
 
 #[tokio::test]
+async fn dns_interface_failure_retains_port_until_runtime_shutdown() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let mut runtime_provider = DnsStartupRecordingProvider::new(Arc::clone(&events));
+    runtime_provider.failure = Some(DnsStartupTestFailure::MissingInterfacePattern);
+    let (mut mitm, _mitm_crash_rx) = crate::proxy::MitmProxy::noop();
+    let prefetch_cancel = CancellationToken::new();
+    let task_cancel = prefetch_cancel.clone();
+    let (cancelled_tx, cancelled_rx) = tokio::sync::oneshot::channel();
+    let prefetch_handle = tokio::spawn(async move {
+        task_cancel.cancelled().await;
+        let _ = cancelled_tx.send(());
+    });
+    let mut memory_prefetch =
+        crate::prefetch::MemoryPrefetchTasks::from_test_handle(prefetch_cancel, prefetch_handle);
+
+    let error = match start_runtime_with_dns(
+        DnsStartupResources {
+            runtime_provider: &runtime_provider,
+            mitm: &mut mitm,
+            kmsg_handle: crate::kmsg_log::KmsgHandle::noop(),
+            memory_prefetch: &mut memory_prefetch,
+            network_log_manager: NetworkLogManager::new(),
+            host_cpu_placement: test_host_cpu_placement(),
+        },
+        // Calling the DNS callback before resolving an interface must fail.
+        scripted_dns_starter(Vec::new(), Arc::clone(&events)),
+    )
+    .await
+    {
+        Ok(_) => panic!("missing DNS interface should fail startup"),
+        Err(error) => error,
+    };
+
+    assert!(matches!(
+        error,
+        RunnerError::Internal(message)
+            if message == "sandbox runtime did not provide DNS interface pattern"
+    ));
+    cancelled_rx.await.expect("prefetch should be cancelled");
+    assert_eq!(memory_prefetch.task_count(), 0);
+    let events = events.lock().unwrap_or_else(|e| e.into_inner());
+    assert!(matches!(
+        events.as_slice(),
+        [
+            DnsStartupEvent::RuntimeCreated { id: 0, .. },
+            DnsStartupEvent::RuntimeShutdown { id: 0 }
+        ]
+    ));
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn dns_readiness_failure_reaps_dns_before_runtime_shutdown() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let mut runtime_provider = DnsStartupRecordingProvider::new(Arc::clone(&events));
+    runtime_provider.failure = Some(DnsStartupTestFailure::Readiness);
+    let (mut mitm, _mitm_crash_rx) = crate::proxy::MitmProxy::noop();
+    let prefetch_cancel = CancellationToken::new();
+    let task_cancel = prefetch_cancel.clone();
+    let prefetch_handle = tokio::spawn(async move { task_cancel.cancelled().await });
+    let mut memory_prefetch = crate::prefetch::MemoryPrefetchTasks::from_test_handle(
+        prefetch_cancel.clone(),
+        prefetch_handle,
+    );
+
+    let mut command = tokio::process::Command::new("sleep");
+    command
+        .arg("60")
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    let child = command.spawn().expect("spawn test DNS child");
+    let dns_pid = child.id().expect("test DNS child should have pid");
+    let dns_starttime = runner_host::process::read_process_stat(dns_pid)
+        .await
+        .expect("test DNS child should be visible")
+        .starttime;
+    let mut dns_handle = crate::dns::DnsProxy::from_test_child(child, NetworkLogManager::new())
+        .await
+        .expect("create test DNS handle");
+    let reap_gate = crate::test_fixtures::ReapGate::new();
+    dns_handle.set_reap_gate(reap_gate.clone());
+    let mut dns_handle = Some(dns_handle);
+    let (callback_owner, mut callback_dropped) = tokio::sync::oneshot::channel::<()>();
+
+    let result = {
+        let callback_events = Arc::clone(&events);
+        let startup = start_runtime_with_dns(
+            DnsStartupResources {
+                runtime_provider: &runtime_provider,
+                mitm: &mut mitm,
+                kmsg_handle: crate::kmsg_log::KmsgHandle::noop(),
+                memory_prefetch: &mut memory_prefetch,
+                network_log_manager: NetworkLogManager::new(),
+                host_cpu_placement: test_host_cpu_placement(),
+            },
+            move |reservation, _interface_pattern, _network_log_manager| {
+                assert!(!callback_owner.is_closed());
+                let port = reservation.port();
+                drop(reservation);
+                callback_events
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DnsStartupEvent::DnsStarted { port });
+                std::future::ready(Ok(dns_handle.take().expect("DNS starts only once")))
+            },
+        );
+        tokio::pin!(startup);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::select! {
+                _ = &mut startup => panic!("startup should wait for DNS cleanup"),
+                _ = reap_gate.entered.notified() => {},
+            }
+        })
+        .await
+        .expect("readiness failure should start DNS cleanup");
+
+        assert!(prefetch_cancel.is_cancelled());
+        assert!(matches!(
+            callback_dropped.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ));
+        {
+            let events = events.lock().unwrap_or_else(|e| e.into_inner());
+            assert_eq!(events.len(), 3);
+            assert!(matches!(
+                events.last(),
+                Some(DnsStartupEvent::ReadinessFailed { id: 0 })
+            ));
+        }
+
+        reap_gate.release.add_permits(1);
+        tokio::time::timeout(Duration::from_secs(5), &mut startup)
+            .await
+            .expect("startup should finish after DNS cleanup")
+    };
+    let error = match result {
+        Ok(_) => panic!("DNS readiness failure should fail startup"),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains(
+        "sandbox runtime DNS readiness: backend unavailable: scripted DNS readiness failure"
+    ));
+    assert!(matches!(
+        callback_dropped.try_recv(),
+        Err(tokio::sync::oneshot::error::TryRecvError::Closed)
+    ));
+    assert_eq!(memory_prefetch.task_count(), 0);
+    assert_ne!(
+        runner_host::process::read_process_stat(dns_pid)
+            .await
+            .map(|stat| stat.starttime),
+        Some(dns_starttime),
+        "readiness failure should reap the DNS child"
+    );
+    let events = events.lock().unwrap_or_else(|e| e.into_inner());
+    assert_eq!(events.len(), 4);
+    assert!(matches!(
+        events.last(),
+        Some(DnsStartupEvent::RuntimeShutdown { id: 0 })
+    ));
+}
+
+#[tokio::test]
 async fn live_runner_instance_publish_failure_shuts_down_startup_resources() {
     use tokio::io::AsyncBufReadExt;
 
@@ -507,9 +603,9 @@ async fn live_runner_instance_publish_failure_shuts_down_startup_resources() {
         shutdowns: Arc::clone(&provider_shutdowns),
     };
     let runtime_shutdowns = Arc::new(AtomicUsize::new(0));
-    let mut runtime = ShutdownRecordingRuntime {
-        shutdowns: Arc::clone(&runtime_shutdowns),
-    };
+    let factory_creates = Arc::new(AtomicUsize::new(0));
+    let mut runtime =
+        ShutdownRecordingRuntime::new(Arc::clone(&runtime_shutdowns), Arc::clone(&factory_creates));
     let status_path = dir.path().join("status.json");
     let status = StatusTracker::new(status_path.clone(), 4, None, None);
     let (mut mitm, _mitm_crash_rx) = crate::proxy::MitmProxy::noop();
@@ -595,6 +691,7 @@ done
     );
     assert_eq!(provider_shutdowns.load(Ordering::SeqCst), 1);
     assert_eq!(runtime_shutdowns.load(Ordering::SeqCst), 1);
+    assert_eq!(factory_creates.load(Ordering::SeqCst), 0);
     tokio::time::timeout(Duration::from_secs(5), cancelled_rx)
         .await
         .expect("prefetch task should observe cleanup cancellation")
@@ -608,224 +705,13 @@ done
         !proxy_child_still_exists,
         "proxy child should be killed and reaped during cleanup"
     );
-    wait_status_mode(&status_path, "stopped", Duration::from_secs(5)).await;
-}
-
-#[tokio::test]
-async fn startup_does_not_publish_running_before_factories_are_ready() {
-    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
-    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-    let runtime = BlockingFactoryRuntime::new(entered_tx, release_rx);
-    let (config, env) =
-        mock_run_config_with_runtime(test_profiles(), 8, 32768, 4, Box::new(runtime));
-    let status_path = env._temp_dir.path().join("status.json");
-    let run_handle = tokio::spawn(run(config));
-
-    tokio::time::timeout(Duration::from_secs(2), entered_rx)
-        .await
-        .expect("factory startup should be entered")
-        .expect("factory startup should report entry");
-    assert_ne!(
-        status_mode_if_exists(&status_path).await.as_deref(),
-        Some("running"),
-        "runner must not publish running before factories are ready",
-    );
+    // Cleanup awaits persistence; no independent publication task may outlive it.
+    let status: serde_json::Value =
+        serde_json::from_str(&tokio::fs::read_to_string(&status_path).await.unwrap()).unwrap();
     assert_eq!(
-        status_mode_if_exists(&status_path).await.as_deref(),
-        Some("starting"),
-        "runner should publish startup progress while factories are not ready",
+        status.get("mode").and_then(serde_json::Value::as_str),
+        Some("stopped")
     );
-
-    release_tx
-        .send(())
-        .expect("runner should still be waiting for factory release");
-    wait_status_mode(&status_path, "running", Duration::from_secs(5)).await;
-    shutdown(&env, run_handle).await;
-}
-
-#[tokio::test]
-async fn startup_readiness_blocks_running_and_discovery() {
-    let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
-    env.handle.block_startup_readiness();
-    let status_path = env._temp_dir.path().join("status.json");
-    let run_handle = tokio::spawn(run(config));
-
-    assert!(
-        env.handle
-            .wait_startup_readiness_entered(Duration::from_secs(2))
-            .await,
-        "startup readiness should be entered",
-    );
-    assert_eq!(
-        status_mode_if_exists(&status_path).await.as_deref(),
-        Some("starting"),
-        "runner should publish starting while provider readiness is blocked",
-    );
-    assert_eq!(env.handle.startup_readiness_calls(), 1);
-    assert_eq!(
-        env.handle.discover_started_count(),
-        0,
-        "provider discovery must not start before startup readiness completes",
-    );
-
-    env.handle.release_startup_readiness();
-    wait_status_mode(&status_path, "running", Duration::from_secs(5)).await;
-    shutdown(&env, run_handle).await;
-}
-
-#[tokio::test]
-async fn stop_during_startup_readiness_exits_without_running() {
-    let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
-    env.handle.block_startup_readiness();
-    let status_path = env._temp_dir.path().join("status.json");
-    let run_handle = tokio::spawn(run(config));
-
-    assert!(
-        env.handle
-            .wait_startup_readiness_entered(Duration::from_secs(2))
-            .await,
-        "startup readiness should be entered",
-    );
-    assert_eq!(
-        status_mode_if_exists(&status_path).await.as_deref(),
-        Some("starting"),
-        "runner should publish starting while provider readiness is blocked",
-    );
-
-    env.trigger_stopping().await;
-    assert_eq!(
-        *env.mode_tx.borrow(),
-        RunnerMode::Stopping,
-        "startup stop must not be lost while provider readiness is blocked",
-    );
-
-    assert_run_exits_within(
-        run_handle,
-        Duration::from_secs(5),
-        "startup readiness stop should exit without entering Running",
-    )
-    .await;
-    wait_status_mode(&status_path, "stopped", Duration::from_secs(5)).await;
-}
-
-#[tokio::test]
-async fn startup_readiness_failure_stops_status_and_cleans_startup_resources() {
-    let runtime_shutdowns = Arc::new(AtomicUsize::new(0));
-    let runtime = ShutdownRecordingRuntime {
-        shutdowns: Arc::clone(&runtime_shutdowns),
-    };
-    let (config, env) =
-        mock_run_config_with_runtime(test_profiles(), 8, 32768, 4, Box::new(runtime));
-    env.handle
-        .fail_startup_readiness("provider readiness failed");
-    let status_path = env._temp_dir.path().join("status.json");
-
-    let error = run(config)
-        .await
-        .expect_err("provider startup readiness should fail");
-
-    assert!(
-        error.to_string().contains("provider readiness failed"),
-        "unexpected error: {error}"
-    );
-    assert_eq!(env.handle.startup_readiness_calls(), 1);
-    assert_eq!(
-        env.handle.discover_started_count(),
-        0,
-        "provider discovery must not start after startup readiness failure",
-    );
-    assert_eq!(runtime_shutdowns.load(Ordering::SeqCst), 1);
-    wait_status_mode(&status_path, "stopped", Duration::from_secs(5)).await;
-}
-
-#[tokio::test]
-async fn drain_during_startup_exits_after_readiness_without_running() {
-    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
-    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-    let runtime = BlockingFactoryRuntime::new(entered_tx, release_rx);
-    let (config, env) =
-        mock_run_config_with_runtime(test_profiles(), 8, 32768, 4, Box::new(runtime));
-    let run_handle = tokio::spawn(run(config));
-
-    tokio::time::timeout(Duration::from_secs(2), entered_rx)
-        .await
-        .expect("factory startup should be entered")
-        .expect("factory startup should report entry");
-
-    env.drain();
-    env.resume();
-    assert_eq!(
-        *env.mode_tx.borrow(),
-        RunnerMode::Draining,
-        "resume before startup readiness must not open admission",
-    );
-
-    release_tx
-        .send(())
-        .expect("runner should still be waiting for factory release");
-    assert_run_exits_within(
-        run_handle,
-        Duration::from_secs(5),
-        "startup drain should exit without entering Running",
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn stop_during_startup_exits_after_readiness_without_running() {
-    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
-    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-    let runtime = BlockingFactoryRuntime::new(entered_tx, release_rx);
-    let (config, env) =
-        mock_run_config_with_runtime(test_profiles(), 8, 32768, 4, Box::new(runtime));
-    let status_path = env._temp_dir.path().join("status.json");
-    let run_handle = tokio::spawn(run(config));
-
-    tokio::time::timeout(Duration::from_secs(2), entered_rx)
-        .await
-        .expect("factory startup should be entered")
-        .expect("factory startup should report entry");
-
-    env.trigger_stopping().await;
-    assert_eq!(
-        *env.mode_tx.borrow(),
-        RunnerMode::Stopping,
-        "startup stop must not be lost before factories become ready",
-    );
-
-    release_tx
-        .send(())
-        .expect("runner should still be waiting for factory release");
-    assert_run_exits_within(
-        run_handle,
-        Duration::from_secs(5),
-        "startup stop should exit without entering Running",
-    )
-    .await;
-    wait_status_mode(&status_path, "stopped", Duration::from_secs(5)).await;
-}
-
-#[tokio::test]
-async fn factory_startup_failure_stops_status_and_cleans_startup_resources() {
-    let create_calls = Arc::new(AtomicUsize::new(0));
-    let runtime_shutdowns = Arc::new(AtomicUsize::new(0));
-    let runtime = FactoryFailingRuntime {
-        create_calls: Arc::clone(&create_calls),
-        shutdowns: Arc::clone(&runtime_shutdowns),
-    };
-    let (config, env) =
-        mock_run_config_with_runtime(test_profiles(), 8, 32768, 4, Box::new(runtime));
-    let status_path = env._temp_dir.path().join("status.json");
-
-    let error = run(config).await.expect_err("factory startup should fail");
-
-    assert!(
-        error.to_string().contains("factory failed"),
-        "unexpected error: {error}"
-    );
-    assert_eq!(create_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(runtime_shutdowns.load(Ordering::SeqCst), 1);
-    wait_status_mode(&status_path, "stopped", Duration::from_secs(5)).await;
 }
 
 #[tokio::test]
@@ -887,7 +773,7 @@ profiles:
     vcpu: 2
     memory_mb: 4096
     rootfs_disk_mb: 8192
-    workspace_disk_mb: 10240
+    home_disk_mb: 10240
 server:
   url: http://localhost:0
   token: token
@@ -913,7 +799,10 @@ server:
             local: true,
         },
         &provider,
-        || Ok(home),
+        || {
+            assert!(base_dir.is_dir(), "base dir must exist before home loading");
+            Ok(home)
+        },
     )
     .await
     .expect_err("local provider setup should fail before runtime creation");

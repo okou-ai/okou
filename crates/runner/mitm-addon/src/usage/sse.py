@@ -10,6 +10,7 @@ optimistically capture data before an event name is known while keeping provider
 JSON and billing semantics outside this module.
 """
 
+from collections.abc import Iterator
 from typing import Protocol
 
 _CR = ord("\r")
@@ -23,6 +24,8 @@ _UTF8_BOM = b"\xef\xbb\xbf"
 # Non-data SSE control lines are expected to be tiny.  Cap malformed lines so
 # an upstream bug cannot grow memory while we wait for a newline.
 _MAX_CONTROL_LINE_BYTES = 4096
+# Cooperative steps also bound nonterminating data and discarded/control lines.
+_MAX_STEP_BYTES = 4096
 
 
 class SseUsageEventHandler(Protocol):
@@ -136,6 +139,34 @@ class SseUsageScanner:
                 i = self._consume_discard_line(chunk, i)
             else:
                 i = self._consume_line(chunk, i)
+
+    def feed_steps(self, chunk: bytes) -> Iterator[None]:
+        """Yield after each event boundary or at most 4 KiB of framing work.
+
+        Use the same synchronous framing implementation on bounded line slices.
+        Blank, ignored and malformed frames consume steps too. The caller must
+        exhaust this iterator before feeding more input or finalizing the scanner.
+        """
+        for offset in range(0, len(chunk), _MAX_STEP_BYTES):
+            fragment = chunk[offset : offset + _MAX_STEP_BYTES]
+            i = 0
+            checkpoint = 0
+            while i < len(fragment):
+                line_end = _find_next_line_ending(fragment, i, self._line_ending_hint)
+                end = len(fragment) if line_end == -1 else line_end + 1
+                event_boundary = (
+                    line_end == i
+                    and self._state == "line"
+                    and not self._line_buf
+                    and not (self._skip_next_lf and fragment[i] == _LF)
+                )
+                self.feed(fragment[i:end])
+                i = end
+                if event_boundary:
+                    checkpoint = i
+                    yield None
+            if checkpoint != len(fragment):
+                yield None
 
     def finish(self) -> None:
         """Flush a trailing captured event at end-of-stream without a blank-line terminator."""

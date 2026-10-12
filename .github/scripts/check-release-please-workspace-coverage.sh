@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
 fail() {
   echo "release please workspace coverage: $1" >&2
   exit 1
 }
 
-for required_command in cargo jq realpath sort yq; do
+for required_command in cargo jq python3 realpath sort yq; do
   command -v "$required_command" >/dev/null ||
     fail "${required_command} is required"
 done
@@ -169,6 +171,8 @@ cargo_metadata=$(cargo metadata \
   --format-version 1 \
   --manifest-path "$cargo_workspace_manifest") ||
   fail "could not read Cargo workspace metadata"
+python3 "${script_dir}/check-rust-workspace-cycles.py" <<<"$cargo_metadata" ||
+  fail "Cargo workspace dependency graph must be acyclic"
 jq -r --arg repo_prefix "${repo_root}/" '
   .workspace_members as $workspace_members
   | .packages[]

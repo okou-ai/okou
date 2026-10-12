@@ -11,27 +11,6 @@ const trigger =
   "CREATE TRIGGER example BEFORE INSERT ON items FOR EACH ROW EXECUTE FUNCTION capture_item();";
 const ruleId = "api/no-database-trigger";
 
-test("the current inventory has nine effective inline legacy exceptions", async () => {
-  const eslint = new ESLint({ cwd: dbRoot });
-  const [result] = await eslint.lintFiles([
-    "scripts/test-migration-consistency-schema.ts",
-  ]);
-  expect(result.messages).toEqual([]);
-  const suppressed = result.suppressedMessages.filter((message) => {
-    return message.ruleId === ruleId;
-  });
-  expect(suppressed).toHaveLength(9);
-  for (const message of suppressed) {
-    expect(message.suppressions).toEqual([
-      {
-        kind: "directive",
-        justification:
-          "Legacy trigger created before 2026-09-29; new database triggers are prohibited.",
-      },
-    ]);
-  }
-});
-
 test("a legacy inline exception does not allow the next trigger definition", async () => {
   const eslint = new ESLint({ cwd: dbRoot });
   const code = `

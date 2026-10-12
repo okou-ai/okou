@@ -9,9 +9,7 @@ use sandbox::{
 use tracing::{info, warn};
 
 use crate::duration::duration_ms;
-use crate::workspace_drive_image::{
-    WorkspaceDriveImagePrepareObserver, WorkspaceDriveImagePrepareStage,
-};
+use crate::home_drive_image::{HomeDriveImagePrepareObserver, HomeDriveImagePrepareStage};
 
 pub(super) const SLOW_SANDBOX_CREATE_THRESHOLD: Duration = Duration::from_secs(3);
 
@@ -24,17 +22,16 @@ macro_rules! emit_success_summary_event {
             success = true,
             sandbox_id = ($timing).sandbox_id.as_str(),
             profile = ($timing).profile.as_str(),
-            workspace_drive_present = ($timing).workspace_drive_present,
-            workspace_seed_image_used = ($timing).workspace_seed_image_used,
+            home_drive_present = ($timing).home_drive_present,
+            home_seed_image_used = ($timing).home_seed_image_used,
             cow_pool_acquire_ms = ($timing).stage_duration_ms(SandboxCreateStage::CowPoolAcquire),
             workspace_dir_rename_ms =
                 ($timing).stage_duration_ms(SandboxCreateStage::WorkspaceDirRename),
-            workspace_drive_prepare_ms =
-                ($timing).stage_duration_ms(SandboxCreateStage::WorkspaceDrivePrepare),
-            workspace_seed_sparse_copy_ms =
-                ($timing).stage_duration_ms(SandboxCreateStage::WorkspaceSeedSparseCopy),
-            workspace_fresh_format_ms =
-                ($timing).stage_duration_ms(SandboxCreateStage::WorkspaceFreshFormat),
+            home_drive_prepare_ms =
+                ($timing).stage_duration_ms(SandboxCreateStage::HomeDrivePrepare),
+            home_seed_sparse_copy_ms =
+                ($timing).stage_duration_ms(SandboxCreateStage::HomeSeedSparseCopy),
+            home_fresh_format_ms = ($timing).stage_duration_ms(SandboxCreateStage::HomeFreshFormat),
             sock_dir_prepare_ms = ($timing).stage_duration_ms(SandboxCreateStage::SockDirPrepare),
             netns_acquire_ms = ($timing).stage_duration_ms(SandboxCreateStage::NetnsAcquire),
             nbd_cow_create_ms = ($timing).stage_duration_ms(SandboxCreateStage::NbdCowCreate),
@@ -49,9 +46,9 @@ fn sandbox_create_stage_name(stage: SandboxCreateStage) -> &'static str {
     match stage {
         SandboxCreateStage::CowPoolAcquire => "cow_pool_acquire",
         SandboxCreateStage::WorkspaceDirRename => "workspace_dir_rename",
-        SandboxCreateStage::WorkspaceDrivePrepare => "workspace_drive_prepare",
-        SandboxCreateStage::WorkspaceSeedSparseCopy => "workspace_seed_sparse_copy",
-        SandboxCreateStage::WorkspaceFreshFormat => "workspace_fresh_format",
+        SandboxCreateStage::HomeDrivePrepare => "home_drive_prepare",
+        SandboxCreateStage::HomeSeedSparseCopy => "home_seed_sparse_copy",
+        SandboxCreateStage::HomeFreshFormat => "home_fresh_format",
         SandboxCreateStage::SockDirPrepare => "sock_dir_prepare",
         SandboxCreateStage::NetnsAcquire => "netns_acquire",
         SandboxCreateStage::NbdCowCreate => "nbd_cow_create",
@@ -63,9 +60,9 @@ fn sandbox_create_stage_summary_field_name(stage: SandboxCreateStage) -> &'stati
     match stage {
         SandboxCreateStage::CowPoolAcquire => "cow_pool_acquire_ms",
         SandboxCreateStage::WorkspaceDirRename => "workspace_dir_rename_ms",
-        SandboxCreateStage::WorkspaceDrivePrepare => "workspace_drive_prepare_ms",
-        SandboxCreateStage::WorkspaceSeedSparseCopy => "workspace_seed_sparse_copy_ms",
-        SandboxCreateStage::WorkspaceFreshFormat => "workspace_fresh_format_ms",
+        SandboxCreateStage::HomeDrivePrepare => "home_drive_prepare_ms",
+        SandboxCreateStage::HomeSeedSparseCopy => "home_seed_sparse_copy_ms",
+        SandboxCreateStage::HomeFreshFormat => "home_fresh_format_ms",
         SandboxCreateStage::SockDirPrepare => "sock_dir_prepare_ms",
         SandboxCreateStage::NetnsAcquire => "netns_acquire_ms",
         SandboxCreateStage::NbdCowCreate => "nbd_cow_create_ms",
@@ -97,9 +94,9 @@ impl SandboxCreateStageDurations {
         let [
             cow_pool_acquire,
             workspace_dir_rename,
-            workspace_drive_prepare,
-            workspace_seed_sparse_copy,
-            workspace_fresh_format,
+            home_drive_prepare,
+            home_seed_sparse_copy,
+            home_fresh_format,
             sock_dir_prepare,
             netns_acquire,
             nbd_cow_create,
@@ -107,9 +104,9 @@ impl SandboxCreateStageDurations {
         match stage {
             SandboxCreateStage::CowPoolAcquire => cow_pool_acquire,
             SandboxCreateStage::WorkspaceDirRename => workspace_dir_rename,
-            SandboxCreateStage::WorkspaceDrivePrepare => workspace_drive_prepare,
-            SandboxCreateStage::WorkspaceSeedSparseCopy => workspace_seed_sparse_copy,
-            SandboxCreateStage::WorkspaceFreshFormat => workspace_fresh_format,
+            SandboxCreateStage::HomeDrivePrepare => home_drive_prepare,
+            SandboxCreateStage::HomeSeedSparseCopy => home_seed_sparse_copy,
+            SandboxCreateStage::HomeFreshFormat => home_fresh_format,
             SandboxCreateStage::SockDirPrepare => sock_dir_prepare,
             SandboxCreateStage::NetnsAcquire => netns_acquire,
             SandboxCreateStage::NbdCowCreate => nbd_cow_create,
@@ -120,9 +117,9 @@ impl SandboxCreateStageDurations {
         let [
             cow_pool_acquire,
             workspace_dir_rename,
-            workspace_drive_prepare,
-            workspace_seed_sparse_copy,
-            workspace_fresh_format,
+            home_drive_prepare,
+            home_seed_sparse_copy,
+            home_fresh_format,
             sock_dir_prepare,
             netns_acquire,
             nbd_cow_create,
@@ -130,9 +127,9 @@ impl SandboxCreateStageDurations {
         match stage {
             SandboxCreateStage::CowPoolAcquire => cow_pool_acquire,
             SandboxCreateStage::WorkspaceDirRename => workspace_dir_rename,
-            SandboxCreateStage::WorkspaceDrivePrepare => workspace_drive_prepare,
-            SandboxCreateStage::WorkspaceSeedSparseCopy => workspace_seed_sparse_copy,
-            SandboxCreateStage::WorkspaceFreshFormat => workspace_fresh_format,
+            SandboxCreateStage::HomeDrivePrepare => home_drive_prepare,
+            SandboxCreateStage::HomeSeedSparseCopy => home_seed_sparse_copy,
+            SandboxCreateStage::HomeFreshFormat => home_fresh_format,
             SandboxCreateStage::SockDirPrepare => sock_dir_prepare,
             SandboxCreateStage::NetnsAcquire => netns_acquire,
             SandboxCreateStage::NbdCowCreate => nbd_cow_create,
@@ -146,8 +143,8 @@ pub(crate) struct SandboxCreateTiming<'a> {
     started_at: Instant,
     durations: SandboxCreateStageDurations,
     observer: Option<&'a mut dyn sandbox::SandboxCreateObserver>,
-    workspace_drive_present: bool,
-    workspace_seed_image_used: bool,
+    home_drive_present: bool,
+    home_seed_image_used: bool,
     failure_logged: bool,
 }
 
@@ -163,18 +160,18 @@ impl<'a> SandboxCreateTiming<'a> {
             started_at: Instant::now(),
             durations: SandboxCreateStageDurations::default(),
             observer,
-            workspace_drive_present: false,
-            workspace_seed_image_used: false,
+            home_drive_present: false,
+            home_seed_image_used: false,
             failure_logged: false,
         }
     }
 
-    pub(super) fn mark_workspace_drive_present(&mut self) {
-        self.workspace_drive_present = true;
+    pub(super) fn mark_home_drive_present(&mut self) {
+        self.home_drive_present = true;
     }
 
-    pub(super) fn mark_workspace_seed_image_used(&mut self) {
-        self.workspace_seed_image_used = true;
+    pub(super) fn mark_home_seed_image_used(&mut self) {
+        self.home_seed_image_used = true;
     }
 
     pub(super) fn record_stage_result<T, E>(
@@ -336,28 +333,24 @@ fn sandbox_nbd_cow_outcome(outcome: NbdCowCreateOutcome) -> SandboxNbdCowCreateO
     }
 }
 
-impl WorkspaceDriveImagePrepareObserver for SandboxCreateTiming<'_> {
-    fn mark_workspace_drive_present(&mut self) {
-        SandboxCreateTiming::mark_workspace_drive_present(self);
+impl HomeDriveImagePrepareObserver for SandboxCreateTiming<'_> {
+    fn mark_home_drive_present(&mut self) {
+        SandboxCreateTiming::mark_home_drive_present(self);
     }
 
-    fn mark_workspace_seed_image_used(&mut self) {
-        SandboxCreateTiming::mark_workspace_seed_image_used(self);
+    fn mark_home_seed_image_used(&mut self) {
+        SandboxCreateTiming::mark_home_seed_image_used(self);
     }
 
     fn record_stage_result(
         &mut self,
-        stage: WorkspaceDriveImagePrepareStage,
+        stage: HomeDriveImagePrepareStage,
         started_at: Instant,
         result: sandbox::Result<()>,
     ) -> sandbox::Result<()> {
         let sandbox_stage = match stage {
-            WorkspaceDriveImagePrepareStage::SeedSparseCopy => {
-                SandboxCreateStage::WorkspaceSeedSparseCopy
-            }
-            WorkspaceDriveImagePrepareStage::FreshFormat => {
-                SandboxCreateStage::WorkspaceFreshFormat
-            }
+            HomeDriveImagePrepareStage::SeedSparseCopy => SandboxCreateStage::HomeSeedSparseCopy,
+            HomeDriveImagePrepareStage::FreshFormat => SandboxCreateStage::HomeFreshFormat,
         };
         self.record_stage_result(sandbox_stage, started_at, result)
     }
@@ -474,11 +467,11 @@ mod tests {
         "threshold_ms",
         "total_elapsed_ms",
         "workspace_dir_rename_ms",
-        "workspace_drive_prepare_ms",
-        "workspace_drive_present",
-        "workspace_fresh_format_ms",
-        "workspace_seed_image_used",
-        "workspace_seed_sparse_copy_ms",
+        "home_drive_prepare_ms",
+        "home_drive_present",
+        "home_fresh_format_ms",
+        "home_seed_image_used",
+        "home_seed_sparse_copy_ms",
     ];
 
     const SUCCESS_SUMMARY_STAGE_FIELDS: &[(SandboxCreateStage, &str)] = &[
@@ -488,17 +481,14 @@ mod tests {
             "workspace_dir_rename_ms",
         ),
         (
-            SandboxCreateStage::WorkspaceDrivePrepare,
-            "workspace_drive_prepare_ms",
+            SandboxCreateStage::HomeDrivePrepare,
+            "home_drive_prepare_ms",
         ),
         (
-            SandboxCreateStage::WorkspaceSeedSparseCopy,
-            "workspace_seed_sparse_copy_ms",
+            SandboxCreateStage::HomeSeedSparseCopy,
+            "home_seed_sparse_copy_ms",
         ),
-        (
-            SandboxCreateStage::WorkspaceFreshFormat,
-            "workspace_fresh_format_ms",
-        ),
+        (SandboxCreateStage::HomeFreshFormat, "home_fresh_format_ms"),
         (SandboxCreateStage::SockDirPrepare, "sock_dir_prepare_ms"),
         (SandboxCreateStage::NetnsAcquire, "netns_acquire_ms"),
         (SandboxCreateStage::NbdCowCreate, "nbd_cow_create_ms"),
@@ -603,13 +593,13 @@ mod tests {
         assert_field(&event, "profile", "vm0/default");
         assert_field(&event, "total_elapsed_ms", "1500");
         assert_field(&event, "threshold_ms", "3000");
-        assert_field(&event, "workspace_drive_present", "false");
-        assert_field(&event, "workspace_seed_image_used", "false");
+        assert_field(&event, "home_drive_present", "false");
+        assert_field(&event, "home_seed_image_used", "false");
         assert_field(&event, "cow_pool_acquire_ms", "0");
         assert_field(&event, "workspace_dir_rename_ms", "0");
-        assert_field(&event, "workspace_drive_prepare_ms", "0");
-        assert_field(&event, "workspace_seed_sparse_copy_ms", "0");
-        assert_field(&event, "workspace_fresh_format_ms", "0");
+        assert_field(&event, "home_drive_prepare_ms", "0");
+        assert_field(&event, "home_seed_sparse_copy_ms", "0");
+        assert_field(&event, "home_fresh_format_ms", "0");
         assert_field(&event, "sock_dir_prepare_ms", "0");
         assert_field(&event, "netns_acquire_ms", "0");
         assert_field(&event, "nbd_cow_create_ms", "0");
@@ -634,8 +624,8 @@ mod tests {
     #[test]
     fn slow_success_emits_summary_with_stable_fields() {
         let mut timing = SandboxCreateTiming::new("sandbox-1".into(), "vm0/default".into(), None);
-        timing.mark_workspace_drive_present();
-        timing.mark_workspace_seed_image_used();
+        timing.mark_home_drive_present();
+        timing.mark_home_seed_image_used();
         for (index, (stage, _)) in SUCCESS_SUMMARY_STAGE_FIELDS.iter().copied().enumerate() {
             let duration_ms = (index as u64 + 1) * 10;
             timing.record_stage_duration(stage, Duration::from_millis(duration_ms));
@@ -653,8 +643,8 @@ mod tests {
         assert_field(&event, "profile", "vm0/default");
         assert_field(&event, "total_elapsed_ms", "3000");
         assert_field(&event, "threshold_ms", "3000");
-        assert_field(&event, "workspace_drive_present", "true");
-        assert_field(&event, "workspace_seed_image_used", "true");
+        assert_field(&event, "home_drive_present", "true");
+        assert_field(&event, "home_seed_image_used", "true");
         for (index, (_, field)) in SUCCESS_SUMMARY_STAGE_FIELDS.iter().copied().enumerate() {
             let expected = ((index as u64 + 1) * 10).to_string();
             assert_field(&event, field, &expected);
@@ -676,36 +666,36 @@ mod tests {
     }
 
     #[test]
-    fn workspace_drive_image_observer_maps_to_sandbox_create_timing() {
+    fn home_drive_image_observer_maps_to_sandbox_create_timing() {
         let mut timing = SandboxCreateTiming::new("sandbox-1".into(), "vm0/default".into(), None);
 
-        WorkspaceDriveImagePrepareObserver::mark_workspace_drive_present(&mut timing);
-        WorkspaceDriveImagePrepareObserver::mark_workspace_seed_image_used(&mut timing);
-        WorkspaceDriveImagePrepareObserver::record_stage_result(
+        HomeDriveImagePrepareObserver::mark_home_drive_present(&mut timing);
+        HomeDriveImagePrepareObserver::mark_home_seed_image_used(&mut timing);
+        HomeDriveImagePrepareObserver::record_stage_result(
             &mut timing,
-            WorkspaceDriveImagePrepareStage::SeedSparseCopy,
+            HomeDriveImagePrepareStage::SeedSparseCopy,
             Instant::now(),
             Ok(()),
         )
         .unwrap();
-        WorkspaceDriveImagePrepareObserver::record_stage_result(
+        HomeDriveImagePrepareObserver::record_stage_result(
             &mut timing,
-            WorkspaceDriveImagePrepareStage::FreshFormat,
+            HomeDriveImagePrepareStage::FreshFormat,
             Instant::now(),
             Ok(()),
         )
         .unwrap();
 
-        assert!(timing.workspace_drive_present);
-        assert!(timing.workspace_seed_image_used);
+        assert!(timing.home_drive_present);
+        assert!(timing.home_seed_image_used);
         assert!(
             timing
-                .stage_duration_for_test(SandboxCreateStage::WorkspaceSeedSparseCopy)
+                .stage_duration_for_test(SandboxCreateStage::HomeSeedSparseCopy)
                 .is_some()
         );
         assert!(
             timing
-                .stage_duration_for_test(SandboxCreateStage::WorkspaceFreshFormat)
+                .stage_duration_for_test(SandboxCreateStage::HomeFreshFormat)
                 .is_some()
         );
     }
@@ -732,9 +722,9 @@ mod tests {
             vec![
                 sandbox::SandboxCreateStage::CowPoolAcquire,
                 sandbox::SandboxCreateStage::WorkspaceDirRename,
-                sandbox::SandboxCreateStage::WorkspaceDrivePrepare,
-                sandbox::SandboxCreateStage::WorkspaceSeedSparseCopy,
-                sandbox::SandboxCreateStage::WorkspaceFreshFormat,
+                sandbox::SandboxCreateStage::HomeDrivePrepare,
+                sandbox::SandboxCreateStage::HomeSeedSparseCopy,
+                sandbox::SandboxCreateStage::HomeFreshFormat,
                 sandbox::SandboxCreateStage::SockDirPrepare,
                 sandbox::SandboxCreateStage::NetnsAcquire,
                 sandbox::SandboxCreateStage::NbdCowCreate,
@@ -850,12 +840,12 @@ mod tests {
 
         let events = capture_events(|| {
             timing.emit_stage_failure(
-                SandboxCreateStage::WorkspaceSeedSparseCopy,
+                SandboxCreateStage::HomeSeedSparseCopy,
                 Duration::from_millis(25),
                 "copy failed",
             );
             timing.emit_stage_failure(
-                SandboxCreateStage::WorkspaceDrivePrepare,
+                SandboxCreateStage::HomeDrivePrepare,
                 Duration::from_millis(30),
                 "outer failed",
             );
@@ -865,7 +855,7 @@ mod tests {
         let event = &events[0];
         assert_eq!(event.level, Level::WARN);
         assert_field(event, "message", "sandbox create stage failed");
-        assert_field(event, "stage", "workspace_seed_sparse_copy");
+        assert_field(event, "stage", "home_seed_sparse_copy");
         assert_field(event, "elapsed_ms", "25");
         assert_field(event, "success", "false");
         assert_field(event, "sandbox_id", "sandbox-1");
@@ -879,9 +869,9 @@ mod tests {
 
         let events = capture_events(|| {
             timing.emit_stage_failure(
-                SandboxCreateStage::WorkspaceSeedSparseCopy,
+                SandboxCreateStage::HomeSeedSparseCopy,
                 Duration::from_millis(25),
-                "sandbox sandbox allocation initialization failed: copy workspace seed image: command failed: cp --sparse=always -- /tmp/source.ext4 /tmp/target.ext4\nsecret stderr",
+                "sandbox sandbox allocation initialization failed: copy home seed image: command failed: cp --sparse=always -- /tmp/source.ext4 /tmp/target.ext4\nsecret stderr",
             );
         });
 
@@ -890,7 +880,7 @@ mod tests {
         assert_field(
             event,
             "error",
-            "sandbox sandbox allocation initialization failed: copy workspace seed image: command failed",
+            "sandbox sandbox allocation initialization failed: copy home seed image: command failed",
         );
         assert!(!event.fields["error"].contains("/tmp"), "event={event:#?}");
         assert!(!event.fields["error"].contains("cp --"), "event={event:#?}");
@@ -910,24 +900,24 @@ mod tests {
     #[test]
     fn stage_failure_redacts_path_tokens() {
         let error = sanitize_error_for_timing(
-            "workspace seed image size mismatch for /tmp/seed.ext4: expected 1 bytes, got 0 bytes",
+            "home seed image size mismatch for /tmp/seed.ext4: expected 1 bytes, got 0 bytes",
         );
 
         assert_eq!(
             error,
-            "workspace seed image size mismatch for <path> expected 1 bytes, got 0 bytes"
+            "home seed image size mismatch for <path> expected 1 bytes, got 0 bytes"
         );
     }
 
     #[test]
     fn stage_failure_redacts_relative_image_path_tokens() {
         let error = sanitize_error_for_timing(
-            "workspace seed image size mismatch for seed.ext4: expected 1 bytes, got 0 bytes",
+            "home seed image size mismatch for seed.ext4: expected 1 bytes, got 0 bytes",
         );
 
         assert_eq!(
             error,
-            "workspace seed image size mismatch for <path> expected 1 bytes, got 0 bytes"
+            "home seed image size mismatch for <path> expected 1 bytes, got 0 bytes"
         );
     }
 }

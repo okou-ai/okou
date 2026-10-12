@@ -395,24 +395,6 @@ async function resolveConnectedStatusFields(args: {
   };
 }
 
-async function teamsConnectionForStatus(args: {
-  readonly db: ReadonlyDb;
-  readonly userId: string;
-  readonly tenantId: string;
-}): Promise<typeof teamsOrgConnections.$inferSelect | undefined> {
-  const [connection] = await args.db
-    .select()
-    .from(teamsOrgConnections)
-    .where(
-      and(
-        eq(teamsOrgConnections.userId, args.userId),
-        eq(teamsOrgConnections.teamsTenantId, args.tenantId),
-      ),
-    )
-    .limit(1);
-  return connection;
-}
-
 function inactiveTeamsStatus(args: {
   readonly installation: TeamsInstallation | undefined;
   readonly orgId: string;
@@ -516,11 +498,16 @@ export function teamsConnectStatus(args: {
       return inactiveTeamsStatus({ ...args, installation });
     }
 
-    const connection = await teamsConnectionForStatus({
-      db,
-      userId: args.userId,
-      tenantId: installation.teamsTenantId,
-    });
+    const [connection] = await db
+      .select()
+      .from(teamsOrgConnections)
+      .where(
+        and(
+          eq(teamsOrgConnections.userId, args.userId),
+          eq(teamsOrgConnections.teamsTenantId, installation.teamsTenantId),
+        ),
+      )
+      .limit(1);
     const connectedFields = connection
       ? await resolveConnectedStatusFields({
           db,

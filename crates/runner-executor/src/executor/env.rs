@@ -6,10 +6,7 @@ use api_contracts::generated::constants::runners::{
     PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
 };
 use api_contracts::generated::types::runners::{
-    runs::{
-        CodexRuntimeConfig, PiLaunchConfig, PiModelConfig, PiModelConfigV2, PiModelConfigV3,
-        PiModelConfigV5,
-    },
+    runs::{CodexRuntimeConfig, PiLaunchConfig, PiModelConfigV2, PiModelConfigV3, PiModelConfigV5},
     storage::ArtifactEntryMissingRootPolicy,
 };
 use guest_contracts::cli_agent_session_id::is_valid_cli_agent_session_id;
@@ -25,7 +22,7 @@ use super::cli_framework::{
 use super::{JOB_TIMEOUT, RunnerError, RunnerResult, guest_runtime_dir, guest_runtime_path};
 use runner_types::ids::RunId;
 use runner_types::types::{
-    ConnectorRuntimeTargetRegistration, ExecutionContext, SandboxReuseResult, WorkspaceReuseResult,
+    ConnectorRuntimeTargetRegistration, ExecutionContext, HomeReuseResult, SandboxReuseResult,
 };
 
 pub(super) struct ProtectedModelProviderEnvKey {
@@ -154,9 +151,9 @@ pub(super) fn validate_execution_context_before_sandbox_with_host_env(
 }
 
 // Generated enums and explicit versions intentionally fail closed. A future
-// enum value or schema version must reach runners before the API emits it;
-// unknown additive object fields remain safe because the original JSON is
-// forwarded after this validation view is discarded.
+// enum value or schema version must reach runners before the API emits it.
+// Launch config validation tolerates unknown additive fields and forwards the
+// original JSON; versioned model configs enforce their exact fields below.
 fn validate_pi_launch_config(value: &serde_json::Value) -> Result<(), String> {
     let launch: PiLaunchConfig = serde_json::from_value(value.clone())
         .map_err(|error| format!("Pi launch config v2 is invalid: {error}"))?;
@@ -164,12 +161,6 @@ fn validate_pi_launch_config(value: &serde_json::Value) -> Result<(), String> {
         return Err("Pi launch config schemaVersion must be 2".to_string());
     }
     Ok(())
-}
-
-fn is_pi_credential_secret_name(value: &str) -> bool {
-    let mut bytes = value.bytes();
-    matches!(bytes.next(), Some(b'A'..=b'Z' | b'_'))
-        && bytes.all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
 enum PiModelConfigCommonError {
@@ -192,27 +183,6 @@ fn validate_pi_model_config_common(
     }
     if catalog_model.is_some_and(|value| value.as_str().is_none_or(str::is_empty)) {
         return Err(PiModelConfigCommonError::InvalidCatalogModel);
-    }
-    Ok(())
-}
-
-fn validate_legacy_pi_model_config(value: &serde_json::Value) -> Result<(), String> {
-    let model: PiModelConfig = serde_json::from_value(value.clone())
-        .map_err(|error| format!("Pi legacy model config is invalid: {error}"))?;
-    validate_pi_model_config_common(&model.base_url, &model.model, value.get("catalogModel"))
-        .map_err(|error| match error {
-            PiModelConfigCommonError::InvalidBaseUrl => {
-                "Pi model config baseUrl is invalid".to_string()
-            }
-            PiModelConfigCommonError::EmptyModel => {
-                "Pi model config model must not be empty".to_string()
-            }
-            PiModelConfigCommonError::InvalidCatalogModel => {
-                "Pi model config catalogModel is invalid".to_string()
-            }
-        })?;
-    if !is_pi_credential_secret_name(&model.credential_secret_name) {
-        return Err("Pi model config credentialSecretName is invalid".to_string());
     }
     Ok(())
 }
@@ -476,7 +446,6 @@ fn validate_pi_model_config_dialect(
 
 fn validate_pi_model_config(value: &serde_json::Value) -> Result<(), String> {
     match value.get("schemaVersion") {
-        None => validate_legacy_pi_model_config(value),
         Some(serde_json::Value::Number(generation))
             if generation.as_u64() == Some(u64::from(PI_MODEL_CONFIG_CURRENT_GENERATION)) =>
         {
@@ -493,7 +462,7 @@ fn validate_pi_model_config(value: &serde_json::Value) -> Result<(), String> {
         {
             validate_pi_model_config_v5(value)
         }
-        Some(_) => Err("Pi model config generation is unsupported".to_string()),
+        _ => Err("Pi model config generation is unsupported".to_string()),
     }
 }
 
@@ -808,7 +777,7 @@ pub(super) fn build_env_json_for_run(
     api_url: &str,
     sandbox_id: &str,
     reuse_result: SandboxReuseResult,
-    workspace_reuse_result: WorkspaceReuseResult,
+    home_reuse_result: HomeReuseResult,
 ) -> RunnerResult<HashMap<String, String>> {
     let host_env = HostEnv::from_process();
     build_env_json_with_host_env_for_run(
@@ -816,7 +785,7 @@ pub(super) fn build_env_json_for_run(
         api_url,
         sandbox_id,
         reuse_result,
-        workspace_reuse_result,
+        home_reuse_result,
         &host_env,
     )
 }
@@ -826,7 +795,7 @@ pub(super) fn build_env_json_with_host_env_for_run(
     api_url: &str,
     sandbox_id: &str,
     reuse_result: SandboxReuseResult,
-    workspace_reuse_result: WorkspaceReuseResult,
+    home_reuse_result: HomeReuseResult,
     host_env: &HostEnv,
 ) -> RunnerResult<HashMap<String, String>> {
     build_env_json_with_host_env_inner(
@@ -834,7 +803,7 @@ pub(super) fn build_env_json_with_host_env_for_run(
         api_url,
         sandbox_id,
         reuse_result,
-        Some(workspace_reuse_result),
+        Some(home_reuse_result),
         host_env,
     )
 }
@@ -844,7 +813,7 @@ fn build_env_json_with_host_env_inner(
     api_url: &str,
     sandbox_id: &str,
     reuse_result: SandboxReuseResult,
-    workspace_reuse_result: Option<WorkspaceReuseResult>,
+    home_reuse_result: Option<HomeReuseResult>,
     host_env: &HostEnv,
 ) -> RunnerResult<HashMap<String, String>> {
     let mut env = HashMap::new();
@@ -873,10 +842,10 @@ fn build_env_json_with_host_env_inner(
         guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV.into(),
         reuse_result.as_wire().into(),
     );
-    if let Some(workspace_reuse_result) = workspace_reuse_result {
+    if let Some(home_reuse_result) = home_reuse_result {
         env.insert(
-            guest_contracts::env::CANONICAL_WORKSPACE_REUSE_RESULT_ENV.into(),
-            workspace_reuse_result.as_wire().into(),
+            guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV.into(),
+            home_reuse_result.as_wire().into(),
         );
     }
     env.insert(

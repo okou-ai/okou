@@ -3398,7 +3398,7 @@ printf '%s\n' \
                     "vcpu": 1,
                     "memory_mb": 512,
                     "rootfs_disk_mb": 512,
-                    "workspace_disk_mb": 1024,
+                    "home_disk_mb": 1024,
                 },
             },
         });
@@ -3941,7 +3941,7 @@ printf '%s\n' \
                     "vcpu": 1,
                     "memory_mb": 512,
                     "rootfs_disk_mb": 512,
-                    "workspace_disk_mb": 1024,
+                    "home_disk_mb": 1024,
                 },
             },
             "server": {

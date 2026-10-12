@@ -1,3 +1,4 @@
+import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { createHash, randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, beforeEach } from "vitest";
@@ -34,13 +35,10 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import { seedBuiltInModelKey } from "./helpers/runtime-state";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readGetStartedStatus } from "./helpers/get-started";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 // INT-03 deep AgentPhone flows: linking through the webhook connect prompt,
 // real run dispatch through runner poll/claim, and completion replies through
 // typed internal callback dispatch. All state is constructed through public
@@ -262,7 +260,7 @@ async function completeSandboxRun(
       exitCode,
       ...(exitCode === 0
         ? {
-            checkpoint: {
+            completion: {
               cliAgentType: options.cliAgentType ?? "claude-code",
               cliAgentSessionId: agentPhoneCliAgentSessionIdForRun(runId),
               cliAgentSessionHistoryHash: createHash("sha256")
@@ -823,21 +821,30 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(lastSend(sends).body).toBe("Task completed successfully.");
   });
 
-  it("links an AgentPhone user without provisioning artifact storage", async () => {
-    const bdd = createBddApi(context);
+  it("links an AgentPhone user through the provider connect prompt", async () => {
     const integrations = createBddIntegrationApi(context);
     const ap = createAgentPhoneBddApi(context);
-    const storages = createStoragesBddApi(context);
-    const actor = bdd.user();
-    integrations.configureAgentPhoneProvider();
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
+    const owner = createPublicConnectorActor(context, {
+      optionalEnvironmentNames: [
+        "AGENTPHONE_AGENT_ID",
+        "AGENTPHONE_API_BASE_URL",
+        "AGENTPHONE_API_KEY",
+        "AGENTPHONE_PHONE_NUMBER",
+        "AGENTPHONE_WEBHOOK_SECRET",
+      ],
+    });
+    const actor = owner.actor;
+    await owner.run(async () => {
+      integrations.configureAgentPhoneProvider();
+      integrations.configureAgentPhoneWebhook();
+      const sends = ap.captureAgentPhoneSends();
 
-    await ap.linkViaWebhookConnectPrompt(actor, uniquePhoneHandle(), sends);
-
-    await expect(storages.listStorages(actor, "user")).resolves.toStrictEqual(
-      [],
-    );
+      const phone = uniquePhoneHandle();
+      await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
+      await expect(
+        integrations.getAgentPhoneLinkStatus(actor),
+      ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
+    });
   });
 
   it.each(["dispatch context", "typing and plain-text completion"] as const)(
@@ -1112,7 +1119,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         {
           runId,
           exitCode: 0,
-          checkpoint: {
+          completion: {
             cliAgentType: "claude-code",
             cliAgentSessionId: agentPhoneCliAgentSessionIdForRun(runId),
             cliAgentSessionHistoryHash: createHash("sha256")
@@ -1321,7 +1328,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     ).resolves.toMatchObject({
       selectedModel: "auto",
     });
-    await seedBuiltInModelKey(context, SEEDED_SYSTEM_DEFAULT_MODEL);
+
     await send("use the system default");
     await runs.heartbeatRunner(runnerGroup);
     await flushWaitUntilForTest();
@@ -1797,6 +1804,118 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(sends.messages).toHaveLength(sendsAfterCompletion);
   });
 
+  it.each(["sms", "imessage"] as const)(
+    "deduplicates concurrent %s ingress by provider message and webhook identities",
+    async (channel) => {
+      const { actor, ap, phone, runnerGroup, sends } =
+        await entitledLinkedActor();
+      const runs = createRunsApi(context);
+      const integrations = createBddIntegrationApi(context);
+      const isGroup = channel === "imessage";
+      const conversationId = uniqueConversationId();
+      const groupId = bddGroupId(conversationId);
+      const messageId = `ap-concurrent-${randomUUID()}`;
+      const webhookId = `evt-concurrent-${randomUUID()}`;
+      const message = {
+        channel,
+        from: phone,
+        body: isGroup
+          ? "@Okou accept this event once"
+          : "accept this event once",
+        messageId,
+        webhookId,
+        conversationId,
+        ...(isGroup
+          ? { isGroup, groupId, participants: [{ identifier: phone }] }
+          : {}),
+      };
+      await Promise.all([
+        ap.postAgentPhoneInboundMessage(message),
+        ap.postAgentPhoneInboundMessage(message),
+      ]);
+      await ap.postAgentPhoneInboundMessage({
+        ...message,
+        webhookId: `${webhookId}-replay`,
+      });
+      await ap.postAgentPhoneInboundMessage({
+        ...message,
+        messageId: `${messageId}-replay`,
+      });
+      const run = await claimDispatchedRun(runnerGroup);
+      expect(run.prompt).toBe(message.body);
+      await runs.heartbeatRunner(runnerGroup);
+      expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+      if (isGroup) {
+        const history = await integrations.requestAgentPhoneGroupHistory(
+          actor,
+          { groupId, limit: 100 },
+          [200],
+        );
+        expect(
+          history.status === 200 ? history.body.messages : [],
+        ).toMatchObject([{ id: messageId, body: message.body }]);
+        expect(
+          history.status === 200 ? history.body.messages : [],
+        ).toHaveLength(1);
+      }
+      const sendCount = sends.messages.length;
+      await completeSandboxRun(run.sandboxToken, run.runId, 0);
+      await waitForSendCount(sends, sendCount + 1);
+      await ap.postAgentPhoneInboundMessage(message);
+      await runs.heartbeatRunner(runnerGroup);
+      expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+      expect(sends.messages).toHaveLength(sendCount + 1);
+    },
+  );
+
+  it("retains an unarchived group receipt across replay and later linking", async () => {
+    const bdd = createBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    integrations.configureAgentPhoneProvider();
+    integrations.configureAgentPhoneWebhook();
+    const sends = ap.captureAgentPhoneSends();
+    const actor = bdd.user();
+    const phone = uniquePhoneHandle();
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+    const message = {
+      channel: "imessage" as const,
+      from: phone,
+      body: "@Okou please connect",
+      messageId: `ap-no-recipients-${randomUUID()}`,
+      webhookId: `evt-no-recipients-${randomUUID()}`,
+      conversationId,
+      groupId,
+      isGroup: true,
+      participants: [{ identifier: phone }],
+      receivedAt: new Date(now()).toISOString(),
+    };
+    await Promise.all([
+      ap.postAgentPhoneInboundMessage(message),
+      ap.postAgentPhoneInboundMessage(message),
+    ]);
+    expect(sends.messages).toHaveLength(1);
+    expect(sends.messages[0]).toMatchObject({
+      toNumber: groupId,
+      replyToMessageId: message.messageId,
+    });
+    await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
+    const sendCount = sends.messages.length;
+    await ap.postAgentPhoneInboundMessage(message);
+    await ap.postAgentPhoneInboundMessage({
+      ...message,
+      messageId: `${message.messageId}-replay`,
+    });
+    expect(sends.messages).toHaveLength(sendCount);
+    const history = await integrations.requestAgentPhoneGroupHistory(
+      actor,
+      { groupId, limit: 100 },
+      [200],
+    );
+    expect(history.status === 200 ? history.body.messages : []).toHaveLength(0);
+  });
+
   it("imports phone media into canonical storage and preserves its message text", async () => {
     const ap = createAgentPhoneBddApi(context);
     const { actor, phone, runnerGroup } = await entitledLinkedActor();
@@ -2035,6 +2154,133 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(plainPromptUnlinked).not.toContain(SMS_RISK_WARNING);
   });
 
+  it("archives an outbound group reply once with the original recipients across concurrent provider-id replays", async () => {
+    const bdd = createBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    integrations.configureAgentPhoneProvider();
+    integrations.configureAgentPhoneWebhook();
+    const sends = ap.captureAgentPhoneSends();
+    const sender = bdd.user();
+    const recipient = bdd.user();
+    const laterRecipient = bdd.user();
+    const senderPhone = uniquePhoneHandle();
+    const recipientPhone = uniquePhoneHandle();
+    const laterPhone = uniquePhoneHandle();
+    await ap.linkViaWebhookConnectPrompt(sender, senderPhone, sends);
+    await ap.linkViaWebhookConnectPrompt(recipient, recipientPhone, sends);
+    await ap.linkViaWebhookConnectPrompt(laterRecipient, laterPhone, sends);
+
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+    let providerId = `ap-outbound-${randomUUID()}`;
+    let roster = [
+      senderPhone,
+      recipientPhone,
+      recipientPhone,
+      "invalid-handle",
+    ];
+    const requests: unknown[] = [];
+    server.use(
+      http.get("https://api.agentphone.test/v1/conversations/:id", () => {
+        return HttpResponse.json({ participants: roster });
+      }),
+      http.post(
+        "https://api.agentphone.test/v1/messages",
+        async ({ request }) => {
+          expect(request.headers.get("authorization")).toBe(
+            "Bearer agentphone-bdd-key",
+          );
+          const body: unknown = await request.json();
+          requests.push(body);
+          return HttpResponse.json({
+            id: providerId,
+            channel: "imessage",
+            to_number: groupId,
+          });
+        },
+      ),
+    );
+    mockNow(now());
+    const sentAt = new Date(now()).toISOString();
+    async function sendHelp() {
+      return await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: senderPhone,
+        body: "/help @Okou",
+        conversationId,
+        isGroup: true,
+        participants: [{ identifier: senderPhone }],
+      });
+    }
+    await sendHelp();
+    await flushWaitUntilForTest();
+
+    async function outbound(actor: ApiTestUser) {
+      const history = await integrations.requestAgentPhoneGroupHistory(
+        actor,
+        { groupId, limit: 100 },
+        [200],
+      );
+      if (history.status !== 200) {
+        throw new Error("Expected the member's phone group history");
+      }
+      return history.body.messages.filter((message) => {
+        return message.direction === "outbound";
+      });
+    }
+    const archived = await outbound(sender);
+    expect(archived).toHaveLength(1);
+    expect(archived[0]).toMatchObject({
+      id: providerId,
+      conversationId,
+      fromNumber: AGENTPHONE_BDD_PHONE_NUMBER,
+      toNumber: groupId,
+      channel: "imessage",
+      mediaUrl: null,
+      receivedAt: sentAt,
+    });
+    await expect(outbound(recipient)).resolves.toStrictEqual(archived);
+    await expect(outbound(laterRecipient)).resolves.toStrictEqual([]);
+    await expect(
+      outbound({ ...recipient, orgId: `org_${randomUUID()}` }),
+    ).resolves.toStrictEqual([]);
+
+    roster = [senderPhone, laterPhone];
+    await Promise.all([sendHelp(), sendHelp()]);
+    await flushWaitUntilForTest();
+    expect(requests).toHaveLength(3);
+    for (const request of requests) {
+      expect(request).toMatchObject({
+        agent_id: AGENTPHONE_BDD_AGENT_ID,
+        to_number: groupId,
+        reply_to_message_id: expect.any(String),
+        body: expect.stringContaining("/help"),
+      });
+    }
+    await expect(outbound(sender)).resolves.toStrictEqual(archived);
+    await expect(outbound(recipient)).resolves.toStrictEqual(archived);
+    await expect(outbound(laterRecipient)).resolves.toStrictEqual([]);
+
+    mockNow(now() + 1000);
+    providerId = `ap-outbound-fresh-${randomUUID()}`;
+    await Promise.all([sendHelp(), sendHelp()]);
+    await flushWaitUntilForTest();
+    const newlyArchived = await outbound(laterRecipient);
+    expect(newlyArchived).toHaveLength(1);
+    expect(newlyArchived[0]).toMatchObject({
+      id: providerId,
+      toNumber: groupId,
+      channel: "imessage",
+    });
+    await expect(outbound(sender)).resolves.toStrictEqual([
+      ...archived,
+      ...newlyArchived,
+    ]);
+    await expect(outbound(recipient)).resolves.toStrictEqual(archived);
+    expect(requests).toHaveLength(5);
+  });
+
   it("limits archived group history to linked participants captured for each message", async () => {
     const bdd = createBddApi(context);
     const integrations = createBddIntegrationApi(context);
@@ -2132,7 +2378,21 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       mediaUrl: groupMediaUrl,
     });
 
+    const beforeLaterLink = new Date(now()).toISOString();
+    mockNow(now() + 1000);
     await ap.linkViaWebhookConnectPrompt(linkedLater, laterPhone, sends);
+    const delayedMessageId = `ap-group-history-delayed-${randomUUID()}`;
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: firstPhone,
+      body: "delivered after linking but sent before it",
+      messageId: delayedMessageId,
+      webhookId: null,
+      conversationId,
+      isGroup: true,
+      participants,
+      receivedAt: beforeLaterLink,
+    });
     const noMatchHistory = await integrations.requestAgentPhoneGroupHistory(
       linkedLater,
       { groupId: bddGroupId(noMatchConversationId), limit: 100 },
@@ -2177,9 +2437,13 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
 
     await expect(visibleIds(first)).resolves.toStrictEqual([
       firstMessageId,
+      delayedMessageId,
       secondMessageId,
     ]);
-    await expect(visibleIds(second)).resolves.toStrictEqual([firstMessageId]);
+    await expect(visibleIds(second)).resolves.toStrictEqual([
+      firstMessageId,
+      delayedMessageId,
+    ]);
     await expect(visibleIds(linkedLater)).resolves.toStrictEqual([
       secondMessageId,
     ]);
@@ -2234,7 +2498,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
     expect(
       secondPage.status === 200 ? secondPage.body.messages : [],
-    ).toMatchObject([{ id: secondMessageId }]);
+    ).toMatchObject([{ id: delayedMessageId }]);
   });
 
   it("returns 500 and does not dispatch group webhooks without a timestamp", async () => {

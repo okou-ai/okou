@@ -346,7 +346,7 @@ EOF
     assert_success
     public_surfaces+="$output"$'\n'
 
-    run runner_api_curl "/api/runs/${first_run_id}/context"
+    run runner_e2e_wait_for_run_context "$first_run_id"
     echo "$output"
     assert_success
     local default_run_context="$output"
@@ -489,7 +489,7 @@ EOF
     assert_success
     public_surfaces+="$output"$'\n'
 
-    run runner_api_curl "/api/runs/${RUN_ID}/context"
+    run runner_e2e_wait_for_run_context "$RUN_ID"
     echo "$output"
     assert_success
     local selected_run_context="$output"

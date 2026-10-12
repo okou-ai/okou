@@ -35,17 +35,24 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
+import { validateCanonicalModelSelections } from "./test-canonical-model-selections-permanent";
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
 import { validateOfficialAutomationResultEmailSchema } from "./test-official-automation-result-email-schema";
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
 import { validatePermanentDiscordFoundation } from "./test-discord-foundation-permanent";
 import { validatePermanentDiscordChat } from "./test-discord-chat-permanent";
+import { validatePermanentDiscordGrants } from "./test-discord-grants-permanent";
 import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
 import { validatePermanentModelCatalogConstraints } from "./test-model-catalog-permanent";
 import { validateModelCatalogSeed } from "./test-model-catalog-seed";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 import { validatePermanentConnectorCatalogColumns } from "./test-connector-catalog-columns-permanent";
+import { validatePermanentChatThreadStorage } from "./test-chat-thread-storage-permanent";
+import { validateMemberMetadataRuntimePreparation } from "./test-member-metadata-runtime-preparation";
+import { validatePiMemoryStorageRetirementPreparation } from "./test-pi-memory-storage-retirement-preparation";
+import { validatePermanentComputerUseHostStorage } from "./test-computer-use-host-storage-permanent";
+import { validatePermanentPlatformGenerationReceipts } from "./test-platform-generation-receipts-permanent";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.join(dirname, "..");
@@ -435,11 +442,11 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
     const event = await client.query<{ id: string; seqId: string }>(
       `
         INSERT INTO "chat_thread_events" (
-          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "agent_id", "title"
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "agent_id", "title", "selected_model"
         )
         VALUES (
           'append-only-test-user', 'append-only-test-org', 1,
-          $1, 'created', $2, 'append-only migration test'
+          $1, 'created', $2, 'append-only migration test', 'auto'
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,
@@ -933,6 +940,16 @@ async function generateFreshMigrations(): Promise<void> {
   await fs.appendFile(
     path.join(MIGRATIONS_DIR, finalSql),
     `\n--> statement-breakpoint\n${deferral}`,
+  );
+  // PostgreSQL exclusion constraints are not modeled by Drizzle. Install the
+  // complete canonical ownership contract on the independently generated side.
+  const discordOwnership = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/constraints/discord-sender-ownership.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${discordOwnership}`,
   );
 }
 
@@ -1770,7 +1787,6 @@ async function validateCustomConnectorOauthModeConstraints(
       fixture.createdBy,
     ]);
 
-    await client.query("BEGIN");
     await client.query(insertConnector, [
       fixture.oauthConnectorId,
       fixture.orgId,
@@ -1783,7 +1799,6 @@ async function validateCustomConnectorOauthModeConstraints(
       fixture.oauthConnectorId,
       fixture.orgId,
     ]);
-    await client.query("COMMIT");
 
     await client.query(insertAutomaticConnector, [
       fixture.automaticConnectorId,
@@ -2581,6 +2596,7 @@ async function validatePermanentUsagePackPendingSnapshotState(
   console.log("=== Validate permanent usage-pack pending snapshot state ===\n");
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0397; new non-billing transactions are prohibited.
   await client.query("BEGIN");
 
   const orgId = "permanent-usage-pack-pending-snapshot-org";
@@ -2592,6 +2608,7 @@ async function validatePermanentUsagePackPendingSnapshotState(
     );
     // Counts above one represent grandfathered purchases. Admission and release
     // are owned by the API service; the database retains uniqueness and range.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0398; new non-billing transactions are prohibited.
     await client.query("SAVEPOINT guard_constraint");
     await expectDatabaseError(client, {
       code: "23505",
@@ -2600,6 +2617,7 @@ async function validatePermanentUsagePackPendingSnapshotState(
       values: [orgId],
     });
     await client.query("ROLLBACK TO SAVEPOINT guard_constraint");
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0399; new non-billing transactions are prohibited.
     await client.query("SAVEPOINT guard_constraint");
     await expectDatabaseError(client, {
       code: "23514",
@@ -2609,6 +2627,7 @@ async function validatePermanentUsagePackPendingSnapshotState(
       values: [orgId],
     });
     await client.query("ROLLBACK TO SAVEPOINT guard_constraint");
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0400; new non-billing transactions are prohibited.
     await client.query("SAVEPOINT guard_constraint");
     await expectDatabaseError(client, {
       code: "23502",
@@ -2665,9 +2684,16 @@ async function main(): Promise<void> {
     await validatePermanentBuiltInModelKeyState(dbUrl1);
     await validatePermanentDiscordFoundation(dbUrl1);
     await validatePermanentDiscordChat(dbUrl1);
+    await validatePermanentDiscordGrants(dbUrl1);
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
     await validatePermanentConnectorCatalogColumns(dbUrl1);
+    await validatePermanentChatThreadStorage(dbUrl1);
+    await validateMemberMetadataRuntimePreparation(dbUrl1);
+    await validatePiMemoryStorageRetirementPreparation(dbUrl1);
+    await validatePermanentComputerUseHostStorage(dbUrl1);
+    await validatePermanentPlatformGenerationReceipts(dbUrl1);
     await validatePermanentModelCatalogConstraints(dbUrl1);
+    await validateCanonicalModelSelections(dbUrl1);
     await validateModelCatalogSeed(dbUrl1);
     await validateXResourceUsageSchema(dbUrl1);
     await validateAgentRunLaunchSnapshotSchema(dbUrl1);
@@ -2694,9 +2720,16 @@ async function main(): Promise<void> {
     await validatePermanentBuiltInModelKeyState(dbUrl2);
     await validatePermanentDiscordFoundation(dbUrl2);
     await validatePermanentDiscordChat(dbUrl2);
+    await validatePermanentDiscordGrants(dbUrl2);
     await validatePermanentOrgPlanEntitlementState(dbUrl2);
     await validatePermanentConnectorCatalogColumns(dbUrl2);
+    await validatePermanentChatThreadStorage(dbUrl2);
+    await validateMemberMetadataRuntimePreparation(dbUrl2);
+    await validatePiMemoryStorageRetirementPreparation(dbUrl2);
+    await validatePermanentComputerUseHostStorage(dbUrl2);
+    await validatePermanentPlatformGenerationReceipts(dbUrl2);
     await validatePermanentModelCatalogConstraints(dbUrl2);
+    await validateCanonicalModelSelections(dbUrl2);
     await validateXResourceUsageSchema(dbUrl2);
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);

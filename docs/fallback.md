@@ -48,9 +48,7 @@ it("does not read legacy vm0 preview bypass query params", () => {
 
 **Delete the old test together with the old code.** When a behavior is
 replaced, update the existing test to the new behavior instead of keeping the
-old assertion alongside it. PR #22573 removed dozens of retired-behavior tests
-in one pass, many of them tombstones; that class of test should never have been
-written.
+old assertion alongside it.
 
 **The narrow exception** is a fail-closed security boundary, where the
 assertion is that an attacker-supplied legacy credential, token prefix, or
@@ -195,9 +193,9 @@ How to use them:
     API is still serving or draining. Every statement that API can issue must
     stay legal, including columns an ORM adds to `SELECT` or `RETURNING`.
   - **New code before migration** — the new API is serving before the migration
-    is visible to it. This is the direction that produced `42703`, `22P02`, and
-    `42P01` in production. New readers and writers must not require the new
-    column, enum value, relation, or constraint until the migration lands.
+    is visible to it. New readers and writers must not require the new column,
+    enum value, relation, or constraint until the migration lands; otherwise,
+    requests can fail with `42703`, `22P02`, or `42P01`.
 
   Remove a fallback only after its direction is safe. New-code fallbacks require
   a successful release and the expected schema. Old-code fallbacks require the
@@ -229,29 +227,29 @@ obligation (see section 2).
 A legitimate rollout fallback is introduced with its removal already planned.
 
 **Step 1 — ship the tolerant version with a comment stating the removal
-condition.** PR #25563 added an additive route and let the app accept the old
-API's `404`:
+condition.** For an additive API route, accept the previous API's `404` only
+while that API can still serve requests during deployment or rollback:
 
 ```typescript
 const result = await accept(client.unreadIds(), [200, 404]);
 // A newly promoted app can briefly reach an API version from before this
-// additive route existed. Remove after that API is outside the production
-// rollback window.
+// additive route existed. Remove after that API is neither serving nor
+// retained as a production rollback target.
 return new Set(result.status === 200 ? result.body.threadIds : []);
 ```
 
-**Step 2 — after the rollback window closes, remove the fallback, the contract
-entry, and its test.** PR #25694 did exactly that:
+**Step 2 — once the old API is no longer serving or retained for rollback,
+remove the fallback, the contract entry, and its test.**
 
 ```typescript
 const result = await accept(client.unreadIds(), [200]);
 return new Set(result.body.threadIds);
 ```
 
-The follow-up PR removed the `404` from the contract, narrowed the BDD helper's
-status type, and deleted the test that exercised the missing route. Note that
-the deleted test is not a regression loss: it covered the temporary fallback,
-so it dies with the fallback rather than becoming a tombstone.
+Remove the `404` from the contract, narrow any helper's status type, and delete
+the test that exercises the missing route. That test covers the temporary
+fallback, so removing it with the fallback avoids a tombstone rather than
+losing regression coverage.
 
 Requirements for this pattern:
 
@@ -291,7 +289,8 @@ switch`),
 
 - `sidebar-unread-threads.ts:allUnreadThreadIds$` — accepts `404` from an API
   that predates the additive `unreadIds` route. Surface: new app -> old API.
-  Remove after that API is outside the rollback window; follow-up #25694.
+  Remove after that API is no longer serving or retained for production rollback;
+  follow-up: <removal issue or PR>.
 ```
 
 PRs that do not introduce a fallback need no `Fallbacks` section. This includes
@@ -315,8 +314,7 @@ must show why the removed branch is unreachable:
 - **Single-writer evidence** — the only code path that creates the row always
   sets the field.
 - **Production evidence** — a read-only query against the masked production
-  branch showing zero rows in the old shape. PR #24888 removed an unreachable
-  claim-time fallback only after confirming `pending_automation = 0`.
+  branch showing zero rows in the old shape.
 - **Rollout evidence** — the applicable gate in section 7 has passed.
 
 The evidence can come from the diff, tests, or linked production or rollout

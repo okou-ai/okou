@@ -24,7 +24,7 @@ pre-commit:
             fail_text: |
               App style policy violations found. Use Tailwind utilities in business components;
               do not expand the allowlist for first-party styling.
-              Read docs/styles.md for the style guide before fixing these errors.
+              Read docs/app/styles.md for the style guide before fixing these errors.
           - name: platform-static-assets
             run: pnpm -F @okouai/app lint:static-assets
             root: turbo/

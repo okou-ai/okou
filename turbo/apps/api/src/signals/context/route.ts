@@ -1,3 +1,9 @@
+import { selectClientResponseTransforms } from "@okouai/api-contracts/client-transforms/select";
+import type { ClientResponseTransform } from "@okouai/api-contracts/client-transforms/types";
+import {
+  CLIENT_TYPE_HEADER,
+  CLIENT_VERSION_HEADER,
+} from "@okouai/api-contracts/contracts/client-headers";
 import {
   type AppRoute,
   validateResponse,
@@ -8,18 +14,10 @@ import type { ContentfulStatusCode, StatusCode } from "hono/utils/http-status";
 
 import { monotonicNow, now } from "../../lib/time";
 import { logger } from "../../lib/log";
-import {
-  setUsagePricingResolution$,
-  type UsagePricingResolution,
-} from "./usage-pricing-resolution";
 import { initHono$ } from "./hono";
 import { requestValidation$ } from "./request";
 import { setRootSignal$ } from "./root";
 import { safeSync } from "../utils";
-import {
-  setSystemSkillStorageResolution$,
-  type SystemSkillStorageResolution,
-} from "./system-skill-storage-resolution";
 
 export type SignalRouteHandler<T> = Computed<T> | Command<T, [AbortSignal]>;
 
@@ -37,8 +35,9 @@ export type JsonResponseObserver = (
 
 interface HonoSignalHandlerOptions {
   readonly initializeServices$: Command<void, []>;
-  readonly usagePricingResolution?: UsagePricingResolution;
-  readonly systemSkillStorageResolution?: SystemSkillStorageResolution;
+
+  readonly clientResponseTransforms: readonly ClientResponseTransform[];
+
   readonly observeJsonResponse?: JsonResponseObserver;
 }
 
@@ -127,8 +126,9 @@ export function honoSignalHandler(
   signal: AbortSignal,
   {
     initializeServices$,
-    usagePricingResolution,
-    systemSkillStorageResolution,
+
+    clientResponseTransforms,
+
     observeJsonResponse,
   }: HonoSignalHandlerOptions,
 ): Handler {
@@ -138,12 +138,6 @@ export function honoSignalHandler(
     store.set(setRootSignal$, signal);
     store.set(initHono$, context, contract, apiStartTime);
     store.set(initializeServices$);
-    if (usagePricingResolution) {
-      store.set(setUsagePricingResolution$, usagePricingResolution);
-    }
-    if (systemSkillStorageResolution) {
-      store.set(setSystemSkillStorageResolution$, systemSkillStorageResolution);
-    }
 
     // Mirror the contract client order: path/query validation
     // precedes auth and downstream services, so a malformed request returns
@@ -182,14 +176,34 @@ export function honoSignalHandler(
       return context.body(null, status);
     }
 
+    // Older clients receive the response shape they were built against. The
+    // transforms run on the body validated above and their output is the old
+    // contract by design, so it is not validated again. Both serialization
+    // paths below send, and observe, the transformed body.
+    const body = selectClientResponseTransforms({
+      transforms: clientResponseTransforms,
+      client: context.req.header(CLIENT_TYPE_HEADER),
+      version: context.req.header(CLIENT_VERSION_HEADER),
+      method: contract.method,
+      path: contract.path,
+      status,
+    }).reduce<unknown>((current, entry) => {
+      return entry.transform(current);
+    }, response.body);
+    if (body === undefined) {
+      throw new Error(
+        `Client response transform for ${contract.method} ${contract.path} returned no body`,
+      );
+    }
+
     if (!observeJsonResponse || status < 200 || status >= 300) {
-      return context.json(response.body, status as ContentfulStatusCode);
+      return context.json(body, status as ContentfulStatusCode);
     }
 
     const serializationStartedAt = monotonicNow();
-    const serialized = JSON.stringify(response.body);
+    const serialized = JSON.stringify(body);
     if (serialized === undefined) {
-      throw new Error("Validated JSON response could not be serialized");
+      throw new Error("JSON response could not be serialized");
     }
     const serializationDurationMs = Math.max(
       0,

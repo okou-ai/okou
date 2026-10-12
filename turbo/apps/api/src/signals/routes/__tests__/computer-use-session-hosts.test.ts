@@ -3,9 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   computerUseSessionHostsContract as contract,
   computerUseHostsContract,
-  computerUseHeartbeatContract,
   computerUseCommandContract,
-  computerUseHostCommandsContract,
 } from "@okouai/api-contracts/contracts/computer-use";
 
 import {
@@ -68,7 +66,7 @@ async function app() {
 }
 
 describe("Native Computer Use session authentication", () => {
-  it("requires an upgrade at registration, including legacy clients that claim a supported version", async () => {
+  it("enforces the supported Native version at registration", async () => {
     const api = await app();
     authenticate(identity());
     desktopCompatibility.minimumSupportedVersion = "0.51.0";
@@ -80,13 +78,6 @@ describe("Native Computer Use session authentication", () => {
       error: { code: "DESKTOP_UPDATE_REQUIRED" },
       minimumSupportedVersion: "0.51.0",
     });
-    await accept(
-      api(computerUseHostsContract).start({
-        headers,
-        body: { ...runtimeBody, appVersion: "99.0.0" },
-      }),
-      [426],
-    );
     await accept(
       api(contract).register({
         headers,
@@ -173,71 +164,6 @@ describe("Native Computer Use session authentication", () => {
     await accept(client.stop({ headers, params, body }), [200]);
   });
 
-  it("drains legacy work after activation even when its stored version claims to be current", async () => {
-    const api = await app();
-    authenticate(identity());
-    const runtime = { ...runtimeBody, appVersion: "99.0.0" };
-    const legacy = (
-      await accept(
-        api(computerUseHostsContract).start({ headers, body: runtime }),
-        [200],
-      )
-    ).body;
-    const legacyHeaders = { authorization: `Bearer ${legacy.hostToken}` };
-    const created = (
-      await accept(
-        api(computerUseCommandContract).create({
-          headers,
-          body: { kind: "apps.list" },
-        }),
-        [200],
-      )
-    ).body;
-    await accept(
-      api(computerUseHostCommandsContract).next({
-        headers: legacyHeaders,
-        body: {},
-      }),
-      [200],
-    );
-    desktopCompatibility.minimumSupportedVersion = "0.51.0";
-    await accept(
-      api(computerUseHostCommandsContract).next({
-        headers: legacyHeaders,
-        body: {},
-      }),
-      [426],
-    );
-    const listed = (
-      await accept(api(computerUseHostsContract).list({ headers }), [200])
-    ).body;
-    expect(listed.hosts).toContainEqual(
-      expect.objectContaining({ id: legacy.hostId, status: "offline" }),
-    );
-    await accept(
-      api(computerUseHeartbeatContract).heartbeat({
-        headers: legacyHeaders,
-        body: runtime,
-      }),
-      [200],
-    );
-    await accept(
-      api(computerUseHostCommandsContract).complete({
-        headers: legacyHeaders,
-        params: { commandId: created.commandId },
-        body: { status: "succeeded", result: { apps: [] } },
-      }),
-      [200],
-    );
-    await accept(
-      api(computerUseHeartbeatContract).stop({
-        headers: legacyHeaders,
-        body: {},
-      }),
-      [200],
-    );
-  });
-
   it("registers, claims, reports, and stops using only a Clerk session", async () => {
     const api = await app();
     const client = api(contract);
@@ -250,6 +176,10 @@ describe("Native Computer Use session authentication", () => {
     expect(registered.body).toStrictEqual({
       hostId: expect.any(String),
       connectionGeneration: 1,
+      commandNotifications: {
+        channelName: `computer-use-host:${actor.userId}:${actor.orgId}:${registered.body.hostId}:1`,
+        eventName: "commandsChanged",
+      },
     });
     const params = { hostId: registered.body.hostId };
     const body = { connectionGeneration: registered.body.connectionGeneration };
@@ -309,6 +239,220 @@ describe("Native Computer Use session authentication", () => {
     );
   });
 
+  it.each([
+    ["succeeded", 29_999],
+    ["succeeded", 30_000],
+    ["failed", 29_999],
+    ["failed", 30_000],
+  ] as const)(
+    "refreshes liveness for %s completion at %i ms and preserves the result through retries",
+    async (status, completionAge) => {
+      const startedAt = Date.parse("2026-10-12T01:00:00Z");
+      mockNow(startedAt);
+      const api = await app();
+      const client = api(contract);
+      authenticate(identity());
+      const registered = (
+        await accept(client.register({ headers, body: runtimeBody }), [200])
+      ).body;
+      const params = { hostId: registered.hostId };
+      const generation = {
+        connectionGeneration: registered.connectionGeneration,
+      };
+      const created = await accept(
+        api(computerUseCommandContract).create({
+          headers,
+          body: { kind: "apps.list", timeoutMs: 60_000 },
+        }),
+        [200],
+      );
+      const claimed = await accept(
+        client.next({ headers, params, body: generation }),
+        [200],
+      );
+      expect(claimed.body).toMatchObject({
+        status: "command",
+        command: { id: created.body.commandId },
+      });
+      const completedParams = { ...params, commandId: created.body.commandId };
+      const succeeded = {
+        ...generation,
+        status: "succeeded" as const,
+        result: { apps: [] },
+      };
+      const failed = {
+        ...generation,
+        status: "failed" as const,
+        error: {
+          code: "app_not_found" as const,
+          message: "The requested app is unavailable",
+        },
+      };
+      mockNow(startedAt + completionAge);
+      await accept(
+        client.complete({
+          headers,
+          params: completedParams,
+          body: status === "succeeded" ? succeeded : failed,
+        }),
+        [200],
+      );
+      const initialDirectory = await accept(
+        api(computerUseHostsContract).list({ headers }),
+        [200],
+      );
+      expect(initialDirectory.body.hosts).toContainEqual(
+        expect.objectContaining({
+          id: registered.hostId,
+          status: "online",
+          lastSeenAt: new Date(
+            startedAt + (completionAge === 30_000 ? completionAge : 0),
+          ).toISOString(),
+        }),
+      );
+      const original = (
+        await accept(
+          api(computerUseCommandContract).get({
+            headers,
+            params: { commandId: created.body.commandId },
+          }),
+          [200],
+        )
+      ).body;
+      expect(original).toMatchObject({
+        status,
+        completedAt: new Date(startedAt + completionAge).toISOString(),
+        ...(status === "succeeded"
+          ? { result: succeeded.result }
+          : { error: failed.error }),
+      });
+      for (const retryAge of [30_000, 59_999, 60_000]) {
+        mockNow(startedAt + retryAge);
+        const retried = await accept(
+          client.complete({
+            headers,
+            params: completedParams,
+            body: status === "succeeded" ? failed : succeeded,
+          }),
+          [200],
+        );
+        expect(retried.body).toStrictEqual({ ok: true });
+        const directory = await accept(
+          api(computerUseHostsContract).list({ headers }),
+          [200],
+        );
+        expect(directory.body.hosts).toContainEqual(
+          expect.objectContaining({
+            id: registered.hostId,
+            status: "online",
+            lastSeenAt: new Date(
+              startedAt + (retryAge === 60_000 ? retryAge : 30_000),
+            ).toISOString(),
+          }),
+        );
+        const observed = await accept(
+          api(computerUseCommandContract).get({
+            headers,
+            params: { commandId: created.body.commandId },
+          }),
+          [200],
+        );
+        expect(observed.body).toStrictEqual(original);
+      }
+    },
+  );
+
+  it("acknowledges a completion that loses to timeout during screenshot storage without refreshing liveness", async () => {
+    const startedAt = Date.parse("2026-10-12T02:00:00Z");
+    mockNow(startedAt);
+    const api = await app();
+    const client = api(contract);
+    authenticate(identity());
+    const hostBody = { ...runtimeBody, supportedCapabilities: ["app.state"] };
+    const registered = (
+      await accept(client.register({ headers, body: hostBody }), [200])
+    ).body;
+    const created = await accept(
+      api(computerUseCommandContract).create({
+        headers,
+        body: { kind: "app.state", app: "Calculator", timeoutMs: 1000 },
+      }),
+      [200],
+    );
+    const claimed = await accept(
+      client.next({
+        headers,
+        params: { hostId: registered.hostId },
+        body: { connectionGeneration: registered.connectionGeneration },
+      }),
+      [200],
+    );
+    expect(claimed.body).toMatchObject({
+      status: "command",
+      command: { id: created.body.commandId },
+    });
+    context.mocks.s3.send.mockImplementationOnce(async () => {
+      mockNow(startedAt + 30_000);
+      const expired = await accept(
+        api(computerUseCommandContract).get({
+          headers,
+          params: { commandId: created.body.commandId },
+        }),
+        [200],
+      );
+      expect(expired.body).toMatchObject({
+        status: "failed",
+        error: { code: "timeout" },
+        completedAt: new Date(startedAt + 30_000).toISOString(),
+      });
+      return {};
+    });
+    const completed = await accept(
+      client.complete({
+        headers,
+        params: {
+          hostId: registered.hostId,
+          commandId: created.body.commandId,
+        },
+        body: {
+          connectionGeneration: registered.connectionGeneration,
+          status: "succeeded",
+          result: {
+            screenshot: `data:image/png;base64,${Buffer.from("test-png").toString("base64")}`,
+            screenshotWidth: 800,
+            screenshotHeight: 600,
+          },
+        },
+      }),
+      [200],
+    );
+    expect(completed.body).toStrictEqual({ ok: true });
+    const observed = await accept(
+      api(computerUseCommandContract).get({
+        headers,
+        params: { commandId: created.body.commandId },
+      }),
+      [200],
+    );
+    expect(observed.body).toMatchObject({
+      status: "failed",
+      error: { code: "timeout" },
+      completedAt: new Date(startedAt + 30_000).toISOString(),
+    });
+    expect(observed.body).not.toHaveProperty("result");
+    const directory = await accept(
+      api(computerUseHostsContract).list({ headers }),
+      [200],
+    );
+    expect(directory.body.hosts).toContainEqual(
+      expect.objectContaining({
+        id: registered.hostId,
+        status: "online",
+        lastSeenAt: new Date(startedAt).toISOString(),
+      }),
+    );
+  });
+
   it("rejects another user, organization, session, and replaced connection", async () => {
     const api = await app();
     const client = api(contract);
@@ -339,6 +483,10 @@ describe("Native Computer Use session authentication", () => {
     expect(second).toStrictEqual({
       hostId: first.hostId,
       connectionGeneration: 2,
+      commandNotifications: {
+        channelName: `computer-use-host:${owner.userId}:${owner.orgId}:${first.hostId}:2`,
+        eventName: "commandsChanged",
+      },
     });
     await accept(
       client.stop({
@@ -358,16 +506,43 @@ describe("Native Computer Use session authentication", () => {
     );
   });
 
-  it.each(["session", "membership"])(
-    "stops admission after remote %s revocation while the JWT is still accepted",
-    async (revocation) => {
-      mockNow(Date.parse("2026-10-08T01:00:00Z"));
+  it.each([
+    ["session", "heartbeat"],
+    ["session", "next"],
+    ["session", "complete"],
+    ["session", "stop"],
+    ["membership", "heartbeat"],
+    ["membership", "next"],
+    ["membership", "complete"],
+    ["membership", "stop"],
+  ] as const)(
+    "expires cached authority after remote %s revocation before %s",
+    async (revocation, operation) => {
+      const registeredAt = Date.parse("2026-10-08T01:00:00Z");
+      mockNow(registeredAt);
       const api = await app();
       const client = api(contract);
       authenticate(identity());
       const registered = (
         await accept(client.register({ headers, body: runtimeBody }), [200])
       ).body;
+      const params = { hostId: registered.hostId };
+      const body = { connectionGeneration: registered.connectionGeneration };
+      const created = await accept(
+        api(computerUseCommandContract).create({
+          headers,
+          body: { kind: "apps.list", timeoutMs: 60_000 },
+        }),
+        [200],
+      );
+      const claimed = await accept(
+        client.next({ headers, params, body }),
+        [200],
+      );
+      expect(claimed.body).toMatchObject({
+        status: "command",
+        command: { id: created.body.commandId },
+      });
       if (revocation === "session") {
         context.mocks.clerk.sessions.getSession.mockResolvedValue({
           status: "revoked",
@@ -377,15 +552,39 @@ describe("Native Computer Use session authentication", () => {
           { data: [], totalCount: 0 },
         );
       }
-      mockNow(Date.parse("2026-10-08T01:00:31Z"));
+      mockNow(registeredAt + 29_999);
       await accept(
-        client.next({
+        client.heartbeat({
           headers,
-          params: { hostId: registered.hostId },
-          body: { connectionGeneration: registered.connectionGeneration },
+          params,
+          body: { ...runtimeBody, ...body },
         }),
-        [409],
+        [200],
       );
+      mockNow(registeredAt + 30_000);
+      if (operation === "heartbeat") {
+        await accept(
+          client.heartbeat({
+            headers,
+            params,
+            body: { ...runtimeBody, ...body },
+          }),
+          [409],
+        );
+      } else if (operation === "next") {
+        await accept(client.next({ headers, params, body }), [409]);
+      } else if (operation === "complete") {
+        await accept(
+          client.complete({
+            headers,
+            params: { ...params, commandId: created.body.commandId },
+            body: { ...body, status: "succeeded", result: { apps: [] } },
+          }),
+          [409],
+        );
+      } else {
+        await accept(client.stop({ headers, params, body }), [409]);
+      }
       const listed = await accept(
         api(computerUseHostsContract).list({ headers }),
         [200],
@@ -428,49 +627,6 @@ describe("Native Computer Use session authentication", () => {
     expect(inactive.body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("preserves legacy routes without issuing a host token to the Native protocol", async () => {
-    const api = await app();
-    const actor = identity();
-    authenticate(actor);
-    const legacy = (
-      await accept(
-        api(computerUseHostsContract).start({ headers, body: runtimeBody }),
-        [200],
-      )
-    ).body;
-    await accept(
-      api(computerUseHeartbeatContract).heartbeat({
-        headers: { authorization: `Bearer ${legacy.hostToken}` },
-        body: runtimeBody,
-      }),
-      [200],
-    );
-    const native = (
-      await accept(
-        api(contract).register({ headers, body: runtimeBody }),
-        [200],
-      )
-    ).body;
-    expect(native.hostId).toBe(legacy.hostId);
-    await accept(
-      api(computerUseHostCommandsContract).next({
-        headers: { authorization: `Bearer ${legacy.hostToken}` },
-        body: {},
-      }),
-      [401],
-    );
-    await accept(
-      api(contract).heartbeat({
-        headers,
-        params: { hostId: native.hostId },
-        body: {
-          ...runtimeBody,
-          connectionGeneration: native.connectionGeneration,
-        },
-      }),
-      [200],
-    );
-  });
   it("does not let a new connection report an older connection's action", async () => {
     const api = await app();
     const client = api(contract);
@@ -531,70 +687,93 @@ describe("Native Computer Use session authentication", () => {
     expect(observed.body.status).toBe("running");
   });
 
-  it("rejects a connection replaced during screenshot upload without confirming its result", async () => {
-    const api = await app();
-    const client = api(contract);
-    authenticate(identity());
-    const hostBody = { ...runtimeBody, supportedCapabilities: ["app.state"] };
-    const first = (
-      await accept(client.register({ headers, body: hostBody }), [200])
-    ).body;
-    const created = await accept(
-      api(computerUseCommandContract).create({
-        headers,
-        body: { kind: "app.state", app: "Calculator", timeoutMs: 10_000 },
-      }),
-      [200],
-    );
-    const claimed = await accept(
-      client.next({
-        headers,
-        params: { hostId: first.hostId },
-        body: { connectionGeneration: first.connectionGeneration },
-      }),
-      [200],
-    );
-    expect(claimed.body).toMatchObject({
-      status: "command",
-      command: { id: created.body.commandId },
-    });
-    context.mocks.s3.send.mockImplementationOnce(async () => {
-      const replacement = await accept(
-        client.register({ headers, body: hostBody }),
+  it.each(["replaced", "stopped"])(
+    "rejects a connection %s during screenshot upload without confirming its result",
+    async (invalidation) => {
+      const api = await app();
+      const client = api(contract);
+      const actor = identity();
+      authenticate(actor);
+      const hostBody = { ...runtimeBody, supportedCapabilities: ["app.state"] };
+      const first = (
+        await accept(client.register({ headers, body: hostBody }), [200])
+      ).body;
+      const created = await accept(
+        api(computerUseCommandContract).create({
+          headers,
+          body: { kind: "app.state", app: "Calculator", timeoutMs: 10_000 },
+        }),
         [200],
       );
-      expect(replacement.body).toStrictEqual({
-        hostId: first.hostId,
-        connectionGeneration: first.connectionGeneration + 1,
+      const claimed = await accept(
+        client.next({
+          headers,
+          params: { hostId: first.hostId },
+          body: { connectionGeneration: first.connectionGeneration },
+        }),
+        [200],
+      );
+      expect(claimed.body).toMatchObject({
+        status: "command",
+        command: { id: created.body.commandId },
       });
-      return {};
-    });
-    const rejected = await accept(
-      client.complete({
-        headers,
-        params: { hostId: first.hostId, commandId: created.body.commandId },
-        body: {
-          connectionGeneration: first.connectionGeneration,
-          status: "succeeded",
-          result: {
-            screenshot: `data:image/png;base64,${Buffer.from("test-png").toString("base64")}`,
-            screenshotWidth: 800,
-            screenshotHeight: 600,
+      context.mocks.s3.send.mockImplementationOnce(async () => {
+        if (invalidation === "replaced") {
+          const replacement = await accept(
+            client.register({ headers, body: hostBody }),
+            [200],
+          );
+          expect(replacement.body).toStrictEqual({
+            hostId: first.hostId,
+            connectionGeneration: first.connectionGeneration + 1,
+            commandNotifications: {
+              channelName: `computer-use-host:${actor.userId}:${actor.orgId}:${first.hostId}:${first.connectionGeneration + 1}`,
+              eventName: "commandsChanged",
+            },
+          });
+        } else {
+          const stopped = await accept(
+            client.stop({
+              headers,
+              params: { hostId: first.hostId },
+              body: { connectionGeneration: first.connectionGeneration },
+            }),
+            [200],
+          );
+          expect(stopped.body).toStrictEqual({
+            ok: true,
+            hostId: first.hostId,
+          });
+        }
+        return {};
+      });
+      const rejected = await accept(
+        client.complete({
+          headers,
+          params: { hostId: first.hostId, commandId: created.body.commandId },
+          body: {
+            connectionGeneration: first.connectionGeneration,
+            status: "succeeded",
+            result: {
+              screenshot: `data:image/png;base64,${Buffer.from("test-png").toString("base64")}`,
+              screenshotWidth: 800,
+              screenshotHeight: 600,
+            },
           },
-        },
-      }),
-      [409],
-    );
-    expect(rejected.body.error.code).toBe("HOST_CONNECTION_INVALID");
-    const observed = await accept(
-      api(computerUseCommandContract).get({
-        headers,
-        params: { commandId: created.body.commandId },
-      }),
-      [200],
-    );
-    expect(observed.body.status).toBe("running");
-  });
+        }),
+        [409],
+      );
+      expect(rejected.body.error.code).toBe("HOST_CONNECTION_INVALID");
+      const observed = await accept(
+        api(computerUseCommandContract).get({
+          headers,
+          params: { commandId: created.body.commandId },
+        }),
+        [200],
+      );
+      expect(observed.body.status).toBe("running");
+    },
+  );
 
   it("pauses after expired validation during a Clerk outage and recovers the same connection", async () => {
     mockNow(Date.parse("2026-10-08T02:00:00Z"));

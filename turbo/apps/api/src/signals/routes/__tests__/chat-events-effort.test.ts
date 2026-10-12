@@ -18,7 +18,7 @@ const {
   waitForThreadMessages,
   cancelChatRun,
   configureSubscriptionPiModel,
-  mockPiCheckpointObjectStore,
+  mockPiObjectStore,
 } = createChatEventsFixture(context);
 
 describe("CHAT effort: thread configuration", () => {
@@ -31,7 +31,7 @@ describe("CHAT effort: thread configuration", () => {
       agentId,
       model,
     });
-    mockPiCheckpointObjectStore();
+    mockPiObjectStore();
     const sent = await sendChatRun(actor, {
       agentId,
       threadId: thread.id,
@@ -141,7 +141,7 @@ describe("CHAT effort: thread configuration", () => {
         ? configureSubscriptionPiModel(actor, {}, model)
         : api.ensurePersonalSubscriptionModel(actor, { model }));
       if (pi) {
-        mockPiCheckpointObjectStore();
+        mockPiObjectStore();
       }
       const thread = await chat.createThread(actor, {
         agentId,
@@ -281,7 +281,7 @@ describe("CHAT effort: thread configuration", () => {
         Date.parse(queued.body.createdAt ?? ""),
       );
       if (pi) {
-        mockPiCheckpointObjectStore();
+        mockPiObjectStore();
       }
       await cancelChatRun(actor, active.runId, activeClaim.sandboxHeaders);
       const messages = await waitForThreadMessages(

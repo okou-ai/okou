@@ -567,7 +567,7 @@ const enqueueCanonicalSlackMessage$ = command(
       readonly canonicalAssets: readonly CanonicalSlackInputAsset[];
     },
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const enqueuedModel = await set(
       resolveEnqueuedChatInputModel$,
       {
@@ -594,7 +594,7 @@ const enqueueCanonicalSlackMessage$ = command(
       slackContext: args.slackContext,
       createdAt: args.ingress.createdAt,
     } as const;
-    await set(
+    const enqueuedId = await set(
       enqueueIntegrationChatInput$,
       {
         orgId: args.orgId,
@@ -605,6 +605,7 @@ const enqueueCanonicalSlackMessage$ = command(
       signal,
     );
     signal.throwIfAborted();
+    return enqueuedId !== null;
   },
 );
 
@@ -712,11 +713,14 @@ const persistClaimedCanonicalSlackIngress$ = command(
     { set },
     ingressId: string,
     signal: AbortSignal,
-  ): Promise<PersistedCanonicalSlackIngress> => {
+  ): Promise<PersistedCanonicalSlackIngress | undefined> => {
     const db = set(writeDb$);
     const ingress = await loadClaimedIngress(db, ingressId);
     signal.throwIfAborted();
-    if (!ingress?.chatThreadId || !ingress.orgId) {
+    if (!ingress) {
+      return undefined;
+    }
+    if (!ingress.chatThreadId || !ingress.orgId) {
       throw new Error("Canonical Slack ingress route is incomplete");
     }
     const chatThreadId = ingress.chatThreadId;
@@ -774,7 +778,7 @@ const persistClaimedCanonicalSlackIngress$ = command(
         error: permalinkResult.error,
       });
     }
-    await set(
+    const enqueued = await set(
       enqueueCanonicalSlackMessage$,
       {
         ingress,
@@ -797,6 +801,9 @@ const persistClaimedCanonicalSlackIngress$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (!enqueued) {
+      return undefined;
+    }
     return persistedCanonicalSlackIngress(
       client,
       ingress,
@@ -900,6 +907,19 @@ export const processCanonicalSlackIngress$ = command(
           signal,
         );
         signal.throwIfAborted();
+        if (!ingress) {
+          const target = await set(
+            canonicalSlackThreadStatusTargetForIngress$,
+            args.ingressId,
+            signal,
+          );
+          signal.throwIfAborted();
+          if (target) {
+            await set(clearCanonicalSlackThreadStatusIfIdle$, target, signal);
+            signal.throwIfAborted();
+          }
+          return false;
+        }
         waitUntil(
           set(finishCanonicalSlackEnqueue$, ingress, args.ingressId, signal),
         );

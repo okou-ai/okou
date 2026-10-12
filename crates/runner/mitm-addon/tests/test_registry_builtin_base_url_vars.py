@@ -74,7 +74,7 @@ def _builtin_firewall(name: str) -> dict:
         "shopify": "https://${{ vars.SHOPIFY_SHOP }}.myshopify.com/admin/api/2025-01",
         "snowflake": "https://${{ vars.SNOWFLAKE_ACCOUNT }}.snowflakecomputing.com/api",
         "strapi": "${{ vars.STRAPI_BASE_URL }}",
-        "zendesk": "https://${{ vars.ZENDESK_SUBDOMAIN }}.zendesk.com",
+        "test-subdomain": "https://${{ vars.SUBDOMAIN_TEST_SUBDOMAIN }}.example.com",
     }
     host_policy_by_name = {
         "jira": {"kind": "providerOwned", "suffixes": ["atlassian.net"]},
@@ -119,9 +119,9 @@ class TestRegistryBuiltinBaseUrlVars:
         path = tmp_path / "registry.json"
         write_builtin_firewall_registry(
             path,
-            run_id="run-zendesk",
-            name="zendesk",
-            base_url_vars={"ZENDESK_SUBDOMAIN": "acme"},
+            run_id="run-test-subdomain",
+            name="test-subdomain",
+            base_url_vars={"SUBDOMAIN_TEST_SUBDOMAIN": "acme"},
         )
 
         context = registry.get_sandbox_context("10.200.0.1", str(path))
@@ -129,7 +129,7 @@ class TestRegistryBuiltinBaseUrlVars:
         assert context is not None
         sandbox_info, compiled_firewalls, _ = context
         assert compiled_firewalls is not None
-        assert sandbox_info["firewalls"][0]["apis"][0]["base"] == "https://acme.zendesk.com"
+        assert sandbox_info["firewalls"][0]["apis"][0]["base"] == "https://acme.example.com"
 
     def test_builtin_trailing_authority_fragment_resolves_with_provider_policy(self, tmp_path):
         name = "audit"
@@ -184,7 +184,7 @@ class TestRegistryBuiltinBaseUrlVars:
         ("base_url_vars", "expected_message"),
         [
             ([], "baseUrlVars must be an object"),
-            ({"ZENDESK_SUBDOMAIN": 1}, "baseUrlVars must contain string values"),
+            ({"SUBDOMAIN_TEST_SUBDOMAIN": 1}, "baseUrlVars must contain string values"),
         ],
     )
     def test_malformed_base_url_vars_reject_sandbox(
@@ -193,9 +193,9 @@ class TestRegistryBuiltinBaseUrlVars:
         path = tmp_path / "registry.json"
         write_builtin_firewall_registry(
             path,
-            run_id="run-zendesk",
-            name="zendesk",
-            base_url_vars={"ZENDESK_SUBDOMAIN": "acme"},
+            run_id="run-test-subdomain",
+            name="test-subdomain",
+            base_url_vars={"SUBDOMAIN_TEST_SUBDOMAIN": "acme"},
         )
         data = json.loads(path.read_text())
         data["sandboxes"]["10.200.0.1"]["firewalls"][0]["baseUrlVars"] = base_url_vars
@@ -1007,13 +1007,13 @@ class TestRegistryBuiltinBaseUrlVars:
         path = tmp_path / "registry.json"
         write_builtin_firewall_registry(
             path,
-            run_id="run-zendesk",
-            name="zendesk",
+            run_id="run-test-subdomain",
+            name="test-subdomain",
             base_url_vars={},
         )
 
         invalid_sandbox = assert_invalid_builtin_sandbox(path)
-        assert "ZENDESK_SUBDOMAIN" in invalid_sandbox.message
+        assert "SUBDOMAIN_TEST_SUBDOMAIN" in invalid_sandbox.message
 
     def test_builtin_firewall_entry_does_not_read_top_level_vars(self, tmp_path):
         path = tmp_path / "registry.json"
@@ -1022,11 +1022,11 @@ class TestRegistryBuiltinBaseUrlVars:
                 {
                     "sandboxes": {
                         "10.200.0.1": {
-                            "runId": "run-zendesk",
+                            "runId": "run-test-subdomain",
                             "billableFirewalls": [],
                             "cliAgentType": "claude-code",
-                            "vars": {"ZENDESK_SUBDOMAIN": "top-level"},
-                            "firewalls": [{"kind": "builtin", "name": "zendesk"}],
+                            "vars": {"SUBDOMAIN_TEST_SUBDOMAIN": "top-level"},
+                            "firewalls": [{"kind": "builtin", "name": "test-subdomain"}],
                         }
                     },
                     "updatedAt": 0,
@@ -1034,13 +1034,13 @@ class TestRegistryBuiltinBaseUrlVars:
             )
         )
         cache_path = _cache_path_for_registry(path)
-        _write_catalog_cache(cache_path, {"zendesk": _builtin_firewall("zendesk")})
+        _write_catalog_cache(cache_path, {"test-subdomain": _builtin_firewall("test-subdomain")})
         builtin_firewall_cache.ctx.options.okou_builtin_firewall_catalog_cache_path = str(
             cache_path
         )
 
         invalid_sandbox = assert_invalid_builtin_sandbox(path)
-        assert "ZENDESK_SUBDOMAIN" in invalid_sandbox.message
+        assert "SUBDOMAIN_TEST_SUBDOMAIN" in invalid_sandbox.message
 
     def test_unknown_builtin_firewall_entry_is_omitted(self, tmp_path):
         path = tmp_path / "registry.json"
@@ -1049,7 +1049,7 @@ class TestRegistryBuiltinBaseUrlVars:
             run_id="run-missing",
             name="missing-firewall",
             base_url_vars={},
-            cache_firewall=_builtin_firewall("zendesk"),
+            cache_firewall=_builtin_firewall("test-subdomain"),
         )
 
         context = registry.get_sandbox_context("10.200.0.1", str(path))

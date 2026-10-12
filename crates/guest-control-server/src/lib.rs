@@ -19,6 +19,7 @@ mod guest_dns_readiness;
 mod guest_state_restore;
 mod guest_storage_manifest;
 mod handlers;
+mod home_drive_mount;
 mod log;
 mod memory_snapshot;
 mod oom_evidence;
@@ -33,17 +34,16 @@ mod threading;
 mod user;
 mod wait;
 mod worker_ownership;
-mod workspace_drive_mount;
 mod writer;
 
 pub use connection::handle_connection_with_test_dns_readiness_program;
 pub use connection::handle_connection_with_test_guest_agent_program;
 pub use connection::handle_connection_with_test_guest_state_restore_program;
+pub use connection::handle_connection_with_test_home_drive_mount_program;
 pub use connection::handle_connection_with_test_memory_snapshot_path;
 pub use connection::handle_connection_with_test_storage_manifest_program;
 pub use connection::handle_connection_with_test_storage_manifest_timeout_gate;
 pub use connection::handle_connection_with_test_storage_resources;
-pub use connection::handle_connection_with_test_workspace_drive_mount_program;
 pub use connection::{
     connect_unix, connect_vsock, handle_connection,
     handle_connection_with_test_process_containment,

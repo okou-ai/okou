@@ -12,7 +12,6 @@ export type WorkflowAutomationEventType = z.infer<
 export type WorkflowAutomationEventPayload = Readonly<Record<string, unknown>>;
 
 export interface WorkflowAutomationEventPolicy {
-  readonly activePreviousRunPolicy: "allow" | "block";
   readonly recordLastRunId: boolean;
   readonly recordLastRunAt: boolean;
 }
@@ -667,19 +666,16 @@ const AGENT_EVENT_CONTEXT: Readonly<
 };
 
 const EVENT_SOURCE_POLICY = {
-  activePreviousRunPolicy: "allow",
   recordLastRunId: false,
   recordLastRunAt: true,
 } as const;
 const SCHEDULE_POLICY = {
-  activePreviousRunPolicy: "block",
   recordLastRunId: true,
   // The poller records the fire time during its optimistic schedule claim.
   // Queue launch must not replace it with a later drain time.
   recordLastRunAt: false,
 } as const;
 const MANUAL_POLICY = {
-  activePreviousRunPolicy: "block",
   recordLastRunId: true,
   recordLastRunAt: true,
 } as const;

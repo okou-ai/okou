@@ -74,6 +74,7 @@ export const startRunBuiltInAdmission$ = command(
 
     const runId = args.runId;
     const writeDb = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0236; new non-billing transactions are prohibited.
     return await writeDb.transaction(async (tx) => {
       await tx
         .select({ id: agentRuns.id })

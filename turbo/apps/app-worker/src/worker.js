@@ -1,5 +1,7 @@
 import { createClerkClient } from "@clerk/backend";
 import { derivePlatformServiceOrigin } from "@okouai/core/platform-service-origin";
+import { artifactOgHtml } from "@okouai/core/artifact-og";
+import { artifactOgMetadataSchema } from "@okouai/api-contracts/contracts/artifact-og-metadata";
 
 import posthogClientMetadata from "../assets/posthog-metadata.json" with { type: "json" };
 
@@ -61,7 +63,7 @@ const OKOU_APP_METADATA = {
     "An AI teammate that connects to 3,000+ tools: get the right data, run agentic workflows, and deliver finished work with team-wide context.",
   documentTitle: "AI Teammate for Real Work — More Done, Same Team | Okou",
   openGraphTitle: "AI Teammate for Real Work — More Done, Same Team | Okou",
-  socialImagePath: "web/okou-og-image-373c892e.png",
+  socialImagePath: "web/okou-og-image-rudy-final-60db1bc00fa7.png",
   staticAssetsOrigin: "https://static.okou.io",
   twitterDescription:
     "An AI teammate that connects to 3,000+ tools: get the right data, run agentic workflows, and deliver finished work with team-wide context.",
@@ -823,6 +825,71 @@ function withAppHeaders(response, requestUrl) {
   });
 }
 
+async function artifactPageResponse(
+  request,
+  requestUrl,
+  embeddedShell,
+  apiFetcher,
+) {
+  const reference =
+    /^\/artifacts\/((?:[a-f0-9]{32}|[a-z0-9]{10})(?:\.[a-z0-9]{1,12})?)$/u.exec(
+      requestUrl.pathname,
+    )?.[1] ??
+    /^\/share\/artifacts\/([a-f0-9-]{36})$/u
+      .exec(requestUrl.pathname)?.[1]
+      ?.replaceAll("-", "");
+  if (!reference) return null;
+  const origin = apiOrigin(requestUrl);
+  const url = new URL("/api/artifact-og/metadata", origin);
+  url.search = new globalThis.URLSearchParams({
+    kind: "reference",
+    id: reference,
+  }).toString();
+  let metadata;
+  try {
+    // OG always represents anonymous visibility, regardless of the visitor's session.
+    const result = await apiFetcher(url, {
+      headers: metaRequestHeaders(requestUrl, origin),
+      cache: "no-store",
+      // Workers supports manual redirects; the non-OK check below rejects them.
+      redirect: "manual",
+      signal: globalThis.AbortSignal.any([
+        request.signal,
+        globalThis.AbortSignal.timeout(3000),
+      ]),
+    });
+    if (!result.ok) {
+      globalThis.console.error(
+        "Artifact OG metadata unavailable",
+        result.status,
+      );
+      return null;
+    }
+    const parsed = artifactOgMetadataSchema.parse(await result.json());
+    if (!parsed.available) return null;
+    metadata = {
+      ...parsed,
+      url: new URL(requestUrl.pathname, requestUrl.origin).href,
+    };
+  } catch (error) {
+    if (request.signal.aborted) throw error;
+    globalThis.console.error("Artifact OG metadata unavailable", error);
+    return null;
+  }
+  const shell = await fetchShellAsset(
+    new Request(new URL("/index.html", requestUrl)),
+    embeddedShell,
+  );
+  if (!shell.ok) return shell;
+  const html = previewAppAssetHtml(await shell.text(), requestUrl);
+  return htmlResponse(
+    artifactOgHtml(html, metadata, "replace-all"),
+    shell,
+    200,
+    "private, no-store",
+  );
+}
+
 async function handleRequest(
   request,
   env,
@@ -831,6 +898,19 @@ async function handleRequest(
   clerkClientFactory,
   apiFetcher,
 ) {
+  if (
+    request.method === "GET" &&
+    (requestUrl.pathname.startsWith("/artifacts/") ||
+      requestUrl.pathname.startsWith("/share/artifacts/"))
+  ) {
+    const artifactResponse = await artifactPageResponse(
+      request,
+      requestUrl,
+      embeddedShell,
+      apiFetcher,
+    );
+    if (artifactResponse) return artifactResponse;
+  }
   if (
     (request.method === "GET" || request.method === "HEAD") &&
     requestUrl.pathname.startsWith(APP_ASSET_PATH_PREFIX)
@@ -957,6 +1037,8 @@ export function createWorker(
       ) {
         const headers = new Headers(result.headers);
         headers.set("Cache-Control", "private, no-store");
+        headers.set("CDN-Cache-Control", "no-store");
+        headers.set("Cloudflare-CDN-Cache-Control", "no-store");
         headers.set("Referrer-Policy", "no-referrer");
         return new Response(result.body, { status: result.status, headers });
       }

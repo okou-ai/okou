@@ -267,9 +267,7 @@ try {
   // A rerun finds nothing left to clear.
   const afterThreads = await threads();
   const afterOwnerEvents = await events(ownerId);
-  await sql.begin(async (tx) => {
-    for (const statement of migration.sql) await tx.unsafe(statement);
-  });
+  await sql.unsafe(migration.sql.join("\n")).simple();
   assert.deepEqual(await threads(), afterThreads);
   assert.deepEqual(await events(ownerId), afterOwnerEvents);
 

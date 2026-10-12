@@ -27,24 +27,21 @@ async fn execute_blank(
     let mut context = codex_oauth_context();
     context.reuse_key = Some("thread:blank-prefetch-recovery".into());
     let sandbox_id = sandbox.id().parse().unwrap();
-    let workspace_image = match &config.workspace_cache {
+    let home_image = match &config.home_cache {
         Some(cache) => Some(
             cache
-                .lease_active(
-                    crate::workspace_image_cache::WorkspaceImageActiveLeaseRequest {
-                        identity: WorkspaceImageLeaseIdentity {
-                            run_id: context.run_id,
-                            sandbox_id,
-                            profile_name: "vm0/default",
-                            reuse_key: context.reuse_key(),
-                            working_dir: CANONICAL_WORKING_DIR,
-                            image_size_bytes: u64::from(default_params().workspace_disk_mb)
-                                * 1024
-                                * 1024,
-                        },
-                        workspace_drive_available: true,
+                .lease_active(crate::home_image_cache::HomeImageLeaseRequest {
+                    identity: HomeImageLeaseIdentity {
+                        rootfs_hash: "test-rootfs",
+                        run_id: context.run_id,
+                        sandbox_id,
+                        profile_name: "vm0/default",
+                        reuse_key: context.reuse_key(),
+                        working_dir: CANONICAL_WORKING_DIR,
+                        image_size_bytes: u64::from(default_params().home_disk_mb) * 1024 * 1024,
                     },
-                )
+                    home_drive_available: true,
+                })
                 .await,
         ),
         None => None,
@@ -60,7 +57,7 @@ async fn execute_blank(
             },
             source_ip: sandbox.source_ip().to_string(),
             sandbox,
-            workspace_image,
+            home_image,
             kind: IdleSandboxKind::Blank,
         },
         &context,
@@ -68,7 +65,7 @@ async fn execute_blank(
         RunStart {
             restore_guest_state: true,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+            home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -129,7 +126,7 @@ async fn blank_prefetch_retires_before_one_replacement_and_one_agent() {
         assert_eq!(overrides.start_process_calls().len(), 1);
         assert_eq!(overrides.start_agent_process_calls().len(), 1);
         assert_eq!(overrides.guest_state_restore_calls().len(), 1);
-        assert_eq!(overrides.workspace_drive_mount_calls(), 1);
+        assert_eq!(overrides.home_drive_mount_calls(), 1);
         assert_telemetry_action(&telemetry, REPLACEMENT, true, None);
         assert_telemetry_action(
             &telemetry,
@@ -174,7 +171,7 @@ async fn blank_prefetch_success_and_safe_failure_bypass_fresh_admission() {
         assert_eq!(overrides.start_process_calls().len(), 1);
         assert_eq!(overrides.start_agent_process_calls().len(), 1);
         assert!(overrides.guest_state_restore_calls().is_empty());
-        assert_eq!(overrides.workspace_drive_mount_calls(), 0);
+        assert_eq!(overrides.home_drive_mount_calls(), 0);
         assert_no_telemetry_action(&telemetry, REPLACEMENT);
         assert_no_telemetry_action(&telemetry, "runner_fresh_pre_spawn_admission_wait");
         drop(holder);
@@ -192,7 +189,7 @@ async fn blank_prefetch_uncertain_destroy_suppresses_replacement_and_guest_clean
         execute_blank(config, Arc::clone(&overrides), CancellationToken::new()).await;
     assert_eq!(outcome.exit_code(), 1);
     assert!(outcome.sandbox.is_none());
-    assert!(outcome.workspace_image.is_none());
+    assert!(outcome.home_image.is_none());
     assert!(outcome.network_log_session.is_none());
     assert_eq!(overrides.create_configs().len(), 1);
     assert!(overrides.start_agent_process_calls().is_empty());
@@ -255,7 +252,7 @@ async fn blank_prefetch_replacement_failure_cannot_retry_again() {
 async fn blank_prefetch_replacement_releases_old_workspace_lease() {
     let dir = tempfile::tempdir().unwrap();
     let mut config = test_executor_config(dir.path()).await;
-    config.workspace_cache = Some(WorkspaceImageCache::new(RunnerPaths::new(
+    config.home_cache = Some(HomeImageCache::new(RunnerPaths::new(
         dir.path().join("runner"),
     )));
     let overrides = Arc::new(MockSandboxOverrides::new());
@@ -263,8 +260,8 @@ async fn blank_prefetch_replacement_releases_old_workspace_lease() {
     let (outcome, _) = execute_blank(config, overrides, CancellationToken::new()).await;
     assert_eq!(outcome.exit_code(), 0);
     assert_eq!(
-        outcome.workspace_image.unwrap().result(),
-        WorkspaceCacheCheckoutResult::Miss
+        outcome.home_image.unwrap().result(),
+        HomeCacheCheckoutResult::Miss
     );
 }
 

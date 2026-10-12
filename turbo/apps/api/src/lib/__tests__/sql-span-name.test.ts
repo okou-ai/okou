@@ -101,8 +101,7 @@ describe("deriveSqlSpanName", () => {
       ).toBeNull();
     });
 
-    it("begin / commit control statements", () => {
-      expect(deriveSqlSpanName("begin")).toBeNull();
+    it("commit control statement", () => {
       expect(deriveSqlSpanName("commit")).toBeNull();
     });
   });

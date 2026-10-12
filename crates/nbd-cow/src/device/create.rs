@@ -12,10 +12,9 @@ use uuid::Uuid;
 
 use super::NbdCowDevice;
 use super::connection::{
-    ConnectedDevice, OwnedDisconnectState, connect_device_with_state_critical_section,
-    disconnect_connected_if_owned_result_with_kernel,
+    ConnectedDevice, DeferredCreateCleanup, OwnedDisconnectState,
+    connect_device_with_state_critical_section, disconnect_connected_if_owned_result_with_kernel,
     disconnect_connected_if_owned_result_with_lease_and_kernel,
-    disconnect_connected_if_owned_with_kernel,
 };
 use super::create_timing::{
     NbdCowCreateObserver, NbdCowCreateStage, NbdCowCreateTiming, NbdNetlinkConnectTiming,
@@ -34,6 +33,7 @@ struct CreateAttemptGuard<K: CreateKernel = NativeKernel> {
     server_handles: Vec<JoinHandle<()>>,
     connected: Option<ConnectedDevice>,
     kernel: K,
+    runtime: tokio::runtime::Handle,
 }
 
 #[derive(Clone, Copy)]
@@ -332,6 +332,7 @@ impl<K: CreateKernel> CreateAttemptGuard<K> {
             server_handles: Vec::with_capacity(NUM_CONNECTIONS),
             connected: None,
             kernel,
+            runtime: tokio::runtime::Handle::current(),
         }
     }
 
@@ -620,7 +621,8 @@ impl<K: CreateKernel> Drop for CreateAttemptGuard<K> {
             handle.abort();
         }
         if let Some(connected) = self.connected.take() {
-            disconnect_connected_if_owned_with_kernel(connected, &self.kernel);
+            DeferredCreateCleanup::new(connected, self.pool.clone(), self.lease.take())
+                .dispatch(&self.runtime, self.kernel.clone());
         }
         if let Some(lease) = self.lease.take() {
             let device_index = lease.index();
@@ -702,6 +704,8 @@ impl NbdCowDevice {
     }
 }
 
+#[cfg(test)]
+mod cancellation_tests;
 #[cfg(test)]
 mod size_retry_tests;
 

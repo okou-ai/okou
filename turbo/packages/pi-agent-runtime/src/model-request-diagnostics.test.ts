@@ -19,6 +19,7 @@ import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 import rateLimitMessage from "./test/fixtures/codex-rate-limit.json";
 import cyberSafetyRefusal from "./test/fixtures/codex-cyber-safety-refusal.json";
+import requestProcessingError from "./test/fixtures/codex-request-processing-error.json";
 import { piModelFailureReason } from "./model-request-diagnostics";
 import { normalizeContext } from "@earendil-works/pi-ai";
 
@@ -242,6 +243,12 @@ describe("Codex model request diagnostics", () => {
 
   it.each([
     {
+      message: requestProcessingError.errorMessage.slice(
+        "Codex error: ".length,
+      ),
+      reason: "provider_server_error",
+    },
+    {
       message: "Our servers are currently overloaded. Please try again later.",
       reason: "provider_overloaded",
     },
@@ -291,23 +298,27 @@ describe("Codex model request diagnostics", () => {
     },
   );
 
-  it("does not classify successful assistant text as a terminal refusal", async () => {
-    let requests = 0;
-    server.use(
-      http.post(endpoint, () => {
-        requests++;
-        return successResponse(cyberSafetyRefusal.errorMessage);
-      }),
-    );
-    const result = await stream().result();
-    expect(result.stopReason).toBe("stop");
-    expect(result.content).toMatchObject([
-      { type: "text", text: cyberSafetyRefusal.errorMessage },
-    ]);
-    expect(result.diagnostics).toBeUndefined();
-    expect(piModelFailureReason(result)).toBeUndefined();
-    expect(requests).toBe(1);
-  });
+  it.each([
+    cyberSafetyRefusal.errorMessage,
+    requestProcessingError.errorMessage,
+  ])(
+    "does not classify successful assistant text as a terminal failure: %s",
+    async (message) => {
+      let requests = 0;
+      server.use(
+        http.post(endpoint, () => {
+          requests++;
+          return successResponse(message);
+        }),
+      );
+      const result = await stream().result();
+      expect(result.stopReason).toBe("stop");
+      expect(result.content).toMatchObject([{ type: "text", text: message }]);
+      expect(result.diagnostics).toBeUndefined();
+      expect(piModelFailureReason(result)).toBeUndefined();
+      expect(requests).toBe(1);
+    },
+  );
 
   it.each(["events", "result"])(
     "preserves the shared rate-limit fixture via %s",

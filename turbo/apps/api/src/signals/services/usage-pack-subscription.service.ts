@@ -130,7 +130,7 @@ const PAYABLE_USAGE_PACK_ALLOCATION_STATUSES = [
   "active",
   "pending_invitation",
 ] as const;
-const MANAGED_USAGE_PACK_ALLOCATION_STATUSES = [
+export const MANAGED_USAGE_PACK_ALLOCATION_STATUSES = [
   ...PAYABLE_USAGE_PACK_ALLOCATION_STATUSES,
   "paid_pending_invitation",
 ] as const;
@@ -146,7 +146,7 @@ const USAGE_PACK_PURCHASE_SNAPSHOT_STATUSES = [
   "checkout_pending",
   "purchase_pending",
 ] as const;
-const TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES = [
+export const TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES = [
   "canceled",
   "incomplete_expired",
   "invalid",
@@ -1005,6 +1005,7 @@ async function correlateUsagePackCheckout(
     readonly tier: CreateUsagePackCheckoutSessionArgs["tier"];
   },
 ): Promise<UsagePackCheckoutCorrelation> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0301; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const correlated = await tx
       .update(usagePackSubscriptions)
@@ -1689,6 +1690,7 @@ async function retireUsagePackPurchaseClaim(
   orgId: string,
   usagePackSubscriptionId: string,
 ): Promise<void> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0302; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     const updatedAt = nowDate();
     const [retired] = await tx
@@ -2184,39 +2186,45 @@ function oneUsagePackSubscriptionId(
   return ids.values().next().value ?? null;
 }
 
-async function boundUsagePackSubscriptionId(
+async function resolveUsagePackSubscriptionId(
   db: Pick<Db, "select">,
-  stripeSubscriptionId: string | null,
-  includeTerminal: boolean,
+  args: {
+    readonly stripeSubscriptionId: string | null;
+    readonly metadata: readonly (
+      Readonly<Record<string, string>> | null | undefined
+    )[];
+    readonly includeTerminalBinding?: boolean;
+  },
 ): Promise<string | null> {
-  if (!stripeSubscriptionId) {
-    return null;
-  }
-  const [subscription] = await db
-    .select({ id: usagePackSubscriptions.id })
-    .from(usagePackSubscriptions)
-    .where(
-      includeTerminal
-        ? eq(usagePackSubscriptions.stripeSubscriptionId, stripeSubscriptionId)
-        : and(
-            eq(
+  const stripeSubscriptionId = args.stripeSubscriptionId;
+  const includeTerminal = args.includeTerminalBinding ?? false;
+  if (stripeSubscriptionId) {
+    const [subscription] = await db
+      .select({ id: usagePackSubscriptions.id })
+      .from(usagePackSubscriptions)
+      .where(
+        includeTerminal
+          ? eq(
               usagePackSubscriptions.stripeSubscriptionId,
               stripeSubscriptionId,
+            )
+          : and(
+              eq(
+                usagePackSubscriptions.stripeSubscriptionId,
+                stripeSubscriptionId,
+              ),
+              notInArray(usagePackSubscriptions.subscriptionStatus, [
+                ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
+              ]),
             ),
-            notInArray(usagePackSubscriptions.subscriptionStatus, [
-              ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
-            ]),
-          ),
-    )
-    .limit(1);
-  return subscription?.id ?? null;
-}
-
-async function activeMetadataUsagePackSubscriptionId(
-  db: Pick<Db, "select">,
-  metadata: readonly (Readonly<Record<string, string>> | null | undefined)[],
-): Promise<string | null> {
-  const metadataId = oneUsagePackSubscriptionId(...metadata);
+      )
+      .limit(1);
+    const boundId = subscription?.id ?? null;
+    if (boundId) {
+      return boundId;
+    }
+  }
+  const metadataId = oneUsagePackSubscriptionId(...args.metadata);
   if (!metadataId) {
     return null;
   }
@@ -2233,63 +2241,6 @@ async function activeMetadataUsagePackSubscriptionId(
     )
     .limit(1);
   return subscription?.id ?? null;
-}
-
-export async function stripeSubscriptionUsesMemberUsagePacks(
-  db: Pick<Db, "select">,
-  args: {
-    readonly orgId: string;
-    readonly stripeSubscriptionId: string;
-  },
-): Promise<boolean> {
-  const [allocation] = await db
-    .select({ id: usagePackAllocations.id })
-    .from(usagePackSubscriptions)
-    .innerJoin(
-      usagePackAllocations,
-      eq(
-        usagePackAllocations.usagePackSubscriptionId,
-        usagePackSubscriptions.id,
-      ),
-    )
-    .where(
-      and(
-        eq(usagePackSubscriptions.orgId, args.orgId),
-        eq(
-          usagePackSubscriptions.stripeSubscriptionId,
-          args.stripeSubscriptionId,
-        ),
-        notInArray(usagePackSubscriptions.subscriptionStatus, [
-          ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
-        ]),
-        inArray(usagePackAllocations.status, [
-          ...MANAGED_USAGE_PACK_ALLOCATION_STATUSES,
-        ]),
-      ),
-    )
-    .limit(1);
-  return allocation !== undefined;
-}
-
-async function resolveUsagePackSubscriptionId(
-  db: Pick<Db, "select">,
-  args: {
-    readonly stripeSubscriptionId: string | null;
-    readonly metadata: readonly (
-      Readonly<Record<string, string>> | null | undefined
-    )[];
-    readonly includeTerminalBinding?: boolean;
-  },
-): Promise<string | null> {
-  const boundId = await boundUsagePackSubscriptionId(
-    db,
-    args.stripeSubscriptionId,
-    args.includeTerminalBinding ?? false,
-  );
-  if (boundId) {
-    return boundId;
-  }
-  return await activeMetadataUsagePackSubscriptionId(db, args.metadata);
 }
 
 function stripeObjectId(value: StripeObjectReference | null | undefined) {
@@ -2787,6 +2738,7 @@ const publishUsagePackCheckoutState$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     const { subscription } = args;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0303; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       // Conditioned on the root state this decision was made from.
       const roots = await tx
@@ -3569,6 +3521,7 @@ const commitUsagePackPlanActivation$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     const orgId = args.context.subscription.orgId;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0304; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       // The subscription write below is conditional on the root status and
       // prepared allocation set it was decided from, and the pending count is
@@ -3783,6 +3736,7 @@ const commitUsagePackFulfillment$ = command(
     const prepared = fulfillmentPreparedWrites(args);
     const orgId = args.context.subscription.orgId;
     await set(expireFirstPaidUpgradeDebt$, orgId, signal);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0305; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       // Duplicate invoice deliveries queue on the root rows below and then see
       // the committed receipt; the receipt primary key and the grant
@@ -4073,6 +4027,7 @@ const retireReconciledUsagePackSnapshot$ = command(
   ): Promise<void> => {
     signal.throwIfAborted();
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0306; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       // The retirement below is a conditional status transition.
       const roots = await tx

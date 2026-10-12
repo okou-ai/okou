@@ -189,7 +189,7 @@ function logAgentRunCompletionOutcome(
 function runOutputInputForCompletion(
   input: CompleteAgentRunInput,
 ): AgentRunOutputInput | null {
-  const completion = input.body.completion ?? input.body.checkpoint;
+  const completion = input.body.completion;
   if (!completion) {
     return null;
   }
@@ -328,9 +328,9 @@ async function applyCancelledCompletionMetadata(
           sandboxReuseResult: sql`coalesce(${agentRuns.sandboxReuseResult}, ${input.body.sandboxReuseResult})`,
         }
       : {}),
-    ...(input.body.workspaceReuseResult !== undefined
+    ...(input.body.homeReuseResult !== undefined
       ? {
-          workspaceReuseResult: sql`coalesce(${agentRuns.workspaceReuseResult}, ${input.body.workspaceReuseResult})`,
+          homeReuseResult: sql`coalesce(${agentRuns.homeReuseResult}, ${input.body.homeReuseResult})`,
         }
       : {}),
   };
@@ -382,7 +382,7 @@ async function applyTerminalCompletion(
       ...(prepared.result !== undefined ? { result: prepared.result } : {}),
       sandboxId: input.body.sandboxId,
       sandboxReuseResult: input.body.sandboxReuseResult,
-      workspaceReuseResult: input.body.workspaceReuseResult,
+      homeReuseResult: input.body.homeReuseResult,
     },
     conditions: [
       eq(agentRuns.id, input.body.runId),
@@ -811,6 +811,7 @@ export function createAgentRunCompletion(runId: string, userId: string) {
       let expectedChatThreadId = initialRun.chatThreadId;
       let commit: ReleasedCompletionCommit;
       while (true) {
+        // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0050; new non-billing transactions are prohibited.
         const result = await db.transaction(async (tx) => {
           const transition = await completeAgentRunTransition(
             tx,

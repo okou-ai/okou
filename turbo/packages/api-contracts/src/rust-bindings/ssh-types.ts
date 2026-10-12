@@ -218,6 +218,9 @@ export const sshTypeBindings = [
             "SSH authentication after protected carrier and host proof.",
           ],
           access: ["Private Access authority for the exact saved recipient."],
+          tailscale: [
+            "Private network authority, never guest data or an SSH login.",
+          ],
           host: ["Current destination, private to Runner."],
           port: ["Current destination port."],
           username: ["Current login identity."],
@@ -234,6 +237,9 @@ export const sshTypeBindings = [
             "Authorized protected carrier and SSH credential handoff.",
           ],
           unavailable: ["Current authority not available; no secrets."],
+          resolved_tailscale: [
+            "Authorized SSH/network handoff; requires qualified native carrier.",
+          ],
           resolved: ["Authorized current credential handoff."],
           resolved_password: [
             "Authorized current password credential handoff.",
@@ -254,6 +260,19 @@ export const sshTypeBindings = [
         variants: {
           private_key: ["SSH private key."],
           password: ["SSH password."],
+        },
+      },
+      {
+        rustTypeName: "ResolveResponseResolvedTailscaleTailscale",
+        rustDoc: [
+          "Write-only OAuth authority for trusted ephemeral registration; never SDK, guest or log data.",
+        ],
+        fields: {
+          configId: ["Exact selected configuration UUID."],
+          generation: ["Effective network generation."],
+          tags: ["Bounded permitted registration tags."],
+          clientId: ["Bounded zeroizing OAuth client ID."],
+          clientSecret: ["Bounded zeroizing OAuth client secret."],
         },
       },
       {

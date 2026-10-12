@@ -1,5 +1,64 @@
 # Changelog
 
+## [0.21.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.21.0...guest-contracts-v0.21.1) (2026-10-12)
+
+
+### Refactoring
+
+* **runner:** retire workspace protocol and application sql ([#38837](https://github.com/okou-ai/okou/issues/38837)) ([a932f1f](https://github.com/okou-ai/okou/commit/a932f1f86ae10eb624fa3ff3bccc851ba4809a7e))
+
+## [0.21.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.20.2...guest-contracts-v0.21.0) (2026-10-11)
+
+
+### Features
+
+* **guest:** manage task runtimes and image batch workers ([#38762](https://github.com/okou-ai/okou/issues/38762)) ([dbb7241](https://github.com/okou-ai/okou/commit/dbb72412af7116f4e27419057023d51bbf203613))
+
+
+### Bug Fixes
+
+* **rust:** remove the release graph cycle between contracts and ipc ([#39029](https://github.com/okou-ai/okou/issues/39029)) ([5441dd6](https://github.com/okou-ai/okou/commit/5441dd60e2c24925c05cb2f38df002c396920b25))
+
+
+### Performance Improvements
+
+* **runner-network:** decouple dns readiness constants from firecracker ([#38859](https://github.com/okou-ai/okou/issues/38859)) ([78ce425](https://github.com/okou-ai/okou/commit/78ce4259eb3679b088a55c507c9d4962c263df4c))
+
+## [0.20.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.20.1...guest-contracts-v0.20.2) (2026-10-10)
+
+
+### Refactoring
+
+* name native history and pi memory publications explicitly ([#38679](https://github.com/okou-ai/okou/issues/38679)) ([e5b1d4e](https://github.com/okou-ai/okou/commit/e5b1d4ed7bd2f8b54e01352e762e1f9eec5c3a39))
+* simplify pi memory results and finalization diagnostics ([#38765](https://github.com/okou-ai/okou/issues/38765)) ([cdd6a0a](https://github.com/okou-ai/okou/commit/cdd6a0abe3f5880e98a02da8df5143232d7632e1))
+
+## [0.20.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.20.0...guest-contracts-v0.20.1) (2026-10-10)
+
+## [0.20.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.19.2...guest-contracts-v0.20.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+## [0.19.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.19.1...guest-contracts-v0.19.2) (2026-10-10)
+
+## [0.19.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.19.0...guest-contracts-v0.19.1) (2026-10-10)
+
+## [0.19.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.11...guest-contracts-v0.19.0) (2026-10-09)
+
+
+### Features
+
+* **storage:** prepare large decoded storage readers (1/2) ([#38396](https://github.com/okou-ai/okou/issues/38396)) ([fe12503](https://github.com/okou-ai/okou/commit/fe12503564388499b06ba2b42f45b33fe641a032))
+
+## [0.18.11](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.10...guest-contracts-v0.18.11) (2026-10-09)
+
+
+### Bug Fixes
+
+* **guest-agent:** describe terminal event delivery failures accurately ([#38356](https://github.com/okou-ai/okou/issues/38356)) ([9a32460](https://github.com/okou-ai/okou/commit/9a3246062f207542dcc8d7af66dad9f97210b498))
+
 ## [0.18.10](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.9...guest-contracts-v0.18.10) (2026-10-09)
 
 

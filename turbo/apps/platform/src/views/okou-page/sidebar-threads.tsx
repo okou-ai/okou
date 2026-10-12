@@ -59,7 +59,6 @@ import {
   deleteChatThread$,
   renameChatThread$,
 } from "../../signals/chat-page/chat-event.ts";
-import { chatThreadContainerElement$ } from "../../signals/chat-page/chat-keyboard.ts";
 import {
   createNewChatThread$,
   newChatThreadDisabled$,
@@ -119,6 +118,15 @@ const CHAT_THREAD_ROW_ICON_CLASS = "[&_svg]:size-[17px]";
 // One spatial cycle spans 12 rows: 200ms per row at the existing 2.4s cadence.
 const RUNNING_INDICATOR_WAVE_ROWS = 12;
 const CHAT_THREADS_CONTENT_ID = "sidebar-chat-threads-content";
+
+// Labels never wrap: the menu grows past its minimum when a label shares its
+// row with a long shortcut such as Ctrl+Shift+X.
+function chatThreadMenuContentClassName(touch: boolean) {
+  return cn(
+    "min-w-56 whitespace-nowrap",
+    touch && "[&_[role=menuitem]]:min-h-11",
+  );
+}
 
 function ChatThreadMenuShortcut({ shortcut }: { readonly shortcut: string }) {
   return (
@@ -459,7 +467,7 @@ function ChatThreadMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"
-          className={cn("w-56", touch && "[&_[role=menuitem]]:min-h-11")}
+          className={chatThreadMenuContentClassName(touch)}
           data-chat-thread-menu-thread-id={signals.threadId}
         >
           <ChatThreadPinMenuItems signals={signals} />
@@ -650,7 +658,6 @@ function ChatThreadRenameDialog() {
   const closeRenameChatThreadDialog = useSet(closeRenameChatThreadDialog$);
   const setRenameDialogInput = useSet(setRenameDialogInput$);
   const renameChatThread = useSet(renameChatThread$);
-  const chatThreadContainerElement = useSet(chatThreadContainerElement$);
   const pageSignal = useGet(pageSignal$);
 
   function closeRenameDialog() {
@@ -682,13 +689,7 @@ function ChatThreadRenameDialog() {
         }
       }}
     >
-      <DialogContent
-        finalFocus={() => {
-          return renameDialogThreadId
-            ? chatThreadContainerElement(renameDialogThreadId)
-            : null;
-        }}
-      >
+      <DialogContent finalFocus={false}>
         <DialogHeader>
           <DialogTitle>
             {t(($) => {
@@ -837,6 +838,11 @@ function useSelectChatThreadFilter() {
   };
 }
 
+// Switching filters is a secondary action, so it reads as neutral text rather
+// than the brand link colour.
+const CHAT_THREAD_FILTER_ACTION_CLASS_NAME =
+  "font-normal text-nav-copy hover:text-nav-copy active:text-nav-copy/80 focus-visible:ring-inset focus-visible:ring-offset-0";
+
 function ShowAllChatsRow() {
   const { t } = useTranslation();
   const selectFilter = useSelectChatThreadFilter();
@@ -847,7 +853,10 @@ function ShowAllChatsRow() {
         type="button"
         variant="link"
         size="sm"
-        className="w-full justify-start px-2 font-normal leading-5 focus-visible:ring-inset focus-visible:ring-offset-0"
+        className={cn(
+          "w-full justify-start px-2 leading-5",
+          CHAT_THREAD_FILTER_ACTION_CLASS_NAME,
+        )}
         onClick={() => {
           selectFilter("all");
         }}
@@ -856,6 +865,38 @@ function ShowAllChatsRow() {
           return $.chat.sidebar.showAllChats;
         })}
       </Button>
+    </div>
+  );
+}
+
+// An empty list is one centred group: what is missing, then the way back.
+function ChatThreadListEmptyState({
+  message,
+  action,
+}: {
+  message: string;
+  action?: { readonly filter: ChatThreadFilter; readonly label: string };
+}) {
+  const selectFilter = useSelectChatThreadFilter();
+
+  return (
+    <div className="flex w-full flex-col items-center gap-1 px-4 py-4 text-center text-[13px] leading-5">
+      <p className="text-nav-copy-muted">{message}</p>
+      {action ? (
+        <Button
+          type="button"
+          variant="link"
+          className={cn(
+            "h-auto p-0 text-[13px] leading-5",
+            CHAT_THREAD_FILTER_ACTION_CLASS_NAME,
+          )}
+          onClick={() => {
+            selectFilter(action.filter);
+          }}
+        >
+          {action.label}
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -921,44 +962,6 @@ function VirtualizedChatThreads({
   );
 }
 
-function ArchivedChatThreadsEmptyState() {
-  const { t } = useTranslation();
-  const selectFilter = useSelectChatThreadFilter();
-
-  return (
-    <div className="flex flex-col items-center px-2 py-6 text-center">
-      <span
-        aria-hidden="true"
-        className="font-family-emoji text-xl leading-none"
-      >
-        🎉
-      </span>
-      <p className="mt-2 text-xs font-medium text-nav-copy">
-        {t(($) => {
-          return $.chat.sidebar.allCaughtUp;
-        })}
-      </p>
-      <p className="mt-1 text-xs leading-relaxed text-nav-copy-muted">
-        {t(($) => {
-          return $.chat.sidebar.allArchived;
-        })}
-      </p>
-      <Button
-        type="button"
-        variant="link"
-        className="mt-1 h-auto p-0 text-xs"
-        onClick={() => {
-          selectFilter("archived");
-        }}
-      >
-        {t(($) => {
-          return $.chat.sidebar.showArchivedChats;
-        })}
-      </Button>
-    </div>
-  );
-}
-
 function ChatThreads({
   listSignals,
 }: {
@@ -975,39 +978,53 @@ function ChatThreads({
   );
 
   if (threadCount === 0) {
+    const showAllChats = {
+      filter: "all",
+      label: t(($) => {
+        return $.chat.sidebar.showAllChats;
+      }),
+    } as const;
     if (mutedOnly) {
       return (
-        <div className="w-full">
-          <p className="px-2 py-2 text-xs text-nav-copy-muted leading-relaxed">
-            {t(($) => {
-              return $.chat.sidebar.noMuted;
-            })}
-          </p>
-          <ShowAllChatsRow />
-        </div>
+        <ChatThreadListEmptyState
+          message={t(($) => {
+            return $.chat.sidebar.noMuted;
+          })}
+          action={showAllChats}
+        />
       );
     }
     if (archiveEnabled && archivedOnly) {
       return (
-        <div className="w-full">
-          <p className="px-2 py-2 text-xs text-nav-copy-muted leading-relaxed">
-            {t(($) => {
-              return $.chat.sidebar.noArchived;
-            })}
-          </p>
-          <ShowAllChatsRow />
-        </div>
+        <ChatThreadListEmptyState
+          message={t(($) => {
+            return $.chat.sidebar.noArchived;
+          })}
+          action={showAllChats}
+        />
       );
     }
     if (hasHiddenArchivedThreads) {
-      return <ArchivedChatThreadsEmptyState />;
+      return (
+        <ChatThreadListEmptyState
+          message={t(($) => {
+            return $.chat.sidebar.inboxEmpty;
+          })}
+          action={{
+            filter: "archived",
+            label: t(($) => {
+              return $.chat.sidebar.showArchivedChats;
+            }),
+          }}
+        />
+      );
     }
     return (
-      <p className="px-2 py-2 text-xs text-nav-copy-muted leading-relaxed">
-        {t(($) => {
+      <ChatThreadListEmptyState
+        message={t(($) => {
           return $.chat.sidebar.empty;
         })}
-      </p>
+      />
     );
   }
   return <VirtualizedChatThreads listSignals={listSignals} />;
@@ -1214,7 +1231,7 @@ export function ChatThreadsListMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"
-          className={cn("w-56", touch && "[&_[role=menuitem]]:min-h-11")}
+          className={chatThreadMenuContentClassName(touch)}
         >
           {markAllReadAction.visible ? (
             <>
@@ -1229,6 +1246,40 @@ export function ChatThreadsListMenu({
   );
 }
 
+// With archiving on, a non-default filter names itself in the title so the list
+// never looks like the inbox while it shows archived, unread, or muted chats.
+function useChatThreadsFilteredTitleLabel() {
+  const { t } = useTranslation();
+  const { titleLabel } = useChatThreadsTitleLabels();
+  const unreadOnly = useGet(chatThreadOnlyUnread$);
+  const archivedOnly = useGet(chatThreadOnlyArchived$);
+  const mutedOnly = useGet(chatThreadOnlyMuted$);
+  const archiveEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
+  const filterLabel = unreadOnly
+    ? t(($) => {
+        return $.chat.sidebar.unreadOnly;
+      })
+    : archivedOnly
+      ? t(($) => {
+          return $.chat.sidebar.archived;
+        })
+      : mutedOnly
+        ? t(($) => {
+            return $.chat.sidebar.muted;
+          })
+        : null;
+  if (!archiveEnabled || filterLabel === null) {
+    return titleLabel;
+  }
+  return t(
+    ($) => {
+      return $.chat.sidebar.filteredTitle;
+    },
+    { filter: filterLabel, title: titleLabel },
+  );
+}
+
 function ChatThreadsTitle({
   showMarkAllRead,
   contentId,
@@ -1239,7 +1290,7 @@ function ChatThreadsTitle({
   collapsible: boolean;
 }) {
   const { t } = useTranslation();
-  const { titleLabel } = useChatThreadsTitleLabels();
+  const titleLabel = useChatThreadsFilteredTitleLabel();
   const newChatAction = useNewChatAction();
   const newChatLabel = t(($) => {
     return $.chat.newChat;
@@ -1386,14 +1437,17 @@ function UnreadChatThreadsContent({
   }
   if (list.data.items.length === 0) {
     return (
-      <div className="w-full">
-        <p className="px-2 py-2 text-xs text-nav-copy-muted leading-relaxed">
-          {t(($) => {
-            return $.chat.sidebar.noUnread;
-          })}
-        </p>
-        <ShowAllChatsRow />
-      </div>
+      <ChatThreadListEmptyState
+        message={t(($) => {
+          return $.chat.sidebar.noUnread;
+        })}
+        action={{
+          filter: "all",
+          label: t(($) => {
+            return $.chat.sidebar.showAllChats;
+          }),
+        }}
+      />
     );
   }
 

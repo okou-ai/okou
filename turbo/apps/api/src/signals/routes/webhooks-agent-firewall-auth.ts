@@ -4,12 +4,11 @@ import { webhookFirewallAuthContract } from "@okouai/api-contracts/contracts/web
 import { badRequestMessage } from "../../lib/error";
 import { authorization$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
-import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { isSandboxToken, verifySandboxToken } from "../auth/tokens";
 import {
   resolveBillableFirewallCacheExpiry$,
-  prepareFirewallAuthResponse,
+  prepareFirewallAuthResponse$,
   admitPreparedFirewallAuthResponse$,
 } from "../services/agent-webhook-firewall-auth.service";
 
@@ -74,11 +73,12 @@ const firewallAuthRoute$ = command(
       { auth, firewallBillable: bodyResult.data.firewallBillable },
       signal,
     );
-    const prepared = await prepareFirewallAuthResponse(
-      set(writeDb$),
+    const prepared = await set(
+      prepareFirewallAuthResponse$,
       auth,
       bodyResult.data,
       billableCacheExpiry,
+      signal,
     );
     signal.throwIfAborted();
     return await set(

@@ -31,6 +31,30 @@ pub(crate) fn is_codex_model_capacity_message(message: &str) -> bool {
         .contains(CODEX_MODEL_CAPACITY_MESSAGE)
 }
 
+/// Match the native Codex wrapper and complete OpenAI server-error signature.
+/// A bare stream disconnect does not establish a provider server error.
+pub(crate) fn is_codex_provider_server_error_message(message: &str) -> bool {
+    let normalized = message.trim().to_ascii_lowercase();
+    let normalized = normalized
+        .strip_prefix("error running remote compact task: ")
+        .unwrap_or(&normalized);
+    normalized
+        .strip_prefix(concat!(
+            "stream disconnected before completion: ",
+            "an error occurred while processing your request. ",
+            "you can retry your request, or contact us through our help center at ",
+            "help.openai.com if the error persists. ",
+            "please include the request id ",
+        ))
+        .and_then(|detail| detail.strip_suffix(" in your message."))
+        .is_some_and(|request_id| {
+            !request_id.is_empty()
+                && !request_id
+                    .chars()
+                    .any(|character| character.is_whitespace() || character.is_control())
+        })
+}
+
 /// Match only the native Codex terminal error for an incomplete provider response.
 /// Callers must establish that this is model failure text, not normal output.
 pub(crate) fn is_codex_output_token_limit_message(message: &str) -> bool {

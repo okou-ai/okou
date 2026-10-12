@@ -1,5 +1,3 @@
-use std::fs;
-use std::os::unix::fs::OpenOptionsExt;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,9 +11,7 @@ use tracing::Level;
 use tracing_subscriber::prelude::*;
 use tracing_test_support::CapturedEvents;
 
-use super::support::{
-    final_identity_metadata_bytes, final_identity_runtime_paths, local_sidecar_restore_plan,
-};
+use super::support::{final_identity_metadata_bytes, final_identity_runtime_paths};
 use crate::executor::agent_run::{ProcessCancelTimeouts, RunControls, RunStart, run_in_sandbox};
 use crate::executor::diagnostics::AgentStdoutStreamDiagnostics;
 use crate::executor::tests::support::{
@@ -27,9 +23,6 @@ use crate::executor::{
     EXIT_SIGKILL, PROCESS_CANCEL_TIMEOUTS, PROCESS_CANCEL_WRITE_TIMEOUT, SandboxReuseDisposition,
     SandboxReuseRejection, SandboxReuseTerminal, SessionHistoryMaterializer,
     SessionHistoryRestorePlan, effective_cli_framework,
-};
-use crate::workspace_image_cache::{
-    WorkspaceSessionHistorySidecar, WorkspaceSessionHistorySidecarRepresentation,
 };
 use runner_provider::RunCancellationHandle;
 use runner_types::types::{
@@ -206,7 +199,7 @@ async fn run_in_sandbox_preserves_wait_result_when_cancel_arrives_after_wait() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+            home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -235,99 +228,6 @@ async fn run_in_sandbox_preserves_wait_result_when_cancel_arrives_after_wait() {
             stream_incomplete: false,
         }
     );
-}
-
-#[tokio::test]
-async fn run_in_sandbox_reports_cancelled_while_workspace_sidecar_read_is_pending() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
-    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
-    let history = b"x";
-    let sidecar_path = dir.path().join("pending-session-history.blob");
-    nix::unistd::mkfifo(
-        &sidecar_path,
-        nix::sys::stat::Mode::from_bits_truncate(0o600),
-    )
-    .unwrap();
-    let writer_path = sidecar_path.clone();
-    let mut ctx = minimal_context();
-    ctx.resume_session = Some(ResumeSession {
-        cli_agent_session_id: "sess-sidecar-cancel-123".into(),
-        history: ResumeSessionHistory::Ref {
-            history_ref: ResumeSessionHistoryRef {
-                kind: ResumeSessionHistoryRefKind::Blob,
-                hash: hex::encode(Sha256::digest(history)),
-                url: "https://example.test/history.blob?token=secret".into(),
-                encoding: ResumeSessionHistoryEncoding::Identity,
-                raw_size: history.len() as u64,
-                encoded_size: history.len() as u64,
-                download_source: None,
-            },
-        },
-    });
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let run_cancel = cancel.clone();
-    let run_task = tokio::spawn(async move {
-        let restore_plan = local_sidecar_restore_plan(
-            &ctx,
-            &config,
-            WorkspaceSessionHistorySidecar {
-                path: sidecar_path,
-                representation: WorkspaceSessionHistorySidecarRepresentation::Raw,
-                encoded_size: history.len() as u64,
-            },
-            run_cancel.clone(),
-        )
-        .await;
-        let mut telemetry = test_telemetry(&config, &ctx);
-        run_in_sandbox(
-            &*sandbox,
-            &ctx,
-            &config,
-            RunStart {
-                restore_guest_state: false,
-                reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
-                prev_storage: None,
-            },
-            &mut telemetry,
-            RunControls::new(run_cancel, None).with_session_history_restore_plan(restore_plan),
-        )
-        .await
-    });
-
-    let writer = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, async {
-        loop {
-            match fs::OpenOptions::new()
-                .write(true)
-                .custom_flags(libc::O_NONBLOCK)
-                .open(&writer_path)
-            {
-                Ok(writer) => break writer,
-                Err(error) if error.raw_os_error() == Some(libc::ENXIO) => {
-                    tokio::task::yield_now().await;
-                }
-                Err(error) => panic!("open sidecar FIFO writer: {error}"),
-            }
-        }
-    })
-    .await
-    .expect("run should open the sidecar reader");
-    cancel.cancel();
-
-    let result = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, run_task)
-        .await
-        .expect("cancelled run should finish")
-        .unwrap()
-        .unwrap();
-    drop(writer);
-
-    let failure = result.failure.expect("cancelled run should fail");
-    assert_eq!(failure.exit_code, EXIT_SIGKILL);
-    assert_eq!(failure.error, "cancelled by user");
-    assert!(overrides.start_agent_process_calls().is_empty());
-    assert!(overrides.wait_process_calls().is_empty());
 }
 
 #[tokio::test]
@@ -387,7 +287,7 @@ async fn run_in_sandbox_reports_cancelled_while_session_history_download_is_pend
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+                home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -441,7 +341,7 @@ async fn run_in_sandbox_starts_no_guest_work_when_already_cancelled() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+            home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -513,7 +413,7 @@ async fn run_in_sandbox_preserves_ready_start_result_when_cancellation_arrives()
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+            home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,

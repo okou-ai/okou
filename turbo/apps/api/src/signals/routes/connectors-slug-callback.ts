@@ -24,12 +24,12 @@ import { db$, writeDb$, type Db } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { env, optionalEnv } from "../../lib/env";
 import {
-  claimConnectorOAuthState,
-  getConnectorOAuthStateStatus,
+  claimBuiltinConnectorOAuthState$,
+  getConnectorOAuthStateStatus$,
   type StoredBuiltinOAuthState,
 } from "../services/connector-oauth-state.service";
 import { authorizeConnectedConnector$ } from "../services/connected-connector-authorization.service";
-import { recordConnectorOAuthCompletion } from "../services/connector-oauth-completion.service";
+import { recordConnectorOAuthCompletion$ } from "../services/connector-oauth-completion.service";
 import { publishBuiltinConnectorInvalidationAfterCommit } from "../services/connector-client-invalidation.service";
 import {
   connectorActionResolverForSnapshot,
@@ -336,74 +336,78 @@ function resolveConnectorWithGrant(args: {
   return { ok: true, connector };
 }
 
-async function claimStoredOAuthStateForCallback(
-  args: {
-    readonly db: Db;
-    readonly state: string;
-    readonly connectorSlug: ConnectorSlug;
-    readonly origin: string;
-  },
-  signal: AbortSignal,
-): Promise<ClaimedCallbackState> {
-  const storedStateResolution = await claimConnectorOAuthState(
-    args.db,
-    {
-      state: args.state,
-      target: { kind: "builtin", connectorSlug: args.connectorSlug },
+const claimStoredOAuthStateForCallback$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: string;
+      readonly connectorSlug: ConnectorSlug;
+      readonly origin: string;
     },
-    signal,
-  );
-  if (storedStateResolution.kind === "invalid") {
-    return {
-      ok: false,
-      response: invalidStateRedirectResponse(args.origin, args.connectorSlug),
-    };
-  }
-  if (storedStateResolution.kind === "missing") {
-    return {
-      ok: false,
-      response: invalidStateRedirectResponse(args.origin, args.connectorSlug),
-    };
-  }
+    signal: AbortSignal,
+  ): Promise<ClaimedCallbackState> => {
+    const storedStateResolution = await set(
+      claimBuiltinConnectorOAuthState$,
+      {
+        state: args.state,
+        connectorSlug: args.connectorSlug,
+      },
+      signal,
+    );
+    if (storedStateResolution.kind === "invalid") {
+      return {
+        ok: false,
+        response: invalidStateRedirectResponse(args.origin, args.connectorSlug),
+      };
+    }
+    if (storedStateResolution.kind === "missing") {
+      return {
+        ok: false,
+        response: invalidStateRedirectResponse(args.origin, args.connectorSlug),
+      };
+    }
 
-  return {
-    ok: true,
-    storedState: storedStateResolution.state,
-  };
-}
-
-async function rejectInvalidStoredOAuthStateForCallback(
-  args: {
-    readonly db: Db;
-    readonly state: string;
-    readonly connectorSlug: ConnectorSlug;
-    readonly origin: string;
-  },
-  signal: AbortSignal,
-): Promise<
-  | { readonly ok: true; readonly origin: string }
-  | { readonly ok: false; readonly response: Response }
-> {
-  const status = await getConnectorOAuthStateStatus(
-    args.db,
-    {
-      state: args.state,
-      target: { kind: "builtin", connectorSlug: args.connectorSlug },
-    },
-    signal,
-  );
-  if (status.kind === "usable") {
     return {
       ok: true,
-      origin: appCallbackOrigin(),
+      storedState: storedStateResolution.state,
     };
-  }
+  },
+);
 
-  return {
-    ok: false,
-    response: invalidStateRedirectResponse(args.origin, args.connectorSlug),
-  };
-}
+const rejectInvalidStoredOAuthStateForCallback$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: string;
+      readonly connectorSlug: ConnectorSlug;
+      readonly origin: string;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | { readonly ok: true; readonly origin: string }
+    | { readonly ok: false; readonly response: Response }
+  > => {
+    const status = await set(
+      getConnectorOAuthStateStatus$,
+      {
+        state: args.state,
+        target: { kind: "builtin", connectorSlug: args.connectorSlug },
+      },
+      signal,
+    );
+    if (status.kind === "usable") {
+      return {
+        ok: true,
+        origin: appCallbackOrigin(),
+      };
+    }
+
+    return {
+      ok: false,
+      response: invalidStateRedirectResponse(args.origin, args.connectorSlug),
+    };
+  },
+);
 
 function invalidStoredAuthMethodResponse(
   origin: string,
@@ -639,12 +643,13 @@ const completeOAuthCallback$ = command(
     );
     signal.throwIfAborted();
 
-    await recordConnectorOAuthCompletion(
-      set(writeDb$),
+    await set(
+      recordConnectorOAuthCompletion$,
       {
         attemptId: args.oauthAttemptId,
         connectionId: result.connector.id,
-        ...args.identity,
+        orgId: args.identity.orgId,
+        userId: args.identity.userId,
       },
       signal,
     );
@@ -731,12 +736,13 @@ const completeOpenIdCallback$ = command(
       }
     }
 
-    await recordConnectorOAuthCompletion(
-      set(writeDb$),
+    await set(
+      recordConnectorOAuthCompletion$,
       {
         attemptId: args.oauthAttemptId,
         connectionId: result.connector.id,
-        ...args.identity,
+        orgId: args.identity.orgId,
+        userId: args.identity.userId,
       },
       signal,
     );
@@ -900,9 +906,9 @@ const handleOpenIdConnectorCallback$ = command(
       return missingStateRedirectResponse(args.origin, args.connectorSlug);
     }
 
-    const claimedState = await claimStoredOAuthStateForCallback(
+    const claimedState = await set(
+      claimStoredOAuthStateForCallback$,
       {
-        db: set(writeDb$),
         connectorSlug: args.connectorSlug,
         origin: args.origin,
         state,
@@ -980,137 +986,136 @@ function requestMatchesStoredCallback(
   );
 }
 
-async function authCodeCallbackPreflight(
-  db: Db,
-  args: {
-    readonly connectorSlug: ConnectorSlug;
-    readonly query: ConnectorCallbackQuery;
-    readonly request: Request;
-    readonly origin: string;
-    readonly snapshot: ConnectorRuntimeSelection;
-  },
-  signal: AbortSignal,
-): Promise<Response | null> {
-  const connectorResult = resolveConnectorWithGrant({
-    snapshot: args.snapshot,
-    connectorSlug: args.connectorSlug,
-    grantKind: "auth-code",
-    origin: args.origin,
-  });
-  if (!connectorResult.ok) {
-    return connectorResult.response;
-  }
-  if (args.query.responseMode === "json") {
-    return null;
-  }
-  const canonicalRedirectUrl =
-    getBuiltinConnectorOAuthCanonicalRedirectUrlForMethods(
-      args.request,
-      [...connectorResult.connector.methods.values()]
-        .filter((runtimeMethod) => {
-          return runtimeMethod.executable;
-        })
-        .map((runtimeMethod) => {
-          return runtimeMethod.method;
-        }),
-    );
-  if (!canonicalRedirectUrl) {
-    return null;
-  }
-  if (args.connectorSlug === "github" && args.query.state) {
-    const stateStatus = await getConnectorOAuthStateStatus(
-      db,
-      {
-        state: args.query.state,
-        target: { kind: "builtin", connectorSlug: args.connectorSlug },
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (
-      stateStatus.kind === "usable" &&
-      requestMatchesStoredCallback(args.request, stateStatus.redirectUri)
-    ) {
+const authCodeCallbackPreflight$ = command(
+  async (
+    { set },
+    args: {
+      readonly connectorSlug: ConnectorSlug;
+      readonly query: ConnectorCallbackQuery;
+      readonly request: Request;
+      readonly origin: string;
+      readonly snapshot: ConnectorRuntimeSelection;
+    },
+    signal: AbortSignal,
+  ): Promise<Response | null> => {
+    const connectorResult = resolveConnectorWithGrant({
+      snapshot: args.snapshot,
+      connectorSlug: args.connectorSlug,
+      grantKind: "auth-code",
+      origin: args.origin,
+    });
+    if (!connectorResult.ok) {
+      return connectorResult.response;
+    }
+    if (args.query.responseMode === "json") {
       return null;
     }
-  }
-  return connectorOAuthRedirectResponse(canonicalRedirectUrl);
-}
-
-function storedOAuthStateCallbackArgs(
-  db: Db,
-  args: { readonly connectorSlug: ConnectorSlug; readonly origin: string },
-) {
-  return {
-    db,
-    connectorSlug: args.connectorSlug,
-    origin: args.origin,
-  };
-}
-
-async function authCodeProviderErrorResponse(
-  db: Db,
-  args: {
-    readonly connectorSlug: ConnectorSlug;
-    readonly query: ConnectorCallbackQuery;
-    readonly origin: string;
-  },
-  signal: AbortSignal,
-): Promise<Response> {
-  let callbackOrigin = args.origin;
-  if (args.query.state) {
-    const claimedState = await claimStoredOAuthStateForCallback(
-      {
-        ...storedOAuthStateCallbackArgs(db, args),
-        state: args.query.state,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!claimedState.ok) {
-      return claimedState.response;
+    const canonicalRedirectUrl =
+      getBuiltinConnectorOAuthCanonicalRedirectUrlForMethods(
+        args.request,
+        [...connectorResult.connector.methods.values()]
+          .filter((runtimeMethod) => {
+            return runtimeMethod.executable;
+          })
+          .map((runtimeMethod) => {
+            return runtimeMethod.method;
+          }),
+      );
+    if (!canonicalRedirectUrl) {
+      return null;
     }
-    callbackOrigin = appCallbackOrigin();
-  }
-  return redirectWithError(
-    callbackOrigin,
-    args.connectorSlug,
-    args.query.error_description ||
-      args.query.error ||
-      "OAuth authorization failed",
-    true,
-  );
-}
-
-async function missingAuthCodeResponse(
-  db: Db,
-  args: {
-    readonly connectorSlug: ConnectorSlug;
-    readonly query: ConnectorCallbackQuery;
-    readonly origin: string;
-  },
-  signal: AbortSignal,
-): Promise<Response> {
-  let callbackOrigin = args.origin;
-  if (args.query.state) {
-    const stateStatus = await rejectInvalidStoredOAuthStateForCallback(
-      {
-        ...storedOAuthStateCallbackArgs(db, args),
-        state: args.query.state,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!stateStatus.ok) {
-      return stateStatus.response;
+    if (args.connectorSlug === "github" && args.query.state) {
+      const stateStatus = await set(
+        getConnectorOAuthStateStatus$,
+        {
+          state: args.query.state,
+          target: { kind: "builtin", connectorSlug: args.connectorSlug },
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (
+        stateStatus.kind === "usable" &&
+        requestMatchesStoredCallback(args.request, stateStatus.redirectUri)
+      ) {
+        return null;
+      }
     }
-    callbackOrigin = stateStatus.origin;
-  }
-  return missingAuthorizationCodeRedirectResponse(
-    callbackOrigin,
-    args.connectorSlug,
-  );
-}
+    return connectorOAuthRedirectResponse(canonicalRedirectUrl);
+  },
+);
+
+const authCodeProviderErrorResponse$ = command(
+  async (
+    { set },
+    args: {
+      readonly connectorSlug: ConnectorSlug;
+      readonly query: ConnectorCallbackQuery;
+      readonly origin: string;
+    },
+    signal: AbortSignal,
+  ): Promise<Response> => {
+    let callbackOrigin = args.origin;
+    if (args.query.state) {
+      const claimedState = await set(
+        claimStoredOAuthStateForCallback$,
+        {
+          connectorSlug: args.connectorSlug,
+          origin: args.origin,
+          state: args.query.state,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!claimedState.ok) {
+        return claimedState.response;
+      }
+      callbackOrigin = appCallbackOrigin();
+    }
+    return redirectWithError(
+      callbackOrigin,
+      args.connectorSlug,
+      args.query.error_description ||
+        args.query.error ||
+        "OAuth authorization failed",
+      true,
+    );
+  },
+);
+
+const missingAuthCodeResponse$ = command(
+  async (
+    { set },
+    args: {
+      readonly connectorSlug: ConnectorSlug;
+      readonly query: ConnectorCallbackQuery;
+      readonly origin: string;
+    },
+    signal: AbortSignal,
+  ): Promise<Response> => {
+    let callbackOrigin = args.origin;
+    if (args.query.state) {
+      const stateStatus = await set(
+        rejectInvalidStoredOAuthStateForCallback$,
+        {
+          connectorSlug: args.connectorSlug,
+          origin: args.origin,
+          state: args.query.state,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!stateStatus.ok) {
+        return stateStatus.response;
+      }
+      callbackOrigin = stateStatus.origin;
+    }
+    return missingAuthorizationCodeRedirectResponse(
+      callbackOrigin,
+      args.connectorSlug,
+    );
+  },
+);
 
 const handleAuthCodeConnectorCallback$ = command(
   async (
@@ -1129,8 +1134,8 @@ const handleAuthCodeConnectorCallback$ = command(
     if (args.query.state?.startsWith(SLACK_CONNECTOR_OAUTH_STATE_PREFIX)) {
       return invalidStateRedirectResponse(args.origin, args.connectorSlug);
     }
-    const preflightResponse = await authCodeCallbackPreflight(
-      set(writeDb$),
+    const preflightResponse = await set(
+      authCodeCallbackPreflight$,
       args,
       signal,
     );
@@ -1141,21 +1146,23 @@ const handleAuthCodeConnectorCallback$ = command(
     const state = args.query.state;
 
     if (args.query.error) {
-      return await authCodeProviderErrorResponse(set(writeDb$), args, signal);
+      return await set(authCodeProviderErrorResponse$, args, signal);
     }
 
     const code = args.query.code ?? args.query.auth_code;
     if (!code) {
-      return await missingAuthCodeResponse(set(writeDb$), args, signal);
+      return await set(missingAuthCodeResponse$, args, signal);
     }
 
     if (!state) {
       return missingStateRedirectResponse(args.origin, args.connectorSlug);
     }
 
-    const claimedState = await claimStoredOAuthStateForCallback(
+    const claimedState = await set(
+      claimStoredOAuthStateForCallback$,
       {
-        ...storedOAuthStateCallbackArgs(set(writeDb$), args),
+        connectorSlug: args.connectorSlug,
+        origin: args.origin,
         state,
       },
       signal,

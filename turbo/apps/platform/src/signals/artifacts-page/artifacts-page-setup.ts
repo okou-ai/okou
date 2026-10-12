@@ -9,6 +9,7 @@ import { updatePage$ } from "../react-router.ts";
 import { closeLightboxImmediately$ } from "../okou-page/attachment-chips.ts";
 import { historyState$, searchParams$ } from "../route.ts";
 import {
+  artifactCatalogSidebar,
   artifactCatalogKindFromSearchParams,
   artifactCatalogScrollTargetFromHistoryState,
   artifactIdFromCatalogSearchParams,
@@ -21,6 +22,14 @@ import {
 
 export const setupArtifactsPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    set(artifactCatalogSidebar.close$);
+    signal.addEventListener(
+      "abort",
+      () => {
+        set(artifactCatalogSidebar.close$);
+      },
+      { once: true },
+    );
     const routeSearchParams = new URLSearchParams(get(searchParams$));
     const artifactId = artifactIdFromCatalogSearchParams(routeSearchParams);
     const kind = artifactCatalogKindFromSearchParams(routeSearchParams);

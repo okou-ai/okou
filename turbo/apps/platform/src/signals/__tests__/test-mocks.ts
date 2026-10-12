@@ -613,8 +613,10 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       clipboardExecCommand: (): ClipboardExecCommandMock => {
         return mockClipboardExecCommand(getSignal());
       },
-      blobDownload: (): BrowserDownloadMock => {
-        return mockBlobDownload(getSignal());
+      blobDownload: (
+        options: { readonly deferRead?: boolean } = {},
+      ): BrowserDownloadMock => {
+        return mockBlobDownload(getSignal(), options.deferRead ?? false);
       },
       audioContext: (): void => {
         mockAudioContext(getSignal());
@@ -1051,7 +1053,10 @@ function mockClipboardExecCommand(
   return { writes };
 }
 
-function mockBlobDownload(signal: AbortSignal): BrowserDownloadMock {
+function mockBlobDownload(
+  signal: AbortSignal,
+  deferRead: boolean,
+): BrowserDownloadMock {
   const downloads: BrowserDownload[] = [];
   const revokedUrls: string[] = [];
   const blobs = new Map<string, Blob>();
@@ -1074,16 +1079,23 @@ function mockBlobDownload(signal: AbortSignal): BrowserDownloadMock {
     "revokeObjectURL",
     (url: string) => {
       revokedUrls.push(url);
+      blobs.delete(url);
     },
   );
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
     this: HTMLAnchorElement,
   ) {
-    downloads.push({
-      url: this.href,
-      filename: this.download,
-      blob: blobs.get(this.href) ?? null,
-    });
+    const url = this.href;
+    const filename = this.download;
+    const read = () => {
+      downloads.push({ url, filename, blob: blobs.get(url) ?? null });
+    };
+    // Some browsers resolve the object URL after click() has returned.
+    if (deferRead) {
+      queueMicrotask(read);
+    } else {
+      read();
+    }
   });
 
   restoreOnAbort(signal, () => {

@@ -41,11 +41,19 @@ describe("Pi agent credential resolution", () => {
 
   it("fails closed when the Auto credential is blank", async () => {
     const config = piModelConfigSchema.parse({
+      schemaVersion: 5,
+      dialect: "openai-completions",
+      transport: "sse",
       provider: "openrouter",
       baseUrl: "https://openrouter.ai/api/v1",
       model: "okou-1.0",
-      apiKeyEnv: "OPENAI_API_KEY",
-      credentialSecretName: "OPENROUTER_API_KEY",
+      credentialBindings: [
+        {
+          kind: "api-key",
+          environment: "OPENAI_API_KEY",
+          secretName: "OPENROUTER_API_KEY",
+        },
+      ],
     });
     await expect(
       materializePiAgentModelConfig({
@@ -57,13 +65,21 @@ describe("Pi agent credential resolution", () => {
     ).rejects.toThrow("Pi api-key credential is unavailable");
   });
 
-  it("materializes canonical Gen1 as public Responses", async () => {
+  it("materializes generation 2 as public Responses", async () => {
     const config = piModelConfigSchema.parse({
+      schemaVersion: 2,
+      dialect: "openai-responses",
+      transport: "sse",
       provider: "openrouter",
       baseUrl: "https://openrouter.ai/api/v1",
       model: "okou-1.0",
-      apiKeyEnv: "OPENAI_API_KEY",
-      credentialSecretName: "OPENROUTER_API_KEY",
+      credentialBindings: [
+        {
+          kind: "api-key",
+          environment: "OPENAI_API_KEY",
+          secretName: "OPENROUTER_API_KEY",
+        },
+      ],
     });
 
     await expect(

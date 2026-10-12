@@ -304,7 +304,7 @@ export function createHostMapsBddApi(context: TestContext) {
     },
 
     async readHostedSiteFiles(
-      actor: ApiTestUser,
+      actor: HostActor,
       publicSlug: string,
       version?: number,
     ): Promise<HostedSiteFilesResponse> {
@@ -350,7 +350,7 @@ export function createHostMapsBddApi(context: TestContext) {
     },
 
     async requestHostedSiteDeployments(
-      actor: ApiTestUser | null,
+      actor: HostActor | null,
       site: string,
       statuses: readonly HostDeploymentsStatus[],
     ) {

@@ -20,7 +20,7 @@ import { privateArtifactsBucket } from "./private-artifact-storage.service";
 import { sharedThreadArtifactsBucket } from "./shared-thread-artifact-snapshot.service";
 
 /** Snapshot authority is independent of the original resource's current state. */
-const sharedThreadArtifactSnapshot$ = command(
+export const sharedThreadArtifactSnapshot$ = command(
   async (
     { get },
     reference: SharedThreadArtifactReference,
@@ -78,7 +78,13 @@ const sharedThreadArtifactSnapshot$ = command(
           ).href
         : undefined;
     signal.throwIfAborted();
-    return { target, previewImageUrl };
+    return {
+      target,
+      previewImageUrl,
+      previewTarget,
+      ownerId: policy.ownerId,
+      orgId: policy.orgId,
+    };
   },
 );
 

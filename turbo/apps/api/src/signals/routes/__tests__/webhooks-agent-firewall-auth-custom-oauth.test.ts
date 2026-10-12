@@ -10,6 +10,7 @@ import { describe, expect, it, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { mockNow, now } from "../../../lib/time";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { createBddApi } from "./helpers/api-bdd";
 import {
@@ -38,6 +39,10 @@ async function setupCustomOAuthFirewall(
     readonly refresh?: OAuthIdentityFixtureOptions;
   },
   publicFixture: PublicFirewallFixture,
+  automaticOptions: {
+    readonly registration?: "cimd" | "dcr";
+    readonly dcrClientSecretExpiresAt?: number;
+  } = {},
 ) {
   mockEnv("APP_URL", "https://app.okou.ai");
   mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
@@ -45,6 +50,7 @@ async function setupCustomOAuthFirewall(
     mode === "automatic"
       ? mockAutomaticMcpOAuthProvider(context, {
           registration: "cimd",
+          ...automaticOptions,
           initialExpiresIn: 3600,
           ...(refreshResponse ? { refreshResponse } : {}),
           ...(identity.initial ? { identity: identity.initial } : {}),
@@ -183,6 +189,106 @@ async function setupCustomOAuthFirewall(
   const account = await connect({ intent: "add", displayName: "First" });
   return { actor, account, connector, connectors, provider, connect, request };
 }
+
+describe("Custom Automatic DCR credential retirement", () => {
+  it.each(["invalid_client", "expired registration"] as const)(
+    "requires all linked accounts to reconnect after %s and recovers one account",
+    async (trigger) => {
+      const startedAt = now();
+      mockNow(startedAt);
+      const fixture = createPublicFirewallFixture(context, {
+        orgRole: "org:admin",
+      });
+      await fixture.run(async () => {
+        const custom = await setupCustomOAuthFirewall(
+          "automatic",
+          () => {
+            return HttpResponse.json(
+              { error: "invalid_client" },
+              { status: 400 },
+            );
+          },
+          {},
+          fixture,
+          {
+            registration: "dcr",
+            ...(trigger === "expired registration"
+              ? {
+                  dcrClientSecretExpiresAt: Math.floor(
+                    (startedAt + 60_000) / 1000,
+                  ),
+                }
+              : {}),
+          },
+        );
+        const sibling = await custom.connect({
+          intent: "add",
+          displayName: "Second",
+        });
+        if (trigger === "expired registration") {
+          mockNow(startedAt + 120_000);
+        }
+        for (const account of [custom.account, sibling]) {
+          const failed = await custom.request(account.id, true);
+          expect(failed.status).toBe(502);
+          expect(failed.body).toMatchObject({
+            error: {
+              code: "TOKEN_REFRESH_FAILED",
+              failureReason: "reconnect_required",
+            },
+          });
+        }
+        await expect(
+          custom.connectors.listCustomConnectorAccounts(
+            custom.actor,
+            custom.connector.id,
+          ),
+        ).resolves.toMatchObject([
+          {
+            connectionStatus: "reconnect-required",
+            reconnectReason: "authorization_expired_or_revoked",
+          },
+          {
+            connectionStatus: "reconnect-required",
+            reconnectReason: "authorization_expired_or_revoked",
+          },
+        ]);
+        const replacement = mockAutomaticMcpOAuthProvider(context, {
+          registration: "dcr",
+        });
+        await custom.connect({
+          intent: "reconnect",
+          connectionId: custom.account.id,
+        });
+        expect(replacement.registrationBodies).toHaveLength(1);
+        const recovered = await custom.request(custom.account.id, true);
+        expect(recovered.status).toBe(200);
+        expect(recovered.body).toMatchObject({
+          headers: { Authorization: "Bearer automatic-refreshed-access-token" },
+        });
+        await expect(
+          custom.connectors.listCustomConnectorAccounts(
+            custom.actor,
+            custom.connector.id,
+          ),
+        ).resolves.toStrictEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: custom.account.id,
+              connectionStatus: "connected",
+              reconnectReason: null,
+            }),
+            expect.objectContaining({
+              id: sibling.id,
+              connectionStatus: "reconnect-required",
+              reconnectReason: "authorization_expired_or_revoked",
+            }),
+          ]),
+        );
+      });
+    },
+  );
+});
 
 describe.each(["configured", "automatic"] as const)(
   "Custom %s OAuth quiet refresh recovery",

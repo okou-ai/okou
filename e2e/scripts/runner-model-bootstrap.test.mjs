@@ -18,7 +18,7 @@ const path = new URL(url).pathname;
 fs.appendFileSync(process.env.REQUESTS, JSON.stringify({path, method, body, args}) + "\\n");
 let response;
 if (path === "/api/run-models" && method === "GET") {
-  const models = [{model: process.env.INVALID_AUTO === "true" ? "retired-model" : null, modelProviderId: null, memberEffective: {providerType: "built-in", credentialScope: "org"}}];
+  const models = [{model: process.env.INVALID_AUTO === "true" ? "retired-model" : "auto", modelProviderId: null, memberEffective: {providerType: "built-in", credentialScope: "org"}}];
   if (process.env.PERSONAL === "true") {
     models.push({model: "claude-sonnet-5-5", memberEffective: {providerType: "claude-code-oauth-token", credentialScope: "member"}},
       {model: "gpt-6-astra", memberEffective: {providerType: "codex-oauth-token", credentialScope: "member"}});
@@ -105,7 +105,7 @@ for (const realAgent of ["true", "false"]) {
   });
 }
 
-test("Auto bootstrap rejects a non-null Auto entry before writing preferences", async (context) => {
+test("Auto bootstrap rejects a noncanonical Auto entry before writing preferences", async (context) => {
   const { result, calls } = await runBootstrap(
     context,
     "runner-auto-bootstrap.bash",

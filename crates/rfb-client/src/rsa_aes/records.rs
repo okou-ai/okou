@@ -411,6 +411,109 @@ mod tests {
         assert!(writer.write_all(b"new").await.is_err());
     }
 
+    enum WriteFault {
+        Prefix,
+        Error,
+        Recovered,
+    }
+
+    struct PartialWriteFailsOnce<S> {
+        inner: S,
+        fault: WriteFault,
+    }
+
+    impl<S: AsyncRead + Unpin> AsyncRead for PartialWriteFailsOnce<S> {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            out: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            Pin::new(&mut self.get_mut().inner).poll_read(cx, out)
+        }
+    }
+
+    impl<S: AsyncWrite + Unpin> AsyncWrite for PartialWriteFailsOnce<S> {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            input: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            let this = self.get_mut();
+            if input.is_empty() {
+                return Poll::Ready(Ok(0));
+            }
+            match this.fault {
+                WriteFault::Prefix => {
+                    let result = Pin::new(&mut this.inner).poll_write(cx, input.get(..1).unwrap());
+                    if matches!(result, Poll::Ready(Ok(1))) {
+                        this.fault = WriteFault::Error;
+                    }
+                    result
+                }
+                WriteFault::Error => {
+                    this.fault = WriteFault::Recovered;
+                    Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "synthetic one-shot write failure",
+                    )))
+                }
+                WriteFault::Recovered => Pin::new(&mut this.inner).poll_write(cx, input),
+            }
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Pin::new(&mut self.get_mut().inner).poll_flush(cx)
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
+        }
+    }
+
+    #[tokio::test]
+    async fn one_shot_partial_write_error_permanently_rejects_records_and_raw_transition() {
+        // Keep enough capacity for a complete record if the failure guard regresses.
+        let (a, mut peer) = tokio::io::duplex(128);
+        let mut writer = Records::new(
+            PartialWriteFailsOnce {
+                inner: a,
+                fault: WriteFault::Prefix,
+            },
+            Zeroizing::new(vec![3; 16]),
+            Zeroizing::new(vec![3; 16]),
+        );
+        writer.write_all(b"payload").await.unwrap();
+        assert_eq!(
+            writer.flush().await.unwrap_err().kind(),
+            io::ErrorKind::TimedOut
+        );
+        for _ in 0..2 {
+            assert_eq!(
+                writer.flush().await.unwrap_err().kind(),
+                io::ErrorKind::InvalidData
+            );
+            assert_eq!(
+                writer.write_all(b"new").await.unwrap_err().kind(),
+                io::ErrorKind::InvalidData
+            );
+        }
+        let mut plaintext = [9];
+        let mut read = ReadBuf::new(&mut plaintext);
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        assert!(matches!(
+            Pin::new(&mut writer).poll_read(&mut cx, &mut read),
+            Poll::Ready(Err(error)) if error.kind() == io::ErrorKind::InvalidData
+        ));
+        assert!(read.filled().is_empty());
+        assert_eq!(plaintext, [9]);
+        assert!(writer.into_raw().is_err());
+
+        // Rejected conversion drops the writer, giving the live peer a deterministic EOF.
+        let mut wire = Vec::new();
+        peer.read_to_end(&mut wire).await.unwrap();
+        assert_eq!(wire, [0]);
+    }
+
     struct CompletionFails<S>(S, bool);
 
     impl<S: AsyncRead + Unpin> AsyncRead for CompletionFails<S> {

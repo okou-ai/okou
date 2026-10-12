@@ -1,8 +1,5 @@
 import { command } from "ccstate";
-import {
-  webhookCheckpointsPrepareHistoryContract,
-  webhookSessionHistoryPrepareContract,
-} from "@okouai/api-contracts/contracts/webhooks";
+import { webhookSessionHistoryPrepareContract } from "@okouai/api-contracts/contracts/webhooks";
 import { authorization$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
@@ -12,13 +9,9 @@ import {
   unauthorizedRunMismatch,
 } from "./agent-webhook-auth";
 
-function historyUploadHandler(
-  route:
-    | typeof webhookSessionHistoryPrepareContract.prepare
-    | typeof webhookCheckpointsPrepareHistoryContract.prepare,
-) {
-  const body$ = bodyResultOf(route);
-  return command(async ({ get, set }, signal: AbortSignal) => {
+const body$ = bodyResultOf(webhookSessionHistoryPrepareContract.prepare);
+const historyUploadHandler$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
     const parsed = await get(body$);
     signal.throwIfAborted();
     if (!parsed.ok) {
@@ -30,19 +23,12 @@ function historyUploadHandler(
       return unauthorizedRunMismatch;
     }
     return await set(prepareSessionHistoryUpload$, { auth, body }, signal);
-  });
-}
+  },
+);
 
 export const webhooksAgentSessionHistoryRoutes: readonly RouteEntry[] = [
   {
     route: webhookSessionHistoryPrepareContract.prepare,
-    handler: historyUploadHandler(webhookSessionHistoryPrepareContract.prepare),
-  },
-  // Remove after old Guest binaries and their pending uploads have drained.
-  {
-    route: webhookCheckpointsPrepareHistoryContract.prepare,
-    handler: historyUploadHandler(
-      webhookCheckpointsPrepareHistoryContract.prepare,
-    ),
+    handler: historyUploadHandler$,
   },
 ];

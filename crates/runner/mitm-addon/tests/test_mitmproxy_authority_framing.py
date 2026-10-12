@@ -436,7 +436,8 @@ async def test_matching_http1_absolute_form_authority_is_forwardable_with_auth(
         command for command in request_commands if isinstance(command, commands.OpenConnection)
     ]
     assert len(open_connections) == 1
-    assert open_connections[0].connection.address == ("203.0.113.10", 443)
+    assert open_connections[0].connection.address == ("api.github.com", 443)
+    assert open_connections[0].connection.sni == "api.github.com"
     assert flow.request.authority == "API.GITHUB.COM.:443"
     assert flow.metadata[metadata_keys.ORIGINAL_URL] == "https://api.github.com/repos"
     assert flow.request.headers["Authorization"] == "Bearer managed-secret"

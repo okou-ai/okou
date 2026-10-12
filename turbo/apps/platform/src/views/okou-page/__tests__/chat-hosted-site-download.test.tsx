@@ -173,7 +173,7 @@ test.each([
   },
 ])("a $name downloads every published member as a zip", async (publication) => {
   mockPublicPublication(publication);
-  const browser = context.mocks.browser.blobDownload();
+  const browser = context.mocks.browser.blobDownload({ deferRead: true });
 
   await downloadSite(publication.host);
 
@@ -197,7 +197,7 @@ test.each([
 
 test("a public site containing one page downloads that HTML file", async () => {
   mockPublicPublication({ members: publicationMembers().slice(0, 1) });
-  const browser = context.mocks.browser.blobDownload();
+  const browser = context.mocks.browser.blobDownload({ deferRead: true });
 
   await downloadSite();
 

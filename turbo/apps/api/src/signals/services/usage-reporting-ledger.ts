@@ -1,8 +1,11 @@
 import { and, asc, eq, gt, inArray, sql, sum } from "drizzle-orm";
+import { usageRecordKindSchema } from "@okouai/api-contracts/contracts/usage-record";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
+  nullableDriverValueDecoder,
   pgInt8ToSafeIntegerDecoder,
   pgTextDecoder,
+  zodEnumDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import {
   buildFinalizedUsageRelation,
@@ -36,10 +39,44 @@ interface UsageMemberTotalsRow {
   readonly creditsCharged: number;
 }
 
-export function memberUsageTotalsQuery(
-  orgId: string,
-  billingWindow: BillingWindow,
-) {
+/** Totals and display groups share one statement snapshot, including compaction. */
+export function memberUsageQuery(orgId: string, billingWindow: BillingWindow) {
+  const totals = memberUsageTotalsQuery(orgId, billingWindow);
+  const breakdown = memberUsageBreakdownQuery(orgId, billingWindow);
+  return new QueryBuilder()
+    .select({
+      userId: totals.userId,
+      inputTokens: totals.inputTokens,
+      outputTokens: totals.outputTokens,
+      cacheReadInputTokens: totals.cacheReadInputTokens,
+      cacheCreationInputTokens: totals.cacheCreationInputTokens,
+      creditsCharged: totals.creditsCharged,
+      breakdownKey: sql`${breakdown.key}`
+        .mapWith(nullableDriverValueDecoder(pgTextDecoder))
+        .as("breakdown_key"),
+      breakdownKind: sql`${breakdown.kind}`
+        .mapWith(
+          nullableDriverValueDecoder(
+            zodEnumDriverValueDecoder(usageRecordKindSchema),
+          ),
+        )
+        .as("breakdown_kind"),
+      breakdownUsageKind: sql`${breakdown.usageKind}`
+        .mapWith(nullableDriverValueDecoder(pgTextDecoder))
+        .as("breakdown_usage_kind"),
+      breakdownProvider: sql`${breakdown.provider}`
+        .mapWith(nullableDriverValueDecoder(pgTextDecoder))
+        .as("breakdown_provider"),
+      breakdownCredits: sql`${breakdown.credits}`
+        .mapWith(nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder))
+        .as("breakdown_credits"),
+    })
+    .from(totals)
+    .leftJoin(breakdown, eq(totals.userId, breakdown.key))
+    .as("member_usage");
+}
+
+function memberUsageTotalsQuery(orgId: string, billingWindow: BillingWindow) {
   const usage = buildFinalizedUsageRelation(
     normalizeFinalizedUsagePeriod(billingWindow),
   );
@@ -76,7 +113,7 @@ export function memberUsageTotalsQuery(
     .as("member_usage_totals");
 }
 
-export function memberUsageBreakdownQuery(
+function memberUsageBreakdownQuery(
   orgId: string,
   billingWindow: BillingWindow,
 ) {

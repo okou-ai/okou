@@ -128,9 +128,10 @@ SH
           "codex-mock": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
           "guest-state-restore": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
           "guest-tool-exec": "2222222222222222222222222222222222222222222222222222222222222222",
+          "guest-task-exec": "4444444444444444444444444444444444444444444444444444444444444444",
           "runner-rpc-client": "2222222222222222222222222222222222222222222222222222222222222222",
           "guest-write-file": "1111111111111111111111111111111111111111111111111111111111111111",
-          "guest-workspace-mount": "3333333333333333333333333333333333333333333333333333333333333333"
+          "guest-home-mount": "3333333333333333333333333333333333333333333333333333333333333333"
         }
       }
     ' >"${target_dir}/metadata.json"

@@ -5,8 +5,7 @@ import {
 import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
-import { piMemoryPhase2Checkpoints } from "@okouai/db/schema/pi-memory-phase2-checkpoint";
+import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
@@ -27,27 +26,30 @@ import {
 } from "../external/s3";
 import {
   maintenanceCallbackCondition,
-  storageMaintenanceReceiptCondition,
   storageMaintenanceJobCondition,
   storageCommitLineageCondition,
-  type MaintenanceReceiptBinding,
 } from "./storage-write-conditions";
 import {
   storageCommitPublicationPlan,
   sandboxStorageRunIsActive,
   maintenancePublicationBinding,
-  maintenanceCheckpointBinding,
   totalSize,
   terminalStorageCommitPersistedStateMatches,
   storageCommitSuccess,
   type MaintenancePublicationInput,
 } from "./storage-write-publication-plan";
 
+import {
+  maintenancePublicationResultCondition,
+  maintenancePublicationResultVersion,
+  maintenancePublicationVersion,
+} from "./pi-memory-phase2-result";
+
 interface StorageChanges {
   readonly deleted?: readonly string[];
 }
 
-export interface PiMemoryPhase2CheckpointAttestation {
+export interface PiMemoryPhase2PublicationAttestation {
   readonly schemaVersion: number;
   readonly leaseToken: string;
   readonly claimedRevision: number;
@@ -63,7 +65,7 @@ interface PrepareStorageUploadInput {
   readonly parentVersionId?: string;
   readonly baseVersion?: string;
   readonly changes?: StorageChanges;
-  readonly maintenanceAttestation?: PiMemoryPhase2CheckpointAttestation;
+  readonly maintenanceAttestation?: PiMemoryPhase2PublicationAttestation;
 }
 
 interface PrepareStorageInput extends PrepareStorageUploadInput {
@@ -81,7 +83,7 @@ interface CommitStorageUploadInput {
   readonly runId?: string;
   readonly parentVersionId?: string;
   readonly message?: string;
-  readonly maintenanceAttestation?: PiMemoryPhase2CheckpointAttestation;
+  readonly maintenanceAttestation?: PiMemoryPhase2PublicationAttestation;
 }
 
 interface CommitStorageInput extends CommitStorageUploadInput {
@@ -250,14 +252,14 @@ const guardMaintenancePreparation$ = command(
     if (!binding || "status" in binding) {
       return binding;
     }
-    const [receipt] = await db
-      .select()
-      .from(piMemoryPhase2Checkpoints)
-      .where(storageMaintenanceReceiptCondition(binding))
+    const [result] = await db
+      .select({ id: piMemoryPhase2Jobs.memoryStorageId })
+      .from(piMemoryPhase2Jobs)
+      .where(maintenancePublicationResultCondition(binding))
       .limit(1);
     signal.throwIfAborted();
-    if (receipt) {
-      return notFound("Pi memory maintenance checkpoint already committed");
+    if (result) {
+      return notFound("Pi memory maintenance publication already committed");
     }
     const [active] = await db
       .select({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId })
@@ -533,6 +535,7 @@ const commitVerifiedStorageVersion$ = command(
     },
     signal: AbortSignal,
   ): Promise<CommitStorageResponse> => {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0254; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(async (tx) => {
       // The plan contains only bound SQL and ordinary data. This command alone
       // executes every statement and owns the transaction through completion.
@@ -741,18 +744,6 @@ export const prepareStorageUploadForAuth$ = command(
   },
 );
 
-const readSandboxReceipt$ = command(
-  async ({ get }, binding: MaintenanceReceiptBinding, signal: AbortSignal) => {
-    const [receipt] = await get(db$)
-      .select()
-      .from(piMemoryPhase2Checkpoints)
-      .where(storageMaintenanceReceiptCondition(binding))
-      .limit(1);
-    signal.throwIfAborted();
-    return receipt;
-  },
-);
-
 const readSandboxLineage$ = command(
   async (
     { get },
@@ -783,7 +774,7 @@ const readSandboxLineage$ = command(
 
 export const commitSandboxStorageUpload$ = command(
   async (
-    { set },
+    { get, set },
     args: CommitStorageInput,
     signal: AbortSignal,
   ): Promise<CommitStorageResponse> => {
@@ -800,17 +791,42 @@ export const commitSandboxStorageUpload$ = command(
     if ("status" in mounted) {
       return mounted;
     }
-    const binding = maintenanceCheckpointBinding(input);
-    const receipt = binding
-      ? await set(readSandboxReceipt$, binding, signal)
-      : undefined;
-    if (receipt) {
+    const db = get(db$);
+    // Only attested retries use this shortcut; the publication plan admits live commits.
+    const [callback] = args.maintenanceAttestation
+      ? await db
+          .select({ payload: agentRunCallbacks.payload })
+          .from(agentRunCallbacks)
+          .where(maintenanceCallbackCondition(args.auth.runId))
+          .limit(1)
+      : [];
+    signal.throwIfAborted();
+    const binding = maintenancePublicationBinding(callback?.payload, {
+      auth: args.auth,
+      storageId: args.storageId,
+      versionId: args.versionId,
+      parentVersionId: args.parentVersionId,
+      attestation: args.maintenanceAttestation,
+    });
+    if (binding && "status" in binding) {
+      return binding;
+    }
+    const [result] = binding
+      ? await db
+          .select({ versionId: maintenancePublicationResultVersion() })
+          .from(piMemoryPhase2Jobs)
+          .where(maintenancePublicationResultCondition(binding))
+          .limit(1)
+      : [];
+    signal.throwIfAborted();
+    const publicationVersionId = maintenancePublicationVersion(result);
+    if (publicationVersionId) {
       if (
-        receipt.versionId !== args.versionId ||
+        publicationVersionId !== args.versionId ||
         computeContentHashFromHashes(args.storageId, args.files) !==
-          receipt.versionId
+          publicationVersionId
       ) {
-        return notFound("Pi memory maintenance checkpoint replay mismatch");
+        return notFound("Pi memory maintenance publication replay mismatch");
       }
       const version = await set(
         findStorageVersion$,
@@ -826,7 +842,7 @@ export const commitSandboxStorageUpload$ = command(
             fileCount: version.fileCount,
             deduplicated: true,
           })
-        : notFound("Pi memory maintenance checkpoint version not found");
+        : notFound("Pi memory maintenance publication version not found");
     }
     const terminalRetry = !sandboxStorageRunIsActive(mounted.runStatus);
     if (terminalRetry) {

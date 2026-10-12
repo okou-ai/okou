@@ -122,7 +122,11 @@ export function createAuthDeviceSupportApi(context: TestContext) {
       );
     },
 
-    async activatePersonalModelProviderAccount(actor: ApiTestUser, id: string) {
+    async activatePersonalModelProviderAccount(
+      actor: ApiTestUser,
+      id: string,
+      statuses: readonly (200 | 404 | 409)[] = [200],
+    ) {
       return await accept(
         authDeviceSupportApp(context)(
           personalModelProviderAccountsByIdContract,
@@ -131,7 +135,7 @@ export function createAuthDeviceSupportApi(context: TestContext) {
           params: { id },
           body: {},
         }),
-        [200],
+        statuses,
       );
     },
 

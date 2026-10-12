@@ -238,7 +238,7 @@ test("Delete a chat after reviewing the impact", async () => {
 });
 
 /**
- * Deliberate exception to `docs/testing/testing-external-behavior.md`. The fade
+ * Deliberate exception to `docs/testing.md#external-behavior`. The fade
  * and the hover travel are a mask and a transform derived from measured text
  * width, and happy-dom has no layout engine: it reports every box as
  * zero-width and paints nothing, so neither the state nor the result exists on
@@ -375,7 +375,16 @@ test("Keep check-mark chats and archive controls unchanged when archiving is dis
   expect(menuItemByText("All chats")).toBeInTheDocument();
   expect(queryMenuItemByText("Inbox")).not.toBeInTheDocument();
   expect(queryMenuItemByText("Archived")).not.toBeInTheDocument();
-  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
+  click(menuItemByText("Unread"));
+  await expect(
+    within(sidebar()).findByText("No unread chats"),
+  ).resolves.toBeInTheDocument();
+  // Without archiving, the filter keeps the plain agent title.
+  expect(within(sidebar()).getByText("Chats with Okou")).toBeInTheDocument();
+  click(buttonByText("Show all chats", sidebar()));
+  await expect(
+    within(sidebar()).findByText("✅ Completed release"),
+  ).resolves.toBeInTheDocument();
 
   openThreadMenu("✅ Completed release");
   expect(menuItemByText("Rename chat")).toBeInTheDocument();
@@ -388,7 +397,7 @@ test("Keep check-mark chats and archive controls unchanged when archiving is dis
     within(sidebar()).findByText("✅ Completed release"),
   ).resolves.toBeInTheDocument();
   expect(
-    within(sidebar()).queryByText("All your chats are archived"),
+    within(sidebar()).queryByText("Your inbox is empty"),
   ).not.toBeInTheDocument();
 });
 
@@ -715,17 +724,24 @@ test("Hide the current chat after archiving it without changing its title", asyn
   click(menuItemByText("Archive chat"));
 
   await waitFor(() => {
-    expect(within(sidebar()).getByText("All caught up")).toBeInTheDocument();
     expect(
-      within(sidebar()).getByText("All your chats are archived"),
+      within(sidebar()).getByText("Your inbox is empty"),
     ).toBeInTheDocument();
     expect(within(sidebar()).queryByText("New chat")).not.toBeInTheDocument();
   });
+  expect(within(sidebar()).queryByText("🎉")).not.toBeInTheDocument();
+  expect(pathname()).toBe(`/chats/${EXISTING_THREAD_ID}`);
+  await expect(
+    screen.findByText("Chat archived."),
+  ).resolves.toBeInTheDocument();
   click(buttonByText("Show archived chats", sidebar()));
 
   await waitFor(() => {
     expect(within(sidebar()).getByText("New chat")).toBeInTheDocument();
   });
+  expect(
+    within(sidebar()).getByText("Archived · Chats with Okou"),
+  ).toBeInTheDocument();
   expect(within(sidebar()).queryByText("✅")).not.toBeInTheDocument();
   openThreadMenu("New chat");
   click(menuItemByText("Unarchive chat"));
@@ -772,12 +788,15 @@ test("Archive and unarchive the current chat with the keyboard shortcut", async 
 
   await waitFor(() => {
     expect(
-      within(sidebar()).getByText("All your chats are archived"),
+      within(sidebar()).getByText("Your inbox is empty"),
     ).toBeInTheDocument();
     expect(
       within(sidebar()).queryByText("Release plan"),
     ).not.toBeInTheDocument();
   });
+  await expect(
+    screen.findByText("Chat archived."),
+  ).resolves.toBeInTheDocument();
 
   pressArchiveShortcut();
 
@@ -785,8 +804,43 @@ test("Archive and unarchive the current chat with the keyboard shortcut", async 
     within(sidebar()).findByText("Release plan"),
   ).resolves.toBeInTheDocument();
   expect(
-    within(sidebar()).queryByText("All your chats are archived"),
+    within(sidebar()).queryByText("Your inbox is empty"),
   ).not.toBeInTheDocument();
+  await expect(
+    screen.findByText("Chat moved to Inbox"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("Undo an archive from its toast and explain the muted exception", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Release plan"),
+    createThread(INCIDENT_THREAD_ID, "Quiet task", { muted: true }),
+  ]);
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: {
+      [FeatureSwitchKey.ChatThreadArchiving]: true,
+      [FeatureSwitchKey.ChatThreadMuting]: true,
+    },
+  });
+
+  await within(sidebar()).findByText("Quiet task");
+  openThreadMenu("Quiet task");
+  click(menuItemByText("Archive chat"));
+  await expect(
+    screen.findByText(
+      "Chat archived. It's muted, so new replies won't bring it back.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(within(sidebar()).queryByText("Quiet task")).not.toBeInTheDocument();
+
+  click(buttonByText("Undo"));
+  await expect(
+    within(sidebar()).findByText("Quiet task"),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Find archived chats in All and Chats workspace search results", async () => {
@@ -1241,23 +1295,23 @@ test("Mark the current conversation unread after navigating away", async () => {
   );
 });
 
-test("An open native-only thread reads each newer delivery without a terminal Run", async () => {
+test("An open thread with runless messages reads each newer delivery without a terminal Run", async () => {
   const firstAt = "2026-03-10T00:04:00Z";
   const secondAt = "2026-03-10T00:05:00Z";
   const thirdAt = "2026-03-10T00:06:00Z";
   mockNow(Date.parse("2026-03-10T00:04:30Z"), context.signal);
   prepareDefaultAgent();
   mockSidebarThreadStory([
-    createThread(EXISTING_THREAD_ID, "Native brief"),
+    createThread(EXISTING_THREAD_ID, "Runless updates"),
     createThread(INCIDENT_THREAD_ID, "Other conversation"),
   ]);
 
   const rows = mockChatEventRows([
     {
-      id: "native-brief-1",
+      id: "runless-message-1",
       threadId: EXISTING_THREAD_ID,
       eventType: "output.message" as const,
-      content: "First native brief",
+      content: "First runless update",
       seqId: 1,
       createdAt: firstAt,
     },
@@ -1327,7 +1381,9 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
     path: `/chats/${EXISTING_THREAD_ID}`,
     sharedWorkerTestTransport: "message-port",
   });
-  await expect(screen.findByText("First native brief")).resolves.toBeVisible();
+  await expect(
+    screen.findByText("First runless update"),
+  ).resolves.toBeVisible();
   await waitFor(() => {
     expect(markedThrough).toStrictEqual([firstAt]);
   });
@@ -1337,10 +1393,10 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
   rows.push(
     ...mockChatEventRows([
       {
-        id: "native-brief-2",
+        id: "runless-message-2",
         threadId: EXISTING_THREAD_ID,
         eventType: "output.message" as const,
-        content: "Second native brief",
+        content: "Second runless update",
         seqId: 2,
         createdAt: secondAt,
       },
@@ -1360,17 +1416,19 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
       markedThrough: [firstAt, secondAt],
       secondMarkStarted: true,
     });
-  await expect(screen.findByText("Second native brief")).resolves.toBeVisible();
+  await expect(
+    screen.findByText("Second runless update"),
+  ).resolves.toBeVisible();
 
   mockNow(Date.parse("2026-03-10T00:06:30Z"), context.signal);
   unreadAt = thirdAt;
   rows.push(
     ...mockChatEventRows([
       {
-        id: "native-brief-3",
+        id: "runless-message-3",
         threadId: EXISTING_THREAD_ID,
         eventType: "output.message" as const,
-        content: "Third native brief",
+        content: "Third runless update",
         seqId: 3,
         createdAt: thirdAt,
       },
@@ -1381,7 +1439,9 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
   releaseSecondMark.resolve();
 
   // A pending indicator refresh must not block the actual message delivery.
-  await expect(screen.findByText("Third native brief")).resolves.toBeVisible();
+  await expect(
+    screen.findByText("Third runless update"),
+  ).resolves.toBeVisible();
   releaseThirdIndicators.resolve();
   await waitFor(() => {
     expect(markedThrough).toStrictEqual([firstAt, secondAt, thirdAt]);
@@ -1399,8 +1459,8 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
 
   click(threadLinkByTitle("Other conversation"));
   await waitFor(() => {
-    expect(threadLinkByTitle("Native brief")).toHaveAccessibleName(
-      "Native brief",
+    expect(threadLinkByTitle("Runless updates")).toHaveAccessibleName(
+      "Runless updates",
     );
   });
 });

@@ -471,6 +471,7 @@ const persistConnectorRefresh$ = command(
       signal,
     );
     const storage = args.connection.runtimeMethod.method.storage;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0082; new non-billing transactions are prohibited.
     const persisted = await set(writeDb$).transaction(async (tx) => {
       const [updated] = await tx
         .update(connectors)

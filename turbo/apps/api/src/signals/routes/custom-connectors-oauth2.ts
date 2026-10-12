@@ -11,8 +11,8 @@ import { request$, setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import {
-  claimConnectorOAuthState,
-  getConnectorOAuthStateStatus,
+  claimCustomConnectorOAuthState$,
+  getConnectorOAuthStateStatus$,
   type StoredCustomConnectorOAuthState,
 } from "../services/connector-oauth-state.service";
 import { validateConnectorAuthorizationTarget$ } from "../services/connected-connector-authorization.service";
@@ -50,7 +50,7 @@ import {
   clearConnectorOAuthCookies,
 } from "../../lib/connector-oauth-state";
 import { env } from "../../lib/env";
-import { recordConnectorOAuthCompletion } from "../services/connector-oauth-completion.service";
+import { recordConnectorOAuthCompletion$ } from "../services/connector-oauth-completion.service";
 import { connectorConnectionWriteFailureMessage } from "../services/connector-data.service";
 import {
   okouMcpOAuthClientMetadata,
@@ -254,32 +254,6 @@ async function authorizeCustomConnectorAgent(
   }
 }
 
-async function recordAuthorizedCustomOAuthCompletion(
-  args: {
-    readonly db: Db;
-    readonly state: StoredCustomConnectorOAuthState;
-    readonly connectorId: string;
-    readonly connectionId: string;
-  },
-  signal: AbortSignal,
-): Promise<string | null> {
-  const error = await authorizeCustomConnectorAgent(args, signal);
-  if (error) {
-    return error;
-  }
-  await recordConnectorOAuthCompletion(
-    args.db,
-    {
-      attemptId: args.state.id,
-      connectionId: args.connectionId,
-      orgId: args.state.orgId,
-      userId: args.state.userId,
-    },
-    signal,
-  );
-  return null;
-}
-
 type CustomOAuthPersistenceResult =
   | { readonly ok: true; readonly connectionId: string }
   | { readonly ok: false; readonly message: string };
@@ -347,20 +321,23 @@ function customConnectorOAuthPersistenceResult(
   return result;
 }
 
-async function codeLessCustomOAuthCallbackResponse(
-  args: { readonly db: Db; readonly origin: string; readonly state: string },
-  signal: AbortSignal,
-): Promise<Response> {
-  const status = await getConnectorOAuthStateStatus(
-    args.db,
-    { state: args.state, target: { kind: "custom" } },
-    signal,
-  );
-  signal.throwIfAborted();
-  return status.kind === "usable"
-    ? callbackError(appOrigin(), "Missing authorization code")
-    : callbackError(args.origin, "Invalid OAuth state - please try again");
-}
+const codeLessCustomOAuthCallbackResponse$ = command(
+  async (
+    { set },
+    args: { readonly origin: string; readonly state: string },
+    signal: AbortSignal,
+  ): Promise<Response> => {
+    const status = await set(
+      getConnectorOAuthStateStatus$,
+      { state: args.state, target: { kind: "custom" } },
+      signal,
+    );
+    signal.throwIfAborted();
+    return status.kind === "usable"
+      ? callbackError(appOrigin(), "Missing authorization code")
+      : callbackError(args.origin, "Invalid OAuth state - please try again");
+  },
+);
 
 async function completeAutomaticOAuthCallback(
   args: {
@@ -574,14 +551,15 @@ const completeOAuth2Callback$ = command(
       return callbackError(defaultOrigin, "Missing OAuth state");
     }
     if (!providerError && !authorizationCode) {
-      return await codeLessCustomOAuthCallbackResponse(
-        { db: set(writeDb$), origin: defaultOrigin, state: oauthState },
+      return await set(
+        codeLessCustomOAuthCallbackResponse$,
+        { origin: defaultOrigin, state: oauthState },
         signal,
       );
     }
-    const claimed = await claimConnectorOAuthState(
-      set(writeDb$),
-      { state: oauthState, target: { kind: "custom" } },
+    const claimed = await set(
+      claimCustomConnectorOAuthState$,
+      oauthState,
       signal,
     );
     signal.throwIfAborted();
@@ -660,15 +638,26 @@ const completeOAuth2Callback$ = command(
     if (!persistence.ok) {
       return callbackError(origin, persistence.message);
     }
-    const completionError = await recordAuthorizedCustomOAuthCompletion(
+    const completionError = await authorizeCustomConnectorAgent(
       {
         db: set(writeDb$),
         state: claimed.state,
         connectorId: connector.id,
-        connectionId: persistence.connectionId,
       },
       signal,
     );
+    if (!completionError) {
+      await set(
+        recordConnectorOAuthCompletion$,
+        {
+          attemptId: claimed.state.id,
+          connectionId: persistence.connectionId,
+          orgId: claimed.state.orgId,
+          userId: claimed.state.userId,
+        },
+        signal,
+      );
+    }
     signal.throwIfAborted();
     if (completionError) {
       return callbackError(origin, completionError);

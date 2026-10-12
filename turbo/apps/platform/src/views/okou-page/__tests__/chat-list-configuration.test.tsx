@@ -97,6 +97,7 @@ test("Enabling cloud browser replaces the Computer Use host", async () => {
     auth,
     cachedChatThreadEvents: cachedChatListEvents(2, [thread]),
   });
+  await page.content;
 
   await openComputerMenu();
   const selectedHost = await screen.findByRole("switch", {
@@ -208,6 +209,7 @@ test("Service tier and Computer Use settings update independently", async () => 
     auth,
     cachedChatThreadEvents: cachedChatListEvents(14, [target, newer]),
   });
+  await page.content;
 
   const order = ["Newer conversation", "Configured conversation"];
   await waitFor(() => {

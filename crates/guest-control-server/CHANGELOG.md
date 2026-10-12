@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.24.1](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.0...guest-control-server-v0.24.1) (2026-10-12)
+
+## [0.24.0](https://github.com/okou-ai/okou/compare/guest-control-server-v0.23.2...guest-control-server-v0.24.0) (2026-10-11)
+
+
+### Features
+
+* **guest:** manage task runtimes and image batch workers ([#38762](https://github.com/okou-ai/okou/issues/38762)) ([dbb7241](https://github.com/okou-ai/okou/commit/dbb72412af7116f4e27419057023d51bbf203613))
+
+## [0.23.2](https://github.com/okou-ai/okou/compare/guest-control-server-v0.23.1...guest-control-server-v0.23.2) (2026-10-10)
+
+## [0.23.1](https://github.com/okou-ai/okou/compare/guest-control-server-v0.23.0...guest-control-server-v0.23.1) (2026-10-10)
+
+## [0.23.0](https://github.com/okou-ai/okou/compare/guest-control-server-v0.22.15...guest-control-server-v0.23.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+## [0.22.15](https://github.com/okou-ai/okou/compare/guest-control-server-v0.22.14...guest-control-server-v0.22.15) (2026-10-10)
+
+## [0.22.14](https://github.com/okou-ai/okou/compare/guest-control-server-v0.22.13...guest-control-server-v0.22.14) (2026-10-10)
+
+## [0.22.13](https://github.com/okou-ai/okou/compare/guest-control-server-v0.22.12...guest-control-server-v0.22.13) (2026-10-09)
+
+## [0.22.12](https://github.com/okou-ai/okou/compare/guest-control-server-v0.22.11...guest-control-server-v0.22.12) (2026-10-09)
+
+## [0.22.11](https://github.com/okou-ai/okou/compare/guest-control-server-v0.22.10...guest-control-server-v0.22.11) (2026-10-09)
+
 ## [0.22.10](https://github.com/okou-ai/okou/compare/guest-control-server-v0.22.9...guest-control-server-v0.22.10) (2026-10-09)
 
 ## [0.22.9](https://github.com/okou-ai/okou/compare/guest-control-server-v0.22.8...guest-control-server-v0.22.9) (2026-10-09)

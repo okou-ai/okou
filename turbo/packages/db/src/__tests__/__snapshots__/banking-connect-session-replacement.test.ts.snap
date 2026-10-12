@@ -1,0 +1,119 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`banking connect replacement SQL contract > compiles the owner gate, partial arbiter, dependent insert and typed connect projection 1`] = `
+{
+  "params": [
+    "00000000-0000-4000-8000-000000000002",
+    "org_'$owner",
+    "user_'$owner",
+    "finicity",
+    "active",
+    "repair_required",
+    "00000000-0000-4000-8000-000000000001",
+    "org_'$owner",
+    "user_'$owner",
+    "connect",
+    null,
+    "2026-01-02T03:04:05.006Z",
+    "org_'$owner",
+    "user_'$owner",
+    "00000000-0000-4000-8000-000000000001",
+    "org_'$owner",
+    "user_'$owner",
+    "connect",
+    null,
+    "superseded",
+    "pending",
+  ],
+  "sql": "with "locked_banking_connection" as (select "id" from "banking_connections" where ("banking_connections"."id" = $1 and "banking_connections"."org_id" = $2 and "banking_connections"."user_id" = $3 and "banking_connections"."provider" = $4 and "banking_connections"."revoked_at" is null and "banking_connections"."deleted_at" is null and ("banking_connections"."status" = $5 or "banking_connections"."status" = $6)) for no key update), "replaced_banking_session" as (
+    INSERT INTO "banking_connect_sessions"
+      (id, org_id, user_id, connection_id, mode, institution_login_id)
+    SELECT
+    $7,
+    $8,
+    $9,
+    "locked_banking_connection"."id",
+    $10,
+    $11
+    FROM "locked_banking_connection"
+    ON CONFLICT (connection_id) WHERE status = 'pending'
+    DO UPDATE SET status = 'superseded',
+      updated_at = $12
+    WHERE "banking_connect_sessions"."org_id" = $13
+      AND "banking_connect_sessions"."user_id" = $14
+    RETURNING *
+  ), "inserted_banking_session" as (
+    INSERT INTO "banking_connect_sessions"
+      (id, org_id, user_id, connection_id, mode, institution_login_id)
+    SELECT
+    $15,
+    $16,
+    $17,
+    "locked_banking_connection"."id",
+    $18,
+    $19
+    FROM "locked_banking_connection"
+    WHERE (exists (select "id" from "replaced_banking_session" where "replaced_banking_session"."status" = $20) OR not exists (select "id" from "replaced_banking_session"))
+    RETURNING *
+  ), "pending_banking_session" as ((select "id", "org_id", "user_id", "connection_id", "mode", "status", "institution_login_id", "added_at", "done_at", "completed_at", "end_reason", "created_at", "updated_at" from "replaced_banking_session" where "replaced_banking_session"."status" = $21) union all (select "id", "org_id", "user_id", "connection_id", "mode", "status", "institution_login_id", "added_at", "done_at", "completed_at", "end_reason", "created_at", "updated_at" from "inserted_banking_session")) select "locked_banking_connection"."id", "pending_banking_session"."id", "pending_banking_session"."org_id", "pending_banking_session"."user_id", "pending_banking_session"."connection_id", "pending_banking_session"."mode", "pending_banking_session"."status", "pending_banking_session"."institution_login_id", "pending_banking_session"."added_at", "pending_banking_session"."done_at", "pending_banking_session"."completed_at", "pending_banking_session"."end_reason", "pending_banking_session"."created_at", "pending_banking_session"."updated_at" from "locked_banking_connection" left join "pending_banking_session" on true",
+}
+`;
+
+exports[`banking connect replacement SQL contract > compiles the owner gate, partial arbiter, dependent insert and typed fix projection 1`] = `
+{
+  "params": [
+    "00000000-0000-4000-8000-000000000002",
+    "org_'$owner",
+    "user_'$owner",
+    "finicity",
+    "active",
+    "repair_required",
+    "00000000-0000-4000-8000-000000000001",
+    "org_'$owner",
+    "user_'$owner",
+    "fix",
+    "institution_'$id",
+    "2026-01-02T03:04:05.006Z",
+    "org_'$owner",
+    "user_'$owner",
+    "00000000-0000-4000-8000-000000000001",
+    "org_'$owner",
+    "user_'$owner",
+    "fix",
+    "institution_'$id",
+    "superseded",
+    "pending",
+  ],
+  "sql": "with "locked_banking_connection" as (select "id" from "banking_connections" where ("banking_connections"."id" = $1 and "banking_connections"."org_id" = $2 and "banking_connections"."user_id" = $3 and "banking_connections"."provider" = $4 and "banking_connections"."revoked_at" is null and "banking_connections"."deleted_at" is null and ("banking_connections"."status" = $5 or "banking_connections"."status" = $6)) for no key update), "replaced_banking_session" as (
+    INSERT INTO "banking_connect_sessions"
+      (id, org_id, user_id, connection_id, mode, institution_login_id)
+    SELECT
+    $7,
+    $8,
+    $9,
+    "locked_banking_connection"."id",
+    $10,
+    $11
+    FROM "locked_banking_connection"
+    ON CONFLICT (connection_id) WHERE status = 'pending'
+    DO UPDATE SET status = 'superseded',
+      updated_at = $12
+    WHERE "banking_connect_sessions"."org_id" = $13
+      AND "banking_connect_sessions"."user_id" = $14
+    RETURNING *
+  ), "inserted_banking_session" as (
+    INSERT INTO "banking_connect_sessions"
+      (id, org_id, user_id, connection_id, mode, institution_login_id)
+    SELECT
+    $15,
+    $16,
+    $17,
+    "locked_banking_connection"."id",
+    $18,
+    $19
+    FROM "locked_banking_connection"
+    WHERE (exists (select "id" from "replaced_banking_session" where "replaced_banking_session"."status" = $20) OR not exists (select "id" from "replaced_banking_session"))
+    RETURNING *
+  ), "pending_banking_session" as ((select "id", "org_id", "user_id", "connection_id", "mode", "status", "institution_login_id", "added_at", "done_at", "completed_at", "end_reason", "created_at", "updated_at" from "replaced_banking_session" where "replaced_banking_session"."status" = $21) union all (select "id", "org_id", "user_id", "connection_id", "mode", "status", "institution_login_id", "added_at", "done_at", "completed_at", "end_reason", "created_at", "updated_at" from "inserted_banking_session")) select "locked_banking_connection"."id", "pending_banking_session"."id", "pending_banking_session"."org_id", "pending_banking_session"."user_id", "pending_banking_session"."connection_id", "pending_banking_session"."mode", "pending_banking_session"."status", "pending_banking_session"."institution_login_id", "pending_banking_session"."added_at", "pending_banking_session"."done_at", "pending_banking_session"."completed_at", "pending_banking_session"."end_reason", "pending_banking_session"."created_at", "pending_banking_session"."updated_at" from "locked_banking_connection" left join "pending_banking_session" on true",
+}
+`;

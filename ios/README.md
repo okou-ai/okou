@@ -89,8 +89,22 @@ launching an app or simulator:
 swift test --package-path ios/Packages/ChatDomain
 ```
 
-Domain tests construct domain values directly. HTTP decoding and store/UI
-integration remain in `OkouTests`. The CI test script runs both suites.
+Domain tests construct domain values directly. The local
+[ChatData package](Packages/ChatData/Package.swift) owns API requests and DTOs,
+synchronization, commands, model selection, and SQLite storage. It depends on
+ChatDomain and Apple system frameworks; authentication/realtime SDK adapters,
+feature stores, Markdown rendering, and native UI remain in the App.
+
+Run the 32 data tests independently:
+
+```sh
+swift test --package-path ios/Packages/ChatData
+```
+
+They retain real HTTP decoding, loopback snapshot transfers, and temporary SQLite
+files. ChatDataTestSupport shares the existing HTTP fixture with App integration
+tests and is linked only by test targets. Store and UI tests remain in
+`OkouTests`. The CI script runs both package suites and the App suite.
 
 The project uses synchronized folders: adding Swift files beneath `Okou/` or
 `OkouTests/` adds them to the corresponding target. `Resources/Info.plist` is
@@ -118,13 +132,20 @@ production approval. See [TestFlight releases](TESTFLIGHT.md) for the one-time
 App Store Connect group, signing, and credential setup. A successful signed CI
 upload and TestFlight installation have not yet been verified.
 
-This implementation does not add an independent iOS minimum-build gate. Existing
-HTTP 426 responses show a blocking update screen, but enforcing an iOS build
-floor requires the separately planned API middleware change. Old API-version
+Every `/api/` request identifies the app with `X-Client-Type: iOS`, an
+`X-Client-Version` equal to the marketing version (`CFBundleShortVersionString`,
+from `MARKETING_VERSION`), an `X-Client-Session-Id` generated once per API
+client, and a per-request `X-Client-Request-Id`. A bundle without a stable
+`x.y.z` marketing version fails configuration at launch. Signed snapshot
+downloads carry none of these headers. The API logs these values; an API-side
+iOS minimum-version floor is planned in
+[#38584](https://github.com/okou-ai/okou/issues/38584), and the app does not
+enforce one itself. Builds that predate these headers cannot be identified.
+Existing HTTP 426 responses show a blocking update screen. Old API-version
 compatibility and the future OpenAPI v1 migration are outside this MVP.
 
 The iOS icon retains the Desktop flower geometry from
-`turbo/apps/desktop/assets/icon.svg`. Its source is `Assets/AppIcon.svg`, with a
+`desktop/Resources/symbol.svg`. Its source is `Assets/AppIcon.svg`, with a
 full opaque background because iOS supplies the outer icon mask. The 1024-pixel
 PNG is RGB without alpha; it removes the transparent Desktop padding that
 appeared as a black border on the simulator. The SVG was exported using
@@ -190,7 +211,9 @@ long-history performance checks remain outside the completed interactive sample.
 The transcript uses a native `UICollectionView` cell for each message, with
 SwiftUI message content and measured row heights. A bounded batch of temporary
 hosts settles Markdown layout before a snapshot is applied. Cell reuse keeps
-these heights, and pending content changes wait until scrolling ends. Reading
+these heights, and pending content changes wait until scrolling ends. A per-detail
+ConversationScrollCoordinator owns latest/history intent and bottom-button policy;
+the native collection owns motion and the anchor owns offset correction. Reading
 positions update when late message markers become ready, even without a change
 to the list's size or offset. Initial
 positioning targets the latest prepared messages; starting a manual scroll stops
@@ -220,9 +243,9 @@ remain outstanding.
 and manual dispatch. A lightweight Linux job tests change detection and gate
 behavior on every run. Changes to `ios/`, the iOS workflow, or the shared
 changed-base helper trigger Swift formatting, property-list validation, an app
-build, standalone ChatDomain tests, and the simulator tests on macOS 26 with
-Xcode 26.3 and iOS 26.2. Formatting includes the package manifest, sources, and
-tests. Swift
+build, standalone ChatDomain/ChatData tests, and the simulator tests on macOS 26
+with Xcode 26.3 and iOS 26.2. Formatting includes both package manifests, sources,
+and tests. Swift
 packages must match `Package.resolved`; CI checks that it remains unchanged.
 
 The `ci-gate-ios` check succeeds only after the required build/tests pass, or

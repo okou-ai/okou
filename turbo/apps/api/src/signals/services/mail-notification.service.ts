@@ -4,8 +4,6 @@ import type {
   NotificationResponse,
   NotifyMailBody,
 } from "@okouai/api-contracts/contracts/notifications";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
@@ -13,7 +11,7 @@ import { mailNotifications } from "@okouai/db/schema/mail-notification";
 import { users } from "@okouai/db/schema/user";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command, computed } from "ccstate";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
 import {
   conflict,
   notConfigured,
@@ -23,7 +21,6 @@ import {
 import { env, optionalEnv } from "../../lib/env";
 import { isMorningBriefNotificationSource } from "../../lib/morning-brief-notification-source";
 import { db$, writeDb$ } from "../external/db";
-import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { emailSubscription$ } from "./email-subscription.service";
 import {
   buildFromAddress,
@@ -50,17 +47,6 @@ function response(
     reason: receipt.reason,
     deduplicated,
   };
-}
-
-export function mailNotificationsEnabled(owner: Owner) {
-  const overrides$ = userFeatureSwitchOverrides(owner.orgId, owner.userId);
-  return computed(async (get) => {
-    const overrides = await get(overrides$);
-    return isFeatureEnabled(FeatureSwitchKey.NotifyMail, {
-      ...owner,
-      overrides,
-    });
-  });
 }
 
 function notificationKeyScope(owner: Owner, key: string) {
@@ -159,6 +145,7 @@ const commitMailNotification$ = command(
     const keyScope = notificationKeyScope(owner, body.idempotencyKey);
     const runScope = activeRunScope(owner);
     const plan = notificationAdmissionReadPlan();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0176; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // Serialize admission with run termination and the user's opt-out writes.
       const [activeRun] = await tx
@@ -362,24 +349,34 @@ export const eraseMailNotifications$ = command(
     if (!owner.userId && !owner.orgId) {
       throw new Error("Mail notification erasure requires an owner");
     }
-    await set(writeDb$).transaction(async (tx) => {
-      const scope = and(
-        owner.userId ? eq(mailNotifications.userId, owner.userId) : undefined,
-        owner.orgId ? eq(mailNotifications.orgId, owner.orgId) : undefined,
-      );
-      await tx
+    const db = set(writeDb$);
+    const scope = and(
+      owner.userId ? eq(mailNotifications.userId, owner.userId) : undefined,
+      owner.orgId ? eq(mailNotifications.orgId, owner.orgId) : undefined,
+    );
+    const erasedOutbox = db.$with("erased_email_outbox").as(
+      db
         .delete(emailOutbox)
         .where(
           inArray(
             emailOutbox.id,
-            tx
+            db
               .select({ id: mailNotifications.outboxId })
               .from(mailNotifications)
               .where(scope),
           ),
-        );
-      await tx.delete(mailNotifications).where(scope);
-      signal.throwIfAborted();
-    });
+        )
+        .returning({ id: emailOutbox.id }),
+    );
+    // Exhaust the outbox DELETE before locking receipts, matching completion/TTL
+    // order. COUNT also keeps receipts eligible when no outbox survives.
+    await db
+      .with(erasedOutbox)
+      .delete(mailNotifications)
+      .where(
+        and(scope, gte(db.select({ count: count() }).from(erasedOutbox), 0)),
+      );
+    // SQL has committed; cancellation stops the caller's remaining cleanup.
+    signal.throwIfAborted();
   },
 );

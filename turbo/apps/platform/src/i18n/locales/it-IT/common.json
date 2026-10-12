@@ -124,20 +124,23 @@
         "title": "Log non trovato"
       },
       "runner": {
-        "cacheMiss": "Nessuno spazio di lavoro nella cache corrispondeva alla chiave di riutilizzo.",
+        "cacheMiss": "Nessuna directory home nella cache corrispondeva alla chiave di riutilizzo.",
         "deviceLimitMismatch": "Esiste una voce del pool inattivo ma lo stato del limitatore di velocità del dispositivo non corrisponde.",
-        "diskPressure": "Il riutilizzo dello spazio di lavoro è stato ignorato a causa della pressione sul disco del runner.",
+        "diskPressure": "Il riutilizzo della directory home è stato ignorato a causa della pressione sul disco del runner.",
         "environment": "Ambiente",
         "featureDisabled": "Il riutilizzo del sandbox è disabilitato per questa esecuzione.",
         "framework": "Framework",
         "generation": "Generazione",
+        "home": "Directory home",
+        "homeNoReuseKey": "Non era disponibile alcuna chiave di riutilizzo della directory home.",
+        "homeReusedDescription": "La directory home è stata ripristinata dalla cache del runner.",
         "hostname": "Nome host",
-        "invalidMetadata": "I metadati dello spazio di lavoro nella cache non erano validi.",
+        "invalidMetadata": "I metadati della directory home nella cache non erano validi.",
         "invalidWorkingDir": "Non è stato possibile riutilizzare la directory di lavoro richiesta.",
-        "lockBusy": "Un'altra esecuzione stava preparando lo stesso spazio di lavoro.",
+        "lockBusy": "Un'altra esecuzione stava preparando la stessa directory home.",
         "noReuseKey": "Non era disponibile alcuna chiave di riutilizzo per trovare una sandbox inattiva.",
         "noSessionId": "Risultato legacy: il motivo esatto per cui la sandbox non è stata riutilizzata non è disponibile.",
-        "notConfigured": "Il riutilizzo dello spazio di lavoro non era configurato per questa esecuzione.",
+        "notConfigured": "Il riutilizzo della directory home non era configurato per questa esecuzione.",
         "notReused": "Non riutilizzato",
         "outcomeUnavailableDescription": "Non sono disponibili ulteriori dettagli.",
         "poolMiss": "Nessun sandbox corrispondente trovato nel pool inattivo.",
@@ -147,23 +150,20 @@
         "reusedDescription": "La sandbox è stata riattivata dal pool inattivo.",
         "runnerId": "ID runner",
         "sandbox": "Sandbox",
-        "sandboxPrepareFallback": "È stato trovato uno spazio di lavoro nella cache, ma non è stato possibile utilizzarlo dopo la preparazione della sandbox.",
-        "sandboxReusedDescription": "Lo spazio di lavoro è rimasto disponibile nella sandbox riutilizzata.",
+        "sandboxPrepareFallback": "È stata trovata una directory home nella cache, ma non è stato possibile utilizzarla dopo la preparazione della sandbox.",
+        "sandboxReusedDescription": "La directory home è rimasta disponibile nella sandbox riutilizzata.",
         "startup": "Avvio",
         "startupCold": "Avvio a freddo",
         "startupColdDescription": "Sono stati preparati una nuova sandbox e un nuovo spazio di lavoro.",
+        "startupHome": "Riutilizzo della directory home",
+        "startupHomeDescription": "Una nuova sandbox ha ripristinato una directory home dalla cache.",
         "startupSandbox": "Riutilizzo della sandbox",
         "startupSandboxDescription": "La sandbox e il relativo spazio di lavoro sono stati riutilizzati.",
         "startupUnknown": "Sconosciuto",
         "startupUnknownDescription": "I dettagli sul riutilizzo all'avvio non sono disponibili.",
-        "startupWorkspace": "Riutilizzo dello spazio di lavoro",
-        "startupWorkspaceDescription": "Una nuova sandbox ha ripristinato uno spazio di lavoro dalla cache.",
         "unavailable": "Non disponibile",
         "unparkFailed": "Impossibile riattivare la sandbox; ne è stata predisposta una nuova.",
-        "version": "Versione",
-        "workspace": "Spazio di lavoro",
-        "workspaceNoReuseKey": "Non era disponibile alcuna chiave di riutilizzo dello spazio di lavoro.",
-        "workspaceReusedDescription": "Lo spazio di lavoro è stato ripristinato dalla cache del runner."
+        "version": "Versione"
       },
       "steps": {
         "matched": "({{matched}}/{{total}} corrispondenti)",
@@ -927,20 +927,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Hai effettuato l’accesso a Desktop. Puoi chiudere questa finestra.",
-        "connecting": "Connessione della sessione desktop in corso.",
-        "consumed": "Accesso a Desktop in fase di completamento. Lascia aperta questa finestra.",
-        "failed": "Impossibile completare l’accesso. Ricomincia da Desktop o riprova in questo browser.",
-        "no-workspaces": "Crea uno spazio di lavoro o unisciti a uno nell’app web, poi accedi di nuovo da Desktop.",
-        "pending": "Apri Desktop per continuare ad accedere.",
-        "selecting": "Scegli uno spazio di lavoro per questo computer."
-      },
-      "reopen": "Apri Desktop",
-      "retry": "Riprova",
-      "title": "Accedi a Desktop"
-    },
     "documentTitles": {
       "signIn": "Accedi",
       "signUp": "Iscriviti"
@@ -1736,6 +1722,9 @@
       "cancelled": "Richiesta annullata",
       "cancelling": "Annullamento…",
       "checkFailed": "Impossibile verificare il browser. I dati inseriti sono conservati; riprova prima di inviarli.",
+      "checkingOutcome": "Verifica dello stato del browser",
+      "checkingOutcomeDescription": "In attesa che il browser confermi questa richiesta.",
+      "checkStatus": "Verifica stato",
       "completed": "Informazioni aggiunte",
       "confirmRangeValue": "Usa il valore attuale",
       "continue": "Avvisa l’agente",
@@ -1751,6 +1740,8 @@
       "loadingDescription": "Verifica della richiesta…",
       "open": "Inserisci le informazioni",
       "optional": "(Facoltativo)",
+      "outcomeNotConfirmed": "Esito non confermato",
+      "outcomeNotConfirmedDescription": "Il browser potrebbe aver completato questa richiesta. Verifica il suo stato prima di riprovare.",
       "required": "(Obbligatorio)",
       "retry": "Riprova",
       "site": "Sito",
@@ -2178,8 +2169,6 @@
       "number": "numero"
     },
     "sidebar": {
-      "allArchived": "Tutte le chat sono archiviate",
-      "allCaughtUp": "Tutto fatto",
       "allChats": "Tutte le chat",
       "archive": "Archivia chat",
       "archived": "Archiviate",
@@ -2190,7 +2179,9 @@
       "deleteTitle": "Eliminare la chat?",
       "draft": "Bozza",
       "empty": "Avvia una conversazione e verrà visualizzata qui",
+      "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Posta in arrivo",
+      "inboxEmpty": "La tua posta in arrivo è vuota",
       "markUnread": "Segna come non letta",
       "movePinDown": "Sposta giù",
       "movePinUp": "Sposta su",
@@ -2858,8 +2849,12 @@
       "resize": "Ridimensiona la barra laterale"
     },
     "toasts": {
+      "archived": "Chat archiviata.",
+      "archivedMuted": "Chat archiviata. È silenziata, quindi le nuove risposte non la riporteranno indietro.",
       "copied": "Copiato",
-      "deleted": "Chat eliminata"
+      "deleted": "Chat eliminata",
+      "unarchived": "Chat spostata nella posta in arrivo",
+      "undo": "Annulla"
     },
     "voice": {
       "checkingLimit": "Controllo del limite di input vocale",
@@ -3883,6 +3878,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "Riprova"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Richiesta non riuscita"
@@ -3995,22 +3993,6 @@
         "back": "Indietro",
         "continue": "Continua",
         "notNow": "Non ora"
-      },
-      "compliance": {
-        "frameworks": {
-          "ccpa": "CCPA / CPRA",
-          "gdpr": "GDPR",
-          "hipaa": "HIPAA",
-          "iso27001": "ISO/IEC 27001",
-          "soc2": "SOC 2 Type II"
-        },
-        "link": "Dettagli sulla sicurezza",
-        "status": {
-          "aligned": "Allineato",
-          "compliant": "Conforme",
-          "inProgress": "In corso"
-        },
-        "title": "La conformità di Okou, pensata per la tua fiducia"
       },
       "documentTitles": {
         "experience": "La tua esperienza con l'IA",
@@ -4994,6 +4976,27 @@
           "title": "Spazio IndexedDB",
           "unavailable": "Lo spazio IndexedDB non è disponibile."
         },
+        "morningBriefEmail": {
+          "checkStatus": "Controlla lo stato di consegna",
+          "description": "Invia un esempio fisso all’email del tuo account con il modello Morning Brief. Non esegue un Agent e non modifica la programmazione.",
+          "reasons": {
+            "delivery-failed": "Consegna non riuscita. Il provider potrebbe aver accettato un tentativo precedente.",
+            "expired": "Il termine di consegna è scaduto. Il provider potrebbe aver accettato un tentativo precedente.",
+            "no-email": "Saltata: il tuo account non ha un indirizzo email.",
+            "suppressed": "Saltata: la consegna all’email del tuo account è bloccata.",
+            "unsubscribed": "Saltata: il tuo account ha annullato l’iscrizione agli aggiornamenti email."
+          },
+          "requestFailed": "La richiesta non è stata completata. Il nuovo tentativo usa la stessa richiesta per evitare un’email duplicata.",
+          "retry": "Riprova l’email di prova",
+          "send": "Invia email di prova",
+          "sendAnother": "Invia un’altra email di prova",
+          "sending": "Invio in corso…",
+          "status": {
+            "queued": "In coda per la consegna. Controlla lo stato prima di inviare un altro esempio.",
+            "sent": "Accettata dal provider email. Controlla posta in arrivo e spam; l’arrivo nella casella non è confermato."
+          },
+          "title": "Email di prova di Morning Brief"
+        },
         "openrouterPreset": {
           "description": "Si applica alle nuove esecuzioni di Auto e Okou 1.0 integrato per tutta l’organizzazione. Le esecuzioni esistenti non cambiano.",
           "loading": "Caricamento…",
@@ -5226,6 +5229,22 @@
   },
   "shared": {
     "breadcrumb": "Percorso di navigazione",
+    "compliance": {
+      "frameworks": {
+        "ccpa": "CCPA / CPRA",
+        "gdpr": "GDPR",
+        "hipaa": "HIPAA",
+        "iso27001": "ISO/IEC 27001",
+        "soc2": "SOC 2 Type II"
+      },
+      "link": "Dettagli sulla sicurezza",
+      "status": {
+        "aligned": "Allineato",
+        "compliant": "Conforme",
+        "inProgress": "In corso"
+      },
+      "title": "La conformità di Okou, pensata per la tua fiducia"
+    },
     "errorBoundary": {
       "contactSupport": "supporto",
       "description": "Fai un altro tentativo o contattaci",
@@ -5397,6 +5416,14 @@
     },
     "clearSearch": "Cancella ricerca",
     "custom": "Personalizzati",
+    "delete": {
+      "cancel": "Annulla",
+      "confirm": "Elimina modello",
+      "deleting": "Eliminazione...",
+      "description": "\"{{title}}\" verrà rimosso per tutti coloro che possono vederlo. Questa azione non può essere annullata.",
+      "failed": "Impossibile eliminare il modello. Riprova.",
+      "title": "Eliminare il modello?"
+    },
     "detail": {
       "back": "Modelli personalizzati",
       "page": "Pagina {{number}}"
@@ -6390,22 +6417,31 @@
     "connected": "Connesso",
     "connectedWithDetail": "Connesso ({{detail}})",
     "discord": {
-      "accountSetup": "Il tuo account non è connesso. Non è ancora possibile connettere un nuovo account Discord.",
-      "adminSetup": "La configurazione dei server non è ancora disponibile. Le configurazioni esistenti già verificate possono continuare a usare Discord.",
+      "accountSetup": "Connetti il tuo account Discord tramite il consenso ufficiale nel browser.",
+      "adminSetup": "Installa Okou sul tuo server Discord, quindi connetti il tuo account.",
+      "approvalConfirmed": "Consenso del browser confermato. Chiudi questa scheda per terminare nella scheda Works originale.",
+      "approvalFailed": "Conferma non riuscita. Accedi con l’account e l’organizzazione Okou originali o riavvia l’autorizzazione.",
+      "approvalPrompt": "Conferma con lo stesso account e la stessa organizzazione Okou della scheda Works originale. La sola conferma non connette il tuo account.",
+      "approve": "Conferma il consenso Discord",
+      "approving": "Conferma…",
+      "authorizationError": "Non è stato possibile completare l’autorizzazione Discord. Riprova da questa scheda.",
+      "authorizing": "Autorizzazione in corso…",
+      "browserConsent": "Completa il consenso Discord e conferma con il tuo account Okou in quella scheda. Chiuderla da sola non connette il tuo account.",
       "chooseDmServer": "Scegli un server",
       "description": "Menziona Okou in un server o invia un messaggio diretto al bot.",
       "disconnect": "Disconnetti Discord",
       "dmServer": "Server predefinito per i messaggi diretti",
+      "install": "Installa su Discord",
       "limitedContext": "Contesto limitato: Okou potrebbe non ricevere i normali messaggi dei canali. Menziona Okou e includi i dettagli di cui ha bisogno.",
-      "loadError": "Impossibile caricare lo stato di Discord.",
-      "loading": "Caricamento dello stato di Discord…",
-      "memberSetup": "Chiedi a un amministratore dell’organizzazione informazioni sull’accesso a Discord. La configurazione dei server non è ancora disponibile.",
+      "memberSetup": "Chiedi a un amministratore dell’organizzazione di installare Okou sul tuo server Discord.",
       "moreOptions": "Altre opzioni di Discord",
+      "pendingConsent": "Questa scheda non ha una prova di autorizzazione. Chiudila e riavvia l’autorizzazione dalla scheda Works originale.",
+      "popupBlocked": "Consenti i popup per autorizzare Discord, quindi riprova.",
       "retry": "Riprova",
       "server": "Server: {{name}}",
       "suspended": "Discord è temporaneamente non disponibile. Le connessioni esistenti vengono mantenute.",
       "title": "Discord",
-      "unconfigured": "Discord non è ancora disponibile per questa organizzazione.",
+      "unconfigured": "Discord non è ancora configurato per questa organizzazione.",
       "uninstall": "Rimuovi Discord",
       "uninstallDescription": "Questa operazione disconnette da Discord tutte le persone di questa organizzazione. Le altre organizzazioni mantengono le proprie connessioni.",
       "uninstallTitle": "Rimuovere Discord da questa organizzazione?"

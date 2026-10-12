@@ -1,9 +1,10 @@
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { randomUUID } from "node:crypto";
 
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { createStore } from "ccstate";
 import StripeSDK from "stripe";
-import { beforeEach, onTestFinished } from "vitest";
+import { beforeEach } from "vitest";
 import {
   okouTokenFromClaim,
   createChatEventsFixture,
@@ -12,11 +13,7 @@ import {
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import {
-  deleteOrgPlanEntitlementFixture,
-  upsertOrgPlanEntitlementFixture,
-} from "../../../test-fixtures/org-plan-entitlement";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+
 import { mockStripeClient } from "../../external/stripe-client";
 import { billingStatusRoutes } from "../billing-status";
 import { createBddApi } from "./helpers/api-bdd";
@@ -330,9 +327,14 @@ describe("GET /api/billing/status", () => {
     expect(Number.isFinite(response.body.concurrencyLimit)).toBeTruthy();
   });
 
-  it("returns entitlement capabilities and the current Stripe concurrency price", async () => {
+  it("returns Team capabilities and the current Stripe concurrency price", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "3");
     const concurrencyPriceId = `price_concurrency_${randomUUID()}`;
+    const userId = `user_${randomUUID()}`;
+    const orgId = `org_${randomUUID()}`;
+    const actor = createBddApi(context).user({ userId, orgId });
+    await createBddApi(context).completeOnboarding(actor);
+    await publicPlanLifecycle(context, actor, "team").update("active");
     mockEnv("OKOU_PRICE_CONCURRENCY", concurrencyPriceId);
     mockOptionalEnv("STRIPE_SECRET_KEY", "sk_test_billing_status");
     mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
@@ -345,27 +347,6 @@ describe("GET /api/billing/status", () => {
       recurring: { interval: "month", interval_count: 1 },
       product: "prod_concurrency",
     });
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    onTestFinished(async () => {
-      await deleteOrgPlanEntitlementFixture(orgId);
-    });
-    await seedOrgMetadata({
-      orgId,
-      tier: "pro",
-      credits: 0,
-    });
-    await upsertOrgPlanEntitlementFixture({
-      orgId,
-      status: "active",
-      baseConcurrencyLimit: 10,
-      canBuyConcurrency: true,
-      canBuyCredits: false,
-      showUsagePack: true,
-      autoRechargeAllowed: false,
-      restrictedBuiltInModels: false,
-      workflowWebhookAutomationAllowed: true,
-    });
     mocks.clerk.session(userId, orgId);
 
     const response = await accept(
@@ -377,12 +358,12 @@ describe("GET /api/billing/status", () => {
       [200],
     );
 
-    expect(response.body.tier).toBe("pro");
+    expect(response.body.tier).toBe("team");
     expect(response.body.canBuyConcurrency).toBeTruthy();
-    expect(response.body.canBuyCredits).toBeFalsy();
-    expect(response.body.showUsagePack).toBeTruthy();
+    expect(response.body.canBuyCredits).toBeTruthy();
+    expect(response.body.showUsagePack).toBeFalsy();
     expect(response.body.status).toBe("active");
-    expect(response.body.autoRechargeAllowed).toBeFalsy();
+    expect(response.body.autoRechargeAllowed).toBeTruthy();
     expect(response.body.restrictedBuiltInModels).toBeFalsy();
     expect(response.body.workflowWebhookAutomationAllowed).toBeTruthy();
     expect(response.body.concurrencyLimit).toBe(3);

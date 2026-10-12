@@ -140,9 +140,10 @@ make_manifest() {
         "codex-mock": "codex-mock-sha",
         "guest-state-restore": "guest-state-restore-sha",
         "guest-tool-exec": "guest-tool-exec-sha",
+        "guest-task-exec": "guest-task-exec-sha",
         "runner-rpc-client": "runner-rpc-client-sha",
         "guest-write-file": "guest-write-file-sha",
-        "guest-workspace-mount": "guest-workspace-mount-sha"
+        "guest-home-mount": "guest-home-mount-sha"
       },
       hosts: $hosts
     }' >"$file"

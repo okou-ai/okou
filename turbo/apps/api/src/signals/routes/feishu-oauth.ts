@@ -26,7 +26,7 @@ import {
 import { nowDate } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
 import {
-  claimConnectorOAuthState,
+  claimCustomConnectorOAuthState$,
   customConnectorOAuthStateByState,
   customConnectorOAuthStatePreview,
   type StoredCustomConnectorOAuthState,
@@ -436,6 +436,7 @@ async function persistFeishuOAuthConnection(
       readonly shouldNotify: boolean;
     }
 > {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0018; new non-billing transactions are prohibited.
   return await args.db.transaction(async (tx) => {
     const agentLocked = await lockUserCustomConnectorGrantScope(tx, {
       orgId: args.state.orgId,
@@ -1026,9 +1027,9 @@ const completeCustomFeishuOAuth$ = command(
       );
     }
 
-    const claimed = await claimConnectorOAuthState(
-      db,
-      { state: query.state, target: { kind: "custom" } },
+    const claimed = await set(
+      claimCustomConnectorOAuthState$,
+      query.state,
       signal,
     );
     signal.throwIfAborted();

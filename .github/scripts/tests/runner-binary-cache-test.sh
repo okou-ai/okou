@@ -399,91 +399,54 @@ cat > "${TMPDIR}/run-30.json" <<JSON
 {"id":30,"run_attempt":1,"event":"pull_request","status":"completed","conclusion":"success","head_branch":"other","head_sha":"${unreachable_head}","path":".github/workflows/runner-image.yml","repository":{"full_name":"okou-ai/okou"},"pull_requests":[{"number":999}]}
 JSON
 
-cat > "${TMPDIR}/bin/gh" <<'BASH'
-#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\n' "$*" >> "$GH_LOG"
-if [ "$1" = "api" ]; then
-  endpoint="${*: -1}"
-  if [[ "$endpoint" == *'/actions/artifacts?'* ]]; then
-    [ "${GH_SCENARIO:-rank}" != "api-fail" ] || exit 8
-    case "${GH_SCENARIO:-rank}" in
-      failed)
-        printf '[{"artifacts":[{"id":122,"name":"%s","expired":false,"size_in_bytes":1000,"created_at":"2026-07-21T00:00:00Z","workflow_run":{"id":22,"head_branch":"main","head_sha":"%s"}}]}]\n' "$EXPECTED_ARTIFACT_NAME" "$MAIN_HEAD"
-        ;;
-      failed-valid)
-        printf '[{"artifacts":[{"id":122,"name":"%s","expired":false,"size_in_bytes":1000,"created_at":"2026-07-21T00:00:00Z","workflow_run":{"id":22,"head_branch":"main","head_sha":"%s"}}]}]\n' "$EXPECTED_ARTIFACT_NAME" "$MAIN_HEAD"
-        ;;
-      ranking-reachable)
-        printf '[{"artifacts":[{"id":124,"name":"%s","expired":false,"size_in_bytes":1000,"created_at":"2026-07-21T02:00:00Z","workflow_run":{"id":24,"head_branch":"gh-readonly-queue/main/pr-456-deadbeef","head_sha":"%s"}},{"id":121,"name":"%s","expired":false,"size_in_bytes":1000,"created_at":"2026-07-21T01:00:00Z","workflow_run":{"id":21,"head_branch":"feature","head_sha":"%s"}}]}]\n' \
-          "$EXPECTED_ARTIFACT_NAME" "$REACHABLE_HEAD" \
-          "$EXPECTED_ARTIFACT_NAME" "$PR_HEAD"
-        ;;
-      untrusted)
-        printf '[{"artifacts":[{"id":120,"name":"%s","expired":false,"size_in_bytes":1000,"created_at":"2026-07-21T00:00:00Z","workflow_run":{"id":20,"head_branch":"main","head_sha":"%s"}}]}]\n' "$EXPECTED_ARTIFACT_NAME" "$MAIN_HEAD"
-        ;;
-      empty)
-        printf '[{"artifacts":[]}]\n'
-        ;;
-      *)
-        printf '[{"artifacts":[{"id":199,"name":"%s","expired":false,"size_in_bytes":1000,"created_at":"2026-07-21T03:00:00Z","workflow_run":{"id":99,"head_branch":"feature","head_sha":"%s"}},{"id":130,"name":"%s","expired":false,"size_in_bytes":1000,"created_at":"2026-07-21T02:30:00Z","workflow_run":{"id":30,"head_branch":"other","head_sha":"%s"}},{"id":121,"name":"%s","expired":false,"size_in_bytes":1000,"created_at":"2026-07-21T02:00:00Z","workflow_run":{"id":21,"head_branch":"feature","head_sha":"%s"}}]},{"artifacts":[{"id":120,"name":"%s","expired":false,"size_in_bytes":1000,"created_at":"2026-07-21T01:00:00Z","workflow_run":{"id":20,"head_branch":"main","head_sha":"%s"}}]}]\n' \
-          "$EXPECTED_ARTIFACT_NAME" "$PR_HEAD" \
-          "$EXPECTED_ARTIFACT_NAME" "$UNREACHABLE_HEAD" \
-          "$EXPECTED_ARTIFACT_NAME" "$PR_HEAD" \
-          "$EXPECTED_ARTIFACT_NAME" "$MAIN_HEAD"
-        ;;
-    esac
-    exit 0
-  fi
-  if [[ "$endpoint" == *'/compare/'* ]]; then
-    case "${GH_SCENARIO:-rank}" in
-
-      rank)
-        printf '{"status":"diverged","ahead_by":1,"behind_by":1,"base_commit":{"sha":"%s"},"merge_base_commit":{"sha":"%s"}}\n' "$UNREACHABLE_HEAD" "$MAIN_HEAD"
-        ;;
-      ranking-reachable)
-        printf '{"status":"ahead","ahead_by":3,"behind_by":0,"base_commit":{"sha":"%s"},"merge_base_commit":{"sha":"%s"}}\n' "$REACHABLE_HEAD" "$REACHABLE_HEAD"
-        ;;
-      *) exit 2 ;;
-    esac
-    exit 0
-  fi
-  run_id=${endpoint##*/}
-  cp "${GH_FIXTURES}/run-${run_id}.json" /dev/stdout
-  exit 0
-fi
-if [ "$1" = "run" ] && [ "$2" = "download" ]; then
-  run_id=$3
-  output_dir=""
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      -D) output_dir=$2; shift 2 ;;
-      *) shift ;;
-    esac
-  done
-  mkdir -p "$output_dir"
-  if [ "$run_id" = "20" ] && [ "${GH_SCENARIO:-rank}" = "untrusted" ]; then
-    cp "${GH_FIXTURES}/untrusted-manifest.json" "${output_dir}/manifest.json"
-  elif [ "$run_id" = "20" ] && [ "${GH_SCENARIO:-rank}" = "conflict" ]; then
-    cp "${GH_FIXTURES}/conflict-manifest.json" "${output_dir}/manifest.json"
-  elif [ "$run_id" = "20" ] && [ "${GH_SCENARIO:-rank}" = "guest-conflict" ]; then
-    cp "${GH_FIXTURES}/guest-conflict-manifest.json" "${output_dir}/manifest.json"
-  elif [ "$run_id" = "20" ]; then
-    cp "${GH_FIXTURES}/main-manifest.json" "${output_dir}/manifest.json"
-  elif [ "$run_id" = "21" ]; then
-    cp "${GH_FIXTURES}/pr-manifest.json" "${output_dir}/manifest.json"
-  elif [ "$run_id" = "22" ] && [ "${GH_SCENARIO:-rank}" = "failed-valid" ]; then
-    cp "${GH_FIXTURES}/failed-main-manifest.json" "${output_dir}/manifest.json"
-  elif [ "$run_id" = "24" ]; then
-    cp "${GH_FIXTURES}/reachable-manifest.json" "${output_dir}/manifest.json"
-  else
-    exit 1
-  fi
-  exit 0
-fi
-exit 2
-BASH
-chmod +x "${TMPDIR}/bin/gh"
+cat > "${TMPDIR}/bin/curl" <<'PYTHON'
+#!/usr/bin/env python3
+import io, json, os, pathlib, sys, urllib.parse, zipfile
+args = sys.argv[1:]; url = urllib.parse.urlsplit(args[-1]); endpoint = url.path
+assert url.hostname == 'api.github.com' and 'Authorization: Bearer fixture-token' in sys.stdin.read()
+with open(os.environ['GH_LOG'],'a') as log: log.write(endpoint+'\n')
+output = pathlib.Path(args[args.index('--output')+1]); headers = pathlib.Path(args[args.index('--dump-header')+1])
+headers.write_text('HTTP/2 200\r\n'); scenario = os.environ.get('GH_SCENARIO','rank')
+fixture = pathlib.Path(os.environ['GH_FIXTURES'])
+if endpoint.endswith('/actions/artifacts'):
+    if scenario == 'api-fail': sys.exit(8)
+    def artifact(run, branch, head, created):
+        return {'id': run+100, 'name': os.environ['EXPECTED_ARTIFACT_NAME'], 'expired': False,
+          'size_in_bytes': 1000, 'created_at': '2026-07-21T'+created+'Z',
+          'workflow_run': {'id': run,'head_branch': branch,'head_sha': os.environ[head]}}
+    main = artifact(20,'main','MAIN_HEAD','01:00:00')
+    pr = artifact(21,'feature','PR_HEAD','02:00:00')
+    if scenario in ('failed','failed-valid'): pages = [[artifact(22,'main','MAIN_HEAD','00:00:00')]]
+    elif scenario == 'ranking-reachable': pages = [[artifact(24,'gh-readonly-queue/main/pr-456-deadbeef','REACHABLE_HEAD','02:00:00'),pr]]
+    elif scenario == 'untrusted': pages = [[main]]
+    elif scenario == 'empty': pages = [[]]
+    else: pages = [[artifact(99,'feature','PR_HEAD','03:00:00'),artifact(30,'other','UNREACHABLE_HEAD','02:30:00'),pr],[main]]
+    page = int(urllib.parse.parse_qs(url.query)['page'][0])
+    if page < len(pages): headers.write_text('HTTP/2 200\r\nLink: <https://api.github.com/next>; rel="next"\r\n')
+    output.write_text(json.dumps({'artifacts':pages[page-1]}))
+elif '/compare/' in endpoint:
+    if scenario == 'rank':
+        result = {'status':'diverged','ahead_by':1,'behind_by':1,'base_commit':{'sha':os.environ['UNREACHABLE_HEAD']},'merge_base_commit':{'sha':os.environ['MAIN_HEAD']}}
+    elif scenario == 'ranking-reachable':
+        result = {'status':'ahead','ahead_by':3,'behind_by':0,'base_commit':{'sha':os.environ['REACHABLE_HEAD']},'merge_base_commit':{'sha':os.environ['REACHABLE_HEAD']}}
+    else: sys.exit(2)
+    output.write_text(json.dumps(result))
+elif '/actions/runs/' in endpoint:
+    output.write_bytes((fixture / ('run-'+endpoint.rsplit('/',1)[1]+'.json')).read_bytes())
+elif endpoint.endswith('/zip'):
+    run = int(endpoint.split('/')[-2])-100
+    if run == 20: name = {'untrusted':'untrusted','conflict':'conflict','guest-conflict':'guest-conflict'}.get(scenario,'main')
+    elif run == 21: name = 'pr'
+    elif run == 22 and scenario == 'failed-valid': name = 'failed-main'
+    elif run == 24: name = 'reachable'
+    else: sys.exit(1)
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive,'w') as zipped: zipped.writestr('manifest.json',(fixture/(name+'-manifest.json')).read_bytes())
+    output.write_bytes(archive.getvalue())
+else: raise AssertionError('unexpected external API endpoint')
+print('200',end='')
+PYTHON
+chmod +x "${TMPDIR}/bin/curl"
 
 expected_artifact="runner-binary-asset-${target}-${input_digest}"
 run_shadow() {
@@ -495,6 +458,7 @@ run_shadow() {
   fi
   PATH="${TMPDIR}/bin:${PATH}" \
   GH_LOG="${TMPDIR}/gh.log" \
+  GH_TOKEN=fixture-token \
   GH_SCENARIO="$scenario" \
   GH_FIXTURES="$TMPDIR" \
   EXPECTED_ARTIFACT_NAME="$expected_artifact" \

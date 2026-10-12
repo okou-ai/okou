@@ -22,6 +22,10 @@ import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
+import sharp from "sharp";
+import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
+import { artifactOgRoutes } from "../artifact-og";
 import { testContext, accept } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -56,6 +60,7 @@ const api = () => {
     context,
     routes: [
       ...artifactShareRoutes,
+      ...artifactOgRoutes,
       ...artifactReferenceRoutes,
       ...featureSwitchesRoutes,
       ...uploadsPrepareRoutes,
@@ -73,14 +78,18 @@ async function flag(enabled: boolean) {
     [200],
   );
 }
-async function file() {
+async function file(
+  filename = "report.pdf",
+  contentType = "application/pdf",
+  size = 13,
+) {
   const prepared = await accept(
     api()(uploadsContract).prepare({
       headers,
       body: {
-        filename: "report.pdf",
-        contentType: "application/pdf",
-        size: 13,
+        filename,
+        contentType,
+        size,
         purpose: "artifact",
       },
     }),
@@ -1982,4 +1991,134 @@ test("canonical file links disclose public previews only while explicitly public
     }),
     [404],
   );
+});
+
+test("oG checks anonymous sharing again for old image URLs after a public share becomes organization-only or revoked", async () => {
+  await fixture();
+  await accept(
+    api()(featureSwitchesContract).update({
+      headers,
+      body: { switches: { artifactPreviews: true } },
+    }),
+    [200],
+  );
+  const bytes = await sharp({
+    create: { width: 32, height: 20, channels: 3, background: "#ee2200" },
+  })
+    .png()
+    .toBuffer();
+  const provider = context.mocks.s3.send.getMockImplementation()!;
+  context.mocks.s3.send.mockImplementation((cmd, ...args) => {
+    if (
+      cmd instanceof HeadObjectCommand &&
+      cmd.input.Key?.startsWith("private-artifacts/")
+    ) {
+      return Promise.resolve({
+        ContentLength: bytes.length,
+        ContentType: "image/png",
+        Metadata: { "artifact-id": cmd.input.Key.split("/")[1] },
+      });
+    }
+    if (
+      cmd instanceof GetObjectCommand &&
+      cmd.input.Key?.startsWith("private-artifacts/")
+    ) {
+      return Promise.resolve({
+        Body: Readable.from([bytes]),
+        ContentLength: bytes.length,
+        ContentType: "image/png",
+        ETag: '"image"',
+      });
+    }
+    return provider(cmd, ...args);
+  });
+  const target = await file(
+    "confidential-report.png",
+    "image/png",
+    bytes.length,
+  );
+  const reference = artifactReferencePath(target.id, "confidential-report.png")
+    .split("/")
+    .at(-1)!;
+  const og = api()(artifactOgContract);
+  const query = { kind: "reference" as const, id: reference };
+  expect((await accept(og.metadata({ query }), [200])).body).toStrictEqual({
+    available: false,
+  });
+  await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "public" },
+    }),
+    [200],
+  );
+  const metadata = (await accept(og.metadata({ query }), [200])).body;
+  if (!metadata.available) {
+    throw new Error("Expected public metadata");
+  }
+  expect(metadata.title).toBe("confidential-report.png");
+  const imageQuery = {
+    ...query,
+    version: new URL(metadata.imageUrl).searchParams.get("version")!,
+  };
+  const image = await accept(og.image({ query: imageQuery }), [200]);
+  await expect(
+    sharp(Buffer.from(await image.body.arrayBuffer())).metadata(),
+  ).resolves.toMatchObject({ width: 32, height: 20 });
+  const brand = await accept(og.defaultImage(), [302]);
+  expect(brand.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
+  await accept(
+    api()(featureSwitchesContract).update({
+      headers,
+      body: { switches: { artifactPreviews: false } },
+    }),
+    [200],
+  );
+  const workingStorage = context.mocks.s3.send.getMockImplementation()!;
+  context.mocks.s3.send.mockImplementation((cmd, ...args) => {
+    if (
+      cmd instanceof GetObjectCommand &&
+      cmd.input.Key?.startsWith("artifact-shares/")
+    ) {
+      return Promise.reject(new Error("Publication policy unavailable"));
+    }
+    return workingStorage(cmd, ...args);
+  });
+  expect((await accept(og.metadata({ query }), [200])).body).toStrictEqual({
+    available: false,
+  });
+  const disabled = await accept(og.image({ query: imageQuery }), [302]);
+  expect(disabled.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
+  context.mocks.s3.send.mockImplementation(workingStorage);
+  await accept(
+    api()(featureSwitchesContract).update({
+      headers,
+      body: { switches: { artifactPreviews: true } },
+    }),
+    [200],
+  );
+  for (const audience of ["organization", "private"] as const) {
+    await accept(
+      api()(artifactSharesContract).update({
+        headers,
+        body: { target, audience },
+      }),
+      [200],
+    );
+    expect((await accept(og.metadata({ query }), [200])).body).toStrictEqual({
+      available: false,
+    });
+    const denied = await accept(og.image({ query: imageQuery }), [302]);
+    expect(denied.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
+    expect(denied.headers.get("cache-control")).toBe("private, no-store");
+  }
+  await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "public" },
+    }),
+    [200],
+  );
+  const stale = await accept(og.image({ query: imageQuery }), [302]);
+  expect(stale.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
 });

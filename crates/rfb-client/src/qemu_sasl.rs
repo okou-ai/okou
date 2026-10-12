@@ -145,7 +145,7 @@ async fn step(
     .map_err(|_| Error::InvalidScramExchange)?
 }
 
-async fn write_blob<S: AsyncWrite + Unpin>(
+pub(crate) async fn write_blob<S: AsyncWrite + Unpin>(
     stream: &mut S,
     data: Option<&[u8]>,
 ) -> Result<(), Error> {
@@ -164,7 +164,7 @@ async fn write_blob<S: AsyncWrite + Unpin>(
     Ok(())
 }
 
-async fn read_blob<S: AsyncRead + Unpin>(
+pub(crate) async fn read_blob<S: AsyncRead + Unpin>(
     stream: &mut S,
     total: &mut usize,
 ) -> Result<(Option<Zeroizing<Vec<u8>>>, bool), Error> {

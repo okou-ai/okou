@@ -96,6 +96,35 @@ async def test_transport_error_after_expiry_never_serves_old_entry(real_flow):
         catalog_cache.handle_error(retry)
 
 
+async def test_authenticated_models_etag_renews_only_confirmed_credential_until_deadline(real_flow):
+    with patch.object(catalog_cache.time, "monotonic", return_value=100.0) as monotonic:
+        await install_catalog(catalog_flow(real_flow))
+        await install_catalog(catalog_flow(real_flow, auth_value="auth-b"))
+
+        monotonic.return_value = 150.0
+        confirmation = responses_flow(real_flow)
+        mitm_addon.responseheaders(confirmation)
+
+        # Both original entries expire at t=160; only the confirmed credential is renewed.
+        monotonic.return_value = 161.0
+        confirmed_hit = catalog_flow(real_flow)
+        await catalog_cache.prepare_request(confirmed_hit, request_end_stream=True)
+        assert confirmed_hit.response is not None
+        assert confirmed_hit.response.status_code == 200
+        assert confirmed_hit.response.content == CATALOG_BODY
+        assert confirmed_hit.response.headers["ETag"] == CATALOG_ETAG
+
+        other_credential = catalog_flow(real_flow, auth_value="auth-b")
+        await prepare_miss(other_credential)
+        catalog_cache.handle_error(other_credential)
+
+        # The hit at t=161 must not extend the renewed deadline of t=210.
+        monotonic.return_value = 210.0
+        expired = catalog_flow(real_flow)
+        await prepare_miss(expired)
+        catalog_cache.handle_error(expired)
+
+
 async def test_authenticated_models_etag_confirmation_and_partitioned_invalidation(real_flow):
     with patch.object(catalog_cache.time, "monotonic", return_value=100.0) as monotonic:
         await install_catalog(catalog_flow(real_flow))

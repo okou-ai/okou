@@ -34,7 +34,7 @@ pub(super) async fn build_snapshot(
         output_dir: snapshot_dir.to_path_buf(),
         vcpu_count: def.vcpu,
         memory_mb: def.memory_mb,
-        workspace_disk_mb: def.workspace_disk_mb,
+        home_disk_mb: def.home_disk_mb,
     };
 
     let pending = provider.create_uncommitted_snapshot(create_config).await?;
@@ -232,7 +232,7 @@ mod tests {
         create_uncommitted_called: Arc<AtomicBool>,
         create_snapshot_called: Arc<AtomicBool>,
         committed: Arc<AtomicBool>,
-        workspace_disk_mb: Arc<AtomicU32>,
+        home_disk_mb: Arc<AtomicU32>,
     }
 
     #[async_trait::async_trait]
@@ -242,8 +242,8 @@ mod tests {
             config: sandbox::SnapshotCreateConfig,
         ) -> Result<Box<dyn sandbox::PendingSnapshotPublish>, sandbox::SnapshotError> {
             self.create_uncommitted_called.store(true, Ordering::SeqCst);
-            self.workspace_disk_mb
-                .store(config.workspace_disk_mb, Ordering::SeqCst);
+            self.home_disk_mb
+                .store(config.home_disk_mb, Ordering::SeqCst);
             Ok(Box::new(RecordingPendingSnapshotPublish {
                 output_dir: config.output_dir,
                 committed: Arc::clone(&self.committed),
@@ -531,18 +531,18 @@ mod tests {
         let create_uncommitted_called = Arc::new(AtomicBool::new(false));
         let create_snapshot_called = Arc::new(AtomicBool::new(false));
         let committed = Arc::new(AtomicBool::new(false));
-        let workspace_disk_mb = Arc::new(AtomicU32::new(0));
+        let home_disk_mb = Arc::new(AtomicU32::new(0));
         let provider = RecordingSnapshotProvider {
             create_uncommitted_called: Arc::clone(&create_uncommitted_called),
             create_snapshot_called: Arc::clone(&create_snapshot_called),
             committed: Arc::clone(&committed),
-            workspace_disk_mb: Arc::clone(&workspace_disk_mb),
+            home_disk_mb: Arc::clone(&home_disk_mb),
         };
         let def = profile::ProfileDef {
             vcpu: 1,
             memory_mb: 128,
             rootfs_disk_mb: 8,
-            workspace_disk_mb: 16,
+            home_disk_mb: 16,
         };
 
         build_snapshot(
@@ -560,9 +560,9 @@ mod tests {
         assert!(create_uncommitted_called.load(Ordering::SeqCst));
         assert!(committed.load(Ordering::SeqCst));
         assert_eq!(
-            workspace_disk_mb.load(Ordering::SeqCst),
+            home_disk_mb.load(Ordering::SeqCst),
             16,
-            "snapshot workspace disk size must use workspace_disk_mb, not rootfs_disk_mb"
+            "snapshot home disk size must use home_disk_mb, not rootfs_disk_mb"
         );
         assert!(
             !create_snapshot_called.load(Ordering::SeqCst),
@@ -592,7 +592,7 @@ mod tests {
             vcpu: 1,
             memory_mb: 128,
             rootfs_disk_mb: 8,
-            workspace_disk_mb: 16,
+            home_disk_mb: 16,
         };
 
         let err = build_snapshot(
@@ -636,7 +636,7 @@ mod tests {
             vcpu: 1,
             memory_mb: 128,
             rootfs_disk_mb: 8,
-            workspace_disk_mb: 16,
+            home_disk_mb: 16,
         };
 
         let err = build_snapshot(

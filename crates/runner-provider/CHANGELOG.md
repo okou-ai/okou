@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.7.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.4...runner-provider-v0.7.5) (2026-10-12)
+
+
+### Refactoring
+
+* **runner:** retire workspace protocol and application sql ([#38837](https://github.com/okou-ai/okou/issues/38837)) ([a932f1f](https://github.com/okou-ai/okou/commit/a932f1f86ae10eb624fa3ff3bccc851ba4809a7e))
+
+## [0.7.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.3...runner-provider-v0.7.4) (2026-10-11)
+
+## [0.7.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.2...runner-provider-v0.7.3) (2026-10-11)
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+
+## [0.7.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.1...runner-provider-v0.7.2) (2026-10-10)
+
+## [0.7.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.0...runner-provider-v0.7.1) (2026-10-10)
+
+## [0.7.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.5...runner-provider-v0.7.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+## [0.6.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.4...runner-provider-v0.6.5) (2026-10-10)
+
+## [0.6.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.3...runner-provider-v0.6.4) (2026-10-10)
+
+## [0.6.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.2...runner-provider-v0.6.3) (2026-10-10)
+
+
+### Refactoring
+
+* **pi:** retire unversioned model config execution ([#38449](https://github.com/okou-ai/okou/issues/38449)) ([c628473](https://github.com/okou-ai/okou/commit/c62847319cb3ebbd41259d662f47905a1cb39863))
+
+## [0.6.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.1...runner-provider-v0.6.2) (2026-10-09)
+
+## [0.6.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.0...runner-provider-v0.6.1) (2026-10-09)
+
+
+### Refactoring
+
+* **runner:** move runtime reactor into runner-supervisor ([#38393](https://github.com/okou-ai/okou/issues/38393)) ([a5a1dd3](https://github.com/okou-ai/okou/commit/a5a1dd3ae25f19d65baed071cb15fa2a456cfb0a))
+
+## [0.6.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.13...runner-provider-v0.6.0) (2026-10-09)
+
+
+### Features
+
+* **api:** prepare home cache affinity and runner state ([#38314](https://github.com/okou-ai/okou/issues/38314)) ([21ce097](https://github.com/okou-ai/okou/commit/21ce0978ad9a5bc7eddb94bc9d2bc25f1897095f))
+
 ## [0.5.13](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.12...runner-provider-v0.5.13) (2026-10-09)
 
 

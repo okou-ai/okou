@@ -3,6 +3,7 @@ import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { cloudflareAccessCredentialsSchema } from "./cloudflare-access";
+import { tailscaleCredentialsSchema, tailscaleTagsSchema } from "./tailscale";
 import {
   sshAuthenticationSchema,
   SSH_PASSWORD_MAX_LENGTH,
@@ -79,6 +80,18 @@ export const runnerSshAccessResolvedSchema = z
     }),
   })
   .strict();
+export const runnerSshTailscaleResolvedSchema = z
+  .object({
+    outcome: z.literal("resolved_tailscale"),
+    ...resolvedFields,
+    authentication: sshAuthenticationSchema,
+    tailscale: tailscaleCredentialsSchema.extend({
+      configId: z.uuid(),
+      generation: generationSchema,
+      tags: tailscaleTagsSchema,
+    }),
+  })
+  .strict();
 const resolveResponseSchema = z.discriminatedUnion("outcome", [
   unavailableSchema,
   z
@@ -97,6 +110,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
     })
     .strict(),
   runnerSshAccessResolvedSchema,
+  runnerSshTailscaleResolvedSchema,
 ]);
 
 const pinRequestSchema = resolveRequestSchema

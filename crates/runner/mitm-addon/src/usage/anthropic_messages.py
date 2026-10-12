@@ -125,6 +125,7 @@ class _AnthropicMessagesSseUsageHandler:
     ) -> None:
         self._usage = usage
         self._extractor: JsonSelectiveExtractor | None = None
+        self._event_extractor: JsonSelectiveExtractor | None = None
         self._on_parse_error = on_parse_error
         self._on_accounting_event = on_accounting_event
 
@@ -134,10 +135,12 @@ class _AnthropicMessagesSseUsageHandler:
         )
 
     def on_event_start(self, event_name: str | None) -> None:
-        self._extractor = JsonSelectiveExtractor(
-            scalar_fields=_ANTHROPIC_SSE_SCALAR_FIELDS,
-            max_work_units=_ANTHROPIC_MESSAGES_MAX_WORK_UNITS,
-        )
+        if self._event_extractor is None:
+            self._event_extractor = JsonSelectiveExtractor(
+                scalar_fields=_ANTHROPIC_SSE_SCALAR_FIELDS,
+                max_work_units=_ANTHROPIC_MESSAGES_MAX_WORK_UNITS,
+            )
+        self._extractor = self._event_extractor
 
     def on_data(self, chunk: bytes) -> None:
         if self._extractor is not None:
@@ -153,12 +156,16 @@ class _AnthropicMessagesSseUsageHandler:
             return
 
         result = extractor.finish()
+        data_type = (
+            result.values.get(("type",))
+            if result.complete
+            else extractor.observed_scalar_for_diagnostics(("type",))
+        )
+        extractor.reset()
         if not result.complete:
             event_type = event_name
-            if event_type is None:
-                data_type = extractor.observed_scalar_for_diagnostics(("type",))
-                if isinstance(data_type, str):
-                    event_type = data_type
+            if event_type is None and isinstance(data_type, str):
+                event_type = data_type
             if (
                 event_type is not None
                 and event_type in _ANTHROPIC_MESSAGES_USAGE_EVENTS
@@ -168,7 +175,6 @@ class _AnthropicMessagesSseUsageHandler:
                 self._on_parse_error(event_type, result.error)
             return
 
-        data_type = result.values.get(("type",))
         event_type = event_name
         if event_type is None and isinstance(data_type, str):
             event_type = data_type
@@ -193,6 +199,8 @@ class _AnthropicMessagesSseUsageHandler:
             self._on_accounting_event(event_type)
 
     def on_event_discard(self, event_name: str | None) -> None:
+        if self._extractor is not None:
+            self._extractor.reset()
         self._extractor = None
 
 

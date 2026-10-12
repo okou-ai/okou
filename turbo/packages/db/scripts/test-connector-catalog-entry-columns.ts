@@ -298,6 +298,7 @@ assert.deepEqual(
 );
 
 try {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0378; new non-billing transactions are prohibited.
   await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${testSchema}"`);
   await client.query(`SET LOCAL search_path TO "${testSchema}"`);
@@ -379,6 +380,7 @@ try {
   await client.query(
     "UPDATE connector_catalog_entries SET label = NULL WHERE hash = 'historical'",
   );
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0379; new non-billing transactions are prohibited.
   await client.query("SAVEPOINT preparation");
   await assert.rejects(client.query(preparation), (error: unknown) => {
     return error instanceof Error && "code" in error && error.code === "23502";
@@ -423,6 +425,7 @@ try {
     .orderBy(runtimeEntries.hash, runtimeEntries.slug);
   const pointers = await db.select().from(connectorCatalog);
   // The actual contraction must roll back along with its transaction.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0380; new non-billing transactions are prohibited.
   await client.query("SAVEPOINT contraction");
   await client.query(contraction);
   await validateConnectorCatalogColumnContract(client);
@@ -447,6 +450,7 @@ try {
   assert.deepEqual(physicalColumns.rows, []);
   // DROP is incompatible with a still-serving dual writer. This rejection
   // makes the separate preparation-release/drain boundary explicit.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0381; new non-billing transactions are prohibited.
   await client.query("SAVEPOINT retired_writer");
   await assert.rejects(
     db.insert(connectorCatalogEntries).values({

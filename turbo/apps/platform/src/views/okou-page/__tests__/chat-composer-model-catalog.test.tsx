@@ -1,4 +1,7 @@
 import { screen } from "@testing-library/react";
+import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
+import { getMockModelCatalog } from "../../../mocks/handlers/api-model-catalog.ts";
 import { expect, test } from "vitest";
 import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 
@@ -64,6 +67,41 @@ test("Offer the active catalog models in catalog order with catalog names", asyn
     return option.textContent?.trim();
   });
   expect(names).toStrictEqual(["Auto", "Claude Sonnet 5", "GPT 6 Luna"]);
+});
+
+test("Offer Auto from canonical available-model and catalog responses", async () => {
+  installConnectedPersonalSubscriptions(context);
+  const catalog = getMockModelCatalog();
+  context.mocks.api(modelCatalogContract.get, ({ respond }) => {
+    return respond(200, {
+      systemDefaultModel: "auto",
+      models: catalog.models.map((model) => {
+        return model.model === "okou-1.0"
+          ? { ...model, model: "auto", resolvedModel: "auto" }
+          : model;
+      }),
+      routes: catalog.routes.map((route) => {
+        return route.model === "okou-1.0" ? { ...route, model: "auto" } : route;
+      }),
+    });
+  });
+  context.mocks.api(runModelsMainContract.list, ({ respond }) => {
+    return respond(200, {
+      models: [
+        { ...buildRunModel({ model: null }), model: "auto" },
+        buildRunModel({ model: "gpt-6-luna" }),
+      ],
+    });
+  });
+  preference("auto");
+  await setupPage({ context, path: NEW_CHAT_PATH });
+  await readyComposer();
+  const panel = await openModelPanel("Auto");
+  expect(
+    queryAllByRoleFast("radio", panel).map((option) => {
+      return option.textContent?.trim();
+    }),
+  ).toStrictEqual(["Auto", "GPT 6 Luna"]);
 });
 
 test("Show the replacement for a thread pinned to a retired model", async () => {

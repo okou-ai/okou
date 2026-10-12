@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.7.0](https://github.com/okou-ai/okou/compare/runner-host-v0.6.0...runner-host-v0.7.0) (2026-10-12)
+
+
+### Features
+
+* **ssh:** integrate native tailscale saved-host transport ([#39018](https://github.com/okou-ai/okou/issues/39018)) ([e8f8c83](https://github.com/okou-ai/okou/commit/e8f8c83186b0d6881c546048b7198f6dd2d96181))
+
+## [0.6.0](https://github.com/okou-ai/okou/compare/runner-host-v0.5.0...runner-host-v0.6.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** persist wss sockets in shared home ([#38992](https://github.com/okou-ai/okou/issues/38992)) ([3ac8fdc](https://github.com/okou-ai/okou/commit/3ac8fdc9211315897c7c159f91d69bad107db2df))
+
+## [0.5.0](https://github.com/okou-ai/okou/compare/runner-host-v0.4.1...runner-host-v0.5.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** add one-use ticket wss admission ([#37114](https://github.com/okou-ai/okou/issues/37114)) ([0eece1f](https://github.com/okou-ai/okou/commit/0eece1f399b9e1b357fa1b3c1b4a6d0699d21088))
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+
+## [0.4.1](https://github.com/okou-ai/okou/compare/runner-host-v0.4.0...runner-host-v0.4.1) (2026-10-10)
+
+## [0.4.0](https://github.com/okou-ai/okou/compare/runner-host-v0.3.2...runner-host-v0.4.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+## [0.3.2](https://github.com/okou-ai/okou/compare/runner-host-v0.3.1...runner-host-v0.3.2) (2026-10-10)
+
+## [0.3.1](https://github.com/okou-ai/okou/compare/runner-host-v0.3.0...runner-host-v0.3.1) (2026-10-10)
+
+## [0.3.0](https://github.com/okou-ai/okou/compare/runner-host-v0.2.18...runner-host-v0.3.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** add passive host memory observation and calibration ([#38370](https://github.com/okou-ai/okou/issues/38370)) ([851e18c](https://github.com/okou-ai/okou/commit/851e18cbe272e59863a06cb3193c3c4e92891c1a))
+
+
+### Refactoring
+
+* **runner:** move orphan workspace gc ownership into host ([#38476](https://github.com/okou-ai/okou/issues/38476)) ([46ed3bd](https://github.com/okou-ai/okou/commit/46ed3bd317356e59b9811bdbd788ce4245a216a8))
+
+## [0.2.18](https://github.com/okou-ai/okou/compare/runner-host-v0.2.17...runner-host-v0.2.18) (2026-10-09)
+
+
+### Refactoring
+
+* **runner:** move runtime reactor into runner-supervisor ([#38393](https://github.com/okou-ai/okou/issues/38393)) ([a5a1dd3](https://github.com/okou-ai/okou/commit/a5a1dd3ae25f19d65baed071cb15fa2a456cfb0a))
+
+## [0.2.17](https://github.com/okou-ai/okou/compare/runner-host-v0.2.16...runner-host-v0.2.17) (2026-10-09)
+
 ## [0.2.16](https://github.com/okou-ai/okou/compare/runner-host-v0.2.15...runner-host-v0.2.16) (2026-10-09)
 
 

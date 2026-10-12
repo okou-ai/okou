@@ -1,6 +1,10 @@
 import { desktopUpgradeRequired } from "../../lib/desktop-compatibility";
 import { command, computed, type Command } from "ccstate";
 import { computerUseSessionHostsContract as contract } from "@okouai/api-contracts/contracts/computer-use";
+import {
+  computerUseHostChannelName,
+  computerUseCommandsChangedEvent,
+} from "@okouai/api-contracts/contracts/realtime";
 
 import { conflict, notFound, providerUnavailable } from "../../lib/error";
 import { authRoute } from "../auth/auth-route";
@@ -91,7 +95,7 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const result = await set(
     startComputerUseHost$,
-    { ...body.data, ...identity, session: identity },
+    { ...body.data, ...identity },
     signal,
   );
   if (result.status === "upgrade_required") {
@@ -105,6 +109,15 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
     body: {
       hostId: result.hostId,
       connectionGeneration: result.connectionGeneration,
+      commandNotifications: {
+        channelName: computerUseHostChannelName(
+          identity.userId,
+          identity.orgId,
+          result.hostId,
+          result.connectionGeneration,
+        ),
+        eventName: computerUseCommandsChangedEvent,
+      },
     },
   };
 });
@@ -127,12 +140,16 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  if (result.status === "invalid_token") {
+  if (result.status === "invalid_connection") {
     return invalidConnection;
   }
   return {
     status: 200 as const,
-    body: { ok: true as const, hostId: result.hostId },
+    body: {
+      ok: true as const,
+      hostId: result.hostId,
+      hasPendingCommands: result.hasPendingCommands,
+    },
   };
 });
 
@@ -154,7 +171,7 @@ const stop$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  if (result.status === "invalid_token") {
+  if (result.status === "invalid_connection") {
     return invalidConnection;
   }
   return {
@@ -184,7 +201,7 @@ const next$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (result.status === "upgrade_required") {
     return desktopUpgradeRequired(result.minimumSupportedVersion);
   }
-  if (result.status === "invalid_token") {
+  if (result.status === "invalid_connection") {
     return invalidConnection;
   }
   return result.status === "idle"
@@ -213,7 +230,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  if (result.status === "invalid_token") {
+  if (result.status === "invalid_connection") {
     return invalidConnection;
   }
   if (result.status === "not_found") {

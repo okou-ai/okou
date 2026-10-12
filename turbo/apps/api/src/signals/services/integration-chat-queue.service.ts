@@ -111,6 +111,7 @@ export const enqueueIntegrationChatInput$ = command(
     }
     const { createdAt, chatThreadId } = prepared.row;
     const currentTime = nowDate();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0172; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       if (args.ingress?.kind === "discord") {
         const [claimed] = await tx
@@ -137,13 +138,8 @@ export const enqueueIntegrationChatInput$ = command(
           return null;
         }
       }
-      await insertIntegrationContext(tx, context, chatThreadId, createdAt);
-      const [event] = parseRawRows(
-        chatEventAppendResultSchema,
-        await tx.execute(appendCanonicalChatEventsSql([prepared.row], "id")),
-      );
       if (args.ingress?.kind === "slack") {
-        await tx
+        const [claimed] = await tx
           .update(slackChatIngress)
           .set({
             status: "processed",
@@ -157,8 +153,18 @@ export const enqueueIntegrationChatInput$ = command(
               eq(slackChatIngress.id, args.ingress.ingressId),
               eq(slackChatIngress.status, "processing"),
             ),
-          );
-      } else if (args.ingress?.kind === "feishu") {
+          )
+          .returning({ id: slackChatIngress.id });
+        if (!claimed) {
+          return null;
+        }
+      }
+      await insertIntegrationContext(tx, context, chatThreadId, createdAt);
+      const [event] = parseRawRows(
+        chatEventAppendResultSchema,
+        await tx.execute(appendCanonicalChatEventsSql([prepared.row], "id")),
+      );
+      if (args.ingress?.kind === "feishu") {
         await tx
           .update(feishuChatIngress)
           .set({ status: "processed", lastError: null, updatedAt: currentTime })
@@ -172,7 +178,7 @@ export const enqueueIntegrationChatInput$ = command(
       if (event) {
         await applyThreadModelReplacement(tx, args.threadModelReplacement);
         // The queue row is locked last and only advances queuedAt; a live
-        // claim lease stays with its holder (docs/chat-run-pick.md).
+        // claim lease stays with its holder.
         const plan = queuedChatThreadEnqueuePlan({
           chatThreadId,
           orgId: args.orgId,

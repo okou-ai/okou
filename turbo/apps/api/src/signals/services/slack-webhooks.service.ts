@@ -1,4 +1,5 @@
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -59,6 +60,16 @@ import {
   slackSessionThreadTs,
 } from "./slack-chat-ingress.service";
 import { publishSlackAdminSignal$ } from "./slack-connect.service";
+import {
+  slackLinkSharedEventSchema,
+  unfurlSlackArtifactLinks$,
+  type SlackLinkSharedEvent,
+} from "./slack-link-unfurl.service";
+import {
+  slackSessionStoppedEventSchema,
+  stopSlackSession$,
+  type SlackSessionStoppedEvent,
+} from "./slack-session-stop.service";
 const L = logger("SlackWebhooks");
 const MODEL_PICKER_MAX_OPTIONS = 100;
 
@@ -82,6 +93,8 @@ interface SlackEventCallback {
     | SlackDirectMessageEvent
     | SlackChannelMessageEvent
     | SlackAppHomeOpenedEvent
+    | SlackSessionStoppedEvent
+    | SlackLinkSharedEvent
     | SlackAppUninstalledEvent
     | SlackTokensRevokedEvent;
 }
@@ -869,7 +882,7 @@ const slackModelPickerState$ = command(
         return {
           model: runModel.model,
           label: runModel.modelLabel,
-          isDefault: runModel.model === null,
+          isDefault: runModel.model === AUTO_SELECTED_MODEL,
         };
       }),
       currentSelectedModel,
@@ -1421,6 +1434,72 @@ const handleEventCallback$ = command(
   },
 );
 
+const handleSlackSessionStoppedEvent$ = command(
+  async (
+    { set },
+    args: { readonly payload: SlackEventCallback; readonly isRetry: boolean },
+    signal: AbortSignal,
+  ): Promise<Response> => {
+    const { payload, isRetry } = args;
+    const stopped = slackSessionStoppedEventSchema.safeParse(payload.event);
+    if (!stopped.success || !payload.team_id) {
+      return jsonResponse({ error: "Invalid Slack stop event" }, 400);
+    }
+    await set(
+      stopSlackSession$,
+      { workspaceId: payload.team_id, event: stopped.data, isRetry },
+      signal,
+    );
+    signal.throwIfAborted();
+    return textResponse("OK");
+  },
+);
+
+const scheduleSlackLinkUnfurl$ = command(
+  ({ set }, payload: SlackEventCallback): Response => {
+    const shared = slackLinkSharedEventSchema.safeParse(payload.event);
+    if (
+      !shared.success ||
+      typeof payload.team_id !== "string" ||
+      !payload.team_id
+    ) {
+      return jsonResponse({ error: "Invalid Slack link event" }, 400);
+    }
+    // chat.unfurl updates the same message/URL on redelivery. Acknowledge
+    // before loading previews, with a bounded lifetime beyond the response.
+    waitUntil(
+      tapError(
+        set(
+          unfurlSlackArtifactLinks$,
+          { workspaceId: payload.team_id, event: shared.data },
+          AbortSignal.timeout(30_000),
+        ),
+        (error) => {
+          L.error("Error unfurling Slack artifact links", { error });
+        },
+      ),
+    );
+    return textResponse("OK");
+  },
+);
+
+const scheduleCanonicalSlackIngress$ = command(({ set }, ingressId: string) => {
+  // Admission is durable and already acknowledged to Slack. Keep the
+  // processor alive if the request signal is cancelled afterward.
+  const backgroundSignal = new AbortController().signal;
+  waitUntil(
+    tapError(
+      set(processCanonicalSlackIngress$, { ingressId }, backgroundSignal),
+      (error) => {
+        L.error("Canonical Slack ingress background processing failed", {
+          ingressId,
+          error,
+        });
+      },
+    ),
+  );
+});
+
 export const handleSlackEvents$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const request = get(request$);
@@ -1442,6 +1521,19 @@ export const handleSlackEvents$ = command(
 
     if (payload.type === "event_callback") {
       const retryNum = request.header("x-slack-retry-num");
+      if (payload.event.type === "link_shared") {
+        // Unfurl retries are safe and must precede the generic retry guard.
+        return set(scheduleSlackLinkUnfurl$, payload);
+      }
+      if (payload.event.type === "agent_session_stopped") {
+        // Stop retries repeat the same time-bounded mutation; do not discard them
+        // with the generic non-message retry guard below.
+        return await set(
+          handleSlackSessionStoppedEvent$,
+          { payload, isRetry: Boolean(retryNum) },
+          signal,
+        );
+      }
       const agentEvent = slackAgentMessageEvent(payload.event);
       if (agentEvent) {
         if (!payload.event_id) {
@@ -1510,27 +1602,7 @@ export const handleSlackEvents$ = command(
             status: ingress.status,
           });
           if (ingress.status !== "processed") {
-            // Admission is durable and already acknowledged to Slack. Keep the
-            // processor alive if the request signal is cancelled afterward.
-            const backgroundSignal = new AbortController().signal;
-            waitUntil(
-              tapError(
-                set(
-                  processCanonicalSlackIngress$,
-                  { ingressId: ingress.id },
-                  backgroundSignal,
-                ),
-                (error) => {
-                  L.error(
-                    "Canonical Slack ingress background processing failed",
-                    {
-                      ingressId: ingress.id,
-                      error,
-                    },
-                  );
-                },
-              ),
-            );
+            set(scheduleCanonicalSlackIngress$, ingress.id);
           }
           return textResponse("OK");
         }

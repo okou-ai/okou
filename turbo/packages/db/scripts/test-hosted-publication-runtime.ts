@@ -425,6 +425,7 @@ try {
   const locker = new Client({ connectionString: fixtureUrl.toString() });
   await locker.connect();
   try {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0393; new non-billing transactions are prohibited.
     await locker.query("BEGIN");
     await locker.query("LOCK TABLE hosted_sites IN ROW EXCLUSIVE MODE");
     await assert.rejects(apply, /lock timeout/u);

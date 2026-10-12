@@ -13,10 +13,7 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
-import {
-  readCustomConnectorCredentialStorageParent,
-  setCustomConnectorCredentialStorageState,
-} from "./helpers/connector-credential-storage-state";
+import { publicChatActor } from "./helpers/public-chat-actor";
 import {
   createChatEventsFixture,
   type EntitledChatActor,
@@ -639,66 +636,71 @@ describe("CHAT-02: thread connector account selection", () => {
   });
 
   it("starts the run when a selected custom connector becomes unavailable", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const fixture = await publicChatActor(context);
+    const { actor, agentId, runnerGroup, run: own } = fixture;
     const orgId = actor.orgId;
     if (!orgId) {
       throw new Error("Expected an organization-scoped chat actor");
     }
-    const customConnector = await connectors.createCustomConnector(
-      actor,
-      manualHttpCustomConnectorCreateBody({
-        slug: `_thread-runtime-${randomUUID()}`,
-        displayName: "Thread runtime connector",
-        prefixTemplates: ["https://thread-runtime.example.test/v1/"],
-      }),
-    );
-    await connectors.setCustomConnectorSecret(
-      actor,
-      customConnector.id,
-      "thread-runtime-secret",
-    );
-    await connectors.updateAgentCustomConnectors(actor, agentId, [
-      customConnector.id,
-    ]);
-    const connection = await readCustomConnectorCredentialStorageParent(
-      context,
-      {
-        orgId,
-        userId: actor.userId,
-        customConnectorId: customConnector.id,
-      },
-    );
-    const connectorId = connection.connector?.id;
-    const storageVersion = connection.connector?.storage_version;
-    if (!connectorId || storageVersion === undefined) {
-      throw new Error("Expected a custom connector account");
+    const customConnector = await own(() => {
+      return connectors.createCustomConnector(
+        actor,
+        manualHttpCustomConnectorCreateBody({
+          slug: `_thread-runtime-${randomUUID()}`,
+          displayName: "Thread runtime connector",
+          prefixTemplates: ["https://thread-runtime.example.test/v1/"],
+        }),
+      );
+    });
+    await own(() => {
+      return connectors.setCustomConnectorSecret(
+        actor,
+        customConnector.id,
+        "thread-runtime-secret",
+      );
+    });
+    await own(() => {
+      return connectors.updateAgentCustomConnectors(actor, agentId, [
+        customConnector.id,
+      ]);
+    });
+    const [connection] = await own(() => {
+      return connectors.listCustomConnectorAccounts(actor, customConnector.id);
+    });
+    if (!connection) {
+      throw new Error("Expected the public custom connector account");
     }
+    const connectorId = connection.id;
 
-    const first = await sendChatRun(actor, {
+    const first = await fixture.sendChatRun(actor, {
       agentId,
       prompt: "Use my default custom connector account",
     });
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: sessionHeaders(actor),
-        params: { id: first.threadId },
-        body: {
-          connectionId: connectorId,
-          target: {
-            kind: "custom",
-            customConnectorId: customConnector.id,
+    await own(() => {
+      return accept(
+        chatThreadConnectorSelectionsClient().update({
+          headers: sessionHeaders(actor),
+          params: { id: first.threadId },
+          body: {
+            connectionId: connectorId,
+            target: {
+              kind: "custom",
+              customConnectorId: customConnector.id,
+            },
           },
-        },
-      }),
-      [200],
-    );
-    const availableSelection = await accept(
-      chatThreadConnectorSelectionsClient().get({
-        headers: sessionHeaders(actor),
-        params: { id: first.threadId },
-      }),
-      [200],
-    );
+        }),
+        [200],
+      );
+    });
+    const availableSelection = await own(() => {
+      return accept(
+        chatThreadConnectorSelectionsClient().get({
+          headers: sessionHeaders(actor),
+          params: { id: first.threadId },
+        }),
+        [200],
+      );
+    });
     expect(availableSelection.body.selectedConnections).toMatchObject([
       {
         id: connectorId,
@@ -706,36 +708,57 @@ describe("CHAT-02: thread connector account selection", () => {
         connectionStatus: "connected",
       },
     ]);
-    await cancelChatRun(actor, first.runId);
-    await setCustomConnectorCredentialStorageState(context, {
-      orgId,
-      userId: actor.userId,
-      customConnectorId: customConnector.id,
-      authMethod: "manual",
-      storageVersion,
-      needsReconnect: true,
+    await own(() => {
+      return cancelChatRun(actor, first.runId);
+    });
+    await own(() => {
+      return connectors.updateCustomConnector(actor, customConnector.id, {
+        ...manualHttpCustomConnectorCreateBody({
+          slug: `_thread-runtime-${randomUUID()}`,
+          displayName: "Thread runtime connector",
+          prefixTemplates: ["https://thread-runtime.example.test/v1/"],
+        }),
+        fields: [
+          {
+            key: "replacement_key",
+            label: "Replacement key",
+            kind: "secret",
+            required: true,
+          },
+        ],
+        headerInjections: [
+          {
+            name: "Authorization",
+            valueTemplate: "Bearer {{secrets.replacement_key}}",
+          },
+        ],
+      });
     });
 
-    const fallback = await sendChatRun(actor, {
+    const fallback = await fixture.sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
       prompt: "Continue despite the unavailable connector account",
     });
-    const claimed = await claimChatRun(runnerGroup, fallback.runId);
+    const claimed = await fixture.claimChatRun(runnerGroup, fallback.runId);
     expect(claimed.claim.connectorRuntimeTargets).not.toContainEqual(
       expect.objectContaining({ customConnectorId: customConnector.id }),
     );
-    const selections = await accept(
-      chatThreadConnectorSelectionsClient().get({
-        headers: sessionHeaders(actor),
-        params: { id: first.threadId },
-      }),
-      [200],
-    );
+    const selections = await own(() => {
+      return accept(
+        chatThreadConnectorSelectionsClient().get({
+          headers: sessionHeaders(actor),
+          params: { id: first.threadId },
+        }),
+        [200],
+      );
+    });
     expect(selections.body.selections).toContainEqual({
       connectionId: connectorId,
       target: { kind: "custom", customConnectorId: customConnector.id },
     });
-    await cancelChatRun(actor, fallback.runId, claimed.sandboxHeaders);
+    await own(() => {
+      return cancelChatRun(actor, fallback.runId, claimed.sandboxHeaders);
+    });
   });
 });

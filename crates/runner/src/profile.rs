@@ -8,8 +8,8 @@ pub struct ProfileDef {
     pub memory_mb: u32,
     /// Rootfs disk size in MiB for VMs using this profile.
     pub rootfs_disk_mb: u32,
-    /// Workspace disk size in MiB for VMs using this profile.
-    pub workspace_disk_mb: u32,
+    /// Home disk size in MiB for VMs using this profile.
+    pub home_disk_mb: u32,
 }
 
 pub use runner_types::profile_name::DEFAULT_PROFILE;
@@ -20,7 +20,7 @@ pub fn get(name: &str) -> RunnerResult<&'static ProfileDef> {
         vcpu: 2,
         memory_mb: 4096,
         rootfs_disk_mb: 12288,
-        workspace_disk_mb: 16384,
+        home_disk_mb: 24576,
     };
 
     if name == DEFAULT_PROFILE {
@@ -55,7 +55,7 @@ mod tests {
         assert_eq!(def.vcpu, 2);
         assert_eq!(def.memory_mb, 4096);
         assert_eq!(def.rootfs_disk_mb, 12288);
-        assert_eq!(def.workspace_disk_mb, 16384);
+        assert_eq!(def.home_disk_mb, 24576);
     }
 
     #[test]

@@ -142,10 +142,10 @@ export function ComposerMentionSuggestionMenu({
       initialFocus={false}
       finalFocus={false}
       className={cn(
-        "flex h-[min(16rem,var(--available-height))] flex-col overflow-hidden p-0 md:h-[min(20rem,var(--available-height))]",
+        "flex flex-col overflow-hidden p-0",
         composerAnchored
-          ? "w-(--anchor-width)"
-          : "w-[260px] max-w-[calc(100vw-1.5rem)]",
+          ? "max-h-[min(16rem,var(--available-height))] w-(--anchor-width) md:max-h-[min(20rem,var(--available-height))]"
+          : "h-[min(16rem,var(--available-height))] w-[260px] max-w-[calc(100vw-1.5rem)] md:h-[min(20rem,var(--available-height))]",
       )}
       data-testid="chat-thread-suggestion-menu"
     >

@@ -20,6 +20,7 @@
 //! sandbox-mock = { workspace = true }
 //! ```
 
+mod backing_process;
 mod call_records;
 mod control;
 mod factory_runtime;
@@ -29,6 +30,7 @@ mod sandbox;
 mod snapshot;
 mod support;
 
+pub use backing_process::{MockBackingProcess, MockBackingProcessCompletion};
 pub use call_records::{
     CodexSessionCleanupCall, CopyFileCall, ExecCall, ExecMatcher, FinalizeStagedFileCall,
     GuestStateRestoreCall, GuestStateRestoreTimezoneCall, ProcessCancelCall, ProcessControlCall,

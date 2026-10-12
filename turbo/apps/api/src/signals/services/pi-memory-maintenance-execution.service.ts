@@ -83,7 +83,7 @@ import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
+import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { storages } from "@okouai/db/schema/storage";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
@@ -578,6 +578,7 @@ const failMaintenanceLaunch$ = command(
     signal: AbortSignal,
   ): Promise<never> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0221; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const { record } = args;
       const error =
@@ -659,6 +660,7 @@ const persistMaintenanceRun$ = command(
     const db = set(writeDb$);
     const { record } = args;
     const admissionTiming = maintenanceAdmissionTiming(args);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0222; new non-billing transactions are prohibited.
     return db.transaction(async (tx) => {
       admissionTiming.transactionStarted();
       admissionTiming.admissionStarted();

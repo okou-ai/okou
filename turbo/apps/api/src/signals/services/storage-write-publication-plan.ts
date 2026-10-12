@@ -5,8 +5,7 @@ import {
 } from "@okouai/core/storage-names";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
-import { piMemoryPhase2Checkpoints } from "@okouai/db/schema/pi-memory-phase2-checkpoint";
+import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
@@ -42,7 +41,6 @@ import {
   storageIdentityCondition,
   storageVersionCondition,
   maintenanceCallbackCondition,
-  storageMaintenanceReceiptCondition,
   storageMaintenanceJobCondition,
   storageCommitLineageCondition,
   memoryCandidateOwnerCondition,
@@ -50,8 +48,12 @@ import {
   externalMemoryHeadChangeCondition,
   externalMemoryHeadChangeValues,
   storageMaintenanceCompletionValues,
-  type MaintenanceReceiptBinding,
 } from "./storage-write-conditions";
+import {
+  maintenancePublicationResultCondition,
+  maintenancePublicationResultVersion,
+  type MaintenancePublicationBinding,
+} from "./pi-memory-phase2-result";
 import type {
   CommitStorageForStorageInput,
   CommitStorageResponse,
@@ -59,7 +61,7 @@ import type {
   StorageRow,
   StorageVersionRow,
   VerifiedStorageCommit,
-  PiMemoryPhase2CheckpointAttestation,
+  PiMemoryPhase2PublicationAttestation,
 } from "./storage-write.service";
 
 export interface MaintenancePublicationInput {
@@ -67,7 +69,7 @@ export interface MaintenancePublicationInput {
   readonly storageId: string;
   readonly parentVersionId?: string;
   readonly versionId: string;
-  readonly attestation?: PiMemoryPhase2CheckpointAttestation;
+  readonly attestation?: PiMemoryPhase2PublicationAttestation;
 }
 
 // A plan never receives a database, transaction or clock. Its owner supplies
@@ -152,7 +154,7 @@ const integerRow = z.union([z.int(), pgInt8ToSafeIntegerSchema]);
 const dateRow = z.union([z.date(), pgTimestampWithoutTimezoneToDateSchema]);
 const idRows = z.array(z.object({ id: z.string() }));
 const callbackRows = z.array(z.object({ payload: z.unknown() }));
-const receiptRows = z.array(z.object({ version_id: z.string() }));
+const resultRows = z.array(z.object({ version_id: z.string() }));
 const mountRow = z.object({
   storageId: z.string(),
   orgId: z.string(),
@@ -236,11 +238,11 @@ function callbackSnapshotSql(runId: string) {
     .limit(1)
     .getSQL();
 }
-function receiptSnapshotSql(binding: MaintenanceReceiptBinding) {
+function resultSnapshotSql(binding: MaintenancePublicationBinding) {
   return new QueryBuilder()
-    .select({ version_id: piMemoryPhase2Checkpoints.versionId })
-    .from(piMemoryPhase2Checkpoints)
-    .where(storageMaintenanceReceiptCondition(binding))
+    .select({ version_id: maintenancePublicationResultVersion() })
+    .from(piMemoryPhase2Jobs)
+    .where(maintenancePublicationResultCondition(binding))
     .limit(1)
     .getSQL();
 }
@@ -257,7 +259,7 @@ function runSnapshotSql(auth: SandboxAuth) {
     .getSQL();
 }
 function maintenanceJobLockSql(
-  binding: MaintenanceReceiptBinding,
+  binding: MaintenancePublicationBinding,
   currentTime: Date,
 ) {
   return new QueryBuilder()
@@ -292,8 +294,8 @@ function lineageSnapshotSql(
 interface AdmittedCommit {
   readonly storage: StorageRow;
   readonly runStatus?: string;
-  readonly binding?: MaintenanceReceiptBinding;
-  readonly receiptVersionId?: string;
+  readonly binding?: MaintenancePublicationBinding;
+  readonly resultVersionId?: string;
   readonly version?: StorageVersionRow;
 }
 
@@ -303,8 +305,8 @@ function* admitMaintenanceCommit(
   payload: unknown,
 ): StorageSqlPlan<
   | {
-      readonly binding?: MaintenanceReceiptBinding;
-      readonly receiptVersionId?: string;
+      readonly binding?: MaintenancePublicationBinding;
+      readonly resultVersionId?: string;
     }
   | StorageErrorResponse
 > {
@@ -319,13 +321,13 @@ function* admitMaintenanceCommit(
   if ("status" in binding) {
     return binding;
   }
-  let [receipt] = binding
-    ? receiptRows.parse(
-        yield readStatement(receiptSnapshotSql(binding), receiptRows.element),
+  let [result] = binding
+    ? resultRows.parse(
+        yield readStatement(resultSnapshotSql(binding), resultRows.element),
       )
     : [];
   const [active] =
-    binding && !receipt
+    binding && !result
       ? idRows.parse(
           yield readStatement(
             maintenanceJobLockSql(binding, yield* publicationTimestampPlan()),
@@ -333,19 +335,19 @@ function* admitMaintenanceCommit(
           ),
         )
       : [];
-  if (binding && !receipt && !active) {
+  if (binding && !result && !active) {
     // Settlement while waiting on the job lock requires a fresh statement snapshot.
-    [receipt] = receiptRows.parse(
-      yield readStatement(receiptSnapshotSql(binding), receiptRows.element),
+    [result] = resultRows.parse(
+      yield readStatement(resultSnapshotSql(binding), resultRows.element),
     );
   }
-  if (receipt && receipt.version_id !== input.versionId) {
-    return notFound("Pi memory maintenance checkpoint already committed");
+  if (result && result.version_id !== input.versionId) {
+    return notFound("Pi memory maintenance publication already committed");
   }
-  if (binding && !receipt && !active) {
+  if (binding && !result && !active) {
     return notFound("Active Pi memory maintenance publication not found");
   }
-  return { binding, receiptVersionId: receipt?.version_id };
+  return { binding, resultVersionId: result?.version_id };
 }
 
 function* admitStorageCommit(
@@ -506,20 +508,17 @@ function* publishStorageCommit(
   return { size, fileCount, deduplicated: !inserted };
 }
 
-function* settleStorageCheckpoint(
-  binding: MaintenanceReceiptBinding,
+function* settleStoragePublication(
+  binding: MaintenancePublicationBinding,
   versionId: string,
 ): StorageSqlPlan<void> {
-  yield writeStatement(
-    insertedStorageSql(piMemoryPhase2Checkpoints, { ...binding, versionId }),
-  );
   const [callback] = callbackRows.parse(
     yield readStatement(
       callbackSnapshotSql(binding.runId),
       callbackRows.element,
     ),
   );
-  const payload = checkpointPayload(callback?.payload);
+  const payload = maintenancePayload(callback?.payload);
   yield writeStatement(
     updatedStorageSql(
       piMemoryStage1Candidates,
@@ -625,7 +624,7 @@ export function* storageCommitPublicationPlan(
   }
   const { storage, version, binding } = admitted;
   const replay =
-    version !== undefined && admitted.receiptVersionId === version.id;
+    version !== undefined && admitted.resultVersionId === version.id;
   const terminal =
     admitted.runStatus !== undefined &&
     !sandboxStorageRunIsActive(admitted.runStatus);
@@ -653,7 +652,7 @@ export function* storageCommitPublicationPlan(
       return notFound("Active agent run not found");
     }
   }
-  // A validated no-diff receipt acknowledges its epoch without restoring it as
+  // A validated no-diff result acknowledges its epoch without restoring it as
   // HEAD when an ordinary writer has already published another version.
   const publish = shouldPublishStorageHead(admitted, input, replay, terminal);
   const result = publish
@@ -664,7 +663,7 @@ export function* storageCommitPublicationPlan(
         deduplicated: true,
       };
   if (binding && !replay && !terminal) {
-    yield* settleStorageCheckpoint(binding, input.versionId);
+    yield* settleStoragePublication(binding, input.versionId);
   }
   yield* enqueueStorageIndex(input.versionId);
   return storageCommitSuccess({
@@ -687,7 +686,7 @@ export function maintenancePublicationBinding(
 ) {
   if (payload === undefined) {
     return args.attestation
-      ? badRequestMessage("Unexpected maintenance checkpoint attestation")
+      ? badRequestMessage("Unexpected maintenance publication attestation")
       : undefined;
   }
   const parsed =
@@ -699,16 +698,16 @@ export function maintenancePublicationBinding(
   ) {
     return notFound("Active Pi memory maintenance publication not found");
   }
-  const checkpoint = parsed.data;
+  const maintenance = parsed.data;
   return {
     runId: args.auth.runId,
-    memoryStorageId: checkpoint.memoryStorageId,
-    orgId: checkpoint.orgId,
-    userId: checkpoint.userId,
-    leaseToken: checkpoint.leaseToken,
-    claimedRevision: checkpoint.claimedRevision,
-    claimedBaseVersionId: checkpoint.claimedBaseVersionId,
-    selectionDigest: checkpoint.selectionDigest,
+    memoryStorageId: maintenance.memoryStorageId,
+    orgId: maintenance.orgId,
+    userId: maintenance.userId,
+    leaseToken: maintenance.leaseToken,
+    claimedRevision: maintenance.claimedRevision,
+    claimedBaseVersionId: maintenance.claimedBaseVersionId,
+    selectionDigest: maintenance.selectionDigest,
   };
 }
 
@@ -716,7 +715,7 @@ function matchesMaintenancePublication(
   payload: ReturnType<
     typeof piMemoryPhase2MaintenanceCallbackPayloadSchema.parse
   >,
-  attestation: PiMemoryPhase2CheckpointAttestation,
+  attestation: PiMemoryPhase2PublicationAttestation,
   args: MaintenancePublicationInput,
 ): boolean {
   return (
@@ -730,31 +729,6 @@ function matchesMaintenancePublication(
     args.parentVersionId === attestation.claimedBaseVersionId &&
     args.versionId === attestation.validatedVersionId
   );
-}
-
-export function maintenanceCheckpointBinding(
-  input: CommitStorageForStorageInput,
-) {
-  const auth = input.sandboxAuth;
-  const attestation = input.maintenanceAttestation;
-  if (
-    !auth ||
-    !attestation ||
-    input.parentVersionId !== attestation.claimedBaseVersionId ||
-    input.versionId !== attestation.validatedVersionId
-  ) {
-    return undefined;
-  }
-  return {
-    runId: auth.runId,
-    memoryStorageId: input.storageId,
-    orgId: auth.orgId,
-    userId: auth.userId,
-    leaseToken: attestation.leaseToken,
-    claimedRevision: attestation.claimedRevision,
-    claimedBaseVersionId: attestation.claimedBaseVersionId,
-    selectionDigest: attestation.selectionDigest,
-  };
 }
 
 export function totalSize(files: readonly FileEntryWithHash[]): number {
@@ -877,12 +851,12 @@ function requirePublicationRow(row: unknown, message: string) {
   }
 }
 
-function checkpointPayload(payload: unknown) {
+function maintenancePayload(payload: unknown) {
   const parsed = piMemoryPhase2MaintenanceCallbackPayloadSchema.parse(payload);
   if (
     piMemoryPhase2SelectionDigest(parsed.selected) !== parsed.selectionDigest
   ) {
-    throw new Error("Pi memory checkpoint selection mismatch");
+    throw new Error("Pi memory publication selection mismatch");
   }
   return parsed;
 }

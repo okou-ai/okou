@@ -1,3 +1,5 @@
+import ChatData
+import ChatDataTestSupport
 import Foundation
 import Synchronization
 import XCTest

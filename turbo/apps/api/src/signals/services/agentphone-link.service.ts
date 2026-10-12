@@ -64,6 +64,7 @@ export const linkAgentPhoneIdentity$ = command(
       args.phoneHandle,
       args.channel,
     );
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0052; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const at = nowDate();
       // Consuming the one active code is the conditional write itself: a

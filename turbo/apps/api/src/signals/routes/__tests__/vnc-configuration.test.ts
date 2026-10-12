@@ -9,6 +9,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
+import { createDeferredPromise } from "../../utils";
 import { vncConnectionsRoutes } from "../vnc-connections";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { createRouteMocks } from "./helpers/route-test";
@@ -1931,6 +1932,15 @@ describe("VNC owner configuration", () => {
       name: "Recovered",
       revision: revision + 1,
     });
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections,
+    ).toStrictEqual(
+      hosts.map((host) => {
+        return host.id === first.body.id || host.id === second.body.id
+          ? { ...host, credentialName: "Recovered" }
+          : host;
+      }),
+    );
     const edited = await accept(
       connections().update({
         headers,
@@ -1947,6 +1957,263 @@ describe("VNC owner configuration", () => {
       generation: revision + 1,
       host: "new.example.com",
     });
+  });
+
+  it("preserves the credential and every host when a compatible auth method violates the native profile pin", async () => {
+    useSecretKmsProbe();
+    await owner();
+    const first = await accept(
+      connections().create({ headers, body: hostBody() }),
+      [201],
+    );
+    const credentialId = requireVncCredentialId(first.body);
+    await accept(
+      connections().create({
+        headers,
+        body: { ...hostBody(), credential: { id: credentialId } },
+      }),
+      [201],
+    );
+    const beforeCredentials = await accept(
+      credentials().list({ headers }),
+      [200],
+    );
+    const beforeHosts = await accept(connections().list({ headers }), [200]);
+    const rejected = await accept(
+      credentials().update({
+        headers,
+        params: { credentialId },
+        body: {
+          expectedRevision: 1,
+          name: "Must not publish",
+          authentication: {
+            method: "client_certificate_vnc_password",
+            password: "rotated",
+            certificateChain,
+            privateKey,
+          },
+        },
+      }),
+      [400],
+    );
+    expect(rejected.body.error.code).toBe("VNC_PROFILE_MISMATCH");
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body,
+    ).toStrictEqual(beforeCredentials.body);
+    expect(
+      (await accept(connections().list({ headers }), [200])).body,
+    ).toStrictEqual(beforeHosts.body);
+  });
+
+  it("publishes a delayed rotation after a public rename and rebind while returning the earlier host snapshot", async () => {
+    useSecretKmsProbe();
+    await owner();
+    const host = await accept(
+      connections().create({ headers, body: hostBody() }),
+      [201],
+    );
+    const replacement = await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "Replacement",
+          authentication: passwordAuthentication("other"),
+        },
+      }),
+      [201],
+    );
+    const params = { credentialId: requireVncCredentialId(host.body) };
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    useSecretKmsProbe(async (request) => {
+      entered.resolve();
+      await release.promise;
+      return {
+        keyId: request.keyId,
+        plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
+        encryptedDataKey: Buffer.from("test-wrapped-key"),
+      };
+    });
+    const delayed = accept(
+      credentials().update({
+        headers,
+        params,
+        body: {
+          expectedRevision: 1,
+          authentication: passwordAuthentication("rotated"),
+        },
+      }),
+      [200],
+    );
+    await (async () => {
+      await entered.promise;
+      await accept(
+        credentials().update({
+          headers,
+          params,
+          body: { expectedRevision: 1, name: "Concurrent rename" },
+        }),
+        [200],
+      );
+      await accept(
+        connections().update({
+          headers,
+          params: { connectionId: host.body.id },
+          body: {
+            expectedGeneration: 1,
+            displayName: "Rebound desktop",
+            credential: { id: replacement.body.id },
+          },
+        }),
+        [200],
+      );
+    })().finally(() => {
+      release.resolve();
+    });
+    const saved = await delayed;
+    expect(saved.body).toMatchObject({
+      id: params.credentialId,
+      name: "Concurrent rename",
+      revision: 3,
+      authMethod: "vnc_password",
+      hosts: [{ id: host.body.id, displayName: host.body.displayName }],
+    });
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toContainEqual({ ...saved.body, hosts: [] });
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections,
+    ).toContainEqual({
+      ...host.body,
+      displayName: "Rebound desktop",
+      credentialId: replacement.body.id,
+      credentialName: replacement.body.name,
+      generation: 2,
+      updatedAt: expect.any(String),
+    });
+  });
+
+  it("keeps a newly bound host at its generation when a delayed rotation initially observed no hosts", async () => {
+    useSecretKmsProbe();
+    await owner();
+    const created = await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "Initially unused",
+          authentication: passwordAuthentication("first"),
+        },
+      }),
+      [201],
+    );
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    useSecretKmsProbe(async (request) => {
+      entered.resolve();
+      await release.promise;
+      return {
+        keyId: request.keyId,
+        plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
+        encryptedDataKey: Buffer.from("test-wrapped-key"),
+      };
+    });
+    const delayed = accept(
+      credentials().update({
+        headers,
+        params: { credentialId: created.body.id },
+        body: {
+          expectedRevision: 1,
+          authentication: passwordAuthentication("rotated"),
+        },
+      }),
+      [200],
+    );
+    await (async () => {
+      await entered.promise;
+      await accept(
+        connections().create({
+          headers,
+          body: { ...hostBody(), credential: { id: created.body.id } },
+        }),
+        [201],
+      );
+    })().finally(() => {
+      release.resolve();
+    });
+    const saved = await delayed;
+    expect(saved.body).toMatchObject({ revision: 2, hosts: [] });
+    const hosts = (await accept(connections().list({ headers }), [200])).body
+      .connections;
+    expect(hosts).toHaveLength(1);
+    expect(hosts[0]).toMatchObject({
+      credentialId: created.body.id,
+      generation: 1,
+    });
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toContainEqual({
+      ...saved.body,
+      hosts: [{ id: hosts[0]!.id, displayName: hosts[0]!.displayName }],
+    });
+  });
+
+  it("reports a credential deleted through the public API during encryption as missing", async () => {
+    useSecretKmsProbe();
+    await owner();
+    const created = await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "Unused",
+          authentication: passwordAuthentication("first"),
+        },
+      }),
+      [201],
+    );
+    const params = { credentialId: created.body.id };
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    useSecretKmsProbe(async (request) => {
+      entered.resolve();
+      await release.promise;
+      return {
+        keyId: request.keyId,
+        plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
+        encryptedDataKey: Buffer.from("test-wrapped-key"),
+      };
+    });
+    const delayed = accept(
+      credentials().update({
+        headers,
+        params,
+        body: {
+          expectedRevision: 1,
+          authentication: passwordAuthentication("rotated"),
+        },
+      }),
+      [404],
+    );
+    await (async () => {
+      await entered.promise;
+      await accept(
+        credentials().delete({
+          headers,
+          params,
+          body: { expectedRevision: 1 },
+        }),
+        [204],
+      );
+    })().finally(() => {
+      release.resolve();
+    });
+    const missing = await delayed;
+    expect(missing.body.error.code).toBe("VNC_CREDENTIAL_NOT_FOUND");
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toStrictEqual([]);
   });
 
   it("rejects a concurrent creation by another owner without leaving an inline credential", async () => {

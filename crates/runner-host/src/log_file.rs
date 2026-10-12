@@ -65,8 +65,40 @@ pub fn validate_copy_destination(path: &Path) -> io::Result<()> {
     host_file::validate_private_file_destination(path, "guest log destination")
 }
 
+/// Borrow a UTF-8-safe suffix only when text exceeds the caller's byte budget.
+/// The caller owns field policy; this primitive never formats or allocates.
+pub fn bounded_error_tail(error: &str, max_bytes: usize) -> Option<&str> {
+    if error.len() <= max_bytes {
+        return None;
+    }
+    let mut start = error.len() - max_bytes;
+    while !error.is_char_boundary(start) {
+        start += 1;
+    }
+    Some(&error[start..])
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn bounded_error_tail_preserves_short_text_and_byte_budget() {
+        assert_eq!(super::bounded_error_tail("short", 5), None);
+        assert_eq!(super::bounded_error_tail("prefix-cause", 5), Some("cause"));
+        assert_eq!(super::bounded_error_tail("nonempty", 0), Some(""));
+        assert_eq!(super::bounded_error_tail("", 0), None);
+    }
+
+    #[test]
+    fn bounded_error_tail_never_splits_utf8_or_exceeds_limit() {
+        let text = "prefix🦀cause";
+        for limit in 0..text.len() {
+            let tail = super::bounded_error_tail(text, limit).unwrap();
+            assert!(tail.len() <= limit);
+            assert!(text.ends_with(tail));
+        }
+        assert_eq!(super::bounded_error_tail("🦀", 3), Some(""));
+    }
+
     use std::io::Write;
     use std::os::unix::fs::{PermissionsExt, symlink};
     use std::path::Path;

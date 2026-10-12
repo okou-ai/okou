@@ -4,7 +4,7 @@ import {
   type PiRouteClass,
 } from "@okouai/api-contracts/contracts/model-catalog";
 import {
-  AUTO_RUN_MODEL,
+  AUTO_SELECTED_MODEL,
   AUTO_RUN_PROVIDER,
   isAutoSelectedModel,
 } from "./auto-run-model";
@@ -51,7 +51,7 @@ export function piCatalogModel(
 ): PiCatalogModel | null {
   if (isAutoSelectedModel(model)) {
     return {
-      model: AUTO_RUN_MODEL,
+      model: AUTO_SELECTED_MODEL,
       piRouteClass: "gpt-codex",
       own: new Map(),
     };
@@ -102,6 +102,8 @@ export interface PiRouteArgs {
 
 export interface PiExecutionRouteArgs extends PiRouteArgs {
   readonly codexServiceTier: "fast" | undefined;
+  /** Auto and personal Codex subscriptions can use their native Codex harness. */
+  readonly codexExecution?: boolean;
 }
 
 function isAutoRoute(args: PiRouteArgs): boolean {
@@ -136,7 +138,7 @@ export function piRouteCatalogIdentities(
   args: PiRouteArgs,
 ): readonly PiRuntimeIdentity[] {
   if (isAutoRoute(args)) {
-    return [{ provider: "openrouter", model: AUTO_RUN_MODEL }];
+    return [{ provider: "openrouter", model: AUTO_SELECTED_MODEL }];
   }
   const model = args.catalogModel;
   if (
@@ -159,5 +161,9 @@ export function isPiRouteRuntimeCapable(args: PiRouteArgs): boolean {
 }
 
 export function isPiExecutionRoute(args: PiExecutionRouteArgs): boolean {
-  return isPiAdmittedRoute(args) && isPiRouteRuntimeCapable(args);
+  return (
+    !args.codexExecution &&
+    isPiAdmittedRoute(args) &&
+    isPiRouteRuntimeCapable(args)
+  );
 }

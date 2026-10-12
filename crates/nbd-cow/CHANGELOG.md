@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.5](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.4...nbd-cow-v0.5.5) (2026-10-11)
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+
+## [0.5.4](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.3...nbd-cow-v0.5.4) (2026-10-09)
+
+
+### Bug Fixes
+
+* **nbd-cow:** defer cleanup after connect outcome consumption ([#38405](https://github.com/okou-ai/okou/issues/38405)) ([8e7881c](https://github.com/okou-ai/okou/commit/8e7881cd26c8d6facf741911a512125d099b3a17))
+
 ## [0.5.3](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.2...nbd-cow-v0.5.3) (2026-10-08)
 
 

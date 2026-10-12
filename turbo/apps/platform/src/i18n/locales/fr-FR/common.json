@@ -124,20 +124,23 @@
         "title": "Journal introuvable"
       },
       "runner": {
-        "cacheMiss": "Aucun espace de travail en cache ne correspondait à la clé de réutilisation.",
+        "cacheMiss": "Aucun répertoire personnel en cache ne correspondait à la clé de réutilisation.",
         "deviceLimitMismatch": "Une entrée de pool inactif existe mais son état de limiteur de débit de l'appareil ne correspond pas.",
-        "diskPressure": "La réutilisation de l'espace de travail a été ignorée en raison de la pression disque du runner.",
+        "diskPressure": "La réutilisation du répertoire personnel a été ignorée en raison de la pression disque du runner.",
         "environment": "Environnement",
         "featureDisabled": "La réutilisation du bac à sable est désactivée pour cette exécution.",
         "framework": "Framework",
         "generation": "Génération",
+        "home": "Répertoire personnel",
+        "homeNoReuseKey": "Aucune clé de réutilisation du répertoire personnel n’était disponible.",
+        "homeReusedDescription": "Le répertoire personnel a été restauré depuis le cache du runner.",
         "hostname": "Nom d’hôte",
-        "invalidMetadata": "Les métadonnées de l'espace de travail en cache n'étaient pas valides.",
+        "invalidMetadata": "Les métadonnées du répertoire personnel en cache n'étaient pas valides.",
         "invalidWorkingDir": "Le répertoire de travail demandé n'a pas pu être réutilisé.",
-        "lockBusy": "Une autre exécution préparait le même espace de travail.",
+        "lockBusy": "Une autre exécution préparait le même répertoire personnel.",
         "noReuseKey": "Aucune clé de réutilisation n'était disponible pour trouver un bac à sable inactif.",
         "noSessionId": "Résultat hérité : la raison exacte pour laquelle le bac à sable n'a pas été réutilisé n'est pas disponible.",
-        "notConfigured": "La réutilisation de l'espace de travail n'était pas configurée pour cette exécution.",
+        "notConfigured": "La réutilisation du répertoire personnel n'était pas configurée pour cette exécution.",
         "notReused": "Non réutilisé",
         "outcomeUnavailableDescription": "Aucun détail supplémentaire n'est disponible.",
         "poolMiss": "Aucun bac à sable correspondant trouvé dans le pool inactif.",
@@ -147,23 +150,20 @@
         "reusedDescription": "Le bac à sable a été remis en service depuis le pool inactif.",
         "runnerId": "ID du runner",
         "sandbox": "Sandbox",
-        "sandboxPrepareFallback": "Un espace de travail en cache a été trouvé, mais n'a pas pu être utilisé après la préparation du bac à sable.",
-        "sandboxReusedDescription": "L'espace de travail est resté disponible dans le bac à sable réutilisé.",
+        "sandboxPrepareFallback": "Un répertoire personnel en cache a été trouvé, mais n'a pas pu être utilisé après la préparation du bac à sable.",
+        "sandboxReusedDescription": "Le répertoire personnel est resté disponible dans le bac à sable réutilisé.",
         "startup": "Démarrage",
         "startupCold": "Démarrage à froid",
         "startupColdDescription": "Un nouveau bac à sable et un nouvel espace de travail ont été préparés.",
+        "startupHome": "Réutilisation du répertoire personnel",
+        "startupHomeDescription": "Un nouveau bac à sable a restauré un répertoire personnel mis en cache.",
         "startupSandbox": "Réutilisation du bac à sable",
         "startupSandboxDescription": "Le bac à sable et son espace de travail ont été réutilisés.",
         "startupUnknown": "Inconnu",
         "startupUnknownDescription": "Les détails de réutilisation au démarrage ne sont pas disponibles.",
-        "startupWorkspace": "Réutilisation de l'espace de travail",
-        "startupWorkspaceDescription": "Un nouveau bac à sable a restauré un espace de travail mis en cache.",
         "unavailable": "Indisponible",
         "unparkFailed": "La tentative de remise en service a échoué ; un bac à sable neuf a été provisionné.",
-        "version": "Version",
-        "workspace": "Espace de travail",
-        "workspaceNoReuseKey": "Aucune clé de réutilisation de l'espace de travail n'était disponible.",
-        "workspaceReusedDescription": "L'espace de travail a été restauré depuis le cache du runner."
+        "version": "Version"
       },
       "steps": {
         "matched": "({{matched}}/{{total}} correspondants)",
@@ -927,20 +927,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Vous êtes connecté à Desktop. Vous pouvez fermer cette fenêtre.",
-        "connecting": "Connexion de votre session de bureau.",
-        "consumed": "Finalisation de la connexion dans Desktop. Gardez cette fenêtre ouverte.",
-        "failed": "La connexion n’a pas pu aboutir. Recommencez depuis Desktop ou réessayez dans ce navigateur.",
-        "no-workspaces": "Créez ou rejoignez un espace de travail dans l’application web, puis reconnectez-vous depuis Desktop.",
-        "pending": "Ouvrez Desktop pour poursuivre la connexion.",
-        "selecting": "Choisissez un espace de travail pour cet ordinateur."
-      },
-      "reopen": "Ouvrir Desktop",
-      "retry": "Réessayer",
-      "title": "Se connecter à Desktop"
-    },
     "documentTitles": {
       "signIn": "Se connecter",
       "signUp": "S'inscrire"
@@ -1736,6 +1722,9 @@
       "cancelled": "Demande annulée",
       "cancelling": "Annulation…",
       "checkFailed": "Impossible de vérifier le navigateur. Vos saisies sont conservées ; réessayez avant de les envoyer.",
+      "checkingOutcome": "Vérification de l’état du navigateur",
+      "checkingOutcomeDescription": "En attente de la confirmation de cette demande par le navigateur.",
+      "checkStatus": "Vérifier l’état",
       "completed": "Informations ajoutées",
       "confirmRangeValue": "Utiliser la valeur actuelle",
       "continue": "Prévenir l’agent",
@@ -1751,6 +1740,8 @@
       "loadingDescription": "Vérification de cette demande…",
       "open": "Saisir les informations",
       "optional": "(Facultatif)",
+      "outcomeNotConfirmed": "Résultat non confirmé",
+      "outcomeNotConfirmedDescription": "Le navigateur a peut-être terminé cette demande. Vérifiez son état avant de réessayer.",
       "required": "(Obligatoire)",
       "retry": "Réessayer",
       "site": "Site",
@@ -2178,8 +2169,6 @@
       "number": "numéro"
     },
     "sidebar": {
-      "allArchived": "Toutes vos discussions sont archivées",
-      "allCaughtUp": "Tout est à jour",
       "allChats": "Toutes les discussions",
       "archive": "Archiver la discussion",
       "archived": "Archivées",
@@ -2190,7 +2179,9 @@
       "deleteTitle": "Supprimer la discussion ?",
       "draft": "Brouillon",
       "empty": "Commencez une conversation et elle apparaîtra ici",
+      "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Boîte de réception",
+      "inboxEmpty": "Votre boîte de réception est vide",
       "markUnread": "Marquer comme non lu",
       "movePinDown": "Déplacer vers le bas",
       "movePinUp": "Déplacer vers le haut",
@@ -2858,8 +2849,12 @@
       "resize": "Redimensionner la barre latérale"
     },
     "toasts": {
+      "archived": "Discussion archivée.",
+      "archivedMuted": "Discussion archivée. Elle est en sourdine, les nouvelles réponses ne la ramèneront pas.",
       "copied": "Copié",
-      "deleted": "Chat supprimé"
+      "deleted": "Chat supprimé",
+      "unarchived": "Discussion déplacée dans la boîte de réception",
+      "undo": "Annuler"
     },
     "voice": {
       "checkingLimit": "Vérification de la limite d'entrée vocale",
@@ -3883,6 +3878,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "Réessayer"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "La requête a échoué"
@@ -3995,22 +3993,6 @@
         "back": "Retour",
         "continue": "Continuer",
         "notNow": "Pas maintenant"
-      },
-      "compliance": {
-        "frameworks": {
-          "ccpa": "CCPA / CPRA",
-          "gdpr": "GDPR",
-          "hipaa": "HIPAA",
-          "iso27001": "ISO/IEC 27001",
-          "soc2": "SOC 2 Type II"
-        },
-        "link": "Détails de sécurité",
-        "status": {
-          "aligned": "Aligné",
-          "compliant": "Conforme",
-          "inProgress": "En cours"
-        },
-        "title": "La conformité d’Okou, pensée pour votre confiance"
       },
       "documentTitles": {
         "experience": "Votre expérience de l'IA",
@@ -4994,6 +4976,27 @@
           "title": "Stockage IndexedDB",
           "unavailable": "Le stockage IndexedDB est indisponible."
         },
+        "morningBriefEmail": {
+          "checkStatus": "Vérifier l’état de livraison",
+          "description": "Envoyez un exemple fixe à l’adresse de votre compte avec le modèle Morning Brief. Cela n’exécute aucun Agent et ne modifie pas votre planning.",
+          "reasons": {
+            "delivery-failed": "La livraison a échoué. Une tentative précédente a peut-être été acceptée par le fournisseur.",
+            "expired": "Le délai de livraison a expiré. Une tentative précédente a peut-être été acceptée par le fournisseur.",
+            "no-email": "Ignoré : votre compte n’a pas d’adresse e-mail.",
+            "suppressed": "Ignoré : la livraison à l’adresse de votre compte est bloquée.",
+            "unsubscribed": "Ignoré : votre compte est désabonné des mises à jour par e-mail."
+          },
+          "requestFailed": "La demande n’a pas abouti. Une nouvelle tentative réutilise la même demande pour éviter un doublon.",
+          "retry": "Réessayer l’e-mail de test",
+          "send": "Envoyer l’e-mail de test",
+          "sendAnother": "Envoyer un autre e-mail de test",
+          "sending": "Envoi en cours…",
+          "status": {
+            "queued": "En attente de livraison. Vérifiez l’état avant d’envoyer un autre exemple.",
+            "sent": "Accepté par le fournisseur d’e-mail. Vérifiez votre boîte de réception et les indésirables ; l’arrivée dans la boîte n’est pas confirmée."
+          },
+          "title": "E-mail de test Morning Brief"
+        },
         "openrouterPreset": {
           "description": "S’applique aux nouvelles exécutions Auto et Okou 1.0 intégré de toute l’organisation. Les exécutions existantes restent inchangées.",
           "loading": "Chargement…",
@@ -5226,6 +5229,22 @@
   },
   "shared": {
     "breadcrumb": "Fil d'Ariane",
+    "compliance": {
+      "frameworks": {
+        "ccpa": "CCPA / CPRA",
+        "gdpr": "GDPR",
+        "hipaa": "HIPAA",
+        "iso27001": "ISO/IEC 27001",
+        "soc2": "SOC 2 Type II"
+      },
+      "link": "Détails de sécurité",
+      "status": {
+        "aligned": "Aligné",
+        "compliant": "Conforme",
+        "inProgress": "En cours"
+      },
+      "title": "La conformité d’Okou, pensée pour votre confiance"
+    },
     "errorBoundary": {
       "contactSupport": "support",
       "description": "Essayez encore ou contactez-nous",
@@ -5397,6 +5416,14 @@
     },
     "clearSearch": "Effacer la recherche",
     "custom": "Personnalisés",
+    "delete": {
+      "cancel": "Annuler",
+      "confirm": "Supprimer le modèle",
+      "deleting": "Suppression...",
+      "description": "« {{title}} » sera supprimé pour tous ceux qui peuvent le voir. Cette action est irréversible.",
+      "failed": "Impossible de supprimer le modèle. Réessayez.",
+      "title": "Supprimer le modèle ?"
+    },
     "detail": {
       "back": "Modèles personnalisés",
       "page": "Page {{number}}"
@@ -6390,22 +6417,31 @@
     "connected": "Connecté",
     "connectedWithDetail": "Connecté ({{detail}})",
     "discord": {
-      "accountSetup": "Votre compte n’est pas connecté. Il n’est pas encore possible de connecter un nouveau compte Discord.",
-      "adminSetup": "La configuration des serveurs n’est pas encore disponible. Les configurations déjà vérifiées peuvent continuer à utiliser Discord.",
+      "accountSetup": "Connectez votre compte Discord via le consentement officiel dans le navigateur.",
+      "adminSetup": "Installez Okou sur votre serveur Discord, puis connectez votre compte.",
+      "approvalConfirmed": "Consentement du navigateur confirmé. Fermez cet onglet pour terminer dans l’onglet Works d’origine.",
+      "approvalFailed": "La confirmation a échoué. Connectez-vous avec le compte et l’organisation Okou d’origine ou recommencez l’autorisation.",
+      "approvalPrompt": "Confirmez avec le même compte et la même organisation Okou que dans l’onglet Works d’origine. La confirmation seule ne connecte pas votre compte.",
+      "approve": "Confirmer le consentement Discord",
+      "approving": "Confirmation…",
+      "authorizationError": "L’autorisation Discord n’a pas pu être terminée. Réessayez depuis cette carte.",
+      "authorizing": "Autorisation en cours…",
+      "browserConsent": "Terminez le consentement Discord et confirmez avec votre compte Okou dans cet onglet. Le fermer seul ne connecte pas votre compte.",
       "chooseDmServer": "Choisir un serveur",
       "description": "Mentionnez Okou sur un serveur ou envoyez un message privé au bot.",
       "disconnect": "Déconnecter Discord",
       "dmServer": "Serveur par défaut pour les messages privés",
+      "install": "Installer sur Discord",
       "limitedContext": "Contexte limité : Okou peut ne pas recevoir les messages ordinaires des canaux. Mentionnez Okou et incluez les détails dont il a besoin.",
-      "loadError": "Impossible de charger le statut de Discord.",
-      "loading": "Chargement du statut de Discord…",
-      "memberSetup": "Renseignez-vous auprès d’un administrateur de l’organisation sur l’accès à Discord. La configuration des serveurs n’est pas encore disponible.",
+      "memberSetup": "Demandez à un administrateur de l’organisation d’installer Okou sur votre serveur Discord.",
       "moreOptions": "Plus d’options Discord",
+      "pendingConsent": "Cet onglet n’a plus de preuve d’autorisation. Fermez-le et recommencez l’autorisation depuis l’onglet Works d’origine.",
+      "popupBlocked": "Autorisez les fenêtres contextuelles pour Discord, puis réessayez.",
       "retry": "Réessayer",
       "server": "Serveur : {{name}}",
       "suspended": "Discord est temporairement indisponible. Les connexions existantes sont conservées.",
       "title": "Discord",
-      "unconfigured": "Discord n’est pas encore disponible pour cette organisation.",
+      "unconfigured": "Discord n’est pas encore configuré pour cette organisation.",
       "uninstall": "Supprimer Discord",
       "uninstallDescription": "Cela déconnecte de Discord toutes les personnes de cette organisation. Les autres organisations conservent leurs connexions.",
       "uninstallTitle": "Supprimer Discord de cette organisation ?"

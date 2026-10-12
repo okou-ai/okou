@@ -72,6 +72,8 @@ function missingGuildId(): string {
 describe("Discord Gateway authentication and ignored transport events", () => {
   beforeEach(() => {
     configureGateway();
+    // Signing and verification must observe the same clock second.
+    mockNow(new Date("2026-10-01T00:00:00.999Z"));
   });
 
   it.each(DISCORD_GATEWAY_AUTH_TEST_VECTORS)(
@@ -107,6 +109,24 @@ describe("Discord Gateway authentication and ignored transport events", () => {
     );
     expect(response.status).toBe(401);
   });
+
+  it.each([-300, 300])(
+    "accepts a signed timestamp at the past/future window boundary (%s)",
+    async (offset) => {
+      const body = eventBody(
+        { id: "222222222222222222", unavailable: true },
+        "GUILD_DELETE",
+      );
+      const timestamp = String(Math.floor(now() / 1000) + offset);
+      const response = await postRaw(body, timestamp);
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toStrictEqual({
+        ok: true,
+        outcome: "ignored",
+        reason: "guild-unavailable",
+      });
+    },
+  );
 
   it.each([-301, 301])(
     "rejects a signed timestamp outside the past/future window (%s)",

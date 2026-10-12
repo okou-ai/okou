@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.6.4](https://github.com/okou-ai/okou/compare/runner-types-v0.6.3...runner-types-v0.6.4) (2026-10-12)
+
+
+### Refactoring
+
+* **runner:** retire workspace protocol and application sql ([#38837](https://github.com/okou-ai/okou/issues/38837)) ([a932f1f](https://github.com/okou-ai/okou/commit/a932f1f86ae10eb624fa3ff3bccc851ba4809a7e))
+
+## [0.6.3](https://github.com/okou-ai/okou/compare/runner-types-v0.6.2...runner-types-v0.6.3) (2026-10-11)
+
+
+### Performance Improvements
+
+* **runner-lifecycle:** decouple storage fingerprint contracts ([#39056](https://github.com/okou-ai/okou/issues/39056)) ([24f6151](https://github.com/okou-ai/okou/commit/24f61511de54a9e5c8c06391344cf67d897b51bd))
+
+## [0.6.2](https://github.com/okou-ai/okou/compare/runner-types-v0.6.1...runner-types-v0.6.2) (2026-10-11)
+
+## [0.6.1](https://github.com/okou-ai/okou/compare/runner-types-v0.6.0...runner-types-v0.6.1) (2026-10-10)
+
+## [0.6.0](https://github.com/okou-ai/okou/compare/runner-types-v0.5.4...runner-types-v0.6.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+## [0.5.4](https://github.com/okou-ai/okou/compare/runner-types-v0.5.3...runner-types-v0.5.4) (2026-10-10)
+
+## [0.5.3](https://github.com/okou-ai/okou/compare/runner-types-v0.5.2...runner-types-v0.5.3) (2026-10-10)
+
+## [0.5.2](https://github.com/okou-ai/okou/compare/runner-types-v0.5.1...runner-types-v0.5.2) (2026-10-10)
+
+
+### Refactoring
+
+* **pi:** retire unversioned model config execution ([#38449](https://github.com/okou-ai/okou/issues/38449)) ([c628473](https://github.com/okou-ai/okou/commit/c62847319cb3ebbd41259d662f47905a1cb39863))
+
+## [0.5.1](https://github.com/okou-ai/okou/compare/runner-types-v0.5.0...runner-types-v0.5.1) (2026-10-09)
+
+## [0.5.0](https://github.com/okou-ai/okou/compare/runner-types-v0.4.7...runner-types-v0.5.0) (2026-10-09)
+
+
+### Features
+
+* **api:** prepare home cache affinity and runner state ([#38314](https://github.com/okou-ai/okou/issues/38314)) ([21ce097](https://github.com/okou-ai/okou/commit/21ce0978ad9a5bc7eddb94bc9d2bc25f1897095f))
+
 ## [0.4.7](https://github.com/okou-ai/okou/compare/runner-types-v0.4.6...runner-types-v0.4.7) (2026-10-09)
 
 ## [0.4.6](https://github.com/okou-ai/okou/compare/runner-types-v0.4.5...runner-types-v0.4.6) (2026-10-08)

@@ -125,7 +125,7 @@ describe("MemoryPiSession", () => {
     }).toThrow(SyntaxError);
   });
 
-  it("distinguishes a pending tool call from a settled native checkpoint", () => {
+  it("distinguishes a pending tool call from a settled native history", () => {
     const memory = MemoryPiSession.create({
       cwd: "/home/user/workspace",
       id: SESSION_ID,
@@ -138,7 +138,7 @@ describe("MemoryPiSession", () => {
     memory.appendMessage(pending);
 
     expect(memory.hasPendingToolCalls()).toBe(true);
-    expect(memory.isSettledCheckpoint()).toBe(false);
+    expect(memory.isSettledHistory()).toBe(false);
     const call = pending.content.find((content) => {
       return content.type === "toolCall";
     });
@@ -155,10 +155,10 @@ describe("MemoryPiSession", () => {
     });
 
     expect(memory.hasPendingToolCalls()).toBe(false);
-    expect(memory.isSettledCheckpoint()).toBe(false);
+    expect(memory.isSettledHistory()).toBe(false);
     memory.appendMessage(
       fauxAssistantMessage("done", { stopReason: "stop", timestamp: 4 }),
     );
-    expect(memory.isSettledCheckpoint()).toBe(true);
+    expect(memory.isSettledHistory()).toBe(true);
   });
 });

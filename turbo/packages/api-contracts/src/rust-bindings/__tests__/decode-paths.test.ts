@@ -57,7 +57,7 @@ describe("Rust decode-path bindings", () => {
 
     expect(second).toBe(first);
     expect(first).toContain('DecodePathField::new("providerId"');
-    expect(first).toContain('DecodePathField::new("apiKeyEnv"');
+    expect(first).toContain('DecodePathField::new("credentialBindings"');
     expect(first).toContain('DecodePathField::new("networkPolicyRefreshes"');
     expect(first).toContain('DecodePathField::new("modelCatalog"');
     expect(first).toContain('DecodePathField::new("catalogDigest"');

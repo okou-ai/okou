@@ -39,7 +39,7 @@ async fn snapshot_provider_default_create_snapshot_commits_pending_publish() {
             output_dir: output_dir.clone(),
             vcpu_count: 1,
             memory_mb: 128,
-            workspace_disk_mb: 16,
+            home_disk_mb: 16,
         })
         .await
         .expect("create snapshot");

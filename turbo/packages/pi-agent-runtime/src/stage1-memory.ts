@@ -180,7 +180,7 @@ export function projectPiMemoryStage1Evidence(args: {
   if (session.getSessionId() !== args.expectedSessionId) {
     throw new Error("Pi memory Stage 1 source session id mismatch");
   }
-  if (!session.isSettledCheckpoint()) {
+  if (!session.isSettledHistory()) {
     throw new Error("Pi memory Stage 1 source is not settled");
   }
   const rows: PiMemoryStage1Evidence[] = [];

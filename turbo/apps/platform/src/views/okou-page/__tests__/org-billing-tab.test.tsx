@@ -3876,6 +3876,31 @@ test("Buy a custom credit amount in hosted checkout", async () => {
   ).not.toBeInTheDocument();
 });
 
+test("Invalid automatic top-ups can be discarded while saving is disabled", async () => {
+  mockBillingStory();
+  await openBillingTab("/?settings=billing");
+  const enable = await screen.findByLabelText("Enable auto-recharge");
+
+  click(enable);
+  await fill(screen.getByLabelText("Credit threshold for auto-recharge"), "0");
+  const unsavedBar = await screen.findByTestId("auto-recharge-unsaved-bar");
+  const discard = within(unsavedBar).getByTestId("discard-button");
+  expect(within(unsavedBar).getByTestId("save-button")).toBeDisabled();
+  expect(discard).toBeEnabled();
+
+  click(discard);
+
+  await waitFor(() => {
+    expect(enable).not.toBeChecked();
+  });
+  expect(
+    screen.queryByTestId("auto-recharge-unsaved-bar"),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByLabelText("Credit threshold for auto-recharge"),
+  ).not.toBeInTheDocument();
+});
+
 test("Save automatic credit top-ups", async () => {
   mockBillingStory();
   await openBillingTab("/?settings=billing");

@@ -1,5 +1,166 @@
 # Changelog
 
+## [1.9.11](https://github.com/okou-ai/okou/compare/app-worker-v1.9.10...app-worker-v1.9.11) (2026-10-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.551.3
+    * @okouai/core bumped to 8.743.0
+
+## [1.9.10](https://github.com/okou-ai/okou/compare/app-worker-v1.9.9...app-worker-v1.9.10) (2026-10-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.551.2
+    * @okouai/core bumped to 8.742.3
+
+## [1.9.9](https://github.com/okou-ai/okou/compare/app-worker-v1.9.8...app-worker-v1.9.9) (2026-10-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.551.1
+    * @okouai/core bumped to 8.742.2
+
+## [1.9.8](https://github.com/okou-ai/okou/compare/app-worker-v1.9.7...app-worker-v1.9.8) (2026-10-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.551.0
+    * @okouai/core bumped to 8.742.1
+
+## [1.9.7](https://github.com/okou-ai/okou/compare/app-worker-v1.9.6...app-worker-v1.9.7) (2026-10-10)
+
+
+### Bug Fixes
+
+* replace okou branding with final rudy logo assets ([#38732](https://github.com/okou-ai/okou/issues/38732)) ([0207873](https://github.com/okou-ai/okou/commit/020787385355dd03548bda3ea621bf414f159cf5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.550.0
+    * @okouai/core bumped to 8.742.0
+
+## [1.9.6](https://github.com/okou-ai/okou/compare/app-worker-v1.9.5...app-worker-v1.9.6) (2026-10-10)
+
+
+### Bug Fixes
+
+* restore artifact og requests in cloudflare workers ([#38666](https://github.com/okou-ai/okou/issues/38666)) ([2626497](https://github.com/okou-ai/okou/commit/2626497e9c7f22c913ba61de6bfac66f1b191c1c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.549.1
+    * @okouai/core bumped to 8.741.1
+
+## [1.9.5](https://github.com/okou-ai/okou/compare/app-worker-v1.9.4...app-worker-v1.9.5) (2026-10-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.741.0
+
+## [1.9.4](https://github.com/okou-ai/okou/compare/app-worker-v1.9.3...app-worker-v1.9.4) (2026-10-10)
+
+
+### Bug Fixes
+
+* use hosted og credentials and restore the okou brand cover ([#38510](https://github.com/okou-ai/okou/issues/38510)) ([2d2ec67](https://github.com/okou-ai/okou/commit/2d2ec676fbf7ab4bc0db3cd5439715869ff2d6b9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.549.0
+    * @okouai/core bumped to 8.740.1
+
+## [1.9.3](https://github.com/okou-ai/okou/compare/app-worker-v1.9.2...app-worker-v1.9.3) (2026-10-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.548.0
+    * @okouai/core bumped to 8.740.0
+
+## [1.9.2](https://github.com/okou-ai/okou/compare/app-worker-v1.9.1...app-worker-v1.9.2) (2026-10-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.547.0
+    * @okouai/core bumped to 8.739.2
+
+## [1.9.1](https://github.com/okou-ai/okou/compare/app-worker-v1.9.0...app-worker-v1.9.1) (2026-10-09)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.739.1
+
+## [1.9.0](https://github.com/okou-ai/okou/compare/app-worker-v1.8.209...app-worker-v1.9.0) (2026-10-09)
+
+
+### Features
+
+* add permission-aware artifact og previews ([#38361](https://github.com/okou-ai/okou/issues/38361)) ([2ef5d4e](https://github.com/okou-ai/okou/commit/2ef5d4ec8c2aedc9217e669f110f8c68fb9b65f3))
+
+
+### Refactoring
+
+* retire organization custom model configuration ([#37746](https://github.com/okou-ai/okou/issues/37746)) ([014fe18](https://github.com/okou-ai/okou/commit/014fe1867c6d1830fd35b03c3d77491da5aaa36a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.546.0
+    * @okouai/core bumped to 8.739.0
+
+## [1.8.209](https://github.com/okou-ai/okou/compare/app-worker-v1.8.208...app-worker-v1.8.209) (2026-10-09)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.738.1
+
+## [1.8.208](https://github.com/okou-ai/okou/compare/app-worker-v1.8.207...app-worker-v1.8.208) (2026-10-09)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.738.0
+
 ## [1.8.207](https://github.com/okou-ai/okou/compare/app-worker-v1.8.206...app-worker-v1.8.207) (2026-10-09)
 
 

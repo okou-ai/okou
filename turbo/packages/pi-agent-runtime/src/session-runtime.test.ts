@@ -121,7 +121,7 @@ const MEMORY_TOOL_SCHEMAS = [
   {
     name: "add_ad_hoc_note",
     description:
-      "Create one append-only ad-hoc memory note only after the user explicitly asks Pi to remember, forget, or update something. Use this tool, not Bash or a generic filesystem tool, for memory updates. Success means only sandbox-local staging; durable retention depends on the terminal artifact checkpoint.",
+      "Create one append-only ad-hoc memory note only after the user explicitly asks Pi to remember, forget, or update something. Use this tool, not Bash or a generic filesystem tool, for memory updates. Success means only sandbox-local staging; durable retention depends on successful artifact publication at the end of the run.",
     parameters: {
       additionalProperties: false,
       properties: {
@@ -542,7 +542,7 @@ describe("official Pi AgentSession runtime", () => {
       expect(inspectPiSessionJsonl(sessionJsonl)).toMatchObject({
         messageCount: 7,
         hasPendingToolCalls: false,
-        isSettledCheckpoint: true,
+        isSettledHistory: true,
       });
       for (const marker of [
         "legacy reasoning context",
@@ -814,11 +814,19 @@ describe("official Pi AgentSession runtime", () => {
         config: {
           provider: "openrouter",
           baseUrl: provider.baseUrl,
+          schemaVersion: 2,
+          dialect: "openai-responses",
+          transport: "sse",
           model: `openai/${selectedModel}`,
           thinkingLevel: "max",
           serviceTier: "priority",
-          apiKeyEnv: "OPENAI_API_KEY",
-          credentialSecretName: "OPENROUTER_API_KEY",
+          credentialBindings: [
+            {
+              kind: "api-key",
+              environment: "OPENAI_API_KEY",
+              secretName: "OPENROUTER_API_KEY",
+            },
+          ],
         },
         resolveCredential() {
           return "opaque-openrouter-credential";
@@ -1080,7 +1088,7 @@ describe("official Pi AgentSession runtime", () => {
       };
     }),
   )(
-    "preserves Gen1 request policy for $name $provider $model Sandbox turns",
+    "preserves versioned Responses request policy for $name $provider $model Sandbox turns",
     async ({ serviceTier, provider: catalogProvider, model }) => {
       const provider = await startResponsesProvider();
       const sessionManager = SessionManager.inMemory("/home/user/workspace", {
@@ -1095,8 +1103,16 @@ describe("official Pi AgentSession runtime", () => {
             provider: catalogProvider,
             model,
             baseUrl: provider.baseUrl,
-            apiKeyEnv: "OPENAI_API_KEY",
-            credentialSecretName: "OPENROUTER_API_KEY",
+            schemaVersion: 2,
+            dialect: "openai-responses",
+            transport: "sse",
+            credentialBindings: [
+              {
+                kind: "api-key",
+                environment: "OPENAI_API_KEY",
+                secretName: "OPENROUTER_API_KEY",
+              },
+            ],
             thinkingLevel: LUNA_MODEL.thinkingLevel,
             ...(serviceTier === undefined ? {} : { serviceTier }),
           }),

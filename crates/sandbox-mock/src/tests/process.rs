@@ -3,6 +3,81 @@ use ::sandbox::DEFAULT_PROCESS_START_TIMEOUT;
 use std::sync::Arc;
 
 #[tokio::test]
+async fn agent_start_preserves_provider_handle_without_consuming_it_for_other_starts() {
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    overrides.push_start_agent_process_handle(::sandbox::GuestProcessHandle::new(
+        42,
+        None,
+        Some(::sandbox::GuestProcessControlHandle::new_with_outcome(
+            |message_id, payload, _| {
+                Box::pin(async move {
+                    assert_eq!(payload, b"provider payload");
+                    ProcessControlOutcome::Delivered(::sandbox::ProcessControlAck { message_id })
+                })
+            },
+        )),
+        ::sandbox::GuestProcessWaiter::new(|_| {
+            Box::pin(async { Ok(::sandbox::ProcessExit::new(42, 7, Vec::new(), Vec::new())) })
+        }),
+    ));
+    let sandbox = MockSandbox::with_overrides("test", Arc::clone(&overrides));
+    let ordinary = sandbox
+        .start_process(&StartProcessRequest {
+            timeout_is_expected: false,
+            cmd: "ordinary helper",
+            start_timeout: DEFAULT_PROCESS_START_TIMEOUT,
+            timeout: Duration::from_secs(5),
+            env: &[],
+            sudo: false,
+            output: ProcessOutputMode::buffered(EXEC_OUTPUT_LIMIT_1_MIB),
+        })
+        .await
+        .unwrap();
+    assert_eq!(ordinary.guest_pid, 1);
+    sandbox
+        .wait_process(ordinary, Duration::from_secs(5))
+        .await
+        .unwrap();
+    assert!(
+        sandbox
+            .start_agent_process(&StartAgentProcessRequest {
+                timeout: Duration::from_secs(5),
+                env: &[("INVALID=KEY", "value")],
+                output: ProcessOutputMode::buffered(EXEC_OUTPUT_LIMIT_1_MIB),
+            })
+            .await
+            .is_err()
+    );
+    let agent = sandbox
+        .start_agent_process(&StartAgentProcessRequest {
+            timeout: Duration::from_secs(5),
+            env: &[],
+            output: ProcessOutputMode::buffered(EXEC_OUTPUT_LIMIT_1_MIB),
+        })
+        .await
+        .unwrap();
+    let (process, control) = agent.into_parts();
+    assert_eq!(process.guest_pid, 42);
+    let outcome = control
+        .control_outcome("message", b"provider payload", Duration::from_secs(1))
+        .await;
+    let ProcessControlOutcome::Delivered(ack) = outcome else {
+        panic!("expected delivered process-control outcome, got {outcome:?}");
+    };
+    assert_eq!(ack.message_id, "message");
+    let exit = sandbox
+        .wait_process(process, Duration::from_secs(5))
+        .await
+        .unwrap();
+    assert_eq!(exit.guest_pid, 42);
+    assert_eq!(
+        exit.termination,
+        ::sandbox::ExecTermination::Exited { exit_code: 7 }
+    );
+    assert_eq!(overrides.start_agent_process_calls().len(), 1);
+}
+
+#[tokio::test]
 async fn overrides_record_start_process_output_modes_in_order() {
     let overrides = Arc::new(MockSandboxOverrides::new());
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
@@ -161,10 +236,12 @@ async fn start_agent_process_returns_mandatory_control_handle() {
         .await
         .unwrap();
     let (_process, control) = with_control.into_parts();
-    let ack = control
-        .control("msg-1", b"payload", Duration::from_secs(5))
-        .await
-        .unwrap();
+    let outcome = control
+        .control_outcome("msg-1", b"payload", Duration::from_secs(5))
+        .await;
+    let ProcessControlOutcome::Delivered(ack) = outcome else {
+        panic!("expected delivered process-control outcome, got {outcome:?}");
+    };
     assert_eq!(ack.message_id, "msg-1");
 }
 
@@ -212,10 +289,13 @@ async fn process_control_calls_are_recorded_when_overrides_are_enabled() {
         .unwrap();
     let (_process, control) = handle.into_parts();
 
-    control
-        .control("msg-1", b"payload", Duration::from_millis(250))
-        .await
-        .unwrap();
+    let outcome = control
+        .control_outcome("msg-1", b"payload", Duration::from_millis(250))
+        .await;
+    assert!(matches!(
+        outcome,
+        ProcessControlOutcome::Delivered(ack) if ack.message_id == "msg-1"
+    ));
 
     assert_eq!(
         overrides.process_control_calls(),
@@ -258,14 +338,27 @@ async fn queued_process_control_errors_are_consumed_fifo() {
         }
         other => panic!("expected failed process-control outcome, got {other:?}"),
     };
-    let second_error = control
-        .control("msg-2", b"payload-2", Duration::from_secs(1))
-        .await
-        .unwrap_err();
-    let ack = control
-        .control("msg-3", b"payload-3", Duration::from_secs(1))
-        .await
-        .unwrap();
+    let outcome = control
+        .control_outcome("msg-2", b"payload-2", Duration::from_secs(1))
+        .await;
+    let second_error = match outcome {
+        ProcessControlOutcome::Failed {
+            kind,
+            write_state,
+            error,
+        } => {
+            assert_eq!(kind, ProcessControlFailureKind::Operation);
+            assert_eq!(write_state, ProcessControlWriteState::PossiblyWritten);
+            error
+        }
+        other => panic!("expected failed process-control outcome, got {other:?}"),
+    };
+    let outcome = control
+        .control_outcome("msg-3", b"payload-3", Duration::from_secs(1))
+        .await;
+    let ProcessControlOutcome::Delivered(ack) = outcome else {
+        panic!("expected delivered process-control outcome, got {outcome:?}");
+    };
 
     assert!(first_error.to_string().contains("first control failed"));
     assert!(second_error.to_string().contains("second control failed"));
@@ -336,16 +429,10 @@ async fn structured_process_control_distinguishes_timeout_write_state() {
                 assert_eq!(kind, ProcessControlFailureKind::Operation);
                 assert_eq!(actual_write_state, write_state);
                 assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+                assert_eq!(error.to_string(), "process control timed out");
             }
             other => panic!("expected failed process-control outcome, got {other:?}"),
         }
-
-        let error = control
-            .control("msg-1", b"payload-1", Duration::from_secs(1))
-            .await
-            .unwrap_err();
-        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
-        assert_eq!(error.to_string(), "process control timed out");
     }
 }
 

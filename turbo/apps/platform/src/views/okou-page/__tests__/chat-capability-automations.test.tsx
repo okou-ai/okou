@@ -23,6 +23,7 @@ import {
 const ACTIVE_SCHEDULE_ID = "a0000000-0000-4000-a000-000000000861";
 const WEBHOOK_ID = "a0000000-0000-4000-a000-000000000862";
 const DISABLED_SCHEDULE_ID = "a0000000-0000-4000-a000-000000000863";
+const OFFICIAL_SCHEDULE_ID = "a0000000-0000-4000-a000-000000000864";
 
 function workflow(
   id: string,
@@ -122,6 +123,29 @@ async function openAutomationBrowser(): Promise<void> {
         "Paused digest schedule",
       ),
     },
+    {
+      id: OFFICIAL_SCHEDULE_ID,
+      ownerUserId: "test-user-123",
+      enabled: true,
+      chatThreadId: RUN_THREAD_ID,
+      nextRunAt: "2026-08-02T10:00:00.000Z",
+      lastRunAt: null,
+      official: {
+        blueprintKey: "daily",
+        appliedFingerprint: "a".repeat(64),
+        reconciliationStatus: "current",
+        intendedEnabled: true,
+        parameterBindings: [],
+      },
+      kind: "schedule",
+      schedule: { type: "loop", intervalSeconds: 86_400 },
+      scheduleSummary: "Every day",
+      workflow: workflow(
+        "a0000000-0000-4000-a000-000000000874",
+        "morning-brief",
+        "Official Morning Brief",
+      ),
+    },
   ] satisfies readonly ChatThreadWorkflowAutomation[];
   installCapabilityChat({
     events: [
@@ -185,6 +209,21 @@ test("Browse a webhook workflow without offering schedule editing", async () => 
       return button.textContent?.trim() === "Edit";
     }),
   ).toBeFalsy();
+});
+
+test("Keep official automation management without offering Run now", async () => {
+  await openAutomationBrowser();
+  const official = automationPanel("Official Morning Brief");
+  expect(automationControl(official, "link", "View")).toBeVisible();
+  expect(automationControl(official, "link", "View")).toHaveAttribute(
+    "href",
+    "/workflows/a0000000-0000-4000-a000-000000000874/automations",
+  );
+  expect(
+    queryAllByRoleFast("button", official).find((button) => {
+      return ["Run now", "Edit"].includes(button.textContent?.trim() ?? "");
+    }),
+  ).toBeUndefined();
 });
 
 test("Refresh the automation list when the thread's automations change", async () => {

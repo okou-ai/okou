@@ -150,24 +150,24 @@ fn optional_positive_duration_secs(
 // the run payload. If the value is unset or empty, there are no artifacts.
 // ---------------------------------------------------------------------------
 
-/// Checkpoint state materialized from one runner-provided artifact entry.
+/// Artifact publication inputs materialized from one Runner-provided entry.
 ///
 /// [`guest_contracts::env::RunArtifact`] owns the wire representation parsed
 /// before this guest-agent type is constructed.
 #[derive(Clone, Debug)]
 pub struct ArtifactEnv {
     /// VAS storage name for the mounted artifact. This is also the artifact
-    /// name reported in checkpoint snapshot payloads.
+    /// name reported in completion artifact snapshot payloads.
     pub name: String,
     /// Absolute path inside the guest where the artifact archive was mounted
-    /// and where the guest-agent walks files during checkpointing.
+    /// and where the guest-agent walks files during snapshot publication.
     pub mount_path: String,
     /// VAS storage id used when recomputing the mounted artifact's content hash.
     pub storage_id: String,
     /// VAS version id mounted at startup. This is the expected content hash used
     /// to skip unchanged snapshots and the parent version for new snapshots.
     pub version_id: String,
-    /// Optional internal checkpoint policy. Absence means strict failure on a
+    /// Optional internal artifact publication policy. Absence means strict failure on a
     /// missing or unreadable artifact root.
     pub missing_root_policy: Option<ArtifactEntryMissingRootPolicy>,
 }
@@ -214,7 +214,7 @@ pub struct GuestConfigRaw {
     pub api_token: String,
     pub sandbox_id: String,
     pub sandbox_reuse_result: String,
-    pub workspace_reuse_result: String,
+    pub home_reuse_result: String,
     pub vercel_bypass: String,
     pub resume_session_id: String,
     pub api_start_time: String,
@@ -287,9 +287,7 @@ impl GuestConfigRaw {
             sandbox_reuse_result: env_or_empty(
                 guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
             ),
-            workspace_reuse_result: env_or_empty(
-                guest_contracts::env::CANONICAL_WORKSPACE_REUSE_RESULT_ENV,
-            ),
+            home_reuse_result: env_or_empty(guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV),
             vercel_bypass: env_or_empty(guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV),
             resume_session_id: env_or_empty(guest_contracts::env::CANONICAL_RESUME_SESSION_ID_ENV),
             api_start_time: env_or_empty(guest_contracts::env::CANONICAL_API_START_TIME_ENV),
@@ -360,11 +358,11 @@ pub struct GuestConfig {
     /// means the sandbox was unparked; other values explain why reuse did not
     /// happen. The value is retained for completion and cancellation reports.
     pub sandbox_reuse_result: String,
-    /// Final wire-format outcome of workspace preparation from
-    /// [`guest_contracts::env::CANONICAL_WORKSPACE_REUSE_RESULT_ENV`]. Values
+    /// Final wire-format outcome of home preparation from
+    /// [`guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV`]. Values
     /// such as `reused` and `sandboxReused` identify the reuse path, while the
-    /// other values describe why workspace reuse did not happen.
-    pub workspace_reuse_result: String,
+    /// other values describe why home reuse did not happen.
+    pub home_reuse_result: String,
     /// User prompt loaded from [`guest_contracts::env::RunPayload`] and passed
     /// to the selected CLI protocol and active-input runtime.
     pub prompt: String,
@@ -461,7 +459,7 @@ pub struct GuestConfig {
     pub codex_home_dir: String,
     /// Artifact mounts parsed from the camelCase JSON array in
     /// [`guest_contracts::env::RunPayload`]. Empty input produces an empty
-    /// vector; checkpoint creation uses the entries for artifact snapshots.
+    /// vector; finalization uses the entries for artifact snapshots.
     pub artifacts: Vec<ArtifactEnv>,
     /// Feature flags parsed from the JSON object in
     /// [`guest_contracts::env::RunPayload`]. Empty input produces an empty map
@@ -572,7 +570,7 @@ impl GuestConfig {
             api_token: raw.api_token,
             sandbox_id: raw.sandbox_id,
             sandbox_reuse_result: raw.sandbox_reuse_result,
-            workspace_reuse_result: raw.workspace_reuse_result,
+            home_reuse_result: raw.home_reuse_result,
             prompt: payload.prompt,
             append_system_prompt: payload.append_system_prompt,
             vercel_bypass: raw.vercel_bypass,
@@ -1106,7 +1104,7 @@ mod tests {
             api_token: String::new(),
             sandbox_id: "sandbox-1".to_string(),
             sandbox_reuse_result: "reused".to_string(),
-            workspace_reuse_result: "sandboxReused".to_string(),
+            home_reuse_result: "sandboxReused".to_string(),
             vercel_bypass: "bypass".to_string(),
             resume_session_id: "session-1".to_string(),
             api_start_time: "123".to_string(),
@@ -1128,7 +1126,7 @@ mod tests {
         assert_eq!(config.api_token, "");
         assert_eq!(config.sandbox_id, "sandbox-1");
         assert_eq!(config.sandbox_reuse_result, "reused");
-        assert_eq!(config.workspace_reuse_result, "sandboxReused");
+        assert_eq!(config.home_reuse_result, "sandboxReused");
         assert_eq!(config.prompt, "hello");
         assert_eq!(config.append_system_prompt, "extra system");
         assert_eq!(config.vercel_bypass, "bypass");

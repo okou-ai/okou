@@ -22,6 +22,8 @@ import {
   type ImagesBinding,
 } from "./artifact-thumbnail";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import type { ArtifactOgTarget } from "@okouai/api-contracts/contracts/artifact-og";
+import { withArtifactOg } from "./artifact-og";
 
 interface R2ObjectBody {
   readonly size: number;
@@ -50,6 +52,7 @@ interface Env {
   readonly OKOU_HOST_DOMAIN: string;
   /** Activate only after all serving API instances support owner validation. */
   readonly HOSTED_SITE_API_ORIGIN?: string;
+  readonly ARTIFACT_OG_API_ORIGIN?: string;
 }
 
 interface ExecutionContext {
@@ -694,20 +697,23 @@ async function serveLegacyArtifactFile(
         return execution.waitUntil(promise);
       },
     });
-    if (!response.ok) return privateResponse(response);
-    response.headers.set("Cache-Control", PRIVATE_NO_STORE_CACHE_CONTROL);
-    return response;
+    return artifactFileResponse(response);
   }
   const cache = (caches as CacheStorage & { readonly default: Cache }).default;
   const key = new Request(request.url);
   const ranged = request.headers.has("Range");
   const cached = ranged ? undefined : await cache.match(key);
   if (cached)
-    return new Response(request.method === "HEAD" ? null : cached.body, cached);
+    return artifactFileResponse(
+      new Response(request.method === "HEAD" ? null : cached.body, {
+        status: cached.status,
+        headers: [...cached.headers],
+      }),
+    );
 
-  const response = await serveArtifactFile(request, bucket, file);
-  if (!response.ok) return privateResponse(response);
-  response.headers.set("Cache-Control", PRIVATE_NO_STORE_CACHE_CONTROL);
+  const response = artifactFileResponse(
+    await serveArtifactFile(request, bucket, file),
+  );
   if (request.method === "GET" && response.status === 200 && !ranged)
     execution.waitUntil(cache.put(key, response.clone()));
   return response;
@@ -825,7 +831,10 @@ async function serveLegacyHostedSite(
   if (env.HOSTED_SITE_API_ORIGIN) {
     response.headers.set("Cache-Control", PRIVATE_NO_STORE_CACHE_CONTROL);
   }
-  return response;
+  return withArtifactOg(request, response, env.ARTIFACT_OG_API_ORIGIN, {
+    kind: "host",
+    id: manifest.deploymentId,
+  });
 }
 
 async function authorizeHostedSiteDelivery(
@@ -848,7 +857,8 @@ async function authorizeHostedSiteDelivery(
   }).toString();
   const response = await fetch(url, {
     cache: "no-store",
-    redirect: "error",
+    // Workers supports manual redirects; only a direct 200 can authorize delivery.
+    redirect: "manual",
     signal: AbortSignal.any([request.signal, AbortSignal.timeout(3_000)]),
   });
   if (response.status !== 200) {
@@ -894,6 +904,7 @@ async function serveManifestFile(
     object.writeHttpMetadata(headers);
   }
   headers.set("Content-Type", file.contentType);
+  headers.set("Content-Length", String(object.size));
   headers.set("Cache-Control", cacheControl(file));
   headers.set("ETag", object.httpEtag);
   headers.set("X-Content-Type-Options", "nosniff");
@@ -972,11 +983,6 @@ async function serveArtifactFile(
       "Content-Range",
       `bytes ${range.offset}-${range.offset + range.length - 1}/${object.size}`,
     );
-  if (/html|svg|xml/iu.test(file.contentType))
-    headers.set(
-      "Content-Disposition",
-      `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
-    );
   return new Response(request.method === "HEAD" ? null : object.body, {
     status: range ? 206 : 200,
     headers,
@@ -1022,6 +1028,14 @@ function privateResponse(
     "sandbox allow-scripts allow-same-origin allow-forms allow-popups allow-downloads; worker-src 'none'",
   );
   return new Response(response.body, { status: response.status, headers });
+}
+
+/** Normalize object metadata and old cached headers at the file boundary. */
+function artifactFileResponse(response: Response): Response {
+  const result = privateResponse(response);
+  if (/html|svg|xml/iu.test(result.headers.get("Content-Type") ?? ""))
+    result.headers.delete("Content-Disposition");
+  return result;
 }
 
 function privatePreviewPrefix(
@@ -1141,6 +1155,7 @@ async function servePrivatePreview(
 interface AuthorizedArtifact {
   readonly layout: StorageLayout;
   readonly target: ArtifactSharePolicy["target"];
+  readonly ogTarget: ArtifactOgTarget;
 }
 
 async function readPublicShare(
@@ -1188,7 +1203,11 @@ async function readPublicShare(
     policy.publicToken !== token
   )
     return denied();
-  return { layout: policy.layout, target: policy.target };
+  return {
+    layout: policy.layout,
+    target: policy.target,
+    ogTarget: { kind: "reference", id: policy.shareId.replaceAll("-", "") },
+  };
 }
 
 /** Callers must read current authorization before every content-cache hit. */
@@ -1213,7 +1232,17 @@ async function readSharedThreadResource(
   const target = parsed.data.resources[record.publicToken];
   return target?.kind === record.targetKind &&
     (record.targetId === undefined || target.id === record.targetId)
-    ? { layout: layoutOfSegment(record.publicBrand), target }
+    ? {
+        layout: layoutOfSegment(record.publicBrand),
+        target,
+        ogTarget: {
+          kind: "thread",
+          id: record.threadId,
+          targetId: target.id,
+          token: record.publicToken,
+          publicBrand: record.publicBrand,
+        },
+      }
     : null;
 }
 
@@ -1243,7 +1272,7 @@ async function serveAuthorizedArtifact(
   ) {
     const bucket = env.PRIVATE_ARTIFACTS_BUCKET;
     if (!bucket) return denied();
-    return privateResponse(
+    return artifactFileResponse(
       await serveArtifactThumbnail(request, {
         sourceKey: `private:${target.key}`,
         images: env.IMAGES,
@@ -1265,10 +1294,19 @@ async function serveAuthorizedArtifact(
   const cache = (caches as CacheStorage & { readonly default: Cache }).default;
   const rangedFile = target.kind === "file" && request.headers.has("Range");
   const cached = rangedFile ? undefined : await cache.match(key);
-  if (cached)
-    return privateResponse(
-      new Response(request.method === "HEAD" ? null : cached.body, cached),
+  if (cached) {
+    const response = new Response(
+      request.method === "HEAD" ? null : cached.body,
+      { status: cached.status, headers: [...cached.headers] },
     );
+    if (target.kind === "file") return artifactFileResponse(response);
+    return withArtifactOg(
+      request,
+      privateResponse(response),
+      env.ARTIFACT_OG_API_ORIGIN,
+      artifact.ogTarget,
+    );
+  }
   let response: Response;
   if (target.kind === "html") {
     response = await serveManifestFile(
@@ -1294,7 +1332,14 @@ async function serveAuthorizedArtifact(
     stored.headers.set("Cache-Control", "public, max-age=86400");
     execution.waitUntil(cache.put(key, stored));
   }
-  return privateResponse(response);
+  // File artifacts keep their original bytes; only hosted sites receive OG.
+  if (target.kind === "file") return artifactFileResponse(response);
+  return withArtifactOg(
+    request,
+    privateResponse(response),
+    env.ARTIFACT_OG_API_ORIGIN,
+    artifact.ogTarget,
+  );
 }
 
 export default {

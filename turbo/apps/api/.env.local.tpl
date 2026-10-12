@@ -7,7 +7,7 @@ CLERK_PUBLISHABLE_KEY=op://Development/clerk/CLERK_PUBLISHABLE_KEY
 CLERK_WEBHOOK_SIGNING_SECRET=op://Development/clerk/CLERK_WEBHOOK_SIGNING_SECRET
 
 # Optional: external MCP resource server.
-# See docs/mcp-server.md; use the exact resource and issuer configured in Clerk.
+# Use the exact MCP resource and issuer configured in Clerk.
 # MCP_RESOURCE_URL=https://api.example.test/mcp
 # MCP_OAUTH_ISSUER=https://your-instance.clerk.accounts.dev
 
@@ -89,7 +89,6 @@ DISCORD_APPLICATION_ID=
 DISCORD_PUBLIC_KEY=
 DISCORD_GATEWAY_SECRET=
 # Set true only when the bot has the MESSAGE_CONTENT intent enabled.
-DISCORD_MESSAGE_CONTENT_ENABLED=false
 
 # Optional: Official Telegram Bot
 TELEGRAM_OFFICIAL_BOT_TOKEN=op://Development/telegram/TELEGRAM_OFFICIAL_BOT_TOKEN
@@ -316,8 +315,3 @@ OFFICIAL_RUNNER_SECRET=000000000000000000000000000000000000000000000000000000000
 # `pnpm dev`. A fixed local value is fine; production uses a Vercel-managed
 # secret and never touches this file.
 CRON_SECRET=local-dev-cron-secret
-
-# Native Morning Brief per-owner self-dispatch; leave off until the staff canary
-# is accepted and a distinct 32+ character secret is provisioned on both sides.
-MORNING_BRIEF_WORKER_CONCURRENCY=4
-# Worker signatures use a purpose-derived key from SECRETS_ENCRYPTION_KEY.

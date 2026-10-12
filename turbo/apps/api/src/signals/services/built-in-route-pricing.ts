@@ -3,10 +3,6 @@ import {
   autoRunBillingProvider,
 } from "@okouai/core/auto-run-model";
 import {
-  resolveUsagePricingProvider,
-  type UsagePricingResolution,
-} from "../context/usage-pricing-resolution";
-import {
   type CatalogRoute,
   type ModelCatalog,
   catalogBuiltInRoute,
@@ -112,18 +108,16 @@ function builtInRouteBillableCategories(
  */
 export interface BuiltInRoutePricing {
   readonly byKey: ReadonlyMap<string, unknown>;
-  readonly resolution: UsagePricingResolution;
   readonly serviceTier: RunServiceTier;
 }
 
 export function builtInRoutePricingFromSnapshot(
   args: {
-    readonly resolution: UsagePricingResolution;
     readonly serviceTier: RunServiceTier;
   },
   byKey: ReadonlyMap<string, unknown>,
 ): BuiltInRoutePricing {
-  return { byKey, resolution: args.resolution, serviceTier: args.serviceTier };
+  return { byKey, serviceTier: args.serviceTier };
 }
 
 /**
@@ -150,15 +144,14 @@ export function unpricedBuiltInRouteCategories(
   if (!pricingKind || !pricingProvider) {
     return categories;
   }
-  const lookupProvider = resolveUsagePricingProvider(
-    pricing.resolution,
-    pricingKind,
-    pricingProvider,
-  );
   return categories.filter((category) => {
     return (
-      findUsagePricing(pricing.byKey, pricingKind, lookupProvider, category) ===
-      undefined
+      findUsagePricing(
+        pricing.byKey,
+        pricingKind,
+        pricingProvider,
+        category,
+      ) === undefined
     );
   });
 }
@@ -272,7 +265,6 @@ export function runRoutePricingFromSnapshot(
   args: {
     readonly modelProvider: ResolvedModelProviderEnvironment | null;
     readonly serviceTier: CodexServiceTier | undefined;
-    readonly resolution: UsagePricingResolution;
   },
   byKey: ReadonlyMap<string, unknown>,
 ): BuiltInRoutePricing | null {

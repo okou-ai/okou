@@ -110,32 +110,29 @@ exec "$@"
 SH
 chmod +x "${tmp_dir}/bin/sudo"
 
-cat >"${tmp_dir}/bin/gh" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-if [ "$1" = api ]; then
-  endpoint=${*: -1}
-  [[ "$endpoint" == *'/actions/artifacts?'* ]] || exit 2
-  name=${endpoint#*name=}
-  name=${name%%&*}
-  jq -cn --arg name "$name" '[{artifacts: [{
-    id: 120, name: $name, expired: false, size_in_bytes: 1000,
-    created_at: "2026-09-11T00:00:00Z", workflow_run: {id: 20}
-  }]}]'
-elif [ "$1" = run ] && [ "$2" = download ]; then
-  name="" output=""
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      -n) name=$2; shift 2 ;;
-      -D) output=$2; shift 2 ;;
-      *) shift ;;
-    esac
-  done
-  cp "${MOCK_CACHE_ROOT}/${name}.json" "${output}/manifest.json"
-else
-  exit 2
-fi
-SH
+cat >"${tmp_dir}/bin/curl" <<'PYTHON'
+#!/usr/bin/env python3
+import io, json, os, pathlib, sys, urllib.parse, zipfile
+args = sys.argv[1:]; url = urllib.parse.urlsplit(args[-1])
+assert url.hostname == 'api.github.com' and 'Authorization: Bearer fixture-token' in sys.stdin.read()
+output = pathlib.Path(args[args.index('--output')+1]); headers = pathlib.Path(args[args.index('--dump-header')+1])
+headers.write_text('HTTP/2 200\r\n')
+if url.path.endswith('/actions/artifacts'):
+    name = urllib.parse.parse_qs(url.query)['name'][0]
+    artifact = 120 if 'aarch64' in name else 121
+    output.write_text(json.dumps({'artifacts':[{'id':artifact,'name':name,'expired':False,'size_in_bytes':1000,
+      'created_at':'2026-09-11T00:00:00Z','workflow_run':{'id':20}}]}))
+elif url.path.endswith('/zip'):
+    artifact = int(url.path.split('/')[-2]); assert artifact in (120,121)
+    target = 'aarch64-unknown-linux-musl' if artifact == 120 else 'x86_64-unknown-linux-musl'
+    manifests = list(pathlib.Path(os.environ['MOCK_CACHE_ROOT']).glob('runner-binary-asset-'+target+'-*.json'))
+    assert len(manifests) == 1
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive,'w') as zipped: zipped.writestr('manifest.json',manifests[0].read_bytes())
+    output.write_bytes(archive.getvalue())
+else: raise AssertionError('unexpected external GitHub endpoint')
+print('200',end='')
+PYTHON
 cat >"${tmp_dir}/bin/aws" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -146,7 +143,7 @@ case "$2" in
   *) exit 2 ;;
 esac
 SH
-chmod +x "${tmp_dir}/bin/gh" "${tmp_dir}/bin/aws"
+chmod +x "${tmp_dir}/bin/curl" "${tmp_dir}/bin/aws"
 
 printf '#!/usr/bin/env bash\nprintf "cached runner fixture\\n"\n' >"${tmp_dir}/cached-runner"
 zstd -q -3 -o "${tmp_dir}/cached-runner.zst" "${tmp_dir}/cached-runner"
@@ -209,6 +206,7 @@ run_case() {
     METAL_USER=ci \
     OFFICIAL_RUNNER_SECRET=test-secret \
     REPO=okou-ai/okou \
+    GH_TOKEN=fixture-token \
     ROOTFS_HASH_MAP='{"arm-1":"rootfs-arm","x86-1":"rootfs-x86-1","x86-2":"rootfs-x86-2"}' \
     RUNNER_API_URL=https://api.example.test \
     RUNNER_DIR="/var/lib/vm0-runner/runners/${job_ref}" \

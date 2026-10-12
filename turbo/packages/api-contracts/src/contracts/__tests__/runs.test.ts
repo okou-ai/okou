@@ -103,15 +103,6 @@ describe("unified run request contract", () => {
     ).toBe(true);
   });
 
-  it("rejects checkpoint resume requests", () => {
-    expect(
-      unifiedRunRequestSchema.safeParse({
-        checkpointId: "11111111-1111-4111-8111-111111111111",
-        prompt: "resume from checkpoint",
-      }).success,
-    ).toBe(false);
-  });
-
   it("rejects built-in models for direct runs without credit admission", () => {
     expect(
       unifiedRunRequestSchema.safeParse({
@@ -238,11 +229,10 @@ describe("Run result generations", () => {
     agentSessionId: "agent-session",
     conversationId: "conversation",
   };
-  it("accepts current outputs and historical checkpoint identities", () => {
+  it("reads continuation and file outputs from current and historical results", () => {
     for (const result of [
       {
         ...identity,
-        checkpointId: "historical-id",
         artifact: { memory: "old-version" },
       },
       {
@@ -257,7 +247,15 @@ describe("Run result generations", () => {
         ],
       },
     ]) {
-      expect(runResultSchema.parse(result)).toStrictEqual(result);
+      expect(runResultSchema.parse(result)).toMatchObject(identity);
+      if ("storageOutputs" in result)
+        expect(runResultSchema.parse(result).storageOutputs).toStrictEqual(
+          result.storageOutputs,
+        );
+      if ("artifact" in result)
+        expect(runResultSchema.parse(result).artifact).toStrictEqual(
+          result.artifact,
+        );
     }
   });
 });

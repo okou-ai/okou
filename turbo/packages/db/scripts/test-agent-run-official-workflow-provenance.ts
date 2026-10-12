@@ -28,11 +28,11 @@ export async function validateAgentRunOfficialWorkflowProvenanceSchema(
   );
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
-  await client.query("BEGIN");
+  const sessionId = randomUUID();
+  let sessionOwned = false;
 
   try {
     const runId = randomUUID();
-    const sessionId = randomUUID();
     const identity = randomUUID();
     const userId = `official-provenance-user-${identity}`;
     const orgId = `official-provenance-org-${identity}`;
@@ -60,6 +60,7 @@ export async function validateAgentRunOfficialWorkflowProvenanceSchema(
       `,
       [sessionId, userId, orgId],
     );
+    sessionOwned = true;
     await client.query(
       `
         INSERT INTO "agent_runs" (
@@ -125,8 +126,15 @@ export async function validateAgentRunOfficialWorkflowProvenanceSchema(
       "   ✅ JSON-omitted nested artifact identity is rejected by the exact constraint\n",
     );
   } finally {
-    await client.query("ROLLBACK");
-    await client.end();
+    try {
+      if (sessionOwned) {
+        await client.query('DELETE FROM "agent_sessions" WHERE "id" = $1', [
+          sessionId,
+        ]);
+      }
+    } finally {
+      await client.end();
+    }
   }
 }
 

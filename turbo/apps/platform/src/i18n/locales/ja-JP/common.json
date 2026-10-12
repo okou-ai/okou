@@ -122,20 +122,23 @@
         "title": "ログが見つかりません"
       },
       "runner": {
-        "cacheMiss": "再利用キーに一致するキャッシュ済みワークスペースがありませんでした。",
+        "cacheMiss": "再利用キーに一致するキャッシュ済みホームディレクトリがありませんでした。",
         "deviceLimitMismatch": "アイドル プール エントリは存在しますが、そのデバイス レート リミッタの状態が一致しません。",
-        "diskPressure": "ランナーのディスク使用量が逼迫していたため、ワークスペースの再利用をスキップしました。",
+        "diskPressure": "ランナーのディスク使用量が逼迫していたため、ホームディレクトリの再利用をスキップしました。",
         "environment": "環境",
         "featureDisabled": "この実行ではサンドボックスの再利用が無効になっています。",
         "framework": "フレームワーク",
         "generation": "世代",
+        "home": "ホームディレクトリ",
+        "homeNoReuseKey": "ホームディレクトリの再利用キーがありませんでした。",
+        "homeReusedDescription": "ホームディレクトリがランナーのキャッシュから復元されました。",
         "hostname": "ホスト名",
-        "invalidMetadata": "キャッシュ済みワークスペースのメタデータが無効でした。",
+        "invalidMetadata": "キャッシュ済みホームディレクトリのメタデータが無効でした。",
         "invalidWorkingDir": "指定された作業ディレクトリを再利用できませんでした。",
-        "lockBusy": "別の実行が同じワークスペースを準備していました。",
+        "lockBusy": "別の実行が同じホームディレクトリを準備していました。",
         "noReuseKey": "アイドル状態のサンドボックスと照合するための再利用キーがありませんでした。",
         "noSessionId": "従来の結果です。サンドボックスが再利用されなかった正確な理由は確認できません。",
-        "notConfigured": "この実行ではワークスペースの再利用が構成されていませんでした。",
+        "notConfigured": "この実行ではホームディレクトリの再利用が構成されていませんでした。",
         "notReused": "再利用されない",
         "outcomeUnavailableDescription": "追加の詳細は利用できません。",
         "poolMiss": "アイドル状態のプールに一致するサンドボックスが見つかりません。",
@@ -145,23 +148,20 @@
         "reusedDescription": "サンドボックスがアイドル状態のプールからパーク解除されました。",
         "runnerId": "ランナー ID",
         "sandbox": "サンドボックス",
-        "sandboxPrepareFallback": "キャッシュ済みワークスペースが見つかりましたが、サンドボックスの準備後に使用できませんでした。",
-        "sandboxReusedDescription": "再利用されたサンドボックス内でワークスペースを引き続き利用できました。",
+        "sandboxPrepareFallback": "キャッシュ済みホームディレクトリが見つかりましたが、サンドボックスの準備後に使用できませんでした。",
+        "sandboxReusedDescription": "ホームディレクトリは再利用されたサンドボックス内で引き続き利用できました。",
         "startup": "起動",
         "startupCold": "コールドスタート",
         "startupColdDescription": "新しいサンドボックスとワークスペースが準備されました。",
+        "startupHome": "ホームディレクトリの再利用",
+        "startupHomeDescription": "新しいサンドボックスでキャッシュ済みのホームディレクトリが復元されました。",
         "startupSandbox": "サンドボックス再利用",
         "startupSandboxDescription": "サンドボックスとそのワークスペースが再利用されました。",
         "startupUnknown": "不明",
         "startupUnknownDescription": "起動時の再利用に関する詳細は利用できません。",
-        "startupWorkspace": "ワークスペース再利用",
-        "startupWorkspaceDescription": "新しいサンドボックスでキャッシュ済みのワークスペースが復元されました。",
         "unavailable": "利用不可",
         "unparkFailed": "パーク解除の試行は失敗しました。新しいサンドボックスがプロビジョニングされました。",
-        "version": "バージョン",
-        "workspace": "ワークスペース",
-        "workspaceNoReuseKey": "ワークスペースの再利用キーがありませんでした。",
-        "workspaceReusedDescription": "ワークスペースがランナーのキャッシュから復元されました。"
+        "version": "バージョン"
       },
       "steps": {
         "matched": "({{matched}}/{{total}} が一致しました)",
@@ -907,20 +907,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Desktop にサインインしました。このウィンドウを閉じられます。",
-        "connecting": "デスクトップのセッションを接続しています。",
-        "consumed": "Desktop でサインインを完了しています。このウィンドウを開いたままにしてください。",
-        "failed": "サインインを完了できませんでした。Desktop からやり直すか、このブラウザーで再試行してください。",
-        "no-workspaces": "ウェブアプリでワークスペースを作成するか参加してから、Desktop で再度サインインしてください。",
-        "pending": "Desktop を開いてサインインを続けてください。",
-        "selecting": "このコンピューターで使うワークスペースを選んでください。"
-      },
-      "reopen": "Desktop を開く",
-      "retry": "再試行",
-      "title": "Desktop にサインイン"
-    },
     "documentTitles": {
       "signIn": "サインイン",
       "signUp": "サインアップ"
@@ -1704,6 +1690,9 @@
       "cancelled": "リクエストをキャンセルしました",
       "cancelling": "キャンセルしています…",
       "checkFailed": "ブラウザーを確認できませんでした。入力内容は保持されています。送信前に再試行してください。",
+      "checkingOutcome": "ブラウザーの状態を確認中",
+      "checkingOutcomeDescription": "ブラウザーがこのリクエストを確認するのを待っています。",
+      "checkStatus": "状態を確認",
       "completed": "情報を追加しました",
       "confirmRangeValue": "現在の値を使用",
       "continue": "エージェントに通知",
@@ -1719,6 +1708,8 @@
       "loadingDescription": "リクエストを確認しています…",
       "open": "情報を入力",
       "optional": "（任意）",
+      "outcomeNotConfirmed": "結果を確認できません",
+      "outcomeNotConfirmedDescription": "ブラウザーはこのリクエストを完了している可能性があります。再試行する前に状態を確認してください。",
       "required": "（必須）",
       "retry": "再試行",
       "site": "サイト",
@@ -2123,8 +2114,6 @@
       "number": "番号"
     },
     "sidebar": {
-      "allArchived": "すべてのチャットがアーカイブされています",
-      "allCaughtUp": "すべて完了しました",
       "allChats": "すべてのチャット",
       "archive": "チャットをアーカイブ",
       "archived": "アーカイブ済み",
@@ -2135,7 +2124,9 @@
       "deleteTitle": "チャットを削除しますか?",
       "draft": "草案",
       "empty": "会話を開始するとここに表示されます",
+      "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "受信トレイ",
+      "inboxEmpty": "受信トレイは空です",
       "markUnread": "未読にする",
       "movePinDown": "下に移動",
       "movePinUp": "上に移動",
@@ -2799,8 +2790,12 @@
       "resize": "サイドバーのサイズを変更する"
     },
     "toasts": {
+      "archived": "チャットをアーカイブしました。",
+      "archivedMuted": "チャットをアーカイブしました。ミュート中のため、新しい返信があっても戻りません。",
       "copied": "コピーされました",
-      "deleted": "チャットが削除されました"
+      "deleted": "チャットが削除されました",
+      "unarchived": "チャットを受信トレイに戻しました",
+      "undo": "元に戻す"
     },
     "voice": {
       "checkingLimit": "音声入力制限を確認する",
@@ -3804,6 +3799,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "再試行"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "リクエストが失敗しました"
@@ -3916,22 +3914,6 @@
         "back": "戻る",
         "continue": "次へ",
         "notNow": "後で"
-      },
-      "compliance": {
-        "frameworks": {
-          "ccpa": "CCPA / CPRA",
-          "gdpr": "GDPR",
-          "hipaa": "HIPAA",
-          "iso27001": "ISO/IEC 27001",
-          "soc2": "SOC 2 Type II"
-        },
-        "link": "セキュリティの詳細",
-        "status": {
-          "aligned": "整合",
-          "compliant": "準拠",
-          "inProgress": "進行中"
-        },
-        "title": "安心して使えるための、Okou のコンプライアンス"
       },
       "documentTitles": {
         "experience": "AI の利用経験",
@@ -4905,6 +4887,27 @@
           "title": "IndexedDB ストレージ",
           "unavailable": "IndexedDB ストレージを利用できません。"
         },
+        "morningBriefEmail": {
+          "checkStatus": "配信状況を確認",
+          "description": "Morning Brief のテンプレートを使い、固定のサンプルをアカウントのメールアドレスに送信します。Agent の実行や配信スケジュールの変更は行いません。",
+          "reasons": {
+            "delivery-failed": "配信に失敗しました。以前の送信がメールサービスに受け付けられている可能性があります。",
+            "expired": "配信期限が切れました。以前の送信がメールサービスに受け付けられている可能性があります。",
+            "no-email": "送信をスキップしました。アカウントにメールアドレスがありません。",
+            "suppressed": "送信をスキップしました。アカウントのメールアドレスへの配信は抑制されています。",
+            "unsubscribed": "送信をスキップしました。アカウントはメール更新の配信を停止しています。"
+          },
+          "requestFailed": "リクエストが完了しませんでした。再試行では同じリクエストを使い、重複送信を防ぎます。",
+          "retry": "テストメールを再試行",
+          "send": "テストメールを送信",
+          "sendAnother": "別のテストメールを送信",
+          "sending": "送信中…",
+          "status": {
+            "queued": "配信待ちです。別のサンプルを送信する前に状況を確認してください。",
+            "sent": "メールサービスが受け付けました。受信トレイと迷惑メールをご確認ください。受信トレイへの到着は未確認です。"
+          },
+          "title": "Morning Brief テストメール"
+        },
         "openrouterPreset": {
           "description": "組織全体の新しい Auto および組み込み Okou 1.0 の実行に適用されます。既存の実行は変更されません。",
           "loading": "読み込み中…",
@@ -5137,6 +5140,22 @@
   },
   "shared": {
     "breadcrumb": "ブレッドクラム",
+    "compliance": {
+      "frameworks": {
+        "ccpa": "CCPA / CPRA",
+        "gdpr": "GDPR",
+        "hipaa": "HIPAA",
+        "iso27001": "ISO/IEC 27001",
+        "soc2": "SOC 2 Type II"
+      },
+      "link": "セキュリティの詳細",
+      "status": {
+        "aligned": "整合",
+        "compliant": "準拠",
+        "inProgress": "進行中"
+      },
+      "title": "安心して使えるための、Okou のコンプライアンス"
+    },
     "errorBoundary": {
       "contactSupport": "サポート",
       "description": "もう一度試すか、お問い合わせください",
@@ -5301,6 +5320,14 @@
     },
     "clearSearch": "検索をクリア",
     "custom": "カスタム",
+    "delete": {
+      "cancel": "キャンセル",
+      "confirm": "テンプレートを削除",
+      "deleting": "削除中...",
+      "description": "「{{title}}」は、閲覧できるすべてのユーザーから削除されます。この操作は取り消せません。",
+      "failed": "テンプレートを削除できませんでした。もう一度お試しください。",
+      "title": "テンプレートを削除しますか？"
+    },
     "detail": {
       "back": "カスタムテンプレート",
       "page": "{{number}} ページ目"
@@ -6282,22 +6309,31 @@
     "connected": "接続済み",
     "connectedWithDetail": "接続されました ({{detail}})",
     "discord": {
-      "accountSetup": "アカウントが接続されていません。新しい Discord アカウントの接続はまだ利用できません。",
-      "adminSetup": "サーバーのセットアップはまだ利用できません。検証済みの既存の設定では、引き続き Discord を利用できます。",
+      "accountSetup": "Discord の公式ブラウザー認証でアカウントを接続してください。",
+      "adminSetup": "Discord サーバーに Okou をインストールし、アカウントを接続してください。",
+      "approvalConfirmed": "ブラウザーの同意を確認しました。このタブを閉じ、元の Works タブで接続を完了してください。",
+      "approvalFailed": "確認できませんでした。元の Okou アカウントと組織でログインするか、認証をやり直してください。",
+      "approvalPrompt": "元の Works タブと同じ Okou アカウントと組織で確認してください。同意の確認だけではアカウントは接続されません。",
+      "approve": "Discord の同意を確認",
+      "approving": "確認中…",
+      "authorizationError": "Discord の認証を完了できませんでした。このカードから再試行してください。",
+      "authorizing": "認証中…",
+      "browserConsent": "Discord の同意を完了し、そのタブで Okou アカウントによる確認を行ってください。タブを閉じるだけでは接続されません。",
       "chooseDmServer": "サーバーを選択",
       "description": "サーバーで Okou にメンションするか、ボットにダイレクトメッセージを送信してください。",
       "disconnect": "Discord の接続を解除",
       "dmServer": "ダイレクトメッセージの既定のサーバー",
+      "install": "Discord にインストール",
       "limitedContext": "コンテキストの制限: Okou は通常のチャンネルメッセージを受信できない場合があります。Okou にメンションし、必要な詳細情報を含めてください。",
-      "loadError": "Discord の状態を読み込めませんでした。",
-      "loading": "Discord の状態を読み込み中…",
-      "memberSetup": "Discord へのアクセスについては、組織の管理者にお問い合わせください。サーバーのセットアップはまだ利用できません。",
+      "memberSetup": "組織の管理者に Discord サーバーへの Okou のインストールを依頼してください。",
       "moreOptions": "その他の Discord オプション",
+      "pendingConsent": "このタブには認証の証明がありません。閉じて、元の Works タブから認証をやり直してください。",
+      "popupBlocked": "Discord の認証のためにポップアップを許可し、再試行してください。",
       "retry": "再試行",
       "server": "サーバー: {{name}}",
       "suspended": "Discord は一時的に利用できません。既存の接続は保持されます。",
       "title": "Discord",
-      "unconfigured": "この組織では、Discord はまだ利用できません。",
+      "unconfigured": "この組織では、Discord がまだ設定されていません。",
       "uninstall": "Discord を削除",
       "uninstallDescription": "この組織の全員が Discord から切断されます。他の組織の接続は維持されます。",
       "uninstallTitle": "この組織から Discord を削除しますか？"

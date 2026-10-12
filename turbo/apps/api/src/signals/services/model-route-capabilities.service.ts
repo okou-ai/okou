@@ -1,5 +1,5 @@
 import {
-  AUTO_RUN_MODEL,
+  AUTO_SELECTED_MODEL,
   isAutoSelectedModel,
 } from "@okouai/core/auto-run-model";
 import { getCatalogRunModelRouteAccess } from "@okouai/api-contracts/contracts/model-providers";
@@ -154,7 +154,7 @@ export function catalogModelForSelectedId(
 ): string | null {
   const id = selectedId.trim();
   if (isAutoSelectedModel(id)) {
-    return AUTO_RUN_MODEL;
+    return AUTO_SELECTED_MODEL;
   }
   if (catalog.byModel.has(id)) {
     return id;

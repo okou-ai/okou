@@ -37,21 +37,8 @@ const commandInteractionSchema = invocationBaseSchema.extend({
   data: z.object({
     id: discordSnowflakeSchema,
     type: z.literal(1),
-    name: z.literal("okou"),
-    options: z.tuple([
-      z.object({
-        type: z.literal(1),
-        name: z.enum([
-          "help",
-          "connect",
-          "disconnect",
-          "switch",
-          "model",
-          "org",
-        ]),
-        options: z.tuple([]).optional(),
-      }),
-    ]),
+    name: z.enum(["help", "connect", "disconnect", "switch", "model"]),
+    options: z.tuple([]).optional(),
   }),
 });
 
