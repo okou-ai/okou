@@ -24,7 +24,8 @@ It verifies ordinary bytes survive and the previous private runtime directory
 does not. It repeats exact-prune, all-inventory drain/shutdown batches and logical
 substitution, atomic park replacement, reserved restore over blank inventory and
 aged exact-to-blank replenishment with fresh boot and the matching prepared
-snapshot (twenty owned cases, including caller-owned cancellation before
+snapshot (twenty-two owned cases, including independent job-free pressure,
+caller-owned cancellation before
 business activation, speculative guest restore failure, and cancelled parked
 and fenced running finalizing deliveries).
 
@@ -109,6 +110,17 @@ matches the packaged `vm0/default` fixture: two vCPUs, 4096 MiB, 16384 MiB home.
 The host observation is a real fresh `/proc/meminfo` read. Arithmetic validation
 does not prove calibration or OOM safety. The test must have actual headroom;
 rejected admission fails the test and uses the existing fixture cleanup path.
+
+The pressure cases additionally require `pressure_sample_period_millis`,
+`pressure_recovery_sustain_millis`, `pressure_wave_cooldown_millis`,
+`pressure_optional_start_interval_millis` and `pressure_max_wave_entries` in the
+same JSON file. All must be positive. They use the same P2 policy and real fresh
+reader, and require an actual critical sample with enough covered cleanup
+headroom on this disposable test host. Absent pressure, refused grants and
+uncertain outcomes fail acceptance; the fixture does not manufacture pressure
+or start business work. Shutdown joins sampling and accepted saving before
+factory/runtime teardown. These two seams do not activate production policy or
+replace the combined native pressure/session/history corpus in P3d.
 
 ```sh
 cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \

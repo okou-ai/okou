@@ -63,6 +63,26 @@ impl MemoryGrowthPermit {
         self.id
     }
 
+    pub(crate) fn matches_coverage(
+        &self,
+        operations: &super::HostMemoryOperations,
+        growth_bytes: u64,
+    ) -> bool {
+        Arc::ptr_eq(&self.shared, &operations.shared) && self.plan.allowance == growth_bytes
+    }
+
+    /// Recheck unused coverage with a fresh fenced read, preserving the exact
+    /// originally captured purpose/backing. Refusal never starts physical work.
+    pub async fn refresh(&mut self) -> Result<runner_host::host_memory::HostMemoryObservation> {
+        let id = self.id.ok_or(Error::Consumed)?;
+        let sample = self.shared.sample().await?;
+        let observation = sample.observation.clone();
+        let mut ledger = self.shared.lock()?;
+        let plan = ledger.plan(id, Stage::Granted)?;
+        ledger.grant(id, plan, Stage::Granted, sample, self.shared.policy)?;
+        Ok(observation)
+    }
+
     /// Follow actual resource selection before start. Failure leaves the old
     /// captured allowance/backing intact; a started replacement needs a new guard.
     pub async fn rebind(&mut self, plan: MemoryOperationPlan) -> Result<()> {

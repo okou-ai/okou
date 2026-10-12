@@ -188,6 +188,17 @@ struct Shared {
 }
 
 impl HostMemoryOperations {
+    /// Immutable supplied inputs, not calibrated production defaults.
+    pub fn policy(&self) -> MemoryOperationPolicy {
+        self.shared.policy
+    }
+
+    /// Fresh scheduling observation through this authority's existing reader.
+    /// This grants and settles nothing; physical admission still needs a permit.
+    pub async fn observe_pressure(&self) -> HostMemoryObservation {
+        self.shared.source.observe().await
+    }
+
     pub(crate) fn same_authority(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.shared, &other.shared)
     }

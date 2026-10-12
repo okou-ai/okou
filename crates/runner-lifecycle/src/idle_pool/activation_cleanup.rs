@@ -351,10 +351,7 @@ impl IdleActivationOwner {
             }
         };
         current.accepted = true;
-        let retained = RetainedActivationCleanup(Arc::new(Mutex::new(RetainedState {
-            owner: None,
-            finished: false,
-        })));
+        let retained = RetainedActivationCleanup::new();
         let payload = (
             Box::new(current),
             retained.clone(),
@@ -399,6 +396,13 @@ struct RetainedState {
 }
 
 impl RetainedActivationCleanup {
+    pub(super) fn new() -> Self {
+        Self(Arc::new(Mutex::new(RetainedState {
+            owner: None,
+            finished: false,
+        })))
+    }
+
     fn lock_state(&self) -> std::sync::MutexGuard<'_, RetainedState> {
         // This lock contains only ownership moves, never provider work or awaits.
         // Preserve the actual capsule across poisoning; do not invent completion
@@ -453,6 +457,13 @@ pub struct AcceptedActivationCleanup {
 }
 
 impl AcceptedActivationCleanup {
+    pub(super) fn new(
+        task: MemoryOperationTask<ActivationCleanupOutcome>,
+        retained: RetainedActivationCleanup,
+    ) -> Self {
+        Self { task, retained }
+    }
+
     pub fn into_parts(
         self,
     ) -> (
@@ -483,6 +494,25 @@ fn validate_backing(
         }
     }
     Ok(())
+}
+
+pub(super) async fn run_cleanup_from_entry(
+    live: MemoryOperation,
+    tail: MemoryOperation,
+    (entry, retained, backing, identity, operations, envelope, context): (
+        super::IdleEntry,
+        RetainedActivationCleanup,
+        Arc<dyn SandboxBackingProcess>,
+        BackingProcessIdentity,
+        HostMemoryOperations,
+        IdleRetirementEnvelope,
+        &'static str,
+    ),
+) -> ActivationCleanupOutcome {
+    let mut owner = Box::new(IdleActivationOwner::from_entry(entry));
+    owner.accepted = true;
+    owner.admission = Some((operations, envelope));
+    run_cleanup(live, tail, (owner, retained, backing, identity, context)).await
 }
 
 async fn run_cleanup(
@@ -617,25 +647,47 @@ async fn cleanup_phases(
             // An accepted owner must never become ordinary reusable inventory.
             owner.state = IdleActivationState::Uncertain;
         }
-        owner
+        let sandbox = owner
             .sandbox
             .as_mut()
-            .ok_or("required cleanup resource consumed")?
-            .kill()
-            .await
-            .map_err(|e| e.to_string())?;
-        revalidate!();
-        if !backing.exit_confirmed().await {
-            return Err("required caller cleanup backing exit is unconfirmed".into());
-        }
-        revalidate!();
+            .ok_or("required cleanup resource consumed")?;
+        let termination = async {
+            sandbox.kill().await.map_err(|e| e.to_string())?;
+            validate_backing(Some(sandbox.as_ref()), backing, identity)
+                .map_err(|e| e.to_string())?;
+            if !backing.exit_confirmed().await {
+                return Err("required caller cleanup backing exit is unconfirmed".to_owned());
+            }
+            validate_backing(Some(sandbox.as_ref()), backing, identity).map_err(|e| e.to_string())
+        };
+        let completion = super::retirement::settle(live, context);
+        tokio::pin!(termination, completion);
+        let settled = tokio::select! {
+            result = &mut termination => {
+                result?;
+                completion.await
+            }
+            settled = &mut completion => {
+                if settled {
+                    owner.reclamation.take();
+                }
+                // An accepted kill/service tail is still real work. Join it
+                // even if the independent live phase could not settle.
+                termination.await?;
+                settled
+            }
+        };
         owner.state = IdleActivationState::Exited;
         owner.reclamation.take();
+        settled
+            .then_some(())
+            .ok_or("required caller live phase remains uncertain")?;
+    } else {
+        super::retirement::settle(live, context)
+            .await
+            .then_some(())
+            .ok_or("required caller live phase remains uncertain")?;
     }
-    super::retirement::settle(live, context)
-        .await
-        .then_some(())
-        .ok_or("required caller live phase remains uncertain")?;
     revalidate!();
     let promoted = if let Some(prepared) = &owner.prepared {
         let promoted = prepared
