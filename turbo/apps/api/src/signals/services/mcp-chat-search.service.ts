@@ -61,7 +61,7 @@ export function mcpChatSearch(
           row.name,
           {
             agentId: row.agentId,
-            agentDisplayName: agentDisplayName(row),
+            displayName: agentDisplayName(row),
           },
         ];
       }),

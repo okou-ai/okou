@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { cronProjectChatEventSearchContract } from "@okouai/api-contracts/contracts/cron";
+import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { mcpChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
 import { describe, expect, it } from "vitest";
 
@@ -123,7 +124,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
     );
     const native = await chat.searchChat(owner, keyword);
     expect(native.results.length).toBeGreaterThan(0);
-    const listed = await bdd.listAgents(owner);
     const token = mcp.authorize(owner);
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: [owner.orgId, otherOrg.orgId].map((orgId) => {
@@ -135,15 +135,26 @@ describe("GET /api/cron/project-chat-event-search", () => {
       }),
       totalCount: 2,
     });
-    async function search(accessToken: string, agentId?: string) {
-      const response = await mcp.call(accessToken, "search_chat_messages", {
-        keyword,
-        ...(agentId ? { agentId } : {}),
-      });
+    async function call(
+      accessToken: string,
+      name: string,
+      args: Record<string, unknown> = {},
+    ) {
+      const response = await mcp.call(accessToken, name, args);
       expect(response.isError).not.toBeTruthy();
       const raw: unknown =
         response.structuredContent ??
         JSON.parse(response.content[0]?.text ?? "null");
+      return raw;
+    }
+    const listed = agentsMainContract.list.responses[200].parse(
+      await call(token(), "list_agents"),
+    );
+    async function search(accessToken: string, agentId?: string) {
+      const raw = await call(accessToken, "search_chat_messages", {
+        keyword,
+        ...(agentId ? { agentId } : {}),
+      });
       return { raw, ...mcpChatSearchContract.search.responses[200].parse(raw) };
     }
     const result = await search(token());
@@ -161,7 +172,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
         return {
           ...hit,
           agentId: agent.agentId,
-          agentDisplayName: agent.displayName,
+          displayName: agent.displayName,
         };
       }),
     });
@@ -182,12 +193,12 @@ describe("GET /api/cron/project-chat-event-search", () => {
       result.results.find((hit) => {
         return hit.agentId === onboarding.defaultAgentId;
       }),
-    ).toMatchObject({ agentDisplayName: "Okou" });
+    ).toMatchObject({ displayName: "Okou" });
     expect(
       result.results.find((hit) => {
         return hit.agentId === unnamed.agentId;
       }),
-    ).toMatchObject({ agentDisplayName: null });
+    ).toMatchObject({ displayName: null });
     const filtered = await search(token(), named.agentId);
     expect(filtered.results.length).toBeGreaterThan(0);
     expect(
@@ -214,7 +225,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
       displayName: "Renamed research",
     });
     expect((await search(token(), named.agentId)).results).toContainEqual(
-      expect.objectContaining({ agentDisplayName: "Renamed research" }),
+      expect.objectContaining({ displayName: "Renamed research" }),
     );
     await expect(chat.searchChat(owner, keyword)).resolves.toStrictEqual(
       native,
@@ -231,7 +242,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
     expect((await search(token({ sub: peer.userId }))).results).toContainEqual(
       expect.objectContaining({
         agentId: shared.agentId,
-        agentDisplayName: "Shared research",
+        displayName: "Shared research",
       }),
     );
     await bdd.deleteAgent(owner, unnamed.agentId);

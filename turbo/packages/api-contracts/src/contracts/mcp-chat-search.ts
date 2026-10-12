@@ -9,14 +9,9 @@ const nativeSearch = chatSearchContract.search;
 const mcpChatSearchResultSchema =
   nativeSearch.responses[200].shape.results.element
     .omit({ agentName: true })
-    .extend({
-      agentId: agentResponseSchema.shape.agentId.describe(
-        "Stable Agent ID, matching list_agents.agentId",
-      ),
-      agentDisplayName: agentResponseSchema.shape.displayName.describe(
-        "Canonical display name, matching list_agents.displayName; null when unset",
-      ),
-    });
+    .extend(
+      agentResponseSchema.pick({ agentId: true, displayName: true }).shape,
+    );
 
 /** Used only by the MCP in-process route slice, not the public Web search API. */
 export const mcpChatSearchContract = c.router({

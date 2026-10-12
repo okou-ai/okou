@@ -152,7 +152,7 @@ describe("thin MCP Web adapters", () => {
       const searchHit = {
         chatThreadId: searchThreadId,
         agentId: f.agentId,
-        agentDisplayName: null,
+        displayName: null,
         matchedMessage: {
           chatThreadId: searchThreadId,
           role: "user",

@@ -4,11 +4,11 @@ import { mcpChatSearchContract } from "../mcp-chat-search";
 describe("MCP chat search response", () => {
   it.each(["Okou", null])(
     "carries a stable Agent ID with display name %s",
-    (agentDisplayName) => {
+    (displayName) => {
       const hit = {
         chatThreadId: "thread-1",
         agentId: "11111111-1111-4111-8111-111111111111",
-        agentDisplayName,
+        displayName,
         matchedMessage: {
           chatThreadId: "thread-1",
           role: "user" as const,

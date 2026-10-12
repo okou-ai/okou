@@ -604,7 +604,7 @@ function registerReadTools(
       name: "search_chat_messages",
       scope: "okou:chat:read",
       description:
-        "Search using the Web keyword, agentId and since filters. Hits expose stable agentId and nullable canonical agentDisplayName matching list_agents, for currently visible Agents. The index updates asynchronously: recent messages may be missing even after a Run completes, and an empty result does not prove absence. No index freshness signal or lag bound is returned. To confirm a recent send, use get_chat_messages with its known threadId and inspect the snapshot and event pages; do not resend solely because search is empty.",
+        "Search using the Web keyword, agentId and since filters. Hits expose stable agentId and nullable canonical displayName matching list_agents, for currently visible Agents. The index updates asynchronously: recent messages may be missing even after a Run completes, and an empty result does not prove absence. No index freshness signal or lag bound is returned. To confirm a recent send, use get_chat_messages with its known threadId and inspect the snapshot and event pages; do not resend solely because search is empty.",
       inputSchema: mcpChatSearchContract.search.query,
       outputSchema: mcpChatSearchContract.search.responses[200],
       annotations: readAnnotations,
