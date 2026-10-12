@@ -871,6 +871,38 @@ describe("Pi memory Phase 2 filesystem", () => {
     expect(files.get("rollout_summaries/codex.md")).toBe("codex evidence");
   });
 
+  it("publishes skill files without validating SKILL.md frontmatter", async () => {
+    const skills = new Map([
+      ["skills/missing-manifest/reference.md", "reference only"],
+      [
+        "skills/renamed/SKILL.md",
+        "---\nname: another-name\ndescription: mismatch\n---\n",
+      ],
+      [
+        "skills/unquoted/SKILL.md",
+        "---\nname: unquoted\ndescription: Use when: shipping\n---\n",
+      ],
+      ["skills/no-frontmatter/SKILL.md", "# No frontmatter\n"],
+    ]);
+    const workspace = await freshWorkspace(VALID_BASE);
+    for (const [path, content] of skills) {
+      await put(workspace, path, content);
+    }
+
+    const prepared = await validatePiMemoryPhase2Output(
+      workspace,
+      "storage-phase2",
+    );
+    const files = new Map(
+      prepared.files.map((file) => {
+        return [file.path, Buffer.from(file.bytes).toString()];
+      }),
+    );
+    for (const [path, content] of skills) {
+      expect(files.get(path)).toBe(content);
+    }
+  });
+
   it("rejects invalid generated text, skills, immutable changes, links, and special entries", async () => {
     const invalidMutations: ReadonlyArray<
       (workspace: Phase2PrivateWorkspace) => Promise<void>
@@ -902,16 +934,6 @@ describe("Pi memory Phase 2 filesystem", () => {
           workspace,
           "memory_summary.md",
           `v1\n${"s".repeat(PI_MEMORY_SUMMARY_MAX_BYTES)}`,
-        );
-      },
-      async (workspace) => {
-        await put(workspace, "skills/missing-manifest/reference.md", "x");
-      },
-      async (workspace) => {
-        await put(
-          workspace,
-          "skills/bad-manifest/SKILL.md",
-          "---\nname: another-name\ndescription: mismatch\n---\n",
         );
       },
       async (workspace) => {

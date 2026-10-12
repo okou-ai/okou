@@ -48,7 +48,6 @@ const REASONS = [
   "skill_file_bytes",
   "skill_files",
   "skill_bytes",
-  "skill_manifest",
 ] as const;
 const FILE_CLASSES = [
   "memory",
