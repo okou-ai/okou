@@ -466,18 +466,6 @@ function teamsGraphPromptFiles(
   });
 }
 
-async function installationForTenant(
-  db: Db,
-  tenantId: string,
-): Promise<TeamsInstallation | undefined> {
-  const [installation] = await db
-    .select()
-    .from(teamsOrgInstallations)
-    .where(eq(teamsOrgInstallations.teamsTenantId, tenantId))
-    .limit(1);
-  return installation;
-}
-
 async function connectionForTeamsUser(
   db: Db,
   tenantId: string,
@@ -1878,10 +1866,15 @@ export const dispatchTeamsMessageToAgent$ = command(
     }
 
     const db = set(writeDb$);
-    const installation =
-      args.installation ??
-      (await installationForTenant(db, activity.tenantId)) ??
-      null;
+    let installation = args.installation ?? null;
+    if (installation === null) {
+      const tenantId = activity.tenantId;
+      [installation = null] = await db
+        .select()
+        .from(teamsOrgInstallations)
+        .where(eq(teamsOrgInstallations.teamsTenantId, tenantId))
+        .limit(1);
+    }
     signal.throwIfAborted();
 
     if (!installation?.orgId) {

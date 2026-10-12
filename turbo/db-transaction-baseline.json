@@ -737,11 +737,6 @@
       "owner": "markPreparedChangeApplying$"
     },
     {
-      "id": "TX-0291",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
-      "owner": "recordImmediateSubscriptionChangeInvoice"
-    },
-    {
       "id": "TX-0293",
       "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
       "owner": "failExpiredPendingSubscriptionChange"
