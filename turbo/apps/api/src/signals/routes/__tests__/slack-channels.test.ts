@@ -3,6 +3,11 @@ import { http, HttpResponse } from "msw";
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { createFixtureTracker } from "./helpers/route-test";
+import {
+  createPublicSlackOrgApi,
+  uniqueSlackUserId,
+} from "./helpers/slack-public-install";
 
 const context = testContext();
 const integrations = createBddIntegrationApi(context);
@@ -10,6 +15,104 @@ const integrations = createBddIntegrationApi(context);
 const SLACK_LIST_URL = "https://slack.com/api/users.conversations";
 
 describe("GET /api/slack/channels", () => {
+  const slackOrgs = createPublicSlackOrgApi(context);
+  const track = createFixtureTracker<{
+    readonly teamId: string;
+    readonly installerSlackUserId: string;
+  }>((installation) => {
+    return slackOrgs.uninstallWorkspace(installation.teamId);
+  });
+
+  it("keeps successive channel requests scoped to their user and organization", async () => {
+    const first = integrations.user();
+    const second = integrations.user({
+      orgId: first.orgId,
+      orgRole: "org:member",
+    });
+    const other = integrations.user();
+    const uninstalled = integrations.user();
+    integrations.configureSlackAppMocks();
+    const installationA = await track(
+      integrations.installSlackWorkspace(first),
+    );
+    const installationB = await track(
+      integrations.installSlackWorkspace(other),
+    );
+    const requests: { token: string | null; user: string | null }[] = [];
+    server.use(
+      http.get(SLACK_LIST_URL, ({ request }) => {
+        requests.push({
+          token: request.headers.get("authorization"),
+          user: new URL(request.url).searchParams.get("user"),
+        });
+        return HttpResponse.json({
+          ok: true,
+          channels: [{ id: "C001", name: "general", is_private: false }],
+          response_metadata: { next_cursor: "" },
+        });
+      }),
+    );
+    const body = { channels: [{ id: "C001", name: "general" }] };
+    expect(
+      (await integrations.requestListSlackChannels(first, [200])).body,
+    ).toStrictEqual(body);
+    const disconnected = await integrations.requestListSlackChannels(
+      second,
+      [404],
+    );
+    expect(disconnected.body).toStrictEqual({
+      error: {
+        message: "No Slack account connected for this user",
+        code: "NOT_FOUND",
+      },
+    });
+    expect(requests).toHaveLength(1);
+
+    const secondSlackUserId = uniqueSlackUserId();
+    await integrations.connectSlackUser(second, {
+      workspaceId: installationA.teamId,
+      slackUserId: secondSlackUserId,
+    });
+    expect(
+      (await integrations.requestListSlackChannels(second, [200])).body,
+    ).toStrictEqual(body);
+    expect(
+      (await integrations.requestListSlackChannels(other, [200])).body,
+    ).toStrictEqual(body);
+    const missing = await integrations.requestListSlackChannels(
+      uninstalled,
+      [404],
+    );
+    expect(missing.body).toStrictEqual({
+      error: {
+        message: "No Slack installation found for this org",
+        code: "NOT_FOUND",
+      },
+    });
+    expect(requests).toHaveLength(3);
+    expect(
+      (await integrations.requestListSlackChannels(first, [200])).body,
+    ).toStrictEqual(body);
+    expect(requests).toStrictEqual([
+      {
+        token: `Bearer xoxb-bdd-${installationA.teamId}`,
+        user: installationA.installerSlackUserId,
+      },
+      {
+        token: `Bearer xoxb-bdd-${installationA.teamId}`,
+        user: secondSlackUserId,
+      },
+      {
+        token: `Bearer xoxb-bdd-${installationB.teamId}`,
+        user: installationB.installerSlackUserId,
+      },
+      {
+        token: `Bearer xoxb-bdd-${installationA.teamId}`,
+        user: installationA.installerSlackUserId,
+      },
+    ]);
+  });
+
   it("returns 401 when the authenticated session has no organization", async () => {
     const response = await integrations.requestListSlackChannels(
       integrations.user({ orgId: null }),

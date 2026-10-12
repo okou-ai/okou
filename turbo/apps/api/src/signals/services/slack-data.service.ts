@@ -9,7 +9,10 @@ import { env } from "../../lib/env";
 import { db$ } from "../external/db";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import type { ApiOrgRole } from "../../types/auth";
-import { userFeatureSwitchContext } from "./feature-switches.service";
+import {
+  createUserFeatureSwitchContext,
+  userFeatureSwitchContext,
+} from "./feature-switches.service";
 import { buildSlackConnectorOAuthStartUrl } from "./slack-connector-oauth-state";
 
 export const SLACK_BOT_SCOPES: readonly string[] = [
@@ -267,10 +270,12 @@ export function slackOrgInstallation(args: {
   });
 }
 
-export function slackUserInstallation(args: {
-  readonly orgId: string;
-  readonly userId: string;
-}): Computed<
+export function slackUserInstallation(
+  input$: Computed<{
+    readonly orgId: string;
+    readonly userId: string;
+  }>,
+): Computed<
   Promise<
     | {
         readonly kind: "connected";
@@ -283,9 +288,13 @@ export function slackUserInstallation(args: {
     | { readonly kind: "not-connected" }
   >
 > {
-  const featureContext$ = userFeatureSwitchContext(args.orgId, args.userId);
+  const identity$ = computed((get) => {
+    return Promise.resolve(get(input$));
+  });
+  const featureContext$ = createUserFeatureSwitchContext(identity$);
 
   return computed(async (get) => {
+    const args = get(input$);
     const db = get(db$);
 
     const [installation] = await db
