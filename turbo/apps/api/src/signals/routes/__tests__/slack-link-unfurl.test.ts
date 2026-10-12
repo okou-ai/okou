@@ -153,7 +153,7 @@ function postLinks(
 }
 
 describe("Slack artifact link previews", () => {
-  it("adds only a divider, linked title and large image without requiring membership or an Okou user connection", async () => {
+  it("adds a divider, linked title and compact image without requiring membership or an Okou user connection", async () => {
     const f = await fixture();
     const immutable = `https://dpl-${f.prepared.deploymentId}.okou.app/?source=slack&view=cover#cover|v1`;
     const alias = `https://${f.prepared.publicSlug}.okou.app/index.html`;
@@ -162,8 +162,11 @@ describe("Slack artifact link previews", () => {
 
     const cover = {
       type: "image",
-      image_url: expect.stringContaining(
-        `/api/artifact-og/image?kind=host&id=${f.prepared.deploymentId}&version=`,
+      image_url: expect.stringMatching(
+        new RegExp(
+          `/api/artifact-og/image\\?kind=host&id=${f.prepared.deploymentId}&version=[^&]+&variant=slack$`,
+          "u",
+        ),
       ),
       alt_text: 'Report & <!channel>\u00a0"标题"',
     };

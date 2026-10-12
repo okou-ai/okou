@@ -206,6 +206,8 @@ const slackArtifactUnfurl$ = command(
     const pageUrl = new URL(url);
     // A pipe in the URL must not become Slack's link-label separator.
     const href = escapeSlackLinkText(pageUrl.href.replaceAll("|", "%7C"));
+    const imageUrl = new URL(metadata.imageUrl);
+    imageUrl.searchParams.set("variant", "slack");
     return {
       blocks: [
         { type: "divider" },
@@ -217,7 +219,7 @@ const slackArtifactUnfurl$ = command(
             verbatim: true,
           },
         },
-        { type: "image", image_url: metadata.imageUrl, alt_text: title },
+        { type: "image", image_url: imageUrl.href, alt_text: title },
       ],
     };
   },
