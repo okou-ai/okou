@@ -90,6 +90,11 @@ JSON
     run_id=${endpoint%/force-cancel}
     run_id=${run_id##*/}
     printf '%s\n' "$run_id" >>"$MOCK_CANCEL_LOG"
+    if [ "$run_id" = "120" ] && [ "${MOCK_DELAY_COMPLETION:-0}" = "1" ] &&
+      [ ! -f "$MOCK_RUNS_RELEASED" ]; then
+      echo 'producer cancelled before consumers terminated' >&2
+      exit 1
+    fi
     case " ${MOCK_CANCEL_FAILURE_RUN_IDS:-} " in
       *" $run_id "*)
         echo 'gh: Failed to cancel workflow run (HTTP 500)' >&2
@@ -108,7 +113,12 @@ JSON
         exit 1
         ;;
     esac
-    if [ "${MOCK_DELAY_COMPLETION:-0}" = "1" ] && [ ! -f "$MOCK_RUNS_RELEASED" ]; then
+    if [ "${MOCK_INVALID_STATUS:-0}" = "1" ]; then
+      printf 'null\n'
+    elif [[ " ${MOCK_CANCEL_FAILURE_RUN_IDS:-} " == *" $run_id "* ]] &&
+      [ "${MOCK_CANCEL_FAILURE_ACTIVE:-0}" = "1" ]; then
+      printf 'in_progress\n'
+    elif [ "${MOCK_DELAY_COMPLETION:-0}" = "1" ] && [ ! -f "$MOCK_RUNS_RELEASED" ]; then
       printf 'in_progress\n'
     else
       printf 'completed\n'
@@ -242,6 +252,10 @@ grep -q "Waiting for superseded CI runs" <<<"$output" ||
   fail "expected an explicit completion barrier"
 [ "$(wc -l <"${tmp_dir}/sleep.log")" -eq 1 ] ||
   fail "expected one poll before superseded runs completed"
+consumer_terminal_line=$(grep -n 'api --method GET repos/okou-ai/okou/actions/runs/110 ' "${tmp_dir}/gh.log" | tail -1 | cut -d: -f1)
+producer_cancel_line=$(grep -n 'api --method POST repos/okou-ai/okou/actions/runs/120/force-cancel' "${tmp_dir}/gh.log" | tail -1 | cut -d: -f1)
+[ "$consumer_terminal_line" -lt "$producer_cancel_line" ] ||
+  fail "producer cancellation must follow consumer terminal confirmation"
 
 : >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"
@@ -299,61 +313,58 @@ fi
 : >"${tmp_dir}/cancel.log"
 : >"${tmp_dir}/sleep.log"
 rm -f "${tmp_dir}/runs-released"
-output=$(
-  run_cancel \
-    MOCK_CANCEL_FAILURE_RUN_IDS=100 \
-    MOCK_DELAY_COMPLETION=1 \
-    MOCK_FORCE_CANCEL_COMPLETION=1 2>&1
-)
-grep -q "failed to cancel superseded run 100; continuing without cancellation" <<<"$output" ||
-  fail "expected a cancellation API failure to become a warning"
-grep -q "All superseded CI runs completed" <<<"$output" ||
-  fail "expected the barrier to still complete for the remaining runs"
-[ ! -s "${tmp_dir}/sleep.log" ] ||
-  fail "a failed cancellation target must not enter the completion barrier"
-if grep -Fq \
-  'api --method GET repos/okou-ai/okou/actions/runs/100' \
-  "${tmp_dir}/gh.log"; then
-  fail "a failed cancellation target must not receive follow-up API queries"
+if run_cancel MOCK_CANCEL_FAILURE_RUN_IDS=100 MOCK_CANCEL_FAILURE_ACTIVE=1 \
+  >"${tmp_dir}/cancel-failure.out" 2>"${tmp_dir}/cancel-failure.err"; then
+  fail "active consumer cancellation failure must stop the handoff"
 fi
+grep -q 'failed to cancel active superseded run 100' "${tmp_dir}/cancel-failure.err" ||
+  fail "expected an explicit active-owner failure"
+[ "$(cat "${tmp_dir}/cancel.log")" = 100 ] ||
+  fail "no producer request may follow an unconfirmed consumer cancellation"
+
+# A cancellation conflict after a concurrent terminal transition is safe only
+# after its fresh GET; it does not remove this consumer from the barrier.
+: >"${tmp_dir}/gh.log"
+: >"${tmp_dir}/cancel.log"
+output=$(run_cancel MOCK_CANCEL_FAILURE_RUN_IDS=100)
+grep -q "All superseded CI runs completed" <<<"$output" || fail "terminal conflict must be safe"
+grep -q 'api --method GET repos/okou-ai/okou/actions/runs/100 ' "${tmp_dir}/gh.log" ||
+  fail "terminal conflict must have fresh status proof"
 
 : >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"
 : >"${tmp_dir}/sleep.log"
 rm -f "${tmp_dir}/runs-released"
-output=$(
-  run_cancel \
-    MOCK_CANCEL_FAILURE_RUN_IDS="100 110 120" 2>&1
-)
-grep -q "continuing without a terminal-state barrier" <<<"$output" ||
-  fail "expected all failed cancellations to exit without a completion barrier"
-[ ! -s "${tmp_dir}/sleep.log" ] ||
-  fail "failed cancellation targets must not poll"
+if run_cancel MOCK_INVALID_STATUS=1 >"${tmp_dir}/invalid.out" 2>"${tmp_dir}/invalid.err"; then
+  fail "unknown status must stop the handoff"
+fi
+if grep -qx 120 "${tmp_dir}/cancel.log"; then fail "unknown consumer status must retain producer"; fi
 
 : >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"
-output=$(run_cancel MOCK_PR_LOOKUP_FAILURE=1 2>&1)
-grep -q "failed to resolve PR #42 head; continuing without cancellation" <<<"$output" ||
-  fail "expected a PR lookup API failure to become a warning"
+if run_cancel MOCK_PR_LOOKUP_FAILURE=1 >"${tmp_dir}/lookup.out" 2>"${tmp_dir}/lookup.err"; then
+  fail "PR lookup failure must stop the handoff"
+fi
 [ ! -s "${tmp_dir}/cancel.log" ] ||
   fail "a PR lookup API failure must not attempt cancellation"
 
 : >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"
-output=$(run_cancel MOCK_DISCOVERY_FAILURE_STATUS=queued 2>&1)
-grep -q "failed to discover superseded CI runs; continuing without cancellation" <<<"$output" ||
-  fail "expected a run discovery API failure to become a warning"
+if run_cancel MOCK_DISCOVERY_FAILURE_STATUS=queued >"${tmp_dir}/discovery.out" 2>"${tmp_dir}/discovery.err"; then
+  fail "discovery failure must stop the handoff"
+fi
 [ ! -s "${tmp_dir}/cancel.log" ] ||
   fail "a run discovery API failure must not attempt cancellation"
 
 : >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"
 : >"${tmp_dir}/sleep.log"
-output=$(run_cancel MOCK_RUN_STATUS_FAILURE_RUN_IDS=100 2>&1)
-grep -q "failed to query superseded run 100; continuing without a terminal-state barrier" <<<"$output" ||
-  fail "expected a run status API failure to become a warning"
+if run_cancel MOCK_RUN_STATUS_FAILURE_RUN_IDS=100 >"${tmp_dir}/status.out" 2>"${tmp_dir}/status.err"; then
+  fail "unknown consumer status must stop the handoff"
+fi
 [ ! -s "${tmp_dir}/sleep.log" ] ||
-  fail "a run status API failure must release the completion barrier"
+  fail "an API status failure must stop before polling"
+if grep -qx 120 "${tmp_dir}/cancel.log"; then fail "status read failure must retain producer"; fi
 
 if run_closed_pr_cleanup MOCK_DISCOVERY_FAILURE_STATUS=queued >/dev/null 2>&1; then
   fail "closed-PR cleanup must fail closed when run discovery fails"

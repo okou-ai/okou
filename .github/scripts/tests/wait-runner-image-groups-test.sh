@@ -180,6 +180,7 @@ run_wait_groups() {
   local output_file="$1"
 
   PATH="$FAKE_BIN:$PATH" \
+    GITHUB_EVENT_NAME=push \
     AWS_METAL_RUNNER_HOSTS="arm-1,arm-2,x86-1" \
     METAL_USER="ci" \
     HEAD_SHA="head-sha" \

@@ -1026,8 +1026,9 @@ jobs:
   runner-test-prepare:
     runs-on: ubuntu-latest
     permissions:
-      actions: read
+      actions: write
       contents: read
+      pull-requests: read
     needs: [detect, runner-host-groups]
     if: |
       needs.detect.outputs.metal-job-ref != '' &&

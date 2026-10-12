@@ -97,6 +97,7 @@
 3 turbo-playwright-runner-workflow-test.sh
 3 verify-okou-production-domains-test.sh
 3 wait-runner-image-test.sh
+3 wait-runner-image-cancellation-test.sh
 3 workflow-script-test-shards-test.sh
 4 changed-base-ref-test.sh
 4 check-pr-title-test.sh

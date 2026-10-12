@@ -1,5 +1,12 @@
 name: Turbo
 
+# A reusable caller can grant a write ceiling; default jobs must stay read-only.
+# Jobs that write to GitHub declare their own permissions below.
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
 on:
   pull_request:
   merge_group:
@@ -2269,8 +2276,9 @@ jobs:
   deploy-runner-prepare:
     runs-on: ubuntu-latest
     permissions:
-      actions: read
+      actions: write
       contents: read
+      pull-requests: read
     concurrency:
       group: deploy-runner-prepare-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
