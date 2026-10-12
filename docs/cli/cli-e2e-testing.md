@@ -237,16 +237,24 @@ message in the public chat-events API. Network telemetry is uploaded after the
 run completes, so use it only as the final ordered policy assertion, not as a
 live synchronization point.
 
-Run completion does not guarantee that the asynchronously ingested public
-context snapshot is queryable. Mandatory context assertions use
-`runner_e2e_wait_for_run_context`: it observes the requested run's snapshot for
-up to 30 seconds, retrying only the exact `404 / NOT_FOUND / Run context not
-available` response. Other HTTP/transport failures and invalid snapshots fail
-immediately; permanent absence fails at the deadline. The helper returns only
-the matching-run JSON, so existing content and secret-redaction assertions still
-apply. Keep context reads used solely to diagnose an already-failed probe
-single-shot; do not replace readiness observation with run retries or longer
-outer test timeouts.
+Business-outcome assertions must not require `GET /api/runs/:id/context`.
+That debugging snapshot is best-effort telemetry in Axiom, and Run completion
+does not guarantee that it is queryable. Verify model/provider identity through
+the owned Run's persisted `source` and actual behavior through sandbox output
+and continuation. Native Runner API integration tests verify exact launch
+configuration and preset selection for initial and continued Runs. Settled
+usage belongs in billing coverage after that test's public reconciliation:
+preview deployments have no production usage cron, and completion does not
+guarantee accounting has finalized. External account identity metadata may be
+unknown for opaque mock subscription tokens; it is not a model-route oracle.
+For exact connector account selection, run `okou connector check --json` inside
+the active Run and assert its admitted account ID; keep outbound-request and
+authentication assertions where network telemetry is itself the tested contract.
+Missing or wrong route/account/output evidence must still fail the outcome test;
+missing or wrong settled usage must fail the billing test.
+Context reads used solely to diagnose an already-failed probe remain single-shot
+and do not become successful-path prerequisites. Do not replay Runs or mutations,
+skip assertions, or increase test deadlines to accommodate optional snapshots.
 
 Body capture must be enabled on the individual chat run. Do not mutate the
 shared runner account's next-run capture preference: runner files execute in

@@ -22,17 +22,17 @@ teardown() {
     runner_e2e_teardown_test
 }
 
-assert_auto_context() {
-    local context
-    context=$(runner_e2e_wait_for_run_context "$1") || return
-    jq -e '
-        .cliAgentType == "pi" and
-        .environment.OPENAI_BASE_URL == "https://openrouter.ai/api/v1" and
-        .environment.OPENAI_MODEL == "@preset/okou-1-0" and
-        any(.firewalls[]?;
-            .kind == "builtin" and .name == "model-provider:openrouter-codex"
-        )
-    ' <<<"$context"
+assert_auto_route() {
+    local run_id="$1" response
+    response=$(runner_api_curl "/api/runs/${run_id}") || return
+    jq -e --arg runId "$run_id" '
+        .runId == $runId and
+        .status == "completed" and
+        .source.providerType == "built-in" and
+        .source.runtimeProviderType == "openrouter-codex" and
+        .source.model == "auto" and
+        .source.credentialScope == "org"
+    ' <<<"$response"
 }
 
 @test "auto preserves session continuity and its OpenRouter route on a successor" {
@@ -54,7 +54,7 @@ assert_auto_context() {
     first_session="$(jq -er '.result.agentSessionId | select(type == "string" and length > 0)' <<<"$output")"
     run _wait_for_runner_chat_output "$THREAD_ID" "$RUN_ID" "$expected" 60
     assert_success
-    run assert_auto_context "$RUN_ID"
+    run assert_auto_route "$RUN_ID"
     assert_success
 
     # No explicit model on continuation: the thread keeps Auto and its session.
@@ -68,6 +68,6 @@ assert_auto_context() {
     [[ "$(runner_chat_field "$successor_result" '.threadId')" == "$THREAD_ID" ]]
     [[ "$(runner_chat_field "$successor_result" '.sessionId')" == "$first_session" ]]
     RUN_ID="$successor_run_id"
-    run assert_auto_context "$RUN_ID"
+    run assert_auto_route "$RUN_ID"
     assert_success
 }

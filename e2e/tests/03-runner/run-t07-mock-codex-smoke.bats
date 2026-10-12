@@ -52,11 +52,16 @@ teardown_file() {
     [[ -n "$(runner_chat_field "$output" '.sessionId')" ]]
     local run_id
     run_id="$(runner_chat_field "$output" '.runId')"
-    run runner_e2e_wait_for_run_context "$run_id"
+    run runner_api_curl "/api/runs/${run_id}"
     assert_success
-    run jq -e '
-        .cliAgentType == "codex" and
-        any(.firewalls[]?; .name == "model-provider:codex-oauth-token")
+    run jq -e --arg runId "$run_id" --arg model "$E2E_MOCK_CODEX_MODEL" '
+        .runId == $runId and
+        .status == "completed" and
+        .source.providerType == "codex-oauth-token" and
+        .source.runtimeProviderType == "codex-oauth-token" and
+        .source.model == $model and
+        .source.credentialScope == "member" and
+        .source.account.status == "connected"
     ' <<<"$output"
     assert_success
 }
