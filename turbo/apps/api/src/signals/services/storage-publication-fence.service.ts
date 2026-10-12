@@ -76,9 +76,24 @@ export function beginPublicationSql(
   token: string,
   at: Date,
 ): SQL {
-  return sql`WITH advanced AS (
+  return sql`WITH ${beginPublicationCtesSql(scope, publicationKey, token, at)}
+    SELECT generation FROM reserved`;
+}
+
+/** Pure top-level clauses; an optional source gates reservation on actual rows. */
+export function beginPublicationCtesSql(
+  scope: PublicationFenceScope,
+  publicationKey: string,
+  token: string,
+  at: Date,
+  source?: SQL,
+): SQL {
+  const values = source
+    ? sql`SELECT ${scope.orgId}, ${scope.agentId}, ${subjectForScope(scope)}, ${at.toISOString()}::timestamp FROM ${source}`
+    : sql`VALUES (${scope.orgId}, ${scope.agentId}, ${subjectForScope(scope)}, ${at.toISOString()}::timestamp)`;
+  return sql`advanced AS (
     INSERT INTO ${storagePublicationGenerations} (org_id, agent_id, subject, updated_at)
-    VALUES (${scope.orgId}, ${scope.agentId}, ${subjectForScope(scope)}, ${at.toISOString()}::timestamp)
+    ${values}
     ON CONFLICT (org_id, agent_id, subject) DO UPDATE SET generation = ${storagePublicationGenerations.generation} + 1,
       updated_at = EXCLUDED.updated_at RETURNING generation
   ), reserved AS (
@@ -87,7 +102,7 @@ export function beginPublicationSql(
       ${at.toISOString()}::timestamp, ${at.toISOString()}::timestamp FROM advanced
     ON CONFLICT (org_id, agent_id, subject, publication_key) DO UPDATE SET generation = EXCLUDED.generation,
       token = EXCLUDED.token, created_at = EXCLUDED.created_at, updated_at = EXCLUDED.updated_at RETURNING generation
-  ) SELECT generation FROM reserved`;
+  )`;
 }
 
 /**

@@ -12,6 +12,7 @@ import {
   HeadObjectCommand,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
+import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   workflowAutomationsContract,
@@ -34,6 +35,7 @@ import { extractFilesFromTarGz } from "../../../lib/tar";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
+import { agentsRoutes } from "../agents";
 import { chatThreadRoutes } from "../chat-threads";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
@@ -1253,6 +1255,85 @@ describe("workflows", () => {
       ),
     ).resolves.toMatchObject({ body: { visibility: "public" } });
   });
+
+  it.each(["private", "public"] as const)(
+    "rejects an older %s Workflow upload after a newer update publishes",
+    async (visibility) => {
+      const actor = user();
+      bdd.acceptAgentStorageWrites();
+      const client = (
+        await setupApp({ context, routes: agentsRoutes, isolatePg: true })
+      )(agentsMainContract);
+      const createdAgent = await accept(
+        client.create({
+          headers: authHeaders(actor),
+          body: {
+            displayName: "Superseded Workflow Agent",
+            visibility: "public",
+          },
+        }),
+        [201],
+      );
+      const agent = createdAgent.body;
+      const s3 = installVolumeS3Fixture();
+      const workflow = await createWorkflow(actor, {
+        agentId: agent.agentId,
+        name: `superseded-update-${randomUUID().slice(0, 8)}`,
+        visibility,
+        instruction: "# original Workflow",
+        files: [{ path: "notes.md", content: "original notes" }],
+      });
+      const signal = AbortSignal.timeout(10_000);
+      const uploadEntered = createDeferredPromise<void>(signal);
+      const uploadReleased = createDeferredPromise<void>(signal);
+      s3.beforeNextArchiveWrite(async () => {
+        uploadEntered.resolve();
+        await uploadReleased.promise;
+      });
+      const older = requestUpdateWorkflow(
+        actor,
+        workflow.body.id,
+        {
+          instruction: "# older Workflow",
+          files: [{ path: "notes.md", content: "older notes" }],
+        },
+        [409],
+      );
+      let released = false;
+      onTestFinished(async () => {
+        if (!released) {
+          uploadReleased.resolve();
+        }
+        await older;
+      });
+      await uploadEntered.promise;
+
+      const newer = await updateWorkflow(actor, workflow.body.id, {
+        instruction: "# newer Workflow",
+        files: [{ path: "notes.md", content: "newer notes" }],
+      });
+      expect(newer.body).toMatchObject({
+        instruction: "# newer Workflow",
+        fileContents: [{ path: "notes.md", content: "newer notes" }],
+      });
+      released = true;
+      uploadReleased.resolve();
+      expect((await older).body.error.message).toBe(
+        "Workflow changed during update; retry the request",
+      );
+      const current = await accept(
+        detailClient().get({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.body.id },
+        }),
+        [200],
+      );
+      expect(current.body).toMatchObject({
+        instruction: "# newer Workflow",
+        fileContents: [{ path: "notes.md", content: "newer notes" }],
+      });
+    },
+  );
 
   it("keeps concurrent Workflow instruction updates on the same Agent", async () => {
     const actor = user();
