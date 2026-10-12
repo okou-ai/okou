@@ -203,7 +203,13 @@ impl Service {
                         connections.spawn(async move {
                             let secure = tls.is_some();
                             let socket: Box<dyn Duplex> = match tls {
-                                Some(tls) => Box::new(tokio_rustls::TlsAcceptor::from(tls).accept(socket).await.unwrap()),
+                                Some(tls) => match tokio_rustls::TlsAcceptor::from(tls).accept(socket).await {
+                                    Ok(socket) => Box::new(socket),
+                                    // An abandoned connection must not stop the listener
+                                    // or the authenticated provisioning exchanges.
+                                    Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return,
+                                    Err(error) => panic!("provider TLS handshake failed: {error:?}"),
+                                },
                                 None => Box::new(socket),
                             };
                             serve(socket, received, send, gates, invalid, delete_status, secure).await;

@@ -4,6 +4,7 @@
 use std::sync::{Arc, Mutex};
 
 use runner_types::ids::RunId;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::regional_fixture::{Relay, map};
 use super::{configuration, fixture::Service as Api};
@@ -105,6 +106,13 @@ async fn configured_tls_oauth_noise_error_and_auth_url_remain_private_through_ac
 #[tokio::test]
 async fn configured_tls_oauth_key_and_authenticated_root_share_one_physical_run_owner() {
     let api = Api::secure(None).await;
+    // A separate loopback client abandons TLS before sending a ClientHello.
+    // Observe its retirement before starting the real provisioning exchange.
+    let mut abandoned = tokio::net::TcpStream::connect(api.dial.0).await.unwrap();
+    abandoned.shutdown().await.unwrap();
+    let mut byte = [0];
+    assert_eq!(bounded(abandoned.read(&mut byte)).await.unwrap(), 0);
+    drop(abandoned);
     let relay = Server::secure().await;
     let control = Control::new(ACCEPTED.to_vec(), map(&relay), KeyReply::Valid, false).await;
     let gate = WriteGate::new();
