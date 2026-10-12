@@ -2939,9 +2939,8 @@ const releaseStrandedBrowserStarts$ = command(
         browser.suspendedAt <= retentionCutoff
           ? browser.suspendedAt
           : null;
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0072; new non-billing transactions are prohibited.
-      await db.transaction(async (tx) => {
-        await tx
+      const stoppedInstances = db.$with("stopped_instances").as(
+        db
           .update(browserSessionInstances)
           .set({
             status: "stopped",
@@ -2953,21 +2952,29 @@ const releaseStrandedBrowserStarts$ = command(
               eq(browserSessionInstances.chatThreadId, browser.chatThreadId),
               eq(browserSessionInstances.status, "stopping"),
             ),
-          );
-        await tx
-          .update(browserSessions)
-          .set({
-            status: "suspended",
-            suspendedAt: retentionClaimedAt ?? nowDate(),
-            updatedAt: retentionClaimedAt ?? nowDate(),
-          })
-          .where(
-            and(
-              eq(browserSessions.chatThreadId, browser.chatThreadId),
-              eq(browserSessions.status, "stopping"),
-            ),
-          );
-      });
+          )
+          .returning({
+            providerSessionId: browserSessionInstances.providerSessionId,
+          }),
+      );
+      // Exhaust the instance write before the independently required logical
+      // write, including zero matches. Fresh logical timestamps are captured
+      // before the instance wait; both writes share one statement snapshot.
+      await db
+        .with(stoppedInstances)
+        .update(browserSessions)
+        .set({
+          status: "suspended",
+          suspendedAt: retentionClaimedAt ?? nowDate(),
+          updatedAt: retentionClaimedAt ?? nowDate(),
+        })
+        .where(
+          and(
+            eq(browserSessions.chatThreadId, browser.chatThreadId),
+            eq(browserSessions.status, "stopping"),
+            gte(db.select({ count: count() }).from(stoppedInstances), 0),
+          ),
+        );
       signal.throwIfAborted();
       await publishBrowserSessionChangedSafely(browser.userId, {
         threadId: browser.chatThreadId,

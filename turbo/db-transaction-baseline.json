@@ -112,11 +112,6 @@
       "owner": "claimStartedProviderInstance$"
     },
     {
-      "id": "TX-0072",
-      "file": "turbo/apps/api/src/signals/services/browser.service.ts",
-      "owner": "releaseStrandedBrowserStarts$"
-    },
-    {
       "id": "TX-0073",
       "file": "turbo/apps/api/src/signals/services/browser.service.ts",
       "owner": "claimExpiredInactiveBrowser$"
