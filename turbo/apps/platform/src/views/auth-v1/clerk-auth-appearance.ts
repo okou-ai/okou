@@ -28,9 +28,9 @@ const CLERK_AUTH_APPEARANCE_BASE = {
     socialButtonsVariant: "blockButton",
   },
   elements: {
-    // Center hosted dialogs on mobile too. Auto margins yield to scrolling on
-    // short viewports; the backdrop keeps Clerk's existing vertical gutter.
-    modalBackdrop: "py-10",
+    // Center hosted dialogs inside the safe viewport. Keep Clerk's vertical
+    // gutter beyond the insets, with auto margins yielding to short-screen scroll.
+    modalBackdrop: "h-viewport p-safe pt-safe-offset-10 pb-safe-offset-10",
     modalContent: "my-auto",
     rootBox:
       "mx-auto flex w-full max-w-[var(--okou-auth-card-max-width)] flex-col",
