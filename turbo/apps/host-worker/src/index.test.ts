@@ -231,6 +231,8 @@ describe("hosted site worker", () => {
     "https://okou.ai",
     "https://app.okou.ai",
     "https://staging-app.omby.ai",
+    "https://staging-app-okou-app-preview.vm0.workers.dev",
+    "https://pr-123-app-okou-app-preview.vm0.workers.dev",
   ])("allows product origin %s on hosted file responses", async (origin) => {
     const response = await fetchWorker(
       new Request("https://demo.sites.vm0.io/", {
@@ -244,10 +246,15 @@ describe("hosted site worker", () => {
     expect(response.headers.get("Vary")).toBe("Origin");
   });
 
-  it("omits allow-origin for disallowed origins", async () => {
+  it.each([
+    "https://attacker.example",
+    "https://pr-123-app-okou-app-preview.vm0.workers.dev.attacker.example",
+    "https://other.vm0.workers.dev",
+    "https://pr-123-app-okou-app-preview.vm0.workers.dev:8443",
+  ])("omits allow-origin for disallowed origin %s", async (origin) => {
     const response = await fetchWorker(
       new Request("https://demo.sites.vm0.io/", {
-        headers: { Origin: "https://attacker.example" },
+        headers: { Origin: origin },
       }),
       env(),
     );

@@ -1,13 +1,12 @@
 import { command } from "ccstate";
 import type { ArtifactDownloadResponse } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
-import { nowDate } from "../../lib/time";
 import { sharedThreadHostedSnapshotFile } from "../../lib/shared-thread-artifact";
 import {
   generateHostedSitesPresignedGetUrl,
   s3ObjectHead,
 } from "../external/s3";
-import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
+import { resolveArtifactDownloadUrl$ } from "./artifact-download-url.service";
 import {
   artifactReferenceRecord$,
   type SharedThreadArtifactReference,
@@ -44,7 +43,7 @@ const resolveSharedThreadArtifactDownload$ = command(
       return file
         ? {
             kind: "file",
-            url: file.url,
+            url: file.downloadUrl,
             filename: file.filename,
             contentType: file.contentType,
           }
@@ -69,6 +68,10 @@ const resolveSharedThreadArtifactDownload$ = command(
           sharedThreadArtifactsBucket(),
           `shared-artifacts/${reference.publicBrand}/${target.snapshotId}/${target.id}${file.path}`,
           true,
+          {
+            filename: file.path.slice(file.path.lastIndexOf("/") + 1),
+            responseCacheControl: "private, no-store",
+          },
         ),
       );
       signal.throwIfAborted();
@@ -165,15 +168,11 @@ export const resolveArtifactDownload$ = command(
         if (object.kind === "missing") {
           return null;
         }
-        const preview = await set(
-          resolveArtifactPreviewUrl$,
-          { bucket: file.bucket, key: file.key, signingDate: nowDate() },
-          signal,
-        );
+        const url = await set(resolveArtifactDownloadUrl$, file, signal);
         signal.throwIfAborted();
         return {
           kind: "file",
-          url: preview.url,
+          url,
           filename: file.filename,
           contentType: file.contentType,
         };

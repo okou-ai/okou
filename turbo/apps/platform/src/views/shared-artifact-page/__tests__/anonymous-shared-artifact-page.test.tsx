@@ -32,70 +32,77 @@ function action(role: "button" | "link" | "menuitem", name: string) {
   return element;
 }
 
-function publicImage() {
+function publicImage(downloadUrl?: string) {
   context.mocks.api(
     artifactReferencesContract.publicUrl,
     ({ request, respond }) => {
       expect(request.headers.get("authorization")).toBeNull();
       return respond(200, {
         url: publicImageUrl,
+        downloadUrl,
         preview: { filename, contentType: "image/png" },
       });
     },
   );
 }
 
-test("a signed-out recipient can preview, copy, and download a public image inside the app", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  const browser = context.mocks.browser.blobDownload();
-  const assign = context.mocks.browser.locationAssign();
-  const replace = context.mocks.browser.locationReplace();
-  const path = `${imagePath}?source=shared#detail`;
-  publicImage();
-  context.mocks.http.get(publicImageUrl, () => {
-    return HttpResponse.text("public image bytes", {
-      headers: { "Content-Type": "image/png" },
+test.each([false, true])(
+  "a signed-out recipient can preview, copy, and download a public image (native: %s)",
+  async (native) => {
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    const browser = context.mocks.browser.blobDownload();
+    const assign = context.mocks.browser.locationAssign();
+    const replace = context.mocks.browser.locationReplace();
+    const path = `${imagePath}?source=shared#detail`;
+    const downloadUrl =
+      "https://storage.example.test/launch.png?grant=download";
+    publicImage(native ? downloadUrl : undefined);
+    context.mocks.http.get(publicImageUrl, () => {
+      return HttpResponse.text("public image bytes", {
+        headers: { "Content-Type": "image/png" },
+      });
     });
-  });
-  await setupPage({
-    context,
-    path,
-    host: "app.okou.ai",
-    auth: null,
-    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
-  });
+    await setupPage({
+      context,
+      path,
+      host: "app.okou.ai",
+      auth: null,
+      featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
+    });
 
-  await expect(
-    screen.findByTestId("attachment-lightbox-image"),
-  ).resolves.toHaveAttribute("src", `${publicImageUrl}#detail`);
-  expect(screen.getByRole("heading", { name: filename })).toBeInTheDocument();
-  expect(document.title).toBe(`${filename} | Okou`);
-  expect(window.location.href).toBe(`https://app.okou.ai${path}`);
-  expect(assign.calls).toStrictEqual([]);
-  expect(replace.calls).toStrictEqual([]);
-  expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
+    await expect(
+      screen.findByTestId("attachment-lightbox-image"),
+    ).resolves.toHaveAttribute("src", `${publicImageUrl}#detail`);
+    expect(screen.getByRole("heading", { name: filename })).toBeInTheDocument();
+    expect(document.title).toBe(`${filename} | Okou`);
+    expect(window.location.href).toBe(`https://app.okou.ai${path}`);
+    expect(assign.calls).toStrictEqual([]);
+    expect(replace.calls).toStrictEqual([]);
+    expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
 
-  click(action("button", "Share"));
-  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
-  expect(clipboard.writes).toStrictEqual([`https://app.okou.ai${path}`]);
-  expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    click(action("button", "Share"));
+    await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
+    expect(clipboard.writes).toStrictEqual([`https://app.okou.ai${path}`]);
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
 
-  click(action("button", "Download options"));
-  await waitFor(() => {
-    expect(action("menuitem", "Download")).toBeInTheDocument();
-  });
-  click(action("menuitem", "Download"));
-  await waitFor(() => {
-    expect(browser.downloads).toHaveLength(1);
-  });
-  expect(browser.downloads[0]?.filename).toBe(filename);
-  await expect(browser.downloads[0]?.blob?.text()).resolves.toBe(
-    "public image bytes",
-  );
-  expect(window.location.href).toBe(`https://app.okou.ai${path}`);
-  expect(assign.calls).toStrictEqual([]);
-  expect(replace.calls).toStrictEqual([]);
-});
+    click(action("button", "Download options"));
+    await waitFor(() => {
+      expect(action("menuitem", "Download")).toBeInTheDocument();
+    });
+    click(action("menuitem", "Download"));
+    await waitFor(() => {
+      expect(browser.downloads).toHaveLength(1);
+    });
+    expect(browser.downloads[0]?.filename).toBe(filename);
+    expect(browser.downloads[0]?.url === downloadUrl).toBe(native);
+    expect(browser.downloads[0]?.url.startsWith("blob:")).toBe(!native);
+    const bytes = browser.downloads[0]?.blob?.text() ?? Promise.resolve(null);
+    await expect(bytes).resolves.toBe(native ? null : "public image bytes");
+    expect(window.location.href).toBe(`https://app.okou.ai${path}`);
+    expect(assign.calls).toStrictEqual([]);
+    expect(replace.calls).toStrictEqual([]);
+  },
+);
 
 test("a signed-out legacy HTML link previews its requested slide on the isolated public origin", async () => {
   const publicUrl = "https://launch-plan.okou.app/";

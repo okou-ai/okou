@@ -1,7 +1,7 @@
 import { command, computed, state } from "ccstate";
 
 import type { ArtifactSignals } from "./chat-page/artifact-card-signals.ts";
-import { createAttachmentPreviewSignals } from "./attachment-resource-url.ts";
+import { attachmentDownloadSource$ } from "./attachment-download-source.ts";
 import { createMarkdownPreviewTree } from "./markdown-preview-tree.ts";
 import type { MermaidDiagramPreviewCommand } from "./mermaid-diagram.ts";
 import { createArtifactDiagramPreviewSignals } from "./artifact-diagram-preview.ts";
@@ -61,23 +61,20 @@ function storedArtifactPreview(
 
 const downloadStoredArtifact$ = command(
   async (
-    { get },
+    { set },
     preview: PublicArtifactPreview["preview"],
     signal: AbortSignal,
   ) => {
     // A user action resolves a fresh signature; the card may have been open
     // longer than the preview grant. Never use this credential for copying.
-    const download = createAttachmentPreviewSignals(preview.url);
-    const token = await get(download.presignedToken$);
-    signal.throwIfAborted();
-    const url = token?.downloadUrl ?? (await get(download.resourceUrl$));
-    signal.throwIfAborted();
+    const source = await set(attachmentDownloadSource$, preview.url, signal);
     await downloadAttachmentUrl(
-      url,
+      // Same new-App/old-API removal gate as downloadAttachment$ (#39235); legacy
+      // unmanaged URLs permanently require a CORS-readable blob download.
+      source.downloadUrl ?? source.resourceUrl,
       signal,
       preview.filename,
-      token?.downloadUrl ? "native" : "blob",
-      "default",
+      source.downloadUrl ? "native" : "blob",
     );
   },
 );

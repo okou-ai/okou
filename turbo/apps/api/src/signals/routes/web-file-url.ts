@@ -8,6 +8,7 @@ import { authRoute } from "../auth/auth-route";
 import { queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import { resolveArtifactPreviewUrl$ } from "../services/artifact-preview-url.service";
+import { resolveArtifactDownloadUrl$ } from "../services/artifact-download-url.service";
 import {
   uploadedArtifactObject$,
   uploadedArtifactPreviewImageUrl$,
@@ -50,15 +51,15 @@ const fileUrlInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     { bucket: object.bucket, key: object.key, signingDate: nowDate() },
     signal,
   );
+  const downloadUrl = await set(resolveArtifactDownloadUrl$, object, signal);
 
   signal.throwIfAborted();
-  if (object.isPrivate) {
-    set(setResHeader$, "Cache-Control", "private, no-store");
-  }
+  set(setResHeader$, "Cache-Control", "private, no-store");
   return {
     status: 200 as const,
     body: {
       ...preview,
+      downloadUrl,
       publicUrl: object.isPrivate ? null : object.url,
       previewImageUrl,
     },

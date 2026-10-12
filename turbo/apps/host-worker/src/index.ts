@@ -136,6 +136,8 @@ const STATIC_ALLOWED_ORIGINS = new Set([
   "https://okou.ai",
   "https://app.vm7.ai:8443",
 ]);
+const APP_WORKER_PREVIEW_HOST_PATTERN =
+  /^(?:staging|pr-[0-9]+)-app-okou-app-preview\.vm0\.workers\.dev$/u;
 const DEFAULT_ROBOTS_TXT = "User-agent: *\nDisallow: /\n";
 const IMMUTABLE_DEPLOYMENT_HOST_PATTERN =
   /^dpl-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u;
@@ -163,6 +165,9 @@ function allowedCorsOrigin(origin: string | null): string | null {
   }
 
   const hostname = url.hostname.toLowerCase();
+  if (!url.port && APP_WORKER_PREVIEW_HOST_PATTERN.test(hostname)) {
+    return normalizedOrigin;
+  }
   if (
     isSubdomainOf(hostname, "okou.ai") ||
     isSubdomainOf(hostname, "vm6.ai") ||

@@ -198,13 +198,21 @@ describe("GET /api/web/file-url", () => {
     );
 
     expect(response.body.url).toBe(PRESIGNED_URL);
+    expect(response.body.downloadUrl).toBe(PRESIGNED_URL);
     expect(response.body.expiresAt).toBe("2026-09-11T12:00:00.000Z");
     expect(response.body.previewImageUrl).toBeNull();
     expect(signedObjectInputs()).toStrictEqual([
       expect.objectContaining({ Bucket: BUCKET, Key: key }),
+      expect.objectContaining({
+        Bucket: BUCKET,
+        Key: key,
+        ResponseCacheControl: "private, no-store",
+        ResponseContentDisposition: "attachment; filename*=UTF-8''photo.png",
+      }),
     ]);
     expect(signedOptions()).toStrictEqual([
       { expiresIn: 172_800, signingDate: new Date("2026-09-09T12:00:00.000Z") },
+      { expiresIn: 172_800, signingDate: new Date("2026-09-09T12:00:00.123Z") },
     ]);
   });
 
@@ -228,10 +236,10 @@ describe("GET /api/web/file-url", () => {
     // A shared link has to outlive the presigned window and carry no
     // credential, so it addresses the object on the public artifacts domain.
     expect(response.body.publicUrl).toBe(`https://cdn.vm7.io/${key}`);
-    expect(response.headers.get("cache-control")).toBeNull();
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
 
-  it("signs an inline URL without a download disposition", async () => {
+  it("keeps preview inline and serves the separate download as an attachment", async () => {
     const fileId = randomUUID();
     const { token, userId } = await mintFileReadToken();
     mockS3Objects([artifactKey(userId, fileId, "photo.png")]);
@@ -248,7 +256,7 @@ describe("GET /api/web/file-url", () => {
       signedObjectInputs().map((input) => {
         return input.ResponseContentDisposition;
       }),
-    ).toStrictEqual([undefined]);
+    ).toStrictEqual([undefined, "attachment; filename*=UTF-8''photo.png"]);
   });
 
   it("does not sign a URL for a file owned by another user", async () => {
@@ -275,7 +283,7 @@ describe("GET /api/web/file-url", () => {
 
     expectApiError(forbidden.body);
     expect(forbidden.body.error.code).toBe("NOT_FOUND");
-    expect(signedObjectInputs()).toHaveLength(1);
+    expect(signedObjectInputs()).toHaveLength(2);
   });
 
   it("scopes file lookup to the authenticated user", async () => {

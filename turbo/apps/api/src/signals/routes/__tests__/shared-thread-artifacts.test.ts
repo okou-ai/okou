@@ -153,6 +153,12 @@ async function fixture() {
           "response-content-disposition",
           command.input.ResponseContentDisposition,
         );
+        if (command.input.ResponseCacheControl) {
+          url.searchParams.set(
+            "response-cache-control",
+            command.input.ResponseCacheControl,
+          );
+        }
       }
       return Promise.resolve(url.href);
     },
@@ -648,13 +654,16 @@ test("copies an uploaded video with independent bytes and the parent revocation"
     "snapshot-private-key",
   );
   expect(download.searchParams.get("response-content-disposition")).toBe(
-    'attachment; filename="video.mp4"',
+    "attachment; filename*=UTF-8''video.mp4",
+  );
+  expect(download.searchParams.get("response-cache-control")).toBe(
+    "private, no-store",
   );
   expect(download.pathname).toContain(created.body.id);
   const downloaded = await fetch(download);
   expect(downloaded.status).toBe(200);
   expect(downloaded.headers.get("content-disposition")).toBe(
-    'attachment; filename="video.mp4"',
+    "attachment; filename*=UTF-8''video.mp4",
   );
   await expect(downloaded.text()).resolves.toBe("Private video bytes");
   const published = await accept(

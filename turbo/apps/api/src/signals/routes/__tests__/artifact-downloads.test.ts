@@ -341,12 +341,30 @@ test.each([
 );
 
 test.each([
-  { filename: "report.html", contentType: "text/html" },
-  { filename: "chart.svg", contentType: "image/svg+xml" },
-  { filename: "report.xml", contentType: "application/xml" },
+  {
+    filename: "report.html",
+    contentType: "text/html",
+    disposition: "attachment; filename*=UTF-8''report.html",
+  },
+  {
+    filename: "chart.svg",
+    contentType: "image/svg+xml",
+    disposition: "attachment; filename*=UTF-8''chart.svg",
+  },
+  {
+    filename: "report.xml",
+    contentType: "application/xml",
+    disposition: "attachment; filename*=UTF-8''report.xml",
+  },
+  {
+    filename: "小猫 (draft)'*.png",
+    contentType: "image/png",
+    disposition:
+      "attachment; filename*=UTF-8''%E5%B0%8F%E7%8C%AB%20%28draft%29%27%2A.png",
+  },
 ])(
   "$filename previews do not reuse attachment-bearing download credentials",
-  async ({ filename, contentType }) => {
+  async ({ filename, contentType, disposition }) => {
     const { actor, bdd, members, share } = await fixture();
     context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
       const url = new URL(apiTestS3PresignedUrl(command));
@@ -358,6 +376,12 @@ test.each([
           "response-content-disposition",
           command.input.ResponseContentDisposition,
         );
+        if (command.input.ResponseCacheControl) {
+          url.searchParams.set(
+            "response-cache-control",
+            command.input.ResponseCacheControl,
+          );
+        }
       }
       return Promise.resolve(url.href);
     });
@@ -377,13 +401,21 @@ test.each([
       [200],
     );
     const ownerPreview = await accept(
-      api()(artifactReferencesContract).read({
+      api()(artifactReferencesContract).resolve({
         headers,
         params: { reference: reference(completed.body.url) },
       }),
       [200],
     );
     expect(ownerPreview.body).toMatchObject({ filename, contentType });
+    const ownerDownload = new URL(ownerPreview.body.downloadUrl!);
+    expect(ownerDownload.searchParams.get("response-content-disposition")).toBe(
+      disposition,
+    );
+    expect(ownerDownload.searchParams.get("response-cache-control")).toBe(
+      "private, no-store",
+    );
+    expect(ownerDownload.href).not.toBe(ownerPreview.body.url);
     expect(
       new URL(ownerPreview.body.url).searchParams.has(
         "response-content-disposition",
@@ -399,27 +431,35 @@ test.each([
     }
     const recipient = bdd.user({ orgId: actor.orgId });
     members.add(recipient.userId);
-    // Warm the explicit-download cache before resolving the same shared file.
+    // Download first, then confirm that preview resolution remains inline.
     const downloaded = await download(recipient, shared.url);
     if (downloaded.body.kind !== "file") {
       throw new Error("Expected a single-file download");
     }
     expect(downloaded.body).toMatchObject({ filename, contentType });
     expect(
+      new URL(downloaded.body.url).searchParams.get("response-cache-control"),
+    ).toBe("private, no-store");
+    expect(
       new URL(downloaded.body.url).searchParams.get(
         "response-content-disposition",
       ),
-    ).toBe(`attachment; filename="${filename}"`);
+    ).toBe(disposition);
     for (const viewer of [actor, recipient]) {
       session(viewer);
       const preview = await accept(
-        api()(artifactReferencesContract).read({
+        api()(artifactReferencesContract).resolve({
           headers,
           params: { reference: reference(shared.url) },
         }),
         [200],
       );
       expect(preview.body).toMatchObject({ filename, contentType });
+      expect(
+        new URL(preview.body.downloadUrl!).searchParams.get(
+          "response-content-disposition",
+        ),
+      ).toBe(disposition);
       expect(
         new URL(preview.body.url).searchParams.has(
           "response-content-disposition",
@@ -431,6 +471,28 @@ test.each([
         );
       }
     }
+    await share({ kind: "file", id: prepared.body.id }, "public");
+    const published = await accept(
+      api()(artifactReferencesContract).publicUrl({
+        params: { reference: reference(completed.body.url) },
+      }),
+      [200],
+    );
+    const publicDownload = new URL(published.body.downloadUrl!);
+    expect(
+      publicDownload.searchParams.get("response-content-disposition"),
+    ).toBe(disposition);
+    expect(publicDownload.searchParams.get("response-cache-control")).toBe(
+      "private, no-store",
+    );
+    expect(storageKey(publicDownload.href)).toContain("/shares/");
+    await share({ kind: "file", id: prepared.body.id }, "private");
+    await accept(
+      api()(artifactReferencesContract).publicUrl({
+        params: { reference: reference(completed.body.url) },
+      }),
+      [404],
+    );
   },
 );
 
