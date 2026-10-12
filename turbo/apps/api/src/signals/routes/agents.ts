@@ -24,7 +24,10 @@ import {
   publishUserSignal,
 } from "../external/realtime";
 import { nowDate } from "../../lib/time";
-import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
+import {
+  nullableDriverValueDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { conflict, notFound } from "../../lib/error";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { deleteAgentById$ } from "../services/agent-deletion.service";
@@ -258,6 +261,44 @@ async function readAgentForResponse(
 }
 
 function agentCreateSelection(values: typeof agents.$inferSelect) {
+  // Defer text admission until the eligible INSERT row is projected. Binding
+  // raw NUL text would reject before the public-count predicate can run.
+  const displayName =
+    values.displayName === null
+      ? null
+      : Buffer.from(
+          pgTextDecoder.mapFromDriverValue(
+            agents.displayName.mapToDriverValue(values.displayName),
+          ),
+          "utf8",
+        );
+  const description =
+    values.description === null
+      ? null
+      : Buffer.from(
+          pgTextDecoder.mapFromDriverValue(
+            agents.description.mapToDriverValue(values.description),
+          ),
+          "utf8",
+        );
+  const sound =
+    values.sound === null
+      ? null
+      : Buffer.from(
+          pgTextDecoder.mapFromDriverValue(
+            agents.sound.mapToDriverValue(values.sound),
+          ),
+          "utf8",
+        );
+  const avatarUrl =
+    values.avatarUrl === null
+      ? null
+      : Buffer.from(
+          pgTextDecoder.mapFromDriverValue(
+            agents.avatarUrl.mapToDriverValue(values.avatarUrl),
+          ),
+          "utf8",
+        );
   return {
     id: sql`${sql.param(values.id, agents.id)}`.mapWith(agents.id).as("id"),
     orgId: sql`${sql.param(values.orgId, agents.orgId)}`
@@ -272,16 +313,16 @@ function agentCreateSelection(values: typeof agents.$inferSelect) {
     visibility: sql`${sql.param(values.visibility, agents.visibility)}`
       .mapWith(agents.visibility)
       .as("visibility"),
-    displayName: sql`${sql.param(values.displayName, agents.displayName)}`
+    displayName: sql`convert_from(${sql.param(displayName)}, 'UTF8')`
       .mapWith(nullableDriverValueDecoder(agents.displayName))
       .as("display_name"),
-    description: sql`${sql.param(values.description, agents.description)}`
+    description: sql`convert_from(${sql.param(description)}, 'UTF8')`
       .mapWith(nullableDriverValueDecoder(agents.description))
       .as("description"),
-    sound: sql`${sql.param(values.sound, agents.sound)}`
+    sound: sql`convert_from(${sql.param(sound)}, 'UTF8')`
       .mapWith(nullableDriverValueDecoder(agents.sound))
       .as("sound"),
-    avatarUrl: sql`${sql.param(values.avatarUrl, agents.avatarUrl)}`
+    avatarUrl: sql`convert_from(${sql.param(avatarUrl)}, 'UTF8')`
       .mapWith(nullableDriverValueDecoder(agents.avatarUrl))
       .as("avatar_url"),
     createdAt: sql`${sql.param(values.createdAt, agents.createdAt)}`

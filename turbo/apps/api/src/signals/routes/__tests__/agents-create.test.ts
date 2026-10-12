@@ -155,88 +155,101 @@ describe("POST /api/agents", () => {
     expect(instructions.body.content).toBe("");
   });
 
-  it("rejects the uploaded candidate when another public create fills the last slot", async () => {
-    const fixture = agentsFixture("second-limit");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    const entered = createDeferredPromise<void>(context.signal);
-    const released = createDeferredPromise<void>(context.signal);
-    let blockUpload = false;
-    installDurableUserExportStorage(context, {
-      prefixes: [`${fixture.orgId}/`],
-      afterWrite: async (command) => {
-        if (
-          blockUpload &&
-          command instanceof PutObjectCommand &&
-          command.input.Key?.endsWith("/archive.tar.gz")
-        ) {
-          blockUpload = false;
-          entered.resolve();
-          await released.promise;
+  it.each([
+    ["valid metadata", {}],
+    ["NUL description", { description: "Invalid\u0000text" }],
+    ["NUL display name", { displayName: "Invalid\u0000text" }],
+    ["NUL sound", { sound: "Invalid\u0000text" }],
+    ["NUL avatar", { avatarUrl: "Invalid\u0000text" }],
+  ] as const)(
+    "rejects the uploaded candidate when another public create fills the last slot (%s)",
+    async (_name, metadata) => {
+      const fixture = agentsFixture("second-limit");
+      mocks.clerk.session(fixture.userId, fixture.orgId);
+      const entered = createDeferredPromise<void>(context.signal);
+      const released = createDeferredPromise<void>(context.signal);
+      let blockUpload = false;
+      installDurableUserExportStorage(context, {
+        prefixes: [`${fixture.orgId}/`],
+        afterWrite: async (command) => {
+          if (
+            blockUpload &&
+            command instanceof PutObjectCommand &&
+            command.input.Key?.endsWith("/archive.tar.gz")
+          ) {
+            blockUpload = false;
+            entered.resolve();
+            await released.promise;
+          }
+        },
+      });
+      for (let index = 0; index < 6; index += 1) {
+        const created = await accept(
+          agentsClient().create({
+            headers: authHeaders(),
+            body: { visibility: "public", displayName: `Existing ${index}` },
+          }),
+          [201],
+        );
+        await trackCreatedAgent(
+          Promise.resolve({ ...fixture, agentId: created.body.agentId }),
+        );
+      }
+      blockUpload = true;
+      const pending = agentsClient().create({
+        headers: authHeaders(),
+        body: {
+          visibility: "public",
+          displayName: "Rejected candidate",
+          ...metadata,
+        },
+      });
+      onTestFinished(async () => {
+        if (!released.settled()) {
+          released.resolve();
         }
-      },
-    });
-    for (let index = 0; index < 6; index += 1) {
-      const created = await accept(
+        await Promise.allSettled([pending]);
+      });
+      await entered.promise;
+      const winner = await accept(
         agentsClient().create({
           headers: authHeaders(),
-          body: { visibility: "public", displayName: `Existing ${index}` },
+          body: { visibility: "public", displayName: "Last slot" },
         }),
         [201],
       );
       await trackCreatedAgent(
-        Promise.resolve({ ...fixture, agentId: created.body.agentId }),
+        Promise.resolve({ ...fixture, agentId: winner.body.agentId }),
       );
-    }
-    blockUpload = true;
-    const pending = agentsClient().create({
-      headers: authHeaders(),
-      body: { visibility: "public", displayName: "Rejected candidate" },
-    });
-    onTestFinished(async () => {
-      if (!released.settled()) {
-        released.resolve();
-      }
-      await Promise.allSettled([pending]);
-    });
-    await entered.promise;
-    const winner = await accept(
-      agentsClient().create({
-        headers: authHeaders(),
-        body: { visibility: "public", displayName: "Last slot" },
-      }),
-      [201],
-    );
-    await trackCreatedAgent(
-      Promise.resolve({ ...fixture, agentId: winner.body.agentId }),
-    );
-    released.resolve();
-    const rejected = await accept(pending, [409]);
-    expect(rejected.body).toStrictEqual({
-      error: {
-        message:
-          "This organization has reached the maximum number of agents (7). Delete an existing agent before creating a new one.",
-        code: "CONFLICT",
-      },
-    });
-    const listed = await accept(
-      agentsClient().list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(listed.body).toHaveLength(7);
-    expect(listed.body).not.toContainEqual(
-      expect.objectContaining({ displayName: "Rejected candidate" }),
-    );
-    const instructions = await accept(
-      setupApp({ context, routes: agentInstructionsRoutes })(
-        agentInstructionsContract,
-      ).get({
-        headers: authHeaders(),
-        params: { id: winner.body.agentId },
-      }),
-      [200],
-    );
-    expect(instructions.body.content).toBe("");
-  });
+      released.resolve();
+      const rejected = await accept(pending, [409]);
+      expect(rejected.body).toStrictEqual({
+        error: {
+          message:
+            "This organization has reached the maximum number of agents (7). Delete an existing agent before creating a new one.",
+          code: "CONFLICT",
+        },
+      });
+      const listed = await accept(
+        agentsClient().list({ headers: authHeaders() }),
+        [200],
+      );
+      expect(listed.body).toHaveLength(7);
+      expect(listed.body).not.toContainEqual(
+        expect.objectContaining({ displayName: "Rejected candidate" }),
+      );
+      const instructions = await accept(
+        setupApp({ context, routes: agentInstructionsRoutes })(
+          agentInstructionsContract,
+        ).get({
+          headers: authHeaders(),
+          params: { id: winner.body.agentId },
+        }),
+        [200],
+      );
+      expect(instructions.body.content).toBe("");
+    },
+  );
 
   it("leaves no visible agent after its request owner cancels an instruction upload", async () => {
     const fixture = agentsFixture("cancel-create");
