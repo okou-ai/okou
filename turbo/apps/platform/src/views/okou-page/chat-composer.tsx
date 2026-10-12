@@ -5725,9 +5725,7 @@ function selectedComposerTemplateAttachment(
 
 /**
  * Which templates the picker should land on, what to call the affordance that
- * opens it, and how to warm its covers. The toolbar button and the add menu's
- * template row are two presentations of one decision, so neither recomputes
- * the create-mode mapping for itself.
+ * opens it from the add menu, and how to warm its covers.
  */
 function useTemplatePickerTrigger(signals: ComposerSignals) {
   const { t } = useTranslation();
@@ -5773,46 +5771,7 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
   return { label, prewarm, open };
 }
 
-function TemplatePickerButton({ signals }: { signals: ComposerSignals }) {
-  const { label, prewarm, open } = useTemplatePickerTrigger(signals);
-  return (
-    <TooltipProvider delay={300}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-sm"
-              iconSize="md"
-              className="shrink-0"
-              aria-label={label}
-              aria-pressed={false}
-              onPointerEnter={prewarm}
-              onFocus={prewarm}
-              onPointerDown={prewarm}
-              onClick={open}
-            >
-              {/* The label stays in the tooltip and the accessible name; the
-                row beside it is all icons, and one worded control in it read
-                as a different kind of thing. */}
-              <SwatchBook size={18} aria-hidden="true" />
-            </Button>
-          }
-        />
-        <TooltipContent side="top" className="text-xs">
-          {label}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
-
-/**
- * Mounted independently of the button that opens it: the slash panel and an
- * inline template chip's edit action reach the same dialog, so hiding the
- * toolbar button must not take the dialog with it.
- */
+/** Shared dialog for the add menu, slash panel and inline template chips. */
 function TemplatePickerDialogSlot({
   picker,
   presentationItems,
@@ -5856,18 +5815,13 @@ function TemplatePickerDialogSlot({
 
 function ComposerTemplatePickerSlot({ signals }: { signals: ComposerSignals }) {
   const picker = useComposerTemplatePicker(signals);
-  const addMenuEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ComposerAddMenu] === true;
   return (
-    <>
-      {!addMenuEnabled && <TemplatePickerButton signals={signals} />}
-      <TemplatePickerDialogSlot
-        picker={picker}
-        presentationItems={PRESENTATION_TEMPLATE_PICKER_ITEMS}
-        runtime={signals.template.templatePreview}
-        signals={signals}
-      />
-    </>
+    <TemplatePickerDialogSlot
+      picker={picker}
+      presentationItems={PRESENTATION_TEMPLATE_PICKER_ITEMS}
+      runtime={signals.template.templatePreview}
+      signals={signals}
+    />
   );
 }
 
@@ -7655,38 +7609,6 @@ function VoiceDraftFooter({
   );
 }
 
-function ComposerAttachButton({ signals }: { signals: ComposerSignals }) {
-  const { t } = useTranslation();
-  return (
-    <TooltipProvider delay={300}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <label
-              className={cn(
-                buttonVariants({
-                  variant: "quiet",
-                  size: "icon-sm",
-                  iconSize: "md",
-                }),
-                "shrink-0 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2",
-              )}
-            >
-              <ComposerFileInput signals={signals} />
-              <Paperclip size={18} aria-hidden />
-            </label>
-          }
-        />
-        <TooltipContent side="top" className="text-xs">
-          {t(($) => {
-            return $.chat.attachments.attach;
-          })}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
-
 /**
  * Group attachments and templates separately from importing skills, which
  * brings workflows in from the user's Claude Code or Codex.
@@ -7739,10 +7661,6 @@ function useComposerAddMenuGroups(
   ];
 }
 
-/**
- * Split from the switch below so the paperclip path never subscribes to the
- * template picker's signals just to build rows it will not render.
- */
 function ComposerAddMenuSlot({ signals }: { signals: ComposerSignals }) {
   const groups = useComposerAddMenuGroups(signals);
   return (
@@ -7750,18 +7668,8 @@ function ComposerAddMenuSlot({ signals }: { signals: ComposerSignals }) {
       <ComposerAddMenu groups={groups} />
       {/* Menu.Item owns keyboard activation through showPicker(). Keep its
           input outside the popup so selection survives the menu closing. */}
-      <ComposerFileInput signals={signals} hidden />
+      <ComposerFileInput signals={signals} />
     </>
-  );
-}
-
-function ComposerAddSlot({ signals }: { signals: ComposerSignals }) {
-  const addMenuEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ComposerAddMenu] === true;
-  return addMenuEnabled ? (
-    <ComposerAddMenuSlot signals={signals} />
-  ) : (
-    <ComposerAttachButton signals={signals} />
   );
 }
 
@@ -8663,13 +8571,7 @@ function resolveComposerConnectorCollections({
   };
 }
 
-function ComposerFileInput({
-  signals,
-  hidden = false,
-}: {
-  signals: ComposerSignals;
-  hidden?: boolean;
-}) {
+function ComposerFileInput({ signals }: { signals: ComposerSignals }) {
   const { t } = useTranslation();
   const setFileInput = useSet(signals.draft.setComposerFileInput$);
   const uploadFile = useComposerFileUpload(signals);
@@ -8679,7 +8581,7 @@ function ComposerFileInput({
     <input
       ref={setFileInput}
       type="file"
-      className={hidden ? "hidden" : "sr-only"}
+      className="hidden"
       aria-label={t(($) => {
         return $.chat.attachments.attach;
       })}
@@ -9163,7 +9065,7 @@ function ComposerFooter({
       ) : (
         <>
           <div className="flex min-w-0 items-center gap-1 text-muted-foreground composer-wide:gap-1.5">
-            <ComposerAddSlot signals={signals} />
+            <ComposerAddMenuSlot signals={signals} />
             <ComposerTemplatePickerSlot signals={signals} />
             <ComposerConnectorsSlot
               signals={signals}

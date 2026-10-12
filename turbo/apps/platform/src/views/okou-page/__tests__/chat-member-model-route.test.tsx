@@ -2,7 +2,6 @@ import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-d
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
@@ -190,10 +189,14 @@ test("Refreshes the account target on explicit reconnect after a remote account 
   });
   await setupPage({
     context,
-    path: NEW_CHAT_PATH,
-    // Start cards preload subscription accounts, establishing the stale
-    // account cache that this reconnect regression exercises.
-    featureSwitches: { [FeatureSwitchKey.ComposerTaskChips]: false },
+    // Visiting Models loads the account cache before the remote change.
+    path: `${NEW_CHAT_PATH}?settings=model`,
+  });
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  await within(settings).findByTestId(`oauth-account-${ACCOUNT_ID}`);
+  click(within(settings).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
   });
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await fillComposer(composer, "Preserve this draft during reconnect");

@@ -1,6 +1,4 @@
 import { command, computed, state } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import {
   createWorkflowRecommendationSignals,
   type WorkflowRecommendationActions,
@@ -39,23 +37,13 @@ export function createComposerTaskChipsSignals(
   create: ComposerCreateSignals,
   workflowActions: WorkflowRecommendationActions,
 ) {
-  const enabled$ = computed((get) => {
-    return get(featureSwitch$)[FeatureSwitchKey.ComposerTaskChips];
-  });
   const internalGeneralTask$ = state<
     "workflow" | "website" | "visualization" | null
   >(null);
   const visualization = createComposerVisualizationSignals();
-  /**
-   * What the composer is on, as the footer chip states it. A create mode is
-   * named by the slash panel as well as by this row, so it always stands. A
-   * general task has only this row's panels to open into, so it waits for the
-   * chips.
-   */
+  /** The task selected through the chip row, slash panel or template picker. */
   const task$ = computed((get): ComposerTask | null => {
-    return (
-      get(create.mode$) ?? (get(enabled$) ? get(internalGeneralTask$) : null)
-    );
+    return get(create.mode$) ?? get(internalGeneralTask$);
   });
   const workflowVisible$ = computed((get) => {
     return get(task$) === "workflow";
@@ -76,8 +64,7 @@ export function createComposerTaskChipsSignals(
   });
   /**
    * The chip row toggles: choosing the task already showing clears it. The
-   * footer chip and the composer's Backspace clear the same way, and they
-   * stand wherever a task does, so this does not wait for the row's switch.
+   * footer chip and the composer's Backspace clear the same way.
    */
   const selectTask$ = command(({ get, set }, task: ComposerTask | null) => {
     set(applyTask$, get(task$) === task ? null : task);
@@ -86,16 +73,9 @@ export function createComposerTaskChipsSignals(
    * Opens a task without the chip's toggle. A caller outside the row states
    * what the member has just started rather than pressing the chip, so
    * repeating it has to leave the surface the last one opened standing.
-   *
-   * A create mode is its own surface, so it opens whether or not the chips
-   * are on. A general task has only the chip row to live in, so there it waits
-   * for that switch.
    */
   const openTask$ = command(({ get, set }, task: ComposerTask) => {
     if (get(task$) === task) {
-      return;
-    }
-    if (isComposerGeneralTask(task) && !get(enabled$)) {
       return;
     }
     set(applyTask$, task);
@@ -134,7 +114,6 @@ export function createComposerTaskChipsSignals(
     }),
   );
   return {
-    enabled$,
     task$,
     selectTask$,
     openTask$,

@@ -2,7 +2,6 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import {
   click,
@@ -31,13 +30,10 @@ function button(name: string, root: ParentNode = document.body) {
   return element;
 }
 
-async function setupComposer(taskChips = false) {
+async function setupComposer() {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerTaskChips]: taskChips,
-    },
   });
   return findComposerEditor();
 }
@@ -91,7 +87,7 @@ test("An image creation notice opens settings and a confirmed save restores crea
     }
     return respond(200, { toolId: params.toolId, disabled: body.disabled });
   });
-  const editor = await setupComposer(true);
+  const editor = await setupComposer();
   click(button("Image", screen.getByRole("group", { name: "Choose a task" })));
   await screen.findByText("Image generation is off for you");
   click(button("Open settings"));
