@@ -7,6 +7,7 @@ DO $$
 DECLARE
   column_number smallint;
   row_type oid;
+  row_array_type oid;
   dependent_objects text;
 BEGIN
   SELECT attnum INTO column_number
@@ -17,8 +18,10 @@ BEGIN
   IF column_number IS NULL THEN
     RAISE EXCEPTION 'Expected the prepared SSH needs_rebind boolean column';
   END IF;
-  SELECT reltype INTO row_type FROM pg_catalog.pg_class
-  WHERE oid = 'public.ssh_connections'::regclass;
+  SELECT relation.reltype, row.typarray INTO row_type, row_array_type
+  FROM pg_catalog.pg_class AS relation
+  JOIN pg_catalog.pg_type AS row ON row.oid = relation.reltype
+  WHERE relation.oid = 'public.ssh_connections'::regclass;
 
   SELECT string_agg(object_name, ', ' ORDER BY object_name)
   INTO dependent_objects
@@ -52,10 +55,18 @@ BEGIN
     SELECT pg_catalog.pg_describe_object(classid, objid, objsubid)
     FROM pg_catalog.pg_depend
     WHERE classid IN ('pg_catalog.pg_rewrite'::regclass, 'pg_catalog.pg_proc'::regclass)
-      AND (
-        (refclassid = 'pg_catalog.pg_class'::regclass
-          AND refobjid = 'public.ssh_connections'::regclass AND refobjsubid = 0)
-        OR (refclassid = 'pg_catalog.pg_type'::regclass AND refobjid = row_type)
+      AND refclassid = 'pg_catalog.pg_class'::regclass
+      AND refobjid = 'public.ssh_connections'::regclass AND refobjsubid = 0
+    UNION
+    -- Composite columns, domains and array consumers can silently survive DROP
+    -- with a changed row shape. Only the table's own array metadata is expected.
+    SELECT pg_catalog.pg_describe_object(classid, objid, objsubid)
+    FROM pg_catalog.pg_depend
+    WHERE refclassid = 'pg_catalog.pg_type'::regclass
+      AND refobjid IN (row_type, row_array_type)
+      AND NOT (
+        classid = 'pg_catalog.pg_type'::regclass AND objid = row_array_type
+        AND refobjid = row_type AND deptype = 'i'
       )
     UNION
     SELECT pg_catalog.pg_describe_object('pg_catalog.pg_proc'::regclass, routine.oid, 0)

@@ -135,7 +135,7 @@ are enforced by the integration ingress tests.
 - `scripts/test-ssh-needs-rebind-retirement-preparation.ts` exercises the actual
   preparation and contraction migrations, frozen outgoing ORM statements, and
   canonical SQL against retained and contracted storage. Unexpected index,
-  check, view, routine, whole-row or default consumers reject deletion without
+  check, view, routine, composite/array type or default consumers reject deletion without
   changing hosts or advancing the journal. Run
   `pnpm test:ssh-needs-rebind-retirement-preparation` with an owned PostgreSQL
   `DATABASE_URL`. Retain the validator and its outgoing fixture through #39380's

@@ -218,6 +218,25 @@ try {
         },
         {
           create:
+            "CREATE TABLE ssh_rebind_row_storage AS SELECT ssh_connections AS host FROM ssh_connections",
+          drop: "DROP TABLE ssh_rebind_row_storage",
+        },
+        {
+          create:
+            "CREATE TABLE ssh_rebind_row_array_storage AS SELECT ARRAY[ssh_connections] AS hosts FROM ssh_connections",
+          drop: "DROP TABLE ssh_rebind_row_array_storage",
+        },
+        {
+          create:
+            "CREATE FUNCTION ssh_rebind_row_array_type(hosts ssh_connections[]) RETURNS text LANGUAGE sql AS $$ SELECT (hosts[1]).host $$",
+          drop: "DROP FUNCTION ssh_rebind_row_array_type(ssh_connections[])",
+        },
+        {
+          create: "CREATE DOMAIN ssh_rebind_row_domain AS ssh_connections",
+          drop: "DROP DOMAIN ssh_rebind_row_domain",
+        },
+        {
+          create:
             "ALTER TABLE ssh_connections ALTER COLUMN needs_rebind SET DEFAULT true",
           drop: "ALTER TABLE ssh_connections ALTER COLUMN needs_rebind SET DEFAULT false",
         },
