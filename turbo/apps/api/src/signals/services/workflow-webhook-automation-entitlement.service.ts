@@ -1,82 +1,111 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import {
   workflowAutomations,
   workflowWebhookAutomations,
 } from "@okouai/db/schema/workflow";
-import type { Db } from "../external/db";
+import { command } from "ccstate";
+import { and, eq, inArray } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import type { Tx } from "../../lib/db-types";
+import { db$, writeDb$ } from "../external/db";
+import {
+  orgPlanCapabilitiesFromRow,
+  type OrgPlanCapabilities,
+} from "./org-plan-entitlement-read.service";
 
-type DbTransaction = Tx;
-
-export async function lockWorkflowWebhookAutomationTierEligibleForOrg(
-  tx: DbTransaction,
-  args: {
-    readonly orgId: string;
+const readWorkflowWebhookAutomationCapabilities$ = command(
+  async ({ get }, orgId: string): Promise<OrgPlanCapabilities | null> => {
+    const db = get(db$);
+    const [row] = await db
+      .select({
+        planKey: orgPlanEntitlements.planKey,
+        status: orgPlanEntitlements.status,
+        baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
+        canBuyConcurrency: orgPlanEntitlements.canBuyConcurrency,
+        canBuyCredits: orgPlanEntitlements.canBuyCredits,
+        showUsagePack: orgPlanEntitlements.showUsagePack,
+        autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
+        restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
+        workflowWebhookAutomationAllowed:
+          orgPlanEntitlements.workflowWebhookTriggerAllowed,
+        audioLifetimeLimit: orgPlanEntitlements.audioLifetimeLimit,
+        audioDailyRateLimit: orgPlanEntitlements.audioDailyRateLimit,
+        audioDailyDurationSeconds:
+          orgPlanEntitlements.audioDailyDurationSeconds,
+      })
+      .from(orgPlanEntitlements)
+      .where(eq(orgPlanEntitlements.orgId, orgId))
+      .limit(1);
+    if (row) {
+      return orgPlanCapabilitiesFromRow(row, orgId);
+    }
+    const [org] = await db
+      .select({ orgId: orgMetadata.orgId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1);
+    if (org) {
+      throw new Error(`Missing org plan entitlement for ${orgId}`);
+    }
+    return null;
   },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const capabilities = await loadOrgPlanCapabilities(tx, args.orgId, {
-    forUpdate: true,
-  });
-  signal.throwIfAborted();
-  return capabilities?.workflowWebhookAutomationAllowed === true;
-}
+);
 
-export async function disableIneligibleWorkflowWebhookAutomationsForOrg(
-  db: Db,
-  args: {
-    readonly orgId: string;
-  },
-  signal: AbortSignal,
-): Promise<number> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0348; new non-billing transactions are prohibited.
-  return await db.transaction(async (tx) => {
-    const tierEligible = await lockWorkflowWebhookAutomationTierEligibleForOrg(
-      tx,
-      args,
-      signal,
+export const disableIneligibleWorkflowWebhookAutomationsForOrg$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string },
+    signal: AbortSignal,
+  ): Promise<number> => {
+    // Keep complete entitlement validation ahead of the original Abort checkpoint.
+    const capabilities = await set(
+      readWorkflowWebhookAutomationCapabilities$,
+      args.orgId,
     );
-    if (tierEligible) {
+    signal.throwIfAborted();
+    if (capabilities?.workflowWebhookAutomationAllowed === true) {
       return 0;
     }
 
-    const webhookAutomationIds = tx
+    const db = set(writeDb$);
+    const webhookAutomationIds = db
       .select({ automationId: workflowWebhookAutomations.automationId })
       .from(workflowWebhookAutomations);
     const currentTime = nowDate();
-    const disabled = await tx
-      .update(workflowAutomations)
-      .set({ enabled: false, updatedAt: currentTime })
-      .where(
-        and(
-          eq(workflowAutomations.orgId, args.orgId),
-          eq(workflowAutomations.enabled, true),
-          inArray(workflowAutomations.id, webhookAutomationIds),
-        ),
-      )
-      .returning({ id: workflowAutomations.id });
+    const disabled = db.$with("disabled_workflow_webhooks").as(
+      db
+        .update(workflowAutomations)
+        .set({ enabled: false, updatedAt: currentTime })
+        .where(
+          and(
+            eq(workflowAutomations.orgId, args.orgId),
+            eq(workflowAutomations.enabled, true),
+            inArray(workflowAutomations.id, webhookAutomationIds),
+          ),
+        )
+        .returning({ id: workflowAutomations.id }),
+    );
+    const marked = db.$with("marked_workflow_webhooks").as(
+      db
+        .update(workflowWebhookAutomations)
+        .set({ disabledReason: "paid_plan_required", updatedAt: currentTime })
+        .where(
+          inArray(
+            workflowWebhookAutomations.automationId,
+            db.select({ id: disabled.id }).from(disabled),
+          ),
+        )
+        .returning({ automationId: workflowWebhookAutomations.automationId }),
+    );
+    // Exhaust the dependent write while retaining the true parent result,
+    // including a parent whose configuration was concurrently removed.
+    const rows = await db
+      .with(disabled, marked)
+      .select({ id: disabled.id })
+      .from(disabled)
+      .leftJoin(marked, eq(marked.automationId, disabled.id));
+    // Cancellation propagates after the coherent pair has committed.
     signal.throwIfAborted();
-    if (disabled.length === 0) {
-      return 0;
-    }
-
-    await tx
-      .update(workflowWebhookAutomations)
-      .set({
-        disabledReason: "paid_plan_required",
-        updatedAt: currentTime,
-      })
-      .where(
-        inArray(
-          workflowWebhookAutomations.automationId,
-          disabled.map((automation) => {
-            return automation.id;
-          }),
-        ),
-      );
-    signal.throwIfAborted();
-    return disabled.length;
-  });
-}
+    return rows.length;
+  },
+);

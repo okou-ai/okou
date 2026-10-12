@@ -56,7 +56,7 @@ import { reconcileUsagePackCreditRefunds } from "./usage-pack-credit-refund.serv
 import { reconcileUsagePackInvitationPurchases$ } from "./usage-pack-invitation-purchase.service";
 import { syncUsagePackSubscriptionConfigurations$ } from "./usage-pack-allocation-change.service";
 import { reconcileUsagePackSubscriptionMigrations$ } from "./usage-pack-subscription-migration.service";
-import { disableIneligibleWorkflowWebhookAutomationsForOrg } from "./workflow-webhook-automation-entitlement.service";
+import { disableIneligibleWorkflowWebhookAutomationsForOrg$ } from "./workflow-webhook-automation-entitlement.service";
 import { isCurrentStripePreviewMetadata } from "./stripe-preview-metadata.service";
 import {
   reconcileMissingStripeSubscription,
@@ -453,21 +453,6 @@ const reconcileStripeSubscriptionSnapshots$ = command(
     };
   },
 );
-
-async function disableIneligibleWorkflowWebhooksForOrgs(
-  db: Db,
-  orgIds: ReadonlySet<string>,
-  signal: AbortSignal,
-): Promise<void> {
-  for (const orgId of orgIds) {
-    await disableIneligibleWorkflowWebhookAutomationsForOrg(
-      db,
-      { orgId },
-      signal,
-    );
-    signal.throwIfAborted();
-  }
-}
 
 function paidInvoiceBelongsToCurrentEnvironment(
   invoice: StripeInvoice,
@@ -1465,15 +1450,18 @@ export const reconcileBillingEntitlements$ = command(
     ];
     const { expiredConcurrency } = reconciledCandidates;
 
-    await disableIneligibleWorkflowWebhooksForOrgs(
-      db,
-      new Set(
-        downgraded.map((subscription) => {
-          return subscription.orgId;
-        }),
-      ),
-      signal,
-    );
+    for (const orgId of new Set(
+      downgraded.map((subscription) => {
+        return subscription.orgId;
+      }),
+    )) {
+      await set(
+        disableIneligibleWorkflowWebhookAutomationsForOrg$,
+        { orgId },
+        signal,
+      );
+      signal.throwIfAborted();
+    }
 
     if (expiredConcurrency.length > 0) {
       L.warn("stale payment-failed concurrency subscriptions expired", {
