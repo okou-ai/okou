@@ -40,31 +40,34 @@ where
     Discover: FnOnce() -> DiscoverFuture,
     DiscoverFuture: std::future::Future<Output = ProcessDiscovery>,
 {
-    let validated = match validate_orphan_target(target).await {
-        OrphanTargetValidation::Valid(validated) => validated,
-        OrphanTargetValidation::AlreadyGone => {
-            return already_gone_orphan_outcome_with_discovery(target, discover).await;
+    // Retain the validated kernel identity through the shared disappearance
+    // confirmation, including when signal delivery reports ESRCH.
+    let validation = validate_orphan_target(target).await;
+    match &validation {
+        OrphanTargetValidation::Valid(validated) => {
+            match signal_process_group(target.pid, validated) {
+                ProcessGroupSignalResult::Signaled => {
+                    return match wait_for_orphan_exit(target.pid, &validated.generation).await {
+                        Ok(()) => Outcome::Killed(target.clone()),
+                        Err(failure) => Outcome::TerminationUnconfirmed {
+                            target: target.clone(),
+                            failure,
+                        },
+                    };
+                }
+                ProcessGroupSignalResult::AlreadyGone => {}
+                ProcessGroupSignalResult::Failed => {
+                    return Outcome::SignalFailed(target.clone());
+                }
+            }
         }
+        OrphanTargetValidation::AlreadyGone => {}
         OrphanTargetValidation::Changed => {
             return Outcome::AlreadyExitedOrChanged(target.clone());
         }
-    };
-
-    match signal_process_group(target.pid, &validated) {
-        ProcessGroupSignalResult::Signaled => {
-            match wait_for_orphan_exit(target.pid, &validated.generation).await {
-                Ok(()) => Outcome::Killed(target.clone()),
-                Err(failure) => Outcome::TerminationUnconfirmed {
-                    target: target.clone(),
-                    failure,
-                },
-            }
-        }
-        ProcessGroupSignalResult::AlreadyGone => {
-            already_gone_orphan_outcome_with_discovery(target, discover).await
-        }
-        ProcessGroupSignalResult::Failed => Outcome::SignalFailed(target.clone()),
     }
+
+    already_gone_orphan_outcome_with_discovery(target, discover).await
 }
 
 pub(super) async fn confirmed_disappeared_outcome(
@@ -89,6 +92,14 @@ where
     DiscoverFuture: std::future::Future<Output = ProcessDiscovery>,
 {
     let discovered = discover().await;
+    confirmed_disappeared_outcome_from_discovery(target, was_orphan, discovered).await
+}
+
+async fn confirmed_disappeared_outcome_from_discovery(
+    target: &KillTarget,
+    was_orphan: bool,
+    discovered: ProcessDiscovery,
+) -> Option<Outcome> {
     if should_cleanup_disappeared_initial_orphan(
         target,
         was_orphan,

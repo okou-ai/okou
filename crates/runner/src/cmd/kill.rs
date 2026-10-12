@@ -19,7 +19,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use clap::Args;
-use sandbox::{RemoteKillResult, SandboxControl, SandboxControlError};
+use sandbox::{RemoteKillResult, SandboxControl};
 use tracing::info;
 
 use crate::error::RunnerResult;
@@ -220,65 +220,23 @@ where
     Discover: FnOnce() -> DiscoverFuture,
     DiscoverFuture: std::future::Future<Output = process::ProcessDiscovery>,
 {
-    match control.kill_remote(current.control_target()).await {
-        Ok(RemoteKillResult::RefusedIdle) => KillOutcome::RefusedManagedIdle,
-        Ok(result) => KillOutcome::OwnerAccepted(result),
-        Err(error) => {
-            retry_as_orphan_if_owner_disappeared(
-                &current,
-                error,
-                is_orphan,
-                rediscover,
-                classify_orphan,
-                terminate,
-                discover,
-            )
-            .await
-        }
-    }
-}
-
-async fn retry_as_orphan_if_owner_disappeared<
-    Rediscover,
-    RediscoverFuture,
-    IsOrphan,
-    IsOrphanFuture,
-    Terminate,
-    TerminateFuture,
-    Discover,
-    DiscoverFuture,
->(
-    expected: &KillTarget,
-    owner_error: SandboxControlError,
-    was_orphan: bool,
-    rediscover: Rediscover,
-    classify_orphan: IsOrphan,
-    terminate: Terminate,
-    discover: Discover,
-) -> KillOutcome
-where
-    Rediscover: FnOnce() -> RediscoverFuture,
-    RediscoverFuture:
-        std::future::Future<Output = Result<ResolvedKillTarget, RediscoverTargetError>>,
-    IsOrphan: FnOnce(u32, Vec<u32>) -> IsOrphanFuture,
-    IsOrphanFuture: std::future::Future<Output = bool>,
-    Terminate: FnOnce(KillTarget) -> TerminateFuture,
-    TerminateFuture: std::future::Future<Output = OrphanOutcome>,
-    Discover: FnOnce() -> DiscoverFuture,
-    DiscoverFuture: std::future::Future<Output = process::ProcessDiscovery>,
-{
+    let owner_error = match control.kill_remote(current.control_target()).await {
+        Ok(RemoteKillResult::RefusedIdle) => return KillOutcome::RefusedManagedIdle,
+        Ok(result) => return KillOutcome::OwnerAccepted(result),
+        Err(error) => error,
+    };
     let refreshed = match rediscover().await {
         Ok(refreshed) => refreshed,
         Err(error) => {
-            if should_refuse_orphan_fallback(expected.run_id.as_deref()) {
+            if should_refuse_orphan_fallback(current.run_id.as_deref()) {
                 return KillOutcome::RefusedTargetChanged(RUN_ORPHAN_FALLBACK_REFUSAL.into());
             }
-            if was_orphan && error.allows_disappeared_orphan_cleanup() {
+            if is_orphan && error.allows_disappeared_orphan_cleanup() {
                 let outcome = orphan::confirmed_disappeared_outcome_with_discovery(
-                    expected, was_orphan, discover,
+                    &current, is_orphan, discover,
                 )
                 .await
-                .unwrap_or_else(|| OrphanOutcome::AlreadyExitedOrChanged(expected.clone()));
+                .unwrap_or_else(|| OrphanOutcome::AlreadyExitedOrChanged(current.clone()));
                 return KillOutcome::from(outcome);
             }
             return KillOutcome::RefusedTargetChanged(error.to_string());
@@ -291,7 +249,7 @@ where
     if !classify_orphan(refreshed.pid, runner_pids).await {
         return KillOutcome::RefusedManagedControlFailed(owner_error.to_string());
     }
-    if should_refuse_orphan_fallback(expected.run_id.as_deref()) {
+    if should_refuse_orphan_fallback(current.run_id.as_deref()) {
         return KillOutcome::RefusedTargetChanged(RUN_ORPHAN_FALLBACK_REFUSAL.into());
     }
 
@@ -499,7 +457,7 @@ mod tests {
     use std::cell::{Cell, RefCell};
     use std::path::Path;
 
-    use sandbox::SandboxControlTarget;
+    use sandbox::{SandboxControlError, SandboxControlTarget};
     use sandbox_mock::MockSandboxControl;
 
     use super::test_support::{discovered_with_firecrackers, make_target};
@@ -520,6 +478,91 @@ mod tests {
 
     fn orphan_already_exited(target: KillTarget) -> std::future::Ready<OrphanOutcome> {
         std::future::ready(OrphanOutcome::AlreadyExited(target))
+    }
+
+    #[tokio::test]
+    async fn owner_response_releases_unused_callbacks_and_preserves_cleanup_paths() {
+        for (index, response) in [
+            RemoteKillResult::Accepted,
+            RemoteKillResult::AlreadyStopped,
+            RemoteKillResult::RefusedIdle,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let workspace_base = tempfile::tempdir().unwrap();
+            let socket_base = tempfile::tempdir().unwrap();
+            let control = MockSandboxControl::new(socket_base.path());
+            control.push_kill_remote_result(Ok(response));
+            let target = make_target_at_base(200, "owner-response", workspace_base.path());
+            let workspace = workspace_base.path().join("workspaces/owner-response");
+            let socket_dir = control.runtime_dir("owner-response");
+            tokio::fs::create_dir_all(&workspace).await.unwrap();
+            tokio::fs::create_dir_all(&socket_dir).await.unwrap();
+
+            // Real sockets make release of the unused callback captures observable.
+            let sockets: [std::net::TcpListener; 4] =
+                std::array::from_fn(|_| std::net::TcpListener::bind("127.0.0.1:0").unwrap());
+            let addresses = sockets
+                .each_ref()
+                .map(|socket| socket.local_addr().unwrap());
+            let [
+                rediscovery_socket,
+                classification_socket,
+                termination_socket,
+                discovery_socket,
+            ] = sockets;
+            let called = &Cell::new(0_u8);
+            let outcome = kill_current_target_with_orphan_fallback(
+                target.clone(),
+                false,
+                &control,
+                move || {
+                    called.set(called.get() | 1);
+                    drop(rediscovery_socket);
+                    std::future::ready(Err(RediscoverTargetError::Resolve("unused".into())))
+                },
+                move |_, _| {
+                    called.set(called.get() | 2);
+                    drop(classification_socket);
+                    std::future::ready(false)
+                },
+                move |target| {
+                    called.set(called.get() | 4);
+                    drop(termination_socket);
+                    std::future::ready(OrphanOutcome::SignalFailed(target))
+                },
+                move || {
+                    called.set(called.get() | 8);
+                    drop(discovery_socket);
+                    std::future::ready(empty_process_discovery(false))
+                },
+            )
+            .await;
+
+            assert!(matches!(
+                (&outcome, index),
+                (KillOutcome::OwnerAccepted(RemoteKillResult::Accepted), 0)
+                    | (
+                        KillOutcome::OwnerAccepted(RemoteKillResult::AlreadyStopped),
+                        1
+                    )
+                    | (KillOutcome::RefusedManagedIdle, 2)
+            ));
+            assert_eq!(called.get(), 0);
+            let _rebound = addresses.map(|address| std::net::TcpListener::bind(address).unwrap());
+            let exit_code = finish_kill_outcome(&target, &target, &outcome, &control).await;
+            assert_eq!(
+                exit_code,
+                if index == 2 {
+                    ExitCode::FAILURE
+                } else {
+                    ExitCode::SUCCESS
+                }
+            );
+            assert!(workspace.exists());
+            assert!(socket_dir.exists());
+        }
     }
 
     #[test]
