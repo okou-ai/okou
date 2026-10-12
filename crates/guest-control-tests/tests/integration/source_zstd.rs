@@ -78,6 +78,12 @@ async fn failed_source_integrity_preserves_destination_and_cleans_each_sibling()
     trailing.extend_from_slice(b"trailing");
     let mut concatenated = source.clone();
     concatenated.extend_from_slice(&source);
+    let malformed_frames =
+        [source[..source.len() - 1].to_vec(), trailing, concatenated].map(|bytes| {
+            // A matching transport CRC must not conceal a malformed frame.
+            let options = source_options(raw, &bytes);
+            (bytes, options)
+        });
     let cases = [
         (
             source.clone(),
@@ -100,11 +106,8 @@ async fn failed_source_integrity_preserves_destination_and_cleans_each_sibling()
                 crc32: crc,
             },
         ),
-        (source[..source.len() - 1].to_vec(), options),
-        (trailing, options),
-        (concatenated, options),
     ];
-    for (bytes, options) in cases {
+    for (bytes, options) in cases.into_iter().chain(malformed_frames) {
         fs::write(&target, b"previous").unwrap();
         h.host()
             .write_file_with_compression(target.to_str().unwrap(), &bytes, false, options)
