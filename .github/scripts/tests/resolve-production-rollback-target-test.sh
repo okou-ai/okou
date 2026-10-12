@@ -110,6 +110,8 @@ case "${1:-}" in
       [ "${MOCK_CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4141414141414141414141414141414141414141" ]; then
       [ "${MOCK_USAGE_ALLOWANCE_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "4848484848484848484848484848484848484848" ]; then
+      [ "${MOCK_SSH_CANONICAL_TRANSPORT_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -159,6 +161,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_COMMIT-4040404040404040404040404040404040404040}"
     elif [[ "$*" == *1356_drop_organization_usage_allowance.sql* ]]; then
       printf '%s\n' "${MOCK_USAGE_ALLOWANCE_COMMIT-4141414141414141414141414141414141414141}"
+    elif [[ "$*" == *1365_tailscale_private_ssh.sql* ]]; then
+      printf '%s\n' "${MOCK_SSH_CANONICAL_TRANSPORT_COMMIT-4848484848484848484848484848484848484848}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
     elif [[ "$*" == *pi-memory-phase2-input-revision.ts* ]]; then
@@ -302,6 +306,7 @@ grep -Fxq "git merge-base --is-ancestor 3838383838383838383838383838383838383838
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/runtime/org-members-metadata.ts" "${tmp_dir}/boundaries.log" || fail "Native member runtime floor must resolve the canonical preparation on main"
 grep -Fxq "git merge-base --is-ancestor 4747474747474747474747474747474747474747 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Native member runtime preparation floor"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1356_drop_organization_usage_allowance.sql" "${tmp_dir}/boundaries.log" || fail "Usage Allowance floor must resolve the canonical main migration"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1365_tailscale_private_ssh.sql" "${tmp_dir}/boundaries.log" || fail "SSH transport floor must resolve the canonical main migration"
 grep -Fxq "git merge-base --is-ancestor 4141414141414141414141414141414141414141 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Usage Allowance retirement floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
@@ -712,6 +717,24 @@ grep -Fq '4141414141414141414141414141414141414141' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/usage-allowance-floor.output" ] || fail "pre-Allowance-retirement API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Usage Allowance floor must fail before artifact or host access"
+fi
+
+for canonical_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged canonical SSH transport" \
+    run_resolver "${tmp_dir}/ssh-canonical-history.output" "MOCK_SSH_CANONICAL_TRANSPORT_COMMIT=${canonical_commit}"
+  [ ! -s "${tmp_dir}/ssh-canonical-history.output" ] || fail "invalid SSH canonical history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid SSH canonical history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates canonical SSH transport" \
+  run_resolver "${tmp_dir}/ssh-canonical-floor.output" MOCK_SSH_CANONICAL_TRANSPORT_FLOOR_VALID=0
+grep -Fq '4848484848484848484848484848484848484848' "${tmp_dir}/failure.err" || fail "SSH transport rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/ssh-canonical-floor.output" ] || fail "pre-canonical SSH API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "SSH transport floor must fail before artifact or host access"
 fi
 
 for v8_commit in "" invalid; do

@@ -12,7 +12,7 @@ import type {
 import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import {
   and,
   asc,
@@ -680,7 +680,6 @@ export const deleteCloudflareAccessConfig$ = command(
         .set({
           cloudflareAccessId: null,
           transport: "cloudflare_access",
-          legacyNeedsRebind: true,
           generation: sql`${sshConnections.generation} + 1`,
           updatedAt: nowDate(),
         })
@@ -1060,7 +1059,6 @@ export const convertCloudflareAccessToPersonal$ = command(
           .set({
             cloudflareAccessId: null,
             transport: "cloudflare_access",
-            legacyNeedsRebind: true,
             generation: sql`${sshConnections.generation} + 1`,
             updatedAt: nowDate(),
           })

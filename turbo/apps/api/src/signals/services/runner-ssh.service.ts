@@ -18,7 +18,7 @@ import { agentSessions } from "@okouai/db/runtime/agent-session";
 import {
   sshConnectionNeedsRebind,
   sshConnections,
-} from "@okouai/db/schema/ssh-connection";
+} from "@okouai/db/runtime/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { and, eq, or } from "drizzle-orm";
 

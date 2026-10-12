@@ -1,0 +1,1 @@
+ALTER TABLE "ssh_connections" DROP CONSTRAINT "chk_ssh_connections_legacy_needs_rebind";

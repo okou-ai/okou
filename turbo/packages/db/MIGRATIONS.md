@@ -132,6 +132,13 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-ssh-needs-rebind-retirement-preparation.ts` exercises the actual
+  preparation migration, frozen outgoing ORM statements, and the runtime mapping
+  against retained and locally contracted storage. Run
+  `pnpm test:ssh-needs-rebind-retirement-preparation` with an owned PostgreSQL
+  `DATABASE_URL`. Retain the validator and its outgoing fixture through #39380's
+  separately released contraction and drain/rollback acceptance.
+
 - `scripts/test-pi-memory-storage-retirement-preparation.ts` replays writer
   preparation and the actual compatibility-storage contraction. Unexpected
   indexes, checks, views, routines, triggers, inheritance and foreign keys reject

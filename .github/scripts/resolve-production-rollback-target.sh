@@ -87,6 +87,7 @@ readonly PI_STABLE_CONTEXT_RETIREMENT_PATH=turbo/packages/db/src/migrations/1343
 readonly PI_DEBUG_TRACE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1345_outstanding_the_hood.sql
 readonly CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_PATH=turbo/packages/db/src/migrations/1348_connector_catalog_payload_independent_api.sql
 readonly USAGE_ALLOWANCE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1356_drop_organization_usage_allowance.sql
+readonly SSH_CANONICAL_TRANSPORT_PATH=turbo/packages/db/src/migrations/1365_tailscale_private_ssh.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -445,6 +446,18 @@ if [[ ! "$usage_allowance_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$usage_allowance_retirement_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Usage Allowance retirement: ${usage_allowance_retirement_commit}."
+fi
+
+# Prepared SSH writers no longer mirror needs_rebind. APIs before the canonical
+# transport migration infer authority from that flag and can misread retained
+# private bindings, even while its physical column remains for outgoing SQL.
+ssh_canonical_transport_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$SSH_CANONICAL_TRANSPORT_PATH" | sed -n '1p')
+if [[ ! "$ssh_canonical_transport_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged canonical SSH transport on main."
+fi
+if ! git merge-base --is-ancestor "$ssh_canonical_transport_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates canonical SSH transport: ${ssh_canonical_transport_commit}."
 fi
 
 # Chat Event V8 removes eight event types and two context types. Earlier APIs

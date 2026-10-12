@@ -8,11 +8,14 @@ import { agentSessions } from "@okouai/db/runtime/agent-session";
 import {
   sshConnectionNeedsRebind,
   sshConnections,
-} from "@okouai/db/schema/ssh-connection";
+} from "@okouai/db/runtime/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, eq, or, sql } from "drizzle-orm";
-import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
+import {
+  nullableDriverValueDecoder,
+  pgBooleanDecoder,
+} from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
@@ -41,7 +44,7 @@ export const currentRunnerVncAuthority$ = command(
         sshConnectionId: vncConnections.sshConnectionId,
         sshGeneration: sshConnections.generation,
         sshNeedsRebind: sql`${sshConnectionNeedsRebind}`.mapWith(
-          nullableDriverValueDecoder(sshConnections.legacyNeedsRebind),
+          nullableDriverValueDecoder(pgBooleanDecoder),
         ),
         sshAllowed: runThreadSshAccess(),
         x509ServerName: vncConnections.x509ServerName,

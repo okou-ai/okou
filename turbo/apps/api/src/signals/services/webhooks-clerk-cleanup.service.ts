@@ -27,7 +27,7 @@ import { secrets } from "@okouai/db/schema/secret";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { storages } from "@okouai/db/schema/storage";
 import { users } from "@okouai/db/schema/user";

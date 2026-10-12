@@ -11,7 +11,7 @@ import {
 } from "@okouai/api-contracts/contracts/ssh-errors";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { command } from "ccstate";
 import { and, asc, count, eq, exists, inArray, sql } from "drizzle-orm";
 import {

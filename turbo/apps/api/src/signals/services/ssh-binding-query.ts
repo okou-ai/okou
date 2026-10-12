@@ -1,4 +1,4 @@
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
@@ -15,6 +15,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { visibleTailscaleConfig } from "./tailscale-config-model";
 import type {
   PreparedSshConnectionCreation,
@@ -84,7 +85,7 @@ export function createSshCreationReads(
     qb
       .select({
         id: sql`${args.body.id}::uuid`
-          .mapWith(sshConnections.id)
+          .mapWith(pgTextDecoder)
           .as("requested_host_id"),
       })
       .from(sql`(VALUES (1)) AS "ssh_creation_seed" ("present")`),

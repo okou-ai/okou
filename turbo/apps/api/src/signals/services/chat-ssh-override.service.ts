@@ -1,7 +1,7 @@
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadSshAccessOverrides } from "@okouai/db/schema/chat-thread-ssh-access-override";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { and, eq, exists, sql } from "drizzle-orm";
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";

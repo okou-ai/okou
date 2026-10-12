@@ -5,13 +5,16 @@ import { agentSessions } from "@okouai/db/runtime/agent-session";
 import {
   sshConnectionNeedsRebind,
   sshConnections,
-} from "@okouai/db/schema/ssh-connection";
+} from "@okouai/db/runtime/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { and, asc, eq, or, sql } from "drizzle-orm";
 
 import { command } from "ccstate";
-import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
+import {
+  nullableDriverValueDecoder,
+  pgBooleanDecoder,
+} from "../../lib/db-structured-result";
 import { writeDb$ } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import {
@@ -38,7 +41,7 @@ const loadRunSshHostRows$ = command(
         fingerprint: sshConnections.learnedHostKeyFingerprint,
         accessId: sshConnections.cloudflareAccessId,
         needsRebind: sql`${sshConnectionNeedsRebind}`.mapWith(
-          nullableDriverValueDecoder(sshConnections.legacyNeedsRebind),
+          nullableDriverValueDecoder(pgBooleanDecoder),
         ),
         accessConfigId: cloudflareAccessConfigs.id,
       })
