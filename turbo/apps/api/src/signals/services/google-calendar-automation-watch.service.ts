@@ -10,7 +10,16 @@ import {
 } from "@okouai/db/schema/google-calendar-event";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  sql,
+} from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { apiBackendUrl } from "../../lib/api-backend-url";
@@ -1371,13 +1380,34 @@ interface LegacyPrimaryCalendarMigrationArgs {
   readonly userId: string;
 }
 
+function verifiedLegacyPrimaryCalendarMigrationState(
+  legacy: GoogleCalendarWatchStateRow | undefined,
+  primary: GoogleCalendarWatchStateRow | undefined,
+  currentTime: Date,
+): GoogleCalendarWatchStateRow | null {
+  // The opaque provider resource identity proves the unavailable alias was
+  // this primary calendar; an arbitrary shared calendar must not be rebound.
+  if (
+    !legacy ||
+    !primary ||
+    !legacy.resourceId ||
+    legacy.resourceId !== primary.resourceId ||
+    primary.syncToken === null ||
+    primary.needsRewatch ||
+    primary.actionRequiredReason !== null ||
+    primary.watchExpirationAt <= currentTime
+  ) {
+    return null;
+  }
+  return legacy;
+}
+
 const persistLegacyPrimaryCalendarMigration$ = command(
   async (
-    { set },
+    { get, set },
     args: LegacyPrimaryCalendarMigrationArgs,
     signal: AbortSignal,
   ): Promise<GoogleCalendarWatchStateRow | null> => {
-    const db = set(writeDb$);
     // A disabled automation must not keep the dead alias either: re-enabling
     // it would target a calendar ID that no longer resolves.
     const legacyTargetCondition = calendarAutomationTargetCondition({
@@ -1386,57 +1416,77 @@ const persistLegacyPrimaryCalendarMigration$ = command(
       connectorId: args.access.connectorId,
       calendarId: args.legacyCalendarId,
     });
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0167; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const states = await tx
-        .select()
-        .from(googleCalendarWatchStates)
-        .where(
-          and(
-            eq(googleCalendarWatchStates.connectorId, args.access.connectorId),
-            inArray(googleCalendarWatchStates.calendarId, [
-              args.legacyCalendarId,
-              GOOGLE_CALENDAR_PRIMARY_ID,
-            ]),
-            eq(googleCalendarWatchStates.orgId, args.orgId),
-            eq(googleCalendarWatchStates.userId, args.userId),
-          ),
-        );
-      const legacy = states.find((state) => {
-        return state.calendarId === args.legacyCalendarId;
-      });
-      const primary = states.find((state) => {
-        return state.calendarId === GOOGLE_CALENDAR_PRIMARY_ID;
-      });
-      const currentTime = nowDate();
-      // The opaque provider resource identity proves the unavailable alias was
-      // this primary calendar; an arbitrary shared calendar must not be rebound.
-      if (
-        !legacy ||
-        !primary ||
-        !legacy.resourceId ||
-        legacy.resourceId !== primary.resourceId ||
-        primary.syncToken === null ||
-        primary.needsRewatch ||
-        primary.actionRequiredReason !== null ||
-        primary.watchExpirationAt <= currentTime
-      ) {
+    const states = await get(db$)
+      .select()
+      .from(googleCalendarWatchStates)
+      .where(
+        and(
+          eq(googleCalendarWatchStates.connectorId, args.access.connectorId),
+          inArray(googleCalendarWatchStates.calendarId, [
+            args.legacyCalendarId,
+            GOOGLE_CALENDAR_PRIMARY_ID,
+          ]),
+          eq(googleCalendarWatchStates.orgId, args.orgId),
+          eq(googleCalendarWatchStates.userId, args.userId),
+        ),
+      );
+    if (signal.aborted) {
+      // Preserve the original invalid preflight's null result before aborting.
+      const legacy = verifiedLegacyPrimaryCalendarMigrationState(
+        states.find((state) => {
+          return state.calendarId === args.legacyCalendarId;
+        }),
+        states.find((state) => {
+          return state.calendarId === GOOGLE_CALENDAR_PRIMARY_ID;
+        }),
+        nowDate(),
+      );
+      if (legacy === null) {
         return null;
       }
-      await tx
+      signal.throwIfAborted();
+    }
+    const observedLegacy = states.find((state) => {
+      return state.calendarId === args.legacyCalendarId;
+    });
+    const primary = states.find((state) => {
+      return state.calendarId === GOOGLE_CALENDAR_PRIMARY_ID;
+    });
+    const currentTime = nowDate();
+    const legacy = verifiedLegacyPrimaryCalendarMigrationState(
+      observedLegacy,
+      primary,
+      currentTime,
+    );
+    if (legacy === null) {
+      return null;
+    }
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    const retargetedAutomations = db.$with("retargeted_automations").as(
+      db
         .update(workflowAutomations)
         .set({
           eventConfig: sql`jsonb_set(${workflowAutomations.eventConfig}, '{calendarId}', to_jsonb(${GOOGLE_CALENDAR_PRIMARY_ID}::text))`,
           updatedAt: currentTime,
         })
-        .where(legacyTargetCondition);
-      const [removed] = await tx
-        .delete(googleCalendarWatchStates)
-        .where(eq(googleCalendarWatchStates.id, legacy.id))
-        .returning();
-      signal.throwIfAborted();
-      return removed ?? null;
-    });
+        .where(legacyTargetCondition)
+        .returning({ id: workflowAutomations.id }),
+    );
+    const [removed] = await db
+      .with(retargetedAutomations)
+      .delete(googleCalendarWatchStates)
+      .where(
+        and(
+          eq(googleCalendarWatchStates.id, legacy.id),
+          // The aggregate exhausts the UPDATE before deletion, including
+          // an empty result when this alias has no remaining consumers.
+          gte(db.select({ count: count() }).from(retargetedAutomations), 0),
+        ),
+      )
+      .returning();
+    signal.throwIfAborted();
+    return removed ?? null;
   },
 );
 
