@@ -874,6 +874,66 @@ describe("POST /api/webhooks/notion", () => {
     });
   });
 
+  it("coalesces concurrent signed content updates for the same page", async () => {
+    await verifyNotionWebhook();
+    const scenario = await setupFixture();
+    await connectNotion(scenario);
+    configureNotionChildPageMock(scenario.entities);
+    await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId: scenario.workflowId },
+        body: {
+          kind: "event",
+          eventType: "notion-page-content-updated",
+          eventConfig: {
+            provider: "notion",
+            event: "page_content_updated",
+            pageUrl: scenario.entities.childPageUrl,
+          },
+        },
+      }),
+      [201],
+    );
+    const event = notionPageEvent({
+      entities: scenario.entities,
+      type: "page.content_updated",
+      timestamp: "2026-07-06T12:00:00.000Z",
+    });
+    const delivery = {
+      rawBody: event.rawBody,
+      signature: notionSignature(event.rawBody),
+    };
+    const outcomes = await Promise.all([
+      postNotionWebhook(delivery),
+      postNotionWebhook(delivery),
+    ]);
+    expect(outcomes).toStrictEqual(
+      expect.arrayContaining([
+        {
+          status: 200,
+          body: {
+            success: true,
+            kind: "event",
+            pending: 1,
+            refreshed: 0,
+            duplicates: 0,
+          },
+        },
+        {
+          status: 200,
+          body: {
+            success: true,
+            kind: "event",
+            pending: 0,
+            refreshed: 0,
+            duplicates: 1,
+          },
+        },
+      ]),
+    );
+  });
+
   it("suppresses content updated events while child page creation is pending", async () => {
     await verifyNotionWebhook();
     const scenario = await setupFixture();

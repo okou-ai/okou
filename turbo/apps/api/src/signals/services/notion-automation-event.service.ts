@@ -835,9 +835,8 @@ const publishNotionPendingEvent$ = command(
       eq(workflowAutomations.eventConnectorId, args.connectorId),
     );
     const published = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0193; new non-billing transactions are prohibited.
-      db.transaction(async (tx): Promise<NotionPendingPublication> => {
-        const [current] = await tx
+      (async (): Promise<NotionPendingPublication> => {
+        const [current] = await db
           .select({
             eventType: workflowAutomations.eventType,
             eventConfig: workflowAutomations.eventConfig,
@@ -854,7 +853,7 @@ const publishNotionPendingEvent$ = command(
           return null;
         }
         if (args.refreshExisting) {
-          const [updated] = await tx
+          const [updated] = await db
             .update(notionWorkflowPendingEvents)
             .set({
               latestNotionEventId: args.pendingEvent.latestNotionEventId,
@@ -894,14 +893,14 @@ const publishNotionPendingEvent$ = command(
             return "refreshed";
           }
         }
-        const [inserted] = await tx
+        const [inserted] = await db
           .insert(notionWorkflowPendingEvents)
           .values(args.pendingEvent)
           .onConflictDoNothing()
           .returning({ id: notionWorkflowPendingEvents.id });
         signal.throwIfAborted();
         return inserted ? "inserted" : "none";
-      }),
+      })(),
       signal,
     );
     if (published.ok) {

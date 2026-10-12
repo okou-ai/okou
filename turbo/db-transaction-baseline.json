@@ -472,11 +472,6 @@
       "owner": "commitMorningBriefScheduleSettlement$"
     },
     {
-      "id": "TX-0193",
-      "file": "turbo/apps/api/src/signals/services/notion-automation-event.service.ts",
-      "owner": "publishNotionPendingEvent$"
-    },
-    {
       "id": "TX-0194",
       "file": "turbo/apps/api/src/signals/services/official-google-forms-reconfiguration.service.ts",
       "owner": "commitOfficialFormsReconfiguration$"
