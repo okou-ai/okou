@@ -1,5 +1,4 @@
 import { withChatScrollLayout } from "./chat-scroll-layout.tsx";
-import "../css/vendor/uiw-react-markdown-preview-5.2.0.css";
 import {
   useGet,
   useLastLoadable,
@@ -96,18 +95,7 @@ function PlainLink({ href, children, ...rest }: MarkdownAnchorProps) {
   );
 }
 
-function MediaImage({
-  src,
-  url,
-  alt,
-  load,
-  filename,
-  resolvedPreview,
-  asLink = false,
-  insideLink = false,
-  onActivate,
-  resolutionFailed = false,
-}: {
+interface MediaImageProps {
   src: string | undefined;
   url: string;
   alt: string;
@@ -119,7 +107,20 @@ function MediaImage({
   /** Present when the surface can present this image without leaving it. */
   onActivate?: () => void;
   resolutionFailed?: boolean;
-}) {
+}
+
+function MediaImage({
+  src,
+  url,
+  alt,
+  load,
+  filename,
+  resolvedPreview,
+  asLink = false,
+  insideLink = false,
+  onActivate,
+  resolutionFailed = false,
+}: MediaImageProps) {
   const { t } = useTranslation();
   const loadStatus = useGet(load.status$);
   const imageStatus = resolutionFailed ? "error" : loadStatus;
@@ -185,10 +186,15 @@ function MediaImage({
   if (asLink) {
     // A linked Markdown thumbnail already has its own destination.
     if (insideLink) {
-      return <span className={className}>{preview}</span>;
+      return (
+        <span data-markdown-ui className={className}>
+          {preview}
+        </span>
+      );
     }
     return (
       <a
+        data-markdown-ui
         href={url}
         target="_blank"
         rel="noopener noreferrer"
@@ -212,6 +218,7 @@ function MediaImage({
 
   return (
     <button
+      data-markdown-ui
       type="button"
       onClick={(event) => {
         const threadId = event.currentTarget.closest<HTMLElement>(
@@ -678,7 +685,7 @@ function MediaParagraphRenderer({
   // paragraph, so it restates that 6px block spacing.
   if (node && containsBlockArtifact(node)) {
     return (
-      <div {...props} data-slot="markdown-card" className="my-1.5">
+      <div {...props} data-slot="markdown-card" className="@container my-1.5">
         {children}
       </div>
     );
@@ -736,7 +743,11 @@ function MarkdownDivRenderer(props: MarkdownDivProps) {
   // consecutive cards sit border-to-border.
   if (data?.card) {
     return (
-      <div data-slot="markdown-card" className="my-1.5">
+      <div
+        data-slot="markdown-card"
+        data-markdown-ui
+        className="@container my-1.5"
+      >
         <MarkdownCardView card={data.card} />
       </div>
     );

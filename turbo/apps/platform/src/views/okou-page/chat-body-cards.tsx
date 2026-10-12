@@ -152,6 +152,7 @@ export function ChatImagePreviewLink({
 
   return (
     <a
+      data-markdown-ui
       href={resourceUrl ?? imageUrl}
       onClick={openPreview}
       className={cn(
@@ -250,6 +251,7 @@ export function ChatVideoPreviewButton({
 
   return (
     <button
+      data-markdown-ui
       type="button"
       data-testid={testId}
       onClick={onPreview}
@@ -888,7 +890,7 @@ function PermissionActionButton({
       type="button"
       disabled={saving}
       onClick={onClick}
-      className="inline-flex h-9 w-full min-w-0 flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 text-[0.9375rem] font-medium text-foreground transition-colors hover:bg-state-hover sm:w-auto sm:flex-none"
+      className="inline-flex h-9 w-full min-w-0 flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 text-[0.9375rem] font-medium text-foreground transition-colors hover:bg-state-hover @[640px]:w-auto @[640px]:flex-none"
     >
       {saving && <Loader2 size={15} className="animate-spin" />}
       {saving

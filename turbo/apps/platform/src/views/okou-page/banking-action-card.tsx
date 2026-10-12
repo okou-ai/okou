@@ -58,7 +58,7 @@ const BANKING_GRANT_DURATIONS: readonly BankingGrantDuration[] = [
   "30d",
 ];
 
-const BANKING_CARD_HEIGHT_CLASS = "h-[136px] @[900px]:h-[88px]";
+const BANKING_CARD_HEIGHT_CLASS = "h-[136px] @[640px]:h-[88px]";
 
 interface BankingCardController {
   readonly status: BankingAccessRequestStatusResponse;
@@ -420,7 +420,7 @@ function LoadedBankingActionCard({
   return (
     <div
       data-testid="banking-action-card"
-      className="flex h-full w-full flex-col justify-between gap-3 p-3 text-left @[900px]:flex-row @[900px]:items-center"
+      className="flex h-full w-full flex-col justify-between gap-3 p-3 text-left @[640px]:flex-row @[640px]:items-center"
     >
       {controller.pending ? (
         <span ref={controller.pendingSessionPollerRef} hidden />
