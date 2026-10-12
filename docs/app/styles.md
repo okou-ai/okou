@@ -949,36 +949,6 @@ Fullscreen state preservation also needs the shared primitive's state and
 scroll regression coverage. Standalone behavior still needs installed-PWA
 acceptance; desktop browser coverage does not establish iOS keyboard behavior.
 
-`pnpm lint:style` and the staged-file style policy enforce explicit declarations
-in Platform and shared UI production sources, including CSS, the HTML bootstrap,
-and first-party preview-document adapters. `turbo/stacking-ownership.json` pins
-each declaration to its exact file, named source scope (or CSS/HTML ancestry),
-complete utility/value, and occurrence count. Zero, negative values, variants,
-arbitrary properties, variable-backed utilities, style objects, and native
-`style.zIndex`/`setProperty` writes all require ownership. Constants count at
-their definition, not at each consumer. Comments, tests, and stories do not
-authorize production declarations. Dynamic utility or CSS layer construction
-is rejected; keep complete literal declarations visible to tooling.
-
-When this check fails, first remove unnecessary business-control priority. A
-necessary exception must name the element owner, actual host and stacking
-boundary, siblings it must cover, and supporting evidence. Register only its
-exact declaration after reviewing those relationships. New or changed values,
-additional occurrences, and moves between files or named scopes require a
-matching reviewed entry; removed declarations require deleting or reducing
-their stale entry. There is no threshold, file-wide exemption, or automatic
-accept-all command. Registration does not authorize handwritten CSS or weaken
-the existing style policy.
-
-The initial retained inventory is marked `audit-pending` and linked to
-[#35878](https://github.com/okou-ai/okou/issues/35878); it constrains existing debt
-without claiming that its runtime ownership is verified. Do not grow this
-pending inventory to silence failures. Mark an entry `verified` only with
-browser evidence for its host, siblings, paint and hit order, focus, and relevant
-display modes. Static matching cannot detect every reparenting within the same
-named scope or a changed caller of a shared constant. Such changes still require
-review and browser acceptance, even when lint passes.
-
 ### Horizontal hairline rules
 
 A rule between rows of a settings card, list or menu is

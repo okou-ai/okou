@@ -76,9 +76,6 @@ importers:
       miniflare:
         specifier: 5.20260903.0-alpha
         version: 5.20260903.0-alpha(@types/node@24.13.4)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
-      parse5:
-        specifier: 7.3.0
-        version: 7.3.0
       prettier:
         specifier: ^3.9.9
         version: 3.9.9

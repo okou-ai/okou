@@ -237,9 +237,9 @@ For the affected scenario, verify observable behavior in the browser:
 
 Add focused browser regressions for behavior being fixed. Assertions about class
 names or computed z-index alone cannot prove paint order, clipping, or hit
-targets. Static [stacking ownership checks](styles.md#stacking-ownership) document
-declarations and detect drift; registration and an `audit-pending` entry are not
-browser acceptance. Keep evidence for a particular change in its PR or issue.
+targets. Review the actual host, ancestor chain, and interaction ownership when
+changing a layer or moving its component. Keep browser evidence for a particular
+change in its PR or issue.
 
 ## References
 
