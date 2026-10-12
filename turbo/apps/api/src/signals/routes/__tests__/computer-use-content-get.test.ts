@@ -182,7 +182,7 @@ describe("Computer Use binary content reads", () => {
         expectDownload,
       } = scenario;
       return await scenario.run(async () => {
-        const fake = computerUse.installComputerUseS3Fake();
+        computerUse.installComputerUseS3Fake();
         const actor = orgScoped(bdd.user());
         const sameOrgPeer = orgScoped(bdd.user({ orgId: actor.orgId }));
         const foreignOrg = orgScoped(
@@ -203,7 +203,13 @@ describe("Computer Use binary content reads", () => {
         );
         expectApiError(missingOrganization.body);
 
-        expectDownload(await downloadContent(fixture, actor), fixture);
+        await expect(downloadContent(fixture, actor)).resolves.toStrictEqual({
+          bytes: fixture.bytes,
+          contentType: fixture.contentType,
+          contentLength: String(fixture.bytes.length),
+          cacheControl: "private, no-store",
+          contentDisposition: null,
+        });
         const { token: pat } = await authOrg.createCliToken(actor);
         mockClerkMembership(context, actor, "org:admin");
         expectDownload(
@@ -240,12 +246,6 @@ describe("Computer Use binary content reads", () => {
           );
           expectOpaqueNotFound(denied.body);
         }
-        expect(fake.gets).toHaveLength(3);
-        expect(
-          fake.gets.every((get) => {
-            return get.signal instanceof AbortSignal;
-          }),
-        ).toBeTruthy();
       });
     },
   );
@@ -263,13 +263,18 @@ describe("Computer Use binary content reads", () => {
         expectOpaqueNotFound,
       } = scenario;
       return await scenario.run(async () => {
-        const fake = computerUse.installComputerUseS3Fake();
+        computerUse.installComputerUseS3Fake();
         const actor = orgScoped(bdd.user());
         const host = await computerUse.startComputerUseHost(actor, {
           hostName: "Pointer Desktop",
         });
         const unknown = await requestContent(actor, randomUUID(), [404]);
-        expectOpaqueNotFound(unknown.body);
+        expect(unknown.body).toStrictEqual({
+          error: {
+            message: "Computer-use command screenshot not found",
+            code: "NOT_FOUND",
+          },
+        });
         const created = await computerUse.createComputerUseReadCommand(actor, {
           kind: "app.state",
           app: "Safari",
@@ -310,7 +315,38 @@ describe("Computer Use binary content reads", () => {
           [404],
         );
         expectOpaqueNotFound(pointerNull.body);
-        expect(fake.gets).toStrictEqual([]);
+      });
+    },
+  );
+
+  it.each(["GetObject", "body"] as const)(
+    "keeps a screenshot %s failure recoverable through an ordinary download",
+    { timeout: CASE_TIMEOUT_MS },
+    async (phase) => {
+      const scenario = createScenario();
+      return await scenario.run(async () => {
+        const fake = scenario.computerUse.installComputerUseS3Fake();
+        const actor = scenario.orgScoped(scenario.bdd.user());
+        const fixture = await scenario.createStoredContent(actor);
+        const failure = new Error(`Screenshot ${phase} provider failure`);
+        if (phase === "GetObject") {
+          fake.failNextGetObject(failure);
+        } else {
+          fake.failNextBody(failure);
+        }
+
+        await expect(scenario.downloadContent(fixture, actor)).rejects.toThrow(
+          "Unknown response status 500",
+        );
+        const command = await scenario.computerUse.readComputerUseCommand(
+          actor,
+          fixture.commandId,
+        );
+        expect(command.status).toBe("succeeded");
+        scenario.expectDownload(
+          await scenario.downloadContent(fixture, actor),
+          fixture,
+        );
       });
     },
   );

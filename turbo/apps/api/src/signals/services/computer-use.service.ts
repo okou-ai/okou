@@ -42,7 +42,7 @@ import {
   publishComputerUseCommandsChangedSafely,
   publishComputerUseResultChangedSafely,
 } from "../external/realtime";
-import { downloadS3Buffer, putS3Object$ } from "../external/s3";
+import { downloadS3Buffer$, putS3Object$ } from "../external/s3";
 import { settle } from "../utils";
 import { clerk$ } from "../external/clerk";
 import {
@@ -1298,7 +1298,7 @@ export const getComputerUseCommand$ = command(
 
 export const getComputerUseCommandScreenshot$ = command(
   async (
-    { get },
+    { get, set },
     params: {
       readonly orgId: string;
       readonly userId: string;
@@ -1335,8 +1335,10 @@ export const getComputerUseCommandScreenshot$ = command(
     }
     const screenshot = row.result.screenshot;
     if (isStoredScreenshotPointer(screenshot)) {
-      const buffer = await get(
-        downloadS3Buffer(screenshot.bucket, screenshot.key, signal),
+      const buffer = await set(
+        downloadS3Buffer$,
+        { bucket: screenshot.bucket, key: screenshot.key },
+        signal,
       );
       signal.throwIfAborted();
       return { buffer, contentType: screenshot.mimeType };
