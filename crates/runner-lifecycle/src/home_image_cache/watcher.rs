@@ -532,13 +532,7 @@ mod tests {
 
     async fn commit_entry(cache: &HomeImageCache, reuse_key: &str) -> String {
         let image = format!("image-{reuse_key}");
-        let cache_key = cache.scoped_cache_key(
-            TEST_PROFILE_NAME,
-            TEST_ROOTFS,
-            reuse_key,
-            TEST_WORKING_DIR,
-            image.len() as u64,
-        );
+        let cache_key = cache.scoped_cache_key(TEST_PROFILE_NAME, reuse_key, image.len() as u64);
         cache.ensure_home_cache_entry_dir(&cache_key).await.unwrap();
         let run_id = RunId::new_v4();
         let current_image = cache
@@ -585,9 +579,7 @@ mod tests {
         let cache = HomeImageCache::new(paths);
         let cache_key = cache.scoped_cache_key(
             TEST_PROFILE_NAME,
-            TEST_ROOTFS,
             "existing-entry",
-            TEST_WORKING_DIR,
             b"image-existing-entry".len() as u64,
         );
         cache.ensure_home_cache_entry_dir(&cache_key).await.unwrap();
@@ -652,9 +644,7 @@ mod tests {
         let cache = HomeImageCache::new(paths);
         let cache_key = cache.scoped_cache_key(
             TEST_PROFILE_NAME,
-            TEST_ROOTFS,
             "bounded-drain",
-            TEST_WORKING_DIR,
             b"image-bounded-drain".len() as u64,
         );
         cache.ensure_home_cache_entry_dir(&cache_key).await.unwrap();
@@ -847,9 +837,7 @@ mod tests {
         }
         let relevant_cache_key = cache.scoped_cache_key(
             TEST_PROFILE_NAME,
-            TEST_ROOTFS,
             "relevant-after-raw-limit",
-            TEST_WORKING_DIR,
             b"image-relevant-after-raw-limit".len() as u64,
         );
         cache

@@ -669,7 +669,6 @@ async fn execute_inner_waits_for_transient_home_cache_lock() {
     let cache_key = scoped_home_image_cache_key(
         "",
         &params.profile_name,
-        &params.rootfs_hash,
         &format!("thread:home-cache-{session_id}"),
         u64::from(params.home_disk_mb) * 1024 * 1024,
     );
@@ -807,7 +806,6 @@ async fn execute_inner_records_home_cache_lock_busy_prepare_telemetry() {
     let cache_key = scoped_home_image_cache_key(
         "",
         &params.profile_name,
-        &params.rootfs_hash,
         &format!("thread:home-cache-{session_id}"),
         u64::from(params.home_disk_mb) * 1024 * 1024,
     );
@@ -883,7 +881,6 @@ async fn execute_inner_logs_home_cache_lock_error_separately() {
     let cache_key = scoped_home_image_cache_key(
         "",
         &params.profile_name,
-        &params.rootfs_hash,
         &format!("thread:home-cache-{session_id}"),
         u64::from(params.home_disk_mb) * 1024 * 1024,
     );
@@ -1272,7 +1269,6 @@ async fn unconfigured_cache_reuse_stops_when_cache_invalidation_fails() {
     let cache_key = scoped_home_image_cache_key(
         "",
         &params.profile_name,
-        &params.rootfs_hash,
         &format!("thread:home-cache-{session_id}"),
         u64::from(params.home_disk_mb) * 1024 * 1024,
     );

@@ -11,9 +11,7 @@ use runner_lifecycle::active_runs::ActiveRuns;
 use runner_lifecycle::home_image_cache::snapshot::{
     HomeCacheRefreshOutcome, HomeCacheStateSnapshot, filter_current_held_home_states,
 };
-use runner_lifecycle::home_image_cache::{
-    HomeCacheChange, HomeImageCache, HomeImageProfileIdentity,
-};
+use runner_lifecycle::home_image_cache::{HomeCacheChange, HomeImageCache};
 use runner_lifecycle::idle_pool::IdlePool;
 use runner_lifecycle::lifecycle::RunnerMode;
 use runner_lifecycle::resource_budget::ResourceBudget;
@@ -406,11 +404,11 @@ pub async fn refresh_initial_home_cache_snapshot(
             loaded_cache_keys: BTreeSet::new(),
         };
     };
-    // Inventory must validate both full rootfs identity and home shape. Wire capabilities
-    // cannot represent these checks and must never be synthesized from incompatible metadata.
-    let profile_home_identities = profile_home_identities(profiles);
+    // Validate configured profiles, exact home shape and committed-image identity
+    // before advertising the wire capability.
+    let profile_image_sizes = profile_home_sizes(profiles);
     let (states, locked_commit_keys, loaded_cache_keys) = cache
-        .initial_held_home_states_for_profiles(&profile_home_identities)
+        .initial_held_home_states_for_profiles(&profile_image_sizes)
         .await;
     let outcome = snapshot.finish_home_cache_refresh(refresh, states);
     InitialHomeCacheRefreshOutcome {
@@ -450,12 +448,12 @@ async fn home_cache_states(
         return Vec::new();
     };
 
-    let profile_home_identities = profile_home_identities(profiles);
+    let profile_image_sizes = profile_home_sizes(profiles);
     match commits {
         Some((committed_cache_keys, deadline)) if !committed_cache_keys.is_empty() => {
             cache
                 .held_home_states_for_profiles_after_commits(
-                    &profile_home_identities,
+                    &profile_image_sizes,
                     committed_cache_keys,
                     deadline,
                 )
@@ -463,31 +461,21 @@ async fn home_cache_states(
         }
         Some(_) | None => {
             cache
-                .held_home_states_for_profiles(&profile_home_identities)
+                .held_home_states_for_profiles(&profile_image_sizes)
                 .await
         }
     }
 }
 
-fn profile_home_identities(
-    profiles: &BTreeMap<String, HeartbeatProfile>,
-) -> BTreeMap<&str, HomeImageProfileIdentity<'_>> {
+fn profile_home_sizes(profiles: &BTreeMap<String, HeartbeatProfile>) -> BTreeMap<&str, u64> {
     profiles
         .iter()
-        .map(|(name, profile)| {
-            (
-                name.as_str(),
-                HomeImageProfileIdentity {
-                    rootfs_hash: profile.rootfs_hash.as_str(),
-                    image_size_bytes: u64::from(profile.home_disk_mb) * 1024 * 1024,
-                },
-            )
-        })
+        .map(|(name, profile)| (name.as_str(), u64::from(profile.home_disk_mb) * 1024 * 1024))
         .collect()
 }
 
 /// Cached snapshots are advisory, but may advertise only the current configured
-/// profiles/version. Their underlying image/rootfs/shape identity was validated by
+/// profiles/version. Their underlying image and shape identity was validated by
 /// inventory or a successful generation-owned publication under its lease.
 fn filter_home_states_for_profiles(
     mut states: Vec<HeldHomeState>,
@@ -1076,7 +1064,6 @@ mod tests {
         let cache_key = runner_host::paths::scoped_home_image_cache_key(
             "",
             "vm0/default",
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             reuse_key,
             1024 * 1024,
         );
@@ -1121,7 +1108,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn home_inventory_requires_current_full_rootfs_and_exact_home_shape() {
+    async fn home_inventory_survives_rootfs_changes_and_requires_exact_home_shape() {
         let dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
@@ -1138,17 +1125,16 @@ mod tests {
             home_cache_states(Some(&cache), &profiles, None).await.len(),
             1
         );
-        // Same display prefix, different full rootfs: no affinity from the old generation.
+        // A new rootfs uses the same independent home image and physical key.
         profiles.get_mut("vm0/default").unwrap().rootfs_hash =
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab".into();
-        assert!(
-            home_cache_states(Some(&cache), &profiles, None)
-                .await
-                .is_empty()
+        assert_eq!(
+            home_cache_states(Some(&cache), &profiles, None).await.len(),
+            1
         );
         let snapshot = HomeCacheStateSnapshot::new();
         let initial = refresh_initial_home_cache_snapshot(&snapshot, Some(&cache), &profiles).await;
-        assert!(initial.states.is_empty());
+        assert_eq!(initial.states.len(), 1);
         profiles.get_mut("vm0/default").unwrap().rootfs_hash =
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into();
         profiles.get_mut("vm0/default").unwrap().home_disk_mb = 2;

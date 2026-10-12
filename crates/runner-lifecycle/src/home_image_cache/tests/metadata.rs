@@ -88,6 +88,7 @@ async fn malformed_layout_rootfs_scope_state_shape_and_image_identity_are_not_hi
                 serde_json::json!({"dev":0,"ino":0,"len":SIZE,"modifiedSeconds":0,"modifiedNanoseconds":0})
             }
             "imageGeneration" => serde_json::json!("../../escape"),
+            "rootfsHash" => serde_json::json!(""),
             _ => serde_json::json!("wrong"),
         };
         std::fs::write(

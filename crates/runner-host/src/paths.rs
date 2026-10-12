@@ -24,7 +24,8 @@ use sha2::{Digest, Sha256};
 use crate::error::HostResult;
 use runner_types::ids::RunId;
 
-const HOME_IMAGE_CACHE_KEY_DOMAIN: &[u8] = b"home-image-cache:v1";
+// A fixed addressing domain; ordinary rootfs/runtime updates do not change it.
+const HOME_IMAGE_CACHE_KEY_DOMAIN: &[u8] = b"home-image-cache:v2";
 pub const HOME_DRIVE_LAYOUT: &str = "home-drive-v1";
 pub(crate) const RUNNER_HOME_ROOT: &str = "/var/lib/vm0-runner";
 
@@ -58,12 +59,12 @@ pub fn base_dir_lock_name(base_dir: &Path) -> String {
 }
 
 /// Complete identity of a host-shared home baseline. Cwd is deliberately
-/// absent: execution-path validation is separate from image identity.
+/// absent: execution-path validation is separate from image identity. Rootfs
+/// identifies the producing VM; the independently mounted home survives its updates.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HomeImageCacheKey<'a> {
     pub cache_scope: &'a str,
     pub profile_name: &'a str,
-    pub rootfs_hash: &'a str,
     pub reuse_key: &'a str,
     pub drive_layout: &'a str,
     pub image_size_bytes: u64,
@@ -77,7 +78,6 @@ impl HomeImageCacheKey<'_> {
         for field in [
             self.cache_scope,
             self.profile_name,
-            self.rootfs_hash,
             self.reuse_key,
             self.drive_layout,
         ] {
@@ -92,14 +92,12 @@ impl HomeImageCacheKey<'_> {
 pub fn scoped_home_image_cache_key(
     cache_scope: &str,
     profile_name: &str,
-    rootfs_hash: &str,
     reuse_key: &str,
     image_size_bytes: u64,
 ) -> String {
     HomeImageCacheKey {
         cache_scope,
         profile_name,
-        rootfs_hash,
         reuse_key,
         drive_layout: HOME_DRIVE_LAYOUT,
         image_size_bytes,
@@ -525,7 +523,6 @@ mod tests {
         let key = HomeImageCacheKey {
             cache_scope: "group",
             profile_name: "vm0/default",
-            rootfs_hash: "full-rootfs-hash",
             reuse_key: "thread",
             drive_layout: HOME_DRIVE_LAYOUT,
             image_size_bytes: 24 * 1024 * 1024 * 1024,
@@ -538,10 +535,6 @@ mod tests {
             },
             HomeImageCacheKey {
                 profile_name: "other",
-                ..key
-            },
-            HomeImageCacheKey {
-                rootfs_hash: "full-rootfs-hash-tail",
                 ..key
             },
             HomeImageCacheKey {
