@@ -6,11 +6,11 @@ describe("MCP chat search response", () => {
     "carries a stable Agent ID with display name %s",
     (displayName) => {
       const hit = {
-        chatThreadId: "thread-1",
+        threadId: "22222222-2222-4222-8222-222222222222",
         agentId: "11111111-1111-4111-8111-111111111111",
         displayName,
         matchedMessage: {
-          chatThreadId: "thread-1",
+          threadId: "22222222-2222-4222-8222-222222222222",
           role: "user" as const,
           content: "Searchable message",
           createdAt: "2026-10-12T08:00:00.000Z",

@@ -2,16 +2,24 @@ import { z } from "zod";
 import { agentResponseSchema } from "./agents";
 import { initContract } from "./base";
 import { CHAT_SEARCH_RESULT_LIMIT, chatSearchContract } from "./chat-threads";
+import { mcpRunIdSchema, mcpThreadIdSchema } from "./mcp-identifiers";
 
 const c = initContract();
 const nativeSearch = chatSearchContract.search;
+const nativeResult = nativeSearch.responses[200].shape.results.element;
 
-const mcpChatSearchResultSchema =
-  nativeSearch.responses[200].shape.results.element
-    .omit({ agentName: true })
-    .extend(
-      agentResponseSchema.pick({ agentId: true, displayName: true }).shape,
-    );
+const mcpChatSearchResultSchema = nativeResult
+  .omit({ agentName: true, chatThreadId: true })
+  .extend({
+    ...agentResponseSchema.pick({ agentId: true, displayName: true }).shape,
+    threadId: mcpThreadIdSchema,
+    matchedMessage: nativeResult.shape.matchedMessage
+      .omit({ chatThreadId: true })
+      .extend({
+        threadId: mcpThreadIdSchema,
+        runId: mcpRunIdSchema.nullable(),
+      }),
+  });
 
 /** Used only by the MCP in-process route slice, not the public Web search API. */
 export const mcpChatSearchContract = c.router({

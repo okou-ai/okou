@@ -69,10 +69,25 @@ export function mcpChatSearch(
 
     return {
       results: search.results.flatMap(
-        ({ agentName, ...hit }): McpChatSearchResult[] => {
+        ({
+          agentName,
+          chatThreadId,
+          matchedMessage,
+          ...hit
+        }): McpChatSearchResult[] => {
           const agent = metadata.get(agentName);
+          const { chatThreadId: messageThreadId, ...message } = matchedMessage;
           // Do not publish metadata for an Agent that disappeared or became hidden.
-          return agent ? [{ ...hit, ...agent }] : [];
+          return agent
+            ? [
+                {
+                  ...hit,
+                  ...agent,
+                  threadId: chatThreadId,
+                  matchedMessage: { ...message, threadId: messageThreadId },
+                },
+              ]
+            : [];
         },
       ),
     };

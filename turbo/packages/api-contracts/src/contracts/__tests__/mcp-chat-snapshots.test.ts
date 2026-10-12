@@ -58,7 +58,7 @@ describe("MCP snapshot combination contracts", () => {
       }).success,
     ).toBe(false);
   });
-  it("combines unchanged Web response schemas rather than projected messages or metadata", () => {
+  it("preserves native snapshot metadata and paired cursor responses", () => {
     const snapshot = {
       chatThreads: [],
       latestEventId: null,
