@@ -274,23 +274,6 @@ export function OrgMembersTab() {
             </>
           )}
 
-          {!isLoading &&
-            filtered.length === 0 &&
-            filteredPending.length === 0 &&
-            membershipRequests.length === 0 && (
-              <div className="flex items-center justify-center py-12">
-                <span className="text-sm text-muted-foreground">
-                  {search.trim()
-                    ? t(($) => {
-                        return $.settings.workspace.members.emptySearch;
-                      })
-                    : t(($) => {
-                        return $.settings.workspace.members.empty;
-                      })}
-                </span>
-              </div>
-            )}
-
           {!isLoading && membershipRequests.length > 0 && (
             <>
               <div className="px-5 pt-3 pb-1">
@@ -358,6 +341,22 @@ export function OrgMembersTab() {
               );
             })}
         </div>
+        {!isLoading &&
+          filtered.length === 0 &&
+          filteredPending.length === 0 &&
+          membershipRequests.length === 0 && (
+            <div className="sticky left-0 flex items-center justify-center py-12">
+              <span className="text-sm text-muted-foreground">
+                {search.trim()
+                  ? t(($) => {
+                      return $.settings.workspace.members.emptySearch;
+                    })
+                  : t(($) => {
+                      return $.settings.workspace.members.empty;
+                    })}
+              </span>
+            </div>
+          )}
       </div>
     </div>
   );
