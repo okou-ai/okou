@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.748.0](https://github.com/okou-ai/okou/compare/core-v8.747.1...core-v8.748.0) (2026-10-12)
+
+
+### Features
+
+* enable composer anchored suggestions for staff ([#39404](https://github.com/okou-ai/okou/issues/39404)) ([9d25a51](https://github.com/okou-ai/okou/commit/9d25a51bdef9ee56ad439e8ce2d47257a48caac2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.552.4
+
 ## [8.747.1](https://github.com/okou-ai/okou/compare/core-v8.747.0...core-v8.747.1) (2026-10-12)
 
 

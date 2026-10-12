@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.5...runner-executor-v0.10.6) (2026-10-12)
+
+
+### Refactoring
+
+* **runner-executor:** converge terminal agent-preparation cleanup ([#39405](https://github.com/okou-ai/okou/issues/39405)) ([9c04a88](https://github.com/okou-ai/okou/commit/9c04a88a8b6d2b5001ab762ad06623b468ffbdf6))
+
 ## [0.10.5](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.4...runner-executor-v0.10.5) (2026-10-12)
 
 

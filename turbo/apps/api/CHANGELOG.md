@@ -9,6 +9,35 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.728.2](https://github.com/okou-ai/okou/compare/api-v1.728.1...api-v1.728.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* **api:** preserve telegram missing-winner error priority ([#39433](https://github.com/okou-ai/okou/issues/39433)) ([d4aa816](https://github.com/okou-ai/okou/commit/d4aa816d41692e73e037956ca90b953e88f333c0))
+
+
+### Refactoring
+
+* **api:** own billing status concurrency read ([#39426](https://github.com/okou-ai/okou/issues/39426)) ([3ab5196](https://github.com/okou-ai/okou/commit/3ab51967ee9eef21b79e2a59abebfb8a8c458485)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own browser user-action cancellation ([#39420](https://github.com/okou-ai/okou/issues/39420)) ([53251f6](https://github.com/okou-ai/okou/commit/53251f68bb3c377700109e67005d6f5723567164))
+* **api:** preconnect conditional discord status reads ([#39438](https://github.com/okou-ai/okou/issues/39438)) ([c333a4d](https://github.com/okou-ai/okou/commit/c333a4dc6caa457440074aba934198a403e16bd0)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** preconnect teams status identity graph ([#39418](https://github.com/okou-ai/okou/issues/39418)) ([a4078d5](https://github.com/okou-ai/okou/commit/a4078d5824527ff72a16340157701a820305aa67)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** retire canonical slack admission transaction ([#39424](https://github.com/okou-ai/okou/issues/39424)) ([fdf2a84](https://github.com/okou-ai/okou/commit/fdf2a84ea4eb1dce9ec4da487401d4a7dd37dc82))
+* **api:** review x resource billing atomicity ([#39436](https://github.com/okou-ai/okou/issues/39436)) ([a5458fc](https://github.com/okou-ai/okou/commit/a5458fc76438883db9ec99f8a1bbcd41ddb5e67f))
+* **mcp:** unify thread and run identifiers ([#39431](https://github.com/okou-ai/okou/issues/39431)) ([c3c5c71](https://github.com/okou-ai/okou/commit/c3c5c7173474d6782a738da153be1a67c4432291))
+* **ssh:** prepare needs_rebind storage retirement ([#39414](https://github.com/okou-ai/okou/issues/39414)) ([4e5e841](https://github.com/okou-ai/okou/commit/4e5e8416ff4badd8907f6a49e010422437f320e3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.552.4
+    * @okouai/core bumped to 8.748.0
+    * @okouai/db bumped to 1.331.10
+    * @okouai/pi-agent-runtime bumped to 1.49.17
+
 ## [1.728.1](https://github.com/okou-ai/okou/compare/api-v1.728.0...api-v1.728.1) (2026-10-12)
 
 
