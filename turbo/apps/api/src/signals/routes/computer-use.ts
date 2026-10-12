@@ -17,6 +17,7 @@ import {
   listComputerUseHosts$,
 } from "../services/computer-use.service";
 import { computerUseSessionHostRoutes } from "./computer-use-session-hosts";
+import { createComputerUseResultSubscription } from "../external/realtime";
 import type { RouteEntry } from "../route-entry";
 
 const computerUseHostNotAuthorized = Object.freeze({
@@ -112,9 +113,25 @@ const commandCreateInner$ = command(
       return conflict("No online computer-use host supports this command");
     }
 
+    const realtime = bodyResult.data.realtime
+      ? await createComputerUseResultSubscription(
+          {
+            userId: auth.userId,
+            orgId: auth.orgId,
+            commandId: result.commandId,
+            timeoutMs: bodyResult.data.timeoutMs,
+          },
+          signal,
+        )
+      : undefined;
+    signal.throwIfAborted();
     return {
       status: 200 as const,
-      body: { commandId: result.commandId, status: result.commandStatus },
+      body: {
+        commandId: result.commandId,
+        status: result.commandStatus,
+        ...(realtime ? { realtime } : {}),
+      },
     };
   },
 );
@@ -166,9 +183,25 @@ const writeCommandCreateInner$ = command(
       return conflict("No online computer-use host supports this command");
     }
 
+    const realtime = bodyResult.data.realtime
+      ? await createComputerUseResultSubscription(
+          {
+            userId: auth.userId,
+            orgId: auth.orgId,
+            commandId: result.commandId,
+            timeoutMs: bodyResult.data.timeoutMs,
+          },
+          signal,
+        )
+      : undefined;
+    signal.throwIfAborted();
     return {
       status: 200 as const,
-      body: { commandId: result.commandId, status: result.commandStatus },
+      body: {
+        commandId: result.commandId,
+        status: result.commandStatus,
+        ...(realtime ? { realtime } : {}),
+      },
     };
   },
 );

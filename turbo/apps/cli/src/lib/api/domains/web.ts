@@ -10,7 +10,6 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { MIMEType } from "node:util";
-import { Realtime, type AuthOptions, type InboundMessage } from "ably";
 import type {
   BuiltInGenerationAcceptedResponse,
   BuiltInGenerationResponse,
@@ -21,10 +20,13 @@ import { headersWithCliClientHeaders } from "../client-headers";
 import { assertPrivateArtifactUrl } from "../../artifact-url";
 import { getPlatformOrigin } from "../../platform-url";
 import { downloadHostedSiteFiles } from "../../host/clone-hosted-site";
+import {
+  createRealtimeNotifier,
+  type RealtimeNotifier,
+} from "../../realtime-notifier";
 
 const IMAGE_GENERATION_POLL_INTERVAL_MS = 2_000;
 const IMAGE_GENERATION_WAIT_TIMEOUT_MS = 15 * 60 * 1000;
-const ABLY_CONNECT_TIMEOUT_MS = 10_000;
 
 type ImageGenerationAcceptedResponse = BuiltInGenerationAcceptedResponse & {
   readonly type: "image";
@@ -408,124 +410,6 @@ function isImageGenerationAcceptedResponse(
   );
 }
 
-interface ImageGenerationNotifier {
-  wait(timeoutMs: number): Promise<void>;
-  close(): void;
-}
-
-function createImageGenerationRealtime(
-  accepted: ImageGenerationAcceptedResponse,
-): Realtime {
-  const authCallback: NonNullable<AuthOptions["authCallback"]> = (
-    _params,
-    callback,
-  ) => {
-    callback(null, accepted.realtime.tokenRequest);
-  };
-
-  return new Realtime({
-    authCallback,
-    autoConnect: true,
-    disconnectedRetryTimeout: 5000,
-    suspendedRetryTimeout: 15_000,
-  });
-}
-
-function waitForRealtimeConnected(
-  ably: Realtime,
-  timeoutMs = ABLY_CONNECT_TIMEOUT_MS,
-): Promise<void> {
-  if (ably.connection.state === "connected") {
-    return Promise.resolve();
-  }
-  if (ably.connection.state === "failed") {
-    return Promise.reject(new Error("Ably connection failed"));
-  }
-
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error("Timed out connecting to Ably"));
-    }, timeoutMs);
-
-    ably.connection.once("connected", () => {
-      clearTimeout(timer);
-      resolve();
-    });
-    ably.connection.once("failed", (stateChange) => {
-      clearTimeout(timer);
-      reject(
-        new Error(
-          `Ably connection failed: ${stateChange?.reason?.message ?? "unknown"}`,
-        ),
-      );
-    });
-  });
-}
-
-async function createImageGenerationNotifier(
-  accepted: ImageGenerationAcceptedResponse,
-): Promise<ImageGenerationNotifier | null> {
-  const ably = createImageGenerationRealtime(accepted);
-
-  try {
-    await waitForRealtimeConnected(ably);
-    const channel = ably.channels.get(accepted.realtime.channelName);
-
-    let pendingEvent = false;
-    let closed = false;
-    let wake: (() => void) | null = null;
-
-    const wakeWaiter = () => {
-      const current = wake;
-      wake = null;
-      current?.();
-    };
-
-    const onMessage = (_message: InboundMessage) => {
-      if (wake) {
-        wakeWaiter();
-        return;
-      }
-      pendingEvent = true;
-    };
-
-    await channel.subscribe(accepted.realtime.eventName, onMessage);
-
-    return {
-      wait(timeoutMs: number): Promise<void> {
-        if (pendingEvent || closed || timeoutMs <= 0) {
-          pendingEvent = false;
-          return Promise.resolve();
-        }
-
-        return new Promise((resolve) => {
-          function done() {
-            clearTimeout(timer);
-            if (wake === done) {
-              wake = null;
-            }
-            resolve();
-          }
-          const timer = setTimeout(done, timeoutMs);
-          wake = done;
-        });
-      },
-      close(): void {
-        if (closed) {
-          return;
-        }
-        closed = true;
-        channel.unsubscribe(accepted.realtime.eventName, onMessage);
-        wakeWaiter();
-        ably.close();
-      },
-    };
-  } catch {
-    ably.close();
-    return null;
-  }
-}
-
 async function getImageGenerationStatus(
   baseUrl: string,
   token: string,
@@ -613,7 +497,12 @@ async function waitForImageGenerationResult(args: {
   readonly token: string;
   readonly fallback: string;
 }): Promise<GenerateWebImageResult> {
-  let notifier: ImageGenerationNotifier | null = null;
+  let notifier: RealtimeNotifier | null = null;
+  const owner = new AbortController();
+  const deadlineTimer = setTimeout(() => {
+    return owner.abort();
+  }, IMAGE_GENERATION_WAIT_TIMEOUT_MS);
+  const signal = owner.signal;
   let notifierCreated = false;
   const startedAt = Date.now();
   const timeoutMs = IMAGE_GENERATION_WAIT_TIMEOUT_MS;
@@ -634,17 +523,19 @@ async function waitForImageGenerationResult(args: {
       const remaining = timeoutMs - elapsed;
       const waitMs = Math.min(IMAGE_GENERATION_POLL_INTERVAL_MS, remaining);
       if (!notifierCreated) {
-        notifier = await createImageGenerationNotifier(args.accepted);
+        notifier = createRealtimeNotifier(args.accepted.realtime, signal);
         notifierCreated = true;
       }
-      if (notifier) {
+      if (notifier && !notifier.closed) {
         await notifier.wait(waitMs);
       } else {
         await delay(waitMs);
       }
     }
   } finally {
-    notifier?.close();
+    clearTimeout(deadlineTimer);
+    owner.abort();
+    await notifier?.close();
   }
 
   throw new ApiRequestError(

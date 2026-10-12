@@ -61,12 +61,14 @@ interface ComputerUseReadCommandBody {
   readonly kind: ComputerUseReadCommandKind;
   readonly app?: string;
   readonly timeoutMs?: number;
+  readonly realtime?: true;
 }
 
 interface ComputerUseWriteCommandBody {
   readonly kind: ComputerUseWriteCommandKind;
   readonly app: string;
   readonly timeoutMs?: number;
+  readonly realtime?: true;
   readonly snapshotId?: string;
   readonly elementIndex?: number;
   readonly button?: "left" | "right" | "middle";
