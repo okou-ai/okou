@@ -287,32 +287,31 @@ export const admitCanonicalSlackChatEvent$ = command(
     signal: AbortSignal,
   ): Promise<SlackChatIngressAdmission> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0245; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const [inserted] = await tx
-        .insert(slackChatIngress)
-        .values({
-          routeId: args.routeId,
-          eventId: args.eventId,
-          payload: args.payload,
-          status: "pending",
-          retryCount: args.isRetry ? 1 : 0,
-          createdAt: args.currentTime,
-          updatedAt: args.currentTime,
-        })
-        .onConflictDoNothing({ target: slackChatIngress.eventId })
-        .returning({
-          id: slackChatIngress.id,
-          routeId: slackChatIngress.routeId,
-          status: slackChatIngress.status,
-          retryCount: slackChatIngress.retryCount,
-        });
-      signal.throwIfAborted();
-      if (inserted) {
-        return { ...inserted, inserted: true };
-      }
-
-      const [existing] = await tx
+    signal.throwIfAborted();
+    const [inserted] = await db
+      .insert(slackChatIngress)
+      .values({
+        routeId: args.routeId,
+        eventId: args.eventId,
+        payload: args.payload,
+        status: "pending",
+        retryCount: args.isRetry ? 1 : 0,
+        createdAt: args.currentTime,
+        updatedAt: args.currentTime,
+      })
+      .onConflictDoNothing({ target: slackChatIngress.eventId })
+      .returning({
+        id: slackChatIngress.id,
+        routeId: slackChatIngress.routeId,
+        status: slackChatIngress.status,
+        retryCount: slackChatIngress.retryCount,
+      });
+    signal.throwIfAborted();
+    let result: SlackChatIngressAdmission;
+    if (inserted) {
+      result = { ...inserted, inserted: true };
+    } else {
+      const [existing] = await db
         .select({
           id: slackChatIngress.id,
           routeId: slackChatIngress.routeId,
@@ -330,27 +329,27 @@ export const admitCanonicalSlackChatEvent$ = command(
         throw new Error("Slack event ID is already bound to another route");
       }
       if (!args.isRetry) {
-        return { ...existing, inserted: false };
+        result = { ...existing, inserted: false };
+      } else {
+        const [retried] = await db
+          .update(slackChatIngress)
+          .set({
+            retryCount: sql`${slackChatIngress.retryCount} + 1`,
+            updatedAt: args.currentTime,
+          })
+          .where(eq(slackChatIngress.id, existing.id))
+          .returning({
+            id: slackChatIngress.id,
+            status: slackChatIngress.status,
+            retryCount: slackChatIngress.retryCount,
+          });
+        signal.throwIfAborted();
+        if (!retried) {
+          throw new Error("Failed to record canonical Slack ingress retry");
+        }
+        result = { ...retried, inserted: false };
       }
-
-      const [retried] = await tx
-        .update(slackChatIngress)
-        .set({
-          retryCount: sql`${slackChatIngress.retryCount} + 1`,
-          updatedAt: args.currentTime,
-        })
-        .where(eq(slackChatIngress.id, existing.id))
-        .returning({
-          id: slackChatIngress.id,
-          status: slackChatIngress.status,
-          retryCount: slackChatIngress.retryCount,
-        });
-      signal.throwIfAborted();
-      if (!retried) {
-        throw new Error("Failed to record canonical Slack ingress retry");
-      }
-      return { ...retried, inserted: false };
-    });
+    }
     signal.throwIfAborted();
     return result;
   },
