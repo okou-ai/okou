@@ -25,7 +25,17 @@ import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { skills } from "@okouai/db/schema/skill";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import { and, asc, count, eq, gte, inArray, like } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  exists,
+  gte,
+  inArray,
+  like,
+  sql,
+} from "drizzle-orm";
 import { create as createTar, Parser } from "tar";
 
 import { env } from "../../lib/env";
@@ -456,7 +466,7 @@ const resolveSkillStorage$ = command(
       })
       .onConflictDoNothing();
     signal.throwIfAborted();
-    // Existing HEAD metadata belongs to the publication transaction. Reading
+    // Existing HEAD metadata belongs to the publication command. Reading
     // the canonical prefix needs no row update or lock across R2 I/O.
     const [storage] = await get(db$)
       .select({ id: storages.id, s3Prefix: storages.s3Prefix })
@@ -536,13 +546,6 @@ function skillVersionMatches(
     version.fileCount === context.files.length
   );
 }
-const skillVersionColumns = Object.freeze({
-  storageId: storageVersions.storageId,
-  s3Key: storageVersions.s3Key,
-  size: storageVersions.size,
-  archiveSize: storageVersions.archiveSize,
-  fileCount: storageVersions.fileCount,
-});
 const commitSkillPublication$ = command(
   async (
     { set },
@@ -552,72 +555,107 @@ const commitSkillPublication$ = command(
     const db = set(writeDb$);
     const record = skillRecordValues(args);
     const projection = preparePiResourceIndex(args.upload.archiveBuffer);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0134; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      const [inserted] = await tx
+    const values = piResourceProjectionValues(
+      projection,
+      args.upload.archiveBuffer.length,
+      nowDate(),
+    );
+    const version = db.$with("published_skill_version").as(
+      db
         .insert(storageVersions)
         .values(skillVersionValues(args))
-        .onConflictDoNothing()
-        .returning({ archiveSize: storageVersions.archiveSize });
-      signal.throwIfAborted();
-      const [stored] = inserted
-        ? []
-        : await tx
-            .select(skillVersionColumns)
-            .from(storageVersions)
-            .where(eq(storageVersions.id, args.context.versionHash))
-            .limit(1);
-      signal.throwIfAborted();
-      if (
-        !inserted &&
-        (!stored ||
-          !skillVersionMatches(
-            stored,
-            args.storageId,
-            args.context,
-            args.upload.s3Key,
-          ))
-      ) {
-        throw new StorageVersionIdentityConflictError(args.context.versionHash);
-      }
-      const archiveSize = inserted?.archiveSize ?? stored?.archiveSize;
-      if (archiveSize === undefined) {
-        throw new Error("Published skill has no registered archive size");
-      }
-      await tx
+        .onConflictDoUpdate({
+          target: storageVersions.id,
+          // Preserve canonical metadata while returning even a concurrent winner
+          // that was invisible to this statement's initial MVCC snapshot.
+          set: { id: storageVersions.id },
+          setWhere: and(
+            eq(storageVersions.storageId, args.storageId),
+            eq(storageVersions.s3Key, args.upload.s3Key),
+            eq(storageVersions.size, args.context.totalSize),
+            eq(storageVersions.fileCount, args.context.files.length),
+          ),
+        })
+        .returning({
+          id: storageVersions.id,
+          archiveSize: storageVersions.archiveSize,
+        }),
+    );
+    const head = db.$with("published_skill_head").as(
+      db
         .update(storages)
         .set(skillHeadValues(args))
-        .where(eq(storages.id, args.storageId));
-      signal.throwIfAborted();
-      await tx
-        .insert(skills)
-        .values({ url: args.context.url, ...record })
-        .onConflictDoUpdate({
-          target: skills.url,
-          set: { ...record, updatedAt: args.timestamp },
-        });
-      signal.throwIfAborted();
-      const values = piResourceProjectionValues(
-        projection,
-        archiveSize,
-        nowDate(),
-      );
-      await tx
-        .insert(piResourceVersionIndexes)
-        .values({
-          storageVersionId: args.context.versionHash,
-          extractorVersion: PI_RESOURCE_EXTRACTOR_VERSION,
-          ...values,
-        })
-        .onConflictDoUpdate({
-          target: [
-            piResourceVersionIndexes.storageVersionId,
-            piResourceVersionIndexes.extractorVersion,
-          ],
-          set: values,
-        });
-      signal.throwIfAborted();
-    });
+        .where(
+          and(
+            eq(storages.id, args.storageId),
+            exists(db.select({ id: version.id }).from(version)),
+          ),
+        )
+        .returning({ id: storages.id }),
+    );
+    // Drizzle's INSERT SELECT requires every table column. These gated inserts
+    // omit defaulted columns, retaining their actual schema defaults instead.
+    const catalog = db.$with("published_skill_catalog", { id: skills.id })
+      .as(sql`
+      INSERT INTO ${skills}
+        (url, name, full_path, storage_id, version_hash, frontmatter,
+         s3_key, size, file_count, synced_at)
+      SELECT ${sql.param(args.context.url, skills.url)},
+        ${sql.param(record.name, skills.name)},
+        ${sql.param(record.fullPath, skills.fullPath)},
+        ${sql.param(record.storageId, skills.storageId)},
+        ${version.id}, ${sql.param(record.frontmatter, skills.frontmatter)},
+        ${sql.param(record.s3Key, skills.s3Key)},
+        ${sql.param(record.size, skills.size)},
+        ${sql.param(record.fileCount, skills.fileCount)},
+        ${sql.param(record.syncedAt, skills.syncedAt)}
+      FROM ${version}
+      WHERE ${gte(db.select({ count: count() }).from(head), 0)}
+      ON CONFLICT (url) DO UPDATE SET
+        name = excluded.name, full_path = excluded.full_path,
+        storage_id = excluded.storage_id, version_hash = excluded.version_hash,
+        frontmatter = excluded.frontmatter, s3_key = excluded.s3_key,
+        size = excluded.size, file_count = excluded.file_count,
+        synced_at = excluded.synced_at,
+        updated_at = ${sql.param(args.timestamp, skills.updatedAt)}
+      RETURNING id
+    `);
+    const indexed = db.$with("published_skill_index", {
+      storageVersionId: piResourceVersionIndexes.storageVersionId,
+    }).as(sql`
+      INSERT INTO ${piResourceVersionIndexes}
+        (storage_version_id, extractor_version, status, projection,
+         source_archive_size, projection_hash, lease_id, lease_expires_at, updated_at)
+      SELECT ${version.id},
+        ${sql.param(PI_RESOURCE_EXTRACTOR_VERSION, piResourceVersionIndexes.extractorVersion)},
+        ${sql.param(values.status, piResourceVersionIndexes.status)},
+        ${sql.param(values.projection, piResourceVersionIndexes.projection)},
+        ${version.archiveSize},
+        ${sql.param(values.projectionHash, piResourceVersionIndexes.projectionHash)},
+        ${sql.param(values.leaseId, piResourceVersionIndexes.leaseId)},
+        ${sql.param(values.leaseExpiresAt, piResourceVersionIndexes.leaseExpiresAt)},
+        ${sql.param(values.updatedAt, piResourceVersionIndexes.updatedAt)}
+      FROM ${version}
+      WHERE ${gte(db.select({ count: count() }).from(catalog), 0)}
+      ON CONFLICT (storage_version_id, extractor_version) DO UPDATE SET
+        status = excluded.status, projection = excluded.projection,
+        source_archive_size = excluded.source_archive_size,
+        projection_hash = excluded.projection_hash,
+        lease_id = excluded.lease_id, lease_expires_at = excluded.lease_expires_at,
+        updated_at = excluded.updated_at
+      RETURNING storage_version_id
+    `);
+    signal.throwIfAborted();
+    const [published] = await db
+      .with(version, head, catalog, indexed)
+      .select({ id: version.id })
+      .from(version)
+      // Exhaust every predecessor before completing the publication result.
+      .where(gte(db.select({ count: count() }).from(indexed), 0));
+    signal.throwIfAborted();
+    if (!published) {
+      throw new StorageVersionIdentityConflictError(args.context.versionHash);
+    }
   },
 );
 
