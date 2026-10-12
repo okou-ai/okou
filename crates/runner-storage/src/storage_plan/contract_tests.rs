@@ -370,6 +370,7 @@ fn cached_instructions_allow_official_and_ordinary_skill_reuse_without_losing_us
                     .iter_mut()
                     .find(|entry| entry.mount_path == changed.to_string_lossy())
                     .unwrap();
+                changed_entry.name = identity.into();
                 changed_entry.vas_storage_name = identity.into();
                 // The return to ordinary changes identity with the same version.
                 changed_entry.vas_version_id = "v2".into();

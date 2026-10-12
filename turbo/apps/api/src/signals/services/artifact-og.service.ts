@@ -368,6 +368,7 @@ export const artifactOgImage$ = command(
     { get, set },
     target: ArtifactOgTarget,
     version: string,
+    variant: "slack" | undefined,
     signal: AbortSignal,
   ): Promise<Buffer | null> => {
     const source = await set(authorizedOgSource$, target, signal);
@@ -408,7 +409,12 @@ export const artifactOgImage$ = command(
     ) {
       return null;
     }
-    const normalized = await image.rotate().png().toBuffer();
+    image.rotate();
+    if (variant === "slack") {
+      // Slack image blocks use the intrinsic dimensions, not CSS sizing.
+      image.resize({ height: 200, withoutEnlargement: true });
+    }
+    const normalized = await image.png().toBuffer();
     signal.throwIfAborted();
     return normalized.length <= 5 * 1024 * 1024 ? normalized : null;
   },

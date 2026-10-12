@@ -572,7 +572,9 @@ impl GuestControlClient {
         .map(|_| ())
     }
 
-    /// Write unchanged guest bytes with an explicit per-file transport choice.
+    /// Write bytes with an explicit per-file transport/source choice.
+    /// `ZstdSource` takes Host-authenticated encoded content and checks encoded
+    /// CRC/decoded size before publication; other choices take decoded content.
     /// No size policy, sampling or raw retry is performed here.
     pub async fn write_file_with_compression(
         &self,
@@ -620,7 +622,19 @@ impl GuestControlClient {
         options: crate::FileCompression,
     ) -> io::Result<FileWriteMeasurements> {
         validate_guest_file_path(path)?;
-        if content.len() <= chunk_limit {
+        let source = matches!(options, crate::FileCompression::ZstdSource { .. });
+        let chunk_limit = if source {
+            validate_write_file_chunk_request(
+                WriteFileChunkRequest::standard(path, content, sudo, false)
+                    .with_compression(options),
+            )?;
+            guest_control_proto::MAX_ZSTD_SOURCE_BYTES
+        } else {
+            chunk_limit
+        };
+        // A source must finish integrity verification on a sibling before it
+        // can replace the destination, including sources below the raw cap.
+        if content.len() <= chunk_limit && !source {
             let request = WriteFileChunkRequest::standard(path, content, sudo, false)
                 .with_compression(options);
             validate_write_file_chunk_request(request)?;
@@ -896,7 +910,7 @@ impl GuestControlClient {
         let request_started = Instant::now();
         let timeout = WRITE_FILE_REQUEST_DEADLINE;
         let sequence = AtomicU32::new(0);
-        if request.compression == crate::FileCompression::Zstd {
+        if request.compression != crate::FileCompression::None {
             let payload = guest_control_proto::encode_write_file(
                 request.path,
                 &[],
@@ -904,11 +918,24 @@ impl GuestControlClient {
                 request.append,
             )
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-            let mut stream = crate::file_stream::Transfer::new(
-                Arc::clone(&self.shared),
-                request.content,
-                payload,
-            )?;
+            let mut stream = match request.compression {
+                crate::FileCompression::ZstdSource { raw_size, crc32 } => {
+                    crate::file_stream::Transfer::from_source(
+                        Arc::clone(&self.shared),
+                        request.content,
+                        raw_size,
+                        crc32,
+                        payload,
+                    )?
+                }
+                crate::FileCompression::Zstd | crate::FileCompression::None => {
+                    crate::file_stream::Transfer::new(
+                        Arc::clone(&self.shared),
+                        request.content,
+                        payload,
+                    )?
+                }
+            };
             let write_observer = stream.observer(write_observer);
             let build = stream.take_builder()?;
             let terminal = async {
@@ -1077,6 +1104,21 @@ fn validate_write_files<'a>(
 }
 
 fn validate_write_file_chunk_request(request: WriteFileChunkRequest<'_>) -> io::Result<()> {
+    if let crate::FileCompression::ZstdSource { raw_size, .. } = request.compression {
+        if request.private
+            || request.append
+            || request.content.is_empty()
+            || request.content.len() > guest_control_proto::MAX_ZSTD_SOURCE_BYTES
+            || raw_size as usize > guest_control_proto::MAX_ZSTD_SOURCE_BYTES
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid zstd source bounds/mode",
+            ));
+        }
+        return guest_control_proto::validate_write_file(request.path, &[], request.sudo, false)
+            .map_err(protocol_invalid_input);
+    }
     if request.private {
         guest_control_proto::validate_private_write_file(
             request.path,

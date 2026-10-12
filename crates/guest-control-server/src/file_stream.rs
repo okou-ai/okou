@@ -20,6 +20,7 @@ struct Ingress {
     sender: mpsc::SyncSender<Option<Vec<u8>>>,
     credits: Arc<AtomicUsize>,
     bytes: usize,
+    expected_bytes: Option<usize>,
     ended: bool,
 }
 
@@ -42,6 +43,7 @@ impl Streams {
         seq: u32,
         writer: GuestWriter,
         connection_cancel: Arc<AtomicBool>,
+        expected_bytes: Option<usize>,
     ) -> io::Result<Input> {
         let mut slot = self.0.lock().unwrap_or_else(|e| e.into_inner());
         if slot.is_some() {
@@ -54,6 +56,7 @@ impl Streams {
             sender,
             credits: Arc::clone(&credits),
             bytes: 0,
+            expected_bytes,
             ended: false,
         });
         Ok(Input {
@@ -82,6 +85,12 @@ impl Streams {
             if !msg.payload.is_empty() {
                 return Err(io::Error::other("nonempty stream end"));
             }
+            if input
+                .expected_bytes
+                .is_some_and(|expected| input.bytes != expected)
+            {
+                return Err(io::Error::other("encoded source size mismatch"));
+            }
             input.ended = true;
             return input.sender.try_send(None).map_err(io::Error::other);
         }
@@ -93,7 +102,7 @@ impl Streams {
             .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
             .map_err(|_| io::Error::other("stream exceeded credit"))?;
         input.bytes += msg.payload.len();
-        if input.bytes > MAX_ENCODED {
+        if input.bytes > input.expected_bytes.unwrap_or(MAX_ENCODED) {
             return Err(io::Error::other("encoded stream exceeds request bound"));
         }
         input
@@ -169,22 +178,66 @@ pub(crate) fn validate_begin(payload: &[u8]) -> Result<(), guest_control_proto::
 
 pub(crate) fn decode_begin(
     payload: &[u8],
-) -> Result<(u32, &str, bool, bool), guest_control_proto::ProtocolError> {
+) -> Result<StreamBegin<'_>, guest_control_proto::ProtocolError> {
     use guest_control_proto::ProtocolError;
-    let [1, a, b, c, d, metadata @ ..] = payload else {
+    let [codec, a, b, c, d, rest @ ..] = payload else {
         return Err(ProtocolError::InvalidPayload("invalid zstd stream begin"));
     };
     let size = u32::from_be_bytes([*a, *b, *c, *d]);
-    if size > 15 * 1024 * 1024 {
+    let (encoded_size, crc32, metadata) = match codec {
+        1 => (None, None, rest),
+        2 => {
+            let [a, b, c, d, rest @ ..] = rest else {
+                return Err(ProtocolError::InvalidPayload("invalid source stream begin"));
+            };
+            let encoded_size = u32::from_be_bytes([*a, *b, *c, *d]) as usize;
+            if encoded_size == 0 || encoded_size > guest_control_proto::MAX_ZSTD_SOURCE_BYTES {
+                return Err(ProtocolError::InvalidPayload(
+                    "source encoded length too large/empty",
+                ));
+            }
+            let [a, b, c, d, metadata @ ..] = rest else {
+                return Err(ProtocolError::InvalidPayload("missing source CRC"));
+            };
+            (
+                Some(encoded_size),
+                Some(u32::from_be_bytes([*a, *b, *c, *d])),
+                metadata,
+            )
+        }
+        _ => return Err(ProtocolError::InvalidPayload("invalid zstd stream codec")),
+    };
+    let raw_limit = if encoded_size.is_some() {
+        guest_control_proto::MAX_ZSTD_SOURCE_BYTES
+    } else {
+        15 * 1024 * 1024
+    };
+    if size as usize > raw_limit {
         return Err(ProtocolError::InvalidPayload("stream raw length too large"));
     }
     let (path, content, sudo, append, private) = guest_control_proto::decode_write_file(metadata)?;
-    if !content.is_empty() || private {
+    if !content.is_empty() || private || (encoded_size.is_some() && append) {
         return Err(ProtocolError::InvalidPayload(
             "unsupported stream flags/content",
         ));
     }
-    Ok((size, path, sudo, append))
+    Ok(StreamBegin {
+        raw_size: size,
+        path,
+        sudo,
+        append,
+        encoded_size,
+        crc32,
+    })
+}
+
+pub(crate) struct StreamBegin<'a> {
+    pub(crate) raw_size: u32,
+    pub(crate) path: &'a str,
+    pub(crate) sudo: bool,
+    pub(crate) append: bool,
+    pub(crate) encoded_size: Option<usize>,
+    pub(crate) crc32: Option<u32>,
 }
 
 #[cfg(test)]
@@ -192,6 +245,43 @@ mod tests {
     use super::*;
     use guest_control_proto::MSG_WRITE_FILE_STREAM_DATA;
     use std::os::unix::net::UnixStream;
+
+    #[test]
+    fn source_length_must_match_before_end_and_cannot_be_exceeded() {
+        for (bytes, end) in [(&b"x"[..], true), (&b"xxx"[..], false)] {
+            let streams = Streams::default();
+            let (writer, _peer) = UnixStream::pair().unwrap();
+            let _input = streams
+                .begin(
+                    1,
+                    GuestWriter::new(writer),
+                    Arc::new(AtomicBool::new(false)),
+                    Some(2),
+                )
+                .unwrap();
+            let data = streams.accept(BorrowedRawMessage {
+                msg_type: MSG_WRITE_FILE_STREAM_DATA,
+                seq: 1,
+                payload: bytes,
+            });
+            if end {
+                data.unwrap();
+                let error = streams
+                    .accept(BorrowedRawMessage {
+                        msg_type: MSG_WRITE_FILE_STREAM_END,
+                        seq: 1,
+                        payload: &[],
+                    })
+                    .unwrap_err();
+                assert_eq!(error.to_string(), "encoded source size mismatch");
+            } else {
+                assert_eq!(
+                    data.unwrap_err().to_string(),
+                    "encoded stream exceeds request bound"
+                );
+            }
+        }
+    }
 
     #[test]
     fn unread_stream_rejects_data_beyond_its_credit_window() {
@@ -202,6 +292,7 @@ mod tests {
                 1,
                 GuestWriter::new(writer),
                 Arc::new(AtomicBool::new(false)),
+                None,
             )
             .unwrap();
         for _ in 0..WINDOW {
@@ -232,6 +323,7 @@ mod tests {
                 2,
                 GuestWriter::new(writer),
                 Arc::new(AtomicBool::new(false)),
+                None,
             )
             .unwrap();
         for _ in 0..WINDOW {

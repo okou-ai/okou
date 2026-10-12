@@ -23,7 +23,8 @@ const USAGE: &str = concat!(
     "       guest-write-file --create-parents [--] <path>\n",
     "       guest-write-file --private [--append] [--] <path>\n",
     "       guest-write-file --batch [--private]\n",
-    "       guest-write-file --zstd <decoded-size> [--append] [--create-parents] [--] <path>",
+    "       guest-write-file --zstd <decoded-size> [--append] [--create-parents] [--] <path>\n",
+    "       guest-write-file --zstd-source <decoded-size> <encoded-crc32> [--create-parents] [--] <path>",
 );
 
 fn parse_args<I>(args: I) -> Result<Args, String>
@@ -251,6 +252,7 @@ fn prepare_output_file(_file: &File) -> io::Result<()> {
 /// guest-write-file --private [--append] [--] <path>
 /// guest-write-file --batch [--private]
 /// guest-write-file --zstd <decoded-size> [--append | --create-parents] [--] <path>
+/// guest-write-file --zstd-source <decoded-size> <encoded-crc32> [--create-parents] [--] <path>
 /// ```
 ///
 /// Use `--` before `<path>` when the literal path begins with `-`. `stdin`
@@ -277,6 +279,9 @@ fn prepare_output_file(_file: &File) -> io::Result<()> {
 /// bytes using ordinary file semantics. Decoded requests are at most 15 MiB,
 /// with a 16 MiB decoder window. Private and batch modes are not supported.
 /// A decode or write failure may leave partial bytes just like an ordinary write;
+/// source mode checks encoded CRC after Host source authentication, allows a checksumless source,
+/// and bounds decoded size/window at 128 MiB. Its caller writes to a staging
+/// sibling and publishes only after successful validation and completion.
 /// callers that need atomic replacement must stage and rename the complete file.
 ///
 /// Returns process-style exit codes: `0` for success, `1` for runtime or write
@@ -286,7 +291,10 @@ where
     I: IntoIterator<Item = String>,
 {
     let args: Vec<String> = args.into_iter().collect();
-    if args.first().is_some_and(|arg| arg == "--zstd") {
+    if args
+        .first()
+        .is_some_and(|arg| arg == "--zstd" || arg == "--zstd-source")
+    {
         return file_stream::run(args, stdin, stderr);
     }
     let args = match parse_args(args) {

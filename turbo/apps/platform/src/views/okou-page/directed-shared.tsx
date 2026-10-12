@@ -1,3 +1,4 @@
+import { PersonalSubscriptionDialogs } from "./subscription-linking.tsx";
 import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { Loader2 } from "lucide-react";
@@ -25,6 +26,7 @@ export function StandaloneLayout({ children }: { children: ReactNode }) {
       data-color-theme={paletteColorTheme}
     >
       <SettingsDialogMount />
+      <PersonalSubscriptionDialogs />
       <CreditPurchaseConfirmDialog />
       <SubscriptionPurchaseConfirmDialog />
       {children}

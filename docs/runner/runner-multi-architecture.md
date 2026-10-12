@@ -337,8 +337,10 @@ GETs retain their 60s attempt deadline and have a 198s total transfer budget.
 Each fresh manifest/binary GET retains a 120s attempt ceiling and has a 240s
 total budget. The helper reserves the 5s termination grace and shortens later
 attempts to fit the remaining budget. Two fresh GETs therefore consume at most
-480s of transfer time within the cache-index job's existing 10-minute timeout;
-validation and job setup still consume that enclosing budget.
+480s of transfer time. They run in the per-architecture image `build` job in
+[`runner-image-architecture.yml`](../../.github/workflows/runner-image-architecture.yml),
+whose 20-minute timeout also covers setup, validation, provisioning, and image
+preparation.
 
 Only these GETs set `AWS_MAX_ATTEMPTS=1` and `AWS_RETRY_MODE=standard`, so the
 helper owns whole-download retries without multiplying SDK request attempts.

@@ -28,6 +28,10 @@ const CLERK_AUTH_APPEARANCE_BASE = {
     socialButtonsVariant: "blockButton",
   },
   elements: {
+    // Center hosted dialogs inside the safe viewport. Keep Clerk's vertical
+    // gutter beyond the insets, with auto margins yielding to short-screen scroll.
+    modalBackdrop: "h-viewport p-safe pt-safe-offset-10 pb-safe-offset-10",
+    modalContent: "my-auto",
     rootBox:
       "mx-auto flex w-full max-w-[var(--okou-auth-card-max-width)] flex-col",
     cardBox: cn(cardClassName, "w-full shadow-none"),

@@ -11,6 +11,8 @@ tempfile = { workspace = true, features = ["getrandom"] }
 tokio = { workspace = true, features = ["sync", "time"] }
 tokio-util.workspace = true
 uuid = { workspace = true, features = ["std", "v4"] }
+zstd.workspace = true
+crc32fast = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }

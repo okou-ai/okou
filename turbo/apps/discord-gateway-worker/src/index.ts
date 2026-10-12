@@ -408,11 +408,23 @@ export class DiscordGateway {
       return;
     }
     this.connectionDiagnostics.transition("websocket-handshake");
-    const response = await fetch(gatewayUrl(url), {
-      headers: { Upgrade: "websocket" },
-      signal: AbortSignal.timeout(10_000),
-      redirect: "manual",
-    });
+    const handshakeAbort = new AbortController();
+    const handshakeTimeout = setTimeout(() => {
+      handshakeAbort.abort(
+        new DOMException("Gateway handshake timed out", "TimeoutError"),
+      );
+    }, 10_000);
+    let response: Response;
+    try {
+      response = await fetch(gatewayUrl(url), {
+        headers: { Upgrade: "websocket" },
+        signal: handshakeAbort.signal,
+        redirect: "manual",
+      });
+    } finally {
+      // An upgrade keeps its fetch signal: aborting it closes the live socket.
+      clearTimeout(handshakeTimeout);
+    }
     this.connectionDiagnostics.response(response.status);
     const socket = response.webSocket;
     if (response.status !== 101 || !socket)

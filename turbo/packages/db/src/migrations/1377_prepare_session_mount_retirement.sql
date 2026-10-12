@@ -1,0 +1,1 @@
+ALTER TABLE "agent_sessions" ALTER COLUMN "storage_mounts" SET DEFAULT '[]'::jsonb;

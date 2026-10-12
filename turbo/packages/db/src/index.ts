@@ -11,7 +11,7 @@ import * as agentSchema from "./schema/agent";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
 import * as conversationSchema from "./schema/conversation";
-import * as agentSessionSchema from "./schema/agent-session";
+import * as agentSessionSchema from "./runtime/agent-session";
 import * as storageSchema from "./schema/storage";
 import * as storagePublicationFenceSchema from "./schema/storage-publication-fence";
 import * as systemStoragePresignedUrlCacheSchema from "./schema/system-storage-presigned-url-cache";
@@ -136,6 +136,7 @@ import * as builtInGenerationJobSchema from "./schema/built-in-generation-job";
 import * as socialKitDownloadJobSchema from "./schema/socialkit-download-job";
 import * as socialDataJobSchema from "./schema/social-data-job";
 import * as bankingSchema from "./schema/banking";
+import * as linkWalletSchema from "./schema/link-wallet";
 import * as gmailEventSchema from "./schema/gmail-event";
 import * as notionEventSchema from "./schema/notion-event";
 import * as stripeAutomationEventSchema from "./schema/stripe-automation-event";
@@ -299,6 +300,7 @@ export const schema = {
   ...socialKitDownloadJobSchema,
   ...socialDataJobSchema,
   ...bankingSchema,
+  ...linkWalletSchema,
   ...gmailEventSchema,
   ...notionEventSchema,
   ...stripeAutomationEventSchema,

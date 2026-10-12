@@ -23,7 +23,7 @@ async fn materializer_retries_interrupted_zstd_body_without_reusing_partial_byte
         SessionHistoryMaterialization::Downloaded {
             session, timings, ..
         } => {
-            assert_eq!(session.history_bytes(), body);
+            assert_eq!(zstd::decode_all(session.history_bytes()).unwrap(), body);
             assert_phase_failure(timings.body_read());
             assert_phase_success(timings.decompression());
             assert_phase_success(timings.hash_verification());

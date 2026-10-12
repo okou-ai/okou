@@ -2,7 +2,7 @@ import { computed, type Computed } from "ccstate";
 import { getRunModelDisplayName } from "@okouai/core/model-display-name";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { eq } from "drizzle-orm";
 
 import { db$, type ReadonlyDb } from "../external/db";
@@ -20,19 +20,6 @@ function displayLabel(row: {
   return row.agentName;
 }
 
-async function resolveAgentReplyModelLabel(args: {
-  readonly db: ReadonlyDb;
-  readonly runId: string;
-}): Promise<string | undefined> {
-  const runModel = await resolveRunModelSelection(args.db, args.runId);
-  const model = runModel?.selectedModel;
-  const modelLabel = model
-    ? getRunModelDisplayName(model, runModel?.codexServiceTier)
-    : undefined;
-
-  return modelLabel ? escapeHtml(modelLabel) : undefined;
-}
-
 export async function resolveTelegramAgentReplyFooterText(args: {
   readonly db: ReadonlyDb;
   readonly orgId: string;
@@ -42,10 +29,13 @@ export async function resolveTelegramAgentReplyFooterText(args: {
 }): Promise<string | undefined> {
   // The official shared bot has no per-bot default agent, so replies never
   // carry a "Responded by" label; only the model label is shown.
-  return await resolveAgentReplyModelLabel({
-    db: args.db,
-    runId: args.runId,
-  });
+  const runModel = await resolveRunModelSelection(args.db, args.runId);
+  const model = runModel?.selectedModel;
+  const modelLabel = model
+    ? getRunModelDisplayName(model, runModel?.codexServiceTier)
+    : undefined;
+
+  return modelLabel ? escapeHtml(modelLabel) : undefined;
 }
 
 async function resolveRunAgentLabel(

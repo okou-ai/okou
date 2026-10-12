@@ -192,7 +192,6 @@ function WorkflowComposerPlaceholder({
 
 interface TiptapWorkflowComposerProps {
   readonly signals: ComposerSignals;
-  readonly anchorSuggestionsToComposer: boolean;
   readonly onDraftChange: (() => void) | undefined;
   readonly sending: boolean | undefined;
   readonly onKeyDown: (event: KeyboardEventLike) => void;
@@ -696,7 +695,6 @@ function useComposerPasteHandler(
 
 export function TiptapWorkflowComposer({
   signals,
-  anchorSuggestionsToComposer,
   onDraftChange,
   sending,
   onKeyDown,
@@ -705,8 +703,7 @@ export function TiptapWorkflowComposer({
   const composer = signals;
   const features = useLastResolved(featureSwitch$);
   const composerAnchored =
-    anchorSuggestionsToComposer &&
-    (features?.[FeatureSwitchKey.ComposerAnchoredSuggestions] ?? false);
+    features?.[FeatureSwitchKey.ComposerAnchoredSuggestions] ?? false;
   const suggestionMenu = useComposerSuggestionMenu({
     composer,
     reversedSuggestions: composerAnchored,

@@ -12,6 +12,7 @@ mod file_stream;
 mod file_write_status;
 mod read_file;
 mod shutdown;
+mod source_zstd;
 mod storage_manifest;
 mod support;
 mod write_file;

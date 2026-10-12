@@ -69,6 +69,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.SubscriptionLinkingEntry]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Expose personal subscription linking below the composer and in the account menu.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.HomeTaskRecommendations]: {
     maintainer: "yuma@okou.ai",
     description:
@@ -230,6 +237,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Reveal activity debug surfaces, activity log navigation, appended system prompts, and Debug preferences",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.LinkWallet]: {
+    maintainer: "yuma@okou.ai",
+    description:
+      "Enable hosted Link wallet connection and per-purchase approval. Credential retrieval and checkout remain unavailable.",
+    enabled: false,
   },
   [FeatureSwitchKey.Banking]: {
     maintainer: "yuma@okou.ai",

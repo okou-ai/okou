@@ -42,6 +42,12 @@ const SCHEMA = {
   OKOU_SEO_DATAFORSEO_PASSWORD: z.string().min(1).optional(),
   OKOU_BROWSER_USE_API_KEY: z.string().min(1).optional(),
   STEAM_WEB_API_KEY: z.string().min(1).optional(),
+  LINK_OAUTH_CLIENT_ID: z.string().min(1).optional(),
+  LINK_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
+  LINK_STRIPE_PUBLISHABLE_KEY: z
+    .string()
+    .regex(/^pk_(live|test)_/)
+    .optional(),
   FINICITY_APP_KEY: z.string().min(1).optional(),
   FINICITY_APP_SECRET: z.string().min(1).optional(),
   FINICITY_PARTNER_ID: z.string().min(1).optional(),

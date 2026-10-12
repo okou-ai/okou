@@ -92,6 +92,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   finance: "finance:read",
   seo: "seo:read",
   banking: "banking:read",
+  wallet: "wallet:write",
 };
 
 const RUN_ONLY_COMMANDS = new Set(["mcp", "ssh", "vnc", "run"]);
@@ -458,6 +459,13 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     },
   },
   {
+    name: "wallet",
+    description: "Connect Link and request purchase approval",
+    load: async () => {
+      return (await import("./commands/wallet")).walletCommand;
+    },
+  },
+  {
     name: "banking",
     description: "Use managed Okou banking services",
     load: async () => {
@@ -715,6 +723,11 @@ export function buildHelpText(
     ...commandExampleIfVisible(
       "banking",
       "  Read bank data?       okou banking accounts --json",
+      payload,
+    ),
+    ...commandExampleIfVisible(
+      "wallet",
+      "  Link purchase consent? okou wallet guide",
       payload,
     ),
     "  Check your identity?   okou whoami",

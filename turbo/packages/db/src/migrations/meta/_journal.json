@@ -2094,6 +2094,20 @@
       "when": 1791779932118,
       "tag": "1376_retire_workspace_runner_state",
       "breakpoints": true
+    },
+    {
+      "idx": 1377,
+      "version": "7",
+      "when": 1791791882098,
+      "tag": "1377_prepare_session_mount_retirement",
+      "breakpoints": true
+    },
+    {
+      "idx": 1378,
+      "version": "7",
+      "when": 1791801377324,
+      "tag": "1378_link_wallet_hosted_consent",
+      "breakpoints": true
     }
   ]
 }

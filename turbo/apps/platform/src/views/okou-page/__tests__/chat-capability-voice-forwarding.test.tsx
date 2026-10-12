@@ -2,7 +2,14 @@ import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft"
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { cleanup, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { openDB, type DBSchema } from "idb";
 import { HttpResponse } from "msw";
 import { expect, vi, describe, beforeEach, it, test } from "vitest";
@@ -23,6 +30,7 @@ import {
   selectPassage,
 } from "./chat-capability-test-helpers.ts";
 import { textContinuityDraft } from "./chat-continuity-test-helpers.ts";
+import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import {
   findEnabledButton,
   NEW_CHAT_PATH,
@@ -88,26 +96,67 @@ async function uploadedAudio(request: Request) {
   return await file.arrayBuffer();
 }
 
-test("keeps forward suggestions caret-anchored when composer-anchored suggestions are enabled", async () => {
-  installVoiceBoundaries();
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerAnchoredSuggestions]: true,
-    },
-  });
-  const dialog = await openForwardComposer(FORWARD_TARGET_NAME);
-  const editor = within(dialog).getByRole("textbox", { name: "Add a message" });
-  await fill(editor, "/");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  const [first] = queryAllByRoleFast("button", menu);
-  expect(first).toHaveTextContent("Presentation");
-  expect(first).toHaveAttribute("data-active", "true");
-  expect(
-    document.querySelector('[data-slot="slash-template-flyout"]'),
-  ).toBeInTheDocument();
-});
+test.each([false, true])(
+  "keeps forward suggestions consistent with the composer-anchored switch (%s)",
+  async (composerAnchored) => {
+    installVoiceBoundaries();
+    context.mocks.browser.matchMedia((query) => {
+      return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
+    });
+    await setupPage({
+      context,
+      path: RUN_PATH,
+      featureSwitches: {
+        [FeatureSwitchKey.ComposerAnchoredSuggestions]: composerAnchored,
+      },
+    });
+    const originalComposer = await screen.findByRole("textbox", {
+      name: "Message",
+    });
+    const dialog = await openForwardComposer(FORWARD_TARGET_NAME);
+    const editor = within(dialog).getByRole("textbox", {
+      name: "Message",
+    });
+    await fill(editor, "Forward draft /");
+    const menu = await screen.findByTestId("slash-workflow-menu");
+    const [first] = queryAllByRoleFast("button", menu);
+    expect(first).toHaveTextContent(
+      composerAnchored ? "Website" : "Presentation",
+    );
+    const presentation = queryButton("Presentation", menu);
+    expect(presentation).toHaveAttribute("data-active", "true");
+    expect(
+      within(menu).queryAllByRole("region", { name: "Presentation" }),
+    ).toHaveLength(composerAnchored ? 1 : 0);
+    expect(
+      document.querySelectorAll('[data-slot="slash-template-flyout"]'),
+    ).toHaveLength(composerAnchored ? 0 : 1);
+    expect(editor).toHaveFocus();
+    const user = userEvent.setup();
+    await user.keyboard(composerAnchored ? "{ArrowUp}" : "{ArrowDown}");
+    expect(queryButton("Illustration", menu)).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+    fireEvent.compositionStart(editor, { data: "中文" });
+    fireEvent.keyDown(editor, {
+      key: "Enter",
+      isComposing: true,
+      keyCode: 229,
+    });
+    expect(menu).toBeInTheDocument();
+    expect(editor).toHaveTextContent("Forward draft /");
+    fireEvent.compositionEnd(editor, { data: "中文" });
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+    });
+    expect(dialog).toBeInTheDocument();
+    expect(editor).toHaveTextContent("Forward draft /");
+    expect(editor).toHaveFocus();
+    expect(originalComposer).toHaveTextContent("Keep the existing notes.");
+  },
+);
 
 describe("reuse an unfinished agent recording in the forward dialog without replacing it", () => {
   async function prepareRecording() {

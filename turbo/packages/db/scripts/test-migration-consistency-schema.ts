@@ -51,6 +51,7 @@ import { validatePermanentConnectorCatalogColumns } from "./test-connector-catal
 import { validatePermanentChatThreadStorage } from "./test-chat-thread-storage-permanent";
 import { validatePermanentMemberMetadata } from "./test-member-metadata-permanent";
 import { validatePiMemoryStorageRetirementPreparation } from "./test-pi-memory-storage-retirement-preparation";
+import { validateSessionMountRetirementPreparation } from "./test-session-mount-retirement-preparation";
 import { validatePermanentComputerUseHostStorage } from "./test-computer-use-host-storage-permanent";
 import { validatePermanentPlatformGenerationReceipts } from "./test-platform-generation-receipts-permanent";
 import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage-permanent";
@@ -2691,6 +2692,7 @@ async function main(): Promise<void> {
     await validatePermanentChatThreadStorage(dbUrl1);
     await validatePermanentMemberMetadata(dbUrl1);
     await validatePiMemoryStorageRetirementPreparation(dbUrl1);
+    await validateSessionMountRetirementPreparation(dbUrl1);
     await validatePermanentComputerUseHostStorage(dbUrl1);
     await validatePermanentPlatformGenerationReceipts(dbUrl1);
     await validatePermanentRunnerStateStorage(dbUrl1);
@@ -2728,6 +2730,7 @@ async function main(): Promise<void> {
     await validatePermanentChatThreadStorage(dbUrl2);
     await validatePermanentMemberMetadata(dbUrl2);
     await validatePiMemoryStorageRetirementPreparation(dbUrl2);
+    await validateSessionMountRetirementPreparation(dbUrl2);
     await validatePermanentComputerUseHostStorage(dbUrl2);
     await validatePermanentPlatformGenerationReceipts(dbUrl2);
     await validatePermanentRunnerStateStorage(dbUrl2);

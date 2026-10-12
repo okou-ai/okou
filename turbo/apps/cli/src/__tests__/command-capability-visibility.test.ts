@@ -46,6 +46,7 @@ function buildCommands(): Command[] {
     new Command("finance"),
     new Command("seo"),
     new Command("banking"),
+    new Command("wallet"),
   ];
 }
 
@@ -260,6 +261,7 @@ describe("registerCommands", () => {
       "finance",
       "seo",
       "banking",
+      "wallet",
     ]);
   });
 
@@ -724,6 +726,21 @@ describe("registerCommands", () => {
     const prog = buildProgram();
 
     expect(hiddenCommandNames(prog)).toContain("weather");
+  });
+
+  it("advertises the wallet only with its capability and hides it without that capability", () => {
+    for (const enabled of [false, true]) {
+      const token = buildOkouToken({
+        scope: "okou",
+        capabilities: enabled ? ["wallet:write"] : ["file:write"],
+      });
+      vi.stubEnv("OKOU_TOKEN", token);
+      const names = visibleCommandNames(buildProgram());
+      expect(names.includes("wallet")).toBe(enabled);
+      expect(
+        buildHelpText(decodeSandboxTokenPayload(token)).includes("okou wallet"),
+      ).toBe(enabled);
+    }
   });
 
   it("should show banking when banking:read capability is present", () => {

@@ -337,8 +337,6 @@ import {
 } from "../../signals/chat-page/chat-keyboard.ts";
 import { ChatCard } from "./components/chat-card.tsx";
 import { ChatCardDetails } from "./components/chat-card-details.tsx";
-import { PersonalClaudeCodeDeviceAuthDialog } from "./components/settings/claude-code-device-auth-dialog.tsx";
-import { PersonalCodexDeviceAuthDialog } from "./components/settings/codex-device-auth-dialog.tsx";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import {
   ChatAssistantMessageBody,
@@ -4251,9 +4249,7 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
         )}
       >
         <div className="mx-auto max-w-[900px]">
-          <ChatComposer signals={thread.composer} anchorSuggestionsToComposer />
-          <PersonalClaudeCodeDeviceAuthDialog />
-          <PersonalCodexDeviceAuthDialog />
+          <ChatComposer signals={thread.composer} />
         </div>
       </div>
     </footer>

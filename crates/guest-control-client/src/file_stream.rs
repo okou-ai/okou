@@ -58,19 +58,20 @@ struct Begin {
     credit: mpsc::Sender<u8>,
 }
 
-pub(crate) struct Transfer {
+pub(crate) struct Transfer<'a> {
     shared: Arc<Shared>,
     begin: Option<Begin>,
     sequence: Option<oneshot::Receiver<u32>>,
     credit: mpsc::Receiver<u8>,
     raw: Option<Vec<u8>>,
+    source: Option<&'a [u8]>,
     started: Arc<AtomicBool>,
     terminal: bool,
     pub(crate) wire_payload_bytes: u64,
     pub(crate) encoder_pipeline_elapsed: Duration,
 }
 
-impl Transfer {
+impl<'a> Transfer<'a> {
     pub(crate) fn new(shared: Arc<Shared>, raw: &[u8], metadata: Vec<u8>) -> io::Result<Self> {
         // Codec tag 1 identifies one checksummed zstd frame.
         let mut payload = vec![1];
@@ -92,11 +93,52 @@ impl Transfer {
             sequence: Some(sequence_rx),
             credit: credit_rx,
             raw: Some(raw.to_vec()),
+            source: None,
             started: Arc::new(AtomicBool::new(false)),
             terminal: false,
             wire_payload_bytes: 0,
             encoder_pipeline_elapsed: Duration::ZERO,
         })
+    }
+
+    pub(crate) fn from_source(
+        shared: Arc<Shared>,
+        source: &'a [u8],
+        raw_size: u32,
+        crc32: u32,
+        metadata: Vec<u8>,
+    ) -> io::Result<Self> {
+        let mut payload = vec![2];
+        payload.extend_from_slice(&raw_size.to_be_bytes());
+        payload.extend_from_slice(
+            &u32::try_from(source.len())
+                .map_err(io::Error::other)?
+                .to_be_bytes(),
+        );
+        payload.extend_from_slice(&crc32.to_be_bytes());
+        payload.extend_from_slice(&metadata);
+        Ok(Self::source_transfer(shared, source, payload))
+    }
+
+    fn source_transfer(shared: Arc<Shared>, source: &'a [u8], payload: Vec<u8>) -> Self {
+        let (sequence_tx, sequence_rx) = oneshot::channel();
+        let (credit_tx, credit_rx) = mpsc::channel(WINDOW + 1);
+        Self {
+            shared,
+            begin: Some(Begin {
+                payload,
+                sequence: sequence_tx,
+                credit: credit_tx,
+            }),
+            sequence: Some(sequence_rx),
+            credit: credit_rx,
+            raw: None,
+            source: Some(source),
+            started: Arc::new(AtomicBool::new(false)),
+            terminal: false,
+            wire_payload_bytes: 0,
+            encoder_pipeline_elapsed: Duration::ZERO,
+        }
     }
 
     pub(crate) fn observer(&self, original: FrameWriteObserver) -> FrameWriteObserver {
@@ -156,31 +198,42 @@ impl Transfer {
             .map_err(io::Error::other)?;
         // Guest admission precedes codec work.
         let mut credits = self.next_credit().await?;
-        let raw = self
-            .raw
-            .take()
-            .ok_or_else(|| io::Error::other("stream input already consumed"))?;
-        let encoder_started = Instant::now();
-        let mut producer = Producer::start(raw)?;
-        while let Some(bytes) = producer.next().await {
-            if credits == 0 {
-                credits = self.next_credit().await?;
+        if let Some(source) = self.source.take() {
+            for bytes in source.chunks(BLOCK) {
+                self.send_data(seq, bytes, &mut credits).await?;
             }
-            credits -= 1;
-            let frame = guest_control_proto::encode(MSG_WRITE_FILE_STREAM_DATA, seq, &bytes)
-                .map_err(io::Error::other)?;
-            self.shared
-                .write_frame(&frame, || Ok(FrameWriteDecision::Write), |_, _| {})
-                .await?;
-            self.wire_payload_bytes += bytes.len() as u64;
+        } else {
+            let raw = self
+                .raw
+                .take()
+                .ok_or_else(|| io::Error::other("stream input already consumed"))?;
+            let encoder_started = Instant::now();
+            let mut producer = Producer::start(raw)?;
+            while let Some(bytes) = producer.next().await {
+                self.send_data(seq, &bytes, &mut credits).await?;
+            }
+            producer.finish()?;
+            self.encoder_pipeline_elapsed = encoder_started.elapsed();
         }
-        producer.finish()?;
-        self.encoder_pipeline_elapsed = encoder_started.elapsed();
         let frame = guest_control_proto::encode(MSG_WRITE_FILE_STREAM_END, seq, &[])
             .map_err(io::Error::other)?;
         self.shared
             .write_frame(&frame, || Ok(FrameWriteDecision::Write), |_, _| {})
             .await?;
+        Ok(())
+    }
+
+    async fn send_data(&mut self, seq: u32, bytes: &[u8], credits: &mut usize) -> io::Result<()> {
+        if *credits == 0 {
+            *credits = self.next_credit().await?;
+        }
+        *credits -= 1;
+        let frame = guest_control_proto::encode(MSG_WRITE_FILE_STREAM_DATA, seq, bytes)
+            .map_err(io::Error::other)?;
+        self.shared
+            .write_frame(&frame, || Ok(FrameWriteDecision::Write), |_, _| {})
+            .await?;
+        self.wire_payload_bytes += bytes.len() as u64;
         Ok(())
     }
 
@@ -193,7 +246,7 @@ impl Transfer {
     }
 }
 
-impl Drop for Transfer {
+impl Drop for Transfer<'_> {
     fn drop(&mut self) {
         self.shared
             .file_stream

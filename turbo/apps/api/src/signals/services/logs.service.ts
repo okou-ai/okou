@@ -11,7 +11,7 @@ import {
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { conversations } from "@okouai/db/schema/conversation";
 import {
   and,

@@ -273,7 +273,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 
@@ -365,8 +365,6 @@ import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timi
 import {
   type AdditionalVolumeSources,
   type AgentRunCreateAdditionalVolume,
-  type AgentRunCreateContextArtifact,
-  type ArtifactMissingRootPolicy,
   AUTO_MEMORY_ARTIFACT_NAME,
   type MaterializedAgentRunStorage,
   OfficialWorkflowArtifactResolutionError,
@@ -375,7 +373,6 @@ import {
   type ResolvedAgentExecution,
   type ResolvedAgentRunStorage,
   type ResolvedRunExecution,
-  resolvedSessionStorage,
   StorageManifestBuildStats,
 } from "./run-storage-manifest.service";
 import { createStorageSignals, type Storage } from "./thread-storage.signals";
@@ -3502,10 +3499,8 @@ export function createThreadClaimRunObjects(
           apiStartTime: args.apiStartTime,
           includeOkouTokenSecret: args.includeOkouTokenSecret,
           chatThreadId: args.chatThreadId,
-          // Thread launches carry no producer Pi launch options or
-          // artifact root-policy override.
+          // Thread launches carry no producer Pi launch options.
           piLaunchConfig: undefined,
-          artifactMissingRootPolicy: undefined,
         },
       };
     },
@@ -4468,7 +4463,6 @@ interface PreparedRunnerLaunch {
   readonly runnerJobPayload: RunnerJobPayload;
   readonly runContextSnapshot: RunContextAxiomSnapshot;
   readonly runStorageMounts: readonly PersistedStorageMount[];
-  readonly sessionStorageMounts: readonly PersistedStorageMount[];
 }
 
 type AgentRunCallbackInsert = typeof agentRunCallbacks.$inferInsert;
@@ -4617,7 +4611,6 @@ interface LaunchRunRowsArgs {
   >;
   readonly body: CreateRunBody;
   readonly runStorageMounts: readonly PersistedStorageMount[] | undefined;
-  readonly sessionStorageMounts: readonly PersistedStorageMount[] | undefined;
   readonly modelProvider: Pick<
     ResolvedModelProviderEnvironment,
     | "credentialOwner"
@@ -4646,7 +4639,6 @@ interface LaunchSessionValues {
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string | null;
-  readonly storageMounts: PersistedStorageMount[] | null;
   readonly conversationId: null;
 }
 
@@ -4656,9 +4648,6 @@ function launchSessionValues(args: LaunchRunRowsArgs): LaunchSessionValues {
     userId: args.userId,
     orgId: args.orgId,
     agentId: args.resolved.agentId,
-    storageMounts: args.sessionStorageMounts
-      ? [...args.sessionStorageMounts]
-      : null,
     conversationId: null,
   };
 }
@@ -4832,7 +4821,6 @@ function preparedLaunchRowsArgs(args: {
     resolved: args.commit.context.resolved,
     body: args.commit.context.body,
     runStorageMounts: args.commit.launch.runStorageMounts,
-    sessionStorageMounts: args.commit.launch.sessionStorageMounts,
     modelProvider: args.commit.context.modelProvider,
     agentRunModelPin: args.commit.createArgs.agentRunModelPin,
     selectedImageModel: args.commit.context.selectedImageModel,
@@ -5591,7 +5579,6 @@ interface BuildRunnerJobPayloadInput {
   readonly orgId: string;
   readonly resolved: ResolvedRunExecution;
   readonly body: CreateRunBody;
-  readonly artifacts: readonly AgentRunCreateContextArtifact[];
   readonly framework: SupportedFramework;
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly piSandbox: PiModelConfig | undefined;
@@ -5611,7 +5598,6 @@ interface BuildRunnerJobPayloadInput {
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing: ApiDispatchTimingCollector;
   readonly piLaunchConfig: PiLaunchConfigOverrides | undefined;
-  readonly artifactMissingRootPolicy: ArtifactMissingRootPolicy | undefined;
 }
 
 function withPiMemoryRecallEpoch(
@@ -5641,7 +5627,7 @@ function preparedRunnerGroup(): string {
 /**
  * Final runner launch from explicit facts: the stored context draft with its
  * prepared storage, Pi launch resources, run-context snapshot, runner job
- * payload and persisted run/session storage mounts.
+ * payload and exact persisted Run storage mounts.
  */
 function assembleRunnerLaunch(args: {
   readonly runId: string;
@@ -5650,7 +5636,6 @@ function assembleRunnerLaunch(args: {
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly runnerGroup: string;
   readonly body: CreateRunBody;
-  readonly writebackArtifacts: readonly AgentRunCreateContextArtifact[];
   readonly preparedStorage: PreparedAgentRunStorage;
   readonly contextDraft: BuiltStoredExecutionContextDraft;
   readonly piResources: PreparedPiLaunchResources | undefined;
@@ -5686,10 +5671,6 @@ function assembleRunnerLaunch(args: {
     }),
     runContextSnapshot,
     runStorageMounts: persistedStorageMounts,
-    sessionStorageMounts: sessionStorageMountsForPersistence({
-      resolvedMounts: persistedStorageMounts,
-      artifacts: args.writebackArtifacts,
-    }),
   };
 }
 
@@ -5699,17 +5680,6 @@ interface StorageMaterializationInput {
   /** The Okou token source, merged last into body secrets and platform env. */
   readonly okouToken: Environment;
   readonly storageManifestStats: StorageManifestBuildStats;
-}
-
-function runnerWritebackArtifacts(args: BuildRunnerJobPayloadInput) {
-  return args.artifactMissingRootPolicy === undefined
-    ? args.artifacts
-    : args.artifacts.map((artifact) => {
-        return {
-          ...artifact,
-          missingRootPolicy: args.artifactMissingRootPolicy,
-        };
-      });
 }
 
 function prepareRunnerStorageInput(input: StorageMaterializationInput) {
@@ -5725,7 +5695,6 @@ function prepareRunnerStorageInput(input: StorageMaterializationInput) {
         ...okouToken.secrets,
       },
     },
-    writebackArtifacts: runnerWritebackArtifacts(args),
     group: preparedRunnerGroup(),
     platformEnvironment: {
       ...args.environment.platformEnvironment,
@@ -5744,7 +5713,7 @@ function finalizedMaterializedLaunch(
   storage: MaterializedRunnerStorage,
   contextDraft: BuiltStoredExecutionContextDraft,
 ): PreparedRunnerLaunch {
-  const { args, group, body, writebackArtifacts } = storage.input;
+  const { args, group, body } = storage.input;
   return assembleRunnerLaunch({
     runId: args.run.id,
     userId: args.userId,
@@ -5752,7 +5721,6 @@ function finalizedMaterializedLaunch(
     launchSnapshot: args.launchSnapshot,
     runnerGroup: group,
     body,
-    writebackArtifacts,
     preparedStorage: storage.preparedStorage.prepared,
     contextDraft,
     piResources: storage.piResources,
@@ -5828,7 +5796,6 @@ function resolveAgentObservation(
     ownerUserId: row.agentOwner,
     orgId: row.agentOrgId,
     instructionsStorageName: options.instructionsStorageName,
-    artifacts: [],
   };
 }
 
@@ -5904,7 +5871,6 @@ async function resolveSessionExecution(
     ownerUserId: snapshot.agent.owner,
     orgId: snapshot.agent.orgId,
     instructionsStorageName: options.instructionsStorageName,
-    ...resolvedSessionStorage(snapshot.session),
     agentSessionId: snapshot.session.id,
     continuedFromAgentSessionId: snapshot.session.id,
     resumeSession,
@@ -5975,7 +5941,6 @@ async function resolveProductAgentExecution(
       ownerUserId: preloadedAgent.ownerUserId,
       orgId: preloadedAgent.agentOrgId,
       instructionsStorageName: options.instructionsStorageName,
-      artifacts: [],
     };
   }
   return await measureApiDispatchTiming(
@@ -6449,44 +6414,6 @@ function buildRunContextSnapshot(args: {
   return snapshot;
 }
 
-function sessionStorageMountsForPersistence(args: {
-  readonly resolvedMounts: readonly PersistedStorageMount[];
-  readonly artifacts: readonly AgentRunCreateContextArtifact[];
-}): readonly PersistedStorageMount[] {
-  const artifactsByName = new Map<string, AgentRunCreateContextArtifact>();
-  for (const artifact of args.artifacts) {
-    artifactsByName.set(artifact.name, artifact);
-  }
-
-  return args.resolvedMounts.flatMap((mount) => {
-    if (!mount.writeback) {
-      return [];
-    }
-    const artifact = artifactsByName.get(mount.name);
-    if (!artifact || artifact.mountPath !== mount.mountPath) {
-      throw new Error(
-        `Resolved writeback Storage "${mount.name}" has no source declaration`,
-      );
-    }
-    const {
-      version: _resolvedVersion,
-      missingRootPolicy: _resolvedMissingRootPolicy,
-      ...mountBase
-    } = mount;
-    return [
-      {
-        ...mountBase,
-        ...(artifact.version === undefined
-          ? {}
-          : { version: artifact.version }),
-        ...(artifact.missingRootPolicy === undefined
-          ? {}
-          : { missingRootPolicy: artifact.missingRootPolicy }),
-      },
-    ];
-  });
-}
-
 /**
  * The installed CLI must have this session construction and meet the CLI
  * floor; otherwise the guest uses the commit-addressed package.
@@ -6737,7 +6664,6 @@ function preparedSessionUpdateStatements(
         ...(resolution.resetNativeSession
           ? {
               conversationId: null,
-              storageMounts: [...commit.launch.sessionStorageMounts],
             }
           : {}),
       },

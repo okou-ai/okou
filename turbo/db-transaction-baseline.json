@@ -17,11 +17,6 @@
       "owner": "reserveAgentInstructionPublication$"
     },
     {
-      "id": "TX-0010",
-      "file": "turbo/apps/api/src/signals/routes/agents.ts",
-      "owner": "createAgentInner$/createAgent"
-    },
-    {
       "id": "TX-0011",
       "file": "turbo/apps/api/src/signals/routes/agents.ts",
       "owner": "updateAgentInner$"
@@ -117,11 +112,6 @@
       "owner": "claimStartedProviderInstance$"
     },
     {
-      "id": "TX-0071",
-      "file": "turbo/apps/api/src/signals/services/browser.service.ts",
-      "owner": "claimBrowserForResume$"
-    },
-    {
       "id": "TX-0073",
       "file": "turbo/apps/api/src/signals/services/browser.service.ts",
       "owner": "claimExpiredInactiveBrowser$"
@@ -205,11 +195,6 @@
       "id": "TX-0104",
       "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
       "owner": "updateCloudflareAccessConfig$"
-    },
-    {
-      "id": "TX-0105",
-      "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
-      "owner": "deleteCloudflareAccessConfig$"
     },
     {
       "id": "TX-0106",
@@ -885,11 +870,6 @@
       "id": "TX-0314",
       "file": "turbo/apps/api/src/signals/services/user-permission-grants.service.ts",
       "owner": "applyVisibleAgentGrantRows"
-    },
-    {
-      "id": "TX-0315",
-      "file": "turbo/apps/api/src/signals/services/vnc-connection.service.ts",
-      "owner": "createVncConnection$"
     },
     {
       "id": "TX-0319",

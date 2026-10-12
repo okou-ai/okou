@@ -1,5 +1,6 @@
 import { command } from "ccstate";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
+import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { setResHeader$ } from "../context/hono";
 import { queryOf } from "../context/request";
@@ -17,11 +18,16 @@ const noStore$ = command(({ set }) => {
   set(setResHeader$, "Referrer-Policy", "no-referrer");
 });
 
-function imageResponse(bytes: Buffer | null): Response {
+function imageResponse(bytes: Buffer | null, variant?: "slack"): Response {
   if (bytes === null) {
     return new Response(null, {
       status: 302,
-      headers: { Location: ARTIFACT_OG_BRAND.imageUrl },
+      headers: {
+        Location:
+          variant === "slack"
+            ? r2ImageTransformUrl(ARTIFACT_OG_BRAND.imageUrl, { height: 200 })
+            : ARTIFACT_OG_BRAND.imageUrl,
+      },
     });
   }
   return new Response(new Uint8Array(bytes), {
@@ -49,8 +55,14 @@ export const artifactOgRoutes: readonly RouteEntry[] = [
     handler: command(async ({ get, set }, signal: AbortSignal) => {
       set(noStore$);
       const query = get(queryOf(artifactOgContract.image));
-      const bytes = await set(artifactOgImage$, query, query.version, signal);
-      return imageResponse(bytes);
+      const bytes = await set(
+        artifactOgImage$,
+        query,
+        query.version,
+        query.variant,
+        signal,
+      );
+      return imageResponse(bytes, query.variant);
     }),
   },
   {

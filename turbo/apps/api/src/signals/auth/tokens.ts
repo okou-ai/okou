@@ -40,6 +40,7 @@ const CONDITIONAL_CAPABILITIES = [
   ["artifact:read", FeatureSwitchKey.PrivateArtifacts],
   ["artifact:write", FeatureSwitchKey.PrivateArtifacts],
   ["banking:read", FeatureSwitchKey.Banking],
+  ["wallet:write", FeatureSwitchKey.LinkWallet],
   ["lark:write", FeatureSwitchKey.LarkIntegration],
   ["discord:read", FeatureSwitchKey.DiscordIntegration],
   ["discord:write", FeatureSwitchKey.DiscordIntegration],

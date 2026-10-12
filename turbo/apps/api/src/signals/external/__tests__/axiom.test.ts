@@ -481,6 +481,17 @@ describe("shared SDK ingestion", () => {
         session_history_wire_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
         session_history_encoder_pipeline_ms: 0,
       } as const;
+      const sourceZstdTransfer = {
+        ...transfer,
+        session_history_framework: "pi",
+        session_history_transfer_source: "downloaded",
+        session_history_codec_decision: "source_zstd",
+        session_history_transfer_bytes: 64 * 1024,
+        session_history_wire_bytes: 1024,
+        session_history_write_requests: 1,
+        session_history_encoder_pipeline_ms: 0,
+        session_history_publication_ms: 2,
+      } as const;
       const failedTransfer = {
         ...operation,
         action_type: "session_history_transfer",
@@ -551,6 +562,7 @@ describe("shared SDK ingestion", () => {
               legacyTransfer,
               emptyTransfer,
               nativeZstdTransfer,
+              sourceZstdTransfer,
               failedTransfer,
               largeInlineTransfer,
               storageBatch,
@@ -592,6 +604,7 @@ describe("shared SDK ingestion", () => {
         legacyTransfer,
         emptyTransfer,
         nativeZstdTransfer,
+        sourceZstdTransfer,
         failedTransfer,
         largeInlineTransfer,
       ]) {

@@ -222,9 +222,12 @@ allocation. Require a recent `collection_timestamp_seconds` (or exporter
 textfile mtime) and a healthy collector unit: filesystem/publishing failures can
 prevent replacement, and the last textfile must not then imply fresh success.
 No key, profile, project path,
-environment value or file content is published. Provisioning stops/removes old
-workspace collector units and their textfile, never cache entries. Update
-external dashboards/alerts to this namespace and treat absent gauges as
+environment value or file content is published. Current provisioning does not
+remove retired workspace collector units, installed scripts, or textfiles. Their
+one-time cleanup follows
+[deployment compatibility](../deployment-compatibility.md#runner-guest-and-cli-artifacts)
+and never deletes cache entries. Update external dashboards/alerts to this
+namespace and treat absent gauges as
 unavailable; rolling the collector back does not make old-layout metrics valid
 for home generations. No historical query translation is performed.
 
