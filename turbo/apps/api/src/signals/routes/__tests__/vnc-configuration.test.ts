@@ -63,6 +63,103 @@ describe("explicit Owner Kerberos sources", () => {
       },
     };
   }
+  it.each(["saved", "inline"] as const)(
+    "selects one concurrent Kerberos rebind using a %s credential without orphaning the loser",
+    async (selection) => {
+      useSecretKmsProbe();
+      await owner();
+      const original = await accept(
+        connections().create({ headers, body: onlineBody() }),
+        [201],
+      );
+      const candidates = await Promise.all(
+        ["first", "second"].map(async (name) => {
+          const create = {
+            name,
+            authentication: {
+              method: "qemu_kerberos_password" as const,
+              initiator,
+              password: `synthetic-${name}-password`,
+            },
+          };
+          const selected =
+            selection === "saved"
+              ? {
+                  id: (
+                    await accept(
+                      credentials().create({
+                        headers,
+                        body: { id: randomUUID(), ...create },
+                      }),
+                      [201],
+                    )
+                  ).body.id,
+                }
+              : { create };
+          return {
+            expectedGeneration: original.body.generation,
+            security: {
+              ...onlineSecurity,
+              service: {
+                ...service,
+                components: ["vnc", `${name}.example.com`],
+              },
+            },
+            credential: selected,
+          };
+        }),
+      );
+      const results = await Promise.all(
+        candidates.map((body) => {
+          return accept(
+            connections().update({
+              headers,
+              params: { connectionId: original.body.id },
+              body,
+            }),
+            [200, 409],
+          );
+        }),
+      );
+      expect(
+        results
+          .map(({ status }) => {
+            return status;
+          })
+          .sort(),
+      ).toStrictEqual([200, 409]);
+      const winner = results.find((result) => {
+        return result.status === 200;
+      });
+      if (!winner || !("credentialName" in winner.body)) {
+        throw new Error("Expected one successful Kerberos rebind");
+      }
+      expect(winner.body.generation).toBe(2);
+      const loser = results.find((result) => {
+        return result.status === 409;
+      });
+      expect(loser?.body.error.code).toBe("VNC_GENERATION_CONFLICT");
+      expect(
+        (await accept(connections().list({ headers }), [200])).body.connections,
+      ).toStrictEqual([winner.body]);
+      const sources = (await accept(credentials().list({ headers }), [200]))
+        .body.credentials;
+      expect(sources).toHaveLength(selection === "saved" ? 3 : 2);
+      expect(
+        sources.filter(({ hosts }) => {
+          return hosts.length > 0;
+        }),
+      ).toStrictEqual([
+        expect.objectContaining({
+          id: requireVncCredentialId(winner.body),
+          name: winner.body.credentialName,
+          hosts: [
+            { id: original.body.id, displayName: original.body.displayName },
+          ],
+        }),
+      ]);
+    },
+  );
   it("keeps public Kerberos readback complete and metadata-only", async () => {
     const kms = useSecretKmsProbe();
     await owner();

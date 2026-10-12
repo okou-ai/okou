@@ -976,10 +976,9 @@ function inlineVncConnectionResult(
     | { readonly connection: Metadata; readonly credential: CredentialMetadata }
     | undefined,
 ): VncResult<VncConnectionResponse> {
-  if (!row) {
-    throw new Error("VNC connection update returned no row");
-  }
-  return { ok: true, value: response(row.connection, row.credential) };
+  return row
+    ? { ok: true, value: response(row.connection, row.credential) }
+    : vncFailure("generationConflict");
 }
 
 export const updateVncConnection$ = command(
@@ -998,6 +997,10 @@ export const updateVncConnection$ = command(
     const written = await settle(
       (async () => {
         const owner = args.owner;
+        const expectedConnection = and(
+          ownedConnection(owner, args.connectionId),
+          eq(vncConnections.generation, args.body.expectedGeneration),
+        );
         const [current] = await db
           .select(metadata)
           .from(vncConnections)
@@ -1023,6 +1026,14 @@ export const updateVncConnection$ = command(
         }
         const { newHost, newPort, transport, securityType } = resolved.value;
         const selectedSecurity = security?.value ?? current;
+        const changes = {
+          displayName: args.body.displayName,
+          host: newHost,
+          port: newPort,
+          ...transport.value,
+          ...security?.value,
+          generation: sql`${vncConnections.generation} + 1`,
+        };
         if (transport.value.sshConnectionId !== null) {
           const [ssh] = await db
             .select({ id: sshConnections.id })
@@ -1040,18 +1051,13 @@ export const updateVncConnection$ = command(
             db
               .update(vncConnections)
               .set({
-                displayName: args.body.displayName,
-                host: newHost,
-                port: newPort,
-                ...transport.value,
+                ...changes,
                 credentialId: newId.id,
                 authMethod: create.authMethod,
-                ...security?.value,
-                generation: sql`${vncConnections.generation} + 1`,
                 updatedAt: nowDate(),
               })
               .from(newId)
-              .where(ownedConnection(owner, args.connectionId))
+              .where(expectedConnection)
               .returning({ ...metadata }),
           );
           const parts = inlineVncCredentialParts(owner, create, updated);
@@ -1082,19 +1088,14 @@ export const updateVncConnection$ = command(
         const [updated] = await db
           .update(vncConnections)
           .set({
-            displayName: args.body.displayName,
-            host: newHost,
-            port: newPort,
-            ...transport.value,
+            ...changes,
             ...credentialDatabaseValues(credential),
-            ...security?.value,
-            generation: sql`${vncConnections.generation} + 1`,
             updatedAt: nowDate(),
           })
-          .where(ownedConnection(owner, args.connectionId))
+          .where(expectedConnection)
           .returning(metadata);
         if (!updated) {
-          throw new Error("VNC connection update returned no row");
+          return vncFailure("generationConflict");
         }
         return { ok: true as const, value: response(updated, credential) };
       })(),
