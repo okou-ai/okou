@@ -41,21 +41,25 @@ export async function resolveWorkflowRef(
 
   const workflows = await listWorkflows({ agentId });
   const matches = workflows.filter((workflow) => {
-    return workflow.name === ref;
+    return workflow.name === ref && !workflow.official;
   });
   if (matches.length === 0) {
     throw new Error(
-      `Workflow not found: "${ref}" under agent "${agentId}". Check the name and agent, or use the workflow ID`,
+      `Ordinary workflow not found: "${ref}" under agent "${agentId}". Check the name and agent. Use a workflow ID to view or manage an Official Workflow`,
     );
   }
 
-  const winners = matches.filter((workflow) => {
-    return workflow.shadowedBy == null;
+  // Private records visible to this caller are their own. Select within the
+  // ordinary namespace even when an older API marks it shadowed by an official.
+  const privateMatches = matches.filter((workflow) => {
+    return workflow.visibility === "private";
   });
-  if (winners.length !== 1) {
+  const winners = privateMatches.length > 0 ? privateMatches : matches;
+  const [winner] = winners;
+  if (winners.length !== 1 || !winner) {
     throw new Error(
-      `Workflow name "${ref}" did not resolve to exactly one runtime winner under agent "${agentId}". Use the workflow ID`,
+      `Workflow name "${ref}" did not resolve to exactly one ordinary workflow under agent "${agentId}". Use the workflow ID`,
     );
   }
-  return winners[0]!.id;
+  return winner.id;
 }

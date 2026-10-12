@@ -2053,7 +2053,7 @@ function ShadowWarning({
 }: {
   readonly detail: WorkflowDetailResponse;
 }) {
-  if (!detail.shadowedBy) {
+  if (detail.official || !detail.shadowedBy) {
     return null;
   }
 
@@ -9192,41 +9192,46 @@ function AutomationControls({
     <div className="flex min-w-0 items-center justify-end pr-1.5">
       <TooltipProvider delay={200}>
         <div className="flex items-center justify-end gap-1 opacity-100 pointer-events-auto [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:pointer-events-auto [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:pointer-events-auto [@media(hover:hover)]:group-focus-within:opacity-100">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  disabled={busy}
-                  aria-label={copy.runNow}
-                  className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-selected-hover hover:text-foreground"
-                  onClick={() => {
-                    detach(
-                      (async () => {
-                        const result = await runNow(automation.id, pageSignal);
-                        navigate(ROUTES.chat, {
-                          pathParams: { threadId: result.chatThreadId },
-                        });
-                      })(),
-                      Reason.DomCallback,
-                      "run workflow automation now",
-                    );
-                  }}
-                >
-                  {busy ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Play size={14} />
-                  )}
-                </Button>
-              }
-            />
-            <TooltipContent>
-              <p className="text-xs">{copy.runNow}</p>
-            </TooltipContent>
-          </Tooltip>
+          {!automation.official ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    disabled={busy}
+                    aria-label={copy.runNow}
+                    className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-selected-hover hover:text-foreground"
+                    onClick={() => {
+                      detach(
+                        (async () => {
+                          const result = await runNow(
+                            automation.id,
+                            pageSignal,
+                          );
+                          navigate(ROUTES.chat, {
+                            pathParams: { threadId: result.chatThreadId },
+                          });
+                        })(),
+                        Reason.DomCallback,
+                        "run workflow automation now",
+                      );
+                    }}
+                  >
+                    {busy ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Play size={14} />
+                    )}
+                  </Button>
+                }
+              />
+              <TooltipContent>
+                <p className="text-xs">{copy.runNow}</p>
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
           {canEdit ? (
             <AutomationEditButton
               automation={automation}
