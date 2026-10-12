@@ -535,7 +535,7 @@ async function disableLinkSaveInfo(page: Page): Promise<void> {
     name: /save my information/i,
   });
 
-  if (await saveInfo.isVisible({ timeout: 5_000 }).catch(() => false)) {
+  if (await saveInfo.isVisible()) {
     await saveInfo.uncheck();
   }
 }
@@ -547,7 +547,6 @@ export async function fillStripeCheckout(page: Page): Promise<void> {
   // a skeleton. Use the final purchase control as the single layout-neutral
   // readiness boundary before inspecting Card controls or field frames.
   await waitForCheckoutFormReady(page);
-  await disableLinkSaveInfo(page);
 
   const cardNumber = await fillCardNumber(page, "4242424242424242");
   const cardExpiry = await fillStripeField(
