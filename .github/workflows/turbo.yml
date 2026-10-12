@@ -2570,7 +2570,6 @@ jobs:
     needs:
       - prepare
       - deploy-api
-      - deploy-app
       - deploy-cli
       - deploy-runner-prepare
       - deploy-runner-start
@@ -2581,7 +2580,6 @@ jobs:
       needs.prepare.outputs.job-ref != '' &&
       needs.prepare.outputs.turbo-runner-consumer-needed == 'true' &&
       needs.deploy-api.result == 'success' &&
-      needs.deploy-app.result == 'success' &&
       needs.deploy-cli.result == 'success' &&
       needs.deploy-runner-prepare.result == 'success' &&
       needs.deploy-runner-start.result == 'success' &&
@@ -2591,7 +2589,6 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.cli-e2e-03-runner-prepare.outputs.runner-shard-matrix) }}
     env:
-      OKOU_APP_URL: ${{ needs.deploy-app.outputs.preview-url }}
       E2E_CLERK_ORG_ID: ${{ needs.cli-e2e-03-runner-prepare.outputs.runner-organization-id }}
       E2E_RUNNER_CODEX_ORG_ID: ${{ needs.cli-e2e-03-runner-prepare.outputs.codex-organization-id }}
       E2E_RUNNER_CLAUDE_ORG_ID: ${{ needs.cli-e2e-03-runner-prepare.outputs.claude-organization-id }}
@@ -2616,9 +2613,6 @@ jobs:
           node-version: 22
       - name: Install E2E dependencies
         run: cd e2e && pnpm install --frozen-lockfile
-      - name: Install WSS acceptance browser
-        if: contains(matrix.files, 'tests/03-runner/run-t25-run-wss.bats')
-        run: cd e2e && pnpm exec playwright install --only-shell chromium
       - name: Download runner E2E API tokens
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:

@@ -4,8 +4,9 @@ The WSS baseline runs from `tests/03-runner/run-t25-run-wss.bats` in the normal
 Runner E2E pipeline. It consumes the captured checkout, prepared mock-Codex
 profile and actual API/App preview origins; it has no local deployed setup.
 
-The runner shard installs the matching Playwright Chromium only when it contains
-that BATS file. Its browser signs into the prepared Clerk TEST account and runs
+The BATS file's setup installs the matching Playwright Chromium only for that
+case. The prepared credential artifact includes the actual App origin alongside
+its existing token/API origin. Its browser signs into the Clerk TEST account and runs
 the production core transport. Owner bootstrap uses the Web session; public
 agent/chat/Run setup and cleanup use the same account's existing device-flow
 credential so cleanup survives browser loss. No private fixture route or new
