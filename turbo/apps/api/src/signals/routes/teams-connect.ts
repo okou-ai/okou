@@ -26,15 +26,18 @@ function errorResponse(
   };
 }
 
-const getTeamsConnectStatusInner$ = computed(async (get) => {
+const teamsConnectStatusIdentity$ = computed((get) => {
   const auth = get(organizationAuthContext$);
-  const body = await get(
-    teamsConnectStatus({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      isAdmin: "orgRole" in auth && auth.orgRole === "admin",
-    }),
-  );
+  return {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    isAdmin: "orgRole" in auth && auth.orgRole === "admin",
+  };
+});
+const teamsConnectStatus$ = teamsConnectStatus(teamsConnectStatusIdentity$);
+
+const getTeamsConnectStatusInner$ = computed(async (get) => {
+  const body = await get(teamsConnectStatus$);
   return { status: 200 as const, body };
 });
 
