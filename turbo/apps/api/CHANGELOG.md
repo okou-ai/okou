@@ -9,6 +9,43 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.727.8](https://github.com/okou-ai/okou/compare/api-v1.727.7...api-v1.727.8) (2026-10-12)
+
+
+### Bug Fixes
+
+* **api:** align discord command copy with slack ([#39278](https://github.com/okou-ai/okou/issues/39278)) ([8177d57](https://github.com/okou-ai/okou/commit/8177d574285852f6bf7e21114633d345d2facc96))
+* **desktop:** keep native update manifests free of electron releases ([#39302](https://github.com/okou-ai/okou/issues/39302)) ([147e765](https://github.com/okou-ai/okou/commit/147e76579e0029ef1db4b47708ac39995937da5e))
+
+
+### Refactoring
+
+* **api:** atomically complete email outbox and receipt ([#39290](https://github.com/okou-ai/okou/issues/39290)) ([a95b34a](https://github.com/okou-ai/okou/commit/a95b34a5f0c7ad39634e432fde0defd39e169c6d))
+* **api:** atomically persist discord admission destination ([#39285](https://github.com/okou-ai/okou/issues/39285)) ([4d60633](https://github.com/okou-ai/okou/commit/4d6063367909cb3c4e68560691faab8f8a8dde3e))
+* **api:** atomically publish slack routes and thread events ([#39269](https://github.com/okou-ai/okou/issues/39269)) ([77a8259](https://github.com/okou-ai/okou/commit/77a825974ca8008256463391167766bf2b8ef0ad))
+* **api:** construct slack oauth resolver before command execution ([#39214](https://github.com/okou-ai/okou/issues/39214)) ([6948040](https://github.com/okou-ai/okou/commit/694804023fc7577dc17e2423aad4f062bd00205a)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** inline telegram owner binding reads ([#38897](https://github.com/okou-ai/okou/issues/38897)) ([95fb1f3](https://github.com/okou-ai/okou/commit/95fb1f35a390f097a6c612396f3cf178b79a36e5))
+* **api:** own discord org status connection query ([#39078](https://github.com/okou-ai/okou/issues/39078)) ([924005a](https://github.com/okou-ai/okou/commit/924005a909e66ded363712eff82db83d0f6c11c6)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own screenshot download cancellation ([#39287](https://github.com/okou-ai/okou/issues/39287)) ([b38d421](https://github.com/okou-ai/okou/commit/b38d421ac22fe4e5400816b48ea740836b8eb988))
+* **api:** own teams installation metadata writes in connect command ([#39234](https://github.com/okou-ai/okou/issues/39234)) ([087a4f4](https://github.com/okou-ai/okou/commit/087a4f4c2f574ef30fa6442f6746536b850f8220)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** reuse invitation capability read owner ([#39256](https://github.com/okou-ai/okou/issues/39256)) ([085c763](https://github.com/okou-ai/okou/commit/085c763de5aad6934915d0ab996c1df2af8bd905)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **db:** retire native morning brief transition scaffolding ([#39295](https://github.com/okou-ai/okou/issues/39295)) ([61996b2](https://github.com/okou-ai/okou/commit/61996b256b5ae4c2236a3196ac62467b0bd128dc))
+
+
+### Performance Improvements
+
+* **runner:** attribute host-side storage apply phases ([#39232](https://github.com/okou-ai/okou/issues/39232)) ([87699ec](https://github.com/okou-ai/okou/commit/87699ec74930a925c53aa653b48cc78ab63e634e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.552.1
+    * @okouai/core bumped to 8.746.0
+    * @okouai/db bumped to 1.331.7
+    * @okouai/pi-agent-runtime bumped to 1.49.14
+
 ## [1.727.7](https://github.com/okou-ai/okou/compare/api-v1.727.6...api-v1.727.7) (2026-10-12)
 
 

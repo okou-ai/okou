@@ -10,7 +10,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   chatEvents,

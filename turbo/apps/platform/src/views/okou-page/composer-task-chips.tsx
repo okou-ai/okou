@@ -424,9 +424,9 @@ export function ComposerTaskChips({
             // The ideas row and the shelf under it are two groups, not two
             // members of one: they need visibly more air between them than the
             // `gap-3` a shelf keeps between its own title and its covers.
-            // 40px, the same step the entry column puts between the composer
-            // and whatever it hands over to — one block following another is
-            // one distance, wherever in the entry area it happens.
+            // 40px, the same step the entry column puts between the greeting
+            // and the composer — one block following another is one distance,
+            // wherever in the entry area it happens.
             "flex min-w-0 flex-col gap-10",
             "motion-safe:animate-composer-panel-in",
           )}

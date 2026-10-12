@@ -1,6 +1,6 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "../external/db";
 

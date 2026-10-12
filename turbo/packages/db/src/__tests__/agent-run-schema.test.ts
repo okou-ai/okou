@@ -27,7 +27,7 @@ describe("agentRuns circular foreign keys", () => {
     );
 
     const { schema } = await import("../index");
-    const { agentRuns } =
+    const { agentRuns, agentSessions, conversations } =
       await import("../schema/agent-run-session-conversation");
     const { chatThreads } = await import("../schema/chat-thread");
     const { orgMembersMetadata } =
@@ -36,14 +36,24 @@ describe("agentRuns circular foreign keys", () => {
 
     const { agentRuns: runtimeAgentRuns } =
       await import("../runtime/agent-run");
+    const { agentSessions: runtimeAgentSessions } =
+      await import("../runtime/agent-session");
     const { chatThreads: runtimeChatThreads } =
       await import("../runtime/chat-thread");
     expect(schema.agentRuns).toBe(runtimeAgentRuns);
+    expect(schema.agentSessions).toBe(runtimeAgentSessions);
     const runtimeSession = foreignKeyReference(runtimeAgentRuns, "session_id");
     expect(runtimeSession.foreignKey.onDelete).toBe("cascade");
-    expect(runtimeSession.reference.foreignTable).toBe(schema.agentSessions);
-    expect(runtimeSession.reference.foreignColumns).toEqual([
-      schema.agentSessions.id,
+    expect(runtimeSession.reference.foreignTable).toBe(agentSessions);
+    expect(runtimeSession.reference.foreignColumns).toEqual([agentSessions.id]);
+    const runtimeConversation = foreignKeyReference(
+      runtimeAgentSessions,
+      "conversation_id",
+    );
+    expect(runtimeConversation.foreignKey.onDelete).toBe("set null");
+    expect(runtimeConversation.reference.foreignTable).toBe(conversations);
+    expect(runtimeConversation.reference.foreignColumns).toEqual([
+      conversations.id,
     ]);
     const runtimeThread = foreignKeyReference(
       runtimeAgentRuns,

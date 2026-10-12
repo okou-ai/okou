@@ -6,7 +6,7 @@ import {
   walletSpendSchema,
 } from "@okouai/api-contracts/contracts/wallet";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 import {
   linkWalletConnections,
   linkWalletOAuthAttempts,

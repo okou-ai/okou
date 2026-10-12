@@ -82,6 +82,14 @@ public enum ApiRoutes {
     CharacterSet(charactersIn: "/"))
 
   private static func pathSegment(_ value: String) -> String {
-    value.addingPercentEncoding(withAllowedCharacters: pathSegmentAllowed) ?? value
+    var encoded = ""
+    for scalar in value.unicodeScalars {
+      if pathSegmentAllowed.contains(scalar) {
+        encoded.unicodeScalars.append(scalar)
+      } else {
+        for byte in String(scalar).utf8 { encoded += String(format: "%%%02X", byte) }
+      }
+    }
+    return encoded
   }
 }

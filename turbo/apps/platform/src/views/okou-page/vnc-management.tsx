@@ -195,7 +195,7 @@ function VncRebindWarning({
             : $.vnc.transport.sshNeedsRebind;
         })}
       </p>
-      {tailscale && enabled && sshConnection && (
+      {(!tailscale || enabled) && sshConnection && (
         <Button
           type="button"
           variant="outline"

@@ -26,7 +26,7 @@ import {
   maintenancePublicationVersion,
 } from "./pi-memory-phase2-result";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
 import { conversations } from "@okouai/db/schema/conversation";
 import type { PersistedStorageMount } from "@okouai/db/types";

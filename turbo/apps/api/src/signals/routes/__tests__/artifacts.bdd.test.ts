@@ -398,6 +398,65 @@ describe("GET /api/chat-threads/:threadId/artifacts", () => {
 });
 
 describe("hosted Artifact previews", () => {
+  it.each([true, false])(
+    "publishes without a supplied cover with artifactPreviews=%s at completion",
+    async (enabled) => {
+      const owner = await artifactActor("Hosted preview rollout");
+      if (!owner.actor.orgId) {
+        throw new Error("Expected an organization");
+      }
+      const actor = { ...owner.actor, orgId: owner.actor.orgId };
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.ArtifactPreviews]: !enabled,
+      });
+      mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
+      mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
+      const snapshots = mockCloudflareSnapshot();
+      const run = await sendChatRun(actor, {
+        agentId: owner.agentId,
+        prompt: "Publish a site without a supplied cover",
+      });
+      const { claim, sandboxHeaders } = await claimChatRun(
+        owner.runnerGroup,
+        run.runId,
+      );
+      const bearer = `Bearer ${okouTokenFromClaim(claim)}`;
+      host.captureHostedSitesS3();
+      const site = `preview-rollout-${randomUUID().slice(0, 8)}`;
+      const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
+        site,
+        artifactKind: "hosted-site",
+        spaFallback: false,
+        files: [hostedTextFile("/index.html", "<main>Hosted preview</main>")],
+      });
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.ArtifactPreviews]: enabled,
+      });
+      const completed = await chat.completeHostedSiteWithBearer(
+        bearer,
+        prepared.deploymentId,
+      );
+      expect(completed).toMatchObject({ status: "ready", isActive: true });
+      await flushWaitUntilForTest();
+
+      expect(snapshots).toHaveLength(enabled ? 0 : 1);
+      const artifact = await findCatalogArtifact(actor, site);
+      expect(artifact).toMatchObject({
+        kind: "hosted-site",
+        thumbnail: enabled ? null : { url: expect.any(String) },
+      });
+      const thread = await chat.listThreadArtifacts(actor, run.threadId);
+      const file = thread.runs[0]?.files.find((entry) => {
+        return entry.url === prepared.artifactUrl;
+      });
+      expect(file).toBeDefined();
+      expect(file?.previewImageUrl).toBe(
+        enabled ? undefined : artifact?.thumbnail?.url,
+      );
+      await completeChatRunOk(run.runId, sandboxHeaders);
+    },
+  );
+
   it.each(["public", "private"] as const)(
     "keeps the latest catalog cover when an older %s preview finishes rendering",
     async (storage) => {

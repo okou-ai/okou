@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { ArtifactDeliveryRecord } from "@okouai/api-contracts/contracts/artifact-delivery";
 import type { ArtifactOgTarget } from "@okouai/api-contracts/contracts/artifact-og";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
+import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
@@ -137,17 +138,13 @@ const slackPublicationTarget$ = command(
   },
 );
 
-/** Resolve only known delivery identities; never fetch a user-supplied URL. */
+/** Resolve artifact identities from validated links without fetching URLs. */
 const slackArtifactOgTarget$ = command(
   async (
     { get, set },
-    value: string,
+    url: URL,
     signal: AbortSignal,
   ): Promise<ArtifactOgTarget | null> => {
-    const url = parseSlackLinkUrl(value);
-    if (!url) {
-      return null;
-    }
     if (url.origin === new URL(env("APP_URL")).origin) {
       const reference = parseArtifactReference(url.pathname);
       return reference
@@ -192,18 +189,23 @@ const slackArtifactUnfurl$ = command(
     url: string,
     signal: AbortSignal,
   ): Promise<SlackLinkUnfurl | null> => {
-    const target = await set(slackArtifactOgTarget$, url, signal);
-    if (!target) {
+    const pageUrl = parseSlackLinkUrl(url);
+    if (!pageUrl) {
       return null;
     }
-    // This is the same anonymous publication policy used by the OG endpoints.
-    const metadata = await set(artifactOgMetadata$, target, signal);
+    const target = await set(slackArtifactOgTarget$, pageUrl, signal);
+    // Only ordinary App pages use branding; unsupported links stay skipped.
+    if (!target && pageUrl.origin !== new URL(env("APP_URL")).origin) {
+      return null;
+    }
+    const metadata = target
+      ? await set(artifactOgMetadata$, target, signal)
+      : { available: true as const, ...ARTIFACT_OG_BRAND };
     signal.throwIfAborted();
     if (!metadata.available) {
       return null;
     }
     const title = metadata.title.trim().slice(0, 150) || "Okou artifact";
-    const pageUrl = new URL(url);
     // A pipe in the URL must not become Slack's link-label separator.
     const href = escapeSlackLinkText(pageUrl.href.replaceAll("|", "%7C"));
     return {

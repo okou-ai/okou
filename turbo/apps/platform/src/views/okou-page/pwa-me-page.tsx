@@ -22,6 +22,7 @@ import {
   DatabaseBackup,
   FlaskConical,
   LayoutGrid,
+  Link2,
   LogOut,
   Plus,
   Route,
@@ -46,6 +47,7 @@ import {
   useAccountProfile,
   useCreditBalance,
 } from "./sidebar-account.tsx";
+import { useSubscriptionLinkingEntry } from "./subscription-linking.tsx";
 import { AccountMenuSubscriptionsPanel } from "./sidebar-subscriptions.tsx";
 
 type AccountProfile = ReturnType<typeof useAccountProfile>;
@@ -170,11 +172,17 @@ function MeNavigation({
 }) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
+  const subscriptionEntry = useSubscriptionLinkingEntry();
   const defaultDisplayName =
     useLastResolved(defaultAgentName$) ?? assistantName;
 
   return (
     <div className={surfaceVariants({ className: "flex flex-col gap-1 p-1" })}>
+      {subscriptionEntry.enabled && (
+        <MeAction icon={Link2} onClick={subscriptionEntry.onClick}>
+          {subscriptionEntry.label}
+        </MeAction>
+      )}
       <MeAction icon={Settings} onClick={actions.handleOpenSettings}>
         {t(($) => {
           return $.settings.accountMenu.settings;

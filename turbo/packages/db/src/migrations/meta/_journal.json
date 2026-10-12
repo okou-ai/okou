@@ -2098,8 +2098,15 @@
     {
       "idx": 1377,
       "version": "7",
-      "when": 1791791554922,
-      "tag": "1377_link_wallet_hosted_consent",
+      "when": 1791791882098,
+      "tag": "1377_prepare_session_mount_retirement",
+      "breakpoints": true
+    },
+    {
+      "idx": 1378,
+      "version": "7",
+      "when": 1791801377324,
+      "tag": "1378_link_wallet_hosted_consent",
       "breakpoints": true
     }
   ]

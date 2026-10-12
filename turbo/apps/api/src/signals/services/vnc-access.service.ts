@@ -1,7 +1,7 @@
 import { vncHostSchema } from "@okouai/api-contracts/contracts/vnc-access";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 import {
   sshConnectionNeedsRebind,
   sshConnections,

@@ -10,7 +10,7 @@ import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-
 import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 import type { Tx } from "../../lib/db-types";
 import { notFound } from "../../lib/error";
 import { logger } from "../../lib/log";

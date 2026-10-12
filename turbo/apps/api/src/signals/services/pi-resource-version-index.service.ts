@@ -5,8 +5,9 @@ import type { PiResourceVersionIndex } from "@okouai/db/jsonb-contracts/pi-resou
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import { storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 
+import { pgInt8ToSafeIntegerDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import {
   indexPiResourceArchive,
@@ -241,81 +242,132 @@ const claimWork$ = command(
   ) => {
     const db = set(writeDb$);
     const currentTime = nowDate();
-    // Candidate selection and lease assignment must commit together so parallel
-    // workers cannot materialize the same lease. Keep the existing claim locks.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0231; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const rows = await tx
+    // The unlocked read keeps the first SQL error and read Abort checkpoint.
+    // It is not claim authority: the statement below selects its own full cohort.
+    const eligible = db
+      .select({
+        versionId: piResourceVersionIndexes.storageVersionId,
+        attemptCount: piResourceVersionIndexes.attemptCount,
+        createdAt: piResourceVersionIndexes.createdAt,
+        availableAt: piResourceVersionIndexes.availableAt,
+        s3Key: storageVersions.s3Key,
+        archiveSize: storageVersions.archiveSize,
+        fileCount: storageVersions.fileCount,
+      })
+      .from(piResourceVersionIndexes)
+      .innerJoin(
+        storageVersions,
+        eq(storageVersions.id, piResourceVersionIndexes.storageVersionId),
+      )
+      .where(
+        and(
+          eq(
+            piResourceVersionIndexes.extractorVersion,
+            PI_RESOURCE_EXTRACTOR_VERSION,
+          ),
+          versionIds === undefined
+            ? undefined
+            : inArray(piResourceVersionIndexes.storageVersionId, [
+                ...versionIds,
+              ]),
+          or(
+            and(
+              eq(piResourceVersionIndexes.status, "pending"),
+              lte(piResourceVersionIndexes.availableAt, currentTime),
+            ),
+            and(
+              eq(piResourceVersionIndexes.status, "running"),
+              lte(piResourceVersionIndexes.leaseExpiresAt, currentTime),
+            ),
+          ),
+        ),
+      )
+      .orderBy(
+        asc(piResourceVersionIndexes.availableAt),
+        asc(piResourceVersionIndexes.storageVersionId),
+      )
+      .limit(WORK_BATCH_SIZE);
+    const preflight = await eligible;
+    signal.throwIfAborted();
+    if (preflight.length === 0) {
+      return [];
+    }
+
+    // At most 32 application UUIDs are generated after the read checkpoint.
+    // Some may be unused when locks or a later snapshot change the cohort.
+    const leaseIds = Array.from({ length: WORK_BATCH_SIZE }, () => {
+      return randomUUID();
+    });
+    const selected = db.$with("selected").as(
+      eligible.for("update", {
+        of: piResourceVersionIndexes,
+        skipLocked: true,
+      }),
+    );
+    const ordinal = sql`row_number() OVER (ORDER BY ${asc(selected.availableAt)}, ${asc(selected.versionId)})`;
+    const planned = db.$with("planned").as(
+      db
         .select({
-          versionId: piResourceVersionIndexes.storageVersionId,
-          attemptCount: piResourceVersionIndexes.attemptCount,
-          createdAt: piResourceVersionIndexes.createdAt,
-          s3Key: storageVersions.s3Key,
-          archiveSize: storageVersions.archiveSize,
-          fileCount: storageVersions.fileCount,
+          versionId: selected.versionId,
+          createdAt: selected.createdAt,
+          s3Key: selected.s3Key,
+          archiveSize: selected.archiveSize,
+          fileCount: selected.fileCount,
+          ordinal: ordinal.mapWith(pgInt8ToSafeIntegerDecoder).as("ordinal"),
+          leaseId: sql`(${sql.param(leaseIds)}::uuid[])[${ordinal}]`
+            .mapWith(piResourceVersionIndexes.leaseId)
+            .as("planned_lease_id"),
+          attemptCount: sql`${selected.attemptCount} + 1`
+            .mapWith(piResourceVersionIndexes.attemptCount)
+            .as("planned_attempt_count"),
         })
-        .from(piResourceVersionIndexes)
-        .innerJoin(
-          storageVersions,
-          eq(storageVersions.id, piResourceVersionIndexes.storageVersionId),
-        )
+        .from(selected),
+    );
+    const updated = db.$with("updated").as(
+      db
+        .update(piResourceVersionIndexes)
+        .set({
+          status: "running",
+          leaseId: sql`${planned.leaseId}`,
+          attemptCount: sql`${planned.attemptCount}`,
+          leaseExpiresAt: new Date(currentTime.getTime() + WORK_LEASE_MS),
+          updatedAt: currentTime,
+        })
+        .from(planned)
         .where(
           and(
+            eq(piResourceVersionIndexes.storageVersionId, planned.versionId),
             eq(
               piResourceVersionIndexes.extractorVersion,
               PI_RESOURCE_EXTRACTOR_VERSION,
             ),
-            versionIds === undefined
-              ? undefined
-              : inArray(piResourceVersionIndexes.storageVersionId, [
-                  ...versionIds,
-                ]),
-            or(
-              and(
-                eq(piResourceVersionIndexes.status, "pending"),
-                lte(piResourceVersionIndexes.availableAt, currentTime),
-              ),
-              and(
-                eq(piResourceVersionIndexes.status, "running"),
-                lte(piResourceVersionIndexes.leaseExpiresAt, currentTime),
-              ),
-            ),
           ),
         )
-        .orderBy(
-          asc(piResourceVersionIndexes.availableAt),
-          asc(piResourceVersionIndexes.storageVersionId),
-        )
-        .limit(WORK_BATCH_SIZE)
-        .for("update", { of: piResourceVersionIndexes, skipLocked: true });
-      signal.throwIfAborted();
-      const work = [];
-      for (const row of rows) {
-        const leaseId = randomUUID();
-        const attemptCount = row.attemptCount + 1;
-        await tx
-          .update(piResourceVersionIndexes)
-          .set({
-            status: "running",
-            leaseId,
-            attemptCount,
-            leaseExpiresAt: new Date(currentTime.getTime() + WORK_LEASE_MS),
-            updatedAt: currentTime,
-          })
-          .where(
-            and(
-              eq(piResourceVersionIndexes.storageVersionId, row.versionId),
-              eq(
-                piResourceVersionIndexes.extractorVersion,
-                PI_RESOURCE_EXTRACTOR_VERSION,
-              ),
-            ),
-          );
-        work.push({ ...row, leaseId, attemptCount });
-      }
-      signal.throwIfAborted();
-      return work;
-    });
+        .returning({ versionId: piResourceVersionIndexes.storageVersionId }),
+    );
+    const completed = db
+      .$with("completed")
+      .as(db.select({ count: count().as("count") }).from(updated));
+    // Consume actual RETURNING to completion without filtering planned work by
+    // update count. The original command returned every selected work item.
+    const work = await db
+      .with(selected, planned, updated, completed)
+      .select({
+        versionId: planned.versionId,
+        createdAt: planned.createdAt,
+        s3Key: planned.s3Key,
+        archiveSize: planned.archiveSize,
+        fileCount: planned.fileCount,
+        leaseId: planned.leaseId,
+        attemptCount: planned.attemptCount,
+      })
+      .from(planned)
+      .innerJoin(completed, gte(completed.count, 0))
+      .orderBy(asc(planned.ordinal));
+    // The completed statement has committed before this Abort checkpoint;
+    // SQL failures still roll back the whole batch and remain the primary error.
+    signal.throwIfAborted();
+    return work;
   },
 );
 

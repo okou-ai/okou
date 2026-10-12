@@ -1,7 +1,7 @@
 import type { RunnerSshResolveRequest } from "@okouai/api-contracts/contracts/runner-ssh";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";

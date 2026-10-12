@@ -31,6 +31,9 @@ final class GeneratedBindingsTests: XCTestCase {
         baseURL: base
       ).absoluteString,
       "https://api.example.test/api/computer-use/hosts/host%201/commands/a%2Fb/complete")
+    XCTAssertEqual(
+      ApiRoutes.computerUseHostStop(hostId: "é%?#").path,
+      "/api/computer-use/hosts/%C3%A9%25%3F%23/stop")
     XCTAssertEqual(ApiRoutes.desktopCompatibility.method, "GET")
     XCTAssertEqual(
       ApiRoutes.desktopProductDmgDownload(
@@ -43,17 +46,14 @@ final class GeneratedBindingsTests: XCTestCase {
     XCTAssertEqual(ApiRoutes.featureSwitches.path, "/api/feature-switches")
   }
 
-  func testRegistrationDecodesWithAndWithoutNotifications() throws {
-    let full = try decode(
+  func testRegistrationDecodesItsNotificationSubscription() throws {
+    let registration = try decode(
       ComputerUseHostRegistration.self,
       #"{"hostId":"00000000-0000-0000-0000-000000000001","connectionGeneration":3,"#
         + #""commandNotifications":{"channelName":"channel","eventName":"commandsChanged"}}"#)
-    XCTAssertEqual(full.connectionGeneration, 3)
-    XCTAssertEqual(full.commandNotifications?.channelName, "channel")
-    let legacy = try decode(
-      ComputerUseHostRegistration.self,
-      #"{"hostId":"00000000-0000-0000-0000-000000000001","connectionGeneration":1}"#)
-    XCTAssertNil(legacy.commandNotifications)
+    XCTAssertEqual(registration.connectionGeneration, 3)
+    XCTAssertEqual(registration.commandNotifications.channelName, "channel")
+    XCTAssertEqual(registration.commandNotifications.eventName, "commandsChanged")
   }
 
   func testHeartbeatAndUpgradeRequiredDecode() throws {
