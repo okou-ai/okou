@@ -331,6 +331,19 @@ async fn execute_reused_sandbox_proxy_register_failure_returns_sandbox_before_ag
     );
     assert!(outcome.sandbox.is_some());
     assert!(outcome.network_log_session.is_none());
+    let registrations: Vec<_> = telemetry
+        .pending_ops_snapshot()
+        .into_iter()
+        .filter(|op| op.0 == "runner_reused_sandbox_proxy_register")
+        .collect();
+    assert_eq!(
+        registrations,
+        vec![(
+            "runner_reused_sandbox_proxy_register".to_string(),
+            false,
+            Some("sandbox_proxy_register_failed".to_string()),
+        )]
+    );
     server.assert_finished().await;
     assert!(
         overrides.start_agent_process_calls().is_empty(),
