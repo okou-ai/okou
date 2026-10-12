@@ -35,7 +35,8 @@ pub use retirement::{
 pub use retirement_batch::{IdleRetirementBatchScope, IdleRetirementSelection};
 
 pub use activation_cleanup::{
-    AcceptedActivationCleanup, ActivationCleanupOutcome, GuardedSpeculativeIdleOwner,
+    AcceptedActivationCleanup, ActivatedFinalizingHandoff, ActivationCleanupOutcome,
+    FinalizingHandoffState, GuardedFinalizingHandoffOwner, GuardedSpeculativeIdleOwner,
     IdleActivationOwner, IdleActivationState, RetainedActivationCleanup,
     SpeculativeActivationState,
 };

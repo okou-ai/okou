@@ -10,6 +10,12 @@
 //! selection and waits on both idle-pool revisions and budget availability without spending a
 //! retiring lease twice. The caller retains the panic-boundary rollback of `reserved_exact`.
 
+mod guarded;
+pub use guarded::{
+    ActivatedGuardedFinalizing, GuardedFinalizingAdmission, GuardedFinalizingOffer,
+    GuardedFinalizingOfferOutcome, GuardedFinalizingRecovery, RetainedFinalizingResource,
+};
+
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 

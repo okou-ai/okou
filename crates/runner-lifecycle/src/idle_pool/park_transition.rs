@@ -38,9 +38,11 @@
 //!    handoff changes the result from generic idle publication to a candidate
 //!    bound to that waiting successor; an undelivered candidate remains owned
 //!    by the caller for cleanup.
-//!    Its Guest operations remain fenced while the VM is still running. Failed
-//!    validation, failed delivery, or cancellation destroys that candidate
-//!    without invoking parked home promotion.
+//!    Its Guest operations remain fenced while the VM is still running. The
+//!    guarded supplied-policy finalizing component retains failed delivery and
+//!    cancellation for mandatory covered saving without converting it to pool
+//!    inventory. Legacy unguarded disposal abandons unpublished promotion; P4
+//!    production assembly remains separate.
 //! 5. **Speculative rollback.** A reserved exact-generation entry can be
 //!    unparked for claim-time preparation without becoming committed to a job.
 //!    [`SpeculativeIdleSandbox::repark_for_claim_rollback`] re-runs preparation
@@ -550,6 +552,7 @@ async fn park_idle_transition(
                                     metadata,
                                     budget_lease,
                                     handoff_point: point,
+                                    retirement_backing: None,
                                 }),
                             }
                         }
@@ -569,6 +572,7 @@ async fn park_idle_transition(
                         metadata,
                         budget_lease,
                         handoff_point: point,
+                        retirement_backing: None,
                     })
                 }
                 SandboxFinalExecParkHandoffOutcome::Parked(outcome) => {
