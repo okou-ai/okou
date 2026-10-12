@@ -551,7 +551,6 @@ function resolveObject(
         new Set(requiredNames(schema)),
         typeName,
         [],
-        new Map(),
         context,
         path,
       ),
@@ -579,7 +578,6 @@ function renderStruct(
   required: ReadonlySet<string>,
   typeName: string,
   doc: readonly string[],
-  optionalFields: ReadonlyMap<string, string>,
   context: RenderContext,
   path: string,
 ): readonly string[] {
@@ -587,13 +585,6 @@ function renderStruct(
     throw new Error(
       `${context.label}.${path} has an invalid Swift type name: ${typeName}`,
     );
-  }
-  for (const field of optionalFields.keys()) {
-    if (!(field in properties)) {
-      throw new Error(
-        `${context.label}.${path} marks unknown field optional: ${field}`,
-      );
-    }
   }
   const nested: (readonly string[])[] = [];
   const nestedNames = new Set<string>();
@@ -622,12 +613,8 @@ function renderStruct(
       nestedNames.add(nestedName);
       nested.push(resolved.declarations);
     }
-    const override = optionalFields.get(wireName);
-    const optional = !required.has(wireName) || override !== undefined;
+    const optional = !required.has(wireName);
     const swiftType = optionalMarker(resolved, optional);
-    if (override !== undefined) {
-      fields.push(...docLines([override]));
-    }
     fields.push(`public let ${name}: ${swiftType}`);
     parameters.push(`${name}: ${swiftType}`);
     assignments.push(`self.${name} = ${name}`);
@@ -871,7 +858,6 @@ function renderTaggedEnum(
         variant.required,
         payloadName,
         [],
-        new Map(),
         context,
         `${path}.${variant.value}`,
       ),
@@ -931,13 +917,9 @@ function renderTypeBinding(binding: SwiftTypeBinding): readonly string[] {
   const label = `swift type binding ${binding.swiftTypeName}`;
   const root = toJsonSchema(binding.schema, label);
   const context: RenderContext = { label, root };
-  const optionalFields = new Map(Object.entries(binding.optionalFields ?? {}));
   const schema = resolveRef(root, context, "$");
   const union = taggedUnion(schema, context, "$");
   if (union !== null) {
-    if (optionalFields.size > 0) {
-      throw new Error(`${label} cannot mark union fields optional`);
-    }
     return renderTaggedEnum(
       union,
       binding.swiftTypeName,
@@ -956,7 +938,6 @@ function renderTypeBinding(binding: SwiftTypeBinding): readonly string[] {
     new Set(requiredNames(schema)),
     binding.swiftTypeName,
     binding.doc,
-    optionalFields,
     context,
     "$",
   );
@@ -1154,7 +1135,15 @@ export function renderSwiftRoutes(
         '  CharacterSet(charactersIn: "/"))',
         "",
         "private static func pathSegment(_ value: String) -> String {",
-        "  value.addingPercentEncoding(withAllowedCharacters: pathSegmentAllowed) ?? value",
+        '  var encoded = ""',
+        "  for scalar in value.unicodeScalars {",
+        "    if pathSegmentAllowed.contains(scalar) {",
+        "      encoded.unicodeScalars.append(scalar)",
+        "    } else {",
+        '      for byte in String(scalar).utf8 { encoded += String(format: "%%%02X", byte) }',
+        "    }",
+        "  }",
+        "  return encoded",
         "}",
       ]
     : [];

@@ -283,6 +283,15 @@ async fn run_invalidation_cancels_owned_io_and_allows_a_fresh_authority_snapshot
 
 #[tokio::test]
 async fn actual_guest_rpc_shutdown_reports_native_timeout_and_keeps_physical_ownership() {
+    actual_guest_rpc_shutdown(false).await;
+}
+
+#[tokio::test]
+async fn actual_guest_rpc_shutdown_retains_physical_ownership_when_sockets_reset() {
+    actual_guest_rpc_shutdown(true).await;
+}
+
+async fn actual_guest_rpc_shutdown(reset_on_close: bool) {
     use crate::{
         guest_rpc::{CleanupError, Runtime},
         ssh::SshRuntime,
@@ -325,7 +334,12 @@ async fn actual_guest_rpc_shutdown_reports_native_timeout_and_keeps_physical_own
     let http = Http::new(vec![1; 1024]).await;
     let mut gate = Blocking::new().await;
     let fd: Fd = Arc::new(Mutex::new(None));
-    let (work, body) = http_work(http.address, Some(gate.address), Arc::clone(&fd));
+    let (work, body) = http_work_with_reset(
+        http.address,
+        Some(gate.address),
+        Arc::clone(&fd),
+        reset_on_close,
+    );
     let node = registration
         .lookup(uuid::Uuid::new_v4())
         .unwrap()
@@ -344,7 +358,11 @@ async fn actual_guest_rpc_shutdown_reports_native_timeout_and_keeps_physical_own
     assert!(bounded(body).await.is_err());
     gate.release().await;
     bounded(node.physical()).await.unwrap();
-    http.finish().await;
+    // Joined cancellation closes the socket without requiring a graceful FIN.
+    let closure = http.finish_closed().await;
+    if reset_on_close {
+        assert_eq!(closure, SocketClosure::Reset);
+    }
     assert_ne!(
         std::fs::read_link(format!("/proc/self/fd/{number}")).ok(),
         Some(inode)

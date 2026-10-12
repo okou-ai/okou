@@ -18,7 +18,7 @@ pub struct JobRequest {
     pub user_timezone: Option<String>,
     #[serde(default)]
     pub profile: Option<String>,
-    /// Enqueue-time snapshot for sandbox and workspace reuse ownership.
+    /// Enqueue-time snapshot for sandbox and home reuse ownership.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reuse_key: Option<String>,
     /// Provider-native session ID to resume.

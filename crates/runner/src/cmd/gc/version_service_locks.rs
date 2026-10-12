@@ -136,9 +136,7 @@ mod tests {
             version_service_unit_from_lock_file_name("service-vm0-runner-staging.lock").is_none()
         );
         assert!(version_service_unit_from_lock_file_name("service-vm0-runner-v1.0.lock").is_none());
-        assert!(
-            version_service_unit_from_lock_file_name("workspace-image-cache-v1.0.0.lock").is_none()
-        );
+        assert!(version_service_unit_from_lock_file_name("home-image-cache-v1.0.0.lock").is_none());
         assert!(version_service_unit_from_lock_file_name("service-vm0-runner-v1.0.0").is_none());
     }
 

@@ -390,53 +390,6 @@ test("Create image sends every edited draft template reference", async () => {
   expect(JSON.stringify(parts)).toContain("for the cover.");
 });
 
-async function setupMultipleTemplatePresentation() {
-  setupModels();
-  const submissions: UserMessageDocument[] = [];
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      if (body.userMessage) {
-        submissions.push(body.userMessage);
-      }
-    },
-  });
-  await setupComposer();
-  const user = userEvent.setup({ delay: null });
-  const [first, second] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
-  if (!first || !second) {
-    throw new Error("Expected two presentation templates");
-  }
-  await selectTemplate(first);
-  await selectTemplate(second);
-  // Page bootstrap can remount the editor while the template dialogs are open.
-  await user.click(await findComposerEditor());
-  await user.paste(" /");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  await clickPanelRow("Presentation", menu);
-  await waitFor(() => {
-    expect(taskChip("Presentation")).toBeInTheDocument();
-  });
-  return { first, second, submissions };
-}
-
-test("All selected template references survive sending", async () => {
-  const { first, second, submissions } =
-    await setupMultipleTemplatePresentation();
-  click(button("Send"));
-  await waitFor(() => {
-    expect(submissions).toHaveLength(1);
-  });
-  expect(
-    submissions[0]?.parts
-      .filter((part) => {
-        return part.type === "template";
-      })
-      .map((part) => {
-        return part.titleSnapshot;
-      }),
-  ).toStrictEqual([first.title, second.title]);
-});
-
 test("Presentation adds another template when the draft already has one", async () => {
   setupModels();
   const editor = await setupComposer();

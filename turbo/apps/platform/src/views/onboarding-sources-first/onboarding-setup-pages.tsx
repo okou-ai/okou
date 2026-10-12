@@ -38,8 +38,6 @@ import {
   type OnboardingSubscriptionStatus,
 } from "../../signals/onboarding/onboarding-subscription-connect.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { PersonalClaudeCodeDeviceAuthDialog } from "../okou-page/components/settings/claude-code-device-auth-dialog.tsx";
-import { PersonalCodexDeviceAuthDialog } from "../okou-page/components/settings/codex-device-auth-dialog.tsx";
 import {
   OnboardingChoiceCard,
   OnboardingIllustration,
@@ -680,10 +678,8 @@ export function OnboardingExperiencePage() {
           )}
         </div>
       </OnboardingStepLayout>
-      {/* The same device-auth dialogs Settings uses, so the step connects the
-          account rather than keeping an answer of its own. */}
-      <PersonalCodexDeviceAuthDialog />
-      <PersonalClaudeCodeDeviceAuthDialog />
+      {/* OnboardingStepLayout owns the personal authorization dialogs shared
+          with Settings. */}
     </>
   );
 }

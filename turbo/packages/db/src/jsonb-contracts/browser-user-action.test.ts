@@ -21,11 +21,48 @@ const inputTarget = {
 };
 
 describe("Browser user-action JSONB payload", () => {
+  it("keeps historical input requests readable without inventing an explanation", () => {
+    const payload = {
+      version: 1,
+      kind: "input",
+      callbackIds,
+      target: {
+        ...inputTarget,
+        fields: [
+          {
+            key: "code",
+            label: "Code",
+            fieldKind: "one_time_code",
+            required: true,
+            backendNodeId: 42,
+            fingerprint: { tagName: "INPUT", inputType: "text" },
+          },
+        ],
+      },
+    };
+    expect(parseBrowserUserActionPayload(payload)).toStrictEqual(payload);
+    for (const invalid of [
+      { title: "Sign in" },
+      { reason: "Sign-in is required" },
+      { title: null, reason: null },
+      { title: " ", reason: "Sign-in is required" },
+      { title: "Sign in", reason: " " },
+      { title: "x".repeat(129), reason: "Sign-in is required" },
+      { title: "Sign in", reason: "x".repeat(513) },
+    ]) {
+      expect(() => {
+        return parseBrowserUserActionPayload({ ...payload, ...invalid });
+      }).toThrow("Invalid Browser user-action payload");
+    }
+  });
+
   it("decodes a versioned safe input payload", () => {
     expect(
       parseBrowserUserActionPayload({
         version: 1,
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackIds,
         target: {
           ...inputTarget,
@@ -43,6 +80,8 @@ describe("Browser user-action JSONB payload", () => {
       }),
     ).toMatchObject({
       kind: "input",
+      title: "Sign in to download invoices",
+      reason: "The website requires sign-in to access your invoices.",
       callbackIds,
       target: { fields: [{ backendNodeId: 42 }] },
     });
@@ -60,6 +99,8 @@ describe("Browser user-action JSONB payload", () => {
     const payload = {
       version: 1,
       kind: "input",
+      title: "Sign in to download invoices",
+      reason: "The website requires sign-in to access your invoices.",
       callbackIds,
       target: { ...inputTarget, fields: [field] },
     };
@@ -102,6 +143,8 @@ describe("Browser user-action JSONB payload", () => {
       parseBrowserUserActionPayload({
         version: 1,
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackIds,
         target,
       }).target.fields[0],
@@ -114,6 +157,8 @@ describe("Browser user-action JSONB payload", () => {
         parseBrowserUserActionPayload({
           version: 1,
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackIds,
           target: { ...inputTarget, fields: [candidate] },
         });
@@ -133,6 +178,8 @@ describe("Browser user-action JSONB payload", () => {
     const payload = {
       version: 1,
       kind: "input",
+      title: "Sign in to download invoices",
+      reason: "The website requires sign-in to access your invoices.",
       callbackIds,
       target: { ...inputTarget, fields: [field] },
     };
@@ -164,6 +211,8 @@ describe("Browser user-action JSONB payload", () => {
     const payload = {
       version: 1,
       kind: "input",
+      title: "Sign in to download invoices",
+      reason: "The website requires sign-in to access your invoices.",
       callbackIds,
       target: { ...inputTarget, fields: [field] },
     };
@@ -205,6 +254,8 @@ describe("Browser user-action JSONB payload", () => {
       return parseBrowserUserActionPayload({
         version: 1,
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackIds,
         target: { ...inputTarget, fields: [candidate] },
       });
@@ -247,6 +298,8 @@ describe("Browser user-action JSONB payload", () => {
       return parseBrowserUserActionPayload({
         version: 1,
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackIds,
         target: { ...inputTarget, fields: [candidate] },
       });
@@ -280,6 +333,8 @@ describe("Browser user-action JSONB payload", () => {
       return parseBrowserUserActionPayload({
         version: 2,
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackIds,
         target: { ...inputTarget, fields: [] },
       });
@@ -288,6 +343,8 @@ describe("Browser user-action JSONB payload", () => {
       return parseBrowserUserActionPayload({
         version: 1,
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         target: { ...inputTarget, fields: [] },
       });
     }).toThrow("Invalid Browser user-action callback identities");
@@ -295,6 +352,8 @@ describe("Browser user-action JSONB payload", () => {
       return parseBrowserUserActionPayload({
         version: 1,
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackIds,
         target: {
           ...inputTarget,
@@ -316,6 +375,8 @@ describe("Browser user-action JSONB payload", () => {
       return parseBrowserUserActionPayload({
         version: 1,
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackIds,
         target: {
           ...inputTarget,
@@ -344,6 +405,8 @@ describe("Browser user-action JSONB payload", () => {
       return parseBrowserUserActionPayload({
         version: 1,
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackIds,
         target: { ...inputTarget, fields: [field, field] },
       });
@@ -352,6 +415,8 @@ describe("Browser user-action JSONB payload", () => {
       return parseBrowserUserActionPayload({
         version: 1,
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackIds,
         target: {
           ...inputTarget,

@@ -20,6 +20,7 @@ import {
 } from "../../signals/okou-page/pinned-agents.ts";
 
 import { detach, Reason } from "../../signals/utils.ts";
+import { SubscriptionLinkingHint } from "./subscription-linking.tsx";
 import { ChatComposer } from "./chat-composer.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
 import {
@@ -37,8 +38,6 @@ import {
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
 import { AgentAvatarImg, useAgentAvatarTexture } from "./sidebar-shared.tsx";
 import { Link } from "../router/link.tsx";
-import { PersonalClaudeCodeDeviceAuthDialog } from "./components/settings/claude-code-device-auth-dialog.tsx";
-import { PersonalCodexDeviceAuthDialog } from "./components/settings/codex-device-auth-dialog.tsx";
 import { pwaChatListVisible$ } from "../../signals/okou-page/pwa-navigation.ts";
 import { PwaChatListPage } from "./pwa-chat-list-page.tsx";
 
@@ -451,18 +450,25 @@ function AgentComposerPage() {
             greeting's auto margins below have free space to take; the column
             still grows past it when the content is taller, and auto margins
             collapse to nothing there, so the composer scrolls with the page
-            instead of holding the floor. */}
+            instead of holding the floor.
+
+            From `sm` up the column fills the scrollport too, and the block
+            from the greeting down to the type row sits in the middle of the
+            page: the two flexible boxes either side of it split the free
+            space evenly. */}
         <div
           data-testid="agent-chat-scroll-content"
-          className="mx-auto w-full max-w-[900px] flex flex-1 flex-col items-stretch gap-6 pt-8 pb-0 sm:flex-none sm:gap-10 sm:pt-[20vh] sm:pb-safe-or-[10vh]"
+          className="mx-auto w-full max-w-[900px] flex flex-1 flex-col items-stretch gap-6 pt-8 pb-0 sm:gap-0 sm:pt-0"
         >
+          <div aria-hidden className="hidden sm:block sm:min-h-8 sm:flex-1" />
+
           {/* The greeting keeps the space the composer left behind rather than
               staying pinned under the header with a screen-deep hole under it.
               Both margins are auto, so the free space is split above and below
               it and the line lands in the middle of what is left. The row is at
               its final width on the first frame, so it is centered once and
               never moves again. */}
-          <div className="flex min-h-14 w-full justify-center my-auto sm:my-0">
+          <div className="flex min-h-14 w-full justify-center my-auto sm:mt-0 sm:mb-10">
             {/* The async agent identity and user profile leave the first
                 renders incomplete. Reserve the finished row's height, but do
                 not let the avatar run a throwaway entrance before the real
@@ -513,27 +519,48 @@ function AgentComposerPage() {
             className="order-3 pb-safe-or-2 sm:order-none sm:pb-0"
           >
             <ChatComposer signals={composerSignals} />
+            <SubscriptionLinkingHint />
           </div>
 
-          {/* Above the generic starting points and below the composer: these
-              cards describe the member's own unfinished work, so they are only
-              worth the position when there are any, and the section renders
-              nothing when there are not. It is mounted bare rather than in a
-              wrapper: a wrapper would stay a flex item after the section
-              returned null, and the column's own `gap` would then be charged
-              twice — the 80px the composer sat above the chips was two 40px
-              steps with an empty box between them, not one deliberate step.
-              The ordering the wrapper carried moved onto the section itself. */}
-          <HomeTaskRecommendations agentId={currentChatAgentId} />
+          {/* The lower of the two flexible boxes. Below `sm` it is not a box at
+              all, so its children keep their `order` in the column.
 
-          <div className="order-2 sm:order-none">
-            <ComposerTaskChips signals={composerSignals} />
+              The type row hangs off the composer, so it takes the 16px step
+              rather than the 40px one between the greeting and the composer.
+
+              The box starts at that step plus the row's 36px, so the row
+              counts as part of the centred block rather than overhanging it.
+              From `md` it also carries the 56px the corner header reserves
+              above the scroller: that band is empty and reads as part of the
+              page's top margin, so the margin under the row has to match it.
+
+              `min-h-0` stops the box from growing with what it holds. Picking a
+              type swaps the row for a panel several times its height, and if
+              the box grew, the space above it would shrink to make room and
+              lift the composer the click came from. The panel hangs below the
+              row's slot instead and the page scrolls to it. */}
+          <div className="contents sm:flex sm:min-h-0 sm:grow sm:basis-13 sm:flex-col sm:gap-10 sm:pt-4 md:basis-27">
+            {/* Above the generic starting points and below the composer: these
+                cards describe the member's own unfinished work, so they are
+                only worth the position when there are any, and the section
+                renders nothing when there are not. It is mounted bare rather
+                than in a wrapper: a wrapper would stay a flex item after the
+                section returned null, and the `gap` would then be charged
+                twice — the 80px the composer once sat above the chips was two
+                40px steps with an empty box between them, not one deliberate
+                step. The ordering the wrapper carried moved onto the section
+                itself. */}
+            <HomeTaskRecommendations agentId={currentChatAgentId} />
+
+            {/* The bottom padding is the end of the page once a panel has
+                overflowed the box and the page scrolls. */}
+            <div className="order-2 sm:order-none sm:pb-10">
+              <ComposerTaskChips signals={composerSignals} />
+            </div>
           </div>
         </div>
       </main>
       <ChatHomeCompliance />
-      <PersonalClaudeCodeDeviceAuthDialog />
-      <PersonalCodexDeviceAuthDialog />
     </div>
   );
 }

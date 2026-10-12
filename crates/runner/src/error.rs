@@ -127,7 +127,6 @@ impl From<runner_supervisor::reactor::error::ReactorError> for RunnerError {
         match error {
             ReactorError::Host(error) => error.into(),
             ReactorError::Provider(error) => error.into(),
-            ReactorError::Storage(error) => error.into(),
             ReactorError::Lifecycle(error) => error.into(),
             ReactorError::Network(error) => error.into(),
             ReactorError::Executor(error) => error.into(),
@@ -278,10 +277,6 @@ mod tests {
                 RunnerError::Api("provider".into()),
             ),
             (
-                ReactorError::Storage(runner_storage::StorageError::Cancelled),
-                RunnerError::Cancelled,
-            ),
-            (
                 ReactorError::Lifecycle(runner_lifecycle::LifecycleError::Internal(
                     "lifecycle".into(),
                 )),
@@ -308,6 +303,13 @@ mod tests {
             );
             assert_eq!(mapped.to_string(), expected.to_string());
         }
+        let mapped = RunnerError::from(runner_storage::StorageError::Cancelled);
+        let expected = RunnerError::Cancelled;
+        assert_eq!(
+            std::mem::discriminant(&mapped),
+            std::mem::discriminant(&expected)
+        );
+        assert_eq!(mapped.to_string(), expected.to_string());
         let io = std::io::Error::from_raw_os_error(libc::EACCES);
         let expected = io.to_string();
         let mapped = RunnerError::from(ReactorError::Host(runner_host::HostError::Io(io)));

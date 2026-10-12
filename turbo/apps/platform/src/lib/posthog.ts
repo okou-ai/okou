@@ -216,6 +216,24 @@ export function captureOnboardingEvent(
   });
 }
 
+export function captureSubscriptionLinkingEvent(
+  name:
+    | "hint_viewed"
+    | "hint_dismissed"
+    | "entry_clicked"
+    | "provider_selected"
+    | "manage_opened",
+  source: "composer_hint" | "account_menu",
+  provider?: "codex-oauth-token" | "claude-code-oauth-token",
+): void {
+  runPostHog(() => {
+    posthog.capture(`SubscriptionLinking: ${name}`, {
+      source,
+      ...(provider ? { provider } : {}),
+    });
+  });
+}
+
 export function capturePageView(): void {
   runPostHog(() => {
     posthog.capture("$pageview");

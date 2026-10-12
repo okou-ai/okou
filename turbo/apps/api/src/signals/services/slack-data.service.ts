@@ -234,6 +234,10 @@ export function slackOrgInstallation(args: {
     readonly workspaceName: string | null;
   } | null>
 > {
+  const featureContext$ = args.userId
+    ? userFeatureSwitchContext(args.orgId, args.userId)
+    : undefined;
+
   return computed(async (get) => {
     const db = get(db$);
 
@@ -249,9 +253,7 @@ export function slackOrgInstallation(args: {
 
     const botToken = await decryptPersistentSecretValue(
       installation.encryptedBotToken,
-      args.userId
-        ? await get(userFeatureSwitchContext(args.orgId, args.userId))
-        : { orgId: args.orgId },
+      featureContext$ ? await get(featureContext$) : { orgId: args.orgId },
     );
 
     return {
@@ -322,6 +324,8 @@ export function slackUserInstallation(args: {
     | { readonly kind: "not-connected" }
   >
 > {
+  const featureContext$ = userFeatureSwitchContext(args.orgId, args.userId);
+
   return computed(async (get) => {
     const binding = await loadSlackUserBinding(get(db$), args);
     if (binding.kind !== "connected") {
@@ -331,7 +335,7 @@ export function slackUserInstallation(args: {
     const { installation } = binding;
     const botToken = await decryptPersistentSecretValue(
       installation.encryptedBotToken,
-      await get(userFeatureSwitchContext(args.orgId, args.userId)),
+      await get(featureContext$),
     );
     return {
       kind: "connected",

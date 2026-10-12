@@ -1307,7 +1307,7 @@ struct FreshArchiveClassification {
 /// A storage plan paired with the delivery prepared for its plan inputs.
 ///
 /// The plan and delivery must remain together. A retry that changes the
-/// workspace-image selection must drain the previous delivery and rebuild both
+/// home-image selection must drain the previous delivery and rebuild both
 /// values; a retry such as DNS-only sandbox replacement may retain the pair
 /// when the plan inputs are unchanged.
 pub struct PreparedStorage {
@@ -1350,7 +1350,7 @@ impl FreshArchiveDelivery {
     /// Cancels and awaits delivery work when its prepared plan will not be applied.
     ///
     /// Callers use this for sandbox preparation failure, replacement after a
-    /// workspace-image retry, a plan with no guest work, pre-spawn failure, or
+    /// home-image retry, a plan with no guest work, pre-spawn failure, or
     /// cancellation. It closes pending apply gates, aborts and joins fetch
     /// tasks, and then waits for publication tasks that have already started.
     /// Fetches can be cancelled before publication, but an atomic fsync/rename

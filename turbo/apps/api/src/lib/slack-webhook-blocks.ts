@@ -4,7 +4,6 @@ import type {
   SlackAnyBlock,
   SlackView,
 } from "../signals/external/slack-block-kit";
-import { integrationModelOptionValue } from "../signals/services/integration-chat-thread-model.service";
 import { env } from "./env";
 import {
   OFFICIAL_SLACK_APP_NAME,
@@ -13,17 +12,6 @@ import {
 } from "./slack-official-app";
 
 type SlackBlocks = SlackAnyBlock[];
-
-export const MODEL_PICKER_CALLBACK_ID = "model_preference_modal";
-export const MODEL_PICKER_BLOCK_ID = "model_select_block";
-export const MODEL_PICKER_ACTION_ID = "model_select";
-
-interface ModelPickerOption {
-  /** Null is Auto. */
-  readonly model: string | null;
-  readonly label: string;
-  readonly isDefault: boolean;
-}
 
 interface AppHomeOptions {
   readonly isLinked: boolean;
@@ -53,7 +41,7 @@ function buildAppHomeHeaderBlocks(): SlackBlocks {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: "Connect your AI agents to Slack and interact with them through messages.",
+        text: "Chat with your workspace's default agent in Slack through direct messages and mentions.",
       },
     },
     { type: "divider" },
@@ -147,7 +135,7 @@ function buildAppHomeAgentBlocks(options: AppHomeOptions): SlackBlocks {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `AgentName: *${options.agentName}*`,
+        text: `Default agent: *${options.agentName}*`,
       },
       accessory: settingsButton,
     });
@@ -176,14 +164,14 @@ function buildAppHomeUsageBlocks(options: AppHomeOptions): SlackBlocks {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Commands*\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} connect\` - Connect to ${assistantName}\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} disconnect\` - Disconnect from ${assistantName}`,
+        text: `*Commands*\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} help\` - Show available commands\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} connect\` - Connect to ${assistantName}\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} disconnect\` - Disconnect from ${assistantName}`,
       },
     },
     {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Usage*\nSend a DM or mention ${botMention} in any channel to chat with your agents`,
+        text: `*Usage*\nSend a DM or mention ${botMention} in any channel to chat with your workspace's default agent.`,
       },
     },
     { type: "divider" },
@@ -280,16 +268,12 @@ export function buildLoginPromptMessage(loginUrl: string): SlackBlocks {
 }
 
 export function buildHelpMessage(opts?: {
-  readonly canModel?: boolean;
   readonly botUserId?: string;
 }): SlackBlocks {
   const { assistantName } = BRAND_PRESENTATION;
   const botMention = opts?.botUserId
     ? officialSlackBotMention(opts.botUserId)
     : undefined;
-  const modelLine = opts?.canModel
-    ? `\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} model\` - Choose your model`
-    : "";
   return [
     {
       type: "section",
@@ -305,7 +289,7 @@ export function buildHelpMessage(opts?: {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Commands*\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} connect\` - Connect to ${assistantName}${modelLine}\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} disconnect\` - Disconnect from ${assistantName}`,
+        text: `*Commands*\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} help\` - Show available commands\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} connect\` - Connect to ${assistantName}\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} disconnect\` - Disconnect from ${assistantName}`,
       },
     },
     {
@@ -370,77 +354,6 @@ export function buildWelcomeMessage(
   }
 
   return blocks;
-}
-
-function formatModelPickerOptionLabel(option: ModelPickerOption): string {
-  if (!option.isDefault) {
-    return option.label.slice(0, 75);
-  }
-  const suffix = " (default)";
-  if (option.label.length + suffix.length <= 75) {
-    return `${option.label}${suffix}`;
-  }
-  return `${option.label.slice(0, 75 - suffix.length)}${suffix}`;
-}
-
-export function buildModelPickerModal(args: {
-  readonly options: readonly ModelPickerOption[];
-  /** Null is Auto. */
-  readonly currentSelectedModel: string | null;
-  readonly privateMetadata?: string;
-}): SlackView {
-  const selectOptions = args.options.map((option) => {
-    return {
-      text: {
-        type: "plain_text" as const,
-        text: formatModelPickerOptionLabel(option),
-      },
-      value: integrationModelOptionValue(option.model),
-    };
-  });
-  const currentValue = integrationModelOptionValue(args.currentSelectedModel);
-  const currentOption = selectOptions.find((option) => {
-    return option.value === currentValue;
-  });
-  const defaultModel = args.options.find((option) => {
-    return option.isDefault;
-  });
-  const defaultOption = defaultModel
-    ? selectOptions.find((option) => {
-        return option.value === integrationModelOptionValue(defaultModel.model);
-      })
-    : undefined;
-  const initialOption = currentOption ?? defaultOption ?? selectOptions[0];
-
-  return {
-    type: "modal",
-    callback_id: MODEL_PICKER_CALLBACK_ID,
-    title: { type: "plain_text", text: "Switch Model" },
-    submit: { type: "plain_text", text: "Switch" },
-    close: { type: "plain_text", text: "Cancel" },
-    blocks: [
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "Choose your model. This only affects your own runs.",
-        },
-      },
-      {
-        type: "input",
-        block_id: MODEL_PICKER_BLOCK_ID,
-        label: { type: "plain_text", text: "Model" },
-        element: {
-          type: "static_select",
-          action_id: MODEL_PICKER_ACTION_ID,
-          placeholder: { type: "plain_text", text: "Select a model" },
-          options: selectOptions,
-          ...(initialOption && { initial_option: initialOption }),
-        },
-      },
-    ],
-    ...(args.privateMetadata && { private_metadata: args.privateMetadata }),
-  };
 }
 
 export function buildLoginMessage(loginUrl: string): SlackBlocks {

@@ -1201,7 +1201,7 @@ async fn execute_cli_inner(
     cmd.stdin(Stdio::piped());
     child_env::apply_values_to_tokio_command(&mut cmd, &child_env_values);
     // Set the child cwd explicitly at spawn time so the CLI observes the
-    // current canonical workspace mount instead of relying on inherited cwd.
+    // current canonical working directory instead of relying on inherited cwd.
     set_cli_current_dir(&mut cmd, paths::CANONICAL_WORKING_DIR)?;
     if let Some(workload_containment) = workload_containment {
         workload_containment.configure_command(&mut cmd)?;

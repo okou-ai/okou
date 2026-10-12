@@ -3,7 +3,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { exportJobs } from "@okouai/db/schema/export-job";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { command } from "ccstate";

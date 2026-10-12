@@ -1,3 +1,4 @@
+import { PersonalSubscriptionDialogs } from "../okou-page/subscription-linking.tsx";
 import type { ReactNode } from "react";
 import { Button } from "@okouai/ui";
 import { useSet } from "ccstate-react";
@@ -279,6 +280,7 @@ export function OnboardingStepLayout({
   return (
     <div className="relative box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-sidebar pb-safe text-foreground max-sm:bg-background">
       <SettingsDialogMount />
+      <PersonalSubscriptionDialogs />
       {/* The app's own rail: the workspace at the top, the account at the
           bottom, both as the marks the sidebar nav already uses. A phone
           gives the step the whole width instead. */}

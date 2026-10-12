@@ -268,11 +268,11 @@ limits, cancellation wakeups and terminal drain deadlines are unchanged.
 
 Storage remains contained even though it has a typed entry point because its
 download, extraction, cache, and filesystem work is user influenced. The DNS,
-state, file, and fresh workspace-mount helpers use process groups at guest
+state, file, and fresh home-mount helpers use process groups at guest
 root; Codex history-replacement cleanup uses a process group as the sandbox
 user. Their typed handlers select fixed programs, validate bounded inputs before
-containment selection, enforce deadlines, and own kill/reap. The workspace
-mount accepts no input and fixes its device, target, mount-info source, shell
+containment selection, enforce deadlines, and own kill/reap. The home
+mount accepts only the fixed paired layout and fixes its device, target, mount-info source, shell
 helper, identity, output policy, and timeout; unlike storage, it cannot select
 user-provided download or extraction work. Codex cleanup additionally fixes
 the target home, scan budget, environment, and helper script while retaining
@@ -316,9 +316,9 @@ execution. An unusable blank drains its prepared storage, unregisters its proxy,
 closes its network-log session and is destroyed before one fresh replacement
 with prefetch disabled. The replacement keeps the run/sandbox identity and caller
 budget ownership, acquires ordinary fresh pre-spawn admission, and cannot spend
-another DNS, workspace or prefetch retry. Run-scoped remote history work remains
+another DNS, home image or prefetch retry. Run-scoped remote history work remains
 owned across replacement and is drained on terminal failure or cancellation.
-The retired blank's workspace lease is released without guest freeze or cache
+The retired blank's home lease is released without guest freeze or cache
 publication; guest-log copying and session-ID discovery are also skipped on that
 known-unusable connection. Cleanup uncertainty or cancellation suppresses creation.
 
@@ -369,7 +369,7 @@ ready event rather than process creation.
 The production-path benchmark lives in
 `.github/scripts/runner-behavior-process-containment.sh`. It submits the
 deterministic mock CLI through the same-metal runner and Guest Agent path, then
-measures fresh sandbox, workspace-cache reuse, and exact sandbox reuse samples
+measures fresh sandbox, home-cache reuse, and exact sandbox reuse samples
 under one service profile. Set `AGENT_READY_BENCHMARK_SAMPLES` to choose the
 sample count; the script retains bounded raw JSONL evidence and reports the
 sample count, failures, and p50/p90/p95/p99 for process-launch (historically

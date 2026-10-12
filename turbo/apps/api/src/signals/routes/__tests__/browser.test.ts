@@ -2,7 +2,10 @@ import { createPublicComputerUseHosts } from "./helpers/public-computer-use-host
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  deleteFeatureSwitchesForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
@@ -246,6 +249,8 @@ function mockNativeInputTarget(): void {
 function nativePasswordRequest(callbackPrompt: string) {
   return {
     kind: "input" as const,
+    title: "Sign in to download invoices",
+    reason: "The website requires sign-in to access your invoices.",
     callbackPrompt,
     pageTargetId: "native-input-target",
     fields: [
@@ -834,6 +839,8 @@ async function setupNativeMixedVerificationScenario(
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after verified native input",
           pageTargetId: "native-input-target",
           fields: [
@@ -1172,6 +1179,8 @@ async function setupNativeScalarGuardScenario(laterType = "password") {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after scalar input",
           pageTargetId: "native-input-target",
           fields: [
@@ -1629,6 +1638,8 @@ async function setupNativeFileScenario(
           headers: current.claim.browserHeaders,
           body: {
             kind: "input",
+            title: "Sign in to download invoices",
+            reason: "The website requires sign-in to access your invoices.",
             callbackPrompt: "Continue after selecting the file",
             pageTargetId: "native-input-target",
             fields: [
@@ -1712,6 +1723,107 @@ aroundEach(async (runTest) => {
 });
 
 describe("Browser user-action route", () => {
+  it.each(["another user", "another organization"] as const)(
+    "keeps all native input operations within the request owner for %s",
+    async (foreignScope) => {
+      const owned = await setupOwnedNativeFileBrowserScenario();
+      await owned.run(async () => {
+        const { create } = await setupNativeFileScenario(owned);
+        const created = await create();
+        const requestToken = created.body.action.requestToken;
+        const headers = { authorization: "Bearer clerk-session" };
+        const params = { requestToken };
+        const observed = await accept(
+          userActionClient().preflight({ headers, params, body: {} }),
+          [200],
+        );
+        const fingerprint = observed.body.fields[0]?.control.fileSetFingerprint;
+        if (!fingerprint) {
+          throw new Error("Expected the owner's observed file fingerprint");
+        }
+        const foreignActor = createBddApi(context).user(
+          foreignScope === "another user"
+            ? { orgId: owned.actor.orgId }
+            : { userId: owned.actor.userId },
+        );
+        if (!foreignActor.orgId) {
+          throw new Error("Expected an organization for the other caller");
+        }
+        const foreign = { ...foreignActor, orgId: foreignActor.orgId };
+        const denial = await settleIncludingAbort(async () => {
+          await updateFeatureSwitchesForUser(context, foreign, {
+            [FeatureSwitchKey.BrowserNativeInput]: true,
+          });
+          const denied = [
+            await userActionClient().get({ headers, params }),
+            await userActionClient().preflight({ headers, params, body: {} }),
+            await userActionClient().apply({
+              headers,
+              params,
+              body: { values: [nativeFileValue(fingerprint)] },
+            }),
+            await userActionClient().cancel({ headers, params, body: {} }),
+            await userActionClient().prepareFileUpload({
+              headers,
+              params,
+              body: { key: "document", index: 0, size: 4 },
+            }),
+          ];
+          for (const response of denied) {
+            expect(response).toMatchObject({
+              status: 404,
+              body: { error: { code: "BROWSER_USER_ACTION_NOT_FOUND" } },
+            });
+          }
+        });
+        const cleanup = await settleIncludingAbort(
+          deleteFeatureSwitchesForUser(context, foreign),
+        );
+        createRouteMocks(context).clerk.session(
+          owned.actor.userId,
+          owned.actor.orgId,
+          owned.actor.orgRole,
+        );
+        await updateFeatureSwitchesForUser(context, owned.actor, {
+          [FeatureSwitchKey.BrowserNativeInput]: true,
+        });
+        if (!denial.ok && !cleanup.ok) {
+          throw new AggregateError(
+            [denial.error, cleanup.error],
+            "Browser owner checks and feature cleanup failed",
+          );
+        }
+        if (!denial.ok) {
+          throw denial.error;
+        }
+        if (!cleanup.ok) {
+          throw cleanup.error;
+        }
+
+        const pending = await accept(
+          userActionClient().get({ headers, params }),
+          [200],
+        );
+        expect(pending.body.state).toBe("pending");
+        const ownerPreflight = await accept(
+          userActionClient().preflight({ headers, params, body: {} }),
+          [200],
+        );
+        expect(ownerPreflight.body.state).toBe("pending");
+        const cancelled = await accept(
+          userActionClient().cancel({ headers, params, body: {} }),
+          [200],
+        );
+        expect(cancelled.body.state).toBe("cancelled");
+        const terminal = await accept(
+          userActionClient().get({ headers, params }),
+          [200],
+        );
+        expect(terminal.body.state).toBe("cancelled");
+      });
+    },
+  );
+
   it("bounds native file input and cleans staged files when target observation becomes stale", async () => {
     const { state, create, stageSyntheticFile, temporaryObjects, deletedKeys } =
       await setupNativeFileScenario();
@@ -1835,6 +1947,8 @@ describe("Browser user-action route", () => {
       headers: current.claim.browserHeaders,
       body: {
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackPrompt: "Continue after selecting the file",
         pageTargetId: "native-input-target",
         fields: [
@@ -1868,6 +1982,8 @@ describe("Browser user-action route", () => {
       headers: current.claim.browserHeaders,
       body: {
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackPrompt: "Continue after unsupported file root",
         pageTargetId: "native-input-target",
         fields: [
@@ -2473,6 +2589,8 @@ describe("Browser user-action route", () => {
           headers: current.claim.browserHeaders,
           body: {
             kind: "input",
+            title: "Sign in to download invoices",
+            reason: "The website requires sign-in to access your invoices.",
             callbackPrompt: "Continue after checkbox input",
             pageTargetId: "native-input-target",
             fields: [
@@ -2596,6 +2714,8 @@ describe("Browser user-action route", () => {
       headers: current.claim.browserHeaders,
       body: {
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackPrompt: "Continue after checkbox input",
         pageTargetId: "native-input-target",
         fields: [
@@ -2618,6 +2738,8 @@ describe("Browser user-action route", () => {
           headers: current.claim.browserHeaders,
           body: {
             kind: "input",
+            title: "Sign in to download invoices",
+            reason: "The website requires sign-in to access your invoices.",
             callbackPrompt: "Continue after checkbox input",
             pageTargetId: "native-input-target",
             fields: [
@@ -2706,6 +2828,8 @@ describe("Browser user-action route", () => {
           headers: current.claim.browserHeaders,
           body: {
             kind: "input",
+            title: "Sign in to download invoices",
+            reason: "The website requires sign-in to access your invoices.",
             callbackPrompt: "Continue after radio selection",
             pageTargetId: "native-input-target",
             fields: [
@@ -2928,6 +3052,8 @@ describe("Browser user-action route", () => {
             headers: current.claim.browserHeaders,
             body: {
               kind: "input",
+              title: "Sign in to download invoices",
+              reason: "The website requires sign-in to access your invoices.",
               callbackPrompt: "Continue after the mixed form",
               pageTargetId: "native-input-target",
               fields: [
@@ -3137,6 +3263,8 @@ describe("Browser user-action route", () => {
           headers: current.claim.browserHeaders,
           body: {
             kind: "input",
+            title: "Sign in to download invoices",
+            reason: "The website requires sign-in to access your invoices.",
             callbackPrompt: "Continue after region selection",
             pageTargetId: "native-input-target",
             fields: [
@@ -3310,6 +3438,8 @@ describe("Browser user-action route", () => {
             headers: current.claim.browserHeaders,
             body: {
               kind: "input",
+              title: "Sign in to download invoices",
+              reason: "The website requires sign-in to access your invoices.",
               callbackPrompt:
                 "Continue after selecting a region and entering a note",
               pageTargetId: "native-input-target",
@@ -3454,6 +3584,8 @@ describe("Browser user-action route", () => {
           headers: current.claim.browserHeaders,
           body: {
             kind: "input",
+            title: "Sign in to download invoices",
+            reason: "The website requires sign-in to access your invoices.",
             callbackPrompt: "Continue after quantity entry",
             pageTargetId: "native-input-target",
             fields: [
@@ -3699,6 +3831,8 @@ describe("Browser user-action route", () => {
           headers: current.claim.browserHeaders,
           body: {
             kind: "input",
+            title: "Sign in to download invoices",
+            reason: "The website requires sign-in to access your invoices.",
             callbackPrompt: "Continue after slider selection",
             pageTargetId: "native-input-target",
             fields: [
@@ -3926,6 +4060,8 @@ describe("Browser user-action route", () => {
       headers: current.claim.browserHeaders,
       body: {
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackPrompt: "Continue after slider selection",
         pageTargetId: "native-input-target",
         fields: [
@@ -4007,6 +4143,8 @@ describe("Browser user-action route", () => {
           headers: current.claim.browserHeaders,
           body: {
             kind: "input",
+            title: "Sign in to download invoices",
+            reason: "The website requires sign-in to access your invoices.",
             callbackPrompt: "Continue after choosing a color",
             pageTargetId: "native-input-target",
             fields: [
@@ -4158,6 +4296,8 @@ describe("Browser user-action route", () => {
           headers: current.claim.browserHeaders,
           body: {
             kind: "input",
+            title: "Sign in to download invoices",
+            reason: "The website requires sign-in to access your invoices.",
             callbackPrompt: "Continue after choosing a color",
             pageTargetId: "native-input-target",
             fields: [
@@ -4245,6 +4385,8 @@ describe("Browser user-action route", () => {
           headers: current.claim.browserHeaders,
           body: {
             kind: "input",
+            title: "Sign in to download invoices",
+            reason: "The website requires sign-in to access your invoices.",
             callbackPrompt: "Continue after date entry",
             pageTargetId: "native-input-target",
             fields: [
@@ -4901,6 +5043,8 @@ describe("Browser user-action route", () => {
       headers: current.claim.browserHeaders,
       body: {
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackPrompt: "Continue after unsupported input",
         pageTargetId: "native-input-target",
         fields: [
@@ -4930,6 +5074,8 @@ describe("Browser user-action route", () => {
       headers: current.claim.browserHeaders,
       body: {
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackPrompt: "Continue after unsupported root",
         pageTargetId: "native-input-target",
         fields: [
@@ -4956,6 +5102,8 @@ describe("Browser user-action route", () => {
       headers: current.claim.browserHeaders,
       body: {
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackPrompt: "Continue after mismatched input",
         pageTargetId: "native-input-target",
         fields: [
@@ -4988,6 +5136,8 @@ describe("Browser user-action route", () => {
       headers: current.claim.browserHeaders,
       body: {
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackPrompt: "Continue after validated input",
         pageTargetId: "native-input-target",
         fields: [
@@ -5024,6 +5174,8 @@ describe("Browser user-action route", () => {
       headers: current.claim.browserHeaders,
       body: {
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackPrompt: "Continue after input",
         pageTargetId: "native-input-target",
         fields: [
@@ -5060,6 +5212,8 @@ describe("Browser user-action route", () => {
       headers: current.claim.browserHeaders,
       body: {
         kind: "input" as const,
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackPrompt: "Continue after input",
         pageTargetId: "native-input-target",
         fields: [
@@ -5105,6 +5259,8 @@ describe("Browser user-action route", () => {
       headers: current.claim.browserHeaders,
       body: {
         kind: "input",
+        title: "Sign in to download invoices",
+        reason: "The website requires sign-in to access your invoices.",
         callbackPrompt: "Continue after input",
         pageTargetId: "missing-target",
         fields: [
@@ -5128,6 +5284,21 @@ describe("Browser user-action route", () => {
         },
       },
     });
+    for (const explanation of [
+      { title: "   ", reason: "The website requires sign-in" },
+      { title: "x".repeat(129), reason: "The website requires sign-in" },
+      { title: "Sign in to download invoices", reason: "   " },
+      { title: "Sign in to download invoices", reason: "x".repeat(513) },
+    ]) {
+      const invalidExplanation = await userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          ...nativePasswordRequest("Continue after input"),
+          ...explanation,
+        },
+      });
+      expect(invalidExplanation.status).toBe(400);
+    }
     context.mocks.browserUseCdp.connect.mockClear();
     context.mocks.browserUseCdp.command.mockClear();
     providerReadCount = 0;
@@ -5137,6 +5308,8 @@ describe("Browser user-action route", () => {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after password entry",
           pageTargetId: "native-input-target",
           fields: [
@@ -5162,6 +5335,8 @@ describe("Browser user-action route", () => {
     expect(created.body.actionUrl).toContain("/browser/actions/");
     expect(created.body.action).toMatchObject({
       kind: "input",
+      title: "Sign in to download invoices",
+      reason: "The website requires sign-in to access your invoices.",
       state: "pending",
       siteOrigin: "https://example.com",
       fields: [
@@ -5245,6 +5420,8 @@ describe("Browser user-action route", () => {
     expect(preflight.body.state).toBe("pending");
     expect(preflight.body).toMatchObject({
       kind: "input",
+      title: "Sign in to download invoices",
+      reason: "The website requires sign-in to access your invoices.",
       fields: [
         {
           control: {
@@ -5378,6 +5555,10 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(readBack.body.callbackDelivered).toBeFalsy();
+    expect(readBack.body).toMatchObject({
+      title: created.body.action.title,
+      reason: created.body.action.reason,
+    });
     const serializedReadBack = JSON.stringify(readBack.body);
     expect(serializedReadBack).not.toContain("#password");
     expect(serializedReadBack).not.toContain("#username");
@@ -5450,6 +5631,8 @@ describe("Browser user-action route", () => {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue without changing the optional username",
           pageTargetId: "native-input-target",
           fields: [
@@ -5512,6 +5695,8 @@ describe("Browser user-action route", () => {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after multiline input",
           pageTargetId: "native-input-target",
           fields: [
@@ -5537,6 +5722,8 @@ describe("Browser user-action route", () => {
     );
     expect(multilinePreflight.body).toMatchObject({
       kind: "input",
+      title: "Sign in to download invoices",
+      reason: "The website requires sign-in to access your invoices.",
       fields: [{ control: { tagName: "TEXTAREA", inputType: "textarea" } }],
     });
     const multilineApplied = await accept(
@@ -5570,6 +5757,8 @@ describe("Browser user-action route", () => {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after provider recovery",
           pageTargetId: "native-input-target",
           fields: [
@@ -5668,6 +5857,8 @@ describe("Browser user-action route", () => {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after stale input",
           pageTargetId: "native-input-target",
           fields: [
@@ -5711,6 +5902,8 @@ describe("Browser user-action route", () => {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after preflight navigation",
           pageTargetId: "native-input-target",
           fields: [
@@ -5744,6 +5937,8 @@ describe("Browser user-action route", () => {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after detached input",
           pageTargetId: "native-input-target",
           fields: [
@@ -5785,6 +5980,8 @@ describe("Browser user-action route", () => {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after control leaves the document root",
           pageTargetId: "native-input-target",
           fields: [
@@ -5818,6 +6015,8 @@ describe("Browser user-action route", () => {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after control replacement",
           pageTargetId: "native-input-target",
           fields: [
@@ -5851,6 +6050,8 @@ describe("Browser user-action route", () => {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after control type change",
           pageTargetId: "native-input-target",
           fields: [
@@ -5886,6 +6087,8 @@ describe("Browser user-action route", () => {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after Browser closure",
           pageTargetId: "native-input-target",
           fields: [
@@ -5921,6 +6124,8 @@ describe("Browser user-action route", () => {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after uncertain input",
           pageTargetId: "native-input-target",
           fields: [
@@ -5961,6 +6166,8 @@ describe("Browser user-action route", () => {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after rerendered input",
           pageTargetId: "native-input-target",
           fields: [
@@ -6008,6 +6215,8 @@ describe("Browser user-action route", () => {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after stuck input",
           pageTargetId: "native-input-target",
           fields: [
@@ -6071,6 +6280,8 @@ describe("Browser user-action route", () => {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after concurrent input",
           pageTargetId: "native-input-target",
           fields: [
@@ -6122,6 +6333,8 @@ describe("Browser user-action route", () => {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after expiring input",
           pageTargetId: "native-input-target",
           fields: [
@@ -6164,6 +6377,8 @@ describe("Browser user-action route", () => {
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
+          title: "Sign in to download invoices",
+          reason: "The website requires sign-in to access your invoices.",
           callbackPrompt: "Continue after Browser expiry",
           pageTargetId: "native-input-target",
           fields: [
@@ -6714,6 +6929,9 @@ describe("okou browser route", () => {
     );
     expect(appendSystemPrompt).toContain(
       "especially login username, password, or one-time code",
+    );
+    expect(appendSystemPrompt).toContain(
+      "every `input-request` requires `--title` and `--reason` in the user's language",
     );
     expect(appendSystemPrompt).toContain(
       "After it succeeds, return its exact action URL and use no further Browser commands in this turn",

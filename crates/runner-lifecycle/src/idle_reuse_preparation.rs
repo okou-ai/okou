@@ -470,7 +470,7 @@ mod tests {
         let mount_position = calls[0]
             .cmd
             .find(HOME_MOUNT_PATH)
-            .expect("workspace mount command");
+            .expect("home mount command");
         assert!(helper_position < mount_position);
         let request: ReusePreparationRequest = serde_json::from_slice(
             calls[0]
@@ -675,7 +675,7 @@ mod tests {
         sandbox.push_exec_result(Ok(ExecResult::new(
             REUSE_PREPARATION_EXIT_HOME_MOUNT_FAILED,
             serde_json::to_vec(&healthy_reuse_preparation_report()).unwrap(),
-            b"workspace mount failed".to_vec(),
+            b"home mount failed".to_vec(),
         )));
 
         let (result, events) = capture_preparation(&sandbox, RunId::new_v4()).await;

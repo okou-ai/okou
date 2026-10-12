@@ -45,7 +45,6 @@ import {
   larkConnectContract,
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
-import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -92,7 +91,6 @@ import {
 import { createRouteMocks } from "./helpers/route-test";
 import { agentsRoutes } from "../agents";
 import { chatThreadRoutes } from "../chat-threads";
-import { userModelPreferenceRoutes } from "../user-model-preference";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
@@ -4508,7 +4506,7 @@ export function registerFeishuIntegrationTests(
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
         );
-        for (const command of ["/help", "/connect", "/model", "/unknown"]) {
+        for (const command of ["/help", "/connect", "/unknown"]) {
           await own(() => {
             return postEvent(callbackUrl, directMessage(appId, command), {
               encrypted: true,
@@ -4536,11 +4534,6 @@ export function registerFeishuIntegrationTests(
         expect(
           commandReplies.some((content) => {
             return content.includes("Already connected");
-          }),
-        ).toBeTruthy();
-        expect(
-          commandReplies.some((content) => {
-            return content.includes("existing Okou conversation");
           }),
         ).toBeTruthy();
         clearConnectorInvalidationMocks();
@@ -6983,7 +6976,6 @@ export function registerSharedFeishuConversationTests(): void {
     const platform = "feishu";
     const {
       own,
-      configureNativeModels,
       claimRun,
       cancelPlan,
       connectContract,
@@ -7044,10 +7036,6 @@ export function registerSharedFeishuConversationTests(): void {
       });
     });
 
-    async function allowFeishuGptModel(actor: ApiTestUser): Promise<void> {
-      await configureNativeModels(actor);
-    }
-
     async function readFeishuThreadEvents(actor: ApiTestUser) {
       mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
       const threads = await own(() => {
@@ -7062,21 +7050,6 @@ export function registerSharedFeishuConversationTests(): void {
         );
       });
       return threads.body.events;
-    }
-
-    async function readFeishuMemberModel(
-      actor: ApiTestUser,
-    ): Promise<string | null> {
-      mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-      const preference = await own(() => {
-        return accept(
-          setupApp({ context, routes: userModelPreferenceRoutes })(
-            userModelPreferenceContract,
-          ).get({ headers: { authorization: "Bearer clerk-session" } }),
-          [200],
-        );
-      });
-      return preference.body.selectedModel;
     }
 
     it("reuses one Feishu DM thread for concurrent input and a changed chat destination", async () => {
@@ -7145,76 +7118,6 @@ export function registerSharedFeishuConversationTests(): void {
       }
       await expectConnectedFeishuMember(
         setupApp({ context, routes: feishuConnectRoutes })(connectContract),
-      );
-      await removeFeishuInstallation(fixture);
-    });
-
-    it("switches the main Feishu DM thread without changing the member default", async () => {
-      const fixture = await setupFeishuRunFixture();
-      const { actor, appId, callbackUrl, defaultAgentId } = fixture;
-      await startFeishuDmSession(fixture);
-      await allowFeishuGptModel(actor);
-      const memberModel = await readFeishuMemberModel(actor);
-      const thread = requireValue(
-        (await readFeishuThreadEvents(actor)).find((event) => {
-          return event.kind === "created" && event.agentId === defaultAgentId;
-        }),
-        "Expected the main Feishu DM thread",
-      );
-
-      await own(() => {
-        return postEvent(
-          callbackUrl,
-          directMessage(appId, "/model gpt-6-astra"),
-          {
-            encrypted: true,
-          },
-        );
-      });
-      await own(flushWaitUntilForTest);
-
-      expect(
-        fixtureState.outboundMessages.some((message) => {
-          return messageContent(message).includes("Model switched");
-        }),
-      ).toBeTruthy();
-      await expect(readFeishuMemberModel(actor)).resolves.toBe(memberModel);
-      await expect(readFeishuThreadEvents(actor)).resolves.toContainEqual(
-        expect.objectContaining({
-          kind: "model_selection_updated",
-          chatThreadId: thread.chatThreadId,
-          selectedModel: "gpt-6-astra",
-        }),
-      );
-      await removeFeishuInstallation(fixture);
-    });
-
-    it("rejects /model before any Feishu thread without changing the member default", async () => {
-      const fixture = await setupFeishuRunFixture();
-      const { actor, appId, callbackUrl } = fixture;
-      await connectFixtureUser(fixture);
-      await allowFeishuGptModel(actor);
-      const memberModel = await readFeishuMemberModel(actor);
-
-      await own(() => {
-        return postEvent(
-          callbackUrl,
-          directMessage(appId, "/model gpt-6-astra"),
-          {
-            encrypted: true,
-          },
-        );
-      });
-      await own(flushWaitUntilForTest);
-
-      await expect(readFeishuMemberModel(actor)).resolves.toBe(memberModel);
-      expect(
-        fixtureState.outboundMessages.some((message) => {
-          return messageContent(message).includes("existing Okou conversation");
-        }),
-      ).toBeTruthy();
-      await expect(readFeishuThreadEvents(actor)).resolves.not.toContainEqual(
-        expect.objectContaining({ kind: "model_selection_updated" }),
       );
       await removeFeishuInstallation(fixture);
     });

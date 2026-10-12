@@ -223,9 +223,7 @@ mod tests {
             Some(unit)
         );
         assert!(RunnerServiceUnit::from_lock_file_name("service-vm0-runner-staging").is_none());
-        assert!(
-            RunnerServiceUnit::from_lock_file_name("workspace-image-cache-v1.0.0.lock").is_none()
-        );
+        assert!(RunnerServiceUnit::from_lock_file_name("home-image-cache-v1.0.0.lock").is_none());
         assert!(RunnerServiceUnit::from_lock_file_name("service-vm0-runner-UPPER.lock").is_none());
     }
 }

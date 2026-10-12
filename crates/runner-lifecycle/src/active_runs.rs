@@ -25,6 +25,7 @@ struct ActiveRunEntry {
 }
 
 struct ActiveRunHandoffBroker {
+    predecessor_run_id: Option<RunId>,
     signal: SandboxFinalExecParkHandoff,
     delivery: Option<ActiveRunHandoffDelivery>,
 }
@@ -161,7 +162,19 @@ pub enum ActiveRunHandoffDeliveryResult {
     Failed(IdleParkCandidate),
 }
 
+/// Actual binding survives a failed send. No cleanup/provider callback occurs
+/// while the broker lock is held; callers retain every rejected candidate.
+pub enum RetainedActiveRunHandoffDeliveryResult {
+    Delivered,
+    NotRequested(IdleParkCandidate),
+    Undelivered(IdleParkCandidate),
+    Failed(Box<FinalizingHandoffCandidate>),
+}
+
 impl ActiveRunReusePublisher {
+    pub fn predecessor_run_id(&self) -> Option<RunId> {
+        lock_handoff(&self.handoff).predecessor_run_id
+    }
     pub fn mark_finalizing(&self, started_at: Instant) -> bool {
         self.reuse_state.send_if_modified(|state| {
             if *state != ActiveRunReuseState::Pending {
@@ -189,12 +202,39 @@ impl ActiveRunReusePublisher {
         candidate: IdleParkCandidate,
         predecessor_run_id: RunId,
     ) -> ActiveRunHandoffDeliveryResult {
+        match self.deliver_exact_handoff_retained(candidate, predecessor_run_id) {
+            RetainedActiveRunHandoffDeliveryResult::Delivered => {
+                ActiveRunHandoffDeliveryResult::Delivered
+            }
+            RetainedActiveRunHandoffDeliveryResult::NotRequested(candidate) => {
+                ActiveRunHandoffDeliveryResult::NotRequested(candidate)
+            }
+            RetainedActiveRunHandoffDeliveryResult::Undelivered(candidate) => {
+                ActiveRunHandoffDeliveryResult::Failed(candidate)
+            }
+            RetainedActiveRunHandoffDeliveryResult::Failed(candidate) => {
+                ActiveRunHandoffDeliveryResult::Failed(candidate.into_candidate())
+            }
+        }
+    }
+
+    pub fn deliver_exact_handoff_retained(
+        &self,
+        candidate: IdleParkCandidate,
+        predecessor_run_id: RunId,
+    ) -> RetainedActiveRunHandoffDeliveryResult {
         let mut broker = lock_handoff(&self.handoff);
+        if broker
+            .predecessor_run_id
+            .is_some_and(|actual| actual != predecessor_run_id)
+        {
+            return RetainedActiveRunHandoffDeliveryResult::Undelivered(candidate);
+        }
         if !broker.signal.accept_if_requested() {
-            return ActiveRunHandoffDeliveryResult::NotRequested(candidate);
+            return RetainedActiveRunHandoffDeliveryResult::NotRequested(candidate);
         }
         let Some(delivery) = broker.delivery.take() else {
-            return ActiveRunHandoffDeliveryResult::Failed(candidate);
+            return RetainedActiveRunHandoffDeliveryResult::Undelivered(candidate);
         };
         let candidate = Box::new(
             candidate.into_finalizing_handoff(delivery.successor_run_id, predecessor_run_id),
@@ -202,9 +242,9 @@ impl ActiveRunReusePublisher {
         match delivery.sender.send(candidate) {
             Ok(()) => {
                 self.resolve_publishable(ActiveRunReuseState::ExactSandboxHandedOff);
-                ActiveRunHandoffDeliveryResult::Delivered
+                RetainedActiveRunHandoffDeliveryResult::Delivered
             }
-            Err(candidate) => ActiveRunHandoffDeliveryResult::Failed(candidate.into_candidate()),
+            Err(candidate) => RetainedActiveRunHandoffDeliveryResult::Failed(candidate),
         }
     }
 
@@ -234,6 +274,7 @@ impl ActiveRunReusePublisher {
         Self {
             reuse_state,
             handoff: Arc::new(Mutex::new(ActiveRunHandoffBroker {
+                predecessor_run_id: None,
                 signal: SandboxFinalExecParkHandoff::new(),
                 delivery: None,
             })),
@@ -265,6 +306,7 @@ impl ActiveRuns {
     ) -> ActiveRunGuard {
         let (reuse_state, _reuse_state_rx) = watch::channel(ActiveRunReuseState::Pending);
         let handoff = Arc::new(Mutex::new(ActiveRunHandoffBroker {
+            predecessor_run_id: Some(run_id),
             signal: SandboxFinalExecParkHandoff::new(),
             delivery: None,
         }));
@@ -423,6 +465,47 @@ mod tests {
 
     use crate::idle_pool::test_support::ParkedIdleCandidateBuilder;
     use crate::resource_budget::ResourceBudget;
+
+    #[tokio::test]
+    async fn retained_failed_delivery_preserves_the_actual_successor_binding() {
+        let active = ActiveRuns::new(Arc::new(Notify::new()));
+        let predecessor = RunId::new_v4();
+        let successor = RunId::new_v4();
+        let guard = active.register(
+            predecessor,
+            Some("thread:retained-send".into()),
+            "vm0/default".into(),
+        );
+        let proof = active
+            .finalizing_predecessor(predecessor, "thread:retained-send", "vm0/default")
+            .unwrap();
+        let mut request = proof.request_handoff(successor).unwrap();
+        // Close the actual channel receiver while the broker still owns its
+        // accepted sender, forcing the send-failure ownership return.
+        request.receiver.close();
+        let budget = Arc::new(ResourceBudget::new(2, 8, 1.0, 0));
+        let candidate = ParkedIdleCandidateBuilder::new(
+            "thread:retained-send",
+            ResourceBudget::try_reserve_lease(&budget, 2, 8).unwrap(),
+        )
+        .with_history_generation_run_id(predecessor)
+        .build();
+        let RetainedActiveRunHandoffDeliveryResult::Failed(candidate) = guard
+            .reuse_publisher()
+            .deliver_exact_handoff_retained(IdleParkCandidate::Ordinary(candidate), predecessor)
+        else {
+            panic!("closed receiver must return the actual bound candidate");
+        };
+        let candidate = candidate
+            .into_reservation(RunId::new_v4(), predecessor)
+            .err()
+            .expect("wrong successor must retain the candidate");
+        let reservation = candidate
+            .into_reservation(successor, predecessor)
+            .unwrap_or_else(|_| panic!("original binding must survive failed delivery"));
+        assert_eq!(budget.allocated(), (2, 8, 1));
+        drop(reservation);
+    }
 
     #[tokio::test]
     async fn active_runs_prove_exact_predecessor_and_preserve_shared_reuse_key() {
