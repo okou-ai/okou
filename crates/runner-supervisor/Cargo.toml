@@ -20,7 +20,6 @@ runner-lifecycle.workspace = true
 runner-network.workspace = true
 runner-provider.workspace = true
 runner-remote.workspace = true
-runner-storage.workspace = true
 runner-types.workspace = true
 sandbox.workspace = true
 serde = { workspace = true, features = ["derive", "std"] }

@@ -43,8 +43,8 @@ use runner_lifecycle::status::StatusTracker;
 use runner_network::network_log_drain::NetworkLogDrainCoordinator;
 use runner_network::network_log_manager::NetworkLogSession;
 use runner_provider::RunCancellationHandle;
-use runner_storage::storage_fingerprints::StorageFingerprints;
 use runner_types::ids::RunId;
+use runner_types::storage_fingerprints::StorageFingerprints;
 use runner_types::types::reuse_key_kind;
 use runner_types::types::{
     HOME_AFFINITY_VERSION, HeldHomeState, HomeCacheCapability, SandboxReuseResult,
