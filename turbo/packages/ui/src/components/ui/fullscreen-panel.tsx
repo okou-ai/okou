@@ -15,8 +15,6 @@ import {
 type FullscreenPanelProps = ComponentPropsWithoutRef<"div"> & {
   readonly as?: "div" | "aside";
   readonly fullscreen: boolean;
-  /** Disable relocation only inside a stable, shell-owned fullscreen host. */
-  readonly relocate?: boolean;
   /** Opt in a reflowing document to reading-position preservation. */
   readonly scrollAnchor?: {
     readonly viewportSelector: string;
@@ -25,46 +23,8 @@ type FullscreenPanelProps = ComponentPropsWithoutRef<"div"> & {
 };
 
 type FullscreenPanelMount = {
-  readonly inline: HTMLDivElement;
   readonly portal: HTMLDivElement;
 };
-
-function movePortal(mount: FullscreenPanelMount, fullscreen: boolean) {
-  // Escape workspace stacking contexts, while remaining below body-level
-  // dialogs and menus inside the isolated app root.
-  const target = fullscreen
-    ? mount.inline.ownerDocument.getElementById("root")
-    : mount.inline;
-  if (!target) {
-    throw new Error("FullscreenPanel requires an app root");
-  }
-  if (mount.portal.parentElement === target) {
-    return;
-  }
-  // Keep the portal target stable so React state and scroll positions survive.
-  // Native state-preserving moves also retain iframe and media state.
-  if (typeof target.moveBefore === "function") {
-    target.moveBefore(mount.portal, null);
-  } else {
-    const scrollPositions = Array.from(
-      mount.portal.querySelectorAll("*"),
-      (element) => {
-        return {
-          element,
-          top: element.scrollTop,
-          left: element.scrollLeft,
-        };
-      },
-    ).filter(({ top, left }) => {
-      return top !== 0 || left !== 0;
-    });
-    target.appendChild(mount.portal);
-    for (const { element, top, left } of scrollPositions) {
-      element.scrollTop = top;
-      element.scrollLeft = left;
-    }
-  }
-}
 
 type FullscreenPanelPortalProps = FullscreenPanelProps & {
   readonly mount: FullscreenPanelMount;
@@ -85,21 +45,12 @@ class FullscreenPanelPortal extends Component<
     return captureScrollAnchor(mount.portal, scrollAnchor);
   }
 
-  public componentDidMount() {
-    if (this.props.relocate !== false) {
-      movePortal(this.props.mount, this.props.fullscreen);
-    }
-  }
-
   public componentDidUpdate(
     _previous: FullscreenPanelPortalProps,
     _state: Record<string, never>,
     snapshot: ScrollAnchorSnapshot | null,
   ) {
     try {
-      if (this.props.relocate !== false) {
-        movePortal(this.props.mount, this.props.fullscreen);
-      }
       if (snapshot) {
         restoreScrollAnchor(snapshot);
       }
@@ -117,7 +68,6 @@ class FullscreenPanelPortal extends Component<
       className,
       fullscreen,
       mount,
-      relocate: _relocate,
       scrollAnchor: _scrollAnchor,
       ...props
     } = this.props;
@@ -147,7 +97,7 @@ export function FullscreenPanel(props: FullscreenPanelProps) {
     const portal = inline.ownerDocument.createElement("div");
     portal.className = "contents";
     inline.appendChild(portal);
-    setMount({ inline, portal });
+    setMount({ portal });
     return () => {
       portal.remove();
     };

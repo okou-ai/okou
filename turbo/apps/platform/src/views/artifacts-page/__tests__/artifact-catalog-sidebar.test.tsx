@@ -108,7 +108,6 @@ test("A routed website preview opens in the sidebar and Close returns to its cat
     path: `/artifacts?tab=hosted-site&artifact=${ARTIFACT_ID}`,
     featureSwitches: {
       [FeatureSwitchKey.ArtifactSidebarPreview]: true,
-      [FeatureSwitchKey.StablePreviewFullscreen]: true,
     },
   });
   const preview = await screen.findByTestId("artifact-sidebar");

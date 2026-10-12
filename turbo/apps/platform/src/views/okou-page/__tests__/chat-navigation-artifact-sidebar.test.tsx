@@ -499,7 +499,7 @@ test("Explain empty and unavailable CSV previews", async () => {
   });
 });
 
-test.each([false, true])("Expand diagram / stable=%s", async (stableHost) => {
+test("Expand diagram", async () => {
   const browser = context.mocks.browser.blobDownload();
   vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
     1600,
@@ -537,9 +537,6 @@ test.each([false, true])("Expand diagram / stable=%s", async (stableHost) => {
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.StablePreviewFullscreen]: stableHost,
-    },
   });
 
   await waitFor(() => {
@@ -608,7 +605,7 @@ test.each([false, true])("Expand diagram / stable=%s", async (stableHost) => {
   expect(buttonNamed("Exit fullscreen", artifactPreview())).toBeInTheDocument();
 });
 
-test.each([false, true])("Preview site / stable=%s", async (stableHost) => {
+test("Preview site", async () => {
   useWideScreen();
   const summary = artifactSummary(HOSTED_SITE_ID, "hosted-site", "Launch site");
   mockArtifactConversation(context, {
@@ -629,9 +626,6 @@ test.each([false, true])("Preview site / stable=%s", async (stableHost) => {
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.StablePreviewFullscreen]: stableHost,
-    },
   });
 
   await waitFor(() => {
@@ -697,7 +691,7 @@ test.each([false, true])("Preview site / stable=%s", async (stableHost) => {
   });
 });
 
-test.each([false, true])("Image zoom reset / stable=%s", async (stableHost) => {
+test("Image zoom reset", async () => {
   vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
     1600,
   );
@@ -724,9 +718,6 @@ test.each([false, true])("Image zoom reset / stable=%s", async (stableHost) => {
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.StablePreviewFullscreen]: stableHost,
-    },
   });
 
   await waitFor(() => {
@@ -828,7 +819,6 @@ test("Keep PWA navigation and clean up an artifact when leaving the mobile pane"
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.PwaNavigation]: true,
-      [FeatureSwitchKey.StablePreviewFullscreen]: true,
     },
   });
   await waitFor(() => {
