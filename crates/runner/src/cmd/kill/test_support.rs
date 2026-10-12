@@ -22,7 +22,7 @@ pub(super) fn make_target(pid: u32, sandbox_id: &str) -> KillTarget {
         sandbox_id: sandbox_id.into(),
         base_dir: Some(PathBuf::from("/data/r1")),
         generation: Some(ProcfsProcessGeneration {
-            pgid: pid + 1000,
+            pgid: i32::try_from(pid + 1000).unwrap(),
             starttime: 123456,
         }),
     }

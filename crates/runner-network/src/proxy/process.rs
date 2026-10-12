@@ -2215,6 +2215,28 @@ exit 42
 
     #[tokio::test]
     async fn graceful_stop_kills_descendant_after_parent_exits_cleanly() {
+        assert_graceful_stop_with_cleanup_stat(None, true).await;
+    }
+
+    #[tokio::test]
+    async fn graceful_stop_accepts_terminal_stat_with_unavailable_pgid() {
+        assert_graceful_stop_with_cleanup_stat(Some(("X", "-1")), true).await;
+    }
+
+    #[tokio::test]
+    async fn graceful_stop_preserves_launch_after_malformed_terminal_stat() {
+        assert_graceful_stop_with_cleanup_stat(Some(("X", "not-a-number")), false).await;
+    }
+
+    #[tokio::test]
+    async fn graceful_stop_preserves_launch_after_malformed_state_with_unavailable_pgid() {
+        assert_graceful_stop_with_cleanup_stat(Some(("XX", "-1")), false).await;
+    }
+
+    async fn assert_graceful_stop_with_cleanup_stat(
+        cleanup_stat: Option<(&str, &str)>,
+        expect_success: bool,
+    ) {
         let dir = tempfile::tempdir().unwrap();
         let home = HomePaths::with_root(dir.path().join("home"));
         crate::ca::ensure(&home).await.unwrap();
@@ -2232,14 +2254,54 @@ exit 42
         let environment = std::fs::read_to_string(fake_mitmdump.with_extension("env")).unwrap();
         let launch_path = PathBuf::from(environment.lines().next().unwrap());
 
-        proxy.stop().await.unwrap();
+        if let Some((state, pgid)) = cleanup_stat {
+            let ProcessStatRead::Found(stat) = read_process_stat_checked(descendant_pid).await
+            else {
+                panic!("live descendant stat must be readable");
+            };
+            let proc_root = dir.path().join("cleanup-proc");
+            let pid_dir = proc_root.join(descendant_pid.to_string());
+            std::fs::create_dir_all(&pid_dir).unwrap();
+            // Sanitized kernel exit-transition record, changing one selected
+            // field for malformed-input cases. Preserve descendant starttime.
+            let fields = [
+                state, "0", pgid, "-1", "0", "-1", "0", "0", "0", "0", "0", "0", "0", "0", "0",
+                "0", "0", "0", "0",
+            ];
+            std::fs::write(
+                pid_dir.join("stat"),
+                format!(
+                    "{descendant_pid} (python3) {} {}\n",
+                    fields.join(" "),
+                    stat.starttime,
+                ),
+            )
+            .unwrap();
+            proxy
+                .runtime
+                .as_ref()
+                .unwrap()
+                .set_test_cleanup_stat_read(descendant_pid, proc_root);
+        }
+
+        let stopped = proxy.stop().await;
+        if expect_success {
+            stopped.unwrap();
+            assert!(!launch_path.exists(), "graceful stop left launch directory");
+            assert_no_launch_dirs(&runtime_dir).await;
+        } else {
+            let error = stopped.unwrap_err().to_string();
+            assert!(error.contains(&format!("parse /proc/{descendant_pid}/stat")));
+            assert!(
+                launch_path.is_dir(),
+                "uncertain cleanup removed launch directory"
+            );
+        }
 
         assert!(
             wait_for_pid_absent(descendant_pid).await,
             "graceful stop left forked descendant {descendant_pid} alive"
         );
-        assert!(!launch_path.exists(), "graceful stop left launch directory");
-        assert_no_launch_dirs(&runtime_dir).await;
     }
 
     #[tokio::test]

@@ -908,7 +908,7 @@ mod tests {
             panic!("quiet descendant stat must be readable");
         };
         assert!(process_stat_is_live(&stat));
-        assert_eq!(stat.pgid, pid);
+        assert_eq!(stat.pgid, i32::try_from(pid).unwrap());
         assert_eq!(
             process_session_id(libc::pid_t::try_from(pid).unwrap()),
             Ok(nix::unistd::getsid(None).unwrap().as_raw())
@@ -1023,7 +1023,7 @@ mod tests {
         else {
             panic!("output-holding descendant stat must be readable");
         };
-        assert_eq!(stat.pgid, pid);
+        assert_eq!(stat.pgid, i32::try_from(pid).unwrap());
         assert_eq!(
             process_session_id(libc::pid_t::try_from(pid).unwrap()),
             Ok(nix::unistd::getsid(None).unwrap().as_raw())
@@ -1084,7 +1084,7 @@ mod tests {
         );
 
         let identity = read_descendant_identity(&readiness_path);
-        assert_eq!(identity.pgid, identity.pid);
+        assert_eq!(identity.pgid, i32::try_from(identity.pid).unwrap());
         match read_process_stat_checked(identity.pid).await {
             ProcessStatRead::Found(stat) => assert!(
                 stat.starttime != identity.starttime || !process_stat_is_live(&stat),
@@ -1132,7 +1132,7 @@ mod tests {
             panic!("timeout descendant process stat must be readable");
         };
         assert!(process_stat_is_live(&stat));
-        assert_eq!(stat.pgid, pid);
+        assert_eq!(stat.pgid, i32::try_from(pid).unwrap());
         let child_session = nix::unistd::getsid(None).expect("read ignored child session");
         let descendant_session = nix::unistd::getsid(Some(nix::unistd::Pid::from_raw(
             libc::pid_t::try_from(pid).expect("timeout descendant PID must fit in pid_t"),
@@ -1153,7 +1153,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     struct DescendantIdentity {
         pid: u32,
-        pgid: u32,
+        pgid: i32,
         starttime: u64,
     }
 
@@ -1184,7 +1184,7 @@ mod tests {
             "descendant {} remained live after fixture completion",
             identity.pid
         );
-        assert_eq!(identity.pgid, identity.pid);
+        assert_eq!(identity.pgid, i32::try_from(identity.pid).unwrap());
     }
 
     #[cfg(target_os = "linux")]

@@ -610,7 +610,7 @@ mod tests {
             "owner unavailable".into(),
         )));
         let target = make_target_at_base(
-            u32::MAX - 2_000,
+            i32::MAX as u32 - 2_000,
             "sandbox-managed-full-id",
             workspace_base.path(),
         );
@@ -677,7 +677,7 @@ mod tests {
     async fn run_target_refuses_orphan_fallback_when_rediscovery_fails() {
         let control = MockSandboxControl::new("/tmp/test");
         control.push_kill_remote_result(Err(SandboxControlError::NotFound("missing".into())));
-        let mut current = make_target(u32::MAX - 2_000, "sbox-123");
+        let mut current = make_target(i32::MAX as u32 - 2_000, "sbox-123");
         current.run_id = Some("run-full-id".into());
         let classification_called = Cell::new(false);
         let discovery_called = Cell::new(false);
@@ -721,7 +721,7 @@ mod tests {
     async fn run_target_refuses_orphan_fallback_after_orphan_rediscovery() {
         let control = MockSandboxControl::new("/tmp/test");
         control.push_kill_remote_result(Err(SandboxControlError::NotFound("missing".into())));
-        let mut current = make_target(u32::MAX - 2_000, "sbox-123");
+        let mut current = make_target(i32::MAX as u32 - 2_000, "sbox-123");
         current.run_id = Some("run-full-id".into());
         let refreshed = ResolvedKillTarget {
             target: current.clone(),
@@ -755,7 +755,7 @@ mod tests {
     async fn orphan_target_uses_current_reresolved_identity() {
         let control = MockSandboxControl::new("/tmp/test");
         control.push_kill_remote_result(Err(SandboxControlError::NotFound("missing".into())));
-        let current = make_target(u32::MAX - 2_000, "sbox-123");
+        let current = make_target(i32::MAX as u32 - 2_000, "sbox-123");
 
         let outcome = kill_current_target_with_orphan_fallback(
             current.clone(),
@@ -782,7 +782,7 @@ mod tests {
     async fn orphan_target_refuses_incomplete_discovery() {
         let control = MockSandboxControl::new("/tmp/test");
         control.push_kill_remote_result(Err(SandboxControlError::NotFound("missing".into())));
-        let current = make_target(u32::MAX - 2_000, "sbox-123");
+        let current = make_target(i32::MAX as u32 - 2_000, "sbox-123");
 
         let outcome = kill_current_target_with_orphan_fallback(
             current.clone(),
