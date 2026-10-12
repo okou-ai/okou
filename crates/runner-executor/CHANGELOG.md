@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.0...runner-executor-v0.10.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* accept home startup telemetry and attribute rejections ([#39175](https://github.com/okou-ai/okou/issues/39175)) ([acda46d](https://github.com/okou-ai/okou/commit/acda46d74a3bd83fba38e0671cfd606f85ab8401))
+
 ## [0.10.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.9.1...runner-executor-v0.10.0) (2026-10-12)
 
 

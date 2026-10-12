@@ -9,6 +9,34 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.727.5](https://github.com/okou-ai/okou/compare/api-v1.727.4...api-v1.727.5) (2026-10-12)
+
+
+### Bug Fixes
+
+* accept home startup telemetry and attribute rejections ([#39175](https://github.com/okou-ai/okou/issues/39175)) ([acda46d](https://github.com/okou-ai/okou/commit/acda46d74a3bd83fba38e0671cfd606f85ab8401))
+
+
+### Refactoring
+
+* **api:** capture shared thread history in one statement ([#39184](https://github.com/okou-ai/okou/issues/39184)) ([1be8464](https://github.com/okou-ai/okou/commit/1be8464dddc0f65d5d304956e72b1d1a59a6446d))
+* **api:** own teams connection status read in its computed ([#38877](https://github.com/okou-ai/okou/issues/38877)) ([e19e596](https://github.com/okou-ai/okou/commit/e19e5962f73bcb5874d4f7605713db6f57353dd3))
+
+
+### Performance Improvements
+
+* **cli:** reuse ably notifications for computer-use results ([#38742](https://github.com/okou-ai/okou/issues/38742)) ([04d247b](https://github.com/okou-ai/okou/commit/04d247ba25adf0ff82f8afad51e1631200915450))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.551.3
+    * @okouai/core bumped to 8.743.0
+    * @okouai/db bumped to 1.331.4
+    * @okouai/pi-agent-runtime bumped to 1.49.11
+
 ## [1.727.4](https://github.com/okou-ai/okou/compare/api-v1.727.3...api-v1.727.4) (2026-10-12)
 
 

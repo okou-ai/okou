@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.743.0](https://github.com/okou-ai/okou/compare/core-v8.742.3...core-v8.743.0) (2026-10-12)
+
+
+### Features
+
+* **app:** show compliance badges on the chat home ([#38746](https://github.com/okou-ai/okou/issues/38746)) ([0238f2a](https://github.com/okou-ai/okou/commit/0238f2a0db9ad8c1f1bbf2dd94f942c2083c2913))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.551.3
+
 ## [8.742.3](https://github.com/okou-ai/okou/compare/core-v8.742.2...core-v8.742.3) (2026-10-12)
 
 
