@@ -1173,6 +1173,7 @@ impl HomeImageCache {
         input: HomeImagePromotionInput<'_>,
     ) -> LifecycleResult<HomeImagePromotionOutcome> {
         use super::fs::{PinnedImage, move_noreplace, sparse_copy_pinned, sync_directory};
+        use super::io_context::at_publication_phase;
         let paths = self.entry_paths(input.cache_key);
         let generation = input.run_id.to_string();
         if let Some(binding) = input.history_proof {
@@ -1216,7 +1217,9 @@ impl HomeImageCache {
                     return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
                 }
             };
-        let stats = self.fs_stats().await?;
+        let stats = self.fs_stats().await.map_err(|error| {
+            at_publication_phase(error, "measure_initial_capacity", "filesystem_stats_path")
+        })?;
         let budget = CacheBudget::from_fs_stats(stats);
         // Metadata staging and new directory blocks also need reserve. Never use
         // an unavailable scan as zero or assume another locked image is reclaimable.
@@ -1227,22 +1230,33 @@ impl HomeImageCache {
         let source = match PinnedImage::open(input.active_image, input.image_size_bytes) {
             Ok(source) => source,
             Err(error) => {
+                let error = at_publication_phase(error, "open_active_image", "active_image");
                 info!(%error, "home publication source unavailable");
                 return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
             }
         };
         let source_identity = source.identity();
-        let active_allocated = allocated_bytes(&source.validate_path(input.active_image)?);
-        let total = self.total_cache_allocated_bytes().await?;
+        let active_allocated =
+            allocated_bytes(&source.validate_path(input.active_image).map_err(|error| {
+                at_publication_phase(error, "measure_active_image", "active_image")
+            })?);
+        let total = self.total_cache_allocated_bytes().await.map_err(|error| {
+            at_publication_phase(error, "scan_capacity_before_transfer", "cache_tree")
+        })?;
         if total
             .saturating_add(active_allocated)
             .saturating_add(metadata_peak)
             > budget.max_cache_bytes
         {
-            self.gc_locked(false).await?;
+            self.gc_locked(false).await.map_err(|error| {
+                at_publication_phase(error, "reclaim_capacity_before_transfer", "cache_tree")
+            })?;
             if self
                 .total_cache_allocated_bytes()
-                .await?
+                .await
+                .map_err(|error| {
+                    at_publication_phase(error, "scan_capacity_after_gc", "cache_tree")
+                })?
                 .saturating_add(active_allocated)
                 .saturating_add(metadata_peak)
                 > budget.max_cache_bytes
@@ -1250,10 +1264,24 @@ impl HomeImageCache {
                 return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
             }
         }
-        self.ensure_home_cache_entry_dir(input.cache_key).await?;
-        sync_directory(self.home_image_cache_dir()).await?;
+        self.ensure_home_cache_entry_dir(input.cache_key)
+            .await
+            .map_err(|error| {
+                at_publication_phase(error, "prepare_image_directory", "cache_directories")
+            })?;
+        sync_directory(self.home_image_cache_dir())
+            .await
+            .map_err(|error| {
+                at_publication_phase(error, "sync_cache_root_before_transfer", "cache_root")
+            })?;
         if let Some(parent) = self.home_image_cache_dir().parent() {
-            sync_directory(parent).await?;
+            sync_directory(parent).await.map_err(|error| {
+                at_publication_phase(
+                    error,
+                    "sync_cache_parent_before_transfer",
+                    "cache_root_parent",
+                )
+            })?;
         }
         let staging = paths.tmp_image(input.run_id);
         let candidate = paths
@@ -1265,14 +1293,20 @@ impl HomeImageCache {
         {
             return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
         }
-        source.validate_path(input.active_image)?;
+        source.validate_path(input.active_image).map_err(|error| {
+            at_publication_phase(error, "validate_active_before_transfer", "active_image")
+        })?;
         let (pinned, copied) = match move_noreplace(input.active_image, &staging) {
             Ok(()) => {
-                source.validate_path(&staging)?;
+                source.validate_path(&staging).map_err(|error| {
+                    at_publication_phase(error, "validate_staging_after_transfer", "staging_image")
+                })?;
                 (source, false)
             }
             Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
-                let fresh_stats = self.fs_stats().await?;
+                let fresh_stats = self.fs_stats().await.map_err(|error| {
+                    at_publication_phase(error, "measure_copy_capacity", "filesystem_stats_path")
+                })?;
                 if !has_copy_headroom(
                     fresh_stats,
                     budget,
@@ -1280,27 +1314,49 @@ impl HomeImageCache {
                 ) {
                     return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
                 }
-                let copied = sparse_copy_pinned(&source, &staging, input.image_size_bytes).await?;
-                source.validate_path(input.active_image)?;
+                let copied = sparse_copy_pinned(&source, &staging, input.image_size_bytes)
+                    .await
+                    .map_err(|error| {
+                        at_publication_phase(error, "copy_active_image", "staging_image")
+                    })?;
+                source.validate_path(input.active_image).map_err(|error| {
+                    at_publication_phase(error, "validate_active_after_copy", "active_image")
+                })?;
                 (copied, true)
             }
             Err(e) => {
-                return Err(super::io_context::with_paths(
-                    e,
-                    "renameat2(RENAME_NOREPLACE)",
-                    input.active_image,
-                    &staging,
-                )
-                .into());
+                return Err(at_publication_phase(
+                    super::io_context::with_paths(
+                        e,
+                        "renameat2(RENAME_NOREPLACE)",
+                        input.active_image,
+                        &staging,
+                    )
+                    .into(),
+                    "stage_active_image",
+                    "active_to_staging_image",
+                ));
             }
         };
-        pinned.validate_path(&staging)?;
+        pinned.validate_path(&staging).map_err(|error| {
+            at_publication_phase(error, "validate_staging_before_sync", "staging_image")
+        })?;
         #[cfg(test)]
         self.publication_fault(super::PublicationFault::BeforeImageSync)?;
-        pinned.sync(&staging)?;
-        sync_directory(paths.entry_dir()).await?;
+        pinned
+            .sync(&staging)
+            .map_err(|error| at_publication_phase(error, "sync_staging_image", "staging_image"))?;
+        sync_directory(paths.entry_dir()).await.map_err(|error| {
+            at_publication_phase(error, "sync_entry_after_staging", "entry_directory")
+        })?;
         if !copied && let Some(parent) = input.active_image.parent() {
-            sync_directory(parent).await?;
+            sync_directory(parent).await.map_err(|error| {
+                at_publication_phase(
+                    error,
+                    "sync_active_parent_after_transfer",
+                    "active_image_parent",
+                )
+            })?;
         }
         #[cfg(test)]
         self.publication_fault(super::PublicationFault::AfterImageSync)?;
@@ -1308,22 +1364,44 @@ impl HomeImageCache {
         self.remove_staging_before_image_rename_for_test(&staging)
             .await?;
         move_noreplace(&staging, &candidate).map_err(|error| {
-            super::io_context::with_paths(
-                error,
-                "renameat2(RENAME_NOREPLACE)",
-                &staging,
-                &candidate,
+            at_publication_phase(
+                super::io_context::with_paths(
+                    error,
+                    "renameat2(RENAME_NOREPLACE)",
+                    &staging,
+                    &candidate,
+                )
+                .into(),
+                "publish_candidate_image",
+                "staging_to_candidate_image",
             )
         })?;
-        let observed = pinned.validate_path(&candidate)?;
-        sync_directory(paths.entry_dir()).await?;
+        let observed = pinned.validate_path(&candidate).map_err(|error| {
+            at_publication_phase(
+                error,
+                "validate_candidate_after_transfer",
+                "candidate_image",
+            )
+        })?;
+        sync_directory(paths.entry_dir()).await.map_err(|error| {
+            at_publication_phase(error, "sync_entry_after_candidate", "entry_directory")
+        })?;
         // Fresh block counts include old commit, candidates, orphans, staging and
         // metadata. Cross-device source allocation still exists until commit.
-        let fresh_stats = self.fs_stats().await?;
+        let fresh_stats = self.fs_stats().await.map_err(|error| {
+            at_publication_phase(
+                error,
+                "measure_capacity_after_transfer",
+                "filesystem_stats_path",
+            )
+        })?;
         if fresh_stats.available_bytes < budget.min_free_bytes.saturating_add(metadata_peak)
             || self
                 .total_cache_allocated_bytes()
-                .await?
+                .await
+                .map_err(|error| {
+                    at_publication_phase(error, "scan_capacity_after_transfer", "cache_tree")
+                })?
                 .saturating_add(metadata_peak)
                 > budget.max_cache_bytes
         {
@@ -1350,7 +1428,13 @@ impl HomeImageCache {
             storage_fingerprints: filter_storage_fingerprints_for_home(input.storage_fingerprints),
             state: HomeCacheEntryState::Current,
         };
-        pinned.validate_path(&candidate)?;
+        pinned.validate_path(&candidate).map_err(|error| {
+            at_publication_phase(
+                error,
+                "validate_candidate_before_metadata",
+                "candidate_image",
+            )
+        })?;
         self.write_metadata(input.cache_key, input.run_id, metadata)
             .await?;
         // Only a successful synced commit grants deletion authority. A late

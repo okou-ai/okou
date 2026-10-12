@@ -221,7 +221,10 @@ impl PreparedHomeImagePromotion {
                 HomePromotionAction::AbandonUnpublished
             }
             Err(error) => {
-                warn!(run_id = %self.promotion.run_id(), reason = self.reason, error = %error, "home image publication failed");
+                let context = crate::home_image_cache::publication_io_context(&error);
+                let phase = context.map(|context| context.0);
+                let path_role = context.map(|context| context.1);
+                warn!(run_id = %self.promotion.run_id(), reason = self.reason, phase, path_role, error = %error, "home image publication failed");
                 HomePromotionAction::AbandonUnpublished
             }
         }

@@ -33,6 +33,7 @@ mod types;
 mod watcher;
 #[cfg(any(test, feature = "test-support"))]
 pub use entry::CacheEntryPaths;
+pub(crate) use io_context::publication_io_context;
 pub use lifecycle::{
     HomeImageLease, HomeImagePromotionContext, HomeImagePromotionIdentityFailure,
     HomeImagePromotionOutcome, cap_held_home_states,
@@ -127,6 +128,8 @@ enum PublicationFault {
     BeforeMetadataRename,
     AfterMetadataRename,
     RemoveStagingBeforeImageRename,
+    MoveEntryBeforeMetadataDirectorySync,
+    MoveEntryAfterMetadataRename,
 }
 
 impl HomeImageCache {
@@ -283,6 +286,30 @@ impl HomeImageCache {
             .is_ok()
         {
             tokio::fs::remove_file(staging).await?;
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    async fn move_entry_directory_for_test(
+        &self,
+        point: PublicationFault,
+        entry_dir: &std::path::Path,
+        run_id: runner_types::ids::RunId,
+    ) -> LifecycleResult<()> {
+        if self
+            .inner
+            .publication_fault
+            .compare_exchange(
+                point as usize,
+                0,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            )
+            .is_ok()
+        {
+            let moved = entry_dir.with_extension(format!("displaced-{run_id}"));
+            tokio::fs::rename(entry_dir, moved).await?;
         }
         Ok(())
     }

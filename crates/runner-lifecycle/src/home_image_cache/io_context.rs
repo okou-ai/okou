@@ -6,8 +6,17 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
+use crate::error::LifecycleError;
+
 #[derive(Debug, thiserror::Error)]
 enum ContextError {
+    #[error("home cache phase={phase} path_role={path_role}: {source}")]
+    Publication {
+        phase: &'static str,
+        path_role: &'static str,
+        #[source]
+        source: io::Error,
+    },
     #[error("home cache {operation} path_id={path_id}: {source}")]
     Path {
         operation: &'static str,
@@ -25,6 +34,39 @@ enum ContextError {
         #[source]
         source: io::Error,
     },
+}
+
+/// Owner-stage context preserves syscall attribution and kind-based handling.
+pub(super) fn at_publication_phase(
+    error: LifecycleError,
+    phase: &'static str,
+    path_role: &'static str,
+) -> LifecycleError {
+    match error {
+        LifecycleError::Io(source) => LifecycleError::Io(io::Error::new(
+            source.kind(),
+            ContextError::Publication {
+                phase,
+                path_role,
+                source,
+            },
+        )),
+        other => other,
+    }
+}
+
+pub(crate) fn publication_io_context(
+    error: &LifecycleError,
+) -> Option<(&'static str, &'static str)> {
+    let LifecycleError::Io(error) = error else {
+        return None;
+    };
+    match error.get_ref()?.downcast_ref::<ContextError>()? {
+        ContextError::Publication {
+            phase, path_role, ..
+        } => Some((*phase, *path_role)),
+        _ => None,
+    }
 }
 
 fn path_id(path: &Path) -> String {

@@ -1,4 +1,5 @@
 use super::fs::{allocated_bytes, sync_directory, sync_private_file};
+use super::io_context::at_publication_phase;
 use super::types::HomeCacheTerminalStatus;
 use super::{CACHE_FORMAT_VERSION, HOME_DRIVE_LAYOUT, HomeImageCache};
 use crate::error::{LifecycleError, LifecycleResult};
@@ -213,7 +214,11 @@ impl HomeImageCache {
             ));
         }
         let paths = self.entry_paths(key);
-        self.ensure_home_cache_entry_dir(key).await?;
+        self.ensure_home_cache_entry_dir(key)
+            .await
+            .map_err(|error| {
+                at_publication_phase(error, "prepare_metadata_directory", "cache_directories")
+            })?;
         let bytes = serde_json::to_vec(&metadata)
             .map_err(|e| LifecycleError::Internal(format!("serialize home metadata: {e}")))?;
         if bytes.len() as u64 > runner_host::state_file::HOME_METADATA_MAX_BYTES {
@@ -223,17 +228,50 @@ impl HomeImageCache {
         }
         let tmp = paths.tmp_metadata(run_id);
         // Never overwrite another attempt's staging path.
-        runner_host::host_file::write_private_new(&tmp, &bytes, "home metadata staging").await?;
-        sync_private_file(&tmp).await?;
-        sync_directory(paths.entry_dir()).await?;
+        runner_host::host_file::write_private_new(&tmp, &bytes, "home metadata staging")
+            .await
+            .map_err(|error| {
+                at_publication_phase(error.into(), "write_metadata_staging", "staging_metadata")
+            })?;
+        sync_private_file(&tmp).await.map_err(|error| {
+            at_publication_phase(error, "sync_metadata_staging", "staging_metadata")
+        })?;
+        #[cfg(test)]
+        self.move_entry_directory_for_test(
+            super::PublicationFault::MoveEntryBeforeMetadataDirectorySync,
+            paths.entry_dir(),
+            run_id,
+        )
+        .await?;
+        sync_directory(paths.entry_dir()).await.map_err(|error| {
+            at_publication_phase(
+                error,
+                "sync_entry_before_metadata_commit",
+                "entry_directory",
+            )
+        })?;
         #[cfg(test)]
         self.publication_fault(super::PublicationFault::BeforeMetadataRename)?;
         fs::rename(&tmp, paths.metadata()).await.map_err(|error| {
-            super::io_context::with_paths(error, "rename_metadata", &tmp, &paths.metadata())
+            at_publication_phase(
+                super::io_context::with_paths(error, "rename_metadata", &tmp, &paths.metadata())
+                    .into(),
+                "commit_metadata",
+                "staging_to_current_metadata",
+            )
         })?;
         #[cfg(test)]
         self.publication_fault(super::PublicationFault::AfterMetadataRename)?;
-        sync_directory(paths.entry_dir()).await?;
+        #[cfg(test)]
+        self.move_entry_directory_for_test(
+            super::PublicationFault::MoveEntryAfterMetadataRename,
+            paths.entry_dir(),
+            run_id,
+        )
+        .await?;
+        sync_directory(paths.entry_dir()).await.map_err(|error| {
+            at_publication_phase(error, "sync_entry_after_metadata_commit", "entry_directory")
+        })?;
         Ok(())
     }
 }
