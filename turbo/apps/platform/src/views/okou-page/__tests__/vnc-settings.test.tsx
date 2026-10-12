@@ -982,11 +982,6 @@ test("QEMU SCRAM creates only its explicit X509SASL pair and keeps its password 
 
 test("Kerberos password saves independent explicit identities and KDC policy", async () => {
   mockSettings({ connections: [], credentials: [] });
-  context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
-    return {
-      ...respond(200, { connections: [] }),
-    };
-  });
   const initiator = { realm: "EXAMPLE.INVALID", components: ["Alice"] };
   const security = {
     type: "qemu_x509_gssapi" as const,
@@ -1078,11 +1073,6 @@ function mockKerberosImport(
     "qemu_kerberos_keytab" | "qemu_kerberos_ticket" = "qemu_kerberos_keytab",
 ) {
   mockSettings({ connections: [], credentials: [] });
-  context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
-    return {
-      ...respond(200, { connections: [] }),
-    };
-  });
   const requests: unknown[] = [];
   context.mocks.api(vncCredentialsContract.create, ({ body, respond }) => {
     requests.push(body);
