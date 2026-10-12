@@ -629,7 +629,7 @@ mod tests {
             assert!(matches!(
                 reply.unwrap(),
                 TaskReply::Rejected { diagnostic }
-                    if diagnostic == "task caller is not in the owning main runtime/tools domain"
+                    if diagnostic == "task caller UID mismatch"
             ));
             assert_eq!(closed.unwrap(), 0, "rejection must end with clean EOF");
         }
