@@ -115,7 +115,7 @@ test.each([false, true])(
     });
     const dialog = await openForwardComposer(FORWARD_TARGET_NAME);
     const editor = within(dialog).getByRole("textbox", {
-      name: "Add a message",
+      name: "Message",
     });
     await fill(editor, "Forward draft /");
     const menu = await screen.findByTestId("slash-workflow-menu");
