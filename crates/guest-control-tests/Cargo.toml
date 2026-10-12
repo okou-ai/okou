@@ -16,6 +16,10 @@ guest-control-server = { workspace = true, features = ["test-support"] }
 guest-control-client.workspace = true
 guest-control-proto.workspace = true
 tokio = { workspace = true, features = ["fs", "macros", "net", "rt", "time"] }
+zstd.workspace = true
+sha2 = { workspace = true, features = ["alloc"] }
+hex = { workspace = true, features = ["alloc"] }
+crc32fast = { workspace = true, features = ["std"] }
 
 [[test]]
 name = "integration"

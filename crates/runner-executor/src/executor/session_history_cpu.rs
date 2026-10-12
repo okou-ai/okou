@@ -31,7 +31,7 @@
 //! gzip, and zstd jobs; `agent_run.rs` uses it for inline Codex history.
 
 use std::fmt;
-use std::io::{self, BufReader, Read};
+use std::io::{self, BufRead, BufReader, Read};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -660,6 +660,37 @@ fn materialize_compressed(
     let mut timings = SessionHistoryCpuTimings::default();
     let result = (|| {
         validate_compressed_raw_size(expected_raw_size, encoding.label(), &mut timings)?;
+        if matches!(encoding, CompressedEncoding::Zstd)
+            && framework != EffectiveCliFramework::Codex
+            && expected_raw_size >= 4 * 1024 * 1024
+        {
+            let verified = verify_zstd(
+                &encoded_bytes,
+                ZstdVerification {
+                    raw_size: expected_raw_size,
+                    hash: &expected_hash,
+                    framework,
+                },
+                prefix_attribution,
+                &mut timings,
+                cancel,
+                hooks,
+            )?;
+            let mut crc = crc32fast::Hasher::new();
+            for chunk in encoded_bytes.chunks(DECODER_BUFFER_BYTES) {
+                check_cancelled(cancel)?;
+                crc.update(chunk);
+            }
+            return Ok(SessionHistoryCpuMaterialization {
+                session: MaterializedResumeSession::new_zstd_source(
+                    cli_agent_session_id,
+                    encoded_bytes,
+                    expected_raw_size,
+                    crc.finalize(),
+                )?,
+                prefix_outcome: verified.prefix_outcome,
+            });
+        }
         let decompression_started = Instant::now();
         let result = decompress_history(&encoded_bytes, expected_raw_size, encoding, cancel, hooks);
         timings.record_decompression(decompression_started.elapsed(), result.is_ok());
@@ -697,10 +728,13 @@ fn materialize_codex_zstd(
     let mut timings = SessionHistoryCpuTimings::default();
     let result = (|| {
         validate_compressed_raw_size(expected_raw_size, "zstd", &mut timings)?;
-        let verified = verify_codex_zstd(
+        let verified = verify_zstd(
             &encoded_bytes,
-            expected_raw_size,
-            expected_hash,
+            ZstdVerification {
+                raw_size: expected_raw_size,
+                hash: expected_hash,
+                framework: EffectiveCliFramework::Codex,
+            },
             prefix_attribution,
             &mut timings,
             cancel,
@@ -948,24 +982,32 @@ fn read_compressed_history(
     Ok(bytes)
 }
 
-struct VerifiedCodexZstd {
+struct VerifiedZstd {
     timestamp: Option<chrono::DateTime<chrono::Utc>>,
     prefix_outcome: Option<SessionHistoryPrefixOutcome>,
     raw_bytes: Option<Vec<u8>>,
 }
 
-fn verify_codex_zstd(
+struct ZstdVerification<'a> {
+    raw_size: u64,
+    hash: &'a str,
+    framework: EffectiveCliFramework,
+}
+
+fn verify_zstd(
     encoded_bytes: &[u8],
-    expected_raw_size: u64,
-    expected_hash: &str,
+    verification: ZstdVerification<'_>,
     prefix_attribution: Option<RestoredSessionHistoryPrefixAttribution>,
     timings: &mut SessionHistoryCpuTimings,
     cancel: &CancellationToken,
     hooks: &SessionHistoryCpuHooks,
-) -> RunnerResult<VerifiedCodexZstd> {
+) -> RunnerResult<VerifiedZstd> {
+    let expected_raw_size = verification.raw_size;
+    let expected_hash = verification.hash;
+    let codex = verification.framework == EffectiveCliFramework::Codex;
     let decompression_started = Instant::now();
     let input = CancellationReader::new(encoded_bytes, cancel.clone(), hooks.clone());
-    let decoder = match zstd::stream::read::Decoder::new(input) {
+    let mut decoder = match zstd::stream::read::Decoder::new(input) {
         Ok(decoder) => decoder,
         Err(error) => {
             timings.record_decompression(decompression_started.elapsed(), false);
@@ -974,10 +1016,16 @@ fn verify_codex_zstd(
             )));
         }
     };
+    if !codex {
+        decoder = decoder.single_frame();
+        decoder
+            .window_log_max(27)
+            .map_err(|error| RunnerError::Internal(format!("source zstd window: {error}")))?;
+    }
     let decoded = decoder.take(expected_raw_size.saturating_add(1));
     let mut output = CancellationReader::new(decoded, cancel.clone(), hooks.clone());
     let mut observer = SessionHistoryHashObserver::new(prefix_attribution);
-    let mut raw_bytes = if expected_raw_size > hooks.codex_raw_restore_threshold() {
+    let mut raw_bytes = if codex && expected_raw_size > hooks.codex_raw_restore_threshold() {
         let capacity = usize::try_from(expected_raw_size).map_err(|_| {
             RunnerError::Internal("session history raw size does not fit in memory".into())
         })?;
@@ -987,9 +1035,8 @@ fn verify_codex_zstd(
     };
     let mut decoded_bytes = 0u64;
     let mut timestamp = None;
-    let mut timestamp_scanner = Some(CodexTimestampRecordScanner::new(
-        hooks.codex_timestamp_record_max_bytes(),
-    ));
+    let mut timestamp_scanner =
+        codex.then(|| CodexTimestampRecordScanner::new(hooks.codex_timestamp_record_max_bytes()));
     let mut buffer = [0u8; DECODER_BUFFER_BYTES];
 
     loop {
@@ -1034,6 +1081,16 @@ fn verify_codex_zstd(
     if let Some(scanner) = &mut timestamp_scanner {
         timestamp = scanner.finish(cancel, hooks)?;
     }
+    if !codex {
+        let mut input = output.inner.into_inner().finish();
+        if !input
+            .fill_buf()
+            .map_err(|error| RunnerError::Internal(format!("source zstd tail: {error}")))?
+            .is_empty()
+        {
+            return Err(RunnerError::Internal("trailing zstd source bytes".into()));
+        }
+    }
     timings.record_decompression(decompression_started.elapsed(), true);
 
     let validation_started = Instant::now();
@@ -1052,7 +1109,7 @@ fn verify_codex_zstd(
     let hash_result = observer.finish(expected_hash);
     timings.record_hash_verification(hash_started.elapsed(), hash_result.is_ok());
     let prefix_outcome = hash_result?;
-    Ok(VerifiedCodexZstd {
+    Ok(VerifiedZstd {
         timestamp,
         prefix_outcome,
         raw_bytes,

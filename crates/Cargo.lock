@@ -2134,16 +2134,20 @@ dependencies = [
 name = "guest-control-tests"
 version = "0.12.56"
 dependencies = [
+ "crc32fast",
  "guest-contracts",
  "guest-control-client",
  "guest-control-proto",
  "guest-control-server",
  "guest-write-file",
+ "hex",
  "libc",
  "nix",
+ "sha2 0.11.0",
  "shell-quote",
  "tempfile",
  "tokio",
+ "zstd",
 ]
 
 [[package]]
@@ -2235,6 +2239,7 @@ dependencies = [
 name = "guest-write-file"
 version = "0.1.218"
 dependencies = [
+ "crc32fast",
  "guest-contracts",
  "guest-control-proto",
  "libc",
@@ -4161,6 +4166,7 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "chrono",
+ "crc32fast",
  "flate2",
  "futures-util",
  "guest-contracts",
@@ -4823,12 +4829,14 @@ name = "sandbox-mock"
 version = "0.15.0"
 dependencies = [
  "async-trait",
+ "crc32fast",
  "guest-contracts",
  "sandbox",
  "tempfile",
  "tokio",
  "tokio-util",
  "uuid",
+ "zstd",
 ]
 
 [[package]]

@@ -16,7 +16,28 @@ fn main() {
     }
 
     let code = guest_write_file::run_cli(args, io::stdin().lock(), io::stderr().lock());
+    if let Ok(directory) = std::env::var("OKOU_SOURCE_RESTORE_BENCH_REPORT_DIR")
+        && let Err(error) = record_image_peak(Path::new(&directory))
+    {
+        eprintln!("failed to record helper memory peak: {error}");
+        std::process::exit(1);
+    }
     std::process::exit(code);
+}
+
+fn record_image_peak(directory: &Path) -> io::Result<()> {
+    // VmHWM belongs to the current process image. getrusage maxrss can
+    // include the parent's address space inherited before exec.
+    let status = std::fs::read_to_string("/proc/self/status")?;
+    let peak = status
+        .lines()
+        .find_map(|line| line.strip_prefix("VmHWM:"))
+        .ok_or_else(|| io::Error::other("missing helper memory peak"))?
+        .trim();
+    std::fs::write(
+        directory.join(format!("helper-{}.peak", std::process::id())),
+        peak,
+    )
 }
 
 fn wait_for_release(path: &Path) -> io::Result<()> {

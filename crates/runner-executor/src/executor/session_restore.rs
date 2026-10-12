@@ -72,9 +72,52 @@ enum MaterializedResumeHistory {
     SharedText(Arc<String>),
     Bytes(Vec<u8>),
     CodexZstd(Vec<u8>),
+    SourceZstd {
+        bytes: Vec<u8>,
+        raw_size: u32,
+        crc32: u32,
+    },
 }
 
 impl MaterializedResumeSession {
+    pub(super) fn new_zstd_source(
+        cli_agent_session_id: String,
+        bytes: Vec<u8>,
+        raw_size: u64,
+        crc32: u32,
+    ) -> RunnerResult<Self> {
+        let raw_size = u32::try_from(raw_size)
+            .map_err(|_| RunnerError::Internal("invalid source raw size".into()))?;
+        Ok(Self {
+            cli_agent_session_id,
+            history: MaterializedResumeHistory::SourceZstd {
+                bytes,
+                raw_size,
+                crc32,
+            },
+            codex_timestamp: None,
+        })
+    }
+
+    pub(super) fn zstd_source_compression(&self) -> Option<sandbox::FileCompression> {
+        match &self.history {
+            MaterializedResumeHistory::SourceZstd {
+                raw_size, crc32, ..
+            } => Some(sandbox::FileCompression::ZstdSource {
+                raw_size: *raw_size,
+                crc32: *crc32,
+            }),
+            _ => None,
+        }
+    }
+
+    pub(super) fn restore_len(&self) -> usize {
+        match &self.history {
+            MaterializedResumeHistory::SourceZstd { raw_size, .. } => *raw_size as usize,
+            _ => self.history_bytes().len(),
+        }
+    }
+
     pub(super) fn new(
         cli_agent_session_id: String,
         history_bytes: Vec<u8>,
@@ -120,6 +163,7 @@ impl MaterializedResumeSession {
             MaterializedResumeHistory::SharedText(session_history) => session_history.as_bytes(),
             MaterializedResumeHistory::Bytes(history_bytes) => history_bytes,
             MaterializedResumeHistory::CodexZstd(bytes) => bytes,
+            MaterializedResumeHistory::SourceZstd { bytes, .. } => bytes,
         }
     }
 
@@ -130,7 +174,9 @@ impl MaterializedResumeSession {
     pub(super) fn codex_zstd_history(&self) -> Option<&[u8]> {
         match &self.history {
             MaterializedResumeHistory::CodexZstd(bytes) => Some(bytes),
-            MaterializedResumeHistory::SharedText(_) | MaterializedResumeHistory::Bytes(_) => None,
+            MaterializedResumeHistory::SharedText(_)
+            | MaterializedResumeHistory::Bytes(_)
+            | MaterializedResumeHistory::SourceZstd { .. } => None,
         }
     }
 }
@@ -187,7 +233,7 @@ impl FreshSessionRestorePlan {
             self.compression,
             self.codec_decision,
             self.selection_elapsed,
-            session.history_bytes().len(),
+            session.restore_len(),
             session.codex_zstd_history().is_some(),
             wire,
         ))
@@ -219,7 +265,7 @@ impl FreshSessionRestorePlan {
         let diagnostics = SessionRestoreDiagnostics {
             framework: self.framework,
             session_id: self.session_id.clone(),
-            bytes_in: session.history_bytes().len(),
+            bytes_in: session.restore_len(),
             transfer,
         };
         info!(
@@ -324,7 +370,6 @@ async fn restore_pi_session(
     context: &ExecutionContext,
     session: &MaterializedResumeSession,
 ) -> RunnerResult<SessionRestoreDiagnostics> {
-    let session_history = session.history_bytes();
     let session_id = session.cli_agent_session_id();
     let session_dir = CANONICAL_PI_SESSION_DIR;
     let session_path = format!("{session_dir}/restored-{session_id}.jsonl");
@@ -332,7 +377,7 @@ async fn restore_pi_session(
     let diagnostics = SessionRestoreDiagnostics {
         framework: "pi",
         session_id: session_id.to_string(),
-        bytes_in: session_history.len(),
+        bytes_in: session.restore_len(),
         transfer,
     };
     info!(
@@ -351,7 +396,6 @@ pub(super) async fn restore_claude_session(
     context: &ExecutionContext,
     session: &MaterializedResumeSession,
 ) -> RunnerResult<SessionRestoreDiagnostics> {
-    let session_history = session.history_bytes();
     let session_id = session.cli_agent_session_id();
     let session_path = format!("{CANONICAL_CLAUDE_WORKSPACE_SESSION_DIR}/{session_id}.jsonl");
 
@@ -359,7 +403,7 @@ pub(super) async fn restore_claude_session(
     let diagnostics = SessionRestoreDiagnostics {
         framework: "claude-code",
         session_id: session_id.to_string(),
-        bytes_in: session_history.len(),
+        bytes_in: session.restore_len(),
         transfer,
     };
     info!(
@@ -388,7 +432,7 @@ async fn write_session_history_file(
         compression,
         decision,
         selection_elapsed,
-        session.history_bytes().len(),
+        session.restore_len(),
         session.codex_zstd_history().is_some(),
         wire,
     ))

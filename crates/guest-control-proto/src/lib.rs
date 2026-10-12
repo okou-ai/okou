@@ -77,7 +77,17 @@
 //! `write_file_stream_begin`; replies reuse the original non-zero request sequence.
 //! `write_file_stream_begin`, `write_file_stream_data`, `write_file_stream_end`, and
 //! `write_file_stream_credit` share that sequence. Credits count DATA frames, not bytes;
-//! each DATA payload is non-empty and at most 64 KiB. Stream completion reuses
+//! each DATA payload is non-empty and at most 64 KiB.
+//!
+//! `codec=2` instead carries an existing zstd source: `[1B codec=2][4B raw_len]
+//! [4B encoded_len][4B encoded CRC32][write_file metadata with empty content]`.
+//! Both lengths are bounded by [`MAX_ZSTD_SOURCE_BYTES`], independently of DATA
+//! frame and credit limits. The Host must first verify the source's decoded SHA
+//! and size. The Guest checks encoded CRC and decoded size before publication;
+//! the source need not carry a zstd checksum. The whole encoded frame is one
+//! request, not independently decoded fragments.
+//!
+//! Stream completion reuses
 //! `write_file_result` with the same sequence. See the [guest file compression guide]
 //! for the full lifecycle and resource bounds. `exec_output.output_seq` is per exec
 //! operation and starts at 0, incrementing by 1 for each output frame across stdout
@@ -250,6 +260,9 @@ pub use payloads::guest_dns_readiness::{
     encode_guest_dns_readiness_request, encode_guest_dns_readiness_request_frame_into,
     encode_guest_dns_readiness_result,
 };
+/// Whole encoded/decoded source bound; DATA buffers remain credit-bounded.
+pub const MAX_ZSTD_SOURCE_BYTES: usize = 128 * 1024 * 1024;
+
 pub use payloads::guest_state_restore::{
     DecodedGuestStateRestoreRequest, GUEST_STATE_RESTORE_ENTROPY_BYTES,
     GUEST_STATE_RESTORE_MAX_TIMEZONE_BYTES, GUEST_STATE_RESTORE_OUTPUT_LIMIT_BYTES,

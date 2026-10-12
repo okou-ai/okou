@@ -34,6 +34,7 @@ rustix = { workspace = true, features = ["fs", "linux_4_11", "process", "std", "
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 sha2 = { workspace = true, features = ["alloc", "oid"] }
+crc32fast = { workspace = true, features = ["std"] }
 tar = { workspace = true, features = ["xattr"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 thiserror = { workspace = true, features = ["std"] }

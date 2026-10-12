@@ -350,19 +350,26 @@ pub(crate) fn handle_file_stream(
     connection_cancel: &AtomicBool,
     progress: &FileWriteRequestProgress,
 ) -> io::Result<Vec<u8>> {
-    let (size, path, sudo, append) =
-        crate::file_stream::decode_begin(payload).map_err(to_io_error)?;
+    let begin = crate::file_stream::decode_begin(payload).map_err(to_io_error)?;
     progress.mark(FileWriteStage::StartingHelper);
     let mut command = Command::new(guest_write_file_path());
-    command.args(["--zstd", &size.to_string()]);
-    command.args(write_file_command_args(sudo, append, false)?);
+    if let Some(crc32) = begin.crc32 {
+        command.args([
+            "--zstd-source",
+            &begin.raw_size.to_string(),
+            &crc32.to_string(),
+        ]);
+    } else {
+        command.args(["--zstd", &begin.raw_size.to_string()]);
+    }
+    command.args(write_file_command_args(begin.sudo, begin.append, false)?);
     command
         .arg("--")
-        .arg(path)
+        .arg(begin.path)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
-    apply_command_identity(&mut command, sudo)?;
+    apply_command_identity(&mut command, begin.sudo)?;
     let child = spawn_in_own_process_group(&mut command)?;
     if let Err(error) = input.grant_initial() {
         kill_and_reap_child(child);
