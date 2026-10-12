@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.227.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.227.0...runner-rs-v0.227.1) (2026-10-12)
+
+
+### Refactoring
+
+* **runner:** share terminal dns startup cleanup ([#39106](https://github.com/okou-ai/okou/issues/39106)) ([c0e0ad4](https://github.com/okou-ai/okou/commit/c0e0ad4eda9396751a3d98dc2badea9f79dff7eb))
+
 ## [0.227.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.226.0...runner-rs-v0.227.0) (2026-10-12)
 
 
