@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX "idx_workflows_ordinary_private_owner_agent_name_unique" ON "workflows" USING btree ("org_id","agent_id","owner_user_id","name") WHERE visibility = 'private' AND official_definition_name IS NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "idx_workflows_official_owner_agent_definition_unique" ON "workflows" USING btree ("org_id","agent_id","owner_user_id","official_definition_name") WHERE official_definition_name IS NOT NULL;

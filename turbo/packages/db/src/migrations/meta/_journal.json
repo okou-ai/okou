@@ -2080,6 +2080,13 @@
       "when": 1791776374347,
       "tag": "1374_prepare_pi_memory_storage_retirement",
       "breakpoints": true
+    },
+    {
+      "idx": 1375,
+      "version": "7",
+      "when": 1791778277903,
+      "tag": "1375_workflow_name_scopes",
+      "breakpoints": true
     }
   ]
 }
