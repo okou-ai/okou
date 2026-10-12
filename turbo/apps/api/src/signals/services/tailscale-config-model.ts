@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { and, eq, or } from "drizzle-orm";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import type {
   TailscaleConfig,
   UpdateTailscaleRequest,

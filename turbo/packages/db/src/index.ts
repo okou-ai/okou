@@ -154,7 +154,7 @@ import * as memorySummaryProjectionSchema from "./schema/memory-summary-projecti
 import * as piMemoryStage1CandidateSchema from "./schema/pi-memory-stage1-candidate";
 import * as piMemoryPhase2JobSchema from "./runtime/pi-memory-phase2-job";
 import * as piMemoryPublicationProvenanceSchema from "./schema/pi-memory-publication-provenance";
-import * as sshConnectionSchema from "./schema/ssh-connection";
+import * as sshConnectionSchema from "./runtime/ssh-connection";
 import * as sshCredentialSchema from "./schema/ssh-credential";
 import * as vncCredentialSchema from "./schema/vnc-credential";
 import * as vncConnectionSchema from "./schema/vnc-connection";

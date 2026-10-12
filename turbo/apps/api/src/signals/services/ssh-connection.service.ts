@@ -17,7 +17,7 @@ import {
   isSshCredentialReferenceViolation,
   sshCredentialFailure,
 } from "./ssh-credential.service";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import {
   and,
   asc,

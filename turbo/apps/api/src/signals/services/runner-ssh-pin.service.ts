@@ -2,7 +2,7 @@ import type {
   RunnerSshPinRequest,
   RunnerSshPinResponse,
 } from "@okouai/api-contracts/contracts/runner-ssh";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { and, eq, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import { command } from "ccstate";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";

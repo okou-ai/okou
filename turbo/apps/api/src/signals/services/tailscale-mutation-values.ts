@@ -1,6 +1,6 @@
-import { eq, ne, sql, type SQLWrapper } from "drizzle-orm";
+import { eq, sql, type SQLWrapper } from "drizzle-orm";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { nowDate } from "../../lib/time";
 import type { TailscaleMutationArgs } from "./tailscale-mutation-plan";
 
@@ -14,7 +14,6 @@ export function tailscaleHostMutationValues(args: TailscaleMutationArgs) {
       ...advanced,
       tailscaleId: null,
       transport: "tailscale" as const,
-      legacyNeedsRebind: true,
     };
   }
   if (args.operation === "adopt") {
@@ -23,7 +22,6 @@ export function tailscaleHostMutationValues(args: TailscaleMutationArgs) {
       tailscaleId: sql`CASE WHEN ${eq(sshConnections.userId, args.owner.userId)}
         THEN ${sshConnections.tailscaleId} ELSE NULL END`,
       transport: "tailscale" as const,
-      legacyNeedsRebind: sql`${ne(sshConnections.userId, args.owner.userId)}`,
     };
   }
   return advanced;

@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { writeDb$ } from "../external/db";
 import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import { tailscaleFailure } from "./tailscale-config-model";

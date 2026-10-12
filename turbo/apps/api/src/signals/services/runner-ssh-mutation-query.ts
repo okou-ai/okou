@@ -8,12 +8,13 @@ import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import {
   sshConnections,
   sshConnectionNeedsRebind,
-} from "@okouai/db/schema/ssh-connection";
+} from "@okouai/db/runtime/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { and, eq, exists, getTableColumns, not, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   nullableDriverValueDecoder,
+  pgBooleanDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
 import { runThreadSshAccess } from "./run-thread-remote-access.service";
@@ -49,7 +50,7 @@ function hostQueries(initial: RunnerSshHostIdentity) {
       .select({
         ...getTableColumns(sshConnections),
         needsRebind: sql`${sshConnectionNeedsRebind}`
-          .mapWith(sshConnections.legacyNeedsRebind)
+          .mapWith(pgBooleanDecoder)
           .as("derived_needs_rebind"),
         version: sql`${sshConnections}.xmin::text`
           .mapWith(pgTextDecoder)
@@ -95,7 +96,7 @@ function authorityQuery(
         fingerprint: host.learnedHostKeyFingerprint,
         transport: host.transport,
         needsRebind: sql`${host.needsRebind}`
-          .mapWith(sshConnections.legacyNeedsRebind)
+          .mapWith(pgBooleanDecoder)
           .as("authority_needs_rebind"),
         accessId: host.cloudflareAccessId,
         tailscaleId: host.tailscaleId,

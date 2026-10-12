@@ -5,12 +5,15 @@ import { agentSessions } from "@okouai/db/runtime/agent-session";
 import {
   sshConnectionNeedsRebind,
   sshConnections,
-} from "@okouai/db/schema/ssh-connection";
+} from "@okouai/db/runtime/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { and, asc, eq, sql } from "drizzle-orm";
 
 import { command } from "ccstate";
-import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
+import {
+  nullableDriverValueDecoder,
+  pgBooleanDecoder,
+} from "../../lib/db-structured-result";
 import { writeDb$ } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import type { VncOwner } from "./vnc-owner-lifecycle.service";
@@ -33,7 +36,7 @@ export const listRunVncHosts$ = command(
         id: vncConnections.id,
         transportType: vncConnections.transportType,
         sshNeedsRebind: sql`${sshConnectionNeedsRebind}`.mapWith(
-          nullableDriverValueDecoder(sshConnections.legacyNeedsRebind),
+          nullableDriverValueDecoder(pgBooleanDecoder),
         ),
         sshAllowed: runThreadSshAccess(),
         displayName: vncConnections.displayName,

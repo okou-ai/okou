@@ -2,9 +2,17 @@ import { randomUUID } from "node:crypto";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { and, eq, ne, or, sql, type SQL, type Subquery } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
+import { z } from "zod";
+import {
+  nullableDriverValueDecoder,
+  pgBooleanDecoder,
+  pgIntegerDecoder,
+  pgTextDecoder,
+  zodDriverValueDecoder,
+} from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import type { createSshUpdateReads } from "./ssh-binding-query";
 import type {
@@ -49,7 +57,6 @@ export function sshBindingUpdateValues(
     cloudflareAccessId: access,
     tailscaleId: tailscale,
     transport,
-    legacyNeedsRebind: false,
     learnedHostKeyAlgorithm: sql`CASE WHEN ${clear} THEN NULL ELSE ${current.learnedHostKeyAlgorithm} END`,
     learnedHostKeyFingerprint: sql`CASE WHEN ${clear} THEN NULL ELSE ${current.learnedHostKeyFingerprint} END`,
     generation: sql`${current.generation} + 1`,
@@ -178,46 +185,42 @@ export function sshConnectionCreationSource(
   tailscale: SQL,
 ) {
   const at = nowDate();
+  const transport = bindingTransport(args);
   return new QueryBuilder()
     .select({
-      id: sql`${args.body.id}::uuid`.mapWith(sshConnections.id).as("id"),
-      orgId: sql`${args.orgId}`.mapWith(sshConnections.orgId).as("org_id"),
-      userId: sql`${args.userId}`.mapWith(sshConnections.userId).as("user_id"),
+      id: sql`${args.body.id}::uuid`.mapWith(pgTextDecoder).as("id"),
+      orgId: sql`${args.orgId}`.mapWith(pgTextDecoder).as("org_id"),
+      userId: sql`${args.userId}`.mapWith(pgTextDecoder).as("user_id"),
       displayName: sql`${args.body.displayName}`
-        .mapWith(sshConnections.displayName)
+        .mapWith(pgTextDecoder)
         .as("display_name"),
-      host: sql`${args.canonicalHost}`.mapWith(sshConnections.host).as("host"),
-      port: sql`${args.body.port}`.mapWith(sshConnections.port).as("port"),
-      credentialId: credential
-        .mapWith(sshConnections.credentialId)
-        .as("credential_id"),
+      host: sql`${args.canonicalHost}`.mapWith(pgTextDecoder).as("host"),
+      port: sql`${args.body.port}`.mapWith(pgIntegerDecoder).as("port"),
+      credentialId: credential.mapWith(pgTextDecoder).as("credential_id"),
       cloudflareAccessId: access
-        .mapWith(sshConnections.cloudflareAccessId)
+        .mapWith(nullableDriverValueDecoder(pgTextDecoder))
         .as("cloudflare_access_id"),
       tailscaleId: tailscale
-        .mapWith(sshConnections.tailscaleId)
+        .mapWith(nullableDriverValueDecoder(pgTextDecoder))
         .as("tailscale_id"),
-      transport: sql`${bindingTransport(args)}`
-        .mapWith(sshConnections.transport)
+      transport: sql`${transport}`
+        .mapWith(zodDriverValueDecoder(z.literal(transport)))
         .as("transport"),
-      legacyNeedsRebind: sql`false`
-        .mapWith(sshConnections.legacyNeedsRebind)
-        .as("needs_rebind"),
       learnedHostKeyAlgorithm: sql`NULL`
-        .mapWith(sshConnections.learnedHostKeyAlgorithm)
+        .mapWith(nullableDriverValueDecoder(pgTextDecoder))
         .as("learned_host_key_algorithm"),
       learnedHostKeyFingerprint: sql`NULL`
-        .mapWith(sshConnections.learnedHostKeyFingerprint)
+        .mapWith(nullableDriverValueDecoder(pgTextDecoder))
         .as("learned_host_key_fingerprint"),
-      generation: sql`1`.mapWith(sshConnections.generation).as("generation"),
+      generation: sql`1`.mapWith(pgIntegerDecoder).as("generation"),
       defaultEnabledForChats: sql`false`
-        .mapWith(sshConnections.defaultEnabledForChats)
+        .mapWith(pgBooleanDecoder)
         .as("default_enabled_for_chats"),
       createdAt: sql`${sql.param(at, sshConnections.createdAt)}`
-        .mapWith(sshConnections.createdAt)
+        .mapWith(sshCredentials.createdAt)
         .as("created_at"),
       updatedAt: sql`${sql.param(at, sshConnections.updatedAt)}`
-        .mapWith(sshConnections.updatedAt)
+        .mapWith(sshCredentials.updatedAt)
         .as("updated_at"),
     })
     .from(ready);

@@ -1,5 +1,5 @@
 import { sshConnectionObservationSchema } from "@okouai/api-contracts/contracts/ssh-connection-observations";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { sshConnectionObservations } from "@okouai/db/schema/ssh-connection-observation";
 import { and, asc, eq } from "drizzle-orm";
 import { command } from "ccstate";

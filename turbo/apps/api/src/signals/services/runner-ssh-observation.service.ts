@@ -1,5 +1,5 @@
 import type { RunnerSshObservationRequest } from "@okouai/api-contracts/contracts/runner-ssh";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { sshConnectionObservations } from "@okouai/db/schema/ssh-connection-observation";
 import {
   and,

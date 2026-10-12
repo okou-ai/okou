@@ -4,12 +4,13 @@ import { describe, expect, it } from "vitest";
 import { schema } from "../index";
 import { sshCredentials } from "../schema/ssh-credential";
 import { sshConnections } from "../schema/ssh-connection";
+import { sshConnections as runtimeSshConnections } from "../runtime/ssh-connection";
 import { cloudflareAccessConfigs } from "../schema/cloudflare-access-config";
 import { tailscaleConfigs } from "../schema/tailscale-config";
 
 describe("SSH connection schema", () => {
   it("exports the standalone SSH tables", () => {
-    expect(schema.sshConnections).toBe(sshConnections);
+    expect(schema.sshConnections).toBe(runtimeSshConnections);
     expect(schema.sshCredentials).toBe(sshCredentials);
     expect(schema.cloudflareAccessConfigs).toBe(cloudflareAccessConfigs);
     expect(schema.tailscaleConfigs).toBe(tailscaleConfigs);
@@ -32,13 +33,13 @@ describe("SSH connection schema", () => {
       "cloudflare_access_id",
       "tailscale_id",
       "transport",
-      "needs_rebind",
       "learned_host_key_algorithm",
       "learned_host_key_fingerprint",
       "generation",
       "default_enabled_for_chats",
       "created_at",
       "updated_at",
+      "needs_rebind",
     ]);
     expect(
       config.indexes.map((index) => {
@@ -64,7 +65,6 @@ describe("SSH connection schema", () => {
       "chk_ssh_connections_transport",
       "chk_ssh_connections_transport_binding",
       "chk_ssh_connections_cloudflare_access_destination",
-      "chk_ssh_connections_legacy_needs_rebind",
       "chk_ssh_connections_display_name",
       "chk_ssh_connections_host",
       "chk_ssh_connections_port",
@@ -79,9 +79,6 @@ describe("SSH connection schema", () => {
     );
     expect(checks.chk_ssh_connections_transport_binding).toContain(
       '"tailscale_id" IS NULL',
-    );
-    expect(checks.chk_ssh_connections_legacy_needs_rebind).toContain(
-      '"needs_rebind" =',
     );
     expect(checks.chk_ssh_connections_port).toContain("BETWEEN 1 AND 65535");
     expect(checks.chk_ssh_connections_generation).toContain("> 0");
