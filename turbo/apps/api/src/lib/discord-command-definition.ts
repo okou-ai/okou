@@ -10,28 +10,27 @@ export const DISCORD_COMMANDS = [
   {
     ...COMMAND_SETTINGS,
     name: "help",
-    description: "Learn how to use Okou in Discord",
+    description: "Show commands and usage",
   },
   {
     ...COMMAND_SETTINGS,
     name: "connect",
-    description:
-      "View your connection status or choose your workspace for bot DMs",
+    description: "Connect to Okou",
   },
   {
     ...COMMAND_SETTINGS,
     name: "disconnect",
-    description: "Disconnect your account from the selected Discord server",
+    description: "Disconnect from Okou",
   },
   {
     ...COMMAND_SETTINGS,
     name: "switch",
-    description: "Show the workspace default agent used in Discord",
+    description: "View your workspace agent",
   },
   {
     ...COMMAND_SETTINGS,
     name: "model",
-    description: "Choose a model for the current Okou conversation",
+    description: "Choose your model",
   },
 ] as const;
 

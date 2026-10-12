@@ -158,8 +158,8 @@ describe("Discord private account interactions", () => {
     await accept(client().post(request), [202]);
     const message = await replies.delivered;
     expect(message.content).toContain("/disconnect");
-    expect(message.content).toContain("[Works](https://app.okou.ai/works)");
-    expect(message.content).toContain("official Discord browser consent");
+    expect(message.content).toContain("**Commands**");
+    expect(message.content).toContain("**Usage**");
     await accept(client().post(request), [202]);
     expect(replies.messages).toHaveLength(1);
     expect(replies.callbacks[0]).toStrictEqual({
@@ -177,9 +177,9 @@ describe("Discord private account interactions", () => {
       const message = await replies.delivered;
       expect(message.content).toContain("[Works](https://app.okou.ai/works)");
       expect(message.content).toContain("sign in to Okou");
-      expect(message.content).toContain("ask an organization admin");
+      expect(message.content).toContain("ask a workspace admin");
       expect(message.content).toContain(
-        "does not connect or verify an account",
+        "follow the steps to connect your Discord account",
       );
       expect(message.components).toStrictEqual([]);
     },

@@ -63,7 +63,7 @@ import { listAvailableRunModels$ } from "./run-models.service";
 
 function discordSetupGuidance(): string {
   const worksUrl = new URL("/works", env("APP_URL")).toString();
-  return `Open [Works](${worksUrl}) and sign in to Okou to connect your Discord account. If your organization has no server installed, ask an organization admin to install Okou there first. Complete official Discord browser consent; this command does not connect or verify an account.`;
+  return `Please connect your account to use Okou in this workspace.\n\nOpen [Works](${worksUrl}), sign in to Okou, and follow the steps to connect your Discord account. If Okou hasn't been set up for this workspace, ask a workspace admin to install it in your Discord server.`;
 }
 const UNCONFIRMED_REQUEST =
   "Discord could not confirm this request in time, so no changes were made. Run the command again.";
@@ -75,14 +75,18 @@ const NO_MODEL_CONVERSATION =
   "Start or enter an existing Okou conversation before using `/model`.";
 function discordHelp(): string {
   return [
-    "**Okou in Discord**",
-    "Mention Okou in a server channel to start a conversation, or message the bot directly.",
-    "`/connect` — view your connection, connect through App Works, or choose your workspace for bot DMs",
-    "`/disconnect` — disconnect your account from this workspace",
-    "`/switch` — show the workspace default agent used in Discord",
-    "`/model` — choose an allowed model for this conversation",
-    "Existing server threads keep their agent and model unless you run `/model` inside them. Long task replies arrive from the bot.",
-    discordSetupGuidance(),
+    "**Discord Bot Help**",
+    "",
+    "**Commands**",
+    "• `/connect` - Connect to Okou",
+    "• `/model` - Choose your model",
+    "• `/disconnect` - Disconnect from Okou",
+    "• `/switch` - View your workspace agent",
+    "",
+    "**Usage**",
+    "• Send a DM to this bot or mention it in a channel to message your agent",
+    "• Use `/connect` in a DM to choose your workspace",
+    "• Use `/model` in an existing conversation to change its model",
   ].join("\n");
 }
 
@@ -145,10 +149,10 @@ const discordConnectionStatus$ = command(
     const agent = await get(discordEffectiveAgent(binding));
     signal.throwIfAborted();
     const agentStatus = agent
-      ? `Current agent: ${discordAccountLabel(agent.displayName || agent.name)}.`
-      : "No accessible workspace default agent is configured. Ask a workspace admin to set one in Okou.";
+      ? `Workspace agent: ${discordAccountLabel(agent.displayName || agent.name)}.`
+      : "No workspace agent available. Ask a workspace admin to set one in Okou.";
     return discordAccountMessage(
-      `Your account already has a verified connection to this workspace. ${agentStatus} Mention Okou in a server channel or message the bot to start chatting. Manage your connection in [Works](${new URL("/works", env("APP_URL")).toString()}).`,
+      `✅ You are already connected to Okou.\nMention <@${binding.botUserId}> in a channel or send a DM to start chatting with your agent.\n\n${agentStatus}`,
     );
   },
 );
@@ -214,7 +218,7 @@ const discordOrgPicker$ = command(
       );
       return discordAccountMessage(
         saved
-          ? "Workspace selected for bot DMs. Use `/model` in an existing conversation to change its model."
+          ? "✅ Workspace selected for bot DMs. Use `/model` in an existing conversation to change its model."
           : STALE_CONTROL,
       );
     }
@@ -239,8 +243,8 @@ const discordOrgPicker$ = command(
       ...(current.kind === "connected"
         ? { selected: current.binding.connectionId }
         : {}),
-      content:
-        "Choose your workspace for bot DMs. Only your verified connections are listed.",
+      content: "Choose your workspace for bot DMs.",
+      placeholder: "Select a workspace",
     });
   },
 );
@@ -255,8 +259,8 @@ const discordAgentStatus$ = command(
     signal.throwIfAborted();
     return discordAccountMessage(
       effective
-        ? `Discord always uses your workspace default agent: ${discordAccountLabel(effective.displayName || effective.name)}. Change the workspace default agent in Okou.`
-        : "Discord always uses your workspace default agent, but none is accessible. Ask a workspace admin to set a default agent in Okou.",
+        ? `**Workspace Agent**\n${discordAccountLabel(effective.displayName || effective.name)}\n\nDiscord uses your workspace's default agent. Change it in Okou.`
+        : "No workspace agent available. Ask a workspace admin to set one in Okou.",
     );
   },
 );
@@ -383,7 +387,7 @@ const selectDiscordConversationModel$ = command(
     );
     return discordAccountMessage(
       threadModel.kind === "updated"
-        ? `Model selected for this conversation: ${option.label}.`
+        ? `✅ Model selected for this conversation: ${option.label}.`
         : threadModel.kind === "no_thread"
           ? STALE_CONTROL
           : "You no longer have access to that model. Run `/model` again.",
@@ -489,7 +493,9 @@ const discordModelPicker$ = command(
       action: "model",
       options,
       selected: integrationModelOptionValue(currentModel.selectedModel),
-      content: "Choose an allowed model for this conversation.",
+      content:
+        "**Switch Model**\nChoose your model. This only affects this conversation.",
+      placeholder: "Select a model",
     });
   },
 );
@@ -523,7 +529,7 @@ const discordBoundAccountAction$ = command(
       );
       return discordAccountMessage(
         disconnected
-          ? "You have been disconnected from this workspace and your Discord agent access has been revoked. Other workspace connections are unchanged."
+          ? "✅ You have been disconnected from this workspace and your agent access has been revoked. Other workspace connections are unchanged."
           : STALE_CONTROL,
       );
     }
