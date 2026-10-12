@@ -5406,6 +5406,165 @@ describe("usage pack allocation management", () => {
     });
   });
 
+  it("keeps a failed grouped change terminal without failing a later preview", async () => {
+    const lifecycle = createPublicBillingScenario(context);
+    const {
+      purchaseManagedUsagePack,
+      managedUsagePackSubscription,
+      mockUsagePackSubscriptionPackagePreviews,
+      readManagedUsagePacks,
+    } = createManagedUsagePackHelpers(lifecycle);
+    return await withNowScopeForTest(() => {
+      return lifecycle.run(async () => {
+        const memberIds = [`user_${randomUUID()}`, `user_${randomUUID()}`];
+        const fixture = await purchaseManagedUsagePack(
+          memberIds.map((userId) => {
+            return { userId, usagePackUsd: 50 };
+          }),
+          "team",
+        );
+        const activeSubscription = managedUsagePackSubscription(
+          fixture,
+          new Map([[TEST_PRICE_USAGE_PACK_50, 2]]),
+        );
+        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+          activeSubscription,
+        );
+        mockUsagePackSubscriptionPackagePreviews({
+          immediateAmountCents: 0,
+          nextRecurringAmountCents: 4000,
+          sourcePriceId: TEST_PRICE_USAGE_PACK_50,
+          targetPriceId: TEST_PRICE_USAGE_PACK_20,
+        });
+        lifecycle.captureExternalState();
+        const client = setupApp({ context, routes: billingCheckoutRoutes })(
+          billingUsagePackManagementContract,
+        );
+        const headers = { authorization: "Bearer clerk-session" };
+        const body = {
+          targetTier: "team" as const,
+          memberUsagePacks: memberIds.map((memberId) => {
+            return {
+              memberId,
+              usagePackUsd: 20 as const,
+            };
+          }),
+        };
+        const first = await lifecycle.run(() => {
+          return accept(
+            client.previewSubscriptionChange({ headers, body }),
+            [200],
+          );
+        });
+        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+          ...activeSubscription,
+          cancel_at: fixture.billingPeriod.end,
+          cancel_at_period_end: true,
+        });
+        lifecycle.captureExternalState();
+        const failed = await lifecycle.run(() => {
+          return accept(
+            client.confirmSubscriptionChange({
+              headers,
+              body: { changeId: first.body.changeId },
+            }),
+            [409],
+          );
+        });
+        expect(failed.body.error.message).toBe(
+          "Your Plan is scheduled to end before this usage pack change can take effect. Restore your Plan first, then try again.",
+        );
+        const unchanged = await readManagedUsagePacks(fixture);
+        expect(unchanged.allocations).toHaveLength(2);
+        for (const memberId of memberIds) {
+          expect(unchanged.allocations).toContainEqual(
+            expect.objectContaining({
+              memberId,
+              usagePackUsd: 50,
+              pendingChange: null,
+            }),
+          );
+        }
+        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+          activeSubscription,
+        );
+        lifecycle.captureExternalState();
+        const replay = await lifecycle.run(() => {
+          return accept(
+            client.confirmSubscriptionChange({
+              headers,
+              body: { changeId: first.body.changeId },
+            }),
+            [409],
+          );
+        });
+        expect(replay.body.error.message).toBe(
+          "Another usage pack billing change is in progress",
+        );
+        const next = await lifecycle.run(() => {
+          return accept(
+            client.previewSubscriptionChange({ headers, body }),
+            [200],
+          );
+        });
+        expect(next.body.changeId).not.toBe(first.body.changeId);
+        await lifecycle.run(() => {
+          return accept(
+            client.confirmSubscriptionChange({
+              headers,
+              body: { changeId: first.body.changeId },
+            }),
+            [409],
+          );
+        });
+        const scheduleId = `sub_sched_${randomUUID()}`;
+        context.mocks.stripe.subscriptionSchedules.create.mockResolvedValue({
+          id: scheduleId,
+        });
+        context.mocks.stripe.subscriptionSchedules.update.mockResolvedValue({
+          id: scheduleId,
+        });
+        lifecycle.captureExternalState();
+        const confirmed = await lifecycle.run(() => {
+          return accept(
+            client.confirmSubscriptionChange({
+              headers,
+              body: { changeId: next.body.changeId },
+            }),
+            [200],
+          );
+        });
+        expect(confirmed.body.status).toBe("scheduled");
+        const scheduled = await readManagedUsagePacks(fixture);
+        expect(scheduled.allocations).toHaveLength(2);
+        for (const memberId of memberIds) {
+          expect(scheduled.allocations).toContainEqual(
+            expect.objectContaining({
+              memberId,
+              usagePackUsd: 50,
+              pendingChange: expect.objectContaining({
+                status: "scheduled",
+                targetUsagePackUsd: 20,
+              }),
+            }),
+          );
+        }
+        await lifecycle.run(() => {
+          return accept(
+            client.confirmSubscriptionChange({
+              headers,
+              body: { changeId: first.body.changeId },
+            }),
+            [409],
+          );
+        });
+        await expect(readManagedUsagePacks(fixture)).resolves.toStrictEqual(
+          scheduled,
+        );
+      });
+    });
+  });
+
   it("reopens the same pending subscription change without creating another preview", async () => {
     const userId = `user_${randomUUID()}`;
     const fixture = await purchaseManagedUsagePack([
