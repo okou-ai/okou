@@ -24,6 +24,13 @@ UPDATED_SNAPSHOT_HASH=""
 UPDATED_IMAGE_DIR=""
 
 fail() { echo "FAIL: $1"; exit 1; }
+cache_diagnostics() {
+  sudo env RUST_LOG=off "$BIN_DIR/runner" home-image-cache list --json \
+    | python3 -c 'import json, sys
+snapshot = json.load(sys.stdin)
+entries = [entry for entry in snapshot["entries"] if entry.get("cacheScope") == sys.argv[1]]
+print(json.dumps({"phase": sys.argv[2], "fixtureEntries": entries}))' "$GROUP" "$1"
+}
 wait_for_unit_inactive() {
   for _ in $(seq 1 30); do
     if ! sudo systemctl is-active --quiet "$UNIT"; then
@@ -128,7 +135,8 @@ for ((ATTEMPT = 1; ATTEMPT <= MAX_ATTEMPTS; ATTEMPT++)); do
 
   echo "--- Starting runner ---"
   sudo "$BIN_DIR/runner" service start --name "$SVC" \
-    --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true
+    --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true \
+    --env RUST_LOG=info,runner_lifecycle=debug
 
   for _ in $(seq 1 30); do
     TURN1_INVOCATION_ID=$(sudo systemctl show "$UNIT" \
@@ -286,7 +294,8 @@ exit 42' 2>&1)
   # do not make the native test pass merely by accepting every cache rejection.
   sudo "$BIN_DIR/runner" service stop --name "$SVC" --force
   sudo "$BIN_DIR/runner" service start --name "$SVC" \
-    --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true
+    --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true \
+    --env RUST_LOG=info,runner_lifecycle=debug
   for _ in $(seq 1 30); do
     PROMOTION_INVOCATION_ID=$(sudo systemctl show "$UNIT" \
       --property=InvocationID --value 2>/dev/null) || true
@@ -339,10 +348,13 @@ sudo touch /home/user/workspace/nested/ephemeral'; then
   fi
 
   # Clear the drain drop-in before starting a fresh transient service.
+  cache_diagnostics before-rootfs-update
   sudo "$BIN_DIR/runner" service stop --name "$SVC" --force
   prepare_updated_rootfs
+  cache_diagnostics after-rootfs-update
   sudo "$BIN_DIR/runner" service start --name "$SVC" \
-    --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true
+    --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true \
+    --env RUST_LOG=info,runner_lifecycle=debug
 
   # Scope restore diagnostics to the third runner, never an earlier invocation.
   for _ in $(seq 1 30); do
