@@ -6,7 +6,7 @@ import type {
   AgentEvent,
   EventConsumerPayload,
 } from "../../lib/event-consumer/verify";
-import { getDatasetName, ingestAxiomDirect } from "../external/axiom";
+import { getDatasetName, ingestAxiomTrace } from "../external/axiom";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
 const AGENT_RUN_EVENTS_DATASET = "agent-run-events";
@@ -255,7 +255,7 @@ export const ingestAxiomEvents$ = command(
         eventData: eventDataForAxiom(event, encoder),
       };
     });
-    const result = await ingestAxiomDirect(
+    const result = await ingestAxiomTrace(
       getDatasetName(AGENT_RUN_EVENTS_DATASET),
       axiomEvents,
       AXIOM_EVENT_INGEST_TIMEOUT_MS,
