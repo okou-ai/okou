@@ -325,7 +325,6 @@ cat "$CARGO_METADATA_FIXTURE"
             'github.event_name': 'pull_request',
             'needs.detect-release.outputs.skip': 'false',
             'needs.detect.outputs.metal-job-ref': 'pr-1-test',
-            'needs.runner-host-groups.outputs.validation-matrix': '[]',
         })
         actual_owners = [name for name in ['coverage', standalone] if selected(name, values)]
         assert actual_owners == ([] if owner is None else [owner]), f'{label}: {actual_owners}'

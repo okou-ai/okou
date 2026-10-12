@@ -110,8 +110,7 @@ def context(event, changed, ci, guest, ably):
               "needs.detect.outputs.runner-firewall-contract-inputs-changed": "false",
               "needs.detect.outputs.metal-job-ref": "",
               "needs.detect.outputs.crates-runner-consumer-needed": "false",
-              "needs.detect.outputs.sandbox-firecracker-changed": "false",
-              "needs.runner-host-groups.outputs.validation-matrix": "[]"}
+              "needs.detect.outputs.sandbox-firecracker-changed": "false"}
     values.update({f"needs.{name}.result": "success" for name in gate["needs"]})
     return values
 

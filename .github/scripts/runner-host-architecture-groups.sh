@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat <<'USAGE'
-Usage: runner-host-architecture-groups.sh [matrix|validation-plan KEY|target-matrix|has-groups|hosts ID|select-context KEY|select-host ID KEY [HOSTS]]
+Usage: runner-host-architecture-groups.sh [matrix|selection-plan KEY|target-matrix|has-groups|hosts ID|select-context KEY|select-host ID KEY [HOSTS]]
 
 Emits compact JSON for configured runner host architecture groups.
 Inputs:
@@ -16,7 +16,7 @@ Inputs:
 Commands:
   <none>      Emit the full local contract, including hosts.
   matrix      Emit the cross-job matrix contract, excluding hosts.
-  validation-plan KEY  Emit the full matrix, selected target, and remaining validation matrix.
+  selection-plan KEY  Emit the full matrix and selected target.
   target-matrix  Emit the deploy/rollback matrix contract: id, label, target.
   has-groups  Emit true when at least one host group is configured.
   hosts ID            Emit comma-separated hosts for the given architecture group.
@@ -264,7 +264,7 @@ emit_selected_context() {
   selected_context_from_groups "${1:-}" "$groups"
 }
 
-emit_validation_plan() {
+emit_selection_plan() {
   validate_selection_key "${1:-}" || return $?
   local groups context matrix target
   groups=$(emit_groups) || return $?
@@ -273,8 +273,7 @@ emit_validation_plan() {
   matrix=$(matrix_from_groups "$groups") || return $?
   jq -cn --argjson matrix "$matrix" --arg target "$target" '{
     matrix: $matrix,
-    selectedTarget: $target,
-    validationMatrix: ($matrix | map(select(.target != $target)))
+    selectedTarget: $target
   }'
 }
 
@@ -324,8 +323,8 @@ case "$cmd" in
   matrix)
     emit_matrix
     ;;
-  validation-plan)
-    emit_validation_plan "${2:-}"
+  selection-plan)
+    emit_selection_plan "${2:-}"
     ;;
   target-matrix)
     emit_target_matrix
