@@ -234,7 +234,18 @@ export function discordGuildUserBinding(args: {
   });
 }
 
-export function discordSenderBindings(discordUserId: string) {
+export function discordSenderBindings(
+  discordUserId: string | Computed<Promise<string | null>>,
+) {
+  if (typeof discordUserId !== "string") {
+    const where$ = computed(async (get) => {
+      const resolvedDiscordUserId = await get(discordUserId);
+      return resolvedDiscordUserId === null
+        ? null
+        : eq(discordOrgConnections.discordUserId, resolvedDiscordUserId);
+    });
+    return createVerifiedBindings(where$);
+  }
   return verifiedBindings(
     eq(discordOrgConnections.discordUserId, discordUserId),
   );
@@ -265,10 +276,14 @@ export type DiscordDmBindingResult =
     };
 
 export function discordDmBinding(
-  discordUserId: string,
+  input: string | Computed<Promise<string | null>>,
 ): Computed<Promise<DiscordDmBindingResult>> {
-  const bindings$ = discordSenderBindings(discordUserId);
+  const bindings$ = discordSenderBindings(input);
   return computed(async (get): Promise<DiscordDmBindingResult> => {
+    const discordUserId = typeof input === "string" ? input : await get(input);
+    if (discordUserId === null) {
+      return { kind: "not-connected" };
+    }
     const bindings = await get(bindings$);
     if (bindings.length === 0) {
       return { kind: "not-connected" };
@@ -518,6 +533,34 @@ function discordStatusAgentFields(
   };
 }
 
+function discordStatusConnection(
+  identity$: Computed<{ readonly userId: string }>,
+  installation$: Computed<
+    Promise<typeof discordOrgInstallations.$inferSelect | undefined>
+  >,
+) {
+  return computed(async (get) => {
+    const installation = await get(installation$);
+    if (!installation) {
+      return undefined;
+    }
+    const args = get(identity$);
+    const connectionWhere = and(
+      eq(discordOrgConnections.guildId, installation.guildId),
+      eq(discordOrgConnections.userId, args.userId),
+    )!;
+    const [connection] = await get(db$)
+      .select(bindingColumns)
+      .from(discordOrgConnections)
+      .innerJoin(
+        discordOrgInstallations,
+        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+      )
+      .where(connectionWhere);
+    return connection;
+  });
+}
+
 export function discordOrgStatus(
   identity$: Computed<{
     readonly orgId: string;
@@ -529,6 +572,21 @@ export function discordOrgStatus(
   const role$ = discordMemberRole(identity$);
   const agent$ = discordEffectiveAgent(identity$);
   const enabled$ = discordIntegrationEnabledForOwner(identity$);
+  const installation$ = computed(async (get) => {
+    const args = get(identity$);
+    const [installation] = await get(db$)
+      .select()
+      .from(discordOrgInstallations)
+      .where(eq(discordOrgInstallations.orgId, args.orgId));
+    return installation;
+  });
+  const connection$ = discordStatusConnection(identity$, installation$);
+  const discordUserId$ = computed(async (get) => {
+    const connection = await get(connection$);
+    return connection?.discordUserId ?? null;
+  });
+  const statusBindings$ = discordSenderBindings(discordUserId$);
+  const dmBinding$ = discordDmBinding(discordUserId$);
   return computed(async (get): Promise<DiscordOrgStatus> => {
     const args = get(identity$);
     const enabled = await get(enabled$);
@@ -570,36 +628,18 @@ export function discordOrgStatus(
             : "mentions_only"
           : "unavailable",
     };
-    const [installation] = await get(db$)
-      .select()
-      .from(discordOrgInstallations)
-      .where(eq(discordOrgInstallations.orgId, args.orgId));
+    const installation = await get(installation$);
     if (!installation) {
       return { ...currentStatus, isAdmin: role === "admin" };
     }
-    const connectionWhere = and(
-      eq(discordOrgConnections.guildId, installation.guildId),
-      eq(discordOrgConnections.userId, args.userId),
-    )!;
-    const [connection] = await get(db$)
-      .select(bindingColumns)
-      .from(discordOrgConnections)
-      .innerJoin(
-        discordOrgInstallations,
-        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
-      )
-      .where(connectionWhere);
+    const connection = await get(connection$);
     const agent = await get(agent$);
     const bindings = connection
-      ? (await get(discordSenderBindings(connection.discordUserId))).filter(
-          (binding) => {
-            return binding.userId === args.userId;
-          },
-        )
+      ? (await get(statusBindings$)).filter((binding) => {
+          return binding.userId === args.userId;
+        })
       : [];
-    const resolution = connection
-      ? await get(discordDmBinding(connection.discordUserId))
-      : null;
+    const resolution = connection ? await get(dmBinding$) : null;
     const [savedChoice] =
       connection && resolution?.kind === "connected"
         ? await get(db$)

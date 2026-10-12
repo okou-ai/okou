@@ -411,11 +411,14 @@ describe("verified Discord integration settings", () => {
     );
     await expectDiscordChanges([owner.userId]);
 
-    await expect(status(owner)).resolves.toMatchObject({
+    const disconnected = await status(owner);
+    expect(disconnected).toMatchObject({
       isInstalled: true,
       isConnected: false,
       discordUserId: null,
     });
+    expect(disconnected.dmBindings).toStrictEqual([]);
+    expect(disconnected.dmSelectionConnectionId).toBeNull();
     await expect(status(peer)).resolves.toMatchObject({
       isInstalled: true,
       isConnected: true,
@@ -555,6 +558,50 @@ describe("verified Discord integration settings", () => {
     );
     await expectDiscordChanges([]);
     restore();
+  });
+
+  it("keeps DM bindings and saved choices isolated across successive user requests", async () => {
+    const { actor } = createActors();
+    const firstOwner = actor();
+    const first = await fixture(firstOwner);
+    const secondOwner = actor();
+    const second = await fixture(secondOwner);
+
+    for (const [owner, binding] of [
+      [firstOwner, first],
+      [secondOwner, second],
+    ] as const) {
+      await accept(
+        client().setDmSelection({
+          headers: authenticate(owner),
+          body: { connectionId: binding.connectionId },
+        }),
+        [200],
+      );
+    }
+
+    for (const [owner, binding] of [
+      [firstOwner, first],
+      [secondOwner, second],
+      [firstOwner, first],
+    ] as const) {
+      const current = await status(owner);
+      expect({
+        discordUserId: current.discordUserId,
+        dmBindings: current.dmBindings,
+        dmSelectionConnectionId: current.dmSelectionConnectionId,
+      }).toStrictEqual({
+        discordUserId: binding.discordUserId,
+        dmBindings: [
+          {
+            connectionId: binding.connectionId,
+            guildId: binding.guildId,
+            guildName: binding.guildName,
+          },
+        ],
+        dmSelectionConnectionId: binding.connectionId,
+      });
+    }
   });
 
   it("requires an explicit DM choice across organizations and invalidates a revoked choice", async () => {
