@@ -67,6 +67,7 @@ describe("renderSwiftRoutes", () => {
     expect(swift).toContain(
       "private static func pathSegment(_ value: String) -> String {",
     );
+    expect(swift).not.toContain("addingPercentEncoding");
   });
 
   it("omits the segment encoder when no route has parameters", () => {
@@ -246,35 +247,6 @@ describe("renderSwiftTypes", () => {
     expect(swift).toContain("      try value.encode(to: encoder)");
   });
 
-  it("applies documented optional-field overrides", () => {
-    const swift = renderSwiftTypes([
-      {
-        schema: z.object({
-          hostId: z.string(),
-          notifications: z.object({ name: z.string() }),
-        }),
-        swiftTypeName: "Registration",
-        doc: [],
-        optionalFields: {
-          notifications: "Optional for rollout: older APIs omit it.",
-        },
-      },
-    ]);
-    expect(swift).toContain(
-      "  /// Optional for rollout: older APIs omit it.\n  public let notifications: Notifications?\n",
-    );
-    expect(() => {
-      return renderSwiftTypes([
-        {
-          schema: z.object({ hostId: z.string() }),
-          swiftTypeName: "Registration",
-          doc: [],
-          optionalFields: { missing: "x" },
-        },
-      ]);
-    }).toThrow("marks unknown field optional: missing");
-  });
-
   it("rejects unsupported shapes", () => {
     expect(() => {
       return renderSwiftTypes([
@@ -350,7 +322,7 @@ describe("desktop bindings", () => {
       );
     }
     expect(types).toContain(
-      "public let commandNotifications: CommandNotifications?",
+      "public let commandNotifications: CommandNotifications\n",
     );
     expect(types).toContain("public let payload: [String: JSONValue]");
     expect(types).toContain("public let minimumSupportedVersion: String?");

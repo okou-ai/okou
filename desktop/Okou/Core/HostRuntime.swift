@@ -201,22 +201,7 @@ public actor HostRuntime {
       throw DesktopFailure("invalid_response", "Host registration response is missing its identity")
     }
     self.connection = connection
-    guard let notifications = registration.commandNotifications,
-      !notifications.channelName.isEmpty, !notifications.eventName.isEmpty
-    else {
-      // A new Desktop cannot operate against a pre-notification API. Retire
-      // the registered connection instead of leaving an online, inactive host.
-      _ = try? await api.authenticatedRequest(
-        connection.stop, body: connection.body(.object([:])), timeout: 5,
-        tokenProvider: tokenProvider)
-      self.connection = nil
-      running = false
-      acceptingCommands = false
-      state.status = "error"
-      state.lastError = "Computer Use notifications are unavailable until the service is updated."
-      await publish()
-      return
-    }
+    let notifications = registration.commandNotifications
     state.hostId = connection.hostId
     state.status = "online"
     state.lastHeartbeat = Date()

@@ -266,8 +266,10 @@ final class DesktopModel: ObservableObject {
     let route = ApiRoutes.desktopProductDmgDownload(
       product: ApiConstants.desktopUpdateLineOkou, channel: "stable", platform: "darwin",
       arch: "arm64")
-    guard let url = try? APIClient.url(for: route, baseURL: configuration.apiURL) else { return }
-    NSWorkspace.shared.open(url)
+    do {
+      let url = try APIClient.url(for: route, baseURL: configuration.apiURL)
+      NSWorkspace.shared.open(url)
+    } catch { self.error = error.localizedDescription }
   }
   private func sessionToken(forceRefresh: Bool) async throws -> String {
     try await sessionCoordinator.token(forceRefresh: forceRefresh)
