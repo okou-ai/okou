@@ -1864,12 +1864,14 @@ describe("Browser user-action route", () => {
           return HttpResponse.json(providerBrowser(String(params.id)));
         }),
       );
-      const applying = owned.run(() => {
-        return accept(
-          userActionClient().apply({ headers, params, body }),
-          [200],
-        );
-      });
+      const applying = settleIncludingAbort(
+        owned.run(() => {
+          return accept(
+            userActionClient().apply({ headers, params, body }),
+            [200],
+          );
+        }),
+      );
       const overlap = await settleIncludingAbort(async () => {
         await providerReadStarted.promise;
         const inProgress = await accept(
@@ -1888,7 +1890,7 @@ describe("Browser user-action route", () => {
         });
       });
       releaseProviderRead.resolve(undefined);
-      const applied = await settleIncludingAbort(applying);
+      const applied = await applying;
       if (!overlap.ok && !applied.ok) {
         throw new AggregateError(
           [overlap.error, applied.error],
