@@ -1067,6 +1067,131 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
   });
 
+  it("keeps one DM thread as its provider conversation changes or disappears", async () => {
+    const { actor, ap, phone, runnerGroup } = await entitledLinkedActor();
+    const chat = createChatFilesBddApi(context);
+    const conversations = [
+      uniqueConversationId(),
+      uniqueConversationId(),
+      undefined,
+    ];
+    let sessionId: string | undefined;
+    for (const [index, conversationId] of conversations.entries()) {
+      const prompt = `continue the same phone thread ${index}`;
+      await ap.postAgentPhoneInboundMessage({
+        channel: conversationId === undefined ? "sms" : "imessage",
+        from: phone,
+        body: prompt,
+        conversationId,
+      });
+      const run = await claimDispatchedRun(runnerGroup);
+      expect(run.prompt).toBe(prompt);
+      if (conversationId === undefined) {
+        expect(run.appendSystemPrompt).not.toContain("Conversation ID:");
+      } else {
+        expect(run.appendSystemPrompt).toContain(
+          `Conversation ID: ${conversationId}`,
+        );
+      }
+      await completeSandboxRun(run.sandboxToken, run.runId, 0);
+      const currentSessionId = await waitForRunSessionIdPresent(
+        actor,
+        run.runId,
+      );
+      if (sessionId === undefined) {
+        sessionId = currentSessionId;
+      } else {
+        expect(currentSessionId).toBe(sessionId);
+      }
+    }
+    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error("Expected the phone thread lifecycle");
+    }
+    expect(
+      lifecycle.body.events.filter((event) => {
+        return event.kind === "created";
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("publishes one thread for distinct concurrent messages to the same phone root", async () => {
+    const { actor, ap, phone, runnerGroup, sends } =
+      await entitledLinkedActor();
+    const chat = createChatFilesBddApi(context);
+    const runs = createRunsApi(context);
+    const prompts = [
+      "first concurrent phone task",
+      "second concurrent phone task",
+    ];
+    const messageIds = await Promise.all(
+      prompts.map((body) => {
+        return ap.postAgentPhoneInboundMessage({
+          channel: "imessage",
+          from: phone,
+          body,
+          conversationId: uniqueConversationId(),
+        });
+      }),
+    );
+    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error("Expected the concurrent phone thread lifecycle");
+    }
+    const created = lifecycle.body.events.filter((event) => {
+      return event.kind === "created";
+    });
+    expect(created).toHaveLength(1);
+    const thread = created[0];
+    if (!thread) {
+      throw new Error("Expected one published phone thread");
+    }
+    expect(thread).toMatchObject({
+      seqId: 1,
+      selectedModel: "claude-fable-5-1",
+      cloudBrowserEnabled: true,
+    });
+    const inputs = await chat.listThreadEvents(actor, thread.chatThreadId);
+    for (const prompt of prompts) {
+      expect(inputs.events).toContainEqual(
+        expect.objectContaining({
+          eventType: "input.prompt",
+          userMessage: {
+            version: 1,
+            parts: expect.arrayContaining([{ type: "text", text: prompt }]),
+          },
+        }),
+      );
+    }
+    const completedPrompts: string[] = [];
+    const sendsBeforeCompletion = sends.messages.length;
+    for (const index of prompts.keys()) {
+      const run = await claimDispatchedRun(runnerGroup);
+      completedPrompts[index] = run.prompt;
+      await completeSandboxRun(run.sandboxToken, run.runId, 0);
+    }
+    expect(completedPrompts.sort()).toStrictEqual([...prompts].sort());
+    expect(
+      sends.messages
+        .slice(sendsBeforeCompletion)
+        .map((send) => {
+          return send.replyToMessageId;
+        })
+        .sort(),
+    ).toStrictEqual([...messageIds].sort());
+    await runs.heartbeatRunner(runnerGroup);
+    expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+    const finalLifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    if (finalLifecycle.status !== 200) {
+      throw new Error("Expected the completed phone thread lifecycle");
+    }
+    expect(
+      finalLifecycle.body.events.filter((event) => {
+        return event.kind === "created";
+      }),
+    ).toStrictEqual(created);
+  });
+
   it("forwards unrecognized slash commands as agent prompts", async () => {
     const ap = createAgentPhoneBddApi(context);
     const { phone, runnerGroup } = await entitledLinkedActor();

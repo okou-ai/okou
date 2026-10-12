@@ -1,12 +1,13 @@
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { z } from "zod";
 
 import { writeDb$ } from "../external/db";
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
-import type { Tx } from "../../lib/db-types";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   integrationChatThreadInsertFromRouteSql,
   integrationChatThreadValues,
@@ -61,40 +62,11 @@ const ROUTE_COLUMNS = {
   chatThreadId: agentphoneChatThreadRoutes.chatThreadId,
 } as const;
 
-type AgentPhoneChatThreadRouteRow = Awaited<
-  ReturnType<typeof loadAgentPhoneChatThreadRoute>
->;
-
-async function loadAgentPhoneChatThreadRoute(
-  tx: Tx,
-  key: AgentPhoneChatThreadRouteKey,
-) {
-  const [route] = await tx
-    .select(ROUTE_COLUMNS)
-    .from(agentphoneChatThreadRoutes)
-    .innerJoin(
-      chatThreads,
-      eq(chatThreads.id, agentphoneChatThreadRoutes.chatThreadId),
-    )
-    .where(routeWhere(key))
-    .limit(1);
-  return route;
-}
-
-/** Conditional context refresh; no row lock, the route id pins the row. */
-async function refreshAgentPhoneRouteConversation(
-  tx: Tx,
-  route: NonNullable<AgentPhoneChatThreadRouteRow>,
-  conversationId: string | null,
-): Promise<void> {
-  if (route.conversationId === conversationId) {
-    return;
-  }
-  await tx
-    .update(agentphoneChatThreadRoutes)
-    .set({ conversationId })
-    .where(eq(agentphoneChatThreadRoutes.id, route.id));
-}
+const routeRowSchema = z.object({
+  id: z.uuid(),
+  conversationId: z.string().nullable(),
+  chatThreadId: z.uuid(),
+});
 
 /**
  * The unique route and its new thread/event commit in this command alone.
@@ -115,59 +87,96 @@ export const ensureAgentPhoneChatThreadRoute$ = command(
     );
     const candidateId = randomUUID();
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0051; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const existing = await loadAgentPhoneChatThreadRoute(tx, args);
-      if (existing) {
-        await refreshAgentPhoneRouteConversation(
-          tx,
-          existing,
-          args.conversationId,
-        );
-        return existing;
-      }
-      const thread = integrationChatThreadValues(args, candidateId, defaults);
-      const insertedRoute = tx.$with("inserted_agentphone_route").as(
-        tx
-          .insert(agentphoneChatThreadRoutes)
-          .values({
-            agentphoneUserLinkId: args.agentphoneUserLinkId,
-            rootMessageId: args.rootMessageId,
-            conversationId: args.conversationId,
-            chatThreadId: thread.id,
-            createdAt: args.currentTime,
-          })
-          .onConflictDoNothing({
-            target: [
-              agentphoneChatThreadRoutes.agentphoneUserLinkId,
-              agentphoneChatThreadRoutes.rootMessageId,
-            ],
-          })
-          .returning(ROUTE_COLUMNS),
-      );
-      const insertedThread = tx
-        .$with("inserted_agentphone_thread", {})
-        .as(integrationChatThreadInsertFromRouteSql(thread, insertedRoute));
-      const [route] = await tx
-        .with(insertedRoute, insertedThread)
-        .select()
-        .from(insertedRoute);
-      if (route) {
-        await tx.execute(integrationThreadCreatedEventSql(args.orgId, thread));
-        signal.throwIfAborted();
-        return route;
-      }
-      // ON CONFLICT waited for the winner's commit; read it once.
-      const winner = await loadAgentPhoneChatThreadRoute(tx, args);
-      if (!winner) {
-        throw new Error(
-          "Failed to resolve AgentPhone chat thread route after conflict",
-        );
-      }
-      await refreshAgentPhoneRouteConversation(tx, winner, args.conversationId);
-      return winner;
-    });
+    const [existing] = await db
+      .select(ROUTE_COLUMNS)
+      .from(agentphoneChatThreadRoutes)
+      .innerJoin(
+        chatThreads,
+        eq(chatThreads.id, agentphoneChatThreadRoutes.chatThreadId),
+      )
+      .where(routeWhere(args))
+      .limit(1);
     signal.throwIfAborted();
-    return result;
+    if (existing) {
+      if (existing.conversationId !== args.conversationId) {
+        await db
+          .update(agentphoneChatThreadRoutes)
+          .set({ conversationId: args.conversationId })
+          .where(eq(agentphoneChatThreadRoutes.id, existing.id));
+      }
+      signal.throwIfAborted();
+      return existing;
+    }
+    const thread = integrationChatThreadValues(args, candidateId, defaults);
+    const insertRoute = db
+      .insert(agentphoneChatThreadRoutes)
+      .values({
+        agentphoneUserLinkId: args.agentphoneUserLinkId,
+        rootMessageId: args.rootMessageId,
+        conversationId: args.conversationId,
+        chatThreadId: thread.id,
+        createdAt: args.currentTime,
+      })
+      .onConflictDoNothing({
+        target: [
+          agentphoneChatThreadRoutes.agentphoneUserLinkId,
+          agentphoneChatThreadRoutes.rootMessageId,
+        ],
+      })
+      .returning(ROUTE_COLUMNS);
+    const insertedRoute = db.$with("inserted_agentphone_route").as(insertRoute);
+    const insertThread = sql`${integrationChatThreadInsertFromRouteSql(thread, insertedRoute)}
+      RETURNING ${chatThreads.agentId}`;
+    // Thread RETURNING gates the existing lifecycle sequence reservation. The
+    // final result depends on event publication, not a base-table snapshot.
+    const [route] = parseRawRows(
+      routeRowSchema,
+      await db.execute(
+        integrationThreadCreatedEventSql(args.orgId, thread, {
+          cte: sql`inserted_agentphone_route AS (${insertRoute.getSQL()}),
+            inserted_agentphone_thread AS (${insertThread})`,
+          gate: sql`EXISTS (SELECT 1 FROM inserted_agentphone_thread)`,
+          agentId: sql`(SELECT agent_id FROM inserted_agentphone_thread)`,
+          result: sql`SELECT id, conversation_id AS "conversationId",
+            chat_thread_id AS "chatThreadId" FROM inserted_agentphone_route
+            WHERE EXISTS (SELECT 1 FROM inserted)`,
+        }),
+      ),
+    );
+    if (route) {
+      // A successful statement has committed before cancellation propagates.
+      signal.throwIfAborted();
+      return route;
+    }
+    // ON CONFLICT waited for the winner's commit. A new statement sees it;
+    // the losing statement's original snapshot cannot resolve that winner.
+    const [winner] = await db
+      .select(ROUTE_COLUMNS)
+      .from(agentphoneChatThreadRoutes)
+      .innerJoin(
+        chatThreads,
+        eq(chatThreads.id, agentphoneChatThreadRoutes.chatThreadId),
+      )
+      .where(routeWhere(args))
+      .limit(1);
+    if (signal.aborted) {
+      // A missing winner retains its original error ahead of cancellation.
+      if (winner) {
+        signal.throwIfAborted();
+      }
+    }
+    if (!winner) {
+      throw new Error(
+        "Failed to resolve AgentPhone chat thread route after conflict",
+      );
+    }
+    if (winner.conversationId !== args.conversationId) {
+      await db
+        .update(agentphoneChatThreadRoutes)
+        .set({ conversationId: args.conversationId })
+        .where(eq(agentphoneChatThreadRoutes.id, winner.id));
+    }
+    signal.throwIfAborted();
+    return winner;
   },
 );
