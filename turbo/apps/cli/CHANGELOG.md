@@ -1,5 +1,26 @@
 # Changelog
 
+## [9.386.3](https://github.com/okou-ai/okou/compare/cli-v9.386.2...cli-v9.386.3) (2026-10-12)
+
+
+### Bug Fixes
+
+* **workflows:** align manual controls and ordinary name references ([#39179](https://github.com/okou-ai/okou/issues/39179)) ([52bfdd5](https://github.com/okou-ai/okou/commit/52bfdd5ed0d2c3b438f0103d1c11a9b40d0b3943))
+
+
+### Performance Improvements
+
+* **cli:** reuse ably notifications for computer-use results ([#38742](https://github.com/okou-ai/okou/issues/38742)) ([04d247b](https://github.com/okou-ai/okou/commit/04d247ba25adf0ff82f8afad51e1631200915450))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.551.3
+    * @okouai/core bumped to 8.743.0
+    * @okouai/pi-agent-runtime bumped to 1.49.11
+
 ## [9.386.2](https://github.com/okou-ai/okou/compare/cli-v9.386.1...cli-v9.386.2) (2026-10-12)
 
 

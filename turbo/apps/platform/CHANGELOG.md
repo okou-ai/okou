@@ -12,6 +12,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1011.0](https://github.com/okou-ai/okou/compare/app-v0.1010.2...app-v0.1011.0) (2026-10-12)
+
+
+### Features
+
+* **app:** show compliance badges on the chat home ([#38746](https://github.com/okou-ai/okou/issues/38746)) ([0238f2a](https://github.com/okou-ai/okou/commit/0238f2a0db9ad8c1f1bbf2dd94f942c2083c2913))
+
+
+### Bug Fixes
+
+* **app:** restore focus after closing people menus ([#39178](https://github.com/okou-ai/okou/issues/39178)) ([61646ee](https://github.com/okou-ai/okou/commit/61646ee04c6692d9418bf17bce51bfc109a2efc7))
+* **workflows:** align manual controls and ordinary name references ([#39179](https://github.com/okou-ai/okou/issues/39179)) ([52bfdd5](https://github.com/okou-ai/okou/commit/52bfdd5ed0d2c3b438f0103d1c11a9b40d0b3943))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.551.3
+    * @okouai/core bumped to 8.743.0
+    * @okouai/ui bumped to 1.14.0
+
 ## [0.1010.2](https://github.com/okou-ai/okou/compare/app-v0.1010.1...app-v0.1010.2) (2026-10-12)
 
 
