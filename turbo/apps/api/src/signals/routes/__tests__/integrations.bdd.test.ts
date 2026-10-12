@@ -4491,9 +4491,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
       text: "disconnect",
     });
     expect(JSON.stringify(disconnected)).toContain("disconnected");
-    expect(context.mocks.slack.views.publish).toHaveBeenCalledWith(
-      expect.objectContaining({ user_id: slackUserId }),
-    );
+    await flushWaitUntilAndAssert(() => {
+      expect(context.mocks.slack.views.publish).toHaveBeenCalledWith(
+        expect.objectContaining({ user_id: slackUserId }),
+      );
+    });
     const connectStatus = await integrations.requestSlackConnectStatus(
       actor,
       [200],
