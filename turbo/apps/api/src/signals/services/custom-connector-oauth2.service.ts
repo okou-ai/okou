@@ -45,7 +45,7 @@ import {
   generateConnectorOAuthState,
 } from "../../lib/connector-oauth-state";
 import { safeJsonParse, settle } from "../utils";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   exchangeFeishuOAuthCode,
   FeishuOAuthTokenError,
@@ -70,6 +70,7 @@ import { customConnectorDefinitionSelection } from "./custom-connector-definitio
 import type { StoredCustomConnectorOAuthState } from "./connector-oauth-state.service";
 import {
   type ConnectorConnectionMutationResolution,
+  existingConnectorConnectionSelection,
   replaceConnectorConnection,
   resolveConnectorConnectionMutation,
 } from "./connector-connection-write.service";
@@ -672,6 +673,89 @@ function prepareCustomOAuthStart(
   };
 }
 
+const readAutomaticOAuthStartPreflight$ = command(
+  async (
+    { get },
+    args: Pick<
+      StartCustomConnectorOAuth2Args,
+      "orgId" | "userId" | "account"
+    > & {
+      readonly connectorId: string;
+      readonly storageVersion: number;
+    },
+  ) => {
+    const db = get(db$);
+    const [definition] = await db
+      .select({
+        authMode: orgCustomConnectors.authMode,
+        storageVersion: orgCustomConnectors.storageVersion,
+        providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
+      })
+      .from(orgCustomConnectors)
+      .leftJoin(
+        orgCustomConnectorOauthConfigs,
+        and(
+          eq(
+            orgCustomConnectorOauthConfigs.connectorId,
+            orgCustomConnectors.id,
+          ),
+          eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(orgCustomConnectors.id, args.connectorId),
+          eq(orgCustomConnectors.orgId, args.orgId),
+        ),
+      )
+      .for("update", { of: orgCustomConnectors })
+      .limit(1);
+    if (
+      !definition ||
+      definition.authMode !== "automatic" ||
+      definition.storageVersion !== args.storageVersion
+    ) {
+      throw new Error(
+        "Custom connector credential contract changed during OAuth connection",
+      );
+    }
+    // The definition lock ends with its statement. Keep the account probe
+    // separate so its snapshot follows any wait on that definition row.
+    if (args.account.intent === "reconnect") {
+      const [existing] = await db
+        .select(existingConnectorConnectionSelection())
+        .from(connectors)
+        .where(
+          and(
+            eq(connectors.id, args.account.connectionId),
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            eq(connectors.customConnectorId, args.connectorId),
+          ),
+        )
+        .limit(1);
+      return existing
+        ? { kind: "ready" as const }
+        : { kind: "missing" as const };
+    }
+    // Add allows siblings and has no external-ID match. Still execute the
+    // original bounded read and decode every selected field before proceeding.
+    await db
+      .select(existingConnectorConnectionSelection())
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.orgId, args.orgId),
+          eq(connectors.userId, args.userId),
+          eq(connectors.customConnectorId, args.connectorId),
+        ),
+      )
+      .orderBy(connectors.id)
+      .limit(2);
+    return { kind: "ready" as const };
+  },
+);
+
 const prepareAutomaticOAuthStart$ = command(
   async (
     { set },
@@ -687,24 +771,14 @@ const prepareAutomaticOAuthStart$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
     const { connector, args, featureContext, client } = context;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0137; new non-billing transactions are prohibited.
-    const preflight = await db.transaction(async (tx) => {
-      await lockCustomConnectorOAuth2CredentialContract({
-        db: tx,
-        orgId: args.orgId,
-        connectorId: connector.id,
-        storageVersion: connector.storageVersion,
-        authMode: "automatic",
-      });
-      return await resolveConnectorConnectionMutation(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        target: { kind: "custom", customConnectorId: connector.id },
-        mutation: args.account,
-        allowSiblings: true,
-      });
+    // Finish both reads before checking cancellation, as the former preflight did.
+    const preflight = await set(readAutomaticOAuthStartPreflight$, {
+      orgId: args.orgId,
+      userId: args.userId,
+      account: args.account,
+      connectorId: connector.id,
+      storageVersion: connector.storageVersion,
     });
     signal.throwIfAborted();
     if (preflight.kind !== "ready") {
