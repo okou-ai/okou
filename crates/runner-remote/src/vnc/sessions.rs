@@ -295,6 +295,7 @@ impl Run {
                             owner: Arc::clone(&native_owner),
                             exchanges: 0,
                             total: 0,
+                            awaiting_kdc_reply: false,
                         };
                         let result = Box::pin(rfb_client::authenticate_qemu_gssapi(
                             stream,
@@ -311,7 +312,7 @@ impl Run {
                         ))
                         .await;
                         kerberos = Some(caller.binding);
-                        result
+                        caller.authentication_result(result)
                     }
                     Authentication::X509 {
                         server_name,

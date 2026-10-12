@@ -277,6 +277,33 @@ pub(super) struct Caller {
     pub(super) owner: Arc<dyn WorkOwner>,
     pub(super) exchanges: usize,
     pub(super) total: usize,
+    pub(super) awaiting_kdc_reply: bool,
+}
+impl Caller {
+    pub(super) fn authentication_result<T>(
+        &self,
+        result: Result<T, rfb_client::Error>,
+    ) -> Result<T, rfb_client::Error> {
+        if self.awaiting_kdc_reply
+            && matches!(
+                result.as_ref(),
+                Err(
+                    rfb_client::Error::Kerberos(kerberos_worker::Error::Deadline)
+                        | rfb_client::Error::AuthenticationDeadlineExceeded { .. }
+                        | rfb_client::Error::DeadlineExceeded
+                )
+            )
+        {
+            // An enclosing authentication timer can cancel exchange while its
+            // socket still awaits a reply. Preserve the attempted delivery;
+            // the deadline does not establish that the KDC received no bytes.
+            Err(rfb_client::Error::Kerberos(
+                kerberos_worker::Error::DeliveryUnknown,
+            ))
+        } else {
+            result
+        }
+    }
 }
 impl kerberos_worker::KdcExchange for Caller {
     fn work_owner(&self) -> Option<Arc<dyn WorkOwner>> {
@@ -375,6 +402,7 @@ impl kerberos_worker::KdcExchange for Caller {
         self.exchanges += 1;
         self.total += request.len();
         // After a write is attempted every uncertain result is terminal. No retry.
+        self.awaiting_kdc_reply = true;
         stream
             .write_all(&(request.len() as u32).to_be_bytes())
             .await
@@ -395,6 +423,7 @@ impl kerberos_worker::KdcExchange for Caller {
             .await
             .map_err(|_| E::DeliveryUnknown)?;
         self.total += size;
+        self.awaiting_kdc_reply = false;
         Ok(reply)
     }
 }
@@ -454,6 +483,7 @@ mod tests {
             owner: Arc::new(()),
             exchanges: 0,
             total: 0,
+            awaiting_kdc_reply: false,
         }
     }
 
@@ -615,6 +645,79 @@ mod tests {
         resolve.assert_calls_async(1).await;
         drop(rfb);
         drop(rfb_peer);
+        drop(caller);
+        h.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn authentication_deadline_after_full_kdc_send_is_delivery_unknown() {
+        let mut h = Harness::new(Reply::default()).await;
+        let resolve = h.resolve_for_run(h.run, h.credential(false)).await;
+        let pin = pin(&h).await;
+        let initial = check(&h, 7, "valid", None).await;
+        let learned = check(&h, 8, "valid", None).await;
+        let mut caller = caller(&h);
+        let (request_received, deadline) = tokio::sync::oneshot::channel();
+        let authenticate = async {
+            let result = {
+                let exchange = caller.exchange("EXAMPLE.TEST", b"test");
+                tokio::pin!(exchange);
+                tokio::select! {
+                    reply = &mut exchange => reply.map(|_| ()).map_err(rfb_client::Error::Kerberos),
+                    received = deadline => {
+                        received.unwrap();
+                        Err(rfb_client::Error::Kerberos(kerberos_worker::Error::Deadline))
+                    }
+                }
+            };
+            caller.authentication_result(result)
+        };
+        let kdc = async {
+            let mut stream = h.accept_forwarded().await;
+            receive(&mut stream).await;
+            // The enclosing authentication deadline wins only after the real
+            // forwarded socket has received the complete request, without reply.
+            request_received.send(()).unwrap();
+            assert_eq!(stream.read(&mut [0]).await.unwrap(), 0);
+        };
+        let (result, ()) = tokio::join!(authenticate, kdc);
+        assert_eq!(Failure::from(result.unwrap_err()), Failure::DeliveryUnknown);
+        initial.assert_calls_async(1).await;
+        learned.assert_calls_async(2).await;
+        resolve.assert_calls_async(1).await;
+        pin.assert_calls_async(1).await;
+        drop(caller);
+        h.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn completed_kdc_reply_does_not_reclassify_a_later_authentication_deadline() {
+        let mut h = Harness::new(Reply::default()).await;
+        let resolve = h.resolve_for_run(h.run, h.credential(false)).await;
+        let pin = pin(&h).await;
+        let initial = check(&h, 7, "valid", None).await;
+        let learned = check(&h, 8, "valid", None).await;
+        let mut caller = caller(&h);
+        let exchange = caller.exchange("EXAMPLE.TEST", b"test");
+        let kdc = async {
+            let mut stream = h.accept_forwarded().await;
+            receive(&mut stream).await;
+            stream.write_u32(5).await.unwrap();
+            stream.write_all(b"reply").await.unwrap();
+            stream.shutdown().await.unwrap();
+        };
+        let (reply, ()) = tokio::join!(exchange, kdc);
+        assert_eq!(reply.unwrap().as_slice(), b"reply");
+        let error = caller
+            .authentication_result::<()>(Err(rfb_client::Error::Kerberos(
+                kerberos_worker::Error::Deadline,
+            )))
+            .unwrap_err();
+        assert_eq!(Failure::from(error), Failure::TimedOut);
+        initial.assert_calls_async(1).await;
+        learned.assert_calls_async(2).await;
+        resolve.assert_calls_async(1).await;
+        pin.assert_calls_async(1).await;
         drop(caller);
         h.shutdown().await;
     }
