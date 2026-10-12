@@ -96,9 +96,8 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
     }
     const db = set(writeDb$);
     const settled = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0344; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        const [current] = await tx
+      (async () => {
+        const [current] = await db
           .select({
             ...workflowAutomationColumns(),
             rowVersion: sql`${workflowAutomations}.xmin::text`.mapWith(
@@ -108,6 +107,7 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
           .from(workflowAutomations)
           .where(eq(workflowAutomations.id, automation.id))
           .limit(1);
+        signal.throwIfAborted();
         if (
           !current ||
           (stillDueAt !== undefined &&
@@ -125,7 +125,7 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
           failureTime,
           shouldDisable,
         );
-        const [updated] = await tx
+        const [updated] = await db
           .update(workflowAutomations)
           .set({
             consecutiveFailures: sql`${workflowAutomations.consecutiveFailures} + ${failure.isCreditError ? 0 : 1}`,
@@ -149,7 +149,7 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
         }
         signal.throwIfAborted();
         return preRunFailureOutcome(updated, failure);
-      }),
+      })(),
       signal,
     );
     signal.throwIfAborted();

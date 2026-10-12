@@ -1077,11 +1077,6 @@
       "owner": "deleteWorkflowRows$"
     },
     {
-      "id": "TX-0344",
-      "file": "turbo/apps/api/src/signals/services/workflow-schedule-failure.service.ts",
-      "owner": "recordSelectedMorningBriefPreRunFailure$"
-    },
-    {
       "id": "TX-0345",
       "file": "turbo/apps/api/src/signals/services/workflow-schedule-settlement.ts",
       "owner": "advanceInFlightSchedule"
