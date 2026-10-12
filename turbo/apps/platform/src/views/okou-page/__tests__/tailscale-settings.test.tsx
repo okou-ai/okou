@@ -559,7 +559,7 @@ test("A retry after a read proves no creation reuses the original UUID", async (
   expect(requests[1]?.id).toBe(requests[0]?.id);
 });
 
-test("Changing organizations unmounts the draft and clears secrets", async () => {
+test("Changing organizations unmounts the draft, clears secrets and hides old network metadata", async () => {
   context.mocks.data.org({ id: "org_next", name: "Next", role: "member" });
   await page();
   const dialog = await createForm();
@@ -575,6 +575,8 @@ test("Changing organizations unmounts the draft and clears secrets", async () =>
     return expect(screen.queryByRole("dialog")).toBeNull();
   });
   expect(secret).toHaveValue("");
+  expect(screen.queryByText(config.name)).toBeNull();
+  expect(screen.queryByText(shared.name)).toBeNull();
 });
 
 test("An unavailable list stays an error and can be retried instead of appearing empty", async () => {

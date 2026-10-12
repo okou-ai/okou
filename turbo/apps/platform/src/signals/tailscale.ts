@@ -27,11 +27,21 @@ export const tailscaleEnabled$ = computed((get) => {
 });
 
 export const tailscaleIdentity$ = computed(async (get) => {
-  const [user, identity] = await Promise.all([
+  const sessionKey = get(authenticatedSessionKey$);
+  const [user, identity, clerk] = await Promise.all([
     get(user$),
     get(runtimeAuthenticatedIdentity$),
+    get(clerk$),
   ]);
-  return user ? `${identity.orgId}:${user.id}` : null;
+  if (
+    !user ||
+    user.id !== identity.userId ||
+    !sessionKey ||
+    sessionKey !== JSON.stringify([identity.orgId, user.id, clerk.session?.id])
+  ) {
+    return null;
+  }
+  return `${identity.orgId}:${user.id}`;
 });
 
 const tailscaleClient$ = computed(async (get) => {
