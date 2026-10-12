@@ -2987,29 +2987,32 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         }))
         .await;
     model_catalog_prefetch.record_outcome(telemetry);
-    let prepared_agent = match prepared_agent {
-        Some(Ok(prepared_agent)) => prepared_agent,
-        Some(Err(RunnerError::Cancelled)) | None => {
-            model_catalog_prefetch.finish(telemetry).await;
-            info!(
-                run_id = %context.run_id,
-                "cancel received before guest process started"
-            );
-            let result = AgentExecutionResult::cancelled();
-            telemetry.record(
-                "agent_execute",
-                pre_spawn_started.elapsed(),
-                false,
-                result
-                    .failure
-                    .as_ref()
-                    .map(|failure| failure.error.as_str()),
-            );
-            return Ok(result);
-        }
-        Some(Err(error)) => {
-            model_catalog_prefetch.finish(telemetry).await;
-            return Err(error);
+    let prepared_agent = 'prepared_agent: {
+        let preparation_error = match prepared_agent {
+            Some(Ok(prepared_agent)) => break 'prepared_agent prepared_agent,
+            Some(Err(error)) => Some(error),
+            None => None,
+        };
+        model_catalog_prefetch.finish(telemetry).await;
+        match preparation_error {
+            Some(RunnerError::Cancelled) | None => {
+                info!(
+                    run_id = %context.run_id,
+                    "cancel received before guest process started"
+                );
+                let result = AgentExecutionResult::cancelled();
+                telemetry.record(
+                    "agent_execute",
+                    pre_spawn_started.elapsed(),
+                    false,
+                    result
+                        .failure
+                        .as_ref()
+                        .map(|failure| failure.error.as_str()),
+                );
+                return Ok(result);
+            }
+            Some(error) => return Err(error),
         }
     };
     let PreparedAgentProcess {
