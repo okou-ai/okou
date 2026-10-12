@@ -377,11 +377,6 @@
       "owner": "prepareNextOutboxItem"
     },
     {
-      "id": "TX-0157",
-      "file": "turbo/apps/api/src/signals/services/email-common.service.ts",
-      "owner": "completeOutboxItem"
-    },
-    {
       "id": "TX-0160",
       "file": "turbo/apps/api/src/signals/services/feishu-chat-ingress.service.ts",
       "owner": "admitFeishuChatEvent$"
