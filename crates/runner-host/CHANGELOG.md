@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/okou-ai/okou/compare/runner-host-v0.6.0...runner-host-v0.7.0) (2026-10-12)
+
+
+### Features
+
+* **ssh:** integrate native tailscale saved-host transport ([#39018](https://github.com/okou-ai/okou/issues/39018)) ([e8f8c83](https://github.com/okou-ai/okou/commit/e8f8c83186b0d6881c546048b7198f6dd2d96181))
+
 ## [0.6.0](https://github.com/okou-ai/okou/compare/runner-host-v0.5.0...runner-host-v0.6.0) (2026-10-11)
 
 

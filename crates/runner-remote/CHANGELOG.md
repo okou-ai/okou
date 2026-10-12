@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.12.1...runner-remote-v0.13.0) (2026-10-12)
+
+
+### Features
+
+* **ssh:** integrate native tailscale saved-host transport ([#39018](https://github.com/okou-ai/okou/issues/39018)) ([e8f8c83](https://github.com/okou-ai/okou/commit/e8f8c83186b0d6881c546048b7198f6dd2d96181))
+
 ## [0.12.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.12.0...runner-remote-v0.12.1) (2026-10-11)
 
 ## [0.12.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.11.4...runner-remote-v0.12.0) (2026-10-11)

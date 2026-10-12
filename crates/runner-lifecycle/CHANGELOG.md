@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.7.0...runner-lifecycle-v0.8.0) (2026-10-12)
+
+
+### Features
+
+* **runner:** retain guarded ordinary activation cleanup owners ([#39073](https://github.com/okou-ai/okou/issues/39073)) ([9d380c4](https://github.com/okou-ai/okou/commit/9d380c4e66d449bc99663447dac4aca71e1e5547))
+
 ## [0.7.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.6.0...runner-lifecycle-v0.7.0) (2026-10-11)
 
 
