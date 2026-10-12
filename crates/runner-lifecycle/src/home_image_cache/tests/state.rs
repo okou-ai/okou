@@ -6,15 +6,21 @@ use runner_types::types::{
 use std::collections::BTreeMap;
 
 #[tokio::test]
-async fn inventory_requires_profile_and_exact_home_shape() {
+async fn inventory_requires_captured_full_rootfs_profile_and_exact_home_shape() {
     let f = Fixture::new().await;
     f.commit("thread", b"home", "2026-10-09T09:00:00Z").await;
-    for (profile, size, expected) in [
-        (PROFILE, SIZE, 1),
-        ("other", SIZE, 0),
-        (PROFILE, SIZE * 2, 0),
+    for (rootfs, size, expected) in [
+        (ROOTFS, SIZE, 1),
+        ("wrong-rootfs", SIZE, 0),
+        (ROOTFS, SIZE * 2, 0),
     ] {
-        let profiles = BTreeMap::from([(profile, size)]);
+        let profiles = BTreeMap::from([(
+            PROFILE,
+            HomeImageProfileIdentity {
+                rootfs_hash: rootfs,
+                image_size_bytes: size,
+            },
+        )]);
         let states = f.cache.held_home_states_for_profiles(&profiles).await;
         assert_eq!(states.len(), expected);
         if expected == 1 {

@@ -21,6 +21,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 mod entry;
 mod fs;
 mod gc;
+mod gc_metadata;
 mod inspection;
 mod io_context;
 mod lifecycle;
@@ -43,9 +44,9 @@ pub use types::{
     CacheBudget, FsStats, HomeCacheCheckoutResult, HomeCacheTerminalStatus,
     HomeImageCacheInspection, HomeImageCacheInspectionEntry, HomeImageCacheInspectionStatus,
     HomeImageCacheInspectionSummary, HomeImageLeaseIdentity, HomeImageLeaseRequest,
-    HomeImagePrepareLockPolicy, HomeImagePrepareRequest, HomeImagePromotionIdentity,
-    HomeImagePromotionIdentityMismatch, HomeImagePromotionIdentityRequest,
-    HomeImagePromotionRequest,
+    HomeImagePrepareLockPolicy, HomeImagePrepareRequest, HomeImageProfileIdentity,
+    HomeImagePromotionIdentity, HomeImagePromotionIdentityMismatch,
+    HomeImagePromotionIdentityRequest, HomeImagePromotionRequest,
 };
 pub use watcher::{HomeCacheChange, HomeCacheWatcher};
 

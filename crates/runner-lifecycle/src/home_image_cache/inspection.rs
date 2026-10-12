@@ -2,6 +2,7 @@ use super::entry::is_cache_key_name;
 use super::fs::{
     cache_entry_dir_is_dir, entry_file_type_is_dir, is_home_tmp_path_name, measured_entry_bytes,
 };
+use super::metadata::{HomeCacheState, HomeTrust, validate_current_image_identity};
 use super::types::{
     CacheBudget, FsStats, HomeImageCacheInspection, HomeImageCacheInspectionEntry,
     HomeImageCacheInspectionStatus, HomeImageCacheInspectionSummary,
@@ -117,9 +118,19 @@ impl HomeImageCache {
                 .await?;
         let total = measured_entry_bytes(&dir).await?;
         let reason = match (&metadata, &current) {
-            (Some(metadata), Some(current)) => self
-                .unusable_current_entry_reason(&key, metadata, current)
-                .map(str::to_owned),
+            (Some(metadata), Some(current)) => {
+                if metadata.state != HomeCacheState::Current
+                    || metadata.home_trust != HomeTrust::Clean
+                {
+                    Some("metadata is not reusable".into())
+                } else if validate_current_image_identity(metadata, current).is_err() {
+                    Some("current image identity mismatch".into())
+                } else if !self.metadata_matches_cache_key(&key, metadata) {
+                    Some("cache key mismatch".into())
+                } else {
+                    None
+                }
+            }
             (Some(_), None) => Some("missing committed generation image".into()),
             (None, _) => Some("missing or invalid canonical metadata".into()),
         };

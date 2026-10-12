@@ -11,18 +11,15 @@ use tracing::{info, warn};
 use crate::error::{LifecycleError, LifecycleResult};
 use runner_types::types::MAX_HELD_HOME_STATES;
 
+use super::HomeImageCache;
 use super::entry::{CacheEntryPaths, is_cache_key_name};
 use super::fs::{
     cache_entry_dir_is_dir, entry_file_type_is_dir, fs_stats_with_additional_available,
     is_home_tmp_path_name, remove_home_cache_path_if_exists,
 };
+use super::gc_metadata::read_gc_metadata_file;
 use super::io_context::with_path;
-use super::metadata::{
-    HomeCacheMetadata, HomeCacheState, HomeTrust, validate_current_image_identity,
-};
-use super::path_safety::is_safe_guest_working_dir;
 use super::types::{CacheBudget, FsStats};
-use super::{CACHE_FORMAT_VERSION, HOME_DRIVE_LAYOUT, HomeImageCache};
 
 pub(super) struct GcCandidate {
     pub(super) cache_key: String,
@@ -337,7 +334,7 @@ impl HomeImageCache {
         entry: &GcCacheEntry,
         dry_run: bool,
     ) -> LifecycleResult<GcEntryInventory> {
-        let metadata = match self.read_metadata_file(&entry.paths.metadata()).await {
+        let metadata = match read_gc_metadata_file(&entry.paths.metadata()).await {
             Ok(metadata) => metadata,
             Err(LifecycleError::Internal(error)) => {
                 return self
@@ -365,15 +362,19 @@ impl HomeImageCache {
             }
             Err(e) => return Err(with_path(e, "symlink_metadata", &current).into()),
         };
-        if let Some(reason) =
-            self.unusable_current_entry_reason(&entry.cache_key, &metadata, &current_metadata)
-        {
+        if let Err(error) = metadata.validate_current_image(&current_metadata) {
             return self
-                .gc_whole_cache_entry(entry, dry_run, GcWholeEntryReason::Unusable(reason.into()))
+                .gc_whole_cache_entry(
+                    entry,
+                    dry_run,
+                    GcWholeEntryReason::Unusable(error.to_string()),
+                )
                 .await;
         }
 
-        let pre_cleanup_freed_bytes = self.gc_temporary_paths(entry, dry_run).await?;
+        let pre_cleanup_freed_bytes = self
+            .gc_temporary_paths(entry, dry_run, Some(&metadata.image_generation))
+            .await?;
         let candidate = self
             .gc_candidate_from_observation(
                 entry.cache_key.clone(),
@@ -452,7 +453,7 @@ impl HomeImageCache {
             },
         }
 
-        let pre_cleanup_freed_bytes = self.gc_temporary_paths(entry, false).await?;
+        let pre_cleanup_freed_bytes = self.gc_temporary_paths(entry, false, None).await?;
         let candidate = self.gc_candidate_for_entry(entry).await;
         Ok(GcEntryInventory {
             pre_cleanup_freed_bytes,
@@ -527,40 +528,11 @@ impl HomeImageCache {
         Ok(Some(lock))
     }
 
-    pub(super) fn unusable_current_entry_reason(
-        &self,
-        cache_key: &str,
-        metadata: &HomeCacheMetadata,
-        current_metadata: &std::fs::Metadata,
-    ) -> Option<&'static str> {
-        if metadata.format_version != CACHE_FORMAT_VERSION {
-            return Some("metadata format version mismatch");
-        }
-        if metadata.drive_layout != HOME_DRIVE_LAYOUT {
-            return Some("drive layout mismatch");
-        }
-        if metadata.state != HomeCacheState::Current || metadata.home_trust != HomeTrust::Clean {
-            return Some("metadata is not reusable");
-        }
-        if !is_safe_guest_working_dir(&metadata.working_dir) {
-            return Some("unsafe working dir");
-        }
-        if !current_metadata.is_file() {
-            return Some("current image is not a file");
-        }
-        if !self.metadata_matches_cache_key(cache_key, metadata) {
-            return Some("cache key mismatch");
-        }
-        if validate_current_image_identity(metadata, current_metadata).is_err() {
-            return Some("current image identity mismatch");
-        }
-        None
-    }
-
     async fn gc_temporary_paths(
         &self,
         entry: &GcCacheEntry,
         dry_run: bool,
+        committed_generation: Option<&str>,
     ) -> LifecycleResult<u64> {
         let mut freed: u64 = 0;
         let mut files = match fs::read_dir(entry.paths.entry_dir()).await {
@@ -577,13 +549,11 @@ impl HomeImageCache {
             let Some(file_name) = file_name.to_str() else {
                 continue;
             };
-            let committed = self
-                .read_metadata_file(&entry.paths.metadata())
-                .await
-                .ok()
-                .map(|m| m.image_generation);
-            let orphan = super::entry::image_generation(file_name)
-                .is_some_and(|g| committed.as_deref() != Some(g));
+            // The caller read this commit once under the entry lock. Without
+            // a known generation, clean staging paths and retain image files.
+            let orphan = committed_generation.is_some_and(|committed| {
+                super::entry::image_generation(file_name).is_some_and(|g| g != committed)
+            });
             if !is_home_tmp_path_name(file_name) && !orphan {
                 continue;
             }
@@ -661,16 +631,10 @@ impl HomeImageCache {
         if !cache_entry_dir_is_dir(entry.paths.entry_dir()).await.ok()? {
             return None;
         }
-        let metadata = self
-            .read_metadata_file(&entry.paths.metadata())
-            .await
-            .ok()?;
+        let metadata = read_gc_metadata_file(&entry.paths.metadata()).await.ok()?;
         let image = entry.paths.image(&metadata.image_generation)?;
         let file_metadata = fs::symlink_metadata(&image).await.ok()?;
-        if self
-            .unusable_current_entry_reason(&entry.cache_key, &metadata, &file_metadata)
-            .is_some()
-        {
+        if metadata.validate_current_image(&file_metadata).is_err() {
             return None;
         }
         self.gc_candidate_from_observation(
