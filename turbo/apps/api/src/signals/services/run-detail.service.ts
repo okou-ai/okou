@@ -9,6 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 
 import { db$, type Db } from "../external/db";
 import { getDatasetName, queryAxiom } from "../external/axiom";
@@ -166,14 +167,12 @@ interface AgentEventsParams {
   order: "asc" | "desc";
 }
 
-interface AxiomAgentEvent {
-  _time: string;
-  runId: string;
-  userId: string;
-  sequenceNumber: number;
-  eventType: string;
-  eventData: Record<string, unknown>;
-}
+const axiomAgentEventSchema = z.object({
+  _time: z.string(),
+  sequenceNumber: z.number().int(),
+  eventType: z.string(),
+  eventData: z.record(z.string(), z.unknown()),
+});
 
 function publicAgentEventData(
   eventData: Record<string, unknown>,
@@ -264,17 +263,29 @@ export function runAgentEvents(
     const previousCursorValue = sequenceCursorValue(params.cursor, order);
 
     const dataset = getDatasetName("agent-run-events");
-    const paginationFilter = buildAgentEventPaginationFilters(params);
+    const sequenceFilter = buildAgentEventPaginationFilters({
+      ...params,
+      sinceTime: undefined,
+    });
+    const timeFilter = buildTimePaginationFilters({
+      sinceTime: params.sinceTime,
+      order,
+    });
     const apl = `['${dataset}']
 | where runId == "${escapeAplString(params.runId)}"
 | where _time >= datetime("${run.createdAt.toISOString()}")
-${paginationFilter}
+${sequenceFilter}
+| project _time, sequenceNumber, eventType, eventData
+| summarize arg_min(_time, *) by sequenceNumber
+${timeFilter}
 | order by sequenceNumber ${order}
 | limit ${limit + 1}`;
 
     const events = (
-      await get(queryAxiom<AxiomAgentEvent>(apl, { noCache: true }))
-    ).slice();
+      await get(queryAxiom<unknown>(apl, { noCache: true, format: "tabular" }))
+    ).map((event) => {
+      return axiomAgentEventSchema.parse(event);
+    });
 
     const pageHasMore = events.length > limit;
     const resultEvents = pageHasMore ? events.slice(0, limit) : events;

@@ -1,11 +1,13 @@
 import { computed, type Computed } from "ccstate";
 import { Axiom } from "@axiomhq/js";
+import { delay } from "signal-timers";
 
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { singleton } from "../../lib/singleton";
 import { now } from "../../lib/time";
 import {
+  awaitWithSignal,
   settleIncludingAbort,
   startUntrackedBestEffortCleanup,
 } from "../utils";
@@ -18,6 +20,8 @@ const AXIOM_API_ORIGIN = "https://api.axiom.co";
 const AXIOM_QUERY_TIMEOUT_MS = 120_000;
 const AXIOM_INGEST_FAILURE_DETAIL_LIMIT = 3;
 const AXIOM_INGEST_FAILURE_ERROR_MAX_LENGTH = 512;
+const AXIOM_TRACE_ATTEMPT_TIMEOUT_MS = 5000;
+const AXIOM_TRACE_RETRY_DELAY_MS = 100;
 const AXIOM_TRANSPORT_ERROR_MESSAGES = {
   timeout: "Axiom ingest timed out",
   transport_error: "Axiom ingest transport failed",
@@ -136,6 +140,7 @@ type DirectAxiomIngestErrorOptions =
       readonly reason: "http_status";
       readonly dataset: string;
       readonly status: number;
+      readonly retryAfterMs?: number;
     }
   | {
       readonly reason: "invalid_response";
@@ -170,6 +175,7 @@ export class DirectAxiomIngestError extends Error {
     | "transport_error";
   readonly dataset: string;
   readonly status?: number;
+  readonly retryAfterMs?: number;
   readonly expected?: number;
   readonly ingested?: number;
   readonly failed?: number;
@@ -193,6 +199,7 @@ export class DirectAxiomIngestError extends Error {
     this.dataset = options.dataset;
     if (options.reason === "http_status") {
       this.status = options.status;
+      this.retryAfterMs = options.retryAfterMs;
     }
     if (options.reason === "partial_ingest") {
       this.expected = options.expected;
@@ -255,43 +262,65 @@ function axiomIngestUrl(dataset: string): string {
   ).toString();
 }
 
-export async function ingestAxiomDirect(
+interface PreparedAxiomIngest {
+  readonly dataset: string;
+  readonly token: string;
+  readonly body: string;
+  readonly eventCount: number;
+  readonly requestBytes: number;
+}
+
+function prepareAxiomIngest(
   dataset: string,
   events: readonly Record<string, unknown>[],
-  timeoutMs: number,
-  signal: AbortSignal,
-): Promise<DirectAxiomIngestResult> {
+): PreparedAxiomIngest | null {
   const tokenEnvName = getAxiomTokenEnvNameForDataset(dataset);
   const token = optionalEnv(tokenEnvName);
   if (!token) {
-    return { configured: false };
+    return null;
   }
-
   const body = JSON.stringify(events);
-  const requestBytes = Buffer.byteLength(body, "utf8");
+  return {
+    dataset,
+    token,
+    body,
+    eventCount: events.length,
+    requestBytes: Buffer.byteLength(body, "utf8"),
+  };
+}
+
+function axiomRetryAfterMs(value: string | null): number | undefined {
+  if (!value?.trim()) {
+    return undefined;
+  }
+  const text = value.trim();
+  const milliseconds = /^\d+(?:\.\d+)?$/u.test(text)
+    ? Number(text) * 1000
+    : Date.parse(text) - now();
+  return Number.isFinite(milliseconds) && milliseconds >= 0
+    ? milliseconds
+    : undefined;
+}
+
+async function ingestAxiomRequest(
+  request: PreparedAxiomIngest,
+  timeoutMs: number,
+  redirect: "error" | "manual",
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  const { dataset, token, body, eventCount, requestBytes } = request;
   const startedAt = now();
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const requestSignal = AbortSignal.any([signal, timeoutSignal]);
-  const fetchResult = await settleIncludingAbort(
-    fetch(axiomIngestUrl(dataset), {
-      method: "POST",
-      redirect: "error",
-      headers: {
-        accept: "application/json",
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
-      body,
-      signal: requestSignal,
-    }),
-  );
-  if (!fetchResult.ok) {
+
+  const transportError = (error: unknown): DirectAxiomIngestError => {
     if (
       signal.aborted &&
       requestSignal.aborted &&
       requestSignal.reason === signal.reason
     ) {
-      throw fetchResult.error;
+      throw error;
     }
 
     const reason =
@@ -300,15 +329,35 @@ export async function ingestAxiomDirect(
       requestSignal.reason === timeoutSignal.reason
         ? "timeout"
         : "transport_error";
-    throw new DirectAxiomIngestError(AXIOM_TRANSPORT_ERROR_MESSAGES[reason], {
+    return new DirectAxiomIngestError(AXIOM_TRANSPORT_ERROR_MESSAGES[reason], {
       reason,
       dataset,
-      eventCount: events.length,
+      eventCount,
       requestBytes,
       timeoutMs,
       elapsedMs: Math.max(0, now() - startedAt),
-      cause: fetchResult.error,
+      cause: error,
     });
+  };
+  const fetchResult = await settleIncludingAbort(
+    awaitWithSignal(
+      fetch(axiomIngestUrl(dataset), {
+        method: "POST",
+        // Neither policy forwards credentials; traces inspect permanent redirects.
+        redirect,
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body,
+        signal: requestSignal,
+      }),
+      requestSignal,
+    ),
+  );
+  if (!fetchResult.ok) {
+    throw transportError(fetchResult.error);
   }
   const response = fetchResult.value;
 
@@ -322,11 +371,28 @@ export async function ingestAxiomDirect(
         reason: "http_status",
         dataset,
         status: response.status,
+        retryAfterMs: axiomRetryAfterMs(response.headers.get("Retry-After")),
       },
     );
   }
 
-  const payload: unknown = await response.json();
+  const readResult = await settleIncludingAbort(
+    awaitWithSignal(response.json(), requestSignal),
+  );
+  if (!readResult.ok) {
+    if (response.body) {
+      startUntrackedBestEffortCleanup(response.body.cancel());
+    }
+    if (requestSignal.aborted || !(readResult.error instanceof SyntaxError)) {
+      throw transportError(readResult.error);
+    }
+    throw new DirectAxiomIngestError("Axiom ingest returned invalid JSON", {
+      reason: "invalid_response",
+      dataset,
+    });
+  }
+  signal.throwIfAborted();
+  const payload: unknown = readResult.value;
   if (!isAxiomIngestStatus(payload)) {
     throw new DirectAxiomIngestError(
       "Axiom ingest returned an unexpected response shape",
@@ -336,7 +402,7 @@ export async function ingestAxiomDirect(
   if (
     payload.failed !== 0 ||
     (payload.failures?.length ?? 0) !== 0 ||
-    payload.ingested !== events.length
+    payload.ingested !== eventCount
   ) {
     const returnedFailureDetails = payload.failures ?? [];
     const failureDetails = returnedFailureDetails
@@ -348,11 +414,11 @@ export async function ingestAxiomDirect(
         };
       });
     throw new DirectAxiomIngestError(
-      `Axiom ingest accepted ${payload.ingested} of ${events.length} events with ${payload.failed} failed events and ${payload.failures?.length ?? 0} failure details`,
+      `Axiom ingest accepted ${payload.ingested} of ${eventCount} events with ${payload.failed} failed events and ${payload.failures?.length ?? 0} failure details`,
       {
         reason: "partial_ingest",
         dataset,
-        expected: events.length,
+        expected: eventCount,
         ingested: payload.ingested,
         failed: payload.failed,
         failureDetailsReturned: returnedFailureDetails.length,
@@ -362,8 +428,97 @@ export async function ingestAxiomDirect(
       },
     );
   }
+}
 
+/** Required telemetry retains one attempt and its caller-owned deadline. */
+export async function ingestAxiomDirect(
+  dataset: string,
+  events: readonly Record<string, unknown>[],
+  timeoutMs: number,
+  signal: AbortSignal,
+): Promise<DirectAxiomIngestResult> {
+  signal.throwIfAborted();
+  const request = prepareAxiomIngest(dataset, events);
+  if (!request) {
+    return { configured: false };
+  }
+  await ingestAxiomRequest(request, timeoutMs, "error", signal);
   return { configured: true };
+}
+
+/** Replay only optional traces: delivery is ambiguous and readers deduplicate. */
+export async function ingestAxiomTrace(
+  dataset: string,
+  events: readonly Record<string, unknown>[],
+  timeoutMs: number,
+  signal: AbortSignal,
+): Promise<DirectAxiomIngestResult> {
+  signal.throwIfAborted();
+  const startedAt = now();
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const operationSignal = AbortSignal.any([signal, timeoutSignal]);
+  const request = prepareAxiomIngest(dataset, events);
+  if (!request) {
+    return { configured: false };
+  }
+  const remainingMs = () => {
+    return timeoutMs - (now() - startedAt);
+  };
+  const checkDeadline = () => {
+    signal.throwIfAborted();
+    if (timeoutSignal.aborted || remainingMs() <= 0) {
+      throw new DirectAxiomIngestError("Axiom ingest timed out", {
+        reason: "timeout",
+        dataset,
+        eventCount: request.eventCount,
+        requestBytes: request.requestBytes,
+        timeoutMs,
+        elapsedMs: Math.max(0, now() - startedAt),
+        cause: timeoutSignal.reason,
+      });
+    }
+  };
+  for (let attempt = 1; ; attempt += 1) {
+    checkDeadline();
+    const result = await settleIncludingAbort(
+      ingestAxiomRequest(
+        request,
+        Math.min(AXIOM_TRACE_ATTEMPT_TIMEOUT_MS, remainingMs()),
+        "manual",
+        operationSignal,
+      ),
+    );
+    checkDeadline();
+    if (result.ok) {
+      return { configured: true };
+    }
+    const { error } = result;
+    const retryable =
+      error instanceof DirectAxiomIngestError &&
+      (error.reason === "timeout" ||
+        error.reason === "transport_error" ||
+        (error.reason === "http_status" &&
+          error.status !== undefined &&
+          [429, 500, 502, 503, 504].includes(error.status)));
+    if (!retryable || attempt >= 2) {
+      throw error;
+    }
+    const waitMs = Math.max(
+      AXIOM_TRACE_RETRY_DELAY_MS +
+        Math.floor(Math.random() * (AXIOM_TRACE_RETRY_DELAY_MS + 1)),
+      error.retryAfterMs ?? 0,
+    );
+    if (waitMs >= remainingMs()) {
+      throw error;
+    }
+    const waited = await settleIncludingAbort(
+      delay(waitMs, { signal: operationSignal }),
+    );
+    checkDeadline();
+    if (!waited.ok) {
+      throw waited.error;
+    }
+  }
 }
 
 interface FlushAxiomOptions {
@@ -426,6 +581,7 @@ export async function flushAxiom(
 // cache while waiting for asynchronously ingested terminal data; time bounds
 // constrain dataset scans, and `cursor` is used for Axiom-managed pagination.
 interface QueryAxiomOptions {
+  readonly format?: "tabular";
   readonly noCache?: boolean;
   readonly startTime?: string;
   readonly endTime?: string;
@@ -515,7 +671,7 @@ async function queryAxiomDirect<T = Record<string, unknown>>(
   apl: string,
   options?: QueryAxiomOptions,
 ): Promise<readonly T[]> {
-  if (options?.cursor !== undefined) {
+  if (options?.cursor !== undefined && options.format !== "tabular") {
     return queryAxiomDirectWithCursor<T>(apl, {
       ...options,
       cursor: options.cursor,
@@ -537,6 +693,19 @@ async function queryAxiomDirect<T = Record<string, unknown>>(
             : { endTime: options.endTime }),
         }
       : undefined;
+  if (options?.format === "tabular") {
+    const result = await client.query(apl, {
+      ...axiomOptions,
+      ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
+      format: "tabular",
+    });
+    if (result.status.isPartial) {
+      throw new Error("Axiom query returned partial results");
+    }
+    return result.tables.flatMap((table) => {
+      return [...table.events()];
+    }) as readonly T[];
+  }
   const result = await client.query(apl, {
     ...axiomOptions,
     format: "legacy",
