@@ -17,6 +17,7 @@ import { setupApp } from "../../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
 import { createBddApi } from "./api-bdd";
+import { createAuthDeviceSupportApi } from "./api-bdd-auth-device-support";
 import { createRunsApi } from "./api-bdd-runs";
 import { publicRunOwner } from "./public-run-owner";
 import { deletePublicWorkspace } from "./public-workspace-cleanup";
@@ -281,7 +282,7 @@ export function createBillingCheckoutFixture() {
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
       const runnerGroup = runs.configureRunnerGroup();
-      await bdd.updateUserTimezone(actor, "Etc/UTC");
+      await createAuthDeviceSupportApi(context).initializePreferences(actor);
       await runs.ensurePersonalSubscriptionModel(actor);
       const agent = await bdd.createAgent(actor, {
         displayName: "Billing credential carrier",
