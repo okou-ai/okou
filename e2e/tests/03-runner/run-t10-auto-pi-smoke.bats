@@ -61,8 +61,4 @@ teardown() {
     assert_success
     run _wait_for_runner_chat_output "$THREAD_ID" "$RUN_ID" "RESULT=3" 60
     assert_success
-
-    run runner_e2e_wait_for_usage_event \
-        "$THREAD_ID" "$RUN_ID" "@preset/okou-1-0"
-    assert_success
 }

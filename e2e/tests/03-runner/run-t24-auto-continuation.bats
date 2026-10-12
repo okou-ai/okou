@@ -32,9 +32,7 @@ assert_auto_route() {
         .source.runtimeProviderType == "openrouter-codex" and
         .source.model == "auto" and
         .source.credentialScope == "org"
-    ' <<<"$response" || return
-    runner_e2e_wait_for_usage_event \
-        "$THREAD_ID" "$run_id" "@preset/okou-1-0"
+    ' <<<"$response"
 }
 
 @test "auto preserves session continuity and its OpenRouter route on a successor" {

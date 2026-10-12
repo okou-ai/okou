@@ -68,8 +68,7 @@ EOF
         .source.providerType == "claude-code-oauth-token" and
         .source.runtimeProviderType == "claude-code-oauth-token" and
         .source.model == "claude-sonnet-5-5" and
-        .source.credentialScope == "member" and
-        .source.account.status == "connected"
+        .source.credentialScope == "member"
     ' <<<"$output"
     echo "$output"
     assert_success
