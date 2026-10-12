@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.106.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.106.1...guest-agent-v0.106.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* classify codex request processing failures ([#39173](https://github.com/okou-ai/okou/issues/39173)) ([f393900](https://github.com/okou-ai/okou/commit/f39390092d3d9808d8c10b1987b5fa53ec539b8a))
+
 ## [0.106.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.106.0...guest-agent-v0.106.1) (2026-10-12)
 
 

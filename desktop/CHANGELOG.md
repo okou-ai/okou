@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.1](https://github.com/okou-ai/okou/compare/desktop-v0.53.0...desktop-v0.53.1) (2026-10-12)
+
+
+### Refactoring
+
+* **desktop:** retire the legacy squirrel relaunch bridge ([#38771](https://github.com/okou-ai/okou/issues/38771)) ([9124b11](https://github.com/okou-ai/okou/commit/9124b11fb9a7ba04abe56b2c8a0455e12fd7b9df))
+
 ## [0.53.0](https://github.com/okou-ai/okou/compare/desktop-v0.52.2...desktop-v0.53.0) (2026-10-10)
 
 
