@@ -1210,11 +1210,6 @@
       "id": "TX-0438",
       "file": "turbo/packages/db/scripts/test-x-resource-usage.ts",
       "owner": "validateXResourceUsageSchema"
-    },
-    {
-      "id": "TX-0440",
-      "file": "turbo/packages/db/scripts/test-x-resource-usage.ts",
-      "owner": "validateXResourceUsageSchema"
     }
   ]
 }
