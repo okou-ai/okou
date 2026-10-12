@@ -342,7 +342,6 @@ describe("okou subagent", () => {
     expect(first.pid).not.toBe(second.pid);
     expect(first.stdout).toBe(join(root, "run-one", "1", "stdout"));
     expect((await readdir(dirname(first.stdout))).sort()).toEqual([
-      "pid",
       "stderr",
       "stdin",
       "stdout",
@@ -516,6 +515,22 @@ describe("okou subagent", () => {
       }
     },
   );
+
+  it("rejects invalid inherited configuration before reporting a successful start", async () => {
+    vi.stubEnv("OKOU_PI_MODEL_CONFIG", "invalid-json");
+    const exit = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("command failed");
+    });
+    try {
+      await expect(run("start", "invalid inherited model")).rejects.toThrow(
+        "command failed",
+      );
+      expect((await run("list")).join("\n")).toContain("No running subagents");
+      await expect(access(join(root, "run-one", "1"))).rejects.toThrow();
+    } finally {
+      exit.mockRestore();
+    }
+  });
 
   it("retains the registry when Guest stop fails, then permits a successful retry", async () => {
     const item = inspectionSchema.parse(

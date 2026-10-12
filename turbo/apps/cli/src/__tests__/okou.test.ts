@@ -121,10 +121,8 @@ describe("Okou CLI program", () => {
   });
 
   it("should keep internal commands out of the public surface", () => {
-    expect(commandNames).toContain("__main_loop__");
     expect(commandNames).toContain("__subagent_loop__");
     expect(commandNames).toContain("__agent-loop");
-    expect(canonicalCommandNames).not.toContain("__main_loop__");
     expect(canonicalCommandNames).not.toContain("__agent-loop");
   });
 
@@ -152,7 +150,7 @@ describe("Pi-only CLI visibility", () => {
       expect(buildHelpText().includes("okou subagent --help")).toBe(
         role === "parent" || role === "child",
       );
-      expect(cli.helpInformation()).not.toContain("__main_loop__");
+      expect(cli.helpInformation()).not.toContain("__agent-loop");
       expect(cli.helpInformation()).not.toContain("__subagent_loop__");
     },
   );

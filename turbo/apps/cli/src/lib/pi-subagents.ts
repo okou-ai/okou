@@ -1,7 +1,14 @@
 import { execFile, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { constants, closeSync, openSync } from "node:fs";
-import { mkdir, open, readFile, readdir, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rename,
+  writeFile,
+} from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as scheduleTimeout, clearTimeout } from "node:timers";
 import { promisify } from "node:util";
@@ -68,6 +75,7 @@ function taskDirectory(id: string): string {
 export async function removeSubagentDirectory(
   directory: string,
   handle?: string,
+  record: "task" | "task.pending" = "task",
 ): Promise<void> {
   // Serialize removers with a kernel lock, including when SIGKILL interrupts a
   // child's cleanup. Check the UUID while locked so ID reuse stays safe. The
@@ -75,9 +83,9 @@ export async function removeSubagentDirectory(
   const cleanup = `
 const fs = require("node:fs");
 const path = require("node:path");
-const [directory, handle] = process.argv.slice(1);
+const [directory, handle, record] = process.argv.slice(1);
 try {
-  if (handle && JSON.parse(fs.readFileSync(path.join(directory, "task"), "utf8")).handle !== handle) process.exit(0);
+  if (handle && JSON.parse(fs.readFileSync(path.join(directory, record), "utf8")).handle !== handle) process.exit(0);
   fs.rmSync(directory, { recursive: true, force: true });
 } catch (error) {
   if (error.code !== "ENOENT") throw error;
@@ -96,6 +104,7 @@ try {
       cleanup,
       directory,
       handle ?? "",
+      record,
     ],
     { timeout: 5_000, killSignal: "SIGKILL" },
   ).catch(() => {}); // Disposable control/log deletion is intentionally best effort.
@@ -213,6 +222,7 @@ export async function startSubagent(
   let task: GuestTask | undefined;
   let readiness: ReturnType<typeof observeReady> | undefined;
   let bootstrap: Promise<void> | undefined;
+  let published = false;
   try {
     await execFileAsync("mkfifo", ["-m", "600", join(directory, "stdin")]);
     const stdout = openSync(join(directory, "stdout"), "wx", 0o600);
@@ -247,14 +257,15 @@ export async function startSubagent(
     readiness.arm();
     const publishAndBootstrap = async () => {
       await writeFile(
-        join(directory, "task"),
+        join(directory, "task.pending"),
         JSON.stringify({ handle: admitted.handle, pid: admitted.pid }),
         { mode: 0o600, flag: "wx" },
       );
-      await writeFile(join(directory, "pid"), `${admitted.pid}\n`, {
-        mode: 0o600,
-        flag: "wx",
-      });
+      // Publish one complete native identity; list/inspect must never read a
+      // partially written JSON record. Before publication, rollback owns the
+      // staged record; afterward UUID-guarded cleanup uses the visible record.
+      await rename(join(directory, "task.pending"), join(directory, "task"));
+      published = true;
       await new Promise<void>((done, fail) => {
         const stdin = started.stdin;
         if (!stdin) {
@@ -299,7 +310,11 @@ export async function startSubagent(
     // Readiness may reject while publication or a pipe write is still pending.
     // Native stop closes the child first; drain the writer before ID reuse.
     await bootstrap?.catch(() => {});
-    await removeSubagentDirectory(directory, task?.handle);
+    await removeSubagentDirectory(
+      directory,
+      task?.handle,
+      published ? "task" : "task.pending",
+    );
     throw error;
   } finally {
     readiness?.dispose();
@@ -348,13 +363,9 @@ async function readInspection(
   id: string,
 ): Promise<SubagentInspection | undefined> {
   const directory = taskDirectory(id);
-  let pid: number;
-  try {
-    pid = Number((await readFile(join(directory, "pid"), "utf8")).trim());
-  } catch (error) {
-    if (hasCode(error, "ENOENT")) return undefined;
-    throw error;
-  }
+  const task = await readTask(directory);
+  if (!task) return undefined;
+  const { pid } = task;
   if (!Number.isSafeInteger(pid) || pid <= 1)
     throw new Error(`Subagent ${id} has an invalid PID.`);
   return {

@@ -38,7 +38,6 @@ const COMMAND_CAPABILITY_MAP: Record<
   string | readonly string[] | null
 > = {
   "__agent-loop": null,
-  __main_loop__: null,
   __subagent_loop__: null,
   subagent: null,
   agent: "agent:read",
@@ -135,13 +134,6 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     },
   },
   {
-    name: "__main_loop__",
-    description: "Internal sandbox Pi main loop",
-    load: async () => {
-      return (await import("./commands/__main_loop__")).mainLoopCommand;
-    },
-  },
-  {
     name: "__subagent_loop__",
     description: "Internal child Pi loop",
     load: async () => {
@@ -157,7 +149,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   },
   {
     name: "__agent-loop",
-    description: "Legacy internal sandbox agent loop",
+    description: "Internal sandbox agent loop",
     load: async () => {
       return (await import("./commands/__agent-loop")).agentLoopCommand;
     },

@@ -60,7 +60,6 @@ if args[0] == "stop":
         new = {"handle": str(uuid.uuid4()), "pid": replacement.pid}
         (root / new["handle"]).write_text(json.dumps({**task, **new}))
         (directory / "task").write_text(json.dumps(new))
-        (directory / "pid").write_text(str(replacement.pid) + "\n")
 else:
     assert args[:3] == ["--report-fd", "3", "--"]
     assert os.environ.get("NODE_CHANNEL_FD") == "4", "application IPC must use FD 4"
@@ -69,7 +68,7 @@ else:
     task = {"handle": str(uuid.uuid4()), "pid": os.getpid()}
     (root / task["handle"]).write_text(json.dumps({**task, "directory": str(directory), "program": program, "target": target}))
     if mode == "publication-failure":
-        (directory / "pid").mkdir()
+        (directory / "task").mkdir()
     report = {**task}
     if mode == "wrong-pid":
         report["pid"] += 1

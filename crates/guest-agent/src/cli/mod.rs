@@ -583,20 +583,10 @@ fn build_pi_command_for_runtime(
             .map(|session_construction| session_construction.digest.as_str())
             .unwrap_or("<none>"),
     );
-    // Queued Runs can retain a CLI package captured before the entry rename.
-    let loop_command = if requirement
-        .min_cli_version
-        .and_then(guest_contracts::okou_cli::parse_release_version)
-        .is_some_and(|version| version >= [9, 387, 0])
-    {
-        "__main_loop__"
-    } else {
-        "__agent-loop"
-    };
     if decision.source == okou_cli_launch::PiCliLaunchSource::Installed {
         return Ok(vec![
             OKOU_CLI_LAUNCHER_PATH.to_string(),
-            loop_command.to_string(),
+            "__agent-loop".to_string(),
         ]);
     }
     // Keep the task's API-captured package identity on a parity miss; never
@@ -616,7 +606,7 @@ fn build_pi_command_for_runtime(
         "--no-audit".to_string(),
         format!("--package={package_url}"),
         "okou".to_string(),
-        loop_command.to_string(),
+        "__agent-loop".to_string(),
     ])
 }
 
@@ -2646,21 +2636,6 @@ mod tests {
         );
 
         runtime.pi_installed_cli_requirement = Cow::Borrowed(
-            r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.386.0","requiredPiSessionConstructionDigest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}"#,
-        );
-        let mut preceding = installed_okou_cli_for_test("9.386.1", "1.36.0");
-        preceding.session_construction =
-            Some(guest_contracts::okou_cli::OkouCliSessionConstruction {
-                digest: "d".repeat(64),
-            });
-        assert_eq!(
-            build_pi_command_for_runtime(&runtime, Some(&preceding))
-                .unwrap()
-                .last()
-                .unwrap(),
-            "__agent-loop"
-        );
-        runtime.pi_installed_cli_requirement = Cow::Borrowed(
             r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.387.0","requiredPiSessionConstructionDigest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}"#,
         );
         assert_eq!(
@@ -2668,18 +2643,18 @@ mod tests {
                 .unwrap()
                 .last()
                 .unwrap(),
-            "__main_loop__"
+            "__agent-loop"
         );
-        let mut renamed = installed_okou_cli_for_test("9.387.0", "1.36.0");
-        renamed.session_construction =
+        let mut current = installed_okou_cli_for_test("9.387.0", "1.36.0");
+        current.session_construction =
             Some(guest_contracts::okou_cli::OkouCliSessionConstruction {
                 digest: "d".repeat(64),
             });
         assert_eq!(
-            build_pi_command_for_runtime(&runtime, Some(&renamed)).unwrap(),
+            build_pi_command_for_runtime(&runtime, Some(&current)).unwrap(),
             vec![
                 OKOU_CLI_LAUNCHER_PATH.to_string(),
-                "__main_loop__".to_string()
+                "__agent-loop".to_string()
             ]
         );
 

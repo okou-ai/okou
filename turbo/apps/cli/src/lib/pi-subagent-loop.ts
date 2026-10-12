@@ -38,13 +38,11 @@ export async function runPiSubagentLoop(
   const inputController = new AbortController();
   let handle: string | undefined;
   try {
+    // Keep the FIFO's reader open across individual fire-and-forget writes.
     fifo = await open(
       join(directory, "stdin"),
       constants.O_RDWR | constants.O_NONBLOCK,
     );
-    // Keep the FIFO's reader open across individual fire-and-forget writes.
-    process.send?.({ type: "ready" });
-    process.disconnect?.();
     process.stdin.setEncoding("utf8");
     let bootstrap = "";
     for await (const chunk of process.stdin) {
@@ -96,6 +94,10 @@ export async function runPiSubagentLoop(
               controller.abort();
             }
           });
+          // Configuration and session/tool construction must succeed before
+          // start reports a usable child, not just an open steering FIFO.
+          process.send?.({ type: "ready" });
+          process.disconnect?.();
           return () => {
             return inputController.abort();
           };
