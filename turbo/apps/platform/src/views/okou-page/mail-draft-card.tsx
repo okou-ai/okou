@@ -1,10 +1,10 @@
-import { AlertCircle, ChevronRight, Loader2 } from "lucide-react";
+import { AlertCircle, ChevronRight } from "lucide-react";
 import type {
   MailDraft,
   MailDraftStatus,
 } from "@okouai/api-contracts/contracts/mail";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
-import { Button, cn } from "@okouai/ui";
+import { Button, Skeleton, cn } from "@okouai/ui";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
@@ -55,18 +55,18 @@ function statusLabel(status: MailDraftStatus): string {
   }
 }
 
+// The card's own layout drawn with the shared Skeleton, the way the other chat
+// cards wait, rather than a spinner standing in for the Gmail mark.
 function MailDraftCardSkeleton() {
   return (
     <div
       data-testid="mail-draft-card-loading"
       className="flex h-full w-full items-center gap-3 rounded-[var(--okou-chat-card-radius)] border border-border/70 bg-card px-4 py-3"
     >
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted/60">
-        <Loader2 className="animate-spin text-muted-foreground" size={16} />
-      </span>
+      <Skeleton className="size-10 shrink-0" />
       <div className="min-w-0 flex-1 space-y-2">
-        <div className="h-4 w-2/3 rounded bg-muted/70" />
-        <div className="h-3 w-1/3 rounded bg-muted/60" />
+        <Skeleton className="h-4 w-2/3 rounded" />
+        <Skeleton className="h-3 w-1/3 rounded" />
       </div>
     </div>
   );

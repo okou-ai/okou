@@ -40,7 +40,7 @@ import {
   acceptingInvitationId$,
   setAcceptingInvitationId$,
 } from "../../signals/select-org/org-switcher-ui.ts";
-import { WorkspaceLogo } from "../components/avatar.tsx";
+import { ThumbnailPlaceholder, WorkspaceLogo } from "../components/avatar.tsx";
 
 function InvitationRow({
   invitation,
@@ -337,11 +337,15 @@ export function OrgSwitcherCompact() {
           />
         }
       >
-        <WorkspaceLogo
-          name={orgName}
-          imageUrl={currentOrg?.imageUrl}
-          size="md+"
-        />
+        {currentOrg === undefined ? (
+          <ThumbnailPlaceholder size="md+" />
+        ) : (
+          <WorkspaceLogo
+            name={orgName}
+            imageUrl={currentOrg?.imageUrl}
+            size="md+"
+          />
+        )}
         <PendingInvitationsBadge />
       </DropdownMenuTrigger>
       <OrgDropdownContent />
@@ -372,12 +376,18 @@ export function OrgSwitcher() {
             />
           }
         >
+          {/* Until the workspace loads its mark and name stay empty rather
+              than showing the generic "Organization" and its initial. */}
           <span className="relative shrink-0">
-            <WorkspaceLogo name={orgName} imageUrl={currentOrg?.imageUrl} />
+            {currentOrg === undefined ? (
+              <ThumbnailPlaceholder />
+            ) : (
+              <WorkspaceLogo name={orgName} imageUrl={currentOrg?.imageUrl} />
+            )}
             <PendingInvitationsBadge />
           </span>
           <span className="min-w-0 flex-1 text-left text-sm font-semibold leading-tight truncate">
-            {orgName}
+            {currentOrg === undefined ? null : orgName}
           </span>
           <ChevronDown size={16} className="ml-auto shrink-0" />
         </DropdownMenuTrigger>

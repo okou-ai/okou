@@ -95,6 +95,30 @@ export function UserAvatar({
 }
 
 /**
+ * Holds a thumbnail's box while its owner is still loading. Nothing is drawn
+ * in it: a stand-in initial would show for a moment and then change into the
+ * real one, which reads as the wrong account or workspace.
+ */
+export function ThumbnailPlaceholder({
+  size = "sm",
+  shape = "square",
+}: {
+  size?: ThumbnailSize;
+  shape?: "circle" | "square";
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "block shrink-0",
+        THUMBNAIL_SIZE[size],
+        shape === "square" ? THUMBNAIL_RADIUS[size] : "rounded-full",
+      )}
+    />
+  );
+}
+
+/**
  * A workspace: a rounded square, the shape brands are drawn for. Kept visually
  * distinct from `UserAvatar` on purpose — the shape is what tells the two
  * sidebar rows apart once they share a size.
