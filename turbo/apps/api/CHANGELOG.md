@@ -9,6 +9,31 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.727.6](https://github.com/okou-ai/okou/compare/api-v1.727.5...api-v1.727.6) (2026-10-12)
+
+
+### Refactoring
+
+* **api:** append run time budget input atomically ([#39207](https://github.com/okou-ai/okou/issues/39207)) ([7b8c9c9](https://github.com/okou-ai/okou/commit/7b8c9c9701576304a9a549a654edd94cf3f1473b))
+* **api:** own connected teams status reads in its computed ([#39224](https://github.com/okou-ai/okou/issues/39224)) ([295423e](https://github.com/okou-ai/okou/commit/295423ecb6d31a4770ae3bbec307d67bc7152a77)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own credit alert membership cache refresh ([#38384](https://github.com/okou-ai/okou/issues/38384)) ([4cc71cd](https://github.com/okou-ai/okou/commit/4cc71cdf8615b4848627d846bde7e9a11425cc9c)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own invitation plan capability reads locally ([#39223](https://github.com/okou-ai/okou/issues/39223)) ([f40f1b2](https://github.com/okou-ai/okou/commit/f40f1b2443e9f14a31864a43bd49b2d266ea01eb)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** publish and renew gmail watches in one statement ([#39215](https://github.com/okou-ai/okou/issues/39215)) ([96fc6fe](https://github.com/okou-ai/okou/commit/96fc6fe8ae55d27182599b50bbc7b279db1b9977))
+* **api:** remove official schedule failure transaction ([#39212](https://github.com/okou-ai/okou/issues/39212)) ([0f64ab7](https://github.com/okou-ai/okou/commit/0f64ab7236abecc15c306e49ef44789ee1b9e2a4))
+* **api:** remove orphan skill cache rows atomically ([#39220](https://github.com/okou-ai/okou/issues/39220)) ([4cb57a1](https://github.com/okou-ai/okou/commit/4cb57a1899e963bbba66dbe65abde1aa41f57f6a))
+* retire pi memory compatibility storage writes ([#39185](https://github.com/okou-ai/okou/issues/39185)) ([39d60bb](https://github.com/okou-ai/okou/commit/39d60bba6aa3a317948d653b4c1d09781719b466))
+* **workflows:** separate ordinary and official name scopes ([#39213](https://github.com/okou-ai/okou/issues/39213)) ([2da1ce1](https://github.com/okou-ai/okou/commit/2da1ce113c330701b85e4baf5fe7bec613ec6b19))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.551.4
+    * @okouai/core bumped to 8.744.0
+    * @okouai/db bumped to 1.331.5
+    * @okouai/pi-agent-runtime bumped to 1.49.12
+
 ## [1.727.5](https://github.com/okou-ai/okou/compare/api-v1.727.4...api-v1.727.5) (2026-10-12)
 
 

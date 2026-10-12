@@ -1,5 +1,26 @@
 # Changelog
 
+## [8.744.0](https://github.com/okou-ai/okou/compare/core-v8.743.0...core-v8.744.0) (2026-10-12)
+
+
+### Features
+
+* **core:** enable artifact previews for staff ([#39196](https://github.com/okou-ai/okou/issues/39196)) ([7f4ba1e](https://github.com/okou-ai/okou/commit/7f4ba1eac3806f08404386b4ae5e55bcd06a77ba))
+* **core:** enable google slides conversion for staff ([#39197](https://github.com/okou-ai/okou/issues/39197)) ([55e686d](https://github.com/okou-ai/okou/commit/55e686d32249aa2ef1b16645d030a4c97c0568ac))
+* roll out composer add menu and task chips ([#39200](https://github.com/okou-ai/okou/issues/39200)) ([b27dd69](https://github.com/okou-ai/okou/commit/b27dd69bab14bd854712120bed19ecc4853d3626))
+
+
+### Refactoring
+
+* remove chat composer layout feature switch ([#39203](https://github.com/okou-ai/okou/issues/39203)) ([bf4e97a](https://github.com/okou-ai/okou/commit/bf4e97a4b14d8bc238e8028d87881c7e63f654d8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.551.4
+
 ## [8.743.0](https://github.com/okou-ai/okou/compare/core-v8.742.3...core-v8.743.0) (2026-10-12)
 
 

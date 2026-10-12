@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/okou-ai/okou/compare/runner-host-v0.7.0...runner-host-v0.7.1) (2026-10-12)
+
+
+### Refactoring
+
+* **runner:** unify caddy service and group identity ([#39181](https://github.com/okou-ai/okou/issues/39181)) ([12416a4](https://github.com/okou-ai/okou/commit/12416a44d15d2ffc2b5f8966206b4ef769c1866e))
+
 ## [0.7.0](https://github.com/okou-ai/okou/compare/runner-host-v0.6.0...runner-host-v0.7.0) (2026-10-12)
 
 
