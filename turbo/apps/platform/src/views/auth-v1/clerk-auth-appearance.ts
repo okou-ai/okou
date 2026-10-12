@@ -1,7 +1,10 @@
 import { cardClassName, cn } from "@okouai/ui";
 import type { SignIn } from "@clerk/react";
 import type { ComponentProps } from "react";
-import { platformOkouWordmarkLightImg } from "../../lib/static-assets.ts";
+import {
+  platformOkouWordmarkDarkImg,
+  platformOkouWordmarkLightImg,
+} from "../../lib/static-assets.ts";
 
 type ClerkAppearance = NonNullable<ComponentProps<typeof SignIn>["appearance"]>;
 
@@ -52,7 +55,10 @@ export function getClerkAuthAppearance(
     ...CLERK_AUTH_APPEARANCE_BASE,
     options: {
       ...CLERK_AUTH_APPEARANCE_BASE.options,
-      logoImageUrl: theme === "dark" ? platformOkouWordmarkLightImg : undefined,
+      logoImageUrl:
+        theme === "dark"
+          ? platformOkouWordmarkLightImg
+          : platformOkouWordmarkDarkImg,
       logoLinkUrl: homeUrl,
     },
   };

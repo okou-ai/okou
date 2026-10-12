@@ -30,7 +30,10 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { mockNow } from "../../../__tests__/time.ts";
-import { platformOkouWordmarkLightImg } from "../../../lib/static-assets.ts";
+import {
+  platformOkouWordmarkDarkImg,
+  platformOkouWordmarkLightImg,
+} from "../../../lib/static-assets.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
@@ -1101,38 +1104,50 @@ test.each(["success", "failure", "pending task"])(
   },
 );
 
-test("Add account opens the hosted Clerk account switcher with the shared appearance", async () => {
-  context.mocks.browser.matchMedia(true);
-  const clerk = context.mocks.clerk();
-  await setupAddAccountPage();
-  expect(document.documentElement).toHaveAttribute("data-theme", "dark");
-
-  const menu = await openAccountMenu();
-  click(within(menu).getByText("Add account"));
-
-  await waitFor(() => {
-    expect(mockedClerk.openSignIn).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({
-        appearance: expect.objectContaining({
-          theme: "simple",
-          options: expect.objectContaining({
-            logoImageUrl: platformOkouWordmarkLightImg,
-            logoLinkUrl: "/",
-          }),
-          elements: expect.objectContaining({
-            formButtonPrimary: expect.stringContaining("bg-primary"),
-            formFieldInput: expect.stringContaining("bg-input"),
-          }),
-        }),
-        fallbackRedirectUrl: "/",
-        forceRedirectUrl: "/",
-      }),
+test.each([false, true])(
+  "Add account uses the current wordmark (dark mode: %s)",
+  async (dark) => {
+    context.mocks.browser.matchMedia((query) => {
+      return query === "(prefers-color-scheme: dark)"
+        ? dark
+        : query === "(min-width: 48rem)";
+    });
+    const clerk = context.mocks.clerk();
+    await setupAddAccountPage();
+    expect(document.documentElement).toHaveAttribute(
+      "data-theme",
+      dark ? "dark" : "light",
     );
-  });
-  expect(clerk.uiRequests).toStrictEqual([
-    "https://app.example.test/assets/clerk-ui-test.js",
-  ]);
-});
+
+    const menu = await openAccountMenu();
+    click(within(menu).getByText("Add account"));
+
+    await waitFor(() => {
+      expect(mockedClerk.openSignIn).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          appearance: expect.objectContaining({
+            theme: "simple",
+            options: expect.objectContaining({
+              logoImageUrl: dark
+                ? platformOkouWordmarkLightImg
+                : platformOkouWordmarkDarkImg,
+              logoLinkUrl: "/",
+            }),
+            elements: expect.objectContaining({
+              formButtonPrimary: expect.stringContaining("bg-primary"),
+              formFieldInput: expect.stringContaining("bg-input"),
+            }),
+          }),
+          fallbackRedirectUrl: "/",
+          forceRedirectUrl: "/",
+        }),
+      );
+    });
+    expect(clerk.uiRequests).toStrictEqual([
+      "https://app.example.test/assets/clerk-ui-test.js",
+    ]);
+  },
+);
 
 test("Sign out from the account menu", async () => {
   prepareDefaultAgent();

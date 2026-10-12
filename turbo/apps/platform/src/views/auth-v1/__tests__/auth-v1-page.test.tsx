@@ -3,10 +3,14 @@ import { expect, test } from "vitest";
 
 import { PRESENTATION_ONBOARDING_URL } from "../../../__tests__/presentation-onboarding-fixture.ts";
 import {
+  click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { platformOkouWordmarkDarkImg } from "../../../lib/static-assets.ts";
+import {
+  platformOkouWordmarkDarkImg,
+  platformOkouWordmarkLightImg,
+} from "../../../lib/static-assets.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 
@@ -78,6 +82,45 @@ test("The hosted sign-in form renders with Google One Tap on the base route", as
   ]);
   expect(bootstrapSkeleton()).toHaveAttribute("aria-hidden", "true");
 });
+
+test.each([
+  ["sign-in", false],
+  ["sign-up", false],
+  ["sign-in", true],
+  ["sign-up", true],
+] as const)(
+  "Hosted %s keeps the current wordmark when the theme changes (initial dark mode: %s)",
+  async (mode, dark) => {
+    context.mocks.browser.matchMedia(dark);
+    await setupSignedOutPage(`/${mode}`);
+
+    const form = screen.getByTestId(`clerk-${mode}`);
+    const initialWordmark = dark
+      ? platformOkouWordmarkLightImg
+      : platformOkouWordmarkDarkImg;
+    const nextWordmark = dark
+      ? platformOkouWordmarkDarkImg
+      : platformOkouWordmarkLightImg;
+    expect(form).toHaveAttribute("data-clerk-logo-image-url", initialWordmark);
+    expect(screen.getByAltText("Okou")).toHaveAttribute("src", initialWordmark);
+
+    click(screen.getByLabelText("Toggle theme"));
+
+    await waitFor(() => {
+      expect(form).toHaveAttribute("data-clerk-logo-image-url", nextWordmark);
+    });
+    expect(screen.getByAltText("Okou")).toHaveAttribute("src", nextWordmark);
+
+    click(screen.getByLabelText("Toggle theme"));
+
+    await waitFor(() => {
+      expect(form).toHaveAttribute(
+        "data-clerk-logo-image-url",
+        initialWordmark,
+      );
+    });
+  },
+);
 
 test("Nested sign-in task paths stay on the hosted sign-in form", async () => {
   await setupSignedOutPage("/sign-in/tasks/choose-organization");

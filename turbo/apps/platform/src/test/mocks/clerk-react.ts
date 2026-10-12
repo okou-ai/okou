@@ -212,6 +212,7 @@ export function OAuthConsent({
     mounted ? null : fallback,
     createElement("div", {
       "data-client-id": new URLSearchParams(location.search).get("client_id"),
+      "data-clerk-logo-image-url": appearance?.options?.logoImageUrl,
       "data-clerk-logo-link-url": appearance?.options?.logoLinkUrl,
       "data-clerk-primary-color": appearance?.variables?.colorPrimary,
       "data-clerk-primary-foreground":

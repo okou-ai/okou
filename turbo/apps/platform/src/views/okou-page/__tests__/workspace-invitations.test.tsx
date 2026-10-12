@@ -10,6 +10,7 @@ import {
   mockedClerk,
   type MockedMembership,
 } from "../../../__tests__/mock-auth.ts";
+import { platformOkouWordmarkDarkImg } from "../../../lib/static-assets.ts";
 import { search } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
@@ -97,7 +98,7 @@ test("An invitation accepted for another account offers account switching", asyn
         appearance: expect.objectContaining({
           theme: "simple",
           options: expect.objectContaining({
-            logoImageUrl: undefined,
+            logoImageUrl: platformOkouWordmarkDarkImg,
             logoLinkUrl: "/",
           }),
         }),

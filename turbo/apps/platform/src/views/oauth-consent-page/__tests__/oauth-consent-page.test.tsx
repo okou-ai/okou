@@ -1,7 +1,11 @@
 import { screen, waitFor } from "@testing-library/react";
 import { buildPublishableKey } from "@clerk/shared/keys";
 import { expect, test } from "vitest";
-import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import {
+  platformOkouWordmarkDarkImg,
+  platformOkouWordmarkLightImg,
+} from "../../../lib/static-assets.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -65,6 +69,34 @@ test.each(["app.vm7.ai", "app.okou.ai"])(
     expect(new URLSearchParams(location.search).get("code_challenge")).toBe(
       "synthetic-challenge",
     );
+  },
+);
+
+test.each([false, true])(
+  "OAuth consent keeps the current wordmark when the theme changes (initial dark mode: %s)",
+  async (dark) => {
+    context.mocks.browser.matchMedia(dark);
+    await setupPage({
+      context,
+      env: clerkEnvironment(),
+      host: "app.okou.ai",
+      path: consentPath(),
+    });
+
+    const consent = await screen.findByTestId("clerk-oauth-consent");
+    expect(consent).toHaveAttribute(
+      "data-clerk-logo-image-url",
+      dark ? platformOkouWordmarkLightImg : platformOkouWordmarkDarkImg,
+    );
+
+    click(screen.getByLabelText("Toggle theme"));
+
+    await waitFor(() => {
+      expect(consent).toHaveAttribute(
+        "data-clerk-logo-image-url",
+        dark ? platformOkouWordmarkDarkImg : platformOkouWordmarkLightImg,
+      );
+    });
   },
 );
 
