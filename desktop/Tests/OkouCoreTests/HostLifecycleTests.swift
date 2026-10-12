@@ -175,8 +175,17 @@ private actor SessionTokens {
 private final class StateTransitions: @unchecked Sendable {
   private let lock = NSLock()
   private var seen: Set<String> = []
+  private var lastHeartbeat: Date?
   func notify(_ key: String, expectation: XCTestExpectation) {
     if lock.withLock({ seen.insert(key).inserted }) { expectation.fulfill() }
+  }
+  func notifyHeartbeatWhileStopping(_ state: RuntimeState, expectation: XCTestExpectation) {
+    let advanced = lock.withLock {
+      let changed = state.lastHeartbeat != lastHeartbeat
+      lastHeartbeat = state.lastHeartbeat
+      return state.status == "stopping" && state.lastHeartbeat != nil && changed
+    }
+    if advanced { notify("heartbeat", expectation: expectation) }
   }
 }
 
@@ -572,11 +581,15 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
   }
   func testStopKeepsHeartbeatAliveUntilRunningCommandIsReported() async throws {
     let transitions = StateTransitions()
+    let claimReceived = expectation(description: "Server receives the initial claim request")
+    let heartbeatReceived = expectation(description: "Heartbeat arrives before native dispatch")
     let began = expectation(description: "Command is visible in the UI")
     let stopping = expectation(description: "Admission is closed")
-    let heartbeat = expectation(description: "Server receives a heartbeat while draining")
+    let heartbeat = expectation(description: "Heartbeat is processed while draining")
     let reported = expectation(description: "Running command completed successfully")
     let stopped = expectation(description: "Host authorization retired after reporting")
+    let pendingClaim = PendingResponse()
+    let pendingHeartbeat = PendingResponse()
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -604,29 +617,29 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     let timestamp = formatter.string(from: Date())
+    let claimResponse: JSONValue = .object([
+      "status": .string("command"),
+      "command": .object([
+        "id": .string("running"), "kind": .string("apps.list"),
+        "status": .string("running"), "hostId": .null, "hostName": .null,
+        "payload": .object([:]), "timeoutMs": .number(60000),
+        "createdAt": .string(timestamp), "claimedAt": .string(timestamp),
+        "completedAt": .null,
+      ]),
+    ])
     URLProtocolFixture.boundary.set { connection in
       let path = connection.request.url!.path
       if path.hasSuffix("/hosts/register") {
         connection.reply(
           registeredHostResponse())
       } else if path.hasSuffix("/next") {
-        connection.reply(
-          .object([
-            "status": .string("command"),
-            "command": .object([
-              "id": .string("running"), "kind": .string("apps.list"),
-              "status": .string("running"), "hostId": .null, "hostName": .null,
-              "payload": .object([:]), "timeoutMs": .number(60000),
-              "createdAt": .string(timestamp), "claimedAt": .string(timestamp),
-              "completedAt": .null,
-            ]),
-          ]))
+        pendingClaim.hold(connection)
+        transitions.notify("claim", expectation: claimReceived)
       } else if path.hasSuffix("/heartbeat") {
-        XCTAssertEqual(try? String(contentsOf: marker, encoding: .utf8), "once")
-        try! Data().write(to: release)
-        connection.reply(.object([:]))
-        heartbeat.fulfill()
+        pendingHeartbeat.hold(connection)
+        transitions.notify("heartbeat-request", expectation: heartbeatReceived)
       } else if path.hasSuffix("/complete") {
+        XCTAssertEqual(try? String(contentsOf: marker, encoding: .utf8), "once")
         XCTAssertEqual(connection.body["status"].string, "succeeded")
         XCTAssertEqual(connection.body["result"]["apps"].array?.first?["name"].string, "Test app")
         connection.reply(.object([:]))
@@ -646,27 +659,38 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       hostName: "Test Mac", version: "0.49.71", notifications: NotificationBoundary(),
       tokenProvider: { _ in "clerk-session" },
       onChange: { state in
+        transitions.notifyHeartbeatWhileStopping(state, expectation: heartbeat)
         if state.busy && state.status == "online" {
           transitions.notify("began", expectation: began)
         }
         if state.status == "stopping" { transitions.notify("stopping", expectation: stopping) }
       })
     await runtime.start()
+    // Make the early-heartbeat ordering deterministic instead of depending on helper startup speed.
+    await fulfillment(of: [claimReceived, heartbeatReceived], timeout: 5)
+    pendingClaim.reply(claimResponse)
     await fulfillment(of: [began], timeout: 3)
     let drain = Task { await runtime.stop() }
     await fulfillment(of: [stopping], timeout: 3)
     let secondDrain = Task { await runtime.stop() }
-    await fulfillment(of: [heartbeat, reported, stopped], timeout: 5, enforceOrder: true)
+    pendingHeartbeat.reply(heartbeatResponse(pending: false))
+    await fulfillment(of: [heartbeat], timeout: 5)
+    try Data().write(to: release)
+    await fulfillment(of: [reported, stopped], timeout: 5, enforceOrder: true)
     await drain.value
     await secondDrain.value
   }
   func testUpgradeRejectionWhileDrainingDoesNotCancelCompletion() async throws {
     let transitions = StateTransitions()
+    let claimReceived = expectation(description: "Server receives the initial claim request")
+    let heartbeatReceived = expectation(description: "Heartbeat arrives before native dispatch")
     let began = expectation(description: "Command is visible in the UI")
     let stopping = expectation(description: "Admission is closed")
-    let heartbeat = expectation(description: "Server receives a heartbeat while draining")
+    let heartbeat = expectation(description: "Upgrade rejection is processed while draining")
     let reported = expectation(description: "Running command completed successfully")
     let stopped = expectation(description: "Host authorization retired after reporting")
+    let pendingClaim = PendingResponse()
+    let pendingHeartbeat = PendingResponse()
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -694,29 +718,29 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     let timestamp = formatter.string(from: Date())
+    let claimResponse: JSONValue = .object([
+      "status": .string("command"),
+      "command": .object([
+        "id": .string("running"), "kind": .string("apps.list"),
+        "status": .string("running"), "hostId": .null, "hostName": .null,
+        "payload": .object([:]), "timeoutMs": .number(60000),
+        "createdAt": .string(timestamp), "claimedAt": .string(timestamp),
+        "completedAt": .null,
+      ]),
+    ])
     URLProtocolFixture.boundary.set { connection in
       let path = connection.request.url!.path
       if path.hasSuffix("/hosts/register") {
         connection.reply(
           registeredHostResponse())
       } else if path.hasSuffix("/next") {
-        connection.reply(
-          .object([
-            "status": .string("command"),
-            "command": .object([
-              "id": .string("running"), "kind": .string("apps.list"),
-              "status": .string("running"), "hostId": .null, "hostName": .null,
-              "payload": .object([:]), "timeoutMs": .number(60000),
-              "createdAt": .string(timestamp), "claimedAt": .string(timestamp),
-              "completedAt": .null,
-            ]),
-          ]))
+        pendingClaim.hold(connection)
+        transitions.notify("claim", expectation: claimReceived)
       } else if path.hasSuffix("/heartbeat") {
-        XCTAssertEqual(try? String(contentsOf: marker, encoding: .utf8), "once")
-        try! Data().write(to: release)
-        connection.reply(upgradeRequiredResponse(minimum: "0.51.0"), status: 426)
-        heartbeat.fulfill()
+        pendingHeartbeat.hold(connection)
+        transitions.notify("heartbeat-request", expectation: heartbeatReceived)
       } else if path.hasSuffix("/complete") {
+        XCTAssertEqual(try? String(contentsOf: marker, encoding: .utf8), "once")
         XCTAssertEqual(connection.body["status"].string, "succeeded")
         XCTAssertEqual(connection.body["result"]["apps"].array?.first?["name"].string, "Test app")
         connection.reply(.object([:]))
@@ -739,14 +763,25 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         if state.busy && state.status == "online" {
           transitions.notify("began", expectation: began)
         }
-        if state.status == "stopping" { transitions.notify("stopping", expectation: stopping) }
+        if state.status == "stopping" {
+          transitions.notify("stopping", expectation: stopping)
+          if state.updateRequired {
+            XCTAssertEqual(state.minimumSupportedVersion, "0.51.0")
+            transitions.notify("heartbeat", expectation: heartbeat)
+          }
+        }
       })
     await runtime.start()
+    await fulfillment(of: [claimReceived, heartbeatReceived], timeout: 5)
+    pendingClaim.reply(claimResponse)
     await fulfillment(of: [began], timeout: 3)
     let drain = Task { await runtime.stop() }
     await fulfillment(of: [stopping], timeout: 3)
     let secondDrain = Task { await runtime.stop() }
-    await fulfillment(of: [heartbeat, reported, stopped], timeout: 5, enforceOrder: true)
+    pendingHeartbeat.reply(upgradeRequiredResponse(minimum: "0.51.0"), status: 426)
+    await fulfillment(of: [heartbeat], timeout: 5)
+    try Data().write(to: release)
+    await fulfillment(of: [reported, stopped], timeout: 5, enforceOrder: true)
     await drain.value
     await secondDrain.value
   }
