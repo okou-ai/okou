@@ -252,7 +252,7 @@ describe("optional agent trace recovery", () => {
     });
   });
 
-  it("does not retry after caller cancellation during backoff", async () => {
+  it("stops retries on API lifetime cancellation during backoff", async () => {
     const { owned, headers, body } = await traceRun();
     await owned.run(async () => {
       await enableDebug(owned);
