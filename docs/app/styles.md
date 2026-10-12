@@ -815,7 +815,7 @@ met it.
 
 ### Floating layers and portal ownership
 
-Read [UI layering](layering.md) for common scenarios, code examples, and
+Read [UI layering](layering.md) for scenario choices, implementation links, and
 behavioral checks.
 
 Portals belong to the shared primitives. Business components must not import
