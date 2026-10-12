@@ -622,11 +622,6 @@
       "owner": "validatePreparedWork$"
     },
     {
-      "id": "TX-0231",
-      "file": "turbo/apps/api/src/signals/services/pi-resource-version-index.service.ts",
-      "owner": "claimWork$"
-    },
-    {
       "id": "TX-0234",
       "file": "turbo/apps/api/src/signals/services/provider-usage-publication.service.ts",
       "owner": "recordRunnerUsageBatch$"
