@@ -69,6 +69,7 @@ readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-even
 readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
 readonly CHECKPOINT_WRITER_PREPARATION_PATH=turbo/apps/api/src/signals/services/pi-memory-phase2-input-revision.ts
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
+readonly OFFICIAL_RESULT_EMAIL_LEGACY_CONSUMER_PATH=.github/rollback-floors/official-result-email-legacy-consumer
 readonly DESKTOP_MIGRATION_HOP_PATH=turbo/apps/api/src/signals/services/desktop-electron-migration-release.ts
 readonly COMPUTER_USE_COMMAND_NOTIFICATIONS_PATH=.github/rollback-floors/computer-use-command-notifications
 readonly COMPUTER_USE_HOST_SESSION_ONLY_PATH=turbo/packages/db/src/runtime/computer-use-host.ts
@@ -472,6 +473,19 @@ if [[ ! "$official_result_email_runtime_retirement_commit" =~ ^[0-9a-f]{40}$ ]];
 fi
 if ! git merge-base --is-ancestor "$official_result_email_runtime_retirement_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Official result-email runtime retirement: ${official_result_email_runtime_retirement_commit}."
+fi
+
+# Release 2 of #39378 removed the completion-email consumer while release-1 APIs
+# could still register its callback during their drain. The bounded legacy
+# consumer (#39524) restores draining, so an API that has the retirement but not
+# the consumer would fail those captured callbacks and block the email outbox.
+official_result_email_legacy_consumer_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$OFFICIAL_RESULT_EMAIL_LEGACY_CONSUMER_PATH" | sed -n '1p')
+if [[ ! "$official_result_email_legacy_consumer_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Official result-email legacy consumer on main."
+fi
+if ! git merge-base --is-ancestor "$official_result_email_legacy_consumer_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Official result-email legacy consumer: ${official_result_email_legacy_consumer_commit}."
 fi
 
 # Chat Event V8 removes eight event types and two context types. Earlier APIs

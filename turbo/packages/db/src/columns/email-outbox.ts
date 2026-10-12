@@ -8,7 +8,8 @@ import type {
 
 /**
  * Shared physical and runtime `email_outbox` column builders. The retired
- * completion-email source pair is declared only by the physical schema.
+ * completion-email source pair is declared only by the physical schema and the
+ * bounded legacy consumer mapping.
  */
 export function emailOutboxColumns() {
   return {

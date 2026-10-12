@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import postgres from "postgres";
@@ -10,7 +10,12 @@ import { z } from "zod";
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
 import { schema } from "../src/index";
 import { emailOutbox } from "../src/runtime/email-outbox";
+import {
+  legacyOfficialResultEmailClaims,
+  legacyOfficialResultEmailOutbox,
+} from "../src/runtime/legacy-official-result-email";
 import { workflowAutomations } from "../src/runtime/workflow-automation";
+import { users } from "../src/schema/user";
 import {
   outgoingEmailOutbox,
   outgoingOfficialAutomationResultEmailClaims,
@@ -106,6 +111,7 @@ const db = drizzle(client, {
     },
   },
 });
+const legacyDb = drizzle(client);
 
 try {
   await admin.connect();
@@ -653,6 +659,134 @@ try {
       },
     ],
   );
+  // (e) The bounded legacy consumer (#39524) finishes callbacks that draining
+  // release-1 APIs still capture. Its enqueue statement (the API consumer's
+  // shape) shares the permanent claim with outgoing TX-0173 in both orders.
+  const claims = legacyOfficialResultEmailClaims;
+  const legacyOutbox = legacyOfficialResultEmailOutbox;
+  const consumerEnqueue = async (args: {
+    readonly userId: string;
+    readonly runId: string;
+    readonly automationId: string;
+  }) => {
+    await legacyDb
+      .insert(users)
+      .values({ id: args.userId })
+      .onConflictDoNothing({ target: users.id });
+    const claim = legacyDb.$with("legacy_result_email_claim").as(
+      legacyDb
+        .insert(claims)
+        .select(
+          sql`SELECT ${args.runId}::uuid, ${args.automationId}::uuid, gen_random_uuid()
+          FROM ${users}
+          WHERE ${eq(users.id, args.userId)}
+            AND ${eq(users.emailUnsubscribed, false)}`,
+        )
+        .onConflictDoNothing({
+          target: [claims.runId, claims.workflowAutomationId],
+        })
+        .returning({ emailOutboxId: claims.emailOutboxId }),
+    );
+    return await legacyDb
+      .with(claim)
+      .insert(legacyOutbox)
+      .select(
+        sql`SELECT ${claim.emailOutboxId}, ${"Okou <noreply@example.com>"},
+          ${sql.param("owner@example.com", legacyOutbox.toAddresses)}::jsonb,
+          ${"Pulse"},
+          ${sql.param({ "List-Unsubscribe": "<https://example.com/u>" }, legacyOutbox.headers)}::jsonb,
+          ${sql.param({ template: "official-automation-result", props: {} }, legacyOutbox.template)}::jsonb,
+          ${args.runId}::uuid, ${args.automationId}::uuid
+          FROM ${claim}`,
+      )
+      .returning({ id: legacyOutbox.id });
+  };
+  const consumerSource = {
+    userId: ownerUserId,
+    runId: randomUUID(),
+    automationId: legacyEnabled.id,
+  };
+  const [consumerQueued] = await consumerEnqueue(consumerSource);
+  assert.ok(consumerQueued);
+  assert.deepEqual(
+    (
+      await client.query(
+        `SELECT o."id", o."status", o."attempts", o."to_addresses", o."template",
+          o."source_run_id", o."source_workflow_automation_id"
+        FROM "email_outbox" o
+        JOIN "official_automation_result_email_claims" c
+          ON c."email_outbox_id" = o."id"
+        WHERE c."run_id" = $1 AND c."workflow_automation_id" = $2`,
+        [consumerSource.runId, consumerSource.automationId],
+      )
+    ).rows,
+    [
+      {
+        id: consumerQueued.id,
+        status: "pending",
+        attempts: 0,
+        to_addresses: "owner@example.com",
+        template: { template: "official-automation-result", props: {} },
+        source_run_id: consumerSource.runId,
+        source_workflow_automation_id: consumerSource.automationId,
+      },
+    ],
+  );
+  // A retry, and an outgoing handler after the consumer, both find the claim.
+  assert.deepEqual(await consumerEnqueue(consumerSource), []);
+  assert.deepEqual(
+    await outgoingDb
+      .insert(outgoingOfficialAutomationResultEmailClaims)
+      .values({
+        runId: consumerSource.runId,
+        workflowAutomationId: consumerSource.automationId,
+      })
+      .onConflictDoNothing({
+        target: [
+          outgoingOfficialAutomationResultEmailClaims.runId,
+          outgoingOfficialAutomationResultEmailClaims.workflowAutomationId,
+        ],
+      })
+      .returning({
+        emailOutboxId:
+          outgoingOfficialAutomationResultEmailClaims.emailOutboxId,
+      }),
+    [],
+  );
+  // The consumer after an outgoing handler's claim enqueues nothing.
+  assert.deepEqual(
+    await consumerEnqueue({
+      userId: ownerUserId,
+      runId: outgoingClaim.runId,
+      automationId: legacyEnabled.id,
+    }),
+    [],
+  );
+  // Deleting the delivered outbox row cannot reopen the source.
+  await client.query('DELETE FROM "email_outbox" WHERE "id" = $1', [
+    consumerQueued.id,
+  ]);
+  assert.deepEqual(await consumerEnqueue(consumerSource), []);
+  // An opted-out owner gets neither a claim nor an email.
+  const unsubscribedSource = {
+    userId: "result-email-unsubscribed",
+    runId: randomUUID(),
+    automationId: legacyEnabled.id,
+  };
+  await legacyDb
+    .insert(users)
+    .values({ id: unsubscribedSource.userId, emailUnsubscribed: true });
+  assert.deepEqual(await consumerEnqueue(unsubscribedSource), []);
+  assert.deepEqual(
+    (
+      await client.query(
+        'SELECT 1 FROM "official_automation_result_email_claims" WHERE "run_id" = $1',
+        [unsubscribedSource.runId],
+      )
+    ).rows,
+    [],
+  );
+
   console.log(
     "Official result-email retirement keeps outgoing SQL legal and runtime SQL free of retired storage",
   );

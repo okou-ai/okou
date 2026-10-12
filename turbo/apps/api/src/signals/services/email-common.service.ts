@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { debugMorningBriefEmailTemplateSchema } from "../../lib/debug-morning-brief-email";
+import { legacyOfficialResultEmailTemplateSchema } from "../../lib/legacy-official-result-email";
 
 import { emailOutbox } from "@okouai/db/runtime/email-outbox";
 import { mailNotifications } from "@okouai/db/schema/mail-notification";
@@ -41,6 +42,7 @@ import { webUrl } from "../../lib/web-url";
 import { clerk$, type ClerkClient } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { db$, writeDb$, type Db } from "../external/db";
+import { renderMorningBriefEmail } from "../../lib/morning-brief-email-renderer";
 import { renderCreditLowBalanceEmail } from "./credit-low-balance-email-renderer";
 import { renderDataExportReadyEmail } from "./data-export-ready-email-renderer";
 
@@ -132,6 +134,11 @@ const emailTemplateSchema = z.discriminatedUnion("template", [
       unsubscribeUrl: z.string().optional(),
     }),
   }),
+  // Drain-only: entries enqueued by the legacy completion-email consumer or by
+  // a draining release-1 API. A row this decoder rejects fails before
+  // admission and, as the oldest due row, blocks every later email; a `sending`
+  // replay is never expired by cleanup. Remove with the consumer (#39524).
+  legacyOfficialResultEmailTemplateSchema,
 ]);
 
 export type EmailTemplate = z.output<typeof emailTemplateSchema>;
@@ -306,6 +313,12 @@ function renderTemplate(
         websiteUrl: webUrl(),
       });
     }
+    case "official-automation-result": {
+      return renderMorningBriefEmail(
+        template.props,
+        notificationEmailUnsubscribeUrl(headers),
+      );
+    }
   }
 }
 
@@ -319,7 +332,8 @@ function fromAddressForTemplate(template: EmailTemplate): string {
     case "data-export-ready":
     case "debug-morning-brief":
     case "agent-morning-brief":
-    case "agent-notification": {
+    case "agent-notification":
+    case "official-automation-result": {
       return buildFromAddress();
     }
   }

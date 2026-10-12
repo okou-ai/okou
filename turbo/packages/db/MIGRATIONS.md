@@ -147,10 +147,14 @@ are enforced by the integration ingress tests.
   mappings never name the retired column, claim table or outbox source pair;
   their Official rows store NULL, so 1382 must be applied before release 2
   serves. Ordinary rows still reject non-null values, and the other Official
-  bindings, source-pair index and check remain enforced. Run
+  bindings, source-pair index and check remain enforced. Only the bounded
+  legacy consumer mapping (#39524) writes the claim table and source pair; its
+  enqueue statement shares the permanent claim with outgoing claims in both
+  orders, survives outbox deletion and respects the opt-out. Run
   `pnpm test:official-result-email-retirement-preparation` with an owned
-  PostgreSQL `DATABASE_URL`. The production rollback resolver enforces a floor
-  on the first-parent `main` commit that adds 1382. Retain the validator and its
+  PostgreSQL `DATABASE_URL`. The production rollback resolver enforces floors
+  on the first-parent `main` commits that add 1382 and the
+  `official-result-email-legacy-consumer` marker. Retain the validator and its
   outgoing fixture through release 3 of #39378's contraction and its
   drain/rollback acceptance.
 
