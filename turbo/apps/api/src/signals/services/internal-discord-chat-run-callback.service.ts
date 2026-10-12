@@ -151,103 +151,6 @@ async function postParts(
   }
 }
 
-const sendReply$ = command(
-  async (
-    { set },
-    db: Db,
-    request: DiscordReplyRequest,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const access = await set(
-      currentDestinationAccess$,
-      db,
-      {
-        connectionId: request.target.connectionId,
-        orgId: request.orgId,
-        userId: request.userId,
-        channelId: request.target.channelId,
-        routeId: request.target.routeId,
-      },
-      signal,
-    );
-    if (!access) {
-      return;
-    }
-    const binding = access.binding;
-    const [event] = await db
-      .select({
-        content: canonicalChatEventContent(),
-        runId: chatEvents.runId,
-        agentId: agents.id,
-      })
-      .from(chatEvents)
-      .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-      .where(
-        and(
-          eq(chatEvents.id, request.chatEventId),
-          eq(chatEvents.chatThreadId, request.chatThreadId),
-          eq(chatThreads.userId, request.userId),
-          eq(agents.orgId, request.orgId),
-          chatEventTypeIn([
-            "output.message",
-            "output.error",
-            "run.failed",
-            "run.cancelled",
-          ]),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!event?.content) {
-      throw new Error("Discord reply canonical event is unavailable");
-    }
-    const [mentionerCount] = await db
-      .select({ count: countDistinct(discordChatThreadRoutes.userId) })
-      .from(discordChatThreadRoutes)
-      .innerJoin(
-        discordOrgConnections,
-        eq(discordOrgConnections.id, discordChatThreadRoutes.connectionId),
-      )
-      .where(
-        and(
-          eq(discordOrgConnections.guildId, binding.guildId),
-          eq(
-            discordChatThreadRoutes.destinationChannelId,
-            request.target.channelId,
-          ),
-        ),
-      );
-    signal.throwIfAborted();
-    if (!mentionerCount) {
-      throw new Error("Discord reply mentioner count is unavailable");
-    }
-    const presentationArgs = {
-      db,
-      orgId: request.orgId,
-      agentId: event.agentId,
-      replyToMention:
-        mentionerCount.count > 1 ? `<@${binding.discordUserId}>` : undefined,
-    };
-    // An admission failure has no run, so its footer omits the model.
-    const presentation =
-      event.runId === null
-        ? await resolveIntegrationAdmissionFailurePresentation(
-            presentationArgs,
-            signal,
-          )
-        : await resolveIntegrationAgentResponsePresentation(
-            { ...presentationArgs, runId: event.runId },
-            signal,
-          );
-    signal.throwIfAborted();
-    const content = presentation.footerText
-      ? `${event.content}\n\n_${presentation.footerText}_`
-      : event.content;
-    await postParts(access.botToken, request.target.channelId, content, signal);
-  },
-);
-
 /**
  * Fire and forget: call after the transaction that created the event commits,
  * and only from the attempt that created it, so replays never post twice.
@@ -260,7 +163,105 @@ export const sendDiscordChatReply$ = command(
     request: DiscordReplyRequest,
     signal: AbortSignal,
   ): Promise<void> => {
-    const sent = await settle(set(sendReply$, db, request, signal), signal);
+    const sent = await settle(
+      (async (): Promise<void> => {
+        const access = await set(
+          currentDestinationAccess$,
+          db,
+          {
+            connectionId: request.target.connectionId,
+            orgId: request.orgId,
+            userId: request.userId,
+            channelId: request.target.channelId,
+            routeId: request.target.routeId,
+          },
+          signal,
+        );
+        if (!access) {
+          return;
+        }
+        const binding = access.binding;
+        const [event] = await db
+          .select({
+            content: canonicalChatEventContent(),
+            runId: chatEvents.runId,
+            agentId: agents.id,
+          })
+          .from(chatEvents)
+          .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
+          .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+          .where(
+            and(
+              eq(chatEvents.id, request.chatEventId),
+              eq(chatEvents.chatThreadId, request.chatThreadId),
+              eq(chatThreads.userId, request.userId),
+              eq(agents.orgId, request.orgId),
+              chatEventTypeIn([
+                "output.message",
+                "output.error",
+                "run.failed",
+                "run.cancelled",
+              ]),
+            ),
+          )
+          .limit(1);
+        signal.throwIfAborted();
+        if (!event?.content) {
+          throw new Error("Discord reply canonical event is unavailable");
+        }
+        const [mentionerCount] = await db
+          .select({ count: countDistinct(discordChatThreadRoutes.userId) })
+          .from(discordChatThreadRoutes)
+          .innerJoin(
+            discordOrgConnections,
+            eq(discordOrgConnections.id, discordChatThreadRoutes.connectionId),
+          )
+          .where(
+            and(
+              eq(discordOrgConnections.guildId, binding.guildId),
+              eq(
+                discordChatThreadRoutes.destinationChannelId,
+                request.target.channelId,
+              ),
+            ),
+          );
+        signal.throwIfAborted();
+        if (!mentionerCount) {
+          throw new Error("Discord reply mentioner count is unavailable");
+        }
+        const presentationArgs = {
+          db,
+          orgId: request.orgId,
+          agentId: event.agentId,
+          replyToMention:
+            mentionerCount.count > 1
+              ? `<@${binding.discordUserId}>`
+              : undefined,
+        };
+        // An admission failure has no run, so its footer omits the model.
+        const presentation =
+          event.runId === null
+            ? await resolveIntegrationAdmissionFailurePresentation(
+                presentationArgs,
+                signal,
+              )
+            : await resolveIntegrationAgentResponsePresentation(
+                { ...presentationArgs, runId: event.runId },
+                signal,
+              );
+        signal.throwIfAborted();
+        const content = presentation.footerText
+          ? `${event.content}\n\n_${presentation.footerText}_`
+          : event.content;
+        await postParts(
+          access.botToken,
+          request.target.channelId,
+          content,
+          signal,
+        );
+      })(),
+      signal,
+    );
     if (!sent.ok) {
       L.warn("Discord reply was not delivered", {
         chatEventId: request.chatEventId,
