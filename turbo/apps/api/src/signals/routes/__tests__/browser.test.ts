@@ -2016,7 +2016,7 @@ describe("Browser user-action route", () => {
       }
       expect(applied.value).toMatchObject({
         status: 502,
-        body: { error: { code: "BROWSER_USER_ACTION_PROVIDER_ERROR" } },
+        body: { error: { code: "BROWSER_USE_ERROR" } },
       });
       const terminal = await accept(
         userActionClient().get({ headers, params }),
