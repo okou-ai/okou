@@ -2,8 +2,14 @@ import { generateKeyPairSync, randomUUID, X509Certificate } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { rootCertificates } from "node:tls";
 import { describe, expect, it } from "vitest";
-import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
+import {
+  vncCredentialsContract,
+  type VncAuthentication,
+} from "@okouai/api-contracts/contracts/vnc-credentials";
+import {
+  vncConnectionsContract,
+  type VncSecurity,
+} from "@okouai/api-contracts/contracts/vnc-connections";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -105,7 +111,242 @@ function rawRequest(path: string, body: unknown, method = "POST") {
   });
 }
 
+const inlineUpdateProfiles = Object.freeze<
+  readonly {
+    readonly authentication: VncAuthentication;
+    readonly security: VncSecurity;
+    readonly tunneled: boolean;
+  }[]
+>([
+  {
+    authentication: passwordAuthentication("canary"),
+    security,
+    tunneled: false,
+  },
+  {
+    authentication: usernamePasswordAuthentication("operator", "canary"),
+    security: plainSecurity,
+    tunneled: false,
+  },
+  {
+    authentication: {
+      method: "qemu_scram_sha256",
+      username: "operator",
+      password: "canary",
+    },
+    security: { type: "qemu_x509_sasl", trust: { mode: "system" } },
+    tunneled: false,
+  },
+  {
+    authentication: {
+      method: "client_certificate",
+      certificateChain,
+      privateKey,
+    },
+    security: { type: "x509_none", trust: { mode: "system" } },
+    tunneled: false,
+  },
+  {
+    authentication: {
+      method: "client_certificate_vnc_password",
+      certificateChain,
+      privateKey,
+      password: "canary",
+    },
+    security,
+    tunneled: false,
+  },
+  {
+    authentication: { method: "rsa_aes_password", password: "canary" },
+    security: { type: "rsa_aes_ra2", serverKeySha256: "1".repeat(64) },
+    tunneled: false,
+  },
+  {
+    authentication: {
+      method: "rsa_aes_username_password",
+      username: "operator",
+      password: "canary",
+    },
+    security: { type: "rsa_aes_ra2_256", serverKeySha256: "1".repeat(64) },
+    tunneled: false,
+  },
+  {
+    authentication: { method: "rsa_aes_password", password: "canary" },
+    security: { type: "rsa_aes_ra2ne", serverKeySha256: "1".repeat(64) },
+    tunneled: true,
+  },
+  {
+    authentication: {
+      method: "rsa_aes_username_password",
+      username: "operator",
+      password: "canary",
+    },
+    security: { type: "rsa_aes_ra2ne_256", serverKeySha256: "1".repeat(64) },
+    tunneled: true,
+  },
+  {
+    authentication: passwordAuthentication("canary"),
+    security: { type: "apple_vnc_password" },
+    tunneled: true,
+  },
+  {
+    authentication: {
+      method: "apple_dh_username_password",
+      username: "operator",
+      password: "canary",
+    },
+    security: { type: "apple_dh" },
+    tunneled: true,
+  },
+  {
+    authentication: {
+      method: "apple_srp_username_password",
+      username: "操作员",
+      password: "canary",
+    },
+    security: { type: "apple_srp" },
+    tunneled: true,
+  },
+  {
+    authentication: {
+      method: "apple_rsa_srp_username_password",
+      username: "操作员",
+      password: "canary",
+    },
+    security: { type: "apple_rsa_srp" },
+    tunneled: true,
+  },
+]);
+
 describe("VNC owner configuration", () => {
+  it.each(inlineUpdateProfiles)(
+    "rebinds inline $authentication.method with $security.type and returns persisted metadata",
+    async (profile) => {
+      useSecretKmsProbe();
+      await owner();
+      const created = await accept(
+        connections().create({
+          headers,
+          body: {
+            id: randomUUID(),
+            displayName: "Initial desktop",
+            host: "initial.example.com",
+            security: { type: "x509_none", trust: { mode: "system" } },
+            credential: { type: "none" },
+          },
+        }),
+        [201],
+      );
+      const ssh = profile.tunneled
+        ? await accept(
+            sshConnectionsClient().create({
+              headers,
+              body: {
+                id: randomUUID(),
+                displayName: "Gateway",
+                host: "gateway.example.com",
+                credential: inlineSshKey("deploy", "private-key"),
+              },
+            }),
+            [201],
+          )
+        : undefined;
+      const rebound = await accept(
+        connections().update({
+          headers,
+          params: { connectionId: created.body.id },
+          body: {
+            expectedGeneration: 1,
+            displayName: "Rebound 桌面",
+            host: profile.tunneled ? "127.0.0.1" : "rebound.example.com",
+            port: 5901,
+            security: profile.security,
+            ...(ssh
+              ? {
+                  transport: {
+                    type: "ssh" as const,
+                    connectionId: ssh.body.id,
+                  },
+                }
+              : {}),
+            credential: {
+              create: {
+                name: "新 credential",
+                authentication: profile.authentication,
+              },
+            },
+          },
+        }),
+        [200],
+      );
+      const credentialId = requireVncCredentialId(rebound.body);
+      expect(rebound.body).toMatchObject({
+        id: created.body.id,
+        displayName: "Rebound 桌面",
+        port: 5901,
+        credentialId,
+        credentialName: "新 credential",
+        security: profile.security,
+        generation: 2,
+        createdAt: created.body.createdAt,
+      });
+      expect(
+        (await accept(connections().list({ headers }), [200])).body.connections,
+      ).toStrictEqual([rebound.body]);
+      const saved = (await accept(credentials().list({ headers }), [200])).body
+        .credentials;
+      expect(saved).toStrictEqual([
+        expect.objectContaining({
+          id: credentialId,
+          name: "新 credential",
+          authMethod: profile.authentication.method,
+          revision: 1,
+          createdAt: expect.any(String),
+          updatedAt: expect.any(String),
+          hosts: [{ id: created.body.id, displayName: "Rebound 桌面" }],
+        }),
+      ]);
+      const edited = await accept(
+        connections().update({
+          headers,
+          params: { connectionId: created.body.id },
+          body: {
+            expectedGeneration: 2,
+            displayName: "Kept inline credential",
+          },
+        }),
+        [200],
+      );
+      if (profile.authentication.method === "client_certificate") {
+        expect(edited.body).toMatchObject({
+          credential: { type: "none" },
+          security: profile.security,
+          generation: 3,
+        });
+        expect(edited.body).not.toHaveProperty("credentialId");
+        expect(
+          (await accept(credentials().list({ headers }), [200])).body
+            .credentials,
+        ).toStrictEqual([
+          expect.objectContaining({ id: credentialId, revision: 1, hosts: [] }),
+        ]);
+      } else {
+        expect(edited.body).toMatchObject({
+          credentialId,
+          credentialName: "新 credential",
+          security: profile.security,
+          generation: 3,
+        });
+      }
+      for (const value of [rebound.body, saved, edited.body]) {
+        expect(JSON.stringify(value)).not.toContain("encryptedPassword");
+        expect(JSON.stringify(value)).not.toContain("encryptedClientIdentity");
+        expect(JSON.stringify(value)).not.toContain(privateKey);
+        expect(JSON.stringify(value)).not.toContain('"password":');
+      }
+    },
+  );
+
   it("requires session, feature and current membership before exposing configuration", async () => {
     const kms = useSecretKmsProbe();
     await accept(credentials().list({ headers: {} }), [401]);
