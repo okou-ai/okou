@@ -413,8 +413,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Sync presentation artifacts to Drive as native Google Slides decks instead of storing the uploaded file.",
     enabled: false,
-    // Narrowed to the maintainer while conversion fidelity is only measured
-    // against hand-built decks; the template corpus has not been checked yet.
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
