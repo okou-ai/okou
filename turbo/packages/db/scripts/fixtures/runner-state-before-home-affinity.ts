@@ -1,5 +1,5 @@
 // Frozen outgoing application mapping from main 3dcf096997cdd5448a74df524afba9a2ac46df91.
-// Only the exported symbol is renamed; retain through PR5/PR6 deployment and drain gates.
+// Legacy data contracts stay test-only; retain through deployment/drain gates.
 import {
   pgTable,
   uuid,
@@ -15,8 +15,23 @@ import type {
   RunnerAdmittableProfiles,
   RunnerActiveReuseProducers,
   RunnerHeldSandboxStates,
-  RunnerHeldWorkspaceStates,
 } from "@okouai/db/jsonb-contracts/runner-state";
+
+interface RunnerHeldWorkspaceCache {
+  readonly profile: string;
+  readonly workspaceAffinityVersion: 1;
+}
+
+interface RunnerHeldWorkspaceState {
+  readonly reuseKey: string;
+  readonly lastCompletedAt: string;
+  readonly workspaceCaches: readonly [
+    RunnerHeldWorkspaceCache,
+    ...RunnerHeldWorkspaceCache[],
+  ];
+}
+
+export type RunnerHeldWorkspaceStates = RunnerHeldWorkspaceState[];
 
 export const runnerStateBeforeHome = pgTable(
   "runner_state",

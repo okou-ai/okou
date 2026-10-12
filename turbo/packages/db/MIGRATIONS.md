@@ -165,24 +165,36 @@ are enforced by the integration ingress tests.
   implicit RETURNING, independently stamped capability, outgoing API generation
   and sequence advancement without updating home columns, replay fencing and
   capable empty state. Its frozen outgoing mapping is from
-  `3dcf096997cdd5448a74df524afba9a2ac46df91`. The three standalone home
+  `3dcf096997cdd5448a74df524afba9a2ac46df91`; the expanded test-only mapping is
+  frozen from `47a4d38e84372782cf11b0a37d335083387e8c08`. The three standalone home
   version/order columns are temporary: the final model keeps only
   `held_home_states` and existing shared heartbeat order. The production
-  `runtime/runner-state.ts` mapping executes real INSERT/UPSERT/SELECT/UPDATE and
-  implicit RETURNING on both retained and simulated contracted shapes, checking
+  canonical Runner-state mapping executes real INSERT/UPSERT/SELECT/UPDATE and
+  implicit RETURNING on both retained and actually contracted shapes, checking
   preserved home/sandbox/capacity data, empty-state replacement, replay/lower
   sequence and generation reset. This verifies executing application SQL; it
   does not establish a deployed writer floor or consumer/rollback drain.
   Retain the validator/fixtures through #38139's deployed application-SQL
   retirement of `held_workspace_states`, `home_affinity_version`,
-  `home_affinity_generation`, `home_affinity_sequence` and #38140's **later**
-  physical four-column contraction/drain gate. PR5 retains all four physical
-  columns; PR6 drops them only after the exact independent application deploys
-  and previous SQL/rollback artifacts exit. Promote surviving canonical
-  invariants to permanent coverage before eligible fixture retirement. Merge or
+  `home_affinity_generation`, `home_affinity_sequence` and the **later**
+  physical four-column contraction/drain gate. Source contraction preparation
+  does not satisfy the validator's deployed-contraction retention condition.
+  Keep both frozen fixtures until that gate closes. Surviving canonical
+  invariants run permanently on replayed and freshly generated schemas through
+  `scripts/test-runner-state-storage-permanent.ts`. Merge or
   elapsed time does not satisfy those gates. Run only on disposable databases.
   Migration precedes prepared API promotion; no production migration is
   performed by this validator.
+
+- `scripts/test-runner-state-contraction.ts` protects the physical Runner-state
+  retirement migration. It executes the actual four-column drop against populated
+  data, preserves home/sandbox/producer/capacity/order fields, and verifies replay.
+  The migration rejects unexpected indexes, checks, views, string-bodied routines
+  and inherited tables before DROP; rejection must preserve every column, row and
+  journal entry. Column-owned defaults and declared NOT NULL ownership are
+  expected. Retain it through physical deployment and the preceding SQL-consumer
+  exit gate. The current physical schema and runtime mapping share the same
+  canonical table; historical mappings exist only in the transition fixtures.
 
 - `scripts/test-usage-allowance-retirement.ts` protects migration
   `1356_drop_organization_usage_allowance`: positive team Allowance rows are
