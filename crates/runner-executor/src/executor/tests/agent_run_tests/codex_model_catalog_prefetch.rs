@@ -16,7 +16,7 @@ use crate::executor::codex_model_catalog_prefetch::{
 };
 use crate::executor::tests::support::{
     RUN_IN_SANDBOX_TEST_TIMEOUT, create_overridden_sandbox, minimal_context, sandbox_exec_error,
-    spawn_run_in_sandbox_test, test_executor_config, test_telemetry,
+    sandbox_write_file_error, spawn_run_in_sandbox_test, test_executor_config, test_telemetry,
 };
 use runner_types::types::{ExecutionContext, Firewall, FirewallEntry, SandboxReuseResult};
 
@@ -796,6 +796,69 @@ async fn codex_catalog_prefetch_is_cancelled_on_pre_spawn_exit() {
         result.failure.as_ref().map(|failure| failure.exit_code),
         Some(EXIT_SIGKILL)
     );
+    assert_eq!(overrides.start_process_calls().len(), 1);
+    assert_eq!(overrides.wait_process_calls().len(), 1);
+    assert_eq!(overrides.process_cancel_calls().len(), 1);
+}
+
+#[tokio::test]
+async fn codex_catalog_prefetch_is_joined_on_private_preparation_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let wait_gate = MockLifecycleGate::new();
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.set_wait_process_lifecycle_gate(wait_gate.clone());
+    overrides.set_process_cancel_releases_wait_gate(false);
+    let private_write_gate = MockLifecycleGate::new();
+    overrides.set_private_write_file_lifecycle_gate(private_write_gate.clone());
+    let message = "required private preparation failed";
+    let expected = format!("sandbox error: {}", sandbox_write_file_error(message));
+    overrides.push_private_write_files_result(Err(sandbox_write_file_error(message)));
+    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+    let run_task = spawn_run_in_sandbox_test(
+        sandbox,
+        codex_oauth_context(),
+        config,
+        tokio_util::sync::CancellationToken::new(),
+    );
+
+    wait_gate
+        .wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT)
+        .await
+        .expect("prefetch should enter process wait");
+    private_write_gate
+        .wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT)
+        .await
+        .expect("run should enter required private preparation");
+    private_write_gate.release_one();
+    assert!(
+        overrides
+            .wait_for_process_cancel_calls(1, RUN_IN_SANDBOX_TEST_TIMEOUT)
+            .await
+    );
+    assert!(
+        !run_task.is_finished(),
+        "preparation failure must retain the unfinished prefetch wait"
+    );
+    wait_gate.release_one();
+    let error = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, run_task)
+        .await
+        .expect("prefetch teardown should finish after terminal release")
+        .unwrap()
+        .err()
+        .expect("required private preparation must fail");
+
+    assert_eq!(error.to_string(), expected);
+    assert!(matches!(
+        &error,
+        crate::ExecutorError::Sandbox(SandboxError::Operation {
+            operation: SandboxOperation::WriteFile,
+            reason: SandboxOperationReason::Guest,
+            message: actual,
+        }) if actual == message
+    ));
+    assert_eq!(overrides.private_write_files_calls().len(), 1);
+    assert!(overrides.start_agent_process_calls().is_empty());
     assert_eq!(overrides.start_process_calls().len(), 1);
     assert_eq!(overrides.wait_process_calls().len(), 1);
     assert_eq!(overrides.process_cancel_calls().len(), 1);
