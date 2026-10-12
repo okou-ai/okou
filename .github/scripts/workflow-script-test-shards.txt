@@ -46,6 +46,7 @@
 2 release-tool-downloads-test.sh
 2 resolve-desktop-version-change-test.sh
 2 runner-behavior-agent-ready-benchmark-test.sh
+2 runner-behavior-balloon-test.sh
 2 runner-binary-early-publication-test.sh
 2 runner-binary-github-test.sh
 2 runner-binary-test-inputs-test.sh
