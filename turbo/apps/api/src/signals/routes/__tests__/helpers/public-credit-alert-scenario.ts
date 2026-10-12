@@ -80,7 +80,7 @@ function required<T>(values: ReadonlyMap<string, T>, input: unknown): T {
   }
   return value;
 }
-function membership(actor: ApiTestUser, role = actor.orgRole ?? "org:member") {
+function membership(actor: ApiTestUser, role: "org:admin" | "org:member") {
   return {
     id: `membership_${actor.userId}`,
     createdAt: now(),
@@ -693,20 +693,30 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
   context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
     async (input) => {
       const { userId } = z.object({ userId: z.string() }).parse(input);
-      const actor = [admin, member].find((candidate) => {
-        return candidate.userId === userId;
+      const actors: {
+        readonly actor: ApiTestUser;
+        readonly role: "org:admin" | "org:member";
+      }[] = [
+        { actor: admin, role: "org:admin" },
+        { actor: member, role: "org:member" },
+      ];
+      const actor = actors.find((candidate) => {
+        return candidate.actor.userId === userId;
       });
       if (!actor) {
         throw new Error("Unknown case-owned Clerk user");
       }
       return await Promise.resolve({
-        data: [membership(actor)],
+        data: [membership(actor.actor, actor.role)],
         totalCount: 1,
       });
     },
   );
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-    { data: [membership(admin), membership(member)], totalCount: 2 },
+    {
+      data: [membership(admin, "org:admin"), membership(member, "org:member")],
+      totalCount: 2,
+    },
   );
   context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
     { data: [], totalCount: 0 },
@@ -810,7 +820,10 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
         const firstPage = [
           membership(member, "org:admin"),
           ...Array.from({ length: 99 }, () => {
-            return membership(bdd.user({ orgId, orgRole: "org:member" }));
+            return membership(
+              bdd.user({ orgId, orgRole: "org:member" }),
+              "org:member",
+            );
           }),
         ];
         context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
