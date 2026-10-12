@@ -292,16 +292,43 @@ describe("Native Computer Use session authentication", () => {
     );
   });
 
-  it.each(["session", "membership"])(
-    "stops admission after remote %s revocation while the JWT is still accepted",
-    async (revocation) => {
-      mockNow(Date.parse("2026-10-08T01:00:00Z"));
+  it.each([
+    ["session", "heartbeat"],
+    ["session", "next"],
+    ["session", "complete"],
+    ["session", "stop"],
+    ["membership", "heartbeat"],
+    ["membership", "next"],
+    ["membership", "complete"],
+    ["membership", "stop"],
+  ] as const)(
+    "expires cached authority after remote %s revocation before %s",
+    async (revocation, operation) => {
+      const registeredAt = Date.parse("2026-10-08T01:00:00Z");
+      mockNow(registeredAt);
       const api = await app();
       const client = api(contract);
       authenticate(identity());
       const registered = (
         await accept(client.register({ headers, body: runtimeBody }), [200])
       ).body;
+      const params = { hostId: registered.hostId };
+      const body = { connectionGeneration: registered.connectionGeneration };
+      const created = await accept(
+        api(computerUseCommandContract).create({
+          headers,
+          body: { kind: "apps.list", timeoutMs: 60_000 },
+        }),
+        [200],
+      );
+      const claimed = await accept(
+        client.next({ headers, params, body }),
+        [200],
+      );
+      expect(claimed.body).toMatchObject({
+        status: "command",
+        command: { id: created.body.commandId },
+      });
       if (revocation === "session") {
         context.mocks.clerk.sessions.getSession.mockResolvedValue({
           status: "revoked",
@@ -311,15 +338,39 @@ describe("Native Computer Use session authentication", () => {
           { data: [], totalCount: 0 },
         );
       }
-      mockNow(Date.parse("2026-10-08T01:00:31Z"));
+      mockNow(registeredAt + 29_999);
       await accept(
-        client.next({
+        client.heartbeat({
           headers,
-          params: { hostId: registered.hostId },
-          body: { connectionGeneration: registered.connectionGeneration },
+          params,
+          body: { ...runtimeBody, ...body },
         }),
-        [409],
+        [200],
       );
+      mockNow(registeredAt + 30_000);
+      if (operation === "heartbeat") {
+        await accept(
+          client.heartbeat({
+            headers,
+            params,
+            body: { ...runtimeBody, ...body },
+          }),
+          [409],
+        );
+      } else if (operation === "next") {
+        await accept(client.next({ headers, params, body }), [409]);
+      } else if (operation === "complete") {
+        await accept(
+          client.complete({
+            headers,
+            params: { ...params, commandId: created.body.commandId },
+            body: { ...body, status: "succeeded", result: { apps: [] } },
+          }),
+          [409],
+        );
+      } else {
+        await accept(client.stop({ headers, params, body }), [409]);
+      }
       const listed = await accept(
         api(computerUseHostsContract).list({ headers }),
         [200],
