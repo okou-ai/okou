@@ -16,7 +16,7 @@
     - name: Create dedicated Runner WSS system group without user memberships
       become: true
       ansible.builtin.group:
-        name: okou-wss-caddy
+        name: okou-runner-caddy
         system: true
         state: present
       tags: runner_wss_host

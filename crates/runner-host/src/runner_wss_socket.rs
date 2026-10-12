@@ -58,7 +58,7 @@ impl RunnerWssSocket {
             anchor_path: temporary,
             owner,
         };
-        // Startup supplies root:okou-wss-caddy 0710 without setgid.
+        // Startup supplies root:okou-runner-caddy 0710 without setgid.
         // Linux's listener FD refers to a different inode from the pathname
         // socket. Set permissions on the filesystem inode, not that FD.
         socket.set_pathname_permissions(&parent, &temporary_name, group)?;
