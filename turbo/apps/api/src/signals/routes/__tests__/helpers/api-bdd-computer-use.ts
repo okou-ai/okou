@@ -98,7 +98,7 @@ interface RecordedComputerUseS3Get {
   readonly signal: AbortSignal | undefined;
 }
 
-export interface ComputerUseS3ReadBarrier {
+export interface ComputerUseS3Barrier {
   readonly entered: Promise<{
     readonly signal: AbortSignal | undefined;
   }>;
@@ -108,13 +108,15 @@ export interface ComputerUseS3ReadBarrier {
 export interface ComputerUseS3Fake {
   readonly puts: readonly RecordedComputerUseS3Put[];
   readonly gets: readonly RecordedComputerUseS3Get[];
-  readonly holdNextGetObject: () => ComputerUseS3ReadBarrier;
-  readonly holdNextBody: () => ComputerUseS3ReadBarrier;
+  readonly holdNextPutObject: () => ComputerUseS3Barrier;
+  readonly holdNextGetObject: () => ComputerUseS3Barrier;
+  readonly holdNextBody: () => ComputerUseS3Barrier;
+  readonly failNextPutObject: (error: unknown) => void;
   readonly failNextGetObject: (error: unknown) => void;
   readonly failNextBody: (error: unknown) => void;
 }
 
-interface PendingComputerUseS3ReadBarrier {
+interface PendingComputerUseS3Barrier {
   readonly entered: ReturnType<
     typeof createDeferredPromise<{
       readonly signal: AbortSignal | undefined;
@@ -229,11 +231,11 @@ function s3RequestSignal(options: unknown): AbortSignal | undefined {
   return signal instanceof AbortSignal ? signal : undefined;
 }
 
-function pendingS3ReadBarrier(signal: AbortSignal): {
-  readonly pending: PendingComputerUseS3ReadBarrier;
-  readonly barrier: ComputerUseS3ReadBarrier;
+function pendingS3Barrier(signal: AbortSignal): {
+  readonly pending: PendingComputerUseS3Barrier;
+  readonly barrier: ComputerUseS3Barrier;
 } {
-  const pending: PendingComputerUseS3ReadBarrier = {
+  const pending: PendingComputerUseS3Barrier = {
     entered: createDeferredPromise(signal),
     gate: undefined,
     releaseRequested: false,
@@ -253,8 +255,8 @@ function pendingS3ReadBarrier(signal: AbortSignal): {
   };
 }
 
-async function waitAtS3ReadBarrier(
-  pending: PendingComputerUseS3ReadBarrier,
+async function waitAtS3Barrier(
+  pending: PendingComputerUseS3Barrier,
   requestSignal: AbortSignal | undefined,
   contextSignal: AbortSignal,
 ): Promise<void> {
@@ -273,14 +275,14 @@ function controlledBodyStream(
   buffer: Buffer,
   requestSignal: AbortSignal | undefined,
   contextSignal: AbortSignal,
-  heldBody: PendingComputerUseS3ReadBarrier | undefined,
+  heldBody: PendingComputerUseS3Barrier | undefined,
   bodyFailure: unknown | undefined,
 ): AsyncIterable<Uint8Array> {
   return (async function* stream(): AsyncIterable<Uint8Array> {
     const splitAt = Math.max(1, Math.floor(buffer.length / 2));
     yield new Uint8Array(buffer.subarray(0, splitAt));
     if (heldBody) {
-      await waitAtS3ReadBarrier(heldBody, requestSignal, contextSignal);
+      await waitAtS3Barrier(heldBody, requestSignal, contextSignal);
     }
     if (bodyFailure !== undefined) {
       throw bodyFailure;
@@ -403,20 +405,29 @@ export function createComputerUseBddApi(
       >();
       const puts: RecordedComputerUseS3Put[] = [];
       const gets: RecordedComputerUseS3Get[] = [];
-      let heldGetObject: PendingComputerUseS3ReadBarrier | undefined;
-      let heldBody: PendingComputerUseS3ReadBarrier | undefined;
+      let heldPutObject: PendingComputerUseS3Barrier | undefined;
+      let heldGetObject: PendingComputerUseS3Barrier | undefined;
+      let heldBody: PendingComputerUseS3Barrier | undefined;
+      let putObjectFailure: unknown | undefined;
       let getObjectFailure: unknown | undefined;
       let bodyFailure: unknown | undefined;
 
       const reserveBarrier = (
-        phase: "GetObject" | "body",
-      ): ComputerUseS3ReadBarrier => {
-        const occupied = phase === "GetObject" ? heldGetObject : heldBody;
+        phase: "PutObject" | "GetObject" | "body",
+      ): ComputerUseS3Barrier => {
+        const occupied =
+          phase === "PutObject"
+            ? heldPutObject
+            : phase === "GetObject"
+              ? heldGetObject
+              : heldBody;
         if (occupied) {
           throw new Error(`Computer-use S3 ${phase} barrier is already held`);
         }
-        const created = pendingS3ReadBarrier(context.signal);
-        if (phase === "GetObject") {
+        const created = pendingS3Barrier(context.signal);
+        if (phase === "PutObject") {
+          heldPutObject = created.pending;
+        } else if (phase === "GetObject") {
           heldGetObject = created.pending;
         } else {
           heldBody = created.pending;
@@ -432,6 +443,20 @@ export function createComputerUseBddApi(
           const key = typeof input.Key === "string" ? input.Key : "";
 
           if (name === "PutObjectCommand") {
+            const selectedPutObjectBarrier = heldPutObject;
+            heldPutObject = undefined;
+            if (selectedPutObjectBarrier) {
+              await waitAtS3Barrier(
+                selectedPutObjectBarrier,
+                s3RequestSignal(options),
+                context.signal,
+              );
+            }
+            if (putObjectFailure !== undefined) {
+              const error = putObjectFailure;
+              putObjectFailure = undefined;
+              throw error;
+            }
             const body = objectBytes(input.Body);
             const contentType =
               typeof input.ContentType === "string" ? input.ContentType : "";
@@ -445,7 +470,7 @@ export function createComputerUseBddApi(
             const selectedGetObjectBarrier = heldGetObject;
             heldGetObject = undefined;
             if (selectedGetObjectBarrier) {
-              await waitAtS3ReadBarrier(
+              await waitAtS3Barrier(
                 selectedGetObjectBarrier,
                 signal,
                 context.signal,
@@ -492,11 +517,20 @@ export function createComputerUseBddApi(
       return {
         puts,
         gets,
+        holdNextPutObject: () => {
+          return reserveBarrier("PutObject");
+        },
         holdNextGetObject: () => {
           return reserveBarrier("GetObject");
         },
         holdNextBody: () => {
           return reserveBarrier("body");
+        },
+        failNextPutObject: (error) => {
+          if (putObjectFailure !== undefined) {
+            throw new Error("Computer-use S3 PutObject failure is already set");
+          }
+          putObjectFailure = error;
         },
         failNextGetObject: (error) => {
           if (getObjectFailure !== undefined) {
@@ -874,10 +908,11 @@ export function createComputerUseBddApi(
       connection: ComputerUseTestConnection,
       commandId: string,
       body: ComputerUseCompleteBody,
+      signal?: AbortSignal,
     ): Promise<void> {
       return await run(async () => {
         await accept(
-          sessionHostsClient().complete({
+          sessionHostsClient(signal).complete({
             ...hostRequest(connection),
             params: { hostId: connection.hostId, commandId },
             body: {
