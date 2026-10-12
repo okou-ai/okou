@@ -43,7 +43,7 @@ import { command } from "ccstate";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   deleteS3Objects,
   downloadS3BufferWithMaxBytes,
@@ -158,7 +158,7 @@ export const prepareBrowserUserFileUpload$ = command(
     signal: AbortSignal,
   ): Promise<ServiceResult<{ readonly uploadUrl: string }>> => {
     const db = set(writeDb$);
-    const row = await loadOwnedRequest(db, args);
+    const row = await set(loadOwnedBrowserUserActionRequest$, args, signal);
     signal.throwIfAborted();
     if (!row) {
       return notFound();
@@ -324,27 +324,34 @@ function publicRequest(
   };
 }
 
-async function loadOwnedRequest(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly requestToken: string;
+const loadOwnedBrowserUserActionRequest$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly requestToken: string;
+    },
+    signal: AbortSignal,
+  ): Promise<RequestRow | null> => {
+    const [row] = await get(db$)
+      .select()
+      .from(browserUserActionRequests)
+      .where(
+        and(
+          eq(
+            browserUserActionRequests.requestTokenHash,
+            hash(args.requestToken),
+          ),
+          eq(browserUserActionRequests.orgId, args.orgId),
+          eq(browserUserActionRequests.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return row ?? null;
   },
-): Promise<RequestRow | null> {
-  const [row] = await db
-    .select()
-    .from(browserUserActionRequests)
-    .where(
-      and(
-        eq(browserUserActionRequests.requestTokenHash, hash(args.requestToken)),
-        eq(browserUserActionRequests.orgId, args.orgId),
-        eq(browserUserActionRequests.userId, args.userId),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
-}
+);
 
 async function loadExactRequest(
   db: Db,
@@ -1111,7 +1118,7 @@ export const readBrowserUserAction$ = command(
     signal: AbortSignal,
   ): Promise<ServiceResult<BrowserUserActionResponse>> => {
     const db = set(writeDb$);
-    let row = await loadOwnedRequest(db, args);
+    let row = await set(loadOwnedBrowserUserActionRequest$, args, signal);
     signal.throwIfAborted();
     if (!row) {
       return notFound();
@@ -1439,7 +1446,7 @@ export const preflightBrowserUserAction$ = command(
     signal: AbortSignal,
   ): Promise<ServiceResult<BrowserUserActionResponse>> => {
     const db = set(writeDb$);
-    const located = await loadOwnedRequest(db, args);
+    const located = await set(loadOwnedBrowserUserActionRequest$, args, signal);
     signal.throwIfAborted();
     if (!located) {
       return notFound();
@@ -1697,7 +1704,7 @@ export const applyBrowserUserAction$ = command(
     signal: AbortSignal,
   ): Promise<ServiceResult<BrowserUserActionResponse>> => {
     const db = set(writeDb$);
-    const located = await loadOwnedRequest(db, args);
+    const located = await set(loadOwnedBrowserUserActionRequest$, args, signal);
     signal.throwIfAborted();
     if (!located) {
       return notFound();
@@ -1845,7 +1852,7 @@ export const cancelBrowserUserAction$ = command(
     signal: AbortSignal,
   ): Promise<ServiceResult<BrowserUserActionResponse>> => {
     const db = set(writeDb$);
-    const row = await loadOwnedRequest(db, args);
+    const row = await set(loadOwnedBrowserUserActionRequest$, args, signal);
     signal.throwIfAborted();
     if (!row) {
       return notFound();

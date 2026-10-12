@@ -2,7 +2,10 @@ import { createPublicComputerUseHosts } from "./helpers/public-computer-use-host
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  deleteFeatureSwitchesForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
@@ -1720,6 +1723,107 @@ aroundEach(async (runTest) => {
 });
 
 describe("Browser user-action route", () => {
+  it.each(["another user", "another organization"] as const)(
+    "keeps all native input operations within the request owner for %s",
+    async (foreignScope) => {
+      const owned = await setupOwnedNativeFileBrowserScenario();
+      await owned.run(async () => {
+        const { create } = await setupNativeFileScenario(owned);
+        const created = await create();
+        const requestToken = created.body.action.requestToken;
+        const headers = { authorization: "Bearer clerk-session" };
+        const params = { requestToken };
+        const observed = await accept(
+          userActionClient().preflight({ headers, params, body: {} }),
+          [200],
+        );
+        const fingerprint = observed.body.fields[0]?.control.fileSetFingerprint;
+        if (!fingerprint) {
+          throw new Error("Expected the owner's observed file fingerprint");
+        }
+        const foreignActor = createBddApi(context).user(
+          foreignScope === "another user"
+            ? { orgId: owned.actor.orgId }
+            : { userId: owned.actor.userId },
+        );
+        if (!foreignActor.orgId) {
+          throw new Error("Expected an organization for the other caller");
+        }
+        const foreign = { ...foreignActor, orgId: foreignActor.orgId };
+        const denial = await settleIncludingAbort(async () => {
+          await updateFeatureSwitchesForUser(context, foreign, {
+            [FeatureSwitchKey.BrowserNativeInput]: true,
+          });
+          const denied = [
+            await userActionClient().get({ headers, params }),
+            await userActionClient().preflight({ headers, params, body: {} }),
+            await userActionClient().apply({
+              headers,
+              params,
+              body: { values: [nativeFileValue(fingerprint)] },
+            }),
+            await userActionClient().cancel({ headers, params, body: {} }),
+            await userActionClient().prepareFileUpload({
+              headers,
+              params,
+              body: { key: "document", index: 0, size: 4 },
+            }),
+          ];
+          for (const response of denied) {
+            expect(response).toMatchObject({
+              status: 404,
+              body: { error: { code: "BROWSER_USER_ACTION_NOT_FOUND" } },
+            });
+          }
+        });
+        const cleanup = await settleIncludingAbort(
+          deleteFeatureSwitchesForUser(context, foreign),
+        );
+        createRouteMocks(context).clerk.session(
+          owned.actor.userId,
+          owned.actor.orgId,
+          owned.actor.orgRole,
+        );
+        await updateFeatureSwitchesForUser(context, owned.actor, {
+          [FeatureSwitchKey.BrowserNativeInput]: true,
+        });
+        if (!denial.ok && !cleanup.ok) {
+          throw new AggregateError(
+            [denial.error, cleanup.error],
+            "Browser owner checks and feature cleanup failed",
+          );
+        }
+        if (!denial.ok) {
+          throw denial.error;
+        }
+        if (!cleanup.ok) {
+          throw cleanup.error;
+        }
+
+        const pending = await accept(
+          userActionClient().get({ headers, params }),
+          [200],
+        );
+        expect(pending.body.state).toBe("pending");
+        const ownerPreflight = await accept(
+          userActionClient().preflight({ headers, params, body: {} }),
+          [200],
+        );
+        expect(ownerPreflight.body.state).toBe("pending");
+        const cancelled = await accept(
+          userActionClient().cancel({ headers, params, body: {} }),
+          [200],
+        );
+        expect(cancelled.body.state).toBe("cancelled");
+        const terminal = await accept(
+          userActionClient().get({ headers, params }),
+          [200],
+        );
+        expect(terminal.body.state).toBe("cancelled");
+      });
+    },
+  );
+
   it("bounds native file input and cleans staged files when target observation becomes stale", async () => {
     const { state, create, stageSyntheticFile, temporaryObjects, deletedKeys } =
       await setupNativeFileScenario();
