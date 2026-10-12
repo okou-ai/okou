@@ -1343,17 +1343,18 @@ test("organization resolution checks current original-org membership and never g
   expect(allowed.body.url).toContain("signature=temporary");
   expect(allowed.body.expiresAt).toBe("2026-09-11T12:00:00.000Z");
   expect(allowed.headers.get("cache-control")).toBe("private, no-store");
-  expect(context.mocks.s3.getSignedUrl.mock.calls.at(-1)).toMatchObject({
-    1: {
-      input: {
+  expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({
+      input: expect.objectContaining({
         ResponseCacheControl: "private, max-age=31536000, must-revalidate",
-      },
-    },
-    2: {
+      }),
+    }),
+    {
       expiresIn: 172_800,
       signingDate: new Date("2026-09-09T12:00:00.000Z"),
     },
-  });
+  );
   context.mocks.s3.getSignedUrl.mockResolvedValue(
     "https://private-r2.example/report.pdf?signature=second",
   );
@@ -1940,6 +1941,7 @@ test("canonical file links disclose public previews only while explicitly public
     );
     expect(result.body).toStrictEqual({
       url: published.body.url,
+      downloadUrl: expect.any(String),
       preview: { filename: "report.pdf", contentType: "application/pdf" },
     });
     expect(result.headers.get("cache-control")).toBe("private, no-store");

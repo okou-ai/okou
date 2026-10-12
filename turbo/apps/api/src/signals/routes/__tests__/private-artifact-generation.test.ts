@@ -307,6 +307,7 @@ describe("managed artifact privacy", () => {
           });
           expect(preview.body).toStrictEqual({
             url: signedReference,
+            downloadUrl: signedReference,
             publicUrl: null,
             previewImageUrl: null,
             expiresAt: expect.any(String),

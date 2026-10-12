@@ -37,10 +37,12 @@ import {
 } from "../external/clerk";
 import {
   copyArtifactShareObject,
+  generateHostedSitesPresignedGetUrl,
   readArtifactSharePolicyObject,
   writeArtifactSharePolicyObject,
 } from "../external/s3";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
+import { resolveArtifactDownloadUrl$ } from "./artifact-download-url.service";
 import {
   privateArtifactRecord$,
   privateArtifactUrl,
@@ -647,9 +649,19 @@ export const resolveArtifactShare$ = command(
       },
       signal,
     );
+    const downloadUrl = await set(
+      resolveArtifactDownloadUrl$,
+      {
+        bucket: file.bucket,
+        key: policy.target.key,
+        filename: policy.target.filename,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     return {
       ...preview,
+      downloadUrl,
       filename: file.filename,
       contentType: file.contentType,
       target: { kind: "file" as const, id: policy.target.id },
@@ -732,12 +744,11 @@ export const resolveArtifactShareDownload$ = command(
       if (!file) {
         return null;
       }
-      const preview = await set(
-        resolveArtifactPreviewUrl$,
+      const url = await set(
+        resolveArtifactDownloadUrl$,
         {
           bucket: file.bucket,
           key: policy.target.key,
-          signingDate: nowDate(),
           filename: policy.target.filename,
         },
         signal,
@@ -745,7 +756,7 @@ export const resolveArtifactShareDownload$ = command(
       signal.throwIfAborted();
       return {
         kind: "file",
-        url: preview.url,
+        url,
         filename: policy.target.filename,
         contentType: policy.target.contentType,
       };
@@ -954,12 +965,44 @@ export const resolvePublicArtifactSource$ = command(
 );
 
 export const resolvePublicArtifactUrl$ = command(
-  async ({ set }, args: PublicArtifactLookup, signal: AbortSignal) => {
+  async ({ get, set }, args: PublicArtifactLookup, signal: AbortSignal) => {
     const row = await set(publicArtifactShareIdentity$, args, signal);
     if (!row) {
       return null;
     }
     const source = await set(resolvePublicArtifactSource$, args, row, signal);
-    return source ? { url: source.url, preview: source.preview } : null;
+    if (!source) {
+      return null;
+    }
+    const { policy, candidate } = source;
+    if (policy.target.kind === "html") {
+      const downloadUrl = await get(
+        generateHostedSitesPresignedGetUrl(
+          policyBucket(),
+          `shared-artifacts/${policy.publicBrand}/${policy.target.snapshotId}/${policy.target.id}/index.html`,
+          true,
+          {
+            filename: "index.html",
+            responseCacheControl: "private, no-store",
+            signingDate: nowDate(),
+          },
+        ),
+      );
+      signal.throwIfAborted();
+      return { url: source.url, preview: source.preview, downloadUrl };
+    }
+    if (candidate.target.kind !== "file") {
+      throw new Error("Artifact share target does not match its publication");
+    }
+    const downloadUrl = await set(
+      resolveArtifactDownloadUrl$,
+      {
+        bucket: candidate.target.bucket,
+        key: policy.target.key,
+        filename: policy.target.filename,
+      },
+      signal,
+    );
+    return { url: source.url, preview: source.preview, downloadUrl };
   },
 );
