@@ -815,10 +815,8 @@ met it.
 
 ### Floating layers and portal ownership
 
-Start with [UI layering: project practices grounded in Web standards](layering.md)
-for common scenarios, recommended compositions, and behavioral verification.
-That guide distinguishes browser mechanisms and established practices from the
-project's ownership rules below.
+Read [UI layering](layering.md) for common scenarios, code examples, and
+behavioral checks.
 
 Portals belong to the shared primitives. Business components must not import
 `createPortal` from `react-dom`; `no-restricted-imports` in
