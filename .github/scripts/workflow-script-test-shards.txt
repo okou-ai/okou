@@ -117,6 +117,7 @@
 4 resolve-app-preview-alias-test.sh
 4 run-semgrep-test.sh
 4 runner-attribution-ansible-test.sh
+4 runner-behavior-exec-inventory-test.sh
 4 runner-behavior-host-cpu-fairness-test.sh
 4 runner-binary-build-test.sh
 4 runner-binary-cache-plan-test.sh

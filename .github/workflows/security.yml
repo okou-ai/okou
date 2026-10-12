@@ -364,6 +364,7 @@ jobs:
             .github/scripts/tests/semgrep-results-test.sh \
             .github/scripts/tests/runner-behavior-agent-ready-benchmark-test.sh \
             .github/scripts/tests/runner-behavior-durable-test.sh \
+            .github/scripts/tests/runner-behavior-exec-inventory-test.sh \
             .github/scripts/tests/workflow-script-test-shards-test.sh \
             e2e/scripts/ensure-stripe-cli.sh \
             e2e/helpers/browser.bash \

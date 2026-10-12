@@ -904,34 +904,45 @@ echo "PASS: argv boundary preservation"
 
 # Test 7: verify pre-installed language runtimes and databases
 echo "--- Test: runtime availability ---"
-for cmd in \
-  "node --version" \
-  "npm --version" \
-  "python3 --version" \
-  "pip3 --version" \
-  "ruby --version" \
-  "bundler --version" \
-  "php --version" \
-  "composer --version" \
-  "javac -version" \
-  "mvn --version" \
-  "gradle --version" \
-  "go version" \
-  "rustc --version" \
-  "cargo --version" \
-  "gcc --version" \
-  "g++ --version" \
-  "clang --version" \
-  "make --version" \
-  "cmake --version" \
-  "psql --version" \
-  "redis-server --version"; do
-  read -r -a command_parts <<< "$cmd"
-  OUTPUT=$(sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" \
-    -- "${command_parts[@]}" 2>&1) \
-    || fail "command failed: $cmd"
-  echo "  $cmd -> $(echo "$OUTPUT" | head -1)"
-done
+# Each inventory command has one version argument. Pass pairs as argv so the
+# guest resolves the same binaries through its inherited PATH without eval.
+sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" -- sh -c '
+  echo "  runtime inventory: $(($# / 2)) checks in 1 runner-exec probe"
+  while [ "$#" -gt 0 ]; do
+    cmd=$1 arg=$2
+    shift 2
+    if output=$("$cmd" "$arg" 2>&1); then
+      printf "  %s %s -> %s\n" "$cmd" "$arg" "$(printf "%s\n" "$output" | head -1)"
+    else
+      status=$?
+      printf "FAIL: command failed: %s %s (exit %s)\n" "$cmd" "$arg" "$status" >&2
+      printf "%s\n" "$output" >&2
+      exit "$status"
+    fi
+  done
+' runtime-inventory \
+  node --version \
+  npm --version \
+  python3 --version \
+  pip3 --version \
+  ruby --version \
+  bundler --version \
+  php --version \
+  composer --version \
+  javac -version \
+  mvn --version \
+  gradle --version \
+  go version \
+  rustc --version \
+  cargo --version \
+  gcc --version \
+  g++ --version \
+  clang --version \
+  make --version \
+  cmake --version \
+  psql --version \
+  redis-server --version \
+  || fail "runtime inventory probe"
 # Verify PostgreSQL can actually start (not just psql --version).
 # Test with TCP on localhost — users will connect via localhost:5432.
 sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" -- sh -c '
@@ -2024,24 +2035,37 @@ declare -A EXPECTED_ENV=(
 )
 check_env() {
   local label=$1 sudo_flag=$2
+  local var
   local -a sudo_args=()
+  local -a env_args=("$label" "$EXPECTED_PATH")
   if [ -n "$sudo_flag" ]; then
     sudo_args=("$sudo_flag")
   fi
   for var in "${!EXPECTED_ENV[@]}"; do
-    val=$(sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" \
-      "${sudo_args[@]}" -- printenv "$var") \
-      || fail "$label: $var not set"
-    [ "$val" = "${EXPECTED_ENV[$var]}" ] \
-      || fail "$label: $var='$val', expected '${EXPECTED_ENV[$var]}'"
-    echo "  $label $var=$val"
+    env_args+=("$var" "${EXPECTED_ENV[$var]}")
   done
-  val=$(sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" \
-    "${sudo_args[@]}" -- printenv PATH) \
-    || fail "$label: PATH not set"
-  echo "$val" | grep -qF "$EXPECTED_PATH" \
-    || fail "$label: PATH missing '$EXPECTED_PATH' in: $val"
-  echo "  $label PATH=$val"
+  sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" \
+    "${sudo_args[@]}" -- sh -c '
+    fail() { printf "FAIL: %s\n" "$1" >&2; exit 1; }
+    label=$1 expected_path=$2
+    shift 2
+    echo "  $label environment inventory: $(($# / 2 + 1)) checks in 1 runner-exec probe"
+    while [ "$#" -gt 0 ]; do
+      var=$1 expected=$2
+      shift 2
+      val=$(printenv "$var") \
+        || fail "$label: $var not set"
+      [ "$val" = "$expected" ] \
+        || fail "$label: $var=$val, expected $expected"
+      echo "  $label $var=$val"
+    done
+    val=$(printenv PATH) \
+      || fail "$label: PATH not set"
+    printf "%s\n" "$val" | grep -qF "$expected_path" \
+      || fail "$label: PATH missing $expected_path in: $val"
+    echo "  $label PATH=$val"
+  ' environment-inventory "${env_args[@]}" \
+    || fail "$label: environment inventory probe"
 }
 check_env "user" ""
 check_env "root" "--sudo"
