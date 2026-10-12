@@ -31,8 +31,9 @@
           - ansible_facts['architecture'] in runner_caddy_archives
         fail_msg: Caddy requires a supported Linux architecture.
 
-    # Runner supplies this namespace. Inspect it before any ingress changes.
-    - name: Validate existing Runner WSS namespace without changing it
+    # Runner supplies this namespace after first provisioning. Check existing
+    # paths without requiring or creating Runner-owned state before startup.
+    - name: Validate available Runner WSS namespace without changing it
       ansible.builtin.script: ../files/validate-runner-wss-namespace.py
       args:
         executable: /usr/bin/python3

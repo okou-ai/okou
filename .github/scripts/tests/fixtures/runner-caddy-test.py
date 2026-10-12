@@ -52,36 +52,38 @@ class EchoHandler(BaseHTTPRequestHandler):
 
 
 def response(context, port, path, websocket=False):
-    with socket.create_connection(("127.0.0.1", port), timeout=5) as raw:
-        with context.wrap_socket(raw, server_hostname="runner-wss.example.org") as peer:
-            upgrade = (
-                "Upgrade: websocket\r\nConnection: Upgrade\r\n"
-                f"Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: {WEBSOCKET_KEY}\r\n"
-                if websocket
-                else "Connection: close\r\n"
-            )
+    with (
+        socket.create_connection(("127.0.0.1", port), timeout=5) as raw,
+        context.wrap_socket(raw, server_hostname="runner-wss.example.org") as peer,
+    ):
+        upgrade = (
+            "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+            f"Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: {WEBSOCKET_KEY}\r\n"
+            if websocket
+            else "Connection: close\r\n"
+        )
+        peer.sendall(
+            (
+                f"GET {path} HTTP/1.1\r\nHost: runner-wss.example.org\r\n{upgrade}\r\n"
+            ).encode()
+        )
+        reader = peer.makefile("rb")
+        status = int(reader.readline().split()[1])
+        headers = {}
+        while (line := reader.readline()) != b"\r\n":
+            assert line, "unexpected EOF in response headers"
+            name, value = line.decode().split(":", 1)
+            headers[name.lower()] = value.strip()
+        if status == 101:
+            assert headers["sec-websocket-accept"] == WEBSOCKET_ACCEPT
             peer.sendall(
-                (
-                    f"GET {path} HTTP/1.1\r\nHost: runner-wss.example.org\r\n{upgrade}\r\n"
-                ).encode()
+                b"\x81\x84mask"
+                + bytes(v ^ b"mask"[i % 4] for i, v in enumerate(b"ping"))
             )
-            reader = peer.makefile("rb")
-            status = int(reader.readline().split()[1])
-            headers = {}
-            while (line := reader.readline()) != b"\r\n":
-                assert line, "unexpected EOF in response headers"
-                name, value = line.decode().split(":", 1)
-                headers[name.lower()] = value.strip()
-            if status == 101:
-                assert headers["sec-websocket-accept"] == WEBSOCKET_ACCEPT
-                peer.sendall(
-                    b"\x81\x84mask"
-                    + bytes(v ^ b"mask"[i % 4] for i, v in enumerate(b"ping"))
-                )
-                header = reader.read(2)
-                assert header[0] == 0x81 and not header[1] & 0x80
-                return status, reader.read(header[1])
-            return status, None
+            header = reader.read(2)
+            assert header[0] == 0x81 and not header[1] & 0x80
+            return status, reader.read(header[1])
+        return status, None
 
 
 def wait_ready(notify):
@@ -108,6 +110,28 @@ def main():
         shutil.copy2(caddy, root / "caddy")
         caddy = root / "caddy"
         namespace = root / "wss"
+        missing = root / "runner-not-started" / "wss"
+        validator.validate_namespace(missing, consumer)
+        assert not missing.parent.exists()
+        # An absent descendant must not hide an unsafe existing ancestor.
+        root.chmod(0o771)
+        try:
+            validator.validate_namespace(missing, consumer)
+        except ValueError:
+            assert not missing.parent.exists()
+        else:
+            raise AssertionError("unsafe ancestor of missing namespace was accepted")
+        root.chmod(0o751)
+        namespace.symlink_to(root / "missing-target")
+        try:
+            validator.validate_namespace(namespace, consumer)
+        except ValueError:
+            assert namespace.is_symlink()
+        else:
+            raise AssertionError("dangling namespace symlink was accepted")
+        namespace.unlink()
+        validator.validate_namespace(namespace, consumer)
+        assert not namespace.exists()
         namespace.mkdir()
         os.chown(namespace, 0, consumer)
         namespace.chmod(0o710)
@@ -146,31 +170,20 @@ def main():
             assert (
                 subprocess.run(
                     ["test", option, str(path)],
+                    check=False,
                     user=consumer,
                     group=consumer,
                     extra_groups=[],
                 ).returncode
                 == 1
             )
+        private.unlink()
+        namespace.rmdir()
         servers = []
         threads = []
         process = None
         try:
             ids = [str(uuid.uuid4()), str(uuid.uuid4())]
-            for runner_id, label in zip(ids, [b"first", b"second"], strict=True):
-                path = namespace / f"{runner_id}.sock"
-                server = ThreadingUnixStreamServer(str(path), EchoHandler)
-                server.label = label
-                server.daemon_threads = True
-                os.chown(path, 0, consumer)
-                path.chmod(0o660)
-                servers.append(server)
-                thread = threading.Thread(target=server.serve_forever, daemon=True)
-                thread.start()
-                threads.append(thread)
-            before = {
-                p.name: (p.stat().st_ino, p.stat().st_mode) for p in namespace.iterdir()
-            }
             cert, key = root / "cert.pem", root / "key.pem"
             subprocess.run(
                 [
@@ -251,6 +264,36 @@ def main():
                     wait_ready(notify)
                     context = ssl.create_default_context(cafile=str(cert))
                     context.set_alpn_protocols(["http/1.1"])
+                    # First provisioning starts Caddy before Runner-owned state.
+                    assert not namespace.exists()
+                    assert response(context, port, f"/ws/{ids[0]}", True)[0] == 502
+                    namespace.mkdir()
+                    os.chown(namespace, 0, consumer)
+                    namespace.chmod(0o710)
+                    validator.validate_namespace(namespace, consumer)
+                    private.write_bytes(b"private owner record")
+                    private.chmod(0o600)
+                    for runner_id, label in zip(
+                        ids, [b"first", b"second"], strict=True
+                    ):
+                        path = namespace / f"{runner_id}.sock"
+                        server = ThreadingUnixStreamServer(str(path), EchoHandler)
+                        server.label = label
+                        server.daemon_threads = True
+                        os.chown(path, 0, consumer)
+                        path.chmod(0o660)
+                        servers.append(server)
+                        thread = threading.Thread(
+                            target=server.serve_forever, daemon=True
+                        )
+                        thread.start()
+                        threads.append(thread)
+                    before = {
+                        p.name: (p.stat().st_ino, p.stat().st_mode)
+                        for p in namespace.iterdir()
+                    }
+                    # Late socket creation becomes usable in the same process.
+                    assert process.poll() is None
                     for runner_id, label in zip(
                         ids, [b"first", b"second"], strict=True
                     ):

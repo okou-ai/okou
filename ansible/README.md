@@ -4,7 +4,7 @@
 by Runner build/release/preview provisioning. Its cache covers the complete
 `ansible/` tree, including imported tasks and templates.
 
-## Optional Runner Caddy ingress
+## Runner Caddy ingress
 
 `okou-runner-caddy` names the service, dedicated user and its primary group.
 Configuration lives in `/etc/okou-runner-caddy`, private certificate/account
@@ -19,25 +19,28 @@ Host provisioning preserves the existing access group's numeric GID. Runner owns
 creation and validation of its namespace; provisioning leaves existing namespace,
 socket and lock ownership unchanged.
 
-Set `runner_caddy_enabled: true` in a host's Ansible configuration to manage
-the dedicated `okou-runner-caddy.service`. Ordinary provisioning omits these tasks
-unless explicitly opted in; omission does not stop an already deployed service.
-Keep the host setting in `playbooks/host_vars/<inventory_hostname>.yml` for
-consistent cached CI provisioning. A one-off `-e` override is not persisted.
+Every normal `provision-runner.yml` run manages the dedicated
+`okou-runner-caddy.service`. There is no enable switch. Unchanged, successfully
+applied deployments keep the same process; running the tasks does not mean
+restarting Caddy. The CI provisioning cache covers all imported tasks and
+templates in the `ansible/` tree.
 
-First provision the normal Runner dependencies and start a Runner. Runner creates
-`/var/lib/vm0-runner/wss` as `root:okou-runner-caddy 0710`; ingress provisioning
-validates that existing namespace and its trusted ancestors without repairing or
-creating them. Missing state, symlinks, wrong metadata or ACLs stop ingress setup.
-Private Runner directories and owner/lock files remain inaccessible to Caddy.
+Caddy can start before the first Runner. Runner creates `/var/lib/vm0-runner/wss`
+as `root:okou-runner-caddy 0710`; provisioning validates all existing ancestors
+and the namespace without repairing or creating them. Missing paths are allowed
+until Runner creates and validates them; symlinks, wrong metadata or ACLs stop
+ingress setup. Requests to absent sockets return 502. Starting a Runner makes its
+socket available without a Caddy restart. Private Runner directories and
+owner/lock files remain inaccessible to Caddy.
 
-For a separately authorized ingress deployment, use the same entry point:
+Use the shared entry point for normal provisioning:
 
 ```bash
 ansible-playbook -i 'runner.example.org,' playbooks/provision-runner.yml \
-  -e 'ansible_user=ubuntu' -e 'runner_caddy_enabled=true' \
-  --tags runner_caddy
+  -e 'ansible_user=ubuntu'
 ```
+
+To reapply only Caddy on an already provisioned host, use `--tags runner_caddy`.
 
 The exact public inventory hostname must match the hostname written into Runner
 configuration. Its DNS-only A/AAAA records must point to this host; do not proxy

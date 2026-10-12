@@ -13,11 +13,9 @@ export XDG_DATA_HOME="$tmp/caddy-data"
 export XDG_CONFIG_HOME="$tmp/caddy-config"
 
 ansible-playbook -i 'localhost,' -c local --syntax-check "$playbook" >/dev/null
-# The optional ingress tasks must be safe to omit on ordinary/local hosts.
-ansible-playbook -i 'localhost,' -c local --tags runner_caddy \
-  "$playbook" >"$tmp/disabled" 2>&1
+# Ordinary provisioning must reach ingress validation without an enable flag.
 if ansible-playbook -i 'localhost,' -c local --tags runner_caddy \
-  -e 'runner_caddy_enabled=true' "$playbook" >"$tmp/invalid" 2>&1; then
+  "$playbook" >"$tmp/invalid" 2>&1; then
   echo 'non-public inventory hostname unexpectedly enabled WSS ingress' >&2
   exit 1
 fi

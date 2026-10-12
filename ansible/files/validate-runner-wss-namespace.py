@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only validation of the protected namespace consumed by Caddy."""
+"""Validate existing WSS paths without requiring the first Runner to have started."""
 
 import errno
 import grp
@@ -12,7 +12,12 @@ def validate_namespace(directory: Path, group_id: int) -> None:
     if group_id == 0:
         raise ValueError("WSS group must differ from root")
     for path in [*reversed(directory.parents), directory]:
-        metadata = path.lstat()
+        try:
+            metadata = path.lstat()
+        except FileNotFoundError:
+            # Trusted existing ancestors were checked. Runner owns creation
+            # and validation of missing paths before accepting connections.
+            return
         mode = stat.S_IMODE(metadata.st_mode)
         valid_permissions = (
             metadata.st_gid == group_id and mode == 0o710
