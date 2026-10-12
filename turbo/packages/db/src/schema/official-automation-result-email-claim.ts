@@ -7,11 +7,12 @@ import {
 } from "drizzle-orm/pg-core";
 
 /**
- * Migration-only storage of the retired Official Automation completion email.
+ * Physical storage of the retired Official Automation completion email.
  *
- * No runtime code reads or writes these dedupe claims. The table stays until
- * release 3 of #39378 drops it after outgoing APIs drain and rollback excludes
- * them.
+ * Besides draining release-1 APIs, only the bounded legacy consumer writes
+ * these dedupe claims, through `runtime/legacy-official-result-email`
+ * (#39524). Release 3 of #39378 removes that consumer and drops the table after
+ * outgoing APIs drain and rollback excludes them.
  */
 export const officialAutomationResultEmailClaims = pgTable(
   "official_automation_result_email_claims",

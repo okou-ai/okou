@@ -27,9 +27,11 @@ export const emailOutbox = pgTable(
   "email_outbox",
   {
     ...emailOutboxColumns(),
-    // Migration-only producer identity of the retired platform completion
-    // email. The runtime mapping omits it; release 3 of #39378 drops the pair,
-    // its index and check after outgoing APIs drain and rollback excludes them.
+    // Producer identity of the retired platform completion email. The runtime
+    // mapping omits it; besides draining release-1 APIs, only the bounded
+    // legacy consumer writes it, through `runtime/legacy-official-result-email`
+    // (#39524). Release 3 of #39378 drops the pair, its index and check after
+    // outgoing APIs drain and rollback excludes them.
     legacySourceRunId: uuid("source_run_id"),
     legacySourceWorkflowAutomationId: uuid("source_workflow_automation_id"),
   },

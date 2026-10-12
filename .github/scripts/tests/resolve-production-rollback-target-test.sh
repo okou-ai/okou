@@ -114,6 +114,8 @@ case "${1:-}" in
       [ "${MOCK_SSH_CANONICAL_TRANSPORT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4949494949494949494949494949494949494949" ]; then
       [ "${MOCK_OFFICIAL_RESULT_EMAIL_RUNTIME_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "5050505050505050505050505050505050505050" ]; then
+      [ "${MOCK_OFFICIAL_RESULT_EMAIL_LEGACY_CONSUMER_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -167,6 +169,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_SSH_CANONICAL_TRANSPORT_COMMIT-4848484848484848484848484848484848484848}"
     elif [[ "$*" == *1382_retire_official_result_email_runtime.sql* ]]; then
       printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_RUNTIME_COMMIT-4949494949494949494949494949494949494949}"
+    elif [[ "$*" == *official-result-email-legacy-consumer* ]]; then
+      printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_LEGACY_CONSUMER_COMMIT-5050505050505050505050505050505050505050}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
     elif [[ "$*" == *pi-memory-phase2-input-revision.ts* ]]; then
@@ -313,6 +317,8 @@ grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/m
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1365_tailscale_private_ssh.sql" "${tmp_dir}/boundaries.log" || fail "SSH transport floor must resolve the canonical main migration"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1382_retire_official_result_email_runtime.sql" "${tmp_dir}/boundaries.log" || fail "Official result-email runtime retirement floor must resolve the canonical main migration"
 grep -Fxq "git merge-base --is-ancestor 4949494949494949494949494949494949494949 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Official result-email runtime retirement floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- .github/rollback-floors/official-result-email-legacy-consumer" "${tmp_dir}/boundaries.log" || fail "Official result-email legacy consumer floor must resolve the canonical main marker"
+grep -Fxq "git merge-base --is-ancestor 5050505050505050505050505050505050505050 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Official result-email legacy consumer floor"
 grep -Fxq "git merge-base --is-ancestor 4141414141414141414141414141414141414141 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Usage Allowance retirement floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
@@ -759,6 +765,24 @@ grep -Fq '4949494949494949494949494949494949494949' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/official-result-email-floor.output" ] || fail "pre-retirement Official result-email API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Official result-email floor must fail before artifact or host access"
+fi
+
+for consumer_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Official result-email legacy consumer" \
+    run_resolver "${tmp_dir}/official-result-email-consumer-history.output" "MOCK_OFFICIAL_RESULT_EMAIL_LEGACY_CONSUMER_COMMIT=${consumer_commit}"
+  [ ! -s "${tmp_dir}/official-result-email-consumer-history.output" ] || fail "invalid Official result-email consumer history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid Official result-email consumer history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Official result-email legacy consumer" \
+  run_resolver "${tmp_dir}/official-result-email-consumer-floor.output" MOCK_OFFICIAL_RESULT_EMAIL_LEGACY_CONSUMER_FLOOR_VALID=0
+grep -Fq '5050505050505050505050505050505050505050' "${tmp_dir}/failure.err" || fail "Official result-email consumer rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/official-result-email-consumer-floor.output" ] || fail "API without the Official result-email legacy consumer must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Official result-email consumer floor must fail before artifact or host access"
 fi
 
 for v8_commit in "" invalid; do
