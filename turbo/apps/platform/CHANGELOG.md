@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1012.0](https://github.com/okou-ai/okou/compare/app-v0.1011.0...app-v0.1012.0) (2026-10-12)
+
+
+### Features
+
+* roll out composer add menu and task chips ([#39200](https://github.com/okou-ai/okou/issues/39200)) ([b27dd69](https://github.com/okou-ai/okou/commit/b27dd69bab14bd854712120bed19ecc4853d3626))
+
+
+### Refactoring
+
+* remove chat composer layout feature switch ([#39203](https://github.com/okou-ai/okou/issues/39203)) ([bf4e97a](https://github.com/okou-ai/okou/commit/bf4e97a4b14d8bc238e8028d87881c7e63f654d8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.551.4
+    * @okouai/core bumped to 8.744.0
+
 ## [0.1011.0](https://github.com/okou-ai/okou/compare/app-v0.1010.2...app-v0.1011.0) (2026-10-12)
 
 

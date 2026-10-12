@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.228.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.227.3...runner-rs-v0.228.0) (2026-10-12)
+
+
+### Features
+
+* **runner:** retain guarded speculative activation rollback owners ([#39102](https://github.com/okou-ai/okou/issues/39102)) ([98bc4ab](https://github.com/okou-ai/okou/commit/98bc4abcf887e228c96bfa519de0af71286fc3b0))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.227.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.227.2...runner-rs-v0.227.3) (2026-10-12)
 
 ### Release Dependencies

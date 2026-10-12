@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.70](https://github.com/okou-ai/okou/compare/codex-mock-v0.11.69...codex-mock-v0.11.70) (2026-10-12)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify codex upstream stream failures ([#39192](https://github.com/okou-ai/okou/issues/39192)) ([63d9edb](https://github.com/okou-ai/okou/commit/63d9edbf7559a30c30a2481d334ec22cc6e9d9c3))
+
 ## [0.11.69](https://github.com/okou-ai/okou/compare/codex-mock-v0.11.68...codex-mock-v0.11.69) (2026-10-12)
 
 ## [0.11.68](https://github.com/okou-ai/okou/compare/codex-mock-v0.11.67...codex-mock-v0.11.68) (2026-10-11)

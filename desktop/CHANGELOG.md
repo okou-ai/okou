@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.2](https://github.com/okou-ai/okou/compare/desktop-v0.53.1...desktop-v0.53.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* **desktop:** enlarge the menu bar icon glyph ([#39209](https://github.com/okou-ai/okou/issues/39209)) ([2dee8d1](https://github.com/okou-ai/okou/commit/2dee8d1d38995c524a52a5d3a328c58bd635efb9))
+
 ## [0.53.1](https://github.com/okou-ai/okou/compare/desktop-v0.53.0...desktop-v0.53.1) (2026-10-12)
 
 

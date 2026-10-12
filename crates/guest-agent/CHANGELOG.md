@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.106.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.106.2...guest-agent-v0.106.3) (2026-10-12)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify codex upstream stream failures ([#39192](https://github.com/okou-ai/okou/issues/39192)) ([63d9edb](https://github.com/okou-ai/okou/commit/63d9edbf7559a30c30a2481d334ec22cc6e9d9c3))
+
 ## [0.106.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.106.1...guest-agent-v0.106.2) (2026-10-12)
 
 

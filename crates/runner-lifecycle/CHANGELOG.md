@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.8.0...runner-lifecycle-v0.9.0) (2026-10-12)
+
+
+### Features
+
+* **runner:** retain guarded speculative activation rollback owners ([#39102](https://github.com/okou-ai/okou/issues/39102)) ([98bc4ab](https://github.com/okou-ai/okou/commit/98bc4abcf887e228c96bfa519de0af71286fc3b0))
+
 ## [0.8.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.7.0...runner-lifecycle-v0.8.0) (2026-10-12)
 
 
