@@ -535,7 +535,7 @@ async function disableLinkSaveInfo(page: Page): Promise<void> {
     name: /save my information/i,
   });
 
-  if (await saveInfo.isVisible()) {
+  if (await saveInfo.isVisible({ timeout: 5_000 }).catch(() => false)) {
     await saveInfo.uncheck();
   }
 }
@@ -547,6 +547,7 @@ export async function fillStripeCheckout(page: Page): Promise<void> {
   // a skeleton. Use the final purchase control as the single layout-neutral
   // readiness boundary before inspecting Card controls or field frames.
   await waitForCheckoutFormReady(page);
+  await disableLinkSaveInfo(page);
 
   const cardNumber = await fillCardNumber(page, "4242424242424242");
   const cardExpiry = await fillStripeField(
@@ -579,8 +580,8 @@ export async function fillStripeCheckout(page: Page): Promise<void> {
   await email.fill(emailAddress, { timeout: 5_000 });
   await expect(email).toHaveValue(emailAddress);
 
-  // Card/email changes can reveal or reselect Link and require a phone number.
-  // Set the optional save choice on the final form before the single purchase.
+  // Email edits can re-enable Link and its required phone field after the
+  // earlier opt-out. Reassert the intended checkout form state before payment.
   await disableLinkSaveInfo(page);
   await checkoutSubmitLocator(page).click({ timeout: 30_000 });
 }

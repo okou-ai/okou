@@ -29,17 +29,20 @@ import {
   desc,
   eq,
   exists,
+  gt,
   gte,
   inArray,
   isNotNull,
   isNull,
   lte,
+  ne,
   notExists,
   or,
   sql,
 } from "drizzle-orm";
 import { z } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { isUniqueViolation } from "../../lib/pg-errors";
@@ -3172,72 +3175,115 @@ const retireExpiredInactiveBrowser$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0074; new non-billing transactions are prohibited.
-    const retired = await db.transaction(async (tx) => {
-      const [[browser], [profile]] = await Promise.all([
-        tx
-          .select({
-            status: browserSessions.status,
-            updatedAt: browserSessions.updatedAt,
-          })
-          .from(browserSessions)
-          .where(
-            and(
-              eq(browserSessions.id, target.browserId),
-              eq(browserSessions.chatThreadId, target.chatThreadId),
+    // Both nonlocking observations now share a statement snapshot. The actual
+    // conditional DELETE still decides whether a present browser was retired.
+    const observedBrowser = db.$with("observed_browser").as(
+      db
+        .select({
+          id: browserSessions.id,
+          status: browserSessions.status,
+          updatedAt: browserSessions.updatedAt,
+        })
+        .from(browserSessions)
+        .where(
+          and(
+            eq(browserSessions.id, target.browserId),
+            eq(browserSessions.chatThreadId, target.chatThreadId),
+          ),
+        ),
+    );
+    const observedProfile = db.$with("observed_profile").as(
+      db
+        .select({
+          providerProfileId: browserThreadProfiles.providerProfileId,
+        })
+        .from(browserThreadProfiles)
+        .where(eq(browserThreadProfiles.chatThreadId, target.chatThreadId)),
+    );
+    const profileMatches = notExists(
+      db
+        .select({ providerProfileId: observedProfile.providerProfileId })
+        .from(observedProfile)
+        .where(
+          target.providerProfileId === null
+            ? isNotNull(observedProfile.providerProfileId)
+            : ne(observedProfile.providerProfileId, target.providerProfileId),
+        ),
+    );
+    const retiredBrowser = db.$with("retired_browser").as(
+      db
+        .delete(browserSessions)
+        .where(
+          and(
+            eq(browserSessions.id, target.browserId),
+            eq(browserSessions.chatThreadId, target.chatThreadId),
+            eq(browserSessions.status, "stopping"),
+            eq(browserSessions.updatedAt, claimedAt),
+            profileMatches,
+            exists(
+              db
+                .select({ id: observedBrowser.id })
+                .from(observedBrowser)
+                .where(
+                  and(
+                    eq(observedBrowser.status, "stopping"),
+                    eq(observedBrowser.updatedAt, claimedAt),
+                  ),
+                ),
             ),
-          )
-          .limit(1),
-        tx
-          .select({
-            providerProfileId: browserThreadProfiles.providerProfileId,
-          })
-          .from(browserThreadProfiles)
-          .where(eq(browserThreadProfiles.chatThreadId, target.chatThreadId))
-          .limit(1),
-      ]);
-      if (profile && profile.providerProfileId !== target.providerProfileId) {
-        return false;
-      }
-      if (
-        browser &&
-        (browser.status !== "stopping" ||
-          browser.updatedAt.getTime() !== claimedAt.getTime())
-      ) {
-        return false;
-      }
-      if (browser) {
-        const [deleted] = await tx
-          .delete(browserSessions)
-          .where(
-            and(
-              eq(browserSessions.id, target.browserId),
-              eq(browserSessions.chatThreadId, target.chatThreadId),
-              eq(browserSessions.status, "stopping"),
-              eq(browserSessions.updatedAt, claimedAt),
-            ),
-          )
-          .returning({ chatThreadId: browserSessions.chatThreadId });
-        if (!deleted) {
-          return false;
-        }
-      }
-      if (target.providerProfileId !== null) {
-        await tx
-          .delete(browserThreadProfiles)
-          .where(
-            and(
-              eq(browserThreadProfiles.chatThreadId, target.chatThreadId),
-              eq(
-                browserThreadProfiles.providerProfileId,
-                target.providerProfileId,
-              ),
-            ),
+          ),
+        )
+        .returning({ id: browserSessions.id }),
+    );
+    // COUNT consumes every returned parent row before the dependent DELETE.
+    // Observed-present/DELETE-zero is rejection, unlike initially absent.
+    const accepted = sql`CASE
+      WHEN ${gt(db.select({ count: count() }).from(retiredBrowser), 0)} THEN true
+      WHEN ${notExists(db.select({ id: observedBrowser.id }).from(observedBrowser))}
+        THEN ${profileMatches}
+      ELSE false
+    END`;
+    const retiredProfile =
+      target.providerProfileId === null
+        ? null
+        : db.$with("retired_profile").as(
+            db
+              .delete(browserThreadProfiles)
+              .where(
+                and(
+                  eq(browserThreadProfiles.chatThreadId, target.chatThreadId),
+                  eq(
+                    browserThreadProfiles.providerProfileId,
+                    target.providerProfileId,
+                  ),
+                  accepted,
+                ),
+              )
+              .returning({ id: browserThreadProfiles.id }),
           );
-      }
-      return true;
-    });
+    const [result] = await (retiredProfile === null
+      ? db
+          .with(observedBrowser, observedProfile, retiredBrowser)
+          .select({ retired: accepted.mapWith(pgBooleanDecoder) })
+          .from(sql`(VALUES (1)) AS retirement_result`)
+      : db
+          .with(
+            observedBrowser,
+            observedProfile,
+            retiredBrowser,
+            retiredProfile,
+          )
+          .select({
+            retired:
+              sql`CASE WHEN ${gte(db.select({ count: count() }).from(retiredProfile), 0)}
+                THEN ${accepted} ELSE false END`.mapWith(pgBooleanDecoder),
+          })
+          .from(sql`(VALUES (1)) AS retirement_result`));
     signal.throwIfAborted();
+    if (!result) {
+      throw new Error("Expected one expired browser retirement outcome");
+    }
+    const retired = result.retired;
     if (retired) {
       await publishBrowserSessionChangedSafely(target.userId, {
         threadId: target.chatThreadId,

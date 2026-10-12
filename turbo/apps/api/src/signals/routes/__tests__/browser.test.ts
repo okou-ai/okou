@@ -2503,6 +2503,98 @@ describe("Browser user-action route", () => {
     });
   });
 
+  it.each([
+    { failure: "HTTP 503", status: 502, code: "BROWSER_USE_ERROR" },
+    {
+      failure: "inactive provider",
+      status: 409,
+      code: "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
+    },
+  ] as const)(
+    "can create native input after preparation rejects $failure",
+    async ({ failure, status, code }) => {
+      const owned = await setupOwnedNativeFileBrowserScenario();
+      await owned.run(async () => {
+        const { create, current } = await setupNativeFileScenario(owned);
+        server.use(
+          http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+            return failure === "HTTP 503"
+              ? HttpResponse.json(
+                  { detail: "temporary provider failure" },
+                  { status: 503 },
+                )
+              : HttpResponse.json(
+                  providerBrowser(String(params.id), { status: "stopped" }),
+                );
+          }),
+        );
+        const failed = await userActionClient().create({
+          headers: current.claim.browserHeaders,
+          body: {
+            kind: "input",
+            title: "Sign in to download invoices",
+            reason: "The website requires sign-in to access your invoices.",
+            callbackPrompt: "Continue after selecting the file",
+            pageTargetId: "native-input-target",
+            fields: [
+              {
+                key: "document",
+                label: "Document",
+                fieldKind: "file",
+                required: false,
+                backendNodeId: 45,
+              },
+            ],
+          },
+        });
+        server.use(
+          http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+            return HttpResponse.json(providerBrowser(String(params.id)));
+          }),
+        );
+        expect(failed).toMatchObject({ status, body: { error: { code } } });
+
+        const created = await create();
+        const headers = { authorization: "Bearer clerk-session" };
+        const params = { requestToken: created.body.action.requestToken };
+        const pending = await accept(
+          userActionClient().get({ headers, params }),
+          [200],
+        );
+        expect(pending.body).toMatchObject({
+          state: "pending",
+          callbackDelivered: false,
+        });
+        const observed = await accept(
+          userActionClient().preflight({ headers, params, body: {} }),
+          [200],
+        );
+        const fingerprint = observed.body.fields[0]?.control.fileSetFingerprint;
+        if (!fingerprint) {
+          throw new Error("Expected the public file control fingerprint");
+        }
+        const applied = await accept(
+          userActionClient().apply({
+            headers,
+            params,
+            body: {
+              values: [
+                {
+                  key: "document",
+                  observedFingerprint: fingerprint,
+                  operation: "clear",
+                  files: [],
+                },
+              ],
+            },
+          }),
+          [200],
+        );
+        expect(applied.body.state).toBe("succeeded");
+      });
+    },
+  );
+
   it("returns a retryable provider timeout when the internal CDP deadline expires", async () => {
     const { token, providerId } =
       await createNativePasswordActionForPreflightTest();
