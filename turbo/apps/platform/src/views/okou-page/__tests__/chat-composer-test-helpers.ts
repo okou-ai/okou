@@ -37,7 +37,6 @@ import {
   type MockChatEventInput,
 } from "./chat-event-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
-import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 
 export const context = testContext();
 
@@ -400,7 +399,11 @@ export async function expectInlineTemplateInComposer(
 export async function selectTemplate(
   template: PresentationTemplateItem,
 ): Promise<void> {
-  await clickComposerAddMenuItem("Template");
+  click(
+    await waitFor(() => {
+      return screen.getByLabelText("Template");
+    }),
+  );
   await waitFor(() => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });

@@ -303,7 +303,7 @@ test("A closed composer does not load uploaded template covers", async () => {
     host: "app.okou.ai",
   });
 
-  await screen.findByLabelText("Add");
+  await screen.findByLabelText("Template");
   expect(
     document.querySelector(`img[src*="${uploaded.id}"]`),
   ).not.toBeInTheDocument();
