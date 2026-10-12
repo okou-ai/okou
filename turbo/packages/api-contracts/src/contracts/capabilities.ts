@@ -32,6 +32,7 @@ export const CAPABILITIES = [
   "billing:read",
   "billing:write",
   "banking:read",
+  "wallet:write",
   "maps:read",
   "weather:read",
   "scrape:read",
@@ -167,6 +168,10 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
   "billing:write": {
     group: "Billing",
     label: "Buy credits and manage billing",
+  },
+  "wallet:write": {
+    group: "Wallet",
+    label: "Connect Link and request purchase approval",
   },
   "banking:read": {
     group: "Banking",

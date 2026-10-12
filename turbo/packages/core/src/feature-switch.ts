@@ -238,6 +238,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.LinkWallet]: {
+    maintainer: "yuma@okou.ai",
+    description:
+      "Enable hosted Link wallet connection and per-purchase approval. Credential retrieval and checkout remain unavailable.",
+    enabled: false,
+  },
   [FeatureSwitchKey.Banking]: {
     maintainer: "yuma@okou.ai",
     description:

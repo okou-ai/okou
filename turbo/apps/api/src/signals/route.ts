@@ -10,6 +10,7 @@ import { artifactOgRoutes } from "./routes/artifact-og";
 import { artifactShareRoutes } from "./routes/artifact-shares";
 import { authMeRoutes } from "./routes/auth-me";
 import { bankingRoutes } from "./routes/banking";
+import { walletRoutes } from "./routes/wallet";
 import { billingAutoRechargeRoutes } from "./routes/billing-auto-recharge";
 import { billingCheckoutRoutes } from "./routes/billing-checkout";
 import { billingConcurrencyCheckoutRoutes } from "./routes/billing-concurrency-checkout";
@@ -261,6 +262,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webhooksAgentFirewallAuthRoutes,
   ...webhooksAgentStorageRoutes,
   ...builtinConnectorsAutomaticRoutes,
+  ...walletRoutes,
   ...builtinConnectorsSlugCallbackRoutes,
   ...cronCompactChatThreadSnapshotsRoutes,
   ...cronReconcileArtifactCatalogRoutes,
