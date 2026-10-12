@@ -101,10 +101,10 @@ export function SlashWorkflowMenu({
       // The flyout never affects the index's width. Base UI tracks the card's
       // width and available space when the composer or visual viewport resizes.
       className={cn(
-        "flex h-[min(380px,var(--available-height))] flex-col overflow-hidden p-0",
+        "flex flex-col overflow-hidden p-0",
         composerAnchored
-          ? "w-(--anchor-width)"
-          : "w-[260px] max-w-[calc(100vw-1.5rem)]",
+          ? "max-h-[min(380px,var(--available-height))] w-(--anchor-width)"
+          : "h-[min(380px,var(--available-height))] w-[260px] max-w-[calc(100vw-1.5rem)]",
       )}
       data-testid="slash-workflow-menu"
     >
