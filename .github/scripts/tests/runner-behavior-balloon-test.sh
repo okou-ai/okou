@@ -4,7 +4,18 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 worker=${1:-"$repo_root/.github/scripts/runner-behavior-balloon-remote.sh"}
 fixture_root=$(mktemp -d)
-trap 'rm -rf "$fixture_root"' EXIT
+cleanup() {
+  local pid_file pid
+  # A worker-cleanup regression must fail the assertion without leaving its
+  # controlled peers running after this test exits.
+  for pid_file in "$fixture_root"/*/allocator-pid "$fixture_root"/*/submit-pid-*; do
+    [ -f "$pid_file" ] || continue
+    pid=$(<"$pid_file")
+    kill "$pid" 2>/dev/null || true
+  done
+  rm -rf "$fixture_root"
+}
+trap cleanup EXIT
 mkdir -p "$fixture_root/bin"
 
 # Exercise the complete worker with controlled external Runner/Firecracker
