@@ -84,7 +84,7 @@ export const INSTALL_FONTS = String.raw`
       }
       return result;
     });
-  const { tag, tables, coverage, rename } = (${nativeFontTools.toString()})();
+  const { tag, tables, coverage, rename, standalone } = (${nativeFontTools.toString()})();
   state.prepareFonts = async (roots, discover, decode, toEot) => {
     const used = new Map();
     for (const root of roots)
@@ -184,7 +184,7 @@ export const INSTALL_FONTS = String.raw`
                 const r = await fetch(descriptor.url);
                 if (!r.ok)
                   throw new Error("Cannot fetch a used presentation font");
-                return decode(await r.arrayBuffer());
+                return standalone(await decode(await r.arrayBuffer()));
               })(),
             );
           const buffer = await buffers.get(descriptor.url),

@@ -21,6 +21,11 @@
         src: url("fonts/noto-cjk-fixture.woff2") format("woff2");
         font-weight: 400;
       }
+      @font-face {
+        font-family: "Fixture Collection";
+        src: url("fonts/collection-fixture.ttc") format("collection");
+        font-weight: 400;
+      }
       * {
         box-sizing: border-box;
       }
@@ -284,7 +289,9 @@
       <h1>F04 · Editable inline cell paint</h1>
       <table class="badge-table">
         <tr>
-          <td><span class="badge">Feature</span></td>
+          <td>
+            <span class="badge" style="display: inline-flex">Feature</span>
+          </td>
           <td>Filled capsule with rounded border</td>
         </tr>
         <tr>
@@ -330,7 +337,10 @@
           margin-top: 8px;
         "
       >
-        中文备用字体保持可编辑
+        中文备用字体保持可编辑 ·
+        <span style="font-family: &quot;Fixture Collection&quot;"
+          >中文字体</span
+        >
       </p>
       <p
         class="note"

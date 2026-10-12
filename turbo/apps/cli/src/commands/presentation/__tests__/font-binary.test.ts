@@ -111,6 +111,57 @@ describe("native presentation font binaries", () => {
     expect(nativeFontTools().coverage(output)(0x4e2d)).toBe(true);
   });
 
+  it("extracts collection faces with absolute shared-table offsets losslessly", () => {
+    const collection = new Uint8Array(
+      readFileSync(
+        new URL(
+          "./fixtures/convert/fonts/collection-fixture.ttc",
+          import.meta.url,
+        ),
+      ),
+    ).buffer;
+    const font = nativeFontTools(),
+      first = font.standalone(collection),
+      second = font.standalone(collection, 1);
+    const cff = new Uint8Array(
+      readFileSync(
+        new URL(
+          "./fixtures/convert/fonts/noto-cjk-fixture.otf",
+          import.meta.url,
+        ),
+      ),
+    ).buffer;
+    for (const [original, extracted] of [
+      [cff, first],
+      [source, second],
+    ] as const) {
+      const before = directory(original),
+        after = directory(extracted);
+      expect([...after.keys()]).toEqual([...before.keys()].sort());
+      for (const [tag, bytes] of before) {
+        if (tag === "head") continue;
+        expect(after.get(tag), tag).toEqual(bytes);
+      }
+      let checksum = 0;
+      const bytes = Buffer.from(extracted);
+      for (let p = 0; p < bytes.length; p += 4)
+        checksum = (checksum + bytes.readUInt32BE(p)) >>> 0;
+      expect(checksum).toBe(0xb1b0afba);
+    }
+    expect(font.coverage(first)(0x4e2d)).toBe(true);
+    expect(font.coverage(second)(0x4e2d)).toBe(false);
+    expect(font.coverage(second)(0x41)).toBe(true);
+    expect(font.standalone(source)).toBe(source);
+    expect(() => {
+      return font.standalone(collection, 2);
+    }).toThrow("Invalid presentation font collection face");
+    const corrupt = collection.slice(0);
+    new DataView(corrupt).setUint32(12, 0xfffffff0);
+    expect(() => {
+      return font.standalone(corrupt);
+    }).toThrow("Truncated presentation font directory");
+  });
+
   it("rejects truncated and out-of-bounds font directories", () => {
     expect(() => {
       return nativeFontTools().rename(source.slice(0, 8), "Broken");

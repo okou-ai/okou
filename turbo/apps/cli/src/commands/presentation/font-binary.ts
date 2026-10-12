@@ -13,16 +13,16 @@ export function nativeFontTools() {
       return (n * 256 + c.charCodeAt(0)) >>> 0;
     }, 0);
   };
-  const tables = (buffer: ArrayBuffer) => {
-    if (buffer.byteLength < 12)
+  const tables = (buffer: ArrayBuffer, directoryOffset = 0) => {
+    if (directoryOffset < 0 || directoryOffset + 12 > buffer.byteLength)
       throw new Error("Truncated presentation font directory");
     const view = new DataView(buffer),
       result = new Map<string, Uint8Array>();
-    const count = view.getUint16(4);
-    if (count === 0 || 12 + count * 16 > buffer.byteLength)
+    const count = view.getUint16(directoryOffset + 4);
+    if (count === 0 || directoryOffset + 12 + count * 16 > buffer.byteLength)
       throw new Error("Invalid presentation font directory");
-    for (let i = 0; i < view.getUint16(4); i++) {
-      const offset = 12 + i * 16,
+    for (let i = 0; i < count; i++) {
+      const offset = directoryOffset + 12 + i * 16,
         name = String.fromCharCode(...new Uint8Array(buffer, offset, 4));
       const start = view.getUint32(offset + 8),
         length = view.getUint32(offset + 12);
@@ -145,6 +145,10 @@ export function nativeFontTools() {
       const v = new DataView(os2.buffer);
       v.setUint16(62, (v.getUint16(62) & ~33) | 64);
     }
+    return pack(parts, new DataView(buffer).getUint32(0));
+  };
+  const pack = (parts: Map<string, Uint8Array>, version: number) => {
+    new DataView(table(parts, "head").buffer).setUint32(8, 0);
     const entries = [...parts].sort(([a], [b]) => {
         return tag(a) - tag(b);
       }),
@@ -156,7 +160,7 @@ export function nativeFontTools() {
         }, 0);
     const output = new Uint8Array(size),
       v = new DataView(output.buffer);
-    v.setUint32(0, new DataView(buffer).getUint32(0));
+    v.setUint32(0, version);
     v.setUint16(4, entries.length);
     const power = 2 ** Math.floor(Math.log2(entries.length));
     v.setUint16(6, power * 16);
@@ -191,5 +195,27 @@ export function nativeFontTools() {
     v.setUint32(headOffset + 8, (0xb1b0afba - sum(output)) >>> 0);
     return output.buffer;
   };
-  return { tag, tables, coverage, rename };
+  // Collection table offsets are absolute within the TTC, not relative to a
+  // face. Repack the browser's default face as an ordinary SFNT, retaining its
+  // shared outlines/layout tables before coverage, instancing and embedding.
+  const standalone = (buffer: ArrayBuffer, face = 0) => {
+    if (buffer.byteLength < 4)
+      throw new Error("Truncated presentation font directory");
+    const view = new DataView(buffer);
+    if (view.getUint32(0) !== tag("ttcf")) return buffer;
+    if (buffer.byteLength < 12)
+      throw new Error("Truncated presentation font collection");
+    const count = view.getUint32(8);
+    if (
+      !Number.isInteger(face) ||
+      face < 0 ||
+      face >= count ||
+      12 + count * 4 > buffer.byteLength
+    )
+      throw new Error("Invalid presentation font collection face");
+    const offset = view.getUint32(12 + face * 4);
+    const parts = tables(buffer, offset);
+    return pack(parts, view.getUint32(offset));
+  };
+  return { tag, tables, coverage, rename, standalone };
 }

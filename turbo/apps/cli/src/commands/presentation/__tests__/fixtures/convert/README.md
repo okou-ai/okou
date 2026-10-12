@@ -287,3 +287,11 @@ widths. F05 includes a CSS-aliased, static CFF Chinese fallback. The small
 `noto-cjk-fixture` OTF/WOFF2 pair is subset from Noto Sans CJK SC Regular under
 `fonts/Noto-OFL.txt`. Static fonts keep their outline tables intact; only variable
 fonts enter the axis instancer, which must retain an outline table.
+
+The same page also covers a TTC webfont. `collection-fixture.ttc` combines the
+existing CFF and variable TrueType fixtures under their included licenses.
+Extract the default face with absolute collection table offsets before font
+coverage/embedding; preserve every shared table and recompute SFNT checksums.
+The binary test also checks the second face and invalid collection offsets.
+F04 includes an inline-flex badge: materialize it with its owning cell so an
+empty inline box cannot move the baseline and enlarge previously correct rows.

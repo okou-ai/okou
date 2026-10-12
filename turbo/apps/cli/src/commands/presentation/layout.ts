@@ -226,7 +226,10 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
   });
   const inlineTree = owner => Array.from(owner.querySelectorAll('*')).every(child => {
     const style = getComputedStyle(child);
-    return child.tagName === 'BR' || ((style.display === 'inline' || style.display === 'inline-block' || style.display === 'contents') && !child.matches('svg,img,canvas,math,ruby,rt,video,iframe'));
+    // Materialize a cell and its inline flex/grid badges together. Emptying a
+    // badge alone changes its baseline and can enlarge the table's line box.
+    const cellBadge=owner.matches('td,th')&&['inline-flex','inline-grid'].includes(style.display);
+    return child.tagName === 'BR' || ((style.display === 'inline' || style.display === 'inline-block' || style.display === 'contents' || cellBadge) && !child.matches('svg,img,canvas,math,ruby,rt,video,iframe'));
   });
   // visibility is inherited but can be overridden. Unlike display:none, it
   // must not prune visible descendants from the renderer's traversal.
