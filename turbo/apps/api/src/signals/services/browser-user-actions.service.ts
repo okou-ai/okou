@@ -1355,23 +1355,6 @@ function exactInputTarget(
   };
 }
 
-async function markPendingBrowserUserActionStale(
-  db: Db,
-  row: RequestRow,
-): Promise<RequestRow | null> {
-  const [stale] = await db
-    .update(browserUserActionRequests)
-    .set({ status: "stale", completedAt: nowDate() })
-    .where(
-      and(
-        eq(browserUserActionRequests.requestTokenHash, row.requestTokenHash),
-        eq(browserUserActionRequests.status, "pending"),
-      ),
-    )
-    .returning();
-  return stale ?? null;
-}
-
 type BrowserInputInspection =
   | { readonly kind: "stale" }
   | {
@@ -1481,7 +1464,19 @@ export const preflightBrowserUserAction$ = command(
       return expired();
     }
     if (inspection.kind === "stale") {
-      const stale = await markPendingBrowserUserActionStale(db, current);
+      const [stale] = await db
+        .update(browserUserActionRequests)
+        .set({ status: "stale", completedAt: nowDate() })
+        .where(
+          and(
+            eq(
+              browserUserActionRequests.requestTokenHash,
+              current.requestTokenHash,
+            ),
+            eq(browserUserActionRequests.status, "pending"),
+          ),
+        )
+        .returning();
       signal.throwIfAborted();
       if (!stale) {
         return conflict("Browser input state changed during preflight");
