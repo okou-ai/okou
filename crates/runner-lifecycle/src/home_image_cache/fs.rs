@@ -93,10 +93,8 @@ pub(super) fn existing_fs_stats_path(path: &Path) -> PathBuf {
 pub(super) async fn home_cache_existing_path_allocated_bytes(
     path: &Path,
 ) -> std::io::Result<Option<u64>> {
-    let metadata = match fs::symlink_metadata(path).await {
-        Ok(metadata) => metadata,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(with_path(e, "symlink_metadata", path)),
+    let Some(metadata) = allocation_path_metadata(path).await? else {
+        return Ok(None);
     };
     runner_host::host_file::validate_dir(
         runner_host::host_file::file_parent(path),
@@ -227,6 +225,17 @@ pub(super) fn fs_stats_from_statvfs(stats: &libc::statvfs) -> FsStats {
     }
 }
 
+async fn allocation_path_metadata(path: &Path) -> std::io::Result<Option<std::fs::Metadata>> {
+    #[cfg(test)]
+    super::tests::allocation_scan::pause(path, super::tests::allocation_scan::ScanPoint::Metadata)
+        .await;
+    match fs::symlink_metadata(path).await {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(with_path(error, "symlink_metadata", path)),
+    }
+}
+
 async fn path_tree_allocated_bytes(
     path: &Path,
     metadata: std::fs::Metadata,
@@ -236,37 +245,49 @@ async fn path_tree_allocated_bytes(
         return Ok(total);
     }
 
+    // Entry-local GC and checkout can remove discovered descendants even while
+    // publication holds capacity. Missing descendants add no further allocation;
+    // retain already-counted blocks conservatively and propagate other errors.
     let mut pending = vec![(path.to_path_buf(), true)];
-    while let Some((dir, metadata_counted)) = pending.pop() {
-        if !metadata_counted {
-            let metadata = fs::symlink_metadata(&dir)
-                .await
-                .map_err(|error| with_path(error, "symlink_metadata", &dir))?;
+    while let Some((dir, is_root)) = pending.pop() {
+        if !is_root {
+            let Some(metadata) = allocation_path_metadata(&dir).await? else {
+                continue;
+            };
             total = total.saturating_add(allocated_bytes(&metadata));
             if !metadata.file_type().is_dir() {
                 continue;
             }
         }
 
-        let mut entries = fs::read_dir(&dir)
-            .await
-            .map_err(|error| with_path(error, "read_dir", &dir))?;
+        #[cfg(test)]
+        super::tests::allocation_scan::pause(
+            &dir,
+            super::tests::allocation_scan::ScanPoint::ReadDirectory,
+        )
+        .await;
+        let mut entries = match fs::read_dir(&dir).await {
+            Ok(entries) => entries,
+            Err(error) if !is_root && error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(with_path(error, "read_dir", &dir)),
+        };
         while let Some(entry) = entries
             .next_entry()
             .await
             .map_err(|error| with_path(error, "ReadDir::next_entry", &dir))?
         {
             let path = entry.path();
-            let file_type = entry
-                .file_type()
-                .await
-                .map_err(|error| with_path(error, "DirEntry::file_type", &path))?;
+            let file_type = match entry.file_type().await {
+                Ok(file_type) => file_type,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(with_path(error, "DirEntry::file_type", &path)),
+            };
             if file_type.is_dir() {
                 pending.push((path, false));
             } else {
-                let metadata = fs::symlink_metadata(&path)
-                    .await
-                    .map_err(|error| with_path(error, "symlink_metadata", &path))?;
+                let Some(metadata) = allocation_path_metadata(&path).await? else {
+                    continue;
+                };
                 total = total.saturating_add(allocated_bytes(&metadata));
             }
         }
