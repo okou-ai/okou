@@ -47,33 +47,46 @@ remote restoration is not a successful home-cache transfer.
 
 Successful actual writes may include:
 
-| Field                                    | Meaning                                                                          |
-| ---------------------------------------- | -------------------------------------------------------------------------------- |
-| `session_history_wire_codec`             | Caller-selected `none` or `zstd`, independent of stored representation           |
-| `session_history_codec_decision`         | `native_zstd`, `below_threshold` or `above_threshold` (including exactly 16 MiB) |
-| `session_history_selection_ms`           | Host wall duration of representation/size selection                              |
-| `session_history_transfer_bytes`         | Logical Guest file payload length before optional wire compression               |
-| `session_history_restore_representation` | Logical payload `raw` or `codex_zstd`                                            |
-| `session_history_wire_bytes`             | Completed DATA payload bytes, excluding framing/control/replies                  |
-| `session_history_write_requests`         | Completed file requests, including an empty-file request                         |
-| `session_history_file_gate_wait_ms`      | Sum of Host shared file-operation gate waits                                     |
-| `session_history_requests_ms`            | Sum of sequential request envelopes after admission through terminal validation  |
-| `session_history_encoder_pipeline_ms`    | Overlapping Host encoder pipeline wall time, not encoding CPU time               |
-| `session_history_publication_ms`         | Final chunked-file rename duration; zero for one-request writes                  |
+| Field                                    | Meaning                                                                                  |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `session_history_wire_codec`             | Caller-selected `none` or `zstd`, independent of stored representation                   |
+| `session_history_codec_decision`         | `native_zstd`, `source_zstd`, `below_threshold` or `above_threshold`                     |
+| `session_history_selection_ms`           | Host wall duration of representation/size selection                                      |
+| `session_history_transfer_bytes`         | Logical Guest file payload length before optional wire compression                       |
+| `session_history_restore_representation` | Logical payload `raw` or `codex_zstd`                                                    |
+| `session_history_wire_bytes`             | Completed DATA payload bytes, excluding framing/control/replies                          |
+| `session_history_write_requests`         | Completed file requests, including an empty-file request                                 |
+| `session_history_file_gate_wait_ms`      | Sum of Host shared file-operation gate waits                                             |
+| `session_history_requests_ms`            | Sum of sequential request envelopes after the Host file gate through terminal validation |
+| `session_history_encoder_pipeline_ms`    | Overlapping Host encoder pipeline wall time, not encoding CPU time                       |
+| `session_history_publication_ms`         | Final staged-file rename duration; zero when no separate publication is needed           |
 
-Request envelopes include source copying, admission, encoding, transport, Guest
-helper startup and decode/write/terminal-response wait. They do not isolate Guest
-disk I/O. Encoder time overlaps the envelope; raw requests have zero encoder
-pipeline duration. Independent rounding can lose fractions. Do not derive a
-Guest-only residual or add independent percentile values.
+`source_zstd` identifies original-source transfer for every downloaded Claude/Pi
+zstd history, independent of size. Host authenticates decoded SHA and exact size
+before transfer; Guest validates encoded CRC, exact lengths and frame bounds on a
+staging sibling before publication. Its logical payload is decoded `raw`, while
+wire bytes count the original encoded source. `below_threshold` and
+`above_threshold` apply to decoded inputs that still select transport encoding at
+16 MiB, including exactly 16 MiB in `above_threshold`.
+
+Request envelopes include admission, any required source copying or encoding,
+transport, Guest helper startup and decode/write/terminal-response wait. They do
+not isolate Guest disk I/O or include preceding Host source authentication.
+Encoder time overlaps the envelope; raw and original-source requests have zero
+encoder pipeline duration. Original-source writes always use staging and report
+publication duration even with one file request. Independent rounding can lose
+fractions. Do not derive a Guest-only residual or add independent percentile
+values.
 
 Wire measurements exist only after the whole file and required publication
 succeed. Failure may have transferred bytes but omits successful fields. The mock
 backend has no wire transport and omits wire/count/stage fields. Missing values
 on any backend or version are unknown, not zero. Reference histories retain the
-128 MiB logical ceiling and existing per-request limits; this does not introduce
-a new inline-history ceiling. General CPU/download/cache/cancellation ownership
-remains unchanged.
+128 MiB logical ceiling. Original-source streams allow one request with encoded
+and decoded lengths independently bounded at 128 MiB; DATA frames remain at most
+64 KiB with four credits. Other writes retain their existing per-request limits.
+This does not introduce a new inline-history ceiling. General CPU/download/cache/
+cancellation ownership remains unchanged.
 
 ## Terminal publication and reader compatibility
 

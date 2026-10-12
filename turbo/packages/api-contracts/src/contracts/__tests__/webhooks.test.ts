@@ -410,6 +410,17 @@ describe("home history restore telemetry", () => {
       session_history_wire_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
       session_history_encoder_pipeline_ms: 0,
     };
+    const sourceZstd = {
+      ...transfer,
+      session_history_framework: "pi",
+      session_history_transfer_source: "downloaded",
+      session_history_codec_decision: "source_zstd",
+      session_history_transfer_bytes: 64 * 1024,
+      session_history_wire_bytes: 1024,
+      session_history_write_requests: 1,
+      session_history_encoder_pipeline_ms: 0,
+      session_history_publication_ms: 2,
+    };
     const largeInline = {
       ...transfer,
       session_history_transfer_source: "inline",
@@ -426,6 +437,7 @@ describe("home history restore telemetry", () => {
           failed,
           empty,
           nativeZstd,
+          sourceZstd,
           largeInline,
           operation,
         ],
@@ -436,6 +448,7 @@ describe("home history restore telemetry", () => {
       failed,
       empty,
       nativeZstd,
+      sourceZstd,
       largeInline,
       operation,
     ]);
