@@ -9,6 +9,9 @@ import {
 import { agentInstructionsRoutes } from "../agent-instructions";
 import { randomUUID } from "node:crypto";
 import { parseAvatarComposerUrl } from "@okouai/core/agent-avatar";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { onTestFinished } from "vitest";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -52,6 +55,210 @@ function agentsByIdClient() {
 }
 
 describe("POST /api/agents", () => {
+  it.each([
+    ["displayName", 257],
+    ["sound", 65],
+    ["avatarUrl", 1025],
+  ] as const)(
+    "preserves the existing agent and instructions after an oversized %s fails",
+    async (field, length) => {
+      const fixture = agentsFixture("failed-create");
+      mocks.clerk.session(fixture.userId, fixture.orgId);
+      installDurableUserExportStorage(context, {
+        prefixes: [`${fixture.orgId}/`],
+      });
+      const existing = await accept(
+        agentsClient().create({
+          headers: authHeaders(),
+          body: { displayName: "Surviving agent", visibility: "public" },
+        }),
+        [201],
+      );
+      await expect(
+        agentsClient().create({
+          headers: authHeaders(),
+          body: { [field]: "x".repeat(length), visibility: "public" },
+        }),
+      ).rejects.toThrow("Unknown response status 500 for POST /api/agents");
+      const listed = await accept(
+        agentsClient().list({ headers: authHeaders() }),
+        [200],
+      );
+      expect(listed.body).toStrictEqual([existing.body]);
+      const instructions = await accept(
+        setupApp({ context, routes: agentInstructionsRoutes })(
+          agentInstructionsContract,
+        ).get({
+          headers: authHeaders(),
+          params: { id: existing.body.agentId },
+        }),
+        [200],
+      );
+      expect(instructions.body.content).toBe("");
+    },
+  );
+
+  it("keeps default metadata and empty instructions readable after creation", async () => {
+    const fixture = agentsFixture("empty-instructions");
+    mocks.clerk.session(fixture.userId, fixture.orgId);
+    installDurableUserExportStorage(context, {
+      prefixes: [`${fixture.orgId}/`],
+    });
+    const created = await accept(
+      agentsClient().create({ headers: authHeaders(), body: {} }),
+      [201],
+    );
+    expect(created.body).toMatchObject({
+      isDefaultAgent: false,
+      ownerId: fixture.userId,
+      displayName: null,
+      description: null,
+      sound: null,
+      visibility: "private",
+    });
+    const read = await accept(
+      agentsByIdClient().get({
+        headers: authHeaders(),
+        params: { id: created.body.agentId },
+      }),
+      [200],
+    );
+    expect(read.body).toStrictEqual(created.body);
+    const instructions = await accept(
+      setupApp({ context, routes: agentInstructionsRoutes })(
+        agentInstructionsContract,
+      ).get({
+        headers: authHeaders(),
+        params: { id: created.body.agentId },
+      }),
+      [200],
+    );
+    expect(instructions.body.content).toBe("");
+  });
+
+  it("rejects the uploaded candidate when another public create fills the last slot", async () => {
+    const fixture = agentsFixture("second-limit");
+    mocks.clerk.session(fixture.userId, fixture.orgId);
+    const entered = createDeferredPromise<void>(context.signal);
+    const released = createDeferredPromise<void>(context.signal);
+    let blockUpload = false;
+    installDurableUserExportStorage(context, {
+      prefixes: [`${fixture.orgId}/`],
+      afterWrite: async (command) => {
+        if (
+          blockUpload &&
+          command instanceof PutObjectCommand &&
+          command.input.Key?.endsWith("/archive.tar.gz")
+        ) {
+          blockUpload = false;
+          entered.resolve();
+          await released.promise;
+        }
+      },
+    });
+    for (let index = 0; index < 6; index += 1) {
+      await accept(
+        agentsClient().create({
+          headers: authHeaders(),
+          body: { visibility: "public", displayName: `Existing ${index}` },
+        }),
+        [201],
+      );
+    }
+    blockUpload = true;
+    const pending = agentsClient().create({
+      headers: authHeaders(),
+      body: { visibility: "public", displayName: "Rejected candidate" },
+    });
+    onTestFinished(async () => {
+      if (!released.settled()) {
+        released.resolve();
+      }
+      await Promise.allSettled([pending]);
+    });
+    await entered.promise;
+    const winner = await accept(
+      agentsClient().create({
+        headers: authHeaders(),
+        body: { visibility: "public", displayName: "Last slot" },
+      }),
+      [201],
+    );
+    released.resolve();
+    const rejected = await accept(pending, [409]);
+    expect(rejected.body).toStrictEqual({
+      error: {
+        message:
+          "This organization has reached the maximum number of agents (7). Delete an existing agent before creating a new one.",
+        code: "CONFLICT",
+      },
+    });
+    const listed = await accept(
+      agentsClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(listed.body).toHaveLength(7);
+    expect(listed.body).not.toContainEqual(
+      expect.objectContaining({ displayName: "Rejected candidate" }),
+    );
+    const instructions = await accept(
+      setupApp({ context, routes: agentInstructionsRoutes })(
+        agentInstructionsContract,
+      ).get({
+        headers: authHeaders(),
+        params: { id: winner.body.agentId },
+      }),
+      [200],
+    );
+    expect(instructions.body.content).toBe("");
+  });
+
+  it("leaves no visible agent after its request owner cancels an instruction upload", async () => {
+    const fixture = agentsFixture("cancel-create");
+    mocks.clerk.session(fixture.userId, fixture.orgId);
+    const entered = createDeferredPromise<void>(context.signal);
+    const released = createDeferredPromise<void>(context.signal);
+    const controller = new AbortController();
+    installDurableUserExportStorage(context, {
+      prefixes: [`${fixture.orgId}/`],
+      afterWrite: async (command) => {
+        if (
+          command instanceof PutObjectCommand &&
+          command.input.Key?.endsWith("/archive.tar.gz")
+        ) {
+          entered.resolve();
+          await released.promise;
+        }
+      },
+    });
+    const pending = setupApp({
+      context,
+      routes: agentsRoutes,
+      rethrowErrors: true,
+      signal: AbortSignal.any([context.signal, controller.signal]),
+    })(agentsMainContract).create({ headers: authHeaders(), body: {} });
+    const outcome = settleIncludingAbort(pending);
+    onTestFinished(async () => {
+      controller.abort();
+      if (!released.settled()) {
+        released.resolve();
+      }
+      await Promise.allSettled([pending, outcome]);
+    });
+    await entered.promise;
+    controller.abort(new DOMException("Create cancelled", "AbortError"));
+    released.resolve();
+    await expect(outcome).resolves.toMatchObject({
+      ok: false,
+      error: expect.objectContaining({ name: "AbortError" }),
+    });
+    const listed = await accept(
+      agentsClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(listed.body).toStrictEqual([]);
+  });
+
   it("returns 401 when the request is unauthenticated", async () => {
     const response = await accept(
       agentsClient().create({ headers: {}, body: {} }),

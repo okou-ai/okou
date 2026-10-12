@@ -17,11 +17,6 @@
       "owner": "reserveAgentInstructionPublication$"
     },
     {
-      "id": "TX-0010",
-      "file": "turbo/apps/api/src/signals/routes/agents.ts",
-      "owner": "createAgentInner$/createAgent"
-    },
-    {
       "id": "TX-0011",
       "file": "turbo/apps/api/src/signals/routes/agents.ts",
       "owner": "updateAgentInner$"

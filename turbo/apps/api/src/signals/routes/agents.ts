@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, lt, sql } from "drizzle-orm";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   agentsByIdContract,
@@ -24,6 +24,7 @@ import {
   publishUserSignal,
 } from "../external/realtime";
 import { nowDate } from "../../lib/time";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { conflict, notFound } from "../../lib/error";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { deleteAgentById$ } from "../services/agent-deletion.service";
@@ -103,22 +104,6 @@ function publicAgentCreateLimitError() {
   return conflict(
     "This organization has reached the maximum number of agents (7). Delete an existing agent before creating a new one.",
   );
-}
-
-async function publicAgentCreateSlotError(
-  writeDb: Db,
-  orgId: string,
-  signal: AbortSignal,
-) {
-  const [publicAgentCount] = await writeDb
-    .select({ value: count() })
-    .from(agents)
-    .where(and(eq(agents.orgId, orgId), eq(agents.visibility, "public")));
-  signal.throwIfAborted();
-
-  return (publicAgentCount?.value ?? 0) >= PUBLIC_AGENT_LIMIT
-    ? publicAgentCreateLimitError()
-    : null;
 }
 
 function buildAgentUpsertConflictSet(body: AgentUpdateBody, updatedAt: Date) {
@@ -272,6 +257,42 @@ async function readAgentForResponse(
   return rows[0] ?? null;
 }
 
+function agentCreateSelection(values: typeof agents.$inferSelect) {
+  return {
+    id: sql`${sql.param(values.id, agents.id)}`.mapWith(agents.id).as("id"),
+    orgId: sql`${sql.param(values.orgId, agents.orgId)}`
+      .mapWith(agents.orgId)
+      .as("org_id"),
+    owner: sql`${sql.param(values.owner, agents.owner)}`
+      .mapWith(agents.owner)
+      .as("owner"),
+    name: sql`${sql.param(values.name, agents.name)}`
+      .mapWith(agents.name)
+      .as("name"),
+    visibility: sql`${sql.param(values.visibility, agents.visibility)}`
+      .mapWith(agents.visibility)
+      .as("visibility"),
+    displayName: sql`${sql.param(values.displayName, agents.displayName)}`
+      .mapWith(nullableDriverValueDecoder(agents.displayName))
+      .as("display_name"),
+    description: sql`${sql.param(values.description, agents.description)}`
+      .mapWith(nullableDriverValueDecoder(agents.description))
+      .as("description"),
+    sound: sql`${sql.param(values.sound, agents.sound)}`
+      .mapWith(nullableDriverValueDecoder(agents.sound))
+      .as("sound"),
+    avatarUrl: sql`${sql.param(values.avatarUrl, agents.avatarUrl)}`
+      .mapWith(nullableDriverValueDecoder(agents.avatarUrl))
+      .as("avatar_url"),
+    createdAt: sql`${sql.param(values.createdAt, agents.createdAt)}`
+      .mapWith(agents.createdAt)
+      .as("created_at"),
+    updatedAt: sql`${sql.param(values.updatedAt, agents.updatedAt)}`
+      .mapWith(agents.updatedAt)
+      .as("updated_at"),
+  };
+}
+
 const createAgentBody$ = bodyResultOf(agentsMainContract.create);
 
 const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -285,12 +306,17 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const writeDb = set(writeDb$);
   const visibility = body.data.visibility ?? "private";
 
-  const limitError =
-    visibility === "public"
-      ? await publicAgentCreateSlotError(writeDb, auth.orgId, signal)
-      : null;
-  if (limitError) {
-    return limitError;
+  if (visibility === "public") {
+    const [publicAgentCount] = await writeDb
+      .select({ value: count() })
+      .from(agents)
+      .where(
+        and(eq(agents.orgId, auth.orgId), eq(agents.visibility, "public")),
+      );
+    signal.throwIfAborted();
+    if ((publicAgentCount?.value ?? 0) >= PUBLIC_AGENT_LIMIT) {
+      return publicAgentCreateLimitError();
+    }
   }
 
   const agentId = randomUUID();
@@ -325,40 +351,44 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
     signal.throwIfAborted();
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0010; new non-billing transactions are prohibited.
-    const transactionResult = await writeDb.transaction(async (tx) => {
-      if (visibility === "public") {
-        const [publicAgentCount] = await tx
-          .select({ value: count() })
-          .from(agents)
-          .where(
-            and(eq(agents.orgId, auth.orgId), eq(agents.visibility, "public")),
-          );
-        signal.throwIfAborted();
-
-        if ((publicAgentCount?.value ?? 0) >= PUBLIC_AGENT_LIMIT) {
-          return { blocked: true as const };
-        }
-      }
-
-      const createdAt = nowDate();
-      await tx.insert(agents).values({
-        id: agentId,
-        orgId: auth.orgId,
-        owner: auth.userId,
-        name: agentId,
-        ...metadata,
-        createdAt,
-        updatedAt: createdAt,
-      });
-      signal.throwIfAborted();
-
-      return { blocked: false as const };
-    });
-    if (transactionResult.blocked) {
+    // Public creation captures time before its combined count/write statement.
+    const createdAt = nowDate();
+    const values = {
+      id: agentId,
+      orgId: auth.orgId,
+      owner: auth.userId,
+      name: agentId,
+      ...metadata,
+      createdAt,
+      updatedAt: createdAt,
+    };
+    let blocked = false;
+    if (visibility === "public") {
+      const publicAgentCount = writeDb
+        .select({ value: count().as("value") })
+        .from(agents)
+        .where(
+          and(eq(agents.orgId, auth.orgId), eq(agents.visibility, "public")),
+        )
+        .as("public_agent_count");
+      const inserted = await writeDb
+        .insert(agents)
+        .select(
+          writeDb
+            .select(agentCreateSelection(values))
+            .from(publicAgentCount)
+            .where(lt(publicAgentCount.value, PUBLIC_AGENT_LIMIT)),
+        )
+        .returning({ id: agents.id });
+      blocked = inserted.length === 0;
+    } else {
+      await writeDb.insert(agents).values(values);
+    }
+    // Check cancellation outside rejection cleanup after a successful commit.
+    if (blocked) {
       await cleanupInstructions();
     }
-    return transactionResult;
+    return { blocked };
   })();
 
   const result = await onRejection(createAgent, cleanupInstructions);
@@ -368,7 +398,21 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return publicAgentCreateLimitError();
   }
 
-  const agent = await readAgentForResponse(writeDb, auth.orgId, agentId);
+  const [agent] = await writeDb
+    .select({
+      agentId: agents.id,
+      defaultAgentId: orgMetadata.defaultAgentId,
+      owner: agents.owner,
+      displayName: agents.displayName,
+      description: agents.description,
+      sound: agents.sound,
+      avatarUrl: agents.avatarUrl,
+      visibility: agents.visibility,
+    })
+    .from(agents)
+    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+    .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, agentId)))
+    .limit(1);
   signal.throwIfAborted();
 
   if (!agent) {
