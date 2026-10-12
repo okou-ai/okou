@@ -75,6 +75,8 @@ owning surface.
 - [Testing](testing.md): strategy, [external behavior](testing.md#external-behavior),
   [shared patterns](testing.md#shared-patterns), [anti-patterns](testing.md#anti-patterns),
   and routes to each affected surface.
+- [GitHub scripts](github-scripts.md): CI-tool ownership, command and helper
+  contracts, resource handling, meaningful tests, and focused verification.
 - [Chat design](chat.md): event history, optimistic streaming, action links,
   card registration, lifecycle ownership, and stable transcript layout.
 - [React development](react.md): render purity, effects and commands, signal
