@@ -505,7 +505,35 @@ describe("shared SDK ingestion", () => {
         storage_batch_guest_duration_ms: 31,
         storage_batch_outer_residual_ms: 11,
         storage_batch_timing: "paired",
+        storage_batch_admission_ms: 0,
+        storage_batch_request_setup_ms: 1,
+        storage_batch_frame_builder_wait_ms: 2,
+        storage_batch_frame_encode_ms: 3,
+        storage_batch_writer_wait_ms: 4,
+        storage_batch_frame_write_ms: 5,
+        storage_batch_response_wait_ms: 6,
+        storage_batch_result_decode_ms: 7,
+        storage_batch_resource_log_ms: 8,
+        storage_batch_host_timing: "complete",
+        storage_batch_payload_size_bucket: "64_to_256_kib",
         manifest_json: "must-not-reach-axiom",
+      } as const;
+      const partialStorageBatch = {
+        ts,
+        action_type: storageBatch.action_type,
+        duration_ms: 42,
+        success: false,
+        storage_batch_host_timing: "partial",
+        storage_batch_request_setup_ms: 0,
+        storage_batch_payload_size_bucket: "none",
+      } as const;
+      const unavailableStorageBatch = {
+        ts,
+        action_type: storageBatch.action_type,
+        duration_ms: 42,
+        success: true,
+        storage_batch_host_timing: "unavailable",
+        storage_batch_payload_size_bucket: "none",
       } as const;
       const response = await accept(
         setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
@@ -526,6 +554,8 @@ describe("shared SDK ingestion", () => {
               failedTransfer,
               largeInlineTransfer,
               storageBatch,
+              partialStorageBatch,
+              unavailableStorageBatch,
             ],
           },
         }),
@@ -584,9 +614,36 @@ describe("shared SDK ingestion", () => {
             storage_batch_outer_residual_ms:
               storageBatch.storage_batch_outer_residual_ms,
             storage_batch_timing: storageBatch.storage_batch_timing,
+            storage_batch_admission_ms: storageBatch.storage_batch_admission_ms,
+            storage_batch_request_setup_ms:
+              storageBatch.storage_batch_request_setup_ms,
+            storage_batch_frame_builder_wait_ms:
+              storageBatch.storage_batch_frame_builder_wait_ms,
+            storage_batch_frame_encode_ms:
+              storageBatch.storage_batch_frame_encode_ms,
+            storage_batch_writer_wait_ms:
+              storageBatch.storage_batch_writer_wait_ms,
+            storage_batch_frame_write_ms:
+              storageBatch.storage_batch_frame_write_ms,
+            storage_batch_response_wait_ms:
+              storageBatch.storage_batch_response_wait_ms,
+            storage_batch_result_decode_ms:
+              storageBatch.storage_batch_result_decode_ms,
+            storage_batch_resource_log_ms:
+              storageBatch.storage_batch_resource_log_ms,
+            storage_batch_host_timing: storageBatch.storage_batch_host_timing,
+            storage_batch_payload_size_bucket:
+              storageBatch.storage_batch_payload_size_bucket,
           },
         ],
       );
+      for (const batch of [partialStorageBatch, unavailableStorageBatch]) {
+        const { ts: eventTime, action_type: action, ...dimensions } = batch;
+        expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
+          "vm0-sandbox-op-log-dev",
+          [{ ...expected, ...dimensions, _time: eventTime, op_type: action }],
+        );
+      }
     });
   });
 

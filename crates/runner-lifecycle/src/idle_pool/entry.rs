@@ -155,6 +155,7 @@ pub struct ImmediateHandoffCandidate {
     pub(super) metadata: IdleSandboxMetadata,
     pub(super) budget_lease: BudgetLease,
     pub(super) handoff_point: SandboxFinalExecParkHandoffPoint,
+    pub(super) retirement_backing: Option<CapturedBacking>,
 }
 
 /// Sandbox bound to one claimed exact successor without entering the
@@ -383,6 +384,14 @@ impl ImmediateHandoffCandidate {
 }
 
 impl FinalizingHandoffCandidate {
+    pub(super) fn into_guarded_parts(self: Box<Self>) -> (IdleParkCandidate, RunId, RunId) {
+        (
+            self.candidate,
+            self.successor_run_id,
+            self.predecessor_run_id,
+        )
+    }
+
     pub fn into_reservation(
         self: Box<Self>,
         successor_run_id: RunId,

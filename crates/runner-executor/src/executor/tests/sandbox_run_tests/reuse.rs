@@ -430,6 +430,7 @@ async fn execute_job_reuse_rejects_invalid_storage_plan_before_proxy_registratio
     let error = outcome.error().unwrap();
     assert!(error.contains("missing archiveUrl"), "got: {error}");
     assert!(outcome.network_log_session.is_none());
+    assert_no_telemetry_action(&telemetry, "runner_reused_sandbox_proxy_register");
     assert!(overrides.start_agent_process_calls().is_empty());
     let registry: serde_json::Value = serde_json::from_str(
         &tokio::fs::read_to_string(dir.path().join("proxy-registry.json"))

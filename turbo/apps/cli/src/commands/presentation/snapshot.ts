@@ -9,6 +9,7 @@ const snapshotSchema = z.array(
     id: z.number().int().nonnegative(),
     order: z.number().int().nonnegative(),
     fontFamily: z.string().optional(),
+    fontFamilies: z.array(z.string()).optional(),
     generated: z.array(
       z.object({
         kind: z.enum(["before", "after", "marker"]),
@@ -78,12 +79,13 @@ try {
   );
   const strings = snapshot.strings,
     records = new Map(),
-    mathNodes = [];
+    fontNodes = [];
   for (const document of snapshot.documents) {
     const nodes = document.nodes,
       layout = document.layout,
       owners = new Map(),
       pseudos = new Map();
+    const textOwners=new Set(nodes.nodeType.flatMap((type,index)=>type===3&&(strings[nodes.nodeValue[index]]||'').trim()?[nodes.parentIndex[index]]:[]));
     for (let i = 0; i < nodes.nodeType.length; i++) {
       const attrs = nodes.attributes[i];
       for (let j = 0; j < attrs.length; j += 2)
@@ -91,8 +93,8 @@ try {
           const id = Number(strings[attrs[j + 1]]);
           owners.set(i, id);
           records.set(id, { id, order: 0, generated: [] });
-          if (['math', 'mi', 'mn', 'mo', 'mtext'].includes(strings[nodes.nodeName[i]]))
-            mathNodes.push({ id, backendNodeId: nodes.backendNodeId[i] });
+          if (textOwners.has(i)||['math', 'mi', 'mn', 'mo', 'mtext'].includes(strings[nodes.nodeName[i]]))
+            fontNodes.push({ id, backendNodeId: nodes.backendNodeId[i] });
         }
       const name = strings[nodes.nodeName[i]];
       if (['::before', '::after', '::marker'].includes(name)) pseudos.set(i, name.slice(2));
@@ -123,21 +125,26 @@ try {
       });
     }
   }
-  if (mathNodes.length) {
+  if (fontNodes.length) {
     await send('DOM.enable', {}, selected);
     await send('CSS.enable', {}, selected);
     await send('DOM.getDocument', {}, selected);
     const { nodeIds } = await send(
       'DOM.pushNodesByBackendIdsToFrontend',
       {
-        backendNodeIds: mathNodes.map((node) => node.backendNodeId),
+        backendNodeIds: fontNodes.map((node) => node.backendNodeId),
       },
       selected,
     );
-    for (let i = 0; i < mathNodes.length; i++) {
-      const { fonts } = await send('CSS.getPlatformFontsForNode', { nodeId: nodeIds[i] }, selected);
-      fonts.sort((a, b) => b.glyphCount - a.glyphCount);
-      if (fonts.length) records.get(mathNodes[i].id).fontFamily = fonts[0].familyName;
+    for (let offset = 0; offset < fontNodes.length; offset+=25) {
+      await Promise.all(fontNodes.slice(offset,offset+25).map(async(node,index)=>{
+        const { fonts } = await send('CSS.getPlatformFontsForNode', { nodeId: nodeIds[offset+index] }, selected);
+        fonts.sort((a, b) => b.glyphCount - a.glyphCount);
+        if (fonts.length) {
+          records.get(node.id).fontFamily = fonts[0].familyName;
+          records.get(node.id).fontFamilies = [...new Set(fonts.map(font=>font.familyName))];
+        }
+      }));
     }
   }
   process.stdout.write(JSON.stringify([...records.values()]));
@@ -195,6 +202,33 @@ export function captureBrowserLayout(
         return 1;
       })()`);
     }
+    // CDP paintOrders identify layers, not every box within them. A negative-z
+    // child can have a later layer number than normal-flow text. Capture CSS
+    // context membership before materialization adds positioned fragments.
+    page.evaluate(`(() => {
+      const state=window.__okouNative, roots=new Set(document.querySelectorAll(${JSON.stringify(selector)})), contexts=new WeakMap();
+      for(const element of state.elements){
+        const s=getComputedStyle(element), meta=state.nodes.get(element);
+        const parent=contexts.get(element.parentElement);
+        const positioned=s.position!=='static';
+        const flexItem=/flex|grid/.test(getComputedStyle(element.parentElement||element).display);
+        const z=(positioned||flexItem)&&s.zIndex!=='auto'?Number(s.zIndex):0;
+        const context=roots.has(element)||((positioned||flexItem)&&s.zIndex!=='auto')||['fixed','sticky'].includes(s.position)||Number(s.opacity)<1||s.transform!=='none'||s.filter!=='none'||s.perspective!=='none'||s.isolation==='isolate'||s.mixBlendMode!=='normal'||/paint|layout|strict|content/.test(s.contain)||/transform|opacity|filter/.test(s.willChange);
+        const base=parent?.key||[];
+        if(context){
+          const key=roots.has(element)?[]:[...base,z<0?1:z>0?4:3,z,meta.id];
+          contexts.set(element,{key,flow:key});
+          meta.paintKey=[...key,0,0,meta.id];
+          meta.contentKey=[...key,2,0,meta.id];
+        }else{
+          const flow=positioned?[...base,3,0,meta.id]:parent?.flow||base;
+          contexts.set(element,{key:base,flow});
+          meta.paintKey=[...flow,positioned?0:2,0,meta.id];
+          meta.contentKey=[...flow,2,0,meta.id];
+        }
+      }
+      return 1;
+    })()`);
   } finally {
     page.evaluate(
       `(() => {for(const element of window.__okouNative.elements)element.removeAttribute(${JSON.stringify(attribute)});return 1})()`,

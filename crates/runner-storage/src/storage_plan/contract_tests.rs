@@ -277,7 +277,7 @@ fn changed_instructions_promote_without_removing_cached_child() {
 }
 
 #[test]
-fn cached_instructions_allow_replaced_and_removed_skills_on_reuse() {
+fn cached_instructions_allow_official_and_ordinary_skill_reuse_without_losing_user_files() {
     for decoded in [false, true] {
         for (framework_home, filename) in [
             (".claude", "CLAUDE.md"),
@@ -305,7 +305,7 @@ fn cached_instructions_allow_replaced_and_removed_skills_on_reuse() {
                     ),
                     storage(
                         &changed,
-                        "changed",
+                        "custom-skill@ordinary-workflow",
                         "v1",
                         write_archive(dir.path(), "changed-v1.tar.gz", &[("stale", b"old skill")]),
                         None,
@@ -336,59 +336,88 @@ fn cached_instructions_allow_replaced_and_removed_skills_on_reuse() {
                 artifacts: Vec::new(),
             };
             run_plan(build_storage_plan(&manifest, runtime.to_str().unwrap(), None).unwrap());
-            let previous = StorageFingerprints::from_manifest(&manifest);
             assert!(changed.join("stale").exists());
             assert!(removed.join("SKILL.md").exists());
+            let history = home.join("sessions/continuation.jsonl");
+            let nested = retained.join("custom/removed/SKILL.md");
+            let user_file = dir.path().join("user-notes.txt");
+            fs::create_dir_all(history.parent().unwrap()).unwrap();
+            fs::create_dir_all(nested.parent().unwrap()).unwrap();
+            fs::write(&history, b"native session history").unwrap();
+            fs::write(&nested, b"user-owned nested skill").unwrap();
+            fs::write(&user_file, b"user notes").unwrap();
 
-            manifest
-                .storages
-                .retain(|entry| entry.vas_storage_name != "removed");
-            let changed_entry = manifest
-                .storages
-                .iter_mut()
-                .find(|entry| entry.vas_storage_name == "changed")
-                .unwrap();
-            changed_entry.vas_version_id = "v2".into();
-            changed_entry.archive_url = write_archive(
-                dir.path(),
-                "changed-v2.tar.gz",
-                &[("current", b"new skill")],
-            );
-            let plan =
-                build_storage_plan(&manifest, runtime.to_str().unwrap(), Some(&previous)).unwrap();
-            if decoded {
-                let candidate = plan
-                    .cache_candidates()
-                    .into_iter()
-                    .find(|candidate| candidate.name == "changed")
+            for (identity, current, stale, contents) in [
+                (
+                    "official-workflow@changed",
+                    "official",
+                    "stale",
+                    b"official skill".as_slice(),
+                ),
+                (
+                    "custom-skill@ordinary-workflow",
+                    "ordinary",
+                    "official",
+                    b"ordinary skill".as_slice(),
+                ),
+            ] {
+                let previous = StorageFingerprints::from_manifest(&manifest);
+                manifest
+                    .storages
+                    .retain(|entry| entry.vas_storage_name != "removed");
+                let changed_entry = manifest
+                    .storages
+                    .iter_mut()
+                    .find(|entry| entry.mount_path == changed.to_string_lossy())
                     .unwrap();
-                let mount = plan
-                    .decoded_mount(candidate.handle)
-                    .expect("changed skill must admit decoded delivery")
-                    .to_owned();
-                let bytes = serde_json::to_vec(&plan.into_guest_manifest()).unwrap();
-                let files = vec![guest_contracts::storage_files::StorageFile {
-                    path: "current".into(),
-                    mode: 0o644,
-                    mtime: 1234567890,
-                    content: b"new skill".to_vec(),
-                }];
-                let input =
-                    guest_contracts::storage_files::encode_input(&bytes, &[(&mount, &files)])
+                changed_entry.vas_storage_name = identity.into();
+                // The return to ordinary changes identity with the same version.
+                changed_entry.vas_version_id = "v2".into();
+                changed_entry.archive_url = write_archive(
+                    dir.path(),
+                    &format!("{current}.tar.gz"),
+                    &[(current, contents)],
+                );
+                let plan =
+                    build_storage_plan(&manifest, runtime.to_str().unwrap(), Some(&previous))
                         .unwrap();
-                assert!(guest_storage_apply::run_storage_files_bytes(&input));
-            } else {
-                run_plan(plan);
-            }
+                if decoded {
+                    let candidate = plan
+                        .cache_candidates()
+                        .into_iter()
+                        .find(|candidate| candidate.name == identity)
+                        .unwrap();
+                    let mount = plan
+                        .decoded_mount(candidate.handle)
+                        .expect("changed skill must admit decoded delivery")
+                        .to_owned();
+                    let bytes = serde_json::to_vec(&plan.into_guest_manifest()).unwrap();
+                    let files = vec![guest_contracts::storage_files::StorageFile {
+                        path: current.into(),
+                        mode: 0o644,
+                        mtime: 1234567890,
+                        content: contents.to_vec(),
+                    }];
+                    let input =
+                        guest_contracts::storage_files::encode_input(&bytes, &[(&mount, &files)])
+                            .unwrap();
+                    assert!(guest_storage_apply::run_storage_files_bytes(&input));
+                } else {
+                    run_plan(plan);
+                }
 
-            assert!(!changed.join("stale").exists(), "{framework_home}");
-            assert!(!removed.exists(), "{framework_home}");
-            assert_eq!(fs::read(changed.join("current")).unwrap(), b"new skill");
-            assert_eq!(fs::read(home.join(filename)).unwrap(), b"instructions");
-            assert_eq!(
-                fs::read(retained.join("SKILL.md")).unwrap(),
-                b"retained skill"
-            );
+                assert!(!changed.join(stale).exists(), "{framework_home}");
+                assert!(!removed.exists(), "{framework_home}");
+                assert_eq!(fs::read(changed.join(current)).unwrap(), contents);
+                assert_eq!(fs::read(home.join(filename)).unwrap(), b"instructions");
+                assert_eq!(fs::read(&history).unwrap(), b"native session history");
+                assert_eq!(fs::read(&nested).unwrap(), b"user-owned nested skill");
+                assert_eq!(fs::read(&user_file).unwrap(), b"user notes");
+                assert_eq!(
+                    fs::read(retained.join("SKILL.md")).unwrap(),
+                    b"retained skill"
+                );
+            }
         }
     }
 }

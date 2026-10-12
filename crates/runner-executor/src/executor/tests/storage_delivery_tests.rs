@@ -389,6 +389,12 @@ async fn guest_apply_telemetry_pairs_guest_server_duration_per_batch() {
 
     let batches = telemetry.pending_storage_batch_payloads();
     assert_eq!(batches.len(), 3);
+    for batch in &batches {
+        assert_eq!(batch["storage_batch_host_timing"], "unavailable");
+        assert_ne!(batch["storage_batch_payload_size_bucket"], "none");
+        assert!(batch.get("storage_batch_admission_ms").is_none());
+        assert!(batch.get("storage_batch_response_wait_ms").is_none());
+    }
     assert_eq!(batches[0]["storage_batch_guest_duration_ms"], 0);
     assert_eq!(batches[0]["storage_batch_timing"], "paired");
     assert_eq!(

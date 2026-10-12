@@ -331,6 +331,26 @@ fn assert_action_once_with_duration(telemetry: &JobTelemetry, action: &str, dura
     assert_eq!(matching[0].1, duration_ms, "{action} duration");
 }
 
+fn assert_reused_proxy_registration_timing(telemetry: &JobTelemetry) {
+    let operations = telemetry.pending_ops_with_duration_snapshot();
+    let registrations: Vec<_> = operations
+        .iter()
+        .filter(|op| op.0 == "runner_reused_sandbox_proxy_register")
+        .collect();
+    assert_eq!(registrations.len(), 1, "one registration: {operations:?}");
+    assert!(registrations[0].2, "registration succeeds");
+    assert_eq!(registrations[0].3, None, "no registration error");
+    let preparation = operations
+        .iter()
+        .find(|op| op.0 == "runner_reused_sandbox_prepare")
+        .expect("enclosing reused preparation");
+    assert!(preparation.2, "preparation succeeds");
+    assert!(
+        registrations[0].1 <= preparation.1,
+        "registration is inside preparation: {operations:?}"
+    );
+}
+
 fn assert_lacks_api_claim_timing(telemetry: &JobTelemetry) {
     for action in [
         "runner_claim_http_request",
@@ -1164,6 +1184,7 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
     }
     assert_pre_spawn_phase_actions_succeeded(&telemetry);
     assert_lacks_action(&telemetry, "runner_reused_sandbox_prepare");
+    assert_lacks_action(&telemetry, "runner_reused_sandbox_proxy_register");
     assert_lacks_action(&telemetry, "runner_fresh_home_image_prepare");
     assert_lacks_action(&telemetry, "runner_guest_state_restore");
 }
@@ -1682,6 +1703,7 @@ async fn execute_job_reuse_records_runner_pre_spawn_and_reuse_path_timing() {
     )
     .await;
 
+    assert_reused_proxy_registration_timing(&telemetry);
     for action in [
         "runner_claim_http_request",
         "runner_claim_request_to_response_headers",
@@ -1812,6 +1834,7 @@ async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution
     .await;
 
     assert!(outcome.failure.is_none());
+    assert_reused_proxy_registration_timing(&telemetry);
     assert_eq!(
         outcome.home_reuse_result,
         Some(HomeReuseResult::NotConfigured)

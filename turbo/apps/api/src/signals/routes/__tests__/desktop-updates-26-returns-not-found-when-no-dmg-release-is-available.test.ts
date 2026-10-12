@@ -16,8 +16,11 @@ const {
 describe("desktop update routes", () => {
   it("returns not found when no dmg release is available", async () => {
     mockDesktopUpdateManifest(
-      stableManifest("0.11.2", {
-        "0.11.2": darwinArm64Release("0.11.2", okouZipUrl("0.11.2")),
+      stableManifest("0.53.0", {
+        "0.53.0": {
+          ...darwinArm64Release("0.53.0", okouZipUrl("0.53.0")),
+          platforms: {},
+        },
       }),
     );
 

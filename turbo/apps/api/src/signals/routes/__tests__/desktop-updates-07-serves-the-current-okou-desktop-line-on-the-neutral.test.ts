@@ -17,8 +17,8 @@ const {
 describe("desktop update routes", () => {
   it("serves the current Okou desktop line on the neutral routes", async () => {
     mockDesktopUpdateManifest(
-      stableManifest("0.12.0", {
-        "0.12.0": darwinArm64Release("0.12.0", okouZipUrl("0.12.0")),
+      stableManifest("0.50.0", {
+        "0.50.0": darwinArm64Release("0.50.0", okouZipUrl("0.50.0")),
       }),
       LEGACY_OKOU_DESKTOP_UPDATE_MANIFEST_URL,
     );

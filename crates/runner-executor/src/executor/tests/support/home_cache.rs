@@ -36,7 +36,7 @@ pub(in crate::executor::tests) async fn seed_home_image_cache_with_fingerprints(
 ) -> PathBuf {
     let sandbox_id = SandboxId::new_v4();
     let run_id = RunId::new_v4();
-    let reuse_key = format!("thread:workspace-cache-{session_id}");
+    let reuse_key = format!("thread:home-cache-{session_id}");
     let lease = cache
         .prepare(HomeImagePrepareRequest {
             identity: HomeImageLeaseIdentity {

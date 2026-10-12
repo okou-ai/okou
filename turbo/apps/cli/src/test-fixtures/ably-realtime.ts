@@ -1,3 +1,20 @@
+import { http, HttpResponse } from "msw";
+import { ablyTokenRequestSchema } from "@okouai/api-contracts/contracts/realtime";
+
+export const ablyTokenExchangeHandler = http.post(
+  "https://main.realtime.ably.net/keys/test.key/requestToken",
+  async ({ request }) => {
+    const grant = ablyTokenRequestSchema.parse(await request.json());
+    return HttpResponse.json({
+      token: "test-token",
+      issued: Date.now(),
+      expires: Date.now() + 60_000,
+      capability: grant.capability,
+      ...(grant.clientId ? { clientId: grant.clientId } : {}),
+    });
+  },
+);
+
 /** External Ably transport controlled by command integration tests. */
 export function deferred<T>() {
   let resolve!: (value: T) => void;

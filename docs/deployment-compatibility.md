@@ -110,7 +110,7 @@ textfiles on every relevant host. Supported provisioning/rollback artifacts must
 not reinstall them. Verify that gate before releasing provisioning without
 cleanup; monitoring retirement never authorizes deleting cache data.
 
-Workspace-cache images, metadata, and history sidecars can outlive their producer
+Home-cache images, metadata, and generation-bound history evidence can outlive their producer
 and be consumed by another Runner release. Keep old formats readable or
 explicitly invalidate and purge incompatible disposable entries before the new
 reader depends on the change. Host-local status files and independently deployed

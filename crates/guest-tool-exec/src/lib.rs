@@ -311,6 +311,9 @@ mod tests {
         assert!(is_canonical_runtime_path(Path::new(&format!(
             "{task}/runtime"
         ))));
+        assert!(is_canonical_runtime_path(Path::new(&format!(
+            "{task}/tools/task-00000000-0000-0000-0000-000000000002/runtime"
+        ))));
         for suffix in [
             "/tools",
             "/tools/tool-1",

@@ -1,15 +1,15 @@
 use guest_contracts::storage_resources::StorageResourceUsage;
+use sandbox::StorageManifestRequestTiming;
 use std::io;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use guest_control_proto::{
-    ExecCapturedOutput, ExecTermination, MSG_ERROR, MSG_GUEST_STORAGE_MANIFEST_RESULT,
+    ExecCapturedOutput, ExecTermination, MSG_ERROR, MSG_GUEST_STORAGE_MANIFEST_RESULT, RawMessage,
     decode_guest_storage_manifest_result, encode_guest_storage_manifest_request_frame_into,
 };
 
 use crate::{
-    FrameWriteObserver, GuestControlClient,
-    normal_request_on_shared_with_write_observer_frame_builder,
+    FrameWriteObserver, GuestControlClient, normal_request_on_shared_with_timing_frame_builder,
 };
 
 const TERMINAL_MSG_TYPES: &[u8] = &[MSG_ERROR, MSG_GUEST_STORAGE_MANIFEST_RESULT];
@@ -66,7 +66,53 @@ impl GuestControlClient {
         process_timeout_ms: u32,
         request_timeout: Duration,
     ) -> io::Result<GuestStorageManifestResult> {
-        let response = normal_request_on_shared_with_write_observer_frame_builder(
+        self.guest_storage_manifest_inner(
+            manifest_json,
+            run_id,
+            runtime_dir,
+            process_timeout_ms,
+            request_timeout,
+            None,
+        )
+        .await
+    }
+
+    /// Apply the same request while retaining fixed, content-free Host phases.
+    ///
+    /// The record is reset at entry. Completed attempts survive returned errors;
+    /// unobserved phases remain absent. Observations do not change the deadline,
+    /// normal-operation ownership, result, or partial-write cancellation policy.
+    pub async fn guest_storage_manifest_with_timing(
+        &self,
+        manifest_json: &[u8],
+        run_id: &str,
+        runtime_dir: &str,
+        process_timeout_ms: u32,
+        request_timeout: Duration,
+        timing: &mut StorageManifestRequestTiming,
+    ) -> io::Result<GuestStorageManifestResult> {
+        *timing = StorageManifestRequestTiming::default();
+        self.guest_storage_manifest_inner(
+            manifest_json,
+            run_id,
+            runtime_dir,
+            process_timeout_ms,
+            request_timeout,
+            Some(timing),
+        )
+        .await
+    }
+
+    async fn guest_storage_manifest_inner(
+        &self,
+        manifest_json: &[u8],
+        run_id: &str,
+        runtime_dir: &str,
+        process_timeout_ms: u32,
+        request_timeout: Duration,
+        mut timing: Option<&mut StorageManifestRequestTiming>,
+    ) -> io::Result<GuestStorageManifestResult> {
+        let response = normal_request_on_shared_with_timing_frame_builder(
             &self.shared,
             TERMINAL_MSG_TYPES,
             request_timeout,
@@ -82,56 +128,69 @@ impl GuestControlClient {
                 )
                 .map_err(protocol_invalid_input)
             },
+            timing.as_deref_mut(),
         )
         .await?;
 
-        if response.msg_type == MSG_ERROR {
-            let message = guest_control_proto::decode_error(&response.payload)
-                .map_err(protocol_invalid_data)?;
-            return Err(io::Error::other(message.to_owned()));
+        let decode_started = timing.as_ref().map(|_| Instant::now());
+        let result = decode_storage_manifest_response(response, run_id);
+        if let (Some(timing), Some(started)) = (timing, decode_started) {
+            timing.result_decode = Some(started.elapsed());
         }
-        if response.msg_type != MSG_GUEST_STORAGE_MANIFEST_RESULT {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "unexpected guest storage manifest response type: 0x{:02X}",
-                    response.msg_type
-                ),
-            ));
-        }
-
-        let decoded = decode_guest_storage_manifest_result(&response.payload)
-            .map_err(protocol_invalid_data)?;
-        let resources = if decoded.resource_summary.is_empty() {
-            None
-        } else {
-            match serde_json::from_slice::<StorageResourceUsage>(decoded.resource_summary) {
-                Ok(resources) if resources.matches_request(run_id, response.seq) => Some(resources),
-                _ => {
-                    // Optional evidence cannot fail a valid core result. Never
-                    // log raw peer bytes or parser errors containing those bytes.
-                    tracing::warn!(
-                        request_seq = response.seq,
-                        "storage resource summary unavailable: invalid metadata"
-                    );
-                    None
-                }
-            }
-        };
-        let decoded = decoded.result;
-        let (stdout, stdout_truncated) = owned_capture(decoded.stdout, "stdout")?;
-        let (stderr, stderr_truncated) = owned_capture(decoded.stderr, "stderr")?;
-        Ok(GuestStorageManifestResult {
-            resources,
-            termination: decoded.termination,
-            duration_ms: decoded.duration_ms,
-            stdout,
-            stderr,
-            stdout_truncated,
-            stderr_truncated,
-            diagnostic: decoded.diagnostic.to_owned(),
-        })
+        result
     }
+}
+
+fn decode_storage_manifest_response(
+    response: RawMessage,
+    run_id: &str,
+) -> io::Result<GuestStorageManifestResult> {
+    if response.msg_type == MSG_ERROR {
+        let message =
+            guest_control_proto::decode_error(&response.payload).map_err(protocol_invalid_data)?;
+        return Err(io::Error::other(message.to_owned()));
+    }
+    if response.msg_type != MSG_GUEST_STORAGE_MANIFEST_RESULT {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "unexpected guest storage manifest response type: 0x{:02X}",
+                response.msg_type
+            ),
+        ));
+    }
+
+    let decoded =
+        decode_guest_storage_manifest_result(&response.payload).map_err(protocol_invalid_data)?;
+    let resources = if decoded.resource_summary.is_empty() {
+        None
+    } else {
+        match serde_json::from_slice::<StorageResourceUsage>(decoded.resource_summary) {
+            Ok(resources) if resources.matches_request(run_id, response.seq) => Some(resources),
+            _ => {
+                // Optional evidence cannot fail a valid core result. Never
+                // log raw peer bytes or parser errors containing those bytes.
+                tracing::warn!(
+                    request_seq = response.seq,
+                    "storage resource summary unavailable: invalid metadata"
+                );
+                None
+            }
+        }
+    };
+    let decoded = decoded.result;
+    let (stdout, stdout_truncated) = owned_capture(decoded.stdout, "stdout")?;
+    let (stderr, stderr_truncated) = owned_capture(decoded.stderr, "stderr")?;
+    Ok(GuestStorageManifestResult {
+        resources,
+        termination: decoded.termination,
+        duration_ms: decoded.duration_ms,
+        stdout,
+        stderr,
+        stdout_truncated,
+        stderr_truncated,
+        diagnostic: decoded.diagnostic.to_owned(),
+    })
 }
 
 fn owned_capture(output: ExecCapturedOutput<'_>, name: &str) -> io::Result<(Vec<u8>, bool)> {

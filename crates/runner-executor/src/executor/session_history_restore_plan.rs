@@ -11,7 +11,10 @@ use tokio_util::sync::CancellationToken;
 
 use super::cli_framework::effective_cli_framework;
 use super::session_history_cpu::SessionHistoryCpuPool;
-use super::session_history_download::{SessionHistoryMaterializer, SessionHistoryProbe};
+use super::session_history_download::{
+    SessionHistoryMaterializer, SessionHistoryProbe, SessionHistoryReadiness,
+    SessionHistoryReadinessObserver,
+};
 use super::session_restore::restored_session_identity_from_context;
 use super::telemetry::{RunnerPreSpawnPhase, RunnerPreSpawnTiming};
 use crate::idle_pool::IdleSandboxKind;
@@ -129,6 +132,29 @@ pub enum SessionHistoryRestorePlan {
 }
 
 impl SessionHistoryRestorePlan {
+    /// Observe availability without consuming, starting, or verifying the plan.
+    pub(super) fn readiness_observer(
+        &self,
+        context: &ExecutionContext,
+    ) -> SessionHistoryReadinessObserver {
+        match self {
+            Self::Prestarted { materializer, .. } => materializer.readiness_observer(),
+            Self::SkipVerified(_) | Self::HomeCacheCandidate { .. } => {
+                SessionHistoryReadinessObserver::Fixed(SessionHistoryReadiness::VerifyFirst)
+            }
+            Self::Default | Self::DeferredHashBacked { .. } => {
+                let state = match context.resume_session.as_ref() {
+                    None => SessionHistoryReadiness::NoHistory,
+                    Some(session) if session.history_ref().is_none() => {
+                        SessionHistoryReadiness::Inline
+                    }
+                    Some(_) => SessionHistoryReadiness::NotStarted,
+                };
+                SessionHistoryReadinessObserver::Fixed(state)
+            }
+        }
+    }
+
     pub(super) async fn cancel_and_drain(self) {
         match self {
             Self::Prestarted { materializer, .. } => {
@@ -381,6 +407,14 @@ mod tests {
             let plan = build_plan(context, SandboxReuseResult::Reused, None);
 
             assert!(matches!(plan, SessionHistoryRestorePlan::Default));
+            assert_eq!(
+                plan.readiness_observer(context).snapshot().outcome(),
+                if context.resume_session.is_some() {
+                    "inline"
+                } else {
+                    "no_history"
+                }
+            );
         }
     }
 
@@ -396,6 +430,11 @@ mod tests {
             &context,
             SandboxReuseResult::Reused,
             Some(&restored_identity),
+        );
+
+        assert_eq!(
+            plan.readiness_observer(&context).snapshot().outcome(),
+            "verify_first"
         );
 
         match plan {
@@ -610,6 +649,10 @@ mod tests {
 
         let plan = build_plan(&context, SandboxReuseResult::PoolMiss, None);
 
+        assert_eq!(
+            plan.readiness_observer(&context).snapshot().outcome(),
+            "not_started"
+        );
         match plan {
             SessionHistoryRestorePlan::DeferredHashBacked { fallback } => {
                 assert_eq!(fallback, Some(SessionHistoryRestoreFallback::NonReuse));

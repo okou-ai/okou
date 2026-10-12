@@ -1,0 +1,43 @@
+name: Diagnose Discord Gateway
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment whose Discord bot metadata should be inspected"
+        type: choice
+        options: [test, production]
+        default: test
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  npm_config_audit: "false"
+
+concurrency:
+  group: diagnose-discord-gateway-${{ inputs.environment }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  diagnose:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Read Discord discovery metadata without opening a bot session
+        env:
+          DISCORD_APPLICATION_ID: ${{ vars.DISCORD_APPLICATION_ID }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+        run: python3 .github/scripts/diagnose-discord-gateway.py

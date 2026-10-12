@@ -705,6 +705,14 @@ mod tests {
                 "/vm0-exec/exec-281-10-3/workload/tools/task-00000000-0000-0000-0000-000000000001/tools/tool-45",
                 "/vm0-exec/exec-281-10-3/workload/tools/task-00000000-0000-0000-0000-000000000001/tools/tool-45",
             ),
+            (
+                "/vm0-exec/exec-281-10-3/workload/tools/task-00000000-0000-0000-0000-000000000001/tools/task-00000000-0000-0000-0000-000000000002/runtime",
+                "/vm0-exec/exec-281-10-3/workload/tools/task-00000000-0000-0000-0000-000000000001/tools/task-00000000-0000-0000-0000-000000000002/runtime",
+            ),
+            (
+                "/vm0-exec/exec-281-10-3/workload/tools/task-00000000-0000-0000-0000-000000000001/tools/task-00000000-0000-0000-0000-000000000002/tools/tool-45",
+                "/vm0-exec/exec-281-10-3/workload/tools/task-00000000-0000-0000-0000-000000000001/tools/task-00000000-0000-0000-0000-000000000002/tools/tool-45",
+            ),
             ("/vm0-exec/exec-281-10-3/control", "/vm0-exec/exec-281-10-3"),
         ] {
             for (constraint, trigger) in [("CONSTRAINT_NONE", "/"), ("CONSTRAINT_MEMCG", memcg)] {

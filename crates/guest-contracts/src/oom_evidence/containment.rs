@@ -91,6 +91,12 @@ mod tests {
             format!("{workload}/tools/tool-1"),
             format!("{workload}/tools/task-00000000-0000-0000-0000-000000000001/runtime"),
             format!("{workload}/tools/task-00000000-0000-0000-0000-000000000001/tools/tool-1"),
+            format!(
+                "{workload}/tools/task-00000000-0000-0000-0000-000000000001/tools/task-00000000-0000-0000-0000-000000000002/runtime"
+            ),
+            format!(
+                "{workload}/tools/task-00000000-0000-0000-0000-000000000001/tools/task-00000000-0000-0000-0000-000000000002/tools/tool-1"
+            ),
             format!("{workload}/runtime/nested"),
             format!("{workload}-sibling"),
             "/vm0-exec/exec-281-11-3/workload".to_string(),

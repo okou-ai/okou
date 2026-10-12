@@ -1763,7 +1763,7 @@ pub struct HomeCacheCapability {
     pub home_affinity_version: u8,
 }
 
-/// Canonical home evidence; never populated from workspace image observations.
+/// Canonical home evidence for reusable home images.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct HeldHomeState {

@@ -7,14 +7,15 @@ use std::time::{Duration, Instant};
 use guest_contracts::storage_files::{self, StorageFile};
 use guest_contracts::storage_manifest::Manifest;
 use sandbox::{
-    EXEC_OUTPUT_LIMIT_1_MIB, EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, Sandbox, StorageManifestRequest,
+    EXEC_OUTPUT_LIMIT_1_MIB, EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, Sandbox,
+    StorageManifestRequest, StorageManifestTiming,
 };
 use tracing::{info, warn};
 
 use super::{DEFAULT_EXEC_TIMEOUT, RunnerError, RunnerResult, guest_runtime_dir};
 use crate::helper_exec::{format_helper_exec_failure, helper_exec_succeeded};
 use crate::storage_cache::decoded::CachedFiles;
-use crate::telemetry::JobTelemetry;
+use crate::telemetry::{JobTelemetry, StorageBatchDimensions};
 use guest_contracts::guest_binary::STORAGE_APPLY_PATH;
 use guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH;
 use runner_types::types::ExecutionContext;
@@ -98,7 +99,15 @@ pub(super) async fn download_storages(
 ) -> RunnerResult<()> {
     let input = StorageInput::Json(manifest_json(manifest)?);
     let mut guest_duration_ms = None;
-    apply_storage_input(sandbox, context, &input, &mut guest_duration_ms).await
+    let mut host_timing = StorageManifestTiming::default();
+    apply_storage_input(
+        sandbox,
+        context,
+        &input,
+        &mut guest_duration_ms,
+        &mut host_timing,
+    )
+    .await
 }
 
 pub(super) async fn download_storages_with_files(
@@ -128,7 +137,15 @@ pub(super) async fn download_storages_with_files(
     for (index, input) in inputs.iter().enumerate() {
         let started = Instant::now();
         let mut guest_duration_ms = None;
-        let result = apply_storage_input(sandbox, context, input, &mut guest_duration_ms).await;
+        let mut host_timing = StorageManifestTiming::default();
+        let result = apply_storage_input(
+            sandbox,
+            context,
+            input,
+            &mut guest_duration_ms,
+            &mut host_timing,
+        )
+        .await;
         // Keep telemetry bounded for an unusually large manifest. Always retain
         // the final or failing batch in addition to the first observed batches.
         if index < MAX_RECORDED_STORAGE_BATCHES || index + 1 == batch_count || result.is_err() {
@@ -136,8 +153,12 @@ pub(super) async fn download_storages_with_files(
                 started.elapsed(),
                 result.is_ok(),
                 guest_duration_ms,
-                batch_outcome(input, index, batch_count),
-                manifest_size_bucket(input.manifest_bytes()),
+                &host_timing,
+                StorageBatchDimensions {
+                    transport_position: batch_outcome(input, index, batch_count),
+                    manifest_size_bucket: manifest_size_bucket(input.manifest_bytes()),
+                    payload_size_bucket: input.payload_size_bucket(),
+                },
             );
         }
         result?;
@@ -150,10 +171,21 @@ enum StorageInput {
     Files {
         bytes: Vec<u8>,
         manifest_bytes: usize,
+        payload_size_bucket: &'static str,
     },
 }
 
 impl StorageInput {
+    fn payload_size_bucket(&self) -> &'static str {
+        match self {
+            Self::Json(_) => "none",
+            Self::Files {
+                payload_size_bucket,
+                ..
+            } => payload_size_bucket,
+        }
+    }
+
     fn manifest_bytes(&self) -> usize {
         match self {
             Self::Json(bytes) => bytes.len(),
@@ -164,6 +196,25 @@ impl StorageInput {
     fn uses_dedicated_transport(&self) -> bool {
         matches!(self, Self::Files { .. })
             || self.manifest_bytes() <= guest_control_proto::MAX_EXEC_STDIN_BYTES
+    }
+}
+
+fn binary_payload_size_bucket(bytes: usize) -> &'static str {
+    if bytes <= 4 * 1024 {
+        "up_to_4_kib"
+    } else if bytes <= 16 * 1024 {
+        "4_to_16_kib"
+    } else if bytes <= 64 * 1024 {
+        "16_to_64_kib"
+    } else if bytes <= 256 * 1024 {
+        "64_to_256_kib"
+    } else if bytes <= 1024 * 1024 {
+        "256_kib_to_1_mib"
+    } else if bytes <= 4 * 1024 * 1024 {
+        "1_to_4_mib"
+    } else {
+        // The constructor has already enforced MAX_PAYLOAD_BYTES.
+        "4_to_15_mib"
     }
 }
 
@@ -224,9 +275,14 @@ fn manifest_json(manifest: &Manifest) -> RunnerResult<Vec<u8>> {
 
 fn files_input(json: &[u8], groups: &[(&str, &[StorageFile])]) -> RunnerResult<StorageInput> {
     storage_files::encode_input(json, groups)
-        .map(|bytes| StorageInput::Files {
-            bytes,
-            manifest_bytes: json.len(),
+        .and_then(|bytes| {
+            let (_, payload) = storage_files::split_input(&bytes)?;
+            let payload_size_bucket = binary_payload_size_bucket(payload.len());
+            Ok(StorageInput::Files {
+                bytes,
+                manifest_bytes: json.len(),
+                payload_size_bucket,
+            })
         })
         .map_err(|e| RunnerError::Internal(format!("storage files input: {e}")))
 }
@@ -387,6 +443,7 @@ async fn apply_storage_input(
     context: &ExecutionContext,
     input: &StorageInput,
     guest_duration_ms: &mut Option<u32>,
+    host_timing: &mut StorageManifestTiming,
 ) -> RunnerResult<()> {
     let manifest_json = match input {
         StorageInput::Json(bytes) => bytes,
@@ -409,12 +466,15 @@ async fn apply_storage_input(
     );
     let result = if use_dedicated {
         sandbox
-            .apply_storage_manifest(&StorageManifestRequest {
-                manifest_json,
-                run_id: &run_id,
-                runtime_dir: &runtime_dir,
-                timeout: DEFAULT_EXEC_TIMEOUT,
-            })
+            .apply_storage_manifest_with_timing(
+                &StorageManifestRequest {
+                    manifest_json,
+                    run_id: &run_id,
+                    runtime_dir: &runtime_dir,
+                    timeout: DEFAULT_EXEC_TIMEOUT,
+                },
+                host_timing,
+            )
             .await
     } else {
         remove_fallback_storage_manifest(sandbox).await?;
@@ -511,6 +571,9 @@ async fn remove_fallback_storage_manifest(sandbox: &dyn Sandbox) -> RunnerResult
 pub(super) fn format_guest_storage_apply_failure(result: &sandbox::ExecResult) -> String {
     format_helper_exec_failure("storage download", result)
 }
+
+#[cfg(test)]
+mod tests;
 
 #[cfg(test)]
 mod r2_log_tests {
