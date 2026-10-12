@@ -370,7 +370,11 @@ The production-path benchmark lives in
 `.github/scripts/runner-behavior-process-containment.sh`. It submits the
 deterministic mock CLI through the same-metal runner and Guest Agent path, then
 measures fresh sandbox, home-cache reuse, and exact sandbox reuse samples
-under one service profile. Set `AGENT_READY_BENCHMARK_SAMPLES` to choose the
-sample count; the script retains bounded raw JSONL evidence and reports the
-sample count, failures, and p50/p90/p95/p99 for process-launch (historically
-shell-named), ready, and component timings.
+under one service profile. Routine lane C measures one sample per path, using
+six local submissions without contention, including warmups and home-cache
+eviction. Set `AGENT_READY_BENCHMARK_SAMPLES` (1..100) explicitly for repeated
+measurements. The script retains bounded raw JSONL evidence and reports local
+submission attempts, sample counts, failures, and observed min/nearest-rank
+P50/max for process-launch (historically shell-named), ready, and component
+timings. These observations have no performance-regression threshold; small
+sample sets do not establish reliable tail latency.

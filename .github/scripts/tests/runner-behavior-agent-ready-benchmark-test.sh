@@ -42,6 +42,24 @@ assert_value() {
   fi
 }
 
+assert_summary() {
+  local file=$1
+  local sample_count=$2
+  local ready_timings=$3
+
+  sed '1,/^AGENT_READY_BENCHMARK_RAW_END$/d' "$file" \
+    | jq -e --argjson sample_count "$sample_count" --argjson ready_timings "$ready_timings" '
+        ([.[].path] == ["fresh", "home-cache", "exact-reuse"])
+        and all(.[]; .sample_count == $sample_count and .failures == 0)
+        and ([.[].metrics.agent_ready_ms] == $ready_timings)
+        and all(.[] | .metrics[];
+          (.min | type == "number")
+          and (.p50 | type == "number")
+          and (.max | type == "number")
+          and .min <= .p50 and .p50 <= .max)
+      ' >/dev/null
+}
+
 tmp=$(mktemp -d)
 cleanup() {
   rm -rf "$tmp"
@@ -72,9 +90,15 @@ write_agent_log() {
   local run_id=$1
   local sandbox_reuse=$2
   local home_reuse=$3
+  local duration=${run_id#run-}
+  local agent_ready_ms=$((duration + 1))
+
+  if [ "$TEST_SCENARIO" = invalid-timing ] && [ "$run_id" = run-1 ]; then
+    agent_ready_ms=invalid
+  fi
 
   printf '%s\n' \
-    "run_id=${run_id} agent startup timing sandbox_reuse=${sandbox_reuse} home_reuse=${home_reuse} shell_spawn_ms=1 agent_ready_ms=2 containment_create_us=3 placement_broker_setup_us=4 shell_spawn_component_us=5 bootstrap_ready_wait_us=6" \
+    "run_id=${run_id} agent startup timing sandbox_reuse=${sandbox_reuse} home_reuse=${home_reuse} shell_spawn_ms=${duration} agent_ready_ms=${agent_ready_ms} containment_create_us=$((duration + 2)) placement_broker_setup_us=$((duration + 3)) shell_spawn_component_us=$((duration + 4)) bootstrap_ready_wait_us=$((duration + 5))" \
     >> "$TEST_STATE_DIR/journal"
 }
 
@@ -109,7 +133,11 @@ run_id="run-${submit_count}"
 
 case "$session_id" in
   agent-ready-fresh-*)
-    write_agent_log "$run_id" PoolMiss CacheMiss
+    if [ "$TEST_SCENARIO" = unexpected-fresh-reuse ]; then
+      write_agent_log "$run_id" Reused CacheMiss
+    else
+      write_agent_log "$run_id" PoolMiss CacheMiss
+    fi
     ;;
   agent-ready-home)
     home_reuse=CacheMiss
@@ -147,6 +175,8 @@ case "$session_id" in
   agent-ready-exact-reuse)
     exact_count=$(increment exact-count)
     if [ "$exact_count" -eq 1 ]; then
+      write_agent_log "$run_id" PoolMiss CacheMiss
+    elif [ "$TEST_SCENARIO" = exact-reuse-miss ]; then
       write_agent_log "$run_id" PoolMiss CacheMiss
     else
       write_agent_log "$run_id" Reused SandboxReused
@@ -190,11 +220,29 @@ run_case() {
   LAST_CASE_DIR=$case_dir
 }
 
-run_case direct-success direct-success 0 2
-assert_count "$LAST_CASE_DIR/output" 2 '"path":"fresh","success":true'
-assert_count "$LAST_CASE_DIR/output" 2 '"path":"home-cache","success":true'
-assert_count "$LAST_CASE_DIR/output" 2 '"path":"exact-reuse","success":true'
-assert_value "$LAST_CASE_DIR/submit-count" 10
+run_case routine-success direct-success 0 1
+assert_count "$LAST_CASE_DIR/output" 1 '"path":"fresh","success":true'
+assert_count "$LAST_CASE_DIR/output" 1 '"path":"home-cache","success":true'
+assert_count "$LAST_CASE_DIR/output" 1 '"path":"exact-reuse","success":true'
+assert_value "$LAST_CASE_DIR/submit-count" 6
+assert_contains "$LAST_CASE_DIR/output" 'Agent-ready local submissions: 6'
+assert_summary "$LAST_CASE_DIR/output" 1 \
+  '[{"min":2,"p50":2,"max":2},{"min":5,"p50":5,"max":5},{"min":7,"p50":7,"max":7}]'
+
+run_case repeat-success direct-success 0 3
+assert_count "$LAST_CASE_DIR/output" 3 '"path":"fresh","success":true'
+assert_count "$LAST_CASE_DIR/output" 3 '"path":"home-cache","success":true'
+assert_count "$LAST_CASE_DIR/output" 3 '"path":"exact-reuse","success":true'
+assert_value "$LAST_CASE_DIR/submit-count" 14
+assert_contains "$LAST_CASE_DIR/output" 'Agent-ready local submissions: 14'
+assert_summary "$LAST_CASE_DIR/output" 3 \
+  '[{"min":2,"p50":3,"max":4},{"min":7,"p50":9,"max":11},{"min":13,"p50":14,"max":15}]'
+
+for scenario in unexpected-fresh-reuse exact-reuse-miss invalid-timing; do
+  run_case "$scenario" "$scenario" 1 1
+  assert_contains "$LAST_CASE_DIR/output" 'Agent-ready benchmark recorded 1 failures'
+  assert_value "$LAST_CASE_DIR/submit-count" 6
+done
 
 run_case transient-contention transient-contention 0 1
 assert_contains "$LAST_CASE_DIR/output" \
@@ -222,4 +270,4 @@ for scenario in capacity-unavailable publication-failed publication-rejected; do
   assert_value "$LAST_CASE_DIR/submit-count" 3
 done
 
-echo "PASS: Agent-ready benchmark requires committed home-cache promotion and handles contention"
+echo "PASS: Agent-ready paths retain outcomes, timing checks, committed promotion, and bounded contention"

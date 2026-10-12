@@ -7,6 +7,7 @@ INVOCATION_ID=$3
 AGENT_READY_BENCHMARK_SAMPLES=$4
 MAX_HOME_PROMOTION_RETRIES=3
 AGENT_READY_BENCHMARK_RAW=""
+AGENT_READY_BENCHMARK_SUBMISSIONS=0
 AGENT_READY_LAST_RUN_ID=""
 AGENT_READY_SAMPLE_ERROR=""
 AGENT_READY_SUBMIT_ERROR=""
@@ -76,6 +77,7 @@ submit_agent_ready_benchmark_run() {
 
   AGENT_READY_SUBMIT_ERROR=""
   AGENT_READY_SUBMIT_RUN_ID=""
+  AGENT_READY_BENCHMARK_SUBMISSIONS=$((AGENT_READY_BENCHMARK_SUBMISSIONS + 1))
   if ! result=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
     --chat-thread-id "$chat_thread_id" \
     --session-id "$session_id" \
@@ -293,6 +295,8 @@ for _ in $(seq 1 "$AGENT_READY_BENCHMARK_SAMPLES"); do
     || true
 done
 
+echo "Agent-ready local submissions: $AGENT_READY_BENCHMARK_SUBMISSIONS"
+echo "Agent-ready timings are descriptive observations, not a performance-regression gate"
 echo "AGENT_READY_BENCHMARK_RAW_BEGIN"
 cat "$AGENT_READY_BENCHMARK_RAW"
 echo "AGENT_READY_BENCHMARK_RAW_END"
@@ -305,10 +309,9 @@ jq -s '
   def metric_summary($rows; $field):
     [$rows[] | select(.success) | .[$field]] as $values
     | {
+        min: ($values | min),
         p50: percentile($values; 0.50),
-        p90: percentile($values; 0.90),
-        p95: percentile($values; 0.95),
-        p99: percentile($values; 0.99)
+        max: ($values | max)
       };
   . as $records
   | ["fresh", "home-cache", "exact-reuse"]
