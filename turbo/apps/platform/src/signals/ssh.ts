@@ -477,6 +477,7 @@ export const refreshSsh$ = command(({ set }) => {
   set(conflict$, null);
   set(invalidateSsh$);
   set(invalidateCloudflareAccess$);
+  set(invalidateTailscale$);
 });
 
 // Background changes must not discard an open credential form or dialog.
@@ -576,6 +577,7 @@ const onSshChanged$ = command(
     if (org?.id === parsed.data.orgId) {
       set(invalidateSsh$);
       set(invalidateCloudflareAccess$);
+      set(invalidateTailscale$);
     }
     return false;
   },
@@ -906,39 +908,6 @@ const invalidateAfterSshSave$ = command(
   },
 );
 
-const reconcileSshCreation$ = command(
-  async (
-    { get, set },
-    dialog: SshDialogState,
-    id: string,
-    signal: AbortSignal,
-  ) => {
-    if (!get(sshSaveUncertain$) || get(transportEditor$).mode !== "tailscale") {
-      return false;
-    }
-    const clients = await get(sshClients$);
-    signal.throwIfAborted();
-    const current = await accept(
-      clients.connections.list({ fetchOptions: { signal } }),
-      [200],
-      signal,
-    );
-    if (get(dialog$) !== dialog) {
-      return true;
-    }
-    if (
-      !current.body.connections.some((connection) => {
-        return connection.id === id;
-      })
-    ) {
-      return false;
-    }
-    set(closeSshDialog$);
-    set(invalidateAfterSshSave$, dialog.kind);
-    return true;
-  },
-);
-
 const saveSshHost$ = command(
   async (
     { get, set },
@@ -966,9 +935,6 @@ const saveSshHost$ = command(
     const fields = hostFieldsFromForm(dialog, form, editor, transport);
     if (dialog.kind === "create") {
       const id = set(getSshCreationId$);
-      if (await set(reconcileSshCreation$, dialog, id, signal)) {
-        return false;
-      }
       const parsed = createSshConnectionRequestSchema.safeParse({
         ...fields,
         id,

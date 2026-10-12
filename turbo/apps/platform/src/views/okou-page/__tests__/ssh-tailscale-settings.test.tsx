@@ -240,6 +240,7 @@ test("A saved Tailscale host retains its port, credential and learned key during
   });
   await page();
   await screen.findByRole("heading", { name: host.displayName });
+  await screen.findByText("Tailscale · Development network");
   click(getAction("button", "Edit host"));
   const dialog = await screen.findByRole("dialog");
   expect(within(dialog).getByLabelText("Port")).toHaveValue(2022);
@@ -332,7 +333,7 @@ test("Changing carriers preserves endpoint drafts and the independently selected
   ).resolves.toHaveTextContent(config.name);
 });
 
-test("An uncertain host create reads saved hosts and avoids a duplicate write", async () => {
+test("An uncertain host create retries the same request and leaves one saved host", async () => {
   let created: SshConnectionResponse | null = null;
   const requests: unknown[] = [];
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
@@ -340,6 +341,9 @@ test("An uncertain host create reads saved hosts and avoids a duplicate write", 
   });
   context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
     requests.push(body);
+    if (created) {
+      return respond(204);
+    }
     created = {
       ...host,
       id: body.id,
@@ -362,57 +366,85 @@ test("An uncertain host create reads saved hosts and avoids a duplicate write", 
   await expect(
     screen.findByRole("heading", { name: "New private host" }),
   ).resolves.toBeVisible();
-  expect(requests).toHaveLength(1);
+  expect(requests).toStrictEqual([requests[0], requests[0]]);
+  expect(
+    screen.getAllByRole("heading", { name: "New private host" }),
+  ).toHaveLength(1);
   expect(document.body.textContent).not.toContain("provider-secret-canary");
 });
 
-test("A retained Tailscale VNC dependency opens its exact SSH host for rebind", async () => {
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, {
-      connections: [
-        { ...host, transport: { type: "tailscale", needsRebind: true } },
-      ],
+test.each(["tailscale", "cloudflare_access"] as const)(
+  "A retained %s VNC dependency opens its exact SSH host for rebind",
+  async (type) => {
+    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+      return respond(200, {
+        connections: [
+          {
+            ...host,
+            id: "f0000000-0000-4000-8000-000000000001",
+            displayName: "Unrelated server",
+            host: "other.tailnet.example",
+          },
+          {
+            ...host,
+            port: type === "tailscale" ? 2022 : 443,
+            transport:
+              type === "tailscale"
+                ? { type: "tailscale", needsRebind: true }
+                : { type: "cloudflare_access", needsRebind: true },
+          },
+        ],
+      });
     });
-  });
-  context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
-  });
-  context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
-    return respond(200, {
-      connections: [
-        {
-          id: "d0000000-0000-4000-8000-000000000001",
-          displayName: "Private desktop",
-          host: "127.0.0.1",
-          port: 5901,
-          credentialId: "e0000000-0000-4000-8000-000000000001",
-          credentialName: "Desktop login",
-          security: { type: "x509_vnc", trust: { mode: "system" } },
-          transport: { type: "ssh", connectionId: host.id },
-          generation: 1,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        },
-      ],
+    context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
+      return respond(200, { configuredCount: 1 });
     });
-  });
-  context.mocks.api(vncCredentialsContract.list, ({ respond }) => {
-    return respond(200, { credentials: [] });
-  });
-  await page(true, "/connectors?scope=remote-control&type=vnc");
-  const heading = await screen.findByRole("heading", {
-    name: "Private desktop",
-  });
-  const card = heading.closest("article");
-  expect(card).not.toBeNull();
-  click(getAction("button", "Rebind SSH host", card!));
-  const dialog = await screen.findByRole("dialog");
-  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
-    host.displayName,
-  );
-  expect(
-    within(dialog).getByLabelText("Tailnet hostname or IP address"),
-  ).toHaveValue(host.host);
-  expect(within(dialog).getByLabelText("Port")).toHaveValue(2022);
-  expect(getAction("button", "Save", dialog)).toBeDisabled();
-});
+    context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
+      return respond(200, {
+        connections: [
+          {
+            id: "d0000000-0000-4000-8000-000000000001",
+            displayName: "Private desktop",
+            host: "127.0.0.1",
+            port: 5901,
+            credentialId: "e0000000-0000-4000-8000-000000000001",
+            credentialName: "Desktop login",
+            security: { type: "x509_vnc", trust: { mode: "system" } },
+            transport: { type: "ssh", connectionId: host.id },
+            generation: 1,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          },
+        ],
+      });
+    });
+    context.mocks.api(vncCredentialsContract.list, ({ respond }) => {
+      return respond(200, { credentials: [] });
+    });
+    await page(
+      type === "tailscale",
+      "/connectors?scope=remote-control&type=vnc",
+    );
+    const heading = await screen.findByRole("heading", {
+      name: "Private desktop",
+    });
+    const card = heading.closest("article");
+    expect(card).not.toBeNull();
+    click(getAction("button", "Rebind SSH host", card!));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+      host.displayName,
+    );
+    expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
+      "SSH login · deploy",
+    );
+    expect(
+      within(dialog).getByLabelText(
+        type === "tailscale"
+          ? "Tailnet hostname or IP address"
+          : "Published hostname",
+      ),
+    ).toHaveValue(host.host);
+    expect(getAction("button", "Save", dialog)).toBeDisabled();
+  },
+);
