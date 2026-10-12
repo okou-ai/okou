@@ -16,10 +16,52 @@ export async function validateXResourceUsageSchema(
     await client.query("SET LOCAL TIME ZONE 'Asia/Shanghai'");
 
     async function rejects(query: string, parameters: unknown[], code: string) {
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0439; new non-billing transactions are prohibited.
-      await client.query("SAVEPOINT invalid_x_write");
-      await assert.rejects(client.query(query, parameters), { code });
-      await client.query("ROLLBACK TO SAVEPOINT invalid_x_write");
+      const pgClient = new Client({ connectionString: databaseUrl });
+      const failures: unknown[] = [];
+      let inserted = false;
+      try {
+        await pgClient.connect();
+        await pgClient.query("SET TIME ZONE 'Asia/Shanghai'");
+        await assert.rejects(
+          pgClient.query(query, parameters).then((result) => {
+            inserted = result.rowCount === 1;
+          }),
+          { code },
+        );
+      } catch (error) {
+        failures.push(error);
+      } finally {
+        try {
+          // A broken CHECK must fail the assertion without leaving its write.
+          // ON CONFLICT returns no row, so an existing key is never ours to delete.
+          if (inserted) {
+            const removed = await pgClient.query(
+              `DELETE FROM x_resource_reads
+               WHERE utc_day=$1 AND resource_type=$2 AND resource_id=$3
+               RETURNING resource_id`,
+              parameters,
+            );
+            assert.equal(removed.rowCount, 1);
+          }
+        } catch (error) {
+          failures.push(error);
+        } finally {
+          try {
+            await pgClient.end();
+          } catch (error) {
+            failures.push(error);
+          }
+        }
+      }
+      if (failures.length === 1) {
+        throw failures[0];
+      }
+      if (failures.length > 1) {
+        throw new AggregateError(
+          failures,
+          "X rejection fixture cleanup failed",
+        );
+      }
     }
 
     const readSql = `INSERT INTO x_resource_reads (utc_day,resource_type,resource_id)
