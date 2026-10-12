@@ -17,7 +17,7 @@ use super::{
 use crate::{
     test_fixtures::{
         http::{HttpClientConfig, http_client},
-        vnc::supported_profiles,
+        vnc::{optional_kerberos_request, supported_profiles},
     },
     vnc::VncRuntime,
 };
@@ -97,14 +97,17 @@ async fn mac_classic_password_starts_only_over_verified_ssh_loopback() {
             when.method("POST")
                 .path(format!("/api/runners/runs/{}/vnc/resolve", harness.run))
                 .header("authorization", format!("Bearer {TOKEN}"))
-                .json_body(json!({
-                    "connectionId": CONNECTION,
-                    "runnerIdentity": {
-                        "runnerId": harness.identity.runner_id(),
-                        "heartbeatGeneration": 27
-                    },
-                    "supportedProfiles": supported_profiles(true)
-                }));
+                .is_true(optional_kerberos_request(
+                    json!({
+                        "connectionId": CONNECTION,
+                        "runnerIdentity": {
+                            "runnerId": harness.identity.runner_id(),
+                            "heartbeatGeneration": 27
+                        },
+                        "supportedProfiles": supported_profiles(true)
+                    }),
+                    true,
+                ));
             then.status(200).json_body(json!({
                 "outcome": "resolved_apple_vnc_password",
                 "host": "127.0.0.1",
