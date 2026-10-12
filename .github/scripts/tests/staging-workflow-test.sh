@@ -190,9 +190,15 @@ for permission, level in {
 # Reusable workflows cannot elevate their caller's token. Validate the whole
 # declared permission boundary, including jobs skipped for a particular event.
 levels = {'none': 0, 'read': 1, 'write': 2}
+defaults = turbo['permissions']
+assert defaults.get('actions') == 'read', 'implicit jobs must not inherit caller Actions write'
+assert all(levels[level] <= levels['read'] for level in defaults.values()), 'default tokens must be read-only'
 for name, job in jobs.items():
-    for permission, level in job.get('permissions', {}).items():
+    effective = job.get('permissions', defaults)
+    for permission, level in effective.items():
         assert levels[permissions.get(permission, 'none')] >= levels[level], (name, permission, level)
+    if 'permissions' not in job:
+        assert all(levels[level] <= levels['read'] for level in effective.values()), name
 
 inner_group = render(turbo['concurrency']['group'], context())
 assert inner_group != staging['concurrency']['group'], 'nested concurrency must not deadlock staging'

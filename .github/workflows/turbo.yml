@@ -1,5 +1,12 @@
 name: Turbo
 
+# A reusable caller can grant a write ceiling; default jobs must stay read-only.
+# Jobs that write to GitHub declare their own permissions below.
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
 on:
   pull_request:
   merge_group:
