@@ -5406,6 +5406,110 @@ describe("usage pack allocation management", () => {
     });
   });
 
+  it("expires a grouped Plan preview at confirmation without applying billing changes", async () => {
+    const lifecycle = createPublicBillingScenario(context);
+    const run = lifecycle.run;
+    const {
+      purchaseManagedUsagePack,
+      managedUsagePackSubscription,
+      mockUsagePackSubscriptionPackagePreviews,
+      readManagedUsagePacks,
+      readPurchasedCreditGrants,
+    } = createManagedUsagePackHelpers(lifecycle);
+    return await withNowScopeForTest(() => {
+      return run(async () => {
+        mockNow(now());
+        const userId = `user_${randomUUID()}`;
+        const fixture = await purchaseManagedUsagePack(
+          [{ userId, usagePackUsd: 50 }],
+          "team",
+        );
+        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+          managedUsagePackSubscription(
+            fixture,
+            new Map([[TEST_PRICE_USAGE_PACK_50, 1]]),
+          ),
+        );
+        lifecycle.captureExternalState();
+        mockUsagePackSubscriptionPackagePreviews({
+          immediateAmountCents: 0,
+          nextRecurringAmountCents: 2000,
+          sourcePriceId: TEST_PRICE_USAGE_PACK_50,
+          targetPriceId: TEST_PRICE_USAGE_PACK_20,
+        });
+        const billingBefore = await run(() => {
+          return readBillingStatus(fixture);
+        });
+        const creditsBefore = await readPurchasedCreditGrants(fixture);
+        const managementBefore = await readManagedUsagePacks(fixture);
+        const client = setupApp({ context, routes: billingCheckoutRoutes })(
+          billingUsagePackManagementContract,
+        );
+        const preview = await run(() => {
+          return accept(
+            client.previewSubscriptionChange({
+              headers: { authorization: "Bearer clerk-session" },
+              body: {
+                targetTier: "pro",
+                memberUsagePacks: [{ memberId: userId, usagePackUsd: 20 }],
+              },
+            }),
+            [200],
+          );
+        });
+        mockNow(Date.parse(preview.body.expiresAt));
+        lifecycle.captureExternalState();
+
+        const expired = await run(() => {
+          return accept(
+            client.confirmSubscriptionChange({
+              headers: { authorization: "Bearer clerk-session" },
+              body: { changeId: preview.body.changeId },
+            }),
+            [400],
+          );
+        });
+        expect(expired.body.error.message).toBe(
+          "Usage pack subscription preview expired",
+        );
+        const repeated = await run(() => {
+          return accept(
+            client.confirmSubscriptionChange({
+              headers: { authorization: "Bearer clerk-session" },
+              body: { changeId: preview.body.changeId },
+            }),
+            [400],
+          );
+        });
+        expect(repeated.body).toStrictEqual(expired.body);
+        expect(
+          context.mocks.stripe.subscriptions.update,
+        ).not.toHaveBeenCalled();
+        expect(
+          context.mocks.stripe.subscriptionSchedules.create,
+        ).not.toHaveBeenCalled();
+        expect(
+          context.mocks.stripe.subscriptionSchedules.update,
+        ).not.toHaveBeenCalled();
+        await expect(readManagedUsagePacks(fixture)).resolves.toStrictEqual(
+          managementBefore,
+        );
+        await expect(readPurchasedCreditGrants(fixture)).resolves.toStrictEqual(
+          creditsBefore,
+        );
+        const billingAfter = await run(() => {
+          return readBillingStatus(fixture);
+        });
+        expect(billingAfter).toMatchObject({
+          tier: billingBefore.tier,
+          subscriptionStatus: billingBefore.subscriptionStatus,
+          credits: billingBefore.credits,
+          creditGrants: billingBefore.creditGrants,
+        });
+      });
+    });
+  });
+
   it("reopens the same pending subscription change without creating another preview", async () => {
     const userId = `user_${randomUUID()}`;
     const fixture = await purchaseManagedUsagePack([
