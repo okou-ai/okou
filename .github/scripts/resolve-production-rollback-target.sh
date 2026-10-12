@@ -69,6 +69,7 @@ readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-
 readonly DESKTOP_MIGRATION_HOP_PATH=turbo/apps/api/src/signals/services/desktop-electron-migration-release.ts
 readonly COMPUTER_USE_COMMAND_NOTIFICATIONS_PATH=.github/rollback-floors/computer-use-command-notifications
 readonly COMPUTER_USE_HOST_SESSION_ONLY_PATH=turbo/packages/db/src/runtime/computer-use-host.ts
+readonly NATIVE_BRIEF_MEMBER_RUNTIME_PATH=turbo/packages/db/src/runtime/org-members-metadata.ts
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
 readonly RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH=turbo/packages/db/src/migrations/1282_drop_retired_integration_agent_tables.sql
 readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1283_drop_retired_video_model_columns.sql
@@ -137,6 +138,17 @@ if [[ ! "$computer_use_host_session_only_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$computer_use_host_session_only_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Computer Use session-only host mapping: ${computer_use_host_session_only_commit}."
+fi
+
+# #38737 removed the Native collection fence from every member SQL projection.
+# Earlier APIs still include it in implicit INSERT, SELECT and RETURNING.
+native_brief_member_runtime_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$NATIVE_BRIEF_MEMBER_RUNTIME_PATH" | sed -n '1p')
+if [[ ! "$native_brief_member_runtime_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Native Morning Brief member runtime preparation on main."
+fi
+if ! git merge-base --is-ancestor "$native_brief_member_runtime_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Native Morning Brief member runtime preparation: ${native_brief_member_runtime_commit}."
 fi
 
 # The draft contraction requires every draft row to carry its owner and a

@@ -1,18 +1,11 @@
 import { sql } from "drizzle-orm";
-import { check, pgTable, primaryKey, timestamp } from "drizzle-orm/pg-core";
+import { check, pgTable, primaryKey } from "drizzle-orm/pg-core";
 import { orgMembersMetadataColumns } from "../columns/org-members-metadata";
 
 /** Source of truth for per-member preferences, with physical DDL declarations. */
 export const orgMembersMetadata = pgTable(
   "org_members_metadata",
-  {
-    ...orgMembersMetadataColumns(),
-    // Retained physical Native collection fence. Application queries omit it;
-    // drop only after this runtime preparation has shipped and outgoing APIs drain.
-    morningBriefCollectionRevokedAt: timestamp(
-      "morning_brief_collection_revoked_at",
-    ),
-  },
+  orgMembersMetadataColumns(),
   (table) => {
     return [
       primaryKey({ columns: [table.orgId, table.userId] }),

@@ -2066,6 +2066,13 @@
       "when": 1791650995893,
       "tag": "1372_trim_runner_wss_ticket_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 1373,
+      "version": "7",
+      "when": 1791773088975,
+      "tag": "1373_drop_native_morning_brief_member_fence",
+      "breakpoints": true
     }
   ]
 }
