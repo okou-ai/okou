@@ -35,8 +35,6 @@ export const slackLinkSharedEventSchema = z.object({
 
 export type SlackLinkSharedEvent = z.infer<typeof slackLinkSharedEventSchema>;
 
-type SlackUnfurlTarget = ArtifactOgTarget | { readonly kind: "app" };
-
 function escapeSlackLinkText(value: string): string {
   // Slack decodes only amp/lt/gt; retain non-breaking spaces as Unicode.
   return escapeText(value).replaceAll("&nbsp;", "\u00a0");
@@ -140,22 +138,18 @@ const slackPublicationTarget$ = command(
   },
 );
 
-/** Resolve trusted App links and artifact identities without fetching URLs. */
+/** Resolve artifact identities from validated links without fetching URLs. */
 const slackArtifactOgTarget$ = command(
   async (
     { get, set },
-    value: string,
+    url: URL,
     signal: AbortSignal,
-  ): Promise<SlackUnfurlTarget | null> => {
-    const url = parseSlackLinkUrl(value);
-    if (!url) {
-      return null;
-    }
+  ): Promise<ArtifactOgTarget | null> => {
     if (url.origin === new URL(env("APP_URL")).origin) {
       const reference = parseArtifactReference(url.pathname);
       return reference
         ? { kind: "reference", id: `${reference.hash}${reference.extension}` }
-        : { kind: "app" };
+        : null;
     }
     const alias = hostedArtifactAlias(url);
     if (!alias) {
@@ -195,21 +189,23 @@ const slackArtifactUnfurl$ = command(
     url: string,
     signal: AbortSignal,
   ): Promise<SlackLinkUnfurl | null> => {
-    const target = await set(slackArtifactOgTarget$, url, signal);
-    if (!target) {
+    const pageUrl = parseSlackLinkUrl(url);
+    if (!pageUrl) {
       return null;
     }
-    // App pages expose only public branding; artifacts keep their public policy.
-    const metadata =
-      target.kind === "app"
-        ? { available: true as const, ...ARTIFACT_OG_BRAND }
-        : await set(artifactOgMetadata$, target, signal);
+    const target = await set(slackArtifactOgTarget$, pageUrl, signal);
+    // Only ordinary App pages use branding; unsupported links stay skipped.
+    if (!target && pageUrl.origin !== new URL(env("APP_URL")).origin) {
+      return null;
+    }
+    const metadata = target
+      ? await set(artifactOgMetadata$, target, signal)
+      : { available: true as const, ...ARTIFACT_OG_BRAND };
     signal.throwIfAborted();
     if (!metadata.available) {
       return null;
     }
     const title = metadata.title.trim().slice(0, 150) || "Okou artifact";
-    const pageUrl = new URL(url);
     // A pipe in the URL must not become Slack's link-label separator.
     const href = escapeSlackLinkText(pageUrl.href.replaceAll("|", "%7C"));
     return {

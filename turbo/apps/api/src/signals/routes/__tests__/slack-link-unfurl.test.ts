@@ -299,9 +299,14 @@ describe("Slack link previews", () => {
     });
   });
 
-  it("ignores unsupported URLs without preventing a valid sibling preview", async () => {
+  it("skips unsupported or unavailable links without losing artifact and App previews", async () => {
     const f = await fixture();
     const url = `https://dpl-${f.prepared.deploymentId}.okou.app/`;
+    const appUrl = new URL("/works", env("APP_URL")).href;
+    const missingArtifactUrl = new URL(
+      `/artifacts/${"0".repeat(32)}.png`,
+      env("APP_URL"),
+    ).href;
     const lookalike = new URL("/works", env("APP_URL"));
     lookalike.hostname += ".evil.test";
     const credentialed = new URL("/chats/private", env("APP_URL"));
@@ -323,7 +328,9 @@ describe("Slack link previews", () => {
         otherPort.href,
         `${url}social-card.png`,
         `https://dpl-${randomUUID()}.okou.app/`,
+        missingArtifactUrl,
         url,
+        appUrl,
       ]),
       [200],
     );
@@ -331,7 +338,18 @@ describe("Slack link previews", () => {
     expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledExactlyOnceWith({
       channel: "C_PREVIEW",
       ts: messageTs,
-      unfurls: { [url]: expect.any(Object) },
+      unfurls: {
+        [url]: expect.any(Object),
+        [appUrl]: {
+          blocks: expect.arrayContaining([
+            {
+              type: "image",
+              image_url: ARTIFACT_OG_BRAND.imageUrl,
+              alt_text: ARTIFACT_OG_BRAND.title,
+            },
+          ]),
+        },
+      },
     });
   });
 
