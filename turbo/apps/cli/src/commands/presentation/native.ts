@@ -21,6 +21,7 @@ const paintSchema = z.object({
     .optional(),
   noTextFill: z.boolean().optional(),
   grayscale: z.boolean().optional(),
+  resolvedFonts: z.boolean().optional(),
   crop: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional(),
   cells: z.array(z.array(fillSchema.nullable())).optional(),
   mathGroup: z.number().int().nonnegative().optional(),
@@ -654,6 +655,7 @@ export const INSTALL_NATIVE = String.raw`
       matrix,
       sx,
       sy,
+      reflected: matrix.a * matrix.d - matrix.b * matrix.c < 0,
       rotation,
       similarity,
       x: rect.x + rect.width / 2 - (w * sx) / 2,
@@ -1071,13 +1073,8 @@ export const INSTALL_NATIVE = String.raw`
     return items;
   };
   const font = (s, config) => ({
-    fontFace: s.fontFamily
-      .split(',')[0]
-      .trim()
-      .replace(/^['"]|['"]$/g, ''),
+    ...state.fontStyle(s),
     fontSize: parseFloat(s.fontSize) * 0.75 * config.scale,
-    bold: Number(s.fontWeight) >= 600,
-    italic: s.fontStyle === 'italic',
     color: color(s.color).color,
     transparency: (1 - color(s.color).alpha) * 100,
     underline: s.textDecorationLine.includes('underline') ? { style: 'sng' } : { style: 'none' },
@@ -1231,6 +1228,7 @@ export const INSTALL_NATIVE = String.raw`
       for (const item of items) {
         item._paintOrder ??= meta.order;
         item._paintPhase ??= item.type === 'text' ? 2 : 0;
+        item._paintKey = item.type === 'text' ? meta.contentKey : meta.paintKey;
         item._sourceId = meta.id;
         item.domOrder ??= result?.items?.[0]?.domOrder ?? meta.id;
         item.zIndex ??= [0];
@@ -1241,6 +1239,10 @@ export const INSTALL_NATIVE = String.raw`
       if (result) annotate(result.items || []);
       return result;
     }
+    // The table owns cell backgrounds and borders; descendants own their
+    // measured text and inline paint. Never serialize cell text twice.
+    if(['thead','tbody','tfoot','tr','td','th','colgroup','col'].includes(node.localName))
+      return {items:[],stopRecursion:false};
     const s = getComputedStyle(node),
       g = geometry(node),
       items = [];
@@ -1447,7 +1449,8 @@ export const INSTALL_NATIVE = String.raw`
                 transparency: (1 - alpha) * 100,
               },
             };
-            tiles.push(item);
+            // These enter the render queue after synchronous annotation.
+            tiles.push(...annotate([item]));
           }
       });
       // The queue must own placeholders before async source decoding runs.
@@ -1687,6 +1690,8 @@ export const INSTALL_NATIVE = String.raw`
     };
     for (const item of original) {
       if (item.type === 'text') {
+        item.textParts = state.fontRuns(item.textParts || [], meta, s);
+        if(state.hasResolvedFont(s,meta))item._nativePaint={...item._nativePaint,resolvedFonts:true};
         delete item.options.fill;
         item.options.line = { transparency: 100 };
         delete item.options.shadow;
@@ -1760,7 +1765,13 @@ export const INSTALL_NATIVE = String.raw`
           for (const part of item.textParts || []) if (part.options) part.options.transparency = 0;
         }
       }
-      if (item.type === 'image') item.options.transparency = 100 * (1 - alpha);
+      if (item.type === 'image') {
+        item.options.transparency = 100 * (1 - alpha);
+        if(g.matrix.is2D && Math.abs(g.matrix.a*g.matrix.c+g.matrix.b*g.matrix.d)<.0001){
+          const unit=config.scale/96;
+          Object.assign(item.options,{x:config.offX+(g.x-config.rootX)*unit,y:config.offY+(g.y-config.rootY)*unit,w:g.w*g.sx*unit,h:g.h*g.sy*unit,rotate:g.rotation,flipV:g.reflected});
+        }else diagnostic(node,'affine-image','Skewed source images require native picture shear support');
+      }
       if (item.type === 'image' && s.filter !== 'none') {
         const unhandled = s.filter
           .replace(/grayscale\((?:1|100%)\)/g, '')
@@ -1779,7 +1790,8 @@ export const INSTALL_NATIVE = String.raw`
             'This image filter has no implemented equivalent native effect',
           );
       }
-      if (item.type === 'table')
+      if (item.type === 'table') {
+        for(const row of item.tableData.rows)for(const cell of row){cell.text='';cell.options.margin=0;cell.options.fontSize=1;}
         item._nativePaint = {
           cells: Array.from(node.rows).map((row) =>
             Array.from(row.cells).map((cell) => {
@@ -1790,6 +1802,7 @@ export const INSTALL_NATIVE = String.raw`
             }),
           ),
         };
+      }
       add(item);
     }
     // Resolved pseudo and list-marker text has one owner; generic recursion never emits it again.
@@ -1922,7 +1935,7 @@ export const INSTALL_NATIVE = String.raw`
             for (const job of jobs) await job();
           }
         : null,
-      stopRecursion: result?.stopRecursion ?? false,
+      stopRecursion: node.localName==='table' ? false : result?.stopRecursion ?? false,
     };
   };
   return 1;

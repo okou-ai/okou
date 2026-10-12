@@ -108,6 +108,29 @@ function xmlValue(value: string): string {
     .replace(/</gu, "&lt;");
 }
 
+/** Keep glyph-resolved embedded families attached to their source identity. */
+function applyScriptFonts(
+  shape: string,
+  box: Layout["pages"][number]["textBoxes"][number],
+  paint: NativePaint[string] | undefined,
+): string {
+  const objectName = /<p:cNvPr\b[^>]*\bname="([^"]+)"/u.exec(shape)?.[1];
+  if (objectName !== undefined && paint?.[objectName]?.resolvedFonts)
+    return shape;
+  let result = shape;
+  if (box.eastAsianFont)
+    result = result.replace(
+      /<a:ea typeface="[^"]*"/gu,
+      `<a:ea typeface="${xmlValue(box.eastAsianFont)}"`,
+    );
+  if (box.complexFont)
+    result = result.replace(
+      /<a:cs typeface="[^"]*"/gu,
+      `<a:cs typeface="${xmlValue(box.complexFont)}"`,
+    );
+  return result;
+}
+
 /** CSS padding belongs to a rectangular text box, not the preset's inset text area. */
 function separateRoundedText(
   xml: string,
@@ -305,16 +328,7 @@ export function applyGeometry(
         /(<a:bodyPr\b[^>]*?)\s+wrap="[^"]*"/gu,
         '$1 wrap="none"',
       );
-      if (box.eastAsianFont)
-        fixed = fixed.replace(
-          /<a:ea typeface="[^"]*"/gu,
-          `<a:ea typeface="${xmlValue(box.eastAsianFont)}"`,
-        );
-      if (box.complexFont)
-        fixed = fixed.replace(
-          /<a:cs typeface="[^"]*"/gu,
-          `<a:cs typeface="${xmlValue(box.complexFont)}"`,
-        );
+      fixed = applyScriptFonts(fixed, box, nativePaint[String(pageIndex + 1)]);
       if (box.strike)
         fixed = fixed.replace(
           /<a:rPr\b([^>]*?)>/gu,

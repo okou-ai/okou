@@ -243,3 +243,47 @@ The selected page is an independent export surface. Clipping may walk from a
 descendant through that page, but must not continue from the page itself into
 the enclosing deck viewport. Compare HTML, the previous export and the current
 PPTX; all page paint must remain native, with no generated picture objects.
+
+## Native fidelity contract
+
+`fidelity-contract.html` covers five independently inspectable pages:
+
+- F01: normal-flow text above negative-z backgrounds, nested stacking contexts,
+  positive siblings and a rounded card's outer shadow.
+- F02: horizontal, vertical and nested rotated reflections of source images.
+- F03: measured table row heights and single-line numeric cells.
+- F04: filled/outlined rounded badges and legitimate multiline table content.
+- F05: variable font weights 400/500/600/700, negative character spacing across
+  adjacent colored runs, a missing first-choice family, a CSS family alias and
+  a regular-only fallback with `font-synthesis-weight: none`.
+
+Table grids remain native tables; measured cell text and badge paint are
+separate editable objects. Editing a grid cell does not edit those text boxes.
+No page, text, badge, border or shadow is replaced with a screenshot.
+
+The adapter decodes used webfonts losslessly, instances variable axes with the
+pinned `harfbuzzjs@1.6.1` subset WASM, and preserves glyph metrics and OpenType
+positioning/substitution tables. A distinct embedded family identifies each
+instance so the viewer cannot substitute a different weight. CSS font subsets
+are selected by glyph coverage. System-only fonts remain viewer dependencies;
+fonts that forbid embedding produce a diagnostic. The command requires network
+access for its pinned renderer and font instancer.
+
+Use an embedded-font-capable PPTX viewer for both baseline and candidate.
+LibreOffice 24.2 does not import PPTX embedded fonts; it is not a valid font
+fidelity oracle for this contract. Validation used LibreOffice 26.2.6.3 and
+Chromium HTML references, not native Microsoft PowerPoint or Apple Keynote.
+A successful native-text verification remains separate from visual acceptance.
+
+Font fixture provenance: `fonts/geist-latin-variable.woff2` comes from
+`@fontsource-variable/geist@5.3.0/files/geist-latin-wght-normal.woff2` under the
+included SIL OFL license. The TTF is its losslessly decoded SFNT counterpart;
+`geist-latin-regular.woff2` is a weight-400 static instance of that same font.
+The TTF binary regression checks independently validate table preservation,
+coverage, names and the SFNT checksum, including malformed directories.
+
+F03 also covers percentage `colgroup` tracks with independently authored cell
+widths. F05 includes a CSS-aliased, static CFF Chinese fallback. The small
+`noto-cjk-fixture` OTF/WOFF2 pair is subset from Noto Sans CJK SC Regular under
+`fonts/Noto-OFL.txt`. Static fonts keep their outline tables intact; only variable
+fonts enter the axis instancer, which must retain an outline table.

@@ -261,9 +261,32 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
     }
   }
   const candidates = [];
+  // Keep the browser's grid fixed while cell contents are materialized. PPT
+  // retains a native table for its grid and editable, measured text above it;
+  // Office must not independently wrap numbers or grow the measured rows.
+  // Snapshot every table before changing any: adjacent grid tables can share
+  // row height. Freeze colgroup tracks too, since percentage cols and cell
+  // widths jointly determine the original fixed-layout column widths.
+  const tableBoxes=[];
+  for(const slide of slides)for(const table of slide.querySelectorAll('table')){
+    if(!visible(table))continue;
+    for(const element of table.querySelectorAll('col,th,td')){
+      if(element.closest('table')!==table)continue;
+      const s=getComputedStyle(element);
+      tableBoxes.push({element,width:s.width,height:s.height});
+    }
+  }
+  for(const {element,width,height} of tableBoxes){
+    save(element);
+    element.style.setProperty('width',width,'important');
+    if(element.localName!=='col'){
+      element.style.setProperty('min-width',width,'important');
+      element.style.setProperty('height',height,'important');
+    }
+  }
   for (const slide of slides) {
     for (const owner of slide.querySelectorAll('*')) {
-      if (!visible(owner) || owner.closest('table,svg,math,ruby,rt') || !inlineTree(owner)) continue;
+      if (!visible(owner) || owner.closest('svg,math,ruby,rt') || !inlineTree(owner)) continue;
       const style = getComputedStyle(owner);
       if (style.display === 'inline' || style.writingMode !== 'horizontal-tb') continue;
       const nodes = textNodes(owner);
@@ -288,7 +311,7 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
       const naturalWrap = nodes.some(node => fragment(node,false).length > 1);
       const spacing = nodes.some(node => parseFloat(getComputedStyle(node.parentElement).wordSpacing) > 0 || /\t|\u00a0{2}/.test(node.nodeValue));
       const scripts = nodes.some(node => /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(node.nodeValue) || getComputedStyle(node.parentElement).direction === 'rtl');
-      if (decorated || textDecoration || naturalWrap || spacing || scripts || owner.querySelector('sup,sub,br') || style.whiteSpace.startsWith('pre') || nodes.some(node=>fragment(node,false).clipped)) candidates.push({owner,nodes,decorated});
+      if (owner.closest('td,th') || nodes.length>1 || decorated || textDecoration || naturalWrap || spacing || scripts || owner.querySelector('sup,sub,br') || style.whiteSpace.startsWith('pre') || nodes.some(node=>fragment(node,false).clipped)) candidates.push({owner,nodes,decorated});
     }
   }
   const relativeOpacity = (element,owner) => {
@@ -308,7 +331,7 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
     const decorations = Array.from(owner.querySelectorAll('*')).filter(child => {
       const style = getComputedStyle(child);
       return color(style.backgroundColor) || style.backgroundImage !== 'none' || parseFloat(style.borderTopWidth) > 0;
-    }).map(child => ({style:snapshotStyle(child),opacity:relativeOpacity(child,owner),rects:Array.from(child.getClientRects())}));
+    }).map(child => ({source:child,style:snapshotStyle(child),opacity:relativeOpacity(child,owner),rects:Array.from(child.getClientRects())}));
     const originalChildren = Array.from(owner.childNodes);
     save(owner);
     undo.push(() => owner.replaceChildren(...originalChildren));
@@ -326,13 +349,14 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
         for (const property of ['background-color','background-image','background-size','background-position','background-repeat','border-top','border-right','border-bottom','border-left','border-radius','box-shadow']) paint.style.setProperty(property,decoration.style.getPropertyValue(property));
         Object.assign(paint.style,{position:'absolute',display:'block',left:(rect.left-originX)+'px',top:(rect.top-originY)+'px',width:rect.width+'px',height:rect.height+'px',padding:'0',margin:'0'});
         paint.style.opacity = String(decoration.opacity);
+        if(window.__okouNative){const meta=window.__okouNative.nodes.get(decoration.source);if(meta)window.__okouNative.nodes.set(paint,{...meta,generated:[]});}
         owner.append(paint);
       }
     }
     for (const part of parts) {
       const span = document.createElement(part.href ? 'a' : 'span');
       if (part.href) span.href = part.href;
-      for (const property of ['font-family','font-size','font-weight','font-style','font-variant','letter-spacing','text-transform','text-decoration','color','direction','-webkit-text-stroke-width','-webkit-text-stroke-color']) span.style.setProperty(property,part.style.getPropertyValue(property));
+      for (const property of ['font-family','font-size','font-weight','font-style','font-stretch','font-synthesis-weight','font-synthesis-style','font-variant','font-variation-settings','font-optical-sizing','font-feature-settings','font-kerning','letter-spacing','text-transform','text-decoration','color','direction','-webkit-text-stroke-width','-webkit-text-stroke-color']) span.style.setProperty(property,part.style.getPropertyValue(property));
       Object.assign(span.style,{position:'absolute',display:'block',left:(part.left-originX)+'px',top:(part.top-originY)+'px',width:(part.right-part.left)+'px',height:(part.bottom-part.top)+'px',padding:'0',margin:'0',lineHeight:'normal',whiteSpace:'pre',background:'transparent'});
       span.style.opacity = String(part.opacity);
       span.textContent = part.text;
