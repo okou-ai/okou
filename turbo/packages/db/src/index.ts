@@ -136,6 +136,7 @@ import * as builtInGenerationJobSchema from "./schema/built-in-generation-job";
 import * as socialKitDownloadJobSchema from "./schema/socialkit-download-job";
 import * as socialDataJobSchema from "./schema/social-data-job";
 import * as bankingSchema from "./schema/banking";
+import * as linkWalletSchema from "./schema/link-wallet";
 import * as gmailEventSchema from "./schema/gmail-event";
 import * as notionEventSchema from "./schema/notion-event";
 import * as stripeAutomationEventSchema from "./schema/stripe-automation-event";
@@ -299,6 +300,7 @@ export const schema = {
   ...socialKitDownloadJobSchema,
   ...socialDataJobSchema,
   ...bankingSchema,
+  ...linkWalletSchema,
   ...gmailEventSchema,
   ...notionEventSchema,
   ...stripeAutomationEventSchema,
