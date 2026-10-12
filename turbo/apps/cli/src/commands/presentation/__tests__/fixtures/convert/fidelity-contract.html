@@ -13,7 +13,13 @@
       @font-face {
         font-family: "Geist Static";
         src: url("fonts/geist-latin-regular.woff2") format("woff2");
-        font-weight: 400;
+        font-weight: normal;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: "Geist Keyword Bold";
+        src: url("fonts/geist-latin-variable.ttf") format("truetype");
+        font-weight: bold;
         font-style: normal;
       }
       @font-face {
@@ -357,6 +363,31 @@
         style="font-family: &quot;Missing Fixture Font&quot;, Geist, sans-serif"
       >
         Resolved fallback family: Geist. Text remains editable.
+      </p>
+    </section>
+    <section class="slide">
+      <h1>F06 · Unmaterialized table text and font keywords</h1>
+      <table style="transform: rotate(5deg); margin: 100px 0">
+        <tr>
+          <td>Rotated table cell</td>
+          <td>123456</td>
+        </tr>
+      </table>
+      <table>
+        <tr>
+          <td>Control table cell</td>
+          <td>654321</td>
+        </tr>
+      </table>
+      <p style="font-family: &quot;Geist Static&quot;; font-weight: 400">
+        The normal descriptor retains its embedded regular font.
+      </p>
+      <p style="font-family: &quot;Geist Keyword Bold&quot;; font-weight: 700">
+        The bold descriptor retains its embedded bold font.
+      </p>
+      <p class="note">
+        Both tables retain editable text exactly once; their grids retain one
+        owner. Font descriptors accept CSS keywords and numeric weights.
       </p>
     </section>
   </body>

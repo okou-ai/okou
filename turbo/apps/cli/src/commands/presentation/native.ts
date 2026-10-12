@@ -1239,10 +1239,15 @@ export const INSTALL_NATIVE = String.raw`
       if (result) annotate(result.items || []);
       return result;
     }
-    // The table owns cell backgrounds and borders; descendants own their
-    // measured text and inline paint. Never serialize cell text twice.
-    if(['thead','tbody','tfoot','tr','td','th','colgroup','col'].includes(node.localName))
-      return {items:[],stopRecursion:false};
+    // The table owns its grid paint. Materialized descendants own cell text,
+    // but transformed/vertical cells retain their renderer-owned text item.
+    // The renderer skips their child text nodes when the cell owns the text.
+    const tableGrid = ['thead','tbody','tfoot','tr','td','th','colgroup','col'].includes(node.localName);
+    if(tableGrid){
+      const textItems=(result?.items||[]).filter(item=>item.type==='text');
+      if(!textItems.length)return {items:[],stopRecursion:false};
+      result={...result,items:textItems};
+    }
     const s = getComputedStyle(node),
       g = geometry(node),
       items = [];
@@ -1929,8 +1934,8 @@ export const INSTALL_NATIVE = String.raw`
     if (keepJob && result?.job) jobs.push(result.job);
     return {
       ...result,
-      items: annotate(items),
-      job: jobs.length
+      items: annotate(tableGrid ? items.filter(item=>item.type==='text') : items),
+      job: !tableGrid && jobs.length
         ? async () => {
             for (const job of jobs) await job();
           }

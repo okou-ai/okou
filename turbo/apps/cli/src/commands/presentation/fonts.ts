@@ -169,7 +169,7 @@ export const INSTALL_FONTS = String.raw`
         const distance = (f) => {
           const values = String(f.weight || 400)
             .split(/\s+/)
-            .map(Number);
+            .map((value) => value === "normal" ? 400 : value === "bold" ? 700 : Number(value));
           return Math.max(values[0] - weight, weight - values.at(-1), 0);
         };
         const nearest = Math.min(...candidates.map(distance)),

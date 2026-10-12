@@ -246,7 +246,7 @@ PPTX; all page paint must remain native, with no generated picture objects.
 
 ## Native fidelity contract
 
-`fidelity-contract.html` covers five independently inspectable pages:
+`fidelity-contract.html` covers six independently inspectable pages:
 
 - F01: normal-flow text above negative-z backgrounds, nested stacking contexts,
   positive siblings and a rounded card's outer shadow.
@@ -256,6 +256,8 @@ PPTX; all page paint must remain native, with no generated picture objects.
 - F05: variable font weights 400/500/600/700, negative character spacing across
   adjacent colored runs, a missing first-choice family, a CSS family alias and
   a regular-only fallback with `font-synthesis-weight: none`.
+- F06: a rotated table whose cells retain their own editable text, an ordinary
+  control table, and embedded faces declared with `normal`/`bold` weight keywords.
 
 Table grids remain native tables; measured cell text and badge paint are
 separate editable objects. Editing a grid cell does not edit those text boxes.
