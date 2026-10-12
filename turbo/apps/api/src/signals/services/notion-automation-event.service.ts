@@ -536,9 +536,9 @@ const repairNotionAutomationProjection$ = command(
             automation.eventConfig,
             eventConnectorId,
           );
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0192; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      const [retargeted] = await tx
+    const currentTime = nowDate();
+    const retargeted = db.$with("retargeted_notion_automation").as(
+      db
         .update(workflowAutomations)
         .set({
           eventConnectorId,
@@ -554,28 +554,27 @@ const repairNotionAutomationProjection$ = command(
             sql`(${selectionSql}) IS NOT DISTINCT FROM ${eventConnectorId}::uuid`,
           ),
         )
-        .returning({ id: workflowAutomations.id });
-      signal.throwIfAborted();
-      if (!retargeted) {
-        return;
-      }
-      const currentTime = nowDate();
-      await tx
-        .update(notionWorkflowPendingEvents)
-        .set({
-          status: "skipped",
-          skipReason: NOTION_ACCOUNT_CHANGED_SKIP_REASON,
-          processedAt: currentTime,
-          updatedAt: currentTime,
-        })
-        .where(
-          and(
-            eq(notionWorkflowPendingEvents.automationId, automation.id),
-            inArray(notionWorkflowPendingEvents.status, ["pending", "running"]),
+        .returning({ id: workflowAutomations.id }),
+    );
+    await db
+      .with(retargeted)
+      .update(notionWorkflowPendingEvents)
+      .set({
+        status: "skipped",
+        skipReason: NOTION_ACCOUNT_CHANGED_SKIP_REASON,
+        processedAt: currentTime,
+        updatedAt: currentTime,
+      })
+      .where(
+        and(
+          inArray(
+            notionWorkflowPendingEvents.automationId,
+            db.select({ id: retargeted.id }).from(retargeted),
           ),
-        );
-      signal.throwIfAborted();
-    });
+          inArray(notionWorkflowPendingEvents.status, ["pending", "running"]),
+        ),
+      );
+    signal.throwIfAborted();
   },
 );
 

@@ -64,6 +64,22 @@ physical memory relief. Process/runtime termination is an abnormal boundary;
 tracked async ownership alone does not prove completion of a detached physical
 I/O operation.
 
+The supplied-policy ordinary activation component borrows an `IdleActivationOwner`
+through activation and cleanup admission. A failed or cancelled unpark leaves an
+exclusive uncertain owner; it cannot be restored as parked inventory or activated
+for another business run. Both positive live/tail allowances and exact backing
+are required before accepting terminal work. Required readiness, private/home
+preparation and freeze errors retain the promotion and full logical lease rather
+than using best-effort abandonment. Accepted work progresses independently of its
+result receiver. Supervisor retains no-progress capsules separately, joins work
+through `close_and_wait`, and exposes those capsules through
+`take_retained_activation_owners` afterward. They remain unresolved ownership,
+not physical memory credit. Even successful physical cleanup keeps the full
+logical lease until its original caller takes it for reuse or release. Dropping
+a completion observer cannot release that lease. Accepting runtimes must retain
+these owners through their explicit reconciliation boundary before dependent
+teardown.
+
 ## Routine GC and promotion capacity
 
 Updated runners serialize routine maintenance with

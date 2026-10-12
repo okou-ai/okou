@@ -3,6 +3,7 @@
 //! Opt-in packaged-guest terminal saving fixture; see README.md in this directory.
 
 mod fixture;
+mod transitions;
 
 use std::{error::Error, io, path::PathBuf, sync::Arc};
 
@@ -11,13 +12,18 @@ use runner_lifecycle::home_image_cache::{
     HomeCacheTerminalStatus, HomeImageCache, HomeImagePromotionRequest,
 };
 use runner_lifecycle::home_mount::ensure_home_drive_mounted;
+use runner_lifecycle::host_memory_operations::MemoryOperationError;
 use runner_lifecycle::idle_pool::{
-    DestroyOutcome, GuardedIdleRetirement, IdlePool, IdlePoolConfig, ParkResult,
+    DestroyOutcome, IdlePool, IdlePoolConfig, IdleRetirementBatchScope, ParkResult,
     test_support::ParkedIdleCandidateBuilder,
 };
 use runner_lifecycle::resource_budget::ResourceBudget;
+use runner_lifecycle::status::StatusTracker;
 use runner_storage::storage_fingerprints::StorageFingerprints;
-use runner_supervisor::idle_lifecycle::IdleDestroyTracker;
+use runner_supervisor::idle_lifecycle::{
+    GuardedIdlePressureRequest, IdleDestroyTracker, IdlePoolBatchRetirementRequest,
+    IdlePressureRequest, IdlePressureSelection, select_idle_entries_for_guarded_pressure,
+};
 use runner_types::ids::RunId;
 use sandbox::{
     FactoryConfig, RuntimeConfig, SandboxFactory, SandboxId, SandboxParkOutcome, SandboxRuntime,
@@ -27,6 +33,16 @@ use sandbox_firecracker::FirecrackerRuntime;
 use tokio::sync::Notify;
 
 type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+
+#[derive(Clone, Copy, Debug)]
+enum NativeScope {
+    Batch(IdleRetirementBatchScope),
+    Logical,
+    Replacement,
+    Restore,
+    Aged,
+    CallerOwned,
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires root, KVM, NBD, packaged guest artifacts and supplied measured policy"]
@@ -53,35 +69,45 @@ async fn exercise_factories(
     base: &std::path::Path,
     inputs: &fixture::Inputs,
 ) -> TestResult<()> {
-    for restored in [false, true] {
-        // Never share a production Runner directory or another invocation's cache.
-        let owned = tempfile::tempdir_in(base)?;
-        let paths = RunnerPaths::new(owned.path().to_owned());
-        let snapshot = if restored {
-            Some(SnapshotRef {
-                output_dir: PathBuf::from(std::env::var("OKOU_TEST_RPC_SNAPSHOT_DIR")?),
-                hash: std::env::var("OKOU_TEST_RPC_SNAPSHOT_HASH")?,
-            })
-        } else {
-            None
-        };
-        let factory = runtime
-            .create_factory(FactoryConfig {
-                profile: fixture::PROFILE.into(),
-                binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
-                kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
-                rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
-                base_dir: owned.path().to_owned(),
-                snapshot,
-            })
-            .await?;
-        let factory = Arc::new(factory);
-        let result = exercise_retirement(factory.clone(), paths, inputs).await;
-        let mut factory = Arc::try_unwrap(factory)
-            .map_err(|_| io::Error::other("native fixture lost its exclusive factory owner"))?;
-        factory.shutdown().await;
-        result?;
-        println!("GUARDED_IDLE_TERMINAL_PASS restored={restored}");
+    for scope in [
+        NativeScope::Batch(IdleRetirementBatchScope::Exact),
+        NativeScope::Batch(IdleRetirementBatchScope::All),
+        NativeScope::Logical,
+        NativeScope::Replacement,
+        NativeScope::Restore,
+        NativeScope::Aged,
+        NativeScope::CallerOwned,
+    ] {
+        for restored in [false, true] {
+            // Never share a production Runner directory or another invocation's cache.
+            let owned = tempfile::tempdir_in(base)?;
+            let paths = RunnerPaths::new(owned.path().to_owned());
+            let snapshot = if restored {
+                Some(SnapshotRef {
+                    output_dir: PathBuf::from(std::env::var("OKOU_TEST_RPC_SNAPSHOT_DIR")?),
+                    hash: std::env::var("OKOU_TEST_RPC_SNAPSHOT_HASH")?,
+                })
+            } else {
+                None
+            };
+            let factory = runtime
+                .create_factory(FactoryConfig {
+                    profile: fixture::PROFILE.into(),
+                    binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
+                    kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
+                    rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
+                    base_dir: owned.path().to_owned(),
+                    snapshot,
+                })
+                .await?;
+            let factory = Arc::new(factory);
+            let result = exercise_retirement(factory.clone(), paths, inputs, scope).await;
+            let mut factory = Arc::try_unwrap(factory)
+                .map_err(|_| io::Error::other("native fixture lost its exclusive factory owner"))?;
+            factory.shutdown().await;
+            result?;
+            println!("GUARDED_IDLE_TERMINAL_PASS restored={restored} scope={scope:?}");
+        }
     }
     Ok(())
 }
@@ -90,7 +116,15 @@ async fn exercise_retirement(
     factory: Arc<Box<dyn SandboxFactory>>,
     paths: RunnerPaths,
     inputs: &fixture::Inputs,
+    scope: NativeScope,
 ) -> TestResult<()> {
+    let status = Arc::new(StatusTracker::new(
+        paths.base_dir().join("status.json"),
+        1,
+        None,
+        None,
+    ));
+    status.write_initial().await?;
     let cache = HomeImageCache::new(paths);
     let run_id = RunId::new_v4();
     let sandbox_id = SandboxId::new_v4();
@@ -109,7 +143,12 @@ async fn exercise_retirement(
         factory.destroy(sandbox).await;
         return Err(error);
     }
-    let budget = Arc::new(ResourceBudget::new(2, 4096, 1.0, 0));
+    let (vcpu, memory) = match scope {
+        NativeScope::Replacement | NativeScope::Restore => (4, 8192),
+        NativeScope::Aged => (12, 24576),
+        _ => (2, 4096),
+    };
+    let budget = Arc::new(ResourceBudget::new(vcpu, memory, 1.0, 0));
     let parked: TestResult<_> = async {
         let backing = sandbox
             .backing_process()
@@ -141,62 +180,236 @@ async fn exercise_retirement(
         }
     };
     let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 1 });
-    assert!(matches!(
-        pool.park(
-            ParkedIdleCandidateBuilder::new(&reuse_key, lease)
-                .with_sandbox(sandbox)
-                .with_factory(factory.clone())
-                .with_sandbox_id(sandbox_id)
-                .with_profile_name(fixture::PROFILE)
-                .with_rootfs_hash(&rootfs_hash)
-                .with_home_promotion(promotion)
-                .build()
-        ),
-        ParkResult::Parked
-    ));
-    let job = pool
-        .drain()
-        .pop()
-        .ok_or_else(|| io::Error::other("missing native idle job"))?;
-    let mut retirement = match GuardedIdleRetirement::new(job, &operations, inputs.envelope()) {
-        Ok(retirement) => retirement,
-        Err(failure) => {
-            let error = io::Error::other(failure.error().to_string());
-            failure
-                .into_job()
-                .run_with_context("native_fixture_registration_cleanup")
-                .await;
-            return Err(error.into());
-        }
-    };
-    if let Err(error) = fixture::grant(&mut retirement).await {
-        retirement
-            .into_job()
-            .run_with_context("native_fixture_grant_cleanup")
-            .await;
+    let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
+    let mut candidate = ParkedIdleCandidateBuilder::new(&reuse_key, lease)
+        .with_sandbox(sandbox)
+        .with_factory(factory.clone())
+        .with_sandbox_id(sandbox_id)
+        .with_profile_name(fixture::PROFILE)
+        .with_rootfs_hash(&rootfs_hash)
+        .with_home_promotion(promotion)
+        .build();
+    if let Err(error) = candidate.capture_retirement_backing() {
+        // Explicit disposal of this invocation's native fixture, never a
+        // production guarded-admission fallback.
+        let (payload, lease) = candidate.into_active_destroy_parts();
+        tracker
+            .spawn_payload_retaining_lease(payload, lease, "native_fixture_capture_cleanup")
+            .join()
+            .await?;
         return Err(error.into());
     }
-    let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
-    let mut task = match tracker.spawn_guarded_retirement(retirement, "native_guarded_idle") {
-        Ok(task) => task,
-        Err(failure) => {
-            let error = io::Error::other(failure.error().to_string());
-            failure
-                .into_retirement()
-                .into_job()
-                .run_with_context("native_fixture_start_cleanup")
+    let parked = if matches!(scope, NativeScope::Aged) {
+        pool.park_at_for_test(
+            candidate,
+            std::time::Instant::now() - std::time::Duration::from_secs(40 * 60),
+        )
+    } else {
+        pool.park(candidate)
+    };
+    assert!(matches!(parked, ParkResult::Parked));
+    let pool = Arc::new(tokio::sync::Mutex::new(pool));
+    let retirement: TestResult<_> = async {
+        match scope {
+            NativeScope::CallerOwned => {
+                use runner_lifecycle::idle_pool::{ActivationCleanupOutcome, IdleActivationOwner};
+                // A successor cancelled before business activation still owns
+                // its exact parked reservation and mandatory terminal saving.
+                let reservation = pool
+                    .lock()
+                    .await
+                    .take_reserved(&reuse_key)
+                    .ok_or_else(|| io::Error::other("native caller reservation disappeared"))?;
+                let mut owner = Some(
+                    IdleActivationOwner::new(reservation)
+                        .map_err(|_| io::Error::other("native caller received running handoff"))?,
+                );
+                let mut task = tracker
+                    .retire_activation_owner(
+                        &mut owner,
+                        &operations,
+                        inputs.envelope(),
+                        "native_caller_cleanup",
+                    )
+                    .await?;
+                assert!(owner.is_none());
+                let outcome = task.join().await??;
+                if !matches!(
+                    outcome,
+                    ActivationCleanupOutcome::Completed {
+                        home_cache_promoted: true
+                    }
+                ) {
+                    return Err(io::Error::other(format!(
+                        "native caller required saving incomplete: {outcome:?}"
+                    ))
+                    .into());
+                }
+                tracker.close_and_wait().await;
+                drop(task.take_completed_lease()?);
+                if !tracker.take_retained_activation_owners()?.is_empty() {
+                    return Err(io::Error::other("native caller retained uncertainty").into());
+                }
+                Ok(None)
+            }
+            NativeScope::Replacement | NativeScope::Restore | NativeScope::Aged => {
+                transitions::exercise(
+                    transitions::Context {
+                        factory: factory.clone(),
+                        pool: pool.clone(),
+                        status: status.clone(),
+                        operations: operations.clone(),
+                        budget: budget.clone(),
+                        tracker: tracker.clone(),
+                        rootfs_hash: rootfs_hash.clone(),
+                        reuse_key: reuse_key.clone(),
+                    },
+                    inputs,
+                    scope,
+                )
+                .await?;
+                Ok(None)
+            }
+            NativeScope::Batch(scope) => {
+                let mut task = tracker
+                    .start_pool_retirement_batch(
+                        pool.clone(),
+                        status.clone(),
+                        operations.clone(),
+                        IdlePoolBatchRetirementRequest {
+                            scope,
+                            envelope: inputs.envelope(),
+                            context: "native_guarded_idle",
+                        },
+                    )
+                    .await?;
+                let result = task.join().await?;
+                if !result.is_complete() {
+                    return Err(io::Error::other(format!(
+                        "native guarded batch incomplete: {result:?}"
+                    ))
+                    .into());
+                }
+                assert_eq!(
+                    (result.selected, result.completed, result.uncertain),
+                    (1, 1, 0)
+                );
+                Ok(None)
+            }
+            NativeScope::Logical => {
+                // Same physical authority reserves real replacement growth before
+                // accepting old retirement. Logical transfer supplies no credit.
+                let mut replacement = operations.request(inputs.replacement_plan()?)?;
+                let permit = replacement.try_grant().await?;
+                let mut result = select_idle_entries_for_guarded_pressure(
+                    &pool,
+                    &status,
+                    &tracker,
+                    &budget,
+                    &operations,
+                    Vec::new(),
+                    GuardedIdlePressureRequest {
+                        selection: IdlePressureRequest {
+                            run_id: RunId::new_v4(),
+                            reuse_key: None,
+                            profile_name: fixture::PROFILE,
+                            device_rate_limits: &None,
+                            history_generation_run_id: None,
+                            allow_compatible_blank: false,
+                            blank_pool_diagnostics: None,
+                            vcpu: 2,
+                            memory_mb: 4096,
+                            context: "native_guarded_logical",
+                        },
+                        envelope: inputs.envelope(),
+                    },
+                )
                 .await;
-            return Err(error.into());
+                if !result.not_started.is_empty() || result.status_error.is_some() {
+                    return Err(io::Error::other(format!(
+                        "native logical refusal/status failure: {:?} / {:?}",
+                        result.not_started, result.status_error
+                    ))
+                    .into());
+                }
+                let IdlePressureSelection::Fresh(lease) = result.selection else {
+                    return Err(io::Error::other(
+                        "native logical substitution did not return a full lease",
+                    )
+                    .into());
+                };
+                assert_eq!((lease.vcpu(), lease.memory_mb()), (2, 4096));
+                assert_eq!(result.retirements.len(), 1);
+                // Prepare a different guest before joining old cleanup. Ordinary
+                // external gates establish still-live overlap, without timing claims.
+                let next_factory = factory.clone();
+                let next_cache = cache.clone();
+                let next_rootfs = rootfs_hash.clone();
+                let work = permit.spawn(move |mut operation| async move {
+                    let next_run = RunId::new_v4();
+                    let next_id = SandboxId::new_v4();
+                    let key = format!("thread:native-logical-replacement-{next_run}");
+                    let mut home =
+                        fixture::checkout(&next_cache, next_run, next_id, &key, &next_rootfs).await;
+                    let mut next = next_factory
+                        .create(fixture::sandbox_config(next_id, &mut home))
+                        .await?;
+                    let prepared: TestResult<()> = async {
+                        let backing = next
+                            .backing_process()
+                            .ok_or_else(|| io::Error::other("replacement supplied no backing"))?;
+                        operation.bind_backing(backing)?;
+                        fixture::prepare_guest(&mut *next, next_run).await?;
+                        loop {
+                            match operation.complete_phase().await {
+                                Ok(()) => break,
+                                Err(MemoryOperationError::AccountingChanged) => {
+                                    tokio::task::yield_now().await
+                                }
+                                Err(error) => return Err(error.into()),
+                            }
+                        }
+                        Ok(())
+                    }
+                    .await;
+                    next_factory.destroy(next).await;
+                    prepared
+                })?;
+                work.join().await??;
+                for task in &mut result.retirements {
+                    let completion = task.join().await??;
+                    if completion.outcome != DestroyOutcome::Completed
+                        || !completion.home_cache_promoted
+                    {
+                        return Err(io::Error::other(
+                            "native logical retirement did not prove complete saving",
+                        )
+                        .into());
+                    }
+                }
+                Ok(Some(lease))
+            }
+        }
+    }
+    .await;
+    let logical_lease = match retirement {
+        Ok(lease) => lease,
+        Err(error) => {
+            let jobs = pool.lock().await.drain();
+            for job in jobs {
+                job.run_with_context("native_fixture_refused_batch_cleanup")
+                    .await;
+            }
+            tracker.close_and_wait().await;
+            return Err(error);
         }
     };
-    let result = task.join().await??;
-    assert_eq!(result.outcome, DestroyOutcome::Completed);
-    assert!(result.home_cache_promoted);
+    assert!(pool.lock().await.is_empty());
     assert!(backing.exit_confirmed().await);
-    drop(result.budget_lease);
     tracker.close_and_wait().await;
     let report = operations.close_and_wait().await?;
     assert_eq!((report.registered_operations, report.tracked_tasks), (0, 0));
+    drop(logical_lease);
     assert_eq!(budget.allocated(), (0, 0, 0));
     let next_run = RunId::new_v4();
     let next_id = SandboxId::new_v4();

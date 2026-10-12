@@ -11,8 +11,8 @@ import { request$, setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import {
-  claimConnectorOAuthState,
-  getConnectorOAuthStateStatus,
+  claimCustomConnectorOAuthState$,
+  getConnectorOAuthStateStatus$,
   type StoredCustomConnectorOAuthState,
 } from "../services/connector-oauth-state.service";
 import { validateConnectorAuthorizationTarget$ } from "../services/connected-connector-authorization.service";
@@ -321,20 +321,23 @@ function customConnectorOAuthPersistenceResult(
   return result;
 }
 
-async function codeLessCustomOAuthCallbackResponse(
-  args: { readonly db: Db; readonly origin: string; readonly state: string },
-  signal: AbortSignal,
-): Promise<Response> {
-  const status = await getConnectorOAuthStateStatus(
-    args.db,
-    { state: args.state, target: { kind: "custom" } },
-    signal,
-  );
-  signal.throwIfAborted();
-  return status.kind === "usable"
-    ? callbackError(appOrigin(), "Missing authorization code")
-    : callbackError(args.origin, "Invalid OAuth state - please try again");
-}
+const codeLessCustomOAuthCallbackResponse$ = command(
+  async (
+    { set },
+    args: { readonly origin: string; readonly state: string },
+    signal: AbortSignal,
+  ): Promise<Response> => {
+    const status = await set(
+      getConnectorOAuthStateStatus$,
+      { state: args.state, target: { kind: "custom" } },
+      signal,
+    );
+    signal.throwIfAborted();
+    return status.kind === "usable"
+      ? callbackError(appOrigin(), "Missing authorization code")
+      : callbackError(args.origin, "Invalid OAuth state - please try again");
+  },
+);
 
 async function completeAutomaticOAuthCallback(
   args: {
@@ -548,14 +551,15 @@ const completeOAuth2Callback$ = command(
       return callbackError(defaultOrigin, "Missing OAuth state");
     }
     if (!providerError && !authorizationCode) {
-      return await codeLessCustomOAuthCallbackResponse(
-        { db: set(writeDb$), origin: defaultOrigin, state: oauthState },
+      return await set(
+        codeLessCustomOAuthCallbackResponse$,
+        { origin: defaultOrigin, state: oauthState },
         signal,
       );
     }
-    const claimed = await claimConnectorOAuthState(
-      set(writeDb$),
-      { state: oauthState, target: { kind: "custom" } },
+    const claimed = await set(
+      claimCustomConnectorOAuthState$,
+      oauthState,
       signal,
     );
     signal.throwIfAborted();

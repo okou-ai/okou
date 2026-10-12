@@ -1060,8 +1060,8 @@ const publishCopiedWorkflow$ = command(
     args: CopiedWorkflowPublicationInput,
     signal: AbortSignal,
   ) => {
-    // Read a coherent source in a short transaction, then release every lock
-    // before KMS and object storage work. Publication rechecks that exact source.
+    // Prepare with ordinary reads before KMS and object storage work. Concurrent
+    // source changes may conflict; publication rechecks that exact source.
     const snapshot = await set(readWorkflowCopySnapshot$, args, signal);
     signal.throwIfAborted();
     if (snapshot.kind === "conflict") {

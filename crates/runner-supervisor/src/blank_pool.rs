@@ -29,6 +29,9 @@ use runner_lifecycle::resource_budget::{
 };
 use runner_lifecycle::status::StatusTracker;
 
+mod guarded;
+pub use guarded::GuardedBlankPoolRequest;
+
 const TARGET_PERCENT: usize = 10;
 const EXACT_IDLE_CAPACITY_YIELD_AGE: Duration = Duration::from_secs(30 * 60);
 
@@ -41,6 +44,7 @@ pub struct BlankProfile {
     pub home_disk_mb: u32,
 }
 
+#[derive(Clone)]
 struct BlankPoolPlan {
     profile_name: String,
     profile: BlankProfile,

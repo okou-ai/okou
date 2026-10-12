@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "1.330.4",
+  "version": "1.331.2",
   "private": true,
   "type": "module",
   "exports": {
@@ -31,6 +31,10 @@
     "./types": {
       "import": "./src/types.ts",
       "types": "./src/types.ts"
+    },
+    "./operations/banking-connect-session-replacement": {
+      "import": "./src/operations/banking-connect-session-replacement.ts",
+      "types": "./src/operations/banking-connect-session-replacement.ts"
     }
   },
   "scripts": {

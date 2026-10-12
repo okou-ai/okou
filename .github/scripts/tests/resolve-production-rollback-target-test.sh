@@ -22,7 +22,9 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "4545454545454545454545454545454545454545" ]; then
+    if [ "${3:-}" = "4646464646464646464646464646464646464646" ]; then
+      [ "${MOCK_DESKTOP_MIGRATION_HOP_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "4545454545454545454545454545454545454545" ]; then
       [ "${MOCK_COMPUTER_USE_HOST_SESSION_ONLY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "9fa8da0d3d25e75e0dcfdd3292e1e2bbe6fe262f" ]; then
       [ "${MOCK_CHAT_THREAD_PROVENANCE_FLOOR_VALID:-1}" = "1" ]
@@ -109,7 +111,9 @@ case "${1:-}" in
     fi
     ;;
   log)
-    if [[ "$*" == *src/runtime/computer-use-host.ts* ]]; then
+    if [[ "$*" == *desktop-electron-migration-release.ts* ]]; then
+      printf '%s\n' "${MOCK_DESKTOP_MIGRATION_HOP_COMMIT-4646464646464646464646464646464646464646}"
+    elif [[ "$*" == *src/runtime/computer-use-host.ts* ]]; then
       printf '%s\n' "${MOCK_COMPUTER_USE_HOST_SESSION_ONLY_COMMIT-4545454545454545454545454545454545454545}"
     elif [[ "$*" == *1255_retire_public_brand.sql* ]]; then
       printf '%s\n' "${MOCK_PUBLIC_BRAND_RETIREMENT_COMMIT-2222222222222222222222222222222222222222}"
@@ -714,6 +718,20 @@ assert_failure "Rollback target predates the Browser session mutation contract" 
 [ ! -s "${tmp_dir}/browser-session-mutations-floor.output" ] || fail "incompatible Browser mutation API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Browser mutation floor must fail before artifact or host access"
+fi
+
+for migration_hop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Desktop migration-hop policy" \
+    run_resolver "${tmp_dir}/desktop-migration-hop-history.output" "MOCK_DESKTOP_MIGRATION_HOP_COMMIT=${migration_hop_commit}"
+  [ ! -s "${tmp_dir}/desktop-migration-hop-history.output" ] || fail "invalid migration-hop history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the frozen Desktop migration-hop policy" \
+  run_resolver "${tmp_dir}/desktop-migration-hop-floor.output" MOCK_DESKTOP_MIGRATION_HOP_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/desktop-migration-hop-floor.output" ] || fail "dynamic Squirrel API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Desktop migration-hop floor must fail before artifact or host access"
 fi
 
 for notification_commit in "" invalid; do

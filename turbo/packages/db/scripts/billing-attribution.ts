@@ -183,9 +183,14 @@ async function timeout() {
 await client.connect();
 try {
   if (!values.migrate) {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0355; new non-billing transactions are prohibited.
-    await client.query("BEGIN READ ONLY");
-    await timeout();
+    assert.ok(
+      performance.now() - startedAt < maxMs,
+      "billing attribution time budget exhausted; resume the same checkpoint",
+    );
+    await client.query(
+      "SELECT set_config('default_transaction_read_only','on',false), set_config('statement_timeout',$1,false)",
+      [`${remainingMs()}ms`],
+    );
     const union = phases
       .filter((p) => {
         return p !== "done";
@@ -230,7 +235,6 @@ try {
           return [key, integer(value)];
         }),
     );
-    await client.query("COMMIT");
     console.log(
       JSON.stringify({
         mode: "dry-run",

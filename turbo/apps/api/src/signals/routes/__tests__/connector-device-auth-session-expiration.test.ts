@@ -10,6 +10,7 @@ import {
   mockTestOAuthDeviceConnectorProvider,
 } from "./helpers/api-bdd-connectors";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
+import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 const connectors = createConnectorBddApi(context);
@@ -72,6 +73,7 @@ async function expectExpiredSession(
 
 describe("Builtin device-auth session expiration", () => {
   it("expires an exact non-default reconnect only after its deadline and preserves both accounts through recovery", async () => {
+    mockSecretKmsHttp();
     const owned = createPublicConnectorActor(context);
     onTestFinished(() => {
       clearMockNow();
@@ -162,6 +164,7 @@ describe("Builtin device-auth session expiration", () => {
   });
 
   it("preserves a fresh poll past expiry then expires at the freshness boundary without publishing its late successful account", async () => {
+    mockSecretKmsHttp();
     const owned = createPublicConnectorActor(context);
     onTestFinished(() => {
       clearMockNow();

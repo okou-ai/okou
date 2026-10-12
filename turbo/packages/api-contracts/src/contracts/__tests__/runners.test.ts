@@ -12,7 +12,7 @@ import {
   executionContextSchema,
   heartbeatBodySchema,
   heldSandboxStateSchema,
-  heldWorkspaceStateSchema,
+  heldHomeStateSchema,
   jobSchema,
   PI_MEMORY_SUMMARY_MAX_BYTES,
   PI_MEMORY_SUMMARY_MAX_TOKENS,
@@ -37,19 +37,19 @@ import {
   storageManifestSchema,
   storedExecutionContextSchema,
   storedResumeSessionSchema,
-  workspaceReuseResultSchema as runnersWorkspaceReuseResultSchema,
+  homeReuseResultSchema as runnersHomeReuseResultSchema,
 } from "../runners";
 import {
   runnerHeartbeatGenerationSchema,
   runnerHostnameSchema,
   runnerVersionSchema,
   sandboxReuseResultSchema,
-  workspaceReuseResultSchema,
+  homeReuseResultSchema,
 } from "../runner-primitives";
 import { runRunnerContract } from "../run-routes";
 import {
   sandboxReuseResultSchema as webhookSandboxReuseResultSchema,
-  workspaceReuseResultSchema as webhookWorkspaceReuseResultSchema,
+  homeReuseResultSchema as webhookHomeReuseResultSchema,
 } from "../webhooks";
 
 describe("agent execution timing contract", () => {
@@ -107,7 +107,7 @@ describe("run runner response compatibility", () => {
 
     const currentResponse = {
       sandboxReuseResult: null,
-      workspaceReuseResult: null,
+      homeReuseResult: null,
       runnerHostname: null,
       runnerVersion: null,
       runnerId: null,
@@ -121,7 +121,7 @@ describe("run runner response compatibility", () => {
   it("accepts a ready runner lifecycle snapshot", () => {
     const readyResponse = {
       sandboxReuseResult: "reused",
-      workspaceReuseResult: "sandboxReused",
+      homeReuseResult: "sandboxReused",
       runnerHostname: "prod-1.aws.vm3.ai",
       runnerVersion: "1.381.12",
       runnerId: "00000000-0000-4000-8000-000000000001",
@@ -144,8 +144,8 @@ describe("runner lifecycle schema ownership", () => {
   it("keeps runner and webhook compatibility exports on one schema instance", () => {
     expect(runnersSandboxReuseResultSchema).toBe(sandboxReuseResultSchema);
     expect(webhookSandboxReuseResultSchema).toBe(sandboxReuseResultSchema);
-    expect(runnersWorkspaceReuseResultSchema).toBe(workspaceReuseResultSchema);
-    expect(webhookWorkspaceReuseResultSchema).toBe(workspaceReuseResultSchema);
+    expect(runnersHomeReuseResultSchema).toBe(homeReuseResultSchema);
+    expect(webhookHomeReuseResultSchema).toBe(homeReuseResultSchema);
   });
 });
 
@@ -1101,17 +1101,17 @@ describe("runner resume session contract", () => {
       historyGenerationRunId,
     );
 
-    const heldWorkspaceState = heldWorkspaceStateSchema.parse({
+    const heldHomeState = heldHomeStateSchema.parse({
       reuseKey: "thread:22222222-2222-4222-8222-222222222223",
       lastCompletedAt: "2026-07-15T00:00:00.000Z",
-      workspaceCaches: [
-        { profile: "vm0/default", workspaceAffinityVersion: 1 },
-        { profile: "vm0/large", workspaceAffinityVersion: 1 },
+      homeCaches: [
+        { profile: "vm0/default", homeAffinityVersion: 1 },
+        { profile: "vm0/large", homeAffinityVersion: 1 },
       ],
     });
-    expect(heldWorkspaceState.workspaceCaches).toEqual([
-      { profile: "vm0/default", workspaceAffinityVersion: 1 },
-      { profile: "vm0/large", workspaceAffinityVersion: 1 },
+    expect(heldHomeState.homeCaches).toEqual([
+      { profile: "vm0/default", homeAffinityVersion: 1 },
+      { profile: "vm0/large", homeAffinityVersion: 1 },
     ]);
   });
 
@@ -1160,7 +1160,7 @@ describe("runner resume session contract", () => {
       "exactSandbox",
       "finalizingPredecessor",
       "reusableSandbox",
-      "workspaceCache",
+      "homeCache",
     ] as const) {
       expect(
         jobSchema.parse({
@@ -1242,7 +1242,7 @@ describe("runner resume session contract", () => {
         runnerPreference: {
           kind: "noPreference",
           reason: "noReuseKey",
-          tier: "workspaceCache",
+          tier: "homeCache",
         },
       }).success,
     ).toBe(false);
@@ -1262,7 +1262,7 @@ describe("runner resume session contract", () => {
       runningCount: 0,
       admittableProfiles: ["vm0/default"],
       heldSandboxStates: [],
-      heldWorkspaceStates: [],
+      heldHomeStates: [],
       activeReuseProducers: [],
       mode: "running",
     } as const;
@@ -1326,7 +1326,7 @@ describe("runner resume session contract", () => {
       runningCount: 0,
       admittableProfiles: ["vm0/default"],
       heldSandboxStates: [],
-      heldWorkspaceStates: [],
+      heldHomeStates: [],
       activeReuseProducers: [],
       mode: "running",
     } as const;
@@ -1385,7 +1385,7 @@ describe("runner resume session contract", () => {
     ).toBe(false);
   });
 
-  it("bounds profile-qualified workspace cache heartbeat state", () => {
+  it("bounds profile-qualified home cache heartbeat state", () => {
     const heartbeat = {
       runnerId: "33333333-3333-4333-8333-333333333333",
       group: "vm0/test",
@@ -1399,72 +1399,68 @@ describe("runner resume session contract", () => {
       runningCount: 0,
       admittableProfiles: ["vm0/default"],
       heldSandboxStates: [],
-      heldWorkspaceStates: [],
+      heldHomeStates: [],
       activeReuseProducers: [],
       mode: "running",
     } as const;
-    const workspaceCaches = Array.from({ length: 8 }, (_, index) => {
+    const homeCaches = Array.from({ length: 8 }, (_, index) => {
       return {
         profile: `vm0/profile-${index}`,
-        workspaceAffinityVersion: 1 as const,
+        homeAffinityVersion: 1 as const,
       };
     });
-    const heldWorkspaceStates = Array.from({ length: 128 }, (_, index) => {
+    const heldHomeStates = Array.from({ length: 128 }, (_, index) => {
       return {
         reuseKey: `thread:${index}`,
         lastCompletedAt: "2026-07-15T00:00:00.000Z",
-        workspaceCaches,
+        homeCaches,
       };
     });
 
     expect(
       heartbeatBodySchema.safeParse({
         ...heartbeat,
-        heldWorkspaceStates,
+        heldHomeStates,
       }).success,
     ).toBe(true);
     expect(
       heartbeatBodySchema.safeParse({
         ...heartbeat,
-        heldWorkspaceStates: [
-          ...heldWorkspaceStates,
+        heldHomeStates: [
+          ...heldHomeStates,
           {
             reuseKey: "thread:over-global-cap",
             lastCompletedAt: "2026-07-15T00:00:00.000Z",
-            workspaceCaches: [
-              { profile: "vm0/default", workspaceAffinityVersion: 1 },
-            ],
+            homeCaches: [{ profile: "vm0/default", homeAffinityVersion: 1 }],
           },
         ],
       }).success,
     ).toBe(false);
     expect(
-      heldWorkspaceStateSchema.safeParse({
+      heldHomeStateSchema.safeParse({
         reuseKey: "thread:over-parent-cap",
         lastCompletedAt: "2026-07-15T00:00:00.000Z",
-        workspaceCaches: [
-          ...workspaceCaches,
+        homeCaches: [
+          ...homeCaches,
           {
             profile: "vm0/profile-over-cap",
-            workspaceAffinityVersion: 1,
+            homeAffinityVersion: 1,
           },
         ],
       }).success,
     ).toBe(false);
     expect(
-      heldWorkspaceStateSchema.safeParse({
-        reuseKey: "thread:without-workspace",
+      heldHomeStateSchema.safeParse({
+        reuseKey: "thread:without-home",
         lastCompletedAt: "2026-07-15T00:00:00.000Z",
-        workspaceCaches: [],
+        homeCaches: [],
       }).success,
     ).toBe(false);
     expect(
-      heldWorkspaceStateSchema.safeParse({
+      heldHomeStateSchema.safeParse({
         reuseKey: "thread:invalid-capability",
         lastCompletedAt: "2026-07-15T00:00:00.000Z",
-        workspaceCaches: [
-          { profile: "vm0/default", workspaceAffinityVersion: 2 },
-        ],
+        homeCaches: [{ profile: "vm0/default", homeAffinityVersion: 2 }],
       }).success,
     ).toBe(false);
   });
@@ -1724,7 +1720,7 @@ describe("runner claim request contract", () => {
         runnerId: "22222222-2222-4222-8222-222222222222",
         heartbeatGeneration: 7,
       },
-      tier: "workspaceCache" as const,
+      tier: "homeCache" as const,
       expiresAt: "2026-08-03T00:00:01.000Z",
     };
 

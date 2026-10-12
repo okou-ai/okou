@@ -12,6 +12,7 @@ import {
   mockTestOAuthDeviceConnectorProvider,
 } from "./helpers/api-bdd-connectors";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
+import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 const connectors = createConnectorBddApi(context);
@@ -97,9 +98,10 @@ async function expectAccountIdentities(
 }
 
 // A normal caller's interval responses and replacement sessions are the
-// observation boundary; only the external token response is controlled.
+// observation boundary; OAuth and KMS responses are controlled at HTTP.
 describe("Builtin device-auth awaiting restoration", () => {
   it("preserves strict pending, slow-down and failed-poll intervals while recovering the exact non-default account", async () => {
+    mockSecretKmsHttp();
     const owned = createPublicConnectorActor(context, {
       beforeWorkspaceCleanup: () => {
         clearMockNow();
@@ -220,6 +222,7 @@ describe("Builtin device-auth awaiting restoration", () => {
   it.each(["pending", "malformed"] as const)(
     "does not restore a superseded claim after its old %s provider response or disturb the replacement account",
     async (response) => {
+      mockSecretKmsHttp();
       let releasePendingResponse: (() => void) | undefined;
       const owned = createPublicConnectorActor(context, {
         beforeDrain: () => {

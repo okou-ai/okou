@@ -11,6 +11,7 @@ import {
   mockTestOAuthDeviceConnectorProvider,
 } from "./helpers/api-bdd-connectors";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
+import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -76,6 +77,7 @@ async function expectMissingSession(
 
 describe("Builtin device-auth initial poll claims", () => {
   it("recovers a failed reconnect into the exact non-default account without changing its sibling", async () => {
+    mockSecretKmsHttp();
     const owned = createPublicConnectorActor(context);
     await owned.run(async () => {
       const actor = owned.actor;
@@ -148,6 +150,7 @@ describe("Builtin device-auth initial poll claims", () => {
   });
 
   it("enforces identity and the strict stale boundary before preserving the winning reclaimed account", async () => {
+    mockSecretKmsHttp();
     const owned = createPublicConnectorActor(context);
     onTestFinished(() => {
       clearMockNow();

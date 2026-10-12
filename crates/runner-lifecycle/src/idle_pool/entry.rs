@@ -20,7 +20,9 @@ use crate::resource_budget::BudgetLease;
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::StorageFingerprints;
 use runner_types::ids::RunId;
+use uuid::Uuid;
 
+use super::inventory_retirement::CapturedBacking;
 use super::park_transition::IdleParkCandidate;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -59,6 +61,7 @@ impl IdleSandboxIdentity {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct IdleSandboxMetadata {
     pub(super) identity: IdleSandboxIdentity,
     /// Identity of the parked sandbox. Survives reuse (next job's `run_id`
@@ -141,6 +144,7 @@ pub struct ParkedIdleCandidate {
     pub(super) resources: IdleSandboxResources,
     pub(super) metadata: IdleSandboxMetadata,
     pub(super) budget_lease: BudgetLease,
+    pub(super) retirement_backing: Option<CapturedBacking>,
 }
 
 /// Quiesced, fenced, still-running sandbox that may only be handed to its
@@ -163,6 +167,30 @@ pub struct FinalizingHandoffCandidate {
 }
 
 impl ParkedIdleCandidate {
+    /// Capture this resource's exact backing while exclusively caller-owned,
+    /// outside inventory/accounting locks. Failure preserves the candidate and
+    /// clears any earlier proof; guarded pool retirement never falls back.
+    pub fn capture_retirement_backing(
+        &mut self,
+    ) -> Result<(), crate::host_memory_operations::MemoryOperationError> {
+        use crate::host_memory_operations::MemoryOperationError;
+        self.retirement_backing = None;
+        let captured = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let process = self
+                .resources
+                .sandbox
+                .backing_process()
+                .ok_or(MemoryOperationError::MissingBacking)?;
+            Ok(CapturedBacking {
+                identity: process.identity(),
+                process,
+            })
+        }))
+        .unwrap_or(Err(MemoryOperationError::ProducerLost))?;
+        self.retirement_backing = Some(captured);
+        Ok(())
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn reuse_key(&self) -> Option<&str> {
         self.metadata.reuse_key()
@@ -208,11 +236,8 @@ impl ParkedIdleCandidate {
                 last_completed_at: None,
             },
             budget_lease,
+            retirement_backing: None,
         }
-    }
-
-    pub(super) fn is_blank(&self) -> bool {
-        self.metadata.is_blank()
     }
 
     pub(super) fn into_idle_entry(self, parked_at: Instant) -> IdleEntry {
@@ -220,6 +245,7 @@ impl ParkedIdleCandidate {
             resources,
             metadata,
             budget_lease,
+            retirement_backing,
         } = self;
 
         IdleEntry {
@@ -227,6 +253,8 @@ impl ParkedIdleCandidate {
             metadata,
             budget_lease,
             parked_at,
+            retirement_backing,
+            insertion_epoch: Uuid::new_v4(),
         }
     }
 
@@ -399,6 +427,8 @@ pub struct IdleEntry {
     pub(super) metadata: IdleSandboxMetadata,
     pub(super) budget_lease: BudgetLease,
     pub(super) parked_at: Instant,
+    pub(super) retirement_backing: Option<CapturedBacking>,
+    pub(super) insertion_epoch: Uuid,
 }
 
 /// A sandbox reserved for reuse, preserving whether it is physically parked
@@ -436,10 +466,10 @@ pub enum DestroyOutcome {
 /// task owns the active lease so executor panics cannot release capacity before
 /// provider completion and post-job cleanup finish.
 pub struct ReusableIdleSandbox {
-    sandbox: Box<dyn Sandbox>,
-    metadata: IdleSandboxMetadata,
-    home_promotion: Option<HomeImagePromotionContext>,
-    guest_state_prepared: bool,
+    pub(super) sandbox: Box<dyn Sandbox>,
+    pub(super) metadata: IdleSandboxMetadata,
+    pub(super) home_promotion: Option<HomeImagePromotionContext>,
+    pub(super) guest_state_prepared: bool,
 }
 
 pub struct ReusableIdleSandboxParts {
@@ -995,6 +1025,13 @@ impl ReservedIdleSandbox {
     pub(super) fn parked(entry: IdleEntry) -> Self {
         Self {
             state: ReservedIdleSandboxState::Parked(entry),
+        }
+    }
+
+    pub(super) fn into_parked_entry_preserving_owner(self) -> Result<IdleEntry, Box<Self>> {
+        match self.state {
+            ReservedIdleSandboxState::Parked(entry) => Ok(entry),
+            ReservedIdleSandboxState::Running(_) => Err(Box::new(self)),
         }
     }
 

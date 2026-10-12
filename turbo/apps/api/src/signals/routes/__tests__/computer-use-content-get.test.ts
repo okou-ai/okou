@@ -2,12 +2,17 @@ import type { ComputerUseTestConnection } from "./helpers/api-bdd-computer-use";
 import { randomUUID } from "node:crypto";
 
 import { aroundEach, describe, expect, it } from "vitest";
+import { computerUseCommandContract } from "@okouai/api-contracts/contracts/computer-use";
 
 import { testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { withMockNowForTest } from "../../../lib/time";
+import { settleIncludingAbort } from "../../utils";
+import { computerUseRoutes } from "../computer-use";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 
@@ -272,9 +277,28 @@ describe("Computer Use binary content reads", () => {
         const queued = await requestContent(actor, created.commandId, [404]);
         expectOpaqueNotFound(queued.body);
         await computerUse.claimNextComputerUseCommand(host.connection);
+        const running = await requestContent(actor, created.commandId, [404]);
+        expectOpaqueNotFound(running.body);
         await computerUse.completeComputerUseCommandWith(
           host.connection,
           created.commandId,
+          {
+            status: "failed",
+            error: { code: "app_not_found", message: "Desktop read failed" },
+          },
+        );
+        const failed = await requestContent(actor, created.commandId, [404]);
+        expectOpaqueNotFound(failed.body);
+
+        const withoutScreenshot =
+          await computerUse.createComputerUseReadCommand(actor, {
+            kind: "app.state",
+            app: "Safari",
+          });
+        await computerUse.claimNextComputerUseCommand(host.connection);
+        await computerUse.completeComputerUseCommandWith(
+          host.connection,
+          withoutScreenshot.commandId,
           {
             status: "succeeded",
             result: { screenshot: null },
@@ -282,11 +306,71 @@ describe("Computer Use binary content reads", () => {
         );
         const pointerNull = await requestContent(
           actor,
-          created.commandId,
+          withoutScreenshot.commandId,
           [404],
         );
         expectOpaqueNotFound(pointerNull.body);
         expect(fake.gets).toStrictEqual([]);
+      });
+    },
+  );
+
+  it.each(["GetObject", "body"] as const)(
+    "stops a screenshot %s read when its API instance is cancelled",
+    { timeout: CASE_TIMEOUT_MS },
+    async (phase) => {
+      const scenario = createScenario();
+      return await scenario.run(async () => {
+        const fake = scenario.computerUse.installComputerUseS3Fake();
+        const actor = scenario.orgScoped(scenario.bdd.user());
+        const fixture = await scenario.createStoredContent(actor);
+        const owner = new AbortController();
+        const barrier =
+          phase === "GetObject"
+            ? fake.holdNextGetObject()
+            : fake.holdNextBody();
+        createRouteMocks(context).clerk.session(
+          actor.userId,
+          actor.orgId,
+          actor.orgRole,
+        );
+        const pending = settleIncludingAbort(() => {
+          return setupApp({
+            context,
+            routes: computerUseRoutes,
+            signal: AbortSignal.any([context.signal, owner.signal]),
+            rethrowErrors: true,
+          })(computerUseCommandContract).getScreenshot({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { commandId: fixture.commandId },
+          });
+        });
+        const cancelled = await settleIncludingAbort(async () => {
+          const started = await Promise.race([barrier.entered, pending]);
+          if ("ok" in started) {
+            if (!started.ok) {
+              throw started.error;
+            }
+            throw new Error("Screenshot request finished before storage hold");
+          }
+          owner.abort(
+            new DOMException("Computer Use API instance stopped", "AbortError"),
+          );
+          await expect(pending).resolves.toMatchObject({
+            ok: false,
+            error: expect.objectContaining({ name: "AbortError" }),
+          });
+        });
+        owner.abort();
+        barrier.release();
+        await pending;
+        if (!cancelled.ok) {
+          throw cancelled.error;
+        }
+        scenario.expectDownload(
+          await scenario.downloadContent(fixture, actor),
+          fixture,
+        );
       });
     },
   );

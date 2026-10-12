@@ -4,13 +4,24 @@ import {
   asc,
   desc,
   eq,
+  exists,
   gt,
+  gte,
   inArray,
+  isNotNull,
   isNull,
   lte,
+  min,
+  notExists,
   or,
   sql,
+  sum,
+  type SQLWrapper,
 } from "drizzle-orm";
+import {
+  QueryBuilder,
+  type WithSubqueryWithSelection,
+} from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -23,14 +34,19 @@ import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { pgIntegerDecoder } from "../../lib/db-structured-result";
+import {
+  nullableDriverValueDecoder,
+  pgIntegerDecoder,
+  pgInt8ToBigIntDecoder,
+  pgInt8ToSafeIntegerDecoder,
+} from "../../lib/db-structured-result";
 import {
   USER_EXPORT_RESTORE_SCRIPT,
   USER_EXPORT_RESTORE_README,
 } from "../../lib/user-export-restore";
 import { clerk$, createClerkReadContext } from "../external/clerk";
 import { listAllUserOrganizationMemberships } from "../external/clerk-organization-lists";
-import { db$, writeDb$ } from "../external/db";
+import { db$ } from "../external/db";
 import { readUserExportAgentInstructions$ } from "./user-export-agent-instructions.service";
 import { chatEventRowFromDbRow } from "./cron-snapshot-chat-events.service";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
@@ -236,105 +252,132 @@ function threadSourceStep<T extends { readonly id: string }>(
 
 const collectThread$ = command(
   async (
-    { set },
+    { get },
     args: SourceArgs,
     checkpoint: SourceCheckpoint,
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0311; new non-billing transactions are prohibited.
-    return await db.transaction(
-      async (tx) => {
-        const [thread] = await tx
-          .select({
-            id: chatThreads.id,
-            userId: chatThreads.userId,
-            title: chatThreads.title,
-            agentId: chatThreads.agentId,
-            orgId: agents.orgId,
-            sourceScheduleRunId: chatThreads.sourceScheduleRunId,
-            createdAt: chatThreads.createdAt,
-            updatedAt: chatThreads.updatedAt,
-            lastMessageAt: chatThreads.lastMessageAt,
-            lastReadAt: chatThreads.lastReadAt,
-            pinnedAt: chatThreads.pinnedAt,
-            pinOrder: chatThreads.pinOrder,
-            archived: chatThreads.archived,
-            renamedAt: chatThreads.renamedAt,
-            selectedModel: chatThreads.selectedModel,
-            modelSettings: chatThreads.modelSettings,
-            codexServiceTier: chatThreads.codexServiceTier,
-          })
-          .from(chatThreads)
-          .leftJoin(agents, eq(agents.id, chatThreads.agentId))
-          .where(
-            and(
-              eq(chatThreads.userId, args.userId),
-              lte(chatThreads.createdAt, startedBefore(checkpoint)),
-              checkpoint.cursor
-                ? gt(chatThreads.id, checkpoint.cursor)
-                : undefined,
-            ),
-          )
-          .orderBy(asc(chatThreads.id))
-          .limit(1);
-        signal.throwIfAborted();
-        if (!thread) {
-          return nextPhase(checkpoint, "agents");
-        }
-
-        const [draft] = await tx
-          .select({
-            draftUserMessage: chatThreadDrafts.draftUserMessage,
-            draftAttachments: chatThreadDrafts.draftAttachments,
-          })
-          .from(chatThreadDrafts)
-          .where(eq(chatThreadDrafts.chatThreadId, thread.id))
-          .limit(1);
-        signal.throwIfAborted();
-        const draftValues = {
-          draftUserMessage: draft?.draftUserMessage ?? null,
-          draftAttachments: draft?.draftAttachments ?? null,
-        };
-
-        const [head] = await tx
-          .select({
-            lastSeqId: chatEventSnapshots.lastSeqId,
-            lastEventId: chatEventSnapshots.lastEventId,
-            terminalSeqId: chatEventSnapshots.terminalSeqId,
-            terminalEventId: chatEventSnapshots.terminalEventId,
-            archiveSchemaVersion: chatEventSnapshots.archiveSchemaVersion,
-            objectKey: chatEventSnapshots.objectKey,
-          })
-          .from(chatEventSnapshots)
-          .where(
-            and(
-              eq(chatEventSnapshots.chatThreadId, thread.id),
-              eq(
-                chatEventSnapshots.archiveSchemaVersion,
-                CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-              ),
-            ),
-          )
-          .limit(1);
-        signal.throwIfAborted();
-
-        const [lastEvent] = await tx
-          .select({ seqId: chatEvents.seqId })
-          .from(chatEvents)
-          .where(eq(chatEvents.chatThreadId, thread.id))
-          .orderBy(desc(chatEvents.seqId))
-          .limit(1);
-        signal.throwIfAborted();
-        return threadSourceStep(
-          thread,
-          draftValues,
-          head,
-          lastEvent?.seqId,
-          checkpoint,
-        );
-      },
-      { isolationLevel: "repeatable read", accessMode: "read only" },
+    const db = get(db$);
+    const threadRoot = db
+      .select({
+        id: chatThreads.id,
+        userId: chatThreads.userId,
+        title: chatThreads.title,
+        agentId: chatThreads.agentId,
+        orgId: agents.orgId,
+        sourceScheduleRunId: chatThreads.sourceScheduleRunId,
+        createdAt: chatThreads.createdAt,
+        updatedAt: chatThreads.updatedAt,
+        lastMessageAt: chatThreads.lastMessageAt,
+        lastReadAt: chatThreads.lastReadAt,
+        pinnedAt: chatThreads.pinnedAt,
+        pinOrder: chatThreads.pinOrder,
+        archived: chatThreads.archived,
+        renamedAt: chatThreads.renamedAt,
+        selectedModel: chatThreads.selectedModel,
+        modelSettings: chatThreads.modelSettings,
+        codexServiceTier: chatThreads.codexServiceTier,
+      })
+      .from(chatThreads)
+      .leftJoin(agents, eq(agents.id, chatThreads.agentId))
+      .where(
+        and(
+          eq(chatThreads.userId, args.userId),
+          lte(chatThreads.createdAt, startedBefore(checkpoint)),
+          checkpoint.cursor ? gt(chatThreads.id, checkpoint.cursor) : undefined,
+        ),
+      )
+      .orderBy(asc(chatThreads.id))
+      .limit(1)
+      .as("export_thread");
+    const draft = db
+      .select({
+        draftUserMessage: chatThreadDrafts.draftUserMessage,
+        draftAttachments: chatThreadDrafts.draftAttachments,
+      })
+      .from(chatThreadDrafts)
+      .where(eq(chatThreadDrafts.chatThreadId, threadRoot.id))
+      .limit(1)
+      .as("export_draft");
+    const head = db
+      .select({
+        lastSeqId: chatEventSnapshots.lastSeqId,
+        lastEventId: chatEventSnapshots.lastEventId,
+        terminalSeqId: chatEventSnapshots.terminalSeqId,
+        terminalEventId: chatEventSnapshots.terminalEventId,
+        archiveSchemaVersion: chatEventSnapshots.archiveSchemaVersion,
+        objectKey: chatEventSnapshots.objectKey,
+      })
+      .from(chatEventSnapshots)
+      .where(
+        and(
+          eq(chatEventSnapshots.chatThreadId, threadRoot.id),
+          eq(
+            chatEventSnapshots.archiveSchemaVersion,
+            CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+          ),
+        ),
+      )
+      .limit(1)
+      .as("export_head");
+    const lastEvent = db
+      .select({ seqId: chatEvents.seqId })
+      .from(chatEvents)
+      .where(eq(chatEvents.chatThreadId, threadRoot.id))
+      .orderBy(desc(chatEvents.seqId))
+      .limit(1)
+      .as("export_last_event");
+    // Limit the owned root before the bounded children. One statement keeps
+    // these source facts coherent; durable snapshot pinning happens later.
+    const [result] = await db
+      .select({
+        thread: {
+          id: threadRoot.id,
+          userId: threadRoot.userId,
+          title: threadRoot.title,
+          agentId: threadRoot.agentId,
+          orgId: threadRoot.orgId,
+          sourceScheduleRunId: threadRoot.sourceScheduleRunId,
+          createdAt: threadRoot.createdAt,
+          updatedAt: threadRoot.updatedAt,
+          lastMessageAt: threadRoot.lastMessageAt,
+          lastReadAt: threadRoot.lastReadAt,
+          pinnedAt: threadRoot.pinnedAt,
+          pinOrder: threadRoot.pinOrder,
+          archived: threadRoot.archived,
+          renamedAt: threadRoot.renamedAt,
+          selectedModel: threadRoot.selectedModel,
+          modelSettings: threadRoot.modelSettings,
+          codexServiceTier: threadRoot.codexServiceTier,
+        },
+        draft: {
+          draftUserMessage: draft.draftUserMessage,
+          draftAttachments: draft.draftAttachments,
+        },
+        head: {
+          lastSeqId: head.lastSeqId,
+          lastEventId: head.lastEventId,
+          terminalSeqId: head.terminalSeqId,
+          terminalEventId: head.terminalEventId,
+          archiveSchemaVersion: head.archiveSchemaVersion,
+          objectKey: head.objectKey,
+        },
+        lastEvent: { seqId: lastEvent.seqId },
+      })
+      .from(threadRoot)
+      .leftJoinLateral(draft, sql`true`)
+      .leftJoinLateral(head, sql`true`)
+      .leftJoinLateral(lastEvent, sql`true`);
+    signal.throwIfAborted();
+    if (!result) {
+      return nextPhase(checkpoint, "agents");
+    }
+    return threadSourceStep(
+      result.thread,
+      result.draft ?? { draftUserMessage: null, draftAttachments: null },
+      result.head ?? undefined,
+      result.lastEvent?.seqId,
+      checkpoint,
     );
   },
 );
@@ -442,115 +485,255 @@ function messageSourceStep(
   return step({ ...checkpoint, thread }, entries);
 }
 
+const messageSnapshotFields = Object.freeze({
+  lastSeqId: chatEventSnapshots.lastSeqId,
+  lastEventId: chatEventSnapshots.lastEventId,
+  terminalSeqId: chatEventSnapshots.terminalSeqId,
+  terminalEventId: chatEventSnapshots.terminalEventId,
+  archiveSchemaVersion: chatEventSnapshots.archiveSchemaVersion,
+  objectKey: chatEventSnapshots.objectKey,
+});
+const messageEventFields = Object.freeze({
+  id: chatEvents.id,
+  chatThreadId: chatEvents.chatThreadId,
+  runId: chatEvents.runId,
+  revokesEventId: chatEvents.revokesEventId,
+  eventType: chatEvents.eventType,
+  payload: chatEvents.payload,
+  failureReason: chatEvents.failureReason,
+  contextType: chatEvents.contextType,
+  contextId: chatEvents.contextId,
+  runEventSequenceNumber: chatEvents.runEventSequenceNumber,
+  runEventId: chatEvents.runEventId,
+  seqId: chatEvents.seqId,
+  createdAt: chatEvents.createdAt,
+});
+
+function messageSqlWindow(
+  current: NonNullable<SourceCheckpoint["thread"]>,
+  head: WithSubqueryWithSelection<
+    typeof messageSnapshotFields,
+    "export_message_head"
+  >,
+) {
+  const builder = new QueryBuilder();
+  const lastSeqId = sql`(${builder.select({ value: head.lastSeqId }).from(head)})`;
+  const objectKey = sql`(${builder.select({ value: head.objectKey }).from(head)})`;
+  const terminalSeqId = sql`(${builder.select({ value: head.terminalSeqId }).from(head)})`;
+  const coverage = sql`coalesce(${lastSeqId}, 0::bigint)`;
+  const afterSeqId = sql`greatest(${current.afterSeqId}::bigint, ${coverage})`;
+  const upperSeqId = sql`greatest(${current.upperSeqId}::bigint, ${coverage})`;
+  // Gate invalid snapshot metadata before payload reads. JS still owns the
+  // existing validation errors after the schema-aware result is decoded.
+  const validWindow = and(
+    gte(coverage, sql`${current.physicalCoverage}::bigint`),
+    or(
+      isNull(lastSeqId),
+      sql`${objectKey} is not distinct from ${current.snapshotKey}`,
+      and(
+        gt(lastSeqId, 0),
+        isNotNull(terminalSeqId),
+        sql`${objectKey} ~ ${String.raw`-[0-9a-f]{64}\.ndjson\.gz$`}`,
+      ),
+    ),
+  );
+  return { afterSeqId, upperSeqId, validWindow };
+}
+
+function messageBudgetFields(seqId: SQLWrapper, payloadBytes: SQLWrapper) {
+  return {
+    rank: sql`row_number() over (order by ${seqId})`
+      .mapWith(pgInt8ToSafeIntegerDecoder)
+      .as("row_rank"),
+    runningBytes:
+      sql`${sum(sql`${payloadBytes}::bigint * 2::bigint + 1024::bigint`)}
+            over (order by ${seqId} rows unbounded preceding)`
+        .mapWith(pgInt8ToBigIntDecoder)
+        .as("running_bytes"),
+  };
+}
+
+function messageBudgetConditions(rank: SQLWrapper, runningBytes: SQLWrapper) {
+  return {
+    excluded: and(
+      gt(rank, 1),
+      gt(runningBytes, BigInt(CHAT_PAGE_ESTIMATED_BYTES)),
+    ),
+    admitted: or(
+      eq(rank, 1),
+      lte(runningBytes, BigInt(CHAT_PAGE_ESTIMATED_BYTES)),
+    ),
+  };
+}
+
+type MessageCapture = {
+  readonly ownedId: string;
+  readonly head: SnapshotHead | null;
+  readonly candidate: {
+    readonly id: string;
+    readonly seqId: number;
+    readonly payloadBytes: number;
+  } | null;
+  readonly row: Parameters<typeof chatEventRowFromDbRow>[0] | null;
+};
+
+function messageCapturedSourceStep(
+  checkpoint: SourceCheckpoint,
+  current: NonNullable<SourceCheckpoint["thread"]>,
+  captured: readonly MessageCapture[],
+) {
+  const first = captured[0];
+  if (!first) {
+    throw new Error("User export thread became unavailable");
+  }
+  const capturedHead = first.head ?? undefined;
+  const window = messageSourceWindow(current, capturedHead);
+  const candidates = captured.flatMap(({ candidate }) => {
+    return candidate ? [candidate] : [];
+  });
+  const { hasMore } = chatPagePayloadPlan(candidates);
+  const rows = captured.flatMap(({ row }) => {
+    return row ? [row] : [];
+  });
+  return messageSourceStep(checkpoint, current, capturedHead, window, {
+    rows,
+    hasMore,
+  });
+}
+
 const collectMessages$ = command(
   async (
-    { set },
+    { get },
     args: SourceArgs,
     checkpoint: SourceCheckpoint,
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const current = checkpoint.thread;
     if (!current) {
       throw new Error("User export thread cursor is missing");
     }
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0312; new non-billing transactions are prohibited.
-    return await db.transaction(
-      async (tx) => {
-        const [owned] = await tx
-          .select({ id: chatThreads.id })
-          .from(chatThreads)
-          .where(
-            and(
-              eq(chatThreads.id, current.id),
-              eq(chatThreads.userId, args.userId),
-            ),
-          )
-          .limit(1);
-        signal.throwIfAborted();
-        if (!owned) {
-          throw new Error("User export thread became unavailable");
-        }
-
-        const [head] = await tx
-          .select({
-            lastSeqId: chatEventSnapshots.lastSeqId,
-            lastEventId: chatEventSnapshots.lastEventId,
-            terminalSeqId: chatEventSnapshots.terminalSeqId,
-            terminalEventId: chatEventSnapshots.terminalEventId,
-            archiveSchemaVersion: chatEventSnapshots.archiveSchemaVersion,
-            objectKey: chatEventSnapshots.objectKey,
-          })
-          .from(chatEventSnapshots)
-          .where(
-            and(
-              eq(chatEventSnapshots.chatThreadId, current.id),
-              eq(
-                chatEventSnapshots.archiveSchemaVersion,
-                CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-              ),
-            ),
-          )
-          .limit(1);
-        signal.throwIfAborted();
-
-        const window = messageSourceWindow(current, head);
-        const { upperSeqId, afterSeqId } = window;
-        // Select only bounded metadata first: 100 accepted large messages must never
-        // materialize together before the worker can commit a checkpoint.
-        const candidates = await tx
-          .select({
-            id: chatEvents.id,
-            seqId: chatEvents.seqId,
-            payloadBytes:
-              sql`octet_length(COALESCE(${chatEvents.payload}::text, ''))`.mapWith(
-                pgIntegerDecoder,
-              ),
-          })
-          .from(chatEvents)
-          .where(
-            and(
-              eq(chatEvents.chatThreadId, current.id),
-              gt(chatEvents.seqId, afterSeqId),
-              lte(chatEvents.seqId, upperSeqId),
-            ),
-          )
-          .orderBy(asc(chatEvents.seqId))
-          .limit(CHAT_PAGE_SIZE);
-        signal.throwIfAborted();
-        const { ids, hasMore } = chatPagePayloadPlan(candidates);
-        const rows = await tx
-          .select({
-            id: chatEvents.id,
-            chatThreadId: chatEvents.chatThreadId,
-            runId: chatEvents.runId,
-            revokesEventId: chatEvents.revokesEventId,
-            eventType: chatEvents.eventType,
-            payload: chatEvents.payload,
-            failureReason: chatEvents.failureReason,
-            contextType: chatEvents.contextType,
-            contextId: chatEvents.contextId,
-            runEventSequenceNumber: chatEvents.runEventSequenceNumber,
-            runEventId: chatEvents.runEventId,
-            seqId: chatEvents.seqId,
-            createdAt: chatEvents.createdAt,
-          })
-          .from(chatEvents)
-          .where(
-            and(
-              eq(chatEvents.chatThreadId, current.id),
-              inArray(chatEvents.id, ids),
-            ),
-          )
-          .orderBy(asc(chatEvents.seqId));
-        signal.throwIfAborted();
-        return messageSourceStep(checkpoint, current, head, window, {
-          rows,
-          hasMore,
-        });
-      },
-      { isolationLevel: "repeatable read", accessMode: "read only" },
+    signal.throwIfAborted();
+    const owned = db.$with("export_message_owner").as(
+      db
+        .select({ id: chatThreads.id })
+        .from(chatThreads)
+        .where(
+          and(
+            eq(chatThreads.id, current.id),
+            eq(chatThreads.userId, args.userId),
+          ),
+        )
+        .limit(1),
     );
+    const head = db
+      .$with("export_message_head")
+      .as(
+        db
+          .select(messageSnapshotFields)
+          .from(chatEventSnapshots)
+          .innerJoin(owned, eq(chatEventSnapshots.chatThreadId, owned.id))
+          .where(
+            eq(
+              chatEventSnapshots.archiveSchemaVersion,
+              CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+            ),
+          ),
+      );
+    const window = messageSqlWindow(current, head);
+    const metadata = db.$with("export_message_metadata").as(
+      db
+        .select({
+          id: chatEvents.id,
+          seqId: chatEvents.seqId,
+          payloadBytes:
+            sql`octet_length(COALESCE(${chatEvents.payload}::text, ''))`
+              .mapWith(pgIntegerDecoder)
+              .as("payload_bytes"),
+        })
+        .from(chatEvents)
+        .where(
+          and(
+            exists(db.select({ id: owned.id }).from(owned)),
+            eq(chatEvents.chatThreadId, current.id),
+            window.validWindow,
+            gt(chatEvents.seqId, window.afterSeqId),
+            lte(chatEvents.seqId, window.upperSeqId),
+          ),
+        )
+        .orderBy(asc(chatEvents.seqId))
+        .limit(CHAT_PAGE_SIZE),
+    );
+    const ranked = db.$with("export_message_budget").as(
+      db
+        .select({
+          ...metadata._.selectedFields,
+          ...messageBudgetFields(metadata.seqId, metadata.payloadBytes),
+        })
+        .from(metadata),
+    );
+    const budgetConditions = messageBudgetConditions(
+      ranked.rank,
+      ranked.runningBytes,
+    );
+    const firstExcluded = db
+      .select({
+        rank: min(ranked.rank).mapWith(
+          nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
+        ),
+      })
+      .from(ranked)
+      .where(budgetConditions.excluded);
+    // Validate the first excluded row too, but never later unvisited rows.
+    // This gate prevents any full payload read for a rejected metadata plan.
+    const acceptedBudget = notExists(
+      db
+        .select({ id: ranked.id })
+        .from(ranked)
+        .where(
+          and(
+            gt(ranked.payloadBytes, CHAT_ROW_MAX_PAYLOAD_BYTES),
+            lte(
+              ranked.rank,
+              sql`coalesce((${firstExcluded}), ${CHAT_PAGE_SIZE}::bigint)`,
+            ),
+          ),
+        ),
+    );
+    const payload = db
+      .select(messageEventFields)
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.id, ranked.id),
+          budgetConditions.admitted,
+          acceptedBudget,
+        ),
+      )
+      .limit(1)
+      .as("export_message_payload");
+    // One statement captures the owned root, head, bounded metadata and only
+    // admitted payloads in one snapshot. The durable TX-0309 pin stays later.
+    // The driver read cannot abort in flight; check again before using it.
+    const captured = await db
+      .with(owned, head, metadata, ranked)
+      .select({
+        ownedId: owned.id,
+        head: { ...head._.selectedFields },
+        candidate: {
+          id: ranked.id,
+          seqId: ranked.seqId,
+          payloadBytes: ranked.payloadBytes,
+        },
+        row: { ...payload._.selectedFields },
+      })
+      .from(owned)
+      .leftJoin(head, sql`true`)
+      .leftJoin(ranked, sql`true`)
+      .leftJoinLateral(payload, sql`true`)
+      .orderBy(asc(ranked.seqId));
+    signal.throwIfAborted();
+    return messageCapturedSourceStep(checkpoint, current, captured);
   },
 );
 

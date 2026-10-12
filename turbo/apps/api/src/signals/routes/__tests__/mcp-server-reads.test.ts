@@ -27,6 +27,7 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMcpWebApi } from "./helpers/mcp-web-api";
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { createRouteMocks } from "./helpers/route-test";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
@@ -288,71 +289,69 @@ describe("thin MCP Web adapters", () => {
   });
 
   it("reflects committed Run transitions without marking indicator or history reads as read", async () => {
-    const f = await fixture();
+    const f = await publicChatActor(context, { stripeTransport: "http" });
+    const token = mcp.authorize(f.actor);
     const runs = createRunsApi(context);
-    const runnerGroup = runs.configureRunnerGroup();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    await runs.grantProEntitlement(f.actor);
-    await runs.ensurePersonalSubscriptionModel(f.actor);
-    const run = await runs.createThreadRun(f.actor, {
-      agentId: f.agentId,
-      prompt: "observe indicator transitions",
-    });
-    expect(run.status).toBe("pending");
-    const before = await chat.readThread(f.actor, run.threadId);
-    expect(before.lastReadAt).toBeNull();
+    await f.run(async () => {
+      const run = await runs.createThreadRun(f.actor, {
+        agentId: f.agentId,
+        prompt: "observe indicator transitions",
+      });
+      expect(run.status).toBe("pending");
+      const before = await chat.readThread(f.actor, run.threadId);
+      expect(before.lastReadAt).toBeNull();
 
-    const pending = await mcp.call(f.token(), "get_chat_indicators");
-    expect(pending.isError).not.toBeTruthy();
-    expect(indicatorsSchema.parse(body(pending))).toStrictEqual({
-      agents: { [f.agentId]: "active" },
-      threads: { [run.threadId]: "active" },
-      unreadAt: {},
-    });
+      const pending = await mcp.call(token(), "get_chat_indicators");
+      expect(pending.isError).not.toBeTruthy();
+      expect(indicatorsSchema.parse(body(pending))).toStrictEqual({
+        agents: { [f.agentId]: "active" },
+        threads: { [run.threadId]: "active" },
+        unreadAt: {},
+      });
 
-    await runs.heartbeatRunner(runnerGroup);
-    await runs.claimRunnerJob(run.runId);
-    expect((await runs.readRun(f.actor, run.runId)).status).toBe("running");
-    const running = await mcp.call(f.token(), "get_chat_indicators");
-    expect(running.isError).not.toBeTruthy();
-    expect(body(running)).toStrictEqual(body(pending));
+      await runs.heartbeatRunner(f.runnerGroup);
+      await f.claimRunnerRun(run.runId);
+      expect((await runs.readRun(f.actor, run.runId)).status).toBe("running");
+      const running = await mcp.call(token(), "get_chat_indicators");
+      expect(running.isError).not.toBeTruthy();
+      expect(body(running)).toStrictEqual(body(pending));
 
-    const cancelled = await mcp.call(f.token(), "cancel_run", {
-      id: run.runId,
-    });
-    expect(cancelled.isError).not.toBeTruthy();
-    expect(body(cancelled)).toMatchObject({
-      id: run.runId,
-      status: "cancelled",
-    });
-    await flushWaitUntilForTest();
+      const cancelled = await mcp.call(token(), "cancel_run", {
+        id: run.runId,
+      });
+      expect(cancelled.isError).not.toBeTruthy();
+      expect(body(cancelled)).toMatchObject({
+        id: run.runId,
+        status: "cancelled",
+      });
+      await flushWaitUntilForTest();
 
-    const history = await mcp.call(f.token(), "get_chat_messages", {
-      threadId: run.threadId,
-    });
-    expect(history.isError).not.toBeTruthy();
-    const page = mcpGetChatMessagesOutputSchema.parse(body(history));
-    expect(page.snapshot).toBeNull();
-    expect(page.hasMore).toBeFalsy();
-    const terminal = page.rows.find((row) => {
-      return row.runId === run.runId && row.eventType === "run.cancelled";
-    });
-    expect(terminal).toMatchObject({
-      runId: run.runId,
-      eventType: "run.cancelled",
-    });
+      const history = await mcp.call(token(), "get_chat_messages", {
+        threadId: run.threadId,
+      });
+      expect(history.isError).not.toBeTruthy();
+      const page = mcpGetChatMessagesOutputSchema.parse(body(history));
+      expect(page.snapshot).toBeNull();
+      expect(page.hasMore).toBeFalsy();
+      const terminal = page.rows.find((row) => {
+        return row.runId === run.runId && row.eventType === "run.cancelled";
+      });
+      expect(terminal).toMatchObject({
+        runId: run.runId,
+        eventType: "run.cancelled",
+      });
 
-    const unread = await mcp.call(f.token(), "get_chat_indicators");
-    expect(unread.isError).not.toBeTruthy();
-    expect(indicatorsSchema.parse(body(unread))).toStrictEqual({
-      agents: { [f.agentId]: "unread" },
-      threads: { [run.threadId]: "unread" },
-      unreadAt: { [run.threadId]: terminal?.createdAt },
+      const unread = await mcp.call(token(), "get_chat_indicators");
+      expect(unread.isError).not.toBeTruthy();
+      expect(indicatorsSchema.parse(body(unread))).toStrictEqual({
+        agents: { [f.agentId]: "unread" },
+        threads: { [run.threadId]: "unread" },
+        unreadAt: { [run.threadId]: terminal?.createdAt },
+      });
+      expect((await chat.readThread(f.actor, run.threadId)).lastReadAt).toBe(
+        before.lastReadAt,
+      );
     });
-    expect((await chat.readThread(f.actor, run.threadId)).lastReadAt).toBe(
-      before.lastReadAt,
-    );
   });
 
   it("uses Web normal-send response and persists plain text through the ordinary event stream", async () => {

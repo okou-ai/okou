@@ -528,7 +528,7 @@ async function publishOrdinaryMemory(
 }
 
 describe("Genuine Pi maintenance publication results", () => {
-  it("publishes and replays a maintenance result before and after private completion", async () => {
+  it("publishes and replays a maintenance result before private completion", async () => {
     const run = await prepareMaintenance();
     const body = await publish(run, "Prefer focused public API tests.\n");
     const replay = await webhooks.requestAgentStorageCommit(
@@ -540,8 +540,21 @@ describe("Genuine Pi maintenance publication results", () => {
       versionId: body.versionId,
       deduplicated: true,
     });
+  });
+
+  it("replays a maintenance result after private completion", async () => {
+    const run = await prepareMaintenance();
+    const body = await publish(run, "Prefer focused public API tests.\n");
     await completeMaintenance(run, body.versionId);
-    await webhooks.requestAgentStorageCommit(body, run.headers, [200]);
+    const replay = await webhooks.requestAgentStorageCommit(
+      body,
+      run.headers,
+      [200],
+    );
+    expect(replay.body).toMatchObject({
+      versionId: body.versionId,
+      deduplicated: true,
+    });
     expect(
       (await observeMemory(run, "Prefer focused public API tests.\n")).memory,
     ).toMatchObject({

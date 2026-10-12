@@ -21,6 +21,36 @@ export function stubTestWebUrlEnvironment(webUrl: string | undefined): void {
   vi.stubEnv("OKOU_WEB_URL", webUrl);
 }
 
+/** AWS SDK runtime inputs are scoped separately from the application's env. */
+export function stubTestAwsKmsEnvironment(): () => void {
+  const values = {
+    AWS_REGION: "us-west-2",
+    AWS_ACCESS_KEY_ID: "kms-http-test-access-key",
+    AWS_SECRET_ACCESS_KEY: "kms-http-test-secret-key",
+    AWS_SESSION_TOKEN: undefined,
+    AWS_CREDENTIAL_EXPIRATION: undefined,
+    AWS_CREDENTIAL_SCOPE: undefined,
+    AWS_ACCOUNT_ID: undefined,
+    AWS_PROFILE: undefined,
+    AWS_ENDPOINT_URL: undefined,
+    AWS_ENDPOINT_URL_KMS: undefined,
+    AWS_IGNORE_CONFIGURED_ENDPOINT_URLS: "true",
+    AWS_USE_FIPS_ENDPOINT: "false",
+    AWS_USE_DUALSTACK_ENDPOINT: "false",
+  } as const;
+  const previous = Object.keys(values).map((name) => {
+    return [name, process.env[name]] as const;
+  });
+  for (const [name, value] of Object.entries(values)) {
+    vi.stubEnv(name, value);
+  }
+  return () => {
+    for (const [name, value] of previous) {
+      vi.stubEnv(name, value);
+    }
+  };
+}
+
 function stubTestDatabaseUrl(): void {
   const vitestWorkerId = process.env.VITEST_WORKER_ID;
   if (!vitestWorkerId) {

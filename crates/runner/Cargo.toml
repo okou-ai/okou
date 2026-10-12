@@ -1,6 +1,6 @@
 [package]
 name = "runner"
-version = "0.224.2"
+version = "0.227.1"
 edition.workspace = true
 
 [dependencies]
@@ -64,6 +64,10 @@ name = "cli_package_build"
 path = "cli_package.rs"
 
 [dev-dependencies]
+runner-remote = { workspace = true, features = ["test-support"] }
+hyper = { workspace = true, features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
+http-body-util = "0.1"
 runner-host = { workspace = true, features = ["test-support"] }
 runner-executor = { workspace = true, features = ["test-support"] }
 runner-lifecycle = { workspace = true, features = ["test-support"] }

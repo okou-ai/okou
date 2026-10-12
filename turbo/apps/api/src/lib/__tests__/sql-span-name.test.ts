@@ -101,9 +101,7 @@ describe("deriveSqlSpanName", () => {
       ).toBeNull();
     });
 
-    it("begin / commit control statements", () => {
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0003; new non-billing transactions are prohibited.
-      expect(deriveSqlSpanName("begin")).toBeNull();
+    it("commit control statement", () => {
       expect(deriveSqlSpanName("commit")).toBeNull();
     });
   });

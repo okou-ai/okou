@@ -70,7 +70,7 @@ use runner_provider::{
 use runner_supervisor::reactor::{
     self, CapacityPolicy, EarlySignals, OrphanReapState, ProviderState, ProxyState, RunConfig,
     RunPaths, RunnerInfo, RunnerSharedState, RuntimeProfile, SandboxRuntimeConfig, ShutdownHandles,
-    SignalSource, SignalState,
+    SignalSource, SignalState, WssConfig,
 };
 
 mod signals;
@@ -124,6 +124,13 @@ struct DnsStartupResources<'a> {
     host_cpu_placement: sandbox::HostCpuPlacementConfig,
 }
 
+enum DnsStartupFailure {
+    // Keep the unconsumed port reservation through terminal cleanup.
+    MissingInterfacePattern(dns::DnsPortReservation),
+    Proxy(std::io::Error),
+    Readiness(sandbox::SandboxError),
+}
+
 async fn start_runtime_with_dns<F, Fut>(
     resources: DnsStartupResources<'_>,
     mut start_dns: F,
@@ -143,7 +150,7 @@ where
 
     const DNS_START_MAX_ATTEMPTS: usize = 3;
     let mut dns_start_attempt = 1;
-    loop {
+    let (runtime, dns_result) = loop {
         let dns_port_reservation =
             dns::reserve_port().map_err(|e| RunnerError::Internal(format!("dns port: {e}")))?;
         let dns_port = dns_port_reservation.port();
@@ -157,18 +164,12 @@ where
             .map_err(|e| RunnerError::Internal(format!("sandbox runtime: {e}")))?;
 
         let Some(dns_interface_pattern) = runtime.dns_interface_pattern().await else {
-            memory_prefetch.cancel();
-            runtime.shutdown().await;
-            if let Err(e) = mitm.kill_now().await {
-                warn!(error = %e, "failed to kill proxy after DNS interface resolution failed");
-            }
-            if let Err(error) = kmsg_handle.stop().await {
-                warn!(%error, "failed to clean up network-log helper after startup failure");
-            }
-            memory_prefetch.drain().await;
-            return Err(RunnerError::Internal(
-                "sandbox runtime did not provide DNS interface pattern".into(),
-            ));
+            break (
+                runtime,
+                Err(DnsStartupFailure::MissingInterfacePattern(
+                    dns_port_reservation,
+                )),
+            );
         };
 
         match start_dns(
@@ -178,29 +179,7 @@ where
         )
         .await
         {
-            Ok(handle) => {
-                if let Err(e) = runtime.activate_dns_readiness().await {
-                    memory_prefetch.cancel();
-                    if let Err(error) = handle.stop().await {
-                        warn!(%error, "failed to clean up network-log helper after startup failure");
-                    }
-                    runtime.shutdown().await;
-                    if let Err(kill_error) = mitm.kill_now().await {
-                        warn!(
-                            error = %kill_error,
-                            "failed to kill proxy after namespace DNS readiness failed"
-                        );
-                    }
-                    if let Err(error) = kmsg_handle.stop().await {
-                        warn!(%error, "failed to clean up network-log helper after startup failure");
-                    }
-                    memory_prefetch.drain().await;
-                    return Err(RunnerError::Internal(format!(
-                        "sandbox runtime DNS readiness: {e}"
-                    )));
-                }
-                return Ok((runtime, handle, kmsg_handle));
-            }
+            Ok(handle) => break (runtime, Ok(handle)),
             Err(e)
                 if e.kind() == std::io::ErrorKind::AddrInUse
                     && dns_start_attempt < DNS_START_MAX_ATTEMPTS =>
@@ -215,20 +194,61 @@ where
                 runtime.shutdown().await;
                 dns_start_attempt += 1;
             }
-            Err(e) => {
-                memory_prefetch.cancel();
-                runtime.shutdown().await;
-                if let Err(kill_error) = mitm.kill_now().await {
-                    warn!(error = %kill_error, "failed to kill proxy after DNS startup failed");
-                }
-                if let Err(error) = kmsg_handle.stop().await {
-                    warn!(%error, "failed to clean up network-log helper after startup failure");
-                }
-                memory_prefetch.drain().await;
-                return Err(RunnerError::Internal(format!("dns proxy: {e}")));
-            }
+            Err(e) => break (runtime, Err(DnsStartupFailure::Proxy(e))),
         }
+    };
+
+    finish_dns_startup(runtime, dns_result, mitm, kmsg_handle, memory_prefetch).await
+}
+
+async fn finish_dns_startup(
+    mut runtime: Box<dyn SandboxRuntime>,
+    dns_result: Result<dns::DnsProxy, DnsStartupFailure>,
+    mitm: &mut proxy::MitmProxy,
+    kmsg_handle: kmsg_log::KmsgHandle,
+    memory_prefetch: &mut prefetch::MemoryPrefetchTasks,
+) -> RunnerResult<(Box<dyn SandboxRuntime>, dns::DnsProxy, kmsg_log::KmsgHandle)> {
+    let (dns_handle, failure) = match dns_result {
+        Ok(handle) => match runtime.activate_dns_readiness().await {
+            Ok(()) => return Ok((runtime, handle, kmsg_handle)),
+            Err(error) => (Some(handle), DnsStartupFailure::Readiness(error)),
+        },
+        Err(error) => (None, error),
+    };
+
+    memory_prefetch.cancel();
+    if let Some(handle) = dns_handle
+        && let Err(error) = handle.stop().await
+    {
+        warn!(%error, "failed to clean up network-log helper after startup failure");
     }
+    runtime.shutdown().await;
+    if let Err(error) = mitm.kill_now().await {
+        let context = match &failure {
+            DnsStartupFailure::MissingInterfacePattern(_) => {
+                "failed to kill proxy after DNS interface resolution failed"
+            }
+            DnsStartupFailure::Proxy(_) => "failed to kill proxy after DNS startup failed",
+            DnsStartupFailure::Readiness(_) => {
+                "failed to kill proxy after namespace DNS readiness failed"
+            }
+        };
+        warn!(%error, "{context}");
+    }
+    if let Err(error) = kmsg_handle.stop().await {
+        warn!(%error, "failed to clean up network-log helper after startup failure");
+    }
+    memory_prefetch.drain().await;
+
+    Err(match failure {
+        DnsStartupFailure::MissingInterfacePattern(_reservation) => {
+            RunnerError::Internal("sandbox runtime did not provide DNS interface pattern".into())
+        }
+        DnsStartupFailure::Proxy(error) => RunnerError::Internal(format!("dns proxy: {error}")),
+        DnsStartupFailure::Readiness(error) => {
+            RunnerError::Internal(format!("sandbox runtime DNS readiness: {error}"))
+        }
+    })
 }
 
 async fn publish_live_runner_instance_or_shutdown_startup_resources(
@@ -278,7 +298,7 @@ pub async fn run_start(
 async fn run_start_with_home(
     args: StartArgs,
     runtime_provider: &dyn RuntimeProvider,
-    load_home: impl FnOnce() -> RunnerResult<HomePaths>,
+    load_home: impl FnOnce() -> RunnerResult<HomePaths> + Send,
 ) -> RunnerResult<()> {
     // Register lifecycle signals (SIGTERM/SIGINT/SIGUSR1/SIGUSR2) before
     // any slow startup work. Tokio's `signal()` installs the process-wide
@@ -289,10 +309,11 @@ async fn run_start_with_home(
     let signals = signals::register_early_signals()
         .map_err(|e| RunnerError::Internal(format!("register signal handlers: {e}")))?;
 
+    // Share the startup body across home loaders while retaining lazy evaluation.
     run_with_host_memory_observer(run_start_observed(
         args,
         runtime_provider,
-        load_home,
+        Box::new(load_home),
         signals,
     ))
     .await
@@ -319,7 +340,7 @@ async fn run_with_host_memory_observer(
 async fn run_start_observed(
     args: StartArgs,
     runtime_provider: &dyn RuntimeProvider,
-    load_home: impl FnOnce() -> RunnerResult<HomePaths>,
+    load_home: Box<dyn FnOnce() -> RunnerResult<HomePaths> + Send + '_>,
     signals: EarlySignals,
 ) -> RunnerResult<()> {
     let mut runner_config = config::load_for_start(&args.config, args.api_url.as_deref()).await?;
@@ -450,6 +471,10 @@ async fn run_start_observed(
     })?;
     let background_fill = crate::storage_cache::StorageCacheBackgroundFillCoordinator::new()?;
     let hostname = runner_config.hostname;
+    // Official socket health belongs to Supervisor; optional Caddy availability
+    // only suppresses issuance. Admission uses the executor's exact registry.
+    let wss = (!args.local)
+        .then(|| WssConfig::official(&home, http.clone(), server.token.clone(), hostname.clone()));
     let group = runner_config.group;
     let cancel_tokens = RunCancellationRegistry::new();
     let local_group_dir = if args.local {
@@ -822,6 +847,7 @@ async fn run_start_observed(
         },
         usage_flush_tx,
         usage_flush_rx,
+        wss,
         signals: SignalState {
             signal_source: SignalSource::Real(signals),
         },

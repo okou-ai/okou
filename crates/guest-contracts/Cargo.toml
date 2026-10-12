@@ -1,6 +1,6 @@
 [package]
 name = "guest-contracts"
-version = "0.20.2"
+version = "0.21.1"
 edition.workspace = true
 description = "Shared contracts between runner and guest binaries"
 
@@ -14,7 +14,6 @@ serde_json = { workspace = true, features = ["std"] }
 uuid = { workspace = true, features = ["std", "v4"] }
 
 [dev-dependencies]
-process-control-ipc.workspace = true
 tempfile = { workspace = true, features = ["getrandom"] }
 
 [lints]

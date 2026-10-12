@@ -12,6 +12,7 @@ import {
 } from "@okouai/api-contracts/contracts/billing";
 import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -23,6 +24,7 @@ import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { mockNow, now } from "../../../lib/time";
 import { onboardingStatusRoutes } from "../onboarding-status";
 import { runModelsRoutes } from "../run-models";
+import { userPreferencesRoutes } from "../user-preferences";
 import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createBddApi } from "./helpers/api-bdd";
@@ -177,6 +179,33 @@ function joinPendingRequest(
 // APIs. The two explicitly historical parent setups use the existing named
 // Storage fixture; that generic production prepare API was retired in #23143.
 describe("default Agent bootstrap", () => {
+  it("preserves saved member preferences during lazy bootstrap", async () => {
+    const orgId = authenticateAdmin();
+    installDurableUserExportStorage(context, { prefixes: [`${orgId}/`] });
+    const preferences = setupApp({ context, routes: userPreferencesRoutes })(
+      userPreferencesContract,
+    );
+    const saved = {
+      timezone: "Asia/Shanghai",
+      locale: "zh-Hans",
+      sendMode: "cmd-enter",
+      cloudBrowserEnabledByDefault: false,
+      theme: "dark",
+      colorTheme: "deep-lagoon",
+      captureNetworkBodiesRemaining: 3,
+    } as const;
+    await accept(preferences.update({ headers, body: saved }), [200]);
+    const before = await accept(preferences.get({ headers }), [200]);
+    expect(before.body).toMatchObject(saved);
+
+    const api = clients();
+    const agentId = await readDefaultId(api);
+    await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
+    const after = await accept(preferences.get({ headers }), [200]);
+    expect(after.body).toStrictEqual(before.body);
+    await expectSingleOnboardingGrant(api);
+  });
+
   it("publishes one usable default and one grant for concurrent status requests", async () => {
     const orgId = authenticateAdmin();
     installDurableUserExportStorage(context, { prefixes: [`${orgId}/`] });

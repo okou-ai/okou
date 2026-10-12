@@ -1,12 +1,8 @@
-import { valueModelUsage } from "@okouai/core/model-usage-cost";
-import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import type { PiMemoryStage1Model } from "@okouai/pi-agent-runtime/api";
-import { and, eq, sql } from "drizzle-orm";
 import { command } from "ccstate";
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { rawSqlReadDb$ } from "../external/db";
 import { safeSync, settleIncludingAbort } from "../utils";
 import {
   piMemoryStage1AccountingId,
@@ -26,102 +22,47 @@ function unpricedCreditValue(receipt: PiMemoryStage1UsageReceipt | null) {
 /** Best-effort observation only: callers must record canonical usage first. */
 export const observePiMemoryStage1Cost$ = command(
   async (
-    { get },
+    _,
     args: RecordPiMemoryStage1UsageArgs,
     receipt: PiMemoryStage1UsageReceipt | null,
   ): Promise<void> => {
-    // Own both pricing and synchronous logging failures, including abort errors.
-    // Neither may turn already consumed provider work into a paid retry.
-    await settleIncludingAbort(
-      (async () => {
-        const observedAt = nowDate().toISOString();
-        const entries = safeSync(() => {
-          return piMemoryStage1UsageEntries(
-            args.usage,
-            args.longContextMinTotalInputTokens,
-          );
-        });
-        const base = {
-          operation: "pi_memory_stage1",
-          costVersion: 1,
-          accountingId: piMemoryStage1AccountingId(args),
-          accountingAt: receipt?.accountingAt ?? null,
-          observedAt,
-          billingMode: args.billing.mode,
-          model: args.model,
-          usageStatus: "ok" in entries ? "valid" : "invalid",
-          ledgerStatus: receipt?.disposition ?? "persistence_error",
-          inputTokens: "ok" in entries ? args.usage.input : null,
-          outputTokens: "ok" in entries ? args.usage.output : null,
-          cacheReadTokens: "ok" in entries ? args.usage.cacheRead : null,
-          cacheCreationTokens: "ok" in entries ? args.usage.cacheWrite : null,
-          currency: "USD",
-          unit: "gross_credit_value",
-          creditsPerUsd: 1000,
-        };
-        if (!("ok" in entries) || receipt?.disposition !== "new") {
-          log.info("Pi memory Stage 1 cost observed", {
-            ...base,
-            pricingStatus: !("ok" in entries)
-              ? "invalid_usage"
-              : (receipt?.disposition ?? "persistence_error"),
-            ...unpricedCreditValue(receipt),
-            priceBasis: null,
-          });
-          return;
-        }
-        const pricingProvider = args.model;
-        // The transaction scopes SET LOCAL to this best-effort read.
-        const prices = await settleIncludingAbort(
-          // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0226; new non-billing transactions are prohibited.
-          get(rawSqlReadDb$).transaction(async (tx) => {
-            await tx.execute(sql`SET LOCAL statement_timeout = '1s'`);
-            return await tx
-              .select({
-                category: usagePricing.category,
-                unitPrice: usagePricing.unitPrice,
-                unitSize: usagePricing.unitSize,
-                updatedAt: usagePricing.updatedAt,
-              })
-              .from(usagePricing)
-              .where(
-                and(
-                  eq(usagePricing.kind, "model"),
-                  eq(usagePricing.provider, pricingProvider),
-                ),
-              );
-          }),
+    // Own synchronous observation/logging failures, including abort errors.
+    // Neither may turn already consumed provider work into another attempt.
+    await settleIncludingAbort(() => {
+      const observedAt = nowDate().toISOString();
+      const entries = safeSync(() => {
+        return piMemoryStage1UsageEntries(
+          args.usage,
+          args.longContextMinTotalInputTokens,
         );
-        const valuation = prices.ok
-          ? valueModelUsage(entries.ok, prices.value)
-          : {
-              pricingStatus: "pricing_error",
-              grossCreditValueUsd: null,
-              grossCreditValueNanoUsd: null,
-            };
-        log.info("Pi memory Stage 1 cost observed", {
-          ...base,
-          ...valuation,
-          pricingProvider,
-          // A string is deliberate: APL compares a complete observation price basis.
-          priceBasis: prices.ok
-            ? JSON.stringify(
-                entries.ok.map((entry) => {
-                  const price = prices.value.find((row) => {
-                    return row.category === entry.category;
-                  });
-                  return {
-                    ...entry,
-                    unitPrice: price?.unitPrice ?? null,
-                    unitSize: price?.unitSize ?? null,
-                    priceUpdatedAt: price?.updatedAt.toISOString() ?? null,
-                  };
-                }),
-              )
-            : null,
-        });
-      })(),
-    );
+      });
+      const base = {
+        operation: "pi_memory_stage1",
+        costVersion: 1,
+        accountingId: piMemoryStage1AccountingId(args),
+        accountingAt: receipt?.accountingAt ?? null,
+        observedAt,
+        billingMode: args.billing.mode,
+        model: args.model,
+        usageStatus: "ok" in entries ? "valid" : "invalid",
+        ledgerStatus: receipt?.disposition ?? "persistence_error",
+        inputTokens: "ok" in entries ? args.usage.input : null,
+        outputTokens: "ok" in entries ? args.usage.output : null,
+        cacheReadTokens: "ok" in entries ? args.usage.cacheRead : null,
+        cacheCreationTokens: "ok" in entries ? args.usage.cacheWrite : null,
+        currency: "USD",
+        unit: "gross_credit_value",
+        creditsPerUsd: 1000,
+      };
+      log.info("Pi memory Stage 1 cost observed", {
+        ...base,
+        pricingStatus: !("ok" in entries)
+          ? "invalid_usage"
+          : (receipt?.disposition ?? "persistence_error"),
+        ...unpricedCreditValue(receipt),
+        priceBasis: null,
+      });
+    });
   },
 );
 

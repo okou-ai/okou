@@ -123,6 +123,10 @@ function getInternalAllowedLiterals() {
       "Tiptap document schema expression",
     ],
     [
+      "src/signals/okou-page/tiptap-workflow-composer.ts\u0000urlHighlight",
+      "Tiptap extension identifier",
+    ],
+    [
       "src/signals/okou-page/tiptap-workflow-composer.ts\u0000workflowHighlight",
       "Tiptap extension identifier",
     ],

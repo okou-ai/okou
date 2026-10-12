@@ -1,6 +1,6 @@
 import type { BuiltinConnectorExternalCodeSessionStartResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
@@ -13,6 +13,7 @@ import {
   mockAwsExternalCodeProvider,
 } from "./helpers/api-bdd-connectors";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
+import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 const connectors = createConnectorBddApi(context);
@@ -156,6 +157,8 @@ async function expectExpired(
 }
 
 describe("Builtin external-code claimed completion", () => {
+  beforeEach(mockSecretKmsHttp);
+
   it("retries HTTP rejections into the exact non-default account and preserves both accounts through completed replay", async () => {
     mockAwsExternalCodeProvider();
     const owned = createActor();

@@ -52,7 +52,9 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-network -- --test-threads=1
 
-# Extracted Runner guest RPC, usage, SSH, and VNC owner tests
+# Extracted Runner guest RPC, usage, SSH, and VNC owner tests.
+# Includes native TLS/Noise/DERP/TCP and common SSH tests with synthetic external
+# services, real encrypted traffic, binary transfers and physical IO retirement.
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-remote -- --test-threads=1
 
@@ -124,6 +126,30 @@ cargo test --manifest-path crates/Cargo.toml --profile local \
 # With output (for debugging)
 cargo test --manifest-path crates/Cargo.toml --profile local -- --nocapture
 ```
+
+### Workspace dependency policy
+
+Workspace crates must form an acyclic graph, including normal, development,
+build, target-specific, and optional dependency declarations. The policy combines
+all targets and features, even when a particular build would not activate both
+edges. Cargo permits some development-dependency cycles, but release-please
+requires an acyclic declared workspace graph.
+
+Check the policy and release workspace coverage from the repository root:
+
+```bash
+.github/scripts/check-release-please-workspace-coverage.sh
+```
+
+The check reuses `cargo metadata --locked --no-deps`, without compiling crates or
+fetching dependencies. It follows inherited and renamed local workspace
+dependencies, includes crates excluded from publication, and reports a complete
+cycle with dependency kinds and source manifests. Ordinary and release PRs and
+Merge Queue entries enforce it through the required `ci-gate-security` check.
+
+Place cross-crate integration tests in the crate that already depends on the
+tested contracts, or in a separate test crate above its participants. Adding a
+reverse development dependency to a lower-level contract crate creates a cycle.
 
 ### Memory-constrained environments
 

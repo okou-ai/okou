@@ -51,7 +51,7 @@ async fn blank_pool_prepares_and_serves_a_job_without_changing_reuse_attribution
         Some(SandboxReuseResult::NoReuseKey)
     );
     assert_eq!(
-        completion.workspace_reuse_result,
+        completion.home_reuse_result,
         Some(HomeReuseResult::NotConfigured)
     );
     assert_eq!(completion.sandbox_id, Some(blank_sandbox_id));
@@ -669,10 +669,7 @@ async fn home_cache_hit_takes_priority_over_compatible_blank_inventory() {
 
     assert_eq!(completion.exit_code, 0);
     assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
-    assert_eq!(
-        completion.workspace_reuse_result,
-        Some(HomeReuseResult::Reused)
-    );
+    assert_eq!(completion.home_reuse_result, Some(HomeReuseResult::Reused));
     assert_ne!(completion.sandbox_id, Some(blank_sandbox_id));
     assert_eq!(idle_pool.lock().await.blank_len(), 1);
 
@@ -732,10 +729,7 @@ async fn claimed_home_cache_metadata_takes_priority_over_reserved_blank() {
 
     assert_eq!(completion.exit_code, 0);
     assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
-    assert_eq!(
-        completion.workspace_reuse_result,
-        Some(HomeReuseResult::Reused)
-    );
+    assert_eq!(completion.home_reuse_result, Some(HomeReuseResult::Reused));
     assert_ne!(completion.sandbox_id, Some(blank_sandbox_id));
 
     shutdown(&env, run_handle).await;

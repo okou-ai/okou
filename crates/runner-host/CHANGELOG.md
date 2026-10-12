@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.7.0](https://github.com/okou-ai/okou/compare/runner-host-v0.6.0...runner-host-v0.7.0) (2026-10-12)
+
+
+### Features
+
+* **ssh:** integrate native tailscale saved-host transport ([#39018](https://github.com/okou-ai/okou/issues/39018)) ([e8f8c83](https://github.com/okou-ai/okou/commit/e8f8c83186b0d6881c546048b7198f6dd2d96181))
+
+## [0.6.0](https://github.com/okou-ai/okou/compare/runner-host-v0.5.0...runner-host-v0.6.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** persist wss sockets in shared home ([#38992](https://github.com/okou-ai/okou/issues/38992)) ([3ac8fdc](https://github.com/okou-ai/okou/commit/3ac8fdc9211315897c7c159f91d69bad107db2df))
+
+## [0.5.0](https://github.com/okou-ai/okou/compare/runner-host-v0.4.1...runner-host-v0.5.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** add one-use ticket wss admission ([#37114](https://github.com/okou-ai/okou/issues/37114)) ([0eece1f](https://github.com/okou-ai/okou/commit/0eece1f399b9e1b357fa1b3c1b4a6d0699d21088))
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+
 ## [0.4.1](https://github.com/okou-ai/okou/compare/runner-host-v0.4.0...runner-host-v0.4.1) (2026-10-10)
 
 ## [0.4.0](https://github.com/okou-ai/okou/compare/runner-host-v0.3.2...runner-host-v0.4.0) (2026-10-10)

@@ -1,5 +1,6 @@
 import {
   completePublicationSql,
+  settleInstructionPublicationSql,
   publicationGenerationReceiptSchema,
   publicationScopeCondition,
   lockPublicationScopeSql,
@@ -425,11 +426,7 @@ const settleInstructionPublication$ = command(
     const db = set(writeDb$);
     // Deliberately outlive request cancellation; await exact-token settlement.
     // Scope ownership and exact-token removal commit together in reservation order.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0009; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      await tx.execute(lockPublicationScopeSql(fence.scope, nowDate()));
-      await tx.execute(completePublicationSql(fence));
-    });
+    await db.execute(settleInstructionPublicationSql(fence, nowDate()));
   },
 );
 

@@ -10,6 +10,7 @@ import {
   mockTestOAuthDeviceConnectorProvider,
 } from "./helpers/api-bdd-connectors";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
+import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 const connectors = createConnectorBddApi(context);
@@ -96,6 +97,7 @@ async function expectSuperseded(
 
 describe("Builtin device-auth session creation", () => {
   it("replaces matching waiting sessions while preserving completed replay, another workspace and the chosen non-default account", async () => {
+    mockSecretKmsHttp();
     const owned = createPublicConnectorActor(context);
     const foreign = createPublicConnectorActor(context);
     expect(owned.actor.orgId).not.toBe(foreign.actor.orgId);
@@ -187,6 +189,7 @@ describe("Builtin device-auth session creation", () => {
   });
 
   it("rejects reconnect to a deleted account without retiring a previously usable waiting session", async () => {
+    mockSecretKmsHttp();
     const owned = createPublicConnectorActor(context);
     await owned.run(async () => {
       const actor = owned.actor;
@@ -241,6 +244,7 @@ describe("Builtin device-auth session creation", () => {
   });
 
   it("retires an in-flight polling claim without publishing its account when a replacement session is started", async () => {
+    mockSecretKmsHttp();
     let provider:
       ReturnType<typeof mockDeferredTestOAuthTokenEndpoint> | undefined;
     const owned = createPublicConnectorActor(context, {

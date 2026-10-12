@@ -7,9 +7,10 @@ import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/int
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { integrationsDiscordRoutes } from "../integrations-discord";
 import {
   configureDiscordApp,
@@ -638,6 +639,133 @@ describe("verified Discord integration settings", () => {
       firstOwner.userId,
       firstOwner.userId,
     ]);
+  });
+
+  it("keeps the previous DM choice when a requested binding is disconnected while reading the body", async () => {
+    const { actor } = createActors();
+    const firstOwner = actor();
+    const first = await fixture(firstOwner);
+    const secondOwner = actor({ userId: firstOwner.userId });
+    const second = await fixture(secondOwner, {
+      discordUserId: first.discordUserId,
+    });
+    await accept(
+      client().setDmSelection({
+        headers: authenticate(firstOwner),
+        body: { connectionId: first.connectionId },
+      }),
+      [200],
+    );
+    context.mocks.ably.publish.mockClear();
+    context.mocks.ably.channelGet.mockClear();
+    const reading = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    const body = new ReadableStream<Uint8Array>(
+      {
+        async pull(controller) {
+          reading.resolve();
+          await release.promise;
+          controller.enqueue(
+            new TextEncoder().encode(
+              JSON.stringify({ connectionId: second.connectionId }),
+            ),
+          );
+          controller.close();
+        },
+      },
+      // Do not prefetch when constructing the native Request. The gate is
+      // reached only when the real route consumes its valid streamed body.
+      { highWaterMark: 0 },
+    );
+    const request: RequestInit & { readonly duplex: "half" } = {
+      method: "PUT",
+      headers: {
+        ...authenticate(firstOwner),
+        "content-type": "application/json",
+      },
+      body,
+      duplex: "half",
+    };
+    // The typed client cannot express a streamed request body.
+    const pending = setupRawAppRequest({
+      context,
+      routes: integrationsDiscordRoutes,
+    })(integrationsDiscordContract.setDmSelection.path, request);
+    const outcome = await settleIncludingAbort(
+      (async () => {
+        await reading.promise;
+        await accept(
+          client().disconnect({
+            headers: authenticate(secondOwner),
+            query: {},
+          }),
+          [200],
+        );
+        await expectDiscordChanges([firstOwner.userId]);
+        release.resolve();
+        expect((await pending).status).toBe(404);
+        // Disconnect publishes once; the rejected selection publishes nothing.
+        await expectDiscordChanges([firstOwner.userId]);
+        await expect(status(firstOwner)).resolves.toMatchObject({
+          dmSelectionConnectionId: first.connectionId,
+          dmBindings: [
+            {
+              connectionId: first.connectionId,
+              guildId: first.guildId,
+              guildName: first.guildName,
+            },
+          ],
+        });
+      })(),
+    );
+    if (!release.settled()) {
+      release.resolve();
+    }
+    await Promise.allSettled([pending]);
+    if (!outcome.ok) {
+      throw outcome.error;
+    }
+  });
+
+  it("rejects a malformed DM selection body without changing the previous choice", async () => {
+    const { actor } = createActors();
+    const owner = actor();
+    const first = await fixture(owner);
+    const secondOwner = actor({ userId: owner.userId });
+    const second = await fixture(secondOwner, {
+      discordUserId: first.discordUserId,
+    });
+    await accept(
+      client().setDmSelection({
+        headers: authenticate(owner),
+        body: { connectionId: first.connectionId },
+      }),
+      [200],
+    );
+    context.mocks.ably.publish.mockClear();
+    context.mocks.ably.channelGet.mockClear();
+    const response = await setupRawAppRequest({
+      context,
+      routes: integrationsDiscordRoutes,
+    })(integrationsDiscordContract.setDmSelection.path, {
+      method: "PUT",
+      headers: {
+        ...authenticate(owner),
+        "content-type": "application/json",
+      },
+      body: '{"connectionId":',
+    });
+    expect(response.status).toBe(400);
+    const unchanged = await status(owner);
+    expect(unchanged.dmSelectionConnectionId).toBe(first.connectionId);
+    expect(
+      unchanged.dmBindings
+        .map((binding) => {
+          return binding.connectionId;
+        })
+        .sort(),
+    ).toStrictEqual([first.connectionId, second.connectionId].sort());
+    await expectDiscordChanges([]);
   });
 
   it("keeps the previous DM choice when the requested connection is revoked during revalidation", async () => {

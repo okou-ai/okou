@@ -11,11 +11,11 @@ await client.connect();
 const schema = `plan_capability_${randomUUID().replaceAll("-", "")}`;
 const originalUpdatedAt = "2026-01-01 00:00:00";
 
+let schemaOwned = false;
 try {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0419; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${schema}"`);
-  await client.query(`SET LOCAL search_path TO "${schema}"`);
+  schemaOwned = true;
+  await client.query(`SET search_path TO "${schema}"`);
   await client.query(`
     CREATE TABLE org_plan_entitlements (
       org_id text PRIMARY KEY,
@@ -137,6 +137,11 @@ try {
   );
   console.log("Plan entitlement concurrency and BYOK backfill checks passed");
 } finally {
-  await client.query("ROLLBACK");
-  await client.end();
+  try {
+    if (schemaOwned) {
+      await client.query(`DROP SCHEMA "${schema}" CASCADE`);
+    }
+  } finally {
+    await client.end();
+  }
 }

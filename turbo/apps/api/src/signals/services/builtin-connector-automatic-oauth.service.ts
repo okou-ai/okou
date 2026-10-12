@@ -54,7 +54,7 @@ import {
 } from "./connector-catalog-slug-source.service";
 import {
   claimBuiltinConnectorOAuthState$,
-  insertConnectorOAuthState,
+  insertConnectorOAuthState$,
   type StoredBuiltinOAuthState,
 } from "./connector-oauth-state.service";
 import { publishConnectorRuntimeSyncWakeups$ } from "./connector-runtime-wakeup.service";
@@ -458,23 +458,27 @@ export const startBuiltinConnectorAutomatic$ = command(
       connectorSlug: contract.connectorSlug,
       authMethodId: contract.authMethodId,
     });
-    const oauthAttemptId = await insertConnectorOAuthState(set(writeDb$), {
-      state,
-      connectorSlug: contract.connectorSlug,
-      authMethod: contract.authMethodId,
-      storageVersion: null,
-      userId: args.userId,
-      orgId: args.orgId,
-      agentId: args.agentId,
-      authorizeAgent: args.authorizeAgent,
-      redirectUri: args.redirectUri,
-      authorizationUrl: authorization.authorizationUrl,
-      codeVerifier: authorization.codeVerifier,
-      oauthRequestedScopes: authorization.requestedScope,
-      oauthContext: JSON.stringify(context),
-      accountMutation: args.account,
-      expiresAt: connectorOAuthStateExpiresAt(),
-    });
+    const oauthAttemptId = await set(
+      insertConnectorOAuthState$,
+      {
+        state,
+        connectorSlug: contract.connectorSlug,
+        authMethod: contract.authMethodId,
+        storageVersion: null,
+        userId: args.userId,
+        orgId: args.orgId,
+        agentId: args.agentId,
+        authorizeAgent: args.authorizeAgent,
+        redirectUri: args.redirectUri,
+        authorizationUrl: authorization.authorizationUrl,
+        codeVerifier: authorization.codeVerifier,
+        oauthRequestedScopes: authorization.requestedScope,
+        oauthContext: JSON.stringify(context),
+        accountMutation: args.account,
+        expiresAt: connectorOAuthStateExpiresAt(),
+      },
+      signal,
+    );
     signal.throwIfAborted();
     return {
       kind: "authorization",

@@ -346,6 +346,9 @@ jobs:
     timeout-minutes: 20
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    env:
+      # Keep the cache environment identity aligned with the dated image.
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs: [detect]
     if: needs.detect.outputs.any-changed == 'true'
     steps:
@@ -359,6 +362,16 @@ jobs:
           workspaces: crates -> target
           shared-key: check
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}
 
       - name: Check Rust module paths
         run: |
@@ -375,33 +388,87 @@ jobs:
           cd crates
           cargo clippy --all-targets --all-features
 
-      - name: Lint guest-control-server production configuration
-        if: |
-          needs.detect.outputs.guest-control-tests-changed == 'true' ||
-          needs.detect.outputs.ci-changed == 'true'
-        run: |
-          cd crates
-          cargo clippy -p guest-control-server --release --no-default-features --all-targets
+      - name: Save pinned Kerberos dependencies
+        if: github.ref == 'refs/heads/main' && steps.kerberos-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: ${{ steps.kerberos-cache.outputs.cache-primary-key }}
+
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+
+  check-docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    env:
+      # Keep the cache environment identity aligned with the dated image.
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    needs: [detect]
+    if: needs.detect.outputs.any-changed == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: crates -> target
+          shared-key: check
+          save-if: false
+
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}
 
       - name: Build documentation
         run: |
           cd crates
           cargo doc --workspace --all-features --no-deps
 
-      - name: Run ably-subscriber smoke test
-        if: |
-          needs.detect.outputs.ably-subscriber-changed == 'true' ||
-          needs.detect.outputs.ci-changed == 'true'
-        env:
-          ABLY_API_KEY: ${{ secrets.ABLY_API_KEY }}
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+
+  check-guest-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    needs: [detect]
+    if: |
+      needs.detect.outputs.any-changed == 'true' &&
+      (needs.detect.outputs.guest-control-tests-changed == 'true' || needs.detect.outputs.ci-changed == 'true')
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: crates -> target
+          shared-key: check
+          save-if: false
+
+      - name: Lint guest-control-server production configuration
         run: |
           cd crates
-          cargo run -p ably-subscriber --example smoke_test
+          cargo clippy -p guest-control-server --release --no-default-features --all-targets
 
       - name: Run guest-control-server production configuration tests
-        if: |
-          needs.detect.outputs.guest-control-tests-changed == 'true' ||
-          needs.detect.outputs.ci-changed == 'true'
         run: |
           test "$(id -u)" -eq 0
           for command in getent groupadd useradd install; do
@@ -457,6 +524,39 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/report-memory-peak
 
+  check-ably-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    needs: [detect]
+    if: |
+      needs.detect.outputs.any-changed == 'true' &&
+      (needs.detect.outputs.ably-subscriber-changed == 'true' || needs.detect.outputs.ci-changed == 'true')
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: crates -> target
+          shared-key: check
+          save-if: false
+
+      - name: Run ably-subscriber smoke test
+        env:
+          ABLY_API_KEY: ${{ secrets.ABLY_API_KEY }}
+        run: |
+          cd crates
+          cargo run -p ably-subscriber --example smoke_test
+
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+
   coverage:
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 20
@@ -502,7 +602,7 @@ jobs:
           done
 
       - name: Install coverage tools
-        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
         with:
           tool: cargo-llvm-cov@0.9.1,cargo-nextest@0.9.148
 
@@ -721,7 +821,7 @@ jobs:
         run: bash .github/scripts/check-native-kerberos.sh --privileged-synthetic
       - name: Preserve exact-head native receipts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-kerberos-${{ matrix.os }}
           path: crates/target/native-kerberos-receipt/
@@ -753,7 +853,7 @@ jobs:
         run: bash .github/scripts/check-native-gssapi-peer.sh
       - name: Preserve exact-head independent protocol receipts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-gssapi-independent-peer-${{ matrix.os }}
           path: crates/target/native-gssapi-peer-receipt/
@@ -1346,7 +1446,7 @@ jobs:
           shared-key: ${{ needs.runner-host-groups.outputs.selected-target }}-guest-rpc
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Cross-compile native guest RPC test
+      - name: Cross-compile native Guest RPC and duplex test
         id: build
         run: bash .github/scripts/runner-native-test-artifact.sh build
 
@@ -1413,7 +1513,7 @@ jobs:
           cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
-      - name: Verify packaged RPC over fresh and restored Firecracker
+      - name: Verify packaged RPC and duplex over fresh and restored Firecracker
         run: bash .github/scripts/runner-behavior-guest-rpc.sh
 
   ci-gate-crates:
@@ -1423,6 +1523,9 @@ jobs:
       - detect-release
       - detect
       - check
+      - check-docs
+      - check-guest-production
+      - check-ably-smoke
       - coverage
       - api-contracts-rust-bindings
       - runner-firewall-contract-test
@@ -1449,6 +1552,10 @@ jobs:
       - name: Validate CI results
         env:
           IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
+          CHECKS_NEEDED: ${{ needs.detect.outputs.any-changed }}
+          CI_CHANGED: ${{ needs.detect.outputs.ci-changed }}
+          GUEST_CONTROL_CHANGED: ${{ needs.detect.outputs.guest-control-tests-changed }}
+          ABLY_CHANGED: ${{ needs.detect.outputs.ably-subscriber-changed }}
           COVERAGE_NEEDED: ${{ needs.detect.outputs.any-changed == 'true' }}
           NATIVE_KERBEROS_NEEDED: ${{ needs.detect.outputs.native-kerberos-needed }}
           NATIVE_GSSAPI_PEER_NEEDED: ${{ needs.detect.outputs.native-gssapi-peer-needed }}
@@ -1457,6 +1564,14 @@ jobs:
           CPU_FAIRNESS_NEEDED: ${{ needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true' && (needs.detect.outputs.sandbox-firecracker-changed == 'true' || needs.detect.outputs.ci-changed == 'true') }}
           IMAGE_VALIDATION_MATRIX: ${{ needs.runner-host-groups.outputs.validation-matrix }}
         run: |
+          if [ "${{ needs.detect-release.result }}" != "success" ]; then
+            echo "::error::Release classification did not succeed"
+            exit 1
+          fi
+          if [ "$IS_RELEASE" != "true" ] && [ "$IS_RELEASE" != "false" ]; then
+            echo "::error::Missing or invalid release selection"
+            exit 1
+          fi
           # Auto-pass for release-please PRs, commits, and merge queue entries
           if [[ "$IS_RELEASE" == "true" ]]; then
             echo "✅ Release-please — skipping CI gate"
@@ -1485,6 +1600,28 @@ jobs:
 
           # Must-succeed: only 'success' is acceptable
           check_result "detect" "${{ needs.detect.result }}" ""
+
+          # All split checks use the original outer and inner selection.
+          CHECK_ALLOW_SKIP=""
+          GUEST_CONTROL_ALLOW_SKIP=""
+          ABLY_ALLOW_SKIP=""
+          for selection in "$CHECKS_NEEDED" "$CI_CHANGED" "$GUEST_CONTROL_CHANGED" "$ABLY_CHANGED"; do
+            if [ "$selection" != "true" ] && [ "$selection" != "false" ]; then
+              echo "::error::Missing or invalid check selection"
+              FAILED=1
+            fi
+          done
+          if [ "$CHECKS_NEEDED" = "false" ]; then
+            CHECK_ALLOW_SKIP=true
+          fi
+          if [ "$CHECKS_NEEDED" = "false" ] || \
+             { [ "$CI_CHANGED" = "false" ] && [ "$GUEST_CONTROL_CHANGED" = "false" ]; }; then
+            GUEST_CONTROL_ALLOW_SKIP=true
+          fi
+          if [ "$CHECKS_NEEDED" = "false" ] || \
+             { [ "$CI_CHANGED" = "false" ] && [ "$ABLY_CHANGED" = "false" ]; }; then
+            ABLY_ALLOW_SKIP=true
+          fi
 
           RUNNER_IMAGE_ALLOW_SKIP=true
           OTHER_TARGETS_ALLOW_SKIP=true
@@ -1521,7 +1658,10 @@ jobs:
           fi
 
           # May-skip only when the corresponding work was not selected.
-          check_result "check" "${{ needs.check.result }}" "true"
+          check_result "check" "${{ needs.check.result }}" "$CHECK_ALLOW_SKIP"
+          check_result "check-docs" "${{ needs.check-docs.result }}" "$CHECK_ALLOW_SKIP"
+          check_result "check-guest-production" "${{ needs.check-guest-production.result }}" "$GUEST_CONTROL_ALLOW_SKIP"
+          check_result "check-ably-smoke" "${{ needs.check-ably-smoke.result }}" "$ABLY_ALLOW_SKIP"
           check_result "coverage" "${{ needs.coverage.result }}" "$COVERAGE_ALLOW_SKIP"
           check_result "native-kerberos-runtime" "${{ needs.native-kerberos-runtime.result }}" "$NATIVE_KERBEROS_ALLOW_SKIP"
           check_result "native-gssapi-independent-peer" "${{ needs.native-gssapi-independent-peer.result }}" "$NATIVE_GSSAPI_PEER_ALLOW_SKIP"

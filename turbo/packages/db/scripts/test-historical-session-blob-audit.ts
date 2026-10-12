@@ -578,14 +578,27 @@ try {
   const pinned = await readReceipt();
   const pinnedOwnerReferences = pinned.population.owner_references;
   assert.ok(pinnedOwnerReferences !== undefined);
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0389; new non-billing transactions are prohibited.
-  await writer.query("BEGIN; SET LOCAL statement_timeout = '2s'");
-  await conversation(1);
-  await writer.query(
-    "UPDATE blobs SET ref_count = ref_count + 1 WHERE hash = $1",
-    [hash(1)],
-  );
-  await writer.query("COMMIT");
+  const writerSettings = z
+    .object({ statement_timeout: z.string() })
+    .parse(
+      (
+        await writer.query(
+          "SELECT current_setting('statement_timeout') AS statement_timeout",
+        )
+      ).rows[0],
+    );
+  try {
+    await writer.query("SELECT set_config('statement_timeout','2s',false)");
+    await conversation(1);
+    await writer.query(
+      "UPDATE blobs SET ref_count = ref_count + 1 WHERE hash = $1",
+      [hash(1)],
+    );
+  } finally {
+    await writer.query("SELECT set_config('statement_timeout',$1,false)", [
+      writerSettings.statement_timeout,
+    ]);
+  }
   assert.equal(
     (await readReceipt()).population.owner_references,
     pinnedOwnerReferences + 1,
@@ -607,11 +620,9 @@ try {
     "PASS real DDL contention is bounded by the shipped 3-second lock timeout",
   );
 
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0391; new non-billing transactions are prohibited.
-  await writer.query(`BEGIN;
+  await writer.query(`
     ALTER TABLE pi_memory_stage1_candidates DROP CONSTRAINT pi_memory_stage1_candidates_source_history_hash_blobs_hash_fk;`);
   await candidate(12);
-  await writer.query("COMMIT");
   const missingCandidate = await runFile();
   assert.equal(missingCandidate.candidate_only.missing_source_blobs, 1);
   assert.equal(missingCandidate.reconciliation.missing_metadata_references, 3);

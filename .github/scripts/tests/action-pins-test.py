@@ -10,14 +10,16 @@ import sys
 # Upgrade this allowlist and every workflow/composite reference in the same PR.
 # Action subpaths are explicit so a new action needs approval, even in a known repo.
 APPROVED_ACTIONS = {
-    "actions/cache": "cdf6c1fa76f9f475f3d7449005a359c84ca0f306",  # v5.0.3
+    "actions/cache": "55cc8345863c7cc4c66a329aec7e433d2d1c52a9",  # v6.1.0
+    "actions/cache/restore": "55cc8345863c7cc4c66a329aec7e433d2d1c52a9",  # v6.1.0
+    "actions/cache/save": "55cc8345863c7cc4c66a329aec7e433d2d1c52a9",  # v6.1.0
     "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",  # v7.0.1
     "actions/create-github-app-token": "bcd2ba49218906704ab6c1aa796996da409d3eb1",  # v3.2.0
-    "actions/download-artifact": "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",  # v8.0.1
+    "actions/download-artifact": "9000827ccba6bdab643e8b6fd33ac0654aef8333",  # v8.0.2
     "actions/github-script": "3a2844b7e9c422d3c10d287c895573f7108da1b3",  # v9.0.0
-    "actions/setup-node": "820762786026740c76f36085b0efc47a31fe5020",  # v7.0.0
+    "actions/setup-node": "949feb2413d6458794dcd2491c4babbbce0c15c1",  # v7.1.0
     "actions/setup-python": "5fda3b95a4ea91299a34e894583c3862153e4b97",  # v7
-    "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",  # v7.0.1
+    "actions/upload-artifact": "cf430e030ddbb5b0abf93d22962f4752f3646cd9",  # v7.0.2
     "astral-sh/setup-uv": "c18668ad3cf93ea998bef934396af7bb5c839dc7",  # v10.2.0
     "bobheadxi/deployments": "648679e8e4915b27893bd7dbc35cb504dc915bc8",  # v1
     "codecov/codecov-action": "303a32d7a59b442fa8d48b6a1cc6825c09c847a5",  # v7.1.1
@@ -25,15 +27,15 @@ APPROVED_ACTIONS = {
     "docker/login-action": "dbcb813823bdd20940b903addbd779551569679f",  # v4.6.0
     "docker/setup-buildx-action": "f87e5991a6d7451dcb8d9637bfbc97413f497069",  # v4.4.1
     "dopplerhq/secrets-fetch-action": "451892f16195f9ac360e1a5bcbf0b5fd0e957534",  # v2.0.0
-    "github/codeql-action/analyze": "2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2",  # v4.38.2
-    "github/codeql-action/init": "2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2",  # v4.38.2
-    "github/codeql-action/upload-sarif": "2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2",  # v4.38.2
+    "github/codeql-action/analyze": "24c54180a607b1449ed407dd24f251e4e9147c8d",  # v4.38.3
+    "github/codeql-action/init": "24c54180a607b1449ed407dd24f251e4e9147c8d",  # v4.38.3
+    "github/codeql-action/upload-sarif": "24c54180a607b1449ed407dd24f251e4e9147c8d",  # v4.38.3
     "marocchino/sticky-pull-request-comment": "5770ad5eb8f42dd2c4f34da00c94c5381e49af88",  # v3.0.5
     "okou-ai/release-please-action": "1ecb7f79f39296ccfb1946837fac60d32b8cd2bc",
     "pnpm/action-setup": "ea17c68df8912ef543352723c149a84f56e3d413",  # v6.1.0
     "slackapi/slack-github-action": "dcb1066f776dd043e64d0e8ba94ca15cc7e1875d",  # v4.0.0
     "swatinem/rust-cache": "6323deb102c322ba6fcbdcafc7e3dddab59af2b6",  # v2.9.2
-    "taiki-e/install-action": "183e4297cca2404691e9380e1307288dced5c82a",  # v2.87.25
+    "taiki-e/install-action": "f7e5d7c961414b23f5b25b2da9294395d08513ad",  # v2.87.26
 }
 SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
 

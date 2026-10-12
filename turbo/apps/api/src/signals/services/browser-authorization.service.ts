@@ -1,9 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { z } from "zod";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { browserAuthorizationRequests } from "@okouai/db/schema/browser-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -243,49 +245,55 @@ export const applyBrowserAuthorizationRequest$ = command(
       return loaded;
     }
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0065; new non-billing transactions are prohibited.
-    const applied = await db.transaction(async (tx) => {
-      const [thread] = await tx
-        .update(chatThreads)
-        .set({
-          computerUseHostId: null,
-          cloudBrowserEnabled: true,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(chatThreads.id, loaded.request.chatThreadId),
-            eq(chatThreads.userId, args.userId),
-            isNotNull(chatThreads.agentId),
-          ),
-        )
-        .returning({
-          id: chatThreads.id,
-          agentId: chatThreads.agentId,
-        });
-      if (!thread?.agentId) {
-        return false;
-      }
-      await tx.execute(
-        chatThreadEventInsertSql({
-          kind: "computer_use_host_updated",
-          userId: args.userId,
-          orgId: args.orgId,
-          chatThreadId: thread.id,
-          agentId: thread.agentId,
-          computerUseHostId: null,
-          cloudBrowserEnabled: true,
-          createdAt: now,
-        }),
+    const enabledThread = db
+      .update(chatThreads)
+      .set({
+        computerUseHostId: null,
+        cloudBrowserEnabled: true,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(chatThreads.id, loaded.request.chatThreadId),
+          eq(chatThreads.userId, args.userId),
+          isNotNull(chatThreads.agentId),
+        ),
+      )
+      .returning({ id: chatThreads.id, agentId: chatThreads.agentId });
+    const completedRequest = db
+      .update(browserAuthorizationRequests)
+      .set({ completedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(browserAuthorizationRequests.id, loaded.request.id),
+          sql`EXISTS (SELECT 1 FROM enabled_thread)`,
+        ),
       );
-      await tx
-        .update(browserAuthorizationRequests)
-        .set({ completedAt: now, updatedAt: now })
-        .where(eq(browserAuthorizationRequests.id, loaded.request.id));
-      return true;
-    });
+    const [result] = parseRawRows(
+      z.object({ applied: z.boolean() }),
+      await db.execute(
+        chatThreadEventInsertSql(
+          {
+            kind: "computer_use_host_updated",
+            userId: args.userId,
+            orgId: args.orgId,
+            chatThreadId: loaded.request.chatThreadId,
+            computerUseHostId: null,
+            cloudBrowserEnabled: true,
+            createdAt: now,
+          },
+          {
+            cte: sql`enabled_thread AS (${enabledThread.getSQL()})`,
+            gate: sql`EXISTS (SELECT 1 FROM enabled_thread)`,
+            agentId: sql`(SELECT agent_id FROM enabled_thread)`,
+            result: sql`, completed_request AS (${completedRequest.getSQL()})
+              SELECT EXISTS (SELECT 1 FROM enabled_thread) AS applied`,
+          },
+        ),
+      ),
+    );
     signal.throwIfAborted();
-    if (!applied) {
+    if (!result?.applied) {
       return { status: "scope_not_found" };
     }
 

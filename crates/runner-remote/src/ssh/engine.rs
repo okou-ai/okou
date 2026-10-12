@@ -12,12 +12,11 @@ use std::{
     sync::{Arc, atomic::Ordering},
     time::Duration,
 };
-use tokio::net::TcpStream;
 
 use super::{
     FailureReason, Scope,
     authority::{Authority, PreparedAuth, PreparedCredential, Transport},
-    io::{GuestIo, HostLease, SocketGuard, SshSocket},
+    io::{Carrier, GuestIo, HostLease, SocketGuard, SshSocket},
     observation::Attempt,
     output::{Output, RemoteExit, Stream},
 };
@@ -75,7 +74,7 @@ impl Connected {
 impl Execution {
     pub(super) async fn connect(
         self,
-        stream: TcpStream,
+        stream: Carrier,
         scope: &Scope,
         trust_scope: &Scope,
         config: client::Config,
@@ -84,7 +83,7 @@ impl Execution {
         let (stream, socket_guard) =
             SshSocket::new(stream, self.lease).map_err(|_| FailureReason::NetworkFailure)?;
         let stream: Box<dyn super::access::SshStream> = match &self.credential.transport {
-            Transport::Direct => Box::new(stream),
+            Transport::Direct | Transport::Tailscale(_) => Box::new(stream),
             Transport::CloudflareAccess(access) => {
                 observation.connecting = true;
                 let result = scope

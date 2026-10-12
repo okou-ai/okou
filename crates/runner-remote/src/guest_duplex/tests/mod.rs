@@ -51,6 +51,56 @@ impl Fixture {
 }
 
 #[tokio::test]
+async fn expected_sandbox_preflight_and_open_share_the_live_assignment() {
+    let registry = RunGuestChannels::default();
+    let fixture = Fixture::new();
+    let run = RunId::new_v4();
+    let cancellation = CancellationToken::new();
+    let registration = fixture.register(&registry, run, "sandbox-a", &cancellation);
+    assert!(registry.contains_live_assignment(run, "sandbox-a"));
+    assert!(!registry.contains_live_assignment(run, "sandbox-b"));
+    assert!(!registry.contains_live_assignment(RunId::new_v4(), "sandbox-a"));
+    assert_eq!(
+        registry
+            .open_for_sandbox(run, "sandbox-b")
+            .await
+            .err()
+            .unwrap()
+            .kind(),
+        io::ErrorKind::NotConnected
+    );
+    let mut peers = Vec::new();
+    let mut channels = Vec::new();
+    for _ in 0..MAX_STREAMS_PER_RUN {
+        peers.push(fixture.guest("sandbox-a").await);
+        channels.push(registry.open_for_sandbox(run, "sandbox-a").await.unwrap());
+    }
+    assert_eq!(
+        registry
+            .open_for_sandbox(run, "sandbox-a")
+            .await
+            .err()
+            .unwrap()
+            .kind(),
+        io::ErrorKind::WouldBlock
+    );
+    cancellation.cancel();
+    assert!(!registry.contains_live_assignment(run, "sandbox-a"));
+    drop(channels);
+    assert_eq!(
+        registry
+            .open_for_sandbox(run, "sandbox-a")
+            .await
+            .err()
+            .unwrap()
+            .kind(),
+        io::ErrorKind::NotConnected
+    );
+    drop(registration);
+    assert!(!registry.contains_live_assignment(run, "sandbox-a"));
+}
+
+#[tokio::test]
 async fn provider_readiness_errors_release_run_capacity_without_poisoning_live_channels() {
     let registry = RunGuestChannels::default();
     let fixture = Fixture::new();

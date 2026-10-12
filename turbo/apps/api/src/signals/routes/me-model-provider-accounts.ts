@@ -4,6 +4,8 @@ import {
 } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { command, computed } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
+import { and, eq } from "drizzle-orm";
 
 import { isNotFoundResponse, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -15,8 +17,8 @@ import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
   activatePersonalModelProviderAccount$,
   disconnectPersonalModelProviderAccounts$,
-  personalModelProviderAccountById,
   personalModelProviderAccountResponseById,
+  personalSubscriptionAccountAccessCondition,
 } from "../services/model-provider-account.service";
 import {
   consumePersonalCodexRateLimitResetCredit$,
@@ -27,6 +29,19 @@ import {
   personalSubscriptionAccountIdentity,
 } from "../services/personal-subscription-recovery.service";
 import { resetDisconnectedMemberModelSelection } from "../services/member-subscription-models.service";
+
+function managedPersonalAccountCondition(args: {
+  readonly id: string;
+  readonly orgId: string;
+  readonly userId: string;
+}) {
+  return and(
+    eq(modelProviderAccounts.id, args.id),
+    personalSubscriptionAccountAccessCondition(),
+    eq(modelProviderAccounts.orgId, args.orgId),
+    eq(modelProviderAccounts.userId, args.userId),
+  );
+}
 
 const accountResponse$ = personalModelProviderAccountResponseById(
   computed((get) => {
@@ -53,12 +68,15 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   const query = get(queryOf(personalModelProviderAccountsByIdContract.getById));
   const args = {
-    db: set(writeDb$),
     orgId: auth.orgId,
     userId: auth.userId,
     id: params.id,
   };
-  const account = await personalModelProviderAccountById(args);
+  const [account] = await get(db$)
+    .select()
+    .from(modelProviderAccounts)
+    .where(managedPersonalAccountCondition(args))
+    .limit(1);
   signal.throwIfAborted();
   if (!account) {
     return notFound("Resource not found");
@@ -100,7 +118,11 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  const current = await personalModelProviderAccountById(args);
+  const [current] = await get(db$)
+    .select()
+    .from(modelProviderAccounts)
+    .where(managedPersonalAccountCondition(args))
+    .limit(1);
   signal.throwIfAborted();
   if (
     !current ||
@@ -204,12 +226,17 @@ function resetAccountSubscriptionUsage(
     if (!body.ok) {
       return body.response;
     }
-    const account = await personalModelProviderAccountById({
-      db: set(writeDb$),
-      orgId: auth.orgId,
-      userId: auth.userId,
-      id: params.id,
-    });
+    const [account] = await get(db$)
+      .select()
+      .from(modelProviderAccounts)
+      .where(
+        managedPersonalAccountCondition({
+          orgId: auth.orgId,
+          userId: auth.userId,
+          id: params.id,
+        }),
+      )
+      .limit(1);
     signal.throwIfAborted();
     if (!account || account.type !== "codex-oauth-token") {
       return notFound("Resource not found");

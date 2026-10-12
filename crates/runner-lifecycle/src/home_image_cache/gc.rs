@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::os::unix::fs::MetadataExt;
+use std::path::Path;
 use std::time::{Duration, Instant, SystemTime};
 
 use nix::fcntl::Flock;
@@ -15,6 +16,7 @@ use super::fs::{
     cache_entry_dir_is_dir, entry_file_type_is_dir, fs_stats_with_additional_available,
     is_home_tmp_path_name, remove_home_cache_path_if_exists,
 };
+use super::io_context::with_path;
 use super::metadata::{
     HomeCacheMetadata, HomeCacheState, HomeTrust, validate_current_image_identity,
 };
@@ -292,7 +294,9 @@ impl HomeImageCache {
         let mut inventory = GcInventory::default();
         #[cfg(test)]
         let mut entries_seen = 0;
-        while let Some(entry) = Self::next_gc_cache_entry(&mut entries).await? {
+        while let Some(entry) =
+            Self::next_gc_cache_entry(&mut entries, self.home_image_cache_dir()).await?
+        {
             let entry_inventory = match self.try_lock_gc_cache_entry(&entry).await? {
                 Some(lock) => {
                     let result = self.gc_locked_cache_entry(&entry, dry_run).await;
@@ -359,7 +363,7 @@ impl HomeImageCache {
                     .gc_whole_cache_entry(entry, dry_run, GcWholeEntryReason::Stale)
                     .await;
             }
-            Err(e) => return Err(e.into()),
+            Err(e) => return Err(with_path(e, "symlink_metadata", &current).into()),
         };
         if let Some(reason) =
             self.unusable_current_entry_reason(&entry.cache_key, &metadata, &current_metadata)
@@ -465,7 +469,7 @@ impl HomeImageCache {
         match fs::read_dir(&root).await {
             Ok(entries) => Ok(Some(entries)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(e.into()),
+            Err(e) => Err(with_path(e, "read_dir", &root).into()),
         }
     }
 
@@ -485,8 +489,13 @@ impl HomeImageCache {
 
     async fn next_gc_cache_entry(
         entries: &mut fs::ReadDir,
+        root: &Path,
     ) -> LifecycleResult<Option<GcCacheEntry>> {
-        while let Some(entry) = entries.next_entry().await? {
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|error| with_path(error, "ReadDir::next_entry", root))?
+        {
             if !entry_file_type_is_dir(&entry).await? {
                 continue;
             }
@@ -557,9 +566,13 @@ impl HomeImageCache {
         let mut files = match fs::read_dir(entry.paths.entry_dir()).await {
             Ok(files) => files,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
-            Err(e) => return Err(e.into()),
+            Err(e) => return Err(with_path(e, "read_dir", entry.paths.entry_dir()).into()),
         };
-        while let Some(file) = files.next_entry().await? {
+        while let Some(file) = files
+            .next_entry()
+            .await
+            .map_err(|error| with_path(error, "ReadDir::next_entry", entry.paths.entry_dir()))?
+        {
             let file_name = file.file_name();
             let Some(file_name) = file_name.to_str() else {
                 continue;
@@ -614,7 +627,9 @@ impl HomeImageCache {
             return Ok(Vec::new());
         };
         let mut candidates = Vec::new();
-        while let Some(entry) = Self::next_gc_cache_entry(&mut entries).await? {
+        while let Some(entry) =
+            Self::next_gc_cache_entry(&mut entries, self.home_image_cache_dir()).await?
+        {
             let Some(candidate) = self.gc_candidate_for_entry(&entry).await else {
                 continue;
             };

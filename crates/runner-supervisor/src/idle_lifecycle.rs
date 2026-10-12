@@ -1,5 +1,20 @@
 //! Idle-pool lifecycle and status helpers for `runner start`.
 
+mod activation_cleanup;
+pub use activation_cleanup::GuardedActivationCleanupTask;
+mod batch;
+mod insertion;
+mod logical;
+
+pub use batch::{
+    IdlePoolBatchRetirementRequest, IdlePoolRetirementBatchReport, IdlePoolRetirementRefusal,
+};
+pub use insertion::IdlePoolInsertionResult;
+pub use logical::{
+    GuardedIdlePressureRequest, GuardedIdlePressureResult, GuardedLogicalCleanupTask,
+    select_idle_entries_for_guarded_pressure,
+};
+
 use std::ops::Deref;
 use std::sync::Arc;
 use std::{future::Future, panic::AssertUnwindSafe};
@@ -15,11 +30,12 @@ use crate::blank_pool::BlankPoolDiagnostics;
 use runner_executor::executor::{BlankPoolSelection, BlankPoolSelectionReason};
 use runner_host::idle_prune_control::{PruneIdleReport, PruneIdleResponse};
 use runner_host::paths::short_digest;
-use runner_lifecycle::host_memory_operations::MemoryOperationError;
+use runner_lifecycle::host_memory_operations::{HostMemoryOperations, MemoryOperationError};
 use runner_lifecycle::idle_pool::{
     BlankIdleReservationMiss, DestroyOutcome, ExactIdleReservationMiss, GuardedIdleRetirement,
-    IdleDestroyJob, IdleDestroyPayload, IdleDestroyResult, IdlePool, IdlePoolSnapshot,
-    IdleRetirementStartFailure, ReservedIdleSandbox, RestoreReservedIdleResult,
+    IdleDestroyJob, IdleDestroyPayload, IdleDestroyResult, IdlePool, IdlePoolRetirement,
+    IdlePoolSnapshot, IdleRetirementCandidate, IdleRetirementEnvelope, IdleRetirementStartFailure,
+    ReservedIdleSandbox, RestoreReservedIdleResult, RetainedActivationCleanup,
     RetainedIdleDestroyResult,
 };
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
@@ -39,6 +55,20 @@ pub struct IdleCleanupTask<T> {
 pub type GuardedIdleCleanupTask =
     IdleCleanupTask<Result<RetainedIdleDestroyResult, MemoryOperationError>>;
 
+/// Required coverage and exact resource candidate, supplied by the caller.
+pub struct IdlePoolRetirementRequest {
+    pub candidate: IdleRetirementCandidate,
+    pub envelope: IdleRetirementEnvelope,
+    pub context: &'static str,
+}
+
+/// Inventory snapshot committed with acceptance. Status publication may happen
+/// afterward without owning or cancelling the physical cleanup.
+pub struct IdlePoolRetirementStarted {
+    pub task: GuardedIdleCleanupTask,
+    pub snapshot: IdlePoolSnapshot,
+}
+
 impl<T> IdleCleanupTask<T> {
     /// Wait for one completion. A lost producer is uncertainty, not cleanup proof.
     pub async fn join(&mut self) -> Result<T, oneshot::error::RecvError> {
@@ -50,6 +80,7 @@ impl<T> IdleCleanupTask<T> {
 pub struct IdleDestroyTracker {
     tasks: TaskTracker,
     reuse_state_notify: Arc<Notify>,
+    activation_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
 }
 
 impl IdleDestroyTracker {
@@ -57,7 +88,39 @@ impl IdleDestroyTracker {
         Self {
             tasks: TaskTracker::new(),
             reuse_state_notify,
+            activation_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
         }
+    }
+
+    /// Keep inventory owned through admission waits, then fence/accept physical
+    /// retirement and its shutdown observer before yielding to status/callers.
+    pub async fn retire_pool_entry(
+        &self,
+        pool: &SharedIdlePool,
+        operations: &HostMemoryOperations,
+        request: IdlePoolRetirementRequest,
+    ) -> Result<IdlePoolRetirementStarted, MemoryOperationError> {
+        let mut retirement =
+            IdlePoolRetirement::new(request.candidate, operations, request.envelope)?;
+        retirement.try_grant().await?;
+        let mut pool = pool.lock().await;
+        // A token registered before acceptance bridges the gap to installation
+        // of the completion observer. close_and_wait cannot miss accepted work.
+        let token = self.tasks.token();
+        if self.tasks.is_closed() {
+            drop(pool);
+            return Err(MemoryOperationError::Closed);
+        }
+        let task = match retirement.start(&mut pool, request.context) {
+            Ok(task) => task,
+            Err(failure) => {
+                drop(pool);
+                return Err(failure.into_error());
+            }
+        };
+        let snapshot = pool.status_snapshot();
+        let task = self.adopt_pool_retirement(task, token, request.context);
+        Ok(IdlePoolRetirementStarted { task, snapshot })
     }
 
     pub fn spawn_job(
@@ -456,45 +519,8 @@ pub async fn select_idle_entries_for_pressure(
 ) -> (IdlePressureSelection, Option<BlankPoolSelection>) {
     let (selection, blank_pool_selection, snapshot) = {
         let mut pool = idle_pool.lock().await;
-        let exact = pool.reserve_reusable_for_pressure(
-            request.reuse_key,
-            request.profile_name,
-            request.device_rate_limits,
-            request.history_generation_run_id,
-        );
-        let (reservation, blank_pool_selection) = match exact {
-            Some(reservation) => (Some(reservation), None),
-            None if request.allow_compatible_blank => {
-                match pool.reserve_blank(request.profile_name, request.device_rate_limits) {
-                    Ok(reservation) => (Some(reservation), Some(BlankPoolSelection::Hit)),
-                    Err(BlankIdleReservationMiss::Empty) => (
-                        None,
-                        Some(request.blank_pool_diagnostics.map_or(
-                            BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown),
-                            |diagnostics| {
-                                diagnostics.classify_empty(
-                                    request.profile_name,
-                                    request.device_rate_limits,
-                                    pool.revision(),
-                                    budget,
-                                )
-                            },
-                        )),
-                    ),
-                    Err(BlankIdleReservationMiss::Incompatible) => (
-                        None,
-                        Some(BlankPoolSelection::Miss(
-                            BlankPoolSelectionReason::IncompatibleShape,
-                        )),
-                    ),
-                    Err(BlankIdleReservationMiss::Unknown) => (
-                        None,
-                        Some(BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)),
-                    ),
-                }
-            }
-            None => (None, None),
-        };
+        let (reservation, blank_pool_selection) =
+            reserve_pressure_reuse(&mut pool, budget, &request);
         if let Some(reservation) = reservation {
             drop(retiring_leases);
             let snapshot = pool.status_snapshot();
@@ -557,6 +583,51 @@ pub async fn select_idle_entries_for_pressure(
         set_idle_status_snapshot(status, snapshot).await;
     }
     (selection, blank_pool_selection)
+}
+
+fn reserve_pressure_reuse(
+    pool: &mut IdlePool,
+    budget: &Arc<ResourceBudget>,
+    request: &IdlePressureRequest<'_>,
+) -> (Option<ReservedIdleSandbox>, Option<BlankPoolSelection>) {
+    if let Some(reservation) = pool.reserve_reusable_for_pressure(
+        request.reuse_key,
+        request.profile_name,
+        request.device_rate_limits,
+        request.history_generation_run_id,
+    ) {
+        return (Some(reservation), None);
+    }
+    if !request.allow_compatible_blank {
+        return (None, None);
+    }
+    match pool.reserve_blank(request.profile_name, request.device_rate_limits) {
+        Ok(reservation) => (Some(reservation), Some(BlankPoolSelection::Hit)),
+        Err(BlankIdleReservationMiss::Empty) => (
+            None,
+            Some(request.blank_pool_diagnostics.map_or(
+                BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown),
+                |diagnostics| {
+                    diagnostics.classify_empty(
+                        request.profile_name,
+                        request.device_rate_limits,
+                        pool.revision(),
+                        budget,
+                    )
+                },
+            )),
+        ),
+        Err(BlankIdleReservationMiss::Incompatible) => (
+            None,
+            Some(BlankPoolSelection::Miss(
+                BlankPoolSelectionReason::IncompatibleShape,
+            )),
+        ),
+        Err(BlankIdleReservationMiss::Unknown) => (
+            None,
+            Some(BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)),
+        ),
+    }
 }
 
 fn try_substitute_retiring_leases(
@@ -722,6 +793,7 @@ async fn finish_idle_payload(
 mod tests {
     use super::*;
 
+    mod batch;
     mod guarded;
     mod ownership;
 

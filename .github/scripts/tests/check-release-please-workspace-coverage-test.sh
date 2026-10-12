@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHECK_COVERAGE="${SCRIPT_DIR}/check-release-please-workspace-coverage.sh"
+CHECK_CYCLES="${SCRIPT_DIR}/check-rust-workspace-cycles.py"
 TEST_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
@@ -13,8 +14,10 @@ fail() {
 
 assert_contains() {
   local text=$1 expected=$2
-  grep -Fq -- "$expected" <<<"$text" ||
+  if ! grep -Fq -- "$expected" <<<"$text"; then
+    echo "$text" >&2
     fail "expected output to contain: ${expected}"
+  fi
 }
 
 expect_success() {
@@ -34,6 +37,7 @@ expect_failure() {
     fail "expected workspace coverage check to fail"
   fi
   assert_contains "$output" "$expected"
+  LAST_OUTPUT=$output
 }
 
 write_json() {
@@ -125,6 +129,90 @@ setup_repo() {
 
 setup_repo "valid-classification"
 expect_success "$REPO"
+
+# Cargo accepts the dev-cycle case; repository policy also includes normal and
+# build declarations without needing to resolve or compile any dependencies.
+for kind in normal dev build; do
+  setup_repo "${kind}-dependency-cycle"
+  section="${kind}-dependencies"
+  if [ "$kind" = normal ]; then
+    section=dependencies
+  fi
+  printf '\n[%s]\nrunner = { path = "../runner" }\n' "$section" \
+    >>"${REPO}/native/helper/Cargo.toml"
+  expect_failure "$REPO" "dependency cycle: helper -> runner -> helper"
+  assert_contains "$LAST_OUTPUT" "helper -> runner: ${kind}-dependency (native/helper/Cargo.toml)"
+  assert_contains "$LAST_OUTPUT" "runner -> helper: normal-dependency (native/runner/Cargo.toml)"
+done
+
+setup_repo "transitive-cycle-through-excluded-member"
+sed -i '/^helper = /d' "${REPO}/native/guest-control-tests/Cargo.toml"
+printf '\n[dev-dependencies]\nrunner = { path = "../runner" }\n' \
+  >>"${REPO}/native/guest-control-tests/Cargo.toml"
+printf '\n[dev-dependencies]\nguest-control-tests = { path = "../guest-control-tests" }\n' \
+  >>"${REPO}/native/helper/Cargo.toml"
+expect_failure "$REPO" \
+  "dependency cycle: guest-control-tests -> runner -> helper -> guest-control-tests"
+assert_contains "$LAST_OUTPUT" "guest-control-tests -> runner: dev-dependency (native/guest-control-tests/Cargo.toml)"
+
+setup_repo "disconnected-self-cycle"
+printf '\n[dev-dependencies]\nguest-control-tests = { path = "." }\n' \
+  >>"${REPO}/native/guest-control-tests/Cargo.toml"
+expect_failure "$REPO" "dependency cycle: guest-control-tests -> guest-control-tests"
+
+for kind in normal dev build; do
+  setup_repo "target-${kind}-dependency-cycle"
+  section="${kind}-dependencies"
+  if [ "$kind" = normal ]; then
+    section=dependencies
+  fi
+  printf '\n[target.\x27cfg(windows)\x27.%s]\nrunner = { path = "../runner" }\n' "$section" \
+    >>"${REPO}/native/helper/Cargo.toml"
+  expect_failure "$REPO" "dependency cycle: helper -> runner -> helper"
+  assert_contains "$LAST_OUTPUT" "helper -> runner: ${kind}-dependency, target=cfg(windows)"
+done
+
+setup_repo "mutually-exclusive-targets"
+sed -i "s/\[dependencies\]/[target.'cfg(windows)'.dependencies]/" \
+  "${REPO}/native/runner/Cargo.toml"
+printf '\n[target.\x27cfg(unix)\x27.dev-dependencies]\nrunner = { path = "../runner" }\n' \
+  >>"${REPO}/native/helper/Cargo.toml"
+expect_failure "$REPO" "dependency cycle: helper -> runner -> helper"
+assert_contains "$LAST_OUTPUT" "target=cfg(unix)"
+assert_contains "$LAST_OUTPUT" "target=cfg(windows)"
+
+setup_repo "inactive-optional-inherited-renamed-cycle"
+printf '\n[workspace.dependencies]\ntransport = { package = "runner", path = "runner" }\n' \
+  >>"${REPO}/native/Cargo.toml"
+printf '\n[dependencies]\ntransport = { workspace = true, optional = true }\n' \
+  >>"${REPO}/native/helper/Cargo.toml"
+expect_failure "$REPO" "dependency cycle: helper -> runner -> helper"
+assert_contains "$LAST_OUTPUT" "helper -> runner: normal-dependency, optional=true, rename=transport (native/helper/Cargo.toml)"
+
+setup_repo "acyclic-optional-target-inherited-alias"
+printf '\n[workspace.dependencies]\ncontracts = { package = "helper", path = "helper" }\n' \
+  >>"${REPO}/native/Cargo.toml"
+printf '\n[target.\x27cfg(windows)\x27.build-dependencies]\ncontracts = { workspace = true, optional = true }\n' \
+  >>"${REPO}/native/runner/Cargo.toml"
+expect_success "$REPO"
+
+setup_repo "external-name-collision"
+mkdir -p "${TEST_ROOT}/external-runner/src"
+printf '[package]\nname = "runner"\nversion = "2.0.0"\nedition = "2024"\n' \
+  >"${TEST_ROOT}/external-runner/Cargo.toml"
+printf '\n' >"${TEST_ROOT}/external-runner/src/lib.rs"
+printf '\n[dependencies]\nexternal-runner = { package = "runner", path = "%s" }\nregistry-runner = { package = "runner", version = "999.0" }\n' \
+  "${TEST_ROOT}/external-runner" >>"${REPO}/native/helper/Cargo.toml"
+# --no-deps does not fetch/resolve the unavailable registry version. Neither
+# same-named external declaration is the workspace's local runner package.
+expect_success "$REPO"
+
+for metadata in '{}' '{"version":1,"packages":[],"workspace_members":[]}'; do
+  if output=$(python3 "$CHECK_CYCLES" <<<"$metadata" 2>&1); then
+    fail "expected incomplete Cargo metadata to fail"
+  fi
+  assert_contains "$output" "rust workspace cycles:"
+done
 
 setup_repo "unclassified-node-package"
 mkdir -p "${REPO}/turbo/packages/new"

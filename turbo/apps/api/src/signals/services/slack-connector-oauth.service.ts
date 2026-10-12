@@ -28,7 +28,7 @@ import {
 } from "./connector-data.service";
 import {
   claimBuiltinConnectorOAuthState$,
-  insertConnectorOAuthState,
+  insertConnectorOAuthState$,
 } from "./connector-oauth-state.service";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
@@ -140,19 +140,23 @@ export const startSlackConnectorOAuth$ = command(
     if (context.workspaceId) {
       url.searchParams.set("team", context.workspaceId);
     }
-    await insertConnectorOAuthState(set(writeDb$), {
-      state,
-      connectorSlug: "slack",
-      authMethod: resolved.authMethodId,
-      orgId: context.orgId,
-      userId: context.userId,
-      redirectUri: args.redirectUri,
-      authorizationUrl: url.toString(),
-      oauthRequestedScopes: JSON.stringify(scopes),
-      oauthContext: JSON.stringify(context),
-      accountMutation: { intent: "add" },
-      expiresAt: new Date(nowDate().getTime() + 15 * 60 * 1000),
-    });
+    await set(
+      insertConnectorOAuthState$,
+      {
+        state,
+        connectorSlug: "slack",
+        authMethod: resolved.authMethodId,
+        orgId: context.orgId,
+        userId: context.userId,
+        redirectUri: args.redirectUri,
+        authorizationUrl: url.toString(),
+        oauthRequestedScopes: JSON.stringify(scopes),
+        oauthContext: JSON.stringify(context),
+        accountMutation: { intent: "add" },
+        expiresAt: new Date(nowDate().getTime() + 15 * 60 * 1000),
+      },
+      signal,
+    );
     signal.throwIfAborted();
     return redirect(url.toString());
   },

@@ -69,10 +69,13 @@
 3 check-file-size-test.sh
 3 cleanup-pr-runner-test.sh
 3 crates-detect-workflow-test.sh
+3 crates-parallel-checks-workflow-test.sh
 3 deploy-okou-app-worker-workflow-test.sh
 3 deploy-discord-gateway-test.sh
 3 download-verified-test.sh
 3 kms-production-backup-test.sh
+3 kerberos-native-cache-test.sh
+3 kerberos-native-cache-workflow-test.sh
 3 mitm-addon-test-sharding-workflow-test.sh
 3 native-only-gates-test.sh
 3 pass-release-pr-ci-gates-test.sh
@@ -103,6 +106,7 @@
 4 cli-package-identity-test.sh
 4 deploy-cli-local-test.sh
 4 dev-runner-test.sh
+4 download-okou-cli-cdn-file-test.sh
 4 fetch-okou-app-artifact-test.sh
 4 kms-production-exit-check-test.sh
 4 neon-connection-string-ssl-test.sh

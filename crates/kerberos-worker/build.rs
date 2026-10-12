@@ -6,6 +6,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo::rustc-check-cfg=cfg(native_kerberos)");
     for input in [
         "native/build.sh",
+        "native/build-dependencies.sh",
         "native/isolation.h",
         "native/worker.c",
         "native/NOTICE-MIT",
@@ -14,6 +15,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ] {
         println!("cargo::rerun-if-changed={input}");
     }
+    println!("cargo::rerun-if-env-changed=KERBEROS_NATIVE_CACHE_DIR");
+    println!("cargo::rerun-if-env-changed=KERBEROS_NATIVE_BUILD_ENV");
     let target = env::var("TARGET")?;
     let arch = match target.as_str() {
         "x86_64-unknown-linux-gnu" | "x86_64-unknown-linux-musl" => "x86_64",

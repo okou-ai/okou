@@ -8,7 +8,7 @@ use runner_lifecycle::host_memory_operations::{
     HostMemoryOperations, MemoryOperationError, MemoryOperationPolicy, ProcMemoryObservationSource,
 };
 use runner_lifecycle::host_memory_policy::HostMemoryBounds;
-use runner_lifecycle::idle_pool::{GuardedIdleRetirement, IdleRetirementEnvelope};
+use runner_lifecycle::idle_pool::IdleRetirementEnvelope;
 use runner_types::ids::RunId;
 use sandbox::{
     EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, ExecTermination, ResourceLimits, Sandbox, SandboxConfig,
@@ -34,6 +34,7 @@ pub struct Inputs {
     recovery_available_bytes: u64,
     live_growth_bytes: u64,
     tail_growth_bytes: u64,
+    replacement_preparation_bytes: u64,
     max_sample_age_millis: u64,
     max_operations: usize,
     max_cleanup_inflight: usize,
@@ -69,17 +70,21 @@ impl Inputs {
             tail_growth_bytes: self.tail_growth_bytes,
         }
     }
-}
 
-pub async fn grant(retirement: &mut GuardedIdleRetirement) -> Result<(), MemoryOperationError> {
-    // Retry only a contemporaneous accounting revision, never insufficient capacity.
-    for _ in 0..16 {
-        match retirement.try_grant().await {
-            Err(MemoryOperationError::AccountingChanged) => tokio::task::yield_now().await,
-            result => return result,
+    pub fn replacement_plan(
+        &self,
+    ) -> Result<runner_lifecycle::host_memory_operations::MemoryOperationPlan, MemoryOperationError>
+    {
+        if self.replacement_preparation_bytes == 0 {
+            return Err(MemoryOperationError::UnsupportedGrowth);
         }
+        Ok(
+            runner_lifecycle::host_memory_operations::MemoryOperationPlan::Fresh {
+                memory_mib: 4096,
+                preparation_bytes: self.replacement_preparation_bytes,
+            },
+        )
     }
-    Err(MemoryOperationError::AccountingChanged)
 }
 
 pub async fn checkout(

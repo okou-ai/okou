@@ -4,7 +4,7 @@ import { deleteFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished, test } from "vitest";
 
-import { clearAllDetached, createDeferredPromise } from "../../utils";
+import { clearAllDetached, createDeferredPromise, settle } from "../../utils";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
@@ -536,7 +536,14 @@ describe("personal subscription run identity", () => {
           },
         ),
       );
-      return { f, runId, captured, observed, resetKeys };
+      return {
+        f,
+        runId,
+        captured,
+        active: connected.body.provider.id,
+        observed,
+        resetKeys,
+      };
     }
 
     async function expectCapturedAccountRecovery(
@@ -649,6 +656,67 @@ describe("personal subscription run identity", () => {
           )
         ).status,
       ).toBe(404);
+    });
+
+    it("rechecks a disconnected recovery account after in-flight usage completes", async () => {
+      const { f, runId, captured, active } = await recoveryFixture();
+      const started = createDeferredPromise<void>(context.signal);
+      const released = createDeferredPromise<void>(context.signal);
+      server.use(
+        http.get(
+          "https://chatgpt.com/backend-api/wham/usage",
+          async ({ request }) => {
+            if (request.headers.get("chatgpt-account-id") === "identity-a") {
+              if (!started.settled()) {
+                started.resolve(undefined);
+              }
+              await released.promise;
+            }
+            return HttpResponse.json({
+              plan_type: "plus",
+              rate_limit_reset_credits: { available_count: 1 },
+            });
+          },
+        ),
+      );
+      const recovery = settle(
+        support.readPersonalModelProviderAccount(
+          f.actor,
+          captured,
+          runId,
+          [404],
+        ),
+      );
+      onTestFinished(async () => {
+        if (!released.settled()) {
+          released.resolve(undefined);
+        }
+        await recovery;
+      });
+
+      await started.promise;
+      await support.deletePersonalModelProviderAccount(f.actor, captured);
+      released.resolve(undefined);
+      const result = await recovery;
+      if (!result.ok) {
+        throw result.error;
+      }
+      expect(result.value.body).toStrictEqual({
+        error: { message: "Resource not found", code: "NOT_FOUND" },
+      });
+      const remaining = await support.listPersonalModelProviders(
+        f.actor,
+        [200],
+      );
+      expect(remaining.body).toMatchObject({
+        modelProviders: [
+          {
+            id: active,
+            isActive: true,
+            subscriptionResetCredits: 1,
+          },
+        ],
+      });
     });
 
     it("removes recovery after the captured account is deleted", async () => {

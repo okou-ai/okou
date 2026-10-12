@@ -13,6 +13,7 @@ import {
   mockTestOAuthDeviceConnectorProvider,
 } from "./helpers/api-bdd-connectors";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
+import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 const connectors = createConnectorBddApi(context);
@@ -126,6 +127,7 @@ describe("Builtin device-auth terminal claim outcomes", () => {
   it.each(["access_denied", "expired_token", "invalid_request"] as const)(
     "preserves supersession and the exact replacement account after a held %s response",
     async (providerError) => {
+      mockSecretKmsHttp();
       let release: (() => void) | undefined;
       const owned = createPublicConnectorActor(context, {
         beforeDrain: () => {
@@ -196,6 +198,7 @@ describe("Builtin device-auth terminal claim outcomes", () => {
   );
 
   it("keeps a reclaimed poll current after its obsolete denial and completes the exact non-default account", async () => {
+    mockSecretKmsHttp();
     let releaseOld: (() => void) | undefined;
     let releaseWinner: (() => void) | undefined;
     const owned = createPublicConnectorActor(context, {
@@ -285,6 +288,7 @@ describe("Builtin device-auth terminal claim outcomes", () => {
   });
 
   it("replays rejected reconnect completion after public account deletion and preserves its surviving default", async () => {
+    mockSecretKmsHttp();
     const owned = createPublicConnectorActor(context);
     await owned.run(async () => {
       const actor = owned.actor;
