@@ -36,7 +36,7 @@ export const gatewayBotSchema = z.object({
   session_start_limit: z.object({
     total: z.number().int().positive(),
     remaining: z.number().int().nonnegative(),
-    reset_after: z.number().int().positive(),
+    reset_after: z.number().int().nonnegative(),
     max_concurrency: z.number().int().positive(),
   }),
 });
