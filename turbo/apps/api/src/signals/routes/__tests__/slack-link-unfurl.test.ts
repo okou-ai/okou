@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
@@ -152,7 +153,7 @@ function postLinks(
   );
 }
 
-describe("Slack artifact link previews", () => {
+describe("Slack link previews", () => {
   it("adds only a divider, linked title and large image without requiring membership or an Okou user connection", async () => {
     const f = await fixture();
     const immutable = `https://dpl-${f.prepared.deploymentId}.okou.app/?source=slack&view=cover#cover|v1`;
@@ -208,6 +209,68 @@ describe("Slack artifact link previews", () => {
     );
   });
 
+  it("uses only public branding for ordinary App pages without loading their content", async () => {
+    const f = await fixture({ privateArtifacts: true });
+    await updateFeatureSwitchesForUser(context, f.actor, {
+      artifactPreviews: false,
+    });
+    await flushWaitUntilForTest();
+    context.mocks.s3.send.mockClear();
+    const origin = new URL(env("APP_URL")).origin;
+    const chatUrl = `${origin}/chats/${randomUUID()}`;
+    const pages = [
+      { url: `${origin}/`, href: `${origin}/` },
+      { url: `${origin}/works`, href: `${origin}/works` },
+      { url: `${origin}/settings`, href: `${origin}/settings` },
+      {
+        url: `${chatUrl}?source=slack&view=cover#cover|v1`,
+        href: `${chatUrl}?source=slack&amp;view=cover#cover%7Cv1`,
+      },
+    ];
+    await accept(
+      postLinks(
+        f.teamId,
+        pages.map(({ url }) => {
+          return url;
+        }),
+      ),
+      [200],
+    );
+    await flushWaitUntilForTest();
+
+    expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledExactlyOnceWith({
+      channel: "C_PREVIEW",
+      ts: messageTs,
+      unfurls: Object.fromEntries(
+        pages.map(({ url, href }) => {
+          return [
+            url,
+            {
+              blocks: [
+                { type: "divider" },
+                {
+                  type: "section",
+                  text: {
+                    type: "mrkdwn",
+                    text: `*<${href}|${ARTIFACT_OG_BRAND.title}>*`,
+                    verbatim: true,
+                  },
+                },
+                {
+                  type: "image",
+                  image_url: ARTIFACT_OG_BRAND.imageUrl,
+                  alt_text: ARTIFACT_OG_BRAND.title,
+                },
+              ],
+            },
+          ];
+        }),
+      ),
+    });
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+    expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
+  });
+
   it("processes redelivery against the same message and supports composer targets", async () => {
     const f = await fixture();
     const url = `https://dpl-${f.prepared.deploymentId}.okou.app/`;
@@ -236,9 +299,21 @@ describe("Slack artifact link previews", () => {
     });
   });
 
-  it("ignores unsupported URLs without preventing a valid sibling preview", async () => {
+  it("skips unsupported or unavailable links without losing artifact and App previews", async () => {
     const f = await fixture();
     const url = `https://dpl-${f.prepared.deploymentId}.okou.app/`;
+    const appUrl = new URL("/works", env("APP_URL")).href;
+    const missingArtifactUrl = new URL(
+      `/artifacts/${"0".repeat(32)}.png`,
+      env("APP_URL"),
+    ).href;
+    const lookalike = new URL("/works", env("APP_URL"));
+    lookalike.hostname += ".evil.test";
+    const credentialed = new URL("/chats/private", env("APP_URL"));
+    credentialed.username = "user";
+    credentialed.password = "password";
+    const otherPort = new URL("/works", env("APP_URL"));
+    otherPort.port = otherPort.port === "8080" ? "8081" : "8080";
     await accept(
       postLinks(f.teamId, [
         "not a URL",
@@ -248,9 +323,14 @@ describe("Slack artifact link previews", () => {
         "https://dpl-invalid.okou.app/",
         "https://user:password@alias.okou.app/",
         "https://alias.okou.app:8080/",
+        lookalike.href,
+        credentialed.href,
+        otherPort.href,
         `${url}social-card.png`,
         `https://dpl-${randomUUID()}.okou.app/`,
+        missingArtifactUrl,
         url,
+        appUrl,
       ]),
       [200],
     );
@@ -258,7 +338,18 @@ describe("Slack artifact link previews", () => {
     expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledExactlyOnceWith({
       channel: "C_PREVIEW",
       ts: messageTs,
-      unfurls: { [url]: expect.any(Object) },
+      unfurls: {
+        [url]: expect.any(Object),
+        [appUrl]: {
+          blocks: expect.arrayContaining([
+            {
+              type: "image",
+              image_url: ARTIFACT_OG_BRAND.imageUrl,
+              alt_text: ARTIFACT_OG_BRAND.title,
+            },
+          ]),
+        },
+      },
     });
   });
 
@@ -268,7 +359,10 @@ describe("Slack artifact link previews", () => {
   ])("leaves normal connections intact with $name", async (options) => {
     const f = await fixture(options);
     await accept(
-      postLinks(f.teamId, [`https://dpl-${f.prepared.deploymentId}.okou.app/`]),
+      postLinks(f.teamId, [
+        `https://dpl-${f.prepared.deploymentId}.okou.app/`,
+        new URL("/works", env("APP_URL")).href,
+      ]),
       [200],
     );
     await flushWaitUntilForTest();
@@ -377,7 +471,13 @@ describe("Slack artifact link previews", () => {
             url,
             {
               blocks: expect.arrayContaining([
-                expect.objectContaining({ type: "image" }),
+                expect.objectContaining({
+                  type: "image",
+                  image_url: expect.stringContaining(
+                    "/api/artifact-og/image?kind=reference&id=",
+                  ),
+                  alt_text: "report.png",
+                }),
               ]),
             },
           ];
