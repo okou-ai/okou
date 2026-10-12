@@ -1,7 +1,7 @@
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   publicationGenerationReceiptSchema,
-  beginPublicationSql,
+  beginPublicationCtesSql,
   publicationFenceFromReceipt,
   workflowPublicationKey,
 } from "./storage-publication-fence.service";
@@ -13,7 +13,7 @@ import type { WorkflowUpdateRequest } from "@okouai/api-contracts/contracts/work
 import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -43,85 +43,82 @@ const commitWorkflowMetadata$ = command(
   ) => {
     const db = set(writeDb$);
     const { workflow, body } = args;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0346; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      // Metadata and its pending generation must commit atomically so a later
-      // upload can publish only the generation belonging to this source update.
-      // Keep the parent alive until the source and its non-FK generation commit.
-      // Independent Workflow writes can share this parent protection.
-      const [agent] = await tx
-        .select({ id: agents.id })
-        .from(agents)
-        .where(
-          and(
-            eq(agents.id, workflow.agentId),
-            eq(agents.orgId, workflow.orgId),
-          ),
-        )
-        .for("key share")
-        .limit(1);
-      if (!agent) {
-        return { updated: false as const };
-      }
-      const [updated] = await tx
+    // Consume the original parent protection before mutating metadata or its
+    // non-FK publication rows. Independent Workflow writes still share it.
+    const protectedAgentQuery = db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        and(eq(agents.id, workflow.agentId), eq(agents.orgId, workflow.orgId)),
+      )
+      .for("key share")
+      .limit(1);
+    const protectedAgent = db.$with("protected_agent").as(protectedAgentQuery);
+    const values = {
+      ...(body.name !== undefined && { name: body.name }),
+      ...(body.displayName !== undefined && { displayName: body.displayName }),
+      ...(body.description !== undefined && { description: body.description }),
+      ...(body.instruction !== undefined && { instruction: body.instruction }),
+      updatedBy: args.updatedByUserId,
+      updatedAt: nowDate(),
+    };
+    const condition = and(
+      eq(workflows.id, workflow.id),
+      eq(workflows.orgId, workflow.orgId),
+      eq(workflows.agentId, workflow.agentId),
+      eq(workflows.ownerUserId, workflow.ownerUserId),
+      eq(workflows.visibility, workflow.visibility),
+      isNull(workflows.officialDefinitionName),
+      gt(db.select({ total: count() }).from(protectedAgent), 0),
+    );
+    if (!volumeChanged) {
+      const [updated] = await db
+        .with(protectedAgent)
         .update(workflows)
-        .set({
-          ...(body.name !== undefined && { name: body.name }),
-          ...(body.displayName !== undefined && {
-            displayName: body.displayName,
-          }),
-          ...(body.description !== undefined && {
-            description: body.description,
-          }),
-          ...(body.instruction !== undefined && {
-            instruction: body.instruction,
-          }),
-          updatedBy: args.updatedByUserId,
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(workflows.id, workflow.id),
-            eq(workflows.orgId, workflow.orgId),
-            eq(workflows.agentId, workflow.agentId),
-            eq(workflows.ownerUserId, workflow.ownerUserId),
-            eq(workflows.visibility, workflow.visibility),
-            isNull(workflows.officialDefinitionName),
-          ),
-        )
+        .set(values)
+        .where(condition)
         .returning({ id: workflows.id });
-      if (!updated) {
-        return { updated: false as const };
-      }
-      const piMutation0Scope = {
-        orgId: workflow.orgId,
-        agentId: workflow.agentId,
-        ...(workflow.visibility === "private"
-          ? { userId: workflow.ownerUserId }
-          : {}),
-      };
-      const piMutation0Key = workflowPublicationKey(workflow.id);
-      const piMutation0Token = randomUUID();
-      const publicationFence = volumeChanged
-        ? publicationFenceFromReceipt(
-            parseRawRows(
-              publicationGenerationReceiptSchema,
-              await tx.execute(
-                beginPublicationSql(
-                  piMutation0Scope,
-                  piMutation0Key,
-                  piMutation0Token,
-                  nowDate(),
-                ),
-              ),
+      signal.throwIfAborted();
+      return updated
+        ? { updated: true as const, publicationFence: undefined }
+        : { updated: false as const };
+    }
+
+    const updatedWorkflow = db
+      .update(workflows)
+      .set(values)
+      .where(condition)
+      .returning({ id: workflows.id });
+    const scope = {
+      orgId: workflow.orgId,
+      agentId: workflow.agentId,
+      ...(workflow.visibility === "private"
+        ? { userId: workflow.ownerUserId }
+        : {}),
+    };
+    const key = workflowPublicationKey(workflow.id);
+    const token = randomUUID();
+    // Both application clocks are sampled before execution. The actual UPDATE
+    // gates generation, then token; reading reserved exhausts all their effects.
+    const receipts = parseRawRows(
+      publicationGenerationReceiptSchema,
+      await db.execute(sql`WITH protected_agent AS (${protectedAgentQuery.getSQL()}),
+        updated_workflow AS (${updatedWorkflow.getSQL()}),
+        ${beginPublicationCtesSql(scope, key, token, nowDate(), sql`updated_workflow`)}
+        SELECT generation FROM reserved`),
+    );
+    const result =
+      receipts.length > 0
+        ? {
+            updated: true as const,
+            publicationFence: publicationFenceFromReceipt(
+              receipts,
+              scope,
+              key,
+              token,
             ),
-            piMutation0Scope,
-            piMutation0Key,
-            piMutation0Token,
-          )
-        : undefined;
-      return { updated: true as const, publicationFence };
-    });
+          }
+        : { updated: false as const };
     signal.throwIfAborted();
     return result;
   },
