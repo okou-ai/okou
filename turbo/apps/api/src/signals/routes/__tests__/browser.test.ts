@@ -2271,6 +2271,65 @@ describe("Browser user-action route", () => {
     expect(browserInputWrites()).toHaveLength(1);
   });
 
+  it("keeps native file cancellation idempotent after the browser lease expires", async () => {
+    const owned = await setupOwnedNativeFileBrowserScenario();
+    await owned.run(async () => {
+      const { create } = await setupNativeFileScenario(owned);
+      const created = await create();
+      const headers = { authorization: "Bearer clerk-session" };
+      const params = { requestToken: created.body.action.requestToken };
+      const pending = await accept(
+        userActionClient().preflight({ headers, params, body: {} }),
+        [200],
+      );
+      expect(pending.body.state).toBe("pending");
+      const browserParams = { threadId: owned.current.threadId };
+      const leased = await accept(
+        client().leaseByThread({ headers, params: browserParams, body: {} }),
+        [200],
+      );
+      const idleExpiresAt = leased.body.browser.idleExpiresAt;
+      if (!idleExpiresAt) {
+        throw new Error("Expected a live Browser idle lease");
+      }
+      const cancelled = await accept(
+        userActionClient().cancel({ headers, params, body: {} }),
+        [200],
+      );
+      expect(cancelled.body.state).toBe("cancelled");
+
+      mockNow(Date.parse(idleExpiresAt) + 1);
+      const expiredLease = await client().leaseByThread({
+        headers,
+        params: browserParams,
+        body: {},
+      });
+      expect(expiredLease).toMatchObject({
+        status: 409,
+        body: { error: { code: "BROWSER_NOT_LIVE" } },
+      });
+      const repeated = await accept(
+        userActionClient().cancel({ headers, params, body: {} }),
+        [200],
+      );
+      expect(repeated.body).toStrictEqual(cancelled.body);
+      const rejectedPreflight = await userActionClient().preflight({
+        headers,
+        params,
+        body: {},
+      });
+      expect(rejectedPreflight).toMatchObject({
+        status: 409,
+        body: { error: { code: "BROWSER_USER_ACTION_CONFLICT" } },
+      });
+      const terminal = await accept(
+        userActionClient().get({ headers, params }),
+        [200],
+      );
+      expect(terminal.body.state).toBe("cancelled");
+    });
+  });
+
   it("returns a retryable provider timeout when the internal CDP deadline expires", async () => {
     const { token, providerId } =
       await createNativePasswordActionForPreflightTest();
