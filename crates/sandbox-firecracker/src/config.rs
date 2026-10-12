@@ -41,7 +41,7 @@ pub struct SnapshotConfig {
     pub cow_path: PathBuf,
     /// Drive path recorded in the snapshot's Firecracker config (bind mount target).
     pub drive_bind_path: PathBuf,
-    /// Workspace drive path recorded in the snapshot's Firecracker config.
+    /// Home drive path recorded in the snapshot's Firecracker config.
     pub home_drive_bind_path: PathBuf,
     /// Vsock directory recorded in the snapshot's Firecracker config.
     ///

@@ -96,13 +96,13 @@ submit_agent_ready_benchmark_run() {
 record_agent_ready_benchmark_sample() {
   local path=$1
   local expected_sandbox_reuse=$2
-  local expected_workspace_reuse=$3
+  local expected_home_reuse=$3
   local chat_thread_id=$4
   local session_id=$5
   local run_id=""
   local ready_log=""
   local sandbox_reuse=""
-  local workspace_reuse=""
+  local home_reuse=""
   local shell_spawn_ms=""
   local agent_ready_ms=""
   local containment_create_us=""
@@ -124,16 +124,16 @@ record_agent_ready_benchmark_sample() {
   fi
 
   sandbox_reuse=$(agent_ready_log_field "$ready_log" sandbox_reuse)
-  workspace_reuse=$(agent_ready_log_field "$ready_log" workspace_reuse)
+  home_reuse=$(agent_ready_log_field "$ready_log" home_reuse)
   if [ "$sandbox_reuse" != "$expected_sandbox_reuse" ]; then
     record_agent_ready_benchmark_failure "$path" "$run_id" \
       "expected sandbox_reuse=$expected_sandbox_reuse, observed $sandbox_reuse"
     return 1
   fi
-  if [ -n "$expected_workspace_reuse" ] \
-    && [ "$workspace_reuse" != "$expected_workspace_reuse" ]; then
+  if [ -n "$expected_home_reuse" ] \
+    && [ "$home_reuse" != "$expected_home_reuse" ]; then
     record_agent_ready_benchmark_failure "$path" "$run_id" \
-      "expected workspace_reuse=$expected_workspace_reuse, observed $workspace_reuse"
+      "expected home_reuse=$expected_home_reuse, observed $home_reuse"
     return 1
   fi
 
@@ -163,7 +163,7 @@ record_agent_ready_benchmark_sample() {
     --arg path "$path" \
     --arg run_id "$run_id" \
     --arg sandbox_reuse "$sandbox_reuse" \
-    --arg workspace_reuse "$workspace_reuse" \
+    --arg home_reuse "$home_reuse" \
     --argjson shell_spawn_ms "$shell_spawn_ms" \
     --argjson agent_ready_ms "$agent_ready_ms" \
     --argjson containment_create_us "$containment_create_us" \
@@ -175,7 +175,7 @@ record_agent_ready_benchmark_sample() {
       success: true,
       run_id: $run_id,
       sandbox_reuse: $sandbox_reuse,
-      workspace_reuse: $workspace_reuse,
+      home_reuse: $home_reuse,
       shell_spawn_ms: $shell_spawn_ms,
       agent_ready_ms: $agent_ready_ms,
       containment_create_us: $containment_create_us,

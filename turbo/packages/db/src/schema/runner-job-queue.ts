@@ -37,7 +37,7 @@ export const runnerJobQueue = pgTable(
     // the guest reports a CLI agent session).
     cliAgentSessionId: varchar("session_id", { length: 255 }),
 
-    // Snapshot of the sandbox and workspace reuse identity at enqueue time.
+    // Snapshot of the sandbox and home reuse identity at enqueue time.
     reuseKey: varchar("reuse_key", { length: 263 }),
 
     // Execution context (secrets encrypted with persistent-secret envelope)
