@@ -1,7 +1,7 @@
-import { createDeferredPromise } from "../../utils";
-import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
+import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
+import { createDeferredPromise } from "../../utils";
 
 import {
   feishuConnectContract,
@@ -13,27 +13,28 @@ import {
   integrationsLarkMessageContract,
   integrationsLarkUploadInitContract,
 } from "@okouai/api-contracts/contracts/integrations";
-import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { feishuConnectRoutes } from "../feishu-connect";
 import { feishuEventsRoutes } from "../feishu-events";
 import { feishuOauthRoutes } from "../feishu-oauth";
-import { integrationsFeishuMessageRoutes } from "../integrations-feishu-message";
 import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
+import { integrationsFeishuMessageRoutes } from "../integrations-feishu-message";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
-import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const credentials = createClaimedRunCredentials(context);
+const disabledCredentials = createClaimedRunCredentials(context);
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const runsApi = createRunsApi(context);
@@ -174,15 +175,7 @@ describe("Lark integration", () => {
       return complete.body;
     };
     mockClerkMembership(context, actor, "org:admin");
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId,
-      orgId: actor.orgId,
-      runId: `run_${randomUUID()}`,
-      capabilities: ["feishu:write", "lark:write"],
-      iat: Math.floor(now() / 1000),
-      exp: Math.floor(now() / 1000) + 60,
-    });
+    const token = await credentials.okouToken(actor);
     return {
       actor,
       client,
@@ -338,14 +331,12 @@ describe("Lark integration", () => {
         text: "Hello Lark",
       },
     };
-    const feishuOnlyToken = signSandboxJwtForTests({
-      scope: "okou",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      runId: `run_${randomUUID()}`,
-      capabilities: ["feishu:write"],
-      iat: Math.floor(now() / 1000),
-      exp: Math.floor(now() / 1000) + 60,
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.LarkIntegration]: false,
+    });
+    const feishuOnlyToken = await disabledCredentials.okouToken(actor);
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.LarkIntegration]: true,
     });
     await accept(
       client.sendMessage({

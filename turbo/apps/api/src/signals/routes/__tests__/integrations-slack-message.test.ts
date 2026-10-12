@@ -1,59 +1,27 @@
+import { createStore } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createStore } from "ccstate";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
+import { publicRunOwner } from "./helpers/public-run-owner";
 
 import { integrationsSlackMessageContract } from "@okouai/api-contracts/contracts/integrations";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { seedOrgMembership$ } from "./helpers/org-membership";
-import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
+import { integrationsSlackMessageRoutes } from "../integrations-slack-message";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { integrationsSlackMessageRoutes } from "../integrations-slack-message";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 
 // Connecting a Slack user resolves the built-in Slack connector OAuth method.
 const context = testContext();
+const credentials = createClaimedRunCredentials(context);
 const store = createStore();
 const slackOrgs = createPublicSlackOrgApi(context);
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
-
-function okouToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly runId: string;
-  readonly capabilities?: readonly string[];
-}): string {
-  const seconds = Math.floor(now() / 1000);
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: args.runId,
-    capabilities: (args.capabilities ?? ["slack:write"]) as never,
-    iat: seconds,
-    exp: seconds + 60,
-  });
-}
-
-function sandboxToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly runId: string;
-}): string {
-  const seconds = Math.floor(now() / 1000);
-  return signSandboxJwtForTests({
-    scope: "sandbox",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: args.runId,
-    iat: seconds,
-    exp: seconds + 60,
-  });
-}
 
 describe("POST /api/integrations/slack/message", () => {
   beforeEach(() => {
@@ -124,7 +92,7 @@ describe("POST /api/integrations/slack/message", () => {
   async function seedAgentRun(base: {
     readonly orgId: string;
     readonly userId: string;
-  }): Promise<{ readonly runId: string }> {
+  }): Promise<{ readonly runId: string; readonly token: string }> {
     const actor: ApiTestUser = {
       userId: base.userId,
       orgId: base.orgId,
@@ -154,17 +122,23 @@ describe("POST /api/integrations/slack/message", () => {
       { orgId: base.orgId, userId: base.userId, role: "admin" },
       context.signal,
     );
-    return { runId: run.runId };
+    const owner = publicRunOwner(context, actor, {
+      restoreEnvironment: captureConnectorExternalState(context),
+    });
+    await api.heartbeatRunner();
+    const claim = await owner.claim(run.runId);
+    const token = claim.platformEnvironment?.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected the claimed Okou token");
+    }
+    return { runId: run.runId, token };
   }
 
   it("returns 401 when the token has no active organization membership", async () => {
-    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-      data: [],
-    });
-
     const orgId = `org_${randomUUID().slice(0, 8)}`;
     const userId = `user_${randomUUID().slice(0, 8)}`;
-    const token = okouToken({ userId, orgId, runId: "run-1" });
+    const token = await credentials.okouToken({ userId, orgId });
+    await credentials.removeMember({ userId, orgId });
 
     const client = setupApp({
       context,
@@ -185,8 +159,7 @@ describe("POST /api/integrations/slack/message", () => {
   it("returns 403 when sandbox token lacks slack:write", async () => {
     const orgId = `org_${randomUUID().slice(0, 8)}`;
     const userId = `user_${randomUUID().slice(0, 8)}`;
-    const runId = `run_${randomUUID()}`;
-    const token = sandboxToken({ userId, orgId, runId });
+    const token = await credentials.sandboxToken({ userId, orgId });
 
     const client = setupApp({
       context,
@@ -204,7 +177,7 @@ describe("POST /api/integrations/slack/message", () => {
 
   it("returns 404 when no Slack installation exists for org", async () => {
     const { orgId, userId } = await seedBaseContext();
-    const token = okouToken({ userId, orgId, runId: "run-1" });
+    const token = await credentials.okouToken({ userId, orgId });
 
     const client = setupApp({
       context,
@@ -222,7 +195,7 @@ describe("POST /api/integrations/slack/message", () => {
 
   it("sends message successfully and returns Slack response", async () => {
     const { orgId, userId } = await seedWithInstallation();
-    const token = okouToken({ userId, orgId, runId: "run-1" });
+    const token = await credentials.okouToken({ userId, orgId });
 
     const client = setupApp({
       context,
@@ -253,7 +226,7 @@ describe("POST /api/integrations/slack/message", () => {
 
   it("forwards Slack API error with 400 status", async () => {
     const { orgId, userId } = await seedWithInstallation();
-    const token = okouToken({ userId, orgId, runId: "run-1" });
+    const token = await credentials.okouToken({ userId, orgId });
 
     context.mocks.slack.chat.postMessage.mockRejectedValueOnce(
       Object.assign(new Error("channel_not_found"), {
@@ -278,7 +251,7 @@ describe("POST /api/integrations/slack/message", () => {
 
   it("sends DM via user field using conversations.open", async () => {
     const { orgId, userId } = await seedWithInstallation();
-    const token = okouToken({ userId, orgId, runId: "run-1" });
+    const token = await credentials.okouToken({ userId, orgId });
 
     const client = setupApp({
       context,
@@ -306,7 +279,7 @@ describe("POST /api/integrations/slack/message", () => {
 
   it("returns 404 when conversations.open fails with user_not_found", async () => {
     const { orgId, userId } = await seedWithInstallation();
-    const token = okouToken({ userId, orgId, runId: "run-1" });
+    const token = await credentials.okouToken({ userId, orgId });
 
     context.mocks.slack.conversations.open.mockRejectedValueOnce(
       Object.assign(new Error("user_not_found"), {
@@ -336,7 +309,7 @@ describe("POST /api/integrations/slack/message", () => {
       userId,
       slackWorkspaceId,
     });
-    const token = okouToken({ userId, orgId, runId: "run-1" });
+    const token = await credentials.okouToken({ userId, orgId });
 
     const client = setupApp({
       context,
@@ -358,7 +331,7 @@ describe("POST /api/integrations/slack/message", () => {
 
   it("returns 404 when 'me' is used but no Slack connection exists", async () => {
     const { orgId, userId } = await seedWithInstallation();
-    const token = okouToken({ userId, orgId, runId: "run-1" });
+    const token = await credentials.okouToken({ userId, orgId });
 
     const client = setupApp({
       context,
@@ -376,8 +349,7 @@ describe("POST /api/integrations/slack/message", () => {
 
   it("appends 'Sent via' footer when agent is resolvable from run", async () => {
     const { orgId, userId } = await seedWithInstallation();
-    const { runId } = await seedAgentRun({ orgId, userId });
-    const token = okouToken({ userId, orgId, runId });
+    const { token } = await seedAgentRun({ orgId, userId });
 
     const client = setupApp({
       context,
@@ -416,15 +388,13 @@ describe("POST /api/integrations/slack/message", () => {
 
   it("appends user attribution footer when run is user-triggered (not scheduled)", async () => {
     const { orgId, userId, slackWorkspaceId } = await seedWithInstallation();
-    const { runId } = await seedAgentRun({ orgId, userId });
+    const { token } = await seedAgentRun({ orgId, userId });
 
     const { slackUserId } = await connectMember({
       orgId,
       userId,
       slackWorkspaceId,
     });
-
-    const token = okouToken({ userId, orgId, runId });
 
     const client = setupApp({
       context,

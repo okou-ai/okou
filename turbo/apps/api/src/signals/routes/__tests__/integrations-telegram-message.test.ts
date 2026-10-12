@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
+import { randomUUID } from "node:crypto";
+import { describe, expect, it } from "vitest";
 
 import {
   integrationsTelegramMessageContract,
@@ -12,19 +12,19 @@ import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integr
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { seedOrgMembership$ } from "./helpers/org-membership";
-import { createPublicTelegramActor } from "./helpers/public-telegram-actor";
-import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
-import { integrationsTelegramUploadInitRoutes } from "../integrations-telegram-upload-init";
-import { createRouteMocks } from "./helpers/route-test";
 import { integrationsTelegramMessageRoutes } from "../integrations-telegram-message";
 import { integrationsTelegramUploadCompleteRoutes } from "../integrations-telegram-upload-complete";
+import { integrationsTelegramUploadInitRoutes } from "../integrations-telegram-upload-init";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createPublicTelegramActor } from "./helpers/public-telegram-actor";
+import { createRouteMocks } from "./helpers/route-test";
+import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 
 const context = testContext();
+const credentials = createClaimedRunCredentials(context);
 const store = createStore();
 const mocks = createRouteMocks(context);
 
@@ -42,23 +42,6 @@ function officialSender() {
     ...createPublicTelegramActor(context),
     telegramUserId: uniqueBotId(),
   };
-}
-
-function okouToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly runId: string;
-}): string {
-  const seconds = Math.floor(now() / 1000);
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: args.runId,
-    capabilities: ["telegram:write"],
-    iat: seconds,
-    exp: seconds + 60,
-  });
 }
 
 describe("POST /api/integrations/telegram/message", () => {
@@ -82,13 +65,10 @@ describe("POST /api/integrations/telegram/message", () => {
   });
 
   it("returns 401 when the token has no active organization membership", async () => {
-    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-      data: [],
-    });
-
     const orgId = `org_${randomUUID().slice(0, 8)}`;
     const userId = `user_${randomUUID().slice(0, 8)}`;
-    const token = okouToken({ userId, orgId, runId: "run-1" });
+    const token = await credentials.okouToken({ userId, orgId });
+    await credentials.removeMember({ userId, orgId });
 
     const client = setupApp({
       context,
@@ -140,7 +120,6 @@ describe("POST /api/integrations/telegram/message", () => {
   it("returns 404 when the bot id is not owned by the org", async () => {
     const orgId = `org_${randomUUID().slice(0, 8)}`;
     const userId = `user_${randomUUID().slice(0, 8)}`;
-    const runId = `run_${randomUUID()}`;
     await store.set(
       seedOrgMembership$,
       { orgId, userId, role: "admin" },
@@ -159,7 +138,7 @@ describe("POST /api/integrations/telegram/message", () => {
           text: "hello",
         },
         headers: {
-          authorization: `Bearer ${okouToken({ userId, orgId, runId })}`,
+          authorization: `Bearer ${await credentials.okouToken({ userId, orgId })}`,
         },
       }),
       [404],

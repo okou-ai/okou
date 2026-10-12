@@ -1,18 +1,18 @@
-import { randomUUID } from "node:crypto";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
+import { publicRunOwner } from "./helpers/public-run-owner";
 
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import {
   chatThreadsContract,
   type ChatEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { createStore } from "ccstate";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -27,6 +27,46 @@ const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
+function createIndicatorCredentials() {
+  const owners = new Map<string, ReturnType<typeof publicRunOwner>>();
+  const tokens = new Map<string, string>();
+  beforeEach(() => {
+    owners.clear();
+    tokens.clear();
+  });
+  function actorKey(actor: ApiTestUser) {
+    return JSON.stringify([actor.userId, actor.orgId]);
+  }
+  async function claim(actor: ApiTestUser, runId: string) {
+    const owner = owners.get(actorKey(actor));
+    if (!owner) {
+      throw new Error("Expected an owned indicator Run");
+    }
+    await api.heartbeatRunner();
+    const claim = await owner.claim(runId);
+    const token = claim.platformEnvironment?.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected an issued indicator credential");
+    }
+    tokens.set(actorKey(actor), token);
+    return claim;
+  }
+
+  return {
+    claim,
+    register(actor: ApiTestUser, owner: ReturnType<typeof publicRunOwner>) {
+      owners.set(actorKey(actor), owner);
+    },
+    token(actor: ApiTestUser) {
+      const token = tokens.get(actorKey(actor));
+      if (!token) {
+        throw new Error("Expected a previously claimed Run");
+      }
+      return token;
+    },
+  };
+}
+const indicatorCredentials = createIndicatorCredentials();
 
 interface SeededThread {
   readonly threadId: string;
@@ -70,6 +110,11 @@ async function createEntitledAgent(
     displayName,
     visibility: "private",
   });
+  const restoreEnvironment = captureConnectorExternalState(context);
+  indicatorCredentials.register(
+    actor,
+    publicRunOwner(context, actor, { restoreEnvironment, clockTime: now }),
+  );
   return agent.agentId;
 }
 
@@ -96,7 +141,13 @@ async function createCancelledThread(args: {
     prompt: args.prompt,
     model: "claude-fable-5-1",
   });
+  const claim = await indicatorCredentials.claim(args.actor, sent.runId);
   await api.requestCancelRun(args.actor, sent.runId, [200]);
+  await createWebhookCallbackApi(context).requestAgentComplete(
+    { runId: sent.runId, exitCode: 1, error: "Run cancelled" },
+    { authorization: `Bearer ${claim.sandboxToken}` },
+    [200],
+  );
   await flushWaitUntilForTest();
 
   let finished: ReturnType<typeof terminalEvent>;
@@ -112,22 +163,6 @@ async function createCancelledThread(args: {
     throw new Error("Expected the cancelled Run to append a terminal event");
   }
   return { threadId: sent.threadId, unreadAt: finished.createdAt };
-}
-
-function okouToken(args: {
-  readonly actor: ApiTestUser;
-  readonly capabilities: readonly Capability[];
-}): string {
-  const seconds = Math.floor(now() / 1000);
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.actor.userId,
-    orgId: orgIdOf(args.actor),
-    runId: randomUUID(),
-    capabilities: [...args.capabilities],
-    iat: seconds,
-    exp: seconds + 600,
-  });
 }
 
 function client() {
@@ -152,10 +187,7 @@ describe("GET /api/indicators", () => {
     await chat.markThreadRead(actor, read.threadId);
     await seedMembership(actor);
     const headers = {
-      authorization: `Bearer ${okouToken({
-        actor,
-        capabilities: ["chat-thread:read"],
-      })}`,
+      authorization: `Bearer ${indicatorCredentials.token(actor)}`,
     };
     const before = {
       unread: (await chat.readThread(actor, unread.threadId)).lastReadAt,
@@ -209,10 +241,7 @@ describe("GET /api/indicators", () => {
     await seedMembership(peer);
     await seedMembership(otherOrg);
     const headers = {
-      authorization: `Bearer ${okouToken({
-        actor: owner,
-        capabilities: ["chat-thread:read"],
-      })}`,
+      authorization: `Bearer ${indicatorCredentials.token(owner)}`,
     };
 
     const indicators = await accept(client().indicators({ headers }), [200]);
@@ -277,10 +306,7 @@ describe("GET /api/indicators", () => {
     const indicators = await accept(
       client().indicators({
         headers: {
-          authorization: `Bearer ${okouToken({
-            actor,
-            capabilities: ["chat-thread:read"],
-          })}`,
+          authorization: `Bearer ${indicatorCredentials.token(actor)}`,
         },
       }),
       [200],
@@ -315,6 +341,8 @@ describe("GET /api/indicators", () => {
       prompt: "Visible active indicator",
     });
 
+    await indicatorCredentials.claim(actor, visible.runId);
+
     for (let index = 0; index < 50; index += 1) {
       await chat.sendAndLaunch(actor, {
         agentId: hiddenAgent.agentId,
@@ -329,10 +357,7 @@ describe("GET /api/indicators", () => {
     const indicators = await accept(
       client().indicators({
         headers: {
-          authorization: `Bearer ${okouToken({
-            actor,
-            capabilities: ["chat-thread:read"],
-          })}`,
+          authorization: `Bearer ${indicatorCredentials.token(actor)}`,
         },
       }),
       [200],

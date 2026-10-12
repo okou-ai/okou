@@ -1,20 +1,16 @@
-import { publicChatActor } from "./helpers/public-chat-actor";
-import { createPublicConnectorActor } from "./helpers/public-connector-actor";
-import { createPublicComputerUseHosts } from "./helpers/public-computer-use-hosts";
-import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
-import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
-import AdmZip from "adm-zip";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import {
   chatThreadConnectorSelectionContract,
   chatThreadsContract,
+  chatThreadSnapshotArchiveSchema,
+  chatThreadUsageContract,
   type ChatEvent,
+  type ChatEventUsagePayload,
   type ChatThreadArtifactGoogleDriveSync,
   type UserMessageInputDocument,
-  chatThreadUsageContract,
-  type ChatEventUsagePayload,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import AdmZip from "adm-zip";
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -22,7 +18,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
@@ -35,20 +30,24 @@ import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { readThreadMessagesAfterBackgroundWork } from "./helpers/chat-events-fixture";
 import {
   createConnectorBddApi,
   mockGoogleDriveArtifactUpload,
+  mockGoogleDriveArtifactUploadRejection,
   mockGoogleDriveConnectorOAuth,
   mockGoogleDriveFilesList,
-  mockGoogleDriveArtifactUploadRejection,
   mockGoogleSlidesReadback,
 } from "./helpers/api-bdd-connectors";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
+import { readThreadMessagesAfterBackgroundWork } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { createPublicComputerUseHosts } from "./helpers/public-computer-use-hosts";
+import { createPublicConnectorActor } from "./helpers/public-connector-actor";
+import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
 import { createRouteMocks } from "./helpers/route-test";
 const TEST_APP_ROUTES = Object.freeze([...chatThreadRoutes]);
 
@@ -437,32 +436,6 @@ async function completeChatRunInThread(
   return run;
 }
 
-const CHAT_THREAD_READ_CAPABILITIES = [
-  "chat-thread:read",
-] as const satisfies readonly Capability[];
-
-function okouCapabilityHeaders(
-  actor: ApiTestUser,
-  runId: string,
-  capabilities: readonly Capability[],
-): { readonly authorization: string } {
-  if (!actor.orgId) {
-    throw new Error("Expected an org-scoped actor for Okou run authentication");
-  }
-  const seconds = Math.floor(now() / 1000);
-  return {
-    authorization: `Bearer ${signSandboxJwtForTests({
-      scope: "okou",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      runId,
-      capabilities: [...capabilities],
-      iat: seconds,
-      exp: seconds + 600,
-    })}`,
-  };
-}
-
 const malformedChatThreadIdRequests = [
   { method: "GET", path: "/api/chat-threads/:id", paramName: "id" },
   { method: "PATCH", path: "/api/chat-threads/:id", paramName: "id" },
@@ -551,59 +524,56 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     expect(unauthenticatedBody.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("allows chat-thread read agent tokens to sync snapshots and events", async () => {
-    const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped actor");
-    }
-    await api.ensurePersonalSubscriptionModel(actor);
-    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-      data: [
-        {
-          role: actor.orgRole ?? "org:admin",
-          organization: { id: actor.orgId },
-          publicUserData: { userId: actor.userId },
-        },
-      ],
-    });
-    const apiClient = setupApp({ context, routes: chatThreadRoutes })(
-      chatThreadsContract,
-    );
-    const okouHeaders = okouCapabilityHeaders(
-      actor,
-      randomUUID(),
-      CHAT_THREAD_READ_CAPABILITIES,
-    );
-
-    const snapshot = await accept(
-      apiClient.snapshot({ headers: okouHeaders }),
-      [200],
-    );
-    expect(snapshot.body).toStrictEqual({
-      chatThreads: [],
-      latestEventId: null,
-      latestSeqId: null,
-    });
-    const events = await accept(
-      apiClient.events({ headers: okouHeaders, query: {} }),
-      [200],
-    );
-    expect(events.body).toStrictEqual({
-      events: [],
-      hasMore: false,
-    });
-
-    const missingCapability = await accept(
-      apiClient.snapshot({
-        headers: okouCapabilityHeaders(actor, randomUUID(), ["file:write"]),
-      }),
-      [403],
-    );
-    expect(missingCapability.body).toStrictEqual({
-      error: {
-        message: "Missing required capability: chat-thread:read",
-        code: "FORBIDDEN",
-      },
+  it("allows claimed agent tokens to sync their owner's snapshots and events", async () => {
+    const owned = await publicChatActor(context);
+    await owned.run(async () => {
+      const { actor, agentId } = owned;
+      const run = await owned.sendChatRun(actor, {
+        agentId,
+        prompt: "Read chat snapshots",
+      });
+      const claimed = await owned.claimChatRun(owned.runnerGroup, run.runId);
+      const apiClient = setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadsContract,
+      );
+      const okouHeaders = {
+        authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
+      };
+      const snapshot = await accept(
+        apiClient.snapshot({ headers: okouHeaders }),
+        [200],
+      );
+      if (!("url" in snapshot.body)) {
+        throw new Error("Expected a populated thread snapshot archive");
+      }
+      const archive = await fetch(snapshot.body.url);
+      expect(archive.status).toBe(200);
+      const contents = chatThreadSnapshotArchiveSchema.parse(
+        await archive.json(),
+      );
+      expect(contents.chatThreads).toContainEqual(
+        expect.objectContaining({ id: run.threadId, agentId }),
+      );
+      const events = await accept(
+        apiClient.events({ headers: okouHeaders, query: {} }),
+        [200],
+      );
+      createRouteMocks(context).clerk.session(
+        actor.userId,
+        actor.orgId,
+        actor.orgRole,
+      );
+      const sessionHeaders = { authorization: "Bearer clerk-session" };
+      const ownerSnapshot = await accept(
+        apiClient.snapshot({ headers: sessionHeaders }),
+        [200],
+      );
+      const ownerEvents = await accept(
+        apiClient.events({ headers: sessionHeaders, query: {} }),
+        [200],
+      );
+      expect(snapshot.body).toStrictEqual(ownerSnapshot.body);
+      expect(events.body).toStrictEqual(ownerEvents.body);
     });
   });
 
@@ -1971,12 +1941,14 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   it.each(["hosted-site", "presentation-html"] as const)(
     "exports a hosted %s as an owned bundle to Google Drive",
     async (artifactKind) => {
-      const { actor, agentId } = await entitledChatActor("HTML Drive owner");
+      const owned = await publicChatActor(context);
+      const { actor, agentId } = owned;
       mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-      const run = await sendChatRun(actor, {
+      const run = await owned.sendChatRun(actor, {
         agentId,
         prompt: "Create a hosted HTML artifact",
       });
+      const claimed = await owned.claimChatRun(owned.runnerGroup, run.runId);
       const objectStore = chatCallbacks.acceptChatObjectStorage();
       context.mocks.s3.getSignedUrl.mockResolvedValue(
         "https://r2.example.com/hosted-upload?sig=test",
@@ -1984,9 +1956,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       const index =
         '<!doctype html><link rel="stylesheet" href="/assets/style-5e0c7a94.css"><h1>Private report</h1>';
       const css = "h1 { color: green }";
-      const bearer = okouCapabilityHeaders(actor, run.runId, [
-        "host:write",
-      ]).authorization;
+      const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
       const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
         site: `private-drive-${randomUUID().slice(0, 8)}`,
         artifactKind,
@@ -2065,14 +2035,14 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   // The reported defect: a public deck is neither owner-private nor a
   // `hosted-site`, so the old condition uploaded its entry document alone.
   it("exports a public presentation deck to Google Drive as an owned bundle", async () => {
-    const { actor, agentId } = await entitledChatActor(
-      "Public deck Drive owner",
-    );
+    const owned = await publicChatActor(context);
+    const { actor, agentId } = owned;
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-    const run = await sendChatRun(actor, {
+    const run = await owned.sendChatRun(actor, {
       agentId,
       prompt: "Create a public HTML deck",
     });
+    const claimed = await owned.claimChatRun(owned.runnerGroup, run.runId);
     const objectStore = chatCallbacks.acceptChatObjectStorage();
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.com/hosted-upload?sig=test",
@@ -2080,9 +2050,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const index =
       '<!doctype html><link rel="stylesheet" href="/assets/deck-8c4a2f60.css"><h1>Deck</h1>';
     const css = "h1 { color: teal }";
-    const bearer = okouCapabilityHeaders(actor, run.runId, [
-      "host:write",
-    ]).authorization;
+    const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
     const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
       site: `public-deck-${randomUUID().slice(0, 8)}`,
       artifactKind: "presentation-html",
@@ -2159,23 +2127,21 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   });
 
   it("exports a self-contained hosted page to Google Drive as that page", async () => {
-    const { actor, agentId } = await entitledChatActor(
-      "Single page Drive owner",
-    );
+    const owned = await publicChatActor(context);
+    const { actor, agentId } = owned;
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-    const run = await sendChatRun(actor, {
+    const run = await owned.sendChatRun(actor, {
       agentId,
       prompt: "Create a self-contained HTML artifact",
     });
+    const claimed = await owned.claimChatRun(owned.runnerGroup, run.runId);
     const objectStore = chatCallbacks.acceptChatObjectStorage();
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.com/hosted-upload?sig=test",
     );
     const index =
       "<!doctype html><style>h1{color:green}</style><h1>Report</h1>";
-    const bearer = okouCapabilityHeaders(actor, run.runId, [
-      "host:write",
-    ]).authorization;
+    const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
     const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
       site: `single-page-${randomUUID().slice(0, 8)}`,
       artifactKind: "presentation-html",

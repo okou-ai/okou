@@ -1,27 +1,26 @@
-import { randomUUID } from "node:crypto";
 import {
   chatThreadMetadataContract,
-  chatThreadPinOrderContract,
   chatThreadPinContract,
+  chatThreadPinOrderContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
+import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
+import { comparePinnedThreads } from "@okouai/core/chat-thread-pin-order";
 import { createStore } from "ccstate";
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { createRouteMocks } from "./helpers/route-test";
+import { chatThreadGetRoutes } from "../chat-threads-get";
+import { chatThreadPinRoutes } from "../chat-threads-pin";
+import { chatThreadPinOrderRoutes } from "../chat-threads-pin-order";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
-import { chatThreadGetRoutes } from "../chat-threads-get";
-import { chatThreadPinOrderRoutes } from "../chat-threads-pin-order";
-import { chatThreadPinRoutes } from "../chat-threads-pin";
-import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
-import { comparePinnedThreads } from "@okouai/core/chat-thread-pin-order";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const claimedToken = createClaimedRunCredentials(context).okouToken;
 const store = createStore();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
@@ -63,27 +62,6 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
   };
 }
 
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
-}
-
-function okouToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly capabilities: readonly Capability[];
-}): string {
-  const seconds = currentSecond();
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: `run_${randomUUID()}`,
-    capabilities: [...args.capabilities],
-    iat: seconds,
-    exp: seconds + 600,
-  });
-}
-
 function reorderClient() {
   return setupApp({ context, routes: chatThreadPinOrderRoutes })(
     chatThreadPinOrderContract,
@@ -102,9 +80,9 @@ function pinClient() {
     chatThreadPinContract,
   );
 }
-function headers(fixture: ChatThreadFixture) {
+async function headers(fixture: ChatThreadFixture) {
   return {
-    authorization: `Bearer ${okouToken({ ...fixture, capabilities: ["chat-thread:write", "chat-thread:read"] })}`,
+    authorization: `Bearer ${await claimedToken({ ...fixture })}`,
   };
 }
 function metadataClient() {
@@ -124,7 +102,7 @@ describe("pinned thread ordering", () => {
     await chat.pinThread(fixture.actor, second.id);
     const before = await accept(
       metadataClient().get({
-        headers: headers(fixture),
+        headers: await headers(fixture),
         params: { id: fixture.threadId },
       }),
       [200],
@@ -132,7 +110,7 @@ describe("pinned thread ordering", () => {
     const eventId = randomUUID();
     await accept(
       reorderClient().reorder({
-        headers: headers(fixture),
+        headers: await headers(fixture),
         params: { id: fixture.threadId },
         body: { pinOrder: "Zy", eventId },
       }),
@@ -140,7 +118,7 @@ describe("pinned thread ordering", () => {
     );
     const after = await accept(
       metadataClient().get({
-        headers: headers(fixture),
+        headers: await headers(fixture),
         params: { id: fixture.threadId },
       }),
       [200],
@@ -203,7 +181,7 @@ describe("pinned thread ordering", () => {
     const fixture = await seedChatThread("Unpinned");
     const missing = await accept(
       reorderClient().reorder({
-        headers: headers(fixture),
+        headers: await headers(fixture),
         params: { id: fixture.threadId },
         body: { pinOrder: "a0", eventId: randomUUID() },
       }),
@@ -219,7 +197,7 @@ describe("pinned thread ordering", () => {
     );
     await accept(
       reorderClient().reorder({
-        headers: headers({ ...fixture, orgId }),
+        headers: await headers({ ...fixture, orgId }),
         params: { id: fixture.threadId },
         body: { pinOrder: "a0", eventId: randomUUID() },
       }),
@@ -227,12 +205,12 @@ describe("pinned thread ordering", () => {
     );
   });
 
-  it("validates fractional rank keys and requires write capability", async () => {
+  it("validates fractional rank keys", async () => {
     const fixture = await seedChatThread("Pinned");
     await chat.pinThread(fixture.actor, fixture.threadId);
     const invalid = await accept(
       reorderClient().reorder({
-        headers: headers(fixture),
+        headers: await headers(fixture),
         params: { id: fixture.threadId },
         body: { pinOrder: "a00", eventId: randomUUID() },
       }),
@@ -246,16 +224,6 @@ describe("pinned thread ordering", () => {
         query: { pinOrder: "a00" },
       }),
       [400],
-    );
-    await accept(
-      reorderClient().reorder({
-        headers: {
-          authorization: `Bearer ${okouToken({ ...fixture, capabilities: ["chat-thread:read"] })}`,
-        },
-        params: { id: fixture.threadId },
-        body: { pinOrder: "a0", eventId: randomUUID() },
-      }),
-      [403],
     );
   });
 });

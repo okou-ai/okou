@@ -1,20 +1,22 @@
 import { randomUUID } from "node:crypto";
 
-import { createStore } from "ccstate";
 import {
   integrationsTeamsMessageContract,
   integrationsTeamsUploadCompleteContract,
 } from "@okouai/api-contracts/contracts/integrations";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
+import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
-import { server } from "../../../mocks/server";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+import { mockEnv } from "../../../lib/env";
+import { server } from "../../../mocks/server";
+import { integrationsTeamsMessageRoutes } from "../integrations-teams-message";
+import { integrationsTeamsUploadCompleteRoutes } from "../integrations-teams-upload-complete";
+import { teamsConnectRoutes } from "../teams-connect";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -25,11 +27,9 @@ import {
   teamsFixtureExternalId,
   type TeamsConnectFixture,
 } from "./helpers/teams-connect";
-import { integrationsTeamsMessageRoutes } from "../integrations-teams-message";
-import { integrationsTeamsUploadCompleteRoutes } from "../integrations-teams-upload-complete";
-import { teamsConnectRoutes } from "../teams-connect";
 
 const context = testContext();
+const credentials = createClaimedRunCredentials(context);
 const store = createStore();
 const mocks = createRouteMocks(context);
 const SERVICE_URL = "https://smba.trafficmanager.net/amer/";
@@ -41,28 +41,6 @@ interface CapturedTeamsActivity {
   conversationId?: string;
   body?: Record<string, unknown>;
   authorization?: string | null;
-}
-
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
-}
-
-function okouToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly runId: string;
-  readonly capabilities?: readonly string[];
-}): string {
-  const seconds = currentSecond();
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: args.runId,
-    capabilities: (args.capabilities ?? ["teams:write"]) as never,
-    iat: seconds,
-    exp: seconds + 60,
-  });
 }
 
 function teamsFixture(): TeamsConnectFixture {
@@ -193,11 +171,7 @@ describe("Microsoft Teams integration CLI routes", () => {
           text: "Hello from Teams CLI",
         },
         headers: {
-          authorization: `Bearer ${okouToken({
-            userId: fixture.userId,
-            orgId: fixture.orgId,
-            runId: `run_${randomUUID()}`,
-          })}`,
+          authorization: `Bearer ${await credentials.okouToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
         },
       }),
       [200],
@@ -247,11 +221,7 @@ describe("Microsoft Teams integration CLI routes", () => {
           },
         },
         headers: {
-          authorization: `Bearer ${okouToken({
-            userId: fixture.userId,
-            orgId: fixture.orgId,
-            runId: `run_${randomUUID()}`,
-          })}`,
+          authorization: `Bearer ${await credentials.okouToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
         },
       }),
       [200],

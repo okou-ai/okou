@@ -223,6 +223,8 @@ describe("GitHub file integration routes", () => {
     mockEnv("S3_PUBLIC_ENDPOINT", "https://public-s3.test");
     mocks.s3.listObjects([]);
     const fixture = await seedFixture();
+    const token = await claimedToken(fixture);
+    context.mocks.s3.getSignedUrl.mockClear();
     const client = setupApp({
       context,
       routes: integrationsGithubUploadInitRoutes,
@@ -236,7 +238,7 @@ describe("GitHub file integration routes", () => {
           length: 1234,
         },
         headers: {
-          authorization: `Bearer ${await claimedToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
+          authorization: `Bearer ${token}`,
         },
       }),
       [200],

@@ -1,8 +1,10 @@
-import { now } from "../../../../lib/time";
 import { beforeEach } from "vitest";
 import type { TestContext } from "../../../../__tests__/test-context";
+import { mockOptionalEnv } from "../../../../lib/env";
+import { now } from "../../../../lib/time";
 import { createBddApi } from "./api-bdd";
 import { createAuthDeviceSupportApi } from "./api-bdd-auth-device-support";
+import { createAuthOrgAgentsBddApi } from "./api-bdd-auth-org";
 import { createRunsApi } from "./api-bdd-runs";
 import { captureConnectorExternalState } from "./public-connector-actor";
 import { publicRunOwner } from "./public-run-owner";
@@ -53,6 +55,8 @@ export function createClaimedRunCredentials(context: TestContext) {
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
       const runnerGroup = runs.configureRunnerGroup();
+      mockOptionalEnv("OPENROUTER_API_KEY", "bdd-issued-credential-key");
+      await runs.grantProEntitlement(actor);
       await createAuthDeviceSupportApi(context).initializePreferences(actor);
       const agent = await bdd.createAgent(actor, {
         displayName: "API caller credential",
@@ -83,6 +87,32 @@ export function createClaimedRunCredentials(context: TestContext) {
   }
   return {
     claim,
+    async removeMember(identity: Parameters<typeof claim>[0]) {
+      const auth = createAuthOrgAgentsBddApi(context);
+      const actor = auth.user(identity);
+      const admin = auth.user({ orgId: actor.orgId, orgRole: "org:admin" });
+      auth.mockClerkOrg(admin, {
+        members: [{ actor: admin }, { actor }],
+        createdBy: admin.userId,
+      });
+      await auth.removeMember(admin, { email: actor.email });
+      auth.mockClerkOrg(admin, {
+        members: [{ actor: admin }],
+        createdBy: admin.userId,
+      });
+      context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
+        (request) => {
+          return {
+            data:
+              (request as { userId: string }).userId === admin.userId
+                ? [{ role: "org:admin", organization: { id: admin.orgId } }]
+                : [],
+            totalCount:
+              (request as { userId: string }).userId === admin.userId ? 1 : 0,
+          };
+        },
+      );
+    },
     async okouToken(identity: Parameters<typeof claim>[0]) {
       return (await claim(identity)).token;
     },

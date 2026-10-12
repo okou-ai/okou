@@ -1,17 +1,15 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createHash, randomUUID } from "node:crypto";
+import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 
-import { describe, expect, it, onTestFinished } from "vitest";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { hostRoutes } from "../host";
 
+import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockOptionalEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { artifactCatalogRoutes } from "../artifact-catalog";
@@ -326,7 +324,6 @@ async function publishHostedSite(args: {
   readonly site: string;
   readonly artifactKind?: "hosted-site" | "presentation-html";
   readonly threadId?: string;
-  readonly claimRun?: boolean;
 }): Promise<{
   readonly url: string;
   readonly siteId: string;
@@ -341,14 +338,8 @@ async function publishHostedSite(args: {
     prompt: `publish ${args.site}`,
     ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
   });
-  const claimed =
-    args.claimRun === false
-      ? null
-      : await claimChatRun(args.owner.runnerGroup, run.runId);
-  const bearer =
-    claimed === null
-      ? `Bearer ${scopedOkouToken(args.owner, run.runId, ["host:write"])}`
-      : `Bearer ${okouTokenFromClaim(claimed.claim)}`;
+  const claimed = await claimChatRun(args.owner.runnerGroup, run.runId);
+  const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
   const body = {
     site: args.site,
     artifactKind: args.artifactKind ?? ("hosted-site" as const),
@@ -358,9 +349,7 @@ async function publishHostedSite(args: {
 
   const prepared = await chat.prepareHostedSiteWithBearer(bearer, body);
   await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
-  if (claimed !== null) {
-    await completeChatRunOk(run.runId, claimed.sandboxHeaders);
-  }
+  await completeChatRunOk(run.runId, claimed.sandboxHeaders);
   return {
     url: prepared.url,
     siteId: prepared.siteId,
@@ -372,26 +361,6 @@ async function publishHostedSite(args: {
     runId: run.runId,
     threadId: run.threadId,
   };
-}
-
-function scopedOkouToken(
-  owner: CatalogActor,
-  runId: string,
-  capabilities: readonly ("file:write" | "host:read" | "host:write")[],
-): string {
-  if (!owner.actor.orgId) {
-    throw new Error("Expected artifact catalog actor to have an org");
-  }
-  const seconds = Math.floor(now() / 1000);
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: owner.actor.userId,
-    orgId: owner.actor.orgId,
-    runId,
-    capabilities,
-    iat: seconds,
-    exp: seconds + 60,
-  });
 }
 
 describe("GET /api/artifacts/catalog", () => {
@@ -726,7 +695,6 @@ describe("GET /api/artifacts/catalog", () => {
       owner,
       site,
       threadId: hosted.threadId,
-      claimRun: false,
     });
     // Redeploying keeps one site; each publication stays its own artifact.
     expect(second.siteId).toBe(hosted.siteId);
@@ -945,7 +913,6 @@ describe("GET /api/artifacts/catalog", () => {
       site,
       artifactKind: "presentation-html",
       threadId: hosted.threadId,
-      claimRun: false,
     });
 
     // One name is one site, and its single catalog entry follows the newest

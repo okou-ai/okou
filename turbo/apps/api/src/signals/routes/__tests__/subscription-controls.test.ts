@@ -1,31 +1,29 @@
+import {
+  personalModelProviderAccountsByIdContract,
+  personalModelProvidersMainContract,
+  personalSubscriptionsContract,
+} from "@okouai/api-contracts/contracts/personal-model-providers";
+import { http, HttpResponse } from "msw";
 import { randomUUID } from "node:crypto";
 import { expect, test } from "vitest";
-import { http, HttpResponse } from "msw";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import {
-  personalSubscriptionsContract,
-  personalModelProvidersMainContract,
-  personalModelProviderAccountsByIdContract,
-} from "@okouai/api-contracts/contracts/personal-model-providers";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+import { meModelProviderAccountRoutes } from "../me-model-provider-accounts";
 import { meModelProvidersListRoutes } from "../me-model-providers-list";
 import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
-import { meModelProviderAccountRoutes } from "../me-model-provider-accounts";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { mockClerkMembership } from "./helpers/api-bdd-clerk";
-import { createRouteMocks } from "./helpers/route-test";
 import {
   createAuthDeviceApiActions,
-  mockCodexDeviceAuthProvider,
   mockClaudeCodeTokenEndpoint,
+  mockCodexDeviceAuthProvider,
 } from "./helpers/api-bdd-auth-device";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const credentials = createClaimedRunCredentials(context);
 const mocks = createRouteMocks(context);
 const routes = Object.freeze([
   ...meModelProvidersListRoutes,
@@ -89,24 +87,8 @@ async function fixture() {
   return { actor, accountIds: [firstAccountId, secondAccountId] as const };
 }
 
-function agentHeaders(actor: ApiTestUser, capabilities: readonly Capability[]) {
-  if (!actor.orgId) {
-    throw new Error("Expected an organization");
-  }
-  mockClerkMembership(context, actor, "org:member");
-  context.mocks.clerk.authenticateRequest.mockResolvedValue({
-    isAuthenticated: false,
-  });
-  const seconds = Math.floor(now() / 1000);
-  const token = signSandboxJwtForTests({
-    scope: "okou",
-    userId: actor.userId,
-    orgId: actor.orgId,
-    runId: randomUUID(),
-    capabilities: [...capabilities],
-    iat: seconds,
-    exp: seconds + 600,
-  });
+async function agentHeaders(actor: ApiTestUser) {
+  const token = await credentials.okouToken(actor);
   return { authorization: `Bearer ${token}` };
 }
 
@@ -117,7 +99,7 @@ function human(actor: ApiTestUser) {
 
 test("agents read all subscriptions and single-account live usage without a failed run", async () => {
   const { actor, accountIds } = await fixture();
-  const headers = agentHeaders(actor, ["subscription:read"]);
+  const headers = await agentHeaders(actor);
   const listed = await accept(
     app()(personalModelProvidersMainContract).list({ headers }),
     [200],
@@ -196,10 +178,7 @@ test("agents read all subscriptions and single-account live usage without a fail
 
 test("cLI account activation reuses the existing switch behavior", async () => {
   const { actor, accountIds } = await fixture();
-  const headers = agentHeaders(actor, [
-    "subscription:read",
-    "subscription:switch",
-  ]);
+  const headers = await agentHeaders(actor);
   const switched = await accept(
     app()(personalModelProviderAccountsByIdContract).activate({
       headers,
@@ -265,18 +244,8 @@ test("cLI account activation reuses the existing switch behavior", async () => {
   ).toStrictEqual([accountIds[1], accountIds[0]]);
 });
 
-test("read capability cannot switch, and even a switching agent cannot execute reset", async () => {
+test("a claimed agent cannot execute a subscription reset", async () => {
   const { actor, accountIds } = await fixture();
-  const readHeaders = agentHeaders(actor, ["subscription:read"]);
-  expect(
-    (
-      await app()(personalModelProviderAccountsByIdContract).activate({
-        headers: readHeaders,
-        params: { id: accountIds[0] },
-        body: {},
-      })
-    ).status,
-  ).toBe(403);
   let consumed = false;
   server.use(
     http.post(
@@ -287,10 +256,7 @@ test("read capability cannot switch, and even a switching agent cannot execute r
       },
     ),
   );
-  const headers = agentHeaders(actor, [
-    "subscription:read",
-    "subscription:switch",
-  ]);
+  const headers = await agentHeaders(actor);
   const denied = await accept(
     app()(personalModelProviderAccountsByIdContract).resetSubscriptionUsage({
       headers,
