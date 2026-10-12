@@ -27,17 +27,19 @@ impl Fixture {
         Self { dir, paths, cache }
     }
     pub fn key(&self, reuse: &str) -> String {
-        self.cache
-            .scoped_cache_key(PROFILE, ROOTFS, reuse, CWD, SIZE)
+        self.cache.scoped_cache_key(PROFILE, reuse, SIZE)
     }
     pub async fn lease(&self, reuse: &str) -> HomeImageLease {
+        self.lease_at_rootfs(reuse, ROOTFS).await
+    }
+    pub async fn lease_at_rootfs(&self, reuse: &str, rootfs: &str) -> HomeImageLease {
         self.cache
             .prepare(HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
                     run_id: RunId::new_v4(),
                     sandbox_id: sandbox::SandboxId::new_v4(),
                     profile_name: PROFILE,
-                    rootfs_hash: ROOTFS,
+                    rootfs_hash: rootfs,
                     reuse_key: Some(reuse),
                     working_dir: CWD,
                     image_size_bytes: SIZE,
@@ -105,7 +107,6 @@ impl Fixture {
             .read_valid_metadata(
                 &self.cache.entry_paths(&self.key(reuse)).metadata(),
                 PROFILE,
-                ROOTFS,
                 reuse,
                 CWD,
                 SIZE,

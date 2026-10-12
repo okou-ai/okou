@@ -65,15 +65,12 @@ impl HomeImageCache {
     pub(super) fn scoped_cache_key(
         &self,
         profile_name: &str,
-        rootfs_hash: &str,
         reuse_key: &str,
-        _working_dir: &str,
         image_size_bytes: u64,
     ) -> String {
         scoped_home_image_cache_key(
             &self.inner.cache_scope,
             profile_name,
-            rootfs_hash,
             reuse_key,
             image_size_bytes,
         )
@@ -87,7 +84,6 @@ impl HomeImageCache {
             && scoped_home_image_cache_key(
                 &metadata.cache_scope,
                 &metadata.profile_name,
-                &metadata.rootfs_hash,
                 &metadata.reuse_key,
                 metadata.logical_image_size_bytes,
             ) == key

@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
 use nix::fcntl::Flock;
 use tokio::fs;
 use tracing::{info, warn};
@@ -33,9 +32,9 @@ use super::path_safety::{
 use super::types::{
     CacheBudget, HomeCacheCheckoutResult, HomeCacheLockDecision, HomeCacheLockOwner,
     HomeCacheTerminalStatus, HomeImageLeaseIdentity, HomeImageLeaseRequest,
-    HomeImagePrepareLockPolicy, HomeImagePrepareRequest, HomeImageProfileIdentity,
-    HomeImagePromotionIdentity, HomeImagePromotionIdentityMismatch,
-    HomeImagePromotionIdentityRequest, HomeImagePromotionRequest,
+    HomeImagePrepareLockPolicy, HomeImagePrepareRequest, HomeImagePromotionIdentity,
+    HomeImagePromotionIdentityMismatch, HomeImagePromotionIdentityRequest,
+    HomeImagePromotionRequest,
 };
 use super::{
     CACHE_FORMAT_VERSION, HOME_DRIVE_LAYOUT, HomeCacheLockRegistration, HomeImageCache,
@@ -259,14 +258,8 @@ impl<'a> HomeImageLeaseCommon<'a> {
         self.safe_working_dir().unwrap_or(self.raw_working_dir)
     }
 
-    fn cache_key(&self, cache: &HomeImageCache, reuse_key: &str, working_dir: &str) -> String {
-        cache.scoped_cache_key(
-            self.profile_name,
-            self.rootfs_hash,
-            reuse_key,
-            working_dir,
-            self.image_size_bytes,
-        )
+    fn cache_key(&self, cache: &HomeImageCache, reuse_key: &str) -> String {
+        cache.scoped_cache_key(self.profile_name, reuse_key, self.image_size_bytes)
     }
 
     fn lease_base(&self, cache: &HomeImageCache) -> HomeImageLeaseBase {
@@ -371,9 +364,7 @@ impl HomeImageCache {
         };
         let cache_key = self.scoped_cache_key(
             request.profile_name,
-            request.rootfs_hash,
             request.reuse_key,
-            &working_dir,
             request.image_size_bytes,
         );
 
@@ -411,7 +402,7 @@ impl HomeImageCache {
         if common.rootfs_hash.is_empty() || common.image_size_bytes == 0 {
             return active_lease(HomeCacheCheckoutResult::InvalidMetadata, None, None, None);
         }
-        let Some(working_dir) = common.safe_working_dir() else {
+        let Some(_) = common.safe_working_dir() else {
             warn!(
                 run_id = %common.run_id,
                 working_dir = %common.raw_working_dir,
@@ -423,7 +414,7 @@ impl HomeImageCache {
             return active_lease(HomeCacheCheckoutResult::NoReuseKey, None, None, None);
         };
 
-        let cache_key = common.cache_key(self, reuse_key, working_dir);
+        let cache_key = common.cache_key(self, reuse_key);
         let owner_before = self.local_entry_lock_observation(&cache_key);
         match runner_host::lock::try_acquire_or_busy(self.entry_lock_path(&cache_key)).await {
             Ok(runner_host::lock::TryLock::Acquired(lock)) => active_lease(
@@ -601,7 +592,7 @@ impl HomeImageCache {
             );
         }
 
-        let cache_key = common.cache_key(self, reuse_key, working_dir);
+        let cache_key = common.cache_key(self, reuse_key);
         let lock_path = self.entry_lock_path(&cache_key);
         let owner_before = self.local_entry_lock_observation(&cache_key);
         let lock = match self.acquire_prepare_lock(lock_path, lock_policy).await {
@@ -699,7 +690,6 @@ impl HomeImageCache {
             .read_valid_metadata(
                 &metadata_path,
                 common.profile_name,
-                common.rootfs_hash,
                 reuse_key,
                 working_dir,
                 common.image_size_bytes,
@@ -850,7 +840,7 @@ impl HomeImageCache {
 
     pub async fn held_home_states_for_profiles(
         &self,
-        profile_image_sizes_bytes: &BTreeMap<&str, HomeImageProfileIdentity<'_>>,
+        profile_image_sizes_bytes: &BTreeMap<&str, u64>,
     ) -> Vec<HeldHomeState> {
         self.held_home_states_matching_profiles(Some(profile_image_sizes_bytes), None, false)
             .await
@@ -861,7 +851,7 @@ impl HomeImageCache {
     /// needed to connect subscribe-before-scan watcher state.
     pub async fn initial_held_home_states_for_profiles(
         &self,
-        profile_image_sizes_bytes: &BTreeMap<&str, HomeImageProfileIdentity<'_>>,
+        profile_image_sizes_bytes: &BTreeMap<&str, u64>,
     ) -> (Vec<HeldHomeState>, BTreeSet<String>, BTreeSet<String>) {
         let scan = self
             .held_home_states_matching_profiles(Some(profile_image_sizes_bytes), None, true)
@@ -878,10 +868,8 @@ impl HomeImageCache {
                         .map(|image_size_bytes| {
                             self.scoped_cache_key(
                                 &home_cache.profile,
-                                image_size_bytes.rootfs_hash,
                                 &state.reuse_key,
-                                CANONICAL_WORKING_DIR,
-                                image_size_bytes.image_size_bytes,
+                                *image_size_bytes,
                             )
                         })
                 })
@@ -897,7 +885,7 @@ impl HomeImageCache {
     /// the validated observation is merged into that scan's bounded result.
     pub async fn held_home_states_for_profiles_after_commits(
         &self,
-        profile_image_sizes_bytes: &BTreeMap<&str, HomeImageProfileIdentity<'_>>,
+        profile_image_sizes_bytes: &BTreeMap<&str, u64>,
         committed_cache_keys: &BTreeSet<String>,
         deadline: tokio::time::Instant,
     ) -> Vec<HeldHomeState> {
@@ -920,7 +908,7 @@ impl HomeImageCache {
 
     async fn held_home_states_matching_profiles(
         &self,
-        profile_image_sizes_bytes: Option<&BTreeMap<&str, HomeImageProfileIdentity<'_>>>,
+        profile_image_sizes_bytes: Option<&BTreeMap<&str, u64>>,
         committed_cache_keys: Option<(&BTreeSet<String>, tokio::time::Instant)>,
         collect_locked_commits: bool,
     ) -> HeldHomeStateScan {
@@ -1096,7 +1084,7 @@ impl HomeImageCache {
     async fn publishable_held_home_state(
         &self,
         cache_key: &str,
-        profile_image_sizes_bytes: Option<&BTreeMap<&str, HomeImageProfileIdentity<'_>>>,
+        profile_image_sizes_bytes: Option<&BTreeMap<&str, u64>>,
         _lock: &Flock<std::fs::File>,
     ) -> Option<HeldHomeState> {
         let metadata = self
@@ -1123,7 +1111,7 @@ impl HomeImageCache {
         &self,
         cache_key: &str,
         metadata: &HomeCacheMetadata,
-        profile_image_sizes_bytes: Option<&BTreeMap<&str, HomeImageProfileIdentity<'_>>>,
+        profile_image_sizes_bytes: Option<&BTreeMap<&str, u64>>,
     ) -> bool {
         metadata.format_version == CACHE_FORMAT_VERSION
             && metadata.cache_scope == self.inner.cache_scope
@@ -1134,10 +1122,7 @@ impl HomeImageCache {
             && profile_image_sizes_bytes.is_none_or(|profile_image_sizes_bytes| {
                 profile_image_sizes_bytes
                     .get(metadata.profile_name.as_str())
-                    .is_some_and(|identity| {
-                        identity.image_size_bytes == metadata.logical_image_size_bytes
-                            && identity.rootfs_hash == metadata.rootfs_hash
-                    })
+                    .is_some_and(|size| *size == metadata.logical_image_size_bytes)
             })
             && self.metadata_matches_cache_key(cache_key, metadata)
             && self
@@ -1188,7 +1173,6 @@ impl HomeImageCache {
             .read_valid_metadata(
                 &paths.metadata(),
                 input.profile_name,
-                input.rootfs_hash,
                 input.reuse_key,
                 input.working_dir,
                 input.image_size_bytes,

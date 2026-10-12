@@ -32,6 +32,7 @@ pub(super) struct HomeCacheMetadata {
     pub(super) format_version: u32,
     pub(super) cache_scope: String,
     pub(super) profile_name: String,
+    /// Producer VM provenance, independent of consumer home eligibility.
     pub(super) rootfs_hash: String,
     pub(super) reuse_key: String,
     pub(super) working_dir: String,
@@ -123,7 +124,6 @@ impl HomeImageCache {
         &self,
         path: &Path,
         profile: &str,
-        rootfs_hash: &str,
         reuse_key: &str,
         working_dir: &str,
         image_size_bytes: u64,
@@ -139,18 +139,11 @@ impl HomeImageCache {
             &metadata,
             &self.inner.cache_scope,
             profile,
-            rootfs_hash,
             reuse_key,
             working_dir,
             image_size_bytes,
         )?;
-        let key = self.scoped_cache_key(
-            profile,
-            rootfs_hash,
-            reuse_key,
-            working_dir,
-            image_size_bytes,
-        );
+        let key = self.scoped_cache_key(profile, reuse_key, image_size_bytes);
         let image = self
             .entry_paths(&key)
             .image(&metadata.image_generation)
@@ -276,7 +269,6 @@ fn validate_metadata(
     metadata: &HomeCacheMetadata,
     scope: &str,
     profile: &str,
-    rootfs_hash: &str,
     reuse_key: &str,
     working_dir: &str,
     size: u64,
@@ -284,7 +276,6 @@ fn validate_metadata(
     validate_metadata_structure(metadata)?;
     if metadata.cache_scope != scope
         || metadata.profile_name != profile
-        || metadata.rootfs_hash != rootfs_hash
         || metadata.reuse_key != reuse_key
         || metadata.working_dir != working_dir
         || metadata.logical_image_size_bytes != size

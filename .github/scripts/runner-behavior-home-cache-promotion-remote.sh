@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Native operations already require root; keep the fixture's host lock FDs in
+# this worker so cleanup and the durable unit own their complete lifetime.
+if [ "$EUID" -ne 0 ]; then
+  exec sudo -- bash "$0" "$@"
+fi
+
 BIN_DIR=$1
 JOB_REF=$2
 SVC="${JOB_REF}-home-cache-promotion"
@@ -17,8 +23,47 @@ SANDBOX_ID=""
 TURN1_INVOCATION_ID=""
 PROMOTION_INVOCATION_ID=""
 RESTORE_INVOCATION_ID=""
+ORIGINAL_CONFIG="${RUNNER_DIR}/home-cache-original.yaml"
+ROOTFS_UPDATE_DIR="${RUNNER_DIR}/rootfs-update"
+UPDATED_ROOTFS_HASH=""
+UPDATED_SNAPSHOT_HASH=""
+UPDATED_IMAGE_DIR=""
+HOME_CACHE_PIN_FDS=()
 
 fail() { echo "FAIL: $1"; exit 1; }
+hold_fixture_cache_locks() {
+  local keys cache_key cache_fd
+  keys=$(env RUST_LOG=off "$BIN_DIR/runner" home-image-cache list --json \
+    | python3 -c 'import json, sys
+entries = json.load(sys.stdin)["entries"]
+keys = sorted(entry["cacheKey"] for entry in entries
+              if entry.get("cacheScope") == sys.argv[1] and entry["status"] == "reusable")
+if not keys:
+    raise SystemExit("fixture has no reusable committed home")
+print("\n".join(keys))' "$GROUP")
+  while IFS= read -r cache_key; do
+    [[ "$cache_key" =~ ^[0-9a-f]{64}$ ]] || fail "unsafe fixture cache key"
+    exec {cache_fd}<>"/var/lib/vm0-runner/locks/home-image-cache-${cache_key}.lock"
+    HOME_CACHE_PIN_FDS+=("$cache_fd")
+    flock -n "$cache_fd" || fail "fixture cache lock is busy"
+    echo "Pinned fixture home during rootfs build: $cache_key"
+  done <<<"$keys"
+}
+release_fixture_cache_locks() {
+  local cache_fd
+  for cache_fd in "${HOME_CACHE_PIN_FDS[@]}"; do
+    flock -u "$cache_fd"
+    exec {cache_fd}>&-
+  done
+  HOME_CACHE_PIN_FDS=()
+}
+cache_diagnostics() {
+  sudo env RUST_LOG=off "$BIN_DIR/runner" home-image-cache list --json \
+    | python3 -c 'import json, sys
+snapshot = json.load(sys.stdin)
+entries = [entry for entry in snapshot["entries"] if entry.get("cacheScope") == sys.argv[1]]
+print(json.dumps({"phase": sys.argv[2], "fixtureEntries": entries}))' "$GROUP" "$1"
+}
 wait_for_unit_inactive() {
   for _ in $(seq 1 30); do
     if ! sudo systemctl is-active --quiet "$UNIT"; then
@@ -47,9 +92,64 @@ stop_active_attempt() {
 cleanup() {
   echo "--- Cleanup ---"
   stop_active_attempt
+  release_fixture_cache_locks
+  if [ -n "$UPDATED_IMAGE_DIR" ]; then
+    sudo rm -rf "$UPDATED_IMAGE_DIR"
+  fi
   sudo rm -rf "$GROUP_DIR" "$RUNNER_DIR"
 }
 trap cleanup EXIT
+
+sudo cp "$RUNNER_DIR/runner.yaml" "$ORIGINAL_CONFIG"
+
+prepare_updated_rootfs() {
+  if [ -z "$UPDATED_ROOTFS_HASH" ]; then
+    local original_hash original_image updated_image build_hashes
+    original_hash=$(sudo awk '$1 == "rootfs_hash:" {print $2}' "$ORIGINAL_CONFIG")
+    [[ "$original_hash" =~ ^[0-9a-f]{64}$ ]] || fail "original rootfs hash unavailable"
+    original_image="/var/lib/vm0-runner/images/${original_hash}/rootfs.ext4"
+    sudo mkdir -p "$ROOTFS_UPDATE_DIR"
+    sudo debugfs -R "dump /usr/local/bin/codex-mock ${ROOTFS_UPDATE_DIR}/codex-mock" "$original_image"
+    sudo test -s "$ROOTFS_UPDATE_DIR/codex-mock" || fail "original codex mock unavailable"
+    # Appending a fixture note preserves ELF execution while genuinely changing
+    # installed guest bytes and the production builder's rootfs identity.
+    printf '\n%s\n' "$RUN_KEY" | sudo tee -a "$ROOTFS_UPDATE_DIR/codex-mock" >/dev/null
+    sudo chmod 755 "$ROOTFS_UPDATE_DIR/codex-mock"
+    build_hashes=$(sudo "$BIN_DIR/runner" build --profile vm0/default \
+      --codex-mock "$ROOTFS_UPDATE_DIR/codex-mock" --dry-run)
+    UPDATED_ROOTFS_HASH=$(awk -F= '$1 == "rootfs_hash" {print $2}' <<<"$build_hashes")
+    UPDATED_SNAPSHOT_HASH=$(awk -F= '$1 == "snapshot_hash" {print $2}' <<<"$build_hashes")
+    [[ "$UPDATED_ROOTFS_HASH" =~ ^[0-9a-f]{64}$ ]] || fail "updated rootfs hash unavailable"
+    [[ "$UPDATED_SNAPSHOT_HASH" =~ ^[0-9a-f]{64}$ ]] || fail "updated snapshot hash unavailable"
+    [ "$UPDATED_ROOTFS_HASH" != "$original_hash" ] || fail "rootfs update did not change identity"
+    updated_image="/var/lib/vm0-runner/images/${UPDATED_ROOTFS_HASH}/rootfs.ext4"
+    # Cleanup owns only a directory created exclusively by this fixture, after
+    # proving its identity differs from the shared original.
+    sudo mkdir "$(dirname "$updated_image")"
+    UPDATED_IMAGE_DIR=$(dirname "$updated_image")
+    # Reuse the already-built system template without a second network build.
+    # Only the fixture's unique rootfs copy is edited, never the shared original.
+    sudo cp --reflink=auto --sparse=always "$original_image" "${updated_image}.staging"
+    sudo debugfs -w -R 'rm /usr/local/bin/codex-mock' "${updated_image}.staging"
+    sudo debugfs -w -R "write ${ROOTFS_UPDATE_DIR}/codex-mock /usr/local/bin/codex-mock" "${updated_image}.staging"
+    sudo debugfs -w -R 'set_inode_field /usr/local/bin/codex-mock mode 0100755' "${updated_image}.staging"
+    sudo debugfs -R "dump /usr/local/bin/codex-mock ${ROOTFS_UPDATE_DIR}/installed-codex-mock" "${updated_image}.staging"
+    sudo cmp "$ROOTFS_UPDATE_DIR/codex-mock" "$ROOTFS_UPDATE_DIR/installed-codex-mock"
+    if sudo test -f "/var/lib/vm0-runner/images/${original_hash}/okou-cli.json"; then
+      sudo cp "/var/lib/vm0-runner/images/${original_hash}/okou-cli.json" \
+        "$(dirname "$updated_image")/okou-cli.json"
+    fi
+    sudo mv "${updated_image}.staging" "$updated_image"
+    # Build a fresh native VM snapshot from the changed disk, with the owning
+    # production builder computing and validating its actual input identities.
+    sudo "$BIN_DIR/runner" build --profile vm0/default \
+      --codex-mock "$ROOTFS_UPDATE_DIR/codex-mock"
+  fi
+  sudo sed -E \
+    -e "s/^([[:space:]]*rootfs_hash:).*/\\1 ${UPDATED_ROOTFS_HASH}/" \
+    -e "s/^([[:space:]]*snapshot_hash:).*/\\1 ${UPDATED_SNAPSHOT_HASH}/" \
+    "$ORIGINAL_CONFIG" | sudo tee "$RUNNER_DIR/runner.yaml" >/dev/null
+}
 
 for ((ATTEMPT = 1; ATTEMPT <= MAX_ATTEMPTS; ATTEMPT++)); do
   SESSION_ID="e2e-home-cache-promotion-session-${RUN_KEY}-${ATTEMPT}"
@@ -64,11 +164,13 @@ for ((ATTEMPT = 1; ATTEMPT <= MAX_ATTEMPTS; ATTEMPT++)); do
   echo "--- Home cache promotion attempt ${ATTEMPT}/${MAX_ATTEMPTS} ---"
   sudo "$BIN_DIR/runner" service stop --name "$SVC" --force
   wait_for_unit_inactive
+  sudo cp "$ORIGINAL_CONFIG" "$RUNNER_DIR/runner.yaml"
   sudo rm -rf "$GROUP_DIR"
 
   echo "--- Starting runner ---"
   sudo "$BIN_DIR/runner" service start --name "$SVC" \
-    --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true
+    --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true \
+    --env RUST_LOG=info,runner_lifecycle=debug
 
   for _ in $(seq 1 30); do
     TURN1_INVOCATION_ID=$(sudo systemctl show "$UNIT" \
@@ -226,7 +328,8 @@ exit 42' 2>&1)
   # do not make the native test pass merely by accepting every cache rejection.
   sudo "$BIN_DIR/runner" service stop --name "$SVC" --force
   sudo "$BIN_DIR/runner" service start --name "$SVC" \
-    --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true
+    --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true \
+    --env RUST_LOG=info,runner_lifecycle=debug
   for _ in $(seq 1 30); do
     PROMOTION_INVOCATION_ID=$(sudo systemctl show "$UNIT" \
       --property=InvocationID --value 2>/dev/null) || true
@@ -279,9 +382,17 @@ sudo touch /home/user/workspace/nested/ephemeral'; then
   fi
 
   # Clear the drain drop-in before starting a fresh transient service.
+  cache_diagnostics before-rootfs-update
+  # Shared native hosts can still run outgoing formula-aware GC. Isolate this
+  # restore assertion from the accepted rollout miss while constructing a VM.
+  hold_fixture_cache_locks
   sudo "$BIN_DIR/runner" service stop --name "$SVC" --force
+  prepare_updated_rootfs
+  release_fixture_cache_locks
+  cache_diagnostics after-rootfs-update
   sudo "$BIN_DIR/runner" service start --name "$SVC" \
-    --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true
+    --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true \
+    --env RUST_LOG=info,runner_lifecycle=debug
 
   # Scope restore diagnostics to the third runner, never an earlier invocation.
   for _ in $(seq 1 30); do
@@ -297,7 +408,7 @@ sudo touch /home/user/workspace/nested/ephemeral'; then
   done
   [ -n "$RESTORE_INVOCATION_ID" ] || fail "restore runner invocation ID unavailable"
 
-  echo "--- Turn 3: restore promoted home ---"
+  echo "--- Turn 3: restore promoted home into updated rootfs ${UPDATED_ROOTFS_HASH} ---"
   if sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
     --chat-thread-id "$CHAT_THREAD_ID" \
     --session-id "$SESSION_ID" \
@@ -309,7 +420,7 @@ test "$(cat /home/user/live-writer)" = completed-writer
 test "$(cat /home/user/home-cache-marker)" = ordinary-home-state
 test "$(cat /home/user/.npm/home-cache-marker)" = npm-home-state
 test ! -e /home/user/workspace/nested/ephemeral'; then
-    echo "PASS: home cache restored after terminal cleanup and freeze-based promotion"
+    echo "PASS: home cache restored across rootfs update after terminal cleanup and freeze-based promotion"
     PROMOTION_VERIFIED=true
     break
   fi
@@ -340,6 +451,9 @@ done
 
 sudo "$BIN_DIR/runner" service stop --name "$SVC" --force
 wait_for_unit_inactive
+if [ -n "$UPDATED_IMAGE_DIR" ]; then
+  sudo rm -rf "$UPDATED_IMAGE_DIR"
+fi
 sudo rm -rf "$GROUP_DIR" "$RUNNER_DIR"
 trap - EXIT
 

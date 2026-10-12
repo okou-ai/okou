@@ -4,6 +4,127 @@ use crate::storage_fingerprints::StorageFingerprints;
 use runner_types::ids::RunId;
 
 #[tokio::test]
+async fn rootfs_update_reuses_one_physical_entry_and_preserves_current_vm_publication_identity() {
+    let f = Fixture::new().await;
+    let fingerprints = StorageFingerprints {
+        storages: std::collections::HashMap::from([(
+            "/home/user/.npm".into(),
+            crate::storage_fingerprints::StorageFingerprint::new("npm", "v1"),
+        )]),
+        artifacts: Default::default(),
+    };
+    let mut original = f
+        .context(
+            "thread",
+            b"retained-home",
+            "2026-10-09T09:00:00Z",
+            HomeCacheTerminalStatus::Success,
+            fingerprints.clone(),
+        )
+        .await;
+    let proof = binding(&original.publication_generation());
+    original
+        .set_home_history_proof(Some(proof.clone()))
+        .unwrap();
+    assert_eq!(
+        original.promote().await.unwrap(),
+        HomeImagePromotionOutcome::Promoted
+    );
+    drop(original);
+    let committed = f.metadata("thread").await;
+    let physical_image = f.image("thread", &committed);
+    let run_id = RunId::new_v4();
+    let sandbox_id = sandbox::SandboxId::new_v4();
+    let mut lease = f
+        .cache
+        .prepare(HomeImagePrepareRequest {
+            identity: HomeImageLeaseIdentity {
+                run_id,
+                sandbox_id,
+                profile_name: PROFILE,
+                rootfs_hash: "updated-rootfs",
+                reuse_key: Some("thread"),
+                working_dir: CWD,
+                image_size_bytes: SIZE,
+            },
+            home_drive_required: true,
+        })
+        .await;
+    assert!(lease.is_cache_hit());
+    assert_eq!(lease.previous_storage(), Some(&fingerprints));
+    assert_eq!(lease.history_proof_binding(), Some(&proof));
+    let Some(sandbox::HomeDriveSeedImage::Move(source)) =
+        lease.home_drive_config().unwrap().seed_image
+    else {
+        panic!("checkout must use its pinned immutable move seed");
+    };
+    assert_eq!(source, physical_image);
+    assert_eq!(
+        &std::fs::read(&source).unwrap()[4096..4109],
+        b"retained-home"
+    );
+    assert_eq!(
+        f.lease_at_rootfs("thread", "next-rootfs").await.result(),
+        HomeCacheCheckoutResult::LockBusy
+    );
+    assert_eq!(f.cache.gc(false).await.unwrap(), 0);
+    assert!(source.exists());
+    let active = f.paths.active_home_image(&sandbox_id);
+    std::fs::create_dir_all(active.parent().unwrap()).unwrap();
+    std::fs::rename(source, &active).unwrap();
+    let promotion = lease
+        .into_promotion_context(HomeImagePromotionRequest {
+            run_id,
+            sandbox_id,
+            restored_session_identity: None,
+            terminal_status: HomeCacheTerminalStatus::Success,
+            completed_at: "2026-10-09T09:01:00Z".into(),
+            storage_fingerprints: fingerprints,
+        })
+        .unwrap();
+    let other_vm = f
+        .cache
+        .expected_promotion_identity(HomeImagePromotionIdentityRequest {
+            sandbox_id,
+            profile_name: PROFILE,
+            rootfs_hash: ROOTFS,
+            reuse_key: "thread",
+            working_dir: CWD,
+            image_size_bytes: SIZE,
+        })
+        .unwrap();
+    assert_eq!(
+        promotion.validate_identity(&other_vm),
+        Err(HomeImagePromotionIdentityMismatch::RootfsHash)
+    );
+    assert_eq!(promotion.rootfs_hash(), "updated-rootfs");
+    assert_eq!(
+        promotion.promote().await.unwrap(),
+        HomeImagePromotionOutcome::Promoted
+    );
+    drop(promotion);
+    let republished = f.metadata("thread").await;
+    assert_eq!(republished.rootfs_hash, "updated-rootfs");
+    assert_eq!(
+        f.image("thread", &republished).parent(),
+        physical_image.parent()
+    );
+    let profiles = std::collections::BTreeMap::from([(PROFILE, SIZE)]);
+    let (states, locked, loaded) = f
+        .cache
+        .initial_held_home_states_for_profiles(&profiles)
+        .await;
+    assert_eq!(states.len(), 1);
+    assert!(locked.is_empty());
+    assert_eq!(loaded, std::collections::BTreeSet::from([f.key("thread")]));
+    assert!(
+        f.lease_at_rootfs("thread", "next-rootfs")
+            .await
+            .is_cache_hit()
+    );
+}
+
+#[tokio::test]
 async fn checkout_selects_exact_committed_generation_and_pins_it() {
     let f = Fixture::new().await;
     let committed = f
@@ -30,7 +151,7 @@ async fn replaced_seed_is_rejected_at_consumption_and_all_image_evidence_is_disc
     let committed = f
         .commit("thread", b"original", "2026-10-09T09:00:00Z")
         .await;
-    let mut lease = f.lease("thread").await;
+    let mut lease = f.lease_at_rootfs("thread", "updated-rootfs").await;
     assert!(lease.is_cache_hit());
     let image = f.image("thread", &committed);
     let pinned_old = f.dir.path().join("pinned-original.ext4");
@@ -81,7 +202,6 @@ async fn identity_partitions_cannot_checkout_another_home() {
     f.commit("thread", b"home", "2026-10-09T09:00:00Z").await;
     for (profile, rootfs, reuse, size) in [
         ("other", ROOTFS, "thread", SIZE),
-        (PROFILE, "different-full-rootfs", "thread", SIZE),
         (PROFILE, ROOTFS, "other-thread", SIZE),
         (PROFILE, ROOTFS, "thread", SIZE * 2),
     ] {
