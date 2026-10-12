@@ -4,7 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/wallet";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { command, type Command } from "ccstate";
+import { command, computed } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -23,12 +23,11 @@ import {
 } from "../services/link-wallet.service";
 import { settle } from "../utils";
 
-const requireWalletEnabled$ = command(async ({ get }, signal: AbortSignal) => {
+const walletEnabled$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const overrides = await get(
     userFeatureSwitchOverrides(auth.orgId, auth.userId),
   );
-  signal.throwIfAborted();
   if (
     !isFeatureEnabled(FeatureSwitchKey.LinkWallet, {
       orgId: auth.orgId,
@@ -43,121 +42,130 @@ const requireWalletEnabled$ = command(async ({ get }, signal: AbortSignal) => {
     );
   }
 });
-const agentOwner$ = command(async ({ set }, signal: AbortSignal) => {
-  await set(requireWalletEnabled$, signal);
-  signal.throwIfAborted();
-  return await set(walletRunOwner$);
+const agentOwner$ = computed(async (get) => {
+  await get(walletEnabled$);
+  return await get(walletRunOwner$);
 });
 
-function guardedWalletRoute<T>(handler: Command<Promise<T>, [AbortSignal]>) {
-  return command(async ({ set }, signal: AbortSignal) => {
-    const result = await settle(set(handler, signal), signal);
-    signal.throwIfAborted();
-    if (result.ok) {
-      return result.value;
-    }
-    if (!(result.error instanceof LinkWalletError)) {
-      throw result.error;
-    }
-    return {
-      status: result.error.status,
-      body: {
-        error: { code: result.error.code, message: result.error.message },
-      },
-    };
-  });
+function walletError(error: unknown) {
+  if (!(error instanceof LinkWalletError)) {
+    throw error;
+  }
+  return {
+    status: error.status,
+    body: { error: { code: error.code, message: error.message } },
+  };
+}
+function walletResponse<T>(
+  result: { ok: true; value: T } | { ok: false; error: unknown },
+) {
+  return result.ok
+    ? { status: 200 as const, body: result.value }
+    : walletError(result.error);
 }
 const createBody$ = bodyResultOf(walletContract.createSpend);
 const getParams$ = pathParamsOf(walletContract.getSpend);
 const cancelParams$ = pathParamsOf(walletContract.cancelSpend);
 const callbackQuery$ = queryOf(walletCallbackContract.callback);
 
-const status$ = guardedWalletRoute(
-  command(async ({ set }, signal: AbortSignal) => {
-    const owner = await set(agentOwner$, signal);
-    signal.throwIfAborted();
-    return { status: 200 as const, body: await set(walletStatus$, owner) };
-  }),
-);
-const connect$ = guardedWalletRoute(
-  command(async ({ set }, signal: AbortSignal) => {
-    const owner = await set(agentOwner$, signal);
-    signal.throwIfAborted();
-    return { status: 200 as const, body: await set(startWalletOAuth$, owner) };
-  }),
-);
-const disconnect$ = guardedWalletRoute(
-  command(async ({ set }, signal: AbortSignal) => {
-    const owner = await set(agentOwner$, signal);
-    signal.throwIfAborted();
-    return {
-      status: 200 as const,
-      body: await set(disconnectWallet$, owner, signal),
-    };
-  }),
-);
-const createSpend$ = guardedWalletRoute(
-  command(async ({ get, set }, signal: AbortSignal) => {
-    const owner = await set(agentOwner$, signal);
-    signal.throwIfAborted();
-    const body = await get(createBody$);
-    signal.throwIfAborted();
-    if (!body.ok) {
-      return body.response;
-    }
-    return {
-      status: 200 as const,
-      body: await set(createWalletSpend$, owner, body.data, signal),
-    };
-  }),
-);
-const getSpend$ = guardedWalletRoute(
-  command(async ({ get, set }, signal: AbortSignal) => {
-    const owner = await set(agentOwner$, signal);
-    signal.throwIfAborted();
-    return {
-      status: 200 as const,
-      body: await set(
-        getWalletSpend$,
-        owner,
-        get(getParams$).id,
-        false,
-        signal,
-      ),
-    };
-  }),
-);
-const cancelSpend$ = guardedWalletRoute(
-  command(async ({ get, set }, signal: AbortSignal) => {
-    const owner = await set(agentOwner$, signal);
-    signal.throwIfAborted();
-    return {
-      status: 200 as const,
-      body: await set(
-        getWalletSpend$,
-        owner,
-        get(cancelParams$).id,
-        true,
-        signal,
-      ),
-    };
-  }),
-);
-const callback$ = guardedWalletRoute(
-  command(async ({ get, set }, signal: AbortSignal) => {
-    await set(requireWalletEnabled$, signal);
-    signal.throwIfAborted();
-    const auth = get(organizationAuthContext$);
-    return {
-      status: 200 as const,
-      body: await set(
-        completeWalletOAuth$,
-        { orgId: auth.orgId, userId: auth.userId, ...get(callbackQuery$) },
-        signal,
-      ),
-    };
-  }),
-);
+const status$ = command(async ({ get }, signal: AbortSignal) => {
+  const owner = await settle(get(agentOwner$), signal);
+  signal.throwIfAborted();
+  if (!owner.ok) {
+    return walletError(owner.error);
+  }
+  const result = await settle(get(walletStatus$), signal);
+  signal.throwIfAborted();
+  return walletResponse(result);
+});
+const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const owner = await settle(get(agentOwner$), signal);
+  signal.throwIfAborted();
+  if (!owner.ok) {
+    return walletError(owner.error);
+  }
+  const result = await settle(
+    set(startWalletOAuth$, owner.value, signal),
+    signal,
+  );
+  signal.throwIfAborted();
+  return walletResponse(result);
+});
+const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const owner = await settle(get(agentOwner$), signal);
+  signal.throwIfAborted();
+  if (!owner.ok) {
+    return walletError(owner.error);
+  }
+  const result = await settle(
+    set(disconnectWallet$, owner.value, signal),
+    signal,
+  );
+  signal.throwIfAborted();
+  return walletResponse(result);
+});
+const createSpend$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const owner = await settle(get(agentOwner$), signal);
+  signal.throwIfAborted();
+  if (!owner.ok) {
+    return walletError(owner.error);
+  }
+  const input = await get(createBody$);
+  signal.throwIfAborted();
+  if (!input.ok) {
+    return input.response;
+  }
+  const result = await settle(
+    set(createWalletSpend$, owner.value, input.data, signal),
+    signal,
+  );
+  signal.throwIfAborted();
+  return walletResponse(result);
+});
+const getSpend$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const owner = await settle(get(agentOwner$), signal);
+  signal.throwIfAborted();
+  if (!owner.ok) {
+    return walletError(owner.error);
+  }
+  const result = await settle(
+    set(getWalletSpend$, owner.value, get(getParams$).id, false, signal),
+    signal,
+  );
+  signal.throwIfAborted();
+  return walletResponse(result);
+});
+const cancelSpend$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const owner = await settle(get(agentOwner$), signal);
+  signal.throwIfAborted();
+  if (!owner.ok) {
+    return walletError(owner.error);
+  }
+  const result = await settle(
+    set(getWalletSpend$, owner.value, get(cancelParams$).id, true, signal),
+    signal,
+  );
+  signal.throwIfAborted();
+  return walletResponse(result);
+});
+const callback$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const enabled = await settle(get(walletEnabled$), signal);
+  signal.throwIfAborted();
+  if (!enabled.ok) {
+    return walletError(enabled.error);
+  }
+  const auth = get(organizationAuthContext$);
+  const result = await settle(
+    set(
+      completeWalletOAuth$,
+      { orgId: auth.orgId, userId: auth.userId, ...get(callbackQuery$) },
+      signal,
+    ),
+    signal,
+  );
+  signal.throwIfAborted();
+  return walletResponse(result);
+});
 
 const agentAuth = {
   requireOrganization: true,

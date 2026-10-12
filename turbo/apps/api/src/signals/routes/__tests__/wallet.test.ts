@@ -705,6 +705,119 @@ test("fails closed for a non-Link action URL instead of exposing a phishing link
   expect(denied.status).toBe(502);
 });
 
+test.each([false, true])(
+  "obtains a separate hosted approval link and preserves its intent across refresh (initial approval failure: %s)",
+  async (failApproval) => {
+    const fixture = await carrier();
+    server.use(tokenHandler({ expiresIn: 120 }));
+    await connect(fixture);
+    const input = purchase();
+    const provider = spendProvider(input);
+    provider.payload({ status: "created", approval_url: undefined });
+    const approvalUrl =
+      "https://app.link.com/approve?request=fixture%2Fapproval&key=exact";
+    const approvalPath =
+      "https://api.link.com/spend_requests/:id/request_approval";
+    server.use(
+      http.post(approvalPath, ({ params }) => {
+        return HttpResponse.json({ id: params.id, approval_link: approvalUrl });
+      }),
+    );
+    if (failApproval) {
+      server.use(
+        http.post(
+          approvalPath,
+          () => {
+            return HttpResponse.json({}, { status: 503 });
+          },
+          { once: true },
+        ),
+      );
+      const failed = await accept(
+        client().createSpend({ headers: fixture.headers, body: input }),
+        [502],
+      );
+      expect(failed.body.error.code).toBe("WALLET_PROVIDER_ERROR");
+    }
+    const created = await accept(
+      client().createSpend({ headers: fixture.headers, body: input }),
+      [200],
+    );
+    expect(created.body).toMatchObject({
+      intentId: input.intentId,
+      status: "pending_approval",
+      approvalUrl,
+      nextAction: "wait_for_user",
+    });
+
+    // A repeated create must use the credentials it just rotated, not read the
+    // same request graph's earlier credential snapshot a second time.
+    mockNow(now() + 70_000);
+    server.use(tokenHandler());
+    provider.payload({ status: "pending_approval", approval_url: undefined });
+    const repeated = await accept(
+      client().createSpend({ headers: fixture.headers, body: input }),
+      [200],
+    );
+    expect(repeated.body).toMatchObject({
+      id: created.body.id,
+      intentId: input.intentId,
+      status: "pending_approval",
+      approvalUrl,
+    });
+  },
+);
+
+test.each([
+  ["auto_resume", "wait_for_user"],
+  ["create_new_spend_request", "new_approval_required"],
+  ["create_new_spend_request_after_completion", "new_approval_required"],
+] as const)(
+  "reports Link action resolution %s without treating it as approval",
+  async (resolution, nextAction) => {
+    const fixture = await carrier();
+    server.use(tokenHandler());
+    await connect(fixture);
+    const input = purchase();
+    const provider = spendProvider(input);
+    const created = await accept(
+      client().createSpend({ headers: fixture.headers, body: input }),
+      [200],
+    );
+    const actionUrl =
+      "https://hooks.stripe.com/redirect/authenticate?client=fixture%2Fexact";
+    provider.payload({
+      status: "requires_action",
+      status_details: {
+        requires_action: {
+          next_action: {
+            type: "authentication",
+            resolution,
+            action_url: actionUrl,
+          },
+        },
+      },
+      card: { number: "4242424242424242", cvc: "123" },
+      payment_token: "secret-payment-fixture",
+    });
+    const result = await accept(
+      client().getSpend({
+        headers: fixture.headers,
+        params: { id: created.body.id },
+      }),
+      [200],
+    );
+    expect(result.body).toMatchObject({
+      status: "requires_action",
+      nextAction,
+      approvalUrl: null,
+      action: { type: "authentication", resolution, url: actionUrl },
+    });
+    expect(JSON.stringify(result.body)).not.toContain("4242424242424242");
+    expect(JSON.stringify(result.body)).not.toContain("secret-payment-fixture");
+  },
+);
+
 test("finishes revocation if disconnect races a rotating refresh, without resurrecting access", async () => {
   const fixture = await carrier();
   server.use(tokenHandler({ expiresIn: 30 }));

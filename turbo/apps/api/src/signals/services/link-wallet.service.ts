@@ -12,14 +12,14 @@ import {
   linkWalletOAuthAttempts,
   linkWalletSpends,
 } from "@okouai/db/schema/link-wallet";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { and, eq, gt, isNull, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { now, nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { organizationAuthContext$ } from "../auth/auth-context";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
@@ -63,62 +63,59 @@ function spendOwner(owner: WalletOwner) {
   );
 }
 
-export const walletRunOwner$ = command(
-  async ({ get, set }): Promise<WalletOwner> => {
-    const auth = get(organizationAuthContext$);
-    if (auth.tokenType !== "agent") {
-      throw new LinkWalletError(
-        403,
-        "FORBIDDEN",
-        "Wallet access requires an agent run",
-      );
-    }
-    const db = set(writeDb$);
-    const [run] = await db
-      .select({
-        agentId: agentSessions.agentId,
-        triggerSource: agentRuns.triggerSource,
-        status: agentRuns.status,
-      })
-      .from(agentRuns)
-      .innerJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
-      .where(
-        and(
-          eq(agentRuns.id, auth.runId),
-          eq(agentRuns.orgId, auth.orgId),
-          eq(agentRuns.userId, auth.userId),
-        ),
-      )
-      .limit(1);
-    if (
-      !run?.agentId ||
-      run.triggerSource !== "web" ||
-      run.status !== "running"
-    ) {
-      throw new LinkWalletError(
-        403,
-        "WALLET_INTERACTIVE_RUN_REQUIRED",
-        "Wallet access is limited to a running, user-initiated web chat; automations cannot use it",
-      );
-    }
-    return { orgId: auth.orgId, userId: auth.userId, agentId: run.agentId };
-  },
-);
+export const walletRunOwner$ = computed(async (get): Promise<WalletOwner> => {
+  const auth = get(organizationAuthContext$);
+  if (auth.tokenType !== "agent") {
+    throw new LinkWalletError(
+      403,
+      "FORBIDDEN",
+      "Wallet access requires an agent run",
+    );
+  }
+  const db = get(db$);
+  const [run] = await db
+    .select({
+      agentId: agentSessions.agentId,
+      triggerSource: agentRuns.triggerSource,
+      status: agentRuns.status,
+    })
+    .from(agentRuns)
+    .innerJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
+    .where(
+      and(
+        eq(agentRuns.id, auth.runId),
+        eq(agentRuns.orgId, auth.orgId),
+        eq(agentRuns.userId, auth.userId),
+      ),
+    )
+    .limit(1);
+  if (
+    !run?.agentId ||
+    run.triggerSource !== "web" ||
+    run.status !== "running"
+  ) {
+    throw new LinkWalletError(
+      403,
+      "WALLET_INTERACTIVE_RUN_REQUIRED",
+      "Wallet access is limited to a running, user-initiated web chat; automations cannot use it",
+    );
+  }
+  return { orgId: auth.orgId, userId: auth.userId, agentId: run.agentId };
+});
 
-const loadConnection$ = command(
-  async ({ set }, owner: WalletOwner): Promise<Connection | undefined> => {
-    const db = set(writeDb$);
-    const [row] = await db
-      .select()
-      .from(linkWalletConnections)
-      .where(connectionOwner(owner))
-      .limit(1);
-    return row;
-  },
-);
+const connection$ = computed(async (get): Promise<Connection | undefined> => {
+  const owner = await get(walletRunOwner$);
+  const db = get(db$);
+  const [row] = await db
+    .select()
+    .from(linkWalletConnections)
+    .where(connectionOwner(owner))
+    .limit(1);
+  return row;
+});
 
-export const walletStatus$ = command(async ({ set }, owner: WalletOwner) => {
-  const row = await set(loadConnection$, owner);
+export const walletStatus$ = computed(async (get) => {
+  const row = await get(connection$);
   const connected = Boolean(row?.encryptedCredentials && !row.revokedAt);
   return {
     connected,
@@ -128,12 +125,13 @@ export const walletStatus$ = command(async ({ set }, owner: WalletOwner) => {
 });
 
 export const startWalletOAuth$ = command(
-  async ({ set }, owner: WalletOwner) => {
+  async ({ set }, owner: WalletOwner, signal: AbortSignal) => {
     const config = linkWalletConfig();
     const state = randomBytes(32).toString("base64url");
     const verifier = randomBytes(48).toString("base64url");
     const expiresAt = new Date(now() + 10 * 60_000);
     const encryptedVerifier = await encryptStoredSecretValue(verifier);
+    signal.throwIfAborted();
     const db = set(writeDb$);
     await db.insert(linkWalletOAuthAttempts).values({
       ...owner,
@@ -141,6 +139,7 @@ export const startWalletOAuth$ = command(
       encryptedVerifier,
       expiresAt,
     });
+    signal.throwIfAborted();
     const url = new URL("https://login.link.com/auth");
     for (const [key, value] of Object.entries({
       key: config.publishableKey,
@@ -371,11 +370,11 @@ const refreshWalletConnection$ = command(
 
 const walletAccess$ = command(
   async (
-    { set },
+    { get, set },
     owner: WalletOwner,
     signal: AbortSignal,
   ): Promise<{ connection: Connection; token: string }> => {
-    const connection = await set(loadConnection$, owner);
+    const connection = await get(connection$);
     signal.throwIfAborted();
     if (!connection?.encryptedCredentials || connection.revokedAt) {
       throw new LinkWalletError(
@@ -623,7 +622,7 @@ export const createWalletSpend$ = command(
       );
     }
     if (existing.providerSpendId) {
-      return await set(getWalletSpend$, owner, existing.id, false, signal);
+      return await set(readProviderSpend$, existing, access, false, signal);
     }
     if (existing.expiresAt.getTime() <= now()) {
       return publicSpend({ ...existing, status: "expired" });
@@ -665,6 +664,7 @@ export const createWalletSpend$ = command(
         status: "pending_approval",
         approval_url: approvalUrl,
       });
+      signal.throwIfAborted();
     }
     return publicSpend(saved, {
       ...remote,
@@ -707,6 +707,18 @@ export const getWalletSpend$ = command(
         "This purchase belongs to an earlier wallet authorization; do not retry payment",
       );
     }
+    return await set(readProviderSpend$, row, access, cancel, signal);
+  },
+);
+
+const readProviderSpend$ = command(
+  async (
+    { set },
+    row: Spend,
+    access: { readonly token: string },
+    cancel: boolean,
+    signal: AbortSignal,
+  ): Promise<WalletSpend> => {
     if (!row.providerSpendId) {
       return publicSpend(row);
     }
@@ -754,6 +766,7 @@ export const getWalletSpend$ = command(
         status: "pending_approval",
         approval_url: approvalUrl,
       });
+      signal.throwIfAborted();
       remote = { ...remote, status: "pending_approval" };
     }
     return publicSpend(saved, remote);
