@@ -524,18 +524,6 @@ function installationMetadataPatch(args: {
   };
 }
 
-async function updateTeamsInstallationMetadata(
-  writeDb: Db,
-  tenantId: string,
-  args: Parameters<typeof installationMetadataPatch>[0],
-): Promise<void> {
-  const patch = installationMetadataPatch(args);
-  await writeDb
-    .update(teamsOrgInstallations)
-    .set(patch)
-    .where(eq(teamsOrgInstallations.teamsTenantId, tenantId));
-}
-
 type ConnectTeamsInstallationArgs = {
   readonly userId: string;
   readonly orgId: string;
@@ -874,12 +862,16 @@ export const connectTeamsInstallation$ = command(
         return { kind: "forbidden", message: adminRequiredMessage };
       }
 
-      await updateTeamsInstallationMetadata(writeDb, args.tenantId, {
+      const patch = installationMetadataPatch({
         tenantName: args.tenantName,
         teamId: args.teamId,
         teamName: args.teamName,
         serviceUrl: args.serviceUrl,
       });
+      await writeDb
+        .update(teamsOrgInstallations)
+        .set(patch)
+        .where(eq(teamsOrgInstallations.teamsTenantId, args.tenantId));
       signal.throwIfAborted();
 
       const bindResult = await bindUnclaimedTeamsInstallation(
@@ -908,12 +900,16 @@ export const connectTeamsInstallation$ = command(
       return { kind: "forbidden", message: orgMismatchMessage };
     }
 
-    await updateTeamsInstallationMetadata(writeDb, args.tenantId, {
+    const patch = installationMetadataPatch({
       tenantName: args.tenantName,
       teamId: args.teamId,
       teamName: args.teamName,
       serviceUrl: args.serviceUrl,
     });
+    await writeDb
+      .update(teamsOrgInstallations)
+      .set(patch)
+      .where(eq(teamsOrgInstallations.teamsTenantId, args.tenantId));
     signal.throwIfAborted();
 
     return finalizeTeamsConnection(
