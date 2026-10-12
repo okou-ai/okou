@@ -19,6 +19,7 @@ import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { discordOauthRoutes } from "../discord-oauth";
 import { integrationsDiscordRoutes } from "../integrations-discord";
+import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
@@ -499,11 +500,30 @@ describe("Discord product OAuth", () => {
       isAdmin: true,
     });
     expect(f.messages).toHaveLength(1);
-    expect(f.messages[0]).toContain("https://app.okou.ai/works");
+    expect(f.messages[0]).toContain(`**Hi! I'm <@${f.botId}>.**`);
+    expect(f.messages[0]).toContain("_No workspace agent configured yet._");
+    expect(f.messages[0]).not.toContain("https://app.okou.ai/works");
     await installed(f, admin);
     await status(admin);
     await status(admin);
     expect(f.messages).toHaveLength(1);
+  });
+  it("welcomes a connected user with their workspace agent and usage guidance", async () => {
+    const f = fixture();
+    const admin = await f.actor();
+    const authOrgApi = createAuthOrgAgentsBddApi(context);
+    const actor = authOrgApi.user(admin);
+    authOrgApi.acceptAgentStorageWrites();
+    await authOrgApi.readOnboardingStatus(actor);
+
+    await installed(f, admin);
+
+    expect(f.messages).toHaveLength(1);
+    expect(f.messages[0]).toContain("**Workspace Agent**\n• `Okou`");
+    expect(f.messages[0]).toContain(
+      "**How to Use**\n• Just describe what you need help with",
+    );
+    expect(f.messages[0]).not.toContain("https://app.okou.ai/works");
   });
   it("installs when Discord returns only user scopes in the token and authorization", async () => {
     const f = fixture();
