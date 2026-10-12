@@ -90,6 +90,7 @@ readonly CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_PATH=turbo/packages/db/src/migrat
 readonly USAGE_ALLOWANCE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1356_drop_organization_usage_allowance.sql
 readonly SSH_CANONICAL_TRANSPORT_PATH=turbo/packages/db/src/migrations/1365_tailscale_private_ssh.sql
 readonly OFFICIAL_RESULT_EMAIL_RUNTIME_RETIREMENT_PATH=turbo/packages/db/src/migrations/1382_retire_official_result_email_runtime.sql
+readonly SSH_NEEDS_REBIND_INDEPENDENT_PATH=turbo/packages/db/src/runtime/ssh-connection.ts
 
 fail() {
   echo "::error::$*" >&2
@@ -486,6 +487,17 @@ if [[ ! "$official_result_email_legacy_consumer_commit" =~ ^[0-9a-f]{40}$ ]]; th
 fi
 if ! git merge-base --is-ancestor "$official_result_email_legacy_consumer_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Official result-email legacy consumer: ${official_result_email_legacy_consumer_commit}."
+fi
+
+# Physical needs_rebind contraction requires the independently released runtime
+# preparation. Earlier canonical APIs still name it in implicit ORM statements.
+ssh_needs_rebind_independent_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$SSH_NEEDS_REBIND_INDEPENDENT_PATH" | sed -n '1p')
+if [[ ! "$ssh_needs_rebind_independent_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged needs_rebind-independent SSH preparation on main."
+fi
+if ! git merge-base --is-ancestor "$ssh_needs_rebind_independent_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the needs_rebind-independent SSH preparation: ${ssh_needs_rebind_independent_commit}."
 fi
 
 # Chat Event V8 removes eight event types and two context types. Earlier APIs

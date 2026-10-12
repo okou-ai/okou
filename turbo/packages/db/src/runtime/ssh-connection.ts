@@ -2,9 +2,6 @@ import { sql } from "drizzle-orm";
 import { pgTable } from "drizzle-orm/pg-core";
 import { sshConnectionColumns } from "../columns/ssh-connection";
 
-// Exclude needs_rebind from implicit INSERT/SELECT/RETURNING. Physical storage
-// remains until this API is serving, outgoing statements drain and rollback
-// excludes legacy-dependent APIs; the later contraction belongs to #39380.
 export const sshConnections = pgTable(
   "ssh_connections",
   sshConnectionColumns(),

@@ -39,7 +39,6 @@ describe("SSH connection schema", () => {
       "default_enabled_for_chats",
       "created_at",
       "updated_at",
-      "needs_rebind",
     ]);
     expect(
       config.indexes.map((index) => {
@@ -103,7 +102,6 @@ describe("SSH connection schema", () => {
         return column.name;
       }),
     ).toStrictEqual(["id", "org_id"]);
-    expect(sshConnections.legacyNeedsRebind.notNull).toBe(true);
     expect(cloudflareAccessConfigs.scope.default).toBe("personal");
     expect(cloudflareAccessConfigs.userId.notNull).toBe(false);
     expect(

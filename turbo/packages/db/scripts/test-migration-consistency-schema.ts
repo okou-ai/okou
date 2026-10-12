@@ -55,6 +55,7 @@ import { validateSessionMountRetirementPreparation } from "./test-session-mount-
 import { validatePermanentComputerUseHostStorage } from "./test-computer-use-host-storage-permanent";
 import { validatePermanentPlatformGenerationReceipts } from "./test-platform-generation-receipts-permanent";
 import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage-permanent";
+import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.join(dirname, "..");
@@ -2694,6 +2695,7 @@ async function main(): Promise<void> {
     await validatePermanentPiMemoryJobs(dbUrl1);
     await validateSessionMountRetirementPreparation(dbUrl1);
     await validatePermanentComputerUseHostStorage(dbUrl1);
+    await validatePermanentSshStorage(dbUrl1);
     await validatePermanentPlatformGenerationReceipts(dbUrl1);
     await validatePermanentRunnerStateStorage(dbUrl1);
     await validatePermanentModelCatalogConstraints(dbUrl1);
@@ -2732,6 +2734,7 @@ async function main(): Promise<void> {
     await validatePermanentPiMemoryJobs(dbUrl2);
     await validateSessionMountRetirementPreparation(dbUrl2);
     await validatePermanentComputerUseHostStorage(dbUrl2);
+    await validatePermanentSshStorage(dbUrl2);
     await validatePermanentPlatformGenerationReceipts(dbUrl2);
     await validatePermanentRunnerStateStorage(dbUrl2);
     await validatePermanentModelCatalogConstraints(dbUrl2);
