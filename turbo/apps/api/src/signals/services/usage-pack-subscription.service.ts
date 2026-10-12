@@ -72,7 +72,7 @@ import {
   type StripePrice,
   type StripeSubscription,
 } from "../external/stripe-client";
-import { onRejection, settle } from "../utils";
+import { settle, settleIncludingAbort } from "../utils";
 import { getOrCreateStripeCustomer$ } from "./billing-customer.service";
 import { refundDuplicateSubscriptionInvoice } from "./billing-duplicate-subscription.service";
 import { upsertOrgPlanEntitlement } from "./org-plan-entitlements.service";
@@ -994,20 +994,20 @@ type UsagePackCheckoutCorrelation =
  * owner and commercial snapshot. Conditional publication, not an advisory
  * acquisition, selects the canonical Session before its URL is exposed.
  */
-async function correlateUsagePackCheckout(
-  db: Pick<Db, "transaction">,
-  args: {
-    readonly orgId: string;
-    readonly usagePackSubscriptionId: string;
-    readonly sessionId: string;
-    readonly customerId: string;
-    readonly planPriceId: string;
-    readonly tier: CreateUsagePackCheckoutSessionArgs["tier"];
-  },
-): Promise<UsagePackCheckoutCorrelation> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0301; new non-billing transactions are prohibited.
-  return await db.transaction(async (tx) => {
-    const correlated = await tx
+const correlateUsagePackCheckout$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly usagePackSubscriptionId: string;
+      readonly sessionId: string;
+      readonly customerId: string;
+      readonly planPriceId: string;
+      readonly tier: CreateUsagePackCheckoutSessionArgs["tier"];
+    },
+  ): Promise<UsagePackCheckoutCorrelation> => {
+    const db = set(writeDb$);
+    const correlated = await db
       .update(usagePackSubscriptions)
       .set({
         stripeCheckoutSessionId: args.sessionId,
@@ -1032,7 +1032,7 @@ async function correlateUsagePackCheckout(
     if (correlated.length === 1) {
       return "correlated";
     }
-    const [current] = await tx
+    const [current] = await db
       .select({
         status: usagePackSubscriptions.subscriptionStatus,
         sessionId: usagePackSubscriptions.stripeCheckoutSessionId,
@@ -1061,7 +1061,7 @@ async function correlateUsagePackCheckout(
     ) {
       return "changed";
     }
-    const [replacement] = await tx
+    const [replacement] = await db
       .select({ id: usagePackSubscriptions.id })
       .from(usagePackSubscriptions)
       .where(
@@ -1077,8 +1077,8 @@ async function correlateUsagePackCheckout(
     // A replacement purchase retired it (superseded); otherwise stale
     // reconciliation retired it without a successor.
     return replacement ? "superseded" : "retired";
-  });
-}
+  },
+);
 
 /**
  * Correlate a Session created by the claim winner itself. Moving the claimed
@@ -1134,88 +1134,92 @@ async function correlateClaimedUsagePackCheckout(
  * null when the snapshot was retired without a successor or taken by another
  * transition; the caller reports a conflict instead of selecting again.
  */
-async function createUsagePackCheckoutForSnapshot(args: {
-  readonly db: Db;
-  readonly stripe: StripeClient;
-  readonly purchase: CreateUsagePackCheckoutSessionArgs;
-  readonly customerId: string;
-  readonly usagePackSubscriptionId: string;
-  readonly fromClaim?: boolean;
-}): Promise<string | null> {
-  const metadata = usagePackSubscriptionMetadata({
-    orgId: args.purchase.orgId,
-    tier: args.purchase.tier,
-    planPriceId: args.purchase.planPriceId,
-    usagePackSubscriptionId: args.usagePackSubscriptionId,
-  });
-  const session = await args.stripe.checkout.sessions.create(
-    {
-      mode: "subscription",
-      customer: args.customerId,
-      line_items: [
-        { price: args.purchase.planPriceId, quantity: 1 },
-        ...usagePackLineItems(args.purchase.allocations),
-      ],
-      allow_promotion_codes: true,
-      success_url: args.purchase.successUrl,
-      cancel_url: args.purchase.cancelUrl,
-      metadata,
-      subscription_data: { metadata },
+const createUsagePackCheckoutForSnapshot$ = command(
+  async (
+    { set },
+    args: {
+      readonly purchase: CreateUsagePackCheckoutSessionArgs;
+      readonly customerId: string;
+      readonly usagePackSubscriptionId: string;
+      readonly fromClaim?: boolean;
     },
-    {
-      idempotencyKey: `usage-pack-checkout:${args.usagePackSubscriptionId}`,
-    },
-  );
-  // Stripe cannot be rolled back. Correlate or expire the Session before
-  // returning it to the caller.
-  if (!session.url) {
-    await args.stripe.checkout.sessions.expire(session.id);
-    throw new Error("Stripe checkout session did not return a URL");
-  }
-  const correlationArgs = {
-    orgId: args.purchase.orgId,
-    usagePackSubscriptionId: args.usagePackSubscriptionId,
-    sessionId: session.id,
-    customerId: args.customerId,
-    planPriceId: args.purchase.planPriceId,
-    tier: args.purchase.tier,
-  };
-  const correlation = args.fromClaim
-    ? await correlateClaimedUsagePackCheckout(args.db, correlationArgs)
-    : await correlateUsagePackCheckout(args.db, correlationArgs);
-  if (correlation === "correlated") {
-    return session.url;
-  }
-  // The Session never became payable through a retained snapshot.
-  await args.stripe.checkout.sessions.expire(session.id);
-  if (correlation === "superseded") {
-    // A later purchase retired this snapshot after it was selected: the same
-    // outcome as this request completing first and then being superseded.
-    return session.url;
-  }
-  return null;
-}
+  ): Promise<string | null> => {
+    const stripe = getStripeClient();
+    const metadata = usagePackSubscriptionMetadata({
+      orgId: args.purchase.orgId,
+      tier: args.purchase.tier,
+      planPriceId: args.purchase.planPriceId,
+      usagePackSubscriptionId: args.usagePackSubscriptionId,
+    });
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: "subscription",
+        customer: args.customerId,
+        line_items: [
+          { price: args.purchase.planPriceId, quantity: 1 },
+          ...usagePackLineItems(args.purchase.allocations),
+        ],
+        allow_promotion_codes: true,
+        success_url: args.purchase.successUrl,
+        cancel_url: args.purchase.cancelUrl,
+        metadata,
+        subscription_data: { metadata },
+      },
+      {
+        idempotencyKey: `usage-pack-checkout:${args.usagePackSubscriptionId}`,
+      },
+    );
+    // Stripe cannot be rolled back. Correlate or expire the Session before
+    // returning it to the caller.
+    if (!session.url) {
+      await stripe.checkout.sessions.expire(session.id);
+      throw new Error("Stripe checkout session did not return a URL");
+    }
+    const correlationArgs = {
+      orgId: args.purchase.orgId,
+      usagePackSubscriptionId: args.usagePackSubscriptionId,
+      sessionId: session.id,
+      customerId: args.customerId,
+      planPriceId: args.purchase.planPriceId,
+      tier: args.purchase.tier,
+    };
+    const correlation = args.fromClaim
+      ? await correlateClaimedUsagePackCheckout(set(writeDb$), correlationArgs)
+      : await set(correlateUsagePackCheckout$, correlationArgs);
+    if (correlation === "correlated") {
+      return session.url;
+    }
+    // The Session never became payable through a retained snapshot.
+    await stripe.checkout.sessions.expire(session.id);
+    if (correlation === "superseded") {
+      // A later purchase retired this snapshot after it was selected: the same
+      // outcome as this request completing first and then being superseded.
+      return session.url;
+    }
+    return null;
+  },
+);
 
-async function createUsagePackCheckout(
-  db: Db,
-  args: CreateUsagePackCheckoutSessionArgs,
-  customerId: string,
-  usagePackSubscriptionId: string,
-  signal: AbortSignal,
-): Promise<StartUsagePackPurchaseResult> {
-  // Provider I/O runs after the snapshot selection commits; the Session is
-  // published by the conditional correlation, and a lost correlation is a
-  // deterministic conflict.
-  const url = await createUsagePackCheckoutForSnapshot({
-    db,
-    stripe: getStripeClient(),
-    purchase: args,
-    customerId,
-    usagePackSubscriptionId,
-  });
-  signal.throwIfAborted();
-  return url === null ? { status: "conflict" } : { status: "checkout", url };
-}
+const createUsagePackCheckout$ = command(
+  async (
+    { set },
+    args: CreateUsagePackCheckoutSessionArgs,
+    customerId: string,
+    usagePackSubscriptionId: string,
+    signal: AbortSignal,
+  ): Promise<StartUsagePackPurchaseResult> => {
+    // Provider I/O runs after the snapshot selection commits; the Session is
+    // published by the conditional correlation, and a lost correlation is a
+    // deterministic conflict.
+    const url = await set(createUsagePackCheckoutForSnapshot$, {
+      purchase: args,
+      customerId,
+      usagePackSubscriptionId,
+    });
+    signal.throwIfAborted();
+    return url === null ? { status: "conflict" } : { status: "checkout", url };
+  },
+);
 
 const createUsagePackCheckoutSession$ = command(
   async (
@@ -1242,8 +1246,8 @@ const createUsagePackCheckoutSession$ = command(
     if (prepared.kind === "redirect") {
       return { status: "checkout", url: prepared.url };
     }
-    return await createUsagePackCheckout(
-      db,
+    return await set(
+      createUsagePackCheckout$,
       args,
       customerId,
       prepared.usagePackSubscriptionId,
@@ -1483,8 +1487,8 @@ export const startUsagePackPurchase$ = command(
       return { status: "checkout", url: prepared.url };
     }
     if (route.kind === "checkout") {
-      return await createUsagePackCheckout(
-        db,
+      return await set(
+        createUsagePackCheckout$,
         args,
         customerId,
         prepared.usagePackSubscriptionId,
@@ -1685,44 +1689,41 @@ async function claimUsagePackPurchase(
  * Retire a claim that never created a subscription. The claim status is not
  * a pending-snapshot status, so the guard count does not change.
  */
-async function retireUsagePackPurchaseClaim(
-  db: Pick<Db, "transaction">,
-  orgId: string,
-  usagePackSubscriptionId: string,
-): Promise<void> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0302; new non-billing transactions are prohibited.
-  await db.transaction(async (tx) => {
+const retireUsagePackPurchaseClaim$ = command(
+  async (
+    { set },
+    orgId: string,
+    usagePackSubscriptionId: string,
+  ): Promise<void> => {
+    const db = set(writeDb$);
     const updatedAt = nowDate();
-    const [retired] = await tx
-      .update(usagePackSubscriptions)
-      .set({ subscriptionStatus: "checkout_expired", updatedAt })
-      .where(
-        and(
-          eq(usagePackSubscriptions.id, usagePackSubscriptionId),
-          eq(usagePackSubscriptions.orgId, orgId),
-          eq(
-            usagePackSubscriptions.subscriptionStatus,
-            USAGE_PACK_PURCHASE_CLAIM_STATUS,
+    const retired = db.$with("retired_purchase_claim").as(
+      db
+        .update(usagePackSubscriptions)
+        .set({ subscriptionStatus: "checkout_expired", updatedAt })
+        .where(
+          and(
+            eq(usagePackSubscriptions.id, usagePackSubscriptionId),
+            eq(usagePackSubscriptions.orgId, orgId),
+            eq(
+              usagePackSubscriptions.subscriptionStatus,
+              USAGE_PACK_PURCHASE_CLAIM_STATUS,
+            ),
+            isNull(usagePackSubscriptions.stripeCheckoutSessionId),
+            isNull(usagePackSubscriptions.stripeSubscriptionId),
           ),
-          isNull(usagePackSubscriptions.stripeCheckoutSessionId),
-          isNull(usagePackSubscriptions.stripeSubscriptionId),
-        ),
-      )
-      .returning({ id: usagePackSubscriptions.id });
-    if (!retired) {
-      return;
-    }
-    await tx
+        )
+        .returning({ id: usagePackSubscriptions.id }),
+    );
+    // Only an actual returned parent owns retirement of all associated children.
+    await db
+      .with(retired)
       .update(usagePackAllocations)
       .set({ status: "inactive", updatedAt })
-      .where(
-        eq(
-          usagePackAllocations.usagePackSubscriptionId,
-          usagePackSubscriptionId,
-        ),
-      );
-  });
-}
+      .from(retired)
+      .where(eq(usagePackAllocations.usagePackSubscriptionId, retired.id));
+  },
+);
 
 /**
  * Publish the winner's subscription to its claimed snapshot. A webhook that
@@ -1972,121 +1973,141 @@ async function admitClaimedUsagePackPurchase(
   return { kind: "create", items, paymentMethod: route };
 }
 
-async function confirmUsagePackPurchaseSnapshot(
-  db: Db,
-  orgId: string,
-  preview: UsagePackPurchasePreviewToken,
-  snapshot: UsagePackPurchaseSnapshot,
-  signal: AbortSignal,
-): Promise<ConfirmUsagePackPurchaseResult> {
-  const existingResult = await existingUsagePackPurchaseResult(
-    preview,
-    snapshot,
-    signal,
-  );
-  if (existingResult) {
-    return existingResult;
-  }
-  if (!(await claimUsagePackPurchase(db, orgId, preview))) {
-    // Deterministic loser: another purchase owns the organization. No
-    // provider call was made.
-    return { status: "invalid_preview" };
-  }
-  signal.throwIfAborted();
-  const retire = async () => {
-    await retireUsagePackPurchaseClaim(
-      db,
-      orgId,
-      preview.usagePackSubscriptionId,
+const confirmUsagePackPurchaseSnapshot$ = command(
+  async (
+    { set },
+    orgId: string,
+    preview: UsagePackPurchasePreviewToken,
+    snapshot: UsagePackPurchaseSnapshot,
+    providerSignal: AbortSignal,
+  ): Promise<ConfirmUsagePackPurchaseResult> => {
+    const db = set(writeDb$);
+    const existingResult = await existingUsagePackPurchaseResult(
+      preview,
+      snapshot,
+      providerSignal,
     );
-  };
-  const stripe = getStripeClient();
-  // Before creation nothing irreversible exists, so a failure retires the
-  // claim and its preview. After creation the claim stays until published
-  // here, by the subscription webhook, or by reconciliation.
-  const admission = await onRejection(
-    admitClaimedUsagePackPurchase(stripe, orgId, preview, snapshot, signal),
-    retire,
-  );
-  if (admission.kind === "invalid") {
-    await retire();
-    return { status: "invalid_preview" };
-  }
-  if (admission.kind === "checkout") {
-    const checkoutUrl = await onRejection(
-      createUsagePackCheckoutForSnapshot({
-        db,
+    if (existingResult) {
+      return existingResult;
+    }
+    if (!(await claimUsagePackPurchase(db, orgId, preview))) {
+      // Deterministic loser: another purchase owns the organization. No
+      // provider call was made.
+      return { status: "invalid_preview" };
+    }
+    providerSignal.throwIfAborted();
+    const stripe = getStripeClient();
+    // Before creation nothing irreversible exists, so a failure retires the
+    // claim and its preview. After creation the claim stays until published
+    // here, by the subscription webhook, or by reconciliation.
+    const admitted = await settleIncludingAbort(
+      admitClaimedUsagePackPurchase(
         stripe,
-        purchase: {
+        orgId,
+        preview,
+        snapshot,
+        providerSignal,
+      ),
+    );
+    if (!admitted.ok) {
+      await set(
+        retireUsagePackPurchaseClaim$,
+        orgId,
+        preview.usagePackSubscriptionId,
+      );
+      throw admitted.error;
+    }
+    const admission = admitted.value;
+    if (admission.kind === "invalid") {
+      await set(
+        retireUsagePackPurchaseClaim$,
+        orgId,
+        preview.usagePackSubscriptionId,
+      );
+      return { status: "invalid_preview" };
+    }
+    if (admission.kind === "checkout") {
+      const checkout = await settleIncludingAbort(
+        set(createUsagePackCheckoutForSnapshot$, {
+          purchase: {
+            orgId,
+            tier: preview.tier,
+            planPriceId: preview.planPriceId,
+            allocations: snapshot.allocations,
+            successUrl: preview.successUrl,
+            cancelUrl: preview.cancelUrl,
+          },
+          customerId: preview.customerId,
+          usagePackSubscriptionId: preview.usagePackSubscriptionId,
+          fromClaim: true,
+        }),
+      );
+      if (!checkout.ok) {
+        await set(
+          retireUsagePackPurchaseClaim$,
           orgId,
-          tier: preview.tier,
-          planPriceId: preview.planPriceId,
-          allocations: snapshot.allocations,
-          successUrl: preview.successUrl,
-          cancelUrl: preview.cancelUrl,
-        },
-        customerId: preview.customerId,
-        usagePackSubscriptionId: preview.usagePackSubscriptionId,
-        fromClaim: true,
-      }),
-      retire,
-    );
-    signal.throwIfAborted();
-    return checkoutUrl === null
-      ? { status: "invalid_preview" }
-      : {
-          status: "confirmed",
-          response: { status: "checkout_required", checkoutUrl },
-          paidInvoice: null,
-        };
-  }
-  const subscription =
-    admission.kind === "resume"
-      ? admission.subscription
-      : await stripe.subscriptions.create(
-          {
-            customer: preview.customerId,
-            items: [...admission.items],
-            ...stripeBillingPurchasePaymentParams(admission.paymentMethod),
-            metadata: usagePackSubscriptionMetadata({
-              orgId,
-              tier: preview.tier,
-              planPriceId: preview.planPriceId,
-              usagePackSubscriptionId: preview.usagePackSubscriptionId,
-            }),
-            payment_behavior: "default_incomplete",
-            expand: ["latest_invoice"],
-          },
-          {
-            idempotencyKey: `usage-pack:${preview.usagePackSubscriptionId}:subscription`,
-          },
+          preview.usagePackSubscriptionId,
         );
-  signal.throwIfAborted();
-  if (
-    !(await publishUsagePackPurchaseSubscription(
-      db,
-      orgId,
-      preview.usagePackSubscriptionId,
-      subscription,
-    ))
-  ) {
-    // Only reachable if stale-claim recovery retired this snapshot while the
-    // winner was still running; the subscription was never paid here.
-    await abandonUsagePackPurchaseSubscription(
+        throw checkout.error;
+      }
+      const checkoutUrl = checkout.value;
+      providerSignal.throwIfAborted();
+      return checkoutUrl === null
+        ? { status: "invalid_preview" }
+        : {
+            status: "confirmed",
+            response: { status: "checkout_required", checkoutUrl },
+            paidInvoice: null,
+          };
+    }
+    const subscription =
+      admission.kind === "resume"
+        ? admission.subscription
+        : await stripe.subscriptions.create(
+            {
+              customer: preview.customerId,
+              items: [...admission.items],
+              ...stripeBillingPurchasePaymentParams(admission.paymentMethod),
+              metadata: usagePackSubscriptionMetadata({
+                orgId,
+                tier: preview.tier,
+                planPriceId: preview.planPriceId,
+                usagePackSubscriptionId: preview.usagePackSubscriptionId,
+              }),
+              payment_behavior: "default_incomplete",
+              expand: ["latest_invoice"],
+            },
+            {
+              idempotencyKey: `usage-pack:${preview.usagePackSubscriptionId}:subscription`,
+            },
+          );
+    providerSignal.throwIfAborted();
+    if (
+      !(await publishUsagePackPurchaseSubscription(
+        db,
+        orgId,
+        preview.usagePackSubscriptionId,
+        subscription,
+      ))
+    ) {
+      // Only reachable if stale-claim recovery retired this snapshot while the
+      // winner was still running; the subscription was never paid here.
+      await abandonUsagePackPurchaseSubscription(
+        stripe,
+        subscription,
+        admission.kind === "create",
+      );
+      return { status: "invalid_preview" };
+    }
+    providerSignal.throwIfAborted();
+    return await completeUsagePackPurchaseSubscription(
       stripe,
+      preview,
       subscription,
-      admission.kind === "create",
+      providerSignal,
     );
-    return { status: "invalid_preview" };
-  }
-  signal.throwIfAborted();
-  return await completeUsagePackPurchaseSubscription(
-    stripe,
-    preview,
-    subscription,
-    signal,
-  );
-}
+  },
+);
 
 /** Release a subscription that lost publication; it was never paid here. */
 async function abandonUsagePackPurchaseSubscription(
@@ -2133,8 +2154,8 @@ export const confirmUsagePackPurchase$ = command(
     if (!snapshot) {
       return { status: "invalid_preview" };
     }
-    return await confirmUsagePackPurchaseSnapshot(
-      db,
+    return await set(
+      confirmUsagePackPurchaseSnapshot$,
       orgId,
       preview,
       snapshot,
@@ -4123,43 +4144,45 @@ const retireReconciledUsagePackSnapshot$ = command(
  * normal synchronization, otherwise the claim retires without any provider
  * write. Other candidates pass through with their bound subscription.
  */
-async function resolveStaleClaim(
-  db: Db,
-  stripe: StripeClient,
-  candidate: UsagePackSubscriptionRow,
-  signal: AbortSignal,
-): Promise<
-  | { readonly kind: "retired" }
-  | { readonly kind: "subscription"; readonly subscriptionId: string | null }
-> {
-  if (
-    candidate.stripeSubscriptionId ||
-    candidate.stripeCheckoutSessionId ||
-    candidate.subscriptionStatus !== USAGE_PACK_PURCHASE_CLAIM_STATUS
-  ) {
-    return {
-      kind: "subscription",
-      subscriptionId: candidate.stripeSubscriptionId,
-    };
-  }
-  const subscriptions = await listAllStripeSubscriptions(
-    stripe,
-    { customer: candidate.stripeCustomerId, status: "all" },
-    signal,
-  );
-  const created = subscriptions.find((subscription) => {
-    return (
-      subscription.metadata?.[USAGE_PACK_SUBSCRIPTION_ID_METADATA_KEY] ===
-      candidate.id
+const resolveStaleClaim$ = command(
+  async (
+    { set },
+    candidate: UsagePackSubscriptionRow,
+    signal: AbortSignal,
+  ): Promise<
+    | { readonly kind: "retired" }
+    | { readonly kind: "subscription"; readonly subscriptionId: string | null }
+  > => {
+    const stripe = getStripeClient();
+    if (
+      candidate.stripeSubscriptionId ||
+      candidate.stripeCheckoutSessionId ||
+      candidate.subscriptionStatus !== USAGE_PACK_PURCHASE_CLAIM_STATUS
+    ) {
+      return {
+        kind: "subscription",
+        subscriptionId: candidate.stripeSubscriptionId,
+      };
+    }
+    const subscriptions = await listAllStripeSubscriptions(
+      stripe,
+      { customer: candidate.stripeCustomerId, status: "all" },
+      signal,
     );
-  });
-  if (created) {
-    return { kind: "subscription", subscriptionId: created.id };
-  }
-  await retireUsagePackPurchaseClaim(db, candidate.orgId, candidate.id);
-  signal.throwIfAborted();
-  return { kind: "retired" };
-}
+    const created = subscriptions.find((subscription) => {
+      return (
+        subscription.metadata?.[USAGE_PACK_SUBSCRIPTION_ID_METADATA_KEY] ===
+        candidate.id
+      );
+    });
+    if (created) {
+      return { kind: "subscription", subscriptionId: created.id };
+    }
+    await set(retireUsagePackPurchaseClaim$, candidate.orgId, candidate.id);
+    signal.throwIfAborted();
+    return { kind: "retired" };
+  },
+);
 
 const reconcileUsagePackSubscriptionCandidate$ = command(
   async (
@@ -4171,7 +4194,7 @@ const reconcileUsagePackSubscriptionCandidate$ = command(
     const db = set(writeDb$);
     const stripe = getStripeClient();
     const orgIds = new Set<string>();
-    const claim = await resolveStaleClaim(db, stripe, candidate, signal);
+    const claim = await set(resolveStaleClaim$, candidate, signal);
     if (claim.kind === "retired") {
       return { reconciled: 0, orgIds: [] };
     }

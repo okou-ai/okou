@@ -2928,6 +2928,79 @@ const reconcileMigration$ = command(
   },
 );
 
+// This preview decision/write phase has no cancellation checkpoint. The root
+// owns the original pre-phase check; confirmation owns the post-claim check.
+const claimPreviewedMigration$ = command(
+  async (
+    { set },
+    migration: MigrationRow & { readonly rowVersion: string },
+    orgId: string,
+    ownerIds: readonly string[],
+  ): Promise<
+    | { readonly status: "ready"; readonly migration: MigrationRow }
+    | { readonly status: "expired" }
+    | { readonly status: "owners_changed" }
+    | { readonly status: "conflict" }
+  > => {
+    const db = set(writeDb$);
+    // Every transition below is conditional on the previewed state it
+    // was decided from; zero rows is a deterministic conflict.
+    const previewedMigration = and(
+      eq(usagePackSubscriptionMigrations.id, migration.id),
+      eq(usagePackSubscriptionMigrations.orgId, orgId),
+      eq(usagePackSubscriptionMigrations.status, "previewed"),
+      migrationRowVersionIs(migration.rowVersion),
+    );
+    const selections = await db
+      .select()
+      .from(usagePackSubscriptionMigrationSelections)
+      .where(
+        eq(usagePackSubscriptionMigrationSelections.migrationId, migration.id),
+      );
+    if (!paidOwnersStillPresent(selections, ownerIds)) {
+      const completedAt = nowDate();
+      const [failed] = await db
+        .update(usagePackSubscriptionMigrations)
+        .set({
+          status: "failed",
+          failureReason: "owners_changed",
+          completedAt,
+          updatedAt: completedAt,
+        })
+        .where(previewedMigration)
+        .returning({ id: usagePackSubscriptionMigrations.id });
+      return failed
+        ? { status: "owners_changed" as const }
+        : { status: "conflict" as const };
+    }
+    if (migration.previewExpiresAt <= nowDate()) {
+      const completedAt = nowDate();
+      const [expired] = await db
+        .update(usagePackSubscriptionMigrations)
+        .set({
+          status: "failed",
+          failureReason: "preview_expired",
+          completedAt,
+          updatedAt: completedAt,
+        })
+        .where(previewedMigration)
+        .returning({ id: usagePackSubscriptionMigrations.id });
+      return expired
+        ? { status: "expired" as const }
+        : { status: "conflict" as const };
+    }
+    const [claimed] = await db
+      .update(usagePackSubscriptionMigrations)
+      .set({ status: "applying", updatedAt: nowDate() })
+      .where(previewedMigration)
+      .returning();
+    if (!claimed) {
+      return { status: "conflict" as const };
+    }
+    return { status: "ready" as const, migration: claimed };
+  },
+);
+
 const claimMigrationConfirmation$ = command(
   async (
     { set },
@@ -2963,64 +3036,12 @@ const claimMigrationConfirmation$ = command(
       return { status: "conflict" as const };
     }
     if (migration.status === "previewed") {
-      // Every transition below is conditional on the previewed state it
-      // was decided from; zero rows is a deterministic conflict.
-      const previewedMigration = and(
-        eq(usagePackSubscriptionMigrations.id, migration.id),
-        eq(usagePackSubscriptionMigrations.orgId, args.orgId),
-        eq(usagePackSubscriptionMigrations.status, "previewed"),
-        migrationRowVersionIs(migration.rowVersion),
+      return await set(
+        claimPreviewedMigration$,
+        migration,
+        args.orgId,
+        args.ownerIds,
       );
-      const selections = await db
-        .select()
-        .from(usagePackSubscriptionMigrationSelections)
-        .where(
-          eq(
-            usagePackSubscriptionMigrationSelections.migrationId,
-            migration.id,
-          ),
-        );
-      if (!paidOwnersStillPresent(selections, args.ownerIds)) {
-        const completedAt = nowDate();
-        const [failed] = await db
-          .update(usagePackSubscriptionMigrations)
-          .set({
-            status: "failed",
-            failureReason: "owners_changed",
-            completedAt,
-            updatedAt: completedAt,
-          })
-          .where(previewedMigration)
-          .returning({ id: usagePackSubscriptionMigrations.id });
-        return failed
-          ? { status: "owners_changed" as const }
-          : { status: "conflict" as const };
-      }
-      if (migration.previewExpiresAt <= nowDate()) {
-        const completedAt = nowDate();
-        const [expired] = await db
-          .update(usagePackSubscriptionMigrations)
-          .set({
-            status: "failed",
-            failureReason: "preview_expired",
-            completedAt,
-            updatedAt: completedAt,
-          })
-          .where(previewedMigration)
-          .returning({ id: usagePackSubscriptionMigrations.id });
-        return expired
-          ? { status: "expired" as const }
-          : { status: "conflict" as const };
-      }
-      const [claimed] = await db
-        .update(usagePackSubscriptionMigrations)
-        .set({ status: "applying", updatedAt: nowDate() })
-        .where(previewedMigration)
-        .returning();
-      if (!claimed) {
-        return { status: "conflict" as const };
-      }
-      return { status: "ready" as const, migration: claimed };
     }
     return { status: "ready" as const, migration };
   },
