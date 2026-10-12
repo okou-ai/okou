@@ -182,10 +182,17 @@ with tempfile.TemporaryDirectory() as temporary:
 assert condition(caller, context())
 permissions = caller.get('permissions', staging.get('permissions', {}))
 for permission, level in {
-    'actions': 'read', 'contents': 'read', 'pull-requests': 'write',
+    'actions': 'write', 'contents': 'read', 'pull-requests': 'write',
     'issues': 'write', 'deployments': 'write', 'id-token': 'write',
 }.items():
     assert permissions.get(permission) == level, (permission, permissions)
+
+# Reusable workflows cannot elevate their caller's token. Validate the whole
+# declared permission boundary, including jobs skipped for a particular event.
+levels = {'none': 0, 'read': 1, 'write': 2}
+for name, job in jobs.items():
+    for permission, level in job.get('permissions', {}).items():
+        assert levels[permissions.get(permission, 'none')] >= levels[level], (name, permission, level)
 
 inner_group = render(turbo['concurrency']['group'], context())
 assert inner_group != staging['concurrency']['group'], 'nested concurrency must not deadlock staging'
