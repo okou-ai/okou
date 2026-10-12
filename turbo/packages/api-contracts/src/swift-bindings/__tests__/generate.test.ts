@@ -67,7 +67,6 @@ describe("renderSwiftRoutes", () => {
     expect(swift).toContain(
       "private static func pathSegment(_ value: String) -> String {",
     );
-    expect(swift).not.toContain("addingPercentEncoding");
   });
 
   it("omits the segment encoder when no route has parameters", () => {

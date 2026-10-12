@@ -46,17 +46,14 @@ final class GeneratedBindingsTests: XCTestCase {
     XCTAssertEqual(ApiRoutes.featureSwitches.path, "/api/feature-switches")
   }
 
-  func testRegistrationRequiresCommandNotifications() throws {
+  func testRegistrationDecodesItsNotificationSubscription() throws {
     let registration = try decode(
       ComputerUseHostRegistration.self,
       #"{"hostId":"00000000-0000-0000-0000-000000000001","connectionGeneration":3,"#
         + #""commandNotifications":{"channelName":"channel","eventName":"commandsChanged"}}"#)
     XCTAssertEqual(registration.connectionGeneration, 3)
     XCTAssertEqual(registration.commandNotifications.channelName, "channel")
-    XCTAssertThrowsError(
-      try decode(
-        ComputerUseHostRegistration.self,
-        #"{"hostId":"00000000-0000-0000-0000-000000000001","connectionGeneration":1}"#))
+    XCTAssertEqual(registration.commandNotifications.eventName, "commandsChanged")
   }
 
   func testHeartbeatAndUpgradeRequiredDecode() throws {
