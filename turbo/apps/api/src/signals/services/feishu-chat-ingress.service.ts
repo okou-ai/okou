@@ -201,6 +201,15 @@ interface FeishuChatIngressAdmission {
   readonly retryCount: number;
 }
 
+const ingressInsertResultSchema = z.union([
+  z.object({
+    id: z.uuid(),
+    status: z.enum(["pending", "processing", "processed", "failed"]),
+    retryCount: z.int().nonnegative(),
+  }),
+  z.object({ id: z.null(), status: z.null(), retryCount: z.null() }),
+]);
+
 export const admitFeishuChatEvent$ = command(
   async (
     { set },
@@ -213,81 +222,87 @@ export const admitFeishuChatEvent$ = command(
     signal: AbortSignal,
   ): Promise<FeishuChatIngressAdmission | null> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0160; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const [receipt] = await tx
-        .insert(feishuOrgEvents)
-        .values({
-          installationId: args.installationId,
-          eventId: args.eventId,
-          receivedAt: args.currentTime,
-        })
-        .onConflictDoNothing({
-          target: [feishuOrgEvents.installationId, feishuOrgEvents.eventId],
-        })
-        .returning({ eventId: feishuOrgEvents.eventId });
-      signal.throwIfAborted();
-
-      if (receipt) {
-        const [inserted] = await tx
-          .insert(feishuChatIngress)
-          .values({
-            installationId: args.installationId,
-            eventId: args.eventId,
-            payload: args.payload,
-            status: "pending",
-            createdAt: args.currentTime,
-            updatedAt: args.currentTime,
-          })
-          .returning({
-            id: feishuChatIngress.id,
-            status: feishuChatIngress.status,
-            retryCount: feishuChatIngress.retryCount,
-          });
-        signal.throwIfAborted();
-        if (!inserted) {
-          throw new Error("Failed to persist Feishu ingress event");
-        }
-        return { ...inserted, inserted: true };
-      }
-
-      const [existing] = await tx
-        .select({
-          id: feishuChatIngress.id,
-          status: feishuChatIngress.status,
-          retryCount: feishuChatIngress.retryCount,
-        })
-        .from(feishuChatIngress)
-        .where(
-          and(
-            eq(feishuChatIngress.installationId, args.installationId),
-            eq(feishuChatIngress.eventId, args.eventId),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (!existing) {
-        return null;
-      }
-      const [retried] = await tx
-        .update(feishuChatIngress)
-        .set({
-          retryCount: sql`${feishuChatIngress.retryCount} + 1`,
-          updatedAt: args.currentTime,
-        })
-        .where(eq(feishuChatIngress.id, existing.id))
-        .returning({
-          id: feishuChatIngress.id,
-          status: feishuChatIngress.status,
-          retryCount: feishuChatIngress.retryCount,
-        });
-      signal.throwIfAborted();
-      if (!retried) {
-        throw new Error("Failed to record Feishu ingress retry");
-      }
-      return { ...retried, inserted: false };
-    });
+    // A committed implicit statement cannot be rolled back by a later Abort.
+    // Avoid starting it for an already cancelled admission.
     signal.throwIfAborted();
-    return result;
+    const receiptInsert = db
+      .insert(feishuOrgEvents)
+      .values({
+        installationId: args.installationId,
+        eventId: args.eventId,
+        receivedAt: args.currentTime,
+      })
+      .onConflictDoNothing({
+        target: [feishuOrgEvents.installationId, feishuOrgEvents.eventId],
+      })
+      .returning({ eventId: feishuOrgEvents.eventId });
+    // Drizzle INSERT SELECT requires every table column. Keep database UUID
+    // and retry-count defaults by naming only the original supplied columns.
+    // Both writes consume actual RETURNING; a child SQL error rolls both back.
+    const [inserted] = parseRawRows(
+      ingressInsertResultSchema,
+      await db.execute(sql`WITH inserted_feishu_receipt AS (${receiptInsert.getSQL()}),
+        inserted_feishu_ingress AS (
+          INSERT INTO ${feishuChatIngress}
+            (installation_id, event_id, payload, status, created_at, updated_at)
+          SELECT ${sql.param(args.installationId, feishuChatIngress.installationId)},
+            ${sql.param(args.eventId, feishuChatIngress.eventId)},
+            ${sql.param(args.payload, feishuChatIngress.payload)},
+            ${sql.param("pending", feishuChatIngress.status)},
+            ${sql.param(args.currentTime, feishuChatIngress.createdAt)},
+            ${sql.param(args.currentTime, feishuChatIngress.updatedAt)}
+          FROM inserted_feishu_receipt
+          RETURNING id, status, retry_count AS "retryCount"
+        )
+        SELECT ingress.id, ingress.status, ingress."retryCount"
+        FROM inserted_feishu_receipt
+        LEFT JOIN inserted_feishu_ingress AS ingress ON TRUE`),
+    );
+    signal.throwIfAborted();
+    if (inserted) {
+      if (inserted.id === null) {
+        throw new Error("Failed to persist Feishu ingress event");
+      }
+      return { ...inserted, inserted: true };
+    }
+
+    // A conflict may wait for a concurrent receipt winner. Read its committed
+    // ingress with one fresh statement snapshot, including legacy absence.
+    const [existing] = await db
+      .select({
+        id: feishuChatIngress.id,
+        status: feishuChatIngress.status,
+        retryCount: feishuChatIngress.retryCount,
+      })
+      .from(feishuChatIngress)
+      .where(
+        and(
+          eq(feishuChatIngress.installationId, args.installationId),
+          eq(feishuChatIngress.eventId, args.eventId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!existing) {
+      return null;
+    }
+    const [retried] = await db
+      .update(feishuChatIngress)
+      .set({
+        retryCount: sql`${feishuChatIngress.retryCount} + 1`,
+        updatedAt: args.currentTime,
+      })
+      .where(eq(feishuChatIngress.id, existing.id))
+      .returning({
+        id: feishuChatIngress.id,
+        status: feishuChatIngress.status,
+        retryCount: feishuChatIngress.retryCount,
+      });
+    signal.throwIfAborted();
+    if (!retried) {
+      throw new Error("Failed to record Feishu ingress retry");
+    }
+    signal.throwIfAborted();
+    return { ...retried, inserted: false };
   },
 );
