@@ -227,6 +227,24 @@ export async function resolveConnectorAccounts(
     loadExactRows(db, { ...args, requests: normalizedRequests }),
     loadDefaultRows(db, { ...args, requests: normalizedRequests }),
   ]);
+  return connectorAccountResolutionsFromRows({
+    requests: normalizedRequests,
+    exactRows,
+    defaultRows,
+  });
+}
+
+export function connectorAccountResolutionsFromRows(args: {
+  readonly requests: readonly ConnectorAccountResolutionRequest[];
+  readonly exactRows: readonly ConnectorAccountIdentityRow[];
+  readonly defaultRows: readonly ConnectorAccountIdentityRow[];
+}): ReadonlyMap<string, ConnectorAccountResolution> {
+  const requests = normalizeRequests(args.requests);
+  if (requests.size === 0) {
+    return new Map();
+  }
+  const normalizedRequests = [...requests.values()];
+  const { exactRows, defaultRows } = args;
   const exactById = new Map(
     exactRows.map((row) => {
       return [row.connectorId, row] as const;

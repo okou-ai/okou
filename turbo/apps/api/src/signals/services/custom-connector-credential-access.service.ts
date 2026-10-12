@@ -18,7 +18,7 @@ import {
   type SQL,
   type SQLWrapper,
 } from "drizzle-orm";
-import { alias, unionAll } from "drizzle-orm/pg-core";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
 import {
@@ -629,23 +629,62 @@ export async function loadCurrentCustomConnectorStoredValues(
       args.memberConnectorIdsByCustomConnectorId,
     );
   }
-  const parts = customConnectorStoredConnectionsSqlParts({
+  const query = customConnectorRuntimeStorageReadQuery({
     orgId: args.orgId,
     userId: args.userId,
     connectorIds,
     memberConnectorIds,
   });
-  const storedConnections = db
+  const captured = db.$with("captured_custom_runtime_storage").as(query);
+  const rows = await db.with(captured).select().from(captured);
+  return customConnectorRuntimeStorageSnapshot(
+    args.definitions,
+    rows,
+    args.memberConnectorIdsByCustomConnectorId,
+  );
+}
+
+/** Pure query construction; its caller owns execution and snapshot lifetime. */
+export function customConnectorRuntimeStorageReadQuery(
+  args: Parameters<typeof customConnectorRuntimeStorageReadPlan>[0],
+) {
+  const { storedConnections, storedValues, projection } =
+    customConnectorRuntimeStorageReadPlan(args);
+  return new QueryBuilder()
+    .with(storedConnections, storedValues)
+    .select(projection)
+    .from(storedConnections)
+    .leftJoin(
+      storedValues,
+      eq(storedValues.memberConnectorId, storedConnections.id),
+    );
+}
+
+export function customConnectorRuntimeStorageReadPlan(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorIds: readonly string[];
+  readonly memberConnectorIds: readonly string[];
+  readonly sourceCondition?: SQL;
+}) {
+  const queryBuilder = new QueryBuilder();
+  const parts = customConnectorStoredConnectionsSqlParts({
+    orgId: args.orgId,
+    userId: args.userId,
+    connectorIds: args.connectorIds,
+    memberConnectorIds: args.memberConnectorIds,
+  });
+  const storedConnections = queryBuilder
     .$with("custom_connector_runtime_connections")
     .as(
-      db
+      queryBuilder
         .select(parts.selection)
         .from(connectors)
         .innerJoin(orgCustomConnectors, parts.definitionJoin)
         .leftJoin(customConnectorAccessTokenSecret, parts.accessTokenJoin)
         .leftJoin(customConnectorRefreshTokenSecret, parts.refreshTokenJoin)
         .leftJoin(customConnectorAccountOauthBindings, parts.oauthBindingJoin)
-        .where(parts.where),
+        .where(and(parts.where, args.sourceCondition)),
     );
   const authMethodCurrent = customConnectorStoredAuthMethodIsCompatibleSql({
     definitionAuthMethod: storedConnections.definitionAuthMethod,
@@ -655,7 +694,7 @@ export async function loadCurrentCustomConnectorStoredValues(
     storedConnections.storedStorageVersion,
     storedConnections.definitionStorageVersion,
   );
-  const secretQuery = db
+  const secretQuery = queryBuilder
     .select({
       memberConnectorId: sql`${storedConnections.id}`
         .mapWith(pgTextDecoder)
@@ -678,7 +717,7 @@ export async function loadCurrentCustomConnectorStoredValues(
         ne(storedConnections.storedAuthMethod, "none"),
       ),
     );
-  const variableQuery = db
+  const variableQuery = queryBuilder
     .select({
       memberConnectorId: sql`${storedConnections.id}`
         .mapWith(pgTextDecoder)
@@ -700,39 +739,28 @@ export async function loadCurrentCustomConnectorStoredValues(
         storageVersionCurrent,
       ),
     );
-  const storedValues = db
+  const storedValues = queryBuilder
     .$with("custom_connector_runtime_values")
-    .as(unionAll(secretQuery, variableQuery));
-  const rows = await db
-    .with(storedConnections, storedValues)
-    .select({
-      id: storedConnections.id,
-      updatedAt: storedConnections.updatedAt,
-      customConnectorId: storedConnections.customConnectorId,
-      storedAuthMethod: storedConnections.storedAuthMethod,
-      storedStorageVersion: storedConnections.storedStorageVersion,
-      storedNeedsReconnect: storedConnections.storedNeedsReconnect,
-      tokenExpiresAt: storedConnections.tokenExpiresAt,
-      definitionAuthMethod: storedConnections.definitionAuthMethod,
-      definitionMcpTransport: storedConnections.definitionMcpTransport,
-      definitionStorageVersion: storedConnections.definitionStorageVersion,
-      oauthAccessTokenId: storedConnections.oauthAccessTokenId,
-      oauthRefreshTokenId: storedConnections.oauthRefreshTokenId,
-      automaticOAuthBindingId: storedConnections.automaticOAuthBindingId,
-      kind: storedValues.kind,
-      key: storedValues.key,
-      storedValue: storedValues.storedValue,
-    })
-    .from(storedConnections)
-    .leftJoin(
-      storedValues,
-      eq(storedValues.memberConnectorId, storedConnections.id),
-    );
-  return customConnectorRuntimeStorageSnapshot(
-    args.definitions,
-    rows,
-    args.memberConnectorIdsByCustomConnectorId,
-  );
+    .as(secretQuery.unionAll(variableQuery));
+  const projection = {
+    id: storedConnections.id,
+    updatedAt: storedConnections.updatedAt,
+    customConnectorId: storedConnections.customConnectorId,
+    storedAuthMethod: storedConnections.storedAuthMethod,
+    storedStorageVersion: storedConnections.storedStorageVersion,
+    storedNeedsReconnect: storedConnections.storedNeedsReconnect,
+    tokenExpiresAt: storedConnections.tokenExpiresAt,
+    definitionAuthMethod: storedConnections.definitionAuthMethod,
+    definitionMcpTransport: storedConnections.definitionMcpTransport,
+    definitionStorageVersion: storedConnections.definitionStorageVersion,
+    oauthAccessTokenId: storedConnections.oauthAccessTokenId,
+    oauthRefreshTokenId: storedConnections.oauthRefreshTokenId,
+    automaticOAuthBindingId: storedConnections.automaticOAuthBindingId,
+    kind: storedValues.kind,
+    key: storedValues.key,
+    storedValue: storedValues.storedValue,
+  };
+  return { storedConnections, storedValues, projection };
 }
 
 export function customConnectorConnectedConnections(args: {
