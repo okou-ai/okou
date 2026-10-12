@@ -178,7 +178,7 @@ mod tests {
         impl HomeScriptFixture {
             fn new() -> Self {
                 let temp = tempfile::tempdir().unwrap();
-                let home_dir = temp.path().join("workspace");
+                let home_dir = temp.path().join("home");
                 let home_device = temp.path().join("vdb");
                 let fake_bin = temp.path().join("bin");
                 let calls_path = temp.path().join("calls.log");
@@ -201,7 +201,7 @@ mod tests {
                 fixture
             }
 
-            fn create_workspace(&self) {
+            fn create_home(&self) {
                 fs::create_dir(&self.home_dir).unwrap();
             }
 
@@ -364,9 +364,9 @@ log_call() {{
         }
 
         #[test]
-        fn freeze_script_rejects_unmounted_workspace() {
+        fn freeze_script_rejects_unmounted_home() {
             let fixture = HomeScriptFixture::new();
-            fixture.create_workspace();
+            fixture.create_home();
             fixture.write_mountpoint(false, Some(HOME_DEV), None);
 
             let output = fixture.run_freeze();
@@ -386,7 +386,7 @@ log_call() {{
         #[test]
         fn freeze_script_rejects_descriptor_device_mismatch() {
             let fixture = HomeScriptFixture::new();
-            fixture.create_workspace();
+            fixture.create_home();
             fixture.write_mountpoint(true, Some(HOME_DEV), Some("8:32"));
 
             let output = fixture.run_freeze();
@@ -413,7 +413,7 @@ log_call() {{
         #[test]
         fn freeze_script_freezes_matching_descriptor() {
             let fixture = HomeScriptFixture::new();
-            fixture.create_workspace();
+            fixture.create_home();
             fixture.write_mountpoint(true, Some(HOME_DEV), Some(HOME_DEV));
 
             let output = fixture.run_freeze();
@@ -432,7 +432,7 @@ log_call() {{
         #[test]
         fn freeze_script_propagates_fsfreeze_failure() {
             let fixture = HomeScriptFixture::new();
-            fixture.create_workspace();
+            fixture.create_home();
             fixture.write_mountpoint(true, Some(HOME_DEV), Some(HOME_DEV));
             fixture.write_fsfreeze(73, "freeze failed");
 

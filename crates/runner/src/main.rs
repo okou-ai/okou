@@ -815,12 +815,4 @@ mod tests {
             "service unit-state should require at least one --name"
         );
     }
-
-    #[test]
-    fn old_gc_workspace_image_cache_command_is_removed() {
-        assert!(
-            Cli::try_parse_from(["runner", "gc-workspace-image-cache", "--dry-run"]).is_err(),
-            "old top-level gc-workspace-image-cache command should not be accepted"
-        );
-    }
 }

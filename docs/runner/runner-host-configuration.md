@@ -153,9 +153,7 @@ paths retain mount/device/no-symlink and user UID/GID validation.
 Eligibility binds the group, profile, **full configured rootfs hash**, reuse key,
 layout and exact home image bytes. A normalized/display hash or shared prefix
 cannot establish eligibility. The fixed home scope is independent of cwd.
-There is no old workspace-image/config/key/layout decoder, alias or migration;
-old images remain a separate retired domain. New build/snapshot identities require
-a supported Guest/Runner pair.
+New build/snapshot identities require a supported Guest/Runner pair.
 
 Home captures ordinary tools/framework files, `/home/user/.npm` and user files
 outside cwd. Current captured instructions, skills, memory, storage, account,

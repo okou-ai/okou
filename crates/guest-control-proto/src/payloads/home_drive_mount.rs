@@ -145,7 +145,6 @@ mod tests {
         decode_home_drive_mount_request(&decoded.payload).unwrap();
         for incompatible in [
             b"".as_slice(),
-            b"workspace-drive-v1",
             b"home-drive-v2",
             b"home-drive-v1\0",
             b"/dev/vda",

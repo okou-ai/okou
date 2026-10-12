@@ -194,10 +194,7 @@ mod tests {
     #[tokio::test]
     async fn remove_unused_lock_after_probe_keeps_replaced_lock_path() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir
-            .path()
-            .join("locks")
-            .join("workspace-image-cache-test.lock");
+        let path = dir.path().join("locks").join("home-image-cache-test.lock");
 
         let held_lock = match probe_lock(&path) {
             LockProbe::Free(lock) => lock,
@@ -212,13 +209,9 @@ mod tests {
             "test setup must recreate the lock path with a new inode"
         );
 
-        let removed = remove_unused_lock_after_probe(
-            &path,
-            &held_lock,
-            "workspace-image-cache-test.lock",
-            false,
-        )
-        .await;
+        let removed =
+            remove_unused_lock_after_probe(&path, &held_lock, "home-image-cache-test.lock", false)
+                .await;
 
         assert!(!removed, "stale lock fd must not remove a recreated path");
         assert!(

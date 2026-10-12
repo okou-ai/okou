@@ -71,10 +71,10 @@ increment() {
 write_agent_log() {
   local run_id=$1
   local sandbox_reuse=$2
-  local workspace_reuse=$3
+  local home_reuse=$3
 
   printf '%s\n' \
-    "run_id=${run_id} agent startup timing sandbox_reuse=${sandbox_reuse} workspace_reuse=${workspace_reuse} shell_spawn_ms=1 agent_ready_ms=2 containment_create_us=3 placement_broker_setup_us=4 shell_spawn_component_us=5 bootstrap_ready_wait_us=6" \
+    "run_id=${run_id} agent startup timing sandbox_reuse=${sandbox_reuse} home_reuse=${home_reuse} shell_spawn_ms=1 agent_ready_ms=2 containment_create_us=3 placement_broker_setup_us=4 shell_spawn_component_us=5 bootstrap_ready_wait_us=6" \
     >> "$TEST_STATE_DIR/journal"
 }
 
@@ -112,15 +112,15 @@ case "$session_id" in
     write_agent_log "$run_id" PoolMiss CacheMiss
     ;;
   agent-ready-home)
-    workspace_reuse=CacheMiss
+    home_reuse=CacheMiss
     if [ -f "$TEST_STATE_DIR/last-promotion" ] \
       && [ "$(<"$TEST_STATE_DIR/last-promotion")" = promoted ]; then
-      workspace_reuse=Reused
+      home_reuse=Reused
       if [ "$TEST_SCENARIO" = confirmed-miss ]; then
-        workspace_reuse=CacheMiss
+        home_reuse=CacheMiss
       fi
     fi
-    write_agent_log "$run_id" PoolMiss "$workspace_reuse"
+    write_agent_log "$run_id" PoolMiss "$home_reuse"
     printf '%s\n' "$run_id" > "$TEST_STATE_DIR/home-run-id"
     ;;
   agent-ready-home-evictor)
@@ -211,7 +211,7 @@ assert_value "$LAST_CASE_DIR/submit-count" 9
 
 run_case confirmed-miss confirmed-miss 1 1
 assert_contains "$LAST_CASE_DIR/output" \
-  'home-cache sample failed after confirmed promotion: expected workspace_reuse=Reused, observed CacheMiss'
+  'home-cache sample failed after confirmed promotion: expected home_reuse=Reused, observed CacheMiss'
 assert_value "$LAST_CASE_DIR/submit-count" 4
 
 for scenario in capacity-unavailable publication-failed publication-rejected; do

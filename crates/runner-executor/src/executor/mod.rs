@@ -970,11 +970,11 @@ async fn resolve_reused_home_promotion(
     };
     let Some(cache) = cache else {
         promotion
-            .invalidate_current("reused sandbox ran without workspace image cache")
+            .invalidate_current("reused sandbox ran without home image cache")
             .await
             .map_err(|error| {
                 ExecutionFailure::from_error(format!(
-                    "failed to invalidate workspace image cache before unconfigured-cache reuse: {error}"
+                    "failed to invalidate home image cache before unconfigured-cache reuse: {error}"
                 ))
             })?;
         return Ok(None);

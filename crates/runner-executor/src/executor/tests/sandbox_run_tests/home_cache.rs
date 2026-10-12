@@ -37,7 +37,7 @@ fn set_reuse_and_session_identity(
     session_id: &str,
     session_history: &str,
 ) {
-    context.reuse_key = Some(format!("thread:workspace-cache-{session_id}"));
+    context.reuse_key = Some(format!("thread:home-cache-{session_id}"));
     context.resume_session = Some(ResumeSession::inline(
         session_id.into(),
         session_history.into(),
@@ -50,7 +50,7 @@ fn set_reuse_and_session_history_ref(
     history: &[u8],
     url: String,
 ) {
-    context.reuse_key = Some(format!("thread:workspace-cache-{session_id}"));
+    context.reuse_key = Some(format!("thread:home-cache-{session_id}"));
     context.resume_session = Some(ResumeSession {
         cli_agent_session_id: session_id.into(),
         history: ResumeSessionHistory::Ref {
@@ -425,7 +425,7 @@ async fn execute_inner_dns_readiness_retry_replaces_consumed_home_cache_hit() {
     let completion = captured_events_named(&events, "guest DNS readiness replacement completed");
     assert_eq!(completion.len(), 1, "events={events:#?}");
     assert_captured_field(completion[0], "success", "true");
-    assert_captured_field(completion[0], "workspace_fallback", "true");
+    assert_captured_field(completion[0], "home_fallback", "true");
 }
 
 #[tokio::test]
@@ -496,7 +496,7 @@ async fn process_timeout_invalidates_consumed_home_cache_without_fallback() {
                 run_id: RunId::new_v4(),
                 sandbox_id: SandboxId::new_v4(),
                 profile_name: &params.profile_name,
-                reuse_key: Some(&format!("thread:workspace-cache-{session_id}")),
+                reuse_key: Some(&format!("thread:home-cache-{session_id}")),
                 working_dir: CANONICAL_WORKING_DIR,
                 image_size_bytes: u64::from(params.home_disk_mb) * 1024 * 1024,
             },
@@ -584,7 +584,7 @@ async fn dns_replacement_storage_classification_failure_prevents_agent_start() {
     let completion = captured_events_named(&events, "guest DNS readiness replacement completed");
     assert_eq!(completion.len(), 1, "events={events:#?}");
     assert_captured_field(completion[0], "success", "true");
-    assert_captured_field(completion[0], "workspace_fallback", "true");
+    assert_captured_field(completion[0], "home_fallback", "true");
 }
 
 #[tokio::test]
@@ -670,7 +670,7 @@ async fn execute_inner_waits_for_transient_home_cache_lock() {
         "",
         &params.profile_name,
         &params.rootfs_hash,
-        &format!("thread:workspace-cache-{session_id}"),
+        &format!("thread:home-cache-{session_id}"),
         u64::from(params.home_disk_mb) * 1024 * 1024,
     );
     let held_lock = runner_host::lock::acquire(runner_host::paths::home_image_cache_lock_path(
@@ -700,7 +700,7 @@ async fn execute_inner_waits_for_transient_home_cache_lock() {
         tokio::pin!(outcome);
         tokio::select! {
             () = prepare_lock_gate.wait_entered(LOCK_CONTENTION_WATCHDOG) => {}
-            _ = &mut outcome => panic!("sandbox execution ended before workspace cache lock contention"),
+            _ = &mut outcome => panic!("sandbox execution ended before home cache lock contention"),
         }
         drop(held_lock);
         prepare_lock_gate.release();
@@ -808,7 +808,7 @@ async fn execute_inner_records_home_cache_lock_busy_prepare_telemetry() {
         "",
         &params.profile_name,
         &params.rootfs_hash,
-        &format!("thread:workspace-cache-{session_id}"),
+        &format!("thread:home-cache-{session_id}"),
         u64::from(params.home_disk_mb) * 1024 * 1024,
     );
     let _held_lock = runner_host::lock::acquire(runner_host::paths::home_image_cache_lock_path(
@@ -884,7 +884,7 @@ async fn execute_inner_logs_home_cache_lock_error_separately() {
         "",
         &params.profile_name,
         &params.rootfs_hash,
-        &format!("thread:workspace-cache-{session_id}"),
+        &format!("thread:home-cache-{session_id}"),
         u64::from(params.home_disk_mb) * 1024 * 1024,
     );
     let lock_path = runner_host::paths::home_image_cache_lock_path(
@@ -1145,7 +1145,7 @@ async fn execute_job_reuse_uses_home_cache_when_configured() {
                 run_id: RunId::new_v4(),
                 sandbox_id: SandboxId::new_v4(),
                 profile_name: &params.profile_name,
-                reuse_key: Some(&format!("thread:workspace-cache-{session_id}")),
+                reuse_key: Some(&format!("thread:home-cache-{session_id}")),
                 working_dir: CANONICAL_WORKING_DIR,
                 image_size_bytes: u64::from(params.home_disk_mb) * 1024 * 1024,
             },
@@ -1207,7 +1207,7 @@ async fn cached_reuse_home_promotion_identity_mismatch_stops_before_agent() {
                 run_id: RunId::new_v4(),
                 sandbox_id: SandboxId::new_v4(),
                 profile_name: &promotion_params.profile_name,
-                reuse_key: Some(&format!("thread:workspace-cache-{session_id}")),
+                reuse_key: Some(&format!("thread:home-cache-{session_id}")),
                 working_dir: CANONICAL_WORKING_DIR,
                 image_size_bytes: u64::from(promotion_params.home_disk_mb) * 1024 * 1024,
             },
@@ -1246,7 +1246,7 @@ async fn execute_job_reuse_without_home_cache_config_invalidates_held_cache_entr
                 run_id: RunId::new_v4(),
                 sandbox_id: SandboxId::new_v4(),
                 profile_name: &params.profile_name,
-                reuse_key: Some(&format!("thread:workspace-cache-{session_id}")),
+                reuse_key: Some(&format!("thread:home-cache-{session_id}")),
                 working_dir: CANONICAL_WORKING_DIR,
                 image_size_bytes: u64::from(params.home_disk_mb) * 1024 * 1024,
             },
@@ -1273,7 +1273,7 @@ async fn unconfigured_cache_reuse_stops_when_cache_invalidation_fails() {
         "",
         &params.profile_name,
         &params.rootfs_hash,
-        &format!("thread:workspace-cache-{session_id}"),
+        &format!("thread:home-cache-{session_id}"),
         u64::from(params.home_disk_mb) * 1024 * 1024,
     );
     // Exercise failure for a consumed generation, not a miss that preserves
@@ -1304,7 +1304,7 @@ async fn unconfigured_cache_reuse_stops_when_cache_invalidation_fails() {
         reuse_outcome
             .error()
             .unwrap()
-            .contains("failed to invalidate workspace image cache before unconfigured-cache reuse")
+            .contains("failed to invalidate home image cache before unconfigured-cache reuse")
     );
     assert!(
         overrides
@@ -1356,7 +1356,7 @@ async fn cached_reuse_validation_failure_keeps_home_cache_hidden() {
                 run_id: RunId::new_v4(),
                 sandbox_id: SandboxId::new_v4(),
                 profile_name: &params.profile_name,
-                reuse_key: Some(&format!("thread:workspace-cache-{session_id}")),
+                reuse_key: Some(&format!("thread:home-cache-{session_id}")),
                 working_dir: CANONICAL_WORKING_DIR,
                 image_size_bytes: u64::from(params.home_disk_mb) * 1024 * 1024,
             },
@@ -1411,7 +1411,7 @@ async fn cached_reuse_invalid_resume_session_keeps_existing_home_cache_hidden() 
                 run_id: RunId::new_v4(),
                 sandbox_id: SandboxId::new_v4(),
                 profile_name: &params.profile_name,
-                reuse_key: Some(&format!("thread:workspace-cache-{session_id}")),
+                reuse_key: Some(&format!("thread:home-cache-{session_id}")),
                 working_dir: CANONICAL_WORKING_DIR,
                 image_size_bytes: u64::from(params.home_disk_mb) * 1024 * 1024,
             },
@@ -1490,7 +1490,7 @@ async fn reusable_idle_sandbox_with_home_promotion(
     };
     use crate::storage_fingerprints::StorageFingerprints;
 
-    let reuse_key = format!("thread:workspace-cache-{session_id}");
+    let reuse_key = format!("thread:home-cache-{session_id}");
     let current_image =
         seed_home_image_cache(cache, runner_paths, session_id, params.home_disk_mb).await;
 

@@ -226,7 +226,7 @@ impl HomePromotionFixture {
                 completed_at: "2026-06-04T00:00:00.000Z".into(),
                 storage_fingerprints: StorageFingerprints::default(),
             })
-            .expect("workspace image cache hit should be promotable");
+            .expect("home image cache hit should be promotable");
 
         Self {
             _dir,

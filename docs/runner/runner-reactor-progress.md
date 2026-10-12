@@ -132,8 +132,8 @@ unlocked pass. Shared entry flocks protect mutations, and the second interval
 check observes another collector's intervening completion. Manual and
 promotion-triggered pressure GC retain capacity ownership and can still contend
 with promotion. This removes the routine inventory/entry-cleanup collision
-window, not pressure contention. Retired workspace caches are a separate domain;
-they are never probed or interpreted as home images. Cache byte/count targets
+window, not pressure contention. The inventory covers the canonical home-cache
+domain. Cache byte/count targets
 remain periodic GC policy, not a strict per-promotion whole-cache admission
 bound. Profile-bound image eligibility, fresh allocation/reserve and cross-device
 copy headroom remain mandatory.

@@ -45,7 +45,7 @@ async fn assert_spawn_before_receipt(kind: Option<IdleSandboxKind>) {
         let runner_paths = RunnerPaths::new(dir.path().join("runner"));
         let cache = HomeImageCache::new(runner_paths.clone());
         let session_id = "registry-observation-workspace";
-        context.reuse_key = Some(format!("thread:workspace-cache-{session_id}"));
+        context.reuse_key = Some(format!("thread:home-cache-{session_id}"));
         context.resume_session = Some(ResumeSession::inline(
             session_id.into(),
             r#"{"type":"init"}"#.into(),

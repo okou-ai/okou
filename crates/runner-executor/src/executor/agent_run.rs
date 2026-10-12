@@ -2919,7 +2919,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             info!(
                 run_id = %context.run_id,
                 sandbox_reuse = ?start.reuse_result,
-                workspace_reuse = ?start.home_reuse_result,
+                home_reuse = ?start.home_reuse_result,
                 shell_spawn_ms = timing.shell_started_at.saturating_duration_since(t).as_millis(),
                 agent_ready_ms = timing.ready_at.saturating_duration_since(t).as_millis(),
                 containment_create_us = timing.containment_create.as_micros(),

@@ -364,7 +364,7 @@ ready event rather than process creation.
 The production-path benchmark lives in
 `.github/scripts/runner-behavior-process-containment.sh`. It submits the
 deterministic mock CLI through the same-metal runner and Guest Agent path, then
-measures fresh sandbox, workspace-cache reuse, and exact sandbox reuse samples
+measures fresh sandbox, home-cache reuse, and exact sandbox reuse samples
 under one service profile. Set `AGENT_READY_BENCHMARK_SAMPLES` to choose the
 sample count; the script retains bounded raw JSONL evidence and reports the
 sample count, failures, and p50/p90/p95/p99 for process-launch (historically

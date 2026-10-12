@@ -1090,7 +1090,7 @@ async fn execute_new_sandbox_replaces_one_dns_unready_attachment_before_workload
     assert_eq!(completion.len(), 1, "events={events:#?}");
     assert_eq!(completion[0].level, Level::WARN);
     assert_captured_field(completion[0], "success", "true");
-    assert_captured_field(completion[0], "workspace_fallback", "false");
+    assert_captured_field(completion[0], "home_fallback", "false");
 
     let observation = captured_events_named(&events, "guest DNS readiness network log observation");
     assert_eq!(observation.len(), 1, "events={events:#?}");
@@ -1253,7 +1253,7 @@ async fn execute_new_sandbox_stops_after_two_dns_unready_attachments() {
     let completion = captured_events_named(&events, "guest DNS readiness replacement completed");
     assert_eq!(completion.len(), 1, "events={events:#?}");
     assert_captured_field(completion[0], "success", "false");
-    assert_captured_field(completion[0], "workspace_fallback", "false");
+    assert_captured_field(completion[0], "home_fallback", "false");
 }
 
 #[tokio::test]
