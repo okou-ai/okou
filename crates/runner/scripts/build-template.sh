@@ -351,8 +351,8 @@ install_packages() {
   apt-get update
   apt-get install -y \
     procps wget git ripgrep jq file iproute2 sudo ffmpeg \
-    libreoffice-impress poppler-utils \
-    fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji \
+    libreoffice-impress libreoffice-writer poppler-utils \
+    fonts-liberation fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji \
     libnss3 p11-kit-modules tzdata-legacy unzip \
     nodejs \
     python3 python3-pip python3-venv \
@@ -528,6 +528,64 @@ install_runtimes() {
   echo "[OK] runtimes and CLIs installed"
 }
 
+# Office authoring libraries live outside the externally managed system Python.
+# Pin direct dependencies here so a change invalidates the template cache.
+# Skills can use /opt/office/bin/python without network setup in each run.
+install_office() {
+  sudo chroot "$ROOTFS_DIR" python3 -m venv /opt/office
+  sudo chroot "$ROOTFS_DIR" /opt/office/bin/python -m pip install --no-cache-dir \
+    python-docx==1.2.0 typst==0.15.0 openpyxl==3.1.5 \
+    matplotlib==3.11.2 Pillow==12.3.0 pypdf==6.20.0
+
+  # Test real file writes, PDF compilation and Writer's DOCX import as the
+  # sandbox user. `soffice --version` succeeds even without the Writer filters.
+  sudo chroot "$ROOTFS_DIR" runuser -u user -- /opt/office/bin/python - <<'PY'
+from pathlib import Path
+import subprocess
+import tempfile
+
+from docx import Document
+from openpyxl import Workbook, load_workbook
+from PIL import Image
+from pypdf import PdfReader
+import matplotlib
+matplotlib.use("Agg")
+from matplotlib import pyplot as plt
+import typst
+
+with tempfile.TemporaryDirectory(prefix="office-image-check-") as tmp:
+    root = Path(tmp)
+    fig, ax = plt.subplots(figsize=(3, 2))
+    ax.bar(["A", "B"], [1, 2])
+    fig.savefig(root / "chart.png")
+    plt.close(fig)
+    with Image.open(root / "chart.png") as image:
+        image.verify()
+    document = Document()
+    document.add_paragraph("Office runtime check")
+    document.add_table(rows=2, cols=2).cell(0, 0).text = "Editable table"
+    document.save(root / "check.docx")
+    assert Document(root / "check.docx").tables[0].cell(0, 0).text == "Editable table"
+    subprocess.run([
+        "soffice", f"-env:UserInstallation={(root / 'profile').as_uri()}",
+        "--headless", "--convert-to", "pdf:writer_pdf_Export", "--outdir", tmp,
+        str(root / "check.docx"),
+    ], check=True, timeout=60)
+    assert "Office runtime check" in PdfReader(root / "check.pdf").pages[0].extract_text()
+    (root / "native.typ").write_text('#set text(font: "Liberation Serif")\nNative PDF check')
+    typst.compile(str(root / "native.typ"), output=str(root / "native.pdf"))
+    assert "Native PDF check" in PdfReader(root / "native.pdf").pages[0].extract_text()
+    workbook = Workbook()
+    workbook.active["A1"] = "=1+2"
+    workbook.save(root / "check.xlsx")
+    assert load_workbook(root / "check.xlsx").active["A1"].value == "=1+2"
+    for family in ("Liberation Serif", "Noto Serif CJK SC", "Noto Naskh Arabic"):
+        actual = subprocess.check_output(["fc-match", "-f", "%{family}", family], text=True)
+        assert family in actual, (family, actual)
+print("[OK] native Office authoring and Writer import verified")
+PY
+}
+
 # ---------------------------------------------------------------------------
 # ext4 image creation
 # ---------------------------------------------------------------------------
@@ -568,6 +626,7 @@ check_dependencies
 debootstrap_build
 install_packages
 install_runtimes
+install_office
 
 # Remove build-time host resolver state before producing the reusable rootfs
 # template. The VM resolver config is injected by customize-rootfs.sh.

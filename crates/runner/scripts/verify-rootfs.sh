@@ -416,6 +416,18 @@ check_required_executable "/usr/bin/ffmpeg" "ffmpeg"
 check_required_executable "/usr/bin/soffice" "LibreOffice"
 check_required_executable "/usr/bin/pdftocairo" "Poppler pdftocairo"
 
+# The Office Python and Writer import filter are required in fresh runtimes.
+# build-template.sh also exercises them as the sandbox user before publication.
+check_required_executable "/opt/office/bin/python" "Office Python"
+check_bin "/usr/lib/libreoffice/program/libswlo.so" "LibreOffice Writer library"
+check_bin "/usr/lib/libreoffice/share/registry/writer.xcd" "LibreOffice Writer filters"
+for module in docx typst openpyxl matplotlib PIL pypdf; do
+  check_bin "/opt/office/lib/python*/site-packages/${module}/__init__.py" "Office Python ${module}"
+done
+check_bin "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf" "Liberation Serif"
+check_bin "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc" "Noto Serif CJK"
+check_bin "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf" "Noto Naskh Arabic"
+
 # Browser screenshots and exports need system fallbacks for multilingual text.
 check_bin "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf" "Noto Sans"
 check_bin "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf" "Noto Sans Arabic"
