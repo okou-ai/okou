@@ -72,6 +72,7 @@
 3 crates-parallel-checks-workflow-test.sh
 3 deploy-okou-app-worker-workflow-test.sh
 3 deploy-discord-gateway-test.sh
+3 diagnose-discord-gateway-test.sh
 3 download-verified-test.sh
 3 kms-production-backup-test.sh
 3 kerberos-native-cache-test.sh
