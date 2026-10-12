@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/okou-ai/okou/compare/runner-host-v0.7.1...runner-host-v0.7.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* **runner:** parse signed procfs process groups ([#39226](https://github.com/okou-ai/okou/issues/39226)) ([0e8e339](https://github.com/okou-ai/okou/commit/0e8e339a5ecd84af0c9d9652a88374c1a719fc07))
+
 ## [0.7.1](https://github.com/okou-ai/okou/compare/runner-host-v0.7.0...runner-host-v0.7.1) (2026-10-12)
 
 
