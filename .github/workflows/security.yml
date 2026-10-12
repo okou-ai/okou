@@ -315,6 +315,7 @@ jobs:
             .github/scripts/tests/action-pins-test.sh \
             .github/scripts/tests/ansible-ssh-control-path-test.sh \
             .github/scripts/tests/cancel-superseded-merge-group-runs-test.sh \
+            .github/scripts/tests/wait-runner-image-cancellation-test.sh \
             .github/scripts/tests/check-release-please-component-releases-test.sh \
             .github/scripts/tests/check-release-please-workspace-coverage-test.sh \
             .github/scripts/tests/codeql-cache-workflow-test.sh \
@@ -376,6 +377,7 @@ jobs:
             .github/scripts/tests/crates-parallel-checks-workflow-test.sh
           shellcheck -x -P .github/scripts .github/scripts/runner-binary-github.sh .github/scripts/tests/runner-binary-github-test.sh
           shellcheck -x -P .github/scripts .github/scripts/runner-image-architecture.sh .github/scripts/tests/runner-image-architecture-test.sh
+          shellcheck -x -P .github/scripts .github/scripts/wait-runner-image.sh
           # actionlint assumes Bash when shell is omitted and does not model the
           # sh default used by container jobs.
           .github/scripts/check-workflow-shell-compatibility.sh

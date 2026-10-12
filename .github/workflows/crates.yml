@@ -1026,8 +1026,9 @@ jobs:
   runner-test-prepare:
     runs-on: ubuntu-latest
     permissions:
-      actions: read
+      actions: write
       contents: read
+      pull-requests: read
     needs: [detect, runner-host-groups]
     if: |
       needs.detect.outputs.metal-job-ref != '' &&
@@ -1080,6 +1081,7 @@ jobs:
       - name: Wait for runner image manifest
         id: manifest
         env:
+          CHECK_OBSOLETE_CONSUMER: "true"
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.sha }}
           LOOKUP_SHA: ${{ github.event.pull_request.head.sha || github.sha }}

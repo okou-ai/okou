@@ -74,16 +74,19 @@ response_header() {
 }
 
 api_get() {
-  local endpoint=$1 failures=0 backoff=60
+  local endpoint=$1 failures=0 backoff=60 allow_not_found=false
   local status retry_after remaining reset delay now
+  shift
+  if [ "${1:-}" = "--allow-not-found" ]; then allow_not_found=true; shift; fi
   while true; do
     check_deadline
-    if gh api "$endpoint" --include >"$GH_RESPONSE" 2>"$GH_ERR"; then
+    if gh api "$endpoint" --include "$@" >"$GH_RESPONSE" 2>"$GH_ERR"; then
       sed '1,/^\r\{0,1\}$/d' "$GH_RESPONSE"
       return
     fi
-    cat "$GH_ERR" >&2
     status=$(awk 'NR == 1 && /^HTTP\// { print $2 }' "$GH_RESPONSE")
+    if $allow_not_found && [ "$status" = "404" ]; then return 44; fi
+    cat "$GH_ERR" >&2
     retry_after=$(response_header retry-after)
     remaining=$(response_header x-ratelimit-remaining)
     reset=$(response_header x-ratelimit-reset)
@@ -125,14 +128,161 @@ api_get() {
   done
 }
 
+consumer_identity_matches() {
+  jq -e --arg repo "$REPO" --arg sha "$LOOKUP_SHA" \
+    --arg event "$GITHUB_EVENT_NAME" --arg branch "$consumer_branch" \
+    --argjson id "$GITHUB_RUN_ID" --argjson attempt "$GITHUB_RUN_ATTEMPT" '
+    .id == $id and .run_attempt == $attempt and .head_sha == $sha and
+    .repository.full_name == $repo and .head_repository.full_name == $repo and
+    .event == $event and .head_branch == $branch and
+    (.path == ".github/workflows/turbo.yml" or .path == ".github/workflows/crates.yml") and
+    (.status == "queued" or .status == "in_progress" or .status == "pending" or
+     .status == "waiting" or .status == "requested" or .status == "completed")
+  ' <<<"$1" >/dev/null
+}
+
+consumer_obsolete_state() {
+  local ref_json ref_status pr_json query
+  if [ "$GITHUB_EVENT_NAME" = "merge_group" ]; then
+    if ref_json=$(api_get "repos/${REPO}/git/ref/${GITHUB_REF#refs/}" --allow-not-found); then
+      if ! jq -e --arg ref "$GITHUB_REF" '
+        .ref == $ref and .object.type == "commit" and
+        (.object.sha | type == "string" and test("^[0-9a-f]{40}$"))
+      ' <<<"$ref_json" >/dev/null; then
+        echo "invalid merge-group ref response" >&2
+        return 1
+      fi
+      jq -r --arg sha "$GITHUB_SHA" '.object.sha != $sha' <<<"$ref_json"
+    else
+      ref_status=$?
+      [ "$ref_status" = "44" ] || return "$ref_status"
+      echo true
+    fi
+  else
+    query="query(\$owner:String!,\$name:String!,\$number:Int!) { repository(owner:\$owner,name:\$name) { pullRequest(number:\$number) { state headRefOid isInMergeQueue headRepository { nameWithOwner } } } }"
+    pr_json=$(api_get graphql -f query="$query" -f owner="${REPO%%/*}" \
+      -f name="${REPO#*/}" -F number="$pr_number") || return 1
+    if ! jq -e --arg repo "$REPO" '
+      ((.errors // []) | length == 0) and
+      (.data.repository.pullRequest |
+        (.state == "OPEN" or .state == "CLOSED" or .state == "MERGED") and
+        (.headRefOid | type == "string" and test("^[0-9a-f]{40}$")) and
+        (.isInMergeQueue | type == "boolean") and
+        (.state != "OPEN" or .headRepository.nameWithOwner == $repo))
+    ' <<<"$pr_json" >/dev/null; then
+      echo "invalid current PR ownership response" >&2
+      return 1
+    fi
+    jq -r --arg sha "$LOOKUP_SHA" '.data.repository.pullRequest |
+      .state != "OPEN" or .headRefOid != $sha or .isInMergeQueue == true
+    ' <<<"$pr_json"
+  fi
+}
+
+cancel_obsolete_consumer() {
+  # GitHub owns PR/ref lifecycle. Keep this guard while independent producer
+  # cancellation can leave a consumer outside the selected-owner barrier.
+  [ "${CHECK_OBSOLETE_CONSUMER:-false}" = "true" ] || return 0
+  case "${GITHUB_EVENT_NAME:-}" in
+    merge_group|pull_request) ;;
+    *) return 0 ;;
+  esac
+  local run_json pr_number obsolete
+  local consumer_branch cancel_status cancel_deadline cancel_wait_seconds cancel_remaining
+  if [[ ! "${GITHUB_RUN_ID:-}" =~ ^[1-9][0-9]*$ ||
+    ! "${GITHUB_RUN_ATTEMPT:-}" =~ ^[1-9][0-9]*$ ||
+    "$HEAD_SHA" != "${GITHUB_SHA:-}" || ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ||
+    ! "$LOOKUP_SHA" =~ ^[0-9a-f]{40}$ || ! "$JOB_REF" =~ ^pr-([1-9][0-9]*)$ ]]; then
+    echo "invalid native runner consumer cancellation context" >&2
+    return 1
+  fi
+  pr_number=${JOB_REF#pr-}
+  if [ "$GITHUB_EVENT_NAME" = "merge_group" ]; then
+    consumer_branch=${GITHUB_REF#refs/heads/}
+    if [[ "$GITHUB_REF" != refs/heads/gh-readonly-queue/* ||
+      ! "$consumer_branch" =~ /pr-${pr_number}-[0-9a-f]{40}$ ]]; then
+      echo "runner consumer ref does not identify $JOB_REF" >&2
+      return 1
+    fi
+  else
+    consumer_branch=${GITHUB_HEAD_REF:?missing native PR head ref}
+    if [ "${GITHUB_REF:-}" != "refs/pull/${pr_number}/merge" ]; then
+      echo "runner consumer ref does not identify $JOB_REF" >&2
+      return 1
+    fi
+  fi
+  run_json=$(api_get "repos/${REPO}/actions/runs/${GITHUB_RUN_ID}")
+  if ! consumer_identity_matches "$run_json"; then
+    echo "runner consumer run or attempt no longer matches native context" >&2
+    return 1
+  fi
+
+  obsolete=$(consumer_obsolete_state) || return 1
+  [ "$obsolete" = "true" ] || return 0
+
+  # Recheck authority as well as identity: a ref/head can be restored, and a
+  # rerun retains its run ID. Never cancel from stale obsolescence evidence.
+  obsolete=$(consumer_obsolete_state) || return 1
+  [ "$obsolete" = "true" ] || return 0
+  run_json=$(api_get "repos/${REPO}/actions/runs/${GITHUB_RUN_ID}")
+  if ! consumer_identity_matches "$run_json"; then
+    echo "obsolete consumer attempt changed before cancellation" >&2
+    return 1
+  fi
+  cancel_wait_seconds=${CONSUMER_CANCEL_WAIT_SECONDS:-360}
+  if [[ ! "$cancel_wait_seconds" =~ ^[1-9][0-9]{0,2}$ ]] || ((cancel_wait_seconds > 360)); then
+    echo "invalid consumer cancellation wait budget" >&2
+    return 1
+  fi
+  if ! jq -e '.status == "completed" and .conclusion == "cancelled"' <<<"$run_json" >/dev/null; then
+    if gh api --method POST "repos/${REPO}/actions/runs/${GITHUB_RUN_ID}/force-cancel" \
+      --include >"$GH_RESPONSE" 2>"$GH_ERR"; then
+      cancel_status=$(awk 'NR == 1 && /^HTTP\// { print $2 }' "$GH_RESPONSE")
+      if [ "$cancel_status" != "202" ]; then
+        echo "unexpected consumer cancellation response: ${cancel_status}" >&2
+        return 1
+      fi
+    else
+      cancel_status=$(awk 'NR == 1 && /^HTTP\// { print $2 }' "$GH_RESPONSE")
+      if [ "$cancel_status" != "409" ]; then
+        cat "$GH_ERR" >&2
+        echo "failed to request native obsolete-consumer cancellation" >&2
+        return 1
+      fi
+      run_json=$(api_get "repos/${REPO}/actions/runs/${GITHUB_RUN_ID}")
+      if ! consumer_identity_matches "$run_json" ||
+        ! jq -e '.status == "completed" and .conclusion == "cancelled"' <<<"$run_json" >/dev/null; then
+        echo "obsolete-consumer cancellation conflict without terminal cancellation proof" >&2
+        return 1
+      fi
+    fi
+  fi
+  echo "Requested cancellation of obsolete consumer ${GITHUB_RUN_ID}; waiting for Actions interruption" >&2
+  cancel_deadline=$(( $(date +%s) + cancel_wait_seconds ))
+  while [ "$(date +%s)" -lt "$cancel_deadline" ]; do
+    # Once cancellation is accepted, the artifact deadline must not manufacture
+    # a failure while Actions is still delivering its interruption.
+    cancel_remaining=$(( cancel_deadline - $(date +%s) ))
+    if [ "$cancel_remaining" -gt 5 ]; then cancel_remaining=5; fi
+    if [ "$cancel_remaining" -gt 0 ]; then sleep "$cancel_remaining"; fi
+  done
+  echo "Actions did not interrupt obsolete consumer ${GITHUB_RUN_ID} within ${cancel_wait_seconds}s" >&2
+  return 1
+}
+
 selected_run=""
 selected_url=""
 selected_run_id=""
 selected_artifact=""
 next_run_check=0
 producer_failure_url=""
+next_consumer_check=0
 
 while true; do
+  if [ "$(date +%s)" -ge "$next_consumer_check" ]; then
+    cancel_obsolete_consumer
+    next_consumer_check=$(( $(date +%s) + 60 ))
+  fi
   artifacts_json=$(api_get "repos/${REPO}/actions/artifacts?name=${ARTIFACT_NAME}&per_page=100")
 
   selected_artifact=$(jq -c \
@@ -178,6 +328,7 @@ while true; do
   fi
 
   if [ -n "$producer_failure_url" ]; then
+    cancel_obsolete_consumer
     echo "runner image workflow completed with conclusion=${conclusion}: ${producer_failure_url}" >&2
     exit 1
   fi
@@ -213,6 +364,8 @@ while true; do
 
   wait_with_deadline "$POLL_SECONDS"
 done
+
+cancel_obsolete_consumer
 
 MANIFEST_PATH="${OUTPUT_DIR}/manifest.json"
 if [ ! -f "$MANIFEST_PATH" ]; then

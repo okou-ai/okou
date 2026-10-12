@@ -74,19 +74,11 @@ if ! pr_head=$(
     "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" \
     --jq '[.head.ref, .head.repo.full_name] | @tsv' 2>&1
 ); then
-  if $cancel_selected_runs; then
-    echo "::warning::failed to resolve PR #${pr_number} head; continuing without cancellation: ${pr_head}" >&2
-    exit 0
-  fi
   echo "failed to resolve PR #${pr_number} head: ${pr_head}" >&2
   exit 1
 fi
 IFS=$'\t' read -r pr_head_ref pr_head_repository <<<"$pr_head"
 if [ -z "$pr_head_ref" ] || [ -z "$pr_head_repository" ]; then
-  if $cancel_selected_runs; then
-    echo "::warning::failed to resolve head repository and ref for PR #${pr_number}; continuing without cancellation" >&2
-    exit 0
-  fi
   echo "failed to resolve head repository and ref for PR #${pr_number}" >&2
   exit 1
 fi
@@ -162,7 +154,7 @@ discover_selected_runs() {
               )
             )
           )
-        | [.id, .name, .status, .event, .head_sha, .html_url]
+        | [.id, .name, .status, .event, .head_sha, .html_url, .path]
         | @tsv
       ' |
     sort -n -u
@@ -175,10 +167,6 @@ discovery_started_at=$SECONDS
 # to stabilize so a run changing statuses cannot fall between those snapshots.
 while true; do
   if ! discovered_runs=$(discover_selected_runs 2>&1); then
-    if $cancel_selected_runs; then
-      echo "::warning::failed to discover ${selected_runs_label}; continuing without cancellation: ${discovered_runs}" >&2
-      exit 0
-    fi
     echo "failed to discover ${selected_runs_label}: ${discovered_runs}" >&2
     exit 1
   fi
@@ -218,60 +206,73 @@ else
 fi
 printf '%s\n' "$selected_runs"
 
-run_ids=()
-while IFS= read -r run_record; do
-  run_id=${run_record%%$'\t'*}
-  if $cancel_selected_runs; then
-    # A regular cancellation is not an ownership handoff: GitHub may continue
-    # always()-guarded jobs after accepting it. Force-cancel the strictly
-    # selected old owner, then retain the terminal-state barrier below.
-    if ! cancel_error=$(
-      gh api --method POST \
-        "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/force-cancel" 2>&1
-    ); then
-      echo "::warning::failed to cancel ${selected_run_label} ${run_id}; continuing without cancellation: ${cancel_error}" >&2
-      continue
-    fi
-  fi
-  run_ids+=("$run_id")
-done <<<"$selected_runs"
+# Both phases share the existing completion budget. API acceptance alone must
+# never let an image disappear underneath a still-running consumer.
+started_at=$SECONDS
 
-if $cancel_selected_runs && [ "${#run_ids[@]}" -eq 0 ]; then
-  echo "All ${selected_runs_label} failed cancellation; continuing without a terminal-state barrier."
-  exit 0
+read_run_status() {
+  local run_id=$1 current_status
+  if ! current_status=$(gh api --method GET \
+    "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '.status' 2>&1); then
+    echo "failed to query ${selected_run_label} ${run_id}: ${current_status}" >&2
+    return 1
+  fi
+  case "$current_status" in
+    completed|queued|in_progress|pending|waiting|requested) printf '%s\n' "$current_status" ;;
+    *) echo "invalid status for ${selected_run_label} ${run_id}: ${current_status}" >&2; return 1 ;;
+  esac
+}
+
+await_phase() {
+  local records=$1 phase_label=$2 run_record run_id cancel_error current_status
+  local run_ids=() pending_runs=()
+  [ -n "$records" ] || return 0
+
+  while IFS= read -r run_record; do
+    run_id=${run_record%%$'\t'*}
+    if $cancel_selected_runs; then
+      # Stop always()-guarded jobs as well as ordinary steps. A cancellation
+      # conflict is safe only when a fresh read proves this owner is terminal.
+      if ! cancel_error=$(gh api --method POST \
+        "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/force-cancel" 2>&1); then
+        current_status=$(read_run_status "$run_id")
+        if [ "$current_status" != "completed" ]; then
+          echo "failed to cancel active ${selected_run_label} ${run_id}: ${cancel_error}" >&2
+          return 1
+        fi
+      fi
+    fi
+    run_ids+=("$run_id")
+  done <<<"$records"
+
+  while true; do
+    pending_runs=()
+    for run_id in "${run_ids[@]}"; do
+      current_status=$(read_run_status "$run_id")
+      if [ "$current_status" != "completed" ]; then
+        pending_runs+=("${run_id}:${current_status}")
+      fi
+    done
+    if [ "${#pending_runs[@]}" -eq 0 ]; then
+      echo "All ${phase_label} completed."
+      return 0
+    fi
+    if ((SECONDS - started_at >= completion_timeout_seconds)); then
+      echo "::error::Timed out after ${completion_timeout_seconds}s waiting for ${selected_runs_label} to complete: ${pending_runs[*]}" >&2
+      return 1
+    fi
+    echo "Waiting for ${selected_runs_label} (${phase_label}): ${pending_runs[*]}"
+    sleep "$poll_seconds"
+  done
+}
+
+if $cancel_selected_runs; then
+  consumers=$(awk -F '\t' '$7 != ".github/workflows/runner-image.yml"' <<<"$selected_runs")
+  producers=$(awk -F '\t' '$7 == ".github/workflows/runner-image.yml"' <<<"$selected_runs")
+  await_phase "$consumers" "superseded runner consumers"
+  await_phase "$producers" "superseded runner image producers"
+else
+  await_phase "$selected_runs" "$selected_runs_label"
 fi
 
-started_at=$SECONDS
-while true; do
-  pending_runs=()
-  for run_id in "${run_ids[@]}"; do
-    if ! current_status=$(
-      gh api --method GET \
-        "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" \
-        --jq '.status' 2>&1
-    ); then
-      if $cancel_selected_runs; then
-        echo "::warning::failed to query ${selected_run_label} ${run_id}; continuing without a terminal-state barrier: ${current_status}" >&2
-        exit 0
-      fi
-      echo "failed to query ${selected_run_label} ${run_id}: ${current_status}" >&2
-      exit 1
-    fi
-    if [ "$current_status" != "completed" ]; then
-      pending_runs+=("${run_id}:${current_status}")
-    fi
-  done
-
-  if [ "${#pending_runs[@]}" -eq 0 ]; then
-    echo "All ${selected_runs_label} completed before ${completion_boundary}."
-    exit 0
-  fi
-
-  if ((SECONDS - started_at >= completion_timeout_seconds)); then
-    echo "::error::Timed out after ${completion_timeout_seconds}s waiting for ${selected_runs_label} to complete: ${pending_runs[*]}" >&2
-    exit 1
-  fi
-
-  echo "Waiting for ${selected_runs_label}: ${pending_runs[*]}"
-  sleep "$poll_seconds"
-done
+echo "All ${selected_runs_label} completed before ${completion_boundary}."
