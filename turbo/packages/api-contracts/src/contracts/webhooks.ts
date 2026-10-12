@@ -863,7 +863,12 @@ const sandboxOperationDownloadSourceSchema = z
   }, sessionHistoryDownloadSourceSchema.optional())
   .optional();
 
-export const runnerStartupPathSchema = z.enum(["sandbox", "workspace", "cold"]);
+export const runnerStartupPathSchema = z.enum([
+  "sandbox",
+  "workspace",
+  "home",
+  "cold",
+]);
 
 export type RunnerStartupPath = z.infer<typeof runnerStartupPathSchema>;
 

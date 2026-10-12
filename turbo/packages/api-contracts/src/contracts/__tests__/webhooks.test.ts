@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import homeStartupTelemetry from "./fixtures/runner-home-startup-telemetry.json";
+
 import {
   RESUME_SESSION_HISTORY_MAX_BYTES,
   SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
@@ -947,10 +949,17 @@ describe("webhook telemetry contract", () => {
     });
   });
 
+  it("accepts the actual Runner home-cache startup payload", () => {
+    expect(
+      webhookTelemetryContract.send.body.parse(homeStartupTelemetry),
+    ).toStrictEqual(homeStartupTelemetry);
+  });
+
   it("accepts bounded startup outcomes and keeps them optional", () => {
     const startupOutcomes = [
       ["sandbox", "reused"],
       ["workspace", "noReuseKey"],
+      ["home", "poolMiss"],
       ["cold", "poolMiss"],
       ["cold", "profileMismatch"],
       ["cold", "deviceLimitMismatch"],
