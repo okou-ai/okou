@@ -193,7 +193,7 @@ with an intentionally skipped compiler, and a miss requires successful target
 compilation. The image job validates this prerequisite contract before byte
 reads or host effects. A failed or unexpectedly skipped compiler fails that
 architecture; the outer matrix retains every configured result with fail-fast
-disabled. Required per-submission and complementary-architecture checks remain.
+disabled.
 
 Fresh publication and download are required: missing configuration, storage
 failures, invalid manifests, or binary hash/size mismatches fail the job. Cache-hit
@@ -382,13 +382,13 @@ specific checks, including NBD COW tests, on matching metal. Jobs that need an
 actual host resolve the host subset inside the job instead of reading hosts from
 the matrix.
 
-Crates plans image validation with `validation-plan KEY` using the same
+Crates plans its test target with `selection-plan KEY` using the same
 deterministic host selection as `runner-test-prepare`. That job waits for the
 shared Runner Image workflow's manifest and validates the entire selected
-architecture group without compiling or building an image. A parallel manifest
-matrix validates only the remaining groups. The full matrix still drives NBD COW
-and rootfs process tests. The CI gate requires both validation paths when
-applicable, including on reruns.
+architecture group without compiling or building an image. The full matrix still
+drives NBD COW and rootfs process tests. The Crates CI gate requires selected-target
+image preparation when applicable, including on reruns. Turbo runner preparation
+validates all configured architecture manifests before starting the runner.
 
 Native CPU fairness and guest RPC tests compile as soon as `runner-host-groups`
 selects a target, in parallel with `runner-test-prepare` waiting for the image. The

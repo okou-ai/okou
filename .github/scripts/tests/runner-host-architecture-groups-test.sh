@@ -196,23 +196,20 @@ retry_selected=$(run_clean AWS_METAL_RUNNER_HOSTS='arm-1,x86-1,x86-2' "$HOST_GRO
 assert_json_eq "$retry_selected" "$selected"
 
 for selection_key in pr-1 pr-2 pr-9; do
-  plan=$(run_clean SSH_LOG="${TMPDIR}/${selection_key}.ssh" AWS_METAL_RUNNER_HOSTS='arm-1,x86-1,x86-2' "$HOST_GROUPS" validation-plan "$selection_key")
-  [ "$(wc -l <"${TMPDIR}/${selection_key}.ssh")" -eq 3 ] || fail "validation planning must probe each host only once"
+  plan=$(run_clean SSH_LOG="${TMPDIR}/${selection_key}.ssh" AWS_METAL_RUNNER_HOSTS='arm-1,x86-1,x86-2' "$HOST_GROUPS" selection-plan "$selection_key")
+  [ "$(wc -l <"${TMPDIR}/${selection_key}.ssh")" -eq 3 ] || fail "selection planning must probe each host only once"
   context=$(run_clean AWS_METAL_RUNNER_HOSTS='arm-1,x86-1,x86-2' "$HOST_GROUPS" select-context "$selection_key")
   assert_json_eq "$(jq '.selectedTarget' <<<"$plan")" "$(jq '.target' <<<"$context")"
   assert_json_eq "$(jq '.matrix' <<<"$plan")" "$out"
   jq -e '
-    (keys | sort) == ["matrix", "selectedTarget", "validationMatrix"] and
-    (.selectedTarget as $target | .validationMatrix == (.matrix | map(select(.target != $target)))) and
-    (.validationMatrix | length) == 1
-  ' <<<"$plan" >/dev/null || fail "expected full and complementary validation matrices"
+    (keys | sort) == ["matrix", "selectedTarget"]
+  ' <<<"$plan" >/dev/null || fail "expected full matrix and selected target"
   assert_no_hosts_field "$(jq '.matrix' <<<"$plan")"
-  assert_no_hosts_field "$(jq '.validationMatrix' <<<"$plan")"
 done
 
 for host in arm-1 x86-1; do
-  plan=$(run_clean AWS_METAL_RUNNER_HOSTS="$host" "$HOST_GROUPS" validation-plan pr-1)
-  jq -e '.validationMatrix == [] and (.matrix | length) == 1 and .selectedTarget == .matrix[0].target' <<<"$plan" >/dev/null || fail "one target must be fully covered by runner-test-prepare"
+  plan=$(run_clean AWS_METAL_RUNNER_HOSTS="$host" "$HOST_GROUPS" selection-plan pr-1)
+  jq -e '(.matrix | length) == 1 and .selectedTarget == .matrix[0].target' <<<"$plan" >/dev/null || fail "one target must be selected by runner-test-prepare"
 done
 
 selected=$(run_clean AWS_METAL_RUNNER_HOSTS='arm-1,x86-1,x86-2' "$HOST_GROUPS" select-context pr-2)

@@ -37,7 +37,6 @@ values = {
     name: 'success' if name.endswith('.result') else 'false'
     for name in re.findall(r'\bneeds\.[\w.-]+', '\n'.join(texts))
 }
-values['needs.runner-host-groups.outputs.validation-matrix'] = '[]'
 
 
 def expression(text, context):
