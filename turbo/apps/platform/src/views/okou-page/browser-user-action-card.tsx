@@ -9,6 +9,7 @@ import { Button } from "@okouai/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -341,11 +342,11 @@ interface PendingBrowserInputRequest {
 }
 
 function PendingFormHeader({
-  siteOrigin,
+  action,
   compact = false,
   showTitle = true,
 }: {
-  readonly siteOrigin: string;
+  readonly action: PendingBrowserInputAction;
   readonly compact?: boolean;
   readonly showTitle?: boolean;
 }) {
@@ -360,11 +361,20 @@ function PendingFormHeader({
       <Globe size={16} className="mt-1 shrink-0 self-start text-brand-text" />
       <div className="min-w-0 max-w-sm">
         {showTitle && (
-          <h2 className="text-[0.9375rem] font-medium text-foreground">
-            {t(($) => {
-              return $.chat.browserInput.title;
-            })}
+          <h2
+            className={cn(
+              "break-words text-[0.9375rem] font-medium text-foreground",
+              compact && "line-clamp-2 @[380px]:truncate",
+            )}
+            title={compact ? action.title : undefined}
+          >
+            {action.title}
           </h2>
+        )}
+        {showTitle && !compact && (
+          <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">
+            {action.reason}
+          </p>
         )}
         <div
           className={cn(
@@ -379,9 +389,9 @@ function PendingFormHeader({
           </span>
           <span
             className={cn("min-w-0", compact ? "truncate" : "break-all")}
-            title={compact ? siteOrigin : undefined}
+            title={compact ? action.siteOrigin : undefined}
           >
-            {siteOrigin}
+            {action.siteOrigin}
           </span>
         </div>
       </div>
@@ -399,7 +409,7 @@ function PendingFormDestination({
   const { t } = useTranslation();
   return (
     <>
-      <PendingFormHeader siteOrigin={action.siteOrigin} showTitle={showTitle} />
+      <PendingFormHeader action={action} showTitle={showTitle} />
       {action.fields.some((field) => {
         return field.fieldKind === "file";
       }) && (
@@ -1696,9 +1706,7 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
     <form
       ref={formRef}
       className="flex flex-col gap-5"
-      aria-label={t(($) => {
-        return $.chat.browserInput.title;
-      })}
+      aria-label={activeAction.title}
       onSubmit={submitForm}
     >
       <PendingFormDestination action={activeAction} showTitle={showTitle} />
@@ -1739,6 +1747,12 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
           })}
         </p>
       )}
+
+      <p className="text-xs leading-5 text-muted-foreground">
+        {t(($) => {
+          return $.chat.browserInput.submitDescription;
+        })}
+      </p>
 
       <PendingFormActions
         submitting={submitting}
@@ -1792,12 +1806,9 @@ function PendingInlineAction({
   const pageSignal = useGet(pageSignal$);
   const beginEntry = useSet(signals.beginEntry$);
   const dialogRef = useSet(signals.dialogRef$);
-  const title = t(($) => {
-    return $.chat.browserInput.title;
-  });
   return (
     <div className="flex h-full w-full flex-col justify-center gap-2 @[520px]:flex-row @[520px]:items-center @[520px]:justify-between @[520px]:gap-3">
-      <PendingFormHeader siteOrigin={request.action.siteOrigin} compact />
+      <PendingFormHeader action={request.action} compact />
       <div className="shrink-0 self-start pl-[26px] @[520px]:ml-auto @[520px]:self-auto @[520px]:pl-0">
         <Dialog
           onOpenChange={(nextOpen) => {
@@ -1817,7 +1828,12 @@ function PendingInlineAction({
           />
           <DialogContent ref={dialogRef}>
             <DialogHeader>
-              <DialogTitle>{title}</DialogTitle>
+              <DialogTitle className="break-words">
+                {request.action.title}
+              </DialogTitle>
+              <DialogDescription className="whitespace-pre-wrap break-words">
+                {request.action.reason}
+              </DialogDescription>
             </DialogHeader>
             <PendingFormWithCheck
               signals={signals}

@@ -62,6 +62,8 @@ function browserInputAction(
 ): Extract<BrowserUserActionResponse, { kind: "input" }> {
   return {
     kind: "input",
+    title: "Sign in to download invoices",
+    reason: "The website requires sign-in to access your invoices.",
     requestToken: BROWSER_INPUT_TOKEN,
     state,
     completedAt: state === "pending" ? null : "2026-09-22T04:00:00.000Z",
@@ -609,14 +611,27 @@ test("A Browser input card opens a preflighted dialog and completes without navi
   const currentUrl = window.location.href;
   expect(preflights).toBe(0);
   expect(
-    screen.queryByRole("dialog", { name: "Enter information in browser" }),
+    screen.queryByRole("dialog", { name: "Sign in to download invoices" }),
   ).toBeNull();
 
   click(openButton);
   const dialog = await screen.findByRole("dialog", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   await firstCheckStarted.promise;
+  expect(dialog).toHaveAccessibleDescription(
+    "The website requires sign-in to access your invoices.",
+  );
+  expect(
+    within(dialog).getByText(
+      "The website requires sign-in to access your invoices.",
+    ),
+  ).toBeVisible();
+  expect(
+    within(dialog).getByText(
+      "Your information will be added to this website. The agent will then continue and check the result.",
+    ),
+  ).toBeVisible();
   const earlyNotes = within(dialog).getByRole("textbox", { name: "Notes" });
   expect(earlyNotes).toHaveProperty("tagName", "INPUT");
   await fill(earlyNotes, "Draft");
@@ -649,13 +664,16 @@ test("A Browser input card opens a preflighted dialog and completes without navi
   click(closeButton);
   await waitFor(() => {
     expect(
-      screen.queryByRole("dialog", { name: "Enter information in browser" }),
+      screen.queryByRole("dialog", { name: "Sign in to download invoices" }),
     ).toBeNull();
   });
   click(await findButton("Enter information"));
   const reopenedDialog = await screen.findByRole("dialog", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
+  expect(reopenedDialog).toHaveAccessibleDescription(
+    "The website requires sign-in to access your invoices.",
+  );
   await expect(
     within(reopenedDialog).findByRole("textbox", { name: "Notes" }),
   ).resolves.toBeVisible();
@@ -703,7 +721,7 @@ test("Closing an inline form clears password and code drafts while preserving or
   const opener = await findButton("Enter information");
   click(opener);
   const dialog = await screen.findByRole("dialog", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   await firstCheckStarted.promise;
   await fill(
@@ -734,7 +752,7 @@ test("Closing an inline form clears password and code drafts while preserving or
   releaseFirstCheck.resolve(undefined);
   click(await findButton("Enter information"));
   const reopened = await screen.findByRole("dialog", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   expect(within(reopened).getByLabelText("Account email")).toHaveValue(
     "owner@example.test",
@@ -772,7 +790,7 @@ test("Shared inline forms retain sensitive drafts until their final owner closes
   }
   click(firstOpener);
   const first = await screen.findByRole("dialog", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   await fill(
     within(first).getByLabelText("Account email"),
@@ -822,7 +840,7 @@ test("Shared inline forms retain sensitive drafts until their final owner closes
   });
   click(secondOpener);
   const reopened = await screen.findByRole("dialog", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   expect(within(reopened).getByLabelText("Account email")).toHaveValue(
     "owner@example.test",
@@ -885,7 +903,7 @@ test("An inline native datetime-local picker keeps a wall-clock string through c
   await readyChat();
   click(await findButton("Enter information"));
   const dialog = await screen.findByRole("dialog", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const picker = within(dialog).getByLabelText("Appointment");
   expect(picker).toHaveAttribute("type", "datetime-local");
@@ -956,7 +974,7 @@ test("An inline Browser input dialog confirms a required native checkbox", async
   const currentUrl = window.location.href;
   click(await findButton("Enter information"));
   const dialog = await screen.findByRole("dialog", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const checkbox = await within(dialog).findByRole("checkbox", {
     name: /Consent/u,
@@ -1047,7 +1065,7 @@ test("An inline Browser slider confirms the observed website position without na
   const currentUrl = window.location.href;
   click(await findButton("Enter information"));
   const dialog = await screen.findByRole("dialog", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const slider = await within(dialog).findByRole("slider", { name: /Level/u });
   await waitFor(() => {
@@ -1125,7 +1143,7 @@ test("An inline Browser color picker confirms the observed website selection wit
   const currentUrl = window.location.href;
   click(await findButton("Enter information"));
   const dialog = await screen.findByRole("dialog", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const picker = await within(dialog).findByLabelText(/Swatch/u);
   await waitFor(() => {
@@ -1238,7 +1256,7 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
   const currentUrl = window.location.href;
   click(await findButton("Enter information"));
   const dialog = await screen.findByRole("dialog", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   const input = await within(dialog).findByLabelText(/Document/u);
   await waitFor(() => {
@@ -1348,7 +1366,7 @@ test("An inline Browser dialog confirms an existing radio choice and preserves t
   const url = window.location.href;
   click(await findButton("Enter information"));
   const dialog = await screen.findByRole("dialog", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   await within(dialog).findAllByRole("radio");
   const submit = buttonsByName("Add to browser", dialog)[0];
@@ -1440,7 +1458,7 @@ test.each(["apply", "cancel"] as const)(
     await readyChat();
     click(await findButton("Enter information"));
     const dialog = await screen.findByRole("dialog", {
-      name: "Enter information in browser",
+      name: "Sign in to download invoices",
     });
     await fill(
       within(dialog).getByLabelText("Account email"),
@@ -1553,7 +1571,7 @@ test("Closing the input dialog refreshes an action completed in another tab", as
 
   click(await findButton("Enter information"));
   const dialog = await screen.findByRole("dialog", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   await expect(
     within(dialog).findByLabelText("Account email"),
@@ -1599,7 +1617,7 @@ test("Leaving an open dialog clears sensitive drafts and discards its deferred r
   await readyChat();
   click(await findButton("Enter information"));
   const dialog = await screen.findByRole("dialog", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   await within(dialog).findByLabelText("Account email");
   await fill(within(dialog).getByLabelText("Password"), "synthetic-password");
@@ -1625,7 +1643,7 @@ test("Leaving an open dialog clears sensitive drafts and discards its deferred r
   await readyChat();
   click(await findButton("Enter information"));
   const reopened = await screen.findByRole("dialog", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   expect(within(reopened).getByLabelText("Password")).toHaveValue("");
   expect(within(reopened).getByLabelText("Verification code")).toHaveValue("");
@@ -1720,7 +1738,7 @@ test("Absolute and relative Browser input URLs both render dialog cards", async 
   }
   click(openButton);
   const dialog = await screen.findByRole("dialog", {
-    name: "Enter information in browser",
+    name: "Sign in to download invoices",
   });
   await expect(
     within(dialog).findByLabelText("Account email"),

@@ -13,6 +13,8 @@ import {
   BROWSER_USER_ACTION_MAX_FIELDS,
   BROWSER_USER_ACTION_MAX_KEY_LENGTH,
   BROWSER_USER_ACTION_MAX_LABEL_LENGTH,
+  BROWSER_USER_ACTION_MAX_REASON_LENGTH,
+  BROWSER_USER_ACTION_MAX_TITLE_LENGTH,
   browserUserActionCreateRequestSchema,
   browserUserActionFieldKindSchema,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
@@ -92,6 +94,8 @@ interface OutputOptions {
 
 interface InputRequestOptions extends OutputOptions {
   readonly agentSession?: string;
+  readonly title?: string;
+  readonly reason?: string;
   readonly callbackPrompt?: string;
   readonly field: readonly string[];
 }
@@ -492,6 +496,11 @@ const inputRequestCommand = new Command()
   .description(
     "Create a native Okou form for exact controls in the attached Browser",
   )
+  .option("--title <text>", "Required user-facing title for this input request")
+  .option(
+    "--reason <text>",
+    "Required explanation of why the current task needs this input",
+  )
   .option(
     "--callback-prompt <text>",
     "Required message that starts the next agent round after values are applied",
@@ -509,6 +518,24 @@ const inputRequestCommand = new Command()
   .action(
     withErrorHandler(async (options: InputRequestOptions) => {
       const fields = parseInputFields(options.field);
+      const title = options.title?.trim() ?? "";
+      const reason = options.reason?.trim() ?? "";
+      if (
+        title.length === 0 ||
+        title.length > BROWSER_USER_ACTION_MAX_TITLE_LENGTH
+      ) {
+        throw invalidRequest(
+          `--title must be 1-${BROWSER_USER_ACTION_MAX_TITLE_LENGTH} characters`,
+        );
+      }
+      if (
+        reason.length === 0 ||
+        reason.length > BROWSER_USER_ACTION_MAX_REASON_LENGTH
+      ) {
+        throw invalidRequest(
+          `--reason must be 1-${BROWSER_USER_ACTION_MAX_REASON_LENGTH} characters`,
+        );
+      }
       if (
         options.agentSession !== undefined &&
         !/^[a-zA-Z0-9_-]{1,64}$/u.test(options.agentSession)
@@ -535,6 +562,8 @@ const inputRequestCommand = new Command()
       );
       const request = browserUserActionCreateRequestSchema.safeParse({
         kind: "input",
+        title,
+        reason,
         callbackPrompt,
         pageTargetId: captured.pageTargetId,
         fields: fields.map((field, index) => {
@@ -586,16 +615,16 @@ Examples:
   Use the browser:            agent-browser --session ${DEFAULT_AGENT_BROWSER_SESSION} open https://example.com
   Inspect existing tabs:      okou browser tab list
   Select an existing tab:    okou browser tab select t2
-  Request native input:       okou browser input-request --field '{"key":"username","label":"Email","fieldKind":"username","required":true,"target":"@e1"}' --callback-prompt "Continue on the existing page after email input"
-  Request login credentials:  okou browser input-request --field '{"key":"username","label":"Email","fieldKind":"username","required":true,"target":"@e1"}' --field '{"key":"password","label":"Password","fieldKind":"password","required":true,"target":"@e2"}' --callback-prompt "Continue sign-in on the existing page after native input"
-  Request a one-time code:    okou browser input-request --field '{"key":"code","label":"Verification code","fieldKind":"one_time_code","required":true,"target":"@e3"}' --callback-prompt "Continue on the existing verification page after native input"
-  Request a number:           okou browser input-request --field '{"key":"quantity","label":"Quantity","fieldKind":"number","required":false,"target":"@e2"}' --callback-prompt "Continue after the user enters a quantity"
-  Request a native slider:    okou browser input-request --field '{"key":"level","label":"Level","fieldKind":"range","required":true,"target":"@e2"}' --callback-prompt "Continue after the user confirms the slider"
-  Request a native color:     okou browser input-request --field '{"key":"color","label":"Color","fieldKind":"color","required":true,"target":"@e2"}' --callback-prompt "Continue after the user chooses a color"
-  Request a native select:    okou browser input-request --field '{"key":"region","label":"Region","fieldKind":"select","required":true,"target":"@e3"}' --callback-prompt "Continue after the user chooses a region"
-  Request a checkbox:         okou browser input-request --field '{"key":"consent","label":"Consent","fieldKind":"checkbox","required":true,"target":"@e4"}' --callback-prompt "Continue after the user confirms the checkbox"
-  Request a radio group:      okou browser input-request --field '{"key":"delivery","label":"Delivery","fieldKind":"radio","required":true,"target":"@e5"}' --callback-prompt "Continue after the user chooses a delivery option"
-  Request a local file:       okou browser input-request --field '{"key":"document","label":"Document","fieldKind":"file","required":true,"target":"@e6"}' --callback-prompt "Continue after the user chooses a website file"
+  Request native input:       okou browser input-request --title "Sign in to download invoices" --reason "The billing website needs your account email to access the requested invoices" --field '{"key":"username","label":"Email","description":"The account that holds your invoices","fieldKind":"username","required":true,"target":"@e1"}' --callback-prompt "Continue on the existing page after email input"
+  Request login credentials:  okou browser input-request --title "Sign in to download invoices" --reason "The website requires sign-in to access the requested invoices" --field '{"key":"username","label":"Email","fieldKind":"username","required":true,"target":"@e1"}' --field '{"key":"password","label":"Password","fieldKind":"password","required":true,"target":"@e2"}' --callback-prompt "Continue sign-in on the existing page after native input"
+  Request a one-time code:    okou browser input-request --title "Verify sign-in to download invoices" --reason "The website requires a verification code before I can access the requested invoices" --field '{"key":"code","label":"Verification code","fieldKind":"one_time_code","required":true,"target":"@e3"}' --callback-prompt "Continue on the existing verification page after native input"
+  Request a number:           okou browser input-request --title "Choose the order quantity" --reason "The website needs your quantity before I can prepare the order" --field '{"key":"quantity","label":"Quantity","fieldKind":"number","required":false,"target":"@e2"}' --callback-prompt "Continue after the user enters a quantity"
+  Request a native slider:    okou browser input-request --title "Choose the level" --reason "Confirm the website's level setting before I continue" --field '{"key":"level","label":"Level","fieldKind":"range","required":true,"target":"@e2"}' --callback-prompt "Continue after the user confirms the slider"
+  Request a native color:     okou browser input-request --title "Choose a brand color" --reason "The website needs your color choice to finish the design" --field '{"key":"color","label":"Color","fieldKind":"color","required":true,"target":"@e2"}' --callback-prompt "Continue after the user chooses a color"
+  Request a native select:    okou browser input-request --title "Choose a delivery region" --reason "The website needs your region to calculate delivery options" --field '{"key":"region","label":"Region","fieldKind":"select","required":true,"target":"@e3"}' --callback-prompt "Continue after the user chooses a region"
+  Request a checkbox:         okou browser input-request --title "Confirm the website terms" --reason "The website requires your confirmation before I can continue the requested task" --field '{"key":"consent","label":"Consent","fieldKind":"checkbox","required":true,"target":"@e4"}' --callback-prompt "Continue after the user confirms the checkbox"
+  Request a radio group:      okou browser input-request --title "Choose a delivery method" --reason "The website needs your delivery choice to prepare the order" --field '{"key":"delivery","label":"Delivery","fieldKind":"radio","required":true,"target":"@e5"}' --callback-prompt "Continue after the user chooses a delivery option"
+  Request a local file:       okou browser input-request --title "Provide the application document" --reason "The website needs your document to complete the application" --field '{"key":"document","label":"Document","fieldKind":"file","required":true,"target":"@e6"}' --callback-prompt "Continue after the user chooses a website file"
   View browser / takeover:   okou browser view
 
 Notes:
@@ -609,6 +638,7 @@ Notes:
   - Resolving an @eN ref focuses it but never types, clicks, or submits the website form
   - input-request failures identify a safe error code, affected --field position when known, and next action
   - input-request --json errors are one JSON object on stderr and exit nonzero
+  - Every input-request requires --title and --reason in the user's language: identify the task and explain why the website needs their input. Use field description for account, format, or code-source details you have verified; never include secret values in this metadata
   - When native input is enabled, prefer input-request for user-held values in supported exact controls, including passwords and one-time codes; use agent-browser for ordinary form values
   - Never put user-held credentials or codes in CLI arguments, the callback prompt, or chat; input-request fills controls but does not submit the website form
   - After input-request succeeds, return its exact URL and run no later Browser command in this turn; on callback, use safe tab list/select to find the existing page before submitting at most once, then verify the website's result

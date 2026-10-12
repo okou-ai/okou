@@ -1748,8 +1748,8 @@
       "stale": "I campi sono cambiati",
       "staleDescription": "Chiedi all’agente di creare una nuova richiesta.",
       "submit": "Aggiungi al browser",
+      "submitDescription": "Le tue informazioni saranno inserite in questo sito. L’agente proseguirà e verificherà il risultato.",
       "submitting": "Aggiunta…",
-      "title": "Inserisci informazioni nel browser",
       "unavailable": "Richiesta non disponibile",
       "uncertain": "Controlla il browser",
       "uncertainDescription": "Il browser potrebbe aver ricevuto le informazioni. Chiedi all’agente di controllare prima di riprovare."

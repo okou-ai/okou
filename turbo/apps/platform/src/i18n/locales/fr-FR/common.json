@@ -1748,8 +1748,8 @@
       "stale": "Les champs ont changé",
       "staleDescription": "Demandez à l’agent de créer une nouvelle demande.",
       "submit": "Ajouter au navigateur",
+      "submitDescription": "Vos informations seront renseignées sur ce site. L’agent poursuivra ensuite la tâche et vérifiera le résultat.",
       "submitting": "Ajout…",
-      "title": "Saisir des informations dans le navigateur",
       "unavailable": "Demande indisponible",
       "uncertain": "Vérifiez le navigateur",
       "uncertainDescription": "Le navigateur a peut-être reçu les informations. Demandez à l’agent de vérifier avant de réessayer."

@@ -244,6 +244,8 @@ function publicRequest(
   return {
     ...common,
     kind: payload.kind,
+    title: payload.title,
+    reason: payload.reason,
     siteOrigin: payload.target.siteOrigin,
     fields: payload.target.fields.map((field, index) => {
       const observed = controls?.[index];
@@ -885,6 +887,8 @@ function buildBrowserUserActionPayload(
   return {
     version: 1,
     kind: input.kind,
+    title: input.title,
+    reason: input.reason,
     callbackIds,
     target: {
       pageTargetId: validation.pageTargetId,
