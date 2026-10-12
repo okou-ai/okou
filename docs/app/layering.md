@@ -1,52 +1,51 @@
-# UI layering
+# UI 层级设计
 
-Decide coverage and interaction before `z-index`. These recommendations apply Web
-mechanisms to [project conventions](styles.md#stacking-ownership); component APIs
-and numeric values are local choices. Centralized layer tokens are also valid.
+先确定覆盖范围和交互，再考虑 `z-index`。本指南结合 Web 机制与
+[项目约定](styles.md#stacking-ownership)；组件 API 和具体数值属于项目选择。
+统一的层级 token 也是可行方案。
 
-## Principles
+## 核心原则
 
-- Separate positioning, clipping, and stacking. Larger z-index cannot escape an
-  ancestor's stacking context or clipping; transforms can confine fixed elements.
-- Prefer layout and paint order. Use `isolate` only for deliberate local stacking
-  contexts that contain all participating controls.
-- Shared primitives own floating behavior. A portal only relocates DOM; it does
-  not guarantee topmost painting, focus management, or modality.
+- 区分定位、裁剪和层叠。增大 z-index 无法突破祖先的层叠上下文或裁剪；
+  transform 也可能限制 fixed 元素的定位范围。
+- 优先利用布局和绘制顺序。仅在需要局部层叠上下文时使用 `isolate`，
+  并将所有参与层级比较的控件放在其中。
+- 浮层行为由共享组件负责。Portal 只改变 DOM 挂载位置，
+  不保证显示在最上层，也不自动提供焦点管理或模态行为。
 
-## Choose by scenario
+## 按场景选择
 
-| Scenario                          | Recommended approach                                                                                                                                                                                  |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Page, form, decoration            | Normal flow; decoration does not intercept input.                                                                                                                                                     |
-| Image or card controls            | Local positioning; add isolation and ordering only when needed.                                                                                                                                       |
-| Whole-card action                 | Sibling primary/secondary controls; prefer explicit links/buttons for selectable content. [Card example](../../turbo/apps/platform/src/views/okou-page/components/settings/connector-entry-card.tsx). |
-| Sticky header or frozen column    | One scrollport, opaque headers; frozen corner above both axes. [Header example](../../turbo/apps/platform/src/views/okou-page/components/org-manage/org-invoices-tab.tsx).                            |
-| Save bar or footer                | Layout footer or sticky first; fixed bars need safe areas and content clearance. [UnsavedBar](../../turbo/apps/platform/src/views/okou-page/unsaved-bar.tsx).                                         |
-| Menu, popover, select, tooltip    | Shared primitives; do not raise the trigger. [DropdownMenu](../../turbo/packages/ui/src/components/ui/dropdown-menu.tsx).                                                                             |
-| Dialog, sheet, nested popup       | Preserve nesting, focus, backdrop order, and dismissal. [Dialog](../../turbo/packages/ui/src/components/ui/dialog.tsx).                                                                               |
-| App fullscreen                    | Suitable shell host and stable content identity. [FullscreenPanel](../../turbo/packages/ui/src/components/ui/fullscreen-panel.tsx).                                                                   |
-| Native fullscreen                 | Ordinary overlays belong inside the fullscreen element, using supported APIs such as `DialogContent.portalContainer`.                                                                                 |
-| Loading cover, drag shield, toast | Define coverage and input blocking; use the shared toast service and clean up on every exit.                                                                                                          |
+| 场景                         | 推荐写法                                                                                                                                                                         |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 页面、表单、装饰             | 使用普通文档流；装饰元素不拦截交互。                                                                                                                                             |
+| 图片或卡片上的控件           | 局部定位；仅在必要时隔离层叠上下文并设置顺序。                                                                                                                                   |
+| 整张卡片可点击               | 主、次操作使用同级控件；内容需支持文本选择时，优先提供明确的链接或按钮。[卡片示例](../../turbo/apps/platform/src/views/okou-page/components/settings/connector-entry-card.tsx)。 |
+| 吸顶表头、冻结列             | 共用一个滚动容器，表头使用不透明背景；行列交叉角位于两者之上。[表头示例](../../turbo/apps/platform/src/views/okou-page/components/org-manage/org-invoices-tab.tsx)。             |
+| 保存栏、页脚                 | 优先使用布局内页脚或 sticky；fixed 需预留安全区域和内容空间。[UnsavedBar](../../turbo/apps/platform/src/views/okou-page/unsaved-bar.tsx)。                                       |
+| 菜单、浮动面板、选择器、提示 | 复用共享组件，不抬高触发器层级。[DropdownMenu](../../turbo/packages/ui/src/components/ui/dropdown-menu.tsx)。                                                                    |
+| 对话框、抽屉、嵌套弹层       | 保持正确的嵌套关系、焦点、遮罩顺序和关闭行为。[Dialog](../../turbo/packages/ui/src/components/ui/dialog.tsx)。                                                                   |
+| 应用内全屏                   | 选择合适的应用外壳挂载点，保持内容组件身份稳定。[FullscreenPanel](../../turbo/packages/ui/src/components/ui/fullscreen-panel.tsx)。                                              |
+| 浏览器原生全屏               | 普通浮层应挂在全屏元素内，使用 `DialogContent.portalContainer` 等受支持的 API。                                                                                                  |
+| 加载遮罩、拖拽拦截层、通知   | 明确覆盖范围和是否拦截交互；通知使用共享服务，所有退出路径都要清理。                                                                                                             |
 
-Native modal dialogs and shown popovers use the browser's top layer; popovers
-are non-modal. Fullscreen host and state-preservation details stay in the
-[style guide](styles.md#floating-layers-and-portal-ownership).
+原生模态对话框和已打开的 popover 使用浏览器顶层（top layer）；popover 是非模态的。
+全屏挂载点与状态保持的细节见[样式指南](styles.md#floating-layers-and-portal-ownership)。
 
-## Verify
+## 验收要点
 
-- Check actual overlap and click targets, including empty wrapper space.
-  `opacity: 0` and `pointer-events: none` do not remove keyboard focusability.
-- Check Tab, Escape, focus return, and explicit handoffs between surfaces;
-  modal backgrounds must remain unavailable to interaction.
-- Exercise scrolling, narrow/short viewports, zoom, safe areas, keyboard-open
-  states, and fullscreen. Verify iOS PWA behavior in that environment.
-- Repeat close/cancel: release locks, shields, and listeners; preserve content
-  state and reading position. Add browser regressions for fixes.
+- 检查实际遮挡和点击目标，包括容器空白区域。
+  `opacity: 0` 和 `pointer-events: none` 本身不会阻止元素获得键盘焦点。
+- 检查 Tab、Escape、焦点返回和不同界面之间的焦点交接；
+  模态界面的背景内容必须不可交互。
+- 覆盖滚动、窄屏、矮屏、缩放、安全区域、软键盘展开和全屏状态。
+  iOS PWA 行为需在对应环境中验证。
+- 反复关闭或取消，确认释放滚动锁、拦截层和监听器，并保留内容状态和阅读位置。
+  修复缺陷时补充浏览器回归测试。
 
-## References
+## 参考资料
 
-- MDN: [stacking contexts](https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Positioned_layout/Stacking_context), [positioning](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/position), [top layer](https://developer.mozilla.org/en-US/docs/Glossary/Top_layer).
-- [WAI-ARIA modal dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/).
-- [React portals](https://react.dev/reference/react-dom/createPortal).
-- [Base UI portal setup](https://base-ui.com/react/overview/quick-start#portals).
-- [Material UI z-index scale](https://mui.com/material-ui/customization/z-index/).
+- MDN：[层叠上下文](https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Positioned_layout/Stacking_context)、[定位](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/position)、[浏览器顶层](https://developer.mozilla.org/en-US/docs/Glossary/Top_layer)。
+- [WAI-ARIA 模态对话框模式](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/)。
+- [React Portal](https://react.dev/reference/react-dom/createPortal)。
+- [Base UI Portal 配置](https://base-ui.com/react/overview/quick-start#portals)。
+- [Material UI z-index 层级](https://mui.com/material-ui/customization/z-index/)。

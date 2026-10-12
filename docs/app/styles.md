@@ -815,8 +815,7 @@ met it.
 
 ### Floating layers and portal ownership
 
-Read [UI layering](layering.md) for scenario choices, implementation links, and
-behavioral checks.
+参阅 [UI 层级设计](layering.md)，了解场景选择、实现示例和验收要点。
 
 Portals belong to the shared primitives. Business components must not import
 `createPortal` from `react-dom`; `no-restricted-imports` in
