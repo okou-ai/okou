@@ -380,6 +380,99 @@ describe("GET /api/integrations/teams/connect", () => {
     });
   });
 
+  it("keeps status identity isolated across users and organizations", async () => {
+    const fixture = await seedTeamsInstallation(track);
+    const memberUserId = teamsFixtureExternalId(fixture, "user-unlinked");
+    const otherOrg = teamsConnectFixture();
+    const client = setupApp({ context, routes: teamsConnectRoutes })(
+      teamsConnectContract,
+    );
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    await accept(
+      client.connect({
+        headers: { authorization: "Bearer clerk-session" },
+        body: connectBody(fixture),
+      }),
+      [200],
+    );
+
+    const adminStatus = await accept(
+      client.getStatus({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(adminStatus.body).toStrictEqual({
+      isInstalled: true,
+      isConnected: true,
+      isAdmin: true,
+      installUrl: null,
+      connectUrl: null,
+      tenantId: fixture.teamsTenantId,
+      tenantName: fixture.teamsTenantName,
+      teamId: fixture.teamsTeamId,
+      teamName: fixture.teamsTeamName,
+      botName: "Nova",
+      defaultAgentName: null,
+      permissionMismatch: false,
+      reinstallUrl: null,
+      environment: {
+        requiredSecrets: [],
+        requiredVars: [],
+        missingSecrets: [],
+        missingVars: [],
+      },
+    });
+
+    mocks.clerk.session(memberUserId, fixture.orgId, "org:member");
+    const memberStatus = await accept(
+      client.getStatus({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(memberStatus.body).toStrictEqual({
+      isInstalled: true,
+      isConnected: false,
+      isAdmin: false,
+      installUrl: null,
+      connectUrl: teamsOauthConnectUrl({
+        orgId: fixture.orgId,
+        userId: memberUserId,
+      }),
+      tenantId: fixture.teamsTenantId,
+      tenantName: fixture.teamsTenantName,
+      teamId: fixture.teamsTeamId,
+      teamName: fixture.teamsTeamName,
+      botName: "Nova",
+      defaultAgentName: null,
+    });
+
+    mocks.clerk.session(otherOrg.userId, otherOrg.orgId, "org:admin");
+    const otherOrgStatus = await accept(
+      client.getStatus({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(otherOrgStatus.body).toStrictEqual({
+      isInstalled: false,
+      isConnected: false,
+      isAdmin: true,
+      installUrl: teamsInstallUrl(),
+      connectUrl: teamsOauthConnectUrl(otherOrg),
+    });
+
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const restoredAdminStatus = await accept(
+      client.getStatus({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(restoredAdminStatus.body).toStrictEqual(adminStatus.body);
+  });
+
   it("returns connected status when the user has a Teams connection", async () => {
     const fixture = await seedTeamsInstallation(track);
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");

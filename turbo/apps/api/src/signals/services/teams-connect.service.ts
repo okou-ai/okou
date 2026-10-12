@@ -444,12 +444,15 @@ function activeTeamsStatus(args: {
   };
 }
 
-export function teamsConnectStatus(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly isAdmin: boolean;
-}): Computed<Promise<TeamsConnectStatus>> {
+export function teamsConnectStatus(
+  args$: Computed<{
+    readonly orgId: string;
+    readonly userId: string;
+    readonly isAdmin: boolean;
+  }>,
+): Computed<Promise<TeamsConnectStatus>> {
   return computed(async (get) => {
+    const args = get(args$);
     const db = get(db$);
     const [installation] = await db
       .select()
