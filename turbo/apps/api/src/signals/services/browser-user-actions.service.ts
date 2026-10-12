@@ -173,7 +173,7 @@ export const prepareBrowserUserFileUpload$ = command(
     ) {
       return conflict("Browser file upload is not available");
     }
-    if (!(await requestHasLiveBrowser(db, row))) {
+    if (!(await set(requestHasLiveBrowser$, row))) {
       return expired();
     }
     const uploadUrl = await get(
@@ -408,26 +408,26 @@ async function loadLiveBrowser(
   return row ?? null;
 }
 
-async function requestHasLiveBrowser(
-  db: Db,
-  row: RequestRow,
-): Promise<boolean> {
-  const now = nowDate();
-  const [live] = await db
-    .select({ providerSessionId: browserSessionInstances.providerSessionId })
-    .from(browserSessionInstances)
-    .where(
-      and(
-        eq(browserSessionInstances.providerSessionId, row.providerSessionId),
-        eq(browserSessionInstances.chatThreadId, row.chatThreadId),
-        eq(browserSessionInstances.status, "active"),
-        gt(browserSessionInstances.timeoutAt, now),
-        gt(browserSessionInstances.idleExpiresAt, now),
-      ),
-    )
-    .limit(1);
-  return live !== undefined;
-}
+const requestHasLiveBrowser$ = command(
+  async ({ get }, row: RequestRow): Promise<boolean> => {
+    const db = get(db$);
+    const now = nowDate();
+    const [live] = await db
+      .select({ providerSessionId: browserSessionInstances.providerSessionId })
+      .from(browserSessionInstances)
+      .where(
+        and(
+          eq(browserSessionInstances.providerSessionId, row.providerSessionId),
+          eq(browserSessionInstances.chatThreadId, row.chatThreadId),
+          eq(browserSessionInstances.status, "active"),
+          gt(browserSessionInstances.timeoutAt, now),
+          gt(browserSessionInstances.idleExpiresAt, now),
+        ),
+      )
+      .limit(1);
+    return live !== undefined;
+  },
+);
 
 async function touchExactProvider(db: Db, row: RequestRow): Promise<boolean> {
   const now = nowDate();
@@ -1187,7 +1187,7 @@ export const readBrowserUserAction$ = command(
     }
     if (
       (row.status === "pending" || row.status === "applying") &&
-      !(await requestHasLiveBrowser(db, row))
+      !(await set(requestHasLiveBrowser$, row))
     ) {
       return expired();
     }
@@ -1505,7 +1505,7 @@ export const preflightBrowserUserAction$ = command(
     if (current.status !== "pending") {
       return conflict("Browser input state changed during preflight");
     }
-    if (!(await requestHasLiveBrowser(db, current))) {
+    if (!(await set(requestHasLiveBrowser$, current))) {
       return expired();
     }
     if (inspection.kind === "stale") {
@@ -1745,7 +1745,7 @@ export const applyBrowserUserAction$ = command(
       fileContents = materialized.value;
     }
 
-    if (!(await requestHasLiveBrowser(db, located))) {
+    if (!(await set(requestHasLiveBrowser$, located))) {
       signal.throwIfAborted();
       return expired();
     }
@@ -1832,7 +1832,7 @@ export const cancelBrowserUserAction$ = command(
     }
     let current = row;
     if (current.status !== "cancelled") {
-      if (!(await requestHasLiveBrowser(db, current))) {
+      if (!(await set(requestHasLiveBrowser$, current))) {
         return expired();
       }
       if (current.status !== "pending") {
