@@ -9,6 +9,15 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.727.3](https://github.com/okou-ai/okou/compare/api-v1.727.2...api-v1.727.3) (2026-10-12)
+
+
+### Refactoring
+
+* **api:** keep purchased credit expiration in its financial owner ([#39138](https://github.com/okou-ai/okou/issues/39138)) ([6a0135e](https://github.com/okou-ai/okou/commit/6a0135e81e392728046dcaf660c23d27f37ee588))
+* **api:** keep usage expiration sql in its financial owner ([#39140](https://github.com/okou-ai/okou/issues/39140)) ([57590da](https://github.com/okou-ai/okou/commit/57590da43c002e632ef43a6c506f1ab596551915))
+* **api:** own computer-use host authority in commands ([#39103](https://github.com/okou-ai/okou/issues/39103)) ([5d4f6d1](https://github.com/okou-ai/okou/commit/5d4f6d1e119fd1dc724ab5a39b0837e4121c1127))
+
 ## [1.727.2](https://github.com/okou-ai/okou/compare/api-v1.727.1...api-v1.727.2) (2026-10-12)
 
 
