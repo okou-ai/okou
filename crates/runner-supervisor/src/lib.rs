@@ -30,7 +30,7 @@ use runner_network::{dns, kmsg_log, network_log_drain, network_logs, proxy};
 use runner_provider::http;
 #[cfg(test)]
 use runner_storage::storage_cache;
-use runner_storage::storage_fingerprints;
+use runner_types::storage_fingerprints;
 
 pub mod blank_pool;
 pub mod claimed_activation;
