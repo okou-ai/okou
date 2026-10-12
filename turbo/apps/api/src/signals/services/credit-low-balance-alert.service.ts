@@ -223,16 +223,6 @@ async function suppressedEmailKeys(
   );
 }
 
-async function orgDisplayName(db: Db, orgId: string): Promise<string> {
-  const [cached] = await db
-    .select({ name: orgCache.name })
-    .from(orgCache)
-    .where(eq(orgCache.orgId, orgId))
-    .limit(1);
-  const name = cached?.name.trim();
-  return name || "Your organization";
-}
-
 export const enqueueCreditLowBalanceAlert$ = command(
   async (
     { get, set },
@@ -277,7 +267,16 @@ export const enqueueCreditLowBalanceAlert$ = command(
       return;
     }
 
-    const orgName = await orgDisplayName(db, args.orgId);
+    const orgId = args.orgId;
+    const orgName = await (async () => {
+      const [cached] = await db
+        .select({ name: orgCache.name })
+        .from(orgCache)
+        .where(eq(orgCache.orgId, orgId))
+        .limit(1);
+      const name = cached?.name.trim();
+      return name || "Your organization";
+    })();
     signal.throwIfAborted();
     const billingUrl = billingCreditsUrl();
 
