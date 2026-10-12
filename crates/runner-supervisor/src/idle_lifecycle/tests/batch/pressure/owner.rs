@@ -68,6 +68,66 @@ async fn ample_ram_with_logical_exhaustion_and_unknown_reads_never_retires() {
 }
 
 #[tokio::test]
+async fn completed_pressure_victim_releases_its_full_lease_while_another_tail_is_held() {
+    let fixture = fixture(24).await;
+    let mut completed = fixture.park("thread:completed-pressure-victim", true).await;
+    let mut held = fixture.park("thread:held-pressure-victim", true).await;
+    completed.confirm_exit();
+    held.confirm_exit();
+    let destroy = MockLifecycleGate::new();
+    let kill = MockLifecycleGate::new();
+    completed
+        .overrides
+        .set_destroy_lifecycle_gate(destroy.clone());
+    held.overrides.set_kill_lifecycle_gate(kill.clone());
+    let owner = IdlePressureOwner::spawn(config(&fixture, 2)).unwrap();
+    let mut updates = owner.subscribe();
+    destroy.wait_entered(1, WAIT).await.unwrap();
+    kill.wait_entered(1, WAIT).await.unwrap();
+    assert_eq!(fixture.budget.allocated(), (4, 4096, 2));
+    assert!(ResourceBudget::try_reserve_lease(&fixture.budget, 6, 6144).is_none());
+    destroy.release_one();
+    let mut leases = Vec::new();
+    let fitting = tokio::time::timeout(
+        WAIT,
+        ResourceBudget::substitute_leases_when_available(&fixture.budget, &mut leases, 6, 6144),
+    )
+    .await
+    .unwrap();
+    assert_eq!(fixture.budget.allocated(), (8, 8192, 2));
+    completed.assert_cached_bytes().await;
+    held.assert_active_bytes().await;
+    drop(fitting);
+    assert_eq!(fixture.budget.allocated(), (2, 2048, 1));
+    let pending = updates.borrow_and_update().clone();
+    assert!(pending.decision.wave_inflight);
+    assert!(pending.last_wave.is_none());
+    let stopping = owner.shutdown();
+    tokio::pin!(stopping);
+    assert!(futures_util::poll!(stopping.as_mut()).is_pending());
+    kill.release_one();
+    let stopped = tokio::time::timeout(WAIT, stopping).await.unwrap().unwrap();
+    let report = stopped.last_wave.unwrap();
+    assert!(report.is_resolved());
+    assert_eq!(
+        (report.selected, report.completed, report.uncertain),
+        (2, 2, 0)
+    );
+    fixture.tracker.close_and_wait().await;
+    held.assert_cached_bytes().await;
+    assert_eq!(fixture.budget.allocated(), (0, 0, 0));
+    assert_eq!(
+        fixture
+            .operations
+            .close_and_wait()
+            .await
+            .unwrap()
+            .registered_operations,
+        0
+    );
+}
+
+#[tokio::test]
 async fn owned_child_exit_and_held_tail_keep_sampling_fitting_work_and_shutdown_independent() {
     let fixture = fixture(24).await;
     let mut home = fixture.park("thread:owned-child-pressure", true).await;
