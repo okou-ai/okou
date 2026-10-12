@@ -2138,7 +2138,7 @@ mod tests {
         let compressed = zstd_bytes(body);
         let encoded_size = compressed.len() as u64;
         let hash = hex::encode(Sha256::digest(body));
-        let server = serve_once("200 OK", compressed, None).await;
+        let server = serve_once("200 OK", compressed.clone(), None).await;
         let session = zstd_ref_session(server.url(), hash, body.len() as u64, encoded_size);
 
         let materializer = start_materializer(&session);
@@ -2149,7 +2149,8 @@ mod tests {
                 session, timings, ..
             } => {
                 assert_eq!(session.cli_agent_session_id(), "sess-123");
-                assert_eq!(session.history_bytes(), body);
+                assert_eq!(session.history_bytes(), compressed);
+                assert_eq!(zstd::decode_all(session.history_bytes()).unwrap(), body);
                 assert_phase_success(timings.request_status());
                 assert_phase_success(timings.body_read());
                 assert_phase_success(timings.validation());
@@ -2196,7 +2197,13 @@ mod tests {
                         Some(SessionHistoryPrefixOutcome::Verified { raw_extension_size }),
                     ..
                 } => {
-                    assert_eq!(session.history_bytes(), body);
+                    let restored = match encoding {
+                        ResumeSessionHistoryEncoding::Zstd => {
+                            zstd::decode_all(session.history_bytes()).unwrap()
+                        }
+                        _ => session.history_bytes().to_vec(),
+                    };
+                    assert_eq!(restored, body);
                     assert_eq!(
                         raw_extension_size,
                         (body.len() - local_history.len()) as u64

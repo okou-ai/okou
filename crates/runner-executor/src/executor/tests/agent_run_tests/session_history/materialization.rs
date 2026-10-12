@@ -33,75 +33,77 @@ fn zstd_bytes(raw: &[u8]) -> Vec<u8> {
 }
 
 #[tokio::test]
-async fn large_zstd_source_restores_exact_claude_and_pi_bytes_and_rejects_corruption_before_spawn()
-{
-    let history =
-        b"{\"type\":\"message\",\"content\":\"synthetic checkpoint history\"}\n".repeat(320_000);
-    assert!(history.len() >= 16 * 1024 * 1024);
-    let source = zstd::encode_all(history.as_slice(), 3).unwrap();
-    let expected: [u8; 32] = Sha256::digest(&history).into();
-    for framework in ["claude-code", "pi"] {
-        for valid in [true, false] {
-            let dir = tempfile::tempdir().unwrap();
-            let config = test_executor_config(dir.path()).await;
-            let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
-            let sandbox =
-                sandbox_mock::MockSandbox::with_overrides("source-test", Arc::clone(&overrides));
-            let server = serve_history_once(&source).await;
-            let mut ctx = minimal_context();
-            ctx.cli_agent_type = framework.into();
-            ctx.resume_session = Some(ResumeSession {
-                cli_agent_session_id: "source-history-session-123".into(),
-                history: ResumeSessionHistory::Ref {
-                    history_ref: ResumeSessionHistoryRef {
-                        kind: ResumeSessionHistoryRefKind::Blob,
-                        hash: hex::encode(if valid { expected } else { [0; 32] }),
-                        url: server.url(),
-                        encoding: ResumeSessionHistoryEncoding::Zstd,
-                        raw_size: history.len() as u64,
-                        encoded_size: source.len() as u64,
-                        download_source: None,
-                    },
-                },
-            });
-            let mut telemetry = test_telemetry(&config, &ctx);
-            let result = run_in_sandbox(
-                &sandbox,
-                &ctx,
-                &config,
-                RunStart {
-                    restore_guest_state: false,
-                    reuse_result: SandboxReuseResult::PoolMiss,
-                    home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
-                    prev_storage: None,
-                },
-                &mut telemetry,
-                RunControls::new(tokio_util::sync::CancellationToken::new(), None),
-            )
-            .await;
-            server.assert_served().await;
-            if valid {
-                assert!(result.unwrap().failure.is_none());
-                let writes = sandbox.write_file_calls();
-                assert_eq!(writes.len(), 1);
-                assert_eq!(writes[0].content, history);
-                assert_eq!(
-                    writes[0].compression,
-                    sandbox::FileCompression::ZstdSource {
-                        raw_size: history.len() as u32,
-                        crc32: crc32fast::hash(&source),
-                    }
+async fn zstd_sources_restore_both_frameworks_at_all_sizes_and_fail_before_spawn_on_bad_hash() {
+    for repeats in [1, 320_000] {
+        let history = b"{\"type\":\"message\",\"content\":\"synthetic checkpoint history\"}\n"
+            .repeat(repeats);
+        let source = zstd::encode_all(history.as_slice(), 3).unwrap();
+        let expected: [u8; 32] = Sha256::digest(&history).into();
+        for framework in ["claude-code", "pi"] {
+            for valid in [true, false] {
+                let dir = tempfile::tempdir().unwrap();
+                let config = test_executor_config(dir.path()).await;
+                let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+                let sandbox = sandbox_mock::MockSandbox::with_overrides(
+                    "source-test",
+                    Arc::clone(&overrides),
                 );
-                assert_eq!(overrides.start_agent_process_calls().len(), 1);
-            } else {
-                let error = match result {
-                    Err(error) => error,
-                    Ok(_) => panic!("corrupt source unexpectedly restored"),
-                };
-                assert!(error.to_string().contains("hash mismatch"));
-                assert!(overrides.start_agent_process_calls().is_empty());
-                assert!(overrides.start_process_calls().is_empty());
-                assert!(sandbox.write_file_calls().is_empty());
+                let server = serve_history_once(&source).await;
+                let mut ctx = minimal_context();
+                ctx.cli_agent_type = framework.into();
+                ctx.resume_session = Some(ResumeSession {
+                    cli_agent_session_id: "source-history-session-123".into(),
+                    history: ResumeSessionHistory::Ref {
+                        history_ref: ResumeSessionHistoryRef {
+                            kind: ResumeSessionHistoryRefKind::Blob,
+                            hash: hex::encode(if valid { expected } else { [0; 32] }),
+                            url: server.url(),
+                            encoding: ResumeSessionHistoryEncoding::Zstd,
+                            raw_size: history.len() as u64,
+                            encoded_size: source.len() as u64,
+                            download_source: None,
+                        },
+                    },
+                });
+                let mut telemetry = test_telemetry(&config, &ctx);
+                let result = run_in_sandbox(
+                    &sandbox,
+                    &ctx,
+                    &config,
+                    RunStart {
+                        restore_guest_state: false,
+                        reuse_result: SandboxReuseResult::PoolMiss,
+                        home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
+                        prev_storage: None,
+                    },
+                    &mut telemetry,
+                    RunControls::new(tokio_util::sync::CancellationToken::new(), None),
+                )
+                .await;
+                server.assert_served().await;
+                if valid {
+                    assert!(result.unwrap().failure.is_none());
+                    let writes = sandbox.write_file_calls();
+                    assert_eq!(writes.len(), 1);
+                    assert_eq!(writes[0].content, history);
+                    assert_eq!(
+                        writes[0].compression,
+                        sandbox::FileCompression::ZstdSource {
+                            raw_size: history.len() as u32,
+                            crc32: crc32fast::hash(&source),
+                        }
+                    );
+                    assert_eq!(overrides.start_agent_process_calls().len(), 1);
+                } else {
+                    let error = match result {
+                        Err(error) => error,
+                        Ok(_) => panic!("corrupt source unexpectedly restored"),
+                    };
+                    assert!(error.to_string().contains("hash mismatch"));
+                    assert!(overrides.start_agent_process_calls().is_empty());
+                    assert!(overrides.start_process_calls().is_empty());
+                    assert!(sandbox.write_file_calls().is_empty());
+                }
             }
         }
     }

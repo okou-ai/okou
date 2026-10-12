@@ -660,10 +660,7 @@ fn materialize_compressed(
     let mut timings = SessionHistoryCpuTimings::default();
     let result = (|| {
         validate_compressed_raw_size(expected_raw_size, encoding.label(), &mut timings)?;
-        if matches!(encoding, CompressedEncoding::Zstd)
-            && framework != EffectiveCliFramework::Codex
-            && expected_raw_size >= 4 * 1024 * 1024
-        {
+        if matches!(encoding, CompressedEncoding::Zstd) {
             let verified = verify_zstd(
                 &encoded_bytes,
                 ZstdVerification {
@@ -692,7 +689,7 @@ fn materialize_compressed(
             });
         }
         let decompression_started = Instant::now();
-        let result = decompress_history(&encoded_bytes, expected_raw_size, encoding, cancel, hooks);
+        let result = decompress_gzip_history(&encoded_bytes, expected_raw_size, cancel, hooks);
         timings.record_decompression(decompression_started.elapsed(), result.is_ok());
         let bytes = result?;
         validate_decompressed_size(&bytes, expected_raw_size, &mut timings)?;
@@ -924,26 +921,15 @@ impl SessionHistoryPrefixHasher {
     }
 }
 
-fn decompress_history(
+fn decompress_gzip_history(
     encoded_bytes: &[u8],
     max_raw_bytes: u64,
-    encoding: CompressedEncoding,
     cancel: &CancellationToken,
     hooks: &SessionHistoryCpuHooks,
 ) -> RunnerResult<Vec<u8>> {
     let input = CancellationReader::new(encoded_bytes, cancel.clone(), hooks.clone());
-    match encoding {
-        CompressedEncoding::Gzip => {
-            let mut decoder = MultiGzDecoder::new(input);
-            read_compressed_history(&mut decoder, max_raw_bytes, encoding.label(), cancel)
-        }
-        CompressedEncoding::Zstd => {
-            let mut decoder = zstd::stream::read::Decoder::new(input).map_err(|error| {
-                RunnerError::Internal(format!("decompress zstd session history: {error}"))
-            })?;
-            read_compressed_history(&mut decoder, max_raw_bytes, encoding.label(), cancel)
-        }
-    }
+    let mut decoder = MultiGzDecoder::new(input);
+    read_compressed_history(&mut decoder, max_raw_bytes, "gzip", cancel)
 }
 
 fn read_compressed_history(
