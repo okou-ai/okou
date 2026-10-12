@@ -37,16 +37,20 @@ import { OFFICIAL_SLACK_APP_NAME } from "../../lib/slack-official-app";
 import type { RouteEntry } from "../route-entry";
 import { bestEffort, settle } from "../utils";
 
-const getSlackStatusInner$ = computed(async (get) => {
+const slackStatusInput$ = computed((get) => {
   const auth = get(organizationAuthContext$);
-  const status = await get(
-    slackOrgStatus({
-      apiOrigin: getOAuthApiOrigin(get(request$).raw),
-      orgId: auth.orgId,
-      userId: auth.userId,
-      orgRole: auth.orgRole,
-    }),
-  );
+  return {
+    apiOrigin: getOAuthApiOrigin(get(request$).raw),
+    orgId: auth.orgId,
+    userId: auth.userId,
+    orgRole: auth.orgRole,
+  } as const;
+});
+
+const slackStatus$ = slackOrgStatus(slackStatusInput$);
+
+const getSlackStatusInner$ = computed(async (get) => {
+  const status = await get(slackStatus$);
 
   const statusFields = status.isConnected
     ? {

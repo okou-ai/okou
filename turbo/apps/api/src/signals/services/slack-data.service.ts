@@ -95,13 +95,16 @@ interface SlackOrgStatusResult {
   readonly reinstallUrl: string | null;
 }
 
-export function slackOrgStatus(args: {
-  readonly apiOrigin: string;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly orgRole?: ApiOrgRole;
-}): Computed<Promise<SlackOrgStatusResult>> {
+export function slackOrgStatus(
+  args$: Computed<{
+    readonly apiOrigin: string;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly orgRole?: ApiOrgRole;
+  }>,
+): Computed<Promise<SlackOrgStatusResult>> {
   return computed(async (get) => {
+    const args = get(args$);
     const db = get(db$);
 
     const [installation] = await db

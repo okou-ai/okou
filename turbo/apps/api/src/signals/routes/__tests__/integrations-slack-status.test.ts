@@ -139,6 +139,125 @@ describe("GET /api/integrations/slack", () => {
     expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 
+  it("keeps successive status requests scoped to their user and organization", async () => {
+    const orgId = `org_${randomUUID()}`;
+    const adminUserId = `user_${randomUUID()}`;
+    const memberUserId = `user_${randomUUID()}`;
+    const otherOrgId = `org_${randomUUID()}`;
+    const slackWorkspaceId = `T_${randomUUID()}`;
+    await track(
+      installSlackViaOAuth({
+        apiOrigin: "https://api.okou.ai",
+        installerUserId: adminUserId,
+        orgId,
+        slackWorkspaceId,
+      }),
+    );
+    const firstClient = setupApp({
+      baseUrl: "https://first.example.test",
+      context,
+      routes: integrationsSlackRoutes,
+    })(integrationsSlackContract);
+    const secondClient = setupApp({
+      baseUrl: "https://second.example.test",
+      context,
+      routes: integrationsSlackRoutes,
+    })(integrationsSlackContract);
+    const request = { headers: { authorization: "Bearer clerk-session" } };
+
+    mocks.clerk.session(adminUserId, orgId, "org:admin");
+    const connected = await accept(firstClient.getStatus(request), [200]);
+    expect(connected.body).toStrictEqual({
+      isConnected: true,
+      isInstalled: true,
+      isAdmin: true,
+      workspaceName: `Workspace ${slackWorkspaceId}`,
+      defaultAgentName: null,
+      scopeMismatch: false,
+      reinstallUrl: null,
+    });
+
+    mocks.clerk.session(memberUserId, orgId, "org:member");
+    const member = await accept(secondClient.getStatus(request), [200]);
+    expect(member.body).toStrictEqual({
+      isConnected: false,
+      isInstalled: true,
+      isAdmin: false,
+      installUrl: null,
+      connectUrl: expect.any(String),
+    });
+    const connectUrl = new URL(member.body.connectUrl!);
+    expect(`${connectUrl.origin}${connectUrl.pathname}`).toBe(
+      "https://api.okou.ai/api/slack/oauth/connect",
+    );
+    const connectAuthorization = await startStatusOAuth(
+      connectUrl.toString(),
+      orgId,
+    );
+    expect(connectAuthorization.searchParams.get("team")).toBe(
+      slackWorkspaceId,
+    );
+
+    mocks.clerk.session(adminUserId, otherOrgId, "org:admin");
+    const uninstalled = await accept(firstClient.getStatus(request), [200]);
+    expect(uninstalled.body).toStrictEqual({
+      isConnected: false,
+      isInstalled: false,
+      isAdmin: true,
+      installUrl: expect.any(String),
+      connectUrl: null,
+    });
+    const installUrl = new URL(uninstalled.body.installUrl!);
+    expect(`${installUrl.origin}${installUrl.pathname}`).toBe(
+      "https://api.okou.ai/api/slack/oauth/install",
+    );
+
+    mocks.clerk.session(adminUserId, orgId, "org:admin");
+    const returned = await accept(secondClient.getStatus(request), [200]);
+    expect(returned.body).toStrictEqual(connected.body);
+  });
+
+  it("returns null OAuth URLs when OAuth is disabled after installation", async () => {
+    const orgId = `org_${randomUUID()}`;
+    const userId = `user_${randomUUID()}`;
+    await track(
+      installSlackViaOAuth({
+        apiOrigin: "https://api.okou.ai",
+        botScopes: "chat:write",
+        installerUserId: `user_${randomUUID()}`,
+        orgId,
+        slackWorkspaceId: `T_${randomUUID()}`,
+      }),
+    );
+    mockEnv("SLACK_OAUTH_CLIENT_ID", undefined);
+    const client = setupApp({ context, routes: integrationsSlackRoutes })(
+      integrationsSlackContract,
+    );
+    const request = { headers: { authorization: "Bearer clerk-session" } };
+
+    mocks.clerk.session(userId, orgId, "org:admin");
+    const installed = await accept(client.getStatus(request), [200]);
+    expect(installed.body).toStrictEqual({
+      isConnected: false,
+      isInstalled: true,
+      isAdmin: true,
+      installUrl: null,
+      connectUrl: null,
+      scopeMismatch: true,
+      reinstallUrl: null,
+    });
+
+    mocks.clerk.session(userId, `org_${randomUUID()}`, "org:admin");
+    const uninstalled = await accept(client.getStatus(request), [200]);
+    expect(uninstalled.body).toStrictEqual({
+      isConnected: false,
+      isInstalled: false,
+      isAdmin: true,
+      installUrl: null,
+      connectUrl: null,
+    });
+  });
+
   it("returns isConnected=false when user has no connection", async () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
