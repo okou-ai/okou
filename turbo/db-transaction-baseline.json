@@ -237,11 +237,6 @@
       "owner": "upsertBuiltinConnectorTokenConnection$"
     },
     {
-      "id": "TX-0120",
-      "file": "turbo/apps/api/src/signals/services/connector-runtime-sync.service.ts",
-      "owner": "loadCustomSnapshot"
-    },
-    {
       "id": "TX-0121",
       "file": "turbo/apps/api/src/signals/services/credit-low-balance-alert.service.ts",
       "owner": "refreshOrgMemberCache"

@@ -38,7 +38,7 @@ import { variables } from "@okouai/db/schema/variable";
 import { command } from "ccstate";
 import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 
-import { db$, type Db, writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import {
   buildConnectorDiagnosticBaseCandidates,
@@ -59,7 +59,7 @@ import {
   type ConnectorRuntimeMethod,
 } from "./connector-catalog-runtime.service";
 import {
-  resolveConnectorRuntimeDiagnosticTargets,
+  resolveConnectorRuntimeDiagnosticTargets$,
   type ConnectorRuntimeDiagnosticResult,
 } from "./connector-runtime-sync.service";
 import type { FirewallRoutingRouteMetadata } from "./connector-server-firewall-catalog.service";
@@ -685,26 +685,12 @@ function isCustomAvailableDiagnosticRuntime(
 }
 
 async function loadRunDiagnosticState(args: {
-  readonly db: Db;
   readonly scope: RunDiagnosticRegistration;
-  readonly request: ConnectorCheckRequestBody;
-  readonly orgId: string;
-  readonly userId: string;
+  readonly targets: readonly ConnectorRuntimeTargetRegistration[];
+  readonly runtimes: readonly ConnectorRuntimeDiagnosticResult[];
   readonly snapshot: ConnectorRuntimeSnapshot;
 }): Promise<RunDiagnosticState> {
-  const targets = runtimeTargetsForRequest(args.scope, args.request);
-  const runtimes =
-    targets.length === 0
-      ? []
-      : await resolveConnectorRuntimeDiagnosticTargets({
-          db: args.db,
-          scope: {
-            orgId: args.orgId,
-            userId: args.userId,
-            agentId: args.scope.agentId,
-          },
-          targets,
-        });
+  const { targets, runtimes } = args;
   const runtimeByTargetKey = new Map(
     runtimes.map((runtime) => {
       return [connectorRuntimeTargetKey(runtime.target), runtime] as const;
@@ -1695,6 +1681,27 @@ function publicCheckResult(
   };
 }
 
+function storedConnectorReadScope(
+  args: Pick<ResolveConnectorCheckArgs, "orgId" | "userId">,
+  snapshot: ConnectorRuntimeSnapshot,
+) {
+  return { orgId: args.orgId, userId: args.userId, snapshot };
+}
+
+function runDiagnosticRuntimeArgs(
+  registration: RunDiagnosticRegistration,
+  args: Pick<ResolveConnectorCheckArgs, "request" | "orgId" | "userId">,
+) {
+  return {
+    scope: {
+      orgId: args.orgId,
+      userId: args.userId,
+      agentId: registration.agentId,
+    },
+    targets: runtimeTargetsForRequest(registration, args.request),
+  };
+}
+
 export const resolveConnectorCheck$ = command(
   async (
     { get, set },
@@ -1731,12 +1738,15 @@ export const resolveConnectorCheck$ = command(
     signal.throwIfAborted();
     let timeline: ConnectorCheckTimeline;
     if (runRegistration) {
+      const runtimeArgs = runDiagnosticRuntimeArgs(runRegistration, args);
+      const runtimes =
+        runtimeArgs.targets.length === 0
+          ? []
+          : await set(resolveConnectorRuntimeDiagnosticTargets$, runtimeArgs);
       const state = await loadRunDiagnosticState({
-        db,
         scope: runRegistration,
-        request: args.request,
-        orgId: args.orgId,
-        userId: args.userId,
+        targets: runtimeArgs.targets,
+        runtimes,
         snapshot,
       });
       signal.throwIfAborted();
@@ -1747,11 +1757,7 @@ export const resolveConnectorCheck$ = command(
       }
       let state: StoredRuntimeState;
       if (args.request.mode === "url") {
-        const storedScope = {
-          orgId: args.orgId,
-          userId: args.userId,
-          snapshot,
-        };
+        const storedScope = storedConnectorReadScope(args, snapshot);
         const query = storedConnectorReadQuery(storedScope);
         // Only stored connectors and their required variables share this
         // statement snapshot; catalog and diagnostic work remain outside it.
