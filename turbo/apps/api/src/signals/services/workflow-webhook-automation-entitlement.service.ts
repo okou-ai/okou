@@ -1,9 +1,7 @@
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import {
-  workflowAutomations,
-  workflowWebhookAutomations,
-} from "@okouai/db/schema/workflow";
+import { workflowWebhookAutomations } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 import { nowDate } from "../../lib/time";

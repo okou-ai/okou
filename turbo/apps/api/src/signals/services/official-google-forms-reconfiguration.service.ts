@@ -3,9 +3,9 @@ import { googleFormsResponseSubmittedEventConfigSchema } from "@okouai/api-contr
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import {
   officialWorkflowAutomationIdentities,
-  workflowAutomations,
   workflows,
 } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 

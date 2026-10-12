@@ -21,10 +21,10 @@ export type {
 
 /**
  * The only schema version the source catalog and publication writer emit.
- * Persisted readers support more versions than this; publishing a newer
- * version is a separate writer change after its readers serve.
+ * Persisted readers also decode schema v2, whose immutable accepted catalogs
+ * and revisions are still referenced by retired definitions and Run provenance.
  */
-export const OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION = 2 as const;
+export const OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION = 3 as const;
 
 export const officialWorkflowLifecycleSchema = z.enum(["active", "retired"]);
 export type OfficialWorkflowLifecycle = z.infer<
@@ -167,27 +167,15 @@ export type OfficialWorkflowBlueprintDesiredState = z.infer<
   typeof officialWorkflowBlueprintDesiredStateSchema
 >;
 
-export const officialWorkflowRuntimeSettingsSchema = z
-  .object({
-    resultEmail: z.boolean(),
-  })
-  .strict();
-export type OfficialWorkflowRuntimeSettings = z.infer<
-  typeof officialWorkflowRuntimeSettingsSchema
->;
-
 const officialWorkflowBlueprintShape = {
   key: officialWorkflowBlueprintKeySchema,
   parameters: z.array(officialWorkflowInstallationParameterSchema),
   desiredState: officialWorkflowBlueprintDesiredStateSchema,
 };
 
-/** Schema v2 source Blueprint: its runtime settings are required. */
+/** Source Blueprint: schema v3 carries no runtime settings. */
 export const officialWorkflowBlueprintSchema = z
-  .object({
-    ...officialWorkflowBlueprintShape,
-    runtime: officialWorkflowRuntimeSettingsSchema,
-  })
+  .object(officialWorkflowBlueprintShape)
   .strict();
 export type OfficialWorkflowBlueprint = z.infer<
   typeof officialWorkflowBlueprintSchema
@@ -282,8 +270,15 @@ export type OfficialWorkflowArtifactReference = z.infer<
 // supported schema version keeps its original required fields; a payload is
 // parsed only by the schema its own `schemaVersion` names.
 
-const officialWorkflowAcceptedBlueprintV2Schema =
-  officialWorkflowBlueprintSchema.extend({ fingerprint: fingerprintSchema });
+// Schema v2 required the retired completion-email runtime setting. It is
+// decoded only to read immutable v2 identities; no consumer acts on it.
+const officialWorkflowAcceptedBlueprintV2Schema = z
+  .object({
+    ...officialWorkflowBlueprintShape,
+    runtime: z.object({ resultEmail: z.boolean() }).strict(),
+    fingerprint: fingerprintSchema,
+  })
+  .strict();
 
 /** Schema v3 Blueprints carry no runtime settings or platform completion mail. */
 const officialWorkflowAcceptedBlueprintV3Schema = z

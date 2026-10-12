@@ -18,7 +18,7 @@ import { mockClerkUsers } from "./helpers/clerk-users";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
-import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
+import { createPublicAutomationRunApi } from "./helpers/public-automation-run";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -136,7 +136,7 @@ describe("agent mail notifications", () => {
   it("does not authorize a custom automation merely named morning-brief", async () => {
     const workflows = createWorkflowsBddApi(context);
     const runs = createRunsApi(context);
-    const publicResults = createPublicAutomationResultEmailApi(context);
+    const automationRuns = createPublicAutomationRunApi(context);
     const runnerGroup = runs.configureRunnerGroup();
     const { actor } = await workflows.setupWorkflowOrg({
       model: "claude-fable-5-1",
@@ -156,17 +156,17 @@ describe("agent mail notifications", () => {
       }),
       [201],
     );
-    publicResults.configureDelivery(actor);
+    automationRuns.configureDelivery(actor);
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.heartbeatRunner(runnerGroup);
-    const { runId } = await publicResults.start(
+    const { runId } = await automationRuns.start(
       actor,
       automation.body.id,
       runnerGroup,
     );
     const claim = await runs.claimRunnerJob(runId);
-    publicResults.track(actor, runId, runnerGroup).sandboxToken =
+    automationRuns.track(actor, runId, runnerGroup).sandboxToken =
       claim.sandboxToken;
     const headers = { authorization: `Bearer ${okouTokenFromClaim(claim)}` };
     const input = body();

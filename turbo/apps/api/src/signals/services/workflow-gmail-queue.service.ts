@@ -1,6 +1,6 @@
 import { connectors } from "@okouai/db/schema/connector";
 import { gmailWatchStates } from "@okouai/db/schema/gmail-event";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 export interface GmailQueueSource {

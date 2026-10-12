@@ -1,7 +1,7 @@
 import { settle } from "../utils";
 import type { OfficialWorkflowAcceptedRevision } from "@okouai/api-contracts/contracts/official-workflow-catalog";
+import { workflowAutomations as automations } from "@okouai/db/runtime/workflow-automation";
 import {
-  workflowAutomations as automations,
   workflows,
   workflowWebhookAutomations as hooks,
   workflowUserAutomationThreads as bindings,

@@ -10,10 +10,10 @@ import {
   gmailWatchStates,
 } from "@okouai/db/schema/gmail-event";
 import {
-  workflowAutomations,
   workflows,
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq, exists, inArray, or, sql } from "drizzle-orm";
 import { OAuth2Client } from "google-auth-library";

@@ -10,7 +10,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
 import { secrets } from "@okouai/db/schema/secret";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import { logger } from "../../lib/log";
 import { publishCancelToRunnerGroup } from "../external/realtime";

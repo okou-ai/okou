@@ -95,9 +95,36 @@ export function releaseDiagnostics(
   return diagnostics;
 }
 
+/**
+ * A retired definition keeps its immutable revision, artifact and Blueprint
+ * fingerprints. Its Blueprints are projected onto the publication schema, which
+ * drops the retired v2 completion-email runtime setting.
+ */
+function retiredDefinition(
+  previous: OfficialWorkflowAcceptedDefinition,
+  presentation: OfficialWorkflowPublishedCatalogReleasePayload["definitions"][number]["presentation"],
+): OfficialWorkflowPublishedCatalogReleasePayload["definitions"][number] {
+  return {
+    name: previous.name,
+    lifecycle: "retired",
+    revision: previous.revision,
+    artifact: previous.artifact,
+    blueprints: previous.blueprints.map((blueprint) => {
+      return {
+        key: blueprint.key,
+        parameters: blueprint.parameters,
+        desiredState: blueprint.desiredState,
+        fingerprint: blueprint.fingerprint,
+      };
+    }),
+    releasedBlueprintKeys: previous.releasedBlueprintKeys,
+    presentation,
+  };
+}
+
 function buildCandidateRelease(
   catalog: ValidatedOfficialWorkflowCatalog,
-  previous: OfficialWorkflowPublishedCatalogReleasePayload | null,
+  previous: OfficialWorkflowCatalogReleasePayload | null,
   preparedByName: ReadonlyMap<string, PreparedOfficialWorkflowDefinition>,
 ): CandidateReleaseResult {
   const diagnostics = releaseDiagnostics(catalog, previous);
@@ -119,11 +146,9 @@ function buildCandidateRelease(
           sourceDefinition.name,
         );
       }
-      definitions.push({
-        ...previousDefinition,
-        lifecycle: "retired",
-        presentation: sourceDefinition.presentation,
-      });
+      definitions.push(
+        retiredDefinition(previousDefinition, sourceDefinition.presentation),
+      );
       continue;
     }
     const prepared = preparedByName.get(sourceDefinition.name);
@@ -230,23 +255,10 @@ export function catalogPublicationPlan(
       readonly payload: OfficialWorkflowCatalogReleasePayload;
     } {
   const currentReleaseId = current?.releaseId ?? null;
+  // Every decodable accepted catalog (v2 or v3) is at or below the publication
+  // version, so this writer may upgrade it. A newer catalog fails its strict
+  // read before any plan, so it is never replaced.
   const previous = current?.payload ?? null;
-  if (
-    previous !== null &&
-    previous.schemaVersion !==
-      OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION
-  ) {
-    // Readers treat older catalogs as absent, so this one came from a newer
-    // writer. During a mixed deployment or rollback this writer must not
-    // replace it with its own version; supported readers keep serving it.
-    return {
-      outcome: "rejected" as const,
-      releaseId: currentReleaseId,
-      diagnostics: [
-        { code: "activation-conflict" as const, path: ["catalog"] },
-      ],
-    };
-  }
   const stale = currentReleaseId !== input.observedReleaseId;
   const candidate = buildCandidateRelease(
     input.catalog,

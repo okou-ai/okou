@@ -1,10 +1,8 @@
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
 import { gmailWatchStates } from "@okouai/db/schema/gmail-event";
-import {
-  workflowAutomations,
-  workflowUserAutomationThreads,
-} from "@okouai/db/schema/workflow";
+import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, asc, eq, getTableColumns, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";

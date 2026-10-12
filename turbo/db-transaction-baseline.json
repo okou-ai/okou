@@ -387,11 +387,6 @@
       "owner": "enqueueIntegrationChatInput$"
     },
     {
-      "id": "TX-0173",
-      "file": "turbo/apps/api/src/signals/services/internal-workflow-automation-result-email-callback.service.ts",
-      "owner": "enqueueResultEmail$"
-    },
-    {
       "id": "TX-0176",
       "file": "turbo/apps/api/src/signals/services/mail-notification.service.ts",
       "owner": "commitMailNotification$"
@@ -745,11 +740,6 @@
       "id": "TX-0291",
       "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
       "owner": "recordImmediateSubscriptionChangeInvoice"
-    },
-    {
-      "id": "TX-0292",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
-      "owner": "restoreScheduledSubscriptionChange"
     },
     {
       "id": "TX-0293",

@@ -8,7 +8,7 @@ import {
   googleCalendarEventSnapshots,
   googleCalendarWatchStates,
 } from "@okouai/db/schema/google-calendar-event";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import {
   and,

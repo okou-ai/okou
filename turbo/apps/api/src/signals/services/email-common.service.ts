@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { debugMorningBriefEmailTemplateSchema } from "../../lib/debug-morning-brief-email";
 
-import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { emailOutbox } from "@okouai/db/runtime/email-outbox";
 import { mailNotifications } from "@okouai/db/schema/mail-notification";
 import { notifyMailBodySchema } from "@okouai/api-contracts/contracts/notifications";
 import {
@@ -41,7 +41,6 @@ import { webUrl } from "../../lib/web-url";
 import { clerk$, type ClerkClient } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { db$, writeDb$, type Db } from "../external/db";
-import { renderMorningBriefEmail } from "../../lib/morning-brief-email-renderer";
 import { renderCreditLowBalanceEmail } from "./credit-low-balance-email-renderer";
 import { renderDataExportReadyEmail } from "./data-export-ready-email-renderer";
 
@@ -86,27 +85,6 @@ const OUTBOX_EXPIRED_BEFORE_PROVIDER_ERROR =
   "Email outbox item expired before contacting the provider";
 export const CREDIT_LOW_BALANCE_EMAIL_SUBJECT =
   "Your credit balance is running low";
-export const OFFICIAL_AUTOMATION_RESULT_EMAIL_SUBJECT_MAX_CHARACTERS = 180;
-export const OFFICIAL_AUTOMATION_RESULT_EMAIL_TITLE_MAX_CHARACTERS = 160;
-export const OFFICIAL_AUTOMATION_RESULT_EMAIL_TEXT_MAX_CHARACTERS = 8000;
-export const OFFICIAL_AUTOMATION_RESULT_EMAIL_TEXT_TRUNCATION_MARKER =
-  "\n\n[Result truncated]";
-
-function unicodeCharacterCount(value: string): number {
-  return Array.from(value).length;
-}
-
-function boundedUnicodeString(maxCharacters: number) {
-  return z
-    .string()
-    .min(1)
-    .refine(
-      (value) => {
-        return unicodeCharacterCount(value) <= maxCharacters;
-      },
-      { message: `Must contain at most ${maxCharacters} Unicode characters` },
-    );
-}
 
 const emailTemplateSchema = z.discriminatedUnion("template", [
   debugMorningBriefEmailTemplateSchema,
@@ -154,23 +132,6 @@ const emailTemplateSchema = z.discriminatedUnion("template", [
       unsubscribeUrl: z.string().optional(),
     }),
   }),
-  z
-    .object({
-      template: z.literal("official-automation-result"),
-      props: z
-        .object({
-          title: boundedUnicodeString(
-            OFFICIAL_AUTOMATION_RESULT_EMAIL_TITLE_MAX_CHARACTERS,
-          ),
-          resultText: boundedUnicodeString(
-            OFFICIAL_AUTOMATION_RESULT_EMAIL_TEXT_MAX_CHARACTERS,
-          ),
-          runUrl: z.url().max(1024),
-          manageUrl: z.url().max(1024),
-        })
-        .strict(),
-    })
-    .strict(),
 ]);
 
 export type EmailTemplate = z.output<typeof emailTemplateSchema>;
@@ -240,7 +201,7 @@ function appUrl(): string {
   return env("APP_URL");
 }
 
-function officialAutomationResultUnsubscribeUrl(
+function notificationEmailUnsubscribeUrl(
   headers: Readonly<Record<string, string>> | undefined,
 ): string {
   const listUnsubscribe = headers?.["List-Unsubscribe"];
@@ -249,24 +210,18 @@ function officialAutomationResultUnsubscribeUrl(
     !listUnsubscribe.startsWith("<") ||
     !listUnsubscribe.endsWith(">")
   ) {
-    throw new Error(
-      "Official Automation result email is missing its List-Unsubscribe URL",
-    );
+    throw new Error("Notification email is missing its List-Unsubscribe URL");
   }
   const oneClickUrl = new URL(listUnsubscribe.slice(1, -1));
   if (
     oneClickUrl.protocol !== "https:" ||
     !oneClickUrl.pathname.endsWith("/api/email/unsubscribe")
   ) {
-    throw new Error(
-      "Official Automation result email has an invalid List-Unsubscribe URL",
-    );
+    throw new Error("Notification email has an invalid List-Unsubscribe URL");
   }
   const token = oneClickUrl.searchParams.get("token");
   if (!token) {
-    throw new Error(
-      "Official Automation result email is missing its unsubscribe token",
-    );
+    throw new Error("Notification email is missing its unsubscribe token");
   }
 
   const unsubscribeUrl = new URL(`${appUrl()}/email/unsubscribe`);
@@ -332,13 +287,13 @@ function renderTemplate(
     case "agent-morning-brief": {
       return renderAgentMorningBriefEmail(
         template.props,
-        officialAutomationResultUnsubscribeUrl(headers),
+        notificationEmailUnsubscribeUrl(headers),
       );
     }
     case "agent-notification": {
       return renderAgentNotificationEmail(
         template.props,
-        officialAutomationResultUnsubscribeUrl(headers),
+        notificationEmailUnsubscribeUrl(headers),
       );
     }
     case "data-export-ready": {
@@ -350,20 +305,6 @@ function renderTemplate(
         title: CREDIT_LOW_BALANCE_EMAIL_SUBJECT,
         websiteUrl: webUrl(),
       });
-    }
-    case "official-automation-result": {
-      const rendered = renderMorningBriefEmail(
-        template.props,
-        officialAutomationResultUnsubscribeUrl(headers),
-      );
-      if (rendered.fallback) {
-        log.warn("Official Automation result email used fallback renderer", {
-          reason: rendered.fallback.reason,
-          attemptedHtmlBytes: rendered.fallback.attemptedHtmlBytes,
-          fallbackHtmlBytes: rendered.fallback.fallbackHtmlBytes,
-        });
-      }
-      return { html: rendered.html, text: rendered.text };
     }
   }
 }
@@ -378,8 +319,7 @@ function fromAddressForTemplate(template: EmailTemplate): string {
     case "data-export-ready":
     case "debug-morning-brief":
     case "agent-morning-brief":
-    case "agent-notification":
-    case "official-automation-result": {
+    case "agent-notification": {
       return buildFromAddress();
     }
   }

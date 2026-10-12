@@ -6,7 +6,6 @@ import {
 import { readPublishedArchive } from "./helpers/published-archive";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { claimBudgetRun } from "./helpers/public-autonomy-budget";
-import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
@@ -104,7 +103,6 @@ const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const chat = createChatFilesBddApi(context);
 const mocks = createRouteMocks(context);
-const publicResults = createPublicAutomationResultEmailApi(context);
 const CRON_SECRET = "official-workflow-installation-cron-secret";
 const GMAIL_TOPIC_NAME =
   "projects/vm0-ai-488909/topics/official-workflow-gmail-events";
@@ -150,7 +148,7 @@ function catalog(
   };
 }
 
-function scheduledBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
+function scheduledBlueprint(): OfficialWorkflowBlueprint {
   return {
     key: "daily",
     parameters: [
@@ -176,11 +174,10 @@ function scheduledBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
       },
       autonomyBudget: 4,
     },
-    runtime: { resultEmail },
   };
 }
 
-function loopBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
+function loopBlueprint(): OfficialWorkflowBlueprint {
   return {
     key: "pulse",
     parameters: [
@@ -204,11 +201,10 @@ function loopBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
       },
       autonomyBudget: { parameter: "autonomy-budget" },
     },
-    runtime: { resultEmail },
   };
 }
 
-function onceBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
+function onceBlueprint(): OfficialWorkflowBlueprint {
   return {
     key: "one-shot",
     parameters: [
@@ -238,7 +234,6 @@ function onceBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
         atTime: { parameter: "at-time" },
       },
     },
-    runtime: { resultEmail },
   };
 }
 
@@ -251,7 +246,6 @@ function gmailBlueprint(): OfficialWorkflowBlueprint {
       eventType: "gmail-new-message",
       eventConfig: { provider: "gmail", event: "new_message" },
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -275,7 +269,6 @@ function gmailLabelBlueprint(): OfficialWorkflowBlueprint {
         labelName: { parameter: "label-name" },
       },
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -296,7 +289,6 @@ function googleFormsBlueprint(
       },
       autonomyBudget,
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -316,7 +308,6 @@ function googleMeetBlueprint(
       },
       autonomyBudget,
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -341,7 +332,6 @@ function notionBlueprint(): OfficialWorkflowBlueprint {
       },
       autonomyBudget: 4,
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -569,7 +559,6 @@ function structureTransitionScheduleBlueprint(
       kind: "schedule",
       schedule: { type: "loop", intervalSeconds },
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -595,7 +584,6 @@ function structureTransitionGmailBlueprint(
               labelName: "Follow Up",
             },
           },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -614,7 +602,6 @@ function structureTransitionCalendarBlueprint(
         calendarId: "primary",
       },
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -676,7 +663,7 @@ function configureOfficialCalendarWatchMock() {
   return recorder;
 }
 
-function webhookBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
+function webhookBlueprint(): OfficialWorkflowBlueprint {
   return {
     key: "webhook-trigger",
     parameters: [],
@@ -684,7 +671,6 @@ function webhookBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
       kind: "event",
       eventType: "webhook-received",
     },
-    runtime: { resultEmail },
   };
 }
 
@@ -714,7 +700,6 @@ function evolvedScheduledBlueprint(): OfficialWorkflowBlueprint {
       },
       autonomyBudget: { parameter: "autonomy-budget" },
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -777,7 +762,6 @@ function pulseOnceBlueprint(atTime: string): OfficialWorkflowBlueprint {
         atTime: { parameter: "at-time" },
       },
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -802,7 +786,6 @@ function evolvedGmailLabelBlueprint(): OfficialWorkflowBlueprint {
         labelName: { parameter: "next-label-name" },
       },
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -826,6 +809,16 @@ function activeDefinition(
       order: 1,
       marketingCopy: "Official catalog entry.",
     },
+  };
+}
+
+/** A published schema v3 Blueprint: a fingerprint and no runtime settings. */
+function publishedBlueprint(key: string) {
+  return {
+    key,
+    parameters: expect.any(Array),
+    desiredState: expect.any(Object),
+    fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
   };
 }
 
@@ -859,7 +852,6 @@ function connectorDoctorDefinition(): ActiveDefinition {
           cronExpression: "0 9 * * 1",
         },
       },
-      runtime: { resultEmail: false },
     },
   ]);
 }
@@ -1295,7 +1287,7 @@ async function installOfficialWorkflowLifecycleScenario(
   await syncCatalog(
     catalog([
       activeDefinition(definitionName, [
-        scheduledBlueprint(true),
+        scheduledBlueprint(),
         onceBlueprint(),
         loopBlueprint(),
       ]),
@@ -1310,9 +1302,6 @@ async function installOfficialWorkflowLifecycleScenario(
     throw new Error("Expected organization-scoped lifecycle actor");
   }
   const { agentId } = await workflowBdd.createAgent(actor);
-  onTestFinished(async () => {
-    await publicResults.cleanup(actor);
-  });
   const headers = authHeaders(actor);
   await setOfficialWorkflowsEnabled(actor, true);
   const installBody = {
@@ -2627,7 +2616,7 @@ describe("Official Workflow installations", () => {
     await syncCatalog(
       catalog([
         activeDefinition(definitionName, [
-          scheduledBlueprint(true),
+          scheduledBlueprint(),
           onceBlueprint(),
           loopBlueprint(),
         ]),
@@ -2919,10 +2908,20 @@ describe("Official Workflow installations", () => {
       await installOfficialWorkflowLifecycleScenario();
     const firstWorkflowId = installed.body.workflow.id;
     expect(installed.body.workflow.automations).toHaveLength(3);
-    expect(installed.body.definition).toMatchObject({
+    const catalogDetail = await accept(
+      officialClient().get({ headers, params: { definitionName } }),
+      [200],
+    );
+    expect(catalogDetail.body.blueprints).toStrictEqual([
+      publishedBlueprint("daily"),
+      publishedBlueprint("one-shot"),
+      publishedBlueprint("pulse"),
+    ]);
+    expect(installed.body.definition).toStrictEqual({
       name: definitionName,
+      revision: catalogDetail.body.revision,
       lifecycle: "active",
-      blueprints: [{ key: "daily" }, { key: "one-shot" }, { key: "pulse" }],
+      blueprints: catalogDetail.body.blueprints,
     });
     expect(
       installed.body.workflow.automations.every((automation) => {
@@ -2972,6 +2971,7 @@ describe("Official Workflow installations", () => {
       },
       official: {
         blueprintKey: "daily",
+        appliedFingerprint: catalogDetail.body.blueprints[0]?.fingerprint,
         reconciliationStatus: "current",
         intendedEnabled: true,
         parameterBindings: expect.arrayContaining([
@@ -3007,7 +3007,7 @@ describe("Official Workflow installations", () => {
       catalog([
         activeDefinition(
           definitionName,
-          [scheduledBlueprint(true), onceBlueprint(), loopBlueprint()],
+          [scheduledBlueprint(), onceBlueprint(), loopBlueprint()],
           instruction,
         ),
         activeDefinition(zeroBlueprintName, []),
@@ -3021,6 +3021,73 @@ describe("Official Workflow installations", () => {
       [200],
     );
     expect(current.body.workflow.instruction).toBe(instruction);
+  });
+
+  it("retains a retired Definition's accepted revision for its existing installation", async () => {
+    const { definitionName, headers, installed, zeroBlueprintName } =
+      await installOfficialWorkflowLifecycleScenario();
+    const workflowId = installed.body.workflow.id;
+    const active = await accept(
+      officialClient().get({ headers, params: { definitionName } }),
+      [200],
+    );
+    const retirement = await syncCatalog(
+      catalog([
+        {
+          name: definitionName,
+          lifecycle: "retired",
+          presentation: { category: "retired" },
+        },
+        activeDefinition(zeroBlueprintName, []),
+      ]),
+    );
+    expect(retirement.body).toMatchObject({
+      outcome: "accepted",
+      diagnostics: [],
+    });
+    await executeAutomationCron();
+
+    const retired = await accept(
+      officialClient().get({ headers, params: { definitionName } }),
+      [200],
+    );
+    expect(retired.body).toStrictEqual({
+      ...active.body,
+      lifecycle: "retired",
+      presentation: { category: "retired" },
+    });
+    expect(retired.body.blueprints).toStrictEqual([
+      publishedBlueprint("daily"),
+      publishedBlueprint("one-shot"),
+      publishedBlueprint("pulse"),
+    ]);
+    const installation = await accept(
+      installationClient().get({ headers, params: { workflowId } }),
+      [200],
+    );
+    expect(installation.body.definition).toStrictEqual({
+      name: definitionName,
+      revision: active.body.revision,
+      lifecycle: "retired",
+      blueprints: active.body.blueprints,
+    });
+    expect(installation.body.workflow.official).toMatchObject({
+      definitionName,
+      installationState: "installed",
+      definitionLifecycle: "retired",
+    });
+    const appliedFingerprints = (
+      automations: readonly WorkflowAutomationSummary[],
+    ) => {
+      return Object.fromEntries(
+        automations.map((automation) => {
+          return [automation.id, automation.official?.appliedFingerprint];
+        }),
+      );
+    };
+    expect(
+      appliedFingerprints(installation.body.workflow.automations),
+    ).toStrictEqual(appliedFingerprints(installed.body.workflow.automations));
   });
 
   it("rejects duplicate Official Workflow installation on the same agent", async () => {
@@ -4600,6 +4667,17 @@ describe("Official Workflow installations", () => {
         ]),
       );
       expect(activation.body.outcome).toBe("accepted");
+      const published = await accept(
+        officialClient().get({ headers, params: { definitionName } }),
+        [200],
+      );
+      const publishedPulse = published.body.blueprints.find((blueprint) => {
+        return blueprint.key === "pulse";
+      });
+      expect(publishedPulse).toStrictEqual(publishedBlueprint("pulse"));
+      expect(publishedPulse?.fingerprint).not.toBe(
+        initialPulse.official.appliedFingerprint,
+      );
       const beforeDrain = await accept(
         installationClient().get({ headers, params: { workflowId } }),
         [200],
@@ -4630,7 +4708,11 @@ describe("Official Workflow installations", () => {
         enabled: true,
         kind: "schedule",
         schedule: { type: "once", atTime: onceAt, timezone: "Asia/Shanghai" },
-        official: { reconciliationStatus: "current", intendedEnabled: true },
+        official: {
+          appliedFingerprint: publishedPulse?.fingerprint,
+          reconciliationStatus: "current",
+          intendedEnabled: true,
+        },
       });
       expect(
         afterPulse.body.workflow.automations.find((automation) => {
@@ -5231,11 +5313,37 @@ describe("Official Workflow installations", () => {
     await syncCatalog(
       catalog([
         activeDefinition(definitionName, [
-          { ...webhookBlueprint(true), key: "lifecycle-transition" },
+          {
+            ...webhookBlueprint(),
+            key: "lifecycle-transition",
+            desiredState: {
+              kind: "event",
+              eventType: "webhook-received",
+              autonomyBudget: 5,
+            },
+          },
         ]),
       ]),
     );
     await executeAutomationCron();
+    const revised = await accept(
+      installationClient().get({ headers, params: { workflowId } }),
+      [200],
+    );
+    const revisedFingerprint =
+      revised.body.definition.blueprints[0]?.fingerprint;
+    expect(revisedFingerprint).not.toBe(
+      transitioned.body.workflow.automations[0]?.official?.appliedFingerprint,
+    );
+    expect(revised.body.workflow.automations).toStrictEqual([
+      expect.objectContaining({
+        id: original.id,
+        official: expect.objectContaining({
+          appliedFingerprint: revisedFingerprint,
+          reconciliationStatus: "current",
+        }),
+      }),
+    ]);
     const preserved = await accept(
       automationClient().revealWebhookSecret({
         headers,

@@ -18,16 +18,9 @@ interface MorningBriefEmailRenderProps {
   readonly manageUrl: string;
 }
 
-interface MorningBriefEmailFallback {
-  readonly reason: "render-error" | "size-limit";
-  readonly attemptedHtmlBytes: number | null;
-  readonly fallbackHtmlBytes: number;
-}
-
 interface RenderedMorningBriefEmail {
   readonly html: string;
   readonly text: string;
-  readonly fallback: MorningBriefEmailFallback | null;
 }
 
 function morningBriefEmailHtml(
@@ -51,16 +44,14 @@ function morningBriefEmailHtml(
 }
 
 /**
- * Render the Morning Brief presentation shared by Agent notifications, debug
- * emails and legacy completion outbox entries.
+ * Render the Morning Brief presentation shared by Agent notifications and debug
+ * emails. Markdown that fails to render or exceeds the size bound falls back to
+ * escaped preformatted text.
  */
 export function renderMorningBriefEmail(
   props: MorningBriefEmailRenderProps,
   unsubscribeUrl: string,
 ): RenderedMorningBriefEmail {
-  let attemptedHtmlBytes: number | null = null;
-  let fallbackReason: MorningBriefEmailFallback["reason"] = "render-error";
-
   const renderAttempt = safeSync(() => {
     const html = morningBriefEmailHtml(
       props,
@@ -68,26 +59,13 @@ export function renderMorningBriefEmail(
       unsubscribeUrl,
     );
     const htmlBytes = Buffer.byteLength(html, "utf8");
-    if (htmlBytes <= MORNING_BRIEF_EMAIL_HTML_MAX_BYTES) {
-      return {
-        kind: "rendered" as const,
-        html,
-        text: plainTextFromHtml(html),
-      };
-    }
-    return { kind: "size-limit" as const, attemptedHtmlBytes: htmlBytes };
+    return htmlBytes <= MORNING_BRIEF_EMAIL_HTML_MAX_BYTES
+      ? { html, text: plainTextFromHtml(html) }
+      : null;
   });
 
-  if ("ok" in renderAttempt) {
-    if (renderAttempt.ok.kind === "rendered") {
-      return {
-        html: renderAttempt.ok.html,
-        text: renderAttempt.ok.text,
-        fallback: null,
-      };
-    }
-    attemptedHtmlBytes = renderAttempt.ok.attemptedHtmlBytes;
-    fallbackReason = "size-limit";
+  if ("ok" in renderAttempt && renderAttempt.ok) {
+    return renderAttempt.ok;
   }
 
   const fallbackHtml = morningBriefEmailHtml(
@@ -97,18 +75,11 @@ export function renderMorningBriefEmail(
     )}</pre>`,
     unsubscribeUrl,
   );
-  const fallbackHtmlBytes = Buffer.byteLength(fallbackHtml, "utf8");
-  if (fallbackHtmlBytes > MORNING_BRIEF_EMAIL_HTML_MAX_BYTES) {
+  if (
+    Buffer.byteLength(fallbackHtml, "utf8") > MORNING_BRIEF_EMAIL_HTML_MAX_BYTES
+  ) {
     throw new Error("Morning Brief email fallback exceeded its size bound");
   }
 
-  return {
-    html: fallbackHtml,
-    text: plainTextFromHtml(fallbackHtml),
-    fallback: {
-      reason: fallbackReason,
-      attemptedHtmlBytes,
-      fallbackHtmlBytes,
-    },
-  };
+  return { html: fallbackHtml, text: plainTextFromHtml(fallbackHtml) };
 }

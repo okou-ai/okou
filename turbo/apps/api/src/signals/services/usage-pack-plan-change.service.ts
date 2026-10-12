@@ -20,6 +20,7 @@ import {
   asc,
   desc,
   eq,
+  exists,
   inArray,
   isNull,
   isNotNull,
@@ -3225,96 +3226,121 @@ function restoredUsagePackScheduleParams(
   };
 }
 
-async function restoreScheduledSubscriptionChange(
-  db: Db,
-  stored: StoredSubscriptionChange,
-  subscription: StripeSubscription,
-  signal: AbortSignal,
-): Promise<UsagePackSubscriptionChangeConfirmResult> {
-  const scheduledChanges = await db
-    .select()
-    .from(usagePackAllocationChanges)
-    .where(
-      and(
-        eq(
-          usagePackAllocationChanges.usagePackSubscriptionId,
-          stored.subscription.id,
-        ),
-        eq(usagePackAllocationChanges.status, "scheduled"),
-      ),
-    );
-  signal.throwIfAborted();
-  const scheduleId = restorableScheduleId(scheduledChanges);
-  const stripeScheduleId = stripeObjectId(subscription.schedule);
-  if (
-    !scheduleId ||
-    (stripeScheduleId !== null && stripeScheduleId !== scheduleId)
-  ) {
-    return { status: "conflict" };
-  }
-  if (stripeScheduleId === scheduleId) {
-    const stripe = getStripeClient();
-    const schedule = await stripe.subscriptionSchedules.retrieve(scheduleId);
-    signal.throwIfAborted();
-    await stripe.subscriptionSchedules.update(
-      scheduleId,
-      restoredUsagePackScheduleParams(subscription, schedule),
-      {
-        idempotencyKey: `usage-pack-subscription-change:${stored.root.id}:restore-schedule`,
-      },
-    );
-    signal.throwIfAborted();
-  }
-  const completedAt = nowDate();
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0292; new non-billing transactions are prohibited.
-  await db.transaction(async (tx) => {
-    const [completed] = await tx
-      .update(usagePackSubscriptionChanges)
-      .set({
-        status: "completed",
-        effectiveAt: completedAt,
-        completedAt,
-        updatedAt: completedAt,
-      })
-      .where(
-        and(
-          subscriptionChangeIdentity(stored.root),
-          eq(usagePackSubscriptionChanges.status, "applying"),
-        ),
-      )
-      .returning({ id: usagePackSubscriptionChanges.id });
-    if (completed && scheduledChanges.length > 0) {
-      await tx
-        .update(usagePackAllocationChanges)
+const completeScheduledSubscriptionRestore$ = command(
+  async (
+    { set },
+    root: UsagePackSubscriptionChangeRow,
+    capturedChangeIds: readonly string[],
+    scheduleId: string,
+    completedAt: Date,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const completed = db.$with("completed_restore").as(
+      db
+        .update(usagePackSubscriptionChanges)
         .set({
-          status: "failed",
-          failureReason: "scheduled_change_restored",
+          status: "completed",
+          effectiveAt: completedAt,
           completedAt,
           updatedAt: completedAt,
         })
         .where(
           and(
-            inArray(
-              usagePackAllocationChanges.id,
-              scheduledChanges.map((change) => {
-                return change.id;
-              }),
-            ),
-            eq(usagePackAllocationChanges.status, "scheduled"),
-            eq(usagePackAllocationChanges.stripeScheduleId, scheduleId),
+            subscriptionChangeIdentity(root),
+            eq(usagePackSubscriptionChanges.status, "applying"),
           ),
-        );
+        )
+        .returning({ id: usagePackSubscriptionChanges.id }),
+    );
+    // Only a real returned parent permits retirement of the captured children.
+    // Their original roots may be historical or null; keep the selected IDs.
+    await db
+      .with(completed)
+      .update(usagePackAllocationChanges)
+      .set({
+        status: "failed",
+        failureReason: "scheduled_change_restored",
+        completedAt,
+        updatedAt: completedAt,
+      })
+      .where(
+        and(
+          exists(db.select({ id: completed.id }).from(completed)),
+          inArray(usagePackAllocationChanges.id, [...capturedChangeIds]),
+          eq(usagePackAllocationChanges.status, "scheduled"),
+          eq(usagePackAllocationChanges.stripeScheduleId, scheduleId),
+        ),
+      );
+  },
+);
+
+const restoreScheduledSubscriptionChange$ = command(
+  async (
+    { set },
+    stored: StoredSubscriptionChange,
+    subscription: StripeSubscription,
+    providerSignal: AbortSignal,
+  ): Promise<UsagePackSubscriptionChangeConfirmResult> => {
+    const db = set(writeDb$);
+    const scheduledChanges = await db
+      .select()
+      .from(usagePackAllocationChanges)
+      .where(
+        and(
+          eq(
+            usagePackAllocationChanges.usagePackSubscriptionId,
+            stored.subscription.id,
+          ),
+          eq(usagePackAllocationChanges.status, "scheduled"),
+        ),
+      );
+    providerSignal.throwIfAborted();
+    const scheduleId = restorableScheduleId(scheduledChanges);
+    const stripeScheduleId = stripeObjectId(subscription.schedule);
+    if (
+      !scheduleId ||
+      (stripeScheduleId !== null && stripeScheduleId !== scheduleId)
+    ) {
+      await set(
+        failApplyingSubscriptionChange$,
+        stored.root,
+        "scheduled_restore_conflict",
+      );
+      return { status: "conflict" };
     }
-  });
-  return {
-    status: "confirmed",
-    response: {
-      status: "completed",
-      effectiveAt: completedAt.toISOString(),
-      hostedInvoiceUrl: null,
-    },
-  };
-}
+    if (stripeScheduleId === scheduleId) {
+      const stripe = getStripeClient();
+      const schedule = await stripe.subscriptionSchedules.retrieve(scheduleId);
+      providerSignal.throwIfAborted();
+      await stripe.subscriptionSchedules.update(
+        scheduleId,
+        restoredUsagePackScheduleParams(subscription, schedule),
+        {
+          idempotencyKey: `usage-pack-subscription-change:${stored.root.id}:restore-schedule`,
+        },
+      );
+      providerSignal.throwIfAborted();
+    }
+    const completedAt = nowDate();
+    await set(
+      completeScheduledSubscriptionRestore$,
+      stored.root,
+      scheduledChanges.map((change) => {
+        return change.id;
+      }),
+      scheduleId,
+      completedAt,
+    );
+    return {
+      status: "confirmed",
+      response: {
+        status: "completed",
+        effectiveAt: completedAt.toISOString(),
+        hostedInvoiceUrl: null,
+      },
+    };
+  },
+);
 
 const prepareApplicableSubscription$ = command(
   async (
@@ -3493,20 +3519,12 @@ const applyStoredSubscriptionChange$ = command(
     };
     const planItem = validateStripeSubscription(context, subscription);
     if (isScheduledSubscriptionRestore(stored)) {
-      const restored = await restoreScheduledSubscriptionChange(
-        db,
+      return await set(
+        restoreScheduledSubscriptionChange$,
         stored,
         subscription,
         providerSignal,
       );
-      if (restored.status === "conflict") {
-        await set(
-          failApplyingSubscriptionChange$,
-          stored.root,
-          "scheduled_restore_conflict",
-        );
-      }
-      return restored;
     }
     const replacementSchedule = await set(
       resolveReplacementSchedule$,

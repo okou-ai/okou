@@ -2,7 +2,7 @@ import { advanceInFlightSchedule } from "./workflow-schedule-settlement";
 import { command } from "ccstate";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
