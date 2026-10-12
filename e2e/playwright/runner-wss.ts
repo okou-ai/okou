@@ -37,6 +37,11 @@ async function main(): Promise<void> {
   let failed = false;
   let cleanupFailures = 0;
   let phase = "sign-in";
+  let failureEvidence: {
+    apiStatus?: number;
+    transportState?: string;
+    bootstrapStatuses?: readonly number[];
+  } = {};
   const receipts: {
     runId: string;
     runnerId: string;
@@ -64,11 +69,14 @@ async function main(): Promise<void> {
     await api.createAgent();
     const probeOptions = { page, bundle, apiUrl };
 
-    phase = "completion";
+    phase = "completion-start";
     // Finite native work keeps a real Run live during the short protocol exchange.
     const completed = await api.start(model, 45);
+    phase = "completion-connect-echo-replay";
     await connect(probeOptions, completed, true);
+    phase = "completion-status";
     await api.waitForStatus(completed.runId, "completed");
+    phase = "completion-revocation";
     await verifyRunWssRevocation(page, completed.runId);
     await closeRunWssProbe(page);
     receipts.push({
@@ -78,11 +86,14 @@ async function main(): Promise<void> {
       status: "completed",
     });
 
-    phase = "cancellation";
+    phase = "cancellation-start";
     const cancelled = await api.start(model, 300);
+    phase = "cancellation-connect-echo";
     await connect(probeOptions, cancelled, false);
+    phase = "cancellation-status";
     await api.cancel(cancelled.runId);
     await api.waitForStatus(cancelled.runId, "cancelled");
+    phase = "cancellation-revocation";
     await verifyRunWssRevocation(page, cancelled.runId);
     await closeRunWssProbe(page);
     receipts.push({
@@ -93,6 +104,18 @@ async function main(): Promise<void> {
     });
   } catch {
     failed = true;
+    failureEvidence = { apiStatus: api?.lastHttpStatus };
+    if (page && !page.isClosed()) {
+      try {
+        const probe = await page.evaluate(() => ({
+          transportState: window.__runWssProbe?.state,
+          bootstrapStatuses: window.__runWssProbe?.bootstrapStatuses,
+        }));
+        failureEvidence = { ...failureEvidence, ...probe };
+      } catch {
+        // Browser loss has no additional safe protocol evidence.
+      }
+    }
   } finally {
     if (page && !page.isClosed()) {
       try {
@@ -126,7 +149,14 @@ async function main(): Promise<void> {
     clearTimeout(deadline);
   }
   if (failed || cleanupFailures) {
-    console.error(JSON.stringify({ result: "FAIL", phase, cleanupFailures }));
+    console.error(
+      JSON.stringify({
+        result: "FAIL",
+        phase,
+        ...failureEvidence,
+        cleanupFailures,
+      }),
+    );
     process.exitCode = 1;
     return;
   }

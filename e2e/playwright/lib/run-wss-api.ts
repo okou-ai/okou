@@ -20,6 +20,7 @@ export class RunnerWssApi {
   private readonly threads = new Set<string>();
   private readonly runs = new Set<string>();
   private cleanupSignal: AbortSignal | undefined;
+  lastHttpStatus: number | undefined;
 
   constructor(
     private readonly apiUrl: string,
@@ -48,6 +49,7 @@ export class RunnerWssApi {
       ]),
       redirect: "error",
     });
+    this.lastHttpStatus = response.status;
     if (!expected.includes(response.status)) {
       await response.body?.cancel();
       throw new Error(

@@ -156,9 +156,13 @@ async function peer(options: PeerOptions = {}) {
           return;
         }
         if (used.has(message.ticket)) {
-          if (options.acceptReplay)
+          if (options.acceptReplay) {
             socket.send(JSON.stringify({ type: "auth.ok" }, null, 2));
-          socket.close(1000);
+            socket.close(1000);
+          } else {
+            // Match Runner's rejected pre-auth lifetime: it drops the stream.
+            socket.terminate();
+          }
           return;
         }
         used.add(message.ticket);

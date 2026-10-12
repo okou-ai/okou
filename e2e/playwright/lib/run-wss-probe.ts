@@ -63,9 +63,16 @@ export async function verifyRunWssEcho(
     expect(proof.opened).toBe(true);
     expect(proof.admissionSent).toBe(true);
     expect(proof.authOk).toBe(false);
-    expect(proof.closeCode).toBe(1000);
     expect(proof.remainingMs).toBeGreaterThan(5_000);
     expect(proof.endedBeforeExpiry).toBe(true);
+    // Runner drops rejected pre-auth connections without a close handshake.
+    // A browser therefore reports 1006; the admission verdict is absence of
+    // auth.ok while the original admitted Guest connection remains usable.
+    const retainedSizes = await page.evaluate(async () => {
+      if (!window.__runWssProbe) throw new Error("Browser probe missing");
+      return await window.__runWssProbe.echo();
+    });
+    expect(retainedSizes).toEqual([0, 1, 17, 1024, 65536, 37]);
   }
 }
 
