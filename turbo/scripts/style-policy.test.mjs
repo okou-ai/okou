@@ -32,6 +32,10 @@ function createWorkspace(testContext, files) {
   const directory = mkdtempSync(join(tmpdir(), "vm0-style-policy-"));
   const root = join(directory, "turbo");
   mkdirSync(root);
+  writeFileSync(
+    join(root, "stacking-ownership.json"),
+    JSON.stringify({ version: 1, entries: [] }),
+  );
   testContext.after(() => {
     rmSync(directory, { recursive: true, force: true });
   });
@@ -46,7 +50,12 @@ function createWorkspace(testContext, files) {
 function createCommandWorkspace(t, files, allowlist = EMPTY_ALLOWLIST) {
   const root = createWorkspace(t, files);
   mkdirSync(join(root, "scripts"));
-  for (const file of ["style-policy.mjs", "style-class-usage.mjs"]) {
+  for (const file of [
+    "style-policy.mjs",
+    "style-class-usage.mjs",
+    "stacking-policy.mjs",
+    "stacking-source.mjs",
+  ]) {
     copyFileSync(join(import.meta.dirname, file), join(root, "scripts", file));
   }
   symlinkSync(

@@ -7,6 +7,7 @@ import { tailwind4 } from "tailwind-csstree";
 import ts from "typescript";
 
 import { collectClassUsages } from "./style-class-usage.mjs";
+import { checkStackingPolicy } from "./stacking-policy.mjs";
 
 const STYLE_POLICY_VERSION = 1;
 const PROJECT_ROOT = process.cwd();
@@ -597,6 +598,7 @@ export function checkStylePolicy({
   });
   const current = collectCurrentStyleState({ root, allowlist });
   issues.push(...current.issues);
+  issues.push(...checkStackingPolicy(root));
 
   const cssFiles = new Set(Object.keys(current.cssAtoms));
   for (const file of cssFiles) {

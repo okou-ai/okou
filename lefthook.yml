@@ -20,7 +20,7 @@ pre-commit:
           - name: style-policy
             run: node scripts/style-policy.mjs
             root: turbo/
-            glob: "turbo/**/*.{css,js,json,mjs,ts,tsx}"
+            glob: "turbo/**/*.{css,html,js,jsx,json,mjs,cjs,mts,cts,ts,tsx}"
             fail_text: |
               App style policy violations found. Use Tailwind utilities in business components;
               do not expand the allowlist for first-party styling.
