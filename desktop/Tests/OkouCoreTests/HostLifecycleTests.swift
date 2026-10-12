@@ -155,7 +155,11 @@ private final class PendingResponse: @unchecked Sendable {
   private var connection: URLProtocolFixture?
   func hold(_ value: URLProtocolFixture) { lock.withLock { connection = value } }
   func reply(_ value: JSONValue, status: Int = 200) {
-    lock.withLock { connection }!.reply(value, status: status)
+    guard let connection = lock.withLock({ self.connection }) else {
+      XCTFail("Cannot reply before a pending HTTP request arrives")
+      return
+    }
+    connection.reply(value, status: status)
   }
 }
 
@@ -181,11 +185,12 @@ private final class StateTransitions: @unchecked Sendable {
   func notify(_ key: String, expectation: XCTestExpectation) {
     if lock.withLock({ seen.insert(key).inserted }) { expectation.fulfill() }
   }
-  func notifyHeartbeatWhileStopping(_ state: RuntimeState, expectation: XCTestExpectation) {
+  func hasSeen(_ key: String) -> Bool { lock.withLock { seen.contains(key) } }
+  func notifyHeartbeatWhileDraining(_ state: RuntimeState, expectation: XCTestExpectation) {
     let advanced = lock.withLock {
       let changed = state.lastHeartbeat != lastHeartbeat
       lastHeartbeat = state.lastHeartbeat
-      return state.status == "stopping" && state.lastHeartbeat != nil && changed
+      return seen.contains("stopping") && state.busy && state.lastHeartbeat != nil && changed
     }
     if advanced { notify("heartbeat", expectation: expectation) }
   }
@@ -584,14 +589,17 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
   func testStopKeepsHeartbeatAliveUntilRunningCommandIsReported() async throws {
     let transitions = StateTransitions()
     let claimReceived = expectation(description: "Server receives the initial claim request")
-    let heartbeatReceived = expectation(description: "Heartbeat arrives before native dispatch")
+    let earlyHeartbeatReceived = expectation(description: "Heartbeat arrives before native dispatch")
+    let heartbeatReceived = expectation(description: "New heartbeat arrives after admission closes")
     let began = expectation(description: "Command is visible in the UI")
     let stopping = expectation(description: "Admission is closed")
     let heartbeat = expectation(description: "Heartbeat is processed while draining")
     let reported = expectation(description: "Running command completed successfully")
     let stopped = expectation(description: "Host authorization retired after reporting")
     let pendingClaim = PendingResponse()
+    let earlyHeartbeat = PendingResponse()
     let pendingHeartbeat = PendingResponse()
+    let heartbeats = RequestCount()
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -638,8 +646,14 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         pendingClaim.hold(connection)
         transitions.notify("claim", expectation: claimReceived)
       } else if path.hasSuffix("/heartbeat") {
-        pendingHeartbeat.hold(connection)
-        transitions.notify("heartbeat-request", expectation: heartbeatReceived)
+        if heartbeats.next() == 1 {
+          earlyHeartbeat.hold(connection)
+          transitions.notify("early-heartbeat-request", expectation: earlyHeartbeatReceived)
+        } else {
+          XCTAssertTrue(transitions.hasSeen("stopping"))
+          pendingHeartbeat.hold(connection)
+          transitions.notify("heartbeat-request", expectation: heartbeatReceived)
+        }
       } else if path.hasSuffix("/complete") {
         XCTAssertEqual(try? String(contentsOf: marker, encoding: .utf8), "once")
         XCTAssertEqual(connection.body["status"].string, "succeeded")
@@ -661,7 +675,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       hostName: "Test Mac", version: "0.49.71", notifications: NotificationBoundary(),
       tokenProvider: { _ in "clerk-session" },
       onChange: { state in
-        transitions.notifyHeartbeatWhileStopping(state, expectation: heartbeat)
+        transitions.notifyHeartbeatWhileDraining(state, expectation: heartbeat)
         if state.busy && state.status == "online" {
           transitions.notify("began", expectation: began)
         }
@@ -669,12 +683,15 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       })
     await runtime.start()
     // Make the early-heartbeat ordering deterministic instead of depending on helper startup speed.
-    await fulfillment(of: [claimReceived, heartbeatReceived], timeout: 5)
+    await fulfillment(of: [claimReceived, earlyHeartbeatReceived], timeout: 5)
     pendingClaim.reply(claimResponse)
     await fulfillment(of: [began], timeout: 3)
     let drain = Task { await runtime.stop() }
     await fulfillment(of: [stopping], timeout: 3)
     let secondDrain = Task { await runtime.stop() }
+    // A failed in-flight heartbeat must be retried after command admission closes.
+    earlyHeartbeat.reply(.object([:]), status: 503)
+    await fulfillment(of: [heartbeatReceived], timeout: 5)
     pendingHeartbeat.reply(heartbeatResponse(pending: false))
     await fulfillment(of: [heartbeat], timeout: 5)
     try Data().write(to: release)
@@ -685,14 +702,17 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
   func testUpgradeRejectionWhileDrainingDoesNotCancelCompletion() async throws {
     let transitions = StateTransitions()
     let claimReceived = expectation(description: "Server receives the initial claim request")
-    let heartbeatReceived = expectation(description: "Heartbeat arrives before native dispatch")
+    let earlyHeartbeatReceived = expectation(description: "Heartbeat arrives before native dispatch")
+    let heartbeatReceived = expectation(description: "New heartbeat arrives after admission closes")
     let began = expectation(description: "Command is visible in the UI")
     let stopping = expectation(description: "Admission is closed")
     let heartbeat = expectation(description: "Upgrade rejection is processed while draining")
     let reported = expectation(description: "Running command completed successfully")
     let stopped = expectation(description: "Host authorization retired after reporting")
     let pendingClaim = PendingResponse()
+    let earlyHeartbeat = PendingResponse()
     let pendingHeartbeat = PendingResponse()
+    let heartbeats = RequestCount()
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -739,8 +759,14 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         pendingClaim.hold(connection)
         transitions.notify("claim", expectation: claimReceived)
       } else if path.hasSuffix("/heartbeat") {
-        pendingHeartbeat.hold(connection)
-        transitions.notify("heartbeat-request", expectation: heartbeatReceived)
+        if heartbeats.next() == 1 {
+          earlyHeartbeat.hold(connection)
+          transitions.notify("early-heartbeat-request", expectation: earlyHeartbeatReceived)
+        } else {
+          XCTAssertTrue(transitions.hasSeen("stopping"))
+          pendingHeartbeat.hold(connection)
+          transitions.notify("heartbeat-request", expectation: heartbeatReceived)
+        }
       } else if path.hasSuffix("/complete") {
         XCTAssertEqual(try? String(contentsOf: marker, encoding: .utf8), "once")
         XCTAssertEqual(connection.body["status"].string, "succeeded")
@@ -767,19 +793,21 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         }
         if state.status == "stopping" {
           transitions.notify("stopping", expectation: stopping)
-          if state.updateRequired {
-            XCTAssertEqual(state.minimumSupportedVersion, "0.51.0")
-            transitions.notify("heartbeat", expectation: heartbeat)
-          }
+        }
+        if transitions.hasSeen("stopping") && state.busy && state.updateRequired {
+          XCTAssertEqual(state.minimumSupportedVersion, "0.51.0")
+          transitions.notify("heartbeat", expectation: heartbeat)
         }
       })
     await runtime.start()
-    await fulfillment(of: [claimReceived, heartbeatReceived], timeout: 5)
+    await fulfillment(of: [claimReceived, earlyHeartbeatReceived], timeout: 5)
     pendingClaim.reply(claimResponse)
     await fulfillment(of: [began], timeout: 3)
     let drain = Task { await runtime.stop() }
     await fulfillment(of: [stopping], timeout: 3)
     let secondDrain = Task { await runtime.stop() }
+    earlyHeartbeat.reply(.object([:]), status: 503)
+    await fulfillment(of: [heartbeatReceived], timeout: 5)
     pendingHeartbeat.reply(upgradeRequiredResponse(minimum: "0.51.0"), status: 426)
     await fulfillment(of: [heartbeat], timeout: 5)
     try Data().write(to: release)
