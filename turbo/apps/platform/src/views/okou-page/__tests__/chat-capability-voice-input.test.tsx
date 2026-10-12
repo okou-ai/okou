@@ -65,7 +65,7 @@ async function activeVoiceDraftStopButton(): Promise<HTMLElement> {
   expect(
     screen.getByText(/^\d{2}:\d{2}$/u, { selector: "time" }),
   ).toBeVisible();
-  expect(screen.queryByLabelText("Attach")).toBeNull();
+  expect(screen.queryByLabelText("Add")).toBeNull();
   return stop;
 }
 
@@ -267,7 +267,7 @@ test("Show microphone startup before the voice-draft waveform", async () => {
   expect(starting).toBeDisabled();
   expect(starting).toHaveAttribute("aria-busy", "true");
   expect(queryButton("Stop recording")).toBeNull();
-  expect(screen.queryByLabelText("Attach")).toBeVisible();
+  expect(screen.queryByLabelText("Add")).toBeVisible();
   expect(document.querySelector("[data-voice-level-waveform]")).toBeNull();
 
   microphoneReady.resolve(undefined);
@@ -386,7 +386,7 @@ test("Finish a provider no-speech response and preserve the input", async () => 
 
   await findEnabledButton("Voice input");
   expect(normalizedComposerText()).toBe(initialText);
-  expect(screen.queryByLabelText("Attach")).toBeVisible();
+  expect(screen.queryByLabelText("Add")).toBeVisible();
   expect(queryButton("Send")).toBeEnabled();
   expect(consoleErrors).toStrictEqual([]);
   expect(

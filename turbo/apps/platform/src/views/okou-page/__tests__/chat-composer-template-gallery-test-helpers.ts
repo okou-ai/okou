@@ -13,7 +13,6 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect } from "vitest";
 
-import { click } from "../../../__tests__/page-helper.ts";
 import {
   AGENT_ID,
   THREAD_ID,
@@ -24,6 +23,7 @@ import {
   tabByText,
 } from "./chat-composer-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 
 export { AGENT_ID, THREAD_ID, context };
 
@@ -87,11 +87,7 @@ export async function openTemplatePicker(
   user: ReturnType<typeof userEvent.setup>,
   category?: "Presentation" | "Website" | "Illustration",
 ): Promise<HTMLElement> {
-  click(
-    await waitFor(() => {
-      return screen.getByLabelText("Template");
-    }),
-  );
+  await clickComposerAddMenuItem("Template");
   const dialog = await waitFor(() => {
     return screen.getByRole("dialog");
   });
