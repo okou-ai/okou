@@ -67,6 +67,9 @@ import {
 import { ThumbnailPlaceholder, UserAvatar } from "../components/avatar.tsx";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { i18n } from "../../i18n/index.ts";
+import { SubscriptionLinkingMenuItem } from "./subscription-linking.tsx";
+import { subscriptionLinkingEnabled$ } from "../../signals/okou-page/subscription-linking.ts";
+import { refreshPersonalModelProvidersIfStale$ } from "../../signals/external/personal-model-providers.ts";
 
 interface SessionAccount {
   sessionId: string;
@@ -751,6 +754,10 @@ export function AccountDropdown({
   renderCodexResetDialog?: boolean;
 }) {
   const profile = useAccountProfile();
+  const linkingEnabled = useGet(subscriptionLinkingEnabled$);
+  const refreshPersonalProviders = useSet(
+    refreshPersonalModelProvidersIfStale$,
+  );
   const {
     accountDisplay,
     accountVisible,
@@ -785,6 +792,9 @@ export function AccountDropdown({
     }
     if (hidePreferences) {
       return;
+    }
+    if (linkingEnabled) {
+      refreshPersonalProviders();
     }
     // Refresh credit balances every time the menu opens so the displayed
     // remaining credits reflect the latest usage.
@@ -835,6 +845,7 @@ export function AccountDropdown({
               subscriptionsEnabled={subscriptionsEnabled}
             />
           )}
+          {!hidePreferences && <SubscriptionLinkingMenuItem />}
           {!hidePreferences && (
             <UnifiedSettingsGroup
               labEnabled={labEnabled}
