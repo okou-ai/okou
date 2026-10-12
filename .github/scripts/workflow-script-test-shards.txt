@@ -21,6 +21,7 @@
 1 runner-api-curl-test.sh
 1 runner-behavior-durable-test.sh
 1 runner-behavior-guest-rpc-test.sh
+1 runner-behavior-upgrade-local-test.sh
 1 runner-firewall-contract-workflow-test.sh
 1 runner-image-manifest-test.sh
 1 runner-native-test-artifact-test.sh
