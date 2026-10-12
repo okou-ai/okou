@@ -2136,10 +2136,9 @@ const claimBrowserForResume$ = command(
   ): Promise<ResumeClaim> => {
     const db = set(writeDb$);
     const result = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0071; new non-billing transactions are prohibited.
-      db.transaction(async (tx): Promise<ResumeClaim> => {
+      (async (): Promise<ResumeClaim> => {
         signal.throwIfAborted();
-        const [run] = await tx
+        const [run] = await db
           .select({ status: agentRuns.status })
           .from(agentRuns)
           .where(eq(agentRuns.id, context.runId))
@@ -2150,7 +2149,7 @@ const claimBrowserForResume$ = command(
         ) {
           return conflict("The chat run already ended", "BROWSER_RUN_ENDED");
         }
-        const [owned] = await tx
+        const [owned] = await db
           .select(BROWSER_SESSION_SELECTION)
           .from(browserSessions)
           .where(
@@ -2174,7 +2173,7 @@ const claimBrowserForResume$ = command(
           }
           return browserReclaiming();
         }
-        const [current] = await tx
+        const [current] = await db
           .select(BROWSER_SESSION_SELECTION)
           .from(browserSessions)
           .where(
@@ -2188,7 +2187,7 @@ const claimBrowserForResume$ = command(
         if (!current) {
           return { kind: "missing" };
         }
-        const [claimed] = await tx
+        const [claimed] = await db
           .update(browserSessions)
           .set({
             runId: context.runId,
@@ -2212,7 +2211,7 @@ const claimBrowserForResume$ = command(
         return claimed
           ? { kind: "claimed", browser: claimed }
           : conflict("The managed browser is busy", "BROWSER_BUSY");
-      }),
+      })(),
     );
     signal.throwIfAborted();
     if (!result.ok) {
