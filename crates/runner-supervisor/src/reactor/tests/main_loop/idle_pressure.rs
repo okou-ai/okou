@@ -112,9 +112,13 @@ async fn job_free_pressure_and_held_cleanup_leave_real_reactor_heartbeat_and_fit
     kill.wait_entered(1, Duration::from_secs(5)).await.unwrap();
     assert!(env.handle.claim_candidates().is_empty());
     exit.confirm_exit();
-    tokio::fs::write(&meminfo, "MemAvailable: 65536 kB\n")
+    // Live settlement and the sampler read concurrently. Publish a complete
+    // snapshot instead of exposing an in-place write's truncation window.
+    let next_meminfo = meminfo.with_extension("next");
+    tokio::fs::write(&next_meminfo, "MemAvailable: 65536 kB\n")
         .await
         .unwrap();
+    tokio::fs::rename(next_meminfo, &meminfo).await.unwrap();
     let before = env.handle.heartbeat_count();
     heartbeat.send(()).unwrap();
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -150,7 +154,8 @@ async fn job_free_pressure_and_held_cleanup_leave_real_reactor_heartbeat_and_fit
         .await
         .unwrap()
         .unwrap();
-    assert!(stopped.last_wave.unwrap().is_resolved());
+    let report = stopped.last_wave.unwrap();
+    assert!(report.is_resolved(), "{report:?}");
     tracker.close_and_wait().await;
     assert_eq!(
         operations
