@@ -7,7 +7,7 @@ WORKFLOW="${REPO_ROOT}/.github/workflows/turbo.yml"
 TURBO_CONFIG="${REPO_ROOT}/turbo/turbo.json"
 RUNNER_START_HELPER="${REPO_ROOT}/.github/scripts/reconcile-and-start-runner-groups.sh"
 RUNNER_TESTS="${REPO_ROOT}/e2e/tests/03-runner"
-AUTO_TEST="${RUNNER_TESTS}/run-t10-auto-pi-smoke.bats"
+AUTO_BILLING_TEST="${RUNNER_TESTS}/run-t11-auto-billing.bats"
 AUTO_CONTINUATION_TEST="${RUNNER_TESTS}/run-t24-auto-continuation.bats"
 RUNNER_HELPERS=(
   "${REPO_ROOT}/e2e/helpers/runner-api.bash"
@@ -69,8 +69,8 @@ grep -Fq 'trace: "retain-on-failure"' "$PLAYWRIGHT_CONFIG" ||
 if grep -R -Fq '/api/test/' "$RUNNER_TESTS" "${RUNNER_HELPERS[@]}"; then
   fail "runner E2E coverage must use supported public APIs"
 fi
-grep -Fq '"@preset/okou-1-0"' "$AUTO_TEST" ||
-  fail "Auto E2E must verify the canonical OpenRouter preset"
+grep -Fq '"@preset/okou-1-0"' "$AUTO_BILLING_TEST" ||
+  fail "Auto billing E2E must verify the canonical OpenRouter preset"
 grep -Fq 'runner_chat_send_after_completion' "$AUTO_CONTINUATION_TEST" ||
   fail "Auto E2E must retain deployed successor-run coverage"
 grep -Fq 'createRunnerCheckout' "$RUNNER_TOKEN" ||
