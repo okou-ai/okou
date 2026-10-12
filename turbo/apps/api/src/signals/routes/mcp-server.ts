@@ -36,12 +36,14 @@ import { chatThreadRoutes } from "./chat-threads";
 import { runModelsRoutes } from "./run-models";
 import { runsCancelRoutes } from "./runs-cancel";
 
-const searchResponse$ = computed(async (get) => {
+const searchInput$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(mcpChatSearchContract.search));
-  const result = await get(
-    mcpChatSearch({ userId: auth.userId, orgId: auth.orgId, ...query }),
-  );
+  return { userId: auth.userId, orgId: auth.orgId, ...query };
+});
+const search$ = mcpChatSearch(searchInput$);
+const searchResponse$ = computed(async (get) => {
+  const result = await get(search$);
   return { status: 200 as const, body: result };
 });
 

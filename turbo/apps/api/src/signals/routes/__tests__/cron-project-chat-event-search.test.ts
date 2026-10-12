@@ -11,6 +11,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMcpWebApi } from "./helpers/mcp-web-api";
 
 const context = testContext();
@@ -44,6 +45,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
     const bdd = createBddApi(context);
     const chat = createChatFilesBddApi(context);
     const mcp = createMcpWebApi(context);
+    createRunsApi(context).configureRunnerGroup();
     bdd.acceptAgentStorageWrites();
     context.mocks.s3.send.mockImplementation((request: unknown) => {
       return Promise.resolve(
@@ -57,12 +59,15 @@ describe("GET /api/cron/project-chat-event-search", () => {
     if (!onboarding.defaultAgentId) {
       throw new Error("Expected public onboarding to create the default Agent");
     }
+    await bdd.completeOnboarding(owner);
     const named = await bdd.createAgent(owner, {
       displayName: "MCP Research",
       visibility: "private",
     });
     const unnamed = await bdd.createAgent(owner, { visibility: "private" });
     const peer = bdd.user({ orgId: owner.orgId });
+    await bdd.readOnboardingStatus(peer);
+    await bdd.completeOnboarding(peer);
     const shared = await bdd.createAgent(peer, {
       displayName: "Shared research",
     });
@@ -70,6 +75,8 @@ describe("GET /api/cron/project-chat-event-search", () => {
       userId: owner.userId,
       orgId: `org_${randomUUID()}`,
     });
+    await bdd.readOnboardingStatus(otherOrg);
+    await bdd.completeOnboarding(otherOrg);
     const foreign = await bdd.createAgent(otherOrg, {
       displayName: "Other organization",
       visibility: "private",

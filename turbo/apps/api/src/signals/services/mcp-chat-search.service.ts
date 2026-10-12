@@ -12,16 +12,19 @@ import { db$ } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { chatSearch } from "./chat-search.service";
 
-export function mcpChatSearch(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly keyword: string;
-  readonly agentId?: string;
-  readonly since?: number;
-}): Computed<Promise<McpChatSearchResponse>> {
-  const nativeSearch$ = chatSearch(args);
+export function mcpChatSearch(
+  args$: Computed<{
+    readonly userId: string;
+    readonly orgId: string;
+    readonly keyword: string;
+    readonly agentId?: string;
+    readonly since?: number;
+  }>,
+): Computed<Promise<McpChatSearchResponse>> {
+  const nativeSearch$ = chatSearch(args$);
 
   return computed(async (get) => {
+    const args = get(args$);
     const search = await get(nativeSearch$);
     if (search.results.length === 0) {
       return { results: [] };
