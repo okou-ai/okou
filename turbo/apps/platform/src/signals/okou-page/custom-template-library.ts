@@ -266,7 +266,14 @@ export const openCustomTemplateDetail$ = computed(
     }
     get(catalogVersion$);
     const client = get(apiClient$)(userTemplatesContract);
-    const result = await accept(client.get({ params: { templateId } }), [200]);
+    // A delete notification can revalidate the detail before its dialog closes.
+    // Load failures already have an inline retry; do not toast a stale preview.
+    const result = await accept(
+      client.get({ params: { templateId } }),
+      [200],
+      undefined,
+      { showErrorToast: false },
+    );
     return result.body;
   },
 );
