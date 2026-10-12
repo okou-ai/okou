@@ -7,12 +7,27 @@ import { mcpRunIdSchema, mcpThreadIdSchema } from "./mcp-identifiers";
 const c = initContract();
 const nativeSearch = chatSearchContract.search;
 const nativeResult = nativeSearch.responses[200].shape.results.element;
+const nativeRange = nativeResult.shape.matchedRanges.element;
 
 const mcpChatSearchResultSchema = nativeResult
   .omit({ agentName: true, chatThreadId: true })
   .extend({
     ...agentResponseSchema.pick({ agentId: true, displayName: true }).shape,
     threadId: mcpThreadIdSchema,
+    matchedRanges: z
+      .array(
+        nativeRange.extend({
+          start: nativeRange.shape.start.describe(
+            "Inclusive start offset in UTF-16 code units within matchedMessage.content.",
+          ),
+          end: nativeRange.shape.end.describe(
+            "Exclusive end offset in UTF-16 code units within matchedMessage.content.",
+          ),
+        }),
+      )
+      .describe(
+        "Highlight [start,end) intervals in matchedMessage.content, measured in UTF-16 code units, not code points, grapheme clusters or UTF-8 bytes. JavaScript can use content.slice(start,end). Example: 中文 in ACK-QA-A1-🧪-中文 has [13,15). For code-point or UTF-8 byte indexing, translate both UTF-16 boundaries before slicing. Ranges can split a displayed grapheme; apply them to the unchanged returned content.",
+      ),
     matchedMessage: nativeResult.shape.matchedMessage
       .omit({ chatThreadId: true })
       .extend({
@@ -25,6 +40,11 @@ const mcpChatSearchResultSchema = nativeResult
 export const mcpChatSearchContract = c.router({
   search: {
     ...nativeSearch,
+    query: nativeSearch.query.extend({
+      keyword: nativeSearch.query.shape.keyword.describe(
+        "Lexical search: CJK runs use adjacent two-character (bigram) tokens; any single-character CJK run returns no results, including in mixed queries. Other letter/number runs match whole-word tokens after lowercasing; token groups are combined with AND. Non-token characters such as emoji and punctuation are ignored; queries with no indexable tokens return no results. For example, 中文 🧪 searches 中文, and 1️⃣ contributes the digit 1. No Unicode normalization, semantic matching or general substring guarantee.",
+      ),
+    }),
     responses: {
       ...nativeSearch.responses,
       200: z.object({

@@ -150,6 +150,36 @@ describe("thin MCP Web adapters", () => {
       if (!search?.outputSchema) {
         throw new Error("Missing MCP search response schema");
       }
+      expect(search.inputSchema.properties?.keyword).toMatchObject({
+        description: expect.stringMatching(
+          /CJK.*single-character CJK.*whole-word.*AND.*no indexable tokens.*No Unicode normalization/s,
+        ),
+      });
+      expect(search.outputSchema).toMatchObject({
+        properties: {
+          results: {
+            items: {
+              properties: {
+                matchedRanges: {
+                  description: expect.stringMatching(
+                    /\[start,end\).*matchedMessage\.content.*UTF-16.*code points.*UTF-8.*content\.slice.*ACK-QA-A1-🧪-中文.*\[13,15\)/s,
+                  ),
+                  items: {
+                    properties: {
+                      start: {
+                        description: expect.stringMatching(/Inclusive.*UTF-16/),
+                      },
+                      end: {
+                        description: expect.stringMatching(/Exclusive.*UTF-16/),
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
       const searchThreadId = randomUUID();
       const searchHit = {
         threadId: searchThreadId,
