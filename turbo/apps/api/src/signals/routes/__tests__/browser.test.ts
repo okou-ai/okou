@@ -1858,7 +1858,9 @@ describe("Browser user-action route", () => {
         http.get(`${BROWSER_USE_API_URL}/browsers/:id`, async ({ params }) => {
           if (holdNextRead) {
             holdNextRead = false;
-            providerReadStarted.resolve(undefined);
+            if (!providerReadStarted.settled()) {
+              providerReadStarted.resolve(undefined);
+            }
             await releaseProviderRead.promise;
           }
           return HttpResponse.json(providerBrowser(String(params.id)));
@@ -1889,7 +1891,9 @@ describe("Browser user-action route", () => {
           body: { error: { code: "BROWSER_USER_ACTION_CONFLICT" } },
         });
       });
-      releaseProviderRead.resolve(undefined);
+      if (!releaseProviderRead.settled()) {
+        releaseProviderRead.resolve(undefined);
+      }
       const applied = await applying;
       if (!overlap.ok && !applied.ok) {
         throw new AggregateError(
