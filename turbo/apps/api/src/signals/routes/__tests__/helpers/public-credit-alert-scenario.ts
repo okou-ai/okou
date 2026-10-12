@@ -41,6 +41,13 @@ import { createFixtureOperationOwner } from "./fixture-operation-owner";
 import { mockClerkUsers } from "./clerk-users";
 import { createRouteMocks } from "./route-test";
 
+type FixtureStripePrice = StripePrice & { readonly unit_amount: number };
+type FixtureStripeCheckoutSession = StripeCheckoutSession & {
+  readonly amount_total: number;
+  readonly amount_subtotal: number;
+};
+type FixtureStripeInvoice = StripeInvoice & { readonly subtotal: number };
+
 const metadataSchema = z.record(z.string(), z.string());
 const checkoutSchema = z.object({
   mode: z.literal("subscription"),
@@ -93,10 +100,10 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
   }
   const orgId = admin.orgId;
   const customers = new Map<string, StripeCustomer>();
-  const sessions = new Map<string, StripeCheckoutSession>();
+  const sessions = new Map<string, FixtureStripeCheckoutSession>();
   const carts = new Map<string, z.infer<typeof checkoutSchema>>();
   const subscriptions = new Map<string, StripeSubscription>();
-  const invoices = new Map<string, StripeInvoice>();
+  const invoices = new Map<string, FixtureStripeInvoice>();
   const cards = new Map<string, StripePaymentMethod>();
   const creditNotes = new Map<string, StripeCreditNote>();
   const noteInvoices = new Map<string, string>();
@@ -164,7 +171,7 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
 
   // Unchanged fixed provider catalog vectors from billing-checkout-fixture's
   // catalog-only method. No custom price, bonus, grant or business-row seed.
-  const catalog = new Map<string, StripePrice>();
+  const catalog = new Map<string, FixtureStripePrice>();
   for (const [usd, bonus] of [
     [20, 400],
     [50, 2600],
@@ -250,11 +257,9 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
         throw new Error("Checkout routing metadata lost its correlation");
       }
       const amount = cart.line_items.reduce((sum, line) => {
-        return (
-          sum + (required(catalog, line.price).unit_amount ?? 0) * line.quantity
-        );
+        return sum + required(catalog, line.price).unit_amount * line.quantity;
       }, 0);
-      const session: StripeCheckoutSession = {
+      const session: FixtureStripeCheckoutSession = {
         id: `cs_${randomUUID()}`,
         url: `https://checkout.stripe.com/c/pay/${randomUUID()}`,
         customer: cart.customer,
@@ -323,7 +328,7 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
     ) {
       throw new Error("Recharge lost customer/card/workspace correlation");
     }
-    const invoice: StripeInvoice = {
+    const invoice: FixtureStripeInvoice = {
       id: `in_${randomUUID()}`,
       customer: request.customer,
       metadata: request.metadata,
@@ -362,7 +367,7 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
     invoices.set(invoice.id, {
       ...invoice,
       amount_due: invoice.amount_due + item.amount,
-      subtotal: (invoice.subtotal ?? 0) + item.amount,
+      subtotal: invoice.subtotal + item.amount,
       lines: { data: [...invoice.lines.data, line], has_more: false },
     });
     return await Promise.resolve({ id: line.id, ...item });
@@ -383,7 +388,7 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
     if (invoice.status !== "open") {
       throw new Error("Cannot pay a non-open provider invoice");
     }
-    const paid: StripeInvoice = {
+    const paid: FixtureStripeInvoice = {
       ...invoice,
       amount_paid: invoice.amount_due,
       status: "paid",
@@ -552,13 +557,13 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
       };
     });
     const paymentIntent = `pi_${randomUUID()}`;
-    const invoice: StripeInvoice = {
+    const invoice: FixtureStripeInvoice = {
       id: `in_${randomUUID()}`,
       customer: customer.id,
       metadata: {},
       currency: "usd",
-      amount_due: session.amount_total ?? 0,
-      amount_paid: session.amount_total ?? 0,
+      amount_due: session.amount_total,
+      amount_paid: session.amount_total,
       subtotal: session.amount_subtotal,
       status: "paid",
       paid: true,
@@ -583,8 +588,8 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
         data: items.map((item) => {
           return {
             id: `il_${randomUUID()}`,
-            amount: (item.price.unit_amount ?? 0) * item.quantity,
-            subtotal: (item.price.unit_amount ?? 0) * item.quantity,
+            amount: item.price.unit_amount * item.quantity,
+            subtotal: item.price.unit_amount * item.quantity,
             quantity: item.quantity,
             pricing: {
               price_details: {
@@ -617,7 +622,7 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
     };
     invoices.set(invoice.id, invoice);
     subscriptions.set(subscription.id, subscription);
-    const completed: StripeCheckoutSession = {
+    const completed: FixtureStripeCheckoutSession = {
       ...session,
       status: "complete",
       payment_status: "paid",
