@@ -208,6 +208,101 @@ describe("canonical Discord terminal replies", () => {
     );
   });
 
+  it("keeps canonical completion without sending or replaying a reply when Discord access fails with 502", async () => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+    started.provider.state.channelResponse = (channelId) => {
+      return channelId === started.channelId
+        ? HttpResponse.json({ message: "Bad gateway" }, { status: 502 })
+        : undefined;
+    };
+    await (async () => {
+      await webhooks.requestAgentEvents(
+        {
+          runId: started.runId,
+          events: [
+            {
+              type: "assistant",
+              sequenceNumber: 0,
+              message: {
+                id: `discord-answer-${started.runId}`,
+                content: [
+                  {
+                    type: "text",
+                    text: "The completed reply remains in chat.",
+                  },
+                ],
+              },
+            },
+            { type: "system", sequenceNumber: 1 },
+          ],
+        },
+        headers,
+        [200],
+      );
+      const hash = await prepareRunnerSessionHistory(
+        context,
+        started.runId,
+        headers,
+        `Discord conversation history ${started.runId}`,
+      );
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        await webhooks.requestAgentComplete(
+          {
+            runId: started.runId,
+            exitCode: 0,
+            lastEventSequence: 1,
+            completion: {
+              cliAgentType: "claude-code",
+              cliAgentSessionId: `discord-session-${started.runId}`,
+              cliAgentSessionHistoryHash: hash,
+            },
+          },
+          headers,
+          [200],
+        );
+        await flushWaitUntilForTest();
+        expect(started.provider.sentMessages).toStrictEqual([]);
+      }
+      const events = await readProjectedChatEvents(context, {
+        threadId: started.threadId,
+        headers: { authorization: "Bearer clerk-session" },
+      });
+      expect(
+        events.filter((event) => {
+          return (
+            event.eventType === "run.completed" && event.runId === started.runId
+          );
+        }),
+      ).toHaveLength(1);
+    })().finally(() => {
+      delete started.provider.state.channelResponse;
+    });
+  });
+
+  it("delivers a long reply in order to the original destination with one model footer", async () => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    const text = "A long Discord answer. ".repeat(180);
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      text,
+    });
+    expect(started.provider.sentMessages.length).toBeGreaterThan(1);
+    expect(
+      new Set(
+        started.provider.sentMessages.map((message) => {
+          return message.channel_id;
+        }),
+      ),
+    ).toStrictEqual(new Set([started.channelId]));
+    expect(sentContents(started).join("")).toBe(
+      `${text}\n\n_Claude Fable 5.1_`,
+    );
+  });
+
   it("delivers the canonical safe run error without exposing the internal failure", async () => {
     const started = await startDiscordRun();
     const claim = await claimRun(started.actor, started.runId);
