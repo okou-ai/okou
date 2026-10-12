@@ -188,13 +188,20 @@ impl IdleActivationOwner {
                 validate_backing(self.sandbox.as_deref(), &backing.process, backing.identity)?;
             }
             if self.coverage.is_none() {
-                let backing = self
-                    .sandbox
-                    .as_ref()
-                    .ok_or(MemoryOperationError::Consumed)?
-                    .backing_process()
-                    .ok_or(MemoryOperationError::MissingBacking)?;
-                let identity = backing.identity();
+                // Coverage must share the original captured generation. A
+                // provider change after validation cannot replace that fence.
+                let (backing, identity) = if let Some(backing) = &self.original_backing {
+                    (backing.process.clone(), backing.identity)
+                } else {
+                    let backing = self
+                        .sandbox
+                        .as_ref()
+                        .ok_or(MemoryOperationError::Consumed)?
+                        .backing_process()
+                        .ok_or(MemoryOperationError::MissingBacking)?;
+                    let identity = backing.identity();
+                    (backing, identity)
+                };
                 let live = operations.request(MemoryOperationPlan::Retire {
                     growth_bytes: envelope.live_growth_bytes,
                     backing: backing.clone(),

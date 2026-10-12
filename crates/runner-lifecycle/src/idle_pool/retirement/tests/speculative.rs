@@ -300,6 +300,64 @@ impl SandboxBackingProcess for MutableBacking {
     }
 }
 
+struct ChangingBacking {
+    original: BackingProcessIdentity,
+    replacement: BackingProcessIdentity,
+    original_reads: Mutex<Option<usize>>,
+}
+
+#[async_trait::async_trait]
+impl SandboxBackingProcess for ChangingBacking {
+    fn identity(&self) -> BackingProcessIdentity {
+        let mut reads = self.original_reads.lock().unwrap();
+        match *reads {
+            None => self.original,
+            Some(0) => self.replacement,
+            Some(remaining) => {
+                *reads = Some(remaining - 1);
+                self.original
+            }
+        }
+    }
+
+    async fn exit_confirmed(&self) -> bool {
+        false
+    }
+}
+
+#[tokio::test]
+async fn cleanup_registration_never_recaptures_a_replacement_generation() {
+    let backing = Arc::new(ChangingBacking {
+        original: BackingProcessIdentity::new_generation(),
+        replacement: BackingProcessIdentity::new_generation(),
+        original_reads: Mutex::new(None),
+    });
+    let mut fixture =
+        JobFixture::new("thread:spec-cleanup-generation", Some(backing.clone())).await;
+    let mut speculative = owner(&mut fixture);
+    prepare(&mut speculative, RunId::new_v4()).await.unwrap();
+    let mut cleanup = Some(speculative.take_cleanup_owner().unwrap());
+    // The provider acknowledges both original-fence reads, then reports the
+    // replacement throughout registration/admission. Coverage must retain the
+    // original captured identity rather than capturing that replacement.
+    *backing.original_reads.lock().unwrap() = Some(2);
+    let env = Env::new(64).await;
+    assert_eq!(
+        cleanup
+            .as_mut()
+            .unwrap()
+            .grant_cleanup(&env.operations, envelope())
+            .await,
+        Err(MemoryOperationError::OwnershipInvariant)
+    );
+    assert!(
+        IdleActivationOwner::start_cleanup(&mut cleanup, "speculative_generation_changed").is_err()
+    );
+    assert!(cleanup.is_some());
+    assert_eq!(env.operations.snapshot().unwrap().started, 0);
+    retained(&fixture).await;
+}
+
 #[tokio::test]
 async fn original_generation_fence_survives_conversion_to_required_cleanup() {
     let backing = Arc::new(MutableBacking(Mutex::new(
