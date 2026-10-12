@@ -717,11 +717,6 @@
       "owner": "finishDelivery$"
     },
     {
-      "id": "TX-0258",
-      "file": "turbo/apps/api/src/signals/services/teams-chat-ingress.service.ts",
-      "owner": "ensureTeamsChatThreadRoute$"
-    },
-    {
       "id": "TX-0259",
       "file": "turbo/apps/api/src/signals/services/telegram-chat-ingress.service.ts",
       "owner": "ensureTelegramChatThreadRoute$"
