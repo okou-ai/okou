@@ -10,7 +10,7 @@ pub(super) mod startup;
 
 use super::{Control, Failure, Key, Work};
 use crate::ssh::{FailureReason, cache::Cache};
-use fixture::{Blocking, Http, bounded};
+use fixture::{Blocking, Http, SocketClosure, bounded};
 use http_body_util::{BodyExt, Limited};
 use runner_types::ids::RunId;
 use std::{
@@ -38,12 +38,27 @@ fn http_work(
     blocking: Option<SocketAddr>,
     fd: Fd,
 ) -> (Work, tokio::sync::oneshot::Receiver<Vec<u8>>) {
+    http_work_with_reset(address, blocking, fd, false)
+}
+
+fn http_work_with_reset(
+    address: SocketAddr,
+    blocking: Option<SocketAddr>,
+    fd: Fd,
+    reset_on_close: bool,
+) -> (Work, tokio::sync::oneshot::Receiver<Vec<u8>>) {
     let (body, received) = tokio::sync::oneshot::channel();
     let work = Box::new(move |control: Control| {
         Box::pin(async move {
             let socket = tokio::net::TcpStream::connect(address)
                 .await
                 .map_err(|_| Failure::DomainFailed)?;
+            if reset_on_close {
+                // Exercise abortive native IO retirement without changing the owner.
+                socket
+                    .set_zero_linger()
+                    .map_err(|_| Failure::DomainFailed)?;
+            }
             let socket = socket.into_std().map_err(|_| Failure::DomainFailed)?;
             if let Some(address) = blocking {
                 let retained = socket.try_clone().map_err(|_| Failure::DomainFailed)?;
@@ -156,18 +171,31 @@ async fn registration_close_joins_an_actually_pending_sdk_constructor() {
 
 #[tokio::test]
 async fn replacement_and_stale_close_cannot_adopt_or_cancel_the_winning_registration() {
+    replacement_and_stale_close(false).await;
+}
+
+#[tokio::test]
+async fn replacement_and_stale_close_preserve_the_winning_response_when_sockets_reset() {
+    replacement_and_stale_close(true).await;
+}
+
+async fn replacement_and_stale_close(reset_on_close: bool) {
     let cache = Cache::new();
     let run = RunId::new_v4();
     let old = cache.register(run);
-    let a = Http::new(vec![7; 1024]).await;
-    let (work, old_body) = http_work(a.address, None, Arc::new(Mutex::new(None)));
+    let a = Http::new(vec![7; 1024]).await.named("old registration");
+    let (work, old_body) =
+        http_work_with_reset(a.address, None, Arc::new(Mutex::new(None)), reset_on_close);
     let old_access = old.lookup(uuid::Uuid::new_v4()).unwrap();
     let old_node = old_access.native_node(key(1), work).unwrap();
     a.requested().await;
     let winning = cache.register(run);
     let b_bytes: Vec<_> = (0..65536).map(|index| (index % 251) as u8).collect();
-    let b = Http::new(b_bytes.clone()).await;
-    let (work, body) = http_work(b.address, None, Arc::new(Mutex::new(None)));
+    let b = Http::new(b_bytes.clone())
+        .await
+        .named("winning registration");
+    let (work, body) =
+        http_work_with_reset(b.address, None, Arc::new(Mutex::new(None)), reset_on_close);
     let access = winning.lookup(uuid::Uuid::new_v4()).unwrap();
     let node = access.native_node(key(1), work).unwrap();
     b.requested().await;
@@ -181,8 +209,17 @@ async fn replacement_and_stale_close_cannot_adopt_or_cancel_the_winning_registra
     assert_eq!(bounded(node.ready()).await, Ok(()));
     winning.close();
     bounded(winning.shutdown_native()).await.unwrap();
-    a.finish().await;
-    b.finish().await;
+    // Joined cancellation closes the socket; a graceful TCP FIN is not required.
+    let old_closure = a.finish_closed().await;
+    let winning_closure = b.finish_closed().await;
+    if reset_on_close {
+        assert_eq!(old_closure, SocketClosure::Reset, "old registration");
+        assert_eq!(
+            winning_closure,
+            SocketClosure::Reset,
+            "winning registration"
+        );
+    }
 }
 
 #[tokio::test]
