@@ -11730,6 +11730,77 @@ describe("usage pack allocation management", () => {
     ).not.toHaveBeenCalled();
   });
 
+  it("reads the current plan before validating invitation confirmation bodies in each request", async () => {
+    const api = createBddApi(context);
+    const actor = api.user();
+    await api.completeOnboarding(actor);
+    const lifecycle = publicPlanLifecycle(context, actor);
+    const client = setupApp({ context, routes: orgInviteRoutes })(
+      orgInviteContract,
+    );
+
+    for (const status of [
+      "active",
+      "canceled",
+      "trialing",
+      "past_due",
+      "canceled",
+    ] as const) {
+      await lifecycle.update(status);
+      const response = await accept(
+        client.confirmPurchase({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { purchaseId: randomUUID() },
+          body: { paymentMethodPreviewToken: "" },
+        }),
+        [400, 403],
+      );
+      expect(response.status).toBe(status === "canceled" ? 403 : 400);
+      if (response.status === 403) {
+        expect(response.body.error).toStrictEqual({
+          message: "Reactivate your workspace plan to invite members",
+          code: "FORBIDDEN",
+        });
+      }
+    }
+    expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();
+    expect(
+      context.mocks.clerk.organizations.createOrganizationInvitation,
+    ).not.toHaveBeenCalled();
+  });
+
+  it.each(["member", "billing disabled"] as const)(
+    "keeps the %s guard before invitation confirmation body validation",
+    async (guard) => {
+      const api = createBddApi(context);
+      const actor = api.user();
+      await api.completeOnboarding(actor);
+      if (guard === "member") {
+        mocks.clerk.session(actor.userId, actor.orgId, "org:member");
+      } else {
+        mockOptionalEnv("STRIPE_SECRET_KEY", undefined);
+      }
+      const response = await accept(
+        setupApp({ context, routes: orgInviteRoutes })(
+          orgInviteContract,
+        ).confirmPurchase({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { purchaseId: randomUUID() },
+          body: { paymentMethodPreviewToken: "" },
+        }),
+        [403, 503],
+      );
+      expect(response.status).toBe(guard === "member" ? 403 : 503);
+      expect(response.body.error.message).toBe(
+        guard === "member" ? "Access denied" : "Billing not configured",
+      );
+      expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();
+      expect(
+        context.mocks.clerk.organizations.createOrganizationInvitation,
+      ).not.toHaveBeenCalled();
+    },
+  );
+
   it("supports invitation purchase for a non-staff org", async () => {
     const fixture = await createPublicBillingOrg("pro");
     await fixture.run(async () => {

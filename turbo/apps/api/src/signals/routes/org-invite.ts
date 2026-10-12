@@ -32,6 +32,7 @@ import { getStripeClient } from "../external/stripe-client";
 import { parseBillingPaymentMethodPreviewToken } from "../services/billing-purchase-preview-token.service";
 import {
   loadOrgPlanCapabilities,
+  orgPlanCapabilitiesFromRow,
   runtimeStatusForEntitlement,
 } from "../services/org-plan-entitlement-read.service";
 import {
@@ -613,6 +614,49 @@ const revalidateInvitationPurchasePreview$ = command(
   },
 );
 
+const invitationPurchasePlanCapabilities$ = computed((get) => {
+  const db = get(db$);
+  const { orgId } = get(organizationAuthContext$);
+  // Acquisition stays synchronous; query and decoder failures stay async.
+  return (async () => {
+    const query = db
+      .select({
+        planKey: orgPlanEntitlements.planKey,
+        status: orgPlanEntitlements.status,
+        baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
+        canBuyConcurrency: orgPlanEntitlements.canBuyConcurrency,
+        canBuyCredits: orgPlanEntitlements.canBuyCredits,
+        showUsagePack: orgPlanEntitlements.showUsagePack,
+        autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
+        restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
+        workflowWebhookAutomationAllowed:
+          orgPlanEntitlements.workflowWebhookTriggerAllowed,
+        audioLifetimeLimit: orgPlanEntitlements.audioLifetimeLimit,
+        audioDailyRateLimit: orgPlanEntitlements.audioDailyRateLimit,
+        audioDailyDurationSeconds:
+          orgPlanEntitlements.audioDailyDurationSeconds,
+      })
+      .from(orgPlanEntitlements)
+      .where(eq(orgPlanEntitlements.orgId, orgId))
+      .limit(1);
+    const [capabilities] = await query;
+    if (!capabilities) {
+      const orgQuery = db
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, orgId))
+        .limit(1);
+      const [org] = await orgQuery;
+      if (!org) {
+        return null;
+      }
+      throw new Error(`Missing org plan entitlement for ${orgId}`);
+    }
+
+    return orgPlanCapabilitiesFromRow(capabilities, orgId);
+  })();
+});
+
 const purchaseConfirmInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
@@ -623,8 +667,7 @@ const purchaseConfirmInner$ = command(
       return providerUnavailable("Billing not configured");
     }
     signal.throwIfAborted();
-    const db = get(db$);
-    const capabilities = await loadOrgPlanCapabilities(db, auth.orgId);
+    const capabilities = await get(invitationPurchasePlanCapabilities$);
     signal.throwIfAborted();
     if (capabilities?.status !== "active") {
       return activePlanRequired;
