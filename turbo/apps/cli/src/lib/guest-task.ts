@@ -6,7 +6,7 @@ const GUEST_TASK_EXEC = "/usr/local/bin/guest-task-exec";
 // One consumer deadline covers connection, placement and private reporting.
 const HELPER_TIMEOUT_MS = 30_000;
 const MAX_REPORT_BYTES = 4_096;
-const startupSchema = z.strictObject({
+export const guestTaskStartupSchema = z.strictObject({
   handle: z
     .string()
     .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
@@ -16,8 +16,17 @@ const startupSchema = z.strictObject({
 export interface GuestTask {
   readonly handle: string;
   readonly pid: number;
+  readonly child: ChildProcess;
   detach(): void;
   stop(): Promise<void>;
+}
+
+export interface GuestTaskLaunchOptions {
+  readonly stdout: number;
+  readonly stderr: number;
+  readonly env: NodeJS.ProcessEnv;
+  /** Install application listeners synchronously, before native admission. */
+  readonly onSpawn: (child: ChildProcess) => void;
 }
 
 function observeClose(child: ChildProcess): Promise<number | null> {
@@ -67,14 +76,15 @@ async function readStartup(report: Readable, pid: number | undefined) {
       "Guest task launcher exited without a complete startup report",
     );
   }
-  const startup = startupSchema.parse(JSON.parse(record));
+  const startup = guestTaskStartupSchema.parse(JSON.parse(record));
   if (startup.pid !== pid) {
     throw new Error("Guest task launcher reported a different process ID");
   }
   return startup;
 }
 
-async function stopTask(handle: string): Promise<void> {
+export async function stopGuestTask(handle: string): Promise<void> {
+  guestTaskStartupSchema.shape.handle.parse(handle);
   const helper = spawn(GUEST_TASK_EXEC, ["stop", handle], {
     env: process.env,
     stdio: ["ignore", "ignore", "inherit"],
@@ -104,7 +114,7 @@ async function stopTask(handle: string): Promise<void> {
 export async function launchGuestTask(
   program: string,
   args: string[],
-  outputFd: number,
+  output: number | GuestTaskLaunchOptions,
 ): Promise<GuestTask> {
   const child = spawn(
     GUEST_TASK_EXEC,
@@ -112,8 +122,11 @@ export async function launchGuestTask(
     {
       // A task also needs its own process group to survive caller-group cleanup.
       detached: true,
-      env: process.env,
-      stdio: ["ignore", outputFd, outputFd, "pipe"],
+      env: typeof output === "number" ? process.env : output.env,
+      stdio:
+        typeof output === "number"
+          ? ["ignore", output, output, "pipe"]
+          : ["pipe", output.stdout, output.stderr, "pipe", "ipc"],
     },
   );
   const closed = observeClose(child);
@@ -123,6 +136,7 @@ export async function launchGuestTask(
   });
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    if (typeof output !== "number") output.onSpawn(child);
     if (!(report instanceof Readable)) {
       throw new Error(
         "Guest task launcher did not open its private report pipe",
@@ -134,12 +148,13 @@ export async function launchGuestTask(
     const startup = await readStartup(report, child.pid);
     return {
       ...startup,
+      child,
       detach() {
         child.unref();
       },
       async stop() {
         try {
-          await stopTask(startup.handle);
+          await stopGuestTask(startup.handle);
         } finally {
           // Runtime exit also triggers the broker's descendant-cleanup owner.
           child.kill("SIGKILL");

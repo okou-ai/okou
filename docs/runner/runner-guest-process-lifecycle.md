@@ -106,14 +106,16 @@ agent-domain OOM failure.
 
 ### Tools-owned task runtimes
 
-A managed main runtime or its top-level tool may launch an arbitrary sandbox-user
+A managed runtime or its scoped tool may launch an arbitrary sandbox-user
 program through `/usr/local/bin/guest-task-exec --report-fd <fd> -- <program>
 [args...]`. The broker allocates a fresh opaque UUID domain directly below
-`workload/tools`, separate from the starting Bash's populated `tool-N` leaf. Each
+the creator runtime's `tools`, separate from the starting Bash's populated `tool-N` leaf. Each
 empty `task-<UUID>` contains `runtime` and an empty `tools` distribution node;
 managed shell tools from that registered runtime enter only its `tools/tool-N`.
-Tasks cannot recursively create tasks or request caller-selected cgroup paths,
-quotas, protection or root execution. This is not a session, prompt, model,
+Tasks may recursively create tasks: a child of A enters
+`tools/task-A/tools/task-B/runtime`. The authenticated process cgroup and active
+registry select the parent; callers cannot select cgroup paths, quotas,
+protection or root execution. This is not a session, prompt, model,
 steering or child Run contract.
 
 The selected report FD must be a writable private pipe/socket numbered at least 3. The launcher consumes it, sends one newline-delimited JSON `{handle,pid}`
@@ -133,13 +135,16 @@ the application boundary for `image-batch wait`. Failed startup publication stop
 the opaque task and collects the owned child; failed native cleanup retains the
 state directory and reports an error.
 
-`guest-task-exec stop <handle>` is authenticated from the owning main
-runtime/top-level tools domain. Handles are operation-owned identities, not
-subagent numbers or killable bare PIDs. Stop fences scoped admission, waits for
+`guest-task-exec stop <handle>` is authenticated from the owning runtime/tools
+domain. The main runtime may stop any task; nested callers may stop only their
+own descendants. Handles are operation-owned identities, not
+subagent numbers or killable bare PIDs. Stop fences the entire family's admission, waits for
 bounded pending placement, sends graceful termination, then uses task-only
 `cgroup.kill` if needed. Success requires an empty, recursively removed subtree.
-Failed cleanup remains closed/owned and is never a successful stop. Unknown or
-retired handles fail explicitly; they cannot address a replacement task. A
+Failed cleanup remains closed/owned and is never a successful stop. Unknown
+handles fail explicitly. Proven successful cleanup retains an
+operation-local retirement record so a completion/stop race returns success;
+a retired handle cannot address a replacement task. A
 retained runtime pidfd also drives cleanup after natural exit, exec failure,
 crash or OOM, including detached/reparented descendants. It does not transfer
 waitpid ownership. Operation teardown cancels and joins brokers before its

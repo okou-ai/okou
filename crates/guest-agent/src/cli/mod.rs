@@ -2635,6 +2635,29 @@ mod tests {
             ]
         );
 
+        runtime.pi_installed_cli_requirement = Cow::Borrowed(
+            r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.387.0","requiredPiSessionConstructionDigest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}"#,
+        );
+        assert_eq!(
+            build_pi_command_for_runtime(&runtime, Some(&installed))
+                .unwrap()
+                .last()
+                .unwrap(),
+            "__agent-loop"
+        );
+        let mut current = installed_okou_cli_for_test("9.387.0", "1.36.0");
+        current.session_construction =
+            Some(guest_contracts::okou_cli::OkouCliSessionConstruction {
+                digest: "d".repeat(64),
+            });
+        assert_eq!(
+            build_pi_command_for_runtime(&runtime, Some(&current)).unwrap(),
+            vec![
+                OKOU_CLI_LAUNCHER_PATH.to_string(),
+                "__agent-loop".to_string()
+            ]
+        );
+
         runtime.pi_installed_cli_requirement = Cow::Borrowed("not json");
         assert!(build_pi_command_for_runtime(&runtime, Some(&installed)).is_err());
     }
