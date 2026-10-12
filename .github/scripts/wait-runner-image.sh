@@ -182,7 +182,6 @@ consumer_obsolete_state() {
 cancel_obsolete_consumer() {
   # GitHub owns PR/ref lifecycle. Keep this guard while independent producer
   # cancellation can leave a consumer outside the selected-owner barrier.
-  [ "${CHECK_OBSOLETE_CONSUMER:-false}" = "true" ] || return 0
   case "${GITHUB_EVENT_NAME:-}" in
     merge_group|pull_request) ;;
     *) return 0 ;;

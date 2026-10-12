@@ -3,6 +3,8 @@ set -euo pipefail
 
 # Each case supplies its own REPO fixture instead of the calling workflow's repo.
 unset GITHUB_REPOSITORY
+# Artifact and quota fixtures use a push consumer; PR lifecycle has its own suite.
+export GITHUB_EVENT_NAME=push
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WAIT="${SCRIPT_DIR}/wait-runner-image.sh"
@@ -223,7 +225,7 @@ out=$(PATH="${TMPDIR}/bin:${PATH}" \
   GH_ARGS_LOG="${TMPDIR}/gh-args.log" \
   FAKE_MANIFEST="${TMPDIR}/manifest-x86.json" \
   EXPECTED_ARTIFACT_NAME=runner-image-manifest-x86_64-unknown-linux-musl-build-sha-pr-123 \
-  GITHUB_REPOSITORY= \
+  GITHUB_REPOSITORY='' \
   REPO=example/runner-images \
   HEAD_SHA=build-sha \
   LOOKUP_SHA=head-sha \
