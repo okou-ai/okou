@@ -1,14 +1,17 @@
 use std::{
     error::Error as _,
+    future::Future as _,
     io,
     path::{Path, PathBuf},
     pin::Pin,
     sync::{Arc, OnceLock},
     task::{Context, Poll},
+    time::Duration,
 };
 
 use aws_sdk_s3::error::SdkError;
 use tokio::io::{AsyncRead, ReadBuf};
+use tokio::time::{Instant, Sleep};
 
 use super::{
     R2DownloadError, R2Error, R2ImageCache,
@@ -19,9 +22,16 @@ use super::{
     keys::key_for_template_hash,
 };
 
+// Leave time for verification/customization before CI's 600-second SSH budget.
+// The same deadline covers SDK retries, response headers and streamed body reads.
+pub(super) const TEMPLATE_TRANSFER_TIMEOUT: Duration = Duration::from_secs(8 * 60);
+const TRANSFER_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
+
 impl R2ImageCache {
     /// Download one bounded `runner-templates/{hash}.tar.zst` object and
     /// publish its exact-size `template.ext4` member at `destination`.
+    /// Request retries and body reads share an eight-minute deadline. The
+    /// extractor finishes before timeout cleanup; existing destinations survive.
     pub async fn try_download_template_to_file(
         &self,
         hash: &str,
@@ -39,6 +49,8 @@ impl R2ImageCache {
         destination: &Path,
         expected_template_bytes: u64,
     ) -> Result<bool, R2DownloadError> {
+        let started = Instant::now();
+        let deadline = started + TEMPLATE_TRANSFER_TIMEOUT;
         let staging = file_staging_dir(destination);
         // Clean stale residue from a previously crashed download even if this
         // attempt later turns into a cache miss or request error. Successful
@@ -49,14 +61,18 @@ impl R2ImageCache {
         let limits =
             TemplateArchiveLimits::new(expected_template_bytes).map_err(R2DownloadError::Local)?;
 
-        let resp = match self
-            .client
-            .get_object()
-            .bucket(&self.bucket)
-            .key(key)
-            .send()
-            .await
-        {
+        tracing::info!(r2_key = key, "starting template download");
+        let response = tokio::time::timeout_at(
+            deadline,
+            self.client
+                .get_object()
+                .bucket(&self.bucket)
+                .key(key)
+                .send(),
+        )
+        .await
+        .map_err(|_| R2DownloadError::DeadlineExceeded { key: key.into() })?;
+        let resp = match response {
             Ok(r) => r,
             Err(SdkError::ServiceError(e))
                 if matches!(
@@ -99,7 +115,13 @@ impl R2ImageCache {
             .await
             .map_err(|e| R2DownloadError::Local(R2Error::Io(e)))?;
 
-        let (body_reader, body_read_failure) = TrackedBodyReader::new(resp.body.into_async_read());
+        tracing::info!(
+            r2_key = key,
+            content_length = resp.content_length(),
+            "template response received; extracting archive"
+        );
+        let (body_reader, body_read_failure) =
+            TrackedBodyReader::new(resp.body.into_async_read(), key, started, deadline);
 
         if let Err(e) = tokio::fs::create_dir_all(&staging).await {
             return Err(finish_file_staging_error(
@@ -175,25 +197,44 @@ impl R2ImageCache {
             .await
             .map_err(R2DownloadError::Local)?;
 
+        tracing::info!(
+            r2_key = key,
+            elapsed_seconds = started.elapsed().as_secs(),
+            "template transfer complete"
+        );
         Ok(true)
     }
 }
 
 #[derive(Clone, Default)]
 struct BodyReadFailure {
-    diagnostic: Arc<OnceLock<String>>,
+    diagnostic: Arc<OnceLock<BodyReadError>>,
+}
+
+enum BodyReadError {
+    Request(String),
+    DeadlineExceeded,
 }
 
 impl BodyReadFailure {
     fn record(&self, error: &io::Error) {
-        self.diagnostic.get_or_init(|| error_diagnostic(error));
+        self.diagnostic
+            .get_or_init(|| BodyReadError::Request(error_diagnostic(error)));
+    }
+
+    fn record_deadline_exceeded(&self) {
+        self.diagnostic
+            .get_or_init(|| BodyReadError::DeadlineExceeded);
     }
 
     fn request_error(&self, key: &str) -> Option<R2DownloadError> {
-        self.diagnostic.get().map(|diagnostic| {
-            R2DownloadError::Request(R2Error::S3(format!(
+        self.diagnostic.get().map(|diagnostic| match diagnostic {
+            BodyReadError::DeadlineExceeded => {
+                R2DownloadError::DeadlineExceeded { key: key.into() }
+            }
+            BodyReadError::Request(diagnostic) => R2DownloadError::Request(R2Error::S3(format!(
                 "get_object {key} body read: {diagnostic}"
-            )))
+            ))),
         })
     }
 }
@@ -201,15 +242,25 @@ impl BodyReadFailure {
 struct TrackedBodyReader<R> {
     inner: R,
     failure: BodyReadFailure,
+    deadline: Pin<Box<Sleep>>,
+    key: String,
+    started: Instant,
+    last_progress: Instant,
+    bytes_read: u64,
 }
 
 impl<R> TrackedBodyReader<R> {
-    fn new(inner: R) -> (Self, BodyReadFailure) {
+    fn new(inner: R, key: &str, started: Instant, deadline: Instant) -> (Self, BodyReadFailure) {
         let failure = BodyReadFailure::default();
         (
             Self {
                 inner,
                 failure: failure.clone(),
+                deadline: Box::pin(tokio::time::sleep_until(deadline)),
+                key: key.into(),
+                started,
+                last_progress: started,
+                bytes_read: 0,
             },
             failure,
         )
@@ -222,7 +273,32 @@ impl<R: AsyncRead + Unpin> AsyncRead for TrackedBodyReader<R> {
         cx: &mut Context<'_>,
         buffer: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
+        // Expiry is polled by the blocking extractor's actual async reader. The
+        // extractor receives an error and exits before its caller cleans staging;
+        // dropping a timeout-wrapped spawn_blocking future would not stop it.
+        if self.deadline.as_mut().poll(cx).is_ready() {
+            self.failure.record_deadline_exceeded();
+            return Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "template transfer deadline exceeded",
+            )));
+        }
+        let before = buffer.filled().len();
         match Pin::new(&mut self.inner).poll_read(cx, buffer) {
+            Poll::Ready(Ok(())) => {
+                self.bytes_read += (buffer.filled().len() - before) as u64;
+                let now = Instant::now();
+                if now.duration_since(self.last_progress) >= TRANSFER_PROGRESS_INTERVAL {
+                    tracing::info!(
+                        r2_key = self.key,
+                        bytes_read = self.bytes_read,
+                        elapsed_seconds = now.duration_since(self.started).as_secs(),
+                        "template download progress"
+                    );
+                    self.last_progress = now;
+                }
+                Poll::Ready(Ok(()))
+            }
             Poll::Ready(Err(error)) => {
                 self.failure.record(&error);
                 Poll::Ready(Err(error))

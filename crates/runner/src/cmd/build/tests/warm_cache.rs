@@ -4,6 +4,47 @@ use super::*;
 use aws_smithy_mocks::mock;
 
 #[tokio::test]
+async fn cached_warm_head_completes_while_template_writer_is_active() {
+    use aws_sdk_s3::{Client, operation::head_object::HeadObjectOutput};
+
+    let dir = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(dir.path().to_path_buf());
+    let head = mock!(Client::head_object).then_output(|| HeadObjectOutput::builder().build());
+    let cache = mock_r2_cache(&[&head]);
+    let input = template_input(&home, TemplateCache::Required(&cache));
+    let _writer = lock::acquire(home.template_lock(input.template_hash))
+        .await
+        .unwrap();
+    let warm_parent = template_warm_parent_dir(&home, input.template_hash);
+    let active_attempt = warm_parent.join("attempt-active.tmp");
+    tokio::fs::create_dir_all(&active_attempt).await.unwrap();
+    tokio::fs::write(active_attempt.join(TEMPLATE_FILE), b"active-writer")
+        .await
+        .unwrap();
+
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        ensure_template_cached(&input),
+    )
+    .await
+    .expect("a cached warm HEAD must not wait for an active template writer")
+    .unwrap();
+    assert_eq!(
+        tokio::fs::read(active_attempt.join(TEMPLATE_FILE))
+            .await
+            .unwrap(),
+        b"active-writer"
+    );
+    assert_eq!(head.num_calls(), 1);
+    drop(_writer);
+    ensure_template_cached(&input).await.unwrap();
+    assert!(
+        !warm_parent.exists(),
+        "later eligible warming must clean stale residue"
+    );
+}
+
+#[tokio::test]
 async fn warm_cache_download_request_failure_is_fatal() {
     use aws_sdk_s3::Client;
 

@@ -2,10 +2,184 @@ use super::fixtures::*;
 use super::*;
 
 use aws_smithy_mocks::mock;
+use bytes::Bytes;
+use http_body::{Body, Frame};
+use std::{
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 use tokio::io::AsyncReadExt;
+use tokio::sync::Notify;
 use tracing::instrument::WithSubscriber;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_test_support::CapturedEvents;
+
+struct NeverEndsBody {
+    bytes: Option<Bytes>,
+    blocked: Arc<Notify>,
+}
+
+impl Body for NeverEndsBody {
+    type Data = Bytes;
+    type Error = std::io::Error;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, Self::Error>>> {
+        if let Some(bytes) = self.bytes.take() {
+            return Poll::Ready(Some(Ok(Frame::data(bytes))));
+        }
+        self.blocked.notify_one();
+        Poll::Pending
+    }
+}
+
+#[tokio::test]
+async fn cached_template_materializes_while_template_writer_is_active() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(dir.path().to_path_buf());
+    let rootfs = RootfsPaths::new(&home, "independent-cache-reader");
+    let get = template_get_rule(template_archive_bytes(b"independent-reader").await);
+    let cache = mock_r2_cache(&[&get]);
+    let input = template_input(&home, TemplateCache::BestEffort(&cache));
+    let _writer = lock::acquire(home.template_lock(input.template_hash))
+        .await
+        .unwrap();
+    let (mut scripts, work_dir) = fake_rootfs_scripts().await;
+
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        obtain_template_to_staging(&input, &rootfs, &mut scripts),
+    )
+    .await
+    .expect("an independent cached reader must not queue behind the template writer")
+    .unwrap();
+    let mut output = tokio::fs::File::open(rootfs.rootfs_staging())
+        .await
+        .unwrap();
+    let mut prefix = [0u8; 18];
+    output.read_exact(&mut prefix).await.unwrap();
+    assert_eq!(&prefix, b"independent-reader");
+    assert!(!work_dir.join("build-template-called").exists());
+    assert_eq!(get.num_calls(), 1);
+}
+
+#[tokio::test]
+async fn missing_template_rechecks_repaired_object_after_writer_finishes() {
+    use aws_sdk_s3::{
+        Client,
+        operation::get_object::{GetObjectError, GetObjectOutput},
+        types::error::NoSuchKey,
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let home = Arc::new(HomePaths::with_root(dir.path().to_path_buf()));
+    let _writer = lock::acquire(home.template_lock("test-template-hash"))
+        .await
+        .unwrap();
+    let observed_miss = Arc::new(Notify::new());
+    let observed_for_rule = Arc::clone(&observed_miss);
+    let archive = Bytes::from(template_archive_bytes(b"repaired-template").await);
+    let lock_path = home.template_lock("test-template-hash");
+    let get = mock!(Client::get_object)
+        .sequence()
+        .error(move || {
+            observed_for_rule.notify_one();
+            GetObjectError::NoSuchKey(NoSuchKey::builder().build())
+        })
+        .output(move || {
+            assert!(
+                matches!(
+                    lock::try_acquire_or_busy_blocking(&lock_path).unwrap(),
+                    lock::TryLock::Busy
+                ),
+                "repair recheck must own the template write lock"
+            );
+            GetObjectOutput::builder()
+                .body(aws_sdk_s3::primitives::ByteStream::from(archive.clone()))
+                .build()
+        })
+        .build();
+    let cache = mock_r2_cache(&[&get]);
+    let rootfs = RootfsPaths::new(&home, "repaired-cache-reader");
+    let staging = rootfs.rootfs_staging();
+    let (mut scripts, work_dir) = fake_rootfs_scripts().await;
+    let transfer = tokio::spawn(async move {
+        let input = template_input(&home, TemplateCache::BestEffort(&cache));
+        obtain_template_to_staging(&input, &rootfs, &mut scripts).await
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), observed_miss.notified())
+        .await
+        .unwrap();
+    drop(_writer);
+    tokio::time::timeout(std::time::Duration::from_secs(5), transfer)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let mut output = tokio::fs::File::open(staging).await.unwrap();
+    let mut prefix = [0u8; 17];
+    output.read_exact(&mut prefix).await.unwrap();
+    assert_eq!(&prefix, b"repaired-template");
+    assert!(!work_dir.join("build-template-called").exists());
+    assert_eq!(get.num_calls(), 2);
+}
+
+#[tokio::test]
+async fn transfer_deadline_is_fatal_without_rebuild_or_remote_overwrite() {
+    use aws_sdk_s3::{Client, operation::get_object::GetObjectOutput, primitives::ByteStream};
+
+    let dir = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(dir.path().to_path_buf());
+    let rootfs = RootfsPaths::new(&home, "deadline-rootfs");
+    tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
+    let staging = rootfs.rootfs_staging();
+    tokio::fs::write(&staging, b"existing-output")
+        .await
+        .unwrap();
+    let blocked = Arc::new(Notify::new());
+    let blocked_for_rule = Arc::clone(&blocked);
+    let archive = Bytes::from(template_archive_bytes(b"downloaded-template").await);
+    let get = mock!(Client::get_object).then_output(move || {
+        GetObjectOutput::builder()
+            .body(ByteStream::from_body_1_x(NeverEndsBody {
+                bytes: Some(archive.clone()),
+                blocked: Arc::clone(&blocked_for_rule),
+            }))
+            .build()
+    });
+    let cache = mock_r2_cache(&[&get]);
+    let input = template_input(&home, TemplateCache::BestEffort(&cache));
+    let (_scripts, work_dir) = fake_rootfs_scripts().await;
+    let attempt_dir = rootfs.dir().join("attempt.tmp");
+    let transfer = materialize_template_from_r2_or_build(
+        &input,
+        &attempt_dir,
+        &work_dir,
+        TemplateMaterializationTarget::RootfsStaging(&staging),
+    );
+    tokio::pin!(transfer);
+    tokio::select! {
+        _ = blocked.notified() => {},
+        result = &mut transfer => panic!("expected a pending response body: {result:?}"),
+    }
+    tokio::time::pause();
+    tokio::time::advance(std::time::Duration::from_secs(8 * 60)).await;
+    tokio::time::resume();
+    let error = tokio::time::timeout(std::time::Duration::from_secs(5), transfer)
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("transfer deadline exceeded"),
+        "{error}"
+    );
+    assert_eq!(tokio::fs::read(&staging).await.unwrap(), b"existing-output");
+    assert!(!work_dir.join("build-template-called").exists());
+    assert_eq!(get.num_calls(), 1);
+}
 
 #[tokio::test]
 async fn best_effort_upload_allows_missing_r2_cache() {

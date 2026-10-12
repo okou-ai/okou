@@ -263,7 +263,10 @@ if [ "${1:-}" = "sudo" ] && [ "${2:-}" = "install" ]; then
       exit "$status"
     fi
 
-    install -m 755 /dev/stdin "$candidate"
+    # Emulate the remote install's stream and mode without requiring the test
+    # host to expose /dev/stdin (the production host remains the SSH boundary).
+    cat > "$candidate"
+    chmod 755 "$candidate"
     if [ "${SSH_UPLOAD_CORRUPT:-}" = 1 ]; then
       printf 'corrupt bytes\n' > "$candidate"
     fi
@@ -297,11 +300,15 @@ if [ "${SSH_COMPLETE:-}" = "1" ] &&
    [ "${7:-}" = "build" ] && [ "${8:-}" = "--profile" ] &&
    [ "${9:-}" = "vm0/default" ]; then
   if [ "$#" -eq 10 ] && [ "${10}" = "--warm-rootfs-cache" ]; then
-    exit 0
+    exit "${SSH_WARM_STATUS:-0}"
   fi
   if [ "$#" -eq 9 ]; then
     printf 'rootfs_hash=%064d\nsnapshot_hash=%064d\n' 1 2
-    exit 0
+    if [ -n "${SSH_BUILD_RELEASE_PIPE:-}" ]; then
+      echo "live-build-progress"
+      IFS= read -r release < "$SSH_BUILD_RELEASE_PIPE"
+    fi
+    exit "${SSH_BUILD_STATUS:-0}"
   fi
 fi
 
@@ -448,6 +455,9 @@ run_remote_case() {
     SSH_GC_STATUSES="${REMOTE_GC_STATUSES:-}" \
     SSH_REACH_GC="${REMOTE_REACH_GC:-}" \
     SSH_COMPLETE="${REMOTE_COMPLETE:-}" \
+    SSH_BUILD_STATUS="${REMOTE_BUILD_STATUS:-0}" \
+    SSH_WARM_STATUS="${REMOTE_WARM_STATUS:-0}" \
+    SSH_BUILD_RELEASE_PIPE="${REMOTE_BUILD_RELEASE_PIPE:-}" \
     SSH_UPLOAD_DIR="${case_dir}/uploads" \
     SSH_UPLOAD_COUNT_FILE="${case_dir}/upload-count" \
     SSH_UPLOAD_STATUSES="${REMOTE_UPLOAD_STATUSES:-}" \
@@ -469,14 +479,68 @@ run_remote_case() {
     FRESH_METADATA_PATH="$metadata" \
     EXPECTED_BINARY_INPUT_DIGEST="$input_digest" \
     MANIFEST_PATH="${case_dir}/manifest.json" \
-    "$PREPARE" >"${case_dir}/out" 2>"${case_dir}/err"; then
+    "$PREPARE" >"${REMOTE_STDOUT:-${case_dir}/out}" 2>"${case_dir}/err"; then
+    if [ "${REMOTE_BUILD_STATUS:-0}" -ne 0 ] || [ "${REMOTE_WARM_STATUS:-0}" -ne 0 ]; then
+      fail "expected the supplied SSH build status to fail preparation"
+    fi
     [ "${REMOTE_COMPLETE:-}" = "1" ] || fail "expected mocked post-preparation SSH boundary to fail"
   else
-    if [ "${REMOTE_COMPLETE:-}" = "1" ]; then
+    if [ "${REMOTE_COMPLETE:-}" = "1" ] &&
+       [ "${REMOTE_BUILD_STATUS:-0}" -eq 0 ] && [ "${REMOTE_WARM_STATUS:-0}" -eq 0 ]; then
       fail "expected full mocked image preparation to succeed"
     fi
   fi
 }
+
+build_timeout_case="${TMPDIR}/remote-build-timeout"
+prepare_remote_case "$build_timeout_case"
+REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 \
+  REMOTE_COMPLETE=1 REMOTE_BUILD_STATUS=124 run_remote_case "$build_timeout_case"
+grep -q 'runner image-build SSH failed: host=dev-arm-1 status=124' "${build_timeout_case}/out" || {
+  cat "${build_timeout_case}/out" "${build_timeout_case}/err"
+  fail "expected original SSH timeout status"
+}
+grep -q 'runner image-build SSH timed out: host=dev-arm-1 operation_timeout_seconds=600' "${build_timeout_case}/out" || fail "expected timeout budget diagnosis"
+grep -q 'Runner image build failed on dev-arm-1 (status 124)' "${build_timeout_case}/out" || fail "expected timeout status in the CI annotation"
+[ ! -e "${build_timeout_case}/manifest.json" ] || fail "timed-out build must not publish a manifest"
+
+warm_timeout_case="${TMPDIR}/remote-warm-timeout"
+prepare_remote_case "$warm_timeout_case"
+REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 \
+  REMOTE_COMPLETE=1 REMOTE_WARM_STATUS=124 run_remote_case "$warm_timeout_case"
+grep -q 'runner template-warm SSH failed: host=dev-arm-1 status=124' "${warm_timeout_case}/out" || fail "expected original warm timeout status"
+[ ! -e "${warm_timeout_case}/manifest.json" ] || fail "timed-out warming must not publish a manifest"
+
+stream_case="${TMPDIR}/remote-live-build"
+prepare_remote_case "$stream_case"
+mkfifo "${stream_case}/output.pipe" "${stream_case}/release.pipe"
+REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 REMOTE_COMPLETE=1 \
+  REMOTE_BUILD_RELEASE_PIPE="${stream_case}/release.pipe" REMOTE_STDOUT="${stream_case}/output.pipe" \
+  run_remote_case "$stream_case" &
+stream_pid=$!
+if ! timeout 10 bash -s -- "$stream_case" <<'BASH'
+set -euo pipefail
+case_dir=$1
+exec 3< "${case_dir}/output.pipe"
+while IFS= read -r line <&3; do
+  printf '%s\n' "$line" >> "${case_dir}/out"
+  if [ "$line" = '[dev-arm-1] live-build-progress' ]; then
+    printf 'continue\n' > "${case_dir}/release.pipe"
+    cat <&3 >> "${case_dir}/out"
+    exit 0
+  fi
+done
+exit 1
+BASH
+then
+  timeout 2 bash -s -- "${stream_case}/release.pipe" <<'BASH' || true
+printf 'continue\n' > "$1"
+BASH
+  wait "$stream_pid" || true
+  fail "image build output must arrive before its SSH command completes"
+fi
+wait "$stream_pid" || fail "expected the streamed build to finish successfully"
+[ -f "${stream_case}/manifest.json" ] || fail "streaming must preserve manifest hash extraction"
 
 success_case="${TMPDIR}/remote-success"
 prepare_remote_case "$success_case"

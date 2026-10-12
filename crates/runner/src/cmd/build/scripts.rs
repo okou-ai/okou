@@ -82,6 +82,10 @@ impl RootfsScripts {
         self.template_lock = None;
     }
 
+    pub(super) fn retain_template_lock(&mut self, guard: Arc<Flock<File>>) {
+        self.template_lock = Some(guard);
+    }
+
     pub(super) async fn path(&mut self) -> RunnerResult<RootfsScriptDir> {
         if self.temp_dir.is_none() {
             self.temp_dir = Some(Arc::new(create_rootfs_scripts_dir().await?));
