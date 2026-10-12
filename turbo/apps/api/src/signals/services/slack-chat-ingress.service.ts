@@ -98,32 +98,6 @@ export const findSlackChatThreadRoute$ = command(
   },
 );
 
-/** Slash commands identify only the main direct-message conversation. */
-export const findSlackDirectMessageChatThreadId$ = command(
-  async (
-    { set },
-    key: Omit<SlackChatThreadRouteKey, "threadTs">,
-    signal: AbortSignal,
-  ): Promise<string | undefined> => {
-    const db = set(writeDb$);
-    const [route] = await db
-      .select({ chatThreadId: slackChatThreadRoutes.chatThreadId })
-      .from(slackChatThreadRoutes)
-      .where(
-        and(
-          slackChatThreadRouteWhere({
-            ...key,
-            threadTs: INTEGRATION_DM_SESSION_KEY,
-          }),
-          eq(slackChatThreadRoutes.channelId, key.channelId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    return route?.chatThreadId;
-  },
-);
-
 const ROUTE_COLUMNS = {
   id: slackChatThreadRoutes.id,
   connectionId: slackChatThreadRoutes.connectionId,

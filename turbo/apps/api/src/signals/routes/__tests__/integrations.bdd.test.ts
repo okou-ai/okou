@@ -3083,40 +3083,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
           text: "Main Slack DM answer in the new destination",
         }),
       );
-
-      const staleDestination = await integrations.postSlackCommand({
-        teamId,
-        userId: slackUserId,
-        channelId,
-        text: "model",
-        triggerId: "trigger-stale-dm-destination",
-      });
-      expect(JSON.stringify(staleDestination)).toContain(
-        "Use /okou model in an existing Okou Slack main DM conversation.",
-      );
-      await expect(
-        integrations.postSlackCommand({
-          teamId,
-          userId: slackUserId,
-          channelId: latestChannelId,
-          text: "model",
-          triggerId: "trigger-latest-dm-destination",
-        }),
-      ).resolves.toBe("");
-      expect(context.mocks.slack.views.open).toHaveBeenCalledWith(
-        expect.objectContaining({
-          trigger_id: "trigger-latest-dm-destination",
-          view: expect.objectContaining({
-            private_metadata: JSON.stringify({
-              channelId: latestChannelId,
-              chatThreadId: firstThread.chatThreadId,
-            }),
-          }),
-        }),
-      );
     });
 
-    it("switches the main Slack DM thread model from the DM model picker", async () => {
+    it("ignores retired Slack commands and model pickers in an existing DM", async () => {
       const {
         actor,
         teamId,
@@ -3146,113 +3115,44 @@ describe("INT-01: Slack app deep webhook flows", () => {
         actor,
         launchedBy(firstRunId),
       );
-      const modelCommand = await integrations.postSlackCommand({
-        teamId,
-        userId: slackUserId,
-        channelId,
-        text: "model",
-        triggerId: "trigger-main-dm-model",
-      });
-      expect(modelCommand).toBe("");
-      expect(context.mocks.slack.views.open).toHaveBeenCalledWith(
-        expect.objectContaining({
-          trigger_id: "trigger-main-dm-model",
-          view: expect.objectContaining({
-            private_metadata: JSON.stringify({ channelId, chatThreadId }),
-          }),
-        }),
-      );
-      expect(context.mocks.slack.views.open).toHaveBeenCalledWith(
-        expect.objectContaining({
-          view: expect.objectContaining({
-            blocks: expect.arrayContaining([
-              expect.objectContaining({
-                element: expect.objectContaining({
-                  options: expect.arrayContaining([
-                    {
-                      text: { type: "plain_text", text: "Auto (default)" },
-                      value: "auto",
-                    },
-                  ]),
-                }),
-              }),
-            ]),
-          }),
-        }),
-      );
 
-      const selectModel = await integrations.postSlackInteractive(
-        integrations.modelPickerSubmission({
-          workspaceId: teamId,
-          slackUserId,
-          selectedValue: "gpt-6-astra",
+      for (const text of ["switch", "model"]) {
+        const response = await integrations.postSlackCommand({
+          teamId,
+          userId: slackUserId,
           channelId,
-          chatThreadId,
-        }),
-      );
-      expect(selectModel).toBe("");
-      expect(context.mocks.slack.chat.postEphemeral).toHaveBeenCalledWith(
-        expect.objectContaining({
-          channel: channelId,
-          user: slackUserId,
-          text: "Switched to *GPT 6 Astra* for this conversation.",
-        }),
-      );
-      // The picker leaves the member preference the fixture configured.
+          text,
+        });
+        expect(JSON.stringify(response)).toContain("Slack Bot Help");
+      }
+      expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
+      for (const selectedValue of ["gpt-6-astra", "auto"]) {
+        const response = await integrations.postSlackInteractive(
+          integrations.modelPickerSubmission({
+            workspaceId: teamId,
+            slackUserId,
+            selectedValue,
+            channelId,
+            chatThreadId,
+          }),
+        );
+        expect(response).toBe("");
+      }
+      expect(
+        (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
+      ).toBe("claude-fable-5-1");
       await expect(
         integrations.readUserModelPreference(actor),
       ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
-      expect(
-        (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
-      ).toBe("gpt-6-astra");
-      const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
-      if (threadEvents.status !== 200) {
-        throw new Error("Expected Slack thread events to load");
-      }
-      expect(threadEvents.body.events).toContainEqual(
-        expect.objectContaining({
-          kind: "model_selection_updated",
-          chatThreadId,
-          selectedModel: "gpt-6-astra",
-        }),
-      );
-
-      await integrations.postSlackEvent(teamId, {
-        type: "message",
-        channel_type: "im",
-        user: slackUserId,
-        text: "continue the main Slack DM",
-        ts: "2950.000400",
-        channel: channelId,
+      const events = await chat.requestThreadEvents(actor, {}, [200]);
+      expect(events.body).toMatchObject({
+        events: expect.not.arrayContaining([
+          expect.objectContaining({
+            kind: "model_selection_updated",
+            chatThreadId,
+          }),
+        ]),
       });
-      const switchedRunId = await pollSlackRun(runnerGroup);
-      const switchedClaim = await runs.claimRunnerJob(switchedRunId);
-      expect(switchedClaim.cliAgentType).toBe("codex");
-      expect(switchedClaim.environment).toMatchObject({
-        OPENAI_MODEL: "gpt-6-astra",
-      });
-
-      // Auto is offered as its own picker value and stored canonically.
-      const autoSelection = await integrations.postSlackInteractive(
-        integrations.modelPickerSubmission({
-          workspaceId: teamId,
-          slackUserId,
-          selectedValue: "auto",
-          channelId,
-          chatThreadId,
-        }),
-      );
-      expect(autoSelection).toBe("");
-      expect(context.mocks.slack.chat.postEphemeral).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          channel: channelId,
-          user: slackUserId,
-          text: "Switched to *Auto* for this conversation.",
-        }),
-      );
-      expect(
-        (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
-      ).toBe("auto");
     });
   });
 
@@ -4598,8 +4498,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       );
     });
 
-    // `/okou switch` no longer opens an agent picker: Slack always uses the
-    // org default agent.
+    // Retired commands return help without opening a picker.
     const emptySwitch = await integrations.postSlackCommand({
       teamId: bareInstall.teamId,
       userId: bareSlackUserId,
@@ -4607,9 +4506,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       text: "switch",
       triggerId: "trigger-bdd-noagent-switch",
     });
-    expect(JSON.stringify(emptySwitch)).toContain(
-      "Slack always uses your org's default agent.",
-    );
+    expect(JSON.stringify(emptySwitch)).toContain("Slack Bot Help");
     expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
 
     // The same unonboarded member can also receive guidance in a DM.
@@ -4632,7 +4529,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
   });
 
-  it("serves Slack slash commands for help, connect, switch, model, and disconnect", async () => {
+  it("serves supported Slack commands and returns help for retired commands", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
@@ -4653,7 +4550,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     integrations.clearSlackCallHistory();
 
-    for (const text of ["", "help", "unknown"]) {
+    for (const text of ["", "help", "unknown", "switch", "model"]) {
       const help = await integrations.postSlackCommand({
         teamId,
         userId: slackUserId,
@@ -4663,7 +4560,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const helpJson = JSON.stringify(help);
       expect(helpJson).toContain(`<@${botUserId}> Slack Bot Help`);
       expect(helpJson).not.toContain("/okou switch");
-      expect(helpJson).toContain("/okou model");
+      expect(helpJson).not.toContain("/okou model");
       expect(helpJson).toContain(`<@${botUserId}>`);
     }
 
@@ -4675,30 +4572,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     expect(JSON.stringify(alreadyConnected)).toContain("already connected");
 
-    context.mocks.slack.views.open.mockClear();
-    const switchResponse = await integrations.postSlackCommand({
-      teamId,
-      userId: slackUserId,
-      channelId: "C_BDD_CMD",
-      text: "switch",
-      triggerId: "trigger-bdd-switch",
-    });
-    expect(JSON.stringify(switchResponse)).toContain(
-      "Slack always uses your org's default agent.",
-    );
-    expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
-
-    await integrations.updateUserModelPreference(actor, null);
-    const modelResponse = await integrations.postSlackCommand({
-      teamId,
-      userId: slackUserId,
-      channelId: "C_BDD_CMD",
-      text: "model",
-      triggerId: "trigger-bdd-model",
-    });
-    expect(JSON.stringify(modelResponse)).toContain(
-      "existing Okou Slack main DM conversation",
-    );
     expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
 
     const disconnected = await integrations.postSlackCommand({
@@ -4770,7 +4643,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(helpJson).not.toContain("/okou model");
   });
 
-  it("prompts for login when switching agents without a Slack connection", async () => {
+  it("prompts for login for an unsupported command without a Slack connection", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
@@ -4791,73 +4664,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(responseJson).toContain("ephemeral");
     expect(responseJson).toContain("connect");
     expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
-  });
-
-  it("rejects stale Slack picker submissions without a routed main DM", async () => {
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    integrations.configureSlackAppMocks();
-
-    await bdd.bootstrapLimitedFreeOnboarding(actor, {
-      displayName: "BDD Slack Picker Default",
-    });
-    await runs.grantProEntitlement(actor);
-    const slackUserId = uniqueSlackUserId();
-    const { teamId } = await integrations.installSlackWorkspace(actor, {
-      installerSlackUserId: slackUserId,
-    });
-    integrations.clearSlackCallHistory();
-
-    const selectModel = await integrations.postSlackInteractive(
-      integrations.modelPickerSubmission({
-        workspaceId: teamId,
-        slackUserId,
-        selectedValue: "gpt-6-astra",
-        channelId: "C_BDD_PICK",
-      }),
-    );
-    expect(selectModel).toMatchObject({
-      response_action: "errors",
-      errors: {
-        model_select_block: expect.stringContaining("out of date"),
-      },
-    });
-    expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
-    await expect(
-      integrations.readUserModelPreference(actor),
-    ).resolves.toMatchObject({
-      selectedModel: "auto",
-    });
-
-    const replaceModel = await integrations.postSlackInteractive(
-      integrations.modelPickerSubmission({
-        workspaceId: teamId,
-        slackUserId,
-        selectedValue: "gpt-6-luna",
-        channelId: "C_BDD_PICK",
-      }),
-    );
-    expect(replaceModel).toMatchObject({ response_action: "errors" });
-    await expect(
-      integrations.readUserModelPreference(actor),
-    ).resolves.toMatchObject({
-      selectedModel: "auto",
-    });
-
-    const rejectedModel = await integrations.postSlackInteractive(
-      integrations.modelPickerSubmission({
-        workspaceId: teamId,
-        slackUserId,
-        selectedValue: "model-outside-run-models",
-        channelId: "C_BDD_PICK",
-      }),
-    );
-    expect(rejectedModel).toMatchObject({ response_action: "errors" });
-    await expect(
-      integrations.readUserModelPreference(actor),
-    ).resolves.toMatchObject({
-      selectedModel: "auto",
-    });
   });
 
   it("refreshes Slack App Home, welcomes once, and cleans up lifecycle events", async () => {
@@ -4906,6 +4712,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
         JSON.stringify(context.mocks.slack.views.publish.mock.calls),
       ).toContain("Connected to Okou");
     });
+
+    const home = JSON.stringify(context.mocks.slack.views.publish.mock.calls);
+    expect(home).toContain("/okou help");
+    expect(home).toContain("workspace's default agent");
+    expect(home).not.toContain("/okou switch");
+    expect(home).not.toContain("/okou model");
 
     await integrations.postSlackEvent(teamId, {
       type: "app_home_opened",

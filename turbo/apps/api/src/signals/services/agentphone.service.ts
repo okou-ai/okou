@@ -5,10 +5,6 @@ import { agentphoneGroupMessageReceipts } from "@okouai/db/schema/agentphone-gro
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import {
-  AUTO_SELECTED_MODEL,
-  sameSelectedModel,
-} from "@okouai/core/auto-run-model";
 import { command } from "ccstate";
 import {
   and,
@@ -41,10 +37,7 @@ import {
   publishUserSignal,
 } from "../external/realtime";
 import { bestEffort, safeUrlParse, settle } from "../utils";
-import {
-  ensureAgentPhoneChatThreadRoute$,
-  findAgentPhoneRoutedChatThreadId$,
-} from "./agentphone-chat-ingress.service";
+import { ensureAgentPhoneChatThreadRoute$ } from "./agentphone-chat-ingress.service";
 import {
   agentPhoneChannelForLinkedHandle,
   agentPhoneReplyDestination,
@@ -71,11 +64,6 @@ import {
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import {
-  integrationModelOptionValue,
-  readIntegrationChatThreadModel$,
-  updateIntegrationChatThreadModel$,
-} from "./integration-chat-thread-model.service";
-import {
   canonicalInputFilePrompt,
   integrationInputMessageFiles,
   materializeIntegrationInputAssets$,
@@ -85,7 +73,6 @@ import {
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import { listAvailableRunModels$ } from "./run-models.service";
 const MAX_CONNECT_AGE_SECONDS = 600;
 const MAX_WEBHOOK_AGE_SECONDS = 300;
 const SIGNATURE_PREFIX = "sha256=";
@@ -190,9 +177,7 @@ function isAgentPhoneGroupAccountCommand(
 ): boolean {
   return (
     isAgentPhoneGroupEvent(event) &&
-    (commandName === "connect" ||
-      commandName === "disconnect" ||
-      commandName === "model")
+    (commandName === "connect" || commandName === "disconnect")
   );
 }
 
@@ -1025,7 +1010,6 @@ function formatHelpMessage(): string {
     `${brandName} text message commands`,
     "",
     `/connect - Connect this phone number to ${brandName}`,
-    "/model - Choose your model",
     `/disconnect - Disconnect this phone number from ${brandName}`,
     "/help - Show these commands",
     "",
@@ -1160,208 +1144,6 @@ const handleDisconnectCommand$ = command(
   },
 );
 
-function commandArgument(text: string): string {
-  const trimmed = text.trim();
-  if (!trimmed) {
-    return "";
-  }
-  const firstWhitespaceIndex = trimmed.search(/\s/u);
-  if (firstWhitespaceIndex === -1) {
-    return "";
-  }
-  return trimmed.slice(firstWhitespaceIndex).trim();
-}
-
-function lookupKey(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_]+/gu, "-");
-}
-
-function compactLookupKey(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]/gu, "");
-}
-
-function findModelOption(
-  options: readonly {
-    readonly model: string | null;
-    readonly label: string;
-    readonly isDefault: boolean;
-  }[],
-  input: string,
-) {
-  const inputKeys = new Set([lookupKey(input), compactLookupKey(input)]);
-  return options.find((option) => {
-    return [integrationModelOptionValue(option.model), option.label].some(
-      (value) => {
-        return (
-          inputKeys.has(lookupKey(value)) ||
-          inputKeys.has(compactLookupKey(value))
-        );
-      },
-    );
-  });
-}
-
-function formatAgentPhoneModelOptionsMessage(
-  options: readonly {
-    readonly model: string | null;
-    readonly label: string;
-    readonly isDefault: boolean;
-  }[],
-  currentSelectedModel: string | null,
-): string {
-  const optionLines = options.map((option) => {
-    const markers = [
-      sameSelectedModel(option.model, currentSelectedModel) ? "current" : null,
-      option.isDefault ? "default" : null,
-    ].filter((marker): marker is string => {
-      return marker !== null;
-    });
-    const suffix = markers.length > 0 ? ` (${markers.join(", ")})` : "";
-    return `/model ${integrationModelOptionValue(option.model)} - ${option.label}${suffix}`;
-  });
-
-  const current =
-    options.find((option) => {
-      return sameSelectedModel(option.model, currentSelectedModel);
-    })?.label ?? integrationModelOptionValue(currentSelectedModel);
-  return [
-    "Available models",
-    "",
-    `Current: ${current}`,
-    "",
-    "Send one of these commands to switch:",
-    ...optionLines,
-  ].join("\n");
-}
-
-const handleModelCommand$ = command(
-  async (
-    { set },
-    args: {
-      readonly event: AgentPhoneMessageEvent;
-      readonly userLinkId: string;
-      readonly orgId: string;
-      readonly userId: string;
-    },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const chatThreadId = await set(
-      findAgentPhoneRoutedChatThreadId$,
-      {
-        agentphoneUserLinkId: args.userLinkId,
-        rootMessageId: agentPhoneChatRouteRootMessageId(args.event),
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    const currentModel = await set(
-      readIntegrationChatThreadModel$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        chatThreadId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (currentModel.kind === "no_thread") {
-      await set(
-        sendAgentPhoneSlashCommandText$,
-        args.event,
-        "Error: Start or enter an existing Okou conversation before using /model.",
-        signal,
-      );
-      return;
-    }
-    const currentSelectedModel = currentModel.selectedModel;
-    const runModels = await set(
-      listAvailableRunModels$,
-      { orgId: args.orgId, userId: args.userId },
-      signal,
-    );
-    signal.throwIfAborted();
-
-    const options = runModels.models.map((runModel) => {
-      return {
-        model: runModel.model,
-        label: runModel.modelLabel,
-        isDefault: runModel.model === AUTO_SELECTED_MODEL,
-      };
-    });
-
-    if (options.length === 0) {
-      await set(
-        sendAgentPhoneSlashCommandText$,
-        args.event,
-        "Error: No models are configured for this workspace.",
-        signal,
-      );
-      return;
-    }
-
-    const input = commandArgument(args.event.body);
-    if (!input) {
-      await set(
-        sendAgentPhoneSlashCommandText$,
-        args.event,
-        formatAgentPhoneModelOptionsMessage(options, currentSelectedModel),
-        signal,
-      );
-      return;
-    }
-
-    const option = findModelOption(options, input);
-    if (!option) {
-      await set(
-        sendAgentPhoneSlashCommandText$,
-        args.event,
-        [
-          `Error: Unknown model "${input}".`,
-          "",
-          formatAgentPhoneModelOptionsMessage(options, currentSelectedModel),
-        ].join("\n"),
-        signal,
-      );
-      return;
-    }
-
-    const threadModel = await set(
-      updateIntegrationChatThreadModel$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        chatThreadId,
-        model: option.model,
-      },
-      signal,
-    );
-    if (threadModel.kind !== "updated") {
-      await set(
-        sendAgentPhoneSlashCommandText$,
-        args.event,
-        threadModel.kind === "no_thread"
-          ? "Error: Start or enter an existing Okou conversation before using /model."
-          : "Error: You don't have access to that model.",
-        signal,
-      );
-      return;
-    }
-    signal.throwIfAborted();
-    await set(
-      sendAgentPhoneSlashCommandText$,
-      args.event,
-      `Switched to ${option.label}.`,
-      signal,
-    );
-  },
-);
-
 const dispatchAgentPhoneCommand$ = command(
   async (
     { set },
@@ -1395,33 +1177,13 @@ const dispatchAgentPhoneCommand$ = command(
         );
         return true;
       }
-      case "help": {
+      case "help":
+      case "switch":
+      case "model": {
         await set(
           sendAgentPhoneSlashCommandText$,
           args.event,
           formatHelpMessage(),
-          signal,
-        );
-        return true;
-      }
-      case "model": {
-        if (!args.userLink) {
-          await set(
-            sendConnectPrompt$,
-            args.event,
-            { slashCommand: true },
-            signal,
-          );
-          return true;
-        }
-        await set(
-          handleModelCommand$,
-          {
-            event: args.event,
-            userLinkId: args.userLink.id,
-            orgId: args.userLink.orgId,
-            userId: args.userLink.userId,
-          },
           signal,
         );
         return true;

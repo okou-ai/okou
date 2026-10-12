@@ -3,7 +3,6 @@ import type {
   TeamsInboundAttachment,
 } from "@okouai/api-contracts/contracts/teams-bot";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import type {
   ChatTeamsMessageFile,
   ChatTeamsMessageFiles,
@@ -39,7 +38,6 @@ import {
   sendTeamsMessageReply,
   sendTeamsReaction,
   sendTeamsTypingActivity,
-  type TeamsAdaptiveCard,
   type TeamsGraphAttachment,
   type TeamsGraphMessage,
   type TeamsGraphUserInfo,
@@ -58,11 +56,6 @@ import {
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import {
-  integrationModelOptionValue,
-  readIntegrationChatThreadModel$,
-  updateIntegrationChatThreadModel$,
-} from "./integration-chat-thread-model.service";
-import {
   integrationInputMessageFiles,
   materializeIntegrationInputAssets$,
   readyIntegrationInputAsset,
@@ -72,11 +65,7 @@ import {
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import { listAvailableRunModels$ } from "./run-models.service";
-import {
-  ensureTeamsChatThreadRoute$,
-  findTeamsRoutedChatThreadId$,
-} from "./teams-chat-ingress.service";
+import { ensureTeamsChatThreadRoute$ } from "./teams-chat-ingress.service";
 import {
   buildTeamsConnectUrlForActivity,
   disconnectTeamsConnection$,
@@ -85,26 +74,14 @@ import {
 import type { TeamsFileTokenPayload } from "./teams-file-token";
 import { formatTeamsFileForContext } from "./teams-prompt";
 const L = logger("TeamsDispatch");
-const TEAMS_SUPPORTED_COMMANDS_TEXT =
-  "`help`, `connect`, `disconnect`, `model`";
-const TEAMS_MODEL_PICKER_MAX_OPTIONS = 100;
-const TEAMS_CARD_ACTION_KEY = "okouTeamsAction";
-const TEAMS_AGENT_PICKER_ACTION = "switch_agent";
-const TEAMS_MODEL_PICKER_ACTION = "switch_model";
-const TEAMS_MODEL_PICKER_INPUT_ID = "selectedModel";
-// The submit activity replies to the card, so the card carries the route key
-// of the conversation where `/model` was sent.
-const TEAMS_MODEL_PICKER_CONVERSATION_KEY = "routeConversationId";
-const TEAMS_MODEL_PICKER_THREAD_KEY = "routeThreadId";
-const TEAMS_MODEL_PICKER_CHAT_THREAD_KEY = "chatThreadId";
+const TEAMS_SUPPORTED_COMMANDS_TEXT = "`help`, `connect`, `disconnect`";
 const TEAMS_THINKING_REACTION_TYPE = "1f4ad_thoughtballoon";
 const TEAMS_FILE_DOWNLOAD_INFO_CONTENT_TYPE =
   "application/vnd.microsoft.teams.file.download.info";
 const TEAMS_REFERENCE_ATTACHMENT_CONTENT_TYPE = "reference";
 const TEAMS_CHAT_MESSAGE_ID_NAMESPACE = "b60a5846-d85f-4db8-b9aa-d7d803efbb57";
 
-type TeamsBotCommand = "help" | "connect" | "disconnect" | "switch" | "model";
-type TeamsCardAction = "switch_agent" | "switch_model";
+type TeamsBotCommand = "help" | "connect" | "disconnect";
 
 type TeamsInstallation = typeof teamsOrgInstallations.$inferSelect;
 type BoundTeamsInstallation = TeamsInstallation & { readonly orgId: string };
@@ -152,13 +129,6 @@ interface TeamsAgent {
   readonly displayName: string | null;
 }
 
-interface TeamsModelPickerOption {
-  /** Null is Auto. */
-  readonly model: string | null;
-  readonly label: string;
-  readonly isDefault: boolean;
-}
-
 type TeamsPromptFile = Omit<ChatTeamsMessageFile, "inCurrentMessage"> & {
   readonly upstreamFileId: string;
 };
@@ -194,54 +164,11 @@ type TeamsMessageDispatchResult =
       readonly kind: "notice";
       readonly replyText: string;
       readonly connectUrl?: string;
-      readonly card?: TeamsAdaptiveCard;
     }
   | { readonly kind: "accepted" };
 
 function isTeamsBotCommand(value: string): value is TeamsBotCommand {
-  return (
-    value === "help" ||
-    value === "connect" ||
-    value === "disconnect" ||
-    value === "switch" ||
-    value === "model"
-  );
-}
-
-function stringValue(
-  value: Readonly<Record<string, unknown>> | null,
-  key: string,
-): string | undefined {
-  const raw = value?.[key];
-  return typeof raw === "string" && raw.length > 0 ? raw : undefined;
-}
-
-function teamsCardAction(
-  value: Readonly<Record<string, unknown>> | null,
-): TeamsCardAction | null {
-  const action = stringValue(value, TEAMS_CARD_ACTION_KEY);
-  if (action === TEAMS_AGENT_PICKER_ACTION) {
-    return "switch_agent";
-  }
-  if (action === TEAMS_MODEL_PICKER_ACTION) {
-    return "switch_model";
-  }
-  return null;
-}
-
-function choiceLabel(value: string): string {
-  return value.slice(0, 80);
-}
-
-function modelLabel(option: TeamsModelPickerOption): string {
-  if (!option.isDefault) {
-    return choiceLabel(option.label);
-  }
-  const suffix = " (default)";
-  if (option.label.length + suffix.length <= 80) {
-    return `${option.label}${suffix}`;
-  }
-  return `${option.label.slice(0, 80 - suffix.length)}${suffix}`;
+  return value === "help" || value === "connect" || value === "disconnect";
 }
 
 function parseTeamsBotCommand(prompt: string): TeamsBotCommand | null {
@@ -251,6 +178,9 @@ function parseTeamsBotCommand(prompt: string): TeamsBotCommand | null {
   const command = prefixed
     ? (parts[1]?.toLowerCase().replace(/^\//u, "") ?? "")
     : first;
+  if (command === "switch" || command === "model") {
+    return prefixed || parts.length === 1 ? "help" : null;
+  }
   if (!isTeamsBotCommand(command)) {
     return null;
   }
@@ -266,22 +196,17 @@ function isTeamsBotGreeting(prompt: string): boolean {
 }
 
 function commandHelpNotice(args: {
-  readonly canSwitch: boolean;
-  readonly canModel: boolean;
   readonly installation?: TeamsInstallation | null;
 }): TeamsMessageDispatchResult {
   const { assistantName, botName } = teamsIdentity(args.installation);
-  const switchLine = args.canSwitch
-    ? "\n- `switch` - Choose which agent responds to your messages"
-    : "";
-  const modelLine = args.canModel ? "\n- `model` - Choose your model" : "";
   return {
     kind: "notice",
     replyText: [
       `**${botName} Teams Bot Help**`,
       "",
       "**Commands**",
-      `- \`connect\` - Connect to ${assistantName}${switchLine}${modelLine}`,
+      "- `help` - Show available commands",
+      `- \`connect\` - Connect to ${assistantName}`,
       `- \`disconnect\` - Disconnect from ${assistantName}`,
       "",
       "**Usage**",
@@ -320,73 +245,11 @@ function notInstalledNotice(
   };
 }
 
-function orgDefaultAgentNotice(): TeamsMessageDispatchResult {
-  return {
-    kind: "notice",
-    replyText:
-      "Teams always uses your workspace's default agent. Agent switching is not available.",
-  };
-}
-
 function disconnectedNotice(): TeamsMessageDispatchResult {
   return {
     kind: "notice",
     replyText:
       "You have been disconnected and your agent access has been revoked.",
-  };
-}
-
-function buildTeamsModelPickerCard(args: {
-  readonly options: readonly TeamsModelPickerOption[];
-  /** Null is Auto. */
-  readonly currentSelectedModel: string | null;
-  readonly routeConversationId: string;
-  readonly routeThreadId: string;
-  readonly chatThreadId: string;
-}): TeamsAdaptiveCard {
-  const choices = args.options.map((option) => {
-    return {
-      title: modelLabel(option),
-      value: integrationModelOptionValue(option.model),
-    };
-  });
-  const currentValue = integrationModelOptionValue(args.currentSelectedModel);
-  const currentChoice = choices.find((choice) => {
-    return choice.value === currentValue;
-  });
-  const initialValue = currentChoice?.value ?? choices[0]?.value;
-
-  return {
-    type: "AdaptiveCard",
-    version: "1.4",
-    body: [
-      {
-        type: "TextBlock",
-        text: "Choose the model for this conversation.",
-        wrap: true,
-      },
-      {
-        type: "Input.ChoiceSet",
-        id: TEAMS_MODEL_PICKER_INPUT_ID,
-        label: "Model",
-        style: "compact",
-        isMultiSelect: false,
-        ...(initialValue ? { value: initialValue } : {}),
-        choices,
-      },
-    ],
-    actions: [
-      {
-        type: "Action.Submit",
-        title: "Switch",
-        data: {
-          [TEAMS_CARD_ACTION_KEY]: TEAMS_MODEL_PICKER_ACTION,
-          [TEAMS_MODEL_PICKER_CONVERSATION_KEY]: args.routeConversationId,
-          [TEAMS_MODEL_PICKER_THREAD_KEY]: args.routeThreadId,
-          [TEAMS_MODEL_PICKER_CHAT_THREAD_KEY]: args.chatThreadId,
-        },
-      },
-    ],
   };
 }
 
@@ -783,41 +646,6 @@ async function resolveEffectiveCompose(args: {
     agent: visibleDefaultAgent,
   };
 }
-
-const teamsModelPickerState$ = command(
-  async (
-    { set },
-    orgId: string,
-    userId: string,
-    currentSelectedModel: string | null,
-    signal: AbortSignal,
-  ): Promise<{
-    readonly enabled: boolean;
-    readonly options: readonly TeamsModelPickerOption[];
-    readonly currentSelectedModel: string | null;
-  }> => {
-    const runModels = await set(
-      listAvailableRunModels$,
-      { orgId, userId },
-      signal,
-    );
-    signal.throwIfAborted();
-
-    return {
-      enabled: true,
-      options: runModels.models
-        .map((runModel) => {
-          return {
-            model: runModel.model,
-            label: runModel.modelLabel,
-            isDefault: runModel.model === AUTO_SELECTED_MODEL,
-          };
-        })
-        .slice(0, TEAMS_MODEL_PICKER_MAX_OPTIONS),
-      currentSelectedModel,
-    };
-  },
-);
 
 function formatTeamsSenderBlock(message: TeamsContextMessage): string {
   const parts = [`id: ${message.senderId}`];
@@ -1353,8 +1181,6 @@ function teamsValidationFallbackNotice(args: {
 }): TeamsMessageDispatchResult | null {
   if (args.command === "help") {
     return commandHelpNotice({
-      canSwitch: false,
-      canModel: false,
       installation: args.installation,
     });
   }
@@ -1856,8 +1682,6 @@ function unboundInstallationNotice(args: {
 }): TeamsMessageDispatchResult {
   if (args.command === "help") {
     return commandHelpNotice({
-      canSwitch: false,
-      canModel: false,
       installation: args.installation,
     });
   }
@@ -1878,8 +1702,6 @@ function missingConnectionNotice(args: {
 }): TeamsMessageDispatchResult {
   if (args.command === "help") {
     return commandHelpNotice({
-      canSwitch: true,
-      canModel: false,
       installation: args.installation,
     });
   }
@@ -1890,8 +1712,6 @@ function missingConnectionNotice(args: {
 }
 
 interface ConnectedCommandBeforeComposeArgs {
-  readonly db: Db;
-  readonly activity: TeamsMessageActivity;
   readonly command: TeamsBotCommand | null;
   readonly installation: BoundTeamsInstallation;
   readonly connection: TeamsConnection;
@@ -1906,8 +1726,6 @@ const connectedCommandBeforeCompose$ = command(
     switch (args.command) {
       case "help": {
         return commandHelpNotice({
-          canSwitch: true,
-          canModel: true,
           installation: args.installation,
         });
       }
@@ -1938,198 +1756,10 @@ const connectedCommandBeforeCompose$ = command(
         signal.throwIfAborted();
         return disconnectedNotice();
       }
-      case "switch": {
-        return orgDefaultAgentNotice();
-      }
-      case "model": {
-        const routeThreadId = teamsSessionThreadId({ activity: args.activity });
-        const chatThreadId = await set(
-          findTeamsRoutedChatThreadId$,
-          {
-            connectionId: args.connection.id,
-            conversationId: args.activity.conversationId,
-            threadId: routeThreadId,
-            userId: args.connection.userId,
-          },
-          signal,
-        );
-        signal.throwIfAborted();
-        const currentModel = await set(
-          readIntegrationChatThreadModel$,
-          {
-            orgId: args.installation.orgId,
-            userId: args.connection.userId,
-            chatThreadId,
-          },
-          signal,
-        );
-        signal.throwIfAborted();
-        if (!chatThreadId || currentModel.kind === "no_thread") {
-          return {
-            kind: "notice",
-            replyText:
-              "Start or enter an existing Okou conversation before using /model.",
-          };
-        }
-        const picker = await set(
-          teamsModelPickerState$,
-          args.installation.orgId,
-          args.connection.userId,
-          currentModel.selectedModel,
-          signal,
-        );
-        signal.throwIfAborted();
-        if (!picker.enabled) {
-          return {
-            kind: "notice",
-            replyText: "Model switching is not available for this workspace.",
-          };
-        }
-        if (picker.options.length === 0) {
-          return {
-            kind: "notice",
-            replyText: "No models are configured for this workspace.",
-          };
-        }
-        return {
-          kind: "notice",
-          replyText: "Choose the model for this Teams conversation.",
-          card: buildTeamsModelPickerCard({
-            options: picker.options,
-            currentSelectedModel: picker.currentSelectedModel,
-            routeConversationId: args.activity.conversationId,
-            routeThreadId,
-            chatThreadId,
-          }),
-        };
-      }
       case null: {
         return null;
       }
     }
-  },
-);
-
-const connectedTeamsCardAction$ = command(
-  async (
-    { set },
-    args: {
-      readonly action: TeamsCardAction;
-      readonly db: Db;
-      readonly activity: TeamsMessageActivity;
-      readonly installation: BoundTeamsInstallation;
-      readonly connection: TeamsConnection;
-    },
-    signal: AbortSignal,
-  ): Promise<TeamsMessageDispatchResult> => {
-    if (args.action === "switch_agent") {
-      return orgDefaultAgentNotice();
-    }
-
-    const selected = stringValue(
-      args.activity.value,
-      TEAMS_MODEL_PICKER_INPUT_ID,
-    );
-    if (!selected) {
-      return {
-        kind: "notice",
-        replyText: "Please choose a model.",
-      };
-    }
-    const routeConversationId = stringValue(
-      args.activity.value,
-      TEAMS_MODEL_PICKER_CONVERSATION_KEY,
-    );
-    const routeThreadId = stringValue(
-      args.activity.value,
-      TEAMS_MODEL_PICKER_THREAD_KEY,
-    );
-    const expectedChatThreadId = stringValue(
-      args.activity.value,
-      TEAMS_MODEL_PICKER_CHAT_THREAD_KEY,
-    );
-    if (!routeConversationId || !routeThreadId || !expectedChatThreadId) {
-      return {
-        kind: "notice",
-        replyText: "This model picker is out of date. Send `/model` again.",
-      };
-    }
-
-    const chatThreadId = await set(
-      findTeamsRoutedChatThreadId$,
-      {
-        connectionId: args.connection.id,
-        conversationId: routeConversationId,
-        threadId: routeThreadId,
-        userId: args.connection.userId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!chatThreadId || chatThreadId !== expectedChatThreadId) {
-      return {
-        kind: "notice",
-        replyText: "This model picker is out of date. Send `/model` again.",
-      };
-    }
-    const currentModel = await set(
-      readIntegrationChatThreadModel$,
-      {
-        orgId: args.installation.orgId,
-        userId: args.connection.userId,
-        chatThreadId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (currentModel.kind === "no_thread") {
-      return {
-        kind: "notice",
-        replyText: "This model picker is out of date. Send `/model` again.",
-      };
-    }
-    const picker = await set(
-      teamsModelPickerState$,
-      args.installation.orgId,
-      args.connection.userId,
-      currentModel.selectedModel,
-      signal,
-    );
-    signal.throwIfAborted();
-    const option = picker.options.find((candidate) => {
-      return integrationModelOptionValue(candidate.model) === selected;
-    });
-    if (!option) {
-      return {
-        kind: "notice",
-        replyText: "You don't have access to that model.",
-      };
-    }
-    signal.throwIfAborted();
-    const threadModel = await set(
-      updateIntegrationChatThreadModel$,
-      {
-        orgId: args.installation.orgId,
-        userId: args.connection.userId,
-        chatThreadId,
-        model: option.model,
-      },
-      signal,
-    );
-    if (threadModel.kind !== "updated") {
-      return {
-        kind: "notice",
-        replyText:
-          threadModel.kind === "no_thread"
-            ? "This model picker is out of date. Send `/model` again."
-            : "You don't have access to that model.",
-      };
-    }
-    signal.throwIfAborted();
-    return {
-      kind: "notice",
-      replyText: `Switched to **${option.label}**.`,
-    };
   },
 );
 
@@ -2225,12 +1855,15 @@ export const dispatchTeamsMessageToAgent$ = command(
       return { kind: "ignored" };
     }
 
-    const cardAction = teamsCardAction(activity.value);
+    // Previously sent picker cards must not become agent input.
+    if (activity.value?.okouTeamsAction) {
+      return commandHelpNotice({ installation: args.installation });
+    }
     const commandText = activity.text.trim();
     const prompt = teamsAgentPrompt(activity);
-    const command = cardAction ? null : parseTeamsBotCommand(commandText);
-    const isGreeting = !cardAction && isTeamsBotGreeting(commandText);
-    if (!cardAction && !shouldDispatchTeamsMessage(activity)) {
+    const command = parseTeamsBotCommand(commandText);
+    const isGreeting = isTeamsBotGreeting(commandText);
+    if (!shouldDispatchTeamsMessage(activity)) {
       return (
         teamsValidationFallbackNotice({
           command,
@@ -2242,8 +1875,8 @@ export const dispatchTeamsMessageToAgent$ = command(
       );
     }
 
-    const promptFiles = cardAction ? [] : teamsPromptFiles(activity);
-    if (!prompt && promptFiles.length === 0 && !cardAction) {
+    const promptFiles = teamsPromptFiles(activity);
+    if (!prompt && promptFiles.length === 0) {
       const { botName } = teamsIdentity(args.installation);
       return {
         kind: "notice",
@@ -2288,25 +1921,9 @@ export const dispatchTeamsMessageToAgent$ = command(
       });
     }
 
-    if (cardAction) {
-      return set(
-        connectedTeamsCardAction$,
-        {
-          action: cardAction,
-          db,
-          activity,
-          installation: boundInstallation,
-          connection,
-        },
-        signal,
-      );
-    }
-
     const commandResult = await set(
       connectedCommandBeforeCompose$,
       {
-        db,
-        activity,
         command,
         installation: boundInstallation,
         connection,

@@ -4508,7 +4508,13 @@ export function registerFeishuIntegrationTests(
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
         );
-        for (const command of ["/help", "/connect", "/model", "/unknown"]) {
+        for (const command of [
+          "/help",
+          "/connect",
+          "/model",
+          "/switch",
+          "/unknown",
+        ]) {
           await own(() => {
             return postEvent(callbackUrl, directMessage(appId, command), {
               encrypted: true,
@@ -4540,9 +4546,9 @@ export function registerFeishuIntegrationTests(
         ).toBeTruthy();
         expect(
           commandReplies.some((content) => {
-            return content.includes("existing Okou conversation");
+            return content.includes("/model");
           }),
-        ).toBeTruthy();
+        ).toBeFalsy();
         clearConnectorInvalidationMocks();
         await own(() => {
           return postEvent(callbackUrl, directMessage(appId, "/disconnect"), {
@@ -7079,7 +7085,7 @@ export function registerSharedFeishuConversationTests(): void {
       return preference.body.selectedModel;
     }
 
-    it("switches the main Feishu DM thread without changing the member default", async () => {
+    it("ignores retired Feishu model commands without changing the existing thread", async () => {
       const fixture = await setupFeishuRunFixture();
       const { actor, appId, callbackUrl, defaultAgentId } = fixture;
       await startFeishuDmSession(fixture);
@@ -7105,11 +7111,11 @@ export function registerSharedFeishuConversationTests(): void {
 
       expect(
         fixtureState.outboundMessages.some((message) => {
-          return messageContent(message).includes("Model switched");
+          return messageContent(message).includes("/help");
         }),
       ).toBeTruthy();
       await expect(readFeishuMemberModel(actor)).resolves.toBe(memberModel);
-      await expect(readFeishuThreadEvents(actor)).resolves.toContainEqual(
+      await expect(readFeishuThreadEvents(actor)).resolves.not.toContainEqual(
         expect.objectContaining({
           kind: "model_selection_updated",
           chatThreadId: thread.chatThreadId,
@@ -7119,7 +7125,7 @@ export function registerSharedFeishuConversationTests(): void {
       await removeFeishuInstallation(fixture);
     });
 
-    it("rejects /model before any Feishu thread without changing the member default", async () => {
+    it("returns help for retired Feishu commands before a conversation exists", async () => {
       const fixture = await setupFeishuRunFixture();
       const { actor, appId, callbackUrl } = fixture;
       await connectFixtureUser(fixture);
@@ -7140,7 +7146,7 @@ export function registerSharedFeishuConversationTests(): void {
       await expect(readFeishuMemberModel(actor)).resolves.toBe(memberModel);
       expect(
         fixtureState.outboundMessages.some((message) => {
-          return messageContent(message).includes("existing Okou conversation");
+          return messageContent(message).includes("/help");
         }),
       ).toBeTruthy();
       await expect(readFeishuThreadEvents(actor)).resolves.not.toContainEqual(

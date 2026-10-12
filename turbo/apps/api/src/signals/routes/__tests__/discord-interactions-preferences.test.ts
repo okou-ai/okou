@@ -1,5 +1,4 @@
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
   generateKeyPairSync,
   randomBytes,
@@ -23,12 +22,7 @@ import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import {
-  clearMockMonotonicNow,
-  mockMonotonicNow,
-  mockNow,
-  now,
-} from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -694,14 +688,13 @@ describe("Discord account preferences through private controls", () => {
     },
   );
 
-  it("preselects the effective model and the selected DM workspace", async () => {
+  it("preselects the selected DM workspace", async () => {
     const first = await fixture();
     const second = await fixture(
       actor(undefined, first.owner.userId),
       first.binding.discordUserId,
     );
     mockDiscordMemberships(context, [first.owner, second.owner]);
-    await configureModelPreferences(first);
     const sender = {
       discordUserId: first.binding.discordUserId,
       channelId: uniqueDiscordSnowflake(),
@@ -719,273 +712,28 @@ describe("Discord account preferences through private controls", () => {
     expect(
       preselected(await discord.send(commandPayload(sender, "connect"))),
     ).toStrictEqual([first.binding.connectionId]);
-
-    const models = await discord.send(commandPayload(sender, "model"));
-    expect(models.content).toContain("existing Okou conversation");
-    expect(models.components).toStrictEqual([]);
   });
 
-  it("switches the routed server thread the model picker runs in", async () => {
-    const owner = actor();
-    mockDiscordMemberships(context, [owner]);
-    const { headers, preference } = await configureModelPreferences({ owner });
-    const chat = createChatFilesBddApi(context);
-    const scope = await routedModelFixture(owner);
-    const thread = { id: scope.threadId };
-    const discord = discordHttp([scope]);
-    const sender = guildSender(scope);
-
-    const menu = selectMenu(
-      await discord.send(commandPayload(sender, "model")),
-    );
-    const selected = await discord.send(
-      selectPayload(sender, menu.custom_id, "gpt-6-astra"),
-    );
-
-    expect(selected.content).toContain("Model selected for this conversation");
-    const after = await accept(preference.get({ headers }), [200]);
-    expect(after.body.selectedModel).toBe("auto");
-    expect(
-      (await chat.readThreadMetadata(owner, thread.id)).selectedModel,
-    ).toBe("gpt-6-astra");
-    const threadEvents = await chat.requestThreadEvents(owner, {}, [200]);
-    if (threadEvents.status !== 200) {
-      throw new Error("Expected Discord thread events to load");
-    }
-    expect(threadEvents.body.events).toContainEqual(
-      expect.objectContaining({
-        kind: "model_selection_updated",
-        chatThreadId: thread.id,
-        selectedModel: "gpt-6-astra",
-      }),
-    );
-  });
-
-  it("switches the routed server thread to canonical Auto", async () => {
-    const owner = actor();
-    mockDiscordMemberships(context, [owner]);
-    await configureModelPreferences({ owner });
-    const chat = createChatFilesBddApi(context);
-    const scope = await routedModelFixture(owner);
-    const thread = { id: scope.threadId };
-    const discord = discordHttp([scope]);
-    const sender = guildSender(scope);
-
-    const menu = selectMenu(
-      await discord.send(commandPayload(sender, "model")),
-    );
-    expect(menu.options).toContainEqual(
-      expect.objectContaining({ label: "Auto", value: "auto" }),
-    );
-    const selected = await discord.send(
-      selectPayload(sender, menu.custom_id, "auto"),
-    );
-
-    expect(selected.content).toContain(
-      "Model selected for this conversation: Auto.",
-    );
-    expect(
-      (await chat.readThreadMetadata(owner, thread.id)).selectedModel,
-    ).toBe("auto");
-    expect(
-      preselected(await discord.send(commandPayload(sender, "model"))),
-    ).toStrictEqual(["auto"]);
-  });
-
-  it("rechecks personal subscription access after a picker is issued without changing the member preference", async () => {
+  it("returns help for retired Discord commands without changing the routed thread", async () => {
     const scope = await routedModelFixture();
     const { headers, preference } = await configureModelPreferences(scope);
+    const chat = createChatFilesBddApi(context);
+    const before = await chat.readThreadMetadata(scope.owner, scope.threadId);
     const discord = discordHttp([scope]);
     const sender = guildSender(scope);
-    const menu = selectMenu(
-      await discord.send(commandPayload(sender, "model")),
-    );
+    for (const name of ["switch", "model"] as const) {
+      const response = await discord.send(commandPayload(sender, name));
+      expect(response.content).toContain("Okou in Discord");
+      expect(response.content).not.toContain("/switch");
+      expect(response.content).not.toContain("/model");
+      expect(response.components).toStrictEqual([]);
+    }
     expect(
-      menu.options.map((option) => {
-        return option.value;
-      }),
-    ).toContain("gpt-6-astra");
-    const selected = await discord.send(
-      selectPayload(sender, menu.custom_id, "gpt-6-astra"),
-    );
-    expect(selected.content).toContain("Model selected for this conversation");
-    const before = await accept(preference.get({ headers }), [200]);
-    expect(before.body.selectedModel).toBe("auto");
-
-    await createMiscRoutesApi(context).deletePersonalModelProvider(
-      scope.owner,
-      "codex-oauth-token",
-      [204],
-    );
-
-    const rejected = await discord.send(
-      selectPayload(sender, menu.custom_id, "gpt-6-astra"),
-    );
-
-    expect(rejected.content).toContain("no longer have access to that model");
-    // The thread keeps its unavailable personal model; no option, including
-    // Auto, is presented as the conversation's current model.
+      (await chat.readThreadMetadata(scope.owner, scope.threadId))
+        .selectedModel,
+    ).toBe(before.selectedModel);
     expect(
-      preselected(await discord.send(commandPayload(sender, "model"))),
-    ).toStrictEqual([]);
-    const after = await accept(preference.get({ headers }), [200]);
-    expect(after.body.selectedModel).toBe("auto");
+      (await accept(preference.get({ headers }), [200])).body.selectedModel,
+    ).toBe("auto");
   });
-  it.each(["sender", "channel", "expired"] as const)(
-    "rejects a signed control with changed %s context",
-    async (changed) => {
-      const scope = await routedModelFixture();
-      const { headers, preference } = await configureModelPreferences(scope);
-      const discord = discordHttp([scope]);
-      const sender = guildSender(scope);
-      const menu = selectMenu(
-        await discord.send(commandPayload(sender, "model")),
-      );
-      await discord.send(
-        selectPayload(sender, menu.custom_id, "claude-fable-5-1"),
-      );
-      const moved = {
-        ...sender,
-        ...(changed === "sender"
-          ? { discordUserId: uniqueDiscordSnowflake() }
-          : {}),
-        ...(changed === "channel"
-          ? { channelId: uniqueDiscordSnowflake() }
-          : {}),
-      };
-      if (changed === "expired") {
-        mockNow(now() + 15 * 60 * 1000);
-      }
-
-      const rejected = await discord.send(
-        selectPayload(moved, menu.custom_id, "gpt-6-astra"),
-      );
-
-      expect(rejected.content).toContain("expired or your access has changed");
-      const after = await accept(preference.get({ headers }), [200]);
-      expect(after.body.selectedModel).toBe("auto");
-    },
-  );
-
-  it("applies no selection when Discord's acknowledgement is uncertain", async () => {
-    const scope = await routedModelFixture();
-    await configureModelPreferences(scope);
-    const discord = discordHttp([scope]);
-    const sender = guildSender(scope);
-    const menu = selectMenu(
-      await discord.send(commandPayload(sender, "model")),
-    );
-    await discord.send(
-      selectPayload(sender, menu.custom_id, "claude-fable-5-1"),
-    );
-    mockMonotonicNow(0);
-    onTestFinished(clearMockMonotonicNow);
-    server.use(
-      http.post(
-        "https://discord.com/api/v10/interactions/:id/:token/callback",
-        async ({ request, params }) => {
-          discord.callbacks.set(String(params.token), await request.json());
-          // Discord's 3-second response window closes before the edit.
-          mockMonotonicNow(10_000);
-          return HttpResponse.json({ message: "Unavailable" }, { status: 503 });
-        },
-        { once: true },
-      ),
-    );
-
-    const notice = await discord.send(
-      selectPayload(sender, menu.custom_id, "gpt-6-astra"),
-    );
-
-    expect(notice.content).toContain("no changes were made");
-    expect(notice.components).toStrictEqual([]);
-    const reopened = await discord.send(commandPayload(sender, "model"));
-    expect(preselected(reopened)).toStrictEqual(["claude-fable-5-1"]);
-  });
-
-  it.each([
-    "disconnect",
-    "feature",
-    "subscription disconnect",
-    "disconnect after binding read",
-  ] as const)(
-    "rejects a model selection revoked by %s during access revalidation",
-    async (revocation) => {
-      const scope = await routedModelFixture();
-      const { headers, preference } = await configureModelPreferences(scope);
-      const discord = discordHttp([scope]);
-      const sender = guildSender(scope);
-      const menu = selectMenu(
-        await discord.send(commandPayload(sender, "model")),
-      );
-      await discord.send(
-        selectPayload(sender, menu.custom_id, "claude-fable-5-1"),
-      );
-      let channelChecks = 0;
-      let revokeAtMembership = false;
-      let revoked = false;
-      async function revokeAccess() {
-        revoked = true;
-        if (
-          revocation === "disconnect" ||
-          revocation === "disconnect after binding read"
-        ) {
-          await disconnect(scope.owner);
-        } else if (revocation === "feature") {
-          await enableDiscord(scope.owner, false);
-        } else {
-          await createMiscRoutesApi(context).deletePersonalModelProvider(
-            scope.owner,
-            "codex-oauth-token",
-            [204],
-          );
-        }
-      }
-      const membership =
-        context.mocks.clerk.organizations.getOrganizationMembershipList;
-      const membershipResponse = membership.getMockImplementation();
-      if (!membershipResponse) {
-        throw new Error("Expected the fixture's Clerk membership response");
-      }
-      membership.mockImplementation(async (...args) => {
-        const response = await membershipResponse(...args);
-        if (revokeAtMembership) {
-          revokeAtMembership = false;
-          await revokeAccess();
-        }
-        return response;
-      });
-      server.use(
-        http.get(
-          `https://discord.com/api/v10/channels/${scope.channelId}`,
-          async () => {
-            channelChecks++;
-            if (channelChecks === 2) {
-              if (revocation === "disconnect after binding read") {
-                revokeAtMembership = true;
-              } else {
-                await revokeAccess();
-              }
-            }
-            return HttpResponse.json({
-              id: scope.channelId,
-              type: 0,
-              guild_id: scope.binding.guildId,
-              permission_overwrites: [],
-            });
-          },
-        ),
-      );
-      const rejected = await discord.send(
-        selectPayload(sender, menu.custom_id, "gpt-6-astra"),
-      );
-      expect(revoked).toBeTruthy();
-      expect(rejected.content).not.toContain(
-        "Model selected for this conversation",
-      );
-      expect(rejected.components).toStrictEqual([]);
-      const after = await accept(preference.get({ headers }), [200]);
-      expect(after.body.selectedModel).toBe("auto");
-    },
-  );
 });

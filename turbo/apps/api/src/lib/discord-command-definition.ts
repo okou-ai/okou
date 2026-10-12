@@ -23,16 +23,6 @@ export const DISCORD_COMMANDS = [
     name: "disconnect",
     description: "Disconnect your account from the selected Discord server",
   },
-  {
-    ...COMMAND_SETTINGS,
-    name: "switch",
-    description: "Show the workspace default agent used in Discord",
-  },
-  {
-    ...COMMAND_SETTINGS,
-    name: "model",
-    description: "Choose a model for the current Okou conversation",
-  },
 ] as const;
 
 export type DiscordCommandName = (typeof DISCORD_COMMANDS)[number]["name"];

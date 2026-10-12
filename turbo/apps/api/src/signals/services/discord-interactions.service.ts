@@ -3,15 +3,10 @@ import {
   type DiscordCommandInteraction,
   type DiscordComponentInteraction,
 } from "@okouai/api-contracts/contracts/discord-interactions";
-import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
-import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
-import { createHash } from "node:crypto";
 import { delay } from "signal-timers";
 
 import type { DiscordCommandName } from "../../lib/discord-command-definition";
-import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import {
   discordAccountLabel,
   discordAccountMessage,
@@ -29,7 +24,6 @@ import { env } from "../../lib/env";
 import { monotonicNow } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$ } from "../external/db";
 import {
   discordClient,
   type DiscordApiResult,
@@ -41,10 +35,7 @@ import {
   settleIncludingAbort,
 } from "../utils";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
-import {
-  discordIntegrationEnabledForOwner$,
-  getDiscordAppConfig,
-} from "./discord-config";
+import { getDiscordAppConfig } from "./discord-config";
 import {
   disconnectDiscordBinding$,
   discordDmBinding,
@@ -54,12 +45,6 @@ import {
   selectDiscordDmBinding$,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
-import {
-  integrationModelOptionValue,
-  readIntegrationChatThreadModel$,
-  updateIntegrationChatThreadModel$,
-} from "./integration-chat-thread-model.service";
-import { listAvailableRunModels$ } from "./run-models.service";
 
 function discordSetupGuidance(): string {
   const worksUrl = new URL("/works", env("APP_URL")).toString();
@@ -71,17 +56,14 @@ const UNCONFIRMED_REQUEST =
 const DISCORD_RESPONSE_WINDOW_MS = 3500;
 const STALE_CONTROL =
   "This control has expired or your access has changed. Run the command again.";
-const NO_MODEL_CONVERSATION =
-  "Start or enter an existing Okou conversation before using `/model`.";
 function discordHelp(): string {
   return [
     "**Okou in Discord**",
     "Mention Okou in a server channel to start a conversation, or message the bot directly.",
     "`/connect` — view your connection, connect through App Works, or choose your workspace for bot DMs",
     "`/disconnect` — disconnect your account from this workspace",
-    "`/switch` — show the workspace default agent used in Discord",
-    "`/model` — choose an allowed model for this conversation",
-    "Existing server threads keep their agent and model unless you run `/model` inside them. Long task replies arrive from the bot.",
+    "`/help` — show available commands",
+    "Existing server threads keep their agent and model. Long task replies arrive from the bot.",
     discordSetupGuidance(),
   ].join("\n");
 }
@@ -214,7 +196,7 @@ const discordOrgPicker$ = command(
       );
       return discordAccountMessage(
         saved
-          ? "Workspace selected for bot DMs. Use `/model` in an existing conversation to change its model."
+          ? "Workspace selected for bot DMs. Message the bot to start chatting."
           : STALE_CONTROL,
       );
     }
@@ -245,255 +227,6 @@ const discordOrgPicker$ = command(
   },
 );
 
-const discordAgentStatus$ = command(
-  async (
-    { get },
-    binding: DiscordVerifiedBinding,
-    signal: AbortSignal,
-  ): Promise<DiscordAccountMessage> => {
-    const effective = await get(discordEffectiveAgent(binding));
-    signal.throwIfAborted();
-    return discordAccountMessage(
-      effective
-        ? `Discord always uses your workspace default agent: ${discordAccountLabel(effective.displayName || effective.name)}. Change the workspace default agent in Okou.`
-        : "Discord always uses your workspace default agent, but none is accessible. Ask a workspace admin to set a default agent in Okou.",
-    );
-  },
-);
-
-const discordModelSelectionAllowed$ = command(
-  async (
-    { set },
-    binding: DiscordVerifiedBinding,
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    const enabled = await set(
-      discordIntegrationEnabledForOwner$,
-      binding.orgId,
-      binding.userId,
-      signal,
-    );
-    if (!enabled) {
-      return false;
-    }
-    const [connection] = await set(writeDb$)
-      .select({ id: discordOrgConnections.id })
-      .from(discordOrgConnections)
-      .where(
-        and(
-          eq(discordOrgConnections.id, binding.connectionId),
-          eq(discordOrgConnections.discordUserId, binding.discordUserId),
-          eq(discordOrgConnections.userId, binding.userId),
-          eq(discordOrgConnections.guildId, binding.guildId),
-        ),
-      );
-    signal.throwIfAborted();
-    return connection !== undefined;
-  },
-);
-
-function discordModelThreadTag(chatThreadId: string): string {
-  return createHash("sha256")
-    .update(chatThreadId)
-    .digest("base64url")
-    .slice(0, 11);
-}
-
-interface DiscordModelPickerArgs {
-  readonly actor: DiscordInteractionActor;
-  readonly botToken: string;
-  readonly binding: DiscordVerifiedBinding;
-  readonly page?: number;
-  readonly selection?: string;
-  readonly modelThreadTag?: string;
-}
-
-interface DiscordConversationModelOption {
-  readonly label: string;
-  readonly value: string;
-  readonly model: string | null;
-}
-
-const selectDiscordConversationModel$ = command(
-  async (
-    { set },
-    args: DiscordModelPickerArgs,
-    options: readonly DiscordConversationModelOption[],
-    chatThreadId: string,
-    signal: AbortSignal,
-  ): Promise<DiscordAccountMessage> => {
-    const option = options.find((candidate) => {
-      return candidate.value === args.selection;
-    });
-    if (!option) {
-      return discordAccountMessage(
-        "You no longer have access to that model. Run `/model` again.",
-      );
-    }
-    // Revalidate after the run model lookup before writing to the original route.
-    const db = set(writeDb$);
-    const routeArgs = {
-      connectionId: args.binding.connectionId,
-      userId: args.binding.userId,
-      channelId: args.actor.channelId,
-      isDm: args.actor.guildId === null,
-    };
-    const currentThreadId = (
-      await db
-        .select({ chatThreadId: discordChatThreadRoutes.chatThreadId })
-        .from(discordChatThreadRoutes)
-        .where(
-          and(
-            eq(discordChatThreadRoutes.connectionId, routeArgs.connectionId),
-            eq(discordChatThreadRoutes.userId, routeArgs.userId),
-            eq(
-              discordChatThreadRoutes.sessionKey,
-              routeArgs.isDm ? INTEGRATION_DM_SESSION_KEY : routeArgs.channelId,
-            ),
-            eq(
-              discordChatThreadRoutes.destinationChannelId,
-              routeArgs.channelId,
-            ),
-          ),
-        )
-        .limit(1)
-    )[0]?.chatThreadId;
-    signal.throwIfAborted();
-    if (currentThreadId !== chatThreadId) {
-      return discordAccountMessage(STALE_CONTROL);
-    }
-    const allowed = await set(
-      discordModelSelectionAllowed$,
-      args.binding,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!allowed) {
-      return discordAccountMessage(STALE_CONTROL);
-    }
-    const threadModel = await set(
-      updateIntegrationChatThreadModel$,
-      {
-        orgId: args.binding.orgId,
-        userId: args.binding.userId,
-        chatThreadId,
-        model: option.model,
-      },
-      signal,
-    );
-    return discordAccountMessage(
-      threadModel.kind === "updated"
-        ? `Model selected for this conversation: ${option.label}.`
-        : threadModel.kind === "no_thread"
-          ? STALE_CONTROL
-          : "You no longer have access to that model. Run `/model` again.",
-    );
-  },
-);
-
-const discordModelPicker$ = command(
-  async (
-    { set },
-    args: DiscordModelPickerArgs,
-    signal: AbortSignal,
-  ): Promise<DiscordAccountMessage> => {
-    if (args.selection !== undefined) {
-      const channelFailure = await set(
-        discordChannelFailure$,
-        args.binding,
-        args.actor,
-        signal,
-      );
-      if (channelFailure) {
-        return channelFailure;
-      }
-      // Provider permission checks can wait on HTTP. Re-read local authority
-      // afterward, before reading current run models and persisting a preference.
-      const current = await set(currentDiscordBinding$, args.actor, signal);
-      if (
-        current.kind !== "connected" ||
-        current.binding.connectionId !== args.binding.connectionId
-      ) {
-        return discordAccountMessage(STALE_CONTROL);
-      }
-    }
-    const db = set(writeDb$);
-    const routeArgs = {
-      connectionId: args.binding.connectionId,
-      userId: args.binding.userId,
-      channelId: args.actor.channelId,
-      isDm: args.actor.guildId === null,
-    };
-    const chatThreadId = (
-      await db
-        .select({ chatThreadId: discordChatThreadRoutes.chatThreadId })
-        .from(discordChatThreadRoutes)
-        .where(
-          and(
-            eq(discordChatThreadRoutes.connectionId, routeArgs.connectionId),
-            eq(discordChatThreadRoutes.userId, routeArgs.userId),
-            eq(
-              discordChatThreadRoutes.sessionKey,
-              routeArgs.isDm ? INTEGRATION_DM_SESSION_KEY : routeArgs.channelId,
-            ),
-            eq(
-              discordChatThreadRoutes.destinationChannelId,
-              routeArgs.channelId,
-            ),
-          ),
-        )
-        .limit(1)
-    )[0]?.chatThreadId;
-    signal.throwIfAborted();
-    const currentModel = await set(
-      readIntegrationChatThreadModel$,
-      {
-        orgId: args.binding.orgId,
-        userId: args.binding.userId,
-        chatThreadId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!chatThreadId || currentModel.kind === "no_thread") {
-      return discordAccountMessage(NO_MODEL_CONVERSATION);
-    }
-    if (
-      args.page !== undefined &&
-      args.modelThreadTag !== discordModelThreadTag(chatThreadId)
-    ) {
-      return discordAccountMessage(STALE_CONTROL);
-    }
-    const runModels = await set(listAvailableRunModels$, args.binding, signal);
-    signal.throwIfAborted();
-    const options = runModels.models.map((runModel) => {
-      return {
-        label: runModel.modelLabel,
-        value: integrationModelOptionValue(runModel.model),
-        model: runModel.model,
-      };
-    });
-    if (args.selection !== undefined) {
-      return set(
-        selectDiscordConversationModel$,
-        args,
-        options,
-        chatThreadId,
-        signal,
-      );
-    }
-    return discordAccountPicker({
-      ...args,
-      connectionId: args.binding.connectionId,
-      modelThreadTag: discordModelThreadTag(chatThreadId),
-      action: "model",
-      options,
-      selected: integrationModelOptionValue(currentModel.selectedModel),
-      content: "Choose an allowed model for this conversation.",
-    });
-  },
-);
-
 const discordBoundAccountAction$ = command(
   async (
     { set },
@@ -502,10 +235,6 @@ const discordBoundAccountAction$ = command(
         DiscordCommandName | DiscordPickerState["action"] | undefined;
       readonly binding: DiscordVerifiedBinding;
       readonly actor: DiscordInteractionActor;
-      readonly botToken: string;
-      readonly page?: number;
-      readonly selection?: string;
-      readonly modelThreadTag?: string;
     },
     signal: AbortSignal,
   ): Promise<DiscordAccountMessage> => {
@@ -526,20 +255,6 @@ const discordBoundAccountAction$ = command(
           ? "You have been disconnected from this workspace and your Discord agent access has been revoked. Other workspace connections are unchanged."
           : STALE_CONTROL,
       );
-    }
-    const pickerArgs = {
-      actor: args.actor,
-      botToken: args.botToken,
-      binding: args.binding,
-      page: args.page,
-      selection: args.selection,
-      modelThreadTag: args.modelThreadTag,
-    };
-    if (args.action === "switch" || args.action === "agent") {
-      return set(discordAgentStatus$, args.binding, signal);
-    }
-    if (args.action === "model") {
-      return set(discordModelPicker$, pickerArgs, signal);
     }
     return discordAccountMessage(STALE_CONTROL);
   },
@@ -568,8 +283,12 @@ const discordAccountAction$ = command(
         selection = interaction.data.values[0];
       }
     }
-    const commandName: DiscordCommandName | undefined =
+    const commandName =
       interaction.type === 2 ? interaction.data.name : undefined;
+    // Old registrations can still deliver these commands during cleanup.
+    if (commandName === "switch" || commandName === "model") {
+      return discordAccountMessage(discordHelp());
+    }
     const action = commandName ?? control?.action;
     if (action === "help") {
       return discordAccountMessage(discordHelp());
@@ -609,10 +328,6 @@ const discordAccountAction$ = command(
         action,
         binding: current.binding,
         actor,
-        botToken,
-        page: control?.page,
-        selection,
-        modelThreadTag: control?.modelThreadTag,
       },
       signal,
     );

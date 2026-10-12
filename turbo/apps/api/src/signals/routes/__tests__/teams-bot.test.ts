@@ -170,7 +170,7 @@ const TEAMS_WELCOME_TEXT = [
   "",
   "To get started, use `connect` to link this Teams workspace to Okou. An org admin may need to complete workspace setup first.",
   "",
-  "Commands: `help`, `connect`, `disconnect`, `model`. Mention `@Nova` with a task or send a DM to work privately.",
+  "Commands: `help`, `connect`, `disconnect`. Mention `@Nova` with a task or send a DM to work privately.",
 ].join("\n");
 const BOT_FRAMEWORK_METADATA_URL =
   "https://login.botframework.com/v1/.well-known/openidconfiguration";
@@ -2323,24 +2323,26 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
     expect(outboundRequests[2]?.body).toMatchObject({
       type: "message",
-      text: expect.stringContaining(
-        "always uses your workspace's default agent",
-      ),
+      text: expect.stringContaining("Teams Bot Help"),
     });
     expect(outboundRequests[3]?.body).toMatchObject({
       type: "message",
-      text: expect.stringContaining("existing Okou conversation"),
+      text: expect.stringContaining("Teams Bot Help"),
     });
     expect(outboundRequests[4]?.body).toMatchObject({
       type: "message",
-      text: expect.stringContaining(
-        "always uses your workspace's default agent",
-      ),
+      text: expect.stringContaining("Teams Bot Help"),
     });
     expect(outboundRequests[5]?.body).toMatchObject({
       type: "message",
-      text: expect.stringContaining("out of date"),
+      text: expect.stringContaining("Teams Bot Help"),
     });
+
+    for (const request of outboundRequests) {
+      expect(JSON.stringify(request.body)).not.toContain("Choose your model");
+      expect(JSON.stringify(request.body)).not.toContain("Choose which agent");
+      expect(request.body).not.toHaveProperty("attachments");
+    }
 
     outboundRequests.splice(0, outboundRequests.length);
     const switchedRunResponse = await postTeamsActivity({
@@ -2525,7 +2527,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
   });
 
-  it("switches only the main Teams DM thread from the model card", async () => {
+  it("ignores a retired Teams model card targeting an existing DM", async () => {
     const { fixture, actor, runnerGroup } = await setupConnectedTeamsBotActor();
 
     await createBddIntegrationApi(context).configureNativeSubscriptionModels(
@@ -2605,165 +2607,12 @@ describe("POST /api/webhooks/teams/bot", () => {
       }),
       [200],
     );
-    expect(threadEvents.body.events).toContainEqual(
+    expect(threadEvents.body.events).not.toContainEqual(
       expect.objectContaining({
         kind: "model_selection_updated",
         selectedModel: "gpt-6-astra",
       }),
     );
-
-    const switchedResponse = await postTeamsActivity({
-      activity: teamsPersonalMessageActivity({
-        fixture,
-        id: teamsFixtureExternalId(fixture, "activity-dm-switch-after"),
-        text: "run after the DM model switch",
-      }),
-      token: teamsToken(),
-    });
-    expect(switchedResponse.status).toBe(200);
-    await readTeamsBotResponseAndFlush(switchedResponse);
-    const switchedRunId = await runIdForPrompt(
-      actor,
-      "run after the DM model switch",
-    );
-    await runsApi.heartbeatRunner(runnerGroup);
-    const switchedClaim = await runsApi.claimRunnerJob(switchedRunId);
-    expect(switchedClaim.modelUsageProvider).toBe("gpt-6-astra");
-    expect(switchedClaim.resumeSession).toBeNull();
-    expect(switchedClaim.appendSystemPrompt).toContain(
-      "# Microsoft Teams Run Context",
-    );
-    expect(switchedClaim.appendSystemPrompt).toContain(
-      "User: run before the DM model switch",
-    );
-    expect(switchedClaim.appendSystemPrompt).toContain(
-      `- AGENT_SESSION_COMMAND: okou search "${initialRunId}" --source agent-session`,
-    );
-    expect(switchedClaim.appendSystemPrompt).toContain(
-      "Use the AGENT_SESSION_COMMAND for a run",
-    );
-    expect(switchedClaim.appendSystemPrompt).not.toContain("LOG_COMMAND");
-    await runsApi.requestCancelRun(actor, switchedRunId, [200]);
-  });
-
-  it("switches the main Teams DM thread to Auto from the model card", async () => {
-    const { fixture, actor, runnerGroup, outboundRequests } =
-      await setupConnectedTeamsBotActor();
-
-    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
-      actor,
-    );
-    teamsGraphHistoryHandlers({
-      fixture,
-      chatMessages: [],
-      channelMessages: [],
-      threadRoots: {},
-      threadReplies: {},
-    });
-
-    const initialResponse = await postTeamsActivity({
-      activity: teamsPersonalMessageActivity({
-        fixture,
-        id: teamsFixtureExternalId(fixture, "activity-dm-auto-initial"),
-        text: "run before the DM Auto switch",
-      }),
-      token: teamsToken(),
-    });
-    expect(initialResponse.status).toBe(200);
-    await readTeamsBotResponseAndFlush(initialResponse);
-    const initialRunId = await runIdForPrompt(
-      actor,
-      "run before the DM Auto switch",
-    );
-    await runsApi.heartbeatRunner(runnerGroup);
-    const initialClaim = await runsApi.claimRunnerJob(initialRunId);
-    await runsApi.requestCancelRun(actor, initialRunId, [200]);
-    await completeCancelledRun(initialRunId, initialClaim.sandboxToken);
-
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const beforeEvents = await accept(
-      setupApp({ context, routes: chatThreadRoutes })(
-        chatThreadsContract,
-      ).events({
-        headers: { authorization: "Bearer clerk-session" },
-        query: {},
-      }),
-      [200],
-    );
-    const dmThread = beforeEvents.body.events.find((event) => {
-      return event.kind === "created";
-    });
-    if (!dmThread) {
-      throw new Error("Expected the main Teams DM thread");
-    }
-    const switchResponse = await postTeamsActivity({
-      activity: teamsPersonalMessageActivity({
-        fixture,
-        id: teamsFixtureExternalId(fixture, "activity-dm-auto-submit"),
-        text: "",
-        value: {
-          okouTeamsAction: "switch_model",
-          selectedModel: "auto",
-          routeConversationId: `a:personal-${fixture.teamsUserId}`,
-          routeThreadId: "direct-message:main",
-          chatThreadId: dmThread.chatThreadId,
-        },
-      }),
-      token: teamsToken(),
-    });
-    expect(switchResponse.status).toBe(200);
-    await readTeamsBotResponseAndFlush(switchResponse);
-
-    expect(outboundRequests.at(-1)?.body).toMatchObject({
-      type: "message",
-      text: expect.stringContaining("Switched to **Auto**"),
-    });
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const threadEvents = await accept(
-      setupApp({ context, routes: chatThreadRoutes })(
-        chatThreadsContract,
-      ).events({
-        headers: { authorization: "Bearer clerk-session" },
-        query: {},
-      }),
-      [200],
-    );
-    expect(threadEvents.body.events).toContainEqual(
-      expect.objectContaining({
-        kind: "model_selection_updated",
-        chatThreadId: dmThread.chatThreadId,
-        selectedModel: "auto",
-      }),
-    );
-  });
-
-  it("asks for a new /model card when the submitted card has no route keys", async () => {
-    const { fixture, actor, outboundRequests } =
-      await setupConnectedTeamsBotActor();
-    const before = await userConfigApi.readModelPreference(actor);
-
-    const response = await postTeamsActivity({
-      activity: teamsPersonalMessageActivity({
-        fixture,
-        id: teamsFixtureExternalId(fixture, "activity-stale-model-card"),
-        text: "",
-        value: {
-          okouTeamsAction: "switch_model",
-          selectedModel: "claude-fable-5-1",
-        },
-      }),
-      token: teamsToken(),
-    });
-    expect(response.status).toBe(200);
-    await readTeamsBotResponseAndFlush(response);
-
-    expect(outboundRequests.at(-1)?.body).toMatchObject({
-      type: "message",
-      text: expect.stringContaining("This model picker is out of date"),
-    });
-    await expect(
-      userConfigApi.readModelPreference(actor),
-    ).resolves.toStrictEqual(before);
   });
 
   describe("queued runs for a connected Teams bot", () => {

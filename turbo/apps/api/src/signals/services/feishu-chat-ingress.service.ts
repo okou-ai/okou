@@ -61,24 +61,6 @@ export function feishuRouteThreadId(
   return replyThreadId ?? message.messageId;
 }
 
-/** Read the chat thread a Feishu conversation already routes to. */
-export const findFeishuRoutedChatThreadId$ = command(
-  async (
-    { set },
-    key: FeishuChatThreadRouteKey,
-    signal?: AbortSignal,
-  ): Promise<string | undefined> => {
-    const db = set(writeDb$);
-    const [route] = await db
-      .select({ chatThreadId: feishuChatThreadRoutes.chatThreadId })
-      .from(feishuChatThreadRoutes)
-      .where(routeWhere(key))
-      .limit(1);
-    signal?.throwIfAborted();
-    return route?.chatThreadId;
-  },
-);
-
 const ROUTE_COLUMNS = {
   id: feishuChatThreadRoutes.id,
   connectionId: feishuChatThreadRoutes.connectionId,

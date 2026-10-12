@@ -6,10 +6,6 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import {
-  AUTO_SELECTED_MODEL,
-  sameSelectedModel,
-} from "@okouai/core/auto-run-model";
 import { command } from "ccstate";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
@@ -35,23 +31,12 @@ import {
 } from "../external/feishu-client";
 import { tapError } from "../utils";
 import { publishCustomConnectorUserInvalidationAfterCommit } from "./connector-client-invalidation.service";
-import {
-  feishuRouteThreadId,
-  findFeishuRoutedChatThreadId$,
-} from "./feishu-chat-ingress.service";
 import { buildFeishuConnectUrl } from "./feishu-connect-token";
 import { disconnectFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
 import { publishFeishuOrgChanged } from "./feishu-realtime.service";
-import {
-  integrationModelOptionValue,
-  readIntegrationChatThreadModel$,
-  updateIntegrationChatThreadModel$,
-} from "./integration-chat-thread-model.service";
-import { listAvailableRunModels$ } from "./run-models.service";
 
 const L = logger("FeishuDispatch");
 const FEISHU_THINKING_EMOJI = "Typing";
-const FEISHU_MODEL_PICKER_MAX_OPTIONS = 100;
 interface FeishuPromptContext {
   readonly text: string;
   readonly files: readonly FeishuPromptFile[];
@@ -95,13 +80,6 @@ export interface FeishuDispatchConnection {
   readonly userId: string;
   readonly connectorId: string;
   readonly feishuUserName: string | null;
-}
-
-interface FeishuModelOption {
-  /** Null is Auto. */
-  readonly model: string | null;
-  readonly label: string;
-  readonly isDefault: boolean;
 }
 
 interface FeishuCommand {
@@ -616,56 +594,6 @@ export async function markFeishuMessageReceived(
   }
 }
 
-const feishuModelPickerState$ = command(
-  async (
-    { set },
-    orgId: string,
-    userId: string,
-    currentSelectedModel: string | null,
-    signal: AbortSignal,
-  ): Promise<{
-    readonly options: readonly FeishuModelOption[];
-    readonly currentSelectedModel: string | null;
-  }> => {
-    const runModels = await set(
-      listAvailableRunModels$,
-      { orgId, userId },
-      signal,
-    );
-    signal.throwIfAborted();
-    return {
-      options: runModels.models
-        .map((runModel) => {
-          return {
-            model: runModel.model,
-            label: runModel.modelLabel,
-            isDefault: runModel.model === AUTO_SELECTED_MODEL,
-          };
-        })
-        .slice(0, FEISHU_MODEL_PICKER_MAX_OPTIONS),
-      currentSelectedModel,
-    };
-  },
-);
-
-function commandOptionsText(args: {
-  readonly intro: string;
-  readonly options: readonly {
-    readonly commandValue: string;
-    readonly label: string;
-    readonly current: boolean;
-  }[];
-  readonly command: "model";
-}): string {
-  return [
-    args.intro,
-    "",
-    ...args.options.map((option) => {
-      return `• \`/${args.command} ${option.commandValue}\` — ${option.label}${option.current ? " (current)" : ""}`;
-    }),
-  ].join("\n");
-}
-
 async function handleDisconnectCommand(
   args: ConnectedCommandArgs,
   signal: AbortSignal,
@@ -710,183 +638,8 @@ async function handleDisconnectCommand(
   );
 }
 
-async function replyModelUnavailable(
-  args: ConnectedCommandArgs,
-  signal: AbortSignal,
-): Promise<void> {
-  await replyNotice(
-    {
-      db: args.db,
-      message: args.message,
-      title: "Model unavailable",
-      text: "You don't have access to that model. Use `/model` to list available models.",
-      kind: "error",
-    },
-    signal,
-  );
-}
-
-function feishuModelCommandOptions(
-  options: readonly FeishuModelOption[],
-  currentSelectedModel: string | null,
-) {
-  return options.map((option) => {
-    return {
-      commandValue: integrationModelOptionValue(option.model),
-      label: `${option.label}${option.isDefault ? " (default)" : ""}`,
-      current: sameSelectedModel(currentSelectedModel, option.model),
-    };
-  });
-}
-
-function findFeishuModelOption(
-  options: readonly FeishuModelOption[],
-  input: string,
-) {
-  const normalized = input.toLowerCase();
-  return options.find((option) => {
-    return (
-      integrationModelOptionValue(option.model).toLowerCase() === normalized ||
-      option.label.toLowerCase() === normalized
-    );
-  });
-}
-
-const handleModelCommand$ = command(
-  async (
-    { set },
-    args: ConnectedCommandArgs,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const chatThreadId = await set(
-      findFeishuRoutedChatThreadId$,
-      {
-        connectionId: args.connection.id,
-        chatId: args.message.chatId,
-        threadId: feishuRouteThreadId(args.message),
-        userId: args.connection.userId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    const currentModel = await set(
-      readIntegrationChatThreadModel$,
-      {
-        orgId: args.installation.orgId,
-        userId: args.connection.userId,
-        chatThreadId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (currentModel.kind === "no_thread") {
-      await replyNotice(
-        {
-          db: args.db,
-          message: args.message,
-          title: "No conversation",
-          text: "Start or enter an existing Okou conversation before using /model.",
-          kind: "error",
-        },
-        signal,
-      );
-      return;
-    }
-    const picker = await set(
-      feishuModelPickerState$,
-      args.installation.orgId,
-      args.connection.userId,
-      currentModel.selectedModel,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (picker.options.length === 0) {
-      await replyNotice(
-        {
-          db: args.db,
-          message: args.message,
-          title: "No models available",
-          text: "No models are configured for this workspace.",
-          kind: "error",
-        },
-        signal,
-      );
-      return;
-    }
-    if (!args.command.argument) {
-      await replyNotice(
-        {
-          db: args.db,
-          message: args.message,
-          title: "Choose a model",
-          text: commandOptionsText({
-            intro: `Send one of these commands to choose the model for this ${FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name} conversation.`,
-            command: "model",
-            options: feishuModelCommandOptions(
-              picker.options,
-              picker.currentSelectedModel,
-            ),
-          }),
-        },
-        signal,
-      );
-      return;
-    }
-    const selected = findFeishuModelOption(
-      picker.options,
-      args.command.argument,
-    );
-    if (!selected) {
-      await replyModelUnavailable(args, signal);
-      return;
-    }
-    const threadModel = await set(
-      updateIntegrationChatThreadModel$,
-      {
-        orgId: args.installation.orgId,
-        userId: args.connection.userId,
-        chatThreadId,
-        model: selected.model,
-      },
-      signal,
-    );
-    if (threadModel.kind !== "updated") {
-      if (threadModel.kind === "no_thread") {
-        await replyNotice(
-          {
-            db: args.db,
-            message: args.message,
-            title: "No conversation",
-            text: "Start or enter an existing Okou conversation before using /model.",
-            kind: "error",
-          },
-          signal,
-        );
-        return;
-      }
-      await replyModelUnavailable(args, signal);
-      return;
-    }
-    signal.throwIfAborted();
-    await replyNotice(
-      {
-        db: args.db,
-        message: args.message,
-        title: "Model switched",
-        text: `Switched to **${selected.label}**.`,
-        kind: "success",
-      },
-      signal,
-    );
-  },
-);
-
 const handleConnectedCommand$ = command(
-  async (
-    { set },
-    args: ConnectedCommandArgs,
-    signal: AbortSignal,
-  ): Promise<void> => {
+  async (_, args: ConnectedCommandArgs, signal: AbortSignal): Promise<void> => {
     switch (args.command.name) {
       case "help": {
         await reply(
@@ -917,10 +670,6 @@ const handleConnectedCommand$ = command(
       }
       case "disconnect": {
         await handleDisconnectCommand(args, signal);
-        return;
-      }
-      case "model": {
-        await set(handleModelCommand$, args, signal);
         return;
       }
       default: {

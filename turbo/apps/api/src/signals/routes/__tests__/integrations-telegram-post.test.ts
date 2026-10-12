@@ -1192,7 +1192,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           3508,
           branch.botReplyId,
         );
-        // `/model` in the main DM switches only the main DM thread.
+        // Retired commands cannot change the model of either conversation.
         expect(pinnedReply.claim.modelUsageProvider).toBe("claude-fable-5-1");
         expect(pinnedReply.chatThread.id).toBe(branch.chatThread.id);
         expect(pinnedReply.chatThread.selectedModel).toBe("claude-fable-5-1");
@@ -1207,40 +1207,28 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       expect(followUp.chatThread.id).toBe(main.chatThread.id);
       expect(followUp.chatThread.selectedModel).toBe("claude-fable-5-1");
 
-      await sendDm("/model gpt-6-astra", 3506);
-      // `/model` leaves the member preference the fixture configured.
+      for (const [index, text] of [
+        "/switch",
+        "/model",
+        "/model gpt-6-astra",
+        "/model auto",
+      ].entries()) {
+        await sendDm(text, 3506 + index);
+        const reply = dm.telegram.sentMessages.at(-1)?.text;
+        expect(reply).toContain("Telegram Bot Help");
+        expect(reply).not.toContain("/model");
+        expect(reply).not.toContain("/switch");
+      }
       await expect(memberDefaultModelOf(dm.actor)).resolves.toBe(
         "claude-fable-5-1",
       );
-      const alternate = await completeDm("switch the main DM model", 3507);
-      expect(alternate.claim.cliAgentType).toBe("codex");
-      expect(alternate.chatThread.id).toBe(main.chatThread.id);
-      expect(alternate.chatThread.selectedModel).toBe("gpt-6-astra");
-      await sendDm("/model claude-fable-5-1", 3509);
-      const returned = await completeDm("return to the main model", 3510);
-      expect(returned.claim.modelUsageProvider).toBe("claude-fable-5-1");
-      expect(returned.chatThread.id).toBe(main.chatThread.id);
-      expect(returned.chatThread.selectedModel).toBe("claude-fable-5-1");
-
-      // An explicit Auto command stores the canonical selection.
-      await sendDm("/model auto", 3512);
-      const lifecycle = await chatApi.requestThreadEvents(dm.actor, {}, [200]);
-      if (lifecycle.status !== 200) {
-        throw new Error("Expected the Telegram thread event stream");
-      }
-      const autoThread = replayChatThreadEvents([], lifecycle.body.events).find(
-        (thread) => {
-          return thread.id === main.chatThread.id;
-        },
+      const continued = await completeDm(
+        "continue after retired commands",
+        3510,
       );
-      expect(autoThread?.selectedModel).toBe("auto");
-      await sendDm("/model", 3513);
-      expect(dm.telegram.sentMessages.at(-1)?.text).toContain(
-        "Current: <b>Auto</b>",
-      );
-      expect(dm.telegram.sentMessages.at(-1)?.text).toContain(
-        "Auto (current, default)",
-      );
+      expect(continued.chatThread.id).toBe(main.chatThread.id);
+      expect(continued.chatThread.selectedModel).toBe("claude-fable-5-1");
+      expect(continued.claim.resumeSession?.sessionId).toBe(followUp.sessionId);
     });
   });
 
@@ -2147,9 +2135,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     });
     expect(list.status).toBe(200);
     await flushWaitUntilForTest();
-    expect(telegramMocks.sentMessages[0]?.text).toContain(
-      "existing Okou conversation",
-    );
+    expect(telegramMocks.sentMessages[0]?.text).toContain("Telegram Bot Help");
 
     const switchModel = await postWebhook({
       telegramBotId: fixture.telegramBotId,
@@ -2170,9 +2156,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     });
     expect(switchModel.status).toBe(200);
     await flushWaitUntilForTest();
-    expect(telegramMocks.sentMessages[1]?.text).toContain(
-      "existing Okou conversation",
-    );
+    expect(telegramMocks.sentMessages[1]?.text).toContain("Telegram Bot Help");
     await expect(memberDefaultModel(fixture)).resolves.toBe(
       "claude-sonnet-5-5",
     );
@@ -2196,9 +2180,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     });
     expect(defaultModel.status).toBe(200);
     await flushWaitUntilForTest();
-    expect(telegramMocks.sentMessages[2]?.text).toContain(
-      "existing Okou conversation",
-    );
+    expect(telegramMocks.sentMessages[2]?.text).toContain("Telegram Bot Help");
     await expect(memberDefaultModel(fixture)).resolves.toBe(
       "claude-sonnet-5-5",
     );

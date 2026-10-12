@@ -34,7 +34,7 @@ function appHomeIntroBlocks(): SlackAnyBlock[] {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: "Connect your AI agents to Slack and interact with them through messages.",
+        text: "Chat with your workspace's default agent in Slack through direct messages and mentions.",
       },
     },
     { type: "divider" },
@@ -119,7 +119,7 @@ function appHomeAgentBlocks(options: AppHomeViewOptions): SlackAnyBlock[] {
     type: "section",
     text: {
       type: "mrkdwn",
-      text: `AgentName: *${options.agentName}*`,
+      text: `Default agent: *${options.agentName}*`,
     },
     accessory: settingsButton,
   };
@@ -142,14 +142,14 @@ function appHomeHelpBlocks(options: AppHomeViewOptions): SlackAnyBlock[] {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Commands*\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} connect\` - Connect to ${assistantName}\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} disconnect\` - Disconnect from ${assistantName}`,
+        text: `*Commands*\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} help\` - Show available commands\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} connect\` - Connect to ${assistantName}\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} disconnect\` - Disconnect from ${assistantName}`,
       },
     },
     {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Usage*\nSend a DM or mention ${botMention} in any channel to chat with your agents`,
+        text: `*Usage*\nSend a DM or mention ${botMention} in any channel to chat with your workspace's default agent.`,
       },
     },
   ];
