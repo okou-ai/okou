@@ -70,13 +70,13 @@ import {
   BILLING_RESTORE_PURPOSE,
 } from "./billing-payment-method.service";
 import { restoreSubscription$ } from "./billing-restore.service";
-import { publishBillingChangedForOrg } from "./billing-realtime.service";
+import { publishBillingChangedForOrg$ } from "./billing-realtime.service";
 import { pickOrgQueuedChatThreads$ } from "./chat-thread-queue-drain.service";
 import {
   CONCURRENCY_SUBSCRIPTION_PURPOSE,
   isConcurrencyPriceId,
 } from "./org-concurrency-entitlements.service";
-import { disableIneligibleWorkflowWebhookAutomationsForOrg } from "./workflow-webhook-automation-entitlement.service";
+import { disableIneligibleWorkflowWebhookAutomationsForOrg$ } from "./workflow-webhook-automation-entitlement.service";
 import {
   ensureOrgMetadataPlanEntitlement,
   orgPlanEntitlementValues,
@@ -4343,22 +4343,24 @@ export async function reconcileMissingStripeSubscription(
   };
 }
 
-async function publishBillingChanges(
-  db: Db,
-  orgIds: ReadonlySet<string>,
-  signal: AbortSignal,
-): Promise<void> {
-  for (const orgId of orgIds) {
-    await disableIneligibleWorkflowWebhookAutomationsForOrg(
-      db,
-      { orgId },
-      signal,
-    );
-    signal.throwIfAborted();
-    await publishBillingChangedForOrg(db, orgId);
-    signal.throwIfAborted();
-  }
-}
+const publishBillingChanges$ = command(
+  async (
+    { set },
+    orgIds: ReadonlySet<string>,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    for (const orgId of orgIds) {
+      await set(
+        disableIneligibleWorkflowWebhookAutomationsForOrg$,
+        { orgId },
+        signal,
+      );
+      signal.throwIfAborted();
+      await set(publishBillingChangedForOrg$, orgId);
+      signal.throwIfAborted();
+    }
+  },
+);
 
 export const reconcilePaidStripeCheckoutSession$ = command(
   async (
@@ -4376,7 +4378,6 @@ export const reconcilePaidStripeCheckoutSession$ = command(
       return [];
     }
 
-    const db = set(writeDb$);
     const setupResult = await set(
       handleBillingSetupCheckoutCompleted$,
       input.session,
@@ -4396,7 +4397,7 @@ export const reconcilePaidStripeCheckoutSession$ = command(
     if (result.drainOrgId) {
       orgIds.add(result.drainOrgId);
     }
-    await publishBillingChanges(db, orgIds, signal);
+    await set(publishBillingChanges$, orgIds, signal);
     if (result.drainOrgId) {
       waitUntil(
         set(
@@ -4416,14 +4417,13 @@ export const reconcilePaidStripeInvoice$ = command(
     invoice: StripeInvoice,
     signal: AbortSignal,
   ): Promise<string | null> => {
-    const db = set(writeDb$);
     const orgId = await set(handleInvoicePaid$, invoice, signal);
     signal.throwIfAborted();
     if (!orgId) {
       return null;
     }
 
-    await publishBillingChanges(db, new Set([orgId]), signal);
+    await set(publishBillingChanges$, new Set([orgId]), signal);
     waitUntil(
       set(pickOrgQueuedChatThreads$, { orgId }, new AbortController().signal),
     );
@@ -4555,7 +4555,7 @@ export const handleStripeWebhookEvent$ = command(
     }
 
     signal.throwIfAborted();
-    await publishBillingChanges(db, billingChangedOrgIds, signal);
+    await set(publishBillingChanges$, billingChangedOrgIds, signal);
 
     if (drainOrgId) {
       const queueSignal = new AbortController().signal;
