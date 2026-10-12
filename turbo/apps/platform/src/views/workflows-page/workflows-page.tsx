@@ -185,6 +185,8 @@ function AgentAvatar({ workflow }: { readonly workflow: WorkflowSummary }) {
   );
 }
 
+const MEMBER_AVATAR_FALLBACK_DELAY_MS = 600;
+
 function MemberAvatar({
   label,
   imageUrl,
@@ -201,7 +203,12 @@ function MemberAvatar({
           className="h-full w-full object-cover"
         />
       )}
-      <Avatar.Fallback aria-hidden="true">
+      {/* With a picture on the way the circle stays empty while it loads, so
+          initials do not flash first; they still stand in if it fails. */}
+      <Avatar.Fallback
+        aria-hidden="true"
+        delay={imageUrl ? MEMBER_AVATAR_FALLBACK_DELAY_MS : undefined}
+      >
         {label ? labelInitials(label) : <User className="size-3" />}
       </Avatar.Fallback>
     </Avatar.Root>

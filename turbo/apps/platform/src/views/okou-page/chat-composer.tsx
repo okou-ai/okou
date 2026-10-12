@@ -3918,14 +3918,16 @@ function ImportedPptImage({
           />
         );
       })}
+      {/* While the page image loads the frame stays empty; the glyph only
+          marks an image that could not be loaded. */}
       {placeholder === undefined ? null : (
         <div
           hidden={placeholderState === "hidden"}
           data-imported-presentation-template-image-placeholder=""
           data-state={placeholderState}
-          className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center bg-muted/60 text-muted-foreground data-[state=loading]:animate-pulse"
+          className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center bg-muted/60 text-muted-foreground"
         >
-          {placeholder}
+          {placeholderState === "error" ? placeholder : null}
         </div>
       )}
     </>
