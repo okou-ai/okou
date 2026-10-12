@@ -985,7 +985,7 @@ function computerUseHostLivenessIsFresh(
  */
 export const heartbeatComputerUseHost$ = command(
   async (
-    { set },
+    { get, set },
     params: ComputerUseHostAuthority & {
       readonly hostName: string;
       readonly appVersion: string;
@@ -1018,7 +1018,7 @@ export const heartbeatComputerUseHost$ = command(
     const [pendingCommand] =
       claimableKinds.length === 0
         ? []
-        : await db
+        : await get(db$)
             .select({ id: computerUseCommands.id })
             .from(computerUseCommands)
             .where(
@@ -1144,7 +1144,7 @@ export const listComputerUseHosts$ = command(
 
 export const createComputerUseCommand$ = command(
   async (
-    { set },
+    { get, set },
     params: {
       readonly orgId: string;
       readonly userId: string;
@@ -1163,7 +1163,7 @@ export const createComputerUseCommand$ = command(
 
     const db = set(writeDb$);
     const now = nowDate();
-    const hosts = await db
+    const hosts = await get(db$)
       .select()
       .from(computerUseHosts)
       .where(
@@ -1238,7 +1238,7 @@ export const createComputerUseCommand$ = command(
  */
 export const getComputerUseCommand$ = command(
   async (
-    { set },
+    { get, set },
     params: {
       readonly orgId: string;
       readonly userId: string;
@@ -1248,7 +1248,7 @@ export const getComputerUseCommand$ = command(
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
-    const db = set(writeDb$);
+    const db = get(db$);
     const [row] = await db
       .select()
       .from(computerUseCommands)
@@ -1384,7 +1384,7 @@ const hostHasRunningComputerUseCommand$ = command(
  */
 export const claimNextComputerUseHostCommand$ = command(
   async (
-    { set },
+    { get, set },
     params: ComputerUseHostAuthority & {
       readonly supportedCapabilities: readonly string[];
     },
@@ -1431,7 +1431,7 @@ export const claimNextComputerUseHostCommand$ = command(
 
     const effectiveCapabilities =
       capabilities.length > 0 ? capabilities : host.supportedCapabilities;
-    const candidateRows = await db
+    const candidateRows = await get(db$)
       .select()
       .from(computerUseCommands)
       .where(
