@@ -57,7 +57,7 @@ function checkSource(
 }
 
 /**
- * The four places a kind decides something, each naming every kind rather
+ * The places a kind decides something, each naming every kind rather
  * than letting one be what the others fall through to. A kind added to
  * `USER_TEMPLATE_KINDS` fails these switches until someone says what it
  * carries, checks and stores.
@@ -71,6 +71,28 @@ function publishedPageFileIds(
     }
     case "document":
     case "illustration": {
+      return [];
+    }
+  }
+}
+
+/**
+ * The approved example pictures, for the one kind recognised by what it makes.
+ *
+ * Not pages: an illustration has no reading order, and the detail keeps
+ * offering its source as the file it was read from. They are held to what a
+ * page is held to because they are drawn in the same grid and served through
+ * the same preview-asset path.
+ */
+function publishedExampleFileIds(
+  body: PublishUserTemplateBody,
+): readonly string[] {
+  switch (body.kind) {
+    case "illustration": {
+      return body.exampleFileIds;
+    }
+    case "presentation":
+    case "document": {
       return [];
     }
   }
@@ -139,6 +161,7 @@ function publishedManifest(
   body: PublishUserTemplateBody,
   pages: readonly ResolvedUpload[],
   cover: ResolvedUpload | undefined,
+  examples: readonly ResolvedUpload[],
 ): UserTemplateManifest {
   switch (body.kind) {
     case "presentation": {
@@ -161,7 +184,12 @@ function publishedManifest(
       };
     }
     case "illustration": {
-      return { kind: "illustration" };
+      return {
+        kind: "illustration",
+        exampleKeys: examples.map((example) => {
+          return example.storageKey;
+        }),
+      };
     }
   }
 }
@@ -198,10 +226,12 @@ export const publishUserTemplate$ = command(
     const { body } = args;
     const pageFileIds = publishedPageFileIds(body);
     const coverFileId = publishedCoverFileId(body);
+    const exampleFileIds = publishedExampleFileIds(body);
     const ids = [
       body.sourceFileId,
       ...pageFileIds,
       ...(coverFileId === undefined ? [] : [coverFileId]),
+      ...exampleFileIds,
       body.packageFileId,
     ];
     const uploads = await set(
@@ -225,6 +255,9 @@ export const publishUserTemplate$ = command(
     });
     const cover =
       coverFileId === undefined ? undefined : uploads.get(coverFileId)!;
+    const examples = exampleFileIds.map((id) => {
+      return uploads.get(id)!;
+    });
 
     const sourceError = checkSource(body.kind, source);
     if (sourceError) {
@@ -237,6 +270,15 @@ export const publishUserTemplate$ = command(
     const coverError = cover === undefined ? null : checkCover(cover);
     if (coverError) {
       return rejected(coverError);
+    }
+    const exampleError = checkTemplatePages(examples, {
+      contentType: USER_TEMPLATE_PAGE_CONTENT_TYPE,
+      maxPageBytes: MAX_USER_TEMPLATE_PAGE_BYTES,
+      maxTotalBytes: MAX_USER_TEMPLATE_TOTAL_PAGE_BYTES,
+      item: "Example",
+    });
+    if (exampleError) {
+      return rejected(exampleError);
     }
 
     const packageResult = await set(
@@ -258,7 +300,7 @@ export const publishUserTemplate$ = command(
         title: body.title,
         sourceStorageKey: source.storageKey,
         sourceFilename: source.filename,
-        manifest: publishedManifest(body, pages, cover),
+        manifest: publishedManifest(body, pages, cover, examples),
         createdBy: args.ownerUserId,
         updatedBy: args.ownerUserId,
         createdAt: currentTime,

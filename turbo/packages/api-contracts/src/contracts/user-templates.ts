@@ -36,6 +36,7 @@ const userTemplatePreviewAssetSchema = z.object({
 });
 
 export const MAX_USER_TEMPLATE_PAGES = 100;
+const MAX_USER_TEMPLATE_EXAMPLES = 12;
 export const MAX_USER_TEMPLATE_SOURCE_BYTES = 100 * 1024 * 1024;
 export const MAX_USER_TEMPLATE_PAGE_BYTES = 25 * 1024 * 1024;
 export const MAX_USER_TEMPLATE_TOTAL_PAGE_BYTES = 500 * 1024 * 1024;
@@ -259,9 +260,11 @@ const publishUserTemplateBaseSchema = z.object({
  * them into one object would make each of those a rejection rather than the
  * appearance it already has.
  *
- * An illustration carries neither, for the opposite reason: its source is
- * already a picture, so the catalog shows that file rather than a rendering of
- * it. Sending a cover would be sending a second copy of the one it has.
+ * An illustration carries neither. It carries the pictures the reverse run
+ * made from the extracted style and the member approved instead: a style is
+ * recognised by what it produces, and the source is only what it was read
+ * from — a screenshot or a page can look nothing like the pictures the style
+ * draws. They arrive in display order, and the first is the cover.
  */
 const publishUserTemplateBodySchema = z.discriminatedUnion("kind", [
   publishUserTemplateBaseSchema.extend({
@@ -279,6 +282,7 @@ const publishUserTemplateBodySchema = z.discriminatedUnion("kind", [
   }),
   publishUserTemplateBaseSchema.extend({
     kind: z.literal("illustration"),
+    exampleFileIds: z.array(z.uuid()).min(1).max(MAX_USER_TEMPLATE_EXAMPLES),
   }),
 ]);
 

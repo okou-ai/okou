@@ -78,25 +78,28 @@ export function checkTemplatePages(
     readonly contentType: string;
     readonly maxPageBytes: number;
     readonly maxTotalBytes: number;
+    /** What the images are called in a rejection: "Page" or "Example". */
+    readonly item?: string;
   },
 ): string | null {
+  const item = policy.item ?? "Page";
   const wrongType = pages.findIndex((page) => {
     return page.contentType !== policy.contentType;
   });
   if (wrongType !== -1) {
-    return `Page ${(wrongType + 1).toString()} must be a ${policy.contentType}`;
+    return `${item} ${(wrongType + 1).toString()} must be a ${policy.contentType}`;
   }
   const oversized = pages.findIndex((page) => {
     return page.sizeBytes > policy.maxPageBytes;
   });
   if (oversized !== -1) {
-    return `Page ${(oversized + 1).toString()} must be no larger than ${policy.maxPageBytes.toString()} bytes`;
+    return `${item} ${(oversized + 1).toString()} must be no larger than ${policy.maxPageBytes.toString()} bytes`;
   }
   const total = pages.reduce((sum, page) => {
     return sum + page.sizeBytes;
   }, 0);
   if (total > policy.maxTotalBytes) {
-    return `Page images must total ${policy.maxTotalBytes.toString()} bytes or fewer`;
+    return `${item} images must total ${policy.maxTotalBytes.toString()} bytes or fewer`;
   }
   return null;
 }

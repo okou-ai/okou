@@ -371,6 +371,33 @@ export const deleteCustomTemplate$ = command(
 );
 
 /**
+ * Which example an image template's card is showing, by template id.
+ *
+ * Kept here rather than in the card so a catalog refresh, which re-renders
+ * every card, does not snap a card back to its first example.
+ */
+const internalActiveExamples$ = state<ReadonlyMap<string, number>>(new Map());
+
+export const customTemplateActiveExample$ = computed((get) => {
+  const active = get(internalActiveExamples$);
+  return (templateId: string): number => {
+    return active.get(templateId) ?? 0;
+  };
+});
+
+export const showCustomTemplateExample$ = command(
+  (
+    { get, set },
+    args: { readonly templateId: string; readonly index: number },
+  ) => {
+    set(
+      internalActiveExamples$,
+      new Map(get(internalActiveExamples$)).set(args.templateId, args.index),
+    );
+  },
+);
+
+/**
  * Reopening the current category clears its filters, detail view and any
  * removal still waiting to be confirmed, so a picker torn down mid-question
  * does not reopen on it.
@@ -380,6 +407,7 @@ export const resetCustomTemplatePickerView$ = command(({ set }) => {
   set(internalKindFilter$, null);
   set(internalOpenTemplate$, null);
   set(internalPendingDeletion$, null);
+  set(internalActiveExamples$, new Map());
 });
 
 /** Opening the picker always starts from a clean list and a fresh catalog. */

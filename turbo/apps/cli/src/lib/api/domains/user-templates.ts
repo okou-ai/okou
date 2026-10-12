@@ -36,12 +36,17 @@ export type PublishUserTemplateArgs =
       readonly coverPath?: string;
       readonly pageCount?: number;
     })
-  | (PublishUserTemplateCommon & { readonly kind: "illustration" });
+  | (PublishUserTemplateCommon & {
+      readonly kind: "illustration";
+      /** Directory of the approved example PNGs, in filename order. */
+      readonly examplesDir: string;
+    });
 
 interface UploadedFileIds {
   readonly sourceFileId: string;
   readonly pageFileIds: string[];
   readonly coverFileId: string | undefined;
+  readonly exampleFileIds: string[];
   readonly packageFileId: string;
 }
 
@@ -61,10 +66,29 @@ async function pagePaths(
 }
 
 /**
+ * The approved example pictures an illustration is shown by. Not pages: they
+ * have no reading order, and the catalog covers the style with the first.
+ */
+async function examplePaths(
+  args: PublishUserTemplateArgs,
+): Promise<readonly string[]> {
+  switch (args.kind) {
+    case "illustration": {
+      return await orderedPagePaths(args.examplesDir);
+    }
+    case "presentation":
+    case "document": {
+      return [];
+    }
+  }
+}
+
+/**
  * The one picture that is a cover without also being a page.
  *
  * A deck's cover is the first of the pages it already sends and an
- * illustration's is its source, so neither has a file to name here.
+ * illustration's is the first of its examples, so neither has a file to name
+ * here.
  */
 function coverPath(args: PublishUserTemplateArgs): string | undefined {
   switch (args.kind) {
@@ -116,6 +140,7 @@ function publishRequestBody(
         title: args.title,
         kind: "illustration",
         sourceFileId: uploaded.sourceFileId,
+        exampleFileIds: uploaded.exampleFileIds,
         packageFileId: uploaded.packageFileId,
       };
     }
@@ -135,6 +160,7 @@ export async function publishUserTemplate(
 ): Promise<UserTemplateSummary> {
   const pages = await pagePaths(args);
   const cover = coverPath(args);
+  const examples = await examplePaths(args);
 
   const source = await uploadWebFile(args.sourcePath);
   const pageFileIds: string[] = [];
@@ -154,6 +180,14 @@ export async function publishUserTemplate(
             contentType: USER_TEMPLATE_PAGE_CONTENT_TYPE,
           })
         ).id;
+  // Held to a page's limits at publish, so uploaded as a page's content type.
+  const exampleFileIds: string[] = [];
+  for (const examplePath of examples) {
+    const example = await uploadWebFile(examplePath, {
+      contentType: USER_TEMPLATE_PAGE_CONTENT_TYPE,
+    });
+    exampleFileIds.push(example.id);
+  }
 
   const packageFileId = await packageArchive(
     args.packageDir,
@@ -172,6 +206,7 @@ export async function publishUserTemplate(
       sourceFileId: source.id,
       pageFileIds,
       coverFileId,
+      exampleFileIds,
       packageFileId,
     }),
   });

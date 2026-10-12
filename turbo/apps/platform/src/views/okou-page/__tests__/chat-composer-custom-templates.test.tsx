@@ -705,6 +705,8 @@ test("A PDF template opens in the browser's own viewer", async () => {
 
 const ILLUSTRATION_SOURCE_URL =
   "https://storage.example.test/private-artifacts/market-day.png?signature=abc";
+const MARKET_DAY_EXAMPLE_URL =
+  "https://storage.example.test/private-artifacts/ref-market-day.png?signature=def";
 
 function illustrationTemplate(
   overrides: Partial<UserTemplateDetail> = {},
@@ -714,51 +716,99 @@ function illustrationTemplate(
     title: "Market day",
     sourceFilename: "market-day.png",
     kind: "illustration",
-    // The source is the cover, so unlike a document this kind has one without
-    // anything having been rendered for it.
-    coverUrl: ILLUSTRATION_SOURCE_URL,
     coverHasMorePages: false,
     pageCount: null,
     pageUrls: [],
     sourceUrl: ILLUSTRATION_SOURCE_URL,
+    // Covered by the example its style produced, never by its source.
+    coverUrl: MARKET_DAY_EXAMPLE_URL,
+    previewAssets: [previewAsset("example-1", MARKET_DAY_EXAMPLE_URL)],
     ...overrides,
   });
 }
 
-test("An illustration template is tiled by the picture it was reversed from", async () => {
-  mockCustomTemplates([illustrationTemplate()]);
+function previewAsset(name: string, url: string) {
+  return {
+    previewAssetId: `utp:44444444-4444-4444-8444-444444444444:${name}`,
+    url,
+    expiresAt: "2026-12-31T00:00:00.000Z",
+  };
+}
+
+const EXAMPLE_URLS = [
+  "https://storage.example.test/private-artifacts/ref-agenda.png?signature=1",
+  "https://storage.example.test/private-artifacts/ref-approval.png?signature=2",
+  "https://storage.example.test/private-artifacts/ref-access.png?signature=3",
+] as const;
+
+/** An image template published with the examples its style produced. */
+function exampledIllustrationTemplate(
+  urls: readonly string[] = EXAMPLE_URLS,
+): UserTemplateDetail {
+  return illustrationTemplate({
+    title: "Quiet UI mockup",
+    sourceFilename: "design-review.png",
+    coverUrl: urls[0],
+    previewAssets: urls.map((url, index) => {
+      return previewAsset(`example-${(index + 1).toString()}`, url);
+    }),
+  });
+}
+
+function exampleStrip(dialog: HTMLElement): HTMLElement[] {
+  return queryAllByRoleFast("button", dialog).filter((button) => {
+    return /^Show variant \d+$/.test(button.getAttribute("aria-label") ?? "");
+  });
+}
+
+test("An image template is shown by the examples its style produced, not its source", async () => {
+  mockCustomTemplateStore([exampledIllustrationTemplate()]);
 
   const { dialog } = await openCustomPanel();
-  click(tabByText("Custom"));
+  await within(dialog).findByText("Quiet UI mockup");
 
-  await within(dialog).findByText("Market day");
-  // A document with no cover falls back to a format badge. An illustration
-  // never reaches that branch: its source is already a picture.
-  expect(within(dialog).queryByText("PNG")).not.toBeInTheDocument();
-  const cover = buttonByName("Preview Market day", dialog)?.querySelector(
-    "img",
+  const hero = () => {
+    return buttonByName("Preview Quiet UI mockup", dialog)?.querySelector(
+      "img",
+    );
+  };
+  expect(hero()).toHaveAttribute("src", EXAMPLE_URLS[0]);
+  const strip = exampleStrip(dialog);
+  expect(
+    strip.map((button) => {
+      return button.querySelector("img")?.getAttribute("src");
+    }),
+  ).toStrictEqual([...EXAMPLE_URLS]);
+  expect(strip[0]).toHaveAttribute("aria-pressed", "true");
+
+  click(strip[1]!);
+  await waitFor(() => {
+    expect(hero()).toHaveAttribute("src", EXAMPLE_URLS[1]);
+  });
+  expect(exampleStrip(dialog)[1]).toHaveAttribute("aria-pressed", "true");
+
+  click(buttonByName("Preview Quiet UI mockup", dialog)!);
+  const pictures = await screen.findAllByTestId(
+    "custom-template-example-preview",
   );
-  expect(cover).toHaveAttribute("src", ILLUSTRATION_SOURCE_URL);
+  expect(
+    pictures.map((picture) => {
+      return picture.getAttribute("src");
+    }),
+  ).toStrictEqual([...EXAMPLE_URLS]);
 });
 
-test("Opening an illustration template shows the source picture itself", async () => {
-  mockCustomTemplateStore([illustrationTemplate()]);
+test("An image template with one example has nothing to choose between", async () => {
+  mockCustomTemplateStore([exampledIllustrationTemplate([EXAMPLE_URLS[0]])]);
 
   const { dialog } = await openCustomPanel();
-  click(tabByText("Custom"));
-  await within(dialog).findByText("Market day");
-  click(buttonByName("Preview Market day", dialog)!);
+  await within(dialog).findByText("Quiet UI mockup");
 
-  // No viewer and no iframe: the browser draws this source, so it is drawn.
-  const picture = await screen.findByTestId("custom-template-source-preview");
-  expect(picture.tagName).toBe("IMG");
-  expect(picture).toHaveAttribute("src", ILLUSTRATION_SOURCE_URL);
-
-  // The same management column a document's dialog carries, and the catalog
-  // still mounted behind it.
-  const preview = previewDialogAround(picture);
-  expect(buttonByName("Use this template", preview)).toBeTruthy();
-  expect(within(dialog).getByText("Market day")).toBeInTheDocument();
+  expect(
+    buttonByName("Preview Quiet UI mockup", dialog)?.querySelector("img"),
+  ).toHaveAttribute("src", EXAMPLE_URLS[0]);
+  expect(exampleStrip(dialog)).toStrictEqual([]);
+  expect(within(dialog).getByText("Private")).toBeInTheDocument();
 });
 
 async function openDetail(

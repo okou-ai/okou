@@ -44,13 +44,16 @@ export interface UserTemplateDocumentManifest {
 }
 
 /**
- * An illustration template is a style, and what the catalog shows for it is
- * the picture it was reversed from. That file is already on the row as
- * `source_storage_key`, so this arm carries the discriminant alone: repeating
- * the key here would give one object two places to say where the cover is.
+ * An illustration template is a style, and the catalog shows it by the
+ * pictures it produces: the examples the reverse run generated from the
+ * extracted style and the member approved, in display order, the first being
+ * the cover. The source it was read from stays on the row as
+ * `source_storage_key`.
  */
 export interface UserTemplateIllustrationManifest {
   readonly kind: "illustration";
+  /** Private artifact object keys for the approved example pictures. */
+  readonly exampleKeys: readonly string[];
 }
 
 export type UserTemplateManifest =

@@ -55,9 +55,10 @@ import {
   CustomTemplatesLoadError,
 } from "./custom-template-preview-dialog.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
-import { TEMPLATE_TILE_SCRIM } from "./template-tile.ts";
+import { TEMPLATE_CARD_SHADOW, TEMPLATE_TILE_SCRIM } from "./template-tile.ts";
 import {
   cancelDeleteCustomTemplate$,
+  customTemplateActiveExample$,
   customTemplateSearchQuery$,
   customTemplateCatalog$,
   deleteCustomTemplate$,
@@ -67,6 +68,7 @@ import {
   setCustomTemplateSearchQuery$,
   projectCustomTemplatePicker$,
   setCustomTemplateKindFilter$,
+  showCustomTemplateExample$,
   updateCustomTemplate$,
 } from "../../signals/okou-page/custom-template-library.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
@@ -278,6 +280,176 @@ function CustomTemplateActions({
   );
 }
 
+/**
+ * The same strip as the built-in Illustration card: a thumbnail per picture,
+ * the shown one marked, chosen with a pressed button.
+ */
+function CustomTemplateExampleStrip({
+  templateId,
+  pictures,
+  shown,
+}: {
+  readonly templateId: string;
+  readonly pictures: readonly string[];
+  readonly shown: number;
+}) {
+  const { t } = useTranslation();
+  const showExample = useSet(showCustomTemplateExample$);
+  return (
+    <div
+      data-custom-illustration-examples=""
+      className="flex items-center gap-2 overflow-x-auto px-3 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
+      {pictures.map((picture, index) => {
+        const active = index === shown;
+        return (
+          <button
+            key={picture}
+            type="button"
+            aria-label={t(
+              ($) => {
+                return $.artifacts.templates.showVariant;
+              },
+              { variantNumber: index + 1 },
+            )}
+            aria-pressed={active}
+            className={cn(
+              "relative h-12 w-12 shrink-0 overflow-hidden rounded-md border-(length:--border-width-emphasis) bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              active ? "border-primary" : "border-border",
+            )}
+            onClick={() => {
+              showExample({ templateId, index });
+            }}
+          >
+            <img
+              src={picture}
+              alt=""
+              loading="lazy"
+              className="h-full w-full object-cover"
+            />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * An image template, shown the way the built-in Illustration tab shows a
+ * style: the picture it draws, the other pictures beneath it, then the name.
+ *
+ * The pictures are the template's preview assets: the examples its style
+ * produced and the member approved. A style is judged by what it makes, so
+ * the source a member uploaded never represents it. One picture needs no
+ * strip to choose from, so it gets none.
+ */
+function CustomTemplateIllustrationCard({
+  template,
+  onSelect,
+}: {
+  readonly template: UserTemplateCatalogEntry;
+  readonly onSelect: (template: UserTemplateCatalogEntry) => void;
+}) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const openTemplate = useSet(openCustomTemplate$);
+  const updateTemplate = useSet(updateCustomTemplate$);
+  const requestDelete = useSet(requestDeleteCustomTemplate$);
+  const activeExample = useGet(customTemplateActiveExample$);
+  const pictures = template.previewAssets.map((asset) => {
+    return asset.url;
+  });
+  const shown = Math.min(
+    activeExample(template.id),
+    Math.max(0, pictures.length - 1),
+  );
+  const hero = pictures[shown];
+  return (
+    <div className="mb-6 break-inside-avoid">
+      <div
+        data-custom-illustration-card=""
+        className={cn(
+          "group/tile overflow-hidden rounded-xl border border-border bg-card",
+          TEMPLATE_CARD_SHADOW,
+        )}
+      >
+        <div className="relative isolate">
+          <button
+            type="button"
+            className="block w-full cursor-pointer bg-muted"
+            aria-label={t(
+              ($) => {
+                return $.templates.actions.preview;
+              },
+              { title: template.title },
+            )}
+            onClick={() => {
+              openTemplate({ templateId: template.id, kind: template.kind });
+            }}
+          >
+            {hero ? (
+              <img
+                src={hero}
+                alt=""
+                loading="lazy"
+                className="block h-auto w-full"
+              />
+            ) : null}
+          </button>
+          {template.canManage ? (
+            <CustomTemplateActions
+              template={template}
+              onVisibilityChange={(visibility) => {
+                detach(
+                  updateTemplate(
+                    { templateId: template.id, body: { visibility } },
+                    pageSignal,
+                  ),
+                  Reason.DomCallback,
+                );
+              }}
+              onDelete={() => {
+                requestDelete({ id: template.id, title: template.title });
+              }}
+            />
+          ) : null}
+        </div>
+        {pictures.length > 1 ? (
+          <CustomTemplateExampleStrip
+            templateId={template.id}
+            pictures={pictures}
+            shown={shown}
+          />
+        ) : null}
+        <div className="flex items-center justify-between gap-3 px-3.5 py-3">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <p
+              className="min-w-0 truncate text-sm font-semibold text-foreground"
+              title={template.title}
+            >
+              {template.title}
+            </p>
+            <CustomTemplateMeta template={template} />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={() => {
+              onSelect(template);
+            }}
+          >
+            {t(($) => {
+              return $.artifacts.templates.use;
+            })}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CustomTemplateCard({
   template,
   onSelect,
@@ -294,24 +466,13 @@ function CustomTemplateCard({
     openTemplate({ templateId: template.id, kind: template.kind });
   };
   return (
-    <div
-      className={cn(
-        "group/tile flex min-w-0 flex-col",
-        template.kind === "illustration" && "mb-6 break-inside-avoid",
-      )}
-    >
+    <div className="group/tile flex min-w-0 flex-col">
       {/* Positioned tree order paints the cover, then the scrim, then the
           sibling Use and More actions, including during opacity transitions. */}
       <div className="relative">
         <button
           type="button"
-          className={cn(
-            CARD_MEDIA,
-            "cursor-pointer",
-            template.kind === "illustration" &&
-              template.coverUrl &&
-              "aspect-auto",
-          )}
+          className={cn(CARD_MEDIA, "cursor-pointer")}
           aria-label={t(
             ($) => {
               return $.templates.actions.preview;
@@ -330,11 +491,7 @@ function CustomTemplateCard({
               src={template.coverUrl}
               alt=""
               loading="lazy"
-              className={
-                template.kind === "illustration"
-                  ? "block h-auto w-full"
-                  : "absolute inset-0 h-full w-full object-cover object-top"
-              }
+              className="absolute inset-0 h-full w-full object-cover object-top"
             />
           ) : (
             // A template with no rendered cover is named by its file instead.
@@ -780,7 +937,13 @@ export function CustomTemplatePickerPane({
             }
           >
             {view.templates.map((template) => {
-              return (
+              return template.kind === "illustration" ? (
+                <CustomTemplateIllustrationCard
+                  key={template.id}
+                  template={template}
+                  onSelect={onSelect}
+                />
+              ) : (
                 <CustomTemplateCard
                   key={template.id}
                   template={template}
