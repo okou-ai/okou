@@ -6,8 +6,9 @@ import {
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, asc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
@@ -354,7 +355,9 @@ interface GmailWatchPublicationInput {
   readonly accessToken: string;
 }
 
-/** Conditional unique upsert of one mailbox watch for a usable account and live consumer. */
+const gmailWatchPublicationRowSchema = z.object({ id: z.uuid() });
+
+/** Publish one usable consumer's watch and renew its active physical peers. */
 function gmailWatchPublicationSql(
   args: GmailWatchPublicationInput,
   historyId: string,
@@ -384,7 +387,7 @@ function gmailWatchPublicationSql(
   const historyUpdate = args.resetCurrentCursor
     ? sql`EXCLUDED.last_history_id`
     : sql`${gmailWatchStates.lastHistoryId}`;
-  return sql`INSERT INTO ${gmailWatchStates} (
+  return sql`WITH published AS (INSERT INTO ${gmailWatchStates} (
       org_id, user_id, connector_id, email_address, topic_name,
       last_history_id, watch_expiration_at, last_watch_renewed_at,
       needs_rewatch, created_at, updated_at
@@ -401,7 +404,23 @@ function gmailWatchPublicationSql(
       last_watch_renewed_at = EXCLUDED.last_watch_renewed_at,
       needs_rewatch = false,
       updated_at = EXCLUDED.updated_at
-    RETURNING id`;
+    RETURNING id), renewed AS (
+      UPDATE ${gmailWatchStates} SET
+        watch_expiration_at = ${expiresAt},
+        last_watch_renewed_at = ${timestamp},
+        needs_rewatch = false,
+        updated_at = ${timestamp}
+      FROM published
+      WHERE ${and(
+        ne(gmailWatchStates.id, sql`published.id`),
+        eq(
+          sql`lower(${gmailWatchStates.emailAddress})`,
+          normalizeGmailAddress(args.emailAddress),
+        ),
+        eq(gmailWatchStates.topicName, args.topicName),
+        gmailStateHasEnabledConsumer(),
+      )}
+    ) SELECT id FROM published`;
 }
 
 const publishGmailWatch$ = command(
@@ -448,46 +467,27 @@ const publishGmailWatch$ = command(
     const expiration = watchExpirationDate(watch.expiration);
     // Rolling-version watch interruptions are accepted. No users.stop,
     // compatibility acquisition or compensating rollout renewal is added.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0165; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // The unique upsert publishes only while the account is usable and a
-      // consumer is enabled; no source row is locked. The connector FK check
-      // protects a new row from a concurrent account delete.
-      if (
-        (
-          await tx.execute(
-            gmailWatchPublicationSql(
-              args,
-              watch.historyId,
-              expiration,
-              currentTime,
-            ),
-          )
-        ).rowCount === 0
-      ) {
-        return "inactive";
-      }
-      await tx
-        .update(gmailWatchStates)
-        .set({
-          watchExpirationAt: expiration,
-          lastWatchRenewedAt: currentTime,
-          needsRewatch: false,
-          updatedAt: currentTime,
-        })
-        .where(
-          and(
-            eq(
-              sql`lower(${gmailWatchStates.emailAddress})`,
-              normalizeGmailAddress(args.emailAddress),
-            ),
-            eq(gmailWatchStates.topicName, args.topicName),
-            gmailStateHasEnabledConsumer(),
-          ),
-        );
-      signal.throwIfAborted();
-      return "published";
-    });
+    // The conditional upsert and peer renewal share one snapshot. A peer
+    // committed later is picked up by the next reconciliation. Excluding the
+    // returned id avoids updating the published row twice in one statement.
+    const published = parseRawRows(
+      gmailWatchPublicationRowSchema,
+      await db.execute(
+        gmailWatchPublicationSql(
+          args,
+          watch.historyId,
+          expiration,
+          currentTime,
+        ),
+      ),
+    );
+    if (published.length === 0) {
+      return "inactive";
+    }
+    // A completed atomic statement remains committed if cancellation arrives
+    // during the write; propagate it after preserving the inactive outcome.
+    signal.throwIfAborted();
+    return "published";
   },
 );
 

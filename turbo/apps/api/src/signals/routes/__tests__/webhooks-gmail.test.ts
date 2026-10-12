@@ -1163,7 +1163,7 @@ describe("POST /api/webhooks/gmail", () => {
   it("keeps another Gmail identity consuming when one identity disables", async () => {
     const gmailEmail = uniqueGmailEmail();
     configureGmailEnv();
-    const watch = configureGmailWatchMock(["100", "200"]);
+    const watch = configureGmailWatchMock(["100", "200", "300"]);
     const first = await setupFixture(
       `gmail-first-${randomUUID()}@example.test`,
     );
@@ -1250,6 +1250,26 @@ describe("POST /api/webhooks/gmail", () => {
     expectResponseStatus(remaining, 200);
     expect(remaining.body).toMatchObject({ watchStates: 1, dispatched: 0 });
     expect(startHistoryIds).toStrictEqual(["201"]);
+
+    await accept(
+      automationsClient().enable({
+        headers: authHeaders(first.actor),
+        params: { id: firstAutomation.body.id },
+      }),
+      [200],
+    );
+    expect(watch.calls).toBe(3);
+    startHistoryIds.length = 0;
+    const reenabled = await postGmailWebhook(
+      gmailPushBody({
+        emailAddress: gmailEmail,
+        historyId: 301,
+        messageId: "after-other-identity-reenabled",
+      }),
+    );
+    expectResponseStatus(reenabled, 200);
+    expect(reenabled.body).toMatchObject({ watchStates: 2, dispatched: 0 });
+    expect(startHistoryIds.sort()).toStrictEqual(["202", "300"]);
   });
 
   it("dispatches matching new inbound messages and de-duplicates retries", async () => {
