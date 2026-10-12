@@ -282,11 +282,6 @@
       "owner": "refreshOrgMemberCache"
     },
     {
-      "id": "TX-0122",
-      "file": "turbo/apps/api/src/signals/services/credit-usage-settlement.service.ts",
-      "owner": "commitUsageBatch$"
-    },
-    {
       "id": "TX-0123",
       "file": "turbo/apps/api/src/signals/services/cron-billing-entitlements.service.ts",
       "owner": "reconcileCanceledBillingCandidate"
