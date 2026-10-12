@@ -1689,44 +1689,41 @@ async function claimUsagePackPurchase(
  * Retire a claim that never created a subscription. The claim status is not
  * a pending-snapshot status, so the guard count does not change.
  */
-async function retireUsagePackPurchaseClaim(
-  db: Pick<Db, "transaction">,
-  orgId: string,
-  usagePackSubscriptionId: string,
-): Promise<void> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0302; new non-billing transactions are prohibited.
-  await db.transaction(async (tx) => {
+const retireUsagePackPurchaseClaim$ = command(
+  async (
+    { set },
+    orgId: string,
+    usagePackSubscriptionId: string,
+  ): Promise<void> => {
+    const db = set(writeDb$);
     const updatedAt = nowDate();
-    const [retired] = await tx
-      .update(usagePackSubscriptions)
-      .set({ subscriptionStatus: "checkout_expired", updatedAt })
-      .where(
-        and(
-          eq(usagePackSubscriptions.id, usagePackSubscriptionId),
-          eq(usagePackSubscriptions.orgId, orgId),
-          eq(
-            usagePackSubscriptions.subscriptionStatus,
-            USAGE_PACK_PURCHASE_CLAIM_STATUS,
+    const retired = db.$with("retired_purchase_claim").as(
+      db
+        .update(usagePackSubscriptions)
+        .set({ subscriptionStatus: "checkout_expired", updatedAt })
+        .where(
+          and(
+            eq(usagePackSubscriptions.id, usagePackSubscriptionId),
+            eq(usagePackSubscriptions.orgId, orgId),
+            eq(
+              usagePackSubscriptions.subscriptionStatus,
+              USAGE_PACK_PURCHASE_CLAIM_STATUS,
+            ),
+            isNull(usagePackSubscriptions.stripeCheckoutSessionId),
+            isNull(usagePackSubscriptions.stripeSubscriptionId),
           ),
-          isNull(usagePackSubscriptions.stripeCheckoutSessionId),
-          isNull(usagePackSubscriptions.stripeSubscriptionId),
-        ),
-      )
-      .returning({ id: usagePackSubscriptions.id });
-    if (!retired) {
-      return;
-    }
-    await tx
+        )
+        .returning({ id: usagePackSubscriptions.id }),
+    );
+    // Only an actual returned parent owns retirement of all associated children.
+    await db
+      .with(retired)
       .update(usagePackAllocations)
       .set({ status: "inactive", updatedAt })
-      .where(
-        eq(
-          usagePackAllocations.usagePackSubscriptionId,
-          usagePackSubscriptionId,
-        ),
-      );
-  });
-}
+      .from(retired)
+      .where(eq(usagePackAllocations.usagePackSubscriptionId, retired.id));
+  },
+);
 
 /**
  * Publish the winner's subscription to its claimed snapshot. A webhook that
@@ -2013,8 +2010,8 @@ const confirmUsagePackPurchaseSnapshot$ = command(
       ),
     );
     if (!admitted.ok) {
-      await retireUsagePackPurchaseClaim(
-        db,
+      await set(
+        retireUsagePackPurchaseClaim$,
         orgId,
         preview.usagePackSubscriptionId,
       );
@@ -2022,8 +2019,8 @@ const confirmUsagePackPurchaseSnapshot$ = command(
     }
     const admission = admitted.value;
     if (admission.kind === "invalid") {
-      await retireUsagePackPurchaseClaim(
-        db,
+      await set(
+        retireUsagePackPurchaseClaim$,
         orgId,
         preview.usagePackSubscriptionId,
       );
@@ -2046,8 +2043,8 @@ const confirmUsagePackPurchaseSnapshot$ = command(
         }),
       );
       if (!checkout.ok) {
-        await retireUsagePackPurchaseClaim(
-          db,
+        await set(
+          retireUsagePackPurchaseClaim$,
           orgId,
           preview.usagePackSubscriptionId,
         );
@@ -4147,43 +4144,45 @@ const retireReconciledUsagePackSnapshot$ = command(
  * normal synchronization, otherwise the claim retires without any provider
  * write. Other candidates pass through with their bound subscription.
  */
-async function resolveStaleClaim(
-  db: Db,
-  stripe: StripeClient,
-  candidate: UsagePackSubscriptionRow,
-  signal: AbortSignal,
-): Promise<
-  | { readonly kind: "retired" }
-  | { readonly kind: "subscription"; readonly subscriptionId: string | null }
-> {
-  if (
-    candidate.stripeSubscriptionId ||
-    candidate.stripeCheckoutSessionId ||
-    candidate.subscriptionStatus !== USAGE_PACK_PURCHASE_CLAIM_STATUS
-  ) {
-    return {
-      kind: "subscription",
-      subscriptionId: candidate.stripeSubscriptionId,
-    };
-  }
-  const subscriptions = await listAllStripeSubscriptions(
-    stripe,
-    { customer: candidate.stripeCustomerId, status: "all" },
-    signal,
-  );
-  const created = subscriptions.find((subscription) => {
-    return (
-      subscription.metadata?.[USAGE_PACK_SUBSCRIPTION_ID_METADATA_KEY] ===
-      candidate.id
+const resolveStaleClaim$ = command(
+  async (
+    { set },
+    candidate: UsagePackSubscriptionRow,
+    signal: AbortSignal,
+  ): Promise<
+    | { readonly kind: "retired" }
+    | { readonly kind: "subscription"; readonly subscriptionId: string | null }
+  > => {
+    const stripe = getStripeClient();
+    if (
+      candidate.stripeSubscriptionId ||
+      candidate.stripeCheckoutSessionId ||
+      candidate.subscriptionStatus !== USAGE_PACK_PURCHASE_CLAIM_STATUS
+    ) {
+      return {
+        kind: "subscription",
+        subscriptionId: candidate.stripeSubscriptionId,
+      };
+    }
+    const subscriptions = await listAllStripeSubscriptions(
+      stripe,
+      { customer: candidate.stripeCustomerId, status: "all" },
+      signal,
     );
-  });
-  if (created) {
-    return { kind: "subscription", subscriptionId: created.id };
-  }
-  await retireUsagePackPurchaseClaim(db, candidate.orgId, candidate.id);
-  signal.throwIfAborted();
-  return { kind: "retired" };
-}
+    const created = subscriptions.find((subscription) => {
+      return (
+        subscription.metadata?.[USAGE_PACK_SUBSCRIPTION_ID_METADATA_KEY] ===
+        candidate.id
+      );
+    });
+    if (created) {
+      return { kind: "subscription", subscriptionId: created.id };
+    }
+    await set(retireUsagePackPurchaseClaim$, candidate.orgId, candidate.id);
+    signal.throwIfAborted();
+    return { kind: "retired" };
+  },
+);
 
 const reconcileUsagePackSubscriptionCandidate$ = command(
   async (
@@ -4195,7 +4194,7 @@ const reconcileUsagePackSubscriptionCandidate$ = command(
     const db = set(writeDb$);
     const stripe = getStripeClient();
     const orgIds = new Set<string>();
-    const claim = await resolveStaleClaim(db, stripe, candidate, signal);
+    const claim = await set(resolveStaleClaim$, candidate, signal);
     if (claim.kind === "retired") {
       return { reconciled: 0, orgIds: [] };
     }
