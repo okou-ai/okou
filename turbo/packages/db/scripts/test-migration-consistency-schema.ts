@@ -53,6 +53,7 @@ import { validateMemberMetadataRuntimePreparation } from "./test-member-metadata
 import { validatePiMemoryStorageRetirementPreparation } from "./test-pi-memory-storage-retirement-preparation";
 import { validatePermanentComputerUseHostStorage } from "./test-computer-use-host-storage-permanent";
 import { validatePermanentPlatformGenerationReceipts } from "./test-platform-generation-receipts-permanent";
+import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage-permanent";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.join(dirname, "..");
@@ -2692,6 +2693,7 @@ async function main(): Promise<void> {
     await validatePiMemoryStorageRetirementPreparation(dbUrl1);
     await validatePermanentComputerUseHostStorage(dbUrl1);
     await validatePermanentPlatformGenerationReceipts(dbUrl1);
+    await validatePermanentRunnerStateStorage(dbUrl1);
     await validatePermanentModelCatalogConstraints(dbUrl1);
     await validateCanonicalModelSelections(dbUrl1);
     await validateModelCatalogSeed(dbUrl1);
@@ -2728,6 +2730,7 @@ async function main(): Promise<void> {
     await validatePiMemoryStorageRetirementPreparation(dbUrl2);
     await validatePermanentComputerUseHostStorage(dbUrl2);
     await validatePermanentPlatformGenerationReceipts(dbUrl2);
+    await validatePermanentRunnerStateStorage(dbUrl2);
     await validatePermanentModelCatalogConstraints(dbUrl2);
     await validateCanonicalModelSelections(dbUrl2);
     await validateXResourceUsageSchema(dbUrl2);
