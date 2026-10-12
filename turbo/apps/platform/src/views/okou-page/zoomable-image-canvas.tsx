@@ -170,14 +170,12 @@ function ZoomableArtifactImageElement({
 function ZoomableArtifactImageFrame({
   element,
   overlay,
-  ready,
 }: {
   element: ZoomableArtifactImageElementProps;
   overlay?: ReactNode;
-  ready: boolean;
 }) {
   return (
-    <div className="relative shrink-0" hidden={!ready}>
+    <div className="relative shrink-0">
       {/* A resolved or refreshed URL owns its own native decode lifecycle. */}
       <ZoomableArtifactImageElement key={element.src} {...element} />
       {overlay}
@@ -216,7 +214,6 @@ function ZoomableArtifactImageViewport({
       }}
     >
       <TransformComponent
-        contentStyle={{ height: "100%", width: "100%" }}
         wrapperClass="h-full min-h-0 w-full"
         wrapperProps={{
           onWheelCapture: proportionalImageWheelHandler(instance),
@@ -228,18 +225,12 @@ function ZoomableArtifactImageViewport({
         }}
       >
         <div
-          className={cn(
-            "flex h-full w-full items-center justify-center",
-            contentClassName,
-          )}
+          className={contentClassName}
+          hidden={!ready}
           data-testid={`${canvasTestId}-content`}
           data-zoomable-image-content
         >
-          <ZoomableArtifactImageFrame
-            element={element}
-            overlay={overlay}
-            ready={ready}
-          />
+          <ZoomableArtifactImageFrame element={element} overlay={overlay} />
         </div>
       </TransformComponent>
     </div>
@@ -273,6 +264,7 @@ export function ZoomableArtifactImageCanvas({
 
   return (
     <TransformWrapper
+      centerOnInit
       centerZoomedOut
       disablePadding
       doubleClick={{
