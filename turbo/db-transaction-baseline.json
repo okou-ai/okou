@@ -737,11 +737,6 @@
       "owner": "ensureTeamsChatThreadRoute$"
     },
     {
-      "id": "TX-0259",
-      "file": "turbo/apps/api/src/signals/services/telegram-chat-ingress.service.ts",
-      "owner": "ensureTelegramChatThreadRoute$"
-    },
-    {
       "id": "TX-0261",
       "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
       "owner": "createThreadClaimRunObjects/commitQueueHeadRejection$"
