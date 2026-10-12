@@ -61,7 +61,7 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { conversations } from "@okouai/db/schema/conversation";
 import { piMemoryStage1Candidates as candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";

@@ -16,7 +16,7 @@ import {
   type BankingOperationScope,
 } from "@okouai/db/schema/banking";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { command } from "ccstate";
 import {
   and,
