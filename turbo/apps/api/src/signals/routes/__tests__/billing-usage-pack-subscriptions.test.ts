@@ -4085,6 +4085,111 @@ describe("usage pack allocation management", () => {
     mockOptionalEnv("STRIPE_WEBHOOK_SECRET", STRIPE_WEBHOOK_SECRET);
   });
 
+  it("returns 503 before authentication when management billing is unconfigured", async () => {
+    mockOptionalEnv("STRIPE_SECRET_KEY", undefined);
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    const response = await accept(
+      setupApp({ context, routes: billingCheckoutRoutes })(
+        billingUsagePackManagementContract,
+      ).get({ headers: {} }),
+      [503],
+    );
+    expect(response.body.error.message).toBe("Billing not configured");
+  });
+
+  it("returns 401 for unauthenticated management requests", async () => {
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    const response = await accept(
+      setupApp({ context, routes: billingCheckoutRoutes })(
+        billingUsagePackManagementContract,
+      ).get({ headers: {} }),
+      [401],
+    );
+    expect(response.status).toBe(401);
+  });
+
+  it("returns 401 for management requests without an active organization", async () => {
+    mocks.clerk.session(`user_${randomUUID()}`, null);
+    const response = await accept(
+      setupApp({ context, routes: billingCheckoutRoutes })(
+        billingUsagePackManagementContract,
+      ).get({ headers: { authorization: "Bearer clerk-session" } }),
+      [401],
+    );
+    expect(response.status).toBe(401);
+  });
+
+  it("returns 403 for organization members requesting management", async () => {
+    authenticateOrg(createOrgFixture(), "org:member");
+    const response = await accept(
+      setupApp({ context, routes: billingCheckoutRoutes })(
+        billingUsagePackManagementContract,
+      ).get({ headers: { authorization: "Bearer clerk-session" } }),
+      [403],
+    );
+    expect(response.body.error.message).toBe(
+      "Only org admins can manage billing",
+    );
+  });
+
+  it("returns 404 when an onboarded organization has no usage pack subscription", async () => {
+    const fixture = await createPublicBillingOrg();
+    return await fixture.run(async () => {
+      authenticateOrg(fixture);
+      const response = await accept(
+        setupApp({ context, routes: billingCheckoutRoutes })(
+          billingUsagePackManagementContract,
+        ).get({ headers: { authorization: "Bearer clerk-session" } }),
+        [404],
+      );
+      expect(response.body.error.message).toBe(
+        "Usage pack subscription not found",
+      );
+    });
+  });
+
+  it("keeps management allocations isolated across successive organization requests", async () => {
+    const lifecycle = createPublicBillingScenario(context);
+    const { purchaseManagedUsagePack } =
+      createManagedUsagePackHelpers(lifecycle);
+    return await lifecycle.run(async () => {
+      const actorA = createOrgFixture();
+      const actorB = createOrgFixture();
+      const fixtureA = await purchaseManagedUsagePack(
+        [{ userId: actorA.userId, usagePackUsd: 20 }],
+        "pro",
+        actorA,
+      );
+      const fixtureB = await purchaseManagedUsagePack(
+        [{ userId: actorB.userId, usagePackUsd: 50 }],
+        "team",
+        actorB,
+      );
+      const client = setupApp({ context, routes: billingCheckoutRoutes })(
+        billingUsagePackManagementContract,
+      );
+      for (const fixture of [fixtureA, fixtureB, fixtureA]) {
+        authenticateOrg(fixture);
+        const response = await accept(
+          client.get({ headers: { authorization: "Bearer clerk-session" } }),
+          [200],
+        );
+        expect(response.body.tier).toBe(fixture.tier);
+        expect(response.body.allocations).toStrictEqual([
+          expect.objectContaining({
+            memberId: fixture.userId,
+            usagePackUsd: fixture.orgId === actorA.orgId ? 20 : 50,
+            pendingChange: null,
+          }),
+        ]);
+      }
+    });
+  });
+
   it("records a card collected for a usage pack purchase setup", async () => {
     const actor = createOrgFixture();
     const fixture = await purchaseManagedUsagePack(
