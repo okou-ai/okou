@@ -7,6 +7,7 @@ import { btree_gin } from "@electric-sql/pglite/contrib/btree_gin";
 import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
 import { Parser } from "tar";
+import { API_DATABASE_SEED_FILES } from "./database-seeds";
 import { singleton } from "../lib/singleton";
 import { settleIncludingAbort } from "../signals/utils";
 
@@ -44,9 +45,7 @@ const driverParsers = Object.freeze({
 });
 
 /** Build the migrated, seeded baseline once in the run's global setup. */
-export async function createPgliteSnapshot(
-  seed: (database: PgliteDatabase) => Promise<void>,
-): Promise<Blob> {
+export async function createPgliteSnapshot(): Promise<Blob> {
   const engine = new PGlite({
     extensions: { pgcrypto, btree_gin, btree_gist },
     parsers: driverParsers,
@@ -122,7 +121,9 @@ export async function createPgliteSnapshot(
         );
       }
       await engine.exec("SET search_path TO public; SET timezone TO 'UTC'");
-      await seed(drizzle(engine));
+      for (const file of API_DATABASE_SEED_FILES) {
+        await engine.exec(await readFile(file, "utf8"));
+      }
       // Checkpoint the seeded baseline to reduce WAL recovery when restoring cases.
       await engine.exec("CHECKPOINT");
       return await engine.dumpDataDir();

@@ -444,10 +444,6 @@
           "support-ticket-router": {
             "description": "Tickets gehen an Notion, dringende Tickets an Slack",
             "title": "Support-Ticket-Router"
-          },
-          "zendesk-notion-knowledge-base": {
-            "description": "Extrahieren Sie häufig gestellte Zendesk-Fragen und fügen Sie sie automatisch zu einer Notion-FAQ hinzu",
-            "title": "Zendesk → Notion-Wissensdatenbank"
           }
         },
         "title": "Unterstützung"

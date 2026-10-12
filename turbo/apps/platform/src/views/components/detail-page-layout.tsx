@@ -17,6 +17,7 @@ export function DetailPageShell({
 }) {
   return (
     <div
+      data-slot={scroll ? "detail-page-scroll" : undefined}
       className={cn(
         "flex min-h-0 flex-1 flex-col",
         scroll ? "overflow-auto [scrollbar-gutter:stable]" : "",

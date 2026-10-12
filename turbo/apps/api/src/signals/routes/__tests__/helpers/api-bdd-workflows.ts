@@ -9,6 +9,7 @@ import {
   workflowVisibilityContract,
   type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
+import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
 import { randomUUID } from "node:crypto";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
@@ -22,6 +23,7 @@ import { createRouteMocks } from "./route-test";
 import { readProjectedChatEvents } from "./chat-event-test-reader";
 import { chatThreadGetRoutes } from "../../chat-threads-get";
 import { workflowAutomationsRoutes } from "../../workflow-automations";
+import { updateMaxAutonomyBudgetForTest$ } from "../../../autonomy-budget-limit";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
@@ -140,12 +142,16 @@ export function createWorkflowsBddApi(context: TestContext) {
      * the Stripe invoice webhook (which also completes onboarding), a connected
      * personal Claude subscription, and the owner's selected model. The
      * optional timezone flows through the public user-preferences route.
+     * `maxAutonomyBudget` lowers the delegation limit for this case through
+     * the approved test control, so the real chain exhausts in a few hops;
+     * test context restores the production default afterwards.
      */
     async setupWorkflowOrg(
       options: {
         readonly timezone?: string;
         readonly tier?: "pro" | "team";
         readonly model?: RunModel;
+        readonly maxAutonomyBudget?: number;
       } = {},
     ): Promise<{
       readonly actor: ApiTestUser;
@@ -153,6 +159,12 @@ export function createWorkflowsBddApi(context: TestContext) {
       readonly subscriptionId: string;
       readonly invoiceId: string;
     }> {
+      if (options.maxAutonomyBudget !== undefined) {
+        createStore().set(
+          updateMaxAutonomyBudgetForTest$,
+          options.maxAutonomyBudget,
+        );
+      }
       const actor = bdd.user();
       const entitlement = await runs.grantProEntitlement(actor, {
         tier: options.tier,

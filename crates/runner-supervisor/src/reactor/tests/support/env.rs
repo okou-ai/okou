@@ -328,6 +328,7 @@ fn build_mock_run_config_with_runtime(
         },
         usage_flush_tx,
         usage_flush_rx,
+        wss: None, // local fixture has no official WSS attribution
         signals: SignalState {
             signal_source: SignalSource::Override(SignalController {
                 mode_rx,

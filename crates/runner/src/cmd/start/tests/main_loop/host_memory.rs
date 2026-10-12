@@ -9,7 +9,7 @@ async fn startup_failure_joins_the_passive_observer_before_returning() {
         tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
     tracing::callsite::rebuild_interest_cache();
     let dir = tempfile::tempdir().unwrap();
-    let result = run_start_with_home(
+    let result = tokio::spawn(run_start_with_home(
         StartArgs {
             config: dir.path().join("missing.yaml"),
             api_url: None,
@@ -18,8 +18,9 @@ async fn startup_failure_joins_the_passive_observer_before_returning() {
         },
         &sandbox_firecracker::FirecrackerRuntimeProvider,
         || panic!("invalid startup must not load runtime home"),
-    )
-    .await;
+    ))
+    .await
+    .expect("startup task must return without panicking");
     assert!(result.is_err());
     assert_eq!(
         captured

@@ -60,10 +60,17 @@ interface ChatThreadEventAppend {
   readonly createdAt?: Date;
 }
 
+function chatThreadIdentitySql(chatThreadId: string | SQL): SQL {
+  return typeof chatThreadId === "string"
+    ? sql`${sql.param(chatThreadId)}`
+    : chatThreadId;
+}
+
 /** Pure statement preparation; the owning command executes and commits it. */
 export function chatThreadEventInsertSql(
-  args: Omit<ChatThreadEventAppend, "agentId"> & {
+  args: Omit<ChatThreadEventAppend, "agentId" | "chatThreadId"> & {
     readonly agentId?: string;
+    readonly chatThreadId: string | SQL;
   },
   source?: {
     readonly cte: SQL;
@@ -72,6 +79,7 @@ export function chatThreadEventInsertSql(
     readonly result?: SQL;
   },
 ) {
+  const chatThreadId: SQL = chatThreadIdentitySql(args.chatThreadId);
   let agentId: SQL;
   if (source) {
     agentId = source.agentId;
@@ -105,7 +113,7 @@ export function chatThreadEventInsertSql(
       service_tier, computer_use_host_id, cloud_browser_enabled, created_at
     ) SELECT
       ${args.eventId ?? randomUUID()}::uuid, ${args.userId}, ${orgId}, last_seq_id,
-      ${args.chatThreadId}::uuid, ${args.kind}::chat_thread_event_kind,
+      ${chatThreadId}::uuid, ${args.kind}::chat_thread_event_kind,
       ${agentId}::uuid, ${args.reassignedAgentId ?? null}::uuid,
       ${args.title ?? null}, ${args.pinOrder ?? null}, ${args.muted ?? null},
       ${args.selectedModel ?? null},

@@ -141,7 +141,7 @@ async fn execute_cli_injects_user_env_without_runner_owned_bootstrap_env()
         for key in [
             guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
             guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            guest_contracts::env::CANONICAL_WORKSPACE_REUSE_RESULT_ENV,
+            guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV,
             guest_contracts::env::CANONICAL_RESUME_SESSION_ID_ENV,
             guest_contracts::env::CANONICAL_API_START_TIME_ENV,
         ] {
@@ -269,7 +269,7 @@ async fn execute_cli_injects_user_env_without_runner_owned_bootstrap_env()
     for key in [
         guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
         guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-        guest_contracts::env::CANONICAL_WORKSPACE_REUSE_RESULT_ENV,
+        guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV,
         guest_contracts::env::CANONICAL_RESUME_SESSION_ID_ENV,
         guest_contracts::env::CANONICAL_API_START_TIME_ENV,
     ] {

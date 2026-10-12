@@ -207,6 +207,7 @@ class _NdjsonExtractor:
         self._discarding_overlong_line = False
         self._finished = False
         self._on_row = on_row
+        self._row_extractor = _create_x_ndjson_row_extractor()
 
     def feed(self, chunk: bytes) -> None:
         """Process one decoded response-body chunk."""
@@ -277,9 +278,12 @@ class _NdjsonExtractor:
         line = raw_line.rstrip(b"\r")
         if not line:
             return  # keep-alive blank line
-        extractor = _create_x_ndjson_row_extractor()
+        # The observation configuration is fixed for this stream; each row
+        # still gets fresh syntax, observations, and work-budget state.
+        extractor = self._row_extractor
         extractor.feed(line)
         extracted = extractor.finish()
+        extractor.reset()
         if not extracted.complete:
             self.state["lines_failed"] += 1
             return

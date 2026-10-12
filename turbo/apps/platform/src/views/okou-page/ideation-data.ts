@@ -341,12 +341,6 @@ const categories: readonly Category[] = [
         connectorSlugs: ["intercom", "notion"],
       },
       {
-        id: "zendesk-notion-knowledge-base",
-        prompt:
-          "Set up a workflow that identifies recurring Zendesk questions, drafts FAQ entries, and adds them to our Notion knowledge base",
-        connectorSlugs: ["zendesk", "notion", "slack"],
-      },
-      {
         id: "customer-support-bot",
         prompt:
           "Set up a customer support bot that answers questions from our Notion knowledge base and creates tasks for unanswered questions",

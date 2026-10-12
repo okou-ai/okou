@@ -88,11 +88,6 @@ function createCapturedClaimObjects(
       claimId: claim.claimId,
     },
     context,
-    claim.context === undefined
-      ? "not_provided"
-      : context === claim.context
-        ? "hit"
-        : "identity_mismatch",
     claim.requestFacts,
   );
   const orgHasCapacity$ = createOrgHasCapacity(context);

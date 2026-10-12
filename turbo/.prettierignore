@@ -13,6 +13,4 @@ Caddyfile
 **/codereviews/**
 apps/web/src/db/migrations/
 packages/db/src/migrations/
-packages/db/scripts/migrations/00*/
-packages/db/scripts/migrations/01[0-2]*/
 apps/platform/src/views/css/vendor/uiw-react-markdown-preview-5.2.0.css

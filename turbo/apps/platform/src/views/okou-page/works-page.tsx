@@ -68,7 +68,6 @@ import {
   startDiscordAuthorization$,
   disconnectDiscordOrg$,
   uninstallDiscordOrg$,
-  reloadDiscordOrg$,
   selectDiscordDmBinding$,
   showDiscordUninstallDialog$,
   setShowDiscordUninstallDialog$,
@@ -703,26 +702,16 @@ function DiscordAuthorizationPendingNotice() {
   ) : null;
 }
 
-function DiscordCardDescription({
-  data,
-  hasError,
-}: {
-  data: DiscordOrgStatus | null;
-  hasError: boolean;
-}) {
+function DiscordCardDescription({ data }: { data: DiscordOrgStatus | null }) {
   const { t } = useTranslation();
   return (
     <>
       <p className="text-sm text-muted-foreground">
-        {hasError
-          ? t(($) => {
-              return $.works.discord.loadError;
-            })
-          : data
-            ? discordDescription(data)
-            : t(($) => {
-                return $.works.discord.loading;
-              })}
+        {data
+          ? discordDescription(data)
+          : t(($) => {
+              return $.works.discord.memberSetup;
+            })}
       </p>
       {data?.isInstalled && data.guildName ? (
         <p className="text-sm text-muted-foreground">
@@ -749,7 +738,6 @@ function DiscordCard() {
   const [selectionState, selectBinding] = useLoadableSet(
     selectDiscordDmBinding$,
   );
-  const reload = useSet(reloadDiscordOrg$);
   const showUninstallDialog = useGet(showDiscordUninstallDialog$);
   const setShowUninstallDialog = useSet(setShowDiscordUninstallDialog$);
   const pageSignal = useGet(pageSignal$);
@@ -768,18 +756,8 @@ function DiscordCard() {
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="text-sm font-medium text-foreground">{title}</div>
-            <DiscordCardDescription
-              data={data}
-              hasError={status.state === "hasError"}
-            />
+            <DiscordCardDescription data={data} />
           </div>
-          {status.state === "hasError" ? (
-            <Button variant="outline" size="sm" onClick={reload}>
-              {t(($) => {
-                return $.works.discord.retry;
-              })}
-            </Button>
-          ) : null}
           <DiscordAuthorizationActions
             data={data}
             disabled={

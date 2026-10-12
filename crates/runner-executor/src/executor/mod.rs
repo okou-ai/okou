@@ -465,15 +465,25 @@ pub enum ExecutionFailureKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResourceFailureKind {
     GuestRootFilesystemFull,
+    GuestHomeFilesystemFull,
     GuestMemoryOomKilled,
     HostMemoryOomKilled,
 }
 
 impl ResourceFailureKind {
     #[must_use]
+    pub fn is_filesystem_full(self) -> bool {
+        matches!(
+            self,
+            Self::GuestRootFilesystemFull | Self::GuestHomeFilesystemFull
+        )
+    }
+
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::GuestRootFilesystemFull => "guest_root_filesystem_full",
+            Self::GuestHomeFilesystemFull => "guest_home_filesystem_full",
             Self::GuestMemoryOomKilled => "guest_memory_oom_killed",
             Self::HostMemoryOomKilled => "host_memory_oom_killed",
         }
@@ -487,7 +497,10 @@ pub struct ResourceFailureDiagnostics {
     pub guest_root_fs_available_kb: Option<u64>,
     pub guest_root_fs_inode_used_percent: Option<u16>,
     pub guest_root_fs_available_inodes: Option<u64>,
-    pub guest_workspace_fs_used_percent: Option<u16>,
+    pub guest_home_fs_used_percent: Option<u16>,
+    pub guest_home_fs_available_kb: Option<u64>,
+    pub guest_home_fs_inode_used_percent: Option<u16>,
+    pub guest_home_fs_available_inodes: Option<u64>,
     pub guest_memory_available_mb: Option<u64>,
 }
 
@@ -507,7 +520,10 @@ impl ResourceFailureDiagnostics {
             && self.guest_root_fs_available_kb.is_none()
             && self.guest_root_fs_inode_used_percent.is_none()
             && self.guest_root_fs_available_inodes.is_none()
-            && self.guest_workspace_fs_used_percent.is_none()
+            && self.guest_home_fs_used_percent.is_none()
+            && self.guest_home_fs_available_kb.is_none()
+            && self.guest_home_fs_inode_used_percent.is_none()
+            && self.guest_home_fs_available_inodes.is_none()
             && self.guest_memory_available_mb.is_none()
     }
 }

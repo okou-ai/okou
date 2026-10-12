@@ -13,13 +13,16 @@ use crate::home_image_cache::{
     HomeImagePromotionIdentityRequest,
 };
 use crate::home_promotion::{
-    abandon_unpublished_home_promotion, prepare_home_image_from_parked_sandbox,
+    PreparedHomeImagePromotion, abandon_unpublished_home_promotion,
+    prepare_home_image_from_parked_sandbox,
 };
 use crate::resource_budget::BudgetLease;
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::StorageFingerprints;
 use runner_types::ids::RunId;
+use uuid::Uuid;
 
+use super::inventory_retirement::CapturedBacking;
 use super::park_transition::IdleParkCandidate;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,6 +61,7 @@ impl IdleSandboxIdentity {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct IdleSandboxMetadata {
     pub(super) identity: IdleSandboxIdentity,
     /// Identity of the parked sandbox. Survives reuse (next job's `run_id`
@@ -140,6 +144,7 @@ pub struct ParkedIdleCandidate {
     pub(super) resources: IdleSandboxResources,
     pub(super) metadata: IdleSandboxMetadata,
     pub(super) budget_lease: BudgetLease,
+    pub(super) retirement_backing: Option<CapturedBacking>,
 }
 
 /// Quiesced, fenced, still-running sandbox that may only be handed to its
@@ -162,6 +167,30 @@ pub struct FinalizingHandoffCandidate {
 }
 
 impl ParkedIdleCandidate {
+    /// Capture this resource's exact backing while exclusively caller-owned,
+    /// outside inventory/accounting locks. Failure preserves the candidate and
+    /// clears any earlier proof; guarded pool retirement never falls back.
+    pub fn capture_retirement_backing(
+        &mut self,
+    ) -> Result<(), crate::host_memory_operations::MemoryOperationError> {
+        use crate::host_memory_operations::MemoryOperationError;
+        self.retirement_backing = None;
+        let captured = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let process = self
+                .resources
+                .sandbox
+                .backing_process()
+                .ok_or(MemoryOperationError::MissingBacking)?;
+            Ok(CapturedBacking {
+                identity: process.identity(),
+                process,
+            })
+        }))
+        .unwrap_or(Err(MemoryOperationError::ProducerLost))?;
+        self.retirement_backing = Some(captured);
+        Ok(())
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn reuse_key(&self) -> Option<&str> {
         self.metadata.reuse_key()
@@ -207,11 +236,8 @@ impl ParkedIdleCandidate {
                 last_completed_at: None,
             },
             budget_lease,
+            retirement_backing: None,
         }
-    }
-
-    pub(super) fn is_blank(&self) -> bool {
-        self.metadata.is_blank()
     }
 
     pub(super) fn into_idle_entry(self, parked_at: Instant) -> IdleEntry {
@@ -219,6 +245,7 @@ impl ParkedIdleCandidate {
             resources,
             metadata,
             budget_lease,
+            retirement_backing,
         } = self;
 
         IdleEntry {
@@ -226,6 +253,8 @@ impl ParkedIdleCandidate {
             metadata,
             budget_lease,
             parked_at,
+            retirement_backing,
+            insertion_epoch: Uuid::new_v4(),
         }
     }
 
@@ -398,6 +427,8 @@ pub struct IdleEntry {
     pub(super) metadata: IdleSandboxMetadata,
     pub(super) budget_lease: BudgetLease,
     pub(super) parked_at: Instant,
+    pub(super) retirement_backing: Option<CapturedBacking>,
+    pub(super) insertion_epoch: Uuid,
 }
 
 /// A sandbox reserved for reuse, preserving whether it is physically parked
@@ -435,10 +466,10 @@ pub enum DestroyOutcome {
 /// task owns the active lease so executor panics cannot release capacity before
 /// provider completion and post-job cleanup finish.
 pub struct ReusableIdleSandbox {
-    sandbox: Box<dyn Sandbox>,
-    metadata: IdleSandboxMetadata,
-    home_promotion: Option<HomeImagePromotionContext>,
-    guest_state_prepared: bool,
+    pub(super) sandbox: Box<dyn Sandbox>,
+    pub(super) metadata: IdleSandboxMetadata,
+    pub(super) home_promotion: Option<HomeImagePromotionContext>,
+    pub(super) guest_state_prepared: bool,
 }
 
 pub struct ReusableIdleSandboxParts {
@@ -569,6 +600,16 @@ impl IdleDestroyPayload {
     }
 
     pub async fn finalize_home_and_destroy(self, context: &'static str) -> IdleDestroyResult {
+        // Keep the extracted phase state off retained callers' future frames.
+        // Finalizing handoff already has a large independently owned future;
+        // embedding both phase futures here can overflow its ordinary stack.
+        let mut prepared = Box::pin(self.prepare_terminal(context)).await;
+        let permit = prepared.take_reclamation_permit();
+        let termination = prepared.terminate().await;
+        Box::pin(prepared.publish_and_destroy(termination, permit)).await
+    }
+
+    pub(super) async fn prepare_terminal(self, context: &'static str) -> PreparedIdleDestroy {
         let IdleSandboxResources {
             mut sandbox,
             factory,
@@ -577,6 +618,9 @@ impl IdleDestroyPayload {
         // Waiting reclamation jobs must remain parked. The export-only gate is
         // too late to bound resumed guests and their memory recovery work.
         let mut reclamation_permit = None;
+        let preparation_required =
+            matches!(self.home_promotion_policy, HomePromotionPolicy::Promote)
+                && home_promotion.is_some();
         let prepared_promotion = match (self.home_promotion_policy, home_promotion) {
             (HomePromotionPolicy::Promote, Some(promotion)) => {
                 match promotion.acquire_idle_home_reclamation_permit().await {
@@ -602,8 +646,57 @@ impl IdleDestroyPayload {
                 None
             }
         };
+        let preparation_completed = !preparation_required || prepared_promotion.is_some();
+        PreparedIdleDestroy {
+            sandbox,
+            factory,
+            prepared_promotion,
+            reclamation_permit,
+            preparation_completed,
+        }
+    }
+}
+
+/// Common physical phases used by ordinary cleanup and mandatory guarded work.
+pub(super) struct PreparedIdleDestroy {
+    sandbox: Box<dyn Sandbox>,
+    factory: Arc<Box<dyn SandboxFactory>>,
+    prepared_promotion: Option<PreparedHomeImagePromotion>,
+    reclamation_permit: Option<tokio::sync::OwnedSemaphorePermit>,
+    preparation_completed: bool,
+}
+
+pub(super) struct IdleTerminationOutcome {
+    terminated: bool,
+    uncertain: bool,
+}
+
+impl IdleTerminationOutcome {
+    pub(super) fn terminated(&self) -> bool {
+        self.terminated
+    }
+
+    pub(super) fn require_backing_exit(mut self, confirmed: bool) -> Self {
+        if !confirmed {
+            self.terminated = false;
+            self.uncertain = true;
+        }
+        self
+    }
+}
+
+impl PreparedIdleDestroy {
+    pub(super) fn preparation_completed(&self) -> bool {
+        self.preparation_completed
+    }
+
+    pub(super) fn take_reclamation_permit(&mut self) -> Option<tokio::sync::OwnedSemaphorePermit> {
+        self.reclamation_permit.take()
+    }
+
+    pub(super) async fn terminate(&mut self) -> IdleTerminationOutcome {
         let mut uncertain = false;
-        let terminated = match AssertUnwindSafe(sandbox.kill()).catch_unwind().await {
+        let terminated = match AssertUnwindSafe(self.sandbox.kill()).catch_unwind().await {
             Ok(Ok(())) => true,
             Ok(Err(e)) => {
                 tracing::warn!(error = %e, "failed to kill idle sandbox");
@@ -615,12 +708,27 @@ impl IdleDestroyPayload {
                 false
             }
         };
+        IdleTerminationOutcome {
+            terminated,
+            uncertain,
+        }
+    }
+
+    pub(super) async fn publish_and_destroy(
+        self,
+        termination: IdleTerminationOutcome,
+        mut reclamation_permit: Option<tokio::sync::OwnedSemaphorePermit>,
+    ) -> IdleDestroyResult {
+        let IdleTerminationOutcome {
+            terminated,
+            mut uncertain,
+        } = termination;
         if terminated {
             // The guest is no longer running; host publication and destruction
             // need not hold up the next parked sandbox's reclamation.
             drop(reclamation_permit.take());
         }
-        let home_cache_promoted = match (prepared_promotion, terminated) {
+        let home_cache_promoted = match (self.prepared_promotion, terminated) {
             (Some(promotion), true) => promotion.publish().await,
             (Some(promotion), false) => {
                 promotion.abandon("idle_sandbox_kill_failed").await;
@@ -628,7 +736,7 @@ impl IdleDestroyPayload {
             }
             (None, _) => false,
         };
-        if AssertUnwindSafe(factory.destroy(sandbox))
+        if AssertUnwindSafe(self.factory.destroy(self.sandbox))
             .catch_unwind()
             .await
             .is_err()
@@ -917,6 +1025,13 @@ impl ReservedIdleSandbox {
     pub(super) fn parked(entry: IdleEntry) -> Self {
         Self {
             state: ReservedIdleSandboxState::Parked(entry),
+        }
+    }
+
+    pub(super) fn into_parked_entry_preserving_owner(self) -> Result<IdleEntry, Box<Self>> {
+        match self.state {
+            ReservedIdleSandboxState::Parked(entry) => Ok(entry),
+            ReservedIdleSandboxState::Running(_) => Err(Box::new(self)),
         }
     }
 

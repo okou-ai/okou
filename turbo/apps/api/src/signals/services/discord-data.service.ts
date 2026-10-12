@@ -94,8 +94,9 @@ export function discordMemberRole(args: {
   readonly orgId: string;
   readonly userId: string;
 }): Computed<Promise<ApiOrgRole | null>> {
+  const membership$ = discordMembership(args);
   return computed(async (get) => {
-    const member = await get(discordMembership(args));
+    const member = await get(membership$);
     return member ? (member.role === "org:admin" ? "admin" : "member") : null;
   });
 }
@@ -168,16 +169,6 @@ function createVerifiedBindings(
   });
 }
 
-export function discordUserBinding(args: {
-  readonly orgId: string;
-  readonly userId: string;
-}): Computed<Promise<DiscordVerifiedBinding | null>> {
-  const identity$ = computed(() => {
-    return Promise.resolve(args);
-  });
-  return createDiscordUserBinding(identity$);
-}
-
 /** A binding read connected before the owning graph is evaluated. */
 export function createDiscordUserBinding(
   identity$: Computed<
@@ -241,15 +232,14 @@ export function discordGuildUserBinding(args: {
   readonly guildId: string;
   readonly discordUserId: string;
 }): Computed<Promise<DiscordVerifiedBinding | null>> {
+  const bindings$ = verifiedBindings(
+    and(
+      eq(discordOrgConnections.guildId, args.guildId),
+      eq(discordOrgConnections.discordUserId, args.discordUserId),
+    )!,
+  );
   return computed(async (get) => {
-    const rows = await get(
-      verifiedBindings(
-        and(
-          eq(discordOrgConnections.guildId, args.guildId),
-          eq(discordOrgConnections.discordUserId, args.discordUserId),
-        )!,
-      ),
-    );
+    const rows = await get(bindings$);
     return rows[0] ?? null;
   });
 }
@@ -262,6 +252,7 @@ export function discordSenderBindings(discordUserId: string) {
 
 /** Ingress treats missing app configuration as an outage, never as revocation. */
 export function discordIngressSenderBindings(discordUserId: string) {
+  const bindings$ = discordSenderBindings(discordUserId);
   return computed(async (get) => {
     if (!getDiscordAppConfig()) {
       throw new DiscordIngressFailure(
@@ -271,7 +262,7 @@ export function discordIngressSenderBindings(discordUserId: string) {
         "Discord is temporarily unavailable",
       );
     }
-    return await get(discordSenderBindings(discordUserId));
+    return await get(bindings$);
   });
 }
 
@@ -286,8 +277,9 @@ export type DiscordDmBindingResult =
 export function discordDmBinding(
   discordUserId: string,
 ): Computed<Promise<DiscordDmBindingResult>> {
+  const bindings$ = discordSenderBindings(discordUserId);
   return computed(async (get): Promise<DiscordDmBindingResult> => {
-    const bindings = await get(discordSenderBindings(discordUserId));
+    const bindings = await get(bindings$);
     if (bindings.length === 0) {
       return { kind: "not-connected" };
     }
@@ -309,8 +301,9 @@ export function discordDmBinding(
 }
 
 function savedDiscordDmBinding(discordUserId: string) {
+  const binding$ = discordDmBinding(discordUserId);
   return computed(async (get) => {
-    const resolution = await get(discordDmBinding(discordUserId));
+    const resolution = await get(binding$);
     if (resolution.kind !== "connected") {
       return null;
     }
@@ -543,10 +536,11 @@ export function discordOrgStatus(args: {
   readonly orgRole?: ApiOrgRole;
 }): Computed<Promise<DiscordOrgStatus>> {
   const capability$ = discordMessageContentCapability();
+  const role$ = discordMemberRole(args);
+  const agent$ = discordEffectiveAgent(args);
+  const enabled$ = discordIntegrationEnabledForOwner(args.orgId, args.userId);
   return computed(async (get): Promise<DiscordOrgStatus> => {
-    const enabled = await get(
-      discordIntegrationEnabledForOwner(args.orgId, args.userId),
-    );
+    const enabled = await get(enabled$);
     const config = getDiscordAppConfig();
     const status: DiscordOrgStatus = {
       isAvailable: enabled && config !== null,
@@ -566,7 +560,7 @@ export function discordOrgStatus(args: {
     if (!enabled) {
       return status;
     }
-    const role = await get(discordMemberRole(args));
+    const role = await get(role$);
     if (!role) {
       return {
         ...status,
@@ -600,7 +594,7 @@ export function discordOrgStatus(args: {
         )!,
       ),
     );
-    const agent = await get(discordEffectiveAgent(args));
+    const agent = await get(agent$);
     const bindings = connection
       ? (await get(discordSenderBindings(connection.discordUserId))).filter(
           (binding) => {

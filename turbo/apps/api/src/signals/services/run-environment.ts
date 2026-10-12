@@ -22,6 +22,8 @@ export interface Environment {
   readonly vars: Record<string, string> | undefined;
   /** Expanded, untrusted sandbox environment entries. */
   readonly environment: Record<string, string> | undefined;
+  /** Trusted platform entries layered over the sandbox environment. */
+  readonly platformEnvironment: Record<string, string> | undefined;
   /** Runtime `secrets.NAME` namespace, keyed by env alias. */
   readonly secrets: Record<string, string> | undefined;
   /** Owner of each refreshable secret alias, used by firewall auth refresh. */
@@ -45,6 +47,7 @@ export function emptyEnvironment(): Environment {
   return {
     vars: undefined,
     environment: undefined,
+    platformEnvironment: undefined,
     secrets: undefined,
     secretConnectorMap: undefined,
     secretConnectorMetadataMap: undefined,
@@ -132,6 +135,11 @@ export function mergeEnvironments(
               }),
             )
           : undefined;
+      }),
+    ),
+    platformEnvironment: mergeRecords(
+      ...sources.map((source) => {
+        return source.platformEnvironment;
       }),
     ),
     secrets: mergeRecords(

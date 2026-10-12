@@ -1,4 +1,5 @@
 import { gunzipSync } from "node:zlib";
+import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
 import {
   createPublicRunnerMemory,
   memoryArchive,
@@ -126,6 +127,98 @@ async function observeMemory(
 }
 
 describe("member memory account initialization", () => {
+  it.each(["org:admin", "org:member"] as const)(
+    "initializes and replays memory through authenticated %s preferences",
+    async (orgRole) => {
+      const owner = createPublicComputerUseScenario(context);
+      const actor = owner.user({ orgRole });
+      await owner.run(async () => {
+        await prepareReadablePreferences(actor);
+        await expect(memoryInitialized(actor)).resolves.toBeFalsy();
+        mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+        const preferences = setupApp({
+          context,
+          routes: userPreferencesRoutes,
+        })(userPreferencesContract);
+        const initialized = await accept(
+          preferences.initialize({
+            headers: { authorization: "Bearer clerk-session" },
+            body: { timezone: "Asia/Tokyo", locale: "ja-JP" },
+          }),
+          [200],
+        );
+        expect(initialized.body).toMatchObject({
+          memoryInitialized: true,
+          timezone: "UTC",
+          locale: "en-US",
+        });
+        const replayed = await accept(
+          preferences.initialize({
+            headers: { authorization: "Bearer clerk-session" },
+            body: { timezone: "America/Los_Angeles", locale: "fr-FR" },
+          }),
+          [200],
+        );
+        expect(replayed.body).toStrictEqual(initialized.body);
+        // Both responses precede funding/onboarding that could also create Memory.
+        await expect(memoryInitialized(actor)).resolves.toBeTruthy();
+        const initial = await observeMemory(owner, actor);
+        expect(initial).toMatchObject({
+          empty: true,
+          name: "memory",
+          storageId: expect.any(String),
+          versionId: expect.any(String),
+        });
+        expect(initial.versionId).toBe(
+          computeContentHashFromHashes(initial.storageId, []),
+        );
+        await accept(
+          preferences.initialize({
+            headers: { authorization: "Bearer clerk-session" },
+            body: { locale: "ja-JP" },
+          }),
+          [200],
+        );
+        const repeated = await observeMemory(owner, actor);
+        expect(repeated).toMatchObject({
+          empty: true,
+          storageId: initial.storageId,
+          versionId: initial.versionId,
+        });
+      });
+    },
+  );
+
+  it("shares one memory across concurrent onboarding and membership delivery", async () => {
+    const owner = createPublicComputerUseScenario(context);
+    const actor = owner.user({ orgRole: "org:member" });
+    await owner.run(async () => {
+      api.acceptAgentStorageWrites();
+      await prepareReadablePreferences(actor);
+      await expect(memoryInitialized(actor)).resolves.toBeFalsy();
+      const deliveries = await Promise.allSettled([
+        completeOnboarding(actor),
+        membershipCreated(actor),
+      ]);
+      for (const result of deliveries) {
+        if (result.status === "rejected") {
+          throw result.reason;
+        }
+      }
+      await expect(memoryInitialized(actor)).resolves.toBeTruthy();
+      const initial = await observeMemory(owner, actor);
+      expect(initial).toMatchObject({ empty: true, name: "memory" });
+      await completeOnboarding(actor);
+      await membershipCreated(actor);
+      const repeated = await observeMemory(owner, actor);
+      expect(repeated).toMatchObject({
+        empty: true,
+        storageId: initial.storageId,
+        versionId: initial.versionId,
+      });
+    });
+  });
+
   it.each(["org:admin", "org:member"] as const)(
     "synchronously initializes one memory for duplicate %s onboarding completions",
     async (orgRole) => {

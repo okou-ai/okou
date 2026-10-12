@@ -165,6 +165,7 @@ import {
   setWorkflowActionDialog$,
   setWorkflowDetailActiveTab$,
   setWorkflowFileDraft$,
+  discardWorkflowFileDraft$,
   setWorkflowFileInput$,
   showWorkflowFilePicker$,
   setWorkflowCopyForm$,
@@ -188,6 +189,7 @@ import {
   workflowAutomationPickerCategory$,
   workflowAutomationPickerOpen$,
   workflowFileDraft$,
+  workflowFileEditorRevision$,
   currentWorkflowDetail$,
   type WorkflowCopyFormState,
   type WorkflowCronFields,
@@ -2923,7 +2925,9 @@ function WorkflowSelectedFileEditor({
   readonly sourceContent: string;
 }) {
   const draftState = useGet(workflowFileDraft$);
+  const editorRevision = useGet(workflowFileEditorRevision$);
   const setDraftState = useSet(setWorkflowFileDraft$);
+  const discardDraft = useSet(discardWorkflowFileDraft$);
   const pageSignal = useGet(pageSignal$);
   const [saveLoadable, updateWorkflow] = useLoadableSet(updateWorkflow$);
   const saving = saveLoadable.state === "loading";
@@ -2973,7 +2977,7 @@ function WorkflowSelectedFileEditor({
     <div className="flex flex-1 flex-col">
       {markdown ? (
         <TiptapInstructionsEditor
-          key={`${detail.id}:${selectedFilePath ?? "instructions"}:${sourceContent}`}
+          key={`${detail.id}:${selectedFilePath ?? "instructions"}:${sourceContent}:${editorRevision}`}
           initialContent={content}
           onChange={setDraft}
           disabled={!canEdit || saving}
@@ -3015,9 +3019,7 @@ function WorkflowSelectedFileEditor({
       {canEdit && dirty ? (
         <UnsavedBar
           saving={saving}
-          onDiscard={() => {
-            setDraftState(null);
-          }}
+          onDiscard={discardDraft}
           onSave={saveDraft}
         />
       ) : null}

@@ -16,7 +16,7 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { homeTaskRecommendations } from "@okouai/db/schema/home-task-recommendation";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { and, asc, eq, gte, inArray, isNull, lte, not, or } from "drizzle-orm";
 
 import { logger } from "../../lib/log";

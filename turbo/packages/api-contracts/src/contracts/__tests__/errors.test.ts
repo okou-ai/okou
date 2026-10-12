@@ -837,7 +837,7 @@ describe("formatRunErrorForExternalSurface", () => {
 
   it("keeps non-Codex token refresh failures generic", () => {
     const rawRunError =
-      'unexpected status 502 Bad Gateway: {"error":"TOKEN_REFRESH_FAILED","message":"Access token expired and refresh failed for: zendesk.","permission":"connector:zendesk","connectors":["zendesk"],"failureReason":"reconnect_required"}, url: https://example.zendesk.com/api/v2/tickets';
+      'unexpected status 502 Bad Gateway: {"error":"TOKEN_REFRESH_FAILED","message":"Access token expired and refresh failed for: test-subdomain.","permission":"connector:test-subdomain","connectors":["test-subdomain"],"failureReason":"reconnect_required"}, url: https://example.example.com/api/v2/tickets';
 
     expect(
       formatRunErrorForExternalSurface({

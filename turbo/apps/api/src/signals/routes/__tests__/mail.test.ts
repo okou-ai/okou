@@ -521,6 +521,82 @@ async function selectGmailAccount(
 }
 
 describe("POST /api/mail/drafts/link", () => {
+  it("converges simultaneous same-chat links and preserves replay and cross-chat conflict", async () => {
+    mockEnv("APP_URL", "https://app.okou.ai");
+    const fixture = await createPublicGmailMailCardFixture();
+    await fixture.run(async () => {
+      mockGmailDraftApi();
+      const [first, second] = await fixture.run(() => {
+        return Promise.all([
+          fixture.run(() => {
+            return linkDraft(fixture);
+          }),
+          fixture.run(() => {
+            return linkDraft(fixture);
+          }),
+        ]);
+      });
+      expect(second.body).toStrictEqual(first.body);
+      expect(first.body.mailDraftUrl).toBe(
+        `https://app.okou.ai/mail/drafts/${first.body.mailDraftId}`,
+      );
+
+      const loaded = await fixture.run(() => {
+        return accept(
+          client().getDraft({
+            headers: authHeaders(),
+            params: { mailDraftId: first.body.mailDraftId },
+          }),
+          [200],
+        );
+      });
+      expect(loaded.body).toMatchObject({
+        ...first.body,
+        mailDraft: {
+          gmailDraftId: GMAIL_DRAFT_ID,
+          gmailThreadId: GMAIL_THREAD_ID,
+          gmailMessageId: GMAIL_MESSAGE_ID,
+          status: "draft",
+          detailAvailable: true,
+          from: "sender@example.com",
+          subject: "Attachment review",
+        },
+      });
+
+      const replay = await fixture.run(() => {
+        return linkDraft(fixture);
+      });
+      expect(replay.body).toStrictEqual(first.body);
+
+      const otherThread = await fixture.run(() => {
+        return chat.createThread(fixture.actor, {
+          agentId: fixture.agent.agentId,
+          title: "Concurrent mail conflict",
+        });
+      });
+      const conflict = await fixture.run(() => {
+        return accept(
+          client().linkDraft({
+            headers: authHeaders(),
+            body: {
+              threadId: otherThread.id,
+              agentId: fixture.agent.agentId,
+              gmailDraftId: GMAIL_DRAFT_ID,
+            },
+          }),
+          [409],
+        );
+      });
+      expect(conflict.body.error.message).toBe(
+        "This Gmail draft is already linked to another chat",
+      );
+      const originalLink = await fixture.run(() => {
+        return linkDraft(fixture);
+      });
+      expect(originalLink.body).toStrictEqual(first.body);
+    });
+  });
+
   it("uses the thread-selected Gmail account without probing the default", async () => {
     const fixture = await seedGmailMailCardFixture();
     const selectedAccessToken = "selected-gmail-token";

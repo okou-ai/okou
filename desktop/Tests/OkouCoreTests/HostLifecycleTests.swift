@@ -64,13 +64,30 @@ private final class RequestCount: @unchecked Sendable {
 }
 
 private func commandResponse(_ id: String) -> JSONValue {
-  .object([
+  let timestamp = ISO8601DateFormatter().string(from: Date())
+  return .object([
     "status": .string("command"),
     "command": .object([
-      "id": .string(id), "kind": .string("apps.list"), "payload": .object([:]),
-      "claimedAt": .string(ISO8601DateFormatter().string(from: Date())),
-      "timeoutMs": .number(30_000),
+      "id": .string(id), "kind": .string("apps.list"), "status": .string("running"),
+      "hostId": .null, "hostName": .null, "payload": .object([:]), "timeoutMs": .number(30_000),
+      "createdAt": .string(timestamp), "claimedAt": .string(timestamp), "completedAt": .null,
     ]),
+  ])
+}
+
+private func heartbeatResponse(pending: Bool) -> JSONValue {
+  .object([
+    "ok": .bool(true), "hostId": .string("00000000-0000-0000-0000-000000000001"),
+    "hasPendingCommands": .bool(pending),
+  ])
+}
+
+private func upgradeRequiredResponse(minimum: String) -> JSONValue {
+  .object([
+    "error": .object([
+      "code": .string("DESKTOP_UPDATE_REQUIRED"), "message": .string("Update Okou to continue."),
+    ]),
+    "minimumSupportedVersion": .string(minimum),
   ])
 }
 
@@ -191,7 +208,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         connection.reply(.object(["status": .string("idle")]))
       } else if path.hasSuffix("/heartbeat") {
         if beats.next() == 1 { heartbeat.fulfill() }
-        connection.reply(.object(["hasPendingCommands": .bool(false)]))
+        connection.reply(heartbeatResponse(pending: false))
       } else {
         connection.reply(.object([:]))
       }
@@ -238,7 +255,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         connection.reply(.object([:]))
         secondReported.fulfill()
       } else if path.hasSuffix("/heartbeat") {
-        connection.reply(.object(["hasPendingCommands": .bool(false)]))
+        connection.reply(heartbeatResponse(pending: false))
       } else {
         connection.reply(.object([:]))
       }
@@ -274,7 +291,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
           second.fulfill()
         }
       } else if path.hasSuffix("/heartbeat") {
-        connection.reply(.object(["hasPendingCommands": .bool(false)]))
+        connection.reply(heartbeatResponse(pending: false))
       } else {
         connection.reply(.object([:]))
       }
@@ -300,7 +317,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         connection.reply(registeredHostResponse())
       } else if path.hasSuffix("/heartbeat") {
         XCTAssertEqual(claims.value, 0, "Startup must wait for attachment or a pending-work hint")
-        connection.reply(.object(["hasPendingCommands": .bool(true)]))
+        connection.reply(heartbeatResponse(pending: true))
       } else if path.hasSuffix("/next") {
         connection.reply(
           claims.next() == 1 ? commandResponse("missed") : .object(["status": .string("idle")]))
@@ -335,7 +352,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
           retried.fulfill()
         }
       } else if path.hasSuffix("/heartbeat") {
-        connection.reply(.object(["hasPendingCommands": .bool(false)]))
+        connection.reply(heartbeatResponse(pending: false))
       } else {
         connection.reply(.object([:]))
       }
@@ -503,7 +520,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         connection.reply(
           registeredHostResponse())
       } else if path.hasSuffix("/next") {
-        connection.reply(.object(["minimumSupportedVersion": .string("0.51.0")]), status: 426)
+        connection.reply(upgradeRequiredResponse(minimum: "0.51.0"), status: 426)
       } else if path.hasSuffix("/stop") {
         stopped.fulfill()
         connection.reply(.object([:]))
@@ -543,7 +560,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     let started = ContinuousClock.now
     do {
       _ = try await api.request(
-        "api/computer-use/host/commands/next", token: "host-token",
+        ApiRoutes.computerUseHostCommandNext(hostId: "host"), token: "host-token",
         body: .object([:]), timeout: 0.15)
       XCTFail("An unfinished claim must reach its total request deadline")
     } catch let error as DesktopFailure {
@@ -597,9 +614,11 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
           .object([
             "status": .string("command"),
             "command": .object([
-              "id": .string("running"), "kind": .string("apps.list"), "payload": .object([:]),
-              "timeoutMs": .number(60000),
+              "id": .string("running"), "kind": .string("apps.list"),
+              "status": .string("running"), "hostId": .null, "hostName": .null,
+              "payload": .object([:]), "timeoutMs": .number(60000),
               "createdAt": .string(timestamp), "claimedAt": .string(timestamp),
+              "completedAt": .null,
             ]),
           ]))
       } else if path.hasSuffix("/heartbeat") {
@@ -685,15 +704,17 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
           .object([
             "status": .string("command"),
             "command": .object([
-              "id": .string("running"), "kind": .string("apps.list"), "payload": .object([:]),
-              "timeoutMs": .number(60000),
+              "id": .string("running"), "kind": .string("apps.list"),
+              "status": .string("running"), "hostId": .null, "hostName": .null,
+              "payload": .object([:]), "timeoutMs": .number(60000),
               "createdAt": .string(timestamp), "claimedAt": .string(timestamp),
+              "completedAt": .null,
             ]),
           ]))
       } else if path.hasSuffix("/heartbeat") {
         XCTAssertEqual(try? String(contentsOf: marker, encoding: .utf8), "once")
         try! Data().write(to: release)
-        connection.reply(.object(["minimumSupportedVersion": .string("0.51.0")]), status: 426)
+        connection.reply(upgradeRequiredResponse(minimum: "0.51.0"), status: 426)
         heartbeat.fulfill()
       } else if path.hasSuffix("/complete") {
         XCTAssertEqual(connection.body["status"].string, "succeeded")
@@ -793,7 +814,10 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         "status": .string("command"),
         "command": .object([
           "id": .string("command-1"), "kind": .string("app.open"),
-          "payload": .object(["app": .string("com.apple.calculator")]),
+          "status": .string("running"), "hostId": .null, "hostName": .null,
+          "payload": .object(["app": .string("com.apple.calculator")]), "timeoutMs": .null,
+          "createdAt": .string("2026-10-07T00:00:00.000Z"), "claimedAt": .null,
+          "completedAt": .null,
         ]),
       ]))
     await fulfillment(of: [complete, stopped], timeout: 3, enforceOrder: true)
@@ -819,10 +843,11 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
             .object([
               "status": .string("command"),
               "command": .object([
-                "id": .string("expired"), "kind": .string("apps.list"), "payload": .object([:]),
-                "timeoutMs": .number(1000),
+                "id": .string("expired"), "kind": .string("apps.list"),
+                "status": .string("running"), "hostId": .null, "hostName": .null,
+                "payload": .object([:]), "timeoutMs": .number(1000),
                 "createdAt": .string("2026-10-07T00:00:00.000Z"),
-                "claimedAt": .string("2026-10-07T00:00:02.000Z"),
+                "claimedAt": .string("2026-10-07T00:00:02.000Z"), "completedAt": .null,
               ]),
             ]))
         } else {
@@ -875,7 +900,8 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     let api = APIClient(
       baseURL: URL(string: "https://api.example.test")!, version: "0.50.0", session: session)
     let response = try await api.authenticatedRequest(
-      "api/computer-use/hosts/host/commands/command/complete", body: result, timeout: 1,
+      ApiRoutes.computerUseHostCommandComplete(hostId: "host", commandId: "command"),
+      body: result, timeout: 1,
       tokenProvider: { force in force ? "fresh-session" : "cached-session" })
     XCTAssertEqual(response.status, 200)
     await fulfillment(of: [old, renewed], timeout: 1, enforceOrder: true)
@@ -894,7 +920,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       baseURL: URL(string: "https://api.example.test")!, version: "0.50.0", session: session)
     do {
       _ = try await api.authenticatedRequest(
-        "api/computer-use/hosts/register", body: .object([:]), timeout: 0.05,
+        ApiRoutes.computerUseHostRegister, body: .object([:]), timeout: 0.05,
         tokenProvider: { _ in
           try await Task.sleep(for: .seconds(10))
           return "session"

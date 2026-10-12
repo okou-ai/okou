@@ -49,6 +49,8 @@ import { validateModelCatalogSeed } from "./test-model-catalog-seed";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 import { validatePermanentConnectorCatalogColumns } from "./test-connector-catalog-columns-permanent";
 import { validatePermanentChatThreadStorage } from "./test-chat-thread-storage-permanent";
+import { validateMemberMetadataRuntimePreparation } from "./test-member-metadata-runtime-preparation";
+import { validatePermanentComputerUseHostStorage } from "./test-computer-use-host-storage-permanent";
 import { validatePermanentPlatformGenerationReceipts } from "./test-platform-generation-receipts-permanent";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1784,8 +1786,6 @@ async function validateCustomConnectorOauthModeConstraints(
       fixture.createdBy,
     ]);
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0396; new non-billing transactions are prohibited.
-    await client.query("BEGIN");
     await client.query(insertConnector, [
       fixture.oauthConnectorId,
       fixture.orgId,
@@ -1798,7 +1798,6 @@ async function validateCustomConnectorOauthModeConstraints(
       fixture.oauthConnectorId,
       fixture.orgId,
     ]);
-    await client.query("COMMIT");
 
     await client.query(insertAutomaticConnector, [
       fixture.automaticConnectorId,
@@ -2688,6 +2687,8 @@ async function main(): Promise<void> {
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
     await validatePermanentConnectorCatalogColumns(dbUrl1);
     await validatePermanentChatThreadStorage(dbUrl1);
+    await validateMemberMetadataRuntimePreparation(dbUrl1);
+    await validatePermanentComputerUseHostStorage(dbUrl1);
     await validatePermanentPlatformGenerationReceipts(dbUrl1);
     await validatePermanentModelCatalogConstraints(dbUrl1);
     await validateCanonicalModelSelections(dbUrl1);
@@ -2721,6 +2722,8 @@ async function main(): Promise<void> {
     await validatePermanentOrgPlanEntitlementState(dbUrl2);
     await validatePermanentConnectorCatalogColumns(dbUrl2);
     await validatePermanentChatThreadStorage(dbUrl2);
+    await validateMemberMetadataRuntimePreparation(dbUrl2);
+    await validatePermanentComputerUseHostStorage(dbUrl2);
     await validatePermanentPlatformGenerationReceipts(dbUrl2);
     await validatePermanentModelCatalogConstraints(dbUrl2);
     await validateCanonicalModelSelections(dbUrl2);

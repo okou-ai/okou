@@ -1284,19 +1284,37 @@ impl HomeImageCache {
                 source.validate_path(input.active_image)?;
                 (copied, true)
             }
-            Err(e) => return Err(e.into()),
+            Err(e) => {
+                return Err(super::io_context::with_paths(
+                    e,
+                    "renameat2(RENAME_NOREPLACE)",
+                    input.active_image,
+                    &staging,
+                )
+                .into());
+            }
         };
         pinned.validate_path(&staging)?;
         #[cfg(test)]
         self.publication_fault(super::PublicationFault::BeforeImageSync)?;
-        pinned.sync()?;
+        pinned.sync(&staging)?;
         sync_directory(paths.entry_dir()).await?;
         if !copied && let Some(parent) = input.active_image.parent() {
             sync_directory(parent).await?;
         }
         #[cfg(test)]
         self.publication_fault(super::PublicationFault::AfterImageSync)?;
-        move_noreplace(&staging, &candidate)?;
+        #[cfg(test)]
+        self.remove_staging_before_image_rename_for_test(&staging)
+            .await?;
+        move_noreplace(&staging, &candidate).map_err(|error| {
+            super::io_context::with_paths(
+                error,
+                "renameat2(RENAME_NOREPLACE)",
+                &staging,
+                &candidate,
+            )
+        })?;
         let observed = pinned.validate_path(&candidate)?;
         sync_directory(paths.entry_dir()).await?;
         // Fresh block counts include old commit, candidates, orphans, staging and

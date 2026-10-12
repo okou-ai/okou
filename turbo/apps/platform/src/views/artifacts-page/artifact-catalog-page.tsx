@@ -1,7 +1,6 @@
 import type { ReactNode, UIEvent as ReactUIEvent } from "react";
 import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
-  AlertTriangle,
   ChevronRight,
   File,
   Image,
@@ -18,8 +17,8 @@ import {
   useLoadable,
   useSet,
 } from "ccstate-react";
-import { Button, surfaceVariants, cn } from "@okouai/ui";
-import { Alert, AlertDescription } from "@okouai/ui/components/ui/alert";
+import { useLoadableSet } from "ccstate-react/experimental";
+import { LoadErrorSection, surfaceVariants, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -27,7 +26,7 @@ import {
   artifactCatalogSidebar,
   loadMoreArtifactCatalog$,
   openArtifact$,
-  reloadArtifactCatalog$,
+  retryArtifactCatalog$,
   scrollArtifactCardIntoViewRef$,
   selectedArtifactCatalogKind$,
   setArtifactCatalogKind$,
@@ -421,45 +420,36 @@ export function ArtifactCatalogSkeleton({
  * arrives as a prop. Binding one scope's reload here would leave the thread
  * sidebar showing a failure while a different catalog refetched.
  */
-export function ArtifactCatalogError({ onRetry }: { onRetry: () => void }) {
+export function ArtifactCatalogError({
+  onRetry,
+  pending,
+}: {
+  readonly onRetry: () => void;
+  readonly pending: boolean;
+}) {
   const { t } = useTranslation();
+  // Reading the first page again is the whole recovery, so the message carries
+  // the action instead of asking for a browser reload. Both catalog surfaces
+  // keep this message mounted while the re-read runs and let the button report
+  // it, rather than one swapping in a skeleton and the other changing nothing.
   return (
-    <Alert variant="destructive">
-      {/* The icon rides the message line rather than the Alert's absolute slot:
-          that slot is anchored for a single line of text, and the button in
-          this description makes the row taller than the anchor accounts for.
-          Inline also keeps the icon with the text once the sidebar narrows
-          enough to wrap the button onto its own line. */}
-      <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-        <span className="flex items-center gap-3">
-          <AlertTriangle size={16} className="shrink-0" aria-hidden />
-          {t(($) => {
-            return $.artifacts.catalog.error;
-          })}
-        </span>
-        {/* Reading the first page again is the whole recovery, so the message
-            carries the action instead of asking for a browser reload. */}
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            onRetry();
-          }}
-        >
-          {t(($) => {
-            return $.artifacts.catalog.retry;
-          })}
-        </Button>
-      </AlertDescription>
-    </Alert>
+    <LoadErrorSection
+      message={t(($) => {
+        return $.artifacts.catalog.error;
+      })}
+      retryLabel={t(($) => {
+        return $.artifacts.catalog.retry;
+      })}
+      onRetry={onRetry}
+      pending={pending}
+    />
   );
 }
 
 export function ArtifactCatalogEmpty() {
   const { t } = useTranslation();
   return (
-    <div className="rounded-lg border border-dashed border-border bg-card px-6 py-12 text-center">
+    <div className="rounded-xl border border-dashed border-border bg-card px-6 py-12 text-center">
       <img
         src={emptyArtifactImg}
         alt=""
@@ -590,7 +580,8 @@ export function ArtifactCatalogPage({
   const setKind = useSet(setArtifactCatalogKind$);
   const openArtifact = useSet(openArtifact$);
   const loadMore = useSet(loadMoreArtifactCatalog$);
-  const reloadCatalog = useSet(reloadArtifactCatalog$);
+  const [retryLoadable, retryCatalog] = useLoadableSet(retryArtifactCatalog$);
+  const retrying = retryLoadable.state === "loading";
   const pageSignal = useGet(pageSignal$);
   const catalog = useLoadable(artifactCatalog$);
   const artifacts = catalog.state === "hasData" ? catalog.data.artifacts : [];
@@ -648,12 +639,22 @@ export function ArtifactCatalogPage({
           className="flex-1 overflow-auto px-4 pb-safe-or-8 pt-1 sm:px-6 [scrollbar-gutter:stable]"
         >
           <div className="mx-auto flex w-full max-w-[900px] flex-col gap-4">
-            {catalog.state === "loading" ? (
+            {catalog.state === "hasError" ||
+            (retrying && catalog.state === "loading") ? (
+              <ArtifactCatalogError
+                pending={retrying}
+                onRetry={() => {
+                  detach(
+                    retryCatalog(pageSignal),
+                    Reason.DomCallback,
+                    "artifact catalog retry",
+                  );
+                }}
+              />
+            ) : catalog.state === "loading" ? (
               <ArtifactCatalogSkeleton
                 layout={sharedConversationLayout ? "list" : "grid"}
               />
-            ) : catalog.state === "hasError" ? (
-              <ArtifactCatalogError onRetry={reloadCatalog} />
             ) : artifacts.length === 0 ? (
               <ArtifactCatalogEmpty />
             ) : sharedConversationLayout ? (

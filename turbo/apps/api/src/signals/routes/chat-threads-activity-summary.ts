@@ -42,6 +42,7 @@ export const chatThreadActivitySummaryRoutes: readonly RouteEntry[] = [
         requireOrganization: true,
         missingOrganizationStatus: 401,
         requiredCapability: "chat-event:read",
+        oauthScope: "okou:chat:read",
       },
       summarize$,
     ),

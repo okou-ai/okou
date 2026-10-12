@@ -15,7 +15,7 @@ import { cva } from "class-variance-authority";
  * bubble; dark keeps the selected step, which already clears every dark ground.
  */
 export const inlineReferenceVariants = cva(
-  "relative -top-px mx-0.5 inline-flex h-7 items-center gap-1.5 rounded-md border border-state-pressed bg-state-selected-hover align-middle text-[13px] font-medium text-foreground dark:bg-state-selected",
+  "relative -top-px mx-0.5 my-0.5 inline-flex h-7 items-center gap-1.5 rounded-md border border-state-pressed bg-state-selected-hover align-middle text-[13px] font-medium text-foreground dark:bg-state-selected",
   {
     variants: {
       interactive: {

@@ -639,7 +639,7 @@ async fn codex_catalog_prefetch_skips_ineligible_runs() {
 
     let mut unrelated_builtin_firewall = codex_oauth_context();
     unrelated_builtin_firewall.firewalls = Some(vec![FirewallEntry::Builtin {
-        name: "zendesk".into(),
+        name: "test-subdomain".into(),
         base_url_vars: None,
         source_id: None,
     }]);

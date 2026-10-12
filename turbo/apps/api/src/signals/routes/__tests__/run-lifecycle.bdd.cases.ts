@@ -7,6 +7,7 @@ import { publicRunOwner } from "./helpers/public-run-owner";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
 import { createHash, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import {
   createPublicRunnerMemory,
@@ -64,6 +65,8 @@ import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { mockAxiomSdkTelemetryFailure } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
+import { DEV_SEED_SENTINEL_MANAGED_MODEL_KEY } from "../../../scripts/dev-seed-managed-model-key";
+import { API_DATABASE_SEED_FILES } from "../../../test-fixtures/database-seeds";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import {
@@ -1057,9 +1060,9 @@ interface SameThreadReuseHeartbeatArgs {
     readonly profile: string;
     readonly historyGenerationRunId?: string;
   };
-  readonly workspaceCaches?: {
+  readonly homeCaches?: {
     readonly profile: string;
-    readonly workspaceAffinityVersion: 1;
+    readonly homeAffinityVersion: 1;
   }[];
 }
 
@@ -1153,12 +1156,12 @@ async function setupSameThreadReuseScenario(
             },
           ]
         : [],
-      heldWorkspaceStates: args.workspaceCaches
+      heldHomeStates: args.homeCaches
         ? [
             {
               reuseKey,
               lastCompletedAt,
-              workspaceCaches: args.workspaceCaches,
+              homeCaches: args.homeCaches,
             },
           ]
         : [],
@@ -2630,7 +2633,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const runner = await api.requestRunRunner(actor, run.runId, [200]);
         expect(runner.body).toStrictEqual({
           sandboxReuseResult: null,
-          workspaceReuseResult: null,
+          homeReuseResult: null,
           runnerHostname: winningClaim.candidate.runnerHostname,
           runnerVersion: winningClaim.candidate.runnerVersion,
           runnerId: winningClaim.candidate.runnerIdentity.runnerId,
@@ -2675,7 +2678,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const runner = await api.requestRunRunner(actor, run.runId, [200]);
         expect(runner.body).toStrictEqual({
           sandboxReuseResult: null,
-          workspaceReuseResult: null,
+          homeReuseResult: null,
           runnerHostname: null,
           runnerVersion: null,
           runnerId: expect.any(String),
@@ -2763,7 +2766,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const runner = await api.requestRunRunner(actor, run.runId, [200]);
         expect(runner.body).toStrictEqual({
           sandboxReuseResult: null,
-          workspaceReuseResult: null,
+          homeReuseResult: null,
           runnerHostname: null,
           runnerVersion: null,
           runnerId: null,
@@ -3175,7 +3178,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           runningCount: 0,
           admittableProfiles: ["vm0/default"],
           heldSandboxStates: [],
-          heldWorkspaceStates: [],
+          heldHomeStates: [],
           mode: "running",
         });
         expectApiError(missing.body);
@@ -3207,7 +3210,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             allocatedVcpu: 0,
             allocatedMemoryMb: 0,
             runningCount: 0,
-            heldWorkspaceStates: [],
+            heldHomeStates: [],
             activeReuseProducers: [],
             mode: "running",
             ...extra,
@@ -3238,25 +3241,24 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
         );
         expect(validHeartbeat.body).toStrictEqual({ ok: true });
-        const invalidWorkspaceVersionHeartbeat =
-          await api.requestRawHeartbeatRunner(
-            true,
-            [400],
-            rawHeartbeatBody({
-              admittableProfiles: ["vm0/default"],
-              heldSandboxStates: [],
-              heldWorkspaceStates: [
-                {
-                  reuseKey,
-                  lastCompletedAt: nowDate().toISOString(),
-                  workspaceCaches: [
-                    { profile: "vm0/default", workspaceAffinityVersion: 2 },
-                  ],
-                },
-              ],
-            }),
-          );
-        expectApiError(invalidWorkspaceVersionHeartbeat.body);
+        const invalidHomeVersionHeartbeat = await api.requestRawHeartbeatRunner(
+          true,
+          [400],
+          rawHeartbeatBody({
+            admittableProfiles: ["vm0/default"],
+            heldSandboxStates: [],
+            heldHomeStates: [
+              {
+                reuseKey,
+                lastCompletedAt: nowDate().toISOString(),
+                homeCaches: [
+                  { profile: "vm0/default", homeAffinityVersion: 2 },
+                ],
+              },
+            ],
+          }),
+        );
+        expectApiError(invalidHomeVersionHeartbeat.body);
         const canonicalHeartbeatHolder = await pollFollowUp(
           "continue with a canonical heartbeat",
         );
@@ -3270,13 +3272,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
       });
 
-      describe("workspace and reusable-sandbox preferences from runner heartbeats", () => {
+      describe("home and reusable-sandbox preferences from runner heartbeats", () => {
         let prepared: Awaited<ReturnType<typeof setupSameThreadReuseScenario>>;
         beforeEach(async () => {
           prepared = await setupSameThreadReuseScenario();
         });
 
-        it("selects workspace and reusable-sandbox preferences from runner heartbeats", async () => {
+        it("selects home and reusable-sandbox preferences from runner heartbeats", async () => {
           const {
             reuseRunnerId,
             api,
@@ -3294,44 +3296,40 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             snapshotGeneration: 1,
             snapshotSequence: nextReuseSnapshotSequence(),
             admittableProfiles: ["vm0/default"],
-            heldWorkspaceStates: [
+            heldHomeStates: [
               {
                 reuseKey,
                 lastCompletedAt: nowDate().toISOString(),
-                workspaceCaches: [
-                  { profile: "vm0/large", workspaceAffinityVersion: 1 },
-                  { profile: "vm0/default", workspaceAffinityVersion: 1 },
+                homeCaches: [
+                  { profile: "vm0/large", homeAffinityVersion: 1 },
+                  { profile: "vm0/default", homeAffinityVersion: 1 },
                 ],
               },
             ],
           });
-          const workspaceOnlyHolder = await pollFollowUp(
-            "continue with a workspace-only holder",
+          const homeOnlyHolder = await pollFollowUp(
+            "continue with a home-only holder",
           );
-          expect(workspaceOnlyHolder.job?.cliAgentSessionId).toBe(
-            cliAgentSessionId,
-          );
-          expect(runnerPreference(workspaceOnlyHolder.job)).toStrictEqual({
+          expect(homeOnlyHolder.job?.cliAgentSessionId).toBe(cliAgentSessionId);
+          expect(runnerPreference(homeOnlyHolder.job)).toStrictEqual({
             kind: "preference",
             runnerIdentity: {
               runnerId: reuseRunnerId,
               heartbeatGeneration: 1,
             },
-            tier: "workspaceCache",
+            tier: "homeCache",
             expiresAt: expect.any(String),
           });
           await heartbeatHolder({
             admittableProfiles: ["vm0/default"],
-            workspaceCaches: [
-              { profile: "vm0/default", workspaceAffinityVersion: 1 },
-            ],
+            homeCaches: [{ profile: "vm0/default", homeAffinityVersion: 1 }],
           });
-          const capableWorkspaceHolder = await pollFollowUp(
-            "continue with a capable workspace holder",
+          const capableHomeHolder = await pollFollowUp(
+            "continue with a capable home holder",
           );
-          expect(runnerPreference(capableWorkspaceHolder.job)).toMatchObject({
+          expect(runnerPreference(capableHomeHolder.job)).toMatchObject({
             kind: "preference",
-            tier: "workspaceCache",
+            tier: "homeCache",
           });
 
           const reusableRunnerId = randomUUID();
@@ -3349,12 +3347,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               },
             ],
           });
-          const reusableOverWorkspace = await pollFollowUp(
-            "prefer a reusable holder over a capable workspace holder",
+          const reusableOverHome = await pollFollowUp(
+            "prefer a reusable holder over a capable home holder",
           );
-          const reusablePreference = runnerPreference(
-            reusableOverWorkspace.job,
-          );
+          const reusablePreference = runnerPreference(reusableOverHome.job);
           expect(reusablePreference).toStrictEqual({
             kind: "preference",
             runnerIdentity: {
@@ -3367,13 +3363,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           if (reusablePreference?.kind !== "preference") {
             throw new Error("Expected a reusable sandbox preference");
           }
-          expect(runnerPreference(reusableOverWorkspace.job)).toStrictEqual(
+          expect(runnerPreference(reusableOverHome.job)).toStrictEqual(
             reusablePreference,
           );
           expect(context.mocks.ably.publish).toHaveBeenCalledWith(
             "job",
             expect.objectContaining({
-              runId: reusableOverWorkspace.run.runId,
+              runId: reusableOverHome.run.runId,
               runnerPreference: reusablePreference,
             }),
           );
@@ -3401,16 +3397,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           if (holder === "mismatched profile") {
             await heartbeatHolder({
               admittableProfiles: ["vm0/default"],
-              workspaceCaches: [
-                { profile: "vm0/large", workspaceAffinityVersion: 1 },
-              ],
+              homeCaches: [{ profile: "vm0/large", homeAffinityVersion: 1 }],
             });
-            const mismatchedCapableWorkspace = await pollFollowUp(
-              "continue with a mismatched capable workspace",
+            const mismatchedCapableHome = await pollFollowUp(
+              "continue with a mismatched capable home",
             );
-            expect(
-              runnerPreference(mismatchedCapableWorkspace.job),
-            ).toStrictEqual({
+            expect(runnerPreference(mismatchedCapableHome.job)).toStrictEqual({
               kind: "noPreference",
               reason: "noViableHolder",
             });
@@ -3964,9 +3956,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             });
             await heartbeatHolder({
               admittableProfiles: ["vm0/default"],
-              workspaceCaches: [
-                { profile: "vm0/default", workspaceAffinityVersion: 1 },
-              ],
+              homeCaches: [{ profile: "vm0/default", homeAffinityVersion: 1 }],
             });
             clearMockNow();
           } else {
@@ -4064,7 +4054,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         async function heartbeat(args: {
           readonly generation: number;
           readonly sequence: number;
-          readonly resource: "reusableSandbox" | "workspaceCache" | undefined;
+          readonly resource: "reusableSandbox" | "homeCache" | undefined;
         }): Promise<void> {
           const lastCompletedAt = nowDate().toISOString();
           await api.requestHeartbeatRunner(true, [200], {
@@ -4083,14 +4073,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                     },
                   ]
                 : [],
-            heldWorkspaceStates:
-              args.resource === "workspaceCache"
+            heldHomeStates:
+              args.resource === "homeCache"
                 ? [
                     {
                       reuseKey,
                       lastCompletedAt,
-                      workspaceCaches: [
-                        { profile: "vm0/default", workspaceAffinityVersion: 1 },
+                      homeCaches: [
+                        { profile: "vm0/default", homeAffinityVersion: 1 },
                       ],
                     },
                   ]
@@ -4099,7 +4089,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
 
         async function expectReusePreference(
-          expectedResource: "reusableSandbox" | "workspaceCache" | undefined,
+          expectedResource: "reusableSandbox" | "homeCache" | undefined,
         ): Promise<void> {
           const followUp = await sendChatRunMessage(actor, {
             agentId,
@@ -4191,21 +4181,21 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await expectReusePreference(undefined);
       });
 
-      it("retains the workspace cache when a heartbeat sequence is repeated", async () => {
+      it("retains the home cache when a heartbeat sequence is repeated", async () => {
         expect.hasAssertions();
         const { heartbeat, expectReusePreference } =
           await setupOrderedHeartbeats();
         await heartbeat({
           generation: 1,
           sequence: 3,
-          resource: "workspaceCache",
+          resource: "homeCache",
         });
         await heartbeat({
           generation: 1,
           sequence: 3,
           resource: undefined,
         });
-        await expectReusePreference("workspaceCache");
+        await expectReusePreference("homeCache");
       });
 
       it("keeps a new heartbeat generation ahead of an older high sequence", async () => {
@@ -4215,7 +4205,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await heartbeat({
           generation: 1,
           sequence: 3,
-          resource: "workspaceCache",
+          resource: "homeCache",
         });
         await heartbeat({
           generation: 2,
@@ -4225,7 +4215,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await heartbeat({
           generation: 1,
           sequence: 99,
-          resource: "workspaceCache",
+          resource: "homeCache",
         });
         await expectReusePreference(undefined);
       });
@@ -4398,7 +4388,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, olderGeneric.runId, [200]);
       });
 
-      it("prioritizes capable workspace work only for its matching runner", async () => {
+      it("prioritizes capable home work only for its matching runner", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor(
@@ -4408,12 +4398,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const first = await sendChatRunMessage(actor, {
           agentId,
-          prompt: "start workspace-priority session",
+          prompt: "start home-priority session",
         });
         const firstClaim = await api.claimRunnerJob(first.runId);
-        const cliAgentSessionId = `bdd-workspace-priority-${first.runId}`;
+        const cliAgentSessionId = `bdd-home-priority-${first.runId}`;
         const reuseKey = `thread:${first.threadId}`;
-        const history = `bdd workspace priority history ${first.runId}`;
+        const history = `bdd home priority history ${first.runId}`;
         const historyHash = createHash("sha256").update(history).digest("hex");
         mockSessionHistoryBlob(historyHash, history);
         await webhooks.requestAgentComplete(
@@ -4432,36 +4422,34 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         await flushWaitUntilForTest();
 
-        const workspaceRunnerId = randomUUID();
+        const homeRunnerId = randomUUID();
         const priorityBase = now();
         mockNow(priorityBase);
         onTestFinished(() => {
           clearMockNow();
         });
         await api.requestHeartbeatRunner(true, [200], {
-          runnerId: workspaceRunnerId,
+          runnerId: homeRunnerId,
           group: runnerGroup,
           admittableProfiles: ["vm0/default"],
-          heldWorkspaceStates: [
+          heldHomeStates: [
             {
               reuseKey,
               lastCompletedAt: nowDate().toISOString(),
-              workspaceCaches: [
-                { profile: "vm0/default", workspaceAffinityVersion: 1 },
-              ],
+              homeCaches: [{ profile: "vm0/default", homeAffinityVersion: 1 }],
             },
           ],
         });
 
         const olderGeneric = await api.createThreadRun(actor, {
           agentId,
-          prompt: "older workspace-priority FIFO work",
+          prompt: "older home-priority FIFO work",
         });
         mockNow(priorityBase + 1);
-        const newerWorkspace = await sendChatRunMessage(actor, {
+        const newerHome = await sendChatRunMessage(actor, {
           agentId,
           threadId: first.threadId,
-          prompt: "newer capable workspace work",
+          prompt: "newer capable home work",
         });
 
         const fifoPoll = await api.requestPollRunner(
@@ -4470,33 +4458,33 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [200],
         );
         if (fifoPoll.status !== 200) {
-          throw new Error("Expected workspace FIFO poll to return 200");
+          throw new Error("Expected home FIFO poll to return 200");
         }
         expect(fifoPoll.body.job?.runId).toBe(olderGeneric.runId);
 
-        const workspacePoll = await api.requestPollRunner(
+        const homePoll = await api.requestPollRunner(
           true,
           {
-            runnerId: workspaceRunnerId,
+            runnerId: homeRunnerId,
             group: runnerGroup,
             supportedProfiles: ["vm0/default"],
           },
           [200],
         );
-        if (workspacePoll.status !== 200) {
-          throw new Error("Expected workspace-priority poll to return 200");
+        if (homePoll.status !== 200) {
+          throw new Error("Expected home-priority poll to return 200");
         }
-        expect(workspacePoll.body.job?.runId).toBe(newerWorkspace.runId);
-        expect(runnerPreference(workspacePoll.body.job)).toMatchObject({
+        expect(homePoll.body.job?.runId).toBe(newerHome.runId);
+        expect(runnerPreference(homePoll.body.job)).toMatchObject({
           kind: "preference",
           runnerIdentity: {
-            runnerId: workspaceRunnerId,
+            runnerId: homeRunnerId,
             heartbeatGeneration: 1,
           },
-          tier: "workspaceCache",
+          tier: "homeCache",
         });
 
-        await api.requestCancelRun(actor, newerWorkspace.runId, [200]);
+        await api.requestCancelRun(actor, newerHome.runId, [200]);
         await api.requestCancelRun(actor, olderGeneric.runId, [200]);
       });
     });
@@ -5020,6 +5008,78 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
         const queue = await api.readRunQueue(actor);
         expect(queue.body.concurrency.active).toBe(0);
+      });
+
+      it("claims managed Auto runs without delivering the managed provider key", async () => {
+        // The fixed test seed holds the same obvious fake managed key as
+        // dev-seed. This guards the two copies against drift; the claim's
+        // managed route proves that a managed key row is in use.
+        const managedKeySeed = API_DATABASE_SEED_FILES.find((file) => {
+          return file.pathname.endsWith("/managed-model-key.sql");
+        });
+        if (!managedKeySeed) {
+          throw new Error("Expected the managed model key test seed");
+        }
+        expect(readFileSync(managedKeySeed, "utf8")).toContain(
+          `'${DEV_SEED_SENTINEL_MANAGED_MODEL_KEY}'`,
+        );
+
+        const bdd = createBddApi(context);
+        const api = createRunsApi(context);
+        const chat = createChatFilesBddApi(context);
+        const actor = bdd.user();
+        bdd.acceptAgentStorageWrites();
+        api.acceptStorageDownloads();
+        api.acceptTelemetryIngest();
+        const runnerGroup = api.configureRunnerGroup();
+        await api.grantProEntitlement(actor);
+        const agent = await bdd.createAgent(actor, {
+          displayName: "BDD managed key agent",
+          visibility: "private",
+        });
+        preparePiSandboxClaim();
+
+        // No personal subscription and an Auto send: the managed route.
+        const run = await api.createThreadRun(actor, {
+          agentId: agent.agentId,
+          prompt: `managed Auto run ${randomUUID()}`,
+          model: null,
+        });
+        await api.heartbeatRunner(runnerGroup);
+        const poll = await api.pollRunner(runnerGroup);
+        expect(poll.body.job).toMatchObject({ runId: run.runId });
+        const claim = await api.claimRunnerJob(run.runId);
+
+        // The managed provider firewall is configured, and its key travels
+        // only inside the encrypted firewall secrets.
+        expect(
+          claim.firewalls?.map((firewall) => {
+            return firewallEntryName(firewall);
+          }),
+        ).toContain("model-provider:openrouter-codex");
+        expect(claim.encryptedSecrets).toStrictEqual(expect.any(String));
+
+        const runRead = await api.readRun(actor, run.runId);
+        const threadEvents = await chat.listThreadEvents(actor, run.threadId);
+        const logs = await createRunReadsApi(context).requestListLogs(
+          actor,
+          { limit: 100 },
+          [200],
+        );
+        for (const delivered of [
+          poll.body,
+          claim,
+          runRead,
+          threadEvents,
+          logs.body,
+        ]) {
+          expect(JSON.stringify(delivered)).not.toContain(
+            DEV_SEED_SENTINEL_MANAGED_MODEL_KEY,
+          );
+        }
+
+        await api.requestCancelRun(actor, run.runId, [200]);
+        await finishCancelledRun(run.runId, claim.sandboxToken);
       });
 
       it("claims personal Codex GPT 6 chat runs through Pi without platform model billing", async () => {
@@ -10066,12 +10126,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const connectors = createConnectorBddApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-        await connectors.connectManualGrant(actor, "zendesk", "api-token", {
-          apiToken: "zendesk-token-bdd",
-          email: "connector@example.com",
-          subdomain: "münich",
-        });
-        await api.enableAgentConnectors(actor, agentId, ["zendesk"]);
+        await connectors.connectManualGrant(
+          actor,
+          "test-subdomain",
+          "api-token",
+          {
+            apiToken: "test-subdomain-token-bdd",
+            email: "connector@example.com",
+            subdomain: "münich",
+          },
+        );
+        await api.enableAgentConnectors(actor, agentId, ["test-subdomain"]);
 
         // Built-in connector-owned vars must not leak into custom connector bases.
         const slug = `_bdd-vars-${randomUUID().slice(0, 8)}`;
@@ -10105,17 +10170,19 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           claim.firewalls?.map((firewall) => {
             return firewallEntryName(firewall);
           }),
-        ).toContain("zendesk");
-        expect(findFirewallEntry(claim.firewalls, "zendesk")).toStrictEqual({
+        ).toContain("test-subdomain");
+        expect(
+          findFirewallEntry(claim.firewalls, "test-subdomain"),
+        ).toStrictEqual({
           kind: "builtin",
-          name: "zendesk",
-          baseUrlVars: { ZENDESK_SUBDOMAIN: "xn--mnich-kva" },
+          name: "test-subdomain",
+          baseUrlVars: { SUBDOMAIN_TEST_SUBDOMAIN: "xn--mnich-kva" },
           sourceId: expect.any(String),
         });
         expect(claim.connectorRuntimeTargets).toContainEqual({
           kind: "builtin",
-          connectorSlug: "zendesk",
-          baseUrlVars: { ZENDESK_SUBDOMAIN: "xn--mnich-kva" },
+          connectorSlug: "test-subdomain",
+          baseUrlVars: { SUBDOMAIN_TEST_SUBDOMAIN: "xn--mnich-kva" },
           sourceId: expect.any(String),
         });
         expect(customApis[0]?.base).toBe("https://internal.example.com/api/");
@@ -10978,7 +11045,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         for (const toolHint of [
           "okou web download-file -h",
           "Prefer the workspace directory (`/home/user/workspace`) for file operations and project work",
-          "Localhost URLs, local dev server ports, and processes started inside the agent runtime are generally only reachable inside that runtime",
           "Okou Cloud Browser provides rendered-page inspection and interaction",
           "For one known public URL when you only need page content, prefer `okou scrape <url> --format markdown`",
           "use Okou Cloud Browser when you need browser state, authentication, JavaScript, screenshots, or interaction",
@@ -10996,7 +11062,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "plus connector-backed music, text, code, or document",
           "the other types run on Okou without `--provider`",
           "okou generate <type> -h",
-          "do not suggest connectors for them",
           "okou doctor credit",
           "okou credit <credits>",
           "Agent instructions are team-shared behavior rules for everyone using the same agent",
@@ -11037,8 +11102,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "Multiple access actions",
           "okou workflow --help",
           "Workflow and automation requests use the `workflow-setup` skill first",
-          "Local changes or newly-created workflow folders",
-          "runtime-only and will not persist, sync back, or affect future runs",
           "Create or update a durable workflow with `okou workflow create|edit <name>`, passing the workflow body via `--instruction <text>` or `--instruction-file <path>`",
           "`--dir <path>` uploads supplementary files only and must not contain a `SKILL.md`",
           "- New web chat threads:",
@@ -11069,7 +11132,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "okou scrape <url>",
           "one known public HTTP(S) URL",
           "normalized Markdown or links",
-          "does not provide source discovery, raw HTML, or site-wide crawling",
           "Successful requests consume managed-service credits",
           "`enhanced` is a higher-cost billing mode than `standard`",
           "okou scrape --help",
@@ -11078,7 +11140,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "okou teams message send --help",
           "okou telegram message send --help",
           "okou phone message --help",
-          "do not invent `okou github message` commands",
           "Email from web chat: use the Gmail skill",
           "okou mail link <gmail-draft-id>",
         ]) {
@@ -11913,7 +11974,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                   runnerId: randomUUID(),
                   heartbeatGeneration: 1,
                 },
-                tier: "workspaceCache",
+                tier: "homeCache",
                 expiresAt: "2999-01-01T00:00:00.000Z",
               },
               runnerPreferenceClaimState: "active",
@@ -12847,7 +12908,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             error: "runner job timed out",
             lastEventSequence: 0,
             sandboxReuseResult: "poolMiss",
-            workspaceReuseResult: "lockBusy",
+            homeReuseResult: "lockBusy",
           },
           sandboxHeaders,
           [200],
@@ -12862,7 +12923,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const runner = await api.requestRunRunner(actor, run.runId, [200]);
         expect(runner.body).toStrictEqual({
           sandboxReuseResult: "poolMiss",
-          workspaceReuseResult: "lockBusy",
+          homeReuseResult: "lockBusy",
           runnerHostname: null,
           runnerVersion: null,
           runnerId: expect.any(String),
@@ -12992,7 +13053,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               exitCode: 0,
               lastEventSequence: 0,
               sandboxReuseResult: "poolMiss",
-              workspaceReuseResult: "cacheMiss",
+              homeReuseResult: "cacheMiss",
             },
             sandboxHeaders,
             [200],
@@ -13012,7 +13073,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const runner = await api.requestRunRunner(actor, run.runId, [200]);
           expect(runner.body).toStrictEqual({
             sandboxReuseResult: "poolMiss",
-            workspaceReuseResult: "cacheMiss",
+            homeReuseResult: "cacheMiss",
             runnerHostname: null,
             runnerVersion: null,
             runnerId: null,
@@ -13055,7 +13116,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               exitCode: 0,
               lastEventSequence: 0,
               sandboxReuseResult: "poolMiss",
-              workspaceReuseResult: "diskPressure",
+              homeReuseResult: "diskPressure",
             },
             {
               authorization: `Bearer ${claim.sandboxToken}`,
@@ -13071,7 +13132,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const runner = await api.requestRunRunner(actor, run.runId, [200]);
           expect(runner.body).toStrictEqual({
             sandboxReuseResult: "poolMiss",
-            workspaceReuseResult: "diskPressure",
+            homeReuseResult: "diskPressure",
             runnerHostname: null,
             runnerVersion: null,
             runnerId: null,
@@ -13084,7 +13145,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               exitCode: 0,
               lastEventSequence: 0,
               sandboxReuseResult: "reused",
-              workspaceReuseResult: "sandboxReused",
+              homeReuseResult: "sandboxReused",
             },
             {
               authorization: `Bearer ${claim.sandboxToken}`,

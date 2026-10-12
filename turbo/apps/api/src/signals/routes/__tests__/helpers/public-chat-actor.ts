@@ -15,9 +15,10 @@ export async function publicChatActor(
   options: {
     readonly beforeRuns?: (actor: ApiTestUser) => Promise<void>;
     readonly tier?: "pro" | "team";
+    readonly stripeTransport?: "http";
     readonly restoreEnvironment?: () => void;
     readonly clockTime?: number | (() => number);
-    readonly beforeWorkspaceCleanup?: () => Promise<void>;
+    readonly beforeWorkspaceCleanup?: (actor: ApiTestUser) => Promise<void>;
     readonly optionalEnvironmentNames?: readonly string[];
   } = {},
 ) {
@@ -62,7 +63,7 @@ export async function publicChatActor(
           : Promise.resolve();
       });
       const external = await settleIncludingAbort(() => {
-        return options.beforeWorkspaceCleanup?.() ?? Promise.resolve();
+        return options.beforeWorkspaceCleanup?.(actor) ?? Promise.resolve();
       });
       const workspace = await settleIncludingAbort(() => {
         return deletePublicWorkspace(context, actor);
@@ -104,6 +105,7 @@ export async function publicChatActor(
   const { customerId } = await run(() => {
     return fixture.api.grantProEntitlement(actor, {
       tier: options.tier,
+      stripeTransport: options.stripeTransport,
       onExternalStateReady: (restoreWebhook) => {
         restoreSetupWebhook = restoreWebhook;
       },

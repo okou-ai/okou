@@ -14,8 +14,8 @@ type DiscordDmAdmissionNoticeKind = "not-connected" | "selection-required";
 
 function noticeContent(kind: DiscordDmAdmissionNoticeKind): string {
   return kind === "not-connected"
-    ? "This Discord account isn't connected to an Okou workspace, so I can't start a task here yet. Discord account onboarding isn't available yet: ask a workspace administrator to set up a verified connection. Run `/okou connect` to check your connection status."
-    : "Your Discord account is connected to more than one Okou workspace. Run `/okou org` here to choose the workspace for direct messages, then send your message again.";
+    ? "This Discord account isn't connected to an Okou workspace, so I can't start a task here yet. Run `/connect` for account setup guidance."
+    : "Your Discord account is connected to more than one Okou workspace. Run `/connect` here to choose the workspace for direct messages, then send your message again.";
 }
 
 /**

@@ -7,8 +7,9 @@ import type {
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { connectors } from "@okouai/db/schema/connector";
+import { connectorCatalog } from "@okouai/db/runtime/connector-catalog";
 import { command } from "ccstate";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import {
   CONNECTOR_CATALOG_ACTIVE_KEY,
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
@@ -38,7 +39,6 @@ import { safeSync, settle } from "../utils";
 import {
   immutableCatalogHash$,
   prepareImmutableCatalogEntries$,
-  publishImmutableCatalogPointer,
 } from "./connector-catalog-immutable.service";
 import {
   connectorCatalogSkillFailure,
@@ -404,9 +404,33 @@ type PublishResult =
       readonly failure: ConnectorCatalogSkillFailure;
     };
 
-// Entries first, pointer second. A failure or interruption before the pointer
-// transaction commits leaves the previous generation serving and at most an
-// unreferenced partial generation that the next attempt reuses.
+// The caller has completed every entry at `hash`. Last writer wins; the
+// conditional upsert returns a row only when it inserts or changes the pointer.
+const publishCatalogPointer$ = command(
+  async (
+    { set },
+    args: { readonly schemaVersion: number; readonly hash: string },
+    signal: AbortSignal,
+  ): Promise<{ readonly switched: boolean }> => {
+    signal.throwIfAborted();
+    const changed = await set(writeDb$)
+      .insert(connectorCatalog)
+      .values({ schemaVersion: args.schemaVersion, hash: args.hash })
+      .onConflictDoUpdate({
+        target: connectorCatalog.schemaVersion,
+        set: { hash: args.hash },
+        setWhere: ne(connectorCatalog.hash, args.hash),
+      })
+      .returning({ hash: connectorCatalog.hash });
+    // Cancellation after this atomic statement commits cannot undo publication.
+    signal.throwIfAborted();
+    return { switched: changed.length === 1 };
+  },
+);
+
+// Entries first, pointer second. Failed or interrupted preparation leaves the
+// previous generation serving and at most an unreferenced partial generation
+// that the next attempt reuses.
 const publishCandidate$ = command(
   async (
     { set },
@@ -425,15 +449,15 @@ const publishCandidate$ = command(
           signal,
         );
         signal.throwIfAborted();
-        // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0113; new non-billing transactions are prohibited.
-        return await set(writeDb$).transaction(async (tx) => {
-          const { switched } = await publishImmutableCatalogPointer(tx, {
+        const { switched } = await set(
+          publishCatalogPointer$,
+          {
             schemaVersion: args.candidate.artifact.artifactSchemaVersion,
             hash,
-          });
-          signal.throwIfAborted();
-          return switched;
-        });
+          },
+          signal,
+        );
+        return switched;
       })(),
     );
     signal.throwIfAborted();
@@ -457,7 +481,7 @@ const publishCandidate$ = command(
  * Validate the official publication, prepare its complete immutable entries,
  * then move the pointer. One scheduled cron is the production writer and the
  * last writer wins; there is no compare-and-swap, sync state or rejection
- * cache. A rejected or failed attempt leaves the current pointer serving.
+ * cache. A rejected candidate leaves the current pointer serving.
  */
 export const syncConnectorCatalog$ = command(
   async (

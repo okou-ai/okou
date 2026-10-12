@@ -254,6 +254,276 @@ describe("POST /api/user-templates", () => {
     ).toBeTruthy();
   });
 
+  it("renames a private template and preserves its cover and ownership", async () => {
+    const fixture = installS3Fixture(context);
+    const owner = bdd.user();
+    await enableFor(owner);
+    const client = templateClient();
+    mockClerkUsers(context, [clerkProfile(owner.userId, "Mina", "Okafor")]);
+    const published = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await publishBody(owner, fixture),
+      }),
+      [200],
+    );
+    context.mocks.ably.channelGet.mockClear();
+
+    const updated = await accept(
+      client.update({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { title: "Renamed brand" },
+      }),
+      [200],
+    );
+    expect(updated.body).toMatchObject({
+      id: published.body.id,
+      title: "Renamed brand",
+      visibility: "private",
+      ownerUserId: owner.userId,
+      ownerDisplayName: "Mina Okafor",
+      canManage: true,
+      sourceFilename: published.body.sourceFilename,
+      pageCount: 2,
+      coverHasMorePages: true,
+      createdAt: published.body.createdAt,
+    });
+    expect(Date.parse(updated.body.updatedAt)).toBeGreaterThanOrEqual(
+      Date.parse(published.body.updatedAt),
+    );
+    expect(fixture.signedKey(updated.body.coverUrl!)).toBe(
+      fixture.signedKey(published.body.coverUrl!),
+    );
+    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
+      `user:${owner.userId}`,
+    );
+    expect(context.mocks.ably.channelGet).not.toHaveBeenCalledWith(
+      `org:${owner.orgId}`,
+    );
+    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
+    expect(listed.body[0]).toMatchObject(updated.body);
+  });
+
+  it("retracts a shared template and its preview handles from colleagues", async () => {
+    const fixture = installS3Fixture(context);
+    const owner = bdd.user();
+    await enableFor(owner);
+    const client = templateClient();
+    const published = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await publishBody(owner, fixture),
+      }),
+      [200],
+    );
+    await accept(
+      client.update({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { visibility: "organization" },
+      }),
+      [200],
+    );
+    const colleague = bdd.user({ orgId: owner.orgId });
+    await enableFor(colleague);
+    const shared = await accept(client.list({ headers: webHeaders() }), [200]);
+    const previewAssetIds = shared.body.flatMap((entry) => {
+      return entry.previewAssets.map((asset) => {
+        return asset.previewAssetId;
+      });
+    });
+    expect(previewAssetIds).toHaveLength(2);
+
+    mocks.clerk.session(owner.userId, owner.orgId, "org:admin");
+    context.mocks.ably.channelGet.mockClear();
+    await accept(
+      client.update({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { title: "Shared edit" },
+      }),
+      [200],
+    );
+    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
+      `org:${owner.orgId}`,
+    );
+    context.mocks.ably.channelGet.mockClear();
+    const retracted = await accept(
+      client.update({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { visibility: "private" },
+      }),
+      [200],
+    );
+    expect(retracted.body).toMatchObject({
+      title: "Shared edit",
+      visibility: "private",
+    });
+    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
+      `org:${owner.orgId}`,
+    );
+    expect(context.mocks.ably.channelGet).not.toHaveBeenCalledWith(
+      `user:${owner.userId}`,
+    );
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "presentationTemplatesChanged",
+      null,
+    );
+
+    mocks.clerk.session(colleague.userId, colleague.orgId, "org:admin");
+    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
+    expect(listed.body).toStrictEqual([]);
+    await accept(
+      client.get({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+      }),
+      [404],
+    );
+    const previews = await accept(
+      client.resolvePreviewUrls({
+        headers: webHeaders(),
+        body: { previewAssetIds },
+      }),
+      [200],
+    );
+    expect(previews.body.assets).toStrictEqual([]);
+  });
+
+  it("rejects disabled, invalid and cross-organization edits without changing the template", async () => {
+    const fixture = installS3Fixture(context);
+    const owner = bdd.user();
+    await enableFor(owner);
+    const client = templateClient();
+    const published = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await publishBody(owner, fixture),
+      }),
+      [200],
+    );
+    await expect(
+      client.update({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { title: "" },
+      }),
+    ).rejects.toThrow(
+      "Unknown response status 400 for PATCH /api/user-templates/:templateId",
+    );
+    if (!owner.orgId) {
+      throw new Error("User template tests require an organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: owner.userId, orgId: owner.orgId, orgRole: "org:admin" },
+      { [FeatureSwitchKey.CustomTemplates]: false },
+    );
+    const disabled = await accept(
+      client.update({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { title: "Disabled edit", visibility: "organization" },
+      }),
+      [403],
+    );
+    expect(disabled.body.error).toMatchObject({
+      code: "FORBIDDEN",
+      message: "Custom templates are not enabled",
+    });
+    const outsider = bdd.user();
+    await enableFor(outsider);
+    const hidden = await accept(
+      client.update({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { title: "Cross-organization edit" },
+      }),
+      [404],
+    );
+    expect(hidden.body.error).toMatchObject({
+      code: "NOT_FOUND",
+      message: `User template not found: ${published.body.id}`,
+    });
+    await enableFor(owner);
+    const preserved = await accept(
+      client.get({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+      }),
+      [200],
+    );
+    expect(preserved.body).toMatchObject(published.body);
+  });
+
+  it("notifies the readers on both sides of overlapping visibility edits", async () => {
+    const fixture = installS3Fixture(context);
+    const owner = bdd.user();
+    await enableFor(owner);
+    const client = templateClient();
+    const published = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await publishBody(owner, fixture),
+      }),
+      [200],
+    );
+    context.mocks.ably.channelGet.mockClear();
+    const edits = await Promise.all([
+      accept(
+        client.update({
+          headers: webHeaders(),
+          params: { templateId: published.body.id },
+          body: { title: "Shared edit", visibility: "organization" },
+        }),
+        [200],
+      ),
+      accept(
+        client.update({
+          headers: webHeaders(),
+          params: { templateId: published.body.id },
+          body: { title: "Private edit", visibility: "private" },
+        }),
+        [200],
+      ),
+    ]);
+    const current = await accept(
+      client.get({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+      }),
+      [200],
+    );
+    expect(
+      edits.map((edit) => {
+        return edit.body;
+      }),
+    ).toContainEqual(
+      expect.objectContaining({
+        title: current.body.title,
+        visibility: current.body.visibility,
+      }),
+    );
+    for (const edit of edits) {
+      expect(Date.parse(current.body.updatedAt)).toBeGreaterThanOrEqual(
+        Date.parse(edit.body.updatedAt),
+      );
+    }
+    const channels = context.mocks.ably.channelGet.mock.calls.map(
+      ([channel]) => {
+        return channel;
+      },
+    );
+    expect(channels.sort()).toStrictEqual(
+      (current.body.visibility === "private"
+        ? [`org:${owner.orgId}`, `org:${owner.orgId}`]
+        : [`org:${owner.orgId}`, `user:${owner.userId}`]
+      ).sort(),
+    );
+  });
+
   it("accepts a pdf source, which the import picker already offers", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();

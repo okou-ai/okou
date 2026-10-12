@@ -8,8 +8,8 @@ import matching
 class TestMatchBaseUrl:
     def test_parameterized_host(self):
         result = matching.match_base_url(
-            "https://acme.zendesk.com/api/v2/tickets",
-            "https://{subdomain}.zendesk.com",
+            "https://acme.example.com/api/v2/tickets",
+            "https://{subdomain}.example.com",
         )
         assert result is not None
         rel_path, params = result
@@ -18,8 +18,8 @@ class TestMatchBaseUrl:
 
     def test_parameterized_base_host_param_name_preserves_case(self):
         result = matching.match_base_url(
-            "https://acme.zendesk.com/api/v2/tickets",
-            "https://{Subdomain}.zendesk.com",
+            "https://acme.example.com/api/v2/tickets",
+            "https://{Subdomain}.example.com",
         )
         assert result is not None
         rel_path, params = result
@@ -35,15 +35,15 @@ class TestMatchBaseUrl:
 
     def test_parameterized_base_with_query_is_rejected(self):
         result = matching.match_base_url(
-            "https://acme.zendesk.com/api/v2/tickets",
-            "https://{subdomain}.zendesk.com?token=1",
+            "https://acme.example.com/api/v2/tickets",
+            "https://{subdomain}.example.com?token=1",
         )
         assert result is None
 
     def test_parameterized_base_with_fragment_is_rejected(self):
         result = matching.match_base_url(
-            "https://acme.zendesk.com/api/v2/tickets",
-            "https://{subdomain}.zendesk.com#token",
+            "https://acme.example.com/api/v2/tickets",
+            "https://{subdomain}.example.com#token",
         )
         assert result is None
 
@@ -162,25 +162,25 @@ class TestMatchBaseUrl:
 
     def test_host_mismatch_returns_none(self):
         result = matching.match_base_url(
-            "https://api.github.com/repos", "https://{sub}.zendesk.com"
+            "https://api.github.com/repos", "https://{sub}.example.com"
         )
         assert result is None
 
     def test_runtime_host_braces_do_not_match_parameterized_base(self):
         result = matching.match_base_url(
-            "https://{acme}.zendesk.com/api",
-            "https://{sub}.zendesk.com",
+            "https://{acme}.example.com/api",
+            "https://{sub}.example.com",
         )
         assert result is None
 
     def test_scheme_mismatch_returns_none(self):
-        result = matching.match_base_url("http://acme.zendesk.com/api", "https://{sub}.zendesk.com")
+        result = matching.match_base_url("http://acme.example.com/api", "https://{sub}.example.com")
         assert result is None
 
     def test_query_stripped(self):
         result = matching.match_base_url(
-            "https://acme.zendesk.com/api?key=val",
-            "https://{sub}.zendesk.com",
+            "https://acme.example.com/api?key=val",
+            "https://{sub}.example.com",
         )
         assert result is not None
         rel_path, _ = result
@@ -188,8 +188,8 @@ class TestMatchBaseUrl:
 
     def test_no_path_after_parameterized_base(self):
         result = matching.match_base_url(
-            "https://acme.zendesk.com",
-            "https://{sub}.zendesk.com",
+            "https://acme.example.com",
+            "https://{sub}.example.com",
         )
         assert result is not None
         rel_path, params = result
@@ -199,8 +199,8 @@ class TestMatchBaseUrl:
     def test_nonstandard_port_rejected(self):
         """Non-standard port in URL must not match base without port."""
         result = matching.match_base_url(
-            "https://acme.zendesk.com:8443/api",
-            "https://{sub}.zendesk.com",
+            "https://acme.example.com:8443/api",
+            "https://{sub}.example.com",
         )
         assert result is None
 
@@ -215,10 +215,10 @@ class TestMatchBaseUrl:
     @pytest.mark.parametrize(
         ("url", "base"),
         [
-            ("https://acme.zendesk.com/api", "https://{sub}.zendesk.com:443"),
-            ("https://acme.zendesk.com:443/api", "https://{sub}.zendesk.com"),
-            ("http://acme.zendesk.com/api", "http://{sub}.zendesk.com:80"),
-            ("http://acme.zendesk.com:80/api", "http://{sub}.zendesk.com"),
+            ("https://acme.example.com/api", "https://{sub}.example.com:443"),
+            ("https://acme.example.com:443/api", "https://{sub}.example.com"),
+            ("http://acme.example.com/api", "http://{sub}.example.com:80"),
+            ("http://acme.example.com:80/api", "http://{sub}.example.com"),
         ],
     )
     def test_parameterized_base_default_ports_match_omitted_ports(self, url, base):
@@ -228,13 +228,13 @@ class TestMatchBaseUrl:
     @pytest.mark.parametrize(
         ("url", "base"),
         [
-            ("https://acme.zendesk.com/api", "https://{sub}.zendesk.com."),
-            ("https://acme.zendesk.com./api", "https://{sub}.zendesk.com"),
+            ("https://acme.example.com/api", "https://{sub}.example.com."),
+            ("https://acme.example.com./api", "https://{sub}.example.com"),
             ("https://acme.example.com/api", "https://{sub}.example。com"),
             ("https://acme.example.com/api", "https://{sub}.example\uff0ecom"),
             ("https://acme.example.com/api", "https://{sub}.example\uff61com"),
-            ("https://acme.zendesk.com:8443/api", "https://{sub}.zendesk.com.:08443"),
-            ("https://acme.zendesk.com.:8443/api", "https://{sub}.zendesk.com:8443"),
+            ("https://acme.example.com:8443/api", "https://{sub}.example.com.:08443"),
+            ("https://acme.example.com.:8443/api", "https://{sub}.example.com:8443"),
         ],
     )
     def test_parameterized_base_authority_normalization_matches_runtime_host(
@@ -279,29 +279,29 @@ class TestMatchBaseUrl:
     @pytest.mark.parametrize(
         "base",
         [
-            "https://user@{sub}.zendesk.com",
-            "https://user:pass@{sub}.zendesk.com",
-            "https://.{sub}.zendesk.com",
-            "https://{sub}..zendesk.com",
-            "https://{sub}.zendesk.com。。",
-            "https://{sub}.zendesk.com:bad",
-            "https://{sub}.zendesk.com:99999",
+            "https://user@{sub}.example.com",
+            "https://user:pass@{sub}.example.com",
+            "https://.{sub}.example.com",
+            "https://{sub}..example.com",
+            "https://{sub}.example.com。。",
+            "https://{sub}.example.com:bad",
+            "https://{sub}.example.com:99999",
         ],
     )
     def test_parameterized_base_malformed_authority_returns_none(self, base):
-        result = matching.match_base_url("https://acme.zendesk.com/api", base)
+        result = matching.match_base_url("https://acme.example.com/api", base)
         assert result is None
 
     @pytest.mark.parametrize(
         "url",
         [
-            "https://.zendesk.com/api",
-            "https://acme..zendesk.com/api",
+            "https://.example.com/api",
+            "https://acme..example.com/api",
             "https://./api",
         ],
     )
     def test_parameterized_base_malformed_request_authority_returns_none(self, url):
-        result = matching.match_base_url(url, "https://{sub}.zendesk.com")
+        result = matching.match_base_url(url, "https://{sub}.example.com")
         assert result is None
 
     def test_base_with_port_matches_url_with_same_port(self):

@@ -12,7 +12,7 @@ import {
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
@@ -21,7 +21,7 @@ import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { onRejection, settleIncludingAbort } from "../utils";
 import { prepareAgentInstructionsStorage$ } from "./agent-instructions-storage.service";
 import {
@@ -55,8 +55,6 @@ interface EnsureOrgLimitedFreeBootstrapArgs {
   readonly orgId: string;
   readonly ownerUserId: string;
 }
-
-type BootstrapOwnerMembershipArgs = EnsureOrgLimitedFreeBootstrapArgs;
 
 type BootstrapReservation =
   | {
@@ -342,55 +340,76 @@ async function existingDefaultAgentId(
   return existing?.id ?? null;
 }
 
-async function upsertBootstrapOwnerMembership(
-  tx: DbTransaction,
-  args: BootstrapOwnerMembershipArgs,
-): Promise<void> {
-  const cachedAt = nowDate();
-  await tx
-    .insert(orgMembersCache)
-    .values({
-      orgId: args.orgId,
-      userId: args.ownerUserId,
-      role: "admin",
-      cachedAt,
-    })
-    .onConflictDoUpdate({
-      target: [orgMembersCache.orgId, orgMembersCache.userId],
-      set: { role: "admin", cachedAt },
-    });
-
-  await tx
-    .insert(orgMembersMetadata)
-    .values({
-      orgId: args.orgId,
-      userId: args.ownerUserId,
-      selectedModel: AUTO_SELECTED_MODEL,
-      createdAt: cachedAt,
-      updatedAt: cachedAt,
-    })
-    .onConflictDoNothing();
-}
-
 function isPaidTier(tier: string): boolean {
   return PAID_TIERS.some((paidTier) => {
     return paidTier === tier;
   });
 }
 
-async function reserveBootstrapAgent(
-  tx: DbTransaction,
-  args: BootstrapOwnerMembershipArgs & { readonly agentId: string },
-): Promise<BootstrapReservation> {
-  await upsertBootstrapOwnerMembership(tx, args);
+const reserveBootstrapAgent$ = command(
+  async (
+    { get, set },
+    args: EnsureOrgLimitedFreeBootstrapArgs & { readonly agentId: string },
+    signal: AbortSignal,
+  ): Promise<BootstrapReservation> => {
+    const writeDb = set(writeDb$);
+    const cachedAt = nowDate();
+    const membership = writeDb
+      .insert(orgMembersCache)
+      .values({
+        orgId: args.orgId,
+        userId: args.ownerUserId,
+        role: "admin",
+        cachedAt,
+      })
+      .onConflictDoUpdate({
+        target: [orgMembersCache.orgId, orgMembersCache.userId],
+        set: { role: "admin", cachedAt },
+      })
+      .returning({
+        orgId: orgMembersCache.orgId,
+        userId: orgMembersCache.userId,
+      })
+      .getSQL();
+    // Both inserted and updated membership identities prepare preferences.
+    // Keep the partial target list so omitted fields retain database defaults.
+    await writeDb.execute(sql`WITH membership AS (${membership})
+      INSERT INTO ${orgMembersMetadata} (
+        org_id, user_id, selected_model, created_at, updated_at
+      ) SELECT membership.org_id, membership.user_id, ${AUTO_SELECTED_MODEL},
+        ${sql.param(cachedAt, orgMembersMetadata.createdAt)},
+        ${sql.param(cachedAt, orgMembersMetadata.updatedAt)} FROM membership
+      ON CONFLICT DO NOTHING`);
+    signal.throwIfAborted();
 
-  const existingAgentId = await existingDefaultAgentId(tx, args.orgId);
-  if (existingAgentId) {
-    return { status: "skipped", agentId: existingAgentId };
-  }
+    // Preparation stays committed if a later ordinary lookup fails.
+    const db = get(db$);
+    const [orgRow] = await db
+      .select({ defaultAgentId: orgMetadata.defaultAgentId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, args.orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (orgRow?.defaultAgentId) {
+      const [existing] = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.id, orgRow.defaultAgentId),
+            eq(agents.orgId, args.orgId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (existing) {
+        return { status: "skipped", agentId: existing.id };
+      }
+    }
 
-  return { status: "reserved", agentId: args.agentId };
-}
+    return { status: "reserved", agentId: args.agentId };
+  },
+);
 
 async function finalizeBootstrap(
   tx: DbTransaction,
@@ -517,13 +536,11 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
   ): Promise<EnsureOrgLimitedFreeBootstrapResult> => {
     const writeDb = set(writeDb$);
     const agentId = randomUUID();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0217; new non-billing transactions are prohibited.
-    const reservation = await writeDb.transaction(async (tx) => {
-      return await reserveBootstrapAgent(tx, {
-        ...args,
-        agentId,
-      });
-    });
+    const reservation = await set(
+      reserveBootstrapAgent$,
+      { ...args, agentId },
+      signal,
+    );
     signal.throwIfAborted();
 
     if (reservation.status === "skipped") {

@@ -14,7 +14,7 @@ import {
   agentPhoneChannelForLinkedHandle,
   resolveAgentPhoneAgentIdForUserLink,
   resolveAgentPhoneUserLinkForMember,
-  storeOutboundAgentPhoneMessage,
+  storeOutboundAgentPhoneMessage$,
 } from "../services/agentphone.service";
 import { settle } from "../utils";
 
@@ -95,7 +95,7 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const sent = sendResult.value;
 
-  await storeOutboundAgentPhoneMessage(db, {
+  await set(storeOutboundAgentPhoneMessage$, {
     agentphoneMessageId: sent.id,
     conversationId: null,
     agentphoneAgentId,

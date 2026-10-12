@@ -433,7 +433,7 @@ function StableChatWorkspace({
       <WorkspaceInset
         beside={beside}
         framed={false}
-        className={active ? "md:rounded-l-xl" : "md:rounded-xl"}
+        className={active ? "md:rounded-l-2xl" : "md:rounded-2xl"}
       >
         {children}
       </WorkspaceInset>

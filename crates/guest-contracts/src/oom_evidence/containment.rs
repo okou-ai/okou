@@ -89,6 +89,8 @@ mod tests {
         for victim in [
             format!("{workload}/tools"),
             format!("{workload}/tools/tool-1"),
+            format!("{workload}/tools/task-00000000-0000-0000-0000-000000000001/runtime"),
+            format!("{workload}/tools/task-00000000-0000-0000-0000-000000000001/tools/tool-1"),
             format!("{workload}/runtime/nested"),
             format!("{workload}-sibling"),
             "/vm0-exec/exec-281-11-3/workload".to_string(),

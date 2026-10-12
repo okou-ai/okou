@@ -586,6 +586,26 @@ function telemetryMetricEvent(
     mem_total: metric.mem_total,
     disk_used: metric.disk_used,
     disk_total: metric.disk_total,
+    ...(metric.rootfs === undefined
+      ? {}
+      : {
+          rootfs_used_bytes: metric.rootfs.used_bytes,
+          rootfs_total_bytes: metric.rootfs.total_bytes,
+          rootfs_available_bytes: metric.rootfs.available_bytes,
+          rootfs_used_inodes: metric.rootfs.used_inodes,
+          rootfs_total_inodes: metric.rootfs.total_inodes,
+          rootfs_available_inodes: metric.rootfs.available_inodes,
+        }),
+    ...(metric.home === undefined
+      ? {}
+      : {
+          home_used_bytes: metric.home.used_bytes,
+          home_total_bytes: metric.home.total_bytes,
+          home_available_bytes: metric.home.available_bytes,
+          home_used_inodes: metric.home.used_inodes,
+          home_total_inodes: metric.home.total_inodes,
+          home_available_inodes: metric.home.available_inodes,
+        }),
     ...(metric.control_cpu_usage_usec === undefined
       ? {}
       : { control_cpu_usage_usec: metric.control_cpu_usage_usec }),

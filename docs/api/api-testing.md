@@ -287,7 +287,7 @@ Global setup and workers use the same test database URL helper. It appends a
 final `-c timezone=UTC` startup setting, preserving the effective existing URL
 options or inherited `PGOPTIONS`, unrelated connection parameters, and worker
 application names. Startup configuration applies before the first query on every
-physical connection, including pool replacements. The pricing seed checks
+physical connection, including pool replacements. Global setup checks
 `SHOW TimeZone` before any shared pricing/catalog writes and closes its client if
 the check fails. Production connection configuration is unchanged; isolated
 PGlite sessions already explicitly use UTC.
@@ -368,14 +368,25 @@ catalog just to delete its accounts. Keep business deletion assertions and
 cleanup that stops background work, releases external resources, or restores
 external mocks. Shared PostgreSQL fixtures still own and clean up their rows.
 
-`src/__tests__/global-setup.ts` seeds the shared PostgreSQL pricing and complete
-fixed connector catalog once per run. It also migrates and seeds one PGlite,
+`src/__tests__/global-setup.ts` applies the fixed SQL files listed in
+`src/test-fixtures/database-seeds.ts` to shared PostgreSQL once per run, using
+one short-lived client that closes on success or failure without opening the
+application pool. These test-only files live under `src/test-fixtures/seeds/`,
+outside production migrations and deployment entrypoints. Both database engines
+execute exactly the same files; there are no exported pricing/catalog writers
+or per-case seed options. It also migrates and seeds one PGlite,
 saves a checkpointed immutable snapshot, and provides its path to workers.
 The fixture caches the unpacked files for subsequent cases. Each isolated case
 creates a fresh engine and memory filesystem with its own writable copies; cases do not
-repeat gzip/tar decoding, replay migrations, or reseed their database. Shared
-fixture installation inserts only a missing pointer and must never replace an
-existing catalog pointer. This common application baseline is infrastructure; it does
+repeat gzip/tar decoding, replay migrations, or reseed their database. The catalog seed
+publishes entries and their schema-version pointer in one atomic statement,
+inserting only a missing pointer and never replacing existing catalog authority.
+The pricing seed preserves existing rows on their `(kind, provider, category)`
+key. The managed model key seed inserts the obvious fake OpenRouter key that
+`dev-seed` also uses when no real key is configured, so every case has the
+managed Auto route and can assert that its key never reaches a sandbox or
+Runner. To update the fixed baseline, review the declarative data alongside its
+source artifact/pricing projection; do not add case-specific variants. This common application baseline is infrastructure; it does
 not authorize changing prices, catalog entries, or business rows to manufacture
 a case's decisive state.
 
@@ -427,6 +438,98 @@ a public read. Keep public pin/reorder, message, storage, and usage behavior
 where it stands independently of those operations; remove private-only phases
 and their unused drivers. Endpoint-removal totals describe retired HTTP
 operations, not compliance with this construction and observation standard.
+
+## Test Boundary Lint
+
+`turbo/apps/api/eslint.config.mjs` enforces the
+[external behavior boundary](#external-behavior-boundary) statically. Every
+test-related diagnostic links to one of the sections below. The rules apply to
+API test modules: `__tests__/`, `*.test.ts`, `*.spec.ts`, `*.suite.ts`,
+`*.cases.ts`, benchmarks, `test-fixtures/` (including helpers under these
+directories) and executable `acceptance.ts`/`fixture.ts` entrypoints under
+`scripts/`.
+
+### No Private State Access
+
+`api/no-test-private-access` rejects static, dynamic, type-level and
+`vi.mock` imports of:
+
+- `@okouai/db` and every `@okouai/db/*` subpath;
+- database drivers: `drizzle-orm`, `pg`, `postgres` and `@electric-sql/pglite`;
+- the application DB handles `src/lib/db` and `src/signals/external/db`;
+- `src/signals/services/**`;
+- internal signals under `src/signals/computed/**` and `src/signals/commands/**`.
+
+Construct, drive and observe cases through production endpoints instead. Raw
+SQL is unavailable without those imports. Moving the same access into a
+fixture, helper or renamed wrapper is still a violation.
+
+### No Test-only Endpoints
+
+`api/no-test-only-routes` rejects `routes/test-*` modules, `/api/test` paths in
+production code or declared as contract `path` values in tests, and route
+handlers registered from test modules. The API contracts package rejects
+`/api/test` literals as well. Tests mount production route slices through
+`setupApp()`; never add an endpoint, contract or synthetic route to construct a
+case.
+
+### No Diagnostics Observation
+
+API tests must not import the logger or read the logger and telemetry stubs
+(`axiomLogging`, `sdkIngest`, `useRealTelemetry`) through `context.mocks`.
+Assert HTTP responses and their observable effects. Only the suites whose
+subject is the logger, its Axiom transport or the telemetry SDK client are named
+exceptions. Request-log wiring and flush ownership have no route-observable
+contract and are not tested.
+
+### Boundary Test Controls
+
+Production modules may export `*ForTest(s)` symbols only when they are listed in
+`boundaryTestControls`, and tests may import only those listed symbols
+(`api/test-control-allowlist`). The allowed kinds are boundary controls that
+never construct business state:
+
+- tracked `waitUntil` flushing and detached-error ownership hooks;
+- scoped application-clock control;
+- external client mocks such as the KMS client;
+- logger reset;
+- the delegation limit `updateMaxAutonomyBudgetForTest$`.
+
+The delegation limit is an exception Ethan approved in #37440. Production
+always grants a user-started chain the fixed 32-hop budget, and no API,
+configuration or environment value changes it. Tests lower it through
+`setupWorkflowOrg({ maxAutonomyBudget })` so the real Automation, copy and
+Runner claim chain reaches exhaustion in a few hops instead of 32. Test context
+restores the default after every case. Keep this control: it is not a private
+state driver, and it must not be cleaned up as one.
+
+Environment overrides use `mockEnv` from `src/lib/env`. Credential signers are
+listed only so the frozen consumers below keep compiling; they are governed by
+the credential ratchet, not by this allowlist.
+
+### Credentials From Real Flows
+
+Obtain credentials through the real sign-in, chat send, heartbeat and Runner
+claim flow. `api/no-test-credential-forging` rejects test use of
+`signSandboxJwtForTests`, `signPatJwtForTests`, `signSkillImportJwtForTests`,
+`encryptSecretForTests`, `generateSandboxToken` and `verifyOkouToken`, including
+aliased, namespace and destructured access. Files that already used them are
+listed in `credentialForgingLegacyConsumers`. That list may only shrink: a file
+leaves it by using the real flow, and the list is deleted once it is empty.
+Never add a file to it.
+
+### Test Lint Exceptions
+
+Exceptions name exact files with a stated responsibility; globs are rejected.
+`apiTestInfrastructure` covers lifecycle owners such as global setup, the PGlite
+engine, the DB transport binding and connection teardown, plus the API database
+library's own self-tests until they move to an owning package. An exception
+grants only the specific access its entry names and never permits constructing
+or observing business state.
+
+The API service-directory test ban has no file exceptions. Loading the lint
+config fails when any listed exception, control or legacy path no longer
+exists, so remove an entry together with the file or the case that needed it.
 
 ## Commands
 

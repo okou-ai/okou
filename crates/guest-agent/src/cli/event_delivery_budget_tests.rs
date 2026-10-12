@@ -6,22 +6,44 @@ use crate::http::HttpClient;
 use crate::masker::SecretMasker;
 use base64::Engine as _;
 use httpmock::prelude::*;
+use serde::ser::SerializeMap;
+use serde::{Serialize, Serializer};
 use serde_json::{Value, json};
-use std::{borrow::Cow, time::Duration};
+use std::time::Duration;
 
 const LIMIT: usize = 4 * 1024 * 1024;
 const RUN_ID: &str = "delivery-\"\\-你好";
 
+struct PublicEvent<'a> {
+    fields: &'a serde_json::Map<String, Value>,
+    transport: bool,
+}
+
+impl Serialize for PublicEvent<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Mirror Map::remove's ordering, including swap removal under preserve_order,
+        // without cloning the event's large values just to exclude one key.
+        let mut order =
+            serde_json::Map::from_iter(self.fields.keys().map(|key| (key.clone(), Value::Null)));
+        if self.transport {
+            order.remove("memoryCitation");
+        }
+        let mut fields = serializer.serialize_map(Some(order.len()))?;
+        for key in order.keys() {
+            let value = self.fields.get(key).ok_or_else(|| {
+                serde::ser::Error::custom("public fixture key is absent from the original event")
+            })?;
+            fields.serialize_entry(key, value)?;
+        }
+        fields.end()
+    }
+}
+
 fn body(event: &Value, transport: bool) -> Result<String, String> {
-    event.as_object().ok_or("event is not an object")?;
-    let mut public = Cow::Borrowed(event);
+    let fields = event.as_object().ok_or("event is not an object")?;
     let suffix = if transport {
-        let citation = public
-            .to_mut()
-            .as_object_mut()
-            .ok_or("event is not an object")?
-            .remove("memoryCitation");
-        let citations = citation
+        let citations = fields
+            .get("memoryCitation")
             .map(|citation| json!({"sequenceNumber":19,"citation":citation}))
             .into_iter()
             .collect::<Vec<_>>();
@@ -32,11 +54,64 @@ fn body(event: &Value, transport: bool) -> Result<String, String> {
     } else {
         String::new()
     };
-    Ok(format!(
-        "{{\"runId\":{},\"events\":[{}]{suffix}}}",
-        json!(RUN_ID),
-        public
-    ))
+    let mut body = format!("{{\"runId\":{},\"events\":[", json!(RUN_ID)).into_bytes();
+    serde_json::to_writer(&mut body, &PublicEvent { fields, transport }).unwrap();
+    body.push(b']');
+    body.extend_from_slice(suffix.as_bytes());
+    body.push(b'}');
+    Ok(String::from_utf8(body).unwrap())
+}
+
+#[test]
+fn borrowed_public_event_preserves_canonical_bytes_and_original_fields() {
+    for event in [
+        json!({}),
+        json!({"sequenceNumber":19,"text":"你好\"\\\n\0","memoryCitation":null}),
+        text_event(Framework::Pi, &"你好\"\\\n\0".repeat(4096)),
+        text_event(Framework::Codex, "text"),
+        collaboration_event(json!({"child":{"status":"running","message":null}})).unwrap(),
+        json!({"before":{},"memoryCitation":{"entries":[],"rolloutIds":["id"]},"after":{"memoryCitation":"nested"}}),
+    ] {
+        let original = event.to_string();
+        for transport in [false, true] {
+            let mut public = event.clone();
+            let suffix = if transport {
+                let citations = public
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("memoryCitation")
+                    .map(|citation| json!({"sequenceNumber":19,"citation":citation}))
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                format!(
+                    ",\"piMemoryCitationTransport\":{{\"schemaVersion\":1,\"citations\":{}}}",
+                    json!(citations)
+                )
+            } else {
+                String::new()
+            };
+            let expected = format!(
+                "{{\"runId\":{},\"events\":[{public}]{suffix}}}",
+                json!(RUN_ID)
+            );
+            assert_eq!(body(&event, transport).unwrap(), expected);
+            assert_eq!(event.to_string(), original);
+        }
+    }
+    for event in [
+        Value::Null,
+        json!(false),
+        json!([]),
+        json!(19),
+        json!("text"),
+    ] {
+        for transport in [false, true] {
+            assert_eq!(
+                body(&event, transport).unwrap_err(),
+                "event is not an object"
+            );
+        }
+    }
 }
 
 fn text_event(framework: Framework, text: &str) -> Value {
@@ -312,8 +387,16 @@ async fn collaboration_fallback_preserves_structure_beyond_content_discovery_lim
         (30_000, 0, Some("\0".repeat(30))),
     ] {
         let mut states = serde_json::Map::new();
+        let mut expected_states = serde_json::Map::new();
         for index in 0..child_count {
             let key = format!("child-{index:04}{}", "k".repeat(key_bytes));
+            let expected_message = message
+                .as_ref()
+                .map(|_| "[event content truncated for delivery]");
+            expected_states.insert(
+                key.clone(),
+                json!({"status": "errored", "message": expected_message}),
+            );
             states.insert(key, json!({"status": "errored", "message": message}));
         }
         if message.is_none() {
@@ -321,34 +404,29 @@ async fn collaboration_fallback_preserves_structure_beyond_content_discovery_lim
                 "zz-last-child".into(),
                 json!({"status": "completed", "message": "x".repeat(LIMIT)}),
             );
+            expected_states.insert(
+                "zz-last-child".into(),
+                json!({"status": "completed", "message": "[event content truncated for delivery]"}),
+            );
         }
-        states.insert(
-            "empty-child".into(),
-            json!({"status": "running", "message": ""}),
-        );
-        states.insert(
-            "null-child".into(),
-            json!({"status": "pending_init", "message": null}),
-        );
-        states.insert(
-            "short-child".into(),
-            json!({"status": "completed", "message": "done"}),
-        );
+        for states in [&mut states, &mut expected_states] {
+            states.insert(
+                "empty-child".into(),
+                json!({"status": "running", "message": ""}),
+            );
+            states.insert(
+                "null-child".into(),
+                json!({"status": "pending_init", "message": null}),
+            );
+            states.insert(
+                "short-child".into(),
+                json!({"status": "completed", "message": "done"}),
+            );
+        }
         let mut event = collaboration_event(Value::Object(states)).unwrap();
         event["item"]["prompt"] = json!("p".repeat(LIMIT));
-        let mut expected = event.clone();
+        let mut expected = collaboration_event(Value::Object(expected_states)).unwrap();
         expected["item"]["prompt"] = json!("[event content truncated for delivery]");
-        for (child_id, state) in expected["item"]["agents_states"]
-            .as_object_mut()
-            .unwrap()
-            .iter_mut()
-        {
-            if (child_id.starts_with("child-") || child_id == "zz-last-child")
-                && state["message"].is_string()
-            {
-                state["message"] = json!("[event content truncated for delivery]");
-            }
-        }
 
         let server = MockServer::start_async().await;
         let request = server.mock(|when, then| {
@@ -471,8 +549,7 @@ async fn reduced_http_failure_still_breaks_acknowledgement_and_retries_identical
             .is_true(move |request| {
                 captured.lock().unwrap().push(request.body_vec());
                 request.body_ref().len() <= LIMIT
-                    && request
-                        .body_string()
+                    && String::from_utf8_lossy(request.body_ref())
                         .contains("bytes truncated for delivery")
             });
         then.status(500);

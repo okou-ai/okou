@@ -2493,6 +2493,27 @@ pub mod runners {
             }
         }
     }
+
+    /// Official Runner one-use WSS ticket redemption.
+    pub mod wss {
+        /// Exact redeemed ticket digest, audience and owner; not Run cancellation.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ConsumeResponse {
+            /// Exact redeemed Run.
+            pub run_id: String,
+            /// Exact destination Runner.
+            pub runner_id: String,
+            /// Verified owning organization.
+            pub org_id: String,
+            /// Verified owning user.
+            pub user_id: String,
+            /// Exact canonical WSS origin.
+            pub origin: String,
+            /// SHA-256 of the one-use redeemed ticket; never the credential.
+            pub digest: String,
+        }
+    }
 }
 
 /// Webhook DTOs generated from TypeScript API contracts.
@@ -2530,37 +2551,37 @@ pub mod webhooks {
                 UnparkFailed,
             }
 
-            /// Final outcome of workspace reuse preparation.
+            /// Final outcome of home reuse preparation.
             #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-            pub enum RequestWorkspaceReuseResult {
-                /// A cached workspace was reused.
+            pub enum RequestHomeReuseResult {
+                /// A cached home directory was reused.
                 #[serde(rename = "reused")]
                 Reused,
-                /// The workspace remained in a reused sandbox.
+                /// The home directory remained in a reused sandbox.
                 #[serde(rename = "sandboxReused")]
                 SandboxReused,
-                /// No matching workspace cache was available.
+                /// No matching home cache was available.
                 #[serde(rename = "cacheMiss")]
                 CacheMiss,
-                /// The run had no workspace reuse key.
+                /// The run had no home reuse key.
                 #[serde(rename = "noReuseKey")]
                 NoReuseKey,
-                /// The cached workspace directory was invalid.
+                /// The home working directory was invalid.
                 #[serde(rename = "invalidWorkingDir")]
                 InvalidWorkingDir,
-                /// The cached workspace was locked by another run.
+                /// The cached home was locked by another run.
                 #[serde(rename = "lockBusy")]
                 LockBusy,
-                /// The cached workspace metadata was invalid.
+                /// The cached home metadata was invalid.
                 #[serde(rename = "invalidMetadata")]
                 InvalidMetadata,
-                /// Workspace reuse was disabled by disk pressure.
+                /// Home reuse was disabled by disk pressure.
                 #[serde(rename = "diskPressure")]
                 DiskPressure,
-                /// Workspace reuse was not configured.
+                /// Home reuse was not configured.
                 #[serde(rename = "notConfigured")]
                 NotConfigured,
-                /// Workspace preparation fell back after sandbox setup.
+                /// Home preparation fell back after sandbox setup.
                 #[serde(rename = "sandboxPrepareFallback")]
                 SandboxPrepareFallback,
             }
@@ -2656,9 +2677,9 @@ pub mod webhooks {
                 /// Optional outcome of the sandbox reuse decision.
                 #[serde(default, skip_serializing_if = "Option::is_none")]
                 pub sandbox_reuse_result: Option<RequestSandboxReuseResult>,
-                /// Optional outcome of the workspace reuse decision.
+                /// Optional outcome of the home reuse decision.
                 #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub workspace_reuse_result: Option<RequestWorkspaceReuseResult>,
+                pub home_reuse_result: Option<RequestHomeReuseResult>,
                 /// Native history and published file outputs saved with completion.
                 #[serde(default, skip_serializing_if = "Option::is_none")]
                 pub completion: Option<RequestCompletion>,
@@ -2673,6 +2694,9 @@ pub mod webhooks {
                 /// The sandbox root filesystem ran out of free blocks or inodes.
                 #[serde(rename = "guest_root_filesystem_full")]
                 GuestRootFilesystemFull,
+                /// The sandbox home filesystem ran out of free blocks or inodes.
+                #[serde(rename = "guest_home_filesystem_full")]
+                GuestHomeFilesystemFull,
                 /// The run reached its execution time limit.
                 #[serde(rename = "execution_timeout")]
                 ExecutionTimeout,

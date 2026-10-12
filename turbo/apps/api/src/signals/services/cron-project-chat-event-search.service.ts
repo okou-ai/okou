@@ -452,16 +452,16 @@ async function projectThread(
  * A projector racing this cleanup can recreate an orphan after the selection;
  * the next cron tick will select it again.
  */
-async function cleanupOrphanedSearchProjection(db: Db): Promise<number> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0131; new non-billing transactions are prohibited.
-  return await db.transaction(async (tx) => {
-    const orphanedWatermarks = await tx
-      .select({ chatThreadId: chatEventSearchMessageWatermarks.chatThreadId })
-      .from(chatEventSearchMessageWatermarks)
-      .where(
-        and(
+const cleanupOrphanedSearchProjection$ = command(
+  async ({ set }): Promise<number> => {
+    const db = set(writeDb$);
+    const orphanedWatermarks = db.$with("orphaned_watermarks").as(
+      db
+        .select({ chatThreadId: chatEventSearchMessageWatermarks.chatThreadId })
+        .from(chatEventSearchMessageWatermarks)
+        .where(
           notExists(
-            tx
+            db
               .select({ id: chatThreads.id })
               .from(chatThreads)
               .where(
@@ -471,34 +471,66 @@ async function cleanupOrphanedSearchProjection(db: Db): Promise<number> {
                 ),
               ),
           ),
+        )
+        .orderBy(asc(chatEventSearchMessageWatermarks.chatThreadId))
+        .limit(chatEventSearchThreadBatchSize()),
+    );
+    const selectedThreadIds = db
+      .select({ chatThreadId: orphanedWatermarks.chatThreadId })
+      .from(orphanedWatermarks);
+    const deletedWatermarks = db.$with("deleted_watermarks").as(
+      db
+        .delete(chatEventSearchMessageWatermarks)
+        .where(
+          inArray(
+            chatEventSearchMessageWatermarks.chatThreadId,
+            selectedThreadIds,
+          ),
+        )
+        .returning({
+          chatThreadId: chatEventSearchMessageWatermarks.chatThreadId,
+        }),
+    );
+    const watermarkDeletion = db
+      .$with("watermark_deletion")
+      .as(
+        db
+          .select({ orphanedThreads: count().as("orphaned_threads") })
+          .from(deletedWatermarks),
+      );
+    // Consume the complete watermark DELETE before deleting messages. COUNT
+    // still produces one row at zero: both deletes use the original selection
+    // even when a competing cleaner already deleted its watermarks.
+    const deletedMessages = db.$with("deleted_messages").as(
+      db.delete(chatEventSearchMessages).where(
+        and(
+          inArray(chatEventSearchMessages.chatThreadId, selectedThreadIds),
+          exists(
+            db
+              .select({
+                orphanedThreads: watermarkDeletion.orphanedThreads,
+              })
+              .from(watermarkDeletion)
+              .where(gte(watermarkDeletion.orphanedThreads, 0)),
+          ),
         ),
+      ),
+    );
+    const [stats] = await db
+      .with(
+        orphanedWatermarks,
+        deletedWatermarks,
+        watermarkDeletion,
+        deletedMessages,
       )
-      .orderBy(asc(chatEventSearchMessageWatermarks.chatThreadId))
-      .limit(chatEventSearchThreadBatchSize());
-    if (orphanedWatermarks.length === 0) {
-      return 0;
+      .select({ orphanedThreads: watermarkDeletion.orphanedThreads })
+      .from(watermarkDeletion);
+    if (!stats) {
+      throw new Error("Orphaned chat search cleanup query returned no row");
     }
-
-    const chatThreadIds = orphanedWatermarks.map((watermark) => {
-      return watermark.chatThreadId;
-    });
-    // The watermark is the repair anchor. Remove it first so a racing projector
-    // either commits before the message delete or recreates a discoverable
-    // watermark after this transaction.
-    const deletedWatermarks = await tx
-      .delete(chatEventSearchMessageWatermarks)
-      .where(
-        inArray(chatEventSearchMessageWatermarks.chatThreadId, chatThreadIds),
-      )
-      .returning({
-        chatThreadId: chatEventSearchMessageWatermarks.chatThreadId,
-      });
-    await tx
-      .delete(chatEventSearchMessages)
-      .where(inArray(chatEventSearchMessages.chatThreadId, chatThreadIds));
-    return deletedWatermarks.length;
-  });
-}
+    return stats.orphanedThreads;
+  },
+);
 
 async function loadCandidateThreads(
   db: Pick<Db, "select">,
@@ -565,43 +597,36 @@ async function projectionConvergence(
   return stats;
 }
 
-async function projectChatEventSearch(
-  db: Db,
-  signal: AbortSignal,
-): Promise<ChatEventSearchProjectionStats> {
-  const orphanedThreads = await cleanupOrphanedSearchProjection(db);
-  signal.throwIfAborted();
-  const candidateThreads = await loadCandidateThreads(db);
-  signal.throwIfAborted();
-
-  let threads = 0;
-  let indexedEvents = 0;
-  let deletedDocs = 0;
-  for (const thread of candidateThreads) {
-    signal.throwIfAborted();
-    const stats = await projectThread(db, thread);
-    signal.throwIfAborted();
-    threads += stats.thread;
-    indexedEvents += stats.indexedEvents;
-    deletedDocs += stats.deletedDocs;
-  }
-  const convergence = await projectionConvergence(db);
-  signal.throwIfAborted();
-  return {
-    threads,
-    indexedEvents,
-    deletedDocs,
-    orphanedThreads,
-    convergence,
-  };
-}
-
 export const projectChatEventSearch$ = command(
   async (
     { set },
     signal: AbortSignal,
   ): Promise<ChatEventSearchProjectionStats> => {
     const db = set(writeDb$);
-    return await projectChatEventSearch(db, signal);
+    const orphanedThreads = await set(cleanupOrphanedSearchProjection$);
+    signal.throwIfAborted();
+    const candidateThreads = await loadCandidateThreads(db);
+    signal.throwIfAborted();
+
+    let threads = 0;
+    let indexedEvents = 0;
+    let deletedDocs = 0;
+    for (const thread of candidateThreads) {
+      signal.throwIfAborted();
+      const stats = await projectThread(db, thread);
+      signal.throwIfAborted();
+      threads += stats.thread;
+      indexedEvents += stats.indexedEvents;
+      deletedDocs += stats.deletedDocs;
+    }
+    const convergence = await projectionConvergence(db);
+    signal.throwIfAborted();
+    return {
+      threads,
+      indexedEvents,
+      deletedDocs,
+      orphanedThreads,
+      convergence,
+    };
   },
 );

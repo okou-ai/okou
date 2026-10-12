@@ -33,7 +33,7 @@ import { z } from "zod";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { command } from "ccstate";
 import {
   getStripeClient,
@@ -48,7 +48,15 @@ import {
   type StripeSubscriptionItem,
   type StripeSubscriptionUpdateItemParam,
 } from "../external/stripe-client";
-import { pgTextDecoder } from "../../lib/db-structured-result";
+import {
+  pgTextDecoder,
+  zodDriverValueDecoder,
+} from "../../lib/db-structured-result";
+import {
+  contextJsonProjection,
+  contextJsonRows,
+  contextProjectionSchema,
+} from "./context-rowset";
 import {
   handleUsagePackInvoicePaid$,
   handleUsagePackSubscriptionUpdated,
@@ -718,67 +726,61 @@ export const getUsagePackMigrationState$ = command(
   ): Promise<MigrationStateResult> => {
     const db = set(writeDb$);
     const at = nowDate();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0294; new non-billing transactions are prohibited.
-    const stored = await db.transaction(async (tx) => {
-      const openMigrationQuery = tx
-        .select()
-        .from(usagePackSubscriptionMigrations)
+    const openMigrationQuery = db
+      .select()
+      .from(usagePackSubscriptionMigrations)
+      .where(
+        and(
+          eq(usagePackSubscriptionMigrations.orgId, orgId),
+          inArray(usagePackSubscriptionMigrations.status, [
+            ...OPEN_MIGRATION_STATUSES,
+          ]),
+        ),
+      )
+      .limit(1);
+    let [open] = await openMigrationQuery;
+    signal.throwIfAborted();
+    if (open?.status === "previewed" && open.previewExpiresAt <= at) {
+      // Conditional expiry instead of a row lock. Zero rows means a
+      // concurrent confirmation or preview moved it; read the current row.
+      const [expired] = await db
+        .update(usagePackSubscriptionMigrations)
+        .set({
+          status: "failed",
+          failureReason: "preview_expired",
+          completedAt: at,
+          updatedAt: at,
+        })
         .where(
           and(
-            eq(usagePackSubscriptionMigrations.orgId, orgId),
-            inArray(usagePackSubscriptionMigrations.status, [
-              ...OPEN_MIGRATION_STATUSES,
-            ]),
+            eq(usagePackSubscriptionMigrations.id, open.id),
+            eq(usagePackSubscriptionMigrations.status, "previewed"),
+            lte(usagePackSubscriptionMigrations.previewExpiresAt, at),
           ),
         )
-        .limit(1);
-      let [open] = await openMigrationQuery;
-      if (!open) {
-        return null;
-      }
-      if (open.status === "previewed" && open.previewExpiresAt <= at) {
-        // Conditional expiry instead of a row lock. Zero rows means a
-        // concurrent confirmation or preview moved it; read the current row.
-        const [expired] = await tx
-          .update(usagePackSubscriptionMigrations)
-          .set({
-            status: "failed",
-            failureReason: "preview_expired",
-            completedAt: at,
-            updatedAt: at,
-          })
-          .where(
-            and(
-              eq(usagePackSubscriptionMigrations.id, open.id),
-              eq(usagePackSubscriptionMigrations.status, "previewed"),
-              lte(usagePackSubscriptionMigrations.previewExpiresAt, at),
-            ),
-          )
-          .returning({ id: usagePackSubscriptionMigrations.id });
-        if (expired) {
-          return null;
-        }
+        .returning({ id: usagePackSubscriptionMigrations.id });
+      signal.throwIfAborted();
+      if (expired) {
+        open = undefined;
+      } else {
         [open] = await openMigrationQuery;
-        if (
-          !open ||
-          (open.status === "previewed" && open.previewExpiresAt <= at)
-        ) {
-          return null;
+        signal.throwIfAborted();
+        if (open?.status === "previewed" && open.previewExpiresAt <= at) {
+          open = undefined;
         }
       }
-      const selections = await tx
+    }
+    if (open) {
+      const selections = await db
         .select()
         .from(usagePackSubscriptionMigrationSelections)
         .where(
           eq(usagePackSubscriptionMigrationSelections.migrationId, open.id),
         );
-      return { migration: open, selections };
-    });
-    signal.throwIfAborted();
-    if (stored) {
+      signal.throwIfAborted();
       return {
         status: "ready",
-        state: migrationState(stored.migration, stored.selections),
+        state: migrationState(open, selections),
       };
     }
     const context = await set(loadLegacyMigrationContext$, orgId, signal);
@@ -1174,7 +1176,7 @@ type PrepareMigrationRevisionResult =
 
 const loadMigrationForRevision$ = command(
   async (
-    { set },
+    { get },
     orgId: string,
     migrationId: string,
     signal: AbortSignal,
@@ -1182,37 +1184,43 @@ const loadMigrationForRevision$ = command(
     readonly migration: MigrationRow;
     readonly selections: readonly MigrationSelectionRow[];
   } | null> => {
-    const db = set(writeDb$);
+    const db = get(db$);
+    const selectionColumns = getTableColumns(
+      usagePackSubscriptionMigrationSelections,
+    );
+    const selectionSchema = contextProjectionSchema(selectionColumns);
+    const selections = db
+      .select({
+        payload: contextJsonProjection(selectionColumns)
+          .mapWith(zodDriverValueDecoder(selectionSchema))
+          .as("payload"),
+      })
+      .from(usagePackSubscriptionMigrationSelections)
+      .where(
+        eq(
+          usagePackSubscriptionMigrationSelections.migrationId,
+          usagePackSubscriptionMigrations.id,
+        ),
+      );
     // Read-only preparation: persistMigrationRevisionIntent$ revalidates the
     // stored configuration with an exact-row CAS before any write.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0296; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const [migration] = await tx
-        .select()
-        .from(usagePackSubscriptionMigrations)
-        .where(
-          and(
-            eq(usagePackSubscriptionMigrations.id, migrationId),
-            eq(usagePackSubscriptionMigrations.orgId, orgId),
-          ),
-        )
-        .limit(1);
-      if (!migration) {
-        return null;
-      }
-      const selections = await tx
-        .select()
-        .from(usagePackSubscriptionMigrationSelections)
-        .where(
-          eq(
-            usagePackSubscriptionMigrationSelections.migrationId,
-            migration.id,
-          ),
-        );
-      return { migration, selections };
-    });
+    const [result] = await db
+      .select({
+        migration: usagePackSubscriptionMigrations,
+        selections: contextJsonRows(selections).mapWith(
+          zodDriverValueDecoder(selectionSchema.array()),
+        ),
+      })
+      .from(usagePackSubscriptionMigrations)
+      .where(
+        and(
+          eq(usagePackSubscriptionMigrations.id, migrationId),
+          eq(usagePackSubscriptionMigrations.orgId, orgId),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
-    return result;
+    return result ?? null;
   },
 );
 

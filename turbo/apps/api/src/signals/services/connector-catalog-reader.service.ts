@@ -6,7 +6,6 @@ import type {
   PublicConnectorCatalogListResponse,
   PublicConnectorCatalogDiscoveryResponse,
   PublicConnectorCatalogPermissionDetail,
-  PublicConnectorCatalogStatusItem,
   PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
@@ -18,7 +17,8 @@ import {
   connectorCatalogRuntimeColumns,
   materializeConnectorCatalogDisplayRow,
 } from "./connector-catalog-columns";
-import type { ReadonlyDb } from "../external/db";
+import { computed, type Computed } from "ccstate";
+import { db$, type ReadonlyDb } from "../external/db";
 import type { ConnectorFeatureStates } from "./connector-catalog-feature-states";
 import type { ConnectorCatalogConnection } from "./connector-catalog-connection";
 import {
@@ -30,7 +30,6 @@ import {
   listExternalPublicConnectorCatalogStatus,
   loadCompleteConnectorCatalogSource,
   publicConnectorCatalogPermissionDetailFromSource,
-  publicConnectorCatalogStatusFromSource,
   searchExternalConnectorCatalog,
 } from "./connector-catalog-external-reader.service";
 import {
@@ -52,14 +51,9 @@ interface ConnectorCatalogSearchArgs extends ConnectorCatalogReadArgs {
   readonly keyword: string | undefined;
 }
 
-interface ConnectorCatalogConnectorReadArgs extends ConnectorCatalogReadArgs {
-  readonly connectorSlug: ConnectorSlug;
-}
-
 /**
- * Every caller here is an optional read (connected briefs, connect items by
- * slug, single-item status and permission GETs), so a slug without an entry
- * is omitted or becomes 404. Required paths reject through their own readers.
+ * Connected briefs and connect items by slug are optional reads, so a slug
+ * without an entry is omitted. Required paths reject through their own readers.
  */
 async function loadSlugDisplaySource(
   db: ReadonlyDb,
@@ -114,16 +108,31 @@ export async function listPublicConnectorCatalogStatus(
   return read.status;
 }
 
-export async function listConnectedConnectorBriefs(
-  args: ConnectorCatalogReadArgs & {
-    readonly connectorSlugs: readonly ConnectorSlug[];
-  },
-): Promise<readonly BuiltinConnectorBrief[]> {
-  if (args.connectorSlugs.length === 0) {
-    return [];
-  }
+export function connectorBriefsFromRows(args: {
+  readonly rows: readonly {
+    readonly current: {
+      readonly schemaVersion: number;
+      readonly hash: string;
+    };
+    readonly entry:
+      Parameters<typeof materializeConnectorCatalogDisplayRow>[0] | null;
+  }[];
+  readonly featureStates: ConnectorFeatureStates;
+  readonly connectorSlugs: readonly ConnectorSlug[];
+}): readonly BuiltinConnectorBrief[] {
   return connectorBriefsFromSource({
-    catalog: await loadSlugDisplaySource(args.db, args.connectorSlugs),
+    catalog: connectorCatalogSlugSourceFromRows(
+      args.rows.map((row) => {
+        return {
+          current: row.current,
+          entry:
+            row.entry === null
+              ? null
+              : materializeConnectorCatalogDisplayRow(row.entry),
+        };
+      }),
+      args.connectorSlugs,
+    ),
     featureStates: args.featureStates,
   });
 }
@@ -167,56 +176,55 @@ export async function discoverPublicConnectorCatalogStatus(
   return read.status;
 }
 
-export async function getPublicConnectorCatalogStatus(
-  args: ConnectorCatalogConnectorReadArgs & {
-    readonly connections: readonly ConnectorCatalogConnection[];
-  },
-): Promise<PublicConnectorCatalogStatusItem | null> {
-  return publicConnectorCatalogStatusFromSource({
-    ...args,
-    catalog: await loadSlugDisplaySource(args.db, [args.connectorSlug]),
-  });
-}
-
-export async function getPublicConnectorCatalogPermissionDetail(
-  args: ConnectorCatalogConnectorReadArgs,
-): Promise<PublicConnectorCatalogPermissionDetail | null> {
-  const rows = await args.db
-    .select({
-      current: {
-        schemaVersion: connectorCatalog.schemaVersion,
-        hash: connectorCatalog.hash,
-      },
-      entry: {
-        slug: connectorCatalogRuntimeColumns.slug,
-        authMethods: connectorCatalogRuntimeColumns.authMethods,
-        mcp: connectorCatalogRuntimeColumns.mcp,
-        label: connectorCatalogRuntimeColumns.label,
-        icon: connectorCatalogRuntimeColumns.icon,
-        firewall: connectorCatalogRuntimeColumns.firewall,
-      },
-    })
-    .from(connectorCatalog)
-    .leftJoin(
-      connectorCatalogEntries,
-      connectorCatalogSlugJoin([args.connectorSlug]),
-    )
-    .where(connectorCatalogCurrentWhere());
-  const catalog = connectorCatalogSlugSourceFromRows(
-    rows.map((row) => {
-      if (row.entry === null) {
-        return { current: row.current, entry: null };
-      }
-      const { mcp, ...fields } = row.entry;
-      return {
-        current: row.current,
-        entry: { ...fields, ...(mcp === null ? {} : { mcp }) },
-      };
-    }),
-    [args.connectorSlug],
+export function publicConnectorCatalogPermissionDetail(
+  scope$: Computed<
+    Promise<{
+      readonly connectorSlug: ConnectorSlug;
+      readonly featureStates: ConnectorFeatureStates;
+    }>
+  >,
+) {
+  return computed(
+    async (get): Promise<PublicConnectorCatalogPermissionDetail | null> => {
+      const args = await get(scope$);
+      const rows = await get(db$)
+        .select({
+          current: {
+            schemaVersion: connectorCatalog.schemaVersion,
+            hash: connectorCatalog.hash,
+          },
+          entry: {
+            slug: connectorCatalogRuntimeColumns.slug,
+            authMethods: connectorCatalogRuntimeColumns.authMethods,
+            mcp: connectorCatalogRuntimeColumns.mcp,
+            label: connectorCatalogRuntimeColumns.label,
+            icon: connectorCatalogRuntimeColumns.icon,
+            firewall: connectorCatalogRuntimeColumns.firewall,
+          },
+        })
+        .from(connectorCatalog)
+        .leftJoin(
+          connectorCatalogEntries,
+          connectorCatalogSlugJoin([args.connectorSlug]),
+        )
+        .where(connectorCatalogCurrentWhere());
+      const catalog = connectorCatalogSlugSourceFromRows(
+        rows.map((row) => {
+          if (row.entry === null) {
+            return { current: row.current, entry: null };
+          }
+          const { mcp, ...fields } = row.entry;
+          return {
+            current: row.current,
+            entry: { ...fields, ...(mcp === null ? {} : { mcp }) },
+          };
+        }),
+        [args.connectorSlug],
+      );
+      return publicConnectorCatalogPermissionDetailFromSource({
+        ...args,
+        catalog,
+      });
+    },
   );
-  return publicConnectorCatalogPermissionDetailFromSource({
-    ...args,
-    catalog,
-  });
 }

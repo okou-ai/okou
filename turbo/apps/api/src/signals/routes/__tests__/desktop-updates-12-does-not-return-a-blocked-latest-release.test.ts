@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 
 import { createDesktopUpdatePublicApi } from "./helpers/desktop-update-public";
 
 const context = testContext();
 const {
-  client,
+  appcastRequest,
   mockDesktopUpdateManifest,
   stableManifest,
   darwinArm64Release,
@@ -28,19 +28,12 @@ describe("desktop update routes", () => {
       ),
     );
 
-    const response = await accept(
-      client().productFeed({
-        params: {
-          product: "ai-okou-desktop",
-          channel: "stable",
-          platform: "darwin",
-          arch: "arm64",
-        },
-      }),
-      [200],
-    );
+    const response = await appcastRequest();
+    expect(response.status).toBe(200);
 
-    expect(response.body.currentRelease).toBe("0.2.1");
-    expect(response.body.releases[0]?.updateTo.url).toBe(previousUrl);
+    const responseXml = await response.text();
+
+    expect(responseXml).toContain("<sparkle:version>0.2.1</sparkle:version>");
+    expect(responseXml).toContain(`<enclosure url="${previousUrl}"`);
   });
 });

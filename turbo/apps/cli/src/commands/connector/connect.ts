@@ -75,7 +75,7 @@ function parseConnectorValues(rawValues: readonly string[] | undefined) {
   if (!rawValues || rawValues.length === 0) {
     throw new Error("At least one --value NAME=VALUE is required", {
       cause: new Error(
-        "Example: okou connector connect zendesk --value apiToken=token",
+        "Example: okou connector connect openai --value apiKey=token",
       ),
     });
   }

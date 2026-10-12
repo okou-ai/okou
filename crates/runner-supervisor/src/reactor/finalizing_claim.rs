@@ -195,6 +195,7 @@ async fn run_finalizing_claim(
                     &ctx.idle_pool,
                     &ctx.status,
                     &ctx.reuse_state_notify,
+                    &ctx.idle_destroy_tracker,
                 )
                 .await;
             }
@@ -215,6 +216,7 @@ async fn run_finalizing_claim(
                     &ctx.idle_pool,
                     &ctx.status,
                     &ctx.reuse_state_notify,
+                    &ctx.idle_destroy_tracker,
                 )
                 .await;
             }
@@ -303,6 +305,7 @@ async fn run_finalizing_claim(
                     &ctx.idle_pool,
                     &ctx.status,
                     &ctx.reuse_state_notify,
+                    &ctx.idle_destroy_tracker,
                 )
                 .await;
                 pre_spawn_timing.record_finalizing_handoff(
@@ -544,7 +547,7 @@ async fn complete_claimed_without_sandbox(
                 error: Some(failure.error),
                 sandbox_id: None,
                 sandbox_reuse_result: reuse_result,
-                workspace_reuse_result: None,
+                home_reuse_result: None,
             },
             completion_auth,
         )

@@ -233,7 +233,7 @@ def ancestors(name):
 assert not set(finalizers) & ancestors('ci-gate-turbo')
 for event in ['pull_request', 'merge_group']:
     gate(context(event), True)
-    for name in ts_checks + ['file-size-check']:
+    for name in ts_checks + ['file-size-check', 'lint-runtime-api-compat']:
         gate(context(event) | {f'needs.{name}.result': 'skipped'}, False)
 
 # Main baselines run independently of staging; merge groups do not run benches.

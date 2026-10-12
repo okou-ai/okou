@@ -130,7 +130,7 @@ const PAYABLE_USAGE_PACK_ALLOCATION_STATUSES = [
   "active",
   "pending_invitation",
 ] as const;
-const MANAGED_USAGE_PACK_ALLOCATION_STATUSES = [
+export const MANAGED_USAGE_PACK_ALLOCATION_STATUSES = [
   ...PAYABLE_USAGE_PACK_ALLOCATION_STATUSES,
   "paid_pending_invitation",
 ] as const;
@@ -146,7 +146,7 @@ const USAGE_PACK_PURCHASE_SNAPSHOT_STATUSES = [
   "checkout_pending",
   "purchase_pending",
 ] as const;
-const TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES = [
+export const TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES = [
   "canceled",
   "incomplete_expired",
   "invalid",
@@ -2186,39 +2186,45 @@ function oneUsagePackSubscriptionId(
   return ids.values().next().value ?? null;
 }
 
-async function boundUsagePackSubscriptionId(
+async function resolveUsagePackSubscriptionId(
   db: Pick<Db, "select">,
-  stripeSubscriptionId: string | null,
-  includeTerminal: boolean,
+  args: {
+    readonly stripeSubscriptionId: string | null;
+    readonly metadata: readonly (
+      Readonly<Record<string, string>> | null | undefined
+    )[];
+    readonly includeTerminalBinding?: boolean;
+  },
 ): Promise<string | null> {
-  if (!stripeSubscriptionId) {
-    return null;
-  }
-  const [subscription] = await db
-    .select({ id: usagePackSubscriptions.id })
-    .from(usagePackSubscriptions)
-    .where(
-      includeTerminal
-        ? eq(usagePackSubscriptions.stripeSubscriptionId, stripeSubscriptionId)
-        : and(
-            eq(
+  const stripeSubscriptionId = args.stripeSubscriptionId;
+  const includeTerminal = args.includeTerminalBinding ?? false;
+  if (stripeSubscriptionId) {
+    const [subscription] = await db
+      .select({ id: usagePackSubscriptions.id })
+      .from(usagePackSubscriptions)
+      .where(
+        includeTerminal
+          ? eq(
               usagePackSubscriptions.stripeSubscriptionId,
               stripeSubscriptionId,
+            )
+          : and(
+              eq(
+                usagePackSubscriptions.stripeSubscriptionId,
+                stripeSubscriptionId,
+              ),
+              notInArray(usagePackSubscriptions.subscriptionStatus, [
+                ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
+              ]),
             ),
-            notInArray(usagePackSubscriptions.subscriptionStatus, [
-              ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
-            ]),
-          ),
-    )
-    .limit(1);
-  return subscription?.id ?? null;
-}
-
-async function activeMetadataUsagePackSubscriptionId(
-  db: Pick<Db, "select">,
-  metadata: readonly (Readonly<Record<string, string>> | null | undefined)[],
-): Promise<string | null> {
-  const metadataId = oneUsagePackSubscriptionId(...metadata);
+      )
+      .limit(1);
+    const boundId = subscription?.id ?? null;
+    if (boundId) {
+      return boundId;
+    }
+  }
+  const metadataId = oneUsagePackSubscriptionId(...args.metadata);
   if (!metadataId) {
     return null;
   }
@@ -2235,63 +2241,6 @@ async function activeMetadataUsagePackSubscriptionId(
     )
     .limit(1);
   return subscription?.id ?? null;
-}
-
-export async function stripeSubscriptionUsesMemberUsagePacks(
-  db: Pick<Db, "select">,
-  args: {
-    readonly orgId: string;
-    readonly stripeSubscriptionId: string;
-  },
-): Promise<boolean> {
-  const [allocation] = await db
-    .select({ id: usagePackAllocations.id })
-    .from(usagePackSubscriptions)
-    .innerJoin(
-      usagePackAllocations,
-      eq(
-        usagePackAllocations.usagePackSubscriptionId,
-        usagePackSubscriptions.id,
-      ),
-    )
-    .where(
-      and(
-        eq(usagePackSubscriptions.orgId, args.orgId),
-        eq(
-          usagePackSubscriptions.stripeSubscriptionId,
-          args.stripeSubscriptionId,
-        ),
-        notInArray(usagePackSubscriptions.subscriptionStatus, [
-          ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
-        ]),
-        inArray(usagePackAllocations.status, [
-          ...MANAGED_USAGE_PACK_ALLOCATION_STATUSES,
-        ]),
-      ),
-    )
-    .limit(1);
-  return allocation !== undefined;
-}
-
-async function resolveUsagePackSubscriptionId(
-  db: Pick<Db, "select">,
-  args: {
-    readonly stripeSubscriptionId: string | null;
-    readonly metadata: readonly (
-      Readonly<Record<string, string>> | null | undefined
-    )[];
-    readonly includeTerminalBinding?: boolean;
-  },
-): Promise<string | null> {
-  const boundId = await boundUsagePackSubscriptionId(
-    db,
-    args.stripeSubscriptionId,
-    args.includeTerminalBinding ?? false,
-  );
-  if (boundId) {
-    return boundId;
-  }
-  return await activeMetadataUsagePackSubscriptionId(db, args.metadata);
 }
 
 function stripeObjectId(value: StripeObjectReference | null | undefined) {

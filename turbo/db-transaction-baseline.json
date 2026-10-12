@@ -2,34 +2,9 @@
   "version": 1,
   "sites": [
     {
-      "id": "TX-0001",
-      "file": "turbo/apps/api/scripts/chat-event-sequences/acceptance.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0002",
-      "file": "turbo/apps/api/scripts/chat-event-sequences/acceptance.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0003",
-      "file": "turbo/apps/api/src/lib/__tests__/sql-span-name.test.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0004",
       "file": "turbo/apps/api/src/scripts/benchmark-run-seed.ts",
       "owner": "insertBenchmarkRunBatch$"
-    },
-    {
-      "id": "TX-0005",
-      "file": "turbo/apps/api/src/scripts/dev-seed.ts",
-      "owner": "devSeed"
-    },
-    {
-      "id": "TX-0006",
-      "file": "turbo/apps/api/src/scripts/dev-seed.ts",
-      "owner": "devSeed"
     },
     {
       "id": "TX-0007",
@@ -40,11 +15,6 @@
       "id": "TX-0008",
       "file": "turbo/apps/api/src/signals/routes/agent-instructions.ts",
       "owner": "reserveAgentInstructionPublication$"
-    },
-    {
-      "id": "TX-0009",
-      "file": "turbo/apps/api/src/signals/routes/agent-instructions.ts",
-      "owner": "settleInstructionPublication$"
     },
     {
       "id": "TX-0010",
@@ -62,21 +32,6 @@
       "owner": "updateAgentMetadataInner$"
     },
     {
-      "id": "TX-0013",
-      "file": "turbo/apps/api/src/signals/routes/billing-credit-checkout.ts",
-      "owner": "bootstrapCreditAutoRechargeOrg$"
-    },
-    {
-      "id": "TX-0014",
-      "file": "turbo/apps/api/src/signals/routes/connectors.ts",
-      "owner": "startBuiltinConnectorOauthInner$"
-    },
-    {
-      "id": "TX-0015",
-      "file": "turbo/apps/api/src/signals/routes/connectors.ts",
-      "owner": "startBuiltinConnectorOpenIdInner$"
-    },
-    {
       "id": "TX-0018",
       "file": "turbo/apps/api/src/signals/routes/feishu-oauth.ts",
       "owner": "persistFeishuOAuthConnection"
@@ -87,24 +42,9 @@
       "owner": "sendAgentPhoneVerificationText$"
     },
     {
-      "id": "TX-0021",
-      "file": "turbo/apps/api/src/signals/routes/presentation-templates.ts",
-      "owner": "updateInner$"
-    },
-    {
       "id": "TX-0022",
       "file": "turbo/apps/api/src/signals/routes/runners.ts",
       "owner": "failPoisonQueuedJob"
-    },
-    {
-      "id": "TX-0042",
-      "file": "turbo/apps/api/src/signals/routes/user-templates.ts",
-      "owner": "updateInner$"
-    },
-    {
-      "id": "TX-0043",
-      "file": "turbo/apps/api/src/signals/routes/workflow-copy-publication.ts",
-      "owner": "readWorkflowCopySnapshot$"
     },
     {
       "id": "TX-0044",
@@ -147,21 +87,6 @@
       "owner": "linkAgentPhoneIdentity$"
     },
     {
-      "id": "TX-0053",
-      "file": "turbo/apps/api/src/signals/services/agentphone-shared.service.ts",
-      "owner": "storeOutboundAgentPhoneMessage"
-    },
-    {
-      "id": "TX-0054",
-      "file": "turbo/apps/api/src/signals/services/agentphone.service.ts",
-      "owner": "storeInboundAgentPhoneMessage"
-    },
-    {
-      "id": "TX-0055",
-      "file": "turbo/apps/api/src/signals/services/agentphone.service.ts",
-      "owner": "storeInboundAgentPhoneMessage"
-    },
-    {
       "id": "TX-0056",
       "file": "turbo/apps/api/src/signals/services/artifact-catalog.service.ts",
       "owner": "syncHostedArtifact$"
@@ -172,24 +97,9 @@
       "owner": "syncFileArtifact$"
     },
     {
-      "id": "TX-0059",
-      "file": "turbo/apps/api/src/signals/services/banking-connect.service.ts",
-      "owner": "replacePendingConnectSession"
-    },
-    {
       "id": "TX-0060",
       "file": "turbo/apps/api/src/signals/services/banking-connect.service.ts",
       "owner": "syncCustomerAccounts"
-    },
-    {
-      "id": "TX-0061",
-      "file": "turbo/apps/api/src/signals/services/banking-connect.service.ts",
-      "owner": "persistFinicityWebhookEvent"
-    },
-    {
-      "id": "TX-0062",
-      "file": "turbo/apps/api/src/signals/services/billing-customer.service.ts",
-      "owner": "publishStripeCustomer$"
     },
     {
       "id": "TX-0063",
@@ -202,34 +112,14 @@
       "owner": "restoreSubscription$"
     },
     {
-      "id": "TX-0065",
-      "file": "turbo/apps/api/src/signals/services/browser-authorization.service.ts",
-      "owner": "applyBrowserAuthorizationRequest$"
-    },
-    {
       "id": "TX-0066",
       "file": "turbo/apps/api/src/signals/services/browser-user-actions.service.ts",
       "owner": "persistBrowserUserAction"
     },
     {
-      "id": "TX-0067",
-      "file": "turbo/apps/api/src/signals/services/browser.service.ts",
-      "owner": "commitBrowserStop$"
-    },
-    {
-      "id": "TX-0068",
-      "file": "turbo/apps/api/src/signals/services/browser.service.ts",
-      "owner": "retireBrowserProfileOwnership$"
-    },
-    {
       "id": "TX-0069",
       "file": "turbo/apps/api/src/signals/services/browser.service.ts",
       "owner": "claimStartedProviderInstance$"
-    },
-    {
-      "id": "TX-0070",
-      "file": "turbo/apps/api/src/signals/services/browser.service.ts",
-      "owner": "claimFreshBrowser$"
     },
     {
       "id": "TX-0071",
@@ -257,29 +147,14 @@
       "owner": "publishAutomaticConnection$"
     },
     {
-      "id": "TX-0080",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-oauth.service.ts",
-      "owner": "refreshAutomatic"
-    },
-    {
       "id": "TX-0082",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-credential-runtime.service.ts",
       "owner": "persistConnectorRefresh$"
     },
     {
-      "id": "TX-0083",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-external-code.service.ts",
-      "owner": "createExternalCodeSession"
-    },
-    {
       "id": "TX-0084",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-oauth-device-auth.service.ts",
       "owner": "completeClaimedSession$"
-    },
-    {
-      "id": "TX-0085",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-oauth-device-auth.service.ts",
-      "owner": "createDeviceAuthSession"
     },
     {
       "id": "TX-0086",
@@ -362,16 +237,6 @@
       "owner": "convertCloudflareAccessToPersonal$"
     },
     {
-      "id": "TX-0108",
-      "file": "turbo/apps/api/src/signals/services/computer-use-authorization.service.ts",
-      "owner": "applyChatAuthorizationScope$"
-    },
-    {
-      "id": "TX-0109",
-      "file": "turbo/apps/api/src/signals/services/computer-use-authorization.service.ts",
-      "owner": "applyTeamsAuthorizationScope$"
-    },
-    {
       "id": "TX-0111",
       "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
       "owner": "setDefaultGoogleFormsAccount$"
@@ -380,11 +245,6 @@
       "id": "TX-0112",
       "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
       "owner": "setDefaultConnectorAccount$"
-    },
-    {
-      "id": "TX-0113",
-      "file": "turbo/apps/api/src/signals/services/connector-catalog-sync.service.ts",
-      "owner": "publishCandidate$/result"
     },
     {
       "id": "TX-0115",
@@ -420,11 +280,6 @@
       "id": "TX-0121",
       "file": "turbo/apps/api/src/signals/services/credit-low-balance-alert.service.ts",
       "owner": "refreshOrgMemberCache"
-    },
-    {
-      "id": "TX-0122",
-      "file": "turbo/apps/api/src/signals/services/credit-usage-settlement.service.ts",
-      "owner": "commitUsageBatch$"
     },
     {
       "id": "TX-0123",
@@ -467,16 +322,6 @@
       "owner": "projectThread"
     },
     {
-      "id": "TX-0131",
-      "file": "turbo/apps/api/src/signals/services/cron-project-chat-event-search.service.ts",
-      "owner": "cleanupOrphanedSearchProjection"
-    },
-    {
-      "id": "TX-0132",
-      "file": "turbo/apps/api/src/signals/services/cron-snapshot-chat-events.service.ts",
-      "owner": "publishSnapshotVersion"
-    },
-    {
       "id": "TX-0133",
       "file": "turbo/apps/api/src/signals/services/cron-steer-run-time-budget.service.ts",
       "owner": "persistRunTimeBudgetInput$"
@@ -515,16 +360,6 @@
       "id": "TX-0141",
       "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
       "owner": "storeCustomConnectorOAuth2Connection"
-    },
-    {
-      "id": "TX-0142",
-      "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
-      "owner": "handleAutomaticOAuthRefreshFailure"
-    },
-    {
-      "id": "TX-0143",
-      "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
-      "owner": "refreshAutomaticOAuthAccessToken"
     },
     {
       "id": "TX-0144",
@@ -577,11 +412,6 @@
       "owner": "completeOutboxItem"
     },
     {
-      "id": "TX-0158",
-      "file": "turbo/apps/api/src/signals/services/email-common.service.ts",
-      "owner": "cleanupExpiredEmailOutbox"
-    },
-    {
       "id": "TX-0159",
       "file": "turbo/apps/api/src/signals/services/feishu-chat-ingress.service.ts",
       "owner": "ensureFeishuChatThreadRoute$"
@@ -617,19 +447,9 @@
       "owner": "publishGmailWatch$"
     },
     {
-      "id": "TX-0166",
-      "file": "turbo/apps/api/src/signals/services/google-calendar-automation-watch.service.ts",
-      "owner": "publishGoogleCalendarWatch$"
-    },
-    {
       "id": "TX-0167",
       "file": "turbo/apps/api/src/signals/services/google-calendar-automation-watch.service.ts",
       "owner": "persistLegacyPrimaryCalendarMigration$"
-    },
-    {
-      "id": "TX-0168",
-      "file": "turbo/apps/api/src/signals/services/google-forms-automation-watch.service.ts",
-      "owner": "publishGoogleFormsActivation$"
     },
     {
       "id": "TX-0169",
@@ -662,11 +482,6 @@
       "owner": "commitLegacyPlanInvoice$"
     },
     {
-      "id": "TX-0175",
-      "file": "turbo/apps/api/src/signals/services/mail-draft.service.ts",
-      "owner": "persistLinkedDraft$"
-    },
-    {
       "id": "TX-0176",
       "file": "turbo/apps/api/src/signals/services/mail-notification.service.ts",
       "owner": "commitMailNotification$"
@@ -675,21 +490,6 @@
       "id": "TX-0178",
       "file": "turbo/apps/api/src/signals/services/managed-usage.service.ts",
       "owner": "recordManagedUsage$"
-    },
-    {
-      "id": "TX-0180",
-      "file": "turbo/apps/api/src/signals/services/mcp-chat-message-history.service.ts",
-      "owner": "readHistorySnapshot$"
-    },
-    {
-      "id": "TX-0181",
-      "file": "turbo/apps/api/src/signals/services/mcp-chat-search-query.ts",
-      "owner": "mcpChatSearchCandidates$"
-    },
-    {
-      "id": "TX-0183",
-      "file": "turbo/apps/api/src/signals/services/member-memory-initialization.service.ts",
-      "owner": "initializeMemberMemory$"
     },
     {
       "id": "TX-0184",
@@ -707,24 +507,9 @@
       "owner": "disconnectPersonalModelProviderAccounts$"
     },
     {
-      "id": "TX-0188",
-      "file": "turbo/apps/api/src/signals/services/morning-brief-automation-toggle.service.ts",
-      "owner": "persistMorningBriefAutomationToggle$"
-    },
-    {
       "id": "TX-0189",
       "file": "turbo/apps/api/src/signals/services/morning-brief-schedule-claim.service.ts",
       "owner": "commitMorningBriefScheduleSettlement$"
-    },
-    {
-      "id": "TX-0190",
-      "file": "turbo/apps/api/src/signals/services/morning-brief-timezone.service.ts",
-      "owner": "synchronizeMorningBriefTimezone$"
-    },
-    {
-      "id": "TX-0192",
-      "file": "turbo/apps/api/src/signals/services/notion-automation-event.service.ts",
-      "owner": "repairNotionAutomationProjection$"
     },
     {
       "id": "TX-0193",
@@ -827,29 +612,9 @@
       "owner": "deleteRemovedAutomationConfiguration$"
     },
     {
-      "id": "TX-0213",
-      "file": "turbo/apps/api/src/signals/services/onboarding-completion.command.ts",
-      "owner": "markOrgOnboardingComplete$"
-    },
-    {
-      "id": "TX-0214",
-      "file": "turbo/apps/api/src/signals/services/org-credit-expiration.service.ts",
-      "owner": "expireOrgCreditsAt$"
-    },
-    {
-      "id": "TX-0215",
-      "file": "turbo/apps/api/src/signals/services/org-credit-grant.service.ts",
-      "owner": "grantPurchasedOrgCredits$"
-    },
-    {
       "id": "TX-0216",
       "file": "turbo/apps/api/src/signals/services/org-limited-free-bootstrap.service.ts",
       "owner": "cleanupBootstrapCandidate$"
-    },
-    {
-      "id": "TX-0217",
-      "file": "turbo/apps/api/src/signals/services/org-limited-free-bootstrap.service.ts",
-      "owner": "ensureOrgLimitedFreeBootstrap$"
     },
     {
       "id": "TX-0218",
@@ -882,19 +647,9 @@
       "owner": "claimPiMemoryPhase2Job$"
     },
     {
-      "id": "TX-0224",
-      "file": "turbo/apps/api/src/signals/services/pi-memory-phase2-maintenance.service.ts",
-      "owner": "observeTerminalMaintenance$"
-    },
-    {
       "id": "TX-0225",
       "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-candidate.service.ts",
       "owner": "commitPiMemoryStage1Candidate$"
-    },
-    {
-      "id": "TX-0226",
-      "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-cost.service.ts",
-      "owner": "observePiMemoryStage1Cost$"
     },
     {
       "id": "TX-0227",
@@ -937,11 +692,6 @@
       "owner": "startRunBuiltInAdmission$"
     },
     {
-      "id": "TX-0237",
-      "file": "turbo/apps/api/src/signals/services/run-uploaded-files.service.ts",
-      "owner": "recordRunUploadedFile$"
-    },
-    {
       "id": "TX-0240",
       "file": "turbo/apps/api/src/signals/services/runner-wss-ticket.service.ts",
       "owner": "issueRunnerWssTicket$"
@@ -950,11 +700,6 @@
       "id": "TX-0241",
       "file": "turbo/apps/api/src/signals/services/runner-wss-ticket.service.ts",
       "owner": "consumeRunnerWssTicket$"
-    },
-    {
-      "id": "TX-0243",
-      "file": "turbo/apps/api/src/signals/services/slack-chat-ingress.service.ts",
-      "owner": "findSlackChatThreadRoute$"
     },
     {
       "id": "TX-0244",
@@ -1152,19 +897,9 @@
       "owner": "failExpiredPendingSubscriptionChange"
     },
     {
-      "id": "TX-0294",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-subscription-migration.service.ts",
-      "owner": "getUsagePackMigrationState$"
-    },
-    {
       "id": "TX-0295",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription-migration.service.ts",
       "owner": "persistMigrationPreview$"
-    },
-    {
-      "id": "TX-0296",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-subscription-migration.service.ts",
-      "owner": "loadMigrationForRevision$"
     },
     {
       "id": "TX-0297",
@@ -1227,21 +962,6 @@
       "owner": "commitCollectedEntries$"
     },
     {
-      "id": "TX-0310",
-      "file": "turbo/apps/api/src/signals/services/user-export-durable.service.ts",
-      "owner": "publishStep$"
-    },
-    {
-      "id": "TX-0311",
-      "file": "turbo/apps/api/src/signals/services/user-export-source.service.ts",
-      "owner": "collectThread$"
-    },
-    {
-      "id": "TX-0312",
-      "file": "turbo/apps/api/src/signals/services/user-export-source.service.ts",
-      "owner": "collectMessages$"
-    },
-    {
       "id": "TX-0313",
       "file": "turbo/apps/api/src/signals/services/user-export.service.ts",
       "owner": "startUserExport$"
@@ -1275,11 +995,6 @@
       "id": "TX-0321",
       "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
       "owner": "deleteClerkStorageReferences"
-    },
-    {
-      "id": "TX-0322",
-      "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
-      "owner": "deleteClerkExportReferences"
     },
     {
       "id": "TX-0324",
@@ -1352,11 +1067,6 @@
       "owner": "persistOfficialAutomationMetadata$"
     },
     {
-      "id": "TX-0338",
-      "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
-      "owner": "restoreDisabledWorkflowAutomation$"
-    },
-    {
       "id": "TX-0339",
       "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
       "owner": "persistEnabledWorkflowAutomation$"
@@ -1392,11 +1102,6 @@
       "owner": "commitWorkflowMetadata$"
     },
     {
-      "id": "TX-0347",
-      "file": "turbo/apps/api/src/signals/services/workflow-user-automation-thread.service.ts",
-      "owner": "ensureWorkflowUserAutomationThread$"
-    },
-    {
       "id": "TX-0348",
       "file": "turbo/apps/api/src/signals/services/workflow-webhook-automation-entitlement.service.ts",
       "owner": "disableIneligibleWorkflowWebhookAutomationsForOrg"
@@ -1405,16 +1110,6 @@
       "id": "TX-0349",
       "file": "turbo/apps/api/src/signals/services/x-resource-usage.service.ts",
       "owner": "ingestXResourceUsage$"
-    },
-    {
-      "id": "TX-0350",
-      "file": "turbo/apps/api/src/test-fixtures/connector-catalog.ts",
-      "owner": "publishFixtureGeneration"
-    },
-    {
-      "id": "TX-0355",
-      "file": "turbo/packages/db/scripts/billing-attribution.ts",
-      "owner": "<module>"
     },
     {
       "id": "TX-0356",
@@ -1427,77 +1122,7 @@
       "owner": "applyPendingMigrations"
     },
     {
-      "id": "TX-0358",
-      "file": "turbo/packages/db/scripts/migrations/008-automation-to-workflow-preseed/preseed.ts",
-      "owner": "preseedAutomationVolume"
-    },
-    {
-      "id": "TX-0359",
-      "file": "turbo/packages/db/scripts/migrations/010-custom-model-gateways/backfill.ts",
-      "owner": "main"
-    },
-    {
-      "id": "TX-0360",
-      "file": "turbo/packages/db/scripts/migrations/012-custom-connector-credentials/backfill.ts",
-      "owner": "migrateCandidate"
-    },
-    {
-      "id": "TX-0361",
-      "file": "turbo/packages/db/scripts/migrations/013-kms-account-rotation/business-canary.ts",
-      "owner": "verifyBusinessCanary/installFixture"
-    },
-    {
-      "id": "TX-0362",
-      "file": "turbo/packages/db/scripts/migrations/014-goal-archive-search/recover.ts",
-      "owner": "recoverGoalArchiveSearch"
-    },
-    {
-      "id": "TX-0363",
-      "file": "turbo/packages/db/scripts/migrations/014-goal-archive-search/recover.ts",
-      "owner": "recoverGoalArchiveSearch"
-    },
-    {
-      "id": "TX-0364",
-      "file": "turbo/packages/db/scripts/migrations/016-okou-attribution/database.ts",
-      "owner": "scanDatabase"
-    },
-    {
-      "id": "TX-0365",
-      "file": "turbo/packages/db/scripts/migrations/018-hosted-publication-pointers/backfill.ts",
-      "owner": "transaction"
-    },
-    {
-      "id": "TX-0366",
-      "file": "turbo/packages/db/scripts/migrations/019-member-memory-initialization/backfill.ts",
-      "owner": "initializeMemory"
-    },
-    {
-      "id": "TX-0367",
-      "file": "turbo/packages/db/scripts/pi-memory-stage1-cost.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0368",
-      "file": "turbo/packages/db/scripts/test-agent-grant-table-retirement.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0369",
-      "file": "turbo/packages/db/scripts/test-agent-run-official-workflow-provenance.ts",
-      "owner": "validateAgentRunOfficialWorkflowProvenanceSchema"
-    },
-    {
-      "id": "TX-0370",
-      "file": "turbo/packages/db/scripts/test-auto-model-selection-null.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0371",
-      "file": "turbo/packages/db/scripts/test-built-in-model-keys-permanent.ts",
-      "owner": "validateCanonicalRowLock"
-    },
-    {
-      "id": "TX-0372",
       "file": "turbo/packages/db/scripts/test-built-in-model-keys-permanent.ts",
       "owner": "validateCanonicalRowLock"
     },
@@ -1547,11 +1172,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0382",
-      "file": "turbo/packages/db/scripts/test-connector-permission-baseline-retirement.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0386",
       "file": "turbo/packages/db/scripts/test-file-run-provenance.ts",
       "owner": "<module>"
@@ -1562,22 +1182,7 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0388",
-      "file": "turbo/packages/db/scripts/test-file-thread-associations.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0389",
-      "file": "turbo/packages/db/scripts/test-historical-session-blob-audit.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0390",
-      "file": "turbo/packages/db/scripts/test-historical-session-blob-audit.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0391",
       "file": "turbo/packages/db/scripts/test-historical-session-blob-audit.ts",
       "owner": "<module>"
     },
@@ -1600,11 +1205,6 @@
       "id": "TX-0395",
       "file": "turbo/packages/db/scripts/test-legacy-free-retirement.ts",
       "owner": "<module>"
-    },
-    {
-      "id": "TX-0396",
-      "file": "turbo/packages/db/scripts/test-migration-consistency-schema.ts",
-      "owner": "validateCustomConnectorOauthModeConstraints"
     },
     {
       "id": "TX-0397",
@@ -1642,11 +1242,6 @@
       "owner": "validatePermanentModelCatalogConstraints"
     },
     {
-      "id": "TX-0404",
-      "file": "turbo/packages/db/scripts/test-morning-brief-enrollment-installation.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0407",
       "file": "turbo/packages/db/scripts/test-oauth-contract-hash-retirement.ts",
       "owner": "<module>"
@@ -1655,16 +1250,6 @@
       "id": "TX-0408",
       "file": "turbo/packages/db/scripts/test-oauth-contract-hash-retirement.ts",
       "owner": "<module>"
-    },
-    {
-      "id": "TX-0409",
-      "file": "turbo/packages/db/scripts/test-official-automation-result-email-schema.ts",
-      "owner": "validateOfficialAutomationResultEmailSchema"
-    },
-    {
-      "id": "TX-0410",
-      "file": "turbo/packages/db/scripts/test-org-plan-entitlement-permanent.ts",
-      "owner": "validatePermanentOrgPlanEntitlementState"
     },
     {
       "id": "TX-0411",
@@ -1682,34 +1267,9 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0414",
-      "file": "turbo/packages/db/scripts/test-pi-inference-lifecycle.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0415",
-      "file": "turbo/packages/db/scripts/test-pi-inference-lifecycle.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0416",
-      "file": "turbo/packages/db/scripts/test-pi-memory-stage1-cost.ts",
-      "owner": "validatePiMemoryStage1Cost"
-    },
-    {
       "id": "TX-0417",
       "file": "turbo/packages/db/scripts/test-pi-memory-stage1-cost.ts",
       "owner": "validatePiMemoryStage1Cost"
-    },
-    {
-      "id": "TX-0418",
-      "file": "turbo/packages/db/scripts/test-pi-memory-stage1-cost.ts",
-      "owner": "validatePiMemoryStage1Cost"
-    },
-    {
-      "id": "TX-0419",
-      "file": "turbo/packages/db/scripts/test-plan-entitlement-capability-migration.ts",
-      "owner": "<module>"
     },
     {
       "id": "TX-0420",
@@ -1719,11 +1279,6 @@
     {
       "id": "TX-0421",
       "file": "turbo/packages/db/scripts/test-prepared-domain-trigger-retirement.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0422",
-      "file": "turbo/packages/db/scripts/test-private-artifact-absolute-urls.ts",
       "owner": "<module>"
     },
     {
@@ -1747,11 +1302,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0427",
-      "file": "turbo/packages/db/scripts/test-show-usage-pack-migration.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0428",
       "file": "turbo/packages/db/scripts/test-slack-ingress-failed-status-retirement.ts",
       "owner": "expectCheckViolation"
@@ -1759,11 +1309,6 @@
     {
       "id": "TX-0429",
       "file": "turbo/packages/db/scripts/test-slack-ingress-failed-status-retirement.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0430",
-      "file": "turbo/packages/db/scripts/test-unselectable-thread-model-cleanup.ts",
       "owner": "<module>"
     },
     {

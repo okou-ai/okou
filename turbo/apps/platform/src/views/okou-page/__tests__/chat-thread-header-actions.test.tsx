@@ -306,7 +306,7 @@ test("Undo a header archive from its toast and return to the thread", async () =
   click(menuItemNamed("Archive chat"));
 
   await expect(
-    screen.findByText("Chat archived. A new reply brings it back to Inbox."),
+    screen.findByText("Chat archived."),
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
 

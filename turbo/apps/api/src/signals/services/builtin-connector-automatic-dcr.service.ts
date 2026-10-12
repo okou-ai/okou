@@ -3,7 +3,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { connectors } from "@okouai/db/schema/connector";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import {
   decryptStoredSecretValue,
@@ -12,7 +12,6 @@ import {
 import type {
   McpAutomaticOAuthDcrRegistration,
   McpAutomaticOAuthDcrRegistrationInput,
-  McpAutomaticOAuthDcrClientStore,
   McpAutomaticOAuthDcrStore,
 } from "./mcp-automatic-oauth.service";
 
@@ -83,11 +82,6 @@ export function retireBuiltinDcrRegistrationSql(
         EXCEPT SELECT connector_account_id FROM removed_bindings
       )
   `;
-}
-
-interface BuiltinDcrStoreArgs {
-  readonly db: Db;
-  readonly owner: BuiltinConnectorAutomaticContractOwner;
 }
 
 export const readBuiltinDcrRegistrationByIssuer$ = command(
@@ -180,36 +174,6 @@ export const createBuiltinDcrRegistration$ = command(
     return registration(row);
   },
 );
-
-export function builtinConnectorAutomaticDcrStore(
-  args: BuiltinDcrStoreArgs,
-): McpAutomaticOAuthDcrClientStore {
-  const { db, owner } = args;
-  return {
-    async readBoundClient(id) {
-      const [row] = await db
-        .select()
-        .from(builtinConnectorDcrRegistrations)
-        .where(
-          and(
-            ownerCondition(owner),
-            eq(builtinConnectorDcrRegistrations.id, id),
-          ),
-        )
-        .limit(1);
-      if (!row) {
-        return null;
-      }
-      return {
-        ...registration(row),
-        clientSecret:
-          row.encryptedClientSecret === null
-            ? undefined
-            : await decryptStoredSecretValue(row.encryptedClientSecret),
-      };
-    },
-  };
-}
 
 /** Exact registration invalidation owns its SQL independently of provider I/O. */
 export const retireBuiltinDcrRegistration$ = command(

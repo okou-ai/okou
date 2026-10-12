@@ -34,7 +34,7 @@ async fn connection_evidence_reports_actual_authentication_and_skips_reused_tran
                 assert_eq!(terminal["exit"]["code"], 7);
             }
         }
-        dispatcher.shutdown().await;
+        dispatcher.shutdown().await.unwrap();
         // Failed commands retire the transport; a normal exit reuses it without
         // inventing authentication evidence for the second command.
         let authentications = if failure.is_some() { 2 } else { 1 };
@@ -95,7 +95,7 @@ async fn credential_and_host_identity_failures_report_only_structured_codes() {
             .await;
         let frames = h.request(params()).await;
         assert_eq!(super::terminal(&frames)["failure_reason"], reason);
-        dispatcher.shutdown().await;
+        dispatcher.shutdown().await.unwrap();
         report.assert_calls_async(1).await;
         assert!(h.observed.commands.lock().unwrap().is_empty());
     }
@@ -130,7 +130,7 @@ async fn first_authentication_reports_the_generation_returned_by_tofu() {
         super::terminal(&h.request(params()).await)["type"],
         "finished"
     );
-    dispatcher.shutdown().await;
+    dispatcher.shutdown().await.unwrap();
     report.assert_calls_async(1).await;
 }
 
@@ -183,7 +183,7 @@ async fn failed_authentication_after_tofu_reports_the_new_generation_for_exec_an
             );
             assert_eq!(super::terminal(&frames)["effects"], "not_started");
         }
-        dispatcher.shutdown().await;
+        dispatcher.shutdown().await.unwrap();
         pin.assert_calls_async(1).await;
         report.assert_calls_async(1).await;
         assert!(h.observed.commands.lock().unwrap().is_empty());
@@ -220,7 +220,7 @@ async fn first_use_authority_timeout_does_not_report_a_target_connection_failure
         )
         .await;
     assert_eq!(super::terminal(&frames)["failure_reason"], "timed_out");
-    dispatcher.shutdown().await;
+    dispatcher.shutdown().await.unwrap();
     pin.assert_calls_async(1).await;
     report.assert_calls_async(0).await;
     assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
@@ -253,6 +253,7 @@ async fn report_failure_or_timeout_cannot_hold_the_guest_stream_or_replay_comman
         drop(h.control.try_fence_normal_operations().unwrap());
         tokio::time::timeout(Duration::from_secs(3), dispatcher.shutdown())
             .await
+            .unwrap()
             .unwrap();
         report.assert_calls_async(1).await;
         resolve.assert_calls_async(1).await;
@@ -281,7 +282,7 @@ async fn report_saturation_drops_diagnostics_without_blocking_execution() {
         "finished"
     );
     drop(_held);
-    dispatcher.shutdown().await;
+    dispatcher.shutdown().await.unwrap();
     report.assert_calls_async(0).await;
 }
 
@@ -321,7 +322,7 @@ async fn pre_authentication_timeout_is_a_failure_but_cancellation_is_not() {
             super::terminal(&frames)["failure_reason"],
             if cancel { "cancelled" } else { "timed_out" }
         );
-        dispatcher.shutdown().await;
+        dispatcher.shutdown().await.unwrap();
         report.assert_calls_async(usize::from(!cancel)).await;
         assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
     }

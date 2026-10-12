@@ -34,6 +34,7 @@ cat > "${TMPDIR}/manifest.json" <<'JSON'
     "codex-mock": "e",
     "guest-state-restore": "f",
     "guest-tool-exec": "h",
+    "guest-task-exec": "k",
     "runner-rpc-client": "i",
     "guest-write-file": "g",
     "guest-home-mount": "j"
@@ -66,6 +67,19 @@ assert_contains "$out" "runner-sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 assert_contains "$out" 'rootfs-hash-map={"dev-1":"rootfs-1","dev-2":"rootfs-2"}'
 assert_contains "$out" "selected-rootfs-hash=rootfs-2"
 assert_contains "$out" "selected-snapshot-hash=snapshot-2"
+
+# Every packaged helper must be present before this image can be consumed.
+jq 'del(.guestSha256["guest-task-exec"])' "${TMPDIR}/manifest.json" > "${TMPDIR}/missing-task-helper.json"
+if MANIFEST_PATH="${TMPDIR}/missing-task-helper.json" \
+  HEAD_SHA=abc \
+  JOB_REF=pr-123 \
+  TARGET=aarch64-unknown-linux-musl \
+  PROFILE=vm0/default \
+  METAL_HOSTS=dev-1 \
+  "$MANIFEST" validate >"${TMPDIR}/missing-helper.out" 2>"${TMPDIR}/missing-helper.err"; then
+  fail "expected missing managed task helper to fail"
+fi
+grep -qF "manifest missing guestSha256.guest-task-exec" "${TMPDIR}/missing-helper.err" || fail "expected missing helper diagnostic"
 
 if MANIFEST_PATH="${TMPDIR}/manifest.json" \
   HEAD_SHA=wrong \

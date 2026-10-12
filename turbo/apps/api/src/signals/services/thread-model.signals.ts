@@ -111,6 +111,8 @@ export interface ThreadModelSelection {
   readonly codexServiceTier: "fast" | undefined;
   readonly reasoningEffort: ReasoningEffort | undefined;
   readonly piExecution: boolean;
+  /** The CLI runtime the run executes in; Pi when Pi execution applies. */
+  readonly cliAgentType: string | null;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
 }
 
@@ -139,6 +141,8 @@ interface ThreadModelProviderInput {
 export interface ThreadModelSignals {
   readonly dispatchTiming$: Computed<ApiDispatchTimingCollector>;
   readonly queuedModel$: Computed<Promise<QueuedModelContext>>;
+  /** The admitted model selection before any personal subscription account. */
+  readonly modelSelection$: ThreadModelSelectionSignal;
   readonly subscriptionSelection$: Computed<
     Promise<ThreadModelSelection | ThreadModelError>
   >;
@@ -208,6 +212,7 @@ export function createThreadModelSignals(
   return {
     dispatchTiming$,
     queuedModel$,
+    modelSelection$: selection$,
     subscriptionSelection$,
     requestedFramework$,
     modelRoute$,
@@ -480,6 +485,7 @@ function createModelSelection(
           piExecution,
         }),
         piExecution,
+        cliAgentType: piExecution ? "pi" : model.providerAdmission.cliAgentType,
         queueFirstAssociation: {
           threadId: event.chatThreadId,
           eventId: event.id,

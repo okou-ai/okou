@@ -29,6 +29,13 @@ struct ChildOutput {
     error: Option<String>,
 }
 
+/// Captured child output. Callers inspecting the entire stream must reject truncation.
+pub struct IgnoredChildOutput {
+    pub stdout: String,
+    pub stderr: String,
+    pub truncated: bool,
+}
+
 struct IgnoredChildSession {
     #[cfg(target_os = "linux")]
     session_id: libc::pid_t,
@@ -377,9 +384,9 @@ pub async fn run_ignored_child_test(
     env_guard: (&str, &str),
     child_env: &[(&str, Option<&str>)],
     timeout: Duration,
-) {
+) -> IgnoredChildOutput {
     run_ignored_child_test_with_readiness(child_test_name, env_guard, child_env, timeout, None)
-        .await;
+        .await
 }
 
 async fn run_ignored_child_test_with_readiness(
@@ -388,7 +395,7 @@ async fn run_ignored_child_test_with_readiness(
     child_env: &[(&str, Option<&str>)],
     timeout: Duration,
     readiness_path: Option<&Path>,
-) {
+) -> IgnoredChildOutput {
     let (env_guard_key, env_guard_value) = env_guard;
     assert!(
         !child_test_name.is_empty(),
@@ -488,7 +495,7 @@ async fn run_ignored_child_test_with_readiness(
         }
     };
 
-    let (stdout, stderr) = match output_result {
+    let (stdout, stderr, truncated) = match output_result {
         Ok((mut stdout, mut stderr)) => {
             if let Some(error) = stdout.error.take() {
                 failures.push(format!("read ignored child test stdout: {error}"));
@@ -496,9 +503,11 @@ async fn run_ignored_child_test_with_readiness(
             if let Some(error) = stderr.error.take() {
                 failures.push(format!("read ignored child test stderr: {error}"));
             }
+            let truncated = stdout.truncated_bytes > 0 || stderr.truncated_bytes > 0;
             (
                 format_child_output("stdout", stdout),
                 format_child_output("stderr", stderr),
+                truncated,
             )
         }
         Err(error) => {
@@ -506,6 +515,7 @@ async fn run_ignored_child_test_with_readiness(
             (
                 "[stdout unavailable: output reader task failed]".to_owned(),
                 "[stderr unavailable: output reader task failed]".to_owned(),
+                false,
             )
         }
     };
@@ -547,6 +557,11 @@ async fn run_ignored_child_test_with_readiness(
         stdout.contains(&format!("{CHILD_ENV_GUARD_ACTIVE_PREFIX}{env_guard_key}")),
         "ignored child test {child_test_name} did not activate env guard {env_guard_key}\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
+    IgnoredChildOutput {
+        stdout,
+        stderr,
+        truncated,
+    }
 }
 
 async fn kill_ignored_child(
@@ -717,6 +732,7 @@ mod tests {
 
     const LARGE_SUCCESS_OUTPUT_CHILD_ENV: &str = "OKOU_RUN_IGNORED_CHILD_LARGE_SUCCESS_OUTPUT_TEST";
     const LARGE_OUTPUT_CHILD_ENV: &str = "OKOU_RUN_IGNORED_CHILD_LARGE_OUTPUT_TEST";
+    const CAPTURE_OUTPUT_CHILD_ENV: &str = "OKOU_RUN_IGNORED_CHILD_CAPTURE_OUTPUT_TEST";
     const TIMEOUT_CHILD_ENV: &str = "OKOU_RUN_IGNORED_CHILD_TIMEOUT_TEST";
     #[cfg(target_os = "linux")]
     const OUTPUT_TIMEOUT_CHILD_ENV: &str = "OKOU_RUN_IGNORED_CHILD_OUTPUT_TIMEOUT_TEST";
@@ -729,13 +745,39 @@ mod tests {
 
     #[tokio::test]
     async fn run_ignored_child_test_preserves_tail_after_large_output() {
-        run_ignored_child_test(
+        let output = run_ignored_child_test(
             "test_fixtures::ignored_child::tests::run_ignored_child_test_large_success_output_child",
             (LARGE_SUCCESS_OUTPUT_CHILD_ENV, "1"),
             &[],
             Duration::from_secs(5),
         )
         .await;
+        assert!(output.truncated);
+        assert!(output.stdout.contains("[truncated "));
+    }
+
+    #[tokio::test]
+    async fn run_ignored_child_test_returns_complete_small_output() {
+        let output = run_ignored_child_test(
+            "test_fixtures::ignored_child::tests::run_ignored_child_test_capture_output_child",
+            (CAPTURE_OUTPUT_CHILD_ENV, "1"),
+            &[],
+            Duration::from_secs(5),
+        )
+        .await;
+        assert!(!output.truncated);
+        assert!(output.stdout.contains("child stdout capture"));
+        assert!(output.stderr.contains("child stderr capture"));
+    }
+
+    #[test]
+    #[ignore]
+    fn run_ignored_child_test_capture_output_child() {
+        if !ignored_child_test_env_guard_enabled((CAPTURE_OUTPUT_CHILD_ENV, "1")) {
+            return;
+        }
+        println!("child stdout capture");
+        eprintln!("child stderr capture");
     }
 
     #[test]

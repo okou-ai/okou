@@ -4,13 +4,15 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
-import { DISCORD_OKOU_COMMAND } from "../src/lib/discord-command-definition.ts";
+import { DISCORD_COMMANDS } from "../src/lib/discord-command-definition.ts";
 
 const HELP = `Usage: pnpm --filter api discord:register [options]
 
-Preview /okou registration in an explicitly selected test guild by default.
-Only --apply writes to Discord. The named command is upserted; other application
-commands are preserved. This tool never configures credentials or feature flags.
+Preview Okou command registration in an explicitly selected test guild by default.
+Only --apply writes to Discord. Register /help, /connect, /disconnect, /switch,
+and /model, then remove the old /okou command in the selected scope. Other
+application commands are preserved. This tool never configures credentials or
+feature flags.
 
 Options:
   --guild <id>           Test guild to register in (required without --global)
@@ -55,18 +57,36 @@ function registrationFailure(response) {
   );
 }
 
-function registeredCommandId(registered, applicationId, guildId) {
+function registeredCommandId(registered, name, applicationId, guildId) {
   if (
     registered === null ||
     typeof registered !== "object" ||
     registered.application_id !== applicationId ||
-    registered.name !== DISCORD_OKOU_COMMAND.name ||
-    registered.type !== DISCORD_OKOU_COMMAND.type ||
+    registered.name !== name ||
+    registered.type !== 1 ||
     registered.guild_id !== guildId
   ) {
     throw new Error("Discord returned an unexpected command registration.");
   }
   return requireSnowflake(registered.id, "Registered command ID");
+}
+
+async function commandRequest(url, token, method, body) {
+  const response = await globalThis.fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bot ${token}`,
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    redirect: "error",
+    signal: globalThis.AbortSignal.timeout(15_000),
+  });
+  // Another registration may already have removed the superseded command.
+  if (!response.ok && !(method === "DELETE" && response.status === 404)) {
+    throw registrationFailure(response);
+  }
+  return response;
 }
 
 /**
@@ -115,16 +135,18 @@ export async function runDiscordCommandRegistration(
     ? `https://discord.com/api/v10/applications/${applicationId}/guilds/${guildId}/commands`
     : `https://discord.com/api/v10/applications/${applicationId}/commands`;
   // Discord accepts contexts and installation types only for global commands.
-  const {
-    contexts: _contexts,
-    integration_types: _types,
-    ...guildCommand
-  } = DISCORD_OKOU_COMMAND;
-  const command = guildId ? guildCommand : DISCORD_OKOU_COMMAND;
+  const commands = DISCORD_COMMANDS.map((command) => {
+    const {
+      contexts: _contexts,
+      integration_types: _types,
+      ...guildCommand
+    } = command;
+    return guildId ? guildCommand : command;
+  });
 
   if (!values.apply) {
     process.stdout.write(
-      `${JSON.stringify({ mode: "dry-run", scope, method: "POST", url, command }, null, 2)}\n`,
+      `${JSON.stringify({ mode: "dry-run", scope, method: "POST", url, commands, removeCommands: [{ name: "okou", type: 1 }] }, null, 2)}\n`,
     );
     return;
   }
@@ -136,29 +158,39 @@ export async function runDiscordCommandRegistration(
     );
   }
 
-  const response = await globalThis.fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bot ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(command),
-    redirect: "error",
-    signal: globalThis.AbortSignal.timeout(15_000),
-  });
+  const existingResponse = await commandRequest(url, token, "GET");
+  const existing = await existingResponse.json();
+  if (!Array.isArray(existing)) {
+    throw new Error("Discord returned an unexpected command list.");
+  }
+  const obsoleteIds = existing
+    .filter((command) => {
+      return command?.name === "okou" && command.type === 1;
+    })
+    .map((command) => {
+      return registeredCommandId(command, "okou", applicationId, guildId);
+    });
 
-  if (!response.ok) {
-    throw registrationFailure(response);
+  for (const command of commands) {
+    const response = await commandRequest(url, token, "POST", command);
+    const commandId = registeredCommandId(
+      await response.json(),
+      command.name,
+      applicationId,
+      guildId,
+    );
+    process.stdout.write(
+      `Registered /${command.name} (${commandId}) for ${scope}.\n`,
+    );
   }
 
-  const commandId = registeredCommandId(
-    await response.json(),
-    applicationId,
-    guildId,
-  );
-  process.stdout.write(
-    `Registered /okou (${commandId}) for ${scope}. Verify /okou help in the selected scope.\n`,
-  );
+  // Preserve the existing entry point if any replacement registration fails.
+  for (const commandId of obsoleteIds) {
+    await commandRequest(`${url}/${commandId}`, token, "DELETE");
+    process.stdout.write(`Removed /okou (${commandId}) from ${scope}.\n`);
+  }
+
+  process.stdout.write(`Verify /help in the selected scope: ${scope}.\n`);
 }
 
 if (

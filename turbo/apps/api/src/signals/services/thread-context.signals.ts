@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { computed, type Computed } from "ccstate";
@@ -6,8 +7,11 @@ import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
+  capturedChatThreadSessionSnapshot,
+  type ChatThreadSessionResolution,
   chatThreadSessionIdentity,
   createChatThreadSessionRead,
+  resolveChatThreadSessionSnapshot,
 } from "./chat-session-continuity.service";
 import type { ChatThreadRequestRow } from "./chat-thread-request-facts";
 import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
@@ -26,17 +30,36 @@ import {
   createTelegramThreadContext,
 } from "./thread-run-context.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
+import {
+  createThreadWorkflowContext,
+  type ThreadWorkflowContext,
+} from "./thread-workflow-context.signals";
 
 export interface ThreadAutomationTarget {
   readonly automation: typeof workflowAutomations.$inferSelect;
   readonly agentId: string;
+  readonly workflow: Pick<
+    typeof workflows.$inferSelect,
+    | "id"
+    | "orgId"
+    | "agentId"
+    | "name"
+    | "ownerUserId"
+    | "visibility"
+    | "officialDefinitionName"
+    | "officialInstallationState"
+  >;
 }
 
 type ThreadModels = ReturnType<typeof createThreadModelSignals>;
 
 /** Read-only facts for one picked event, shared by admission and prompting. */
-export interface ThreadContext {
+export interface ThreadContext extends ThreadWorkflowContext {
   readonly sessionRead$: ReturnType<typeof createChatThreadSessionRead>;
+  /** Reuse or rotation of the thread's session for this run's model route. */
+  readonly threadSession$: Computed<
+    Promise<ChatThreadSessionResolution | null>
+  >;
   readonly session$: Computed<
     Promise<ReturnType<typeof chatThreadSessionIdentity>>
   >;
@@ -53,11 +76,17 @@ export interface ThreadContext {
   readonly automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>;
   readonly templates$: ReturnType<typeof createRunTemplates>;
   readonly queuedModel$: ThreadModels["queuedModel$"];
+  readonly modelSelection$: ThreadModels["modelSelection$"];
   readonly subscriptionSelection$: ThreadModels["subscriptionSelection$"];
   readonly requestedFramework$: ThreadModels["requestedFramework$"];
   readonly modelRoute$: ThreadModels["modelRoute$"];
   readonly providerFramework$: ThreadModels["providerFramework$"];
   readonly dispatchTiming$: ThreadModels["dispatchTiming$"];
+  /** Generated once per picked event's claim graph. */
+  readonly runIds$: Computed<{
+    readonly runId: string;
+    readonly newSessionId: string;
+  }>;
   /** Connector accounts chosen from thread, source and default selections. */
   readonly connectorSelection$: ConnectedAccounts["connectorSelection$"];
   readonly connectorSnapshot$: ConnectedAccounts["connectorSnapshot$"];
@@ -93,6 +122,12 @@ export function createThreadContext(
   const discordContext$ = createDiscordThreadContext(pickedEvent$, orgId);
   const automationContext$ = createThreadAutomationContext(pickedEvent$);
   const automationTarget$ = createAutomationTarget(automationContext$);
+  const workflowContext = createThreadWorkflowContext(
+    bootstrap,
+    pickedEvent$,
+    automationContext$,
+    automationTarget$,
+  );
   const templates$ = createRunTemplates(
     pickedEvent$,
     orgId,
@@ -100,6 +135,12 @@ export function createThreadContext(
   );
   const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
   const model = createThreadModelSignals(bootstrap, pickedEvent$);
+  const threadSession$ = createThreadSession(
+    bootstrap,
+    pickedEvent$,
+    sessionRead$,
+    model.subscriptionSelection$,
+  );
   const connectorSourceId$ = createConnectorSourceId(
     pickedEvent$,
     automationContext$,
@@ -113,6 +154,7 @@ export function createThreadContext(
   );
   return {
     sessionRead$,
+    threadSession$,
     session$,
     computerUseHostGrant$,
     slackContext$,
@@ -123,13 +165,21 @@ export function createThreadContext(
     discordContext$,
     automationContext$,
     automationTarget$,
+    workflows$: workflowContext.workflows$,
+    officialWorkflows$: workflowContext.officialWorkflows$,
+    officialWorkflowObservation$: workflowContext.officialWorkflowObservation$,
+    workflowSkills$: workflowContext.workflowSkills$,
+    storage$: workflowContext.storage$,
+    storageCache$: workflowContext.storageCache$,
     templates$,
     queuedModel$: model.queuedModel$,
+    modelSelection$: model.modelSelection$,
     subscriptionSelection$: model.subscriptionSelection$,
     requestedFramework$: model.requestedFramework$,
     modelRoute$: model.modelRoute$,
     providerFramework$: model.providerFramework$,
     dispatchTiming$: model.dispatchTiming$,
+    runIds$: createRunIds(),
     connectorSelection$: connectedAccounts.connectorSelection$,
     connectorSnapshot$: connectedAccounts.connectorSnapshot$,
     connectorThreadSelections$: connectedAccounts.threadSelections$,
@@ -150,6 +200,16 @@ function createAutomationTarget(
       .select({
         automation: workflowAutomationColumns(),
         agentId: workflows.agentId,
+        workflow: {
+          id: workflows.id,
+          orgId: workflows.orgId,
+          agentId: workflows.agentId,
+          name: workflows.name,
+          ownerUserId: workflows.ownerUserId,
+          visibility: workflows.visibility,
+          officialDefinitionName: workflows.officialDefinitionName,
+          officialInstallationState: workflows.officialInstallationState,
+        },
       })
       .from(workflowAutomations)
       .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
@@ -206,5 +266,45 @@ function createThreadHostGrant(
       )
       .limit(1);
     return host ?? null;
+  });
+}
+
+function createRunIds() {
+  return computed(() => {
+    return { runId: randomUUID(), newSessionId: randomUUID() };
+  });
+}
+
+function createThreadSession(
+  bootstrap: AgentRunContextSignals,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  sessionRead$: ReturnType<typeof createChatThreadSessionRead>,
+  selection$: ThreadModels["subscriptionSelection$"],
+) {
+  return computed(async (get): Promise<ChatThreadSessionResolution | null> => {
+    const [event, selection] = await Promise.all([
+      get(pickedEvent$),
+      get(selection$),
+    ]);
+    if (!event) {
+      throw new Error("Chat thread not found while resolving session binding");
+    }
+    // A rejected model selection never reaches session binding.
+    if ("status" in selection) {
+      return null;
+    }
+    const [read, agent] = await Promise.all([
+      get(sessionRead$),
+      get(bootstrap.agent$),
+    ]);
+    return resolveChatThreadSessionSnapshot(
+      capturedChatThreadSessionSnapshot(event.thread, read, agent),
+      {
+        route: {
+          selectedModel: selection.selectedModelOverride,
+          cliAgentType: selection.cliAgentType,
+        },
+      },
+    );
   });
 }

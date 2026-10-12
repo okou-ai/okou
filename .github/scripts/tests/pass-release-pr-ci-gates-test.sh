@@ -4,6 +4,7 @@ set -euo pipefail
 SOURCE_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 PASS_GATES="${SOURCE_REPO_ROOT}/.github/scripts/pass-release-pr-ci-gates.sh"
 CHECK_COVERAGE="${SOURCE_REPO_ROOT}/.github/scripts/check-release-please-workspace-coverage.sh"
+CHECK_CYCLES="${SOURCE_REPO_ROOT}/.github/scripts/check-rust-workspace-cycles.py"
 CHECK_ACTION_PINS="${SOURCE_REPO_ROOT}/.github/scripts/tests/action-pins-test.py"
 SECURITY_WORKFLOW="${SOURCE_REPO_ROOT}/.github/workflows/security.yml"
 TEST_ROOT="$(mktemp -d)"
@@ -39,6 +40,7 @@ mkdir -p \
   "${SEED}/turbo/apps/app/src" \
   "${SEED}/turbo/packages/tool"
 cp "$CHECK_COVERAGE" "${SEED}/.github/scripts/check-release-please-workspace-coverage.sh"
+cp "$CHECK_CYCLES" "${SEED}/.github/scripts/check-rust-workspace-cycles.py"
 cp "$CHECK_ACTION_PINS" "${SEED}/.github/scripts/tests/action-pins-test.py"
 cat > "${SEED}/.github/workflows/pins.yml" <<'YAML'
 jobs:
@@ -127,6 +129,15 @@ git -C "$SEED" commit -qm "chore: release valid"
 VALID_HEAD=$(git -C "$SEED" rev-parse HEAD)
 git -C "$SEED" push -q origin release-valid
 
+git -C "$SEED" switch -q -c release-invalid-cycle release-valid
+printf '\n[dev-dependencies]\nguest-control-tests = { path = "../guest-control-tests" }\n' \
+  >>"${SEED}/native/helper/Cargo.toml"
+cargo generate-lockfile --quiet --manifest-path "${SEED}/native/Cargo.toml"
+git -C "$SEED" add --all
+git -C "$SEED" commit -qm "chore: release invalid cycle"
+INVALID_CYCLE_HEAD=$(git -C "$SEED" rev-parse HEAD)
+git -C "$SEED" push -q origin release-invalid-cycle
+
 git -C "$SEED" switch -q -c release-invalid-pins release-valid
 cat > "${SEED}/.github/workflows/pins.yml" <<'YAML'
 jobs:
@@ -214,6 +225,21 @@ grep -Eq 'name=ci-gate-security .*conclusion=failure' "$GH_LOG" ||
 jq -e 'has("native/guest-control-tests") | not' \
   "${CALLER}/.release-please-manifest.json" >/dev/null ||
   fail "the caller main manifest should remain consistent"
+
+: >"$GH_LOG"
+if invalid_cycle_output=$(run_gates "$INVALID_CYCLE_HEAD" 2>&1); then
+  fail "a development-dependency cycle on the exact release head should fail"
+fi
+assert_contains "$invalid_cycle_output" \
+  "dependency cycle: guest-control-tests -> helper -> guest-control-tests"
+assert_contains "$invalid_cycle_output" "validation failed for exact head $INVALID_CYCLE_HEAD"
+grep -Eq "name=ci-gate-security .*head_sha=${INVALID_CYCLE_HEAD} .*conclusion=failure" "$GH_LOG" ||
+  fail "the cyclic exact release head should receive a failing security gate"
+if grep -Eq 'name=ci-gate-security .*conclusion=success' "$GH_LOG"; then
+  fail "a cyclic release head received an unearned successful security gate"
+fi
+[ "$(git -C "$CALLER" rev-parse HEAD)" = "$MAIN_HEAD" ] ||
+  fail "cycle validation changed the caller checkout"
 
 python3 "$CHECK_ACTION_PINS" "$CALLER" >/dev/null
 : >"$GH_LOG"

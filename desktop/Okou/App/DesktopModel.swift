@@ -206,7 +206,7 @@ final class DesktopModel: ObservableObject {
       defer { compatibilityChecking = false }
       do {
         let revision = compatibilityRevision
-        let response = try await api.request("api/desktop/compatibility", timeout: 10)
+        let response = try await api.request(ApiRoutes.desktopCompatibility, timeout: 10)
         try Task.checkCancellation()
         guard compatibilityRevision == revision else { return }
         let wasRequired = compatibility.required
@@ -263,9 +263,11 @@ final class DesktopModel: ObservableObject {
   }
   func stopForUpdate() async { await host.stop() }
   func downloadLatest() {
-    NSWorkspace.shared.open(
-      configuration.apiURL.appendingPathComponent(
-        "api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/dmg"))
+    let route = ApiRoutes.desktopProductDmgDownload(
+      product: ApiConstants.desktopUpdateLineOkou, channel: "stable", platform: "darwin",
+      arch: "arm64")
+    guard let url = try? APIClient.url(for: route, baseURL: configuration.apiURL) else { return }
+    NSWorkspace.shared.open(url)
   }
   private func sessionToken(forceRefresh: Bool) async throws -> String {
     try await sessionCoordinator.token(forceRefresh: forceRefresh)

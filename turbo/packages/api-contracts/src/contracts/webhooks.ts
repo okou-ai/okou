@@ -18,7 +18,7 @@ import {
   sessionHistoryEncodingSchema,
   sessionHistorySizeBucketSchema,
   secretConnectorMetadataMapSchema,
-  workspaceReuseResultSchema,
+  homeReuseResultSchema,
 } from "./runners";
 import {
   eventSequenceNumberSchema,
@@ -33,9 +33,9 @@ import {
 
 export {
   sandboxReuseResultSchema,
-  workspaceReuseResultSchema,
+  homeReuseResultSchema,
   type SandboxReuseResult,
-  type WorkspaceReuseResult,
+  type HomeReuseResult,
 } from "./runners";
 
 const c = initContract();
@@ -396,26 +396,26 @@ const webhookCompleteBodySchema = z
     // the 255-char cap matches the DB column (defense in depth).
     sandboxId: z.string().max(255).optional(),
     sandboxReuseResult: sandboxReuseResultSchema.optional(),
-    workspaceReuseResult: workspaceReuseResultSchema.optional(),
+    homeReuseResult: homeReuseResultSchema.optional(),
     completion: runCompletionMetadataSchema.optional(),
   })
   .superRefine((body, context) => {
-    const workspaceResult = body.workspaceReuseResult;
-    if (workspaceResult === undefined) {
+    const homeResult = body.homeReuseResult;
+    if (homeResult === undefined) {
       return;
     }
     const sandboxResult = body.sandboxReuseResult;
     const coherentSandboxReuse =
-      sandboxResult === "reused" && workspaceResult === "sandboxReused";
+      sandboxResult === "reused" && homeResult === "sandboxReused";
     const coherentSandboxMiss =
       sandboxResult !== undefined &&
       currentSandboxReuseMissSchema.safeParse(sandboxResult).success &&
-      workspaceResult !== "sandboxReused";
+      homeResult !== "sandboxReused";
     if (!coherentSandboxReuse && !coherentSandboxMiss) {
       context.addIssue({
         code: "custom",
-        path: ["workspaceReuseResult"],
-        message: "workspace reuse result does not match sandbox reuse result",
+        path: ["homeReuseResult"],
+        message: "home reuse result does not match sandbox reuse result",
       });
     }
   });
@@ -759,6 +759,29 @@ export const webhookHeartbeatContract = c.router({
   },
 });
 
+const filesystemCounterSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(Number.MAX_SAFE_INTEGER);
+const filesystemObservationSchema = z
+  .object({
+    used_bytes: filesystemCounterSchema,
+    total_bytes: filesystemCounterSchema,
+    available_bytes: filesystemCounterSchema,
+    used_inodes: filesystemCounterSchema,
+    total_inodes: filesystemCounterSchema,
+    available_inodes: filesystemCounterSchema,
+  })
+  .refine((fs) => {
+    return (
+      fs.used_bytes <= fs.total_bytes &&
+      fs.available_bytes <= fs.total_bytes - fs.used_bytes &&
+      fs.used_inodes <= fs.total_inodes &&
+      fs.available_inodes <= fs.total_inodes - fs.used_inodes
+    );
+  });
+
 /**
  * Metric data point schema
  */
@@ -776,6 +799,9 @@ const metricDataSchema = z.object({
   mem_total: z.number(),
   disk_used: z.number(),
   disk_total: z.number(),
+  // A bad optional filesystem sample must not reject the telemetry batch.
+  rootfs: filesystemObservationSchema.optional().catch(undefined),
+  home: filesystemObservationSchema.optional().catch(undefined),
   control_cpu_usage_usec: z.number().optional(),
   control_cpu_nr_throttled: z.number().optional(),
   control_cpu_throttled_usec: z.number().optional(),
@@ -981,7 +1007,7 @@ const sandboxOperationSchema = z.object({
     .enum(["raw_source", "retained_zstd", "codex_pruning_guard"])
     .optional(),
   session_history_transfer_source: z
-    .enum(["workspace_cache", "home_cache", "downloaded", "inline"])
+    .enum(["home_cache", "downloaded", "inline"])
     .optional(),
   session_history_wire_codec: z.enum(["none", "zstd"]).optional(),
   session_history_codec_decision: z

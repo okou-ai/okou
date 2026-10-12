@@ -505,6 +505,26 @@ describe("Discord product OAuth", () => {
     await status(admin);
     expect(f.messages).toHaveLength(1);
   });
+  it("installs when Discord returns only user scopes in the token and authorization", async () => {
+    const f = fixture();
+    const actor = await f.actor();
+    const started = await start(actor, "install", f.guildId);
+    expect(started.url.searchParams.get("scope")).toBe(
+      "bot applications.commands identify guilds",
+    );
+    await expect(
+      finish(f, started, {
+        scopes: ["identify", "guilds"],
+        tokenScopes: "identify guilds",
+      }),
+    ).resolves.toMatchObject({ status: "installed", httpStatus: 200 });
+    await expect(status(actor)).resolves.toMatchObject({
+      isInstalled: true,
+      isConnected: true,
+      guildId: f.guildId,
+      discordUserId: f.discordUserId,
+    });
+  });
   it("retains a completed personal grant when a later attempt reaps expired opener capabilities", async () => {
     const f = fixture();
     const actor = await f.actor();
@@ -698,8 +718,10 @@ describe("Discord product OAuth", () => {
     expect(f.messages).toHaveLength(1);
   });
   it.each([
-    "token-scopes",
-    "authorization-scopes",
+    "missing-token-identify-scope",
+    "missing-token-guilds-scope",
+    "missing-authorization-identify-scope",
+    "missing-authorization-guilds-scope",
     "audience",
     "identity",
     "missing-guild-proof",
@@ -711,13 +733,20 @@ describe("Discord product OAuth", () => {
     const f = await fixture();
     const actor = await f.actor();
     const started = await start(actor, "install", f.guildId);
-    const options: Partial<Grant> = {};
-    if (variant === "token-scopes") {
+    const options: Partial<Grant> = { scopes: ["identify", "guilds"] };
+    if (variant === "missing-token-identify-scope") {
+      options.tokenScopes = "guilds";
+    }
+    if (variant === "missing-token-guilds-scope") {
+      options.tokenScopes = "identify";
+    }
+    if (variant === "missing-authorization-identify-scope") {
+      options.scopes = ["guilds"];
       options.tokenScopes = "identify guilds";
     }
-    if (variant === "authorization-scopes") {
+    if (variant === "missing-authorization-guilds-scope") {
       options.scopes = ["identify"];
-      options.tokenScopes = "bot applications.commands identify guilds";
+      options.tokenScopes = "identify guilds";
     }
     if (variant === "audience") {
       options.audience = snowflake();

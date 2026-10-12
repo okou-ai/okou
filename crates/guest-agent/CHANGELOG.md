@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.106.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.106.0...guest-agent-v0.106.1) (2026-10-12)
+
+
+### Refactoring
+
+* **runner:** retire workspace protocol and application sql ([#38837](https://github.com/okou-ai/okou/issues/38837)) ([a932f1f](https://github.com/okou-ai/okou/commit/a932f1f86ae10eb624fa3ff3bccc851ba4809a7e))
+
+## [0.106.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.105.2...guest-agent-v0.106.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** complete home cache disk visibility ([#38775](https://github.com/okou-ai/okou/issues/38775)) ([30c5539](https://github.com/okou-ai/okou/commit/30c5539999b0a90dfb693f0cc92c2cd29e6882d2))
+
+
+### Bug Fixes
+
+* remove retired connector references from app and tests ([#38802](https://github.com/okou-ai/okou/issues/38802)) ([63a43d9](https://github.com/okou-ai/okou/commit/63a43d9219560c0dfe29048b023c7910417a9c50))
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+
+## [0.105.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.105.1...guest-agent-v0.105.2) (2026-10-10)
+
+
+### Refactoring
+
+* name native history and pi memory publications explicitly ([#38679](https://github.com/okou-ai/okou/issues/38679)) ([e5b1d4e](https://github.com/okou-ai/okou/commit/e5b1d4ed7bd2f8b54e01352e762e1f9eec5c3a39))
+* simplify pi memory results and finalization diagnostics ([#38765](https://github.com/okou-ai/okou/issues/38765)) ([cdd6a0a](https://github.com/okou-ai/okou/commit/cdd6a0abe3f5880e98a02da8df5143232d7632e1))
+
+
+### Performance Improvements
+
+* **test:** serialize invariant fixture fields once ([#38764](https://github.com/okou-ai/okou/issues/38764)) ([c0810bb](https://github.com/okou-ai/okou/commit/c0810bb46375e538ee1ad47dbf887aee494d97d0))
+
 ## [0.105.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.105.0...guest-agent-v0.105.1) (2026-10-10)
 
 ## [0.105.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.15...guest-agent-v0.105.0) (2026-10-10)

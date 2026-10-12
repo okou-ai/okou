@@ -61,6 +61,11 @@ import {
 } from "./slack-chat-ingress.service";
 import { publishSlackAdminSignal$ } from "./slack-connect.service";
 import {
+  slackLinkSharedEventSchema,
+  unfurlSlackArtifactLinks$,
+  type SlackLinkSharedEvent,
+} from "./slack-link-unfurl.service";
+import {
   slackSessionStoppedEventSchema,
   stopSlackSession$,
   type SlackSessionStoppedEvent,
@@ -89,6 +94,7 @@ interface SlackEventCallback {
     | SlackChannelMessageEvent
     | SlackAppHomeOpenedEvent
     | SlackSessionStoppedEvent
+    | SlackLinkSharedEvent
     | SlackAppUninstalledEvent
     | SlackTokensRevokedEvent;
 }
@@ -1449,6 +1455,51 @@ const handleSlackSessionStoppedEvent$ = command(
   },
 );
 
+const scheduleSlackLinkUnfurl$ = command(
+  ({ set }, payload: SlackEventCallback): Response => {
+    const shared = slackLinkSharedEventSchema.safeParse(payload.event);
+    if (
+      !shared.success ||
+      typeof payload.team_id !== "string" ||
+      !payload.team_id
+    ) {
+      return jsonResponse({ error: "Invalid Slack link event" }, 400);
+    }
+    // chat.unfurl updates the same message/URL on redelivery. Acknowledge
+    // before loading previews, with a bounded lifetime beyond the response.
+    waitUntil(
+      tapError(
+        set(
+          unfurlSlackArtifactLinks$,
+          { workspaceId: payload.team_id, event: shared.data },
+          AbortSignal.timeout(30_000),
+        ),
+        (error) => {
+          L.error("Error unfurling Slack artifact links", { error });
+        },
+      ),
+    );
+    return textResponse("OK");
+  },
+);
+
+const scheduleCanonicalSlackIngress$ = command(({ set }, ingressId: string) => {
+  // Admission is durable and already acknowledged to Slack. Keep the
+  // processor alive if the request signal is cancelled afterward.
+  const backgroundSignal = new AbortController().signal;
+  waitUntil(
+    tapError(
+      set(processCanonicalSlackIngress$, { ingressId }, backgroundSignal),
+      (error) => {
+        L.error("Canonical Slack ingress background processing failed", {
+          ingressId,
+          error,
+        });
+      },
+    ),
+  );
+});
+
 export const handleSlackEvents$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const request = get(request$);
@@ -1470,6 +1521,10 @@ export const handleSlackEvents$ = command(
 
     if (payload.type === "event_callback") {
       const retryNum = request.header("x-slack-retry-num");
+      if (payload.event.type === "link_shared") {
+        // Unfurl retries are safe and must precede the generic retry guard.
+        return set(scheduleSlackLinkUnfurl$, payload);
+      }
       if (payload.event.type === "agent_session_stopped") {
         // Stop retries repeat the same time-bounded mutation; do not discard them
         // with the generic non-message retry guard below.
@@ -1547,27 +1602,7 @@ export const handleSlackEvents$ = command(
             status: ingress.status,
           });
           if (ingress.status !== "processed") {
-            // Admission is durable and already acknowledged to Slack. Keep the
-            // processor alive if the request signal is cancelled afterward.
-            const backgroundSignal = new AbortController().signal;
-            waitUntil(
-              tapError(
-                set(
-                  processCanonicalSlackIngress$,
-                  { ingressId: ingress.id },
-                  backgroundSignal,
-                ),
-                (error) => {
-                  L.error(
-                    "Canonical Slack ingress background processing failed",
-                    {
-                      ingressId: ingress.id,
-                      error,
-                    },
-                  );
-                },
-              ),
-            );
+            set(scheduleCanonicalSlackIngress$, ingress.id);
           }
           return textResponse("OK");
         }

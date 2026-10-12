@@ -2,6 +2,10 @@ import { command, computed } from "ccstate";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
 import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 
 import { providerUnavailable, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -18,8 +22,13 @@ import { executableConnectorSlugs } from "../services/connector-action-resolver.
 import { listConnectorAccountSummaries } from "../services/connector-account-lifecycle.service";
 import {
   isConnectorCatalogUnavailableError,
-  listConnectedConnectorBriefs,
+  connectorBriefsFromRows,
 } from "../services/connector-catalog-reader.service";
+import { connectorCatalogDisplayColumns } from "../services/connector-catalog-columns";
+import {
+  connectorCatalogCurrentWhere,
+  connectorCatalogSlugJoin,
+} from "../services/connector-catalog-slug-source.service";
 import { listComputerUseHosts$ } from "../services/computer-use.service";
 import { customConnectorList } from "../services/custom-connector-list.service";
 import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
@@ -45,12 +54,31 @@ const overview$ = command(async ({ get, set }, signal: AbortSignal) => {
       ? [summary.target.connectorSlug]
       : [];
   });
+  const featureStates = getAllFeatureStates({ ...owner, overrides });
   const catalog = await settle(
-    listConnectedConnectorBriefs({
-      db,
-      featureStates: getAllFeatureStates({ ...owner, overrides }),
-      connectorSlugs: connectedSlugs,
-    }),
+    connectedSlugs.length === 0
+      ? Promise.resolve([])
+      : (async () => {
+          const rows = await db
+            .select({
+              current: {
+                schemaVersion: connectorCatalog.schemaVersion,
+                hash: connectorCatalog.hash,
+              },
+              entry: connectorCatalogDisplayColumns,
+            })
+            .from(connectorCatalog)
+            .leftJoin(
+              connectorCatalogEntries,
+              connectorCatalogSlugJoin(connectedSlugs),
+            )
+            .where(connectorCatalogCurrentWhere());
+          return connectorBriefsFromRows({
+            rows,
+            featureStates,
+            connectorSlugs: connectedSlugs,
+          });
+        })(),
     signal,
   );
   if (!catalog.ok) {

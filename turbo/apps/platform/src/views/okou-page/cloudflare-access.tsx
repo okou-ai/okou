@@ -18,6 +18,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  LoadErrorRow,
   surfaceVariants,
 } from "@okouai/ui";
 import {
@@ -145,27 +146,17 @@ export function CloudflareAccessLoadError() {
   const retry = useSet(retryCloudflareAccess$);
   const signal = useGet(pageSignal$);
   return (
-    <div
-      role="alert"
-      className="flex items-center justify-between gap-3 text-sm"
-    >
-      <p>
-        {t(($) => {
-          return $.cloudflareAccess.loadFailed;
-        })}
-      </p>
-      <Button
-        type="button"
-        variant="outline"
-        onClick={() => {
-          return detach(retry(signal), Reason.DomCallback);
-        }}
-      >
-        {t(($) => {
-          return $.cloudflareAccess.retry;
-        })}
-      </Button>
-    </div>
+    <LoadErrorRow
+      message={t(($) => {
+        return $.cloudflareAccess.loadFailed;
+      })}
+      retryLabel={t(($) => {
+        return $.global.actions.tryAgain;
+      })}
+      onRetry={() => {
+        retry(signal);
+      }}
+    />
   );
 }
 

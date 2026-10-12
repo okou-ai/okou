@@ -22,7 +22,7 @@ import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import type { RouteEntry } from "../route-entry";
 import {
   discordOrgStatus,
-  discordUserBinding,
+  createDiscordUserBinding,
   selectDiscordDmBinding$,
   discordMemberRole,
   disconnectDiscordBinding$,
@@ -207,6 +207,11 @@ const deleteDiscordIntegration$ = command(
   },
 );
 
+const dmSelectionIdentity$ = computed((get) => {
+  return Promise.resolve(get(organizationAuthContext$));
+});
+const dmSelectionBinding$ = createDiscordUserBinding(dmSelectionIdentity$);
+
 const setDmSelection$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const bodyResult = await get(
@@ -217,7 +222,7 @@ const setDmSelection$ = command(async ({ get, set }, signal: AbortSignal) => {
     return bodyResult.response;
   }
   const body = bodyResult.data;
-  const binding = await get(discordUserBinding(auth));
+  const binding = await get(dmSelectionBinding$);
   signal.throwIfAborted();
   if (!binding) {
     return unavailable();

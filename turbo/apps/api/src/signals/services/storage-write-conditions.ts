@@ -1,7 +1,6 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
-import { piMemoryPhase2PublicationReceipts } from "@okouai/db/schema/pi-memory-phase2-publication-receipt";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
@@ -9,12 +8,10 @@ import { and, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
 import type { SandboxAuth } from "../../types/auth";
 import type { piMemoryPhase2MaintenanceCallbackPayloadSchema } from "./pi-memory-phase2-maintenance.service";
 
+import type { MaintenancePublicationBinding } from "./pi-memory-phase2-result";
+
 type MaintenancePayload = ReturnType<
   typeof piMemoryPhase2MaintenanceCallbackPayloadSchema.parse
->;
-export type MaintenanceReceiptBinding = Omit<
-  typeof piMemoryPhase2PublicationReceipts.$inferInsert,
-  "versionId" | "createdAt"
 >;
 export type StorageIdentity = Pick<
   typeof storages.$inferSelect,
@@ -47,34 +44,8 @@ export function maintenanceCallbackCondition(runId: string) {
     eq(agentRunCallbacks.internalKind, "pi-memory:phase2"),
   );
 }
-export function storageMaintenanceReceiptCondition(
-  binding: MaintenanceReceiptBinding,
-) {
-  return and(
-    eq(piMemoryPhase2PublicationReceipts.runId, binding.runId),
-    eq(
-      piMemoryPhase2PublicationReceipts.memoryStorageId,
-      binding.memoryStorageId,
-    ),
-    eq(piMemoryPhase2PublicationReceipts.orgId, binding.orgId),
-    eq(piMemoryPhase2PublicationReceipts.userId, binding.userId),
-    eq(piMemoryPhase2PublicationReceipts.leaseToken, binding.leaseToken),
-    eq(
-      piMemoryPhase2PublicationReceipts.claimedRevision,
-      binding.claimedRevision,
-    ),
-    eq(
-      piMemoryPhase2PublicationReceipts.claimedBaseVersionId,
-      binding.claimedBaseVersionId,
-    ),
-    eq(
-      piMemoryPhase2PublicationReceipts.selectionDigest,
-      binding.selectionDigest,
-    ),
-  );
-}
 export function storageMaintenanceJobCondition(
-  binding: MaintenanceReceiptBinding,
+  binding: MaintenancePublicationBinding,
   currentTime?: Date,
 ) {
   return and(
@@ -83,7 +54,6 @@ export function storageMaintenanceJobCondition(
     eq(piMemoryPhase2Jobs.userId, binding.userId),
     eq(piMemoryPhase2Jobs.status, "leased"),
     eq(piMemoryPhase2Jobs.leaseToken, binding.leaseToken),
-    eq(piMemoryPhase2Jobs.sandboxLeaseToken, binding.leaseToken),
     eq(piMemoryPhase2Jobs.claimedRevision, binding.claimedRevision),
     eq(piMemoryPhase2Jobs.claimedBaseVersionId, binding.claimedBaseVersionId),
     eq(piMemoryPhase2Jobs.claimedSelectionDigest, binding.selectionDigest),
@@ -259,6 +229,7 @@ export function storageMaintenanceCompletionValues(
     lastMaintenanceRevision: payload.claimedRevision,
     lastMaintenanceBaseVersionId: payload.claimedBaseVersionId,
     lastMaintenanceSelectionDigest: payload.selectionDigest,
+    // Outgoing API readers and deployed constraints still require this compatibility output.
     lastMaintenancePublicationVersionId: versionId,
     lastMaintenanceOutcome: published
       ? ("published" as const)

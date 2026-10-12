@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.7.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.4...runner-provider-v0.7.5) (2026-10-12)
+
+
+### Refactoring
+
+* **runner:** retire workspace protocol and application sql ([#38837](https://github.com/okou-ai/okou/issues/38837)) ([a932f1f](https://github.com/okou-ai/okou/commit/a932f1f86ae10eb624fa3ff3bccc851ba4809a7e))
+
+## [0.7.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.3...runner-provider-v0.7.4) (2026-10-11)
+
+## [0.7.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.2...runner-provider-v0.7.3) (2026-10-11)
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+
+## [0.7.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.1...runner-provider-v0.7.2) (2026-10-10)
+
 ## [0.7.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.0...runner-provider-v0.7.1) (2026-10-10)
 
 ## [0.7.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.5...runner-provider-v0.7.0) (2026-10-10)

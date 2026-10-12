@@ -3021,6 +3021,101 @@ describe("INT-01: Slack app deep webhook flows", () => {
       );
     });
 
+    it("keeps the main Slack DM session when its destination channel changes", async () => {
+      const {
+        actor,
+        teamId,
+        slackUserId,
+        firstMessageTs,
+        channelId,
+        runnerGroup,
+      } = preparedScenario;
+      await integrations.postSlackEvent(teamId, {
+        type: "message",
+        channel_type: "im",
+        user: slackUserId,
+        text: "start the main Slack DM before its destination changes",
+        ts: firstMessageTs,
+        channel: channelId,
+      });
+      const firstRunId = await pollSlackRun(runnerGroup);
+      const firstClaim = await runs.claimRunnerJob(firstRunId);
+      await completeSlackTriggeredRun({
+        runId: firstRunId,
+        sandboxToken: firstClaim.sandboxToken,
+        cliAgentType: firstClaim.cliAgentType,
+      });
+      await flushWaitUntilForTest();
+      const firstThread = await ownedThreadWhere(actor, launchedBy(firstRunId));
+
+      const latestChannelId = "D_BDD_SESSION_ROUTING_REPLACEMENT";
+      const latestMessageTs = "2950.000500";
+      await integrations.postSlackEvent(teamId, {
+        type: "message",
+        channel_type: "im",
+        user: slackUserId,
+        text: "continue the main Slack DM in its new destination",
+        ts: latestMessageTs,
+        channel: latestChannelId,
+      });
+      const continuedRunId = await pollSlackRun(runnerGroup);
+      const continuedClaim = await runs.claimRunnerJob(continuedRunId);
+      expect(continuedClaim.resumeSession?.sessionId).toBe(
+        `bdd-slack-cli-${firstRunId}`,
+      );
+      expect(continuedClaim.appendSystemPrompt).toContain(
+        `Channel ID: ${latestChannelId}`,
+      );
+      await expect(
+        ownedThreadWhere(actor, launchedBy(continuedRunId)),
+      ).resolves.toStrictEqual(firstThread);
+      await completeSlackTriggeredRun({
+        runId: continuedRunId,
+        sandboxToken: continuedClaim.sandboxToken,
+        cliAgentType: continuedClaim.cliAgentType,
+        assistantText: "Main Slack DM answer in the new destination",
+      });
+      await flushWaitUntilForTest();
+      expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel: latestChannelId,
+          thread_ts: latestMessageTs,
+          text: "Main Slack DM answer in the new destination",
+        }),
+      );
+
+      const staleDestination = await integrations.postSlackCommand({
+        teamId,
+        userId: slackUserId,
+        channelId,
+        text: "model",
+        triggerId: "trigger-stale-dm-destination",
+      });
+      expect(JSON.stringify(staleDestination)).toContain(
+        "Use /okou model in an existing Okou Slack main DM conversation.",
+      );
+      await expect(
+        integrations.postSlackCommand({
+          teamId,
+          userId: slackUserId,
+          channelId: latestChannelId,
+          text: "model",
+          triggerId: "trigger-latest-dm-destination",
+        }),
+      ).resolves.toBe("");
+      expect(context.mocks.slack.views.open).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trigger_id: "trigger-latest-dm-destination",
+          view: expect.objectContaining({
+            private_metadata: JSON.stringify({
+              channelId: latestChannelId,
+              chatThreadId: firstThread.chatThreadId,
+            }),
+          }),
+        }),
+      );
+    });
+
     it("switches the main Slack DM thread model from the DM model picker", async () => {
       const {
         actor,

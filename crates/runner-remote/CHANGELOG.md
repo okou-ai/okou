@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.13.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.12.1...runner-remote-v0.13.0) (2026-10-12)
+
+
+### Features
+
+* **ssh:** integrate native tailscale saved-host transport ([#39018](https://github.com/okou-ai/okou/issues/39018)) ([e8f8c83](https://github.com/okou-ai/okou/commit/e8f8c83186b0d6881c546048b7198f6dd2d96181))
+
+## [0.12.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.12.0...runner-remote-v0.12.1) (2026-10-11)
+
+## [0.12.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.11.4...runner-remote-v0.12.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** add one-use ticket wss admission ([#37114](https://github.com/okou-ai/okou/issues/37114)) ([0eece1f](https://github.com/okou-ai/okou/commit/0eece1f399b9e1b357fa1b3c1b4a6d0699d21088))
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+
+## [0.11.4](https://github.com/okou-ai/okou/compare/runner-remote-v0.11.3...runner-remote-v0.11.4) (2026-10-10)
+
 ## [0.11.3](https://github.com/okou-ai/okou/compare/runner-remote-v0.11.2...runner-remote-v0.11.3) (2026-10-10)
 
 ## [0.11.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.11.1...runner-remote-v0.11.2) (2026-10-10)

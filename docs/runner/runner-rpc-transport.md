@@ -1,9 +1,8 @@
 # Guest-to-Runner RPC
 
-The transport delivered by #32012 is infrastructure under #31932. Its first
-consumer is the Runner SSH dispatcher (`crates/runner-remote/src/ssh`), installed by
-#32387 for official API-backed Runs. The shared Runner-side owner now lives in
-`crates/runner-remote/src/guest_rpc`; SSH owns only its business handlers and run-local
+The shared Runner-side owner lives in `crates/runner-remote/src/guest_rpc` and
+serves authorized consumers for official API-backed Runs. The SSH dispatcher
+(`crates/runner-remote/src/ssh`) owns only its business handlers and run-local
 authority/session state. The generic transport itself has no API
 calls or business validators. Local/mock sandbox providers expose no capability.
 The private run-scoped Guest duplex (`crates/runner-remote/src/guest_duplex`) has its own
@@ -12,9 +11,8 @@ its request bytes, one-operation lifetime, admission budget and decoder are not
 part of a shared protocol classifier. Both listeners rely on the same sandbox
 assignment and authoritative normal-operation reservation. Idle duplex candidates
 hold no park reservation.
-The SSH CLI and owner/Agent UI are delivered. SSH is generally
-available but still requires current API authority; the transport itself does
-not grant SSH access.
+SSH consumers require current API authority; the transport itself does not
+grant SSH access.
 
 ## Choosing a Guest/Runner transport for new work
 
@@ -40,8 +38,8 @@ Apply these questions in order:
 4. **Does the Runner attach an opaque, long-lived bidirectional channel to the
    exact live Run rather than service one Guest RPC?** Use the separate private
    duplex listener on **52002**. Its connection is not an RPC request and cannot
-   acquire an operation reservation until exact-run attachment; #37027 owns
-   ticket admission before any public WSS acknowledgement. See the
+   acquire an operation reservation until exact-run attachment. Ticket admission
+   must precede any public WSS acknowledgement. See the
    [duplex owner](../../crates/runner-remote/src/guest_duplex).
 
 Port 52000 has one accepted control connection: the Guest control service owns its
@@ -76,9 +74,7 @@ plus EOF, file streaming, deadlines, no-replay and exact-Run/park semantics,
 while proving bounded control latency under congested Guest-origin traffic and
 bounded RPC latency under busy control/file work. Compare paired-image
 fresh/restore/reuse behavior and measured idle and congested tail latency
-before recommending a physical-port change. [#37378](https://github.com/okou-ai/okou/issues/37378)
-tracks that research; this placement guide does not choose or activate a
-consolidation.
+before recommending a physical-port change.
 
 ## Guest boundary
 
@@ -109,7 +105,7 @@ A routing label is not a path, executable, endpoint or permission grant. Run,
 owner and sandbox identity come from the host assignment, never from params.
 Every production method must have explicit dispatch and current-authority checks
 before sensitive work. Unknown/unavailable methods must be rejected before
-invoking a handler. These responsibilities belong to #32013.
+invoking a handler. The method's consumer owns these responsibilities.
 
 The helper connects once to AF_VSOCK CID 2, port 52001, routed by Firecracker to
 the private host listener at `vsock.sock_52001`. There is no destination override,
@@ -203,6 +199,20 @@ setup budget; validated SSH file methods retain their longer method-owned budget
 SSH authorization, session pruning, retained host-work capacity, and diagnostic
 reporting remain with SSH. Run cancellation/Drop synchronously closes its SSH
 registration; normal shutdown joins dispatched requests before session cleanup.
+Required native SSH cleanup also joins its owned SDK resources, control and relay
+IO, runtime and worker thread. Its capacity remains reserved until physical
+retirement completes. A five-second cleanup deadline reports failure while the
+independent cleanup owner retains unfinished work. The dispatcher propagates
+that failure to the executor, which denies sandbox reuse with
+`PostJobCleanupFailure`; closing a guest stream is not cleanup confirmation.
+The shared native transport lives in `runner_remote::tailscale`, independently
+of SSH. It owns node configuration, provisioning, control HTTP, DERP, TCP, and
+diagnostic isolation. SSH converts its private resolved authority into the
+transport's validated configuration and retains host capacity through an opaque
+lease until physical transport retirement. The transport does not depend on SSH
+response types or session ownership, so later consumers can use the same core.
+TLS clients share a consumer-independent WebPKI policy with an explicit crypto
+provider. The official Tailscale SDK remains unchanged.
 The current-run usage consumer described below shares this owner without
 changing helper framing, version or retry behavior.
 
@@ -270,9 +280,9 @@ Runner's assignment-bound usage handler and its protocol tests.
 
 ## Opt-in binary streaming foundation
 
-#33856 (under #33847) adds `/usr/local/bin/runner-rpc-client --stream` for
-bounded binary consumers. #33857 adds `ssh.file.upload` / `ssh.file.download`,
-Runner-owned SFTP and CLI file semantics.
+`/usr/local/bin/runner-rpc-client --stream` provides bounded binary transport.
+The `ssh.file.upload` / `ssh.file.download` consumers own Runner-side SFTP and
+CLI file semantics.
 Only validated file methods extend the Runner request lifetime; unknown methods
 are rejected before resolving authority. Existing exec, session and no-argument
 helper contracts are unchanged.
@@ -320,7 +330,7 @@ Binary counters are separate from control counters. Readers check advertised
 sizes and remaining capacity before allocating bodies; writers validate before
 transmission. The bridge buffers only bounded frames and concurrently forwards
 input and responses. Slow output applies backpressure. An early remote terminal
-ends pending input work, including a stalled producer. A future upload handler
+ends pending input work, including a stalled producer. An upload handler
 must therefore verify its own input End, expected size and completion before
 reporting success; the helper cannot establish those business facts.
 
@@ -340,7 +350,7 @@ timeout or missing acknowledgement causes reconnection or replay.
 
 Runner and its bundled helper are one artifact, including rootfs/snapshot
 identity. No cross-version helper/Runner negotiation is added. Independently
-selected older CLI packages keep the unchanged no-argument interface. A future
+selected older CLI packages keep the unchanged no-argument interface. A
 stream-aware CLI on an old helper must report an unsupported invocation without
 exec fallback. An unavailable method returns the existing JSON unknown-method
 error, which the streaming response reader accepts without binary frames.
@@ -369,6 +379,16 @@ dynamic JIT authorization, credentials, TOFU and execution. Generic events wrap 
 accepted/stdout/stderr data; a generic result wraps SSH finished/error data.
 Exec acceptance, remote exit/signal, base64 decoding, independent 1 MiB output
 caps, truncation and execution effects are SSH semantics, not transport types.
+
+The native Tailscale carrier uses the private JIT response for one exact Run
+registration and configuration generation. It retains unmodified official SDK
+components behind bounded control HTTP and one private TCP stack per physical
+SSH connection. Only an authenticated map's exact peer name or assigned address
+can become that connection's destination. The carrier enters the same russh
+server-proof, TOFU, independent login and connection-pool path as ordinary SSH;
+exec, Sessions, file transfers and forwarding keep their existing contracts.
+Targeted host invalidation retires that host's connections while another host
+sharing the native configuration retains its original live connection.
 
 The CLI adapter owns strict SSH event/result ordering and exit-code
 mapping. Both streams' full output, encoded in bounded chunks, must fit the

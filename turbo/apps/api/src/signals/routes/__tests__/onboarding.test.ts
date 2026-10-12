@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import {
   onboardingCompleteContract,
   onboardingStatusContract,
@@ -11,6 +12,7 @@ import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRouteMocks } from "./helpers/route-test";
+import { billingStatusRoutes } from "../billing-status";
 import { onboardingCompleteRoutes } from "../onboarding-complete";
 import { onboardingStatusRoutes } from "../onboarding-status";
 import { runModelsRoutes } from "../run-models";
@@ -38,6 +40,12 @@ function onboardingCompleteClient() {
 
 function runModelsClient() {
   return setupApp({ context, routes: runModelsRoutes })(runModelsMainContract);
+}
+
+function billingStatusClient() {
+  return setupApp({ context, routes: billingStatusRoutes })(
+    billingStatusContract,
+  );
 }
 
 /**
@@ -274,6 +282,102 @@ describe("member source-first onboarding", () => {
 });
 
 describe("POST /api/onboarding/complete", () => {
+  it("publishes the free Plan before any lazy onboarding status bootstrap and keeps it on replay", async () => {
+    const actor = orgActor();
+    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+    mockDefaultAgentStorage();
+
+    await expect(
+      completeAs(actor, { body: { industry: "marketing" } }),
+    ).resolves.toStrictEqual({
+      onboardingComplete: true,
+      needsOnboarding: false,
+    });
+    // This read cannot bootstrap Plan. Read it before onboarding/status, which
+    // can create the default agent and its entitlement.
+    const billing = await accept(
+      billingStatusClient().get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(billing.body).toMatchObject({
+      tier: "limited-free-1",
+      status: "active",
+      concurrencyLimit: 2,
+      canBuyConcurrency: false,
+      canBuyCredits: false,
+      showUsagePack: false,
+      autoRechargeAllowed: false,
+      restrictedBuiltInModels: true,
+      workflowWebhookAutomationAllowed: false,
+      credits: 0,
+      hasSubscription: false,
+      subscriptionStatus: null,
+    });
+
+    const replay = await accept(
+      onboardingCompleteClient().complete({
+        headers: authHeaders(),
+        body: { industry: "design" },
+      }),
+      [200],
+    );
+    expect(replay.body).toStrictEqual({
+      onboardingComplete: true,
+      needsOnboarding: false,
+    });
+    await expect(completeAs(actor)).resolves.toStrictEqual(replay.body);
+    const afterReplay = await accept(
+      billingStatusClient().get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(afterReplay.body).toStrictEqual(billing.body);
+    await expect(statusAs(actor)).resolves.toMatchObject({
+      onboardingComplete: true,
+      needsOnboarding: false,
+      isAdmin: true,
+      hasOrg: true,
+    });
+  });
+
+  it("completes simultaneous public requests without an industry and preserves completion on replay", async () => {
+    const actor = orgActor();
+    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+    mockDefaultAgentStorage();
+    const client = onboardingCompleteClient();
+
+    const responses = await Promise.all([
+      accept(client.complete({ headers: authHeaders(), body: {} }), [200]),
+      accept(client.complete({ headers: authHeaders(), body: {} }), [200]),
+    ]);
+    for (const response of responses) {
+      expect(response.body).toStrictEqual({
+        onboardingComplete: true,
+        needsOnboarding: false,
+      });
+    }
+    const billing = await accept(
+      billingStatusClient().get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(billing.body).toMatchObject({
+      tier: "limited-free-1",
+      status: "active",
+      concurrencyLimit: 2,
+      restrictedBuiltInModels: true,
+      canBuyCredits: false,
+      credits: 0,
+    });
+    await expect(completeAs(actor)).resolves.toStrictEqual({
+      onboardingComplete: true,
+      needsOnboarding: false,
+    });
+    await expect(statusAs(actor)).resolves.toMatchObject({
+      onboardingComplete: true,
+      needsOnboarding: false,
+      isAdmin: true,
+    });
+  });
+
   it("lets a member complete onboarding instead of refusing them", async () => {
     const member = orgActor("org:member");
 

@@ -36,9 +36,17 @@ pub fn completion_failure_reason(
             if failure
                 .resource_diagnostics
                 .and_then(|diagnostics| diagnostics.failure_kind)
-                == Some(ResourceFailureKind::GuestRootFilesystemFull) =>
+                .is_some_and(ResourceFailureKind::is_filesystem_full) =>
         {
-            Some(RequestFailureReason::GuestRootFilesystemFull)
+            match failure
+                .resource_diagnostics
+                .and_then(|diagnostics| diagnostics.failure_kind)
+            {
+                Some(ResourceFailureKind::GuestHomeFilesystemFull) => {
+                    Some(RequestFailureReason::GuestHomeFilesystemFull)
+                }
+                _ => Some(RequestFailureReason::GuestRootFilesystemFull),
+            }
         }
         ExecutionFailureKind::Generic => failure
             .diagnostic
@@ -315,8 +323,7 @@ impl CompletionPayload {
                     error,
                     sandbox_id: Some(sandbox_id),
                     sandbox_reuse_result: Some(reuse_result),
-                    // Prepared outgoing wire contract until PR5 reader retirement.
-                    workspace_reuse_result: home_reuse_result,
+                    home_reuse_result,
                 },
                 completion_auth,
             )

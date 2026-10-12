@@ -4,7 +4,7 @@ import {
   linkLayoutSegment,
   type LinkLayout,
 } from "@okouai/api-contracts/contracts/link-layout";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, exists, isNotNull, sql } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   RUN_UPLOADED_FILE_SOURCES,
@@ -12,12 +12,15 @@ import {
   type RunUploadedFileSource,
 } from "@okouai/db/schema/run-uploaded-file";
 
+import { z } from "zod";
+
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { logger } from "../../lib/log";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
-  queueArtifactCatalogFileSql,
+  queueRecordedArtifactCatalogFileSql,
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
 import { publishArtifactsChangedForRun$ } from "./artifact-realtime.service";
@@ -113,6 +116,11 @@ interface RecordRunUploadedFileArgs {
   readonly resetPreviewForDeploymentId?: string;
 }
 
+const recordedUploadedFileSchema = z.object({
+  id: z.uuid(),
+  previewImageUrl: z.string().nullable(),
+});
+
 const recordRunUploadedFile$ = command(
   async (
     { set },
@@ -120,83 +128,95 @@ const recordRunUploadedFile$ = command(
     signal: AbortSignal,
   ): Promise<RecordedUploadedFile | undefined> => {
     const db = set(writeDb$);
-    // The file identity, captured thread ownership and durable catalog handoff
-    // must commit together so a failed projection can be recovered.
+    const capturedRun = db
+      .select({
+        chatThreadId: agentRuns.chatThreadId,
+        orgId: agentRuns.orgId,
+      })
+      .from(agentRuns)
+      .where(
+        and(eq(agentRuns.id, args.runId), isNotNull(agentRuns.triggerSource)),
+      )
+      .limit(1);
+    const hasCapturedRun = exists(sql`(SELECT 1 FROM captured_run)`);
+    const capturedThread = sql`(SELECT chat_thread_id FROM captured_run)`;
+    const capturedOrg = sql`(SELECT org_id FROM captured_run)`;
+    const mutation = db
+      .insert(runUploadedFiles)
+      .values({
+        runId: args.runId,
+        source: args.source,
+        externalId: args.externalId,
+        ...args.file,
+        chatThreadId: capturedThread,
+        orgId: sql`CASE WHEN ${hasCapturedRun} THEN ${capturedOrg}
+          ELSE ${sql.param(args.file.orgId ?? null, runUploadedFiles.orgId)} END`,
+      })
+      .onConflictDoUpdate({
+        target: [
+          runUploadedFiles.runId,
+          runUploadedFiles.source,
+          runUploadedFiles.externalId,
+        ],
+        set: {
+          ...args.file,
+          // A qualifying Run's nullable association is authoritative. Without
+          // one, retain the existing thread and the caller's org update/default.
+          chatThreadId: sql`CASE WHEN ${hasCapturedRun} THEN ${capturedThread}
+            ELSE ${runUploadedFiles.chatThreadId} END`,
+          orgId: sql`CASE WHEN ${hasCapturedRun} THEN ${capturedOrg}
+            ELSE ${
+              args.file.orgId === undefined
+                ? sql`${runUploadedFiles.orgId}`
+                : sql`${sql.param(args.file.orgId, runUploadedFiles.orgId)}`
+            } END`,
+          // Mutable legacy aliases lose their preview only when a different
+          // deployment takes over. Versioned rows preserve their preview.
+          ...(args.resetPreviewForDeploymentId === undefined ||
+          args.file.previewImageUrl !== undefined
+            ? {}
+            : {
+                previewImageUrl: sql`case
+                  when ${eq(sql`${runUploadedFiles.metadata}->>'deploymentId'`, args.resetPreviewForDeploymentId)}
+                  then ${runUploadedFiles.previewImageUrl}
+                  else null
+                end`,
+              }),
+          updatedAt: sql`now()`,
+        },
+      })
+      .returning({
+        id: runUploadedFiles.id,
+        org_id: runUploadedFiles.orgId,
+        user_id: runUploadedFiles.userId,
+        chat_thread_id: runUploadedFiles.chatThreadId,
+        run_id: runUploadedFiles.runId,
+        url: runUploadedFiles.url,
+        preview_image_url: runUploadedFiles.previewImageUrl,
+      });
+    // One statement publishes the file identity, captured association and
+    // durable handoff. The handoff reads RETURNING, not a sibling table snapshot.
     const result = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0237; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        const [row] = await tx
-          .insert(runUploadedFiles)
-          .values({
-            runId: args.runId,
-            source: args.source,
-            externalId: args.externalId,
-            ...args.file,
-          })
-          .onConflictDoUpdate({
-            target: [
-              runUploadedFiles.runId,
-              runUploadedFiles.source,
-              runUploadedFiles.externalId,
-            ],
-            set: {
-              ...args.file,
-              // Mutable legacy aliases lose their preview only when a different
-              // deployment takes over. Versioned rows preserve their preview.
-              ...(args.resetPreviewForDeploymentId === undefined ||
-              args.file.previewImageUrl !== undefined
-                ? {}
-                : {
-                    previewImageUrl: sql`case
-                    when ${eq(sql`${runUploadedFiles.metadata}->>'deploymentId'`, args.resetPreviewForDeploymentId)}
-                    then ${runUploadedFiles.previewImageUrl}
-                    else null
-                  end`,
-                  }),
-              updatedAt: sql`now()`,
-            },
-          })
-          .returning({
-            id: runUploadedFiles.id,
-            previewImageUrl: runUploadedFiles.previewImageUrl,
-          });
-        if (row) {
-          // Capture the association at write time so lists never need Run history.
-          const [run] = await tx
-            .select({
-              chatThreadId: agentRuns.chatThreadId,
-              orgId: agentRuns.orgId,
-            })
-            .from(agentRuns)
-            .where(
-              and(
-                eq(agentRuns.id, args.runId),
-                isNotNull(agentRuns.triggerSource),
-              ),
-            )
-            .limit(1);
-          signal.throwIfAborted();
-          if (run) {
-            await tx
-              .update(runUploadedFiles)
-              .set({ chatThreadId: run.chatThreadId, orgId: run.orgId })
-              .where(eq(runUploadedFiles.id, row.id));
-            signal.throwIfAborted();
-          }
-          await tx.execute(queueArtifactCatalogFileSql(row.id));
-          signal.throwIfAborted();
-        }
-        return row;
-      }),
+      (async () => {
+        return parseRawRows(
+          recordedUploadedFileSchema,
+          await db.execute(
+            queueRecordedArtifactCatalogFileSql(sql`
+              WITH captured_run AS (${capturedRun.getSQL()}) ${mutation.getSQL()}
+            `),
+          ),
+        );
+      })(),
       signal,
     );
     if (result.ok) {
-      return result.value;
+      const [row] = result.value;
+      return row;
     }
     if (!isForeignKeyViolation(result.error)) {
       throw result.error;
     }
-    L.debug("Ignored uploaded-file association for deleted run", {
+    L.debug("Ignored uploaded-file association after foreign-key violation", {
       runId: args.runId,
     });
     return undefined;

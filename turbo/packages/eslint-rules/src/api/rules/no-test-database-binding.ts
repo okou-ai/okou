@@ -17,7 +17,7 @@ export const noTestDatabaseBinding = createRule({
     schema: [],
     messages: {
       harnessOnly:
-        "Create/bind PGlite only in the case-owned database harness, not in individual API tests.",
+        "Create/bind PGlite only in the case-owned database harness, not in individual API tests. See docs/api/api-testing.md#case-owned-database-selection.",
     },
   },
   create(context) {

@@ -333,7 +333,10 @@ export function queueArtifactCatalogFileSql(
   handoff?: "if-mutated",
 ): SQL {
   const { ctes, queue } = artifactCatalogFileHandoffSql(
-    fileId,
+    sql`${sql.param(fileId, runUploadedFiles.id)}`,
+    fileMutation
+      ? eq(sql`mutated_file.id`, fileId)
+      : eq(runUploadedFiles.id, fileId),
     fileMutation,
     handoff,
   );
@@ -346,7 +349,8 @@ export function queueChangedArtifactCatalogFileSql(
   fileMutation: SQL,
 ): SQL {
   const { ctes, queue } = artifactCatalogFileHandoffSql(
-    fileId,
+    sql`${sql.param(fileId, runUploadedFiles.id)}`,
+    eq(sql`mutated_file.id`, fileId),
     fileMutation,
     "if-mutated",
   );
@@ -355,8 +359,23 @@ export function queueChangedArtifactCatalogFileSql(
   `;
 }
 
+/** Return an upsert's identity and preview after admitting its durable handoff. */
+export function queueRecordedArtifactCatalogFileSql(fileMutation: SQL): SQL {
+  const fileId = sql`(SELECT id FROM mutated_file)`;
+  const { ctes, queue } = artifactCatalogFileHandoffSql(
+    fileId,
+    eq(sql`mutated_file.id`, fileId),
+    fileMutation,
+    "if-mutated",
+  );
+  return sql`${ctes}, queued_file AS (${queue})
+    SELECT id, preview_image_url AS "previewImageUrl" FROM mutated_file
+  `;
+}
+
 function artifactCatalogFileHandoffSql(
-  fileId: string,
+  fileId: SQL,
+  identityCondition: SQL,
   fileMutation?: SQL,
   handoff?: "if-mutated",
 ) {
@@ -374,9 +393,6 @@ function artifactCatalogFileHandoffSql(
   const mutationCte = fileMutation
     ? sql`mutated_file AS (${fileMutation}),`
     : sql.empty();
-  const identityCondition = fileMutation
-    ? eq(sql`mutated_file.id`, fileId)
-    : eq(runUploadedFiles.id, fileId);
   const nonEmptyUrl = fileMutation
     ? ne(sql`mutated_file.url`, "")
     : ne(runUploadedFiles.url, "");

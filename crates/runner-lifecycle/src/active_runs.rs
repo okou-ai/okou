@@ -346,6 +346,19 @@ impl ActiveRuns {
         })
     }
 
+    /// A process-local liveness fence, not proof that a sandbox is running.
+    /// The receiver becomes Released (or closes) when the guard leaves this
+    /// process; consumers must also verify the exact live sandbox assignment.
+    pub fn watch_live_run(&self, run_id: RunId) -> Option<watch::Receiver<ActiveRunReuseState>> {
+        let entries = lock_entries(&self.entries);
+        let entry = entries.get(&run_id)?;
+        let receiver = entry.reuse_state.subscribe();
+        if *receiver.borrow() == ActiveRunReuseState::Released {
+            return None;
+        }
+        Some(receiver)
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn contains(&self, run_id: RunId) -> bool {
         lock_entries(&self.entries).contains_key(&run_id)

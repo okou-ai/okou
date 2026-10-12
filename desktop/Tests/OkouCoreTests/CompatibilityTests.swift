@@ -3,6 +3,17 @@ import XCTest
 
 @testable import OkouCore
 
+/// A claimed command as the API would deliver it, with only the fields a test varies.
+private func claimedCommand(
+  kind: String = "apps.list", payload: [String: JSONValue] = [:], timeoutMs: Int? = 60_000,
+  createdAt: String, claimedAt: String?
+) -> ComputerUseCommandClaim.Command {
+  ComputerUseCommandClaim.Command(
+    id: "command", kind: .init(rawValue: kind), status: .running, hostId: nil, hostName: nil,
+    payload: payload, result: nil, error: nil, timeoutMs: timeoutMs, createdAt: createdAt,
+    claimedAt: claimedAt, completedAt: nil)
+}
+
 final class CompatibilityTests: XCTestCase {
   func testAPIUsesTheCanonicalServiceOriginForProductionAndPreview() {
     for (source, expected) in [
@@ -43,13 +54,12 @@ final class CompatibilityTests: XCTestCase {
     XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "[1]")
   }
   func testExpiredClaimNeverReceivesAnExecutionBudget() throws {
-    let claim: JSONValue = .object([
-      "timeoutMs": .number(1000), "createdAt": .string("2026-10-07T00:00:00.000Z"),
-      "claimedAt": .string("2026-10-07T00:00:02.000Z"),
-    ])
+    let claim = claimedCommand(
+      timeoutMs: 1000, createdAt: "2026-10-07T00:00:00.000Z",
+      claimedAt: "2026-10-07T00:00:02.000Z")
     XCTAssertEqual(try CommandBudget(command: claim, claimStarted: .now).remaining, 0)
-    var invalid = claim
-    invalid["claimedAt"] = .null
+    let invalid = claimedCommand(
+      timeoutMs: 1000, createdAt: "2026-10-07T00:00:00.000Z", claimedAt: nil)
     XCTAssertThrowsError(try CommandBudget(command: invalid, claimStarted: .now))
   }
   func testAppStateAndIndexedClickCrossTheRealCommandPipeline() async throws {
@@ -78,27 +88,36 @@ final class CompatibilityTests: XCTestCase {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     let time = formatter.string(from: Date())
-    var command: JSONValue = .object([
-      "kind": .string("app.state"), "payload": .object(["app": .string("Calculator")]),
-      "timeoutMs": .number(60000), "createdAt": .string(time), "claimedAt": .string(time),
-    ])
-    let state = await executor.execute(command, claimStarted: .now)
+    let state = await executor.execute(
+      claimedCommand(
+        kind: "app.state", payload: ["app": .string("Calculator")], createdAt: time,
+        claimedAt: time),
+      claimStarted: .now)
     XCTAssertEqual(state["status"].string, "succeeded")
     XCTAssertTrue(state["result"]["appState"].string!.contains("0 standard window"))
     XCTAssertTrue(
       state["result"]["appState"].string!.contains("1 button 7, Secondary Actions: Raise"))
     XCTAssertEqual(state["result"]["elements"], .null)
     let snapshot = state["result"]["snapshotId"]
-    command["kind"] = .string("element.click")
-    command["payload"] = .object([
-      "app": .string("Calculator"), "elementIndex": .number(1), "snapshotId": snapshot,
-    ])
-    let click = await executor.execute(command, claimStarted: .now)
+    let click = await executor.execute(
+      claimedCommand(
+        kind: "element.click",
+        payload: [
+          "app": .string("Calculator"), "elementIndex": .number(1), "snapshotId": snapshot,
+        ],
+        createdAt: time, claimedAt: time),
+      claimStarted: .now)
     XCTAssertEqual(click["status"].string, "succeeded")
     XCTAssertEqual(click["result"]["action"]["elementId"].string, "button-7")
     XCTAssertEqual(click["result"]["action"]["snapshotId"], snapshot)
-    command["payload"]["app"] = .string("Other app")
-    let wrongApp = await executor.execute(command, claimStarted: .now)
+    let wrongApp = await executor.execute(
+      claimedCommand(
+        kind: "element.click",
+        payload: [
+          "app": .string("Other app"), "elementIndex": .number(1), "snapshotId": snapshot,
+        ],
+        createdAt: time, claimedAt: time),
+      claimStarted: .now)
     XCTAssertEqual(wrongApp["status"].string, "failed")
     XCTAssertEqual(wrongApp["error"]["code"].string, "invalid_arguments")
     await executor.stop()

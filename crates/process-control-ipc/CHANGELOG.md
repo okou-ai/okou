@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.1](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.0...process-control-ipc-v0.5.1) (2026-10-12)
+
+## [0.5.0](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.4.1...process-control-ipc-v0.5.0) (2026-10-11)
+
+
+### Features
+
+* **guest:** manage task runtimes and image batch workers ([#38762](https://github.com/okou-ai/okou/issues/38762)) ([dbb7241](https://github.com/okou-ai/okou/commit/dbb72412af7116f4e27419057023d51bbf203613))
+
+
+### Bug Fixes
+
+* **rust:** remove the release graph cycle between contracts and ipc ([#39029](https://github.com/okou-ai/okou/issues/39029)) ([5441dd6](https://github.com/okou-ai/okou/commit/5441dd60e2c24925c05cb2f38df002c396920b25))
+
 ## [0.4.1](https://github.com/vm0-ai/vm0/compare/process-control-ipc-v0.4.0...process-control-ipc-v0.4.1) (2026-09-10)
 
 

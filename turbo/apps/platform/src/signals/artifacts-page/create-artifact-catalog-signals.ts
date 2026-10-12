@@ -21,7 +21,7 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { publicAttachmentUrl } from "../../views/okou-page/attachment-url.ts";
 import { apiClient$ } from "../api-client.ts";
-import { onRejection } from "../utils.ts";
+import { bestEffort, onRejection } from "../utils.ts";
 import {
   createImageLoadSignals,
   type ImageLoadSignals,
@@ -88,6 +88,8 @@ export interface ArtifactCatalogSignals {
   readonly selectedKind$: Computed<ArtifactCatalogKind | null>;
   readonly setKind$: Command<void, [ArtifactCatalogKind | null]>;
   readonly reload$: Command<void, []>;
+  /** `reload$` that settles with the re-read, so its control can show it. */
+  readonly retry$: Command<Promise<void>, [AbortSignal]>;
   readonly catalog$: Computed<Promise<ArtifactCatalogPage>>;
   readonly loadMore$: Command<Promise<void>, [AbortSignal]>;
   readonly loadThroughArtifact$: Command<Promise<void>, [string, AbortSignal]>;
@@ -351,6 +353,17 @@ export function createArtifactCatalogSignals(
   });
   const selection = createCatalogSelectionSignals(catalog$, internalReload$);
 
+  /**
+   * A reader-started re-read. It resolves when the first page settles rather
+   * than when the request is queued, so the Try again control stays pending
+   * for exactly as long as the read runs. A failed re-read is rendered by the
+   * catalog's own error branch, so the command only waits for it.
+   */
+  const retry$ = command(async ({ get, set }, signal: AbortSignal) => {
+    set(reload$);
+    await bestEffort(get(catalog$), signal);
+  });
+
   const loadThroughArtifact$ = command(
     async ({ get, set }, artifactId: string, signal: AbortSignal) => {
       while (true) {
@@ -386,6 +399,7 @@ export function createArtifactCatalogSignals(
     }),
     setKind$,
     reload$,
+    retry$,
     catalog$,
     loadMore$,
     loadThroughArtifact$,

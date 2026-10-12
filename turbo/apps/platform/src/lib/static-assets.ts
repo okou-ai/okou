@@ -10,11 +10,11 @@ export const platformEmptyPrivateAgentsImg = platformStaticAssetUrl(
   "views/agents-page/assets/empty-private-agents-9a8d7e3750b6.png",
 );
 export const platformOkouWordmarkDarkImg =
-  "https://static.okou.io/public/okou-logo-wordmark-dark-40e256bb155e.svg";
+  "https://static.okou.io/public/okou-logo-wordmark-dark-8ac16c9eb76d.svg";
 export const platformOkouWordmarkLightImg =
-  "https://static.okou.io/public/okou-logo-wordmark-light-1ebf9d0e7a50.svg";
+  "https://static.okou.io/public/okou-logo-wordmark-light-339c25e162eb.svg";
 export const platformOkouMarkDarkImg =
-  "https://static.okou.io/public/okou-logo-mark-dark-00337dd44485.svg";
+  "https://static.okou.io/public/okou-logo-mark-dark-fa1157132610.svg";
 export const platformFeishuAppIconImg = platformStaticAssetUrl(
   "views/zero-page/assets/feishu/app-icon-okou-fefdc683bf5c.png",
 );

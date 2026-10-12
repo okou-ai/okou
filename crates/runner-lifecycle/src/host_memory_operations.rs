@@ -140,13 +140,15 @@ pub enum MemoryOperationError {
     AccountingPoisoned,
     #[error("memory operation ownership invariant failed")]
     OwnershipInvariant,
+    #[error("selected resource changed; capture a fresh candidate before retrying")]
+    ResourceChanged,
     #[error("operation has already transferred or settled")]
     Consumed,
     #[error("rebind must preserve the operation's purpose and priority class")]
     PurposeChanged,
     #[error("fresh backing must be captured exactly once, before phase completion")]
     BackingAlreadyCaptured,
-    #[error("fresh preparation has no confirmed captured backing capability")]
+    #[error("preparation or retirement has no captured backing capability")]
     MissingBacking,
     #[error("exact provider backing exit is unconfirmed")]
     UnconfirmedBacking,
@@ -186,6 +188,10 @@ struct Shared {
 }
 
 impl HostMemoryOperations {
+    pub(crate) fn same_authority(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.shared, &other.shared)
+    }
+
     pub fn new(
         policy: MemoryOperationPolicy,
         source: Arc<dyn MemoryObservationSource>,

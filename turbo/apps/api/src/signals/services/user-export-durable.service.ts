@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
-import { and, asc, eq, gt, gte, inArray, count, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, sql } from "drizzle-orm";
 import { createSHA256 } from "hash-wasm";
 import { z } from "zod";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
@@ -47,7 +47,7 @@ import { settleIncludingAbort } from "../utils";
 import {
   authorizeUserExportPage$,
   currentUserExportMemberships$,
-  userExportPublicationChecks,
+  userExportPublicationAuthoritySql,
 } from "./user-export-authorization.service";
 
 const log = logger("service:user-export-durable");
@@ -95,6 +95,36 @@ interface Runtime {
   readonly bucket: string;
   readonly job: ClaimedBackgroundJob;
   readonly state: ExportState;
+}
+
+const publicationOutcomeSchema = z.object({
+  authorized: z.boolean(),
+  leased: z.boolean(),
+  published: z.boolean(),
+  handed_off: z.boolean(),
+});
+
+function publicationResult(
+  outcome: z.infer<typeof publicationOutcomeSchema> | undefined,
+): boolean {
+  if (!outcome) {
+    throw new Error("Export publication returned no outcome");
+  }
+  if (!outcome.authorized) {
+    throw new Error(
+      "Access to an exported resource changed before publication",
+    );
+  }
+  if (!outcome.leased) {
+    return false;
+  }
+  if (!outcome.published) {
+    throw new Error("Export owner or result is no longer publishable");
+  }
+  if (!outcome.handed_off) {
+    throw new Error("Export publication lost its notification handoff");
+  }
+  return true;
 }
 
 interface EntryPosition {
@@ -1012,83 +1042,90 @@ const publishStep$ = command(
     }
     const orgIds = await set(currentUserExportMemberships$, job.userId, signal);
     signal.throwIfAborted();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0310; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      for (const check of userExportPublicationChecks({
-        jobId: job.id,
-        userId: job.userId,
-        orgIds,
-      })) {
-        const [expected] = await tx
-          .select({ count: count() })
-          .from(sql`(${check.expected}) expected_resources`);
-        const [actual] = await tx
-          .select({ count: count() })
-          .from(sql`(${check.readable}) locked_resources`);
-        signal.throwIfAborted();
-        if (!expected || !actual || expected.count !== actual.count) {
-          throw new Error(
-            "Access to an exported resource changed before publication",
-          );
-        }
-      }
-      signal.throwIfAborted();
-      const transition = { job, checkpoint: { ...state, phase: "notify" } };
-      // The checkpoint and its byte inventory are one recoverable business write.
-      // Lock before evaluating database-clock expiry, never extend this lease.
-      const [lease] = await tx
-        .select({ id: backgroundJobs.id })
-        .from(backgroundJobs)
-        .where(backgroundJobActiveLease(job))
-        .limit(1)
-        .for("update", { skipLocked: true });
-      signal.throwIfAborted();
-      if (!lease) {
-        return false;
-      }
-      const [progress] = await tx
-        .update(backgroundJobs)
-        .set({
-          status: "pending",
-          checkpoint: transition.checkpoint,
-          failureCount: 0,
-          lastError: null,
-          availableAt: backgroundJobDatabaseNow,
-          leaseId: null,
-          leaseExpiresAt: null,
-          updatedAt: backgroundJobDatabaseNow,
-        })
-        .where(backgroundJobActiveLease(job))
-        .returning({ id: backgroundJobs.id });
-      signal.throwIfAborted();
-      if (!(progress !== undefined)) {
-        return false;
-      }
-      const published = await tx
-        .update(exportJobs)
-        .set({
-          status: "completed",
-          s3Key: state.resultKey,
-          completedAt: nowDate(),
-          expiresAt: new Date(
-            nowDate().getTime() + PRESIGNED_URL_TTL_SECONDS * 1000,
-          ),
-          error: null,
-        })
-        .where(
-          and(
-            eq(exportJobs.id, job.id),
-            eq(exportJobs.userId, job.userId),
-            inArray(exportJobs.status, ["pending", "running"]),
-          ),
-        )
-        .returning({ id: exportJobs.id });
-      signal.throwIfAborted();
-      if (published.length !== 1) {
-        throw new Error("Export owner or result is no longer publishable");
-      }
-      return true;
+    const authority = userExportPublicationAuthoritySql({
+      jobId: job.id,
+      userId: job.userId,
+      orgIds,
     });
+    const lease = db
+      .select({
+        id: backgroundJobs.id,
+        leaseExpiresAt: backgroundJobs.leaseExpiresAt,
+      })
+      .from(backgroundJobs)
+      .where(
+        and(
+          backgroundJobActiveLease(job),
+          sql`(select authorized from export_publication_authority)`,
+        ),
+      )
+      .limit(1)
+      .for("update", { skipLocked: true });
+    // Decide expiry after the original lease lock, before either mutation. Its
+    // held row protects this identity through publication and handoff; another
+    // expiry check after publication could strand a completed ZIP. Only actual
+    // publication RETURNING can advance the checkpoint, so a deleted target
+    // leaves both writes untouched.
+    const publication = db
+      .update(exportJobs)
+      .set({
+        status: "completed",
+        s3Key: state.resultKey,
+        completedAt: nowDate(),
+        expiresAt: new Date(
+          nowDate().getTime() + PRESIGNED_URL_TTL_SECONDS * 1000,
+        ),
+        error: null,
+      })
+      .where(
+        and(
+          eq(exportJobs.id, sql`(select id from export_publication_decision)`),
+          eq(exportJobs.userId, job.userId),
+          inArray(exportJobs.status, ["pending", "running"]),
+        ),
+      )
+      .returning({ id: exportJobs.id });
+    const handoff = db
+      .update(backgroundJobs)
+      .set({
+        status: "pending",
+        checkpoint: { ...state, phase: "notify" },
+        failureCount: 0,
+        lastError: null,
+        availableAt: backgroundJobDatabaseNow,
+        leaseId: null,
+        leaseExpiresAt: null,
+        updatedAt: backgroundJobDatabaseNow,
+      })
+      .where(
+        and(
+          eq(backgroundJobs.id, sql`(select id from published_export)`),
+          eq(backgroundJobs.kind, job.kind),
+          eq(backgroundJobs.handlerVersion, job.handlerVersion),
+          eq(backgroundJobs.status, "running"),
+          eq(backgroundJobs.leaseId, job.leaseId),
+        ),
+      )
+      .returning({ id: backgroundJobs.id });
+    const [outcome] = parseRawRows(
+      publicationOutcomeSchema,
+      await db.execute(sql`
+        with export_publication_authority as materialized (${authority}),
+        export_publication_lease as materialized (${lease.getSQL()}),
+        export_publication_decision as materialized (
+          select id from export_publication_lease
+          where lease_expires_at > ${backgroundJobDatabaseNow}
+        ),
+        published_export as (${publication.getSQL()}),
+        export_publication_handoff as (${handoff.getSQL()})
+        select (select authorized from export_publication_authority) as authorized,
+          exists (select 1 from export_publication_decision) as leased,
+          exists (select 1 from published_export) as published,
+          exists (select 1 from export_publication_handoff) as handed_off
+      `),
+    );
+    signal.throwIfAborted();
+    return publicationResult(outcome);
   },
 );
 

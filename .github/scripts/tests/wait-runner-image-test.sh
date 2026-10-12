@@ -33,6 +33,7 @@ cat > "${TMPDIR}/manifest.json" <<'JSON'
     "codex-mock": "e",
     "guest-state-restore": "f",
     "guest-tool-exec": "h",
+    "guest-task-exec": "k",
     "runner-rpc-client": "i",
     "guest-write-file": "g",
     "guest-home-mount": "j"

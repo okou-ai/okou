@@ -1185,54 +1185,50 @@ const persistLinkedDraft$ = command(
     const db = set(writeDb$);
     const mailDraftId = randomUUID();
     const createdAt = nowDate();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0175; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const [inserted] = await tx
-        .insert(mailDrafts)
-        .values({
-          id: mailDraftId,
-          chatThreadId: args.threadId,
-          connectorId: args.connection.connectorId,
-          gmailDraftId: args.gmail.draftId,
-          gmailThreadId: args.gmail.threadId,
-          gmailMessageId: args.gmail.messageId,
-          status: "draft",
-          senderName: args.gmail.details.fromName ?? null,
-          senderAddress: args.gmail.details.from,
-          subject: args.gmail.details.subject,
-          createdAt,
-          updatedAt: createdAt,
-        })
-        .onConflictDoNothing({
-          target: [mailDrafts.connectorId, mailDrafts.gmailDraftId],
-        })
-        .returning({ id: mailDrafts.id });
-      if (!inserted) {
-        const [existing] = await tx
-          .select({ id: mailDrafts.id, chatThreadId: mailDrafts.chatThreadId })
-          .from(mailDrafts)
-          .where(
-            and(
-              eq(mailDrafts.connectorId, args.connection.connectorId),
-              eq(mailDrafts.gmailDraftId, args.gmail.draftId),
-            ),
-          )
-          .limit(1);
-        if (!existing?.chatThreadId) {
-          throw new Error("Linked Gmail draft row could not be loaded");
-        }
-        return {
-          kind: "existing" as const,
-          mailDraftId: existing.id,
-          chatThreadId: existing.chatThreadId,
-        };
+    const [inserted] = await db
+      .insert(mailDrafts)
+      .values({
+        id: mailDraftId,
+        chatThreadId: args.threadId,
+        connectorId: args.connection.connectorId,
+        gmailDraftId: args.gmail.draftId,
+        gmailThreadId: args.gmail.threadId,
+        gmailMessageId: args.gmail.messageId,
+        status: "draft",
+        senderName: args.gmail.details.fromName ?? null,
+        senderAddress: args.gmail.details.from,
+        subject: args.gmail.details.subject,
+        createdAt,
+        updatedAt: createdAt,
+      })
+      .onConflictDoNothing({
+        target: [mailDrafts.connectorId, mailDrafts.gmailDraftId],
+      })
+      .returning({ id: mailDrafts.id });
+    if (!inserted) {
+      const [existing] = await db
+        .select({ id: mailDrafts.id, chatThreadId: mailDrafts.chatThreadId })
+        .from(mailDrafts)
+        .where(
+          and(
+            eq(mailDrafts.connectorId, args.connection.connectorId),
+            eq(mailDrafts.gmailDraftId, args.gmail.draftId),
+          ),
+        )
+        .limit(1);
+      if (!existing?.chatThreadId) {
+        throw new Error("Linked Gmail draft row could not be loaded");
       }
       return {
-        kind: "created" as const,
-        mailDraftId,
+        kind: "existing" as const,
+        mailDraftId: existing.id,
+        chatThreadId: existing.chatThreadId,
       };
-    });
-    return result;
+    }
+    return {
+      kind: "created" as const,
+      mailDraftId,
+    };
   },
 );
 

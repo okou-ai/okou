@@ -1,9 +1,13 @@
 use std::{
+    future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
 
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::{
+    io::{AsyncRead, AsyncWrite, ReadBuf},
+    time::{Instant, Sleep},
+};
 use tokio_rustls::client::TlsStream;
 
 /// Owned post-authentication RFB stream. The selected authentication entry point
@@ -12,8 +16,18 @@ pub struct AuthenticatedStream<S> {
     inner: Inner<S>,
 }
 
+fn expired() -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::TimedOut, "RFB authentication expired")
+}
+
 enum Inner<S> {
     VerifiedTls(Box<TlsStream<S>>),
+    VerifiedGssapi {
+        stream: Box<TlsStream<S>>,
+        expires_at: Instant,
+        timer: Pin<Box<Sleep>>,
+    },
+    Expired,
     AppleDhRaw(S),
     AppleVncPasswordRaw(S),
     AppleSrpRaw(S),
@@ -23,6 +37,30 @@ enum Inner<S> {
 }
 
 impl<S> AuthenticatedStream<S> {
+    pub(crate) fn verified_gssapi(stream: TlsStream<S>, expires_at: Instant) -> Self {
+        Self {
+            inner: Inner::VerifiedGssapi {
+                stream: Box::new(stream),
+                expires_at,
+                timer: Box::pin(tokio::time::sleep_until(expires_at)),
+            },
+        }
+    }
+    pub(crate) fn authentication_expires_at(&self) -> Option<Instant> {
+        match &self.inner {
+            Inner::VerifiedGssapi { expires_at, .. } => Some(*expires_at),
+            _ => None,
+        }
+    }
+    fn expire(&mut self, cx: &mut Context<'_>) {
+        if let Inner::VerifiedGssapi {
+            expires_at, timer, ..
+        } = &mut self.inner
+            && (*expires_at <= Instant::now() || timer.as_mut().poll(cx).is_ready())
+        {
+            self.inner = Inner::Expired;
+        }
+    }
     pub(crate) fn verified_tls(stream: TlsStream<S>) -> Self {
         Self {
             inner: Inner::VerifiedTls(Box::new(stream)),
@@ -72,8 +110,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for AuthenticatedStream<S> {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
-        match &mut self.get_mut().inner {
+        let this = self.get_mut();
+        this.expire(cx);
+        match &mut this.inner {
             Inner::VerifiedTls(stream) => Pin::new(stream.as_mut()).poll_read(cx, buf),
+            Inner::VerifiedGssapi { stream, .. } => Pin::new(stream.as_mut()).poll_read(cx, buf),
+            Inner::Expired => Poll::Ready(Err(expired())),
             Inner::AppleDhRaw(stream) => Pin::new(stream).poll_read(cx, buf),
             Inner::AppleVncPasswordRaw(stream) => Pin::new(stream).poll_read(cx, buf),
             Inner::AppleSrpRaw(stream) => Pin::new(stream).poll_read(cx, buf),
@@ -90,8 +132,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for AuthenticatedStream<S> {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<std::io::Result<usize>> {
-        match &mut self.get_mut().inner {
+        let this = self.get_mut();
+        this.expire(cx);
+        match &mut this.inner {
             Inner::VerifiedTls(stream) => Pin::new(stream.as_mut()).poll_write(cx, buf),
+            Inner::VerifiedGssapi { stream, .. } => Pin::new(stream.as_mut()).poll_write(cx, buf),
+            Inner::Expired => Poll::Ready(Err(expired())),
             Inner::AppleDhRaw(stream) => Pin::new(stream).poll_write(cx, buf),
             Inner::AppleVncPasswordRaw(stream) => Pin::new(stream).poll_write(cx, buf),
             Inner::AppleSrpRaw(stream) => Pin::new(stream).poll_write(cx, buf),
@@ -102,8 +148,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for AuthenticatedStream<S> {
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        match &mut self.get_mut().inner {
+        let this = self.get_mut();
+        this.expire(cx);
+        match &mut this.inner {
             Inner::VerifiedTls(stream) => Pin::new(stream.as_mut()).poll_flush(cx),
+            Inner::VerifiedGssapi { stream, .. } => Pin::new(stream.as_mut()).poll_flush(cx),
+            Inner::Expired => Poll::Ready(Err(expired())),
             Inner::AppleDhRaw(stream) => Pin::new(stream).poll_flush(cx),
             Inner::AppleVncPasswordRaw(stream) => Pin::new(stream).poll_flush(cx),
             Inner::AppleSrpRaw(stream) => Pin::new(stream).poll_flush(cx),
@@ -114,8 +164,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for AuthenticatedStream<S> {
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        match &mut self.get_mut().inner {
+        let this = self.get_mut();
+        this.expire(cx);
+        match &mut this.inner {
             Inner::VerifiedTls(stream) => Pin::new(stream.as_mut()).poll_shutdown(cx),
+            Inner::VerifiedGssapi { stream, .. } => Pin::new(stream.as_mut()).poll_shutdown(cx),
+            Inner::Expired => Poll::Ready(Err(expired())),
             Inner::AppleDhRaw(stream) => Pin::new(stream).poll_shutdown(cx),
             Inner::AppleVncPasswordRaw(stream) => Pin::new(stream).poll_shutdown(cx),
             Inner::AppleSrpRaw(stream) => Pin::new(stream).poll_shutdown(cx),

@@ -3,7 +3,6 @@ import {
   type DesktopUpdateArchitecture,
   type DesktopUpdateChannel,
   type DesktopUpdatePlatform,
-  type SquirrelMacReleases,
 } from "@okouai/api-contracts/contracts/desktop-updates";
 import { DESKTOP_PRODUCT_OKOU } from "@okouai/api-contracts/contracts/client-headers";
 import { delay } from "signal-timers";
@@ -217,19 +216,24 @@ function assetForRelease(
   return actualAssetName === expectedAssetName ? asset : null;
 }
 
-function squirrelRelease(
+export interface DesktopUpdateRelease {
+  readonly version: string;
+  readonly name: string;
+  readonly notes: string;
+  readonly pubDate: string;
+  readonly url: string;
+}
+
+function desktopUpdateRelease(
   release: DesktopUpdateManifest["releases"][string],
   asset: { readonly url: string },
-) {
+): DesktopUpdateRelease {
   return {
     version: release.version,
-    updateTo: {
-      name: release.name ?? `${DESKTOP_ARTIFACT_NAME} ${release.version}`,
-      version: release.version,
-      pub_date: release.pubDate,
-      url: asset.url,
-      notes: release.notes ?? "",
-    },
+    name: release.name ?? `${DESKTOP_ARTIFACT_NAME} ${release.version}`,
+    pubDate: release.pubDate,
+    url: asset.url,
+    notes: release.notes ?? "",
   };
 }
 
@@ -290,21 +294,6 @@ function selectDesktopRelease(
   }
 
   return { release: fallback, asset };
-}
-
-function buildDesktopUpdateFeed(
-  manifest: DesktopUpdateManifest,
-  request: DesktopUpdateFeedRequest,
-): SquirrelMacReleases | null {
-  const selected = selectDesktopRelease(manifest, request);
-  if (!selected) {
-    return null;
-  }
-
-  return {
-    currentRelease: selected.release.version,
-    releases: [squirrelRelease(selected.release, selected.asset)],
-  };
 }
 
 /**
@@ -456,12 +445,15 @@ async function loadDesktopUpdateManifest(
   return fetched.value;
 }
 
-export async function loadDesktopUpdateFeed(
+export async function loadDesktopUpdateRelease(
   request: DesktopUpdateFeedRequest,
   signal: AbortSignal,
-): Promise<SquirrelMacReleases | null> {
+): Promise<DesktopUpdateRelease | null> {
   const manifest = await loadDesktopUpdateManifest(request.line, signal);
-  return buildDesktopUpdateFeed(manifest, request);
+  const selected = selectDesktopRelease(manifest, request);
+  return selected
+    ? desktopUpdateRelease(selected.release, selected.asset)
+    : null;
 }
 
 export async function loadDesktopReleasePageUrl(

@@ -36,7 +36,7 @@ import { isUniqueViolation } from "../../lib/pg-errors";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   publishUserSignal,
   publishComputerUseCommandsChangedSafely,
@@ -46,7 +46,7 @@ import { settle } from "../utils";
 import { clerk$ } from "../external/clerk";
 import {
   computerUseHostAuthorityCondition,
-  resolveComputerUseHost,
+  resolveComputerUseHost$,
   verifyComputerUseSession,
   type ComputerUseHostAuthority,
   type ComputerUseSessionIdentity,
@@ -716,38 +716,44 @@ function serializeCommand(row: ComputerUseCommandRow, hostName: string | null) {
   };
 }
 
-async function insertComputerUseCommandAuditEvent(
-  db: Db,
-  params: {
-    readonly command: ComputerUseCommandRow;
-    readonly event: "completed";
-    readonly result?: ComputerUseCommandResult | null;
-    readonly error?: ComputerUseCommandError | null;
-    readonly createdAt: Date;
-  },
-): Promise<void> {
-  if (!isComputerUseWriteCommandKind(params.command.kind)) {
-    return;
-  }
-  const redactedResult = redactedResultForAudit(params.result);
+const insertComputerUseCommandAuditEvent$ = command(
+  async (
+    { set },
+    params: {
+      readonly command: ComputerUseCommandRow;
+      readonly event: "completed";
+      readonly result?: ComputerUseCommandResult | null;
+      readonly error?: ComputerUseCommandError | null;
+      readonly createdAt: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (!isComputerUseWriteCommandKind(params.command.kind)) {
+      return;
+    }
+    const redactedResult = redactedResultForAudit(params.result);
 
-  await db.insert(computerUseCommandAuditEvents).values({
-    commandId: params.command.id,
-    orgId: params.command.orgId,
-    userId: params.command.userId,
-    runId: params.command.runId,
-    hostId: params.command.hostId,
-    kind: params.command.kind,
-    app:
-      typeof params.command.payload.app === "string"
-        ? params.command.payload.app
-        : null,
-    event: params.event,
-    redactedResult,
-    error: errorForAudit(params.error),
-    createdAt: params.createdAt,
-  });
-}
+    await set(writeDb$)
+      .insert(computerUseCommandAuditEvents)
+      .values({
+        commandId: params.command.id,
+        orgId: params.command.orgId,
+        userId: params.command.userId,
+        runId: params.command.runId,
+        hostId: params.command.hostId,
+        kind: params.command.kind,
+        app:
+          typeof params.command.payload.app === "string"
+            ? params.command.payload.app
+            : null,
+        event: params.event,
+        redactedResult,
+        error: errorForAudit(params.error),
+        createdAt: params.createdAt,
+      });
+    signal.throwIfAborted();
+  },
+);
 
 /**
  * Fail one running command that is past its timeout. The UPDATE is a
@@ -756,42 +762,48 @@ async function insertComputerUseCommandAuditEvent(
  * the audit event. Returns the failed row, or null when another writer got
  * there first.
  */
-async function failTimedOutComputerUseCommand(
-  db: Db,
-  commandRow: ComputerUseCommandRow,
-  now: Date,
-  signal: AbortSignal,
-): Promise<ComputerUseCommandRow | null> {
-  const error = timeoutErrorForCommand(commandRow);
-  const [timedOut] = await db
-    .update(computerUseCommands)
-    .set({
-      status: "failed",
-      result: { error },
-      error: error.code,
-      completedAt: now,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(computerUseCommands.id, commandRow.id),
-        eq(computerUseCommands.status, "running"),
-      ),
-    )
-    .returning();
-  signal.throwIfAborted();
-  if (!timedOut) {
-    return null;
-  }
-  await insertComputerUseCommandAuditEvent(db, {
-    command: timedOut,
-    event: "completed",
-    error,
-    createdAt: now,
-  });
-  signal.throwIfAborted();
-  return timedOut;
-}
+const failTimedOutComputerUseCommand$ = command(
+  async (
+    { set },
+    commandRow: ComputerUseCommandRow,
+    now: Date,
+    signal: AbortSignal,
+  ): Promise<ComputerUseCommandRow | null> => {
+    const error = timeoutErrorForCommand(commandRow);
+    const [timedOut] = await set(writeDb$)
+      .update(computerUseCommands)
+      .set({
+        status: "failed",
+        result: { error },
+        error: error.code,
+        completedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(computerUseCommands.id, commandRow.id),
+          eq(computerUseCommands.status, "running"),
+        ),
+      )
+      .returning();
+    signal.throwIfAborted();
+    if (!timedOut) {
+      return null;
+    }
+    await set(
+      insertComputerUseCommandAuditEvent$,
+      {
+        command: timedOut,
+        event: "completed",
+        error,
+        createdAt: now,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return timedOut;
+  },
+);
 
 function resolveComputerUseCommandTargets(params: {
   readonly onlineHosts: readonly ComputerUseHostRow[];
@@ -973,7 +985,7 @@ function computerUseHostLivenessIsFresh(
  */
 export const heartbeatComputerUseHost$ = command(
   async (
-    { get, set },
+    { set },
     params: ComputerUseHostAuthority & {
       readonly hostName: string;
       readonly appVersion: string;
@@ -991,7 +1003,7 @@ export const heartbeatComputerUseHost$ = command(
       params.supportedCapabilities,
     );
 
-    const host = await resolveComputerUseHost(db, get(clerk$), params, signal);
+    const host = await set(resolveComputerUseHost$, params, signal);
     signal.throwIfAborted();
     if (!host) {
       return { status: "invalid_connection" };
@@ -1071,12 +1083,12 @@ export const heartbeatComputerUseHost$ = command(
  */
 export const stopComputerUseHost$ = command(
   async (
-    { get, set },
+    { set },
     params: ComputerUseHostAuthority,
     signal: AbortSignal,
   ): Promise<StopComputerUseHostResult> => {
     const db = set(writeDb$);
-    if (!(await resolveComputerUseHost(db, get(clerk$), params, signal))) {
+    if (!(await set(resolveComputerUseHost$, params, signal))) {
       return { status: "invalid_connection" };
     }
     const now = nowDate();
@@ -1102,68 +1114,31 @@ export const stopComputerUseHost$ = command(
   },
 );
 
-export async function projectComputerUseHosts(
-  args: {
-    readonly db: Pick<Db, "select">;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly now: Date;
-  },
-  signal: AbortSignal,
-): Promise<{ readonly hosts: readonly ComputerUseHost[] }> {
-  const hosts = await args.db
-    .select()
-    .from(computerUseHosts)
-    .where(
-      and(
-        eq(computerUseHosts.orgId, args.orgId),
-        eq(computerUseHosts.userId, args.userId),
-        isNull(computerUseHosts.revokedAt),
-      ),
-    )
-    .orderBy(desc(computerUseHosts.lastSeenAt));
-  signal.throwIfAborted();
-  return {
-    hosts: hosts.map((host) => {
-      return serializeHost(host, args.now);
-    }),
-  };
-}
-
 export const listComputerUseHosts$ = command(
   async (
-    { set },
+    { get },
     params: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
-  ) => {
-    return await projectComputerUseHosts(
-      {
-        db: set(writeDb$),
-        ...params,
-        now: nowDate(),
-      },
-      signal,
-    );
-  },
-);
-
-export const listComputerUseAuditEvents$ = command(
-  async (
-    { set },
-    params: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly limit: number;
-      readonly commandId?: string;
-      readonly hostId?: string;
-      readonly runId?: string;
-    },
-    signal: AbortSignal,
-  ) => {
-    return await projectComputerUseAuditEvents(
-      { db: set(writeDb$), ...params },
-      signal,
-    );
+  ): Promise<{ readonly hosts: readonly ComputerUseHost[] }> => {
+    const db = get(db$);
+    const now = nowDate();
+    const hosts = await db
+      .select()
+      .from(computerUseHosts)
+      .where(
+        and(
+          eq(computerUseHosts.orgId, params.orgId),
+          eq(computerUseHosts.userId, params.userId),
+          isNull(computerUseHosts.revokedAt),
+        ),
+      )
+      .orderBy(desc(computerUseHosts.lastSeenAt));
+    signal.throwIfAborted();
+    return {
+      hosts: hosts.map((host) => {
+        return serializeHost(host, now);
+      }),
+    };
   },
 );
 
@@ -1255,36 +1230,6 @@ export const createComputerUseCommand$ = command(
   },
 );
 
-async function selectComputerUseCommandContent(
-  db: Db,
-  params: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly commandId: string;
-    readonly hostId?: string;
-  },
-): Promise<Pick<ComputerUseCommandRow, "status" | "result"> | undefined> {
-  const [row] = await db
-    .select({
-      status: computerUseCommands.status,
-      result: computerUseCommands.result,
-    })
-    .from(computerUseCommands)
-    .where(
-      and(
-        eq(computerUseCommands.orgId, params.orgId),
-        eq(computerUseCommands.userId, params.userId),
-        eq(computerUseCommands.id, params.commandId),
-        inArray(computerUseCommands.kind, COMPUTER_USE_COMMANDS),
-        ...(params.hostId
-          ? [eq(computerUseCommands.hostId, params.hostId)]
-          : []),
-      ),
-    )
-    .limit(1);
-  return row;
-}
-
 /**
  * Command status reads are polled while an agent waits for a result, so they
  * run without a transaction or locks: one bounded read of the command, a
@@ -1329,7 +1274,7 @@ export const getComputerUseCommand$ = command(
     if (row.status === "running" && runningCommandHasTimedOut(row, now)) {
       // A loser keeps the row it read; the next poll sees the winner's state.
       commandRow =
-        (await failTimedOutComputerUseCommand(db, row, now, signal)) ?? row;
+        (await set(failTimedOutComputerUseCommand$, row, now, signal)) ?? row;
     }
 
     const [host] = await db
@@ -1344,7 +1289,7 @@ export const getComputerUseCommand$ = command(
 
 export const getComputerUseCommandScreenshot$ = command(
   async (
-    { get, set },
+    { get },
     params: {
       readonly orgId: string;
       readonly userId: string;
@@ -1357,7 +1302,24 @@ export const getComputerUseCommandScreenshot$ = command(
     readonly contentType: string;
   } | null> => {
     signal.throwIfAborted();
-    const row = await selectComputerUseCommandContent(set(writeDb$), params);
+    const [row] = await get(db$)
+      .select({
+        status: computerUseCommands.status,
+        result: computerUseCommands.result,
+      })
+      .from(computerUseCommands)
+      .where(
+        and(
+          eq(computerUseCommands.orgId, params.orgId),
+          eq(computerUseCommands.userId, params.userId),
+          eq(computerUseCommands.id, params.commandId),
+          inArray(computerUseCommands.kind, COMPUTER_USE_COMMANDS),
+          ...(params.hostId
+            ? [eq(computerUseCommands.hostId, params.hostId)]
+            : []),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
     if (row?.status !== "succeeded" || !row.result) {
       return null;
@@ -1378,37 +1340,39 @@ export const getComputerUseCommandScreenshot$ = command(
  * Whether this host still has a running command. A running command past its
  * timeout is failed here; a poll that loses that race still reports busy.
  */
-async function hostHasRunningComputerUseCommand(
-  db: Db,
-  hostId: string,
-  now: Date,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const [runningCommand] = await db
-    .select()
-    .from(computerUseCommands)
-    .where(
-      and(
-        eq(computerUseCommands.hostId, hostId),
-        eq(computerUseCommands.status, "running"),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!runningCommand) {
-    return false;
-  }
-  if (!runningCommandHasTimedOut(runningCommand, now)) {
-    return true;
-  }
-  const timedOut = await failTimedOutComputerUseCommand(
-    db,
-    runningCommand,
-    now,
-    signal,
-  );
-  return timedOut === null;
-}
+const hostHasRunningComputerUseCommand$ = command(
+  async (
+    { get, set },
+    hostId: string,
+    now: Date,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const [runningCommand] = await get(db$)
+      .select()
+      .from(computerUseCommands)
+      .where(
+        and(
+          eq(computerUseCommands.hostId, hostId),
+          eq(computerUseCommands.status, "running"),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!runningCommand) {
+      return false;
+    }
+    if (!runningCommandHasTimedOut(runningCommand, now)) {
+      return true;
+    }
+    const timedOut = await set(
+      failTimedOutComputerUseCommand$,
+      runningCommand,
+      now,
+      signal,
+    );
+    return timedOut === null;
+  },
+);
 
 /**
  * Claim polls run every 0.5–5s per host, so they hold no transaction and no
@@ -1420,7 +1384,7 @@ async function hostHasRunningComputerUseCommand(
  */
 export const claimNextComputerUseHostCommand$ = command(
   async (
-    { get, set },
+    { set },
     params: ComputerUseHostAuthority & {
       readonly supportedCapabilities: readonly string[];
     },
@@ -1428,7 +1392,7 @@ export const claimNextComputerUseHostCommand$ = command(
   ): Promise<ClaimNextComputerUseHostCommandResult> => {
     const db = set(writeDb$);
     const capabilities = normalizeCapabilities(params.supportedCapabilities);
-    const host = await resolveComputerUseHost(db, get(clerk$), params, signal);
+    const host = await set(resolveComputerUseHost$, params, signal);
     signal.throwIfAborted();
     if (!host) {
       return { status: "invalid_connection" };
@@ -1461,7 +1425,7 @@ export const claimNextComputerUseHostCommand$ = command(
       signal.throwIfAborted();
     }
 
-    if (await hostHasRunningComputerUseCommand(db, host.id, now, signal)) {
+    if (await set(hostHasRunningComputerUseCommand$, host.id, now, signal)) {
       return { status: "idle" };
     }
 
@@ -1541,28 +1505,30 @@ export const claimNextComputerUseHostCommand$ = command(
 );
 
 /** Refresh a host's liveness from a completion only when it is getting stale. */
-async function refreshComputerUseHostLiveness(
-  db: Db,
-  host: ComputerUseHostRow,
-  now: Date,
-  signal: AbortSignal,
-): Promise<void> {
-  if (computerUseHostLivenessIsFresh(host, now)) {
-    return;
-  }
-  await db
-    .update(computerUseHosts)
-    .set({ status: "online", lastSeenAt: now, updatedAt: now })
-    .where(
-      and(
-        eq(computerUseHosts.id, host.id),
-        isNull(computerUseHosts.revokedAt),
-        eq(computerUseHosts.connectionGeneration, host.connectionGeneration),
-        eq(computerUseHosts.status, "online"),
-      ),
-    );
-  signal.throwIfAborted();
-}
+const refreshComputerUseHostLiveness$ = command(
+  async (
+    { set },
+    host: ComputerUseHostRow,
+    now: Date,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (computerUseHostLivenessIsFresh(host, now)) {
+      return;
+    }
+    await set(writeDb$)
+      .update(computerUseHosts)
+      .set({ status: "online", lastSeenAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(computerUseHosts.id, host.id),
+          isNull(computerUseHosts.revokedAt),
+          eq(computerUseHosts.connectionGeneration, host.connectionGeneration),
+          eq(computerUseHosts.status, "online"),
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
 
 /**
  * Structured per-command state metrics logged on every successful completion.
@@ -1648,20 +1614,6 @@ function logComputerUseCompletionSanitization(
   });
 }
 
-async function resolveMissedComputerUseCompletion(
-  db: Db,
-  authority: ComputerUseHostAuthority,
-  signal: AbortSignal,
-): Promise<CompleteComputerUseHostCommandResult> {
-  const [authorized] = await db
-    .select({ id: computerUseHosts.id })
-    .from(computerUseHosts)
-    .where(computerUseHostAuthorityCondition(authority))
-    .limit(1);
-  signal.throwIfAborted();
-  return { status: authorized ? "completed" : "invalid_connection" };
-}
-
 /**
  * Completion runs without a transaction or locks: plain reads of the host and
  * command, the S3 offload, then one compare-and-set on `status = 'running'`.
@@ -1675,12 +1627,12 @@ export const completeComputerUseHostCommand$ = command(
     signal: AbortSignal,
   ): Promise<CompleteComputerUseHostCommandResult> => {
     const db = set(writeDb$);
-    const host = await resolveComputerUseHost(db, get(clerk$), params, signal);
+    const host = await set(resolveComputerUseHost$, params, signal);
     signal.throwIfAborted();
     if (!host) {
       return { status: "invalid_connection" };
     }
-    const [commandRow] = await db
+    const [commandRow] = await get(db$)
       .select({ status: computerUseCommands.status })
       .from(computerUseCommands)
       .where(
@@ -1699,7 +1651,7 @@ export const completeComputerUseHostCommand$ = command(
       return { status: "not_found" };
     }
     if (commandRow.status === "succeeded" || commandRow.status === "failed") {
-      await refreshComputerUseHostLiveness(db, host, nowDate(), signal);
+      await set(refreshComputerUseHostLiveness$, host, nowDate(), signal);
       return { status: "completed" };
     }
     if (commandRow.status !== "running") {
@@ -1764,18 +1716,28 @@ export const completeComputerUseHostCommand$ = command(
       .returning();
     signal.throwIfAborted();
     if (!updated) {
-      return await resolveMissedComputerUseCompletion(db, params, signal);
+      const [authorized] = await get(db$)
+        .select({ id: computerUseHosts.id })
+        .from(computerUseHosts)
+        .where(computerUseHostAuthorityCondition(params))
+        .limit(1);
+      signal.throwIfAborted();
+      return { status: authorized ? "completed" : "invalid_connection" };
     }
 
-    await insertComputerUseCommandAuditEvent(db, {
-      command: updated,
-      event: "completed",
-      result: finalStatus === "succeeded" ? storedResult : null,
-      error: finalStatus === "failed" ? finalError : null,
-      createdAt: completedAt,
-    });
+    await set(
+      insertComputerUseCommandAuditEvent$,
+      {
+        command: updated,
+        event: "completed",
+        result: finalStatus === "succeeded" ? storedResult : null,
+        error: finalStatus === "failed" ? finalError : null,
+        createdAt: completedAt,
+      },
+      signal,
+    );
     signal.throwIfAborted();
-    await refreshComputerUseHostLiveness(db, host, completedAt, signal);
+    await set(refreshComputerUseHostLiveness$, host, completedAt, signal);
 
     logComputerUseCompletionSanitization(
       updated,
@@ -1787,71 +1749,65 @@ export const completeComputerUseHostCommand$ = command(
   },
 );
 
-export async function projectComputerUseAuditEvents(
-  args: {
-    readonly db: Pick<Db, "select">;
+export function computerUseAuditEvents(
+  scope$: Computed<{
     readonly orgId: string;
     readonly userId: string;
     readonly limit: number;
     readonly commandId?: string;
     readonly hostId?: string;
     readonly runId?: string;
-  },
-  signal: AbortSignal,
+  }>,
 ) {
-  const filters = [
-    eq(computerUseCommandAuditEvents.orgId, args.orgId),
-    eq(computerUseCommandAuditEvents.userId, args.userId),
-    inArray(computerUseCommandAuditEvents.kind, COMPUTER_USE_COMMANDS),
-  ];
-  if (args.commandId) {
-    filters.push(eq(computerUseCommandAuditEvents.commandId, args.commandId));
-  }
-  if (args.hostId) {
-    filters.push(eq(computerUseCommandAuditEvents.hostId, args.hostId));
-  }
-  if (args.runId) {
-    filters.push(eq(computerUseCommandAuditEvents.runId, args.runId));
-  }
+  return computed(async (get) => {
+    const args = get(scope$);
+    const filters = [
+      eq(computerUseCommandAuditEvents.orgId, args.orgId),
+      eq(computerUseCommandAuditEvents.userId, args.userId),
+      inArray(computerUseCommandAuditEvents.kind, COMPUTER_USE_COMMANDS),
+    ];
+    if (args.commandId) {
+      filters.push(eq(computerUseCommandAuditEvents.commandId, args.commandId));
+    }
+    if (args.hostId) {
+      filters.push(eq(computerUseCommandAuditEvents.hostId, args.hostId));
+    }
+    if (args.runId) {
+      filters.push(eq(computerUseCommandAuditEvents.runId, args.runId));
+    }
 
-  const rows = await args.db
-    .select({
-      id: computerUseCommandAuditEvents.id,
-      commandId: computerUseCommandAuditEvents.commandId,
-      runId: computerUseCommandAuditEvents.runId,
-      hostId: computerUseCommandAuditEvents.hostId,
-      kind: computerUseCommandAuditEvents.kind,
-      app: computerUseCommandAuditEvents.app,
-      event: computerUseCommandAuditEvents.event,
-      redactedResult: computerUseCommandAuditEvents.redactedResult,
-      error: computerUseCommandAuditEvents.error,
-      createdAt: computerUseCommandAuditEvents.createdAt,
-    })
-    .from(computerUseCommandAuditEvents)
-    .where(and(...filters))
-    .orderBy(desc(computerUseCommandAuditEvents.createdAt))
-    .limit(args.limit);
-  signal.throwIfAborted();
-
-  L.debug("Listed computer-use audit events", {
-    orgId: args.orgId,
-    count: rows.length,
+    const rows = await get(db$)
+      .select({
+        id: computerUseCommandAuditEvents.id,
+        commandId: computerUseCommandAuditEvents.commandId,
+        runId: computerUseCommandAuditEvents.runId,
+        hostId: computerUseCommandAuditEvents.hostId,
+        kind: computerUseCommandAuditEvents.kind,
+        app: computerUseCommandAuditEvents.app,
+        event: computerUseCommandAuditEvents.event,
+        redactedResult: computerUseCommandAuditEvents.redactedResult,
+        error: computerUseCommandAuditEvents.error,
+        createdAt: computerUseCommandAuditEvents.createdAt,
+      })
+      .from(computerUseCommandAuditEvents)
+      .where(and(...filters))
+      .orderBy(desc(computerUseCommandAuditEvents.createdAt))
+      .limit(args.limit);
+    return {
+      auditEvents: rows.map((row) => {
+        return {
+          id: row.id,
+          commandId: row.commandId,
+          runId: row.runId,
+          hostId: row.hostId,
+          kind: row.kind as ComputerUseCommandKind,
+          app: row.app,
+          event: row.event as "completed",
+          redactedResult: row.redactedResult,
+          error: row.error,
+          createdAt: row.createdAt.toISOString(),
+        };
+      }),
+    };
   });
-
-  return {
-    auditEvents: rows.map((row) => {
-      return {
-        id: row.id,
-        commandId: row.commandId,
-        runId: row.runId,
-        hostId: row.hostId,
-        kind: row.kind as ComputerUseCommandKind,
-        app: row.app,
-        event: row.event as "completed",
-        redactedResult: row.redactedResult,
-        error: row.error,
-        createdAt: row.createdAt.toISOString(),
-      };
-    }),
-  };
 }

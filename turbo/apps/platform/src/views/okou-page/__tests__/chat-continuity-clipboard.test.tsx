@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -238,7 +238,16 @@ test("Copy a multiline draft without flattening its line breaks", async () => {
   });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
-  await user.type(composer, "First draft line");
+  // Happy DOM has no caret hit testing. Choose the first paragraph instead of
+  // relying on autofocus while the startup root is inert.
+  const paragraph = within(composer).getByRole("paragraph");
+  await user.pointer({
+    target: paragraph,
+    node: paragraph,
+    offset: 0,
+    keys: "[MouseLeft]",
+  });
+  await user.keyboard("First draft line");
   await user.keyboard("{Shift>}{Enter}{/Shift}");
   await user.keyboard("Second draft line");
   selectComposerContents(composer);

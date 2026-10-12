@@ -5112,6 +5112,7 @@ function hasAssistantRecoveryModelPicker(
     recovery.kind === "safety-policy-refusal" ||
     (recovery.kind === "provider-retryable" &&
       recovery.failureReason !== "guest_root_filesystem_full" &&
+      recovery.failureReason !== "guest_home_filesystem_full" &&
       recovery.failureReason !== "codex_access_program_unavailable")
   );
 }
@@ -5405,17 +5406,20 @@ function AssistantErrorCard({
 
 type StructuredFailureTitle = () => string;
 
+function filesystemFullTitle(): string {
+  return i18n.t(($) => {
+    return $.chat.errors.recovery.filesystemFullTitle;
+  });
+}
+
 const STRUCTURED_FAILURE_TITLES = Object.freeze({
   session_history_limit: () => {
     return i18n.t(($) => {
       return $.chat.errors.recovery.sessionHistoryTitle;
     });
   },
-  guest_root_filesystem_full: () => {
-    return i18n.t(($) => {
-      return $.chat.errors.recovery.filesystemFullTitle;
-    });
-  },
+  guest_root_filesystem_full: filesystemFullTitle,
+  guest_home_filesystem_full: filesystemFullTitle,
   execution_timeout: () => {
     return i18n.t(($) => {
       return $.chat.errors.recovery.timeoutTitle;
@@ -5595,6 +5599,7 @@ const FAILURE_DESCRIPTIONS = Object.freeze({
 const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
   session_history_limit: FAILURE_DESCRIPTIONS.newChat,
   guest_root_filesystem_full: FAILURE_DESCRIPTIONS.filesystemFull,
+  guest_home_filesystem_full: FAILURE_DESCRIPTIONS.filesystemFull,
   execution_timeout: FAILURE_DESCRIPTIONS.timeout,
   insufficient_credits: () => {
     return "";

@@ -1268,10 +1268,10 @@ composer's footer, the sharing bar and the shared thread's handoff bar all stay
 transparent; only the cards inside them carry a fill. A pane-width surface that
 paints `--background` instead assumes the canvas is a flat fill of that colour,
 which holds in the neutral themes and does not under a gradient palette, where
-the canvas is `--card` plus two corner gradients: the composer footer used to
-paint `--background` and ended in a visible band across the pane in every dark
-palette. The transcript's loading placeholder stays transparent too: painting
-even the canvas's own fill over it erases its gradient. While initial events
+the canvas is `--card` plus two corner gradients. An opaque `--background`
+footer creates a visible band across that canvas. The transcript's loading
+placeholder stays transparent too: painting even the canvas's own fill over it
+erases its gradient. While initial events
 are pending, the transcript uses `invisible` to hide its content without
 unmounting the layout used for scroll restoration. Prepared content and load
 errors remain visible; the placeholder never re-creates a background on its
@@ -1332,7 +1332,6 @@ bubble's top and bottom rather than as spacing inside the quote.
 `[&_blockquote]:py-2!` gives the quote the bubble's 8px as block padding, where
 it is both visible and contained, and `[&_blockquote>*:first-child]:mt-0!` with
 its `mb-0!` sibling keeps the inner margins from adding a second, escaping copy.
-Resolves [#34278](https://github.com/vm0-ai/vm0/issues/34278).
 
 The padding needs its important for a sharper reason than the margins do:
 `.wmde-markdown blockquote` declares `padding: 0 1em` unlayered, and an
@@ -1497,11 +1496,9 @@ token. This is a third-party cascade adapter, not a pattern for business UI.
 A reversible action such as Undo spreads the wrapper's `TEXT_TOAST_ACTION`
 into the toast options instead of defining its own button style.
 
-These colors intentionally change the visual result: Dark no longer displays a
-Light toast, and both themes use the application's foreground, border and
-button colors. The ineffective `shadow-lg` utility is removed; Sonner continues
-to own its existing resting shadow and keyboard focus shadows. Do not make a
-resting shadow important, because it would suppress the focus indicator.
+Sonner owns the resting shadow and keyboard focus shadows. A normal `shadow-lg`
+utility cannot override its unlayered shadow. Do not make a resting shadow
+important, because it would suppress the focus indicator.
 Geometry utilities keep their existing precedence and use Sonner's
 `data-sonner-toaster` attribute as the ancestor hook.
 

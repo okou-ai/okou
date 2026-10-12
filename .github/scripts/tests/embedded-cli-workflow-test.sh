@@ -4,6 +4,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 runner_json=$(ruby -ryaml -rjson -e 'puts JSON.generate(YAML.load_file(ARGV.fetch(0)))' \
   "${REPO_ROOT}/.github/workflows/runner-image.yml")
+architecture_json=$(ruby -ryaml -rjson -e 'puts JSON.generate(YAML.load_file(ARGV.fetch(0)))' \
+  "${REPO_ROOT}/.github/workflows/runner-image-architecture.yml")
+runner_json=$(jq --argjson architecture "$architecture_json" '. + {architecture: $architecture}' <<<"$runner_json")
 release_json=$(ruby -ryaml -rjson -e 'puts JSON.generate(YAML.load_file(ARGV.fetch(0)))' \
   "${REPO_ROOT}/.github/workflows/release-please.yml")
 crates_json=$(ruby -ryaml -rjson -e 'puts JSON.generate(YAML.load_file(ARGV.fetch(0)))' \
@@ -34,19 +37,28 @@ jq -e '
   $steps[$plan].env.GUEST_CLI_PATH == "runner-cli-intermediate/package.tgz" and
   $steps[$plan].env.GUEST_CLI_MANIFEST_PATH == "runner-cli-intermediate/manifest.json" and
   $steps[$plan].env.RUNNER_BINARY_GIT_REVISION == "${{ steps.identity.outputs.head-sha }}" and
-  (["compile", "build", "prewarm-rust-cache"] | all(.[]; . as $job |
-    $root.jobs[$job].env.GUEST_CLI_PATH == "runner-cli-intermediate/package.tgz" and
-    $root.jobs[$job].env.GUEST_CLI_MANIFEST_PATH == "runner-cli-intermediate/manifest.json" and
-    $root.jobs[$job].env.RUNNER_BINARY_GIT_REVISION == "${{ needs.prepare.outputs.head-sha }}" and
-    ([$root.jobs[$job].steps[] | select((.uses // "") | startswith("actions/checkout@"))] |
-      length == 1 and .[0].with.ref == "${{ needs.prepare.outputs.head-sha }}") and
-    any($root.jobs[$job].steps[];
+  (["compile", "build"] | all(.[]; . as $job |
+    $root.architecture.jobs[$job].env.GUEST_CLI_PATH == "runner-cli-intermediate/package.tgz" and
+    $root.architecture.jobs[$job].env.GUEST_CLI_MANIFEST_PATH == "runner-cli-intermediate/manifest.json" and
+    $root.architecture.jobs[$job].env.RUNNER_BINARY_GIT_REVISION == "${{ inputs.head-sha }}" and
+    ([$root.architecture.jobs[$job].steps[] | select((.uses // "") | startswith("actions/checkout@"))] |
+      length == 1 and .[0].with.ref == "${{ inputs.head-sha }}") and
+    any($root.architecture.jobs[$job].steps[];
       .name == "Download private CLI build input" and
       .with.name == $steps[$upload].with.name)
   )) and
-  any(.jobs.compile.steps[];
+  .jobs["prewarm-rust-cache"].env.GUEST_CLI_PATH == "runner-cli-intermediate/package.tgz" and
+  .jobs["prewarm-rust-cache"].env.GUEST_CLI_MANIFEST_PATH == "runner-cli-intermediate/manifest.json" and
+  .jobs["prewarm-rust-cache"].env.RUNNER_BINARY_GIT_REVISION == "${{ needs.prepare.outputs.head-sha }}" and
+  ([.jobs["prewarm-rust-cache"].steps[] | select((.uses // "") | startswith("actions/checkout@"))] |
+    length == 1 and .[0].with.ref == "${{ needs.prepare.outputs.head-sha }}") and
+  any(.jobs["prewarm-rust-cache"].steps[];
+    .name == "Download private CLI build input" and
+    .with.name == $steps[$upload].with.name) and
+  .jobs.build.with["head-sha"] == .jobs["prewarm-rust-cache"].env.RUNNER_BINARY_GIT_REVISION and
+  any(.architecture.jobs.compile.steps[];
     .run == ".github/scripts/runner-binary-transport.sh publish" and
-    .env.PRODUCER_HEAD_SHA == "${{ needs.prepare.outputs.producer-head-sha }}"
+    .env.PRODUCER_HEAD_SHA == "${{ inputs.producer-head-sha }}"
   )
 ' <<<"$runner_json" >/dev/null || {
   echo 'Runner image build revision, producer identity, or CLI ordering is invalid' >&2

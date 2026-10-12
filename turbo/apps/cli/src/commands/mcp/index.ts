@@ -5,6 +5,7 @@ import {
   type McpToolErrorIssue,
 } from "@okouai/api-contracts/contracts/mcp-tool-errors";
 import { Command, Option } from "commander";
+import { apiErrorSchema } from "@okouai/api-contracts/contracts/errors";
 
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { callMcpTool, listMcpTools, McpCallFailure } from "./client";
@@ -45,13 +46,16 @@ function toolFailure(result: CallToolResult): McpJsonFailure {
   const structured = mcpToolErrorContentSchema.safeParse(
     result.structuredContent,
   );
+  const web = apiErrorSchema.safeParse(result.structuredContent);
   const error = structured.success
     ? structured.data.error
-    : {
-        code: "tool_error",
-        message: "MCP tool returned an error",
-        retryable: false,
-      };
+    : web.success
+      ? { ...web.data.error, retryable: false }
+      : {
+          code: "tool_error",
+          message: "MCP tool returned an error",
+          retryable: false,
+        };
   return {
     status: "error",
     error: { kind: "tool", ...error },

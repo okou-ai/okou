@@ -17,8 +17,8 @@ The central rule is:
 > Data is derived, writes are explicit, and the entry point owns the order.
 
 Side-effect-free reads and computations are written as `computed` wherever
-possible; only operations with side effects belong in a `command` (Ethan,
-2026-10-02). Side effects are database, Stripe and cache writes, OAuth refresh,
+possible; only operations with side effects belong in a `command`.
+Side effects are database, Stripe and cache writes, OAuth refresh,
 encryption followed by a write, Runner notification or publication, and run
 commit and activation. Telemetry recording in a command's own timing stays with
 that command.
@@ -209,7 +209,7 @@ const noticed = await settle(sendWaitNoticeIfNeeded(/* ... */));
 Work that is independent of the sequence keeps its own `waitUntil`. On the
 enqueue path, notifying a running run of pending input is one such task. When
 you move orchestration into entries, check every entry for these independent
-tasks; one was dropped and later restored during #37430.
+tasks.
 
 ### 7. Cancellation
 
@@ -221,7 +221,7 @@ tasks; one was dropped and later restored during #37430.
 - A `computed` cannot capture a signal (`ccstate/no-computed-signal`). External
   reads started from a computed are owned by their own request timeout.
   Side-effect-free reads, including KMS decryption and an exact managed-key
-  read, may run in a computed (Ethan, 2026-10-02); side effects such as OAuth
+  read, may run in a computed; side effects such as OAuth
   refresh, encryption followed by a database write, Stripe or cache writes stay
   in commands. If such
   a read must follow the caller's cancellation, move it into a command that
@@ -242,10 +242,7 @@ tasks; one was dropped and later restored during #37430.
 ### 9. No test hooks in production code
 
 Production signals must not export `set…HookForTest` and `clear…HookForTest`
-functions, `observe…` pause or count points, or fault injectors. #37430 deleted
-`agent-run-preparation-hooks.ts` and
-`prepared-launch-persistence-observer.service.ts` for this reason, together
-with the model-route and connector-catalog read hooks.
+functions, `observe…` pause or count points, or fault injectors.
 
 Tests build scenarios through public APIs, run callbacks, `mockNow`, and test
 environment configuration. A scenario that can only be reached through a hook
@@ -334,11 +331,9 @@ business graph's symbol inventory in this standard.
 ## Reference Implementation
 
 These references illustrate derived reads, limited state, and entry-owned
-orchestration from #37430. They are not proof that the referenced files already
-meet every target rule above. In particular, remaining database-handle passing,
-node-valued parameters, or command construction during execution are migration
-work, not patterns to copy. Transaction and handle cleanup is tracked in
-[#37513](https://github.com/okou-ai/okou/issues/37513).
+orchestration. Review each pattern against this guide before reusing it; a
+reference is not proof that every implementation detail satisfies the
+database-handle, node-parameter, graph-construction, and transaction rules above.
 
 - `turbo/apps/api/src/signals/services/thread-claim-run.service.ts`: the claim
   graph (`createThreadClaimRunObjects`), with derived head, model inputs, model

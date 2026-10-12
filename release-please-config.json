@@ -94,6 +94,9 @@
     "crates/guest-tool-exec": {
       "release-type": "rust"
     },
+    "crates/guest-task-exec": {
+      "release-type": "rust"
+    },
     "crates/runner-rpc-client": {
       "release-type": "rust"
     },
@@ -174,6 +177,10 @@
       "skip-changelog": true
     },
     "crates/kerberos-credentials": {
+      "release-type": "rust",
+      "skip-changelog": true
+    },
+    "crates/kerberos-worker": {
       "release-type": "rust",
       "skip-changelog": true
     },

@@ -43,7 +43,7 @@ describe("desktop update routes", () => {
     const legacy = await appRequest(`${path}RELEASES.json`);
     expect(legacy.status).toBe(200);
     await expect(legacy.json()).resolves.toMatchObject({
-      currentRelease: "0.51.0",
+      currentRelease: "0.52.2",
     });
     const manual = await appRequest(`${path}dmg`);
     expect(manual.status).toBe(302);

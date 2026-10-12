@@ -25,9 +25,11 @@ import { command } from "ccstate";
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   exists,
+  gte,
   inArray,
   isNotNull,
   isNull,
@@ -37,6 +39,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { z } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { isUniqueViolation } from "../../lib/pg-errors";
@@ -636,7 +639,7 @@ function stopProviderSessionLater(providerSessionId: string): void {
 }
 
 // Complete the committed stop and schedule exact provider cleanup before a
-// caller observes cancellation. The transaction never leaves this command.
+// caller observes cancellation. Both writes stay in one atomic statement.
 const commitBrowserStop$ = command(
   async (
     { set },
@@ -645,49 +648,56 @@ const commitBrowserStop$ = command(
     stopProvider: boolean,
   ): Promise<boolean> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0067; new non-billing transactions are prohibited.
-    const stopped = await db.transaction(async (tx) => {
-      const [instance] = await tx
-        .update(browserSessionInstances)
-        .set({
-          status: "stopped",
-          stopRequestedAt: nowDate(),
-          finishedAt: nowDate(),
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(
-              browserSessionInstances.providerSessionId,
-              target.providerSessionId,
-            ),
-            eq(browserSessionInstances.status, "active"),
+    const stoppedInstance = db
+      .update(browserSessionInstances)
+      .set({
+        status: "stopped",
+        stopRequestedAt: nowDate(),
+        finishedAt: nowDate(),
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(
+            browserSessionInstances.providerSessionId,
+            target.providerSessionId,
           ),
-        )
-        .returning({
-          providerSessionId: browserSessionInstances.providerSessionId,
-        });
-      if (!instance) {
-        return false;
-      }
-      await tx
-        .update(browserSessions)
-        .set({
-          status: "suspended",
-          suspendedAt: nowDate(),
-          suspensionReason: reason,
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(browserSessions.chatThreadId, target.chatThreadId),
-            eq(browserSessions.orgId, target.orgId),
-            eq(browserSessions.userId, target.userId),
-            eq(browserSessions.status, "active"),
-          ),
-        );
-      return true;
-    });
+          eq(browserSessionInstances.status, "active"),
+        ),
+      )
+      .returning({
+        providerSessionId: browserSessionInstances.providerSessionId,
+      })
+      .getSQL();
+    const suspendedSession = db
+      .update(browserSessions)
+      .set({
+        status: "suspended",
+        suspendedAt: nowDate(),
+        suspensionReason: reason,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, target.chatThreadId),
+          eq(browserSessions.orgId, target.orgId),
+          eq(browserSessions.userId, target.userId),
+          eq(browserSessions.status, "active"),
+          exists(sql`(SELECT 1 FROM stopped_instance)`),
+        ),
+      )
+      .getSQL();
+    const rows = parseRawRows(
+      z.object({ stopped: z.boolean() }),
+      await db.execute(sql`WITH stopped_instance AS (${stoppedInstance}),
+        suspended_session AS (${suspendedSession})
+        SELECT ${exists(sql`(SELECT 1 FROM stopped_instance)`)} AS stopped`),
+    );
+    const [result] = rows;
+    if (rows.length !== 1 || !result) {
+      throw new Error("Expected one browser stop result");
+    }
+    const stopped = result.stopped;
     if (stopped && stopProvider) {
       stopProviderSessionLater(target.providerSessionId);
     }
@@ -1347,75 +1357,84 @@ const retireBrowserProfileOwnership$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0068; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      const ownedBrowsers = await tx
-        .select({
-          id: browserSessions.id,
-          runId: browserSessions.runId,
-          status: browserSessions.status,
-          updatedAt: browserSessions.updatedAt,
-        })
-        .from(browserSessions)
-        .innerJoin(
-          browserThreadProfiles,
-          eq(browserThreadProfiles.chatThreadId, browserSessions.chatThreadId),
-        )
-        .where(
-          and(
-            eq(browserSessions.chatThreadId, target.chatThreadId),
-            eq(
-              browserThreadProfiles.providerProfileId,
-              target.providerProfileId,
-            ),
-          ),
-        );
-      if (ownedBrowsers.length > 0) {
-        // A profile-qualified snapshot identifies the exact rows being retired.
-        // A delayed DELETE must not adopt a replacement row or a resumed owner.
-        await tx.delete(browserSessions).where(
-          and(
-            exists(
-              tx
-                .select({ id: browserThreadProfiles.id })
-                .from(browserThreadProfiles)
-                .where(
-                  and(
-                    eq(browserThreadProfiles.chatThreadId, target.chatThreadId),
-                    eq(
-                      browserThreadProfiles.providerProfileId,
-                      target.providerProfileId,
+    const ownedBrowsers = await db
+      .select({
+        id: browserSessions.id,
+        runId: browserSessions.runId,
+        status: browserSessions.status,
+        updatedAt: browserSessions.updatedAt,
+      })
+      .from(browserSessions)
+      .innerJoin(
+        browserThreadProfiles,
+        eq(browserThreadProfiles.chatThreadId, browserSessions.chatThreadId),
+      )
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, target.chatThreadId),
+          eq(browserThreadProfiles.providerProfileId, target.providerProfileId),
+        ),
+      );
+    signal.throwIfAborted();
+    const profileScope = and(
+      eq(browserThreadProfiles.chatThreadId, target.chatThreadId),
+      eq(browserThreadProfiles.providerProfileId, target.providerProfileId),
+    );
+    if (ownedBrowsers.length > 0) {
+      // A profile-qualified snapshot identifies the exact rows being retired.
+      // A delayed DELETE must not adopt a replacement row or a resumed owner.
+      const retiredBrowsers = db.$with("retired_browsers").as(
+        db
+          .delete(browserSessions)
+          .where(
+            and(
+              exists(
+                db
+                  .select({ id: browserThreadProfiles.id })
+                  .from(browserThreadProfiles)
+                  .where(
+                    and(
+                      eq(
+                        browserThreadProfiles.chatThreadId,
+                        target.chatThreadId,
+                      ),
+                      eq(
+                        browserThreadProfiles.providerProfileId,
+                        target.providerProfileId,
+                      ),
                     ),
                   ),
-                ),
+              ),
+              or(
+                ...ownedBrowsers.map((browser) => {
+                  return and(
+                    eq(browserSessions.id, browser.id),
+                    browser.runId === null
+                      ? isNull(browserSessions.runId)
+                      : eq(browserSessions.runId, browser.runId),
+                    eq(browserSessions.status, browser.status),
+                    eq(browserSessions.updatedAt, browser.updatedAt),
+                  );
+                }),
+              ),
             ),
-            or(
-              ...ownedBrowsers.map((browser) => {
-                return and(
-                  eq(browserSessions.id, browser.id),
-                  browser.runId === null
-                    ? isNull(browserSessions.runId)
-                    : eq(browserSessions.runId, browser.runId),
-                  eq(browserSessions.status, browser.status),
-                  eq(browserSessions.updatedAt, browser.updatedAt),
-                );
-              }),
-            ),
-          ),
-        );
-      }
-      await tx
+          )
+          .returning({ id: browserSessions.id }),
+      );
+      // Exhaust the guarded browser DELETE before retiring the exact profile,
+      // including when no snapshotted browser remains eligible.
+      await db
+        .with(retiredBrowsers)
         .delete(browserThreadProfiles)
         .where(
           and(
-            eq(browserThreadProfiles.chatThreadId, target.chatThreadId),
-            eq(
-              browserThreadProfiles.providerProfileId,
-              target.providerProfileId,
-            ),
+            profileScope,
+            gte(db.select({ count: count() }).from(retiredBrowsers), 0),
           ),
         );
-    });
+    } else {
+      await db.delete(browserThreadProfiles).where(profileScope);
+    }
     signal.throwIfAborted();
   },
 );
@@ -1841,67 +1860,66 @@ const claimFreshBrowser$ = command(
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSessionRow>> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0070; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      signal.throwIfAborted();
-      const [owned, run] = await Promise.all([
-        tx
-          .select({ chatThreadId: browserSessions.chatThreadId })
-          .from(browserSessions)
-          .where(
-            and(
-              eq(browserSessions.chatThreadId, context.chatThreadId),
-              inArray(browserSessions.status, [...OWNED_BROWSER_STATUSES]),
-            ),
-          )
-          .limit(1),
-        tx
-          .select({ status: agentRuns.status })
-          .from(agentRuns)
-          .where(eq(agentRuns.id, context.runId))
-          .limit(1),
-      ]);
-      if (
-        context.requireLiveRun &&
-        (!run[0] || isTerminalRunStatus(run[0].status))
-      ) {
-        return conflict("The chat run already ended", "BROWSER_RUN_ENDED");
-      }
-      if (owned[0]) {
-        return conflict(
-          "This chat thread already has an active managed browser",
-          "BROWSER_THREAD_ACTIVE",
-        );
-      }
-      const [browser] = await tx
-        .insert(browserSessions)
-        .values({
-          chatThreadId: context.chatThreadId,
-          runId: context.runId,
-          orgId: context.orgId,
-          userId: context.userId,
-          name: args.name,
-          status: "creating",
-          proxyCountryCode: args.proxyCountryCode,
-          timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
-          updatedAt: nowDate(),
-        })
-        .onConflictDoNothing({
-          target: browserSessions.chatThreadId,
-          where: sql`${browserSessions.status} IN ('creating', 'active', 'resuming', 'stopping')`,
-        })
-        .returning(BROWSER_SESSION_SELECTION);
-      if (!browser) {
-        return conflict(
-          "This chat thread already has an active managed browser",
-          "BROWSER_THREAD_ACTIVE",
-        );
-      }
-      return {
-        kind: "ok",
-        value: browser,
-      };
-    });
+    signal.throwIfAborted();
+    const [owned, run] = await Promise.all([
+      db
+        .select({ chatThreadId: browserSessions.chatThreadId })
+        .from(browserSessions)
+        .where(
+          and(
+            eq(browserSessions.chatThreadId, context.chatThreadId),
+            inArray(browserSessions.status, [...OWNED_BROWSER_STATUSES]),
+          ),
+        )
+        .limit(1),
+      db
+        .select({ status: agentRuns.status })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, context.runId))
+        .limit(1),
+    ]);
+    signal.throwIfAborted();
+    if (
+      context.requireLiveRun &&
+      (!run[0] || isTerminalRunStatus(run[0].status))
+    ) {
+      return conflict("The chat run already ended", "BROWSER_RUN_ENDED");
+    }
+    if (owned[0]) {
+      return conflict(
+        "This chat thread already has an active managed browser",
+        "BROWSER_THREAD_ACTIVE",
+      );
+    }
+    const [browser] = await db
+      .insert(browserSessions)
+      .values({
+        chatThreadId: context.chatThreadId,
+        runId: context.runId,
+        orgId: context.orgId,
+        userId: context.userId,
+        name: args.name,
+        status: "creating",
+        proxyCountryCode: args.proxyCountryCode,
+        timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
+        updatedAt: nowDate(),
+      })
+      .onConflictDoNothing({
+        target: browserSessions.chatThreadId,
+        where: sql`${browserSessions.status} IN ('creating', 'active', 'resuming', 'stopping')`,
+      })
+      .returning(BROWSER_SESSION_SELECTION);
+    signal.throwIfAborted();
+    if (!browser) {
+      return conflict(
+        "This chat thread already has an active managed browser",
+        "BROWSER_THREAD_ACTIVE",
+      );
+    }
+    return {
+      kind: "ok",
+      value: browser,
+    };
   },
 );
 

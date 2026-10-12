@@ -330,10 +330,12 @@ describe("GET /api/computer-use/commands/:commandId", () => {
         ).resolves.toMatchObject({ status: "running" });
 
         mockNow(STARTED_AT_MS + 2000);
-        const [first, second] = await Promise.all([
+        const [first, second, desktopPoll] = await Promise.all([
           computerUse.readComputerUseCommand(actor, running.commandId),
           computerUse.readComputerUseCommand(actor, running.commandId),
+          computerUse.claimNextComputerUseCommand(host.connection),
         ]);
+        expect(desktopPoll).toStrictEqual({ status: "idle" });
         const timedOut = await computerUse.readComputerUseCommand(
           actor,
           running.commandId,
@@ -361,6 +363,110 @@ describe("GET /api/computer-use/commands/:commandId", () => {
         await expect(
           computerUse.readComputerUseCommand(actor, running.commandId),
         ).resolves.toMatchObject({ status: "failed" });
+      });
+    },
+  );
+
+  it(
+    "lets Desktop polling expire a blocker after the strict timeout boundary and preserves its audit through late completions",
+    { timeout: CASE_TIMEOUT_MS },
+    async () => {
+      const scenario = createScenario();
+      const { bdd, computerUse, orgScoped, createRunningWriteCommand } =
+        scenario;
+      return await scenario.run(async () => {
+        const actor = orgScoped(bdd.user());
+        const host = await computerUse.startComputerUseHost(actor, {
+          hostName: "Queued Successor Desktop",
+        });
+        const running = await createRunningWriteCommand({
+          actor,
+          host,
+          timeoutMs: 1000,
+        });
+        const successor = await computerUse.createComputerUseWriteCommand(
+          { bearer: running.agentToken },
+          { kind: "app.open", app: "Finder" },
+        );
+
+        mockNow(STARTED_AT_MS + 1000);
+        await expect(
+          computerUse.claimNextComputerUseCommand(host.connection),
+        ).resolves.toStrictEqual({ status: "idle" });
+        await expect(
+          computerUse.readComputerUseCommand(actor, running.commandId),
+        ).resolves.toMatchObject({ status: "running", completedAt: null });
+        await expect(
+          computerUse.listComputerUseAuditEvents(actor, {
+            commandId: running.commandId,
+          }),
+        ).resolves.toStrictEqual({ auditEvents: [] });
+
+        mockNow(STARTED_AT_MS + 2000);
+        await expect(
+          computerUse.claimNextComputerUseCommand(host.connection),
+        ).resolves.toMatchObject({
+          status: "command",
+          command: { id: successor.commandId, status: "running" },
+        });
+        const timedOut = await computerUse.readComputerUseCommand(
+          actor,
+          running.commandId,
+        );
+        expect(timedOut).toMatchObject({
+          id: running.commandId,
+          status: "failed",
+          error: {
+            code: "timeout",
+            message: "Computer-use command timed out after 1000ms",
+          },
+          completedAt: new Date(STARTED_AT_MS + 2000).toISOString(),
+        });
+        const audit = await computerUse.listComputerUseAuditEvents(actor, {
+          commandId: running.commandId,
+        });
+        expect(audit.auditEvents).toStrictEqual([
+          {
+            id: expect.any(String),
+            commandId: running.commandId,
+            runId: expect.any(String),
+            hostId: host.hostId,
+            kind: "app.open",
+            app: "Safari",
+            event: "completed",
+            redactedResult: null,
+            error: timedOut.error,
+            createdAt: timedOut.completedAt,
+          },
+        ]);
+
+        await computerUse.completeComputerUseCommand(
+          host.connection,
+          running.commandId,
+        );
+        await computerUse.completeComputerUseCommandWith(
+          host.connection,
+          running.commandId,
+          {
+            status: "failed",
+            error: { code: "app_not_found", message: "Late Desktop failure" },
+          },
+        );
+        await expect(
+          computerUse.readComputerUseCommand(actor, running.commandId),
+        ).resolves.toStrictEqual(timedOut);
+        await expect(
+          computerUse.listComputerUseAuditEvents(actor, {
+            commandId: running.commandId,
+          }),
+        ).resolves.toStrictEqual(audit);
+        await computerUse.completeComputerUseCommand(
+          host.connection,
+          successor.commandId,
+        );
+        await expect(
+          computerUse.readComputerUseCommand(actor, successor.commandId),
+        ).resolves.toMatchObject({ status: "succeeded" });
       });
     },
   );

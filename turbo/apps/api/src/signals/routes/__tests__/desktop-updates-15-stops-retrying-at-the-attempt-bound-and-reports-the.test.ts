@@ -1,11 +1,11 @@
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 
 import { createDesktopUpdatePublicApi } from "./helpers/desktop-update-public";
 
 const context = testContext();
-const { feedRequest, countingManifestHandler } =
+const { appcastRequest, countingManifestHandler } =
   createDesktopUpdatePublicApi(context);
 
 // Default Vitest file isolation gives this scenario a fresh module cache.
@@ -15,9 +15,12 @@ describe("desktop update routes", () => {
       return new HttpResponse(null, { status: 500 });
     });
 
-    const response = await accept(feedRequest(), [503]);
+    const response = await appcastRequest();
+    expect(response.status).toBe(503);
 
-    expect(response.body.error.code).toBe("DESKTOP_UPDATE_UNAVAILABLE");
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "DESKTOP_UPDATE_UNAVAILABLE" },
+    });
     expect(upstream.attempts()).toBe(3);
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });

@@ -65,6 +65,8 @@ jobs:
     outputs:
       any-changed: ${{ steps.detect.outputs.any-changed }}
       ci-changed: ${{ steps.detect.outputs.ci-changed }}
+      native-kerberos-needed: ${{ steps.detect.outputs.native-kerberos-needed }}
+      native-gssapi-peer-needed: ${{ steps.detect.outputs.native-gssapi-peer-needed }}
       mitm-addon-test-inputs-changed: ${{ steps.detect.outputs.mitm-addon-test-inputs-changed }}
       mitm-addon-pricing-seed-changed: ${{ steps.detect.outputs.mitm-addon-pricing-seed-changed }}
       runner-firewall-contract-inputs-changed: ${{ steps.detect.outputs.runner-firewall-contract-inputs-changed }}
@@ -94,7 +96,7 @@ jobs:
           BASE_REF=$(.github/scripts/changed-base-ref.sh)
           echo "${{ github.event_name }} mode: comparing against base $BASE_REF"
           # Check if the workflow file or ansible playbooks changed
-          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(crates|runner-image)\.yml$|^\.github/actions/(setup-aws-cli|setup-r2-sccache|setup-ssh-tunnel|provision|report-memory-peak)/|^\.github/scripts/|^ansible/"; then
+          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(crates|runner-image(-architecture)?)\.yml$|^\.github/actions/(setup-aws-cli|setup-r2-sccache|setup-ssh-tunnel|provision|report-memory-peak)/|^\.github/scripts/|^ansible/"; then
             echo "ci-changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "ci-changed=false" >> "$GITHUB_OUTPUT"
@@ -105,12 +107,13 @@ jobs:
             rc=0
             ./scripts/crate-changed.sh "$1" "$BASE_REF" && rc=0 || rc=$?
             if [ $rc -eq 0 ]; then
-              echo "$1-changed=true" >> "$GITHUB_OUTPUT"
+              crate_changed=true
             elif [ $rc -eq 1 ]; then
-              echo "$1-changed=false" >> "$GITHUB_OUTPUT"
+              crate_changed=false
             else
               exit $rc
             fi
+            echo "$1-changed=$crate_changed" >> "$GITHUB_OUTPUT"
           }
           check_crate ably-subscriber
           check_crate api-contracts
@@ -133,7 +136,7 @@ jobs:
           # drift check without forcing every Rust crate job to run.
           api_contracts_rust_bindings_changed=false
           changed_files="$(mktemp)"
-          git diff --name-only "$BASE_REF" HEAD > "$changed_files"
+          git diff --no-renames --name-only "$BASE_REF" HEAD > "$changed_files"
           while IFS= read -r changed_file; do
             case "$changed_file" in
               crates/api-contracts/* | \
@@ -144,6 +147,9 @@ jobs:
               turbo/packages/api-contracts/src/contracts/* | \
               turbo/packages/api-contracts/src/python-bindings/* | \
               turbo/packages/api-contracts/src/rust-bindings/* | \
+              turbo/packages/api-contracts/src/swift-bindings/* | \
+              turbo/packages/api-contracts/tsconfig.swift-bindings.json | \
+              desktop/Okou/Core/Generated/* | \
               turbo/packages/connectors/src/public-destination-policy.ts | \
               turbo/pnpm-lock.yaml)
                 api_contracts_rust_bindings_changed=true
@@ -152,6 +158,35 @@ jobs:
             esac
           done < "$changed_files"
           echo "api-contracts-rust-bindings-changed=$api_contracts_rust_bindings_changed" >> "$GITHUB_OUTPUT"
+
+          # Native checks own separate dependency closures and harness inputs.
+          # Keep these outside the generic Rust/CI aggregation above.
+          check_crate kerberos-worker
+          native_kerberos_needed=$crate_changed
+          check_crate rfb-client
+          native_gssapi_peer_needed=$crate_changed
+          while IFS= read -r changed_file; do
+            case "$changed_file" in
+              .github/workflows/crates.yml | \
+              .github/scripts/changed-base-ref.sh | \
+              scripts/crate-changed.sh | \
+              .github/scripts/native-test-environment.sh | \
+              .github/scripts/tests/runner-firewall-contract-workflow-test.sh | \
+              docker/toolchain/Dockerfile)
+                native_kerberos_needed=true
+                native_gssapi_peer_needed=true
+                ;;
+              .github/scripts/check-native-kerberos.sh)
+                native_kerberos_needed=true
+                ;;
+              .github/scripts/check-native-gssapi-peer.sh | \
+              .github/scripts/prepare-kerberos-peer-fixture.py)
+                native_gssapi_peer_needed=true
+                ;;
+            esac
+          done < "$changed_files"
+          echo "native-kerberos-needed=$native_kerberos_needed" >> "$GITHUB_OUTPUT"
+          echo "native-gssapi-peer-needed=$native_gssapi_peer_needed" >> "$GITHUB_OUTPUT"
           rm -f "$changed_files"
 
           # Shared contract fixtures are stored under turbo but are read by
@@ -311,6 +346,9 @@ jobs:
     timeout-minutes: 20
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    env:
+      # Keep the cache environment identity aligned with the dated image.
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs: [detect]
     if: needs.detect.outputs.any-changed == 'true'
     steps:
@@ -324,6 +362,16 @@ jobs:
           workspaces: crates -> target
           shared-key: check
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}
 
       - name: Check Rust module paths
         run: |
@@ -340,33 +388,87 @@ jobs:
           cd crates
           cargo clippy --all-targets --all-features
 
-      - name: Lint guest-control-server production configuration
-        if: |
-          needs.detect.outputs.guest-control-tests-changed == 'true' ||
-          needs.detect.outputs.ci-changed == 'true'
-        run: |
-          cd crates
-          cargo clippy -p guest-control-server --release --no-default-features --all-targets
+      - name: Save pinned Kerberos dependencies
+        if: github.ref == 'refs/heads/main' && steps.kerberos-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: ${{ steps.kerberos-cache.outputs.cache-primary-key }}
+
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+
+  check-docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    env:
+      # Keep the cache environment identity aligned with the dated image.
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    needs: [detect]
+    if: needs.detect.outputs.any-changed == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: crates -> target
+          shared-key: check
+          save-if: false
+
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}
 
       - name: Build documentation
         run: |
           cd crates
           cargo doc --workspace --all-features --no-deps
 
-      - name: Run ably-subscriber smoke test
-        if: |
-          needs.detect.outputs.ably-subscriber-changed == 'true' ||
-          needs.detect.outputs.ci-changed == 'true'
-        env:
-          ABLY_API_KEY: ${{ secrets.ABLY_API_KEY }}
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+
+  check-guest-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    needs: [detect]
+    if: |
+      needs.detect.outputs.any-changed == 'true' &&
+      (needs.detect.outputs.guest-control-tests-changed == 'true' || needs.detect.outputs.ci-changed == 'true')
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: crates -> target
+          shared-key: check
+          save-if: false
+
+      - name: Lint guest-control-server production configuration
         run: |
           cd crates
-          cargo run -p ably-subscriber --example smoke_test
+          cargo clippy -p guest-control-server --release --no-default-features --all-targets
 
       - name: Run guest-control-server production configuration tests
-        if: |
-          needs.detect.outputs.guest-control-tests-changed == 'true' ||
-          needs.detect.outputs.ci-changed == 'true'
         run: |
           test "$(id -u)" -eq 0
           for command in getent groupadd useradd install; do
@@ -422,6 +524,39 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/report-memory-peak
 
+  check-ably-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    needs: [detect]
+    if: |
+      needs.detect.outputs.any-changed == 'true' &&
+      (needs.detect.outputs.ably-subscriber-changed == 'true' || needs.detect.outputs.ci-changed == 'true')
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: crates -> target
+          shared-key: check
+          save-if: false
+
+      - name: Run ably-subscriber smoke test
+        env:
+          ABLY_API_KEY: ${{ secrets.ABLY_API_KEY }}
+        run: |
+          cd crates
+          cargo run -p ably-subscriber --example smoke_test
+
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+
   coverage:
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 20
@@ -467,7 +602,7 @@ jobs:
           done
 
       - name: Install coverage tools
-        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
         with:
           tool: cargo-llvm-cov@0.9.1,cargo-nextest@0.9.148
 
@@ -555,9 +690,11 @@ jobs:
         run: |
           pnpm -F @okouai/api-contracts generate:rust
           pnpm -F @okouai/api-contracts generate:python
+          pnpm -F @okouai/api-contracts generate:swift
           git diff --exit-code -- \
             ../crates/api-contracts/src/generated \
-            ../crates/runner/mitm-addon/src/generated
+            ../crates/runner/mitm-addon/src/generated \
+            ../desktop/Okou/Core/Generated
 
   runner-firewall-contract-test:
     runs-on: ubuntu-latest
@@ -656,6 +793,72 @@ jobs:
       - name: Check packaged addon control lifecycle
         shell: bash
         run: bash .github/scripts/check-packaged-addon-control.sh
+
+  # Exercise the client's real native boundary and protocol peers, not a build
+  # of an external VNC server. Optional QEMU tooling is outside routine CI.
+  native-kerberos-runtime:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      # Allow namespace bootstrap; retain Docker's seccomp and worker isolation.
+      options: --cap-add=SYS_ADMIN --security-opt apparmor=unconfined
+    needs: [detect]
+    if: needs.detect.outputs.native-kerberos-needed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Compile sealed package and run real native containment/lifecycle conformance
+        shell: bash
+        env:
+          RUSTUP_TOOLCHAIN: stable
+          NATIVE_TEST_OWNER: ubuntu
+        run: bash .github/scripts/check-native-kerberos.sh --privileged-synthetic
+      - name: Preserve exact-head native receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-kerberos-${{ matrix.os }}
+          path: crates/target/native-kerberos-receipt/
+          if-no-files-found: error
+          retention-days: 14
+
+  native-gssapi-independent-peer:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      # Allow namespace bootstrap; retain Docker's seccomp and worker isolation.
+      options: --cap-add=SYS_ADMIN --security-opt apparmor=unconfined
+    needs: [detect]
+    if: needs.detect.outputs.native-gssapi-peer-needed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify native mutual GSS and RFB controls against signed independent MIT
+        shell: bash
+        env:
+          RUSTUP_TOOLCHAIN: stable
+          NATIVE_TEST_OWNER: ubuntu
+        run: bash .github/scripts/check-native-gssapi-peer.sh
+      - name: Preserve exact-head independent protocol receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-gssapi-independent-peer-${{ matrix.os }}
+          path: crates/target/native-gssapi-peer-receipt/
+          if-no-files-found: error
+          retention-days: 14
 
   nbd-cow-test:
     runs-on: ubuntu-latest
@@ -1243,7 +1446,7 @@ jobs:
           shared-key: ${{ needs.runner-host-groups.outputs.selected-target }}-guest-rpc
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Cross-compile native guest RPC test
+      - name: Cross-compile native Guest RPC and duplex test
         id: build
         run: bash .github/scripts/runner-native-test-artifact.sh build
 
@@ -1310,7 +1513,7 @@ jobs:
           cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
-      - name: Verify packaged RPC over fresh and restored Firecracker
+      - name: Verify packaged RPC and duplex over fresh and restored Firecracker
         run: bash .github/scripts/runner-behavior-guest-rpc.sh
 
   ci-gate-crates:
@@ -1320,6 +1523,9 @@ jobs:
       - detect-release
       - detect
       - check
+      - check-docs
+      - check-guest-production
+      - check-ably-smoke
       - coverage
       - api-contracts-rust-bindings
       - runner-firewall-contract-test
@@ -1338,18 +1544,34 @@ jobs:
       - guest-rpc-firecracker-build
       - nbd-cow-test
       - runner-rootfs-process-test
+      - native-kerberos-runtime
+      - native-gssapi-independent-peer
     # Always run so the gate reports an explicit result (not "skipped").
     if: always()
     steps:
       - name: Validate CI results
         env:
           IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
+          CHECKS_NEEDED: ${{ needs.detect.outputs.any-changed }}
+          CI_CHANGED: ${{ needs.detect.outputs.ci-changed }}
+          GUEST_CONTROL_CHANGED: ${{ needs.detect.outputs.guest-control-tests-changed }}
+          ABLY_CHANGED: ${{ needs.detect.outputs.ably-subscriber-changed }}
           COVERAGE_NEEDED: ${{ needs.detect.outputs.any-changed == 'true' }}
+          NATIVE_KERBEROS_NEEDED: ${{ needs.detect.outputs.native-kerberos-needed }}
+          NATIVE_GSSAPI_PEER_NEEDED: ${{ needs.detect.outputs.native-gssapi-peer-needed }}
           FIREWALL_CONTRACT_NEEDED: ${{ needs.detect.outputs.runner-firewall-contract-inputs-changed == 'true' }}
           RUNNER_IMAGE_NEEDED: ${{ needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true' }}
           CPU_FAIRNESS_NEEDED: ${{ needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true' && (needs.detect.outputs.sandbox-firecracker-changed == 'true' || needs.detect.outputs.ci-changed == 'true') }}
           IMAGE_VALIDATION_MATRIX: ${{ needs.runner-host-groups.outputs.validation-matrix }}
         run: |
+          if [ "${{ needs.detect-release.result }}" != "success" ]; then
+            echo "::error::Release classification did not succeed"
+            exit 1
+          fi
+          if [ "$IS_RELEASE" != "true" ] && [ "$IS_RELEASE" != "false" ]; then
+            echo "::error::Missing or invalid release selection"
+            exit 1
+          fi
           # Auto-pass for release-please PRs, commits, and merge queue entries
           if [[ "$IS_RELEASE" == "true" ]]; then
             echo "✅ Release-please — skipping CI gate"
@@ -1379,6 +1601,28 @@ jobs:
           # Must-succeed: only 'success' is acceptable
           check_result "detect" "${{ needs.detect.result }}" ""
 
+          # All split checks use the original outer and inner selection.
+          CHECK_ALLOW_SKIP=""
+          GUEST_CONTROL_ALLOW_SKIP=""
+          ABLY_ALLOW_SKIP=""
+          for selection in "$CHECKS_NEEDED" "$CI_CHANGED" "$GUEST_CONTROL_CHANGED" "$ABLY_CHANGED"; do
+            if [ "$selection" != "true" ] && [ "$selection" != "false" ]; then
+              echo "::error::Missing or invalid check selection"
+              FAILED=1
+            fi
+          done
+          if [ "$CHECKS_NEEDED" = "false" ]; then
+            CHECK_ALLOW_SKIP=true
+          fi
+          if [ "$CHECKS_NEEDED" = "false" ] || \
+             { [ "$CI_CHANGED" = "false" ] && [ "$GUEST_CONTROL_CHANGED" = "false" ]; }; then
+            GUEST_CONTROL_ALLOW_SKIP=true
+          fi
+          if [ "$CHECKS_NEEDED" = "false" ] || \
+             { [ "$CI_CHANGED" = "false" ] && [ "$ABLY_CHANGED" = "false" ]; }; then
+            ABLY_ALLOW_SKIP=true
+          fi
+
           RUNNER_IMAGE_ALLOW_SKIP=true
           OTHER_TARGETS_ALLOW_SKIP=true
           if [ "$RUNNER_IMAGE_NEEDED" = "true" ]; then
@@ -1397,9 +1641,30 @@ jobs:
             FIREWALL_CONTRACT_ALLOW_SKIP=""
           fi
 
+          # Native selection must be explicit; missing/invalid outputs refuse.
+          NATIVE_KERBEROS_ALLOW_SKIP=""
+          NATIVE_GSSAPI_PEER_ALLOW_SKIP=""
+          for selection in "$NATIVE_KERBEROS_NEEDED" "$NATIVE_GSSAPI_PEER_NEEDED"; do
+            if [ "$selection" != "true" ] && [ "$selection" != "false" ]; then
+              echo "::error::Missing or invalid native test selection"
+              FAILED=1
+            fi
+          done
+          if [ "$NATIVE_KERBEROS_NEEDED" = "false" ]; then
+            NATIVE_KERBEROS_ALLOW_SKIP=true
+          fi
+          if [ "$NATIVE_GSSAPI_PEER_NEEDED" = "false" ]; then
+            NATIVE_GSSAPI_PEER_ALLOW_SKIP=true
+          fi
+
           # May-skip only when the corresponding work was not selected.
-          check_result "check" "${{ needs.check.result }}" "true"
+          check_result "check" "${{ needs.check.result }}" "$CHECK_ALLOW_SKIP"
+          check_result "check-docs" "${{ needs.check-docs.result }}" "$CHECK_ALLOW_SKIP"
+          check_result "check-guest-production" "${{ needs.check-guest-production.result }}" "$GUEST_CONTROL_ALLOW_SKIP"
+          check_result "check-ably-smoke" "${{ needs.check-ably-smoke.result }}" "$ABLY_ALLOW_SKIP"
           check_result "coverage" "${{ needs.coverage.result }}" "$COVERAGE_ALLOW_SKIP"
+          check_result "native-kerberos-runtime" "${{ needs.native-kerberos-runtime.result }}" "$NATIVE_KERBEROS_ALLOW_SKIP"
+          check_result "native-gssapi-independent-peer" "${{ needs.native-gssapi-independent-peer.result }}" "$NATIVE_GSSAPI_PEER_ALLOW_SKIP"
           check_result "api-contracts-rust-bindings" "${{ needs.api-contracts-rust-bindings.result }}" "true"
           check_result "runner-firewall-contract-test" "${{ needs.runner-firewall-contract-test.result }}" "$FIREWALL_CONTRACT_ALLOW_SKIP"
           check_result "mitm-addon-test" "${{ needs.mitm-addon-test.result }}" "true"

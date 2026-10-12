@@ -1,6 +1,11 @@
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { exclusiveDurationBreakdown } from "@okouai/core/exclusive-duration";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
+import {
+  withPgPoolAcquisitionCapture,
+  type PgPoolAcquisitionCapture,
+  type PgPoolAcquisition,
+} from "../../lib/db-instrumentation";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { monotonicNow, nowDate } from "../../lib/time";
@@ -25,6 +30,7 @@ interface AdmissionTimingRecord {
   readonly durationMs: number;
   readonly timestamp: string;
   readonly leaf?: AdmissionLockLeaf;
+  readonly poolAcquirePath?: PgPoolAcquisition["path"];
 }
 
 interface AdmissionAttemptTimingArgs {
@@ -45,6 +51,9 @@ export class AdmissionAttemptTiming {
   private leafDurationMs = 0;
   private finished = false;
   private transactionStartedRecorded = false;
+  private readonly poolCapture: PgPoolAcquisitionCapture = {
+    acquisitions: [],
+  };
 
   constructor(
     private readonly args: AdmissionAttemptTimingArgs,
@@ -54,11 +63,17 @@ export class AdmissionAttemptTiming {
   }
 
   transactionStarted(): void {
+    // The callback starts after acquisition and BEGIN; this setup parent is
+    // broader than the separately observed pool-acquisition interval.
     this.transactionStartedRecorded = true;
     this.record(
       "api_dispatch_admission_transaction_setup",
       this.nowMs() - this.startedAt,
     );
+  }
+
+  async capturePoolAcquisition<T>(operation: () => Promise<T>): Promise<T> {
+    return await withPgPoolAcquisitionCapture(this.poolCapture, operation);
   }
 
   /**
@@ -93,6 +108,15 @@ export class AdmissionAttemptTiming {
       return;
     }
     this.finished = true;
+    const [acquisition] = this.poolCapture.acquisitions;
+    if (this.poolCapture.acquisitions.length === 1 && acquisition) {
+      this.records.push({
+        actionType: "api_dispatch_admission_pool_acquire",
+        durationMs: acquisition.durationMs,
+        timestamp: new Date(acquisition.finishedAt).toISOString(),
+        poolAcquirePath: acquisition.path,
+      });
+    }
     const finishedAt = this.nowMs();
     if (!this.transactionStartedRecorded) {
       this.record(
@@ -117,6 +141,8 @@ export class AdmissionAttemptTiming {
         "api_dispatch_admission_lock_completion_tail",
         breakdown.completionMs,
       );
+      // Completion spans callback finish through transaction/command return:
+      // COMMIT, release and application bookkeeping, not server-only COMMIT.
       this.record("api_dispatch_admission_lock_residual", breakdown.residualMs);
       this.record("api_dispatch_admission_lock_overlap", breakdown.overlapMs);
     }
@@ -134,6 +160,12 @@ export class AdmissionAttemptTiming {
         run_persisted: persisted ? "true" : "false",
         query_count_coverage: "unavailable",
         row_count_coverage: "unavailable",
+        db_pool_capture:
+          this.poolCapture.acquisitions.length === 1
+            ? "single"
+            : this.poolCapture.acquisitions.length === 0
+              ? "missing"
+              : "multiple",
         ...(apiCommitSha ? { api_commit_sha: apiCommitSha } : {}),
         ...(this.args.triggerSource
           ? { trigger_source: this.args.triggerSource }
@@ -151,6 +183,9 @@ export class AdmissionAttemptTiming {
             dimensions: {
               ...dimensions,
               ...(record.leaf ? { admission_leaf: record.leaf } : {}),
+              ...(record.poolAcquirePath
+                ? { db_pool_acquire_path: record.poolAcquirePath }
+                : {}),
             },
           };
         }),

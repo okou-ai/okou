@@ -101,7 +101,7 @@ fn log_guest_operation_failure(
     }
 }
 
-async fn prepare_terminal_cache_runtime(
+pub(crate) async fn prepare_terminal_cache_runtime(
     sandbox: &dyn Sandbox,
     promotion: &mut HomeImagePromotionContext,
 ) -> crate::error::LifecycleResult<()> {
@@ -178,6 +178,23 @@ async fn prepare_terminal_cache_runtime(
 }
 
 impl PreparedHomeImagePromotion {
+    /// The caller has completed required preparation and freeze, retaining the
+    /// context on every error. This does not prove backing exit or publication.
+    pub(crate) fn required(promotion: HomeImagePromotionContext, reason: &'static str) -> Self {
+        Self { promotion, reason }
+    }
+
+    /// Required saving never abandons the original context on publication error.
+    pub(crate) async fn publish_required(&self) -> crate::error::LifecycleResult<bool> {
+        match self.promotion.promote().await? {
+            HomeImagePromotionOutcome::Promoted => Ok(true),
+            HomeImagePromotionOutcome::PreservedExisting => Ok(false),
+            HomeImagePromotionOutcome::SkippedUnpublished => Err(LifecycleError::Internal(
+                "required home publication did not complete".into(),
+            )),
+        }
+    }
+
     pub async fn publish(mut self) -> bool {
         match AssertUnwindSafe(self.publish_inner()).catch_unwind().await {
             Ok(HomePromotionAction::Promoted) => true,

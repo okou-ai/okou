@@ -120,7 +120,7 @@ export const noUnownedUsagePricing = createRule({
     schema: [],
     messages: {
       unownedPricing:
-        "Raw usage-pricing mutations require a provider proven unique to this test (randomUUID/runId/lookupProvider). Canonical operator-managed prices have no user fixture API; construct scenarios through ordinary product APIs.",
+        "Raw usage-pricing mutations require a provider proven unique to this test (randomUUID/runId/lookupProvider). Canonical operator-managed prices have no user fixture API; construct scenarios through ordinary product APIs. See docs/api/api-testing.md#shared-persistent-state.",
     },
   },
   create(context) {

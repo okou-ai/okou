@@ -173,9 +173,9 @@ pub fn session_id_file(run_dir: impl AsRef<Path>) -> PathBuf {
 
 /// Return the run-root Guest error file.
 ///
-/// Its historical `checkpoint-error` filename remains stable for Runner readers.
+/// Runner and Guest share this private path within their coupled artifact.
 pub fn finalization_error_file(run_dir: impl AsRef<Path>) -> PathBuf {
-    file(run_dir, "checkpoint-error")
+    file(run_dir, "finalization-error")
 }
 
 /// Return the run-root `final-session-history-identity.json` file.
@@ -1255,7 +1255,7 @@ mod tests {
             run_dir_for_home("/home/user", "00000000-0000-0000-0000-000000000001").unwrap();
         assert_eq!(
             finalization_error_file(&run_dir),
-            run_dir.join("checkpoint-error")
+            run_dir.join("finalization-error")
         );
         let files = [
             session_id_file(&run_dir),

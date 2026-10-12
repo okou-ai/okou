@@ -59,12 +59,19 @@ def check_gate(root, gate, step, matrix:, needed: "true", cpu_needed: "true", re
   script = step.fetch("run").gsub(/\$\{\{ needs\.([a-z-]+)\.result \}\}/) { values.fetch(Regexp.last_match(1)) }
   raise "unresolved gate expression" if script.include?("${{")
   env = {"IS_RELEASE" => release, "RUNNER_IMAGE_NEEDED" => needed,
+         "CHECKS_NEEDED" => "true", "CI_CHANGED" => "true",
+         "GUEST_CONTROL_CHANGED" => "false", "ABLY_CHANGED" => "false",
          "COVERAGE_NEEDED" => "true", "FIREWALL_CONTRACT_NEEDED" => "false",
+         "NATIVE_KERBEROS_NEEDED" => "true", "NATIVE_GSSAPI_PEER_NEEDED" => "true",
          "CPU_FAIRNESS_NEEDED" => cpu_needed, "IMAGE_VALIDATION_MATRIX" => matrix}
   run_step(root, env, script, success: success)
 end
 
-Dir.mktmpdir("crates-image-waiters") do |dir|
+target = File.join(root, "crates/target")
+raise "test target must not be a symlink" if File.symlink?(target)
+FileUtils.mkdir_p(target)
+raise "test target must be canonical" unless File.realpath(target) == target
+Dir.mktmpdir("crates-image-waiters", target) do |dir|
   bin = File.join(dir, "bin")
   FileUtils.mkdir_p(bin)
   ssh = File.join(bin, "ssh")
@@ -134,7 +141,8 @@ unselected = %w[runner-host-groups runner-test-prepare runner-image-architecture
                 host-cpu-fairness-build host-cpu-fairness-test
                 guest-rpc-firecracker-build guest-rpc-firecracker-test].to_h { |name| [name, "skipped"] }
 check_gate(root, gate, gate_step, matrix: "", needed: "false", cpu_needed: "false", results: unselected)
-check_gate(root, gate, gate_step, matrix: "", release: "true", results: gate.fetch("needs").to_h { |name| [name, "skipped"] })
+release_results = gate.fetch("needs").to_h { |name| [name, "skipped"] }.merge("detect-release" => "success")
+check_gate(root, gate, gate_step, matrix: "", release: "true", results: release_results)
 
 puts "crates-runner-image-waiters-test: ok"
 RUBY

@@ -444,10 +444,6 @@
           "support-ticket-router": {
             "description": "チケットは Notion に送られ、緊急のチケットは Slack に ping されます。",
             "title": "サポートチケットルーター"
-          },
-          "zendesk-notion-knowledge-base": {
-            "description": "よくある Zendesk の質問を抽出し、Notion FAQ に自動追加します",
-            "title": "Zendesk → Notion ナレッジ ベース"
           }
         },
         "title": "サポート"

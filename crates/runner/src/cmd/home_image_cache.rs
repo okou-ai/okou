@@ -75,6 +75,7 @@ struct HomeImageCacheInfoOutput {
     lock_dir: String,
     fs_stats: FsStats,
     budget: CacheBudget,
+    measurements_complete: bool,
     summary: HomeImageCacheInspectionSummary,
 }
 
@@ -83,6 +84,10 @@ struct HomeImageCacheInfoOutput {
 struct HomeImageCacheListOutput {
     cache_dir: String,
     lock_dir: String,
+    fs_stats: FsStats,
+    budget: CacheBudget,
+    measurements_complete: bool,
+    entries_complete: bool,
     summary: HomeImageCacheInspectionSummary,
     entries: Vec<HomeImageCacheInspectionEntry>,
 }
@@ -143,6 +148,7 @@ fn info_output(inspection: &HomeImageCacheInspection) -> HomeImageCacheInfoOutpu
         lock_dir: inspection.lock_dir.clone(),
         fs_stats: inspection.fs_stats,
         budget: inspection.budget,
+        measurements_complete: inspection.summary.locked_entries == 0,
         summary: inspection.summary.clone(),
     }
 }
@@ -154,9 +160,10 @@ fn list_output(
     let HomeImageCacheInspection {
         cache_dir,
         lock_dir,
+        fs_stats,
+        budget,
         summary,
         entries,
-        ..
     } = inspection;
     let mut entries = entries;
     entries.sort_by(|left, right| {
@@ -165,12 +172,17 @@ fn list_output(
             .then_with(|| right.last_used_at.cmp(&left.last_used_at))
             .then_with(|| left.cache_key.cmp(&right.cache_key))
     });
+    let observed_entries = entries.len();
     if let Some(limit) = limit {
         entries.truncate(limit);
     }
     HomeImageCacheListOutput {
         cache_dir,
         lock_dir,
+        fs_stats,
+        budget,
+        measurements_complete: summary.locked_entries == 0,
+        entries_complete: entries.len() == observed_entries,
         summary,
         entries,
     }
@@ -199,10 +211,13 @@ Home image cache
   Cache dir: {cache_dir}
   Lock dir: {lock_dir}
   Filesystem: total {fs_total}, available {fs_available}
+  Inodes: total {inode_total}, available {inode_available}
   Budget: max {max_cache}, target after GC {target_after_gc}, min free {min_free}
   Entries: total {total}, reusable {reusable}, invalid {invalid}, stale {stale}, temporary-only {temporary}, locked {locked}
   Temporary paths: {temporary_paths} ({temporary_allocated})
   Size: allocated {allocated}, logical {logical}
+  Scope: retained cache and staging only; excludes active/idle home disks, rootfs COW and other host consumers.
+  Sparse image logical size is not allocated usage; Guest unlink does not guarantee host block reclamation.
 {lower_bound_note}
 List entries:
   runner home-image-cache list --limit 50
@@ -214,6 +229,8 @@ Preview cleanup:
         lock_dir = inspection.lock_dir,
         fs_total = human_bytes(fs.total_bytes),
         fs_available = human_bytes(fs.available_bytes),
+        inode_total = fs.total_inodes,
+        inode_available = fs.available_inodes,
         max_cache = human_bytes(budget.max_cache_bytes),
         target_after_gc = human_bytes(budget.target_after_gc_bytes),
         min_free = human_bytes(budget.min_free_bytes),
@@ -237,6 +254,10 @@ fn format_list_text(output: &HomeImageCacheListOutput) -> String {
         total = output.summary.total_entries,
         cache_dir = output.cache_dir,
     );
+    text.push_str(&format!("  Filesystem: available {} / {}; inodes available {} / {}\n  Measurements complete: {}; entries complete: {}\n  Scope: retained/staging allocation, not active/idle disks or rootfs COW.\n",
+        human_bytes(output.fs_stats.available_bytes), human_bytes(output.fs_stats.total_bytes),
+        output.fs_stats.available_inodes, output.fs_stats.total_inodes,
+        output.measurements_complete, output.entries_complete));
     if output.entries.is_empty() {
         if output.summary.total_entries == 0 {
             text.push_str("\nNo home image cache entries found.\n");
@@ -317,6 +338,8 @@ mod tests {
             fs_stats: FsStats {
                 total_bytes: 1_000,
                 available_bytes: 700,
+                total_inodes: 100,
+                available_inodes: 70,
             },
             budget: CacheBudget {
                 max_cache_bytes: 500,
@@ -409,6 +432,8 @@ mod tests {
         assert_eq!(value["cacheDir"], "/var/lib/vm0-runner/home-image-cache");
         assert_eq!(value["summary"]["totalEntries"], 2);
         assert_eq!(value["summary"]["temporaryPaths"], 1);
+        assert_eq!(value["fsStats"]["availableInodes"], 70);
+        assert_eq!(value["measurementsComplete"], true);
         assert!(value["summary"].get("temporaryFiles").is_none());
         assert!(value.get("entries").is_none());
         assert!(value["budget"].get("maxEntryBytes").is_none());
@@ -419,6 +444,10 @@ mod tests {
         let output = list_output(test_inspection(), Some(1));
         let value = serde_json::to_value(&output).unwrap();
         assert_eq!(value["entries"].as_array().unwrap().len(), 1);
+        assert_eq!(value["entriesComplete"], false);
+        assert_eq!(value["measurementsComplete"], true);
+        assert_eq!(value["fsStats"]["totalInodes"], 100);
+        assert_eq!(value["budget"]["maxCacheBytes"], 500);
         assert_eq!(value["entries"][0]["status"], "invalid");
         assert_eq!(value["entries"][0]["reason"], "missing metadata");
         assert_eq!(value["entries"][0]["temporaryPathCount"], 0);
@@ -432,6 +461,8 @@ mod tests {
             .unwrap();
         let entry = &value["entries"][0];
         assert_eq!(value["summary"]["lockedEntries"], 1);
+        assert_eq!(value["measurementsComplete"], false);
+        assert_eq!(value["entriesComplete"], false);
         assert_eq!(entry["status"], "locked");
         assert_eq!(entry["reason"], "entry lock is held");
         assert_eq!(entry["allocatedBytes"], 0);

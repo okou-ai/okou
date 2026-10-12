@@ -36,8 +36,8 @@ use crate::blank_pool::BlankPoolDiagnostics;
 use crate::finalizing_admission::FinalizingAdmission;
 use crate::idle_lifecycle::{
     IdleDestroyTracker, IdlePressureRequest, IdlePressureSelection, ReservedIdleActivation,
-    SharedIdlePool, destroy_idle_jobs_and_wait, reserve_reusable_idle_for_spawn,
-    rollback_reserved_idle_for_spawn, select_idle_entries_for_pressure, set_idle_status_snapshot,
+    SharedIdlePool, reserve_reusable_idle_for_spawn, rollback_reserved_idle_for_spawn,
+    select_idle_entries_for_pressure, set_idle_status_snapshot,
 };
 
 /// Narrow, borrowed composition inputs required for the admission-to-claim transaction.
@@ -743,6 +743,7 @@ async fn exact_speculative_preparation(
             ctx.idle_pool,
             ctx.status,
             ctx.reuse_state_notify,
+            ctx.idle_destroy_tracker,
         )
         .await;
         return ordinary_preparation(candidate);
@@ -895,6 +896,7 @@ async fn rollback_untracked_resource(
                 ctx.idle_pool,
                 ctx.status,
                 ctx.reuse_state_notify,
+                ctx.idle_destroy_tracker,
             )
             .await;
         }
@@ -904,6 +906,7 @@ async fn rollback_untracked_resource(
                 ctx.idle_pool,
                 ctx.status,
                 ctx.reuse_state_notify,
+                ctx.idle_destroy_tracker,
             )
             .await;
         }
@@ -961,26 +964,30 @@ pub async fn rollback_exact_speculation_outcome(
     home_disk_mb: u32,
     ctx: &PreClaimResources<'_>,
 ) {
-    let destroy_job = match outcome {
+    let destroy_task = match outcome {
         ExactSpeculationOutcome::Prepared(sandbox) => {
             match sandbox
                 .repark_for_claim_rollback(run_id, u64::from(home_disk_mb) * 1024 * 1024)
                 .await
             {
                 SpeculativeReparkResult::Reparked(reservation) => {
-                    let (restore_result, snapshot) = {
+                    let (destroy_task, snapshot) = {
                         let mut pool = ctx.idle_pool.lock().await;
                         let restore_result = pool.restore_reserved(*reservation);
                         let snapshot = pool.status_snapshot();
-                        (restore_result, snapshot)
+                        let destroy_task = match restore_result {
+                            RestoreReservedIdleResult::Restored => None,
+                            RestoreReservedIdleResult::Replaced(job)
+                            | RestoreReservedIdleResult::Rejected(job) => Some(
+                                ctx.idle_destroy_tracker
+                                    .spawn_job(*job, "speculative_exact_reuse_claim_rollback"),
+                            ),
+                        };
+                        (destroy_task, snapshot)
                     };
                     set_idle_status_snapshot(ctx.status, snapshot).await;
                     ctx.reuse_state_notify.notify_one();
-                    match restore_result {
-                        RestoreReservedIdleResult::Restored => None,
-                        RestoreReservedIdleResult::Replaced(destroy_job)
-                        | RestoreReservedIdleResult::Rejected(destroy_job) => Some(destroy_job),
-                    }
+                    destroy_task
                 }
                 SpeculativeReparkResult::Destroy {
                     destroy_job,
@@ -1003,7 +1010,10 @@ pub async fn rollback_exact_speculation_outcome(
                             "speculative exact-reuse rollback could not restore idle ownership"
                         );
                     }
-                    Some(destroy_job)
+                    Some(
+                        ctx.idle_destroy_tracker
+                            .spawn_job(*destroy_job, "speculative_exact_reuse_claim_rollback"),
+                    )
                 }
             }
         }
@@ -1013,12 +1023,16 @@ pub async fn rollback_exact_speculation_outcome(
                 error,
                 "speculative exact-reuse preparation failed before claim resolved"
             );
-            Some(destroy_job)
+            Some(
+                ctx.idle_destroy_tracker
+                    .spawn_job(*destroy_job, "speculative_exact_reuse_claim_rollback"),
+            )
         }
     };
-    if let Some(destroy_job) = destroy_job {
-        destroy_idle_jobs_and_wait(vec![*destroy_job], "speculative_exact_reuse_claim_rollback")
-            .await;
+    if let Some(mut task) = destroy_task {
+        if let Err(error) = task.join().await {
+            warn!(%error, "speculative exact rollback cleanup producer lost");
+        }
         ctx.reuse_state_notify.notify_one();
     }
 }

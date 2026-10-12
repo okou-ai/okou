@@ -11,6 +11,7 @@ import {
   integrationsTelegramContract,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
+import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -586,6 +587,127 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     });
     expect(badJson.status).toBe(400);
     await expect(badJson.text()).resolves.toBe("Bad Request");
+  });
+
+  it("keeps concurrent first Telegram DMs on one owner-scoped thread", async () => {
+    configureCanonicalTelegramRunner();
+    const fixture = await createTelegramPostFixture({ linkOfficial: true });
+    const outsider = await createTelegramPostFixture();
+    const actor = actorForFixture(fixture);
+    telegramApiMocks();
+    const before = await chatApi.requestThreadEvents(actor, {}, [200]);
+    if (before.status !== 200) {
+      throw new Error("Expected the owner's initial thread lifecycle");
+    }
+    const updates = [4701, 4702].map((messageId) => {
+      return {
+        update_id: messageId,
+        message: {
+          message_id: messageId,
+          chat: { id: Number(fixture.telegramUserId), type: "private" },
+          from: { id: Number(fixture.telegramUserId), first_name: "Alice" },
+          text: `concurrent Telegram DM ${messageId}`,
+        },
+      };
+    });
+    const responses = await Promise.all(
+      updates.map((body) => {
+        return postWebhook({
+          telegramBotId: fixture.telegramBotId,
+          secret: fixture.webhookSecret,
+          body,
+        });
+      }),
+    );
+    expect(
+      responses.map((response) => {
+        return response.status;
+      }),
+    ).toStrictEqual([200, 200]);
+    await flushWaitUntilForTest();
+
+    const lifecycle = await chatApi.requestThreadEvents(actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error("Expected the owner's Telegram DM thread lifecycle");
+    }
+    expect(lifecycle.body.hasMore).toBeFalsy();
+    const created = lifecycle.body.events.filter((event) => {
+      return (
+        event.kind === "created" &&
+        !before.body.events.some((previous) => {
+          return previous.id === event.id;
+        })
+      );
+    });
+    expect(created).toHaveLength(1);
+    const [thread] = created;
+    if (!thread) {
+      throw new Error("Expected one owner-scoped Telegram DM thread");
+    }
+    const { events } = await chatApi.listThreadEvents(
+      actor,
+      thread.chatThreadId,
+    );
+    const revokedIds = revokedChatEventIds(events);
+    const inputs = events
+      .filter((event) => {
+        return event.eventType === "input.prompt";
+      })
+      .filter((event) => {
+        return !revokedIds.has(event.id);
+      });
+    expect(inputs).toHaveLength(2);
+    for (const update of updates) {
+      const input = inputs.find((event) => {
+        return event.userMessage.parts.some((part) => {
+          return part.type === "text" && part.text === update.message.text;
+        });
+      });
+      if (!input) {
+        throw new Error("Expected the current Telegram DM input");
+      }
+      await expect(
+        threadIdWhere(fixture, (event) => {
+          return event.id === input.id;
+        }),
+      ).resolves.toBe(thread.chatThreadId);
+    }
+
+    expect(
+      (
+        await postWebhook({
+          telegramBotId: fixture.telegramBotId,
+          secret: fixture.webhookSecret,
+          body: updates[0],
+        })
+      ).status,
+    ).toBe(200);
+    await flushWaitUntilForTest();
+    const repeated = await chatApi.requestThreadEvents(actor, {}, [200]);
+    if (repeated.status !== 200) {
+      throw new Error("Expected the owner's lifecycle after DM replay");
+    }
+    expect(repeated.body.events).toStrictEqual(lifecycle.body.events);
+    const replayed = await chatApi.listThreadEvents(actor, thread.chatThreadId);
+    expect(replayed.events).toStrictEqual(events);
+    await chatApi.requestReadThreadMetadata(
+      actorForFixture(outsider),
+      thread.chatThreadId,
+      [404],
+    );
+    const isolated = await chatApi.requestThreadEvents(
+      actorForFixture(outsider),
+      {},
+      [200],
+    );
+    if (isolated.status !== 200) {
+      throw new Error("Expected the unrelated owner's thread lifecycle");
+    }
+    expect(
+      isolated.body.events.some((event) => {
+        return event.chatThreadId === thread.chatThreadId;
+      }),
+    ).toBeFalsy();
   });
 
   it("snapshots thread reuse inputs before a CLI session exists", async () => {
@@ -1382,6 +1504,77 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   it("preserves Telegram forum delivery and ignores duplicate completion callbacks", async () => {
     expect.hasAssertions();
     await runCanonicalTelegramForumScenario("callback");
+  });
+
+  it("keeps Telegram completion terminal after provider delivery fails", async () => {
+    const runnerGroup = configureCanonicalTelegramRunner();
+    const fixture = await createTelegramPostFixture({ linkOfficial: true });
+    telegramApiMocks();
+    const attemptedMessages: TelegramSendMessageBody[] = [];
+    server.use(
+      http.post(
+        `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/sendMessage`,
+        async ({ request }) => {
+          attemptedMessages.push(
+            (await request.json()) as TelegramSendMessageBody,
+          );
+          return HttpResponse.json(
+            { ok: false, description: "Telegram temporarily unavailable" },
+            { status: 503 },
+          );
+        },
+      ),
+    );
+    const chatId = -77_202;
+    const prompt = `@${OFFICIAL_BOT_USERNAME} complete despite delivery failure`;
+    expect(
+      (
+        await postWebhook({
+          telegramBotId: fixture.telegramBotId,
+          secret: fixture.webhookSecret,
+          body: {
+            update_id: 204,
+            message: {
+              message_id: 2206,
+              chat: { id: chatId, type: "supergroup" },
+              from: { id: Number(fixture.telegramUserId), first_name: "Alice" },
+              text: prompt,
+              entities: [mentionEntity(OFFICIAL_BOT_USERNAME)],
+            },
+          },
+        })
+      ).status,
+    ).toBe(200);
+    await flushWaitUntilForTest();
+    const run = await runForPrompt(fixture, prompt);
+    if (!run) {
+      throw new Error("Expected the Telegram provider-failure run");
+    }
+    const claim = await claimTelegramRun(run.id, runnerGroup, fixture);
+    await completeCanonicalChatRun({
+      runId: run.id,
+      sandboxToken: claim.sandboxToken,
+    });
+    expect(attemptedMessages).toHaveLength(1);
+    expect(attemptedMessages[0]).toMatchObject({
+      chat_id: String(chatId),
+      text: expect.stringContaining("Task completed successfully."),
+    });
+    await expect(runForPrompt(fixture, prompt)).resolves.toMatchObject({
+      id: run.id,
+      status: "completed",
+    });
+    await webhooksApi.requestAgentComplete(
+      { runId: run.id, exitCode: 1, error: "late duplicate completion" },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(attemptedMessages).toHaveLength(1);
+    await expect(runForPrompt(fixture, prompt)).resolves.toMatchObject({
+      id: run.id,
+      status: "completed",
+    });
   });
 
   it("preserves Telegram group reply chains and duplicate updates", async () => {

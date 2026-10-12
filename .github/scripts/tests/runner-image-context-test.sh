@@ -342,8 +342,11 @@ grep -qF "HEAD_SHA: \${{ github.sha }}" \
 grep -qF "PRODUCER_HEAD_SHA: \${{ github.event.pull_request.head.sha || github.sha }}" \
   "${REPO_ROOT}/.github/workflows/runner-image.yml" \
   || fail "workflow must distinguish the Actions API head from the build merge SHA"
-grep -qF "PRODUCER_HEAD_SHA: \${{ needs.prepare.outputs.producer-head-sha }}" \
+grep -qF "producer-head-sha: \${{ needs.prepare.outputs.producer-head-sha }}" \
   "${REPO_ROOT}/.github/workflows/runner-image.yml" \
+  || fail "architecture pipeline must receive the Actions API head SHA"
+grep -qF "PRODUCER_HEAD_SHA: \${{ inputs.producer-head-sha }}" \
+  "${REPO_ROOT}/.github/workflows/runner-image-architecture.yml" \
   || fail "reusable provenance must use the Actions API head SHA"
 
 echo "runner-image-context-test: ok"

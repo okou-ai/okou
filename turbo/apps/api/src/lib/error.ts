@@ -1,3 +1,5 @@
+import { requestValidationError } from "@okouai/api-contracts/contracts/errors";
+
 function httpError<STATUS extends number, CODE extends string>(
   status: STATUS,
   code: CODE,
@@ -105,9 +107,10 @@ interface ZodLikeIssue {
 }
 
 export function badRequest(issue: ZodLikeIssue) {
-  const path = issue.path.map(String).join(".");
-  const message = path ? `${path}: ${issue.message}` : issue.message;
-  return httpError(400, "BAD_REQUEST", message);
+  return Object.freeze({
+    status: 400 as const,
+    body: requestValidationError(issue),
+  });
 }
 
 type HttpResponseLike<S extends number> = {

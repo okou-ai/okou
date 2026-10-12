@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import {
   access,
   copyFile,
@@ -8,6 +7,7 @@ import {
   rename,
   rm,
   writeFile,
+  type FileHandle,
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -19,6 +19,7 @@ import { generateWebImage } from "../../lib/api/domains/web";
 import { absoluteArtifactUrl } from "../../lib/artifact-url";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { assertPaidToolEnabled } from "../../lib/command/paid-tools";
+import { launchGuestTask, type GuestTask } from "../../lib/guest-task";
 import { generatedImageAsset } from "../shared/generated-image-asset";
 import {
   ARTIFACT_PRESENTATION_CONTEXT,
@@ -331,13 +332,6 @@ function childArguments(
   ];
 }
 
-async function waitForSpawn(child: ReturnType<typeof spawn>): Promise<void> {
-  await new Promise<void>((resolvePromise, rejectPromise) => {
-    child.once("spawn", resolvePromise);
-    child.once("error", rejectPromise);
-  });
-}
-
 async function startBatch(
   manifestPathValue: string,
   stateDirectoryValue: string,
@@ -356,30 +350,37 @@ async function startBatch(
   await prepareArtifactVisibility(options.visibility);
   await mkdir(stateDirectory, { recursive: false });
   const copiedManifest = join(stateDirectory, "manifest.tsv");
-  const logHandle = await open(join(stateDirectory, "output.log"), "a");
+  let logHandle: FileHandle | undefined;
+  let task: GuestTask | undefined;
   try {
+    logHandle = await open(join(stateDirectory, "output.log"), "a");
     await copyFile(manifestPath, copiedManifest);
-    const child = spawn(
+    task = await launchGuestTask(
       process.execPath,
       childArguments(copiedManifest, stateDirectory, options),
-      {
-        detached: true,
-        env: process.env,
-        stdio: ["ignore", logHandle.fd, logHandle.fd],
-      },
+      logHandle.fd,
     );
-    await waitForSpawn(child);
-    if (child.pid === undefined) {
-      throw new Error("Image batch worker did not report a process ID");
-    }
-    await writeFile(join(stateDirectory, "pid"), `${child.pid}\n`, "utf8");
-    child.unref();
-  } catch (error) {
+    await writeFile(join(stateDirectory, "pid"), `${task.pid}\n`, "utf8");
     await logHandle.close();
+    logHandle = undefined;
+    task.detach();
+  } catch (error) {
+    if (task) {
+      try {
+        await task.stop();
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          `Image batch startup and task cleanup failed. State retained at ${stateDirectory}`,
+          { cause: cleanupError },
+        );
+      }
+    }
     await rm(stateDirectory, { recursive: true, force: true });
     throw error;
+  } finally {
+    await logHandle?.close();
   }
-  await logHandle.close();
   console.log(`Image batch started: ${stateDirectory}`);
   console.log(
     [

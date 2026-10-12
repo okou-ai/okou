@@ -26,7 +26,7 @@ pub mod status;
 
 pub use error::{LifecycleError, LifecycleResult};
 
-use runner_storage::storage_fingerprints;
+use runner_types::storage_fingerprints;
 use sandbox::helper_exec;
 
 mod duration {

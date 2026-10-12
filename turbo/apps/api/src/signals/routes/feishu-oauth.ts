@@ -26,7 +26,7 @@ import {
 import { nowDate } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
 import {
-  claimConnectorOAuthState,
+  claimCustomConnectorOAuthState$,
   customConnectorOAuthStateByState,
   customConnectorOAuthStatePreview,
   type StoredCustomConnectorOAuthState,
@@ -1027,9 +1027,9 @@ const completeCustomFeishuOAuth$ = command(
       );
     }
 
-    const claimed = await claimConnectorOAuthState(
-      db,
-      { state: query.state, target: { kind: "custom" } },
+    const claimed = await set(
+      claimCustomConnectorOAuthState$,
+      query.state,
       signal,
     );
     signal.throwIfAborted();

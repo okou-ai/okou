@@ -158,7 +158,9 @@ nested helpers; a public final response cannot validate privately seeded state.
 That means:
 
 1. When setting up state, call the real user-accessible API that exists in
-   production. An operator cron requiring `CRON_SECRET` is not that interface.
+   production. An operator cron requiring `CRON_SECRET` is not a user
+   interface; it is covered only as an explicitly scoped system boundary, as
+   described in [the API guide](api/api-testing.md#external-behavior-boundary).
 2. When verifying results, call an API that an external user can call and
    assert its status, headers, body, or effects observable in a later request.
 3. Auth, validation, serialization, idempotency, permissions, and
@@ -284,29 +286,17 @@ contract, not a waiver for constructing private business scenarios.
 
 ### Lint
 
-API test files should not import DB schema, API service files, or the logger.
-
-The API service-directory test ban has no named file exceptions. Remove stale
-test and import exemptions when their owning cases are moved or deleted. Keep
-bootstrap and logger infrastructure exemptions limited to their documented
-responsibilities; they do not permit private business fixtures.
+API test lint enforces this boundary: no DB, driver, service or internal signal
+imports, no test-only endpoints, no logger or telemetry observation, only
+allowlisted boundary controls, and no new credential forging. The rules, their
+exact-file exception policy and the stale-entry guard are documented in
+[API test boundary lint](api/api-testing.md#test-boundary-lint); every
+diagnostic links to its section there.
 
 This lint rule is not about making code look tidy. It is a reminder that the
 test is crossing the external behavior boundary and starting to control internal
 implementation. Go back to the endpoint first and see whether the case can be
 constructed with the real API.
-
-API tests should not reach the same diagnostics through the test mocks either. A
-`no-restricted-syntax` rule in `turbo/apps/api/eslint.config.mjs` rejects
-`axiomLogging`, `sdkIngest`, and `useRealTelemetry` member access in API tests.
-The four suites that own the logger, its Axiom transport, the telemetry SDK
-client, and the app factory's log wiring are exempt, because there the logger is
-the subject rather than a diagnostic.
-
-The files that still read those mocks are listed in
-`apiTestDiagnosticsBaseline`. That list may only shrink: a test leaves it by
-asserting HTTP responses and effects instead, and the list is deleted once it is
-empty. Never add a file to it.
 
 ## Shared Patterns
 

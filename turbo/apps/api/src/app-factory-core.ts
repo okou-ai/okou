@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { httpInstrumentationMiddleware } from "@hono/otel";
 import { DISCORD_OAUTH_CALLBACK_PATH } from "./lib/discord-oauth-telemetry";
 import * as Sentry from "@sentry/node";
+import { desktopResponseTransforms } from "@okouai/api-contracts/client-transforms/desktop";
+import type { ClientResponseTransform } from "@okouai/api-contracts/client-transforms/types";
 import {
   CLIENT_FORCE_UPGRADE_STATUS,
   CLIENT_REQUEST_ID_HEADER,
@@ -569,11 +571,14 @@ function handleError(error: unknown, context: Context): Response {
 interface CreateAppWithRoutesOptions {
   readonly signal: AbortSignal;
   readonly routes: readonly RouteEntry[];
+  // Defaults to the registered Desktop transforms; callers may inject another.
+  readonly clientResponseTransforms?: readonly ClientResponseTransform[];
 }
 
 export function createAppWithRoutes({
   routes,
   signal,
+  clientResponseTransforms = desktopResponseTransforms,
 }: CreateAppWithRoutesOptions): Hono {
   const app = new Hono();
   app.onError(handleError);
@@ -638,6 +643,8 @@ export function createAppWithRoutes({
     const { route } = entry;
     const routeHandler = honoSignalHandler(entry.handler, route, signal, {
       initializeServices$: initializeApiServices$,
+
+      clientResponseTransforms,
 
       observeJsonResponse: entry.observeJsonResponse,
     });

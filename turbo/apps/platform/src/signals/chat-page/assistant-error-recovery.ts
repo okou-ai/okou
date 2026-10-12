@@ -262,6 +262,7 @@ function classifyAssistantErrorFromText(
 const STRUCTURED_RECOVERY_KIND = Object.freeze({
   session_history_limit: "new-chat-required",
   guest_root_filesystem_full: "provider-retryable",
+  guest_home_filesystem_full: "provider-retryable",
   execution_timeout: "execution-timeout",
   insufficient_credits: null,
   provider_insufficient_credits: "provider-settings",

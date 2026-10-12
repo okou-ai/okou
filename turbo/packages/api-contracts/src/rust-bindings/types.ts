@@ -13,6 +13,7 @@ import {
 } from "../contracts/runners";
 import { sshTypeBindings } from "./ssh-types";
 import { vncTypeBindings } from "./vnc-types";
+import { runnerWssTicketsContract } from "../contracts/runner-wss-tickets";
 import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
 import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
 import { fileEntryWithHashSchema } from "../contracts/storages";
@@ -53,6 +54,10 @@ export const rustTypeRootDoc = [
 ] as const;
 
 export const rustTypeModuleDocs = [
+  {
+    rustModulePath: ["runners", "wss"],
+    rustDoc: ["Official Runner one-use WSS ticket redemption."],
+  },
   {
     rustModulePath: ["runners", "runs", "cancellation"],
     rustDoc: ["Authenticated Run cancellation reconciliation DTOs."],
@@ -134,6 +139,30 @@ export const rustTypeModuleDocs = [
 ] satisfies readonly RustTypeModuleDoc[];
 
 export const rustTypeBindings = [
+  {
+    schema: runnerWssTicketsContract.consume.responses[200],
+    rustModulePath: ["runners", "wss"],
+    rustTypeName: "ConsumeResponse",
+    direction: "response",
+    declarations: [
+      {
+        rustTypeName: "ConsumeResponse",
+        rustDoc: [
+          "Exact redeemed ticket digest, audience and owner; not Run cancellation.",
+        ],
+        fields: {
+          runId: ["Exact redeemed Run."],
+          runnerId: ["Exact destination Runner."],
+          orgId: ["Verified owning organization."],
+          userId: ["Verified owning user."],
+          origin: ["Exact canonical WSS origin."],
+          digest: [
+            "SHA-256 of the one-use redeemed ticket; never the credential.",
+          ],
+        },
+      },
+    ],
+  },
   {
     schema: runnerCancellationResponseSchema,
     rustModulePath: ["runners", "runs", "cancellation"],
@@ -629,6 +658,9 @@ export const rustTypeBindings = [
           guest_root_filesystem_full: [
             "The sandbox root filesystem ran out of free blocks or inodes.",
           ],
+          guest_home_filesystem_full: [
+            "The sandbox home filesystem ran out of free blocks or inodes.",
+          ],
           execution_timeout: ["The run reached its execution time limit."],
           insufficient_credits: ["The vm0 workspace lacks credits."],
           provider_insufficient_credits: [
@@ -689,20 +721,20 @@ export const rustTypeBindings = [
         },
       },
       {
-        rustTypeName: "RequestWorkspaceReuseResult",
-        rustDoc: ["Final outcome of workspace reuse preparation."],
+        rustTypeName: "RequestHomeReuseResult",
+        rustDoc: ["Final outcome of home reuse preparation."],
         variants: {
-          reused: ["A cached workspace was reused."],
-          sandboxReused: ["The workspace remained in a reused sandbox."],
-          cacheMiss: ["No matching workspace cache was available."],
-          noReuseKey: ["The run had no workspace reuse key."],
-          invalidWorkingDir: ["The cached workspace directory was invalid."],
-          lockBusy: ["The cached workspace was locked by another run."],
-          invalidMetadata: ["The cached workspace metadata was invalid."],
-          diskPressure: ["Workspace reuse was disabled by disk pressure."],
-          notConfigured: ["Workspace reuse was not configured."],
+          reused: ["A cached home directory was reused."],
+          sandboxReused: ["The home directory remained in a reused sandbox."],
+          cacheMiss: ["No matching home cache was available."],
+          noReuseKey: ["The run had no home reuse key."],
+          invalidWorkingDir: ["The home working directory was invalid."],
+          lockBusy: ["The cached home was locked by another run."],
+          invalidMetadata: ["The cached home metadata was invalid."],
+          diskPressure: ["Home reuse was disabled by disk pressure."],
+          notConfigured: ["Home reuse was not configured."],
           sandboxPrepareFallback: [
-            "Workspace preparation fell back after sandbox setup.",
+            "Home preparation fell back after sandbox setup.",
           ],
         },
       },
@@ -788,9 +820,7 @@ export const rustTypeBindings = [
           sandboxReuseResult: [
             "Optional outcome of the sandbox reuse decision.",
           ],
-          workspaceReuseResult: [
-            "Optional outcome of the workspace reuse decision.",
-          ],
+          homeReuseResult: ["Optional outcome of the home reuse decision."],
           completion: [
             "Native history and published file outputs saved with completion.",
           ],

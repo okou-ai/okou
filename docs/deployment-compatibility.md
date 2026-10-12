@@ -96,11 +96,33 @@ A Runner drain acknowledgement means it stopped admitting new work; claimed
 work and finalization can still be running. A healthy replacement or promotion
 warning does not prove that every old process exited.
 
+Ordered whole-state inventory heartbeats must carry explicit empty inventory so
+an accepted snapshot can clear a previous observation. Shared generation/sequence
+is sufficient only when every accepted writer replaces the complete inventory.
+Before retiring independent provenance, exclude partial writers and their
+rollback artifacts, then refresh observations under whole-state writers.
+Disposable SQL tests do not establish that deployment or consumer exit.
+
+One-time monitoring cleanup has a separate host gate from application protocol
+retirement. Verify that replacement collectors publish fresh metrics and that
+the old units are stopped, disabled and removed with their installed scripts and
+textfiles on every relevant host. Supported provisioning/rollback artifacts must
+not reinstall them. Verify that gate before releasing provisioning without
+cleanup; monitoring retirement never authorizes deleting cache data.
+
 Workspace-cache images, metadata, and history sidecars can outlive their producer
 and be consumed by another Runner release. Keep old formats readable or
 explicitly invalidate and purge incompatible disposable entries before the new
 reader depends on the change. Host-local status files and independently deployed
-monitoring collectors also require old/new writer and reader analysis.
+monitoring collectors also require old/new writer and reader analysis. A
+directory-allocation collector can remain independent of Runner releases when
+it measures physical blocks without interpreting cache metadata or claiming
+reuse eligibility. Changes to directory layouts or metric namespaces still
+require consumer updates. Report unavailable or partial observations explicitly
+rather than translate old layouts or publish false-zero/stale-success
+measurements. Optional diagnostic samples can be
+omitted on measurement failure without implying an empty filesystem; retain
+legacy fields while tolerant older telemetry readers remain reachable.
 
 ## What Requires Compatibility
 
@@ -158,6 +180,89 @@ Do not add broad defaults to hide corrupt data or incompatible protocols.
 An explicitly accepted breaking cutover must record the affected consumers,
 accepted interruption, migration order, and rollback boundary in its owning
 issue or PR. Removing historical notes does not establish that acceptance.
+
+### Desktop Response Transforms
+
+Installed Desktop builds decode bound responses strictly and change only after
+a Desktop release reaches them, while the API deploys shortly after merge. A
+shape-only breaking change to a Desktop-consumed `2xx` response can keep serving
+the previous shape to those builds through a response transform registered in
+[`client-transforms/desktop.ts`](../turbo/packages/api-contracts/src/client-transforms/desktop.ts).
+
+- **Selection.** The API applies transforms only to `2xx` bodies of requests
+  that send `X-Client-Type: Desktop` (exact) and a stable `x.y.z`
+  `X-Client-Version`. An entry matches the contract method, path template, and
+  status; a version `v` receives it when `maxVersion` is `null` or
+  `v <= maxVersion`. Matching entries run in registry order. Other clients and
+  missing, prerelease, or unparseable versions receive the current body.
+- **Response-only.** Transforms never rewrite requests, non-`2xx` bodies, or
+  another client's responses. A change to request shapes, error contracts, or
+  semantics uses the prepare, migrate, and clean-up phases above instead.
+- **Validation order.** The handler's body is validated against the current
+  contract first. The transform receives that validated body, and its output is
+  not validated again because it is the old contract by design. Both
+  serialization paths, including observed response sizes, use the transformed
+  body.
+- **Writing a transform.** Make it a pure function of the current body: parse
+  it with the current response schema and build the old shape from the result.
+  Do not read request state, storage, or time. A transform that throws fails
+  the request with a server error; never fall back to the current shape.
+
+Test each transform by copying
+[the transform template](../turbo/packages/api-contracts/src/client-transforms/__tests__/transform-template.test.ts).
+Assert its output against an explicit JSON Schema of the old shape, taken from
+the route's `responses["<status>"].schema` in the production runtime API schema
+snapshot (`current.json` in the `runtime-api-schema-prod` release), and assert
+that the current body no longer satisfies it. The API runtime's selection and
+serialization path (2xx-only application, Desktop version gating,
+validate-before-transform, the server error on transform failure and size
+observation) has no API test: its synthetic-route fixture test was deleted as a
+framework self-test in #37440. Tests never edit the real registry.
+
+### Desktop Contract Gate
+
+Installed Desktop builds decode every route in
+[`swift-bindings/routes.ts`](../turbo/packages/api-contracts/src/swift-bindings/routes.ts)
+strictly, and the API deploys long before a Desktop release reaches users. The
+required `lint-runtime-api-compat` job binds those routes into the runtime API
+schema with owner `desktop` and compares the candidate with the production
+snapshot that each API production promotion republishes. A breaking Desktop
+finding fails the job unless the same PR carries one of two proofs:
+
+- **(A) Floor raise.** Raise `minimumSupportedVersion` in
+  [`desktop-compatibility.json`](../turbo/apps/api/src/lib/desktop-compatibility.json)
+  to a stable `x.y.z` that is not lower than the base branch floor and not above
+  the published Desktop version. A raise covers every Desktop finding in the PR;
+  review confirms that the new floor tolerates the new shape. Semantic changes
+  expand additively, ship Desktop, then contract together with the raise.
+- **(B) Response transform.** Register a transform for the same method, path,
+  and `2xx` status in
+  [`client-transforms/desktop.ts`](../turbo/packages/api-contracts/src/client-transforms/desktop.ts)
+  with `maxVersion` `null` or at least the published Desktop version.
+  Transforms cannot prove request findings or route removal, method, or path
+  changes. [Desktop Response Transforms](#desktop-response-transforms) defines
+  how the API applies them.
+
+The published Desktop version is `currentRelease` of
+`GET https://api.okou.ai/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/RELEASES.json`,
+which the API serves only after the Desktop update manifest is published. When
+it cannot be read, a PR that raises the floor or relies on a non-null
+`maxVersion` fails and names the oracle; other PRs are unaffected. A lowered,
+removed, or non-stable floor fails even without findings.
+
+The base floor and base schema come from the main commit that the candidate
+merges onto, not from the branch's fork point. A finding the base already has
+against production was proven by the PR that introduced it; it warns until that
+PR reaches production instead of blocking later PRs. Routes absent from the
+production snapshot produce no finding until the next API release publishes
+them. Runner, Guest Agent, and MITM findings only warn.
+
+Transform lifecycle: a shape-only break registers its transform with
+`maxVersion: null`, the Desktop PR that adopts the new shape sets `maxVersion`
+as defined in
+[`client-transforms/types.ts`](../turbo/packages/api-contracts/src/client-transforms/types.ts),
+and once a floor raise passes `maxVersion` the gate reports the transform as
+unreachable until it is deleted.
 
 ### Coupled Guest Disk and Retained-Image Contracts
 

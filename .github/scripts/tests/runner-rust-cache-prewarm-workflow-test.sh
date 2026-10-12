@@ -13,13 +13,15 @@ fail() {
 }
 
 command -v yq >/dev/null || fail "yq is required"
-yq -o=json '.' "$WORKFLOW" > "${TEST_ROOT}/workflow.json"
+yq -o=json '.' "${REPO_ROOT}/.github/workflows/runner-image-architecture.yml" > "${TEST_ROOT}/architecture.json"
+yq -o=json '.' "$WORKFLOW" | jq --slurpfile architecture "${TEST_ROOT}/architecture.json" \
+  '. + {architecture: $architecture[0]}' > "${TEST_ROOT}/workflow.json"
 
 # Producer and consumers must derive compatible keys, without relaxing any
 # required compiler gate or making an image/deployment wait for cache warming.
 # All third-party actions in the main-owned producer use immutable commits.
 jq -e '
-  .jobs.compile as $compile |
+  .architecture.jobs.compile as $compile |
   .jobs["prewarm-rust-cache"] as $warm |
   ($compile.steps | map(select((.uses // "") | startswith("Swatinem/rust-cache@"))) | .[0]) as $cache |
   ($warm.steps | map(select(.id == "cache-lookup")) | .[0]) as $lookup |
@@ -28,7 +30,10 @@ jq -e '
   $warm["continue-on-error"] == true and
   $warm["runs-on"] == $compile["runs-on"] and
   $warm.container == $compile.container and
-  $warm.env == $compile.env and
+  ($warm.env | del(.RUNNER_BINARY_GIT_REVISION)) == ($compile.env | del(.RUNNER_BINARY_GIT_REVISION)) and
+  $warm.env.RUNNER_BINARY_GIT_REVISION == "${{ needs.prepare.outputs.head-sha }}" and
+  $compile.env.RUNNER_BINARY_GIT_REVISION == "${{ inputs.head-sha }}" and
+  .jobs.build.with["head-sha"] == $warm.env.RUNNER_BINARY_GIT_REVISION and
   $warm.permissions == $compile.permissions and
   $warm.strategy.matrix.include == "${{ fromJSON(needs.prepare.outputs.runner-binary-hit-matrix) }}" and
   ($compile | has("continue-on-error") | not) and

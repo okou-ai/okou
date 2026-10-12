@@ -112,9 +112,6 @@ function createExecutionPromptSources(bootstrap: AgentRunContextSignals) {
   const authorizedConnectors$ = computed((get) => {
     return get(bootstrap.authorizedConnectors$);
   });
-  const workflowSkills$ = computed((get) => {
-    return get(bootstrap.workflowSkills$);
-  });
   const selectedImageModel$ = computed((get) => {
     return get(bootstrap.selectedImageModel$);
   });
@@ -124,7 +121,6 @@ function createExecutionPromptSources(bootstrap: AgentRunContextSignals) {
     featureSwitches$,
     memberRoutes$,
     authorizedConnectors$,
-    workflowSkills$,
     selectedImageModel$,
   };
 }
@@ -142,9 +138,11 @@ export function createPromptAndSkillVolumesSignals(
     featureSwitches$,
     memberRoutes$,
     authorizedConnectors$,
-    workflowSkills$,
     selectedImageModel$,
   } = sources;
+  const workflowSkills$ = computed((get) => {
+    return get(threadContext.workflowSkills$);
+  });
   const modelCatalog$ = computed((get) => {
     return get(bootstrap.modelCatalog$);
   });

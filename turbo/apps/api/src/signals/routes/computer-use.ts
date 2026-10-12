@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   computerUseAuditEventsContract,
   computerUseCommandContract,
@@ -13,7 +13,7 @@ import {
   createComputerUseCommand$,
   getComputerUseCommand$,
   getComputerUseCommandScreenshot$,
-  listComputerUseAuditEvents$,
+  computerUseAuditEvents,
   listComputerUseHosts$,
 } from "../services/computer-use.service";
 import { computerUseSessionHostRoutes } from "./computer-use-session-hosts";
@@ -240,26 +240,24 @@ const screenshotGetInner$ = command(
 );
 
 const auditEventsQuery$ = queryOf(computerUseAuditEventsContract.list);
-const auditEventsListInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
-    const query = get(auditEventsQuery$);
-    const body = await set(
-      listComputerUseAuditEvents$,
-      {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        limit: query.limit,
-        ...(query.commandId ? { commandId: query.commandId } : {}),
-        ...(query.hostId ? { hostId: query.hostId } : {}),
-        ...(query.runId ? { runId: query.runId } : {}),
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    return { status: 200 as const, body };
-  },
-);
+const auditEventsScope$ = computed((get) => {
+  const auth = get(organizationAuthContext$);
+  const query = get(auditEventsQuery$);
+  return {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    limit: query.limit,
+    ...(query.commandId ? { commandId: query.commandId } : {}),
+    ...(query.hostId ? { hostId: query.hostId } : {}),
+    ...(query.runId ? { runId: query.runId } : {}),
+  };
+});
+const auditEvents$ = computerUseAuditEvents(auditEventsScope$);
+const auditEventsListInner$ = command(async ({ get }, signal: AbortSignal) => {
+  const body = await get(auditEvents$);
+  signal.throwIfAborted();
+  return { status: 200 as const, body };
+});
 
 const computerUseAuthOptions = {
   requireOrganization: true,

@@ -7,7 +7,6 @@ import { Client } from "pg";
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
 const client = new Client({ connectionString: databaseUrl });
-await client.connect();
 const schema = `private_artifact_urls_${randomUUID().replaceAll("-", "")}`;
 const APP_ORIGIN = "https://app.okou.ai";
 const relativeVideo = "/artifacts/abc123def4.mp4";
@@ -36,11 +35,12 @@ async function snapshot(): Promise<readonly unknown[]> {
   return result;
 }
 
+let schemaCreated = false;
 try {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0422; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
+  await client.connect();
   await client.query(`CREATE SCHEMA "${schema}"`);
-  await client.query(`SET LOCAL search_path TO "${schema}"`);
+  schemaCreated = true;
+  await client.query(`SET search_path TO "${schema}"`);
   await client.query(`
     CREATE TABLE run_uploaded_files (
       id text PRIMARY KEY,
@@ -315,6 +315,11 @@ try {
   assert.deepEqual(await snapshot(), once);
   console.log("Private artifact absolute URL migration checks passed");
 } finally {
-  await client.query("ROLLBACK");
-  await client.end();
+  try {
+    if (schemaCreated) {
+      await client.query(`DROP SCHEMA "${schema}" CASCADE`);
+    }
+  } finally {
+    await client.end();
+  }
 }

@@ -644,7 +644,7 @@ assert.equal(
 assert.equal(metaContent(okouPage.html, "property", "og:image:alt"), okouTitle);
 assert.equal(
   metaContent(okouPage.html, "property", "og:image"),
-  "https://static.okou.io/web/okou-og-image-373c892e.png",
+  "https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png",
 );
 assert.equal(metaContent(okouPage.html, "name", "twitter:title"), okouTitle);
 assert.equal(
@@ -653,7 +653,7 @@ assert.equal(
 );
 assert.equal(
   metaContent(okouPage.html, "name", "twitter:image"),
-  "https://static.okou.io/web/okou-og-image-373c892e.png",
+  "https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png",
 );
 assert.equal(
   tagAttribute(okouPage.html, "link", "rel", "canonical", "href"),
@@ -661,12 +661,12 @@ assert.equal(
 );
 assert.ok(
   tagAttributeValues(okouPage.html, "link", "href").includes(
-    "https://static.okou.io/public/okou-favicon-adaptive-b4eda9221bb7.svg",
+    "https://static.okou.io/public/okou-favicon-adaptive-602cc090ab4e.svg",
   ),
 );
 assert.equal(
   tagAttribute(okouPage.html, "link", "rel", "apple-touch-icon", "href"),
-  "https://static.okou.io/platform/okou-pwa-be0be646-180.png",
+  "https://static.okou.io/platform/icons/okou-apple-touch-icon-180-af89cace7029.png",
 );
 assert.equal(
   tagAttributeValues(okouPage.html, "link", "href").some(
@@ -1462,11 +1462,11 @@ assert.equal(
 );
 assert.equal(
   metaContent(previewHtml, "property", "og:image"),
-  "https://static.okou.io/web/okou-og-image-373c892e.png",
+  "https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png",
 );
 assert.equal(
   metaContent(previewHtml, "name", "twitter:image"),
-  "https://static.okou.io/web/okou-og-image-373c892e.png",
+  "https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png",
 );
 assert.equal(
   tagAttribute(previewHtml, "link", "rel", "canonical", "href"),
@@ -1612,7 +1612,7 @@ for (const state of [
   if (state !== "public") {
     assert.equal(
       metaContent(html, "property", "og:image"),
-      "https://static.okou.io/web/okou-og-image-373c892e.png",
+      "https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png",
     );
     assert.equal(
       metaContent(html, "property", "og:description"),

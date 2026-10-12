@@ -83,7 +83,7 @@ function Toaster({ onReady, ...props }: ToasterProps) {
         toastOptions={{
           classNames: {
             toast:
-              "group/toast font-family-sans group-data-[sonner-toaster]:!rounded-[10px] group-data-[sonner-toaster]:!text-sm group-data-[sonner-toaster]:!font-medium group-data-[sonner-toaster]:!w-auto group-data-[sonner-toaster]:!max-w-[calc(100dvw-2rem)] sm:group-data-[sonner-toaster]:!max-w-none group-data-[sonner-toaster]:!whitespace-normal sm:group-data-[sonner-toaster]:!whitespace-nowrap group-data-[sonner-toaster]:!left-auto group-data-[sonner-toaster]:!top-auto group-data-[sonner-toaster]:!relative [&_[data-icon]]:text-green-600 [&[data-type=error]_[data-icon]]:text-red-500",
+              "group/toast font-family-sans group-data-[sonner-toaster]:!rounded-xl group-data-[sonner-toaster]:!text-sm group-data-[sonner-toaster]:!font-medium group-data-[sonner-toaster]:!w-auto group-data-[sonner-toaster]:!max-w-[calc(100dvw-2rem)] sm:group-data-[sonner-toaster]:!max-w-none group-data-[sonner-toaster]:!whitespace-normal sm:group-data-[sonner-toaster]:!whitespace-nowrap group-data-[sonner-toaster]:!left-auto group-data-[sonner-toaster]:!top-auto group-data-[sonner-toaster]:!relative [&_[data-icon]]:text-green-600 [&[data-type=error]_[data-icon]]:text-red-500",
             // Sonner has no description-color variable or style slot. Preserve
             // its inherited foreground for rich-color and inverted surfaces.
             description:

@@ -62,9 +62,9 @@ export function agentRunColumns(sessionId: () => AnyPgColumn) {
     // Null means unknown (old runner or historical row); "noSessionId" is a
     // legacy ambiguous result.
     sandboxReuseResult: varchar("sandbox_reuse_result", { length: 50 }),
-    // Final workspace reuse outcome after sandbox preparation. Null means the
-    // runner did not reach a reliable decision or predates this field.
-    workspaceReuseResult: varchar("workspace_reuse_result", { length: 50 }),
+    // Final home reuse outcome; retain the existing physical storage name.
+    // Null means the runner did not reach a reliable decision.
+    homeReuseResult: varchar("workspace_reuse_result", { length: 50 }),
     // Null identifies a historical claim without cancellation recovery.
     // Current claims initialize false; false/true records whether recovery
     // completion has been reported. The barrier is active only while the

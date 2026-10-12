@@ -52,11 +52,12 @@ export const piMemoryPhase2Jobs = pgTable(
     claimedBaseVersionId: varchar("claimed_base_version_id", { length: 64 }),
     leaseToken: uuid("lease_token"),
     /**
-     * DB/API rollout fence copied from a pre-cutover publisher lease. Remove
-     * under #31067 only after the outgoing API and all legacy leases drain.
+     * Compatibility marker for outgoing API versions and deployed constraints.
+     * Current attempts use leaseToken and maintenanceRunId. Remove after old
+     * APIs/leases drain, rollback excludes them, and writers stop naming this column.
      */
     legacyLeaseToken: uuid("legacy_lease_token"),
-    /** Fence set only by the sandbox maintenance dispatcher. */
+    /** Compatibility copy of leaseToken; retire with legacyLeaseToken under #37970. */
     sandboxLeaseToken: uuid("sandbox_lease_token"),
     leaseExpiresAt: timestamp("lease_expires_at"),
     maintenanceRunId: uuid("maintenance_run_id"),
@@ -90,7 +91,7 @@ export const piMemoryPhase2Jobs = pgTable(
       "last_maintenance_selection_digest",
       { length: 64 },
     ),
-    /** Published memory version; the physical column name is rollout-stable. */
+    /** Compatibility output; current readers derive the version from the Job result. */
     lastMaintenancePublicationVersionId: varchar(
       "last_maintenance_checkpoint_version_id",
       { length: 64 },

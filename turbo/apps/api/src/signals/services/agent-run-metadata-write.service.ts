@@ -4,7 +4,7 @@ import type { SQL } from "drizzle-orm";
 
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
-import { INITIAL_AUTONOMY_BUDGET } from "./autonomy-budget.constants";
+import { AUTONOMY_BUDGET_CEILING } from "../autonomy-budget-limit";
 
 type StoredRunMetadataValues = Pick<
   typeof agentRuns.$inferSelect,
@@ -110,7 +110,7 @@ export function normalizeRunMetadata(
 ): RunMetadataValues {
   return {
     triggerSource: input.triggerSource,
-    autonomyBudget: input.autonomyBudget ?? INITIAL_AUTONOMY_BUDGET,
+    autonomyBudget: input.autonomyBudget ?? AUTONOMY_BUDGET_CEILING,
     workflowAutomationId: input.workflowAutomationId ?? null,
     ...normalizeRunModelMetadata(input),
     selectedImageModel: input.selectedImageModel ?? null,

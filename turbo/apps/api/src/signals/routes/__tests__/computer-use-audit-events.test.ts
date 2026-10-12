@@ -334,6 +334,22 @@ describe("Computer Use audit events", () => {
         });
         expect(combined).toStrictEqual(byRun);
 
+        for (const conflictingSelectors of [
+          { commandId: failed.commandId, runId: granted.runId },
+          { commandId: succeeded.commandId, hostId: peerEvent.host.hostId },
+          { commandId: peerEvent.commandId, hostId: host.hostId },
+          { commandId: foreignEvent.commandId, hostId: host.hostId },
+        ]) {
+          const intersection = await computerUse.listComputerUseAuditEvents(
+            actor,
+            conflictingSelectors,
+          );
+          expect(intersection.auditEvents).toStrictEqual([]);
+        }
+        const afterConflictingSelectors =
+          await computerUse.listComputerUseAuditEvents(actor);
+        expect(afterConflictingSelectors).toStrictEqual(all);
+
         for (const foreignSelector of [
           { commandId: peerEvent.commandId },
           { hostId: peerEvent.host.hostId },

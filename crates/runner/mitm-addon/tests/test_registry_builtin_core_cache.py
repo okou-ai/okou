@@ -19,12 +19,12 @@ from tests.registry_builtin_helpers import (
 from tests.registry_helpers import builtin_sandbox, inline_sandbox, write_multi_sandbox_registry
 
 
-def _zendesk_cache_firewall() -> dict:
+def _subdomain_test_cache_firewall() -> dict:
     return {
-        "name": "zendesk",
+        "name": "test-subdomain",
         "apis": [
             {
-                "base": "https://${{ vars.ZENDESK_SUBDOMAIN }}.zendesk.com",
+                "base": "https://${{ vars.SUBDOMAIN_TEST_SUBDOMAIN }}.example.com",
                 "auth": {"headers": {}},
                 "permissions": [{"name": "read", "rules": ["GET /api/v2/tickets"]}],
             }
@@ -252,17 +252,17 @@ class TestRegistryBuiltinCoreCache:
             tmp_path,
             {
                 "10.200.0.1": builtin_sandbox(
-                    "run-zendesk-a",
-                    "zendesk",
-                    {"ZENDESK_SUBDOMAIN": "acme"},
+                    "run-test-subdomain-a",
+                    "test-subdomain",
+                    {"SUBDOMAIN_TEST_SUBDOMAIN": "acme"},
                 ),
                 "10.200.0.2": builtin_sandbox(
-                    "run-zendesk-b",
-                    "zendesk",
-                    {"ZENDESK_SUBDOMAIN": "beta"},
+                    "run-test-subdomain-b",
+                    "test-subdomain",
+                    {"SUBDOMAIN_TEST_SUBDOMAIN": "beta"},
                 ),
             },
-            {"zendesk": _zendesk_cache_firewall()},
+            {"test-subdomain": _subdomain_test_cache_firewall()},
         )
 
         with mitm_ctx(
@@ -279,17 +279,17 @@ class TestRegistryBuiltinCoreCache:
         assert first_compiled is not None
         assert second_compiled is not None
         assert first_firewall_core(first_compiled) is not first_firewall_core(second_compiled)
-        assert first_sandbox_info["firewalls"][0]["apis"][0]["base"] == "https://acme.zendesk.com"
-        assert second_sandbox_info["firewalls"][0]["apis"][0]["base"] == "https://beta.zendesk.com"
+        assert first_sandbox_info["firewalls"][0]["apis"][0]["base"] == "https://acme.example.com"
+        assert second_sandbox_info["firewalls"][0]["apis"][0]["base"] == "https://beta.example.com"
 
         first_result = matching.match_compiled_firewall_request(
-            "https://acme.zendesk.com/api/v2/tickets",
+            "https://acme.example.com/api/v2/tickets",
             "GET",
             first_compiled,
             first_policies,
         )
         second_result = matching.match_compiled_firewall_request(
-            "https://beta.zendesk.com/api/v2/tickets",
+            "https://beta.example.com/api/v2/tickets",
             "GET",
             second_compiled,
             second_policies,

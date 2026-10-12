@@ -49,6 +49,13 @@
     "destination": "/usr/local/bin/guest-tool-exec"
   },
   {
+    "package": "guest-task-exec",
+    "binary": "guest-task-exec",
+    "pathEnv": "GUEST_TASK_EXEC_PATH",
+    "bundledEnv": "BUNDLED_GUEST_TASK_EXEC",
+    "destination": "/usr/local/bin/guest-task-exec"
+  },
+  {
     "package": "runner-rpc-client",
     "binary": "runner-rpc-client",
     "pathEnv": "RUNNER_RPC_CLIENT_PATH",

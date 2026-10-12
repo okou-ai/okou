@@ -6,10 +6,9 @@ import {
   type UserTemplatePreviewAsset,
 } from "@okouai/api-contracts/contracts/user-templates";
 import { userTemplates } from "@okouai/db/schema/user-template";
-import { and, eq } from "drizzle-orm";
+import { and, eq, getTableColumns, sql } from "drizzle-orm";
 
 import { notFound } from "../../lib/error";
-import { nowDate } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
@@ -566,49 +565,52 @@ const updateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!bodyResult.ok) {
     return bodyResult.response;
   }
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0042; new non-billing transactions are prohibited.
-  const mutation = await set(writeDb$).transaction(async (tx) => {
-    const whereOwner = and(
-      eq(userTemplates.id, params.templateId),
-      eq(userTemplates.orgId, auth.orgId),
-      eq(userTemplates.ownerUserId, auth.userId),
+  const db = set(writeDb$);
+  const whereOwner = and(
+    eq(userTemplates.id, params.templateId),
+    eq(userTemplates.orgId, auth.orgId),
+    eq(userTemplates.ownerUserId, auth.userId),
+  );
+  // PG17 RETURNING exposes only the updated row. Keep the existing lock in
+  // this dependent read so a concurrent edit cannot leave the prior visibility
+  // at the statement snapshot and miss an organization-to-private retraction.
+  const previous = db
+    .$with("previous_template")
+    .as(
+      db
+        .select({ id: userTemplates.id, visibility: userTemplates.visibility })
+        .from(userTemplates)
+        .where(whereOwner)
+        .for("update")
+        .limit(1),
     );
-    const [previous] = await tx
-      .select({ visibility: userTemplates.visibility })
-      .from(userTemplates)
-      .where(whereOwner)
-      .for("update")
-      .limit(1);
-    if (!previous) {
-      return null;
-    }
-    const [row] = await tx
-      .update(userTemplates)
-      .set({
-        title: bodyResult.data.title,
-        visibility: bodyResult.data.visibility,
-        updatedAt: nowDate(),
-        updatedBy: auth.userId,
-      })
-      .where(whereOwner)
-      .returning();
-    if (!row) {
-      throw new Error(`User template disappeared: ${params.templateId}`);
-    }
-    // Either side of a visibility change has to reach the organization: making
-    // a template private must retract it from members who can still see it.
-    return {
-      row,
-      organizationVisible:
-        previous.visibility === "organization" ||
-        row.visibility === "organization",
-    };
-  });
+  const [mutation] = await db
+    .with(previous)
+    .update(userTemplates)
+    .set({
+      title: bodyResult.data.title,
+      visibility: bodyResult.data.visibility,
+      // Sample after the dependent lock-read, since clients use updatedAt to
+      // reject older edit responses. A bound request time can predate a writer
+      // this statement waited for.
+      updatedAt: sql`timezone('UTC', clock_timestamp())`,
+      updatedBy: auth.userId,
+    })
+    .from(previous)
+    .where(and(whereOwner, eq(userTemplates.id, previous.id)))
+    .returning({
+      ...getTableColumns(userTemplates),
+      previousVisibility: previous.visibility,
+    });
   signal.throwIfAborted();
   if (!mutation) {
     return templateNotFound(params.templateId);
   }
-  const { row, organizationVisible } = mutation;
+  const { previousVisibility, ...row } = mutation;
+  // Either side of a visibility change has to reach the organization: making
+  // a template private must retract it from members who can still see it.
+  const organizationVisible =
+    previousVisibility === "organization" || row.visibility === "organization";
   const coverUrl = await set(coverUrlFor$, { row, orgId: auth.orgId });
   signal.throwIfAborted();
   const ownerDisplayName = await set(ownerDisplayNameFor$, row, signal);

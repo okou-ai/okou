@@ -1,9 +1,7 @@
-import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -189,30 +187,23 @@ describe("model identity new writes", () => {
     });
   });
 
-  it("writes canonical Auto on a send and rejects unavailable platform execution", async () => {
+  it("writes canonical Auto on a send and launches the managed route", async () => {
+    // The fixed test seed provides the managed key, so an Auto send without a
+    // personal subscription launches on the platform route.
     const { actor, agentId } = await actorWithAgent();
     await runs.grantProEntitlement(actor);
-    const clientEventId = randomUUID();
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        clientEventId,
-        prompt: "Use the platform model",
-        model: null,
-      },
-      [201],
-    );
-    if (sent.status !== 201) {
-      throw new Error("Expected accepted input");
-    }
-    expect(sent.body.runId).toBeNull();
-    await flushWaitUntilForTest();
-    const history = await chat.listThreadEvents(actor, sent.body.threadId);
+    runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    const run = await runs.createThreadRun(actor, {
+      agentId,
+      prompt: "Use the platform model",
+      model: null,
+    });
+    const history = await chat.listThreadEvents(actor, run.threadId);
     expect(history.events).toContainEqual(
       expect.objectContaining({
-        id: clientEventId,
         eventType: "input.prompt",
+        runId: run.runId,
         userMessage: {
           version: 1,
           parts: expect.arrayContaining([
@@ -224,20 +215,12 @@ describe("model identity new writes", () => {
         },
       }),
     );
-    expect(history.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.rejected",
-        revokesEventId: clientEventId,
-      }),
-    );
-    expect(history.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "output.error",
-        error: "model_provider_unavailable",
-      }),
+    expect(history.events).not.toContainEqual(
+      expect.objectContaining({ eventType: "input.rejected" }),
     );
     await expect(
-      chat.readThreadMetadata(actor, sent.body.threadId),
+      chat.readThreadMetadata(actor, run.threadId),
     ).resolves.toMatchObject({ selectedModel: "auto" });
+    await runs.requestCancelRun(actor, run.runId, [200]);
   });
 });

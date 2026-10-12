@@ -2045,6 +2045,27 @@
       "when": 1791620818599,
       "tag": "1369_prepare_computer_use_host_token_retirement",
       "breakpoints": true
+    },
+    {
+      "idx": 1370,
+      "version": "7",
+      "when": 1791625914837,
+      "tag": "1370_drop_computer_use_host_token_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 1371,
+      "version": "7",
+      "when": 1791638276606,
+      "tag": "1371_retire_desktop_auth_handoff_storage",
+      "breakpoints": true
+    },
+    {
+      "idx": 1372,
+      "version": "7",
+      "when": 1791650995893,
+      "tag": "1372_trim_runner_wss_ticket_columns",
+      "breakpoints": true
     }
   ]
 }

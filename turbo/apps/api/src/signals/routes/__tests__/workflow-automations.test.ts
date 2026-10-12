@@ -1,13 +1,17 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { randomUUID } from "node:crypto";
 
 import {
   chatThreadByIdContract,
   chatThreadMetadataContract,
+  chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 
 import {
   workflowAutomationsContract,
+  workflowsCollectionContract,
   workflowsDetailContract,
 } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
@@ -41,6 +45,7 @@ import {
 import { createRouteMocks } from "./helpers/route-test";
 import { chatThreadDeleteRoutes } from "../chat-threads-delete";
 import { chatThreadGetRoutes } from "../chat-threads-get";
+import { chatThreadRoutes } from "../chat-threads";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
 import { webhooksGoogleCalendarRoutes } from "../webhooks-google-calendar";
@@ -101,6 +106,20 @@ function detailClient() {
   return setupApp({ context, routes: workflowsRoutes })(
     workflowsDetailContract,
   );
+}
+
+async function readThreadLifecycleEvents() {
+  const response = await accept(
+    setupApp({ context, routes: chatThreadRoutes })(chatThreadsContract).events(
+      {
+        headers: authHeaders(),
+        query: {},
+      },
+    ),
+    [200],
+  );
+  expect(response.body.hasMore).toBeFalsy();
+  return response.body.events;
 }
 
 const WORKFLOW_NAME = "automation-workflow";
@@ -568,11 +587,13 @@ function configureNotionDatabaseMock(args?: {
 describe("okou workflow automations", () => {
   async function setupFixture(
     tier: "pro" | "team" = "pro",
+    options: { readonly maxAutonomyBudget?: number } = {},
   ): Promise<AutomationScenario> {
     // Fable keeps automation runs on the claimable native Runner route.
     const { actor, customerId, subscriptionId } = await wf.setupWorkflowOrg({
       tier,
       model: "claude-fable-5-1",
+      ...options,
     });
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
@@ -4351,5 +4372,415 @@ describe("okou workflow automations", () => {
     expect(chatEventDisplayText(workflowMessage!)).toBe(
       "A manual run of this workflow was requested.",
     );
+  });
+
+  it("shares one lazy destination across concurrent and repeated Run now requests", async () => {
+    const requestedAt = Date.UTC(2026, 7, 1, 12, 34, 56, 123);
+    const owned = await publicChatActor(context, { clockTime: requestedAt });
+    await owned.run(async () => {
+      const workflowId = await wf.createWorkflow(owned.actor, {
+        agentId: owned.agentId,
+        name: WORKFLOW_NAME,
+        displayName: "Lazy workflow destination",
+      });
+      const created = await accept(
+        automationsClient().create({
+          headers: authHeaders(),
+          params: { workflowId },
+          body: {
+            schedule: {
+              type: "once",
+              atTime: futureIso(86_400_000),
+              timezone: "UTC",
+            },
+          },
+        }),
+        [201],
+      );
+      expect(created.body.chatThreadId).toBeNull();
+      await expect(readThreadLifecycleEvents()).resolves.toStrictEqual([]);
+      const runNow = () => {
+        return accept(
+          automationsClient().run({
+            headers: authHeaders(),
+            params: { id: created.body.id },
+          }),
+          [201],
+        );
+      };
+      const [first, second] = await Promise.all([runNow(), runNow()]);
+      expect(first.body.runId).toBeNull();
+      expect(second.body).toStrictEqual(first.body);
+      await flushWaitUntilForTest();
+      const threadId = first.body.chatThreadId;
+      const before = await readThreadLifecycleEvents();
+      expect(
+        before.filter((event) => {
+          return event.kind === "created";
+        }),
+      ).toStrictEqual([
+        expect.objectContaining({
+          chatThreadId: threadId,
+          agentId: owned.agentId,
+          title: "Lazy workflow destination",
+          selectedModel: "claude-fable-5-1",
+          modelSettings: {},
+          serviceTier: null,
+          cloudBrowserEnabled: true,
+          createdAt: new Date(requestedAt).toISOString(),
+        }),
+      ]);
+      const repeated = await runNow();
+      expect(repeated.body).toStrictEqual(first.body);
+      await flushWaitUntilForTest();
+      await expect(readThreadLifecycleEvents()).resolves.toStrictEqual(before);
+      await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
+        chatThreadId: threadId,
+        nextRunAt: created.body.nextRunAt,
+      });
+      const inputs = (await wf.readThreadEvents(threadId)).filter((event) => {
+        return event.eventType === "input.prompt";
+      });
+      // Manual ingress deduplicates requests with the same application clock.
+      expect(inputs).toHaveLength(1);
+      const active = inputs.find((event) => {
+        return event.runId;
+      });
+      if (!active?.runId) {
+        throw new Error("Expected the ordinary Run now request to start a Run");
+      }
+      await runs.heartbeatRunner(owned.runnerGroup);
+      const claim = await owned.claimRunnerRun(active.runId);
+      expect(claim.prompt).toContain(`/${WORKFLOW_NAME}`);
+      expect(claim.appendSystemPrompt).toContain("# Agent Identity");
+    });
+  });
+
+  it("repairs a lazy destination after public thread deletion without reusing its identity", async () => {
+    const owned = await publicChatActor(context);
+    await owned.run(async () => {
+      const workflowId = await wf.createWorkflow(owned.actor, {
+        agentId: owned.agentId,
+        name: WORKFLOW_NAME,
+      });
+      const created = await accept(
+        automationsClient().create({
+          headers: authHeaders(),
+          params: { workflowId },
+          body: {
+            schedule: {
+              type: "once",
+              atTime: futureIso(86_400_000),
+              timezone: "UTC",
+            },
+          },
+        }),
+        [201],
+      );
+      const first = await runAutomationNow(created.body.id);
+      if (!first.runId) {
+        throw new Error("Expected an admitted manual Run");
+      }
+      await runs.heartbeatRunner(owned.runnerGroup);
+      const claim = await owned.claimRunnerRun(first.runId);
+      await runs.requestCancelRun(owned.actor, first.runId, [200]);
+      await webhookCallbacks.requestAgentComplete(
+        { runId: first.runId, exitCode: 1, error: "Run cancelled" },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      await accept(
+        setupApp({ context, routes: chatThreadDeleteRoutes })(
+          chatThreadByIdContract,
+        ).delete({
+          headers: authHeaders(),
+          params: { id: first.chatThreadId },
+        }),
+        [204],
+      );
+      await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
+        chatThreadId: null,
+        enabled: false,
+      });
+      const deleted = await readThreadLifecycleEvents();
+      const repaired = await runAutomationNow(created.body.id);
+      expect(repaired.chatThreadId).not.toBe(first.chatThreadId);
+      await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
+        chatThreadId: repaired.chatThreadId,
+      });
+      const threads = setupApp({ context, routes: chatThreadGetRoutes })(
+        chatThreadMetadataContract,
+      );
+      await accept(
+        threads.get({
+          headers: authHeaders(),
+          params: { id: first.chatThreadId },
+        }),
+        [404],
+      );
+      await accept(
+        threads.get({
+          headers: authHeaders(),
+          params: { id: repaired.chatThreadId },
+        }),
+        [200],
+      );
+      const after = await readThreadLifecycleEvents();
+      expect(after.slice(0, deleted.length)).toStrictEqual(deleted);
+      expect(after.slice(deleted.length)).toStrictEqual([
+        expect.objectContaining({
+          kind: "created",
+          chatThreadId: repaired.chatThreadId,
+          seqId: deleted.at(-1)!.seqId + 1,
+        }),
+      ]);
+    });
+  });
+
+  it("keeps lazy destinations distinct for workflows and owners of one public workflow", async () => {
+    const owned = await publicChatActor(context, { tier: "team" });
+    await owned.run(async () => {
+      const sharedAgent = await wf.createAgent(owned.actor, {
+        visibility: "public",
+      });
+      const workflowId = await wf.createWorkflow(owned.actor, {
+        agentId: sharedAgent.agentId,
+        name: WORKFLOW_NAME,
+      });
+      const secondWorkflowId = await wf.createWorkflow(owned.actor, {
+        agentId: sharedAgent.agentId,
+        name: "second-lazy-workflow",
+      });
+      const createAndRun = async (id: string) => {
+        const automation = await accept(
+          automationsClient().create({
+            headers: authHeaders(),
+            params: { workflowId: id },
+            body: {
+              schedule: {
+                type: "once",
+                atTime: futureIso(86_400_000),
+                timezone: "UTC",
+              },
+            },
+          }),
+          [201],
+        );
+        expect(automation.body.chatThreadId).toBeNull();
+        return await runAutomationNow(automation.body.id);
+      };
+      const first = await createAndRun(workflowId);
+      const second = await createAndRun(secondWorkflowId);
+      expect(second.chatThreadId).not.toBe(first.chatThreadId);
+      const ownerEvents = await readThreadLifecycleEvents();
+      expect(
+        ownerEvents
+          .filter((event) => {
+            return event.kind === "created";
+          })
+          .map((event) => {
+            return event.chatThreadId;
+          }),
+      ).toStrictEqual([first.chatThreadId, second.chatThreadId]);
+
+      const member = bdd.user({
+        orgId: owned.actor.orgId,
+        orgRole: "org:member",
+      });
+      const accepted = captureConnectorExternalState(context);
+      const memberOwner = publicRunOwner(context, member, {
+        continueAcceptedOperations: true,
+        restoreEnvironment: accepted,
+      });
+      await memberOwner.run(async () => {
+        await bdd.readOnboardingStatus(member);
+        await bdd.completeOnboarding(member);
+        await runs.ensurePersonalSubscriptionModel(member);
+        const memberRun = await createAndRun(workflowId);
+        expect(memberRun.chatThreadId).not.toBe(first.chatThreadId);
+        const memberEvents = await readThreadLifecycleEvents();
+        expect(
+          memberEvents.filter((event) => {
+            return event.kind === "created";
+          }),
+        ).toStrictEqual([
+          expect.objectContaining({
+            chatThreadId: memberRun.chatThreadId,
+            seqId: 1,
+          }),
+        ]);
+        await accept(
+          setupApp({ context, routes: chatThreadGetRoutes })(
+            chatThreadMetadataContract,
+          ).get({
+            headers: authHeaders(),
+            params: { id: first.chatThreadId },
+          }),
+          [404],
+        );
+      });
+      mocks.clerk.session(
+        owned.actor.userId,
+        owned.actor.orgId,
+        owned.actor.orgRole,
+      );
+      await expect(readThreadLifecycleEvents()).resolves.toStrictEqual(
+        ownerEvents,
+      );
+    });
+  });
+
+  it("spends one delegation hop per derived Automation and stops the chain at zero", async () => {
+    // A two-hop limit keeps the real chain short: the user-created root gets
+    // 2, each agent-created Automation spends exactly one hop, and the third
+    // derivation is refused.
+    const runnerGroup = runs.configureRunnerGroup();
+    const { actor, workflowId } = await setupFixture("pro", {
+      maxAutonomyBudget: 2,
+    });
+
+    async function claimRun(runId: string | null) {
+      if (!runId) {
+        throw new Error("Expected the Automation run to start");
+      }
+      await runs.heartbeatRunner(runnerGroup);
+      const claim = await runs.claimRunnerJob(runId);
+      const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+      if (!okouToken) {
+        throw new Error("Expected the claimed run to receive OKOU_TOKEN");
+      }
+      return { runId, okouToken, sandboxToken: claim.sandboxToken };
+    }
+
+    // The user cancels and the Runner reports its exit, which releases the
+    // shared workflow Automation thread for the next run.
+    async function cancel(run: {
+      readonly runId: string;
+      readonly sandboxToken: string;
+    }): Promise<void> {
+      await runs.requestCancelRun(actor, run.runId, [200]);
+      await flushWaitUntilForTest();
+      await webhookCallbacks.requestAgentComplete(
+        { runId: run.runId, exitCode: 1, error: "Run cancelled" },
+        { authorization: `Bearer ${run.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+    }
+
+    function createAs(authorization: string, intervalSeconds: number) {
+      return automationsClient().create({
+        headers: { authorization },
+        params: { workflowId },
+        body: { schedule: { type: "loop", intervalSeconds } },
+      });
+    }
+
+    const root = await accept(createAs("Bearer clerk-session", 3600), [201]);
+    const rootRun = await claimRun(
+      (await runAutomationNow(root.body.id)).runId,
+    );
+    const first = await accept(
+      createAs(`Bearer ${rootRun.okouToken}`, 3601),
+      [201],
+    );
+    await cancel(rootRun);
+
+    const firstRun = await claimRun(
+      (await runAutomationNow(first.body.id)).runId,
+    );
+    const second = await accept(
+      createAs(`Bearer ${firstRun.okouToken}`, 3602),
+      [201],
+    );
+    await cancel(firstRun);
+
+    const secondRun = await claimRun(
+      (await runAutomationNow(second.body.id)).runId,
+    );
+    const exhausted = `Bearer ${secondRun.okouToken}`;
+
+    const blockedCreate = await accept(createAs(exhausted, 3603), [409]);
+    expect(blockedCreate.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
+    const listed = await accept(
+      automationsClient().list({
+        headers: authHeaders(),
+        params: { workflowId },
+      }),
+      [200],
+    );
+    expect(
+      listed.body.map((automation) => {
+        return automation.id;
+      }),
+    ).toHaveLength(3);
+
+    await accept(
+      automationsClient().disable({
+        headers: authHeaders(),
+        params: { id: first.body.id },
+      }),
+      [200],
+    );
+    const blockedEnable = await accept(
+      automationsClient().enable({
+        headers: { authorization: exhausted },
+        params: { id: first.body.id },
+      }),
+      [409],
+    );
+    expect(blockedEnable.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
+    await expect(wf.readAutomation(first.body.id)).resolves.toMatchObject({
+      enabled: false,
+    });
+
+    const target = await wf.createAgent(actor, {
+      displayName: "Exhausted Copy Target Agent",
+    });
+    const blockedCopy = await accept(
+      detailClient().copy({
+        headers: { authorization: exhausted },
+        params: { workflowId },
+        body: { toAgentId: target.agentId },
+      }),
+      [409],
+    );
+    expect(blockedCopy.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
+    const targetWorkflows = await accept(
+      setupApp({ context, routes: workflowsRoutes })(
+        workflowsCollectionContract,
+      ).list({
+        headers: authHeaders(),
+        query: { agentId: target.agentId },
+      }),
+      [200],
+    );
+    expect(
+      targetWorkflows.body.map((workflow) => {
+        return workflow.name;
+      }),
+    ).not.toContain(WORKFLOW_NAME);
+
+    // The exhausted request is accepted; once the shared workflow Automation
+    // thread is idle its rejection appears there and no child run is linked.
+    await cancel(secondRun);
+    const blockedRun = await runAutomationNow(root.body.id, {
+      authorization: exhausted,
+    });
+    const events = await wf.readThreadEvents(blockedRun.chatThreadId);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        error: "autonomy_budget_exhausted",
+      }),
+    );
+    expect(
+      events.flatMap((event) => {
+        return event.eventType === "input.prompt" && event.runId
+          ? [event.runId]
+          : [];
+      }),
+    ).toStrictEqual([rootRun.runId, firstRun.runId, secondRun.runId]);
   });
 });

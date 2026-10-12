@@ -1,11 +1,137 @@
 use super::super::super::*;
 use super::super::support::{
     assert_run_exits_within, context_with_session, mock_run_config, mock_run_config_with_overrides,
-    push_job, seed_idle_pool, shutdown, test_profiles, wait_cancel_token,
-    wait_idle_pool_reuse_keys, wait_parking_state, wait_status_idle_reuse_keys_and_active_runs,
+    push_job, seed_idle_pool, seed_idle_pool_with_overrides, shutdown, test_profiles,
+    wait_cancel_token, wait_cancel_token_removed, wait_discover_entered, wait_idle_pool_reuse_keys,
+    wait_parking_state, wait_status_idle_reuse_keys_and_active_runs, wait_status_mode,
 };
 
-use crate::idle_pool::ParkingState;
+use crate::SharedFactory;
+use crate::idle_pool::{ParkResult, ParkingState, test_support::ParkedIdleCandidateBuilder};
+use sandbox::SandboxId;
+
+#[tokio::test]
+async fn soft_drain_processes_resume_and_stopping_while_destroy_is_blocked() {
+    let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    let idle_pool = Arc::clone(&config.shared.idle_pool);
+    let budget = Arc::clone(&config.capacity.budget);
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let destroy_gate = sandbox_mock::MockLifecycleGate::new();
+    overrides.set_destroy_lifecycle_gate(destroy_gate.clone());
+    seed_idle_pool_with_overrides(
+        &idle_pool,
+        &budget,
+        &overrides,
+        "blocked-soft-drain",
+        "vm0/default",
+        2,
+        4096,
+    )
+    .await;
+    let status_path = env._temp_dir.path().join("status.json");
+    let run_handle = tokio::spawn(run(config));
+    wait_discover_entered(&env, Duration::from_secs(5)).await;
+    env.drain();
+    destroy_gate
+        .wait_entered(1, Duration::from_secs(5))
+        .await
+        .unwrap();
+    env.resume();
+    wait_status_mode(&status_path, "running", Duration::from_secs(5)).await;
+    env.trigger_stopping().await;
+    env.start_observer
+        .wait_destroy_tasks_drain_entered(Duration::from_secs(5))
+        .await;
+    assert!(!env.start_observer.destroy_tasks_drain_was_completed());
+    assert_eq!(budget.allocated().2, 1);
+    destroy_gate.release_one();
+    assert_run_exits_within(
+        run_handle,
+        Duration::from_secs(5),
+        "shutdown must join the independent soft drain",
+    )
+    .await;
+    assert_eq!(budget.allocated(), (0, 0, 0));
+}
+
+#[tokio::test]
+async fn renewed_soft_drain_waits_for_inventory_parked_after_resume() {
+    let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    let idle_pool = Arc::clone(&config.shared.idle_pool);
+    let budget = Arc::clone(&config.capacity.budget);
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let destroy_gate = sandbox_mock::MockLifecycleGate::new();
+    overrides.set_destroy_lifecycle_gate(destroy_gate.clone());
+    seed_idle_pool_with_overrides(
+        &idle_pool,
+        &budget,
+        &overrides,
+        "first-drain",
+        "vm0/default",
+        2,
+        4096,
+    )
+    .await;
+    let status_path = env._temp_dir.path().join("status.json");
+    let run_handle = tokio::spawn(run(config));
+    wait_discover_entered(&env, Duration::from_secs(5)).await;
+    env.drain();
+    destroy_gate
+        .wait_entered(1, Duration::from_secs(5))
+        .await
+        .unwrap();
+    let factory: SharedFactory = Arc::new(Box::new(
+        sandbox_mock::MockSandboxFactory::with_overrides(Arc::clone(&overrides)),
+    ));
+    let sandbox_id = SandboxId::new_v4();
+    let sandbox = factory
+        .create(sandbox::SandboxConfig {
+            id: sandbox_id,
+            resources: sandbox::ResourceLimits {
+                cpu_count: 2,
+                memory_mb: 4096,
+            },
+            device_rate_limits: None,
+            home_drive: None,
+        })
+        .await
+        .unwrap();
+    let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
+    let candidate = ParkedIdleCandidateBuilder::new("after-resume", lease)
+        .with_sandbox_id(sandbox_id)
+        .with_sandbox(sandbox)
+        .with_factory(factory)
+        .build();
+    {
+        let mut pool = idle_pool.lock().await;
+        // No yield between lifecycle transitions: the watch may expose only
+        // the renewed Draining value to the reactor.
+        env.resume();
+        assert!(matches!(pool.park(candidate), ParkResult::Parked));
+        env.drain();
+    }
+    destroy_gate.release_one();
+    destroy_gate
+        .wait_entered(2, Duration::from_secs(5))
+        .await
+        .unwrap();
+    wait_status_mode(&status_path, "draining", Duration::from_secs(5)).await;
+    let wire: serde_json::Value =
+        serde_json::from_slice(&tokio::fs::read(&status_path).await.unwrap()).unwrap();
+    assert_eq!(
+        wire["mode"], "draining",
+        "a prior drain must not complete the resumed generation"
+    );
+    assert_eq!(budget.allocated().2, 1);
+    destroy_gate.release_one();
+    assert_run_exits_within(
+        run_handle,
+        Duration::from_secs(5),
+        "renewed drain must wait for its own batch",
+    )
+    .await;
+    assert_eq!(budget.allocated(), (0, 0, 0));
+}
 
 // -----------------------------------------------------------------------
 // Test 17: Shutdown drains idle pool and releases budget
@@ -46,6 +172,19 @@ async fn job_completing_during_active_draining_is_not_parked() {
     let (config, env) = mock_run_config_with_overrides(test_profiles(), 8, 32768, 4, overrides);
     let idle_pool = Arc::clone(&config.shared.idle_pool);
     let budget = Arc::clone(&config.capacity.budget);
+    let idle_overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let destroy_gate = sandbox_mock::MockLifecycleGate::new();
+    idle_overrides.set_destroy_lifecycle_gate(destroy_gate.clone());
+    seed_idle_pool_with_overrides(
+        &idle_pool,
+        &budget,
+        &idle_overrides,
+        "pending-idle-cleanup",
+        "vm0/default",
+        2,
+        4096,
+    )
+    .await;
     let run_handle = tokio::spawn(run(config));
 
     // Claim a gated job with a reusable session while Running.
@@ -58,8 +197,7 @@ async fn job_completing_during_active_draining_is_not_parked() {
     );
     let _token = wait_cancel_token(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
 
-    // Enter Draining. The Draining path drains an empty pool and waits for the
-    // gated job.
+    // Enter Draining with an independently blocked idle cleanup and active job.
     env.drain();
     wait_parking_state(
         &idle_pool,
@@ -67,10 +205,14 @@ async fn job_completing_during_active_draining_is_not_parked() {
         Duration::from_secs(5),
     )
     .await;
+    destroy_gate
+        .wait_entered(1, Duration::from_secs(5))
+        .await
+        .unwrap();
     assert_eq!(
         idle_pool.lock().await.len(),
         0,
-        "Draining mode should have drained an empty pool",
+        "Draining mode should have detached idle inventory",
     );
 
     // Release the gate while still Draining: parking is closed, so the
@@ -82,6 +224,10 @@ async fn job_completing_during_active_draining_is_not_parked() {
         .await;
     assert!(c.is_some(), "job should complete");
     assert_eq!(c.unwrap().exit_code, 0);
+    // Only the reactor's job-result branch retires this registration. It must
+    // progress while the separate idle cleanup still owns its lease.
+    wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
+    assert_eq!(budget.allocated().2, 1);
 
     assert_eq!(
         idle_pool.lock().await.len(),
@@ -89,7 +235,8 @@ async fn job_completing_during_active_draining_is_not_parked() {
         "active draining must reject post-job parking",
     );
 
-    // Draining mode observes jobs.is_empty → auto-Stop → teardown.
+    destroy_gate.release_one();
+    // The accepted idle batch and active job both settle before natural stop.
     assert_run_exits_within(
         run_handle,
         Duration::from_secs(5),

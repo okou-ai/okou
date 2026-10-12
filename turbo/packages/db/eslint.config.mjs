@@ -8,12 +8,7 @@ import {
 export default [
   ...config,
   {
-    ignores: [
-      "**/dist/**",
-      "scripts/migrations/00*/**",
-      "scripts/migrations/01[0-2]*/**",
-      "scripts/migrations/014-goal-archive-search/**",
-    ],
+    ignores: ["**/dist/**"],
   },
   {
     files: ["src/**/*.ts", "scripts/**/*.ts"],
@@ -28,7 +23,6 @@ export default [
       "**/*.test.ts",
       "**/*.spec.ts",
       "**/test-*.ts",
-      "scripts/migrations/**/test.ts",
     ],
     rules: { "api/no-database-trigger": "error" },
   },

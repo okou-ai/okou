@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.10.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.9.1...runner-executor-v0.10.0) (2026-10-12)
+
+
+### Features
+
+* **ssh:** integrate native tailscale saved-host transport ([#39018](https://github.com/okou-ai/okou/issues/39018)) ([e8f8c83](https://github.com/okou-ai/okou/commit/e8f8c83186b0d6881c546048b7198f6dd2d96181))
+
+
+### Refactoring
+
+* **runner-executor:** converge pre-spawn exit cleanup ([#39083](https://github.com/okou-ai/okou/issues/39083)) ([a877797](https://github.com/okou-ai/okou/commit/a877797d84fe928b7314ee2dda31ec94c35084ec))
+* **runner:** retire workspace protocol and application sql ([#38837](https://github.com/okou-ai/okou/issues/38837)) ([a932f1f](https://github.com/okou-ai/okou/commit/a932f1f86ae10eb624fa3ff3bccc851ba4809a7e))
+
+## [0.9.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.9.0...runner-executor-v0.9.1) (2026-10-11)
+
+## [0.9.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.8.2...runner-executor-v0.9.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** complete home cache disk visibility ([#38775](https://github.com/okou-ai/okou/issues/38775)) ([30c5539](https://github.com/okou-ai/okou/commit/30c5539999b0a90dfb693f0cc92c2cd29e6882d2))
+
+
+### Bug Fixes
+
+* remove retired connector references from app and tests ([#38802](https://github.com/okou-ai/okou/issues/38802)) ([63a43d9](https://github.com/okou-ai/okou/commit/63a43d9219560c0dfe29048b023c7910417a9c50))
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+
+## [0.8.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.8.1...runner-executor-v0.8.2) (2026-10-10)
+
+
+### Refactoring
+
+* name native history and pi memory publications explicitly ([#38679](https://github.com/okou-ai/okou/issues/38679)) ([e5b1d4e](https://github.com/okou-ai/okou/commit/e5b1d4ed7bd2f8b54e01352e762e1f9eec5c3a39))
+* **runner-storage:** centralize bounded object-download retry scheduling ([#38730](https://github.com/okou-ai/okou/issues/38730)) ([1e78c25](https://github.com/okou-ai/okou/commit/1e78c25bde7f27f07c062f28021f8e656d4dfebb))
+
 ## [0.8.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.8.0...runner-executor-v0.8.1) (2026-10-10)
 
 ## [0.8.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.7.4...runner-executor-v0.8.0) (2026-10-10)

@@ -1,3 +1,4 @@
+#!/bin/bash
 # Best-effort guest-side diagnostics for unexplained agent bootstrap exits.
 # Keep this script intentionally narrow: it must not collect environment values,
 # command lines with environments, or /proc/*/environ content.
@@ -30,14 +31,14 @@ section resources
 ulimit -a 2>&1
 df -h 2>&1
 echo "VM0_DF_BLOCKS_V1"
-if [ -e /home/user/workspace ]; then
-  df -P -k / /home/user/workspace 2>&1
+if [ -d /home/user ] && [ ! -L /home/user ]; then
+  df -P -k / /home/user 2>&1
 else
   df -P -k / 2>&1
 fi
 echo "VM0_DF_INODES_V1"
-if [ -e /home/user/workspace ]; then
-  df -P -i / /home/user/workspace 2>&1
+if [ -d /home/user ] && [ ! -L /home/user ]; then
+  df -P -i / /home/user 2>&1
 else
   df -P -i / 2>&1
 fi
@@ -62,7 +63,13 @@ section processes
 if command -v ps >/dev/null 2>&1; then
   ps -e --no-headers 2>/dev/null | wc -l
 else
-  ls -1 /proc 2>/dev/null | grep -E '^[0-9]+$' | wc -l
+  count=0
+  for process in /proc/[0-9]*; do
+    if [ -d "$process" ]; then
+      count=$((count + 1))
+    fi
+  done
+  printf '%s\n' "$count"
 fi
 
 section dmesg

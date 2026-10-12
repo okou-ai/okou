@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { webhooksAgentSessionHistoryRoutes } from "../webhooks-agent-session-history";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -338,6 +339,8 @@ describe("Sandbox session history upload preparation", () => {
           headers,
           [200],
         );
+        // Cancellation and completion callbacks may still hold lifecycle locks.
+        await flushWaitUntilForTest();
         fixture.registerRunDeletion(run.runId);
         await bdd.deleteAgent(actor, agent.agentId);
         expect(

@@ -1,15 +1,17 @@
+import { command } from "ccstate";
 import { and, eq, isNull, getTableColumns, sql } from "drizzle-orm";
 import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 
 import { nowDate } from "../../lib/time";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 
-import type { Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { settle } from "../utils";
 import {
   createClerkReadContext,
   isClerkResourceNotFound,
+  clerk$,
   type ClerkClient,
 } from "../external/clerk";
 
@@ -81,54 +83,56 @@ export async function verifyComputerUseSession(
   });
 }
 
-export async function resolveComputerUseHost(
-  db: Db,
-  clerk: ClerkClient,
-  authority: ComputerUseHostAuthority,
-  signal: AbortSignal,
-) {
-  const condition = computerUseHostAuthorityCondition(authority);
-  const [host] = await db
-    .select({
-      ...getTableColumns(computerUseHosts),
-      rowVersion: sql`${computerUseHosts}.xmin::text`.mapWith(pgTextDecoder),
-    })
-    .from(computerUseHosts)
-    .where(condition)
-    .limit(1);
-  signal.throwIfAborted();
-  if (!host) {
-    return null;
-  }
-  const now = nowDate();
-  if (
-    host.sessionValidatedAt &&
-    now.getTime() - host.sessionValidatedAt.getTime() < 30_000
-  ) {
-    return host;
-  }
-  if (!(await verifyComputerUseSession(clerk, authority, signal))) {
-    const [stopped] = await db
-      .update(computerUseHosts)
-      .set({ status: "offline", updatedAt: now })
+export const resolveComputerUseHost$ = command(
+  async (
+    { get, set },
+    authority: ComputerUseHostAuthority,
+    signal: AbortSignal,
+  ) => {
+    const clerk = get(clerk$);
+    const condition = computerUseHostAuthorityCondition(authority);
+    const [host] = await get(db$)
+      .select({
+        ...getTableColumns(computerUseHosts),
+        rowVersion: sql`${computerUseHosts}.xmin::text`.mapWith(pgTextDecoder),
+      })
+      .from(computerUseHosts)
       .where(condition)
-      .returning({ userId: computerUseHosts.userId });
+      .limit(1);
     signal.throwIfAborted();
-    if (stopped) {
-      await publishUserSignal([stopped.userId], "computerUseHostsChanged");
+    if (!host) {
+      return null;
     }
-    return null;
-  }
-  // Stamp the beginning of validation, so a slow provider read never extends
-  // the freshness window. A stopped/replaced connection cannot be revived.
-  const [validated] = await db
-    .update(computerUseHosts)
-    .set({ sessionValidatedAt: now })
-    .where(condition)
-    .returning({
-      ...getTableColumns(computerUseHosts),
-      rowVersion: sql`${computerUseHosts}.xmin::text`.mapWith(pgTextDecoder),
-    });
-  signal.throwIfAborted();
-  return validated ?? null;
-}
+    const now = nowDate();
+    if (
+      host.sessionValidatedAt &&
+      now.getTime() - host.sessionValidatedAt.getTime() < 30_000
+    ) {
+      return host;
+    }
+    if (!(await verifyComputerUseSession(clerk, authority, signal))) {
+      const [stopped] = await set(writeDb$)
+        .update(computerUseHosts)
+        .set({ status: "offline", updatedAt: now })
+        .where(condition)
+        .returning({ userId: computerUseHosts.userId });
+      signal.throwIfAborted();
+      if (stopped) {
+        await publishUserSignal([stopped.userId], "computerUseHostsChanged");
+      }
+      return null;
+    }
+    // Stamp the beginning of validation, so a slow provider read never extends
+    // the freshness window. A stopped/replaced connection cannot be revived.
+    const [validated] = await set(writeDb$)
+      .update(computerUseHosts)
+      .set({ sessionValidatedAt: now })
+      .where(condition)
+      .returning({
+        ...getTableColumns(computerUseHosts),
+        rowVersion: sql`${computerUseHosts}.xmin::text`.mapWith(pgTextDecoder),
+      });
+    signal.throwIfAborted();
+    return validated ?? null;
+  },
+);

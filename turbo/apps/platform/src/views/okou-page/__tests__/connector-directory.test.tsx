@@ -236,7 +236,7 @@ function rankedCatalog() {
       "Discord",
       "Telegram",
       "Lark",
-      "Zendesk",
+      "Test Subdomain",
       "Intercom",
       "Mailchimp",
       "Resend",
@@ -301,7 +301,7 @@ test("Close a shelf with the products behind it, and open that category", async 
   await waitFor(() => {
     expect(within(dialog).queryByTestId("connector-shelf-mail")).toBeNull();
   });
-  expect(within(dialog).getByText("Zendesk")).toBeVisible();
+  expect(within(dialog).getByText("Test Subdomain")).toBeVisible();
 });
 
 test("Show a connector on one shelf only", async () => {

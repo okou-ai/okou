@@ -1505,17 +1505,30 @@ function browserUserActionTokenHash(requestToken: string): string {
   return createHash("sha256").update(requestToken).digest("hex");
 }
 
-async function setupNativeFileScenario() {
-  const { routeMocks, runs, chat, actor, agent } = await setupBrowserScenario();
-  const current = await createClaimedChatRun(
-    chat,
-    runs,
-    actor,
-    agent.agentId,
-    "Choose a local file for the website",
-  );
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.BrowserNativeInput]: true,
+async function setupNativeFileScenario(
+  owned?: Awaited<ReturnType<typeof setupOwnedNativeFileBrowserScenario>>,
+) {
+  const { routeMocks, runs, chat, actor, agent } =
+    owned ?? (await setupBrowserScenario());
+  const run =
+    owned?.run ??
+    (<T>(operation: () => Promise<T>) => {
+      return operation();
+    });
+  const current =
+    owned?.current ??
+    (await createClaimedChatRun(
+      chat,
+      runs,
+      actor,
+      agent.agentId,
+      "Choose a local file for the website",
+    ));
+  owned?.ownsFeatureSwitches();
+  await run(() => {
+    return updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+    });
   });
   const providerId = randomUUID();
   acceptBrowserUseCdpSessions([providerId]);
@@ -1593,70 +1606,87 @@ async function setupNativeFileScenario() {
       return HttpResponse.json(providerBrowser(String(params.id)));
     }),
   );
-  await accept(
-    client().use({ headers: current.claim.browserHeaders, body: {} }),
-    [200],
-  );
+  if (owned) {
+    server.use(
+      http.patch(`${BROWSER_USE_API_URL}/browsers/${providerId}`, () => {
+        return HttpResponse.json(
+          providerBrowser(providerId, { status: "stopped" }),
+        );
+      }),
+    );
+  }
+  await run(() => {
+    return accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+  });
   routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   const create = async (required = false) => {
-    return await accept(
-      userActionClient().create({
-        headers: current.claim.browserHeaders,
-        body: {
-          kind: "input",
-          callbackPrompt: "Continue after selecting the file",
-          pageTargetId: "native-input-target",
-          fields: [
-            {
-              key: "document",
-              label: "Document",
-              fieldKind: "file",
-              required,
-              backendNodeId: 45,
-            },
-          ],
-        },
-      }),
-      [201],
-    );
+    return await run(async () => {
+      const created = await accept(
+        userActionClient().create({
+          headers: current.claim.browserHeaders,
+          body: {
+            kind: "input",
+            callbackPrompt: "Continue after selecting the file",
+            pageTargetId: "native-input-target",
+            fields: [
+              {
+                key: "document",
+                label: "Document",
+                fieldKind: "file",
+                required,
+                backendNodeId: 45,
+              },
+            ],
+          },
+        }),
+        [201],
+      );
+      owned?.rememberAction(created.body.action.requestToken);
+      return created;
+    });
   };
   const stageSyntheticFile = async (
     requestToken: string,
     bytes = Buffer.from("test"),
     index = 0,
   ) => {
-    const prepared = await accept(
-      userActionClient().prepareFileUpload({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken },
-        body: {
-          key: "document",
-          index,
-          size: bytes.length,
-        },
-      }),
-      [200],
-    );
-    expect(prepared.body.uploadUrl).toMatch(/^https?:\/\//u);
-    const signing = context.mocks.s3.getSignedUrl.mock.lastCall;
-    const signedCommand = signing?.[1];
-    if (!(signedCommand instanceof PutObjectCommand)) {
-      throw new Error("Expected a synthetic signed PUT command");
-    }
-    expect(signedCommand.input).toMatchObject({
-      Bucket: "test-user-storages",
-      ContentLength: bytes.length,
-      ContentType: "application/octet-stream",
+    return await run(async () => {
+      const prepared = await accept(
+        userActionClient().prepareFileUpload({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+          body: {
+            key: "document",
+            index,
+            size: bytes.length,
+          },
+        }),
+        [200],
+      );
+      expect(prepared.body.uploadUrl).toMatch(/^https?:\/\//u);
+      const signing = context.mocks.s3.getSignedUrl.mock.lastCall;
+      const signedCommand = signing?.[1];
+      if (!(signedCommand instanceof PutObjectCommand)) {
+        throw new Error("Expected a synthetic signed PUT command");
+      }
+      expect(signedCommand.input).toMatchObject({
+        Bucket: "test-user-storages",
+        ContentLength: bytes.length,
+        ContentType: "application/octet-stream",
+      });
+      expect(signing?.[2]).toMatchObject({ expiresIn: 600 });
+      expect(signedCommand.input.ChecksumSHA256).toBeUndefined();
+      expect(prepared.body).toStrictEqual({
+        uploadUrl: expect.stringMatching(/^https?:\/\//u),
+      });
+      expect(JSON.stringify(prepared.body)).not.toContain("note.txt");
+      const key = `browser-native-input/${browserUserActionTokenHash(requestToken)}/${index.toString()}`;
+      temporaryObjects.set(key, bytes);
+      return key;
     });
-    expect(signing?.[2]).toMatchObject({ expiresIn: 600 });
-    expect(signedCommand.input.ChecksumSHA256).toBeUndefined();
-    expect(prepared.body).toStrictEqual({
-      uploadUrl: expect.stringMatching(/^https?:\/\//u),
-    });
-    expect(JSON.stringify(prepared.body)).not.toContain("note.txt");
-    const key = `browser-native-input/${browserUserActionTokenHash(requestToken)}/${index.toString()}`;
-    temporaryObjects.set(key, bytes);
-    return key;
   };
   return {
     state,
@@ -2029,6 +2059,64 @@ describe("Browser user-action route", () => {
     expect(deletedKeys).toContain(cancelledKey);
     expect(temporaryObjects.has(cancelledKey)).toBeFalsy();
   });
+
+  it.each(["succeeded", "cancelled"] as const)(
+    "rejects resubmitting %s native file actions after upload cleanup",
+    async (terminalState) => {
+      const owned = await setupOwnedNativeFileBrowserScenario();
+      await owned.run(async () => {
+        const { create, stageSyntheticFile } =
+          await setupNativeFileScenario(owned);
+        const created = await create();
+        const requestToken = created.body.action.requestToken;
+        const observed = await accept(
+          userActionClient().preflight({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { requestToken },
+            body: {},
+          }),
+          [200],
+        );
+        const value = nativeFileValue(
+          observed.body.fields[0]?.control.fileSetFingerprint ?? "",
+        );
+        await stageSyntheticFile(requestToken);
+        const terminal = await accept(
+          terminalState === "succeeded"
+            ? userActionClient().apply({
+                headers: { authorization: "Bearer clerk-session" },
+                params: { requestToken },
+                body: { values: [value] },
+              })
+            : userActionClient().cancel({
+                headers: { authorization: "Bearer clerk-session" },
+                params: { requestToken },
+                body: {},
+              }),
+          [200],
+        );
+        expect(terminal.body.state).toBe(terminalState);
+
+        const retry = await userActionClient().apply({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+          body: { values: [value] },
+        });
+        expect(retry).toMatchObject({
+          status: 409,
+          body: { error: { code: "BROWSER_USER_ACTION_CONFLICT" } },
+        });
+        const unchanged = await accept(
+          userActionClient().get({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { requestToken },
+          }),
+          [200],
+        );
+        expect(unchanged.body.state).toBe(terminalState);
+      });
+    },
+  );
 
   it("lets apply finish while the preflight provider read is still pending", async () => {
     const { token } = await createNativePasswordActionForPreflightTest();
@@ -6303,6 +6391,99 @@ async function setupBrowserScenario() {
     runnerGroup,
     agent,
   };
+}
+
+async function setupOwnedNativeFileBrowserScenario() {
+  mockEnv("OKOU_BROWSER_USE_API_KEY", "test-browser-use-key");
+  mockEnv("APP_URL", "https://app.okou.ai");
+  server.use(
+    http.delete(`${BROWSER_USE_API_URL}/profiles/:id`, () => {
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  const chat = createChatFilesBddApi(context);
+  const requestTokens = new Set<string>();
+  let threadId: string | undefined;
+  const owned = await publicChatActor(context, {
+    optionalEnvironmentNames: ["OKOU_BROWSER_USE_API_KEY"],
+    clockTime: STARTED_AT_MS,
+    beforeRuns: async () => {
+      const results = [];
+      for (const requestToken of requestTokens) {
+        results.push(
+          await settleIncludingAbort(async () => {
+            const action = await accept(
+              userActionClient().get({
+                headers: { authorization: "Bearer clerk-session" },
+                params: { requestToken },
+              }),
+              [200],
+            );
+            if (action.body.state === "pending") {
+              await accept(
+                userActionClient().cancel({
+                  headers: { authorization: "Bearer clerk-session" },
+                  params: { requestToken },
+                  body: {},
+                }),
+                [200],
+              );
+            }
+          }),
+        );
+      }
+      const errors = results.flatMap((result) => {
+        return result.ok ? [] : [result.error];
+      });
+      if (errors.length === 1) {
+        throw errors[0];
+      }
+      if (errors.length > 1) {
+        throw new AggregateError(errors, "Native file action cleanup failed");
+      }
+    },
+    beforeWorkspaceCleanup: async (): Promise<void> => {
+      if (threadId) {
+        await chat.deleteThread(owned.actor, threadId);
+        await flushWaitUntilForTest();
+      }
+    },
+  });
+  const orgId = owned.actor.orgId;
+  if (!orgId) {
+    throw new Error("Native file tests require an organization");
+  }
+  const actor = { ...owned.actor, orgId };
+  return await owned.run(async () => {
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId: owned.agentId,
+      prompt: "Choose a local file for the website",
+      cloudBrowserEnabled: true,
+    });
+    threadId = sent.threadId;
+    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+    return {
+      ...owned,
+      actor,
+      chat,
+      runs: createRunsApi(context),
+      routeMocks: createRouteMocks(context),
+      agent: { agentId: owned.agentId },
+      current: {
+        runId: sent.runId,
+        threadId: sent.threadId,
+        claim: {
+          browserHeaders: {
+            authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
+          },
+          sandboxHeaders: claimed.sandboxHeaders,
+        },
+      },
+      rememberAction(requestToken: string) {
+        requestTokens.add(requestToken);
+      },
+    };
+  });
 }
 
 /** Own the two Computer Use selection scenarios without certifying adjacent browser fixtures. */

@@ -8,6 +8,10 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
@@ -21,7 +25,11 @@ import {
 } from "./agent-connector-scope.service";
 import { listConnectorAccountsByIds } from "./connector-account-lifecycle.service";
 import { connectorAccountTargetKey } from "./connector-account-resolution.service";
-import { loadCurrentConnectorCatalogSlugs } from "./connector-catalog-slug-source.service";
+import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorCatalogSlugJoin,
+} from "./connector-catalog-slug-source.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 
 interface OwnedChatThread {
@@ -40,6 +48,14 @@ interface ConnectorTargetOwnership extends ConnectorSelectionRow {
 }
 
 export type PreparedChatThreadConnectorSelection = ConnectorAccountSelection;
+
+interface PrepareChatThreadConnectorSelectionsArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly agentId: string;
+  readonly selections: readonly ConnectorAccountSelection[];
+  readonly missingAccountPolicy?: "reject" | "omit";
+}
 
 type PrepareChatThreadConnectorSelectionsResult =
   | {
@@ -92,18 +108,22 @@ function targetExistsInCatalog(
   );
 }
 
-async function loadCatalogSlugsForBuiltinTargets(
-  db: ReadonlyDb,
-  selections: readonly ConnectorAccountSelection[],
-): Promise<ReadonlySet<string> | undefined> {
-  const connectorSlugs = selections.flatMap((selection) => {
-    return selection.target.kind === "builtin"
-      ? [selection.target.connectorSlug]
-      : [];
-  });
-  return connectorSlugs.length > 0
-    ? await loadCurrentConnectorCatalogSlugs(db, connectorSlugs)
-    : undefined;
+function catalogSlugsForBuiltinTargetsFromRows(
+  rows: readonly { readonly slug: string | null }[] | undefined,
+): ReadonlySet<string> | undefined {
+  if (rows === undefined) {
+    return undefined;
+  }
+  if (rows.length === 0) {
+    throw new ExternalConnectorCatalogUnavailableError(
+      "missing_current_identity",
+    );
+  }
+  return new Set(
+    rows.flatMap((row) => {
+      return row.slug === null ? [] : [row.slug];
+    }),
+  );
 }
 
 function targetColumns(target: ConnectorAccountTarget): {
@@ -167,29 +187,38 @@ async function loadSelectionRows(
     );
 }
 
-async function loadConnectorTargetOwnerships(
-  db: ReadonlyDb,
-  args: {
-    readonly connectorIds: readonly string[];
-  },
-): Promise<ReadonlyMap<string, ConnectorTargetOwnership>> {
-  if (args.connectorIds.length === 0) {
-    return new Map();
-  }
-  const rows = await db
-    .select({
-      connectorId: connectors.id,
-      connectorSlug: connectors.connectorSlug,
-      customConnectorId: connectors.customConnectorId,
-      orgId: connectors.orgId,
-      userId: connectors.userId,
-    })
-    .from(connectors)
-    .where(inArray(connectors.id, [...new Set(args.connectorIds)]));
+const connectorTargetOwnershipColumns = Object.freeze({
+  connectorId: connectors.id,
+  connectorSlug: connectors.connectorSlug,
+  customConnectorId: connectors.customConnectorId,
+  orgId: connectors.orgId,
+  userId: connectors.userId,
+});
+
+function connectorTargetOwnershipsFromRows(
+  rows: readonly ConnectorTargetOwnership[],
+): ReadonlyMap<string, ConnectorTargetOwnership> {
   return new Map(
     rows.map((row) => {
       return [row.connectorId, row];
     }),
+  );
+}
+
+function connectorTargetOwnershipMatches(
+  ownership: ConnectorTargetOwnership,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+  },
+  target: ConnectorAccountTarget,
+): boolean {
+  if (ownership.orgId !== args.orgId || ownership.userId !== args.userId) {
+    return false;
+  }
+  return (
+    connectorAccountTargetKey(targetFromRow(ownership)) ===
+    connectorAccountTargetKey(target)
   );
 }
 
@@ -238,13 +267,7 @@ export async function listChatThreadConnectorSelections(
 export const prepareChatThreadConnectorSelections$ = command(
   async (
     { get, set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly agentId: string;
-      readonly selections: readonly ConnectorAccountSelection[];
-      readonly missingAccountPolicy?: "reject" | "omit";
-    },
+    args: PrepareChatThreadConnectorSelectionsArgs,
     signal: AbortSignal,
   ): Promise<PrepareChatThreadConnectorSelectionsResult> => {
     signal.throwIfAborted();
@@ -275,9 +298,22 @@ export const prepareChatThreadConnectorSelections$ = command(
       agentId: args.agentId,
     });
     signal.throwIfAborted();
-    const catalogSlugs = await loadCatalogSlugsForBuiltinTargets(
-      db,
-      selections,
+    const slugs = selections.flatMap((selection) => {
+      return selection.target.kind === "builtin"
+        ? [selection.target.connectorSlug]
+        : [];
+    });
+    const catalogSlugs = catalogSlugsForBuiltinTargetsFromRows(
+      await (slugs.length > 0
+        ? db
+            .select({
+              current: { schemaVersion: connectorCatalog.schemaVersion },
+              slug: connectorCatalogEntries.slug,
+            })
+            .from(connectorCatalog)
+            .leftJoin(connectorCatalogEntries, connectorCatalogSlugJoin(slugs))
+            .where(connectorCatalogCurrentWhere())
+        : undefined),
     );
     signal.throwIfAborted();
     for (const selection of byTarget.values()) {
@@ -298,9 +334,12 @@ export const prepareChatThreadConnectorSelections$ = command(
     const connectionIds = selections.map((selection) => {
       return selection.connectionId;
     });
-    const targetOwnerships = await loadConnectorTargetOwnerships(db, {
-      connectorIds: connectionIds,
-    });
+    const targetOwnerships = connectorTargetOwnershipsFromRows(
+      await db
+        .select(connectorTargetOwnershipColumns)
+        .from(connectors)
+        .where(inArray(connectors.id, [...new Set(connectionIds)])),
+    );
     signal.throwIfAborted();
     const projectedConnections = await listConnectorAccountsByIds(db, {
       orgId: args.orgId,
@@ -325,17 +364,7 @@ export const prepareChatThreadConnectorSelections$ = command(
           message: "Connector account does not match the requested target",
         };
       }
-      if (ownership.orgId !== args.orgId || ownership.userId !== args.userId) {
-        return {
-          kind: "invalid",
-          message: "Connector account does not match the requested target",
-        };
-      }
-      const ownedTarget = targetFromRow(ownership);
-      if (
-        connectorAccountTargetKey(ownedTarget) !==
-        connectorAccountTargetKey(selection.target)
-      ) {
+      if (!connectorTargetOwnershipMatches(ownership, args, selection.target)) {
         return {
           kind: "invalid",
           message: "Connector account does not match the requested target",
@@ -347,9 +376,12 @@ export const prepareChatThreadConnectorSelections$ = command(
           // Deletion can commit between the ownership read and the projection.
           // Initial thread creation omits a deleted account at either boundary;
           // an existing but unavailable account still receives the same error.
-          const current = await loadConnectorTargetOwnerships(db, {
-            connectorIds: [selection.connectionId],
-          });
+          const current = connectorTargetOwnershipsFromRows(
+            await db
+              .select(connectorTargetOwnershipColumns)
+              .from(connectors)
+              .where(inArray(connectors.id, [selection.connectionId])),
+          );
           signal.throwIfAborted();
           if (!current.has(selection.connectionId)) {
             byTarget.delete(key);

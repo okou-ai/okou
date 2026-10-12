@@ -21,15 +21,9 @@ export type { ComputerUsePermissions } from "@okouai/db/jsonb-contracts/computer
 
 export const computerUseHosts = pgTable(
   "computer_use_hosts",
-  {
-    ...computerUseHostColumns(),
-    // Physical storage stays until the session-only API and rollback floor
-    // have shipped and all token_hash-dependent APIs have drained (#37997).
-    tokenHash: text("token_hash"),
-  },
+  computerUseHostColumns(),
   (table) => {
     return [
-      uniqueIndex("idx_computer_use_hosts_token_hash").on(table.tokenHash),
       uniqueIndex("idx_computer_use_hosts_active_installation")
         .on(table.orgId, table.userId, table.installationId)
         .where(sql`installation_id IS NOT NULL AND revoked_at IS NULL`),

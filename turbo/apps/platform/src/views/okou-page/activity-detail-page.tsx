@@ -30,7 +30,7 @@ import {
 import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
 import type {
   SandboxReuseResult,
-  WorkspaceReuseResult,
+  HomeReuseResult,
 } from "@okouai/api-contracts/contracts/runner-primitives";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -669,7 +669,7 @@ function ActivityContextTab({ detail }: { detail: LogDetail }) {
   );
 }
 
-type RunnerStartupPath = "sandbox" | "workspace" | "cold" | "unknown";
+type RunnerStartupPath = "sandbox" | "home" | "cold" | "unknown";
 
 interface ReuseOutcomeInfo {
   readonly label: string;
@@ -686,21 +686,21 @@ function isCurrentSandboxMiss(result: SandboxReuseResult | null): boolean {
   );
 }
 
-function isWorkspaceMiss(result: WorkspaceReuseResult | null): boolean {
+function isHomeMiss(result: HomeReuseResult | null): boolean {
   return result !== null && result !== "reused" && result !== "sandboxReused";
 }
 
 function runnerStartupPath(
   sandbox: SandboxReuseResult | null,
-  workspace: WorkspaceReuseResult | null,
+  home: HomeReuseResult | null,
 ): RunnerStartupPath {
-  if (sandbox === "reused" && workspace === "sandboxReused") {
+  if (sandbox === "reused" && home === "sandboxReused") {
     return "sandbox";
   }
-  if (isCurrentSandboxMiss(sandbox) && workspace === "reused") {
-    return "workspace";
+  if (isCurrentSandboxMiss(sandbox) && home === "reused") {
+    return "home";
   }
-  if (isCurrentSandboxMiss(sandbox) && isWorkspaceMiss(workspace)) {
+  if (isCurrentSandboxMiss(sandbox) && isHomeMiss(home)) {
     return "cold";
   }
   return "unknown";
@@ -732,9 +732,9 @@ function sandboxOutcomeInfo(
   };
 }
 
-function workspaceOutcomeInfo(
-  result: WorkspaceReuseResult | null,
-  descriptions: Record<WorkspaceReuseResult, string>,
+function homeOutcomeInfo(
+  result: HomeReuseResult | null,
+  descriptions: Record<HomeReuseResult, string>,
   labels: {
     readonly missing: string;
     readonly missingDescription: string;
@@ -884,7 +884,7 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
 
   const runner = runnerLoadable.data?.runner ?? null;
   const sandboxReuse = runner?.sandboxReuseResult ?? null;
-  const workspaceReuse = runner?.workspaceReuseResult ?? null;
+  const homeReuse = runner?.homeReuseResult ?? null;
   const missing = isActiveRunStatus(runnerLoadable.data?.status)
     ? t(($) => {
         return $.activity.detail.runner.provisioning;
@@ -927,9 +927,9 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
       return $.activity.detail.runner.unparkFailed;
     }),
   } satisfies Record<SandboxReuseResult, string>;
-  const workspaceDescriptions = {
+  const homeDescriptions = {
     reused: t(($) => {
-      return $.activity.detail.runner.workspaceReusedDescription;
+      return $.activity.detail.runner.homeReusedDescription;
     }),
     sandboxReused: t(($) => {
       return $.activity.detail.runner.sandboxReusedDescription;
@@ -938,7 +938,7 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
       return $.activity.detail.runner.cacheMiss;
     }),
     noReuseKey: t(($) => {
-      return $.activity.detail.runner.workspaceNoReuseKey;
+      return $.activity.detail.runner.homeNoReuseKey;
     }),
     invalidWorkingDir: t(($) => {
       return $.activity.detail.runner.invalidWorkingDir;
@@ -958,24 +958,20 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
     sandboxPrepareFallback: t(($) => {
       return $.activity.detail.runner.sandboxPrepareFallback;
     }),
-  } satisfies Record<WorkspaceReuseResult, string>;
+  } satisfies Record<HomeReuseResult, string>;
   const labels = { missing, missingDescription, notReused, reused };
   const sandboxInfo = sandboxOutcomeInfo(
     sandboxReuse,
     sandboxDescriptions,
     labels,
   );
-  const workspaceInfo = workspaceOutcomeInfo(
-    workspaceReuse,
-    workspaceDescriptions,
-    labels,
-  );
+  const homeInfo = homeOutcomeInfo(homeReuse, homeDescriptions, labels);
   const startupLabels = {
     sandbox: t(($) => {
       return $.activity.detail.runner.startupSandbox;
     }),
-    workspace: t(($) => {
-      return $.activity.detail.runner.startupWorkspace;
+    home: t(($) => {
+      return $.activity.detail.runner.startupHome;
     }),
     cold: t(($) => {
       return $.activity.detail.runner.startupCold;
@@ -988,8 +984,8 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
     sandbox: t(($) => {
       return $.activity.detail.runner.startupSandboxDescription;
     }),
-    workspace: t(($) => {
-      return $.activity.detail.runner.startupWorkspaceDescription;
+    home: t(($) => {
+      return $.activity.detail.runner.startupHomeDescription;
     }),
     cold: t(($) => {
       return $.activity.detail.runner.startupColdDescription;
@@ -998,7 +994,7 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
       return $.activity.detail.runner.startupUnknownDescription;
     }),
   } satisfies Record<RunnerStartupPath, string>;
-  const startupPath = runnerStartupPath(sandboxReuse, workspaceReuse);
+  const startupPath = runnerStartupPath(sandboxReuse, homeReuse);
   const startupInfo = {
     label: startupLabels[startupPath],
     description: startupDescriptions[startupPath],
@@ -1032,9 +1028,9 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
           />
           <RunnerEnvironmentCard
             title={t(($) => {
-              return $.activity.detail.runner.workspace;
+              return $.activity.detail.runner.home;
             })}
-            info={workspaceInfo}
+            info={homeInfo}
           />
         </div>
       </section>

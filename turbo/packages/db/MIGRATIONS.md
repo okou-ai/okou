@@ -51,8 +51,12 @@ expired transition validator must be deleted.
   session-only Computer Use mapping and its preparation migration: retired
   hashes are cleared, session-less hosts become offline, and device identities,
   chat bindings, generations and command/audit history survive. It exercises
-  runtime and root-schema reads/writes before and after a disposable column
-  deletion. Retain it until physical contraction is released and incompatible
+  runtime and root-schema reads/writes before and after the actual contraction,
+  rejects unexpected index, constraint, view and routine dependencies before
+  deletion, and checks that a rejected migration cannot advance the journal.
+  `test-computer-use-host-storage-permanent.ts` exercises the current host
+  storage contract against replayed and freshly generated schemas. Retain the
+  transition validator until physical contraction is released and incompatible
   serving/rollback APIs have drained; promote surviving invariants to the
   permanent suite before retiring this transition validator.
 
@@ -90,11 +94,18 @@ The chat event sequence bridge, backfill and routing-preparation validators are
 retired. Migration `1236_contract_chat_event_sequence_bridge` shipped in API
 1.676.0 (release #36823): the production migration job succeeded and
 `chat_threads.last_chat_event_seq_id` is absent. The expand and contract cycle is
-complete; no API that rollback can select writes the retired counter. The
-permanent tier of `apps/api/scripts/chat-event-sequences/acceptance.ts` keeps
-first-append initialization, concurrent and cross-thread batches, idempotent
-conflicts, gaps, statement rollback, retention, event FK lock compatibility and
-cascade cleanup against the current schema.
+complete; no API that rollback can select writes the retired counter.
+
+The chat event sequence, context and auxiliary acceptance scripts
+(`apps/api/scripts/chat-event-{sequences,context,auxiliary}`) were deleted on
+2026-10-10 by Ethan's decision in #37440, and CI no longer runs them. They drove
+private SQL, service, fault and lock paths. Their guarantees are not replaced
+by another test: first-append sequence initialization, concurrent and
+cross-thread batches, idempotent conflicts, gaps, statement rollback,
+retention, event FK lock compatibility and cascade cleanup for chat event
+sequences; rejection of a channel input when its chat event context insert
+fails; and append behavior, including `last_message_at` ordering, when the
+auxiliary thread touch or thread-event sort write fails.
 
 ### Retired lock-driven validators (2026-09-26)
 
@@ -135,9 +146,11 @@ are enforced by the integration ingress tests.
   ships. `test-canonical-model-selections-permanent.ts` covers current defaults,
   nonempty present selections/annotations, explicit effort keys and conditional
   executable Built-in capture against both replayed and freshly generated
-  schemas. `scripts/migrations/020-canonical-model-selections/test.ts` covers the
-  independent owner-scoped immutable-object/pointer publication contract. The
-  numbered maintenance tool remains a permanent historical record.
+  schemas. The completed numbered backfill operators and their dedicated
+  publication tests are retired after operator acceptance. Recover their exact
+  historical implementation from Git if another operation is required; revalidate
+  its current target and prerequisites before execution. Shipped SQL migrations
+  and permanent schema invariant coverage remain in the repository.
 
 - `scripts/test-pi-memory-phase2-input-revision.ts` executes the production Phase 2
   input-revision SQL before and after the real generic checkpoint contraction. It
@@ -154,12 +167,12 @@ are enforced by the integration ingress tests.
   capable empty state. Its frozen outgoing mapping is from
   `3dcf096997cdd5448a74df524afba9a2ac46df91`. The three standalone home
   version/order columns are temporary: the final model keeps only
-  `held_home_states` and existing shared heartbeat order. Its test-only
-  prospective canonical mapping executes real INSERT/UPSERT/SELECT/UPDATE and
+  `held_home_states` and existing shared heartbeat order. The production
+  `runtime/runner-state.ts` mapping executes real INSERT/UPSERT/SELECT/UPDATE and
   implicit RETURNING on both retained and simulated contracted shapes, checking
   preserved home/sandbox/capacity data, empty-state replacement, replay/lower
-  sequence and generation reset. That fixture is SQL feasibility evidence, not
-  #38139's actual application integration or a deployed floor.
+  sequence and generation reset. This verifies executing application SQL; it
+  does not establish a deployed writer floor or consumer/rollback drain.
   Retain the validator/fixtures through #38139's deployed application-SQL
   retirement of `held_workspace_states`, `home_affinity_version`,
   `home_affinity_generation`, `home_affinity_sequence` and #38140's **later**
@@ -371,8 +384,10 @@ records the evidence and its limits:
 The expired [1093/1094 validator](https://github.com/vm0-ai/vm0/blob/1cd69b0219c6fe67b7d2fd15bcb7e914ffd8f52e/turbo/packages/db/scripts/test-goal-retirement-migration.ts)
 and [1105/1106 validator](https://github.com/vm0-ai/vm0/blob/1cd69b0219c6fe67b7d2fd15bcb7e914ffd8f52e/turbo/packages/db/scripts/test-goal-schema-contraction.ts)
 remain immutable historical evidence for replay, locks and the measured census.
-Keep shipped SQL, snapshots, journal and numbered external-data operation 014
-(including its original README/code/exports) unchanged. The
+Keep shipped SQL, snapshots and journal unchanged. The accepted numbered
+external-data operation 014 is retired; recover its exact
+[historical source](https://github.com/okou-ai/okou/tree/6249c11bb1b9ba8e2f2deb03771b5084fc209abf/turbo/packages/db/scripts/migrations/014-goal-archive-search)
+only after revalidating targets, prerequisites and authorization. The
 [completed 014 record](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/goal-archive-search-recovery.md) is not an
 execution entry for the contracted schema. Unrelated transition validators and
 the complete migration consistency command remain active.
@@ -392,8 +407,11 @@ it. Every earlier
 API writes the old tables, so it is not rolling-compatible; the interruption
 while the previous API drains is accepted by explicit owner decision
 (2026-10-07). The production rollback resolver enforces a floor on the
-first-parent `main` commit that adds 1343. Numbered operation 017 remains as a
-historical record and no longer has tables to act on. See
+first-parent `main` commit that adds 1343. Numbered operation 017 is retired and
+no longer has tables to act on. Its exact
+[historical source](https://github.com/okou-ai/okou/tree/6249c11bb1b9ba8e2f2deb03771b5084fc209abf/turbo/packages/db/scripts/migrations/017-pi-stable-context)
+is recoverable from Git, not an execution entry for the contracted schema;
+revalidate targets, prerequisites and authorization before restoring it. See
 [deployment compatibility](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/deployment-compatibility.md#pi-stable-context-tables-retired-2026-10-07).
 
 ## Model catalog

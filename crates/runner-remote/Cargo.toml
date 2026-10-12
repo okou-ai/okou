@@ -1,10 +1,33 @@
 [package]
 name = "runner-remote"
-version = "0.11.3"
+version = "0.13.0"
 edition.workspace = true
-description = "Runner guest RPC, remote usage, SSH, and VNC services"
+description = "Runner guest RPC, remote usage, SSH, Tailscale, and VNC services"
+
+[features]
+test-support = ["dep:http-body-util"]
 
 [dependencies]
+ts_bart = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+ts_control = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+ts_capabilityversion = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+ts_control_serde = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+ts_control_noise = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+ts_tls_util = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+ts_dataplane = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6", default-features = false, features = ["async_tokio"] }
+ts_derp = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+ts_keys = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+ts_netstack_smoltcp_core = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6", features = ["std"] }
+ts_netstack_smoltcp_socket = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6", features = ["tokio"] }
+ts_overlay_router = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+ts_packet = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+ts_packetfilter = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+ts_packetfilter_state = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+ts_transport = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+ts_tunnel = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+ipnet = { version = "2", default-features = false, features = ["std"] }
+ts_http_util = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+http-body-util = { version = "0.1", optional = true }
 ably-subscriber.workspace = true
 api-contracts.workspace = true
 runner-host.workspace = true
@@ -41,6 +64,14 @@ webpki-roots.workspace = true
 zeroize = { workspace = true, features = ["alloc"] }
 
 [dev-dependencies]
+crypto_box = "=0.9.1"
+ts_noise = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+ts_http_util = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+ts_derp = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+ts_keys = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
+http-body-util = "0.1"
+hyper = { workspace = true, features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
 guest-control-client.workspace = true
 guest-control-proto.workspace = true
 httpmock = { workspace = true, features = ["cookies"] }
@@ -54,6 +85,7 @@ runner-rpc-client.workspace = true
 sandbox-mock.workspace = true
 tempfile = { workspace = true, features = ["getrandom"] }
 tokio = { workspace = true, features = ["process", "test-util"] }
+tokio-util = { workspace = true, features = ["codec"] }
 tracing-log = { workspace = true, features = ["log-tracer", "std"] }
 tracing-subscriber = { workspace = true, features = ["ansi", "fmt", "smallvec", "std", "tracing-log"] }
 tracing-test-support.workspace = true

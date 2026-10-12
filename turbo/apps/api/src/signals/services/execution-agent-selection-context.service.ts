@@ -122,10 +122,7 @@ function agentSelectionQueries(scope: AgentConnectorSelectionScope, at: Date) {
       and(
         eq(workflows.orgId, scope.orgId),
         eq(workflows.agentId, scope.agentId),
-        or(
-          isNull(workflows.officialDefinitionName),
-          eq(workflows.officialInstallationState, "installed"),
-        ),
+        isNull(workflows.officialDefinitionName),
         or(
           eq(workflows.visibility, "public"),
           eq(workflows.ownerUserId, scope.userId),

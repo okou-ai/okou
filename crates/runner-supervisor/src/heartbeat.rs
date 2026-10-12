@@ -586,10 +586,6 @@ pub fn collect_heartbeat_state(
         running_count,
         admittable_profiles,
         held_sandbox_states: idle_pool.held_sandbox_states(),
-        // Bounded PR2 outgoing envelope; home evidence is never copied here.
-        held_workspace_states: Vec::new(),
-        // Only the paired home-drive Runner implementation advertises this bridge.
-        home_affinity_version: Some(runner_types::types::HOME_AFFINITY_VERSION),
         held_home_states: Vec::new(),
         active_reuse_producers: Vec::new(),
         wss_ingress_service_active: false,
@@ -1114,8 +1110,6 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         assert_eq!(heartbeats.len(), 1);
-        assert_eq!(heartbeats[0].home_affinity_version, Some(1));
-        assert!(heartbeats[0].held_workspace_states.is_empty());
         assert_eq!(
             heartbeats[0].held_home_states,
             vec![held_home_state(
@@ -1177,7 +1171,7 @@ mod tests {
     }
 
     #[test]
-    fn cached_home_snapshot_only_advertises_current_profiles_and_paired_wire_capability() {
+    fn cached_home_snapshot_filters_profiles_and_serializes_empty_inventory() {
         let profiles = test_profiles();
         let filtered = filter_home_states_for_profiles(
             vec![held_home_state(
@@ -1197,8 +1191,8 @@ mod tests {
             &pool,
             RunnerMode::Running,
         );
-        assert_eq!(state.home_affinity_version, Some(1));
-        assert!(state.held_workspace_states.is_empty());
+        let body = serde_json::to_value(&state).unwrap();
+        assert_eq!(body["heldHomeStates"], serde_json::json!([]));
         assert!(
             state.held_home_states.is_empty(),
             "inventory is populated only by eligible cache evidence"

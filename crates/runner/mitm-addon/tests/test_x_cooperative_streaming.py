@@ -44,6 +44,7 @@ def _encode(body: bytes, encoding: str) -> bytes:
     return body
 
 
+@pytest.mark.shard_cost(10)
 async def test_gzip_callback_bounds_real_rows_and_yields_before_reporting_all(
     real_flow, tmp_path, usage_webhook_api
 ):

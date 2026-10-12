@@ -52,7 +52,9 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-network -- --test-threads=1
 
-# Extracted Runner guest RPC, usage, SSH, and VNC owner tests
+# Extracted Runner guest RPC, usage, SSH, and VNC owner tests.
+# Includes native TLS/Noise/DERP/TCP and common SSH tests with synthetic external
+# services, real encrypted traffic, binary transfers and physical IO retirement.
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-remote -- --test-threads=1
 
@@ -73,14 +75,15 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-host -p runner-storage -p runner -- --test-threads=1
 
 # Host-owned orphan-workspace GC and retained Runner policy/report composition
-# All 34 original ordinary workspace/held-lease/retry cases follow the operation
-# into runner-host/src/gc/workspaces/tests.rs; none removed or ignored.
-# New explicit-age and Root default/report/error seams cover the boundary.
+# Run both owner and composition targets for workspace/held-lease/retry behavior,
+# explicit-age propagation and Runner's defaults, reports and errors.
 # Shared GC and immutable report fixtures use non-default Host test-support;
 # production report, candidate, lease and removal-hook state stay private.
-# Initial candidates, fixed age reference, complete ownership snapshots and
-# later held lease retain their ordering. Root global lock/phase policy remains.
-# Scoped warm correctness is not the complete cold-memory acceptance gate.
+# Preserve ordering between initial candidates, the fixed age reference,
+# complete ownership snapshots and later held leases. Cover Runner's global
+# lock/phase policy as well.
+# Scoped correctness tests do not replace the complete native target selection
+# below or establish compile-memory savings.
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-host -p runner -- --test-threads=1
 
@@ -104,6 +107,12 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-host -p runner-supervisor -p runner -- --test-threads=1
 
+# Guarded idle terminal phases, physical memory ownership and retained callers.
+# Native packaged-guest saving is a separate opt-in fixture; see below.
+cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
+  -p runner-host -p runner-lifecycle -p runner-supervisor -p runner \
+  -- --test-threads=1
+
 # Complete native Runner and extracted-domain test set, with ordinary Cargo targets
 cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
   -p runner-types -p runner-host -p runner-provider -p runner-storage \
@@ -117,6 +126,30 @@ cargo test --manifest-path crates/Cargo.toml --profile local \
 # With output (for debugging)
 cargo test --manifest-path crates/Cargo.toml --profile local -- --nocapture
 ```
+
+### Workspace dependency policy
+
+Workspace crates must form an acyclic graph, including normal, development,
+build, target-specific, and optional dependency declarations. The policy combines
+all targets and features, even when a particular build would not activate both
+edges. Cargo permits some development-dependency cycles, but release-please
+requires an acyclic declared workspace graph.
+
+Check the policy and release workspace coverage from the repository root:
+
+```bash
+.github/scripts/check-release-please-workspace-coverage.sh
+```
+
+The check reuses `cargo metadata --locked --no-deps`, without compiling crates or
+fetching dependencies. It follows inherited and renamed local workspace
+dependencies, includes crates excluded from publication, and reports a complete
+cycle with dependency kinds and source manifests. Ordinary and release PRs and
+Merge Queue entries enforce it through the required `ci-gate-security` check.
+
+Place cross-crate integration tests in the crate that already depends on the
+tested contracts, or in a separate test crate above its participants. Adding a
+reverse development dependency to a lower-level contract crate creates a cycle.
 
 ### Memory-constrained environments
 
@@ -142,6 +175,15 @@ does not replace required CI.
 Pre-commit hooks run `cargo fmt` and `cargo doc --profile local` on staged Rust
 files. Clippy remains in the Crates CI workflow. To run it locally from `crates/`,
 use `cargo clippy --profile local --all-targets --all-features`.
+
+### Native terminal saving
+
+The [guarded idle fixture](../../crates/runner/tests/guarded_idle_native/README.md)
+defines matching packaged artifacts, disposable workspaces and required supplied
+memory measurements for its root/KVM/NBD test. Ordinary Cargo targets compile it;
+execution requires explicitly selecting the ignored native case. Keep native
+execution separate from ordinary mock-boundary coverage, and report unavailable
+native prerequisites as unverified rather than a passing result.
 
 ## Coverage in CI
 
@@ -219,7 +261,12 @@ validation metadata before moving an owned payload into its fixture envelope,
 rather than cloning that payload solely to keep reading its length or hash.
 For length-only observations, count actual serialized bytes without retaining
 throwaway JSON strings. Borrow body text for literal observations while preserving
-the same decoding semantics and complete payload assertions.
+the same decoding semantics and complete payload assertions. When omitting a
+fixture field, preserve the map's removal order with key-only metadata and borrow
+the unchanged values. Source-only repeated JSONL may serialize invariant fragments
+once and encode every sequence between them; derive boundaries from map iteration,
+not text matching, and verify complete bytes across ordering and digit boundaries.
+Build expected reduced values directly rather than cloning large values to replace.
 
 Keep real process/socket deadlines, full payload/file/pixel boundaries, key/KDF
 strengths, every assertion and actual retained image buffers. Compare complete
@@ -277,6 +324,30 @@ mod tests {
     }
 }
 ```
+
+### Out-of-line unit modules (`tests/mod.rs`)
+
+Use the native `tests/` directory layout for production-disabled unit modules:
+
+```rust
+// src/config.rs
+#[cfg(test)]
+mod tests;
+// Unit tests live in src/config/tests/mod.rs.
+```
+
+Keep the guard on the production parent. The module namespace and child modules
+are the same as for `tests.rs`; relative fixture includes must follow the new
+source location. Cargo tests and coverage use the complete checkout and still
+select these modules.
+
+Runner binary hashing and compilation share a committed-source inventory that
+excludes complete `tests/` directory segments. Organize a module there only after
+confirming that production build/include readers do not consume its source.
+Other test-named files remain conservatively included. Production sources and
+embedded runtime/license inputs must stay outside excluded directories; adding
+a production reader changes the key, but cannot make omitted source available
+in the materialized build context.
 
 ## Patterns
 

@@ -1,6 +1,6 @@
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 
 import { mockNow, withMockNowForTest } from "../../../lib/time";
 
@@ -12,7 +12,7 @@ const {
   stableManifest,
   darwinArm64Release,
   okouZipUrl,
-  feedRequest,
+  appcastRequest,
   countingManifestHandler,
 } = createDesktopUpdatePublicApi(context);
 
@@ -27,7 +27,7 @@ describe("desktop update routes", () => {
           "1.2.3": darwinArm64Release("1.2.3", okouZipUrl("1.2.3")),
         }),
       );
-      await accept(feedRequest(), [200]);
+      await expect(appcastRequest()).resolves.toMatchObject({ status: 200 });
 
       countingManifestHandler(() => {
         return HttpResponse.error();
@@ -35,14 +35,20 @@ describe("desktop update routes", () => {
 
       for (const minutes of [10, 20, 29]) {
         mockNow(initialNow + minutes * 60_000);
-        const stale = await accept(feedRequest(), [200]);
-        expect(stale.body.currentRelease).toBe("1.2.3");
+        const stale = await appcastRequest();
+        expect(stale.status).toBe(200);
+        await expect(stale.text()).resolves.toContain(
+          "<sparkle:version>1.2.3</sparkle:version>",
+        );
       }
 
       mockNow(initialNow + 30 * 60_000);
-      const expired = await accept(feedRequest(), [503]);
+      const expired = await appcastRequest();
+      expect(expired.status).toBe(503);
 
-      expect(expired.body.error.code).toBe("DESKTOP_UPDATE_UNAVAILABLE");
+      await expect(expired.json()).resolves.toMatchObject({
+        error: { code: "DESKTOP_UPDATE_UNAVAILABLE" },
+      });
     });
   });
 });

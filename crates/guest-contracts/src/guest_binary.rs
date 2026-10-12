@@ -22,6 +22,9 @@ pub const WRITE_FILE_PATH: &str = "/sbin/guest-write-file";
 /// Production path of the managed guest tool executor.
 pub const TOOL_EXEC_PATH: &str = "/usr/local/bin/guest-tool-exec";
 
+/// Production path of the generic managed task runtime launcher.
+pub const TASK_EXEC_PATH: &str = "/usr/local/bin/guest-task-exec";
+
 /// Production path of the one-shot Guest-to-Runner RPC helper.
 pub const RUNNER_RPC_CLIENT_PATH: &str = "/usr/local/bin/runner-rpc-client";
 

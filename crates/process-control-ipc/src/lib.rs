@@ -70,6 +70,8 @@
 //! diagnostics are bounded by [`MAX_DIAGNOSTIC_BYTES`].
 
 mod codec;
+/// Separate, additive version-one managed-task channel; legacy tool IPC is unchanged.
+pub mod managed_task;
 mod transport;
 
 pub use codec::{

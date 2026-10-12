@@ -6,7 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { DEFAULT_USER_TIMEZONE, isValidTimeZone } from "@okouai/core/timezone";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { command, computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { writeDb$, type Db } from "../external/db";

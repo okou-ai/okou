@@ -16,6 +16,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { mockNow } from "../../../lib/time";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -435,6 +436,151 @@ describe("presentation template publish", () => {
       [200],
     );
     expect(revokedPreviewUrls.body.assets).toStrictEqual([]);
+  });
+
+  it("renames a private template without sharing it and rejects another workspace", async () => {
+    mockNow(new Date("2026-10-09T12:00:00.000Z"));
+    const owner = bdd.user();
+    const fixture = installS3Fixture(context);
+    const inputs = await uploadInputs(owner, fixture, tarGz(guidance()));
+    mocks.clerk.session(owner.userId, owner.orgId);
+    const client = templateClient();
+    const published = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: { title: "Private brand", ...inputs },
+      }),
+      [200],
+    );
+    const params = { templateId: published.body.id };
+    context.mocks.ably.channelGet.mockClear();
+    context.mocks.ably.publish.mockClear();
+    const renamed = await accept(
+      client.update({
+        headers: webHeaders(),
+        params,
+        body: { title: "  Renamed private brand  " },
+      }),
+      [200],
+    );
+    expect(renamed.body).toStrictEqual({
+      ...published.body,
+      title: "Renamed private brand",
+      updatedAt: renamed.body.updatedAt,
+    });
+    expect(renamed.body.updatedAt).not.toBe(published.body.updatedAt);
+    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
+      `user:${owner.userId}`,
+    );
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "presentationTemplatesChanged",
+      null,
+    );
+
+    const otherWorkspace = bdd.user();
+    mocks.clerk.session(owner.userId, otherWorkspace.orgId);
+    const rejected = await accept(
+      client.update({
+        headers: webHeaders(),
+        params,
+        body: { title: "Wrong workspace", visibility: "public" },
+      }),
+      [404],
+    );
+    expect(rejected.body).toStrictEqual({
+      error: {
+        message: `Presentation template not found: ${published.body.id}`,
+        code: "NOT_FOUND",
+      },
+    });
+    mocks.clerk.session(owner.userId, owner.orgId);
+    const detail = await accept(
+      client.get({ headers: webHeaders(), params }),
+      [200],
+    );
+    expect(detail.body).toMatchObject(renamed.body);
+  });
+
+  it("preserves concurrent field updates and notifies the workspace on retraction", async () => {
+    const owner = bdd.user();
+    const fixture = installS3Fixture(context);
+    const inputs = await uploadInputs(owner, fixture, tarGz(guidance()));
+    mocks.clerk.session(owner.userId, owner.orgId);
+    const client = templateClient();
+    const published = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: { title: "Brand", ...inputs },
+      }),
+      [200],
+    );
+    const params = { templateId: published.body.id };
+    await Promise.all([
+      accept(
+        client.update({
+          headers: webHeaders(),
+          params,
+          body: { title: "Concurrent brand" },
+        }),
+        [200],
+      ),
+      accept(
+        client.update({
+          headers: webHeaders(),
+          params,
+          body: { visibility: "public" },
+        }),
+        [200],
+      ),
+    ]);
+    const shared = await accept(
+      client.get({ headers: webHeaders(), params }),
+      [200],
+    );
+    expect(shared.body).toMatchObject({
+      title: "Concurrent brand",
+      visibility: "public",
+      sourceFilename: published.body.sourceFilename,
+      pageCount: published.body.pageCount,
+      coverUrl: published.body.coverUrl,
+      createdAt: published.body.createdAt,
+      canManage: true,
+    });
+
+    context.mocks.ably.channelGet.mockClear();
+    const retracted = await Promise.all(
+      [0, 1].map(() => {
+        return accept(
+          client.update({
+            headers: webHeaders(),
+            params,
+            body: { visibility: "private" },
+          }),
+          [200],
+        );
+      }),
+    );
+    for (const result of retracted) {
+      expect(result.body).toMatchObject({
+        title: "Concurrent brand",
+        visibility: "private",
+      });
+    }
+    expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual(
+      expect.arrayContaining([
+        [`org:${owner.orgId}`],
+        [`user:${owner.userId}`],
+      ]),
+    );
+    expect(context.mocks.ably.channelGet).toHaveBeenCalledTimes(2);
+    const privateDetail = await accept(
+      client.get({ headers: webHeaders(), params }),
+      [200],
+    );
+    expect(privateDetail.body).toMatchObject({
+      title: "Concurrent brand",
+      visibility: "private",
+    });
   });
 
   it("deletes a template exactly once when two requests race", async () => {

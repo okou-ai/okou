@@ -104,7 +104,7 @@ export const noProductionStaffEntitlementMutation = createRule({
     schema: [],
     messages: {
       productionStaffMutation:
-        "Do not mutate entitlements for the fixed production staff organization. Use createUniqueStaffOrgIdFixture() or another test-owned organization.",
+        "Do not mutate entitlements for the fixed production staff organization. Use createUniqueStaffOrgIdFixture() or another test-owned organization. See docs/api/api-testing.md#shared-persistent-state.",
     },
   },
   create(context) {

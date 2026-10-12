@@ -1,0 +1,17 @@
+{
+  "role": "assistant",
+  "api": "openai-codex-responses",
+  "content": [],
+  "stopReason": "error",
+  "errorMessage": "Codex error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID 00000000-0000-4000-8000-000000000001 in your message.",
+  "diagnostics": [
+    {
+      "type": "okou_model_request",
+      "details": {
+        "httpStatus": 200,
+        "transportAttempts": 1,
+        "failureReason": "provider_server_error"
+      }
+    }
+  ]
+}

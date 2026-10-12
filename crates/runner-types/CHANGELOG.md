@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.4](https://github.com/okou-ai/okou/compare/runner-types-v0.6.3...runner-types-v0.6.4) (2026-10-12)
+
+
+### Refactoring
+
+* **runner:** retire workspace protocol and application sql ([#38837](https://github.com/okou-ai/okou/issues/38837)) ([a932f1f](https://github.com/okou-ai/okou/commit/a932f1f86ae10eb624fa3ff3bccc851ba4809a7e))
+
+## [0.6.3](https://github.com/okou-ai/okou/compare/runner-types-v0.6.2...runner-types-v0.6.3) (2026-10-11)
+
+
+### Performance Improvements
+
+* **runner-lifecycle:** decouple storage fingerprint contracts ([#39056](https://github.com/okou-ai/okou/issues/39056)) ([24f6151](https://github.com/okou-ai/okou/commit/24f61511de54a9e5c8c06391344cf67d897b51bd))
+
+## [0.6.2](https://github.com/okou-ai/okou/compare/runner-types-v0.6.1...runner-types-v0.6.2) (2026-10-11)
+
 ## [0.6.1](https://github.com/okou-ai/okou/compare/runner-types-v0.6.0...runner-types-v0.6.1) (2026-10-10)
 
 ## [0.6.0](https://github.com/okou-ai/okou/compare/runner-types-v0.5.4...runner-types-v0.6.0) (2026-10-10)

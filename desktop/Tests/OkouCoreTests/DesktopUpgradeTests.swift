@@ -3,6 +3,14 @@ import XCTest
 
 @testable import OkouCore
 
+extension APIResponse {
+  /// Builds a response from a decoded body; tests never need the raw bytes separately.
+  init(status: Int, body: JSONValue, retryAfter: TimeInterval?) {
+    self.init(
+      status: status, data: try! JSONEncoder().encode(body), body: body, retryAfter: retryAfter)
+  }
+}
+
 final class DesktopUpgradeTests: XCTestCase {
   func testNumericFloorAndUpdateCandidateSelection() {
     for (installed, minimum, required) in [

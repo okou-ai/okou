@@ -23,6 +23,7 @@ export const runModelsRoutes: readonly RouteEntry[] = [
         requireOrganization: true,
         missingOrganizationStatus: 401,
         acceptAnySandboxCapability: true,
+        oauthScope: "okou:chat:read",
       },
       listRunModels$,
     ),

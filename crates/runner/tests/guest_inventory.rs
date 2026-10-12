@@ -70,6 +70,7 @@ fn expected_runtime_destinations() -> BTreeMap<&'static str, &'static str> {
             guest_contracts::home_mount::HOME_MOUNT_PATH,
         ),
         ("guest-tool-exec", guest_binary::TOOL_EXEC_PATH),
+        ("guest-task-exec", guest_binary::TASK_EXEC_PATH),
         ("runner-rpc-client", guest_binary::RUNNER_RPC_CLIENT_PATH),
         ("claude-mock", guest_binary::CLAUDE_MOCK_PATH),
         ("codex-mock", guest_binary::CODEX_MOCK_PATH),

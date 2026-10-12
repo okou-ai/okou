@@ -10,6 +10,7 @@ import {
 } from "./mock-auth";
 import { loadClerkJSScript } from "../test/mocks/clerk-resource.ts";
 import {
+  createBootstrapRoot,
   installBootstrapSkeleton,
   queryBootstrapSkeleton,
 } from "../test/bootstrap-skeleton.ts";
@@ -304,8 +305,7 @@ async function setupPageAsync(
     options.appVersion ?? TEST_APP_VERSION,
     () => {
       setupRouter(store, (element) => {
-        const container = document.createElement("div");
-        container.id = "root";
+        const container = createBootstrapRoot();
         document.body.appendChild(container);
         const { unmount } = render(element, { container });
         pageRendered();

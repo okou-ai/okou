@@ -500,18 +500,14 @@ pub(super) fn write_oversized_delivery_notifications<W: Write>(
     )?;
     write_json_line(
         output,
-        &json!({
-            "method": "turn/plan/updated",
-            "params": {
-                "threadId": thread_id,
-                "turnId": turn_id,
-                "explanation": "oversized structural plan",
-                "plan": (0..75_000).map(|index| json!({
+        &plan_update_notification(
+            thread_id,
+            turn_id,
+            (0..75_000).map(|index| json!({
                     "step": format!("step-{index:06}-abcdefghijklmnopqrstuvwxyz-abcdefghijklmnopqrstuvwxyz"),
                     "status": "pending",
-                })).collect::<Vec<_>>(),
-            }
-        }),
+                })).collect(),
+        ),
     )?;
     write_json_line(
         output,
@@ -697,6 +693,20 @@ pub(super) fn historical_token_usage_notification(thread_id: &str) -> Value {
         HISTORICAL_USAGE,
         HISTORICAL_LAST_USAGE,
     )
+}
+
+fn plan_update_notification(thread_id: &str, turn_id: &str, plan: Vec<Value>) -> Value {
+    // json! would borrow and rebuild all 75,000 already-owned plan entries.
+    let params = Value::Object(serde_json::Map::from_iter([
+        ("threadId".into(), thread_id.into()),
+        ("turnId".into(), turn_id.into()),
+        ("explanation".into(), "oversized structural plan".into()),
+        ("plan".into(), Value::Array(plan)),
+    ]));
+    Value::Object(serde_json::Map::from_iter([
+        ("method".into(), "turn/plan/updated".into()),
+        ("params".into(), params),
+    ]))
 }
 
 pub(super) fn secondary_token_usage_notification(thread_id: &str, turn_id: &str) -> Value {
@@ -1008,6 +1018,35 @@ pub(super) fn write_split_json_line_prefix<W: Write>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn owned_plan_notification_preserves_canonical_jsonl() -> io::Result<()> {
+        for plan in [
+            vec![],
+            vec![
+                json!({"step":"step-000000-abcdefghijklmnopqrstuvwxyz-abcdefghijklmnopqrstuvwxyz","status":"pending"}),
+            ],
+            vec![
+                json!({"step":"你好\"\\\n\0", "status":"pending"}),
+                json!({"z-field":[null, true, 19], "a-field":{}}),
+            ],
+        ] {
+            let expected = json!({
+                "method": "turn/plan/updated",
+                "params": {
+                    "threadId": "thread-你好\"\\\n",
+                    "turnId": "turn-\0",
+                    "explanation": "oversized structural plan",
+                    "plan": &plan,
+                }
+            });
+            let notification = plan_update_notification("thread-你好\"\\\n", "turn-\0", plan);
+            let mut actual = Vec::new();
+            write_json_line(&mut actual, &notification)?;
+            assert_eq!(actual, format!("{expected}\n").as_bytes());
+        }
+        Ok(())
+    }
 
     #[test]
     fn owned_item_notifications_preserve_canonical_jsonl() -> io::Result<()> {

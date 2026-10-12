@@ -1,7 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import packageJson from "../../package.json" with { type: "json" };
-import { type RuntimeApiRouteBinding, runtimeApiRouteBindings } from "./routes";
+import {
+  type RuntimeApiRouteBinding,
+  runtimeApiRouteBindings,
+  runtimeApiRouteOwners,
+} from "./routes";
 
 export const runtimeApiSchemaFormatVersion = 1;
 
@@ -279,7 +283,7 @@ const runtimeSchemaSnapshotSchema: z.ZodType<RuntimeSchemaSnapshot> = z.union([
 const runtimeApiRouteSnapshotSchema: z.ZodType<RuntimeApiRouteSnapshot> =
   z.object({
     id: z.string().min(1),
-    owner: z.enum(["runner", "guest-agent", "mitm-addon"]),
+    owner: z.enum(runtimeApiRouteOwners),
     method: z.string().min(1),
     path: z.string().min(1),
     summary: z.string().optional(),

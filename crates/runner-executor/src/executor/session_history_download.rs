@@ -60,11 +60,12 @@ use crate::telemetry::{
     SessionHistoryTelemetryMetadata, SessionHistoryTransferEncodingState,
 };
 use runner_provider::http::HttpClient;
+#[cfg(test)]
+use runner_storage::OBJECT_DOWNLOAD_BUDGET as SESSION_HISTORY_DOWNLOAD_BUDGET;
 use runner_storage::{
-    OBJECT_DOWNLOAD_BUDGET as SESSION_HISTORY_DOWNLOAD_BUDGET,
-    OBJECT_DOWNLOAD_MAX_ATTEMPTS as SESSION_HISTORY_DOWNLOAD_MAX_ATTEMPTS,
-    OBJECT_DOWNLOAD_RETRY_DELAY as SESSION_HISTORY_DOWNLOAD_RETRY_DELAY, OBJECT_DOWNLOAD_TIMEOUT,
-    object_download_http_retry_after, object_download_transient_transport_kind,
+    OBJECT_DOWNLOAD_MAX_ATTEMPTS as SESSION_HISTORY_DOWNLOAD_MAX_ATTEMPTS, OBJECT_DOWNLOAD_TIMEOUT,
+    ObjectDownloadRetryBudget, object_download_http_retry_after,
+    object_download_transient_transport_kind,
 };
 use runner_types::types::{
     ResumeSession, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
@@ -894,14 +895,10 @@ async fn download_body(
     cancel: &CancellationToken,
     timings: &mut SessionHistoryDownloadTimings,
 ) -> RunnerResult<Vec<u8>> {
-    let deadline = tokio::time::Instant::now() + SESSION_HISTORY_DOWNLOAD_BUDGET;
     tokio::select! {
         biased;
         _ = cancel.cancelled() => Err(session_history_download_cancelled_error()),
-        result = tokio::time::timeout_at(
-            deadline,
-            download_body_with_retries(http, url, expected_size, timings, deadline),
-        ) => result.unwrap_or_else(|_| Err(session_history_download_budget_error())),
+        result = download_body_with_retries(http, url, expected_size, timings) => result,
     }
 }
 
@@ -910,46 +907,34 @@ async fn download_body_with_retries(
     url: &str,
     expected_size: Option<u64>,
     timings: &mut SessionHistoryDownloadTimings,
-    deadline: tokio::time::Instant,
 ) -> RunnerResult<Vec<u8>> {
-    let mut attempt = 1usize;
+    let mut budget = ObjectDownloadRetryBudget::default();
     loop {
-        // Timeout polls its inner future before the expired timer, so a late
-        // backoff wakeup and a ready response both need explicit budget checks.
-        if tokio::time::Instant::now() >= deadline {
-            return Err(session_history_download_budget_error());
-        }
-        let result = download_body_once(http, url, expected_size, timings).await;
-        if tokio::time::Instant::now() >= deadline {
-            return Err(session_history_download_budget_error());
-        }
+        let result = budget
+            .run_attempt(download_body_once(http, url, expected_size, timings))
+            .await
+            .map_err(|_| session_history_download_budget_error())?;
         match result {
             Ok(body) => return Ok(body),
             Err(error) => {
-                let Some(retry_after) = error.retry_after else {
+                let Some(retry) = budget.next_retry(error.retry_after) else {
                     return Err(error.into_runner_error());
                 };
-                if attempt >= SESSION_HISTORY_DOWNLOAD_MAX_ATTEMPTS {
-                    return Err(error.into_runner_error());
-                }
-                let backoff = SESSION_HISTORY_DOWNLOAD_RETRY_DELAY * (1 << (attempt - 1));
-                let delay = backoff.max(retry_after);
-                if delay >= deadline.saturating_duration_since(tokio::time::Instant::now()) {
-                    return Err(error.into_runner_error());
-                }
                 tracing::info!(
                     action = "session_history_download_retry",
                     r2_key = runner_storage::r2_download::key_from_url(url).as_deref(),
-                    attempt,
+                    attempt = retry.attempt(),
                     max_attempts = SESSION_HISTORY_DOWNLOAD_MAX_ATTEMPTS,
                     failure_kind = error.failure_kind,
-                    retry_delay_ms = delay.as_millis() as u64,
+                    retry_delay_ms = retry.delay().as_millis() as u64,
                     "retrying session history blob download"
                 );
-                // The caller's cancellation/deadline owns this sleep and the
-                // next request. Each attempt starts with an empty body buffer.
-                tokio::time::sleep(delay).await;
-                attempt += 1;
+                // The caller's cancellation owns this wait and the next request.
+                // Each attempt starts with an empty body buffer.
+                retry
+                    .wait()
+                    .await
+                    .map_err(|_| session_history_download_budget_error())?;
             }
         }
     }

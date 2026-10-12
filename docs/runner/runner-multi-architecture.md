@@ -186,8 +186,14 @@ storage redirects receive no GitHub authorization, and index archives must
 contain one bounded regular manifest. GitHub remains only a discovery index; a successfully
 published target can be reused while unrelated producer-workflow jobs are still
 running. Completed-run/source eligibility remains specific to the separate
-shadow audit, not ordinary trusted-R2 cache reuse. Image builds retain their
-aggregate compiler gate and required per-submission verification.
+shadow audit, not ordinary trusted-R2 cache reuse. Image production calls
+`runner-image-architecture.yml` at the caller's revision for each configured
+group. Each image depends only on its own compiler: a cache-hit target proceeds
+with an intentionally skipped compiler, and a miss requires successful target
+compilation. The image job validates this prerequisite contract before byte
+reads or host effects. A failed or unexpectedly skipped compiler fails that
+architecture; the outer matrix retains every configured result with fail-fast
+disabled. Required per-submission and complementary-architecture checks remain.
 
 Fresh publication and download are required: missing configuration, storage
 failures, invalid manifests, or binary hash/size mismatches fail the job. Cache-hit

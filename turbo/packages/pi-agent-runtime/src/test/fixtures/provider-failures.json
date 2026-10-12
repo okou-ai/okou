@@ -1,5 +1,49 @@
 [
   {
+    "message": "An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists.",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "Codex error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID 00000000-0000-4000-8000-000000000001 in your message.",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "unknown: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req_synthetic in your message.",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"unknown\",\"message\":\"An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists.\"}}",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"invalid_api_key\",\"message\":\"An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists.\"}}",
+    "reason": "invalid_api_key"
+  },
+  {
+    "message": "An error occurred while processing your request.",
+    "reason": null
+  },
+  {
+    "message": "An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID  in your message.",
+    "reason": null
+  },
+  {
+    "message": "An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req synthetic in your message.",
+    "reason": null
+  },
+  {
+    "message": "An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req_synthetic in your message. is an example.",
+    "reason": null
+  },
+  {
+    "message": "The tool printed: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists.",
+    "reason": null
+  },
+  {
+    "message": "{\"debug\":{\"error\":{\"message\":\"An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists.\"}}}",
+    "reason": null
+  },
+  {
     "message": "Unable to verify model access right now. Please retry.",
     "reason": "provider_server_error"
   },

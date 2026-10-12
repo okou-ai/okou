@@ -611,6 +611,35 @@ async fn guest_preserves_pi_completed_length_error_and_aborted_settlement_result
         )
         .await?;
     }
+    let processing_failure: Value = serde_json::from_str(include_str!(
+        "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-request-processing-error.json"
+    ))?;
+    let processing_text = processing_failure["errorMessage"]
+        .as_str()
+        .ok_or_else(|| std::io::Error::other("missing request-processing failure text"))?;
+    for (run_id, structured_reason) in [
+        ("00000000-0000-4000-8000-000000000192", true),
+        ("00000000-0000-4000-8000-000000000193", false),
+    ] {
+        let mut message = processing_failure.clone();
+        if !structured_reason {
+            message
+                .pointer_mut("/diagnostics/0/details")
+                .and_then(Value::as_object_mut)
+                .ok_or_else(|| std::io::Error::other("missing model request details"))?
+                .remove("failureReason");
+        }
+        run_settlement_case(
+            run_id,
+            &[message],
+            ExpectedTerminalResult::Exact(processing_text),
+            Some(FailureReason::ProviderServerError),
+            None,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
     let verification_failure: Value = serde_json::from_str(include_str!(
         "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-model-access-verification.json"
     ))?;

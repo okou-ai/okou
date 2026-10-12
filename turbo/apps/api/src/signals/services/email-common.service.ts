@@ -12,7 +12,19 @@ import { emailSuppressions } from "@okouai/db/schema/email-suppression";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { users } from "@okouai/db/schema/user";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { Resend } from "resend";
 import { delay } from "signal-timers";
 import { Webhook } from "svix";
@@ -20,6 +32,8 @@ import { z } from "zod";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import { apiBackendUrl } from "../../lib/api-backend-url";
+import { pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
+import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
@@ -846,28 +860,30 @@ export const drainEmailOutboxBatch$ = command(
   },
 );
 
-async function cleanupExpiredEmailOutbox(
-  db: Db,
-  context: EmailOutboxDrainContext,
-  signal: AbortSignal,
-): Promise<number> {
-  const cutoff = new Date(context.currentTimeMs - OUTBOX_TTL_MS);
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0158; new non-billing transactions are prohibited.
-  const deleted = await db.transaction(async (tx) => {
-    const removed = await tx
-      .delete(emailOutbox)
-      .where(
-        and(
-          lt(emailOutbox.createdAt, cutoff),
-          or(
-            eq(emailOutbox.status, "pending"),
-            eq(emailOutbox.status, "failed"),
+export const cleanupExpiredEmailOutbox$ = command(
+  async (
+    { set },
+    context: EmailOutboxDrainContext,
+    signal: AbortSignal,
+  ): Promise<number> => {
+    const db = set(writeDb$);
+    const cutoff = new Date(context.currentTimeMs - OUTBOX_TTL_MS);
+    const expiredOutbox = db.$with("expired_email_outbox").as(
+      db
+        .delete(emailOutbox)
+        .where(
+          and(
+            lt(emailOutbox.createdAt, cutoff),
+            or(
+              eq(emailOutbox.status, "pending"),
+              eq(emailOutbox.status, "failed"),
+            ),
           ),
-        ),
-      )
-      .returning({ id: emailOutbox.id });
-    if (removed.length > 0) {
-      await tx
+        )
+        .returning({ id: emailOutbox.id }),
+    );
+    const expiredReceipts = db.$with("expired_mail_notifications").as(
+      db
         .update(mailNotifications)
         .set({ status: "failed", reason: "expired" })
         .where(
@@ -875,32 +891,36 @@ async function cleanupExpiredEmailOutbox(
             eq(mailNotifications.status, "queued"),
             inArray(
               mailNotifications.outboxId,
-              removed.map((row) => {
-                return row.id;
-              }),
+              db.select({ id: expiredOutbox.id }).from(expiredOutbox),
             ),
+            // Exhaust the outbox DELETE before locking receipts, matching
+            // completion and erasure order rather than relying on CTE order.
+            gte(db.select({ count: count() }).from(expiredOutbox), 0),
           ),
-        );
+        )
+        .returning({ id: mailNotifications.id }),
+    );
+    const [deleted] = await db
+      .with(expiredOutbox, expiredReceipts)
+      .select({
+        cleaned: count().mapWith(
+          zodDriverValueDecoder(
+            pgInt8ToSafeIntegerSchema.pipe(z.number().nonnegative()),
+          ),
+        ),
+      })
+      .from(expiredOutbox);
+    // SQL has committed; cancellation stops the caller's remaining work.
+    signal.throwIfAborted();
+    if (!deleted) {
+      throw new Error("Expired email outbox count missing");
     }
-    return removed;
-  });
-  signal.throwIfAborted();
-
-  if (deleted.length > 0) {
-    log.debug("Cleaned up expired email outbox items", {
-      cleaned: deleted.length,
-    });
-  }
-  return deleted.length;
-}
-
-export const cleanupExpiredEmailOutbox$ = command(
-  async (
-    { set },
-    context: EmailOutboxDrainContext,
-    signal: AbortSignal,
-  ): Promise<number> => {
-    return await cleanupExpiredEmailOutbox(set(writeDb$), context, signal);
+    if (deleted.cleaned > 0) {
+      log.debug("Cleaned up expired email outbox items", {
+        cleaned: deleted.cleaned,
+      });
+    }
+    return deleted.cleaned;
   },
 );
 

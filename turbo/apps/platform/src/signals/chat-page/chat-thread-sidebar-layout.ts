@@ -1,7 +1,8 @@
 import { command, computed, state } from "ccstate";
 import { animationFrame } from "signal-timers";
 
-import { resetSignal } from "../utils.ts";
+import { pageSignal$ } from "../page-signal.ts";
+import { onRef, resetSignal } from "../utils.ts";
 import { syncActiveBrowserFitAction$ } from "./thread-sidebar-coordinator.ts";
 
 // Smallest the sidebar may shrink to before its content stops being usable.
@@ -42,21 +43,36 @@ const chatThreadSidebarDragMaskEl$ = computed(() => {
   return element;
 });
 
-export const startChatThreadSidebarResize$ = command(
-  ({ get, set }, container: HTMLElement, pageSignal: AbortSignal): void => {
-    pageSignal.throwIfAborted();
+const startChatThreadSidebarResize$ = command(
+  (
+    { get, set },
+    container: HTMLElement,
+    handle: HTMLDivElement,
+    pointerId: number,
+    ownerSignal: AbortSignal,
+  ): void => {
+    ownerSignal.throwIfAborted();
 
     const rect = container.getBoundingClientRect();
     const maxWidth = Math.max(
       CHAT_THREAD_SIDEBAR_MIN_WIDTH,
       rect.width - CHAT_THREAD_SIDEBAR_MIN_THREAD_WIDTH,
     );
-    const dragSignal = set(resetChatThreadSidebarResize$, pageSignal);
+    const dragSignal = set(resetChatThreadSidebarResize$, ownerSignal);
+    // Capture before mounting the mask so a failed capture cannot leave it
+    // blocking the page. Events stay on this owner across embedded frames.
+    handle.setPointerCapture(pointerId);
     const dragMaskEl = get(chatThreadSidebarDragMaskEl$);
     let fitCheckScheduled = false;
 
     function resetResize(): void {
       set(resetChatThreadSidebarResize$);
+    }
+
+    function endPointerResize(event: PointerEvent): void {
+      if (event.pointerId === pointerId) {
+        resetResize();
+      }
     }
 
     function scheduleBrowserFitCheck(): void {
@@ -72,13 +88,20 @@ export const startChatThreadSidebarResize$ = command(
           fitCheckScheduled = false;
           set(syncActiveBrowserFitAction$);
         },
-        { signal: pageSignal },
+        { signal: ownerSignal },
       );
     }
 
-    dragMaskEl.addEventListener(
+    handle.addEventListener(
       "pointermove",
       (event) => {
+        if (event.pointerId !== pointerId) {
+          return;
+        }
+        if (event.buttons === 0) {
+          resetResize();
+          return;
+        }
         const nextWidth = Math.min(
           Math.max(rect.right - event.clientX, CHAT_THREAD_SIDEBAR_MIN_WIDTH),
           maxWidth,
@@ -88,16 +111,23 @@ export const startChatThreadSidebarResize$ = command(
       },
       { signal: dragSignal },
     );
-    dragMaskEl.addEventListener("pointerup", resetResize, {
+    handle.addEventListener("pointerup", endPointerResize, {
       signal: dragSignal,
     });
-    dragMaskEl.addEventListener("pointercancel", resetResize, {
+    handle.addEventListener("pointercancel", endPointerResize, {
       signal: dragSignal,
     });
+    handle.addEventListener("lostpointercapture", endPointerResize, {
+      signal: dragSignal,
+    });
+    window.addEventListener("blur", resetResize, { signal: dragSignal });
 
     dragSignal.addEventListener(
       "abort",
       () => {
+        if (handle.hasPointerCapture(pointerId)) {
+          handle.releasePointerCapture(pointerId);
+        }
         dragMaskEl.remove();
         set(internalChatThreadSidebarResizing$, false);
       },
@@ -107,4 +137,35 @@ export const startChatThreadSidebarResize$ = command(
     document.body.append(dragMaskEl);
     set(internalChatThreadSidebarResizing$, true);
   },
+);
+
+export const chatThreadSidebarResizeHandleRef$ = onRef(
+  command(({ get, set }, handle: HTMLDivElement, mountSignal: AbortSignal) => {
+    handle.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (!event.isPrimary || event.button !== 0) {
+          return;
+        }
+        const container = handle.parentElement;
+        if (!container) {
+          return;
+        }
+        const ownerSignal = AbortSignal.any([mountSignal, get(pageSignal$)]);
+        if (ownerSignal.aborted) {
+          return;
+        }
+        // Resizing owns this gesture; do not start native text selection.
+        event.preventDefault();
+        set(
+          startChatThreadSidebarResize$,
+          container,
+          handle,
+          event.pointerId,
+          ownerSignal,
+        );
+      },
+      { signal: mountSignal },
+    );
+  }),
 );

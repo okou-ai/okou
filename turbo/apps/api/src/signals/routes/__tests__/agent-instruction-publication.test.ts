@@ -374,4 +374,59 @@ describe("Agent instruction preparation and publication", () => {
       "Instructions after cancellation",
     );
   });
+  it("preserves a newer pending publication when the older preparation is cancelled and permits retry", async () => {
+    const olderPause = uploadPause();
+    const newerPause = uploadPause();
+    const pauses: ReturnType<typeof uploadPause>[] = [];
+    const fixture = await instructionFixture(async (command) => {
+      if (isArchive(command)) {
+        await pauses.shift()?.wait();
+      }
+    });
+    await fixture.update("Published before overlapping cancellation");
+    const controller = new AbortController();
+    onTestFinished(() => {
+      controller.abort();
+    });
+    const cancelledApi = clients(
+      AbortSignal.any([context.signal, controller.signal]),
+    );
+    pauses.push(olderPause, newerPause);
+    const older = cancelledApi.instructions.update({
+      headers,
+      params: fixture.params,
+      body: { content: "Cancelled older preparation" },
+    });
+    const olderResult = settleIncludingAbort(older);
+    await olderPause.entered;
+    const newer = fixture.api.instructions.update({
+      headers,
+      params: fixture.params,
+      body: { content: "Newer publication after cancellation" },
+    });
+    onTestFinished(async () => {
+      olderPause.release();
+      newerPause.release();
+      await Promise.allSettled([older, newer, olderResult]);
+    });
+    await newerPause.entered;
+    controller.abort(new DOMException("Older request cancelled", "AbortError"));
+    olderPause.release();
+    await expect(olderResult).resolves.toMatchObject({
+      ok: false,
+      error: expect.objectContaining({ name: "AbortError" }),
+    });
+    await expect(fixture.content()).resolves.toBe(
+      "Published before overlapping cancellation",
+    );
+    newerPause.release();
+    await accept(newer, [200]);
+    await expect(fixture.content()).resolves.toBe(
+      "Newer publication after cancellation",
+    );
+    await fixture.update("Cancelled older preparation");
+    await expect(fixture.content()).resolves.toBe(
+      "Cancelled older preparation",
+    );
+  });
 });

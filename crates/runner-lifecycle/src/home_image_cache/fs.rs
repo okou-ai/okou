@@ -13,6 +13,7 @@ use runner_host::bounded_command::{
 };
 
 use super::HomeImageCache;
+use super::io_context::with_path;
 use super::types::{CacheBudget, FsStats};
 
 pub(super) const HOME_IMAGE_COPY_TIMEOUT: Duration = Duration::from_secs(300);
@@ -71,6 +72,7 @@ pub(super) fn fs_stats_with_additional_available(stats: FsStats, bytes: u64) -> 
             .available_bytes
             .saturating_add(bytes)
             .min(stats.total_bytes),
+        ..stats
     }
 }
 
@@ -94,7 +96,7 @@ pub(super) async fn home_cache_existing_path_allocated_bytes(
     let metadata = match fs::symlink_metadata(path).await {
         Ok(metadata) => metadata,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e),
+        Err(e) => return Err(with_path(e, "symlink_metadata", path)),
     };
     runner_host::host_file::validate_dir(
         runner_host::host_file::file_parent(path),
@@ -108,7 +110,7 @@ pub(super) async fn remove_home_cache_path_if_exists(path: &Path) -> std::io::Re
     let metadata = match fs::symlink_metadata(path).await {
         Ok(metadata) => metadata,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(e) => return Err(e),
+        Err(e) => return Err(with_path(e, "symlink_metadata", path)),
     };
     runner_host::host_file::validate_dir(
         runner_host::host_file::file_parent(path),
@@ -116,9 +118,13 @@ pub(super) async fn remove_home_cache_path_if_exists(path: &Path) -> std::io::Re
         "home reclamation parent",
     )?;
     if metadata.is_dir() {
-        fs::remove_dir_all(path).await?;
+        fs::remove_dir_all(path)
+            .await
+            .map_err(|error| with_path(error, "remove_dir_all", path))?;
     } else {
-        fs::remove_file(path).await?;
+        fs::remove_file(path)
+            .await
+            .map_err(|error| with_path(error, "remove_file", path))?;
     }
     Ok(true)
 }
@@ -127,7 +133,7 @@ pub(super) async fn remove_non_directory_home_cache_entry(path: &Path) -> Lifecy
     let metadata = match fs::symlink_metadata(path).await {
         Ok(metadata) => metadata,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(e) => return Err(e.into()),
+        Err(e) => return Err(with_path(e, "symlink_metadata", path).into()),
     };
     runner_host::host_file::validate_dir(
         runner_host::host_file::file_parent(path),
@@ -179,7 +185,7 @@ pub(super) async fn cache_entry_dir_is_dir(path: &Path) -> LifecycleResult<bool>
     match fs::symlink_metadata(path).await {
         Ok(metadata) => Ok(metadata.is_dir()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(e) => Err(e.into()),
+        Err(e) => Err(with_path(e, "symlink_metadata", path).into()),
     }
 }
 
@@ -190,7 +196,7 @@ pub(super) async fn entry_file_type_matches(
     match entry.file_type().await {
         Ok(file_type) => Ok(matches(&file_type)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(e) => Err(e.into()),
+        Err(e) => Err(with_path(e, "DirEntry::file_type", &entry.path()).into()),
     }
 }
 
@@ -206,7 +212,7 @@ pub(super) fn statvfs_for_path(path: &Path) -> LifecycleResult<libc::statvfs> {
     let mut stats = std::mem::MaybeUninit::<libc::statvfs>::uninit();
     let rc = unsafe { libc::statvfs(c_path.as_ptr(), stats.as_mut_ptr()) };
     if rc != 0 {
-        return Err(std::io::Error::last_os_error().into());
+        return Err(with_path(std::io::Error::last_os_error(), "statvfs", path).into());
     }
     Ok(unsafe { stats.assume_init() })
 }
@@ -216,6 +222,8 @@ pub(super) fn fs_stats_from_statvfs(stats: &libc::statvfs) -> FsStats {
     FsStats {
         total_bytes: stats.f_blocks.saturating_mul(block_size),
         available_bytes: stats.f_bavail.saturating_mul(block_size),
+        total_inodes: stats.f_files,
+        available_inodes: stats.f_favail,
     }
 }
 
@@ -231,21 +239,34 @@ async fn path_tree_allocated_bytes(
     let mut pending = vec![(path.to_path_buf(), true)];
     while let Some((dir, metadata_counted)) = pending.pop() {
         if !metadata_counted {
-            let metadata = fs::symlink_metadata(&dir).await?;
+            let metadata = fs::symlink_metadata(&dir)
+                .await
+                .map_err(|error| with_path(error, "symlink_metadata", &dir))?;
             total = total.saturating_add(allocated_bytes(&metadata));
             if !metadata.file_type().is_dir() {
                 continue;
             }
         }
 
-        let mut entries = fs::read_dir(&dir).await?;
-        while let Some(entry) = entries.next_entry().await? {
+        let mut entries = fs::read_dir(&dir)
+            .await
+            .map_err(|error| with_path(error, "read_dir", &dir))?;
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|error| with_path(error, "ReadDir::next_entry", &dir))?
+        {
             let path = entry.path();
-            let file_type = entry.file_type().await?;
+            let file_type = entry
+                .file_type()
+                .await
+                .map_err(|error| with_path(error, "DirEntry::file_type", &path))?;
             if file_type.is_dir() {
                 pending.push((path, false));
             } else {
-                let metadata = fs::symlink_metadata(&path).await?;
+                let metadata = fs::symlink_metadata(&path)
+                    .await
+                    .map_err(|error| with_path(error, "symlink_metadata", &path))?;
                 total = total.saturating_add(allocated_bytes(&metadata));
             }
         }
@@ -267,8 +288,11 @@ impl PinnedImage {
         let file = std::fs::OpenOptions::new()
             .read(true)
             .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
-            .open(path)?;
-        let metadata = file.metadata()?;
+            .open(path)
+            .map_err(|error| with_path(error, "open_image", path))?;
+        let metadata = file
+            .metadata()
+            .map_err(|error| with_path(error, "File::metadata", path))?;
         if !metadata.is_file() || metadata.nlink() != 1 || metadata.len() != expected_size {
             return Err(LifecycleError::Internal(
                 "home image is not an owned exact-shape regular file".into(),
@@ -282,8 +306,12 @@ impl PinnedImage {
         Ok(pinned)
     }
     pub(super) fn validate_path(&self, path: &Path) -> LifecycleResult<std::fs::Metadata> {
-        let descriptor = self.file.metadata()?;
-        let observed = std::fs::symlink_metadata(path)?;
+        let descriptor = self
+            .file
+            .metadata()
+            .map_err(|error| with_path(error, "File::metadata", path))?;
+        let observed = std::fs::symlink_metadata(path)
+            .map_err(|error| with_path(error, "symlink_metadata", path))?;
         if !observed.is_file()
             || observed.nlink() != 1
             || descriptor.nlink() != 1
@@ -294,8 +322,10 @@ impl PinnedImage {
         }
         Ok(observed)
     }
-    pub(super) fn sync(&self) -> LifecycleResult<()> {
-        self.file.sync_all()?;
+    pub(super) fn sync(&self, path: &Path) -> LifecycleResult<()> {
+        self.file
+            .sync_all()
+            .map_err(|error| with_path(error, "sync_image", path))?;
         Ok(())
     }
     pub(super) fn identity(&self) -> super::metadata::HomeImageFileIdentity {
@@ -317,13 +347,24 @@ pub(super) async fn sync_private_file(path: &Path) -> LifecycleResult<()> {
     let file = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-        .open(path)?;
-    if !file.metadata()?.is_file() || file.metadata()?.nlink() != 1 {
+        .open(path)
+        .map_err(|error| with_path(error, "open_private_file", path))?;
+    if !file
+        .metadata()
+        .map_err(|error| with_path(error, "File::metadata", path))?
+        .is_file()
+        || file
+            .metadata()
+            .map_err(|error| with_path(error, "File::metadata", path))?
+            .nlink()
+            != 1
+    {
         return Err(LifecycleError::Internal(
             "sync target is not an owned regular file".into(),
         ));
     }
-    file.sync_all()?;
+    file.sync_all()
+        .map_err(|error| with_path(error, "sync_private_file", path))?;
     Ok(())
 }
 
@@ -332,8 +373,10 @@ pub(super) async fn sync_directory(path: &Path) -> LifecycleResult<()> {
     let file = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
-        .open(path)?;
-    file.sync_all()?;
+        .open(path)
+        .map_err(|error| with_path(error, "open_directory", path))?;
+    file.sync_all()
+        .map_err(|error| with_path(error, "sync_directory", path))?;
     Ok(())
 }
 
@@ -378,7 +421,8 @@ pub(super) async fn sparse_copy_pinned(
         .create_new(true)
         .mode(0o600)
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-        .open(dst)?;
+        .open(dst)
+        .map_err(|error| with_path(error, "create_sparse_destination", dst))?;
     use std::os::fd::AsRawFd;
     let target_path = format!("/proc/{}/fd/{}", std::process::id(), target.as_raw_fd());
     let mut command = tokio::process::Command::new("cp");
@@ -411,7 +455,9 @@ pub(super) async fn sparse_copy_pinned(
         }
     }
     let copied = PinnedImage::open(dst, size)?;
-    let target_metadata = target.metadata()?;
+    let target_metadata = target
+        .metadata()
+        .map_err(|error| with_path(error, "File::metadata", dst))?;
     if copied.identity().dev != target_metadata.dev()
         || copied.identity().ino != target_metadata.ino()
     {

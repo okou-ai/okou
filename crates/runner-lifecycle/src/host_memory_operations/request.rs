@@ -124,6 +124,79 @@ impl MemoryGrowthPermit {
         drop(runtime.spawn(owned));
         Ok(MemoryOperationTask { completion })
     }
+
+    /// Terminal-specific transfer. A rejection returns both unused allowances
+    /// and the parked payload, rather than dropping resources captured in a
+    /// rejected callback. Both guards share one bounded real work owner.
+    pub(crate) fn spawn_retirement<P, F, Fut, T>(
+        mut self,
+        mut tail: Self,
+        payload: P,
+        work: F,
+    ) -> std::result::Result<MemoryOperationTask<T>, Box<RetirementStartFailure<P>>>
+    where
+        P: Send + 'static,
+        F: FnOnce(MemoryOperation, MemoryOperation, P) -> Fut + Send + 'static,
+        Fut: Future<Output = T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let prepare = || {
+            let runtime = tokio::runtime::Handle::try_current().map_err(|_| Error::NoRuntime)?;
+            if !Arc::ptr_eq(&self.shared, &tail.shared) {
+                return Err(Error::OwnershipInvariant);
+            }
+            let live_id = self.id.ok_or(Error::Consumed)?;
+            let tail_id = tail.id.ok_or(Error::Consumed)?;
+            let tracking = {
+                let mut ledger = self.shared.lock()?;
+                if self.shared.tasks.len() >= self.shared.policy.max_operations {
+                    return Err(Error::TaskLimit);
+                }
+                ledger.start_retirement(live_id, tail_id)?;
+                Arc::new(self.shared.tasks.token())
+            };
+            Ok((runtime, live_id, tail_id, tracking))
+        };
+        let (runtime, live_id, tail_id, tracking) = match prepare() {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                return Err(Box::new(RetirementStartFailure {
+                    error,
+                    live: self,
+                    tail,
+                    payload,
+                }));
+            }
+        };
+        self.id = None;
+        tail.id = None;
+        let live = MemoryOperation {
+            shared: Arc::clone(&self.shared),
+            id: Some(live_id),
+            plan: self.plan.clone(),
+            _tracking: Arc::clone(&tracking),
+        };
+        let tail = MemoryOperation {
+            shared: Arc::clone(&tail.shared),
+            id: Some(tail_id),
+            plan: tail.plan.clone(),
+            _tracking: Arc::clone(&tracking),
+        };
+        let (sender, completion) = oneshot::channel();
+        drop(runtime.spawn(async move {
+            let _tracking = tracking;
+            let result = work(live, tail, payload).await;
+            let _ = sender.send(result);
+        }));
+        Ok(MemoryOperationTask { completion })
+    }
+}
+
+pub(crate) struct RetirementStartFailure<P> {
+    pub error: Error,
+    pub live: MemoryGrowthPermit,
+    pub tail: MemoryGrowthPermit,
+    pub payload: P,
 }
 
 impl Drop for MemoryGrowthPermit {

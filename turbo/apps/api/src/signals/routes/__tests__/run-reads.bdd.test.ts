@@ -11,10 +11,12 @@ import {
 } from "@okouai/api-contracts/contracts/runners";
 
 import { describe, expect, it, onTestFinished } from "vitest";
+import { HttpResponse, http } from "msw";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -43,7 +45,7 @@ import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook"
  *
  * Direct runs are constructed through createAgentRun$; route boundaries cover
  * runner claims and sandbox webhooks (events/outputs/complete). Axiom reads
- * are answered by an APL-dispatching mock.
+ * use an APL-dispatching mock, with HTTP coverage for context freshness.
  */
 
 // The sanitizer accepts the literal IANA name; built by parts to satisfy
@@ -2191,12 +2193,12 @@ describe("RUN-04: agent run telemetry families", () => {
       {
         name: "legacy no session ID",
         sandboxResult: "noSessionId",
-        workspaceResult: undefined,
+        homeResult: undefined,
       },
       {
         name: "no reuse key",
         sandboxResult: "noReuseKey",
-        workspaceResult: "reused",
+        homeResult: "reused",
       },
     ] as const;
 
@@ -2220,7 +2222,7 @@ describe("RUN-04: agent run telemetry families", () => {
               .digest("hex"),
           },
           sandboxReuseResult: scenario.sandboxResult,
-          workspaceReuseResult: scenario.workspaceResult,
+          homeReuseResult: scenario.homeResult,
         },
         headers,
         [200],
@@ -2233,7 +2235,7 @@ describe("RUN-04: agent run telemetry families", () => {
       const runner = await api.requestRunRunner(actor, run.runId, [200]);
       expect(runner.body).toStrictEqual({
         sandboxReuseResult: scenario.sandboxResult,
-        workspaceReuseResult: scenario.workspaceResult ?? null,
+        homeReuseResult: scenario.homeResult ?? null,
         runnerHostname: null,
         runnerVersion: null,
         runnerId: expect.any(String),
@@ -2242,7 +2244,7 @@ describe("RUN-04: agent run telemetry families", () => {
     }
   });
 
-  it("bounds run context Axiom scans around the run creation time", async () => {
+  it("reads fresh run context within the creation-time window after a cached miss", async () => {
     const actor = await entitledActor();
     await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
@@ -2266,13 +2268,47 @@ describe("RUN-04: agent run telemetry families", () => {
     if (!Number.isFinite(runCreatedAtMs)) {
       throw new Error("Expected the created run to have a valid creation time");
     }
-    dispatchAxiomQueries({
-      [agentRun.runId]: {
-        runContext: [{ runId: agentRun.runId, sessionId: "bdd-bounded" }],
-      },
-    });
-    const queryStartIndex = axiomCallCount();
+    context.mocks.axiom.useRealQuery.mockReturnValue(true);
+    let snapshotVisible = false;
+    const queryRequests: {
+      readonly body: unknown;
+      readonly noCache: string | null;
+    }[] = [];
+    server.use(
+      http.post(
+        "https://api.axiom.co/v1/datasets/_apl",
+        async ({ request }) => {
+          const noCache = new URL(request.url).searchParams.get("nocache");
+          queryRequests.push({ body: await request.json(), noCache });
+          // Cached reads retain the initial miss after the snapshot is ingested.
+          return HttpResponse.json({
+            matches:
+              noCache === "true" && snapshotVisible
+                ? [
+                    {
+                      _time: runCreatedAt,
+                      data: {
+                        runId: agentRun.runId,
+                        sessionId: "bdd-bounded",
+                      },
+                    },
+                  ]
+                : [],
+          });
+        },
+      ),
+    );
 
+    const pendingContext = await api.requestRunContext(
+      actor,
+      agentRun.runId,
+      [404],
+    );
+    expect(pendingContext.body).toStrictEqual({
+      error: { message: "Run context not available", code: "NOT_FOUND" },
+    });
+
+    snapshotVisible = true;
     const contextRead = await api.requestRunContext(
       actor,
       agentRun.runId,
@@ -2287,16 +2323,17 @@ describe("RUN-04: agent run telemetry families", () => {
       sessionId: "bdd-bounded",
     });
 
-    const runContextQueries = context.mocks.axiom.query.mock.calls
-      .slice(queryStartIndex)
-      .filter(([apl]) => {
-        return typeof apl === "string" && apl.includes("['run-context']");
-      });
-    expect(runContextQueries).toHaveLength(1);
-    expect(runContextQueries[0]?.[1]).toStrictEqual({
-      startTime: new Date(runCreatedAtMs - HOUR_MS).toISOString(),
-      endTime: new Date(runCreatedAtMs + HOUR_MS).toISOString(),
-    });
+    const expectedQuery = {
+      noCache: "true",
+      body: {
+        apl: `['vm0-run-context-dev']
+| where runId == "${agentRun.runId}"
+| limit 1`,
+        startTime: new Date(runCreatedAtMs - HOUR_MS).toISOString(),
+        endTime: new Date(runCreatedAtMs + HOUR_MS).toISOString(),
+      },
+    };
+    expect(queryRequests).toStrictEqual([expectedQuery, expectedQuery]);
   });
 
   it("maps agent run context, network, and runner metadata from axiom snapshots", async () => {
@@ -2329,7 +2366,7 @@ describe("RUN-04: agent run telemetry families", () => {
             .digest("hex"),
         },
         sandboxReuseResult: "reused",
-        workspaceReuseResult: "sandboxReused",
+        homeReuseResult: "sandboxReused",
       },
       headers,
       [200],
@@ -2870,7 +2907,7 @@ describe("RUN-04: agent run telemetry families", () => {
     const runner = await api.requestRunRunner(actor, runId, [200]);
     expect(runner.body).toStrictEqual({
       sandboxReuseResult: "reused",
-      workspaceReuseResult: "sandboxReused",
+      homeReuseResult: "sandboxReused",
       runnerHostname: null,
       runnerVersion: null,
       runnerId: expect.any(String),
@@ -2879,7 +2916,7 @@ describe("RUN-04: agent run telemetry families", () => {
     const bareRunner = await api.requestRunRunner(actor, bareRun.runId, [200]);
     expect(bareRunner.body).toStrictEqual({
       sandboxReuseResult: null,
-      workspaceReuseResult: null,
+      homeReuseResult: null,
       runnerHostname: null,
       runnerVersion: null,
       runnerId: null,

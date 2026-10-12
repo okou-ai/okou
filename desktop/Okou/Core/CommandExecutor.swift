@@ -34,11 +34,11 @@ public actor CommandExecutor {
     }
     return response["result"]
   }
-  public func execute(_ command: JSONValue, claimStarted: ContinuousClock.Instant) async
-    -> JSONValue
-  {
+  public func execute(
+    _ command: ComputerUseCommandClaim.Command, claimStarted: ContinuousClock.Instant
+  ) async -> JSONValue {
     do {
-      let kind = command["kind"].string ?? ""
+      let kind = command.kind.rawValue
       guard Self.capabilities.contains(kind) else {
         throw DesktopFailure("unsupported_command", "Unsupported command: \(kind)")
       }
@@ -48,7 +48,8 @@ public actor CommandExecutor {
       guard permissions["accessibility"].bool == true else {
         throw DesktopFailure("permission_denied", "Accessibility permission is required")
       }
-      var payload = command["payload"]
+      // The helper speaks the contract's dynamic payload shape; keep it opaque here.
+      var payload = JSONValue.object(command.payload)
       if kind == "apps.list" {
         let apps = try await call(.object(["kind": .string(kind)]), remaining: budget.remaining)
         return .object(["status": .string("succeeded"), "result": apps])
@@ -167,13 +168,16 @@ public actor CommandExecutor {
 
 public struct CommandBudget: Sendable {
   private let deadline: ContinuousClock.Instant
-  public init(command: JSONValue, claimStarted: ContinuousClock.Instant) throws {
-    let timeout = command["timeoutMs"] == .null ? 120_000 : command["timeoutMs"].number ?? 0
+  public init(
+    command: ComputerUseCommandClaim.Command, claimStarted: ContinuousClock.Instant
+  ) throws {
+    // The contract allows a null timeout; the API then applies its own maximum.
+    let timeout = command.timeoutMs.map(Double.init) ?? 120_000
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    guard timeout >= 1000, timeout <= 120_000, timeout.rounded() == timeout,
-      let created = command["createdAt"].string.flatMap(formatter.date(from:)),
-      let claimed = command["claimedAt"].string.flatMap(formatter.date(from:)), claimed >= created
+    guard timeout >= 1000, timeout <= 120_000,
+      let created = formatter.date(from: command.createdAt),
+      let claimed = command.claimedAt.flatMap(formatter.date(from:)), claimed >= created
     else {
       throw DesktopFailure(
         "command_timeout", "Claim lacks a valid execution deadline; no action was dispatched")

@@ -3,6 +3,8 @@ mod cmd;
 mod config;
 mod deps;
 mod error;
+#[cfg(test)]
+mod native_privacy;
 use runner_executor::executor;
 mod group;
 use runner_host::idle_prune_control;
@@ -30,7 +32,7 @@ use runner_lifecycle::home_mount;
 use runner_network::{
     ca, dns, kmsg_log, network_log_drain, network_log_manager, network_logs, proxy,
 };
-use runner_remote::{guest_rpc, run_usage, ssh, vnc};
+use runner_remote::{guest_rpc, run_usage, ssh, tailscale, vnc};
 use runner_storage::{r2_cache, storage_cache};
 
 #[cfg(test)]
@@ -173,7 +175,13 @@ fn init_tracing_with_file(
     axiom_layer: Option<axiom_layer::AxiomLayer>,
 ) -> Result<tracing_appender::non_blocking::WorkerGuard, Box<dyn std::error::Error>> {
     let home = runner_host::paths::HomePaths::new()?;
-    let log_dir = home.logs_dir();
+    init_tracing_at(home.logs_dir(), axiom_layer)
+}
+
+fn init_tracing_at(
+    log_dir: std::path::PathBuf,
+    axiom_layer: Option<axiom_layer::AxiomLayer>,
+) -> Result<tracing_appender::non_blocking::WorkerGuard, Box<dyn std::error::Error>> {
     runner_host::log_file::ensure_log_dir(&log_dir)
         .map_err(|e| format!("create {}: {e}", log_dir.display()))?;
 
@@ -195,9 +203,9 @@ fn init_tracing_with_file(
         .with_filter(RUNNER_FMT_MAX_LEVEL);
     let axiom_layer = axiom_layer.map(axiom_layer::with_ingest_filter);
     tracing_subscriber::registry()
-        .with(tracing_subscriber::filter::filter_fn(
-            ssh::safe_log_metadata,
-        ))
+        .with(tracing_subscriber::filter::filter_fn(|metadata| {
+            ssh::safe_log_metadata(metadata) && tailscale::safe_log_metadata(metadata)
+        }))
         .with(fmt_layer)
         .with(axiom_layer)
         .init();
@@ -218,12 +226,28 @@ fn init_tracing_stderr(axiom_layer: Option<axiom_layer::AxiomLayer>) {
         .with_filter(RUNNER_FMT_MAX_LEVEL);
     let axiom_layer = axiom_layer.map(axiom_layer::with_ingest_filter);
     tracing_subscriber::registry()
-        .with(tracing_subscriber::filter::filter_fn(
-            ssh::safe_log_metadata,
-        ))
+        .with(tracing_subscriber::filter::filter_fn(|metadata| {
+            ssh::safe_log_metadata(metadata) && tailscale::safe_log_metadata(metadata)
+        }))
         .with(fmt_layer)
         .with(axiom_layer)
         .init();
+}
+
+fn install_native_panic_hook() {
+    let prior_panic = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if tailscale::in_domain() {
+            // Stop the raw payload before stderr and Sentry's panic integration.
+            eprintln!("native Tailscale resource domain failed");
+            sentry::capture_message(
+                "native Tailscale resource domain failed",
+                sentry::Level::Error,
+            );
+        } else {
+            prior_panic(info);
+        }
+    }));
 }
 
 #[tokio::main]
@@ -237,6 +261,8 @@ async fn main() -> ExitCode {
             .default_integrations(false)
             .add_integration(sentry::integrations::panic::PanicIntegration::default()),
     ));
+
+    install_native_panic_hook();
 
     if !nix::unistd::getuid().is_root() {
         eprintln!("error: runner must be run as root");

@@ -34,6 +34,10 @@ export async function hideBootstrapSkeleton(
   }
   signal?.throwIfAborted();
 
+  // HTML owns the initial inert state. Release it with pointer blocking when
+  // content is ready; transitionend must not gate keyboard interaction.
+  document.getElementById("root")?.removeAttribute("inert");
+
   const skeleton = document.getElementById(APP_BOOTSTRAP_SKELETON_ID);
   if (!skeleton) {
     return true;

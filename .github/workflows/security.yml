@@ -165,7 +165,7 @@ jobs:
           SEMGREP_SCAN_MODE: ${{ github.event_name == 'push' && 'full' || 'diff' }}
 
       - name: Upload Semgrep SARIF
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         if: always() && github.event_name != 'merge_group'
         with:
           sarif_file: semgrep-results-for-code-scanning.sarif
@@ -182,12 +182,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           languages: javascript-typescript
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           category: codeql
 
@@ -206,7 +206,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22.19.0
 
@@ -292,6 +292,7 @@ jobs:
             .github/scripts/cloudflare-ssh-command.sh \
             .github/scripts/cloudflare-ssh-diagnostics.sh \
             .github/scripts/cloudflare-ssh-preconnect.sh \
+            .github/scripts/download-okou-cli-cdn-file.sh \
             .github/scripts/download-verified.sh \
             .github/scripts/fetch-okou-desktop-artifact.sh \
             .github/scripts/neon-preview-branch.sh \
@@ -334,6 +335,7 @@ jobs:
             .github/scripts/tests/deploy-okou-app-worker-workflow-test.sh \
             .github/scripts/tests/discover-runner-pr-namespaces-test.sh \
             .github/scripts/tests/publish-okou-app-assets-test.sh \
+            .github/scripts/tests/download-okou-cli-cdn-file-test.sh \
             .github/scripts/tests/download-verified-test.sh \
             .github/scripts/tests/fetch-okou-desktop-artifact-test.sh \
             .github/scripts/tests/nbd-cow-upload-test.sh \
@@ -367,8 +369,12 @@ jobs:
             e2e/helpers/browser.bash \
             e2e/helpers/trace-cli.sh \
             e2e/tests/02-browser/brw-t01-platform-e2e.bats
-          shellcheck .github/scripts/tests/runner-binary-early-publication-test.sh
+          shellcheck .github/scripts/tests/runner-binary-early-publication-test.sh .github/scripts/tests/runner-binary-test-inputs-test.sh
+          shellcheck crates/kerberos-worker/native/build.sh crates/kerberos-worker/native/build-dependencies.sh \
+            .github/scripts/tests/kerberos-native-cache-test.sh .github/scripts/tests/kerberos-native-cache-workflow-test.sh \
+            .github/scripts/tests/crates-parallel-checks-workflow-test.sh
           shellcheck -x -P .github/scripts .github/scripts/runner-binary-github.sh .github/scripts/tests/runner-binary-github-test.sh
+          shellcheck -x -P .github/scripts .github/scripts/runner-image-architecture.sh .github/scripts/tests/runner-image-architecture-test.sh
           # actionlint assumes Bash when shell is omitted and does not model the
           # sh default used by container jobs.
           .github/scripts/check-workflow-shell-compatibility.sh

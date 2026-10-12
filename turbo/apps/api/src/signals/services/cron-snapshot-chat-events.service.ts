@@ -587,8 +587,8 @@ function exactSnapshotPointer(source: SnapshotSource) {
 }
 
 /** Publish the current pointer only if its exact source is still current. */
-async function publishSnapshotVersion(
-  db: Db,
+const publishSnapshotVersion$ = command(async function publishSnapshotVersion(
+  { set },
   candidate: SnapshotCandidate,
   source: SnapshotSource | null,
   pointer: {
@@ -599,47 +599,45 @@ async function publishSnapshotVersion(
     readonly objectKey: string;
   },
 ): Promise<boolean> {
+  const db = set(writeDb$);
   const { lastSeqId, lastEventId, terminalSeqId, terminalEventId, objectKey } =
     pointer;
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0132; new non-billing transactions are prohibited.
-  return await db.transaction(async (tx) => {
-    if (source !== null) {
-      const updated = await tx
-        .update(chatEventSnapshots)
-        .set({
-          lastSeqId,
-          lastEventId,
-          terminalSeqId,
-          terminalEventId,
-          objectKey,
-          createdAt: nowDate(),
-        })
-        .where(exactSnapshotPointer(source))
-        .returning({ id: chatEventSnapshots.id });
-      if (updated.length === 0) {
-        return false;
-      }
-      return true;
-    }
-
-    const [inserted] = await tx
-      .insert(chatEventSnapshots)
-      .values({
-        chatThreadId: candidate.chatThreadId,
+  if (source !== null) {
+    const updated = await db
+      .update(chatEventSnapshots)
+      .set({
         lastSeqId,
         lastEventId,
         terminalSeqId,
         terminalEventId,
-        archiveSchemaVersion: CURRENT_CHAT_EVENT_SCHEMA_VERSION,
         objectKey,
+        createdAt: nowDate(),
       })
+      .where(exactSnapshotPointer(source))
       .returning({ id: chatEventSnapshots.id });
-    if (inserted === undefined) {
+    if (updated.length === 0) {
       return false;
     }
     return true;
-  });
-}
+  }
+
+  const [inserted] = await db
+    .insert(chatEventSnapshots)
+    .values({
+      chatThreadId: candidate.chatThreadId,
+      lastSeqId,
+      lastEventId,
+      terminalSeqId,
+      terminalEventId,
+      archiveSchemaVersion: CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+      objectKey,
+    })
+    .returning({ id: chatEventSnapshots.id });
+  if (inserted === undefined) {
+    return false;
+  }
+  return true;
+});
 
 interface ArchivedThread {
   readonly archivedEvents: number | null;
@@ -879,7 +877,7 @@ interface SnapshotArchiveStageRecorder {
 }
 
 const archiveThread$ = command(async function archiveThread(
-  { get },
+  { get, set },
   args: {
     readonly db: Db;
     readonly bucket: string;
@@ -967,7 +965,7 @@ const archiveThread$ = command(async function archiveThread(
 
   recorder.stage = "publish";
   const published = await settle(
-    publishSnapshotVersion(db, candidate, source, {
+    set(publishSnapshotVersion$, candidate, source, {
       lastSeqId: targetSeqId,
       lastEventId,
       terminalSeqId: prepared.terminalSeqId,

@@ -1584,9 +1584,10 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
     )
     .await;
 
-    if let Some(guest_rpc) = guest_rpc {
-        guest_rpc.shutdown().await;
-    }
+    let remote_cleanup = match guest_rpc {
+        Some(guest_rpc) => guest_rpc.shutdown().await,
+        None => Ok(()),
+    };
     // Revoke before cleanup, park, or release to an idle/reused sandbox.
     drop(guest_duplex_registration);
 
@@ -1628,6 +1629,13 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
         Err(e) => AgentExecutionResult::failure_from_error(e.to_string())
             .with_resource_diagnostics(pre_process_resource_diagnostics),
     };
+    if let Err(error) = remote_cleanup {
+        if agent_result.failure.is_none() {
+            agent_result.failure = Some(ExecutionFailure::from_error(error.to_string()));
+        }
+        agent_result.sandbox_reuse_disposition =
+            SandboxReuseDisposition::Ineligible(SandboxReuseRejection::PostJobCleanupFailure);
+    }
     if let Err(e) = cleanup_result {
         warn!(
             run_id = %context.run_id,

@@ -207,7 +207,7 @@
   --border-width-emphasis: 1.5px;
 
   /* Radius */
-  --radius-xl: 14px;
+  --radius-xl: 12px;
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);

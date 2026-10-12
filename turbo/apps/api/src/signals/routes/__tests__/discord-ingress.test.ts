@@ -376,16 +376,6 @@ describe("canonical Discord ingress", () => {
       expect(claim.appendSystemPrompt).toContain(
         "- Discord files: when the task explicitly asks to share a file in Discord, use `okou discord upload-file --help`",
       );
-      // Native reads deny bot DMs, so the prompt must not steer runs there.
-      expect(claim.appendSystemPrompt).toContain(
-        "Bot DM content is not readable; you can only send or upload to your own bot DM.",
-      );
-      expect(claim.appendSystemPrompt).toContain(
-        "bot DM attachments cannot be downloaded",
-      );
-      expect(claim.appendSystemPrompt).toContain(
-        "bot DM content, including earlier DM messages and their attachments, is not readable",
-      );
       expect(claim.appendSystemPrompt).not.toContain(
         "Only your own bot DM is accessible",
       );
@@ -1308,7 +1298,7 @@ describe("canonical Discord ingress", () => {
     );
     await flushWaitUntilForTest();
     expect(noticesTo(dmId)).toHaveLength(1);
-    expect(noticesTo(dmId)[0]?.content).toContain("/okou connect");
+    expect(noticesTo(dmId)[0]?.content).toContain("/connect");
     // A relay retry of the same event and a follow-up DM send nothing more.
     await postDiscordMessage(context, first);
     await postDiscordMessage(context, strangerDm("are you there?"));
@@ -1344,7 +1334,7 @@ describe("canonical Discord ingress", () => {
     expect(noticesTo(dmId)).toHaveLength(2);
   });
 
-  it("asks a DM sender with several workspaces to choose one with /okou org", async () => {
+  it("asks a DM sender with several workspaces to choose one with /connect", async () => {
     const first = await connected();
     const provider = mockDiscordProvider(first);
     const second = await track(
@@ -1372,7 +1362,7 @@ describe("canonical Discord ingress", () => {
     expect(provider.sentMessages).toHaveLength(1);
     expect(provider.sentMessages[0]).toMatchObject({
       channel_id: provider.dmChannelId,
-      content: expect.stringContaining("/okou org"),
+      content: expect.stringContaining("/connect"),
     });
     await expect(discordChatThreads(context, first)).resolves.toHaveLength(0);
     await expect(discordChatThreads(context, second)).resolves.toHaveLength(0);

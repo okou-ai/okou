@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.8.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.7.0...runner-lifecycle-v0.8.0) (2026-10-12)
+
+
+### Features
+
+* **runner:** retain guarded ordinary activation cleanup owners ([#39073](https://github.com/okou-ai/okou/issues/39073)) ([9d380c4](https://github.com/okou-ai/okou/commit/9d380c4e66d449bc99663447dac4aca71e1e5547))
+
+## [0.7.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.6.0...runner-lifecycle-v0.7.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** guard pool replacement and aged conversion ([#39020](https://github.com/okou-ai/okou/issues/39020)) ([cf992ee](https://github.com/okou-ai/okou/commit/cf992ee7d799e1aa6a2c40e0d79f2da15a218812))
+
+
+### Performance Improvements
+
+* **runner-lifecycle:** decouple storage fingerprint contracts ([#39056](https://github.com/okou-ai/okou/issues/39056)) ([24f6151](https://github.com/okou-ai/okou/commit/24f61511de54a9e5c8c06391344cf67d897b51bd))
+
+## [0.6.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.5.0...runner-lifecycle-v0.6.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** add one-use ticket wss admission ([#37114](https://github.com/okou-ai/okou/issues/37114)) ([0eece1f](https://github.com/okou-ai/okou/commit/0eece1f399b9e1b357fa1b3c1b4a6d0699d21088))
+* **runner:** admit fenced pool retirement before detach ([#38853](https://github.com/okou-ai/okou/issues/38853)) ([3a314cc](https://github.com/okou-ai/okou/commit/3a314cc4ebbf508aea4a9f2c4ae4f5be7d3d3618))
+* **runner:** complete home cache disk visibility ([#38775](https://github.com/okou-ai/okou/issues/38775)) ([30c5539](https://github.com/okou-ai/okou/commit/30c5539999b0a90dfb693f0cc92c2cd29e6882d2))
+* **runner:** guard captured idle retirement batches ([#38909](https://github.com/okou-ai/okou/issues/38909)) ([fd104c1](https://github.com/okou-ai/okou/commit/fd104c1aa7a59f32c234f007338be49f21e47036))
+* **runner:** guard logical idle substitution ([#39001](https://github.com/okou-ai/okou/issues/39001)) ([31aee7e](https://github.com/okou-ai/okou/commit/31aee7e614d11f2fed54e5cb42078fedb5aa0670))
+* **runner:** own guarded idle terminal phases ([#38823](https://github.com/okou-ai/okou/issues/38823)) ([909af6b](https://github.com/okou-ai/okou/commit/909af6b56aa1e45ac6d2ddef1ab7e2d4c7a99771))
+
+
+### Bug Fixes
+
+* **runner:** retain accepted idle cleanup through caller cancellation ([#38770](https://github.com/okou-ai/okou/issues/38770)) ([5feb5d6](https://github.com/okou-ai/okou/commit/5feb5d66c39f43d06d05c6f087c54bd6c4e8e658))
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+
+## [0.5.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.4.0...runner-lifecycle-v0.5.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** bound host pressure recovery and idle selection ([#38709](https://github.com/okou-ai/okou/issues/38709)) ([6249c11](https://github.com/okou-ai/okou/commit/6249c11bb1b9ba8e2f2deb03771b5084fc209abf))
+
+
+### Refactoring
+
+* name native history and pi memory publications explicitly ([#38679](https://github.com/okou-ai/okou/issues/38679)) ([e5b1d4e](https://github.com/okou-ai/okou/commit/e5b1d4ed7bd2f8b54e01352e762e1f9eec5c3a39))
+
 ## [0.4.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.3.0...runner-lifecycle-v0.4.0) (2026-10-10)
 
 

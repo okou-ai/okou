@@ -20,12 +20,17 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { createRouteMocks } from "./helpers/route-test";
+import {
+  createConnectorBddApi,
+  mockGitHubConnectorOAuth,
+} from "./helpers/api-bdd-connectors";
 import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { builtinConnectorsRoutes } from "../connectors";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
+const connectors = createConnectorBddApi(context);
 
 const STEAM_ID = "76561198000000000";
 
@@ -60,6 +65,7 @@ async function startSteamOpenId(
 ): Promise<{
   readonly authorizationUrl: URL;
   readonly oauthAttemptId: string;
+  readonly connectionId?: string;
 }> {
   mockSession(actor);
   const response = await accept(
@@ -72,9 +78,13 @@ async function startSteamOpenId(
     }),
     [200],
   );
+  if (account.intent === "reconnect") {
+    expect(response.body).not.toHaveProperty("connectionId");
+  }
   return {
     authorizationUrl: new URL(response.body.authorizationUrl),
     oauthAttemptId: response.body.oauthAttemptId,
+    connectionId: response.body.connectionId,
   };
 }
 
@@ -319,11 +329,35 @@ describe("Steam OpenID connector", () => {
     );
     expect(connector.body).toStrictEqual(initial.body);
 
-    const { authorizationUrl: replacementAuthorizationUrl } =
-      await startSteamOpenId(actor, {
-        intent: "reconnect",
-        connectionId: initial.body.id,
-      });
+    const {
+      authorizationUrl: replacementAuthorizationUrl,
+      oauthAttemptId: replacementAttemptId,
+      connectionId: replacementConnectionId,
+    } = await startSteamOpenId(actor, {
+      intent: "reconnect",
+      connectionId: initial.body.id,
+    });
+    expect(replacementConnectionId).toBeUndefined();
+    const replacementPending = await accept(
+      setupApp({ context, routes: connectorAccountRoutes })(
+        connectorAccountsContract,
+      ).oauthCompletion({
+        headers: authHeaders(),
+        params: { attemptId: replacementAttemptId },
+        query: { kind: "builtin", connectorSlug: "steam" },
+      }),
+      [404],
+    );
+    expect(replacementPending.body.error.message).toBe(
+      "OAuth completion not found",
+    );
+    const duringReconnect = await accept(
+      setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorsBySlugContract,
+      ).get({ params: { connectorSlug: "steam" }, headers: authHeaders() }),
+      [200],
+    );
+    expect(duringReconnect.body).toStrictEqual(initial.body);
     await completeSteamOpenIdCallback(replacementAuthorizationUrl);
     mockSession(actor);
     const replaced = await accept(
@@ -337,7 +371,111 @@ describe("Steam OpenID connector", () => {
     );
     expect(replaced.body.id).toBe(initial.body.id);
     expect(replaced.body.externalId).toBe(STEAM_ID);
+    const replacementCompletion = await accept(
+      setupApp({ context, routes: connectorAccountRoutes })(
+        connectorAccountsContract,
+      ).oauthCompletion({
+        headers: authHeaders(),
+        params: { attemptId: replacementAttemptId },
+        query: { kind: "builtin", connectorSlug: "steam" },
+      }),
+      [200],
+    );
+    expect(replacementCompletion.body).toStrictEqual({
+      connectionId: initial.body.id,
+    });
   });
+
+  it.each(["missing", "other-user", "other-org", "wrong-target"] as const)(
+    "rejects a %s reconnect target without changing its account",
+    async (scenario) => {
+      const owner = testActor();
+      mockSteamRuntimeEnv();
+      const actor = {
+        ...owner,
+        orgRole: "org:admin" as const,
+        email: `${owner.userId}@example.test`,
+      };
+      let connectorSlug: "steam" | "github" = "steam";
+      let connectionId: string = randomUUID();
+      if (scenario === "wrong-target") {
+        connectorSlug = "github";
+        mockGitHubConnectorOAuth({
+          userId: 39_082,
+          login: "openid-wrong-target",
+        });
+        const started = await connectors.startOauth(actor, "github", "oauth");
+        const state = new URL(started.authorizationUrl).searchParams.get(
+          "state",
+        );
+        if (!state) {
+          throw new Error("Expected GitHub OAuth state");
+        }
+        await connectors.completeOauthCallback("github", {
+          code: "wrong-target",
+          state,
+        });
+        const accounts = await connectors.listBuiltinConnectorAccounts(
+          actor,
+          "github",
+        );
+        expect(accounts).toHaveLength(1);
+        const [account] = accounts;
+        if (!account) {
+          throw new Error("Expected the publicly created GitHub account");
+        }
+        connectionId = account.id;
+      } else if (scenario !== "missing") {
+        const started = await startSteamOpenId(owner);
+        await completeSteamOpenIdCallback(started.authorizationUrl);
+        const accounts = await connectors.listBuiltinConnectorAccounts(
+          actor,
+          "steam",
+        );
+        expect(accounts).toHaveLength(1);
+        const [account] = accounts;
+        if (!account) {
+          throw new Error("Expected the publicly created Steam account");
+        }
+        connectionId = account.id;
+      }
+      const before = await connectors.listBuiltinConnectorAccounts(
+        actor,
+        connectorSlug,
+      );
+      const requester = {
+        userId: scenario === "other-user" ? testActor().userId : owner.userId,
+        orgId: scenario === "other-org" ? testActor().orgId : owner.orgId,
+      };
+      mockSession(requester);
+      const rejected = await accept(
+        setupApp({ context, routes: builtinConnectorsRoutes })(
+          builtinConnectorOpenIdStartContract,
+        ).start({
+          headers: authHeaders(),
+          params: { connectorSlug: "steam" },
+          body: {
+            authMethod: "openid",
+            account: { intent: "reconnect", connectionId },
+          },
+        }),
+        [404],
+      );
+      expect(rejected.body).toStrictEqual({
+        error: { code: "NOT_FOUND", message: "Connector account not found" },
+      });
+      await expect(
+        connectors.listBuiltinConnectorAccounts(actor, connectorSlug),
+      ).resolves.toStrictEqual(before);
+      for (const account of before) {
+        await connectors.deleteBuiltinConnectorAccount(
+          actor,
+          connectorSlug,
+          account.id,
+        );
+      }
+    },
+  );
 
   it("rejects OpenID start requests for non-OpenID connector methods", async () => {
     const actor = testActor();

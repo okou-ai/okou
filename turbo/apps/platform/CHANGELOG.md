@@ -12,6 +12,74 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1010.1](https://github.com/okou-ai/okou/compare/app-v0.1010.0...app-v0.1010.1) (2026-10-12)
+
+
+### Refactoring
+
+* **runner:** retire workspace protocol and application sql ([#38837](https://github.com/okou-ai/okou/issues/38837)) ([a932f1f](https://github.com/okou-ai/okou/commit/a932f1f86ae10eb624fa3ff3bccc851ba4809a7e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.551.1
+    * @okouai/core bumped to 8.742.2
+
+## [0.1010.0](https://github.com/okou-ai/okou/compare/app-v0.1009.2...app-v0.1010.0) (2026-10-11)
+
+
+### Features
+
+* **runner:** complete home cache disk visibility ([#38775](https://github.com/okou-ai/okou/issues/38775)) ([30c5539](https://github.com/okou-ai/okou/commit/30c5539999b0a90dfb693f0cc92c2cd29e6882d2))
+
+
+### Bug Fixes
+
+* **browser:** clear one-time-code drafts when native forms close ([#38838](https://github.com/okou-ai/okou/issues/38838)) ([a5280b1](https://github.com/okou-ai/okou/commit/a5280b14c4f4885b991f37bc1fc625974804a939))
+* **browser:** reconcile native input after interrupted responses ([#38820](https://github.com/okou-ai/okou/issues/38820)) ([76248f8](https://github.com/okou-ai/okou/commit/76248f8c24ffc6265ecf55781880f29eb7b26271))
+* **platform:** shorten archive toast message ([#38819](https://github.com/okou-ai/okou/issues/38819)) ([8745249](https://github.com/okou-ai/okou/commit/87452492318fceff844213bc75c1d226951e77fd))
+* remove retired connector references from app and tests ([#38802](https://github.com/okou-ai/okou/issues/38802)) ([63a43d9](https://github.com/okou-ai/okou/commit/63a43d9219560c0dfe29048b023c7910417a9c50))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.551.0
+    * @okouai/connectors bumped to 3.16.8
+    * @okouai/core bumped to 8.742.1
+
+## [0.1009.2](https://github.com/okou-ai/okou/compare/app-v0.1009.1...app-v0.1009.2) (2026-10-10)
+
+
+### Bug Fixes
+
+* **app:** keep invoice headers visible while scrolling ([#38689](https://github.com/okou-ai/okou/issues/38689)) ([9cb6d94](https://github.com/okou-ai/okou/commit/9cb6d94ae13947c589d031c06d44203773fb68bf))
+* **app:** keep zoomed annotation edges reachable ([#38719](https://github.com/okou-ai/okou/issues/38719)) ([2328c25](https://github.com/okou-ai/okou/commit/2328c257936a6fbbe5746c70983e3e8f26456997))
+* **platform:** align discord status presentation with slack ([#38767](https://github.com/okou-ai/okou/issues/38767)) ([7e3a15b](https://github.com/okou-ai/okou/commit/7e3a15bda34121c4909ad577b092d86c8fddbb96))
+* **platform:** keep custom template tile controls legible on any cover ([#38644](https://github.com/okou-ai/okou/issues/38644)) ([91f9c9d](https://github.com/okou-ai/okou/commit/91f9c9dfced8c6d7a8f735e7560a0b0e02e053dd))
+* **platform:** keep instructions tools reachable and reset discarded drafts ([#38744](https://github.com/okou-ai/okou/issues/38744)) ([00b076a](https://github.com/okou-ai/okou/commit/00b076ac4e052e33379e1c00c643ba39dab70b95))
+* **platform:** prevent hidden focus and stuck resize masks ([#38731](https://github.com/okou-ai/okou/issues/38731)) ([0e24e59](https://github.com/okou-ai/okou/commit/0e24e59ffc10f01b85c1d80a21dfa4bd88f74895))
+* **platform:** unify read-failure recovery and the radius scale ([#38778](https://github.com/okou-ai/okou/issues/38778)) ([3968c3c](https://github.com/okou-ai/okou/commit/3968c3cb5e5405eda46634e00385f2f00c22aeba))
+* **platform:** use signal-owned timer for blob download cleanup ([#38692](https://github.com/okou-ai/okou/issues/38692)) ([bed5c6c](https://github.com/okou-ai/okou/commit/bed5c6c743176b36cebe9d2fe16c3c41d7b26beb))
+* replace okou branding with final rudy logo assets ([#38732](https://github.com/okou-ai/okou/issues/38732)) ([0207873](https://github.com/okou-ai/okou/commit/020787385355dd03548bda3ea621bf414f159cf5))
+
+
+### Refactoring
+
+* **api:** retire native morning brief member metadata mapping ([#38737](https://github.com/okou-ai/okou/issues/38737)) ([5f1cda2](https://github.com/okou-ai/okou/commit/5f1cda2faa2927ce8a393b4d4674abec5cc7f394))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.550.0
+    * @okouai/core bumped to 8.742.0
+    * @okouai/ui bumped to 1.13.4
+
 ## [0.1009.1](https://github.com/okou-ai/okou/compare/app-v0.1009.0...app-v0.1009.1) (2026-10-10)
 
 

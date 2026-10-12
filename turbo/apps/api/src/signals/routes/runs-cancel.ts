@@ -82,7 +82,8 @@ export const runsCancelRoutes: readonly RouteEntry[] = [
       {
         requireOrganization: true,
         missingOrganizationStatus: 401,
-        accept: ["session", "pat"],
+        accept: ["session", "pat", "oauth"],
+        oauthScope: "okou:run:cancel",
       },
       cancelInner$,
     ),

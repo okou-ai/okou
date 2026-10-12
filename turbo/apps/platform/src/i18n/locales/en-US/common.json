@@ -122,20 +122,23 @@
         "title": "Log not found"
       },
       "runner": {
-        "cacheMiss": "No cached workspace matched the reuse key.",
+        "cacheMiss": "No cached home directory matched the reuse key.",
         "deviceLimitMismatch": "Idle pool entry exists but its device rate limiter state does not match.",
-        "diskPressure": "Workspace reuse was skipped because the runner was under disk pressure.",
+        "diskPressure": "Home directory reuse was skipped because the runner was under disk pressure.",
         "environment": "Environment",
         "featureDisabled": "Sandbox reuse is disabled for this run.",
         "framework": "Framework",
         "generation": "Generation",
+        "home": "Home",
+        "homeNoReuseKey": "No home reuse key was available.",
+        "homeReusedDescription": "Home was restored from the runner cache.",
         "hostname": "Hostname",
-        "invalidMetadata": "Cached workspace metadata was invalid.",
+        "invalidMetadata": "Cached home directory metadata was invalid.",
         "invalidWorkingDir": "The requested working directory could not be reused.",
-        "lockBusy": "Another run was preparing the same workspace.",
+        "lockBusy": "Another run was preparing the same home directory.",
         "noReuseKey": "No reuse key was available to match an idle sandbox.",
         "noSessionId": "Legacy result: the exact reason the sandbox was not reused is unavailable.",
-        "notConfigured": "Workspace reuse was not configured for this run.",
+        "notConfigured": "Home directory reuse was not configured for this run.",
         "notReused": "Not reused",
         "outcomeUnavailableDescription": "Additional details are unavailable.",
         "poolMiss": "No matching sandbox found in the idle pool.",
@@ -145,23 +148,20 @@
         "reusedDescription": "Sandbox was unparked from the idle pool.",
         "runnerId": "Runner ID",
         "sandbox": "Sandbox",
-        "sandboxPrepareFallback": "A cached workspace was found but could not be used after sandbox preparation.",
-        "sandboxReusedDescription": "Workspace remained available inside the reused sandbox.",
+        "sandboxPrepareFallback": "A cached home directory was found but could not be used after sandbox preparation.",
+        "sandboxReusedDescription": "The home directory remained available in the reused sandbox.",
         "startup": "Startup",
         "startupCold": "Cold start",
         "startupColdDescription": "A fresh sandbox and workspace were prepared.",
+        "startupHome": "Home reuse",
+        "startupHomeDescription": "A fresh sandbox restored a cached home directory.",
         "startupSandbox": "Sandbox reuse",
         "startupSandboxDescription": "The sandbox and its workspace were reused.",
         "startupUnknown": "Unknown",
         "startupUnknownDescription": "Startup reuse details are unavailable.",
-        "startupWorkspace": "Workspace reuse",
-        "startupWorkspaceDescription": "A fresh sandbox restored a cached workspace.",
         "unavailable": "Unavailable",
         "unparkFailed": "Unpark attempt failed; a fresh sandbox was provisioned.",
-        "version": "Version",
-        "workspace": "Workspace",
-        "workspaceNoReuseKey": "No workspace reuse key was available.",
-        "workspaceReusedDescription": "Workspace was restored from the runner cache."
+        "version": "Version"
       },
       "steps": {
         "matched": "({{matched}}/{{total}} matched)",
@@ -511,7 +511,7 @@
       "description": "Browse everything you have created here.",
       "emptyDescription": "Artifacts will appear here when they are available.",
       "emptyTitle": "No artifacts found",
-      "error": "Could not load artifacts.",
+      "error": "Couldn't load artifacts.",
       "filters": {
         "avatar": "Avatars",
         "avatarAria": "Show avatar artifacts",
@@ -1693,6 +1693,9 @@
       "cancelled": "Request cancelled",
       "cancelling": "Cancelling…",
       "checkFailed": "Couldn't check the browser. Your entries are still here; retry before adding them.",
+      "checkingOutcome": "Checking browser status",
+      "checkingOutcomeDescription": "Waiting for the browser to confirm this request.",
+      "checkStatus": "Check status",
       "completed": "Information added",
       "confirmRangeValue": "Use current value",
       "continue": "Notify agent",
@@ -1708,6 +1711,8 @@
       "loadingDescription": "Checking this request…",
       "open": "Enter information",
       "optional": "(Optional)",
+      "outcomeNotConfirmed": "Outcome not confirmed",
+      "outcomeNotConfirmedDescription": "The browser may have finished this request. Check its status before trying again.",
       "required": "(Required)",
       "retry": "Retry",
       "site": "Site",
@@ -2796,7 +2801,7 @@
       "resize": "Resize sidebar"
     },
     "toasts": {
-      "archived": "Chat archived. A new reply brings it back to Inbox.",
+      "archived": "Chat archived.",
       "archivedMuted": "Chat archived. It's muted, so new replies won't bring it back.",
       "copied": "Copied",
       "deleted": "Chat deleted",
@@ -3086,7 +3091,7 @@
         "loading": "Loading connectors…",
         "noCategoryMatches": "No connectors match in this category.",
         "noCustomMatches": "No custom connectors match your search.",
-        "retry": "Retry",
+        "retry": "Try again",
         "searchAll": "Search all connectors"
       },
       "empty": {
@@ -3805,6 +3810,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "Try again"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Request failed"
@@ -5350,7 +5358,7 @@
     "importHint": "Import a document, presentation or image.",
     "loadFailed": "Couldn't load templates.",
     "renameFailed": "Couldn't rename the template.",
-    "retry": "Retry",
+    "retry": "Try again",
     "sharedBy": "Shared by {{owner}}",
     "sharedByMember": "Shared by an organization member",
     "visibility": {
@@ -6334,8 +6342,6 @@
       "dmServer": "Default server for direct messages",
       "install": "Install to Discord",
       "limitedContext": "Limited context: Okou may not receive ordinary channel messages. Mention Okou and include the details it needs.",
-      "loadError": "Unable to load Discord status.",
-      "loading": "Loading Discord status…",
       "memberSetup": "Ask an organization admin to install Okou to your Discord server.",
       "moreOptions": "More Discord options",
       "pendingConsent": "This tab has no authorization proof. Close it and restart authorization from the original Works tab.",

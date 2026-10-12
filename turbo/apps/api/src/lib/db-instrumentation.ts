@@ -55,6 +55,27 @@ export async function withPgPoolAcquisitionCapture<T>(
   return await scopedPgPoolAcquisitionCapture().run(capture, operation);
 }
 
+export interface PgQueryExecution {
+  // Client-call wall includes network and driver decoding, not just server SQL.
+  readonly durationMs: number;
+  readonly finishedAt: number;
+}
+
+export interface PgQueryExecutionCapture {
+  readonly executions: PgQueryExecution[];
+}
+
+const scopedPgQueryExecutionCapture = singleton(() => {
+  return new AsyncLocalStorage<PgQueryExecutionCapture | undefined>();
+});
+
+export async function withPgQueryExecutionCapture<T>(
+  capture: PgQueryExecutionCapture,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return await scopedPgQueryExecutionCapture().run(capture, operation);
+}
+
 type PoolRelease = (error?: Error | boolean) => void;
 type PoolConnectCallback = (
   error: Error | undefined,
@@ -214,13 +235,39 @@ function instrumentQuery(
   markPoolQuery: boolean,
 ): PgQuery {
   return function instrumentedQuery(this: unknown, ...args: AnyArgs): unknown {
+    // Only client calls own execution; the outer pool call includes acquisition.
+    // Capture the request scope at entry, including callback-style pool queries.
+    const capture = markPoolQuery
+      ? undefined
+      : scopedPgQueryExecutionCapture.peek()?.getStore();
+    const startedAt = capture ? performance.now() : undefined;
+    const recordExecution = (): void => {
+      if (capture && startedAt !== undefined) {
+        safeSync(() => {
+          capture.executions.push({
+            durationMs: performance.now() - startedAt,
+            finishedAt: now(),
+          });
+        });
+      }
+    };
     // pg query is overloaded: when the caller passes a trailing callback
     // (pool.query does this internally to drive client.query), the result is
     // undefined and the callback is the only completion signal. The outer
-    // pool query already produced a span, so pass callback-style client
-    // queries straight through.
-    if (typeof args[args.length - 1] === "function") {
-      return Reflect.apply(original, target, args);
+    // pool query already produced a span, so do not create another client span.
+    const callback = args[args.length - 1];
+    if (typeof callback === "function") {
+      if (!capture) {
+        return Reflect.apply(original, target, args);
+      }
+      const wrappedCallback = function (this: unknown, ...result: AnyArgs) {
+        recordExecution();
+        return Reflect.apply(callback, this, result);
+      };
+      return Reflect.apply(original, target, [
+        ...args.slice(0, -1),
+        wrappedCallback,
+      ]);
     }
 
     const sql = extractSql(args);
@@ -275,6 +322,7 @@ function instrumentQuery(
             },
           )
           .finally(() => {
+            recordExecution();
             span.end();
           });
       },
@@ -283,6 +331,10 @@ function instrumentQuery(
 }
 
 export function instrumentPgPool(pool: Pool, tracer: Tracer): Pool {
+  // Establish the scope before any checkout is queued. Otherwise a callback
+  // registered before the first capture could inherit that later request's
+  // scope when its connection is delivered by the request's release.
+  const queryCaptureStorage = scopedPgQueryExecutionCapture();
   const originalQuery = pool.query.bind(pool) as PgQuery;
   pool.query = instrumentQuery(
     pool,
@@ -292,15 +344,26 @@ export function instrumentPgPool(pool: Pool, tracer: Tracer): Pool {
   ) as Pool["query"];
 
   const instrumentedClients = new WeakSet<PoolClient>();
+  const instrumentClient = (client: PoolClient): PoolClient => {
+    if (!instrumentedClients.has(client)) {
+      const clientQuery = client.query.bind(client) as PgQuery;
+      client.query = instrumentQuery(
+        client,
+        clientQuery,
+        tracer,
+        false,
+      ) as PoolClient["query"];
+      instrumentedClients.add(client);
+    }
+    return client;
+  };
   const originalConnect = pool.connect.bind(pool);
   pool.connect = function patchedConnect(...args: AnyArgs) {
     const callback = args[args.length - 1];
     if (isPoolConnectCallback(callback)) {
       const markedSpan = context.active().getValue(POOL_QUERY_SPAN_KEY);
       const capture = scopedPgPoolAcquisitionCapture.peek()?.getStore();
-      if (!(markedSpan instanceof PoolQuerySpan) && !capture) {
-        return Reflect.apply(originalConnect, pool, args);
-      }
+      const queryCapture = queryCaptureStorage.getStore();
 
       const startedAt = performance.now();
       const path = acquisitionPath(pool);
@@ -319,31 +382,49 @@ export function instrumentPgPool(pool: Pool, tracer: Tracer): Pool {
             capture.acquisitions.push({ durationMs, path, finishedAt: now() });
           });
         }
-        callback(error, client, release);
+        if (client && queryCapture) {
+          instrumentClient(client);
+        }
+        // A queued checkout can be delivered by another request's release.
+        // Its client query must use the checkout owner's capture, not that
+        // releasing request's currently active AsyncLocalStorage context.
+        queryCaptureStorage.run(queryCapture, () => {
+          callback(error, client, release);
+        });
       };
       const wrappedArgs = [...args.slice(0, -1), wrappedCallback] as const;
       return Reflect.apply(originalConnect, pool, wrappedArgs);
     }
 
+    const capture = scopedPgPoolAcquisitionCapture.peek()?.getStore();
+    const startedAt = capture ? performance.now() : undefined;
+    const path = capture ? acquisitionPath(pool) : undefined;
+    const recordAcquisition = (): void => {
+      if (capture && startedAt !== undefined && path) {
+        safeSync(() => {
+          capture.acquisitions.push({
+            durationMs: performance.now() - startedAt,
+            path,
+            finishedAt: now(),
+          });
+        });
+      }
+    };
     const promise = Reflect.apply(
       originalConnect,
       pool,
       args,
     ) as Promise<PoolClient>;
-    return promise.then((client) => {
-      if (instrumentedClients.has(client)) {
-        return client;
-      }
-      const clientQuery = client.query.bind(client) as PgQuery;
-      client.query = instrumentQuery(
-        client,
-        clientQuery,
-        tracer,
-        false,
-      ) as PoolClient["query"];
-      instrumentedClients.add(client);
-      return client;
-    });
+    return promise.then(
+      (client) => {
+        recordAcquisition();
+        return instrumentClient(client);
+      },
+      (error: unknown) => {
+        recordAcquisition();
+        throw error;
+      },
+    );
   } as Pool["connect"];
 
   return pool;
