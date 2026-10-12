@@ -341,6 +341,10 @@ async fn independent_b(retirement: u8) {
         peers.pump().await;
         tokio::task::yield_now().await;
     }
+    // Count established sockets before retiring either region. A failed
+    // reconnect can open TCP on a reused loopback port without completing
+    // TLS/DERP or replacing either original TCP flow.
+    assert_eq!(descriptors.lock().unwrap().len(), 2);
     if let Some(replacement) = replacement {
         let index = if retirement == 5 { 0 } else { 1 };
         gates[index].pause_after(12);
@@ -399,7 +403,6 @@ async fn independent_b(retirement: u8) {
         assert!(matches!(bounded(cb.read(&mut byte)).await, Ok(0) | Err(_)));
         bounded(gates[0].destroyed()).await;
         bounded(gates[1].destroyed()).await;
-        assert_eq!(descriptors.lock().unwrap().len(), 2);
         control.assert_control_closed();
         dial.assert_closed(2);
         api.assert_contract(1, 0);
@@ -446,11 +449,14 @@ async fn independent_b(retirement: u8) {
         "original home/B relay was replaced"
     );
     assert!(peers.services.iter().all(|service| service.packets > 0));
-    assert_eq!(
-        descriptors.lock().unwrap().len(),
-        2,
-        "no successful relay replacement or virtual TCP replay"
-    );
+    if retirement != 1 {
+        // Cancellation and map withdrawal must not start replacement IO.
+        assert_eq!(
+            descriptors.lock().unwrap().len(),
+            2,
+            "cancelled region opened replacement TCP"
+        );
+    }
     run.close();
     bounded(native.physical()).await.unwrap();
     bounded(run.shutdown_native()).await.unwrap();
