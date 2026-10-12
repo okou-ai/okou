@@ -1206,6 +1206,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       expect(followUp.claim.resumeSession?.sessionId).toBe(main.sessionId);
       expect(followUp.chatThread.id).toBe(main.chatThread.id);
       expect(followUp.chatThread.selectedModel).toBe("claude-fable-5-1");
+      expect(dm.telegram.sentMessages.at(-1)?.text).toContain(
+        "<i>Claude Fable 5.1</i>",
+      );
 
       await sendDm("/model gpt-6-astra", 3506);
       // `/model` leaves the member preference the fixture configured.
