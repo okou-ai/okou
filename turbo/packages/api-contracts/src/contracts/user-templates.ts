@@ -265,9 +265,6 @@ const publishUserTemplateBaseSchema = z.object({
  * recognised by what it produces, and the source is only what it was read
  * from — a screenshot or a page can look nothing like the pictures the style
  * draws. They arrive in display order, and the first is the cover.
- *
- * Optional only while the reverse guide and the CLI that send them roll out;
- * a row published without them is shown by its source as before.
  */
 const publishUserTemplateBodySchema = z.discriminatedUnion("kind", [
   publishUserTemplateBaseSchema.extend({
@@ -285,11 +282,7 @@ const publishUserTemplateBodySchema = z.discriminatedUnion("kind", [
   }),
   publishUserTemplateBaseSchema.extend({
     kind: z.literal("illustration"),
-    exampleFileIds: z
-      .array(z.uuid())
-      .min(1)
-      .max(MAX_USER_TEMPLATE_EXAMPLES)
-      .optional(),
+    exampleFileIds: z.array(z.uuid()).min(1).max(MAX_USER_TEMPLATE_EXAMPLES),
   }),
 ]);
 

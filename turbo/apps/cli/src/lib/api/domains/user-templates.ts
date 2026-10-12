@@ -39,7 +39,7 @@ export type PublishUserTemplateArgs =
   | (PublishUserTemplateCommon & {
       readonly kind: "illustration";
       /** Directory of the approved example PNGs, in filename order. */
-      readonly examplesDir?: string;
+      readonly examplesDir: string;
     });
 
 interface UploadedFileIds {
@@ -74,9 +74,7 @@ async function examplePaths(
 ): Promise<readonly string[]> {
   switch (args.kind) {
     case "illustration": {
-      return args.examplesDir === undefined
-        ? []
-        : await orderedPagePaths(args.examplesDir);
+      return await orderedPagePaths(args.examplesDir);
     }
     case "presentation":
     case "document": {
@@ -142,9 +140,7 @@ function publishRequestBody(
         title: args.title,
         kind: "illustration",
         sourceFileId: uploaded.sourceFileId,
-        ...(uploaded.exampleFileIds.length === 0
-          ? {}
-          : { exampleFileIds: uploaded.exampleFileIds }),
+        exampleFileIds: uploaded.exampleFileIds,
         packageFileId: uploaded.packageFileId,
       };
     }

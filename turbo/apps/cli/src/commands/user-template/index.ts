@@ -23,6 +23,17 @@ interface PublishOptions {
   readonly package: string;
 }
 
+function requireExamples(options: PublishOptions): string {
+  if (options.examples === undefined) {
+    throw new ApiRequestError(
+      "--examples is required for an illustration template",
+      "MISSING_EXAMPLES",
+      400,
+    );
+  }
+  return options.examples;
+}
+
 function requirePages(options: PublishOptions): string {
   if (options.pages === undefined) {
     throw new ApiRequestError(
@@ -130,9 +141,7 @@ function publishArguments(options: PublishOptions): PublishUserTemplateArgs {
       return {
         ...common,
         kind: "illustration",
-        ...(options.examples === undefined
-          ? {}
-          : { examplesDir: options.examples }),
+        examplesDir: requireExamples(options),
       };
     }
   }
@@ -167,7 +176,7 @@ const publishCommand = new Command()
   )
   .option(
     "--examples <dir>",
-    "Directory of the approved example PNGs the style produced, in filename order; the first is the catalog cover. Illustrations only",
+    "Directory of the approved example PNGs the style produced, in filename order; the first is the catalog cover. Required for an illustration",
   )
   .requiredOption(
     "--package <dir>",

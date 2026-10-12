@@ -137,10 +137,8 @@ function CustomTemplateSourcePreview({
  * An illustration, as the pictures its style draws.
  *
  * These are the template's preview assets: the examples the reverse run made
- * from the extracted style and the member approved, or, for a row published
- * before examples were sent, the picture it was reversed from. A style is
- * judged by what it produces, so the source a member uploaded is not what is
- * shown once examples exist. The branch is chosen by the row's kind rather
+ * from the extracted style and the member approved. A style is judged by what
+ * it produces, so the source a member uploaded is not what is shown. The branch is chosen by the row's kind rather
  * than by a filename, because the kind is what decided at publish what these
  * pictures are.
  */

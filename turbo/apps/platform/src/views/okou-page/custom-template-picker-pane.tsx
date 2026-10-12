@@ -338,11 +338,10 @@ function CustomTemplateExampleStrip({
  * An image template, shown the way the built-in Illustration tab shows a
  * style: the picture it draws, the other pictures beneath it, then the name.
  *
- * The pictures are the template's preview assets — the examples its style
- * produced and the member approved, or for a row published before those were
- * sent, the picture it was reversed from. A style is judged by what it makes,
- * so the source a member uploaded is not what represents it once examples
- * exist. One picture needs no strip to choose from, so it gets none.
+ * The pictures are the template's preview assets: the examples its style
+ * produced and the member approved. A style is judged by what it makes, so
+ * the source a member uploaded never represents it. One picture needs no
+ * strip to choose from, so it gets none.
  */
 function CustomTemplateIllustrationCard({
   template,
@@ -364,7 +363,7 @@ function CustomTemplateIllustrationCard({
     activeExample(template.id),
     Math.max(0, pictures.length - 1),
   );
-  const hero = pictures[shown] ?? template.coverUrl;
+  const hero = pictures[shown];
   return (
     <div className="mb-6 break-inside-avoid">
       <div
@@ -395,11 +394,7 @@ function CustomTemplateIllustrationCard({
                 loading="lazy"
                 className="block h-auto w-full"
               />
-            ) : (
-              <span className="flex aspect-video items-center justify-center">
-                <FilePreviewIcon filename={template.sourceFilename} size="lg" />
-              </span>
-            )}
+            ) : null}
           </button>
           {template.canManage ? (
             <CustomTemplateActions

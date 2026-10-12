@@ -49,14 +49,11 @@ export interface UserTemplateDocumentManifest {
  * extracted style and the member approved, in display order, the first being
  * the cover. The source it was read from stays on the row as
  * `source_storage_key`.
- *
- * Optional because rows published before examples were sent have none; those
- * are still shown by their source.
  */
 export interface UserTemplateIllustrationManifest {
   readonly kind: "illustration";
   /** Private artifact object keys for the approved example pictures. */
-  readonly exampleKeys?: readonly string[];
+  readonly exampleKeys: readonly string[];
 }
 
 export type UserTemplateManifest =

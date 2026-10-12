@@ -89,7 +89,7 @@ function publishedExampleFileIds(
 ): readonly string[] {
   switch (body.kind) {
     case "illustration": {
-      return body.exampleFileIds ?? [];
+      return body.exampleFileIds;
     }
     case "presentation":
     case "document": {
@@ -186,13 +186,9 @@ function publishedManifest(
     case "illustration": {
       return {
         kind: "illustration",
-        ...(examples.length === 0
-          ? {}
-          : {
-              exampleKeys: examples.map((example) => {
-                return example.storageKey;
-              }),
-            }),
+        exampleKeys: examples.map((example) => {
+          return example.storageKey;
+        }),
       };
     }
   }
@@ -275,15 +271,12 @@ export const publishUserTemplate$ = command(
     if (coverError) {
       return rejected(coverError);
     }
-    const exampleError =
-      examples.length === 0
-        ? null
-        : checkTemplatePages(examples, {
-            contentType: USER_TEMPLATE_PAGE_CONTENT_TYPE,
-            maxPageBytes: MAX_USER_TEMPLATE_PAGE_BYTES,
-            maxTotalBytes: MAX_USER_TEMPLATE_TOTAL_PAGE_BYTES,
-            item: "Example",
-          });
+    const exampleError = checkTemplatePages(examples, {
+      contentType: USER_TEMPLATE_PAGE_CONTENT_TYPE,
+      maxPageBytes: MAX_USER_TEMPLATE_PAGE_BYTES,
+      maxTotalBytes: MAX_USER_TEMPLATE_TOTAL_PAGE_BYTES,
+      item: "Example",
+    });
     if (exampleError) {
       return rejected(exampleError);
     }
