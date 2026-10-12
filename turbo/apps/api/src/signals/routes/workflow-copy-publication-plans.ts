@@ -11,7 +11,7 @@ import {
 } from "@okouai/db/schema/workflow";
 import { storages } from "@okouai/db/schema/storage";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
@@ -152,6 +152,7 @@ export function workflowCopySlugQuery(args: {
         eq(workflows.ownerUserId, args.userId),
         eq(workflows.name, args.sourceWorkflow.name),
         eq(workflows.visibility, "private"),
+        isNull(workflows.officialDefinitionName),
       ),
     )
     .limit(1)

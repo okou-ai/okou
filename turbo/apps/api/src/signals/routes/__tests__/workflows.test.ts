@@ -1007,6 +1007,100 @@ describe("workflows", () => {
     });
   });
 
+  it.each(["private", "public"] as const)(
+    "returns one creation and one name conflict for concurrent %s workflows",
+    async (visibility) => {
+      const actor = user();
+      const agent = await createAgent(actor, { visibility: "public" });
+      const workflowName = `create-race-${randomUUID().slice(0, 8)}`;
+      const results = await Promise.all(
+        ["First", "Second"].map((instruction) => {
+          return accept(
+            collectionClient().create({
+              headers: authHeaders(actor),
+              body: {
+                agentId: agent.agentId,
+                name: workflowName,
+                visibility,
+                instruction,
+              },
+            }),
+            [201, 409],
+          );
+        }),
+      );
+      expect(
+        results
+          .map((result) => {
+            return result.status;
+          })
+          .sort(),
+      ).toStrictEqual([201, 409]);
+      const listed = await accept(
+        collectionClient().list({
+          headers: authHeaders(actor),
+          query: { agentId: agent.agentId },
+        }),
+        [200],
+      );
+      expect(listed.body).toHaveLength(1);
+      expect(listed.body[0]).toMatchObject({ name: workflowName, visibility });
+    },
+  );
+
+  it.each(["private", "public"] as const)(
+    "returns one update and one name conflict for concurrent %s renames",
+    async (visibility) => {
+      const actor = user();
+      const agent = await createAgent(actor, { visibility: "public" });
+      const workflowName = `rename-race-${randomUUID().slice(0, 8)}`;
+      const sources = await Promise.all(
+        ["first", "second"].map((suffix) => {
+          return createWorkflow(actor, {
+            agentId: agent.agentId,
+            name: `${workflowName}-${suffix}`,
+            visibility,
+            instruction: `Preserve ${suffix}`,
+          });
+        }),
+      );
+      const results = await Promise.all(
+        sources.map((source) => {
+          return accept(
+            detailClient().update({
+              headers: authHeaders(actor),
+              params: { workflowId: source.body.id },
+              body: { name: workflowName },
+            }),
+            [200, 409],
+          );
+        }),
+      );
+      expect(
+        results
+          .map((result) => {
+            return result.status;
+          })
+          .sort(),
+      ).toStrictEqual([200, 409]);
+      for (const [index, source] of sources.entries()) {
+        const detail = await accept(
+          detailClient().get({
+            headers: authHeaders(actor),
+            params: { workflowId: source.body.id },
+          }),
+          [200],
+        );
+        expect(detail.body.name).toBe(
+          results[index]?.status === 200 ? workflowName : source.body.name,
+        );
+        expect(detail.body.instruction).toBe(
+          index === 0 ? "Preserve first" : "Preserve second",
+        );
+      }
+    },
+  );
+
   it("renames workflow slugs through metadata update and rejects duplicate public slugs", async () => {
     const actor = user();
     const agent = await createAgent(actor, {

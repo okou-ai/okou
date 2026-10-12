@@ -3114,6 +3114,96 @@ describe("Official Workflow installations", () => {
     expect(unchanged.body.workflow).toMatchObject(installed.body.workflow);
   });
 
+  it("retains the shared Private-name guard for ordinary writes beside an Official installation", async () => {
+    const { actor, agentId, definitionName, headers, installed } =
+      await installOfficialWorkflowLifecycleScenario();
+    await accept(
+      workflowCollectionClient().create({
+        headers,
+        body: { agentId, name: definitionName, instruction: "User content" },
+      }),
+      [409],
+    );
+    const ordinary = await workflowBdd.createWorkflow(actor, {
+      agentId,
+      name: `${definitionName}-user`,
+      visibility: "private",
+      instruction: "Preserved user content",
+    });
+    await accept(
+      workflowClient().update({
+        headers,
+        params: { workflowId: ordinary },
+        body: { name: definitionName },
+      }),
+      [409],
+    );
+    const publicWorkflow = await workflowBdd.createWorkflow(actor, {
+      agentId,
+      name: definitionName,
+      visibility: "public",
+      instruction: "Public content",
+    });
+    await accept(
+      workflowVisibilityClient().demote({
+        headers,
+        params: { workflowId: publicWorkflow },
+      }),
+      [409],
+    );
+    await accept(
+      workflowClient().copy({
+        headers,
+        params: { workflowId: publicWorkflow },
+        body: { toAgentId: agentId },
+      }),
+      [409],
+    );
+    const unchanged = await accept(
+      installationClient().get({
+        headers,
+        params: { workflowId: installed.body.workflow.id },
+      }),
+      [200],
+    );
+    expect(unchanged.body.workflow).toMatchObject({
+      id: installed.body.workflow.id,
+      official: installed.body.workflow.official,
+      automations: installed.body.workflow.automations,
+    });
+    const unchangedOrdinary = await accept(
+      workflowClient().get({
+        headers,
+        params: { workflowId: ordinary },
+      }),
+      [200],
+    );
+    expect(unchangedOrdinary.body).toMatchObject({
+      name: `${definitionName}-user`,
+      instruction: "Preserved user content",
+    });
+    await accept(
+      installationClient().uninstall({
+        headers,
+        params: { workflowId: installed.body.workflow.id },
+      }),
+      [204],
+    );
+    const copied = await accept(
+      workflowClient().copy({
+        headers,
+        params: { workflowId: publicWorkflow },
+        body: { toAgentId: agentId },
+      }),
+      [201],
+    );
+    expect(copied.body).toMatchObject({
+      name: definitionName,
+      official: null,
+      visibility: "private",
+    });
+  });
+
   it("rejects ordinary workflow and automation mutations of an Official installation", async () => {
     const { agentId, dailyAutomation, headers, installed } =
       await installOfficialWorkflowLifecycleScenario();
