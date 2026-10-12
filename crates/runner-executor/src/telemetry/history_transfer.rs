@@ -9,6 +9,7 @@ use crate::duration::duration_ms;
 #[serde(rename_all = "snake_case")]
 pub(crate) enum HistoryCodecDecision {
     NativeZstd,
+    SourceZstd,
     BelowThreshold,
     AboveThreshold,
 }
@@ -45,7 +46,7 @@ impl HistoryTransferMeasurements {
         Self {
             session_history_wire_codec: match codec {
                 FileCompression::None => "none",
-                FileCompression::Zstd => "zstd",
+                FileCompression::Zstd | FileCompression::ZstdSource { .. } => "zstd",
             },
             session_history_codec_decision: decision,
             session_history_selection_ms: duration_ms(selection),

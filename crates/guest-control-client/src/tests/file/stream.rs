@@ -71,3 +71,57 @@ async fn exhausted_stream_credit_keeps_control_live_and_cancellation_closes_conn
         .await
         .unwrap_err();
 }
+
+#[tokio::test]
+async fn source_credit_backpressure_keeps_control_live_and_cancellation_fences_partial_write() {
+    let (host, mut guest) = setup_host_and_mock_guest().await;
+    let content = vec![b's'; 5 * 64 * 1024];
+    let options = FileCompression::ZstdSource {
+        raw_size: 17 * 1024 * 1024,
+        crc32: 1,
+    };
+    let mut write = Box::pin(host.write_file_with_compression(
+        "/tmp/source-credit-cancel",
+        &content,
+        false,
+        options,
+    ));
+    let exhaust = async {
+        let begin = guest.expect_message(MSG_WRITE_FILE_STREAM_BEGIN).await;
+        assert_eq!(begin.payload.first(), Some(&2));
+        guest
+            .send_response(MSG_WRITE_FILE_STREAM_CREDIT, begin.seq, &[4])
+            .await;
+        for _ in 0..4 {
+            let data = guest.expect_message(MSG_WRITE_FILE_STREAM_DATA).await;
+            assert_eq!(data.seq, begin.seq);
+            assert_eq!(data.payload.len(), 64 * 1024);
+        }
+        let control = host.quiesce_operations(Duration::from_secs(5));
+        let respond = async {
+            let request = guest.expect_message(MSG_QUIESCE_OPERATIONS).await;
+            guest
+                .send_response(
+                    MSG_ERROR,
+                    request.seq,
+                    &guest_control_proto::encode_error("source active"),
+                )
+                .await;
+        };
+        let (result, ()) = tokio::join!(control, respond);
+        assert_eq!(result.unwrap_err().to_string(), "source active");
+    };
+    tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::select! {
+            result = &mut write => panic!("source finished without more credit: {result:?}"),
+            () = exhaust => {},
+        }
+    })
+    .await
+    .unwrap();
+    drop(write);
+    guest.expect_eof().await;
+    host.write_file("/tmp/after-source-cancel", b"next", false)
+        .await
+        .unwrap_err();
+}

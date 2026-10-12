@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::io::Write;
+use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -1317,6 +1317,38 @@ impl Sandbox for MockSandbox {
         content: &[u8],
         compression: sandbox::FileCompression,
     ) -> Result<Option<sandbox::FileWriteMeasurements>> {
+        let decoded;
+        let content = if let sandbox::FileCompression::ZstdSource { raw_size, crc32 } = compression
+        {
+            let decode = || -> std::io::Result<Vec<u8>> {
+                if raw_size as usize > 128 * 1024 * 1024 || content.len() > 128 * 1024 * 1024 {
+                    return Err(std::io::Error::other("zstd source exceeds size bound"));
+                }
+                let mut input = std::io::Cursor::new(content);
+                let mut decoder =
+                    zstd::stream::read::Decoder::with_buffer(&mut input)?.single_frame();
+                decoder.window_log_max(27)?;
+                let mut output = Vec::new();
+                decoder
+                    .take(u64::from(raw_size) + 1)
+                    .read_to_end(&mut output)?;
+                if output.len() != raw_size as usize
+                    || input.position() != content.len() as u64
+                    || crc32fast::hash(content) != crc32
+                {
+                    return Err(std::io::Error::other("decoded source integrity mismatch"));
+                }
+                Ok(output)
+            };
+            decoded = decode().map_err(|error| SandboxError::Operation {
+                operation: SandboxOperation::WriteFile,
+                reason: SandboxOperationReason::Other,
+                message: error.to_string(),
+            })?;
+            decoded.as_slice()
+        } else {
+            content
+        };
         let call = WriteFileCall {
             compression,
             path: path.to_string(),
