@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.22.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.21.1...guest-contracts-v0.22.0) (2026-10-12)
+
+
+### Features
+
+* **pi:** manage background subagents in nested guest task domains ([#38611](https://github.com/okou-ai/okou/issues/38611)) ([72a5d7f](https://github.com/okou-ai/okou/commit/72a5d7f01c854f713efce0c095b50edde6ac889a))
+
+
+### Refactoring
+
+* **runner:** finish home cache cleanup ([#39301](https://github.com/okou-ai/okou/issues/39301)) ([40103fe](https://github.com/okou-ai/okou/commit/40103fe690a91412d3f01841a08dc306d52773f9))
+
 ## [0.21.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.21.0...guest-contracts-v0.21.1) (2026-10-12)
 
 

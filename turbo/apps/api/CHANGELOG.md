@@ -9,6 +9,43 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.728.0](https://github.com/okou-ai/okou/compare/api-v1.727.8...api-v1.728.0) (2026-10-12)
+
+
+### Features
+
+* **api:** show large slack previews for ordinary app pages ([#39279](https://github.com/okou-ai/okou/issues/39279)) ([b478b51](https://github.com/okou-ai/okou/commit/b478b5176f6570ef6261bceff152bd14209f451a))
+
+
+### Bug Fixes
+
+* **api:** skip cloudflare screenshots when artifact previews are enabled ([#39341](https://github.com/okou-ai/okou/issues/39341)) ([e7c5b33](https://github.com/okou-ai/okou/commit/e7c5b3323a9e7e112dfe64d24cc20a5d9293fb1d))
+
+
+### Refactoring
+
+* **api:** atomically create vnc connections and inline credentials ([#39334](https://github.com/okou-ai/okou/issues/39334)) ([b97c0a0](https://github.com/okou-ai/okou/commit/b97c0a083ed2b989b2825576c72842260cffa3a5))
+* **api:** own billing status capability reads ([#39364](https://github.com/okou-ai/okou/issues/39364)) ([5fa464d](https://github.com/okou-ai/okou/commit/5fa464da40ef8b5556f6ef71f88483848626c2e8)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own browser user-action request reads ([#39328](https://github.com/okou-ai/okou/issues/39328)) ([80bb495](https://github.com/okou-ai/okou/commit/80bb495080ad08f7ee4ee12c088caace0cd4e1ac))
+* **api:** own saved discord dm choice reads in org status ([#39347](https://github.com/okou-ai/okou/issues/39347)) ([6cffbb8](https://github.com/okou-ai/okou/commit/6cffbb8d880c4ea0e45434efaf867a17263c310b))
+* **api:** own unclaimed teams installation binding ([#39354](https://github.com/okou-ai/okou/issues/39354)) ([947ad30](https://github.com/okou-ai/okou/commit/947ad30ba34d6d0050fbb2403a893ae054f916a5)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** retire session storage mount inputs ([#39325](https://github.com/okou-ai/okou/issues/39325)) ([daf64a5](https://github.com/okou-ai/okou/commit/daf64a5d70a101c531b713370a36c33dbaf072ee))
+
+
+### Performance Improvements
+
+* **runner:** restore sessions from verified zstd sources ([#39335](https://github.com/okou-ai/okou/issues/39335)) ([42f118d](https://github.com/okou-ai/okou/commit/42f118dd2aa86e9d22a732a67d9f46a053ca32e8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.552.2
+    * @okouai/core bumped to 8.747.0
+    * @okouai/db bumped to 1.331.8
+    * @okouai/pi-agent-runtime bumped to 1.49.15
+
 ## [1.727.8](https://github.com/okou-ai/okou/compare/api-v1.727.7...api-v1.727.8) (2026-10-12)
 
 

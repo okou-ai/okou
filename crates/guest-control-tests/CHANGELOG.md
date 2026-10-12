@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.58](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.57...guest-control-tests-v0.12.58) (2026-10-12)
+
+
+### Performance Improvements
+
+* **runner:** restore sessions from verified zstd sources ([#39335](https://github.com/okou-ai/okou/issues/39335)) ([42f118d](https://github.com/okou-ai/okou/commit/42f118dd2aa86e9d22a732a67d9f46a053ca32e8))
+
 ## [0.12.57](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.56...guest-control-tests-v0.12.57) (2026-10-12)
 
 ## [0.12.56](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.55...guest-control-tests-v0.12.56) (2026-10-12)
