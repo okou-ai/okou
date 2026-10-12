@@ -815,18 +815,25 @@ met it.
 
 ### Floating layers and portal ownership
 
+Start with [UI layering: project practices grounded in Web standards](layering.md)
+for common scenarios, recommended compositions, and behavioral verification.
+That guide distinguishes browser mechanisms and established practices from the
+project's ownership rules below.
+
 Portals belong to the shared primitives. Business components must not import
 `createPortal` from `react-dom`; `no-restricted-imports` in
 `turbo/apps/platform/eslint.config.js` enforces that. `DialogContent`,
 `SheetContent`, `PopoverContent`, `SelectContent`, `DropdownMenuContent` and
-`TooltipContent` already own that relocation through Base UI's own `Portal`,
-together with the focus, outside-press, scroll-lock and `aria` ownership that
-arrives with it.
+`TooltipContent` already own that relocation through Base UI's own `Portal`.
+The primitives also own the focus, outside-press, scroll-lock and `aria`
+behavior appropriate to each interaction pattern; relocation alone supplies
+none of those behaviors.
 The portal there is not a rendering convenience: it is what lets a layer escape
 an ancestor's `overflow` clip or `transform` containing block, which is a DOM
-constraint rather than a state-location one. The toaster is the one surface
-that portals to `document.body` on purpose, because a toast outranks a dialog;
-it lives in the primitive layer for the same reason.
+constraint rather than a state-location one. The shared toaster deliberately
+portals to `document.body` with its own priority above ordinary app dialogs.
+That is the app's notification policy, not a universal ordering rule for toasts
+or a way to outrank the browser's top layer.
 
 An app-local surface renders in a stable host owned by the layout. An action
 bar can use `sticky` to remain visible within its scrollport; sticky positioning
@@ -888,8 +895,9 @@ height tokens these surfaces take.
 
 #### Stacking ownership
 
-Business controls do not declare z-index. Icon buttons, menu triggers, cards
-and other content must not choose their order against unrelated app regions.
+Business controls must not assign themselves priority over unrelated app
+regions. Icon buttons, menu triggers, cards and other content leave that
+relationship to the owning layout or primitive.
 A row's background already paints behind its children; a button does not need
 `relative z-10` to sit above it. Event propagation is handled by event handlers,
 not by raising the button's paint order.
@@ -908,15 +916,17 @@ not by raising the button's paint order.
   utilities in shell-owned files, below the shared floating layer in the
   stacking context where they compete. Document each layer's host, the context
   it participates in and the siblings it must cover.
-- Necessary overlap _inside_ a component is a local exception. Establish an
-  explicit `isolate` host around the participating elements in the same change,
-  and document why their order is needed. Keep the z-index inside that host;
+- Necessary overlap _inside_ a component is a local exception. Keep all
+  participating elements inside a deliberate local stacking context; use
+  `isolate` when the host does not already provide that boundary, and document
+  why their order is needed. Keep the z-index inside that host;
   it must not rank the component against the shell. Prefer ordinary paint order
   when it already produces the intended result.
 
 Use literal utilities at those owning layers. Do not introduce a parallel
 z-index token ladder or component-local `--layer-*` variables. This is the
-project's ownership convention, not a limitation of CSS custom properties:
+project's ownership convention, not an industry-wide prohibition or a
+limitation of CSS custom properties:
 Tailwind can express a variable-backed z-index, but neither a variable nor a
 larger literal lets a descendant escape its ancestor's stacking context.
 

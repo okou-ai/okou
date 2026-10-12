@@ -94,6 +94,8 @@ owning surface.
   [ccstate references](../.claude/skills/ccstate/SKILL.md) as needed.
 - [Styles](app/styles.md): shared tokens, semantic HTML, component composition,
   and [Clerk customization](app/styles.md#clerk-customization).
+- [UI layering](app/layering.md): project practices grounded in Web standards,
+  common overlap scenarios, recommended compositions, and interaction checks.
 - [ResizeObserver](app/resize-observer.md): CSS layout and measurement ownership.
 - [Platform testing](app/app-testing.md): real page setup and user-visible assertions.
 
