@@ -99,7 +99,7 @@ try {
     "1296_little_electro.sql",
     "1304_bright_grim_reaper.sql",
     "1313_rsa_aes_vnc.sql",
-    "1379_vnc_kerberos_admission.sql",
+    "1381_vnc_kerberos_admission.sql",
   ]) {
     await client.query(
       (await migration(name)).replaceAll('"public".', `"${schema}".`),
