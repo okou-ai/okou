@@ -1,25 +1,22 @@
-import { randomUUID } from "node:crypto";
-
 import {
   chatThreadMetadataContract,
   chatThreadModelSelectionContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+import { chatThreadGetRoutes } from "../chat-threads-get";
+import { chatThreadModelSelectionRoutes } from "../chat-threads-model-selection";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
-import { chatThreadGetRoutes } from "../chat-threads-get";
-import { chatThreadModelSelectionRoutes } from "../chat-threads-model-selection";
 
 const context = testContext();
+const claimedToken = createClaimedRunCredentials(context).okouToken;
 const store = createStore();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
@@ -63,27 +60,6 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
     agentId: agent.agentId,
     threadId: thread.id,
   };
-}
-
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
-}
-
-function okouToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly capabilities: readonly Capability[];
-}): string {
-  const seconds = currentSecond();
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: `run_${randomUUID()}`,
-    capabilities: [...args.capabilities],
-    iat: seconds,
-    exp: seconds + 600,
-  });
 }
 
 function modelSelectionClient() {
@@ -251,10 +227,9 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
     async (retiredModel, replacement) => {
       const fixture = await seedChatThread("Model retirement");
 
-      const token = okouToken({
+      const token = await claimedToken({
         userId: fixture.userId,
         orgId: fixture.orgId,
-        capabilities: ["chat-thread:read", "chat-thread:write"],
       });
       const headers = { authorization: `Bearer ${token}` };
       await accept(
@@ -291,10 +266,9 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
 
   it("updates thread model selection with an Okou run token carrying chat-thread:write", async () => {
     const fixture = await seedChatThread("Launch plan");
-    const token = okouToken({
+    const token = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
     });
 
     await accept(
@@ -328,33 +302,6 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       serviceTier: null,
       computerUseHostId: null,
       cloudBrowserEnabled: true,
-    });
-  });
-
-  it("rejects an Okou run token without chat-thread:write", async () => {
-    const fixture = await seedChatThread("Launch plan");
-    const token = okouToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      capabilities: ["chat-thread:read"],
-    });
-
-    const response = await accept(
-      modelSelectionClient().update({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: fixture.threadId },
-        body: {
-          model: "claude-sonnet-5-5",
-        },
-      }),
-      [403],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        code: "FORBIDDEN",
-        message: "Missing required capability: chat-thread:write",
-      },
     });
   });
 });

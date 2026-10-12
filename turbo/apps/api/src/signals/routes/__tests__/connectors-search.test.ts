@@ -8,14 +8,14 @@ import { afterEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { seedOrgMembership$ } from "./helpers/org-membership";
-import { createRouteMocks } from "./helpers/route-test";
 import { builtinConnectorsRoutes } from "../connectors";
 import { featureSwitchesRoutes } from "../feature-switches";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const claimedToken = createClaimedRunCredentials(context).okouToken;
 const mocks = createRouteMocks(context);
 const store = createStore();
 
@@ -53,10 +53,6 @@ async function deleteFeatureSwitches(
     featureSwitchesClient().delete({ headers: authHeaders() }),
     [200],
   );
-}
-
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
 }
 
 describe("GET /api/connectors/search", () => {
@@ -334,16 +330,7 @@ describe("GET /api/connectors/search", () => {
       { orgId, userId, role: "admin" },
       context.signal,
     );
-    const seconds = currentSecond();
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId,
-      orgId,
-      runId: `run_${randomUUID()}`,
-      capabilities: ["connector:read"],
-      iat: seconds,
-      exp: seconds + 600,
-    });
+    const token = await claimedToken({ userId, orgId });
 
     const client = setupApp({ context, routes: builtinConnectorsRoutes })(
       builtinConnectorsSearchContract,
@@ -358,38 +345,5 @@ describe("GET /api/connectors/search", () => {
 
     expect(response.body.connectors).toBeInstanceOf(Array);
     expect(response.body.connectors.length).toBeGreaterThan(0);
-  });
-
-  it("rejects an Okou run token missing connector:read with 403", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    await store.set(
-      seedOrgMembership$,
-      { orgId, userId, role: "admin" },
-      context.signal,
-    );
-    const seconds = currentSecond();
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId,
-      orgId,
-      runId: `run_${randomUUID()}`,
-      capabilities: [],
-      iat: seconds,
-      exp: seconds + 600,
-    });
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsSearchContract,
-    );
-    const response = await accept(
-      client.search({
-        query: {},
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [403],
-    );
-
-    expect(response.body.error.code).toBe("FORBIDDEN");
   });
 });

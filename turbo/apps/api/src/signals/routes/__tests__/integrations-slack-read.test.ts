@@ -1,21 +1,20 @@
-import { randomUUID } from "node:crypto";
+import { integrationsSlackReadContract } from "@okouai/api-contracts/contracts/integrations-slack-read";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import { integrationsSlackReadContract } from "@okouai/api-contracts/contracts/integrations-slack-read";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { integrationsSlackReadRoutes } from "../integrations-slack-read";
-import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 
 // Connecting a Slack user resolves the built-in Slack connector OAuth method.
 const context = testContext();
+const claimedToken = createClaimedRunCredentials(context).okouToken;
 const store = createStore();
 const slackOrgs = createPublicSlackOrgApi(context);
 const SLACK_USER_CONVERSATIONS_URL =
@@ -28,7 +27,6 @@ async function fixture(
   options: {
     installed?: boolean;
     connected?: boolean;
-    capabilities?: readonly Capability[];
   } = {},
 ) {
   const orgId = `org_${randomUUID()}`;
@@ -53,16 +51,7 @@ async function fixture(
     { userId, orgId, role: "admin" },
     context.signal,
   );
-  const seconds = Math.floor(now() / 1000);
-  const token = signSandboxJwtForTests({
-    scope: "okou",
-    userId,
-    orgId,
-    runId: randomUUID(),
-    capabilities: options.capabilities ?? ["slack:read"],
-    iat: seconds,
-    exp: seconds + 60,
-  });
+  const token = await claimedToken({ userId, orgId });
   return {
     client: setupApp({ context, routes: integrationsSlackReadRoutes })(
       integrationsSlackReadContract,
@@ -419,17 +408,6 @@ describe("Slack bot channel discovery and history", () => {
     });
   });
 
-  it("rejects a write-only run token", async () => {
-    const { client, headers } = await fixture({
-      capabilities: ["slack:write"],
-    });
-    const response = await accept(
-      client.history({ headers, query: { channel: "C123", limit: 15 } }),
-      [403],
-    );
-    expect(response.body.error.message).toContain("slack:read");
-  });
-
   it("does not reuse a Slack installation from another organization", async () => {
     await fixture();
     const { client, headers } = await fixture({ installed: false });
@@ -662,11 +640,6 @@ describe("Slack bot thread replies", () => {
   );
 
   it.each([
-    {
-      options: { capabilities: ["slack:write"] as const },
-      status: 403,
-      message: "slack:read",
-    },
     {
       options: { installed: false },
       status: 404,

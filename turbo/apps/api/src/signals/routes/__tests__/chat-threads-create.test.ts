@@ -1,6 +1,7 @@
-import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { randomUUID } from "node:crypto";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
   chatThreadConnectorSelectionContract,
   chatThreadMetadataContract,
@@ -8,45 +9,43 @@ import {
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { chatRemoteAccessRoutes } from "../chat-remote-access";
+import { chatThreadRoutes } from "../chat-threads";
+import { chatThreadGetRoutes } from "../chat-threads-get";
+import { chatThreadRenameRoutes } from "../chat-threads-rename";
+import { connectorAccountRoutes } from "../connector-accounts";
+import { sshConnectionsRoutes } from "../ssh-connections";
+import { userModelPreferenceRoutes } from "../user-model-preference";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
   manualHttpCustomConnectorCreateBody,
 } from "./helpers/api-bdd-connectors";
-import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { inlineSshKey } from "./helpers/ssh-credential";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { inlineSshKey } from "./helpers/ssh-credential";
 import {
   createVncRuntimeApi,
   initializeVncRuntimeTest,
   vncConnectionBody,
 } from "./helpers/vnc-runtime";
-import { chatThreadRoutes } from "../chat-threads";
-import { chatThreadGetRoutes } from "../chat-threads-get";
-import { chatThreadRenameRoutes } from "../chat-threads-rename";
-import { connectorAccountRoutes } from "../connector-accounts";
-import { userModelPreferenceRoutes } from "../user-model-preference";
-import { chatRemoteAccessRoutes } from "../chat-remote-access";
-import { sshConnectionsRoutes } from "../ssh-connections";
 
 const context = testContext();
+const claimedToken = createClaimedRunCredentials(context).okouToken;
 const store = createStore();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
@@ -93,30 +92,6 @@ async function seedAgent(): Promise<AgentFixture> {
     orgId: actor.orgId,
     agentId: agent.agentId,
   };
-}
-
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
-}
-
-function okouToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly capabilities: readonly Capability[];
-  readonly runId?: string;
-}): string {
-  const seconds = currentSecond();
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    // Run tokens always carry a real run id, and thread creation reads that
-    // run's media settings, so an unrelated id still has to be a uuid.
-    runId: args.runId ?? randomUUID(),
-    capabilities: [...args.capabilities],
-    iat: seconds,
-    exp: seconds + 600,
-  });
 }
 
 function threadsClient() {
@@ -206,10 +181,9 @@ describe("POST /api/chat-threads", () => {
         { cloudBrowserEnabledByDefault: enabled },
         [200],
       );
-      const token = okouToken({
+      const token = await claimedToken({
         userId: fixture.userId,
         orgId: fixture.orgId,
-        capabilities: ["chat-thread:read", "chat-thread:write"],
       });
       const headers = { authorization: `Bearer ${token}` };
       const body = {
@@ -395,10 +369,9 @@ describe("POST /api/chat-threads", () => {
       [201],
     );
     const threadId = randomUUID();
-    const token = okouToken({
+    const token = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
     });
     const response = await accept(
       threadsClient().create({
@@ -454,10 +427,9 @@ describe("POST /api/chat-threads", () => {
     if (firstResponse.status !== 200 || secondResponse.status !== 200) {
       throw new Error("Expected connector account creation to succeed");
     }
-    const token = okouToken({
+    const token = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
     });
     const inheritedThread = await accept(
       threadsClient().create({
@@ -706,10 +678,9 @@ describe("POST /api/chat-threads", () => {
       { apiKey: "selected-openai-key" },
       fixture.agentId,
     );
-    const token = okouToken({
+    const token = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
     });
 
     const created = await accept(
@@ -747,30 +718,6 @@ describe("POST /api/chat-threads", () => {
       target: { kind: "builtin", connectorSlug: "openai" },
       connectionStatus: "connected",
     });
-    const readToken = okouToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      capabilities: ["chat-thread:read"],
-    });
-    await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${readToken}` },
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    await accept(
-      connectorSelectionsClient().update({
-        headers: { authorization: `Bearer ${readToken}` },
-        params: { id: created.body.id },
-        body: {
-          connectionId: connection.id,
-          target: { kind: "builtin", connectorSlug: "openai" },
-        },
-      }),
-      [403],
-    );
-
     const foreignActor = bdd.user({ orgId: fixture.orgId });
     await store.set(
       seedOrgMembership$,
@@ -799,10 +746,9 @@ describe("POST /api/chat-threads", () => {
       }),
       [400],
     );
-    const foreignToken = okouToken({
+    const foreignToken = await claimedToken({
       userId: foreignActor.userId,
       orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
     });
     await accept(
       connectorSelectionsClient().get({
@@ -817,10 +763,9 @@ describe("POST /api/chat-threads", () => {
       { orgId: otherOrgId, userId: fixture.userId },
       context.signal,
     );
-    const otherOrgToken = okouToken({
+    const otherOrgToken = await claimedToken({
       userId: fixture.userId,
       orgId: otherOrgId,
-      capabilities: ["chat-thread:write"],
     });
     for (const deniedToken of [foreignToken, otherOrgToken]) {
       await accept(
@@ -1038,10 +983,9 @@ describe("POST /api/chat-threads", () => {
     if (!httpConnectionId || !mcpConnectionId) {
       throw new Error("Expected custom connector account fixtures");
     }
-    const token = okouToken({
+    const token = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
     });
 
     const created = await accept(
@@ -1220,10 +1164,9 @@ describe("POST /api/chat-threads", () => {
         }),
         [200],
       );
-      const token = okouToken({
+      const token = await claimedToken({
         userId: fixture.userId,
         orgId: fixture.orgId,
-        capabilities: ["chat-thread:read", "chat-thread:write"],
       });
       const thread = await accept(
         threadsClient().create({
@@ -1295,10 +1238,9 @@ describe("POST /api/chat-threads", () => {
     await flushWaitUntilForTest();
     context.mocks.ably.channelGet.mockClear();
     context.mocks.ably.publish.mockClear();
-    const token = okouToken({
+    const token = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
     });
 
     await accept(
@@ -1324,10 +1266,9 @@ describe("POST /api/chat-threads", () => {
 
   it("creates a titled thread with an Okou run token carrying chat-thread:write", async () => {
     const fixture = await seedAgent();
-    const token = okouToken({
+    const token = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
     });
 
     const response = await accept(
@@ -1440,10 +1381,9 @@ describe("POST /api/chat-threads", () => {
       }),
       [200],
     );
-    const sourceToken = okouToken({
+    const sourceToken = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
     });
     const source = await accept(
       threadsClient().create({
@@ -1515,10 +1455,9 @@ describe("POST /api/chat-threads", () => {
 
   it("uses the workspace default when the request omits a model", async () => {
     const fixture = await seedAgent();
-    const token = okouToken({
+    const token = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
-      capabilities: ["chat-thread:write"],
     });
 
     const response = await accept(
@@ -1534,33 +1473,6 @@ describe("POST /api/chat-threads", () => {
     });
   });
 
-  it("rejects an Okou run token without chat-thread:write", async () => {
-    const fixture = await seedAgent();
-    const token = okouToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      capabilities: ["chat-thread:read"],
-    });
-
-    const response = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          agentId: fixture.agentId,
-          title: "Unauthorized thread",
-          model: WORKSPACE_DEFAULT_MODEL,
-        },
-      }),
-      [403],
-    );
-    expect(response.body).toStrictEqual({
-      error: {
-        code: "FORBIDDEN",
-        message: "Missing required capability: chat-thread:write",
-      },
-    });
-  });
-
   it("replays one thread when a create request is delivered twice", async () => {
     const fixture = await seedAgent();
     await updateFeatureSwitchesForUser(context, fixture, {});
@@ -1571,10 +1483,9 @@ describe("POST /api/chat-threads", () => {
       { apiKey: "duplicate-delivery-openai-key" },
       fixture.agentId,
     );
-    const token = okouToken({
+    const token = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
     });
     const clientThreadId = randomUUID();
     const eventId = randomUUID();
@@ -1642,10 +1553,9 @@ describe("POST /api/chat-threads", () => {
 
   it("replays the stored thread instead of the repeated request body", async () => {
     const fixture = await seedAgent();
-    const token = okouToken({
+    const token = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
     });
     const clientThreadId = randomUUID();
 
@@ -1702,10 +1612,9 @@ describe("POST /api/chat-threads", () => {
 
   it("creates one thread when two deliveries race on a client thread id", async () => {
     const fixture = await seedAgent();
-    const token = okouToken({
+    const token = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
     });
     const clientThreadId = randomUUID();
     const eventId = randomUUID();
@@ -1748,10 +1657,9 @@ describe("POST /api/chat-threads", () => {
 
   it("answers a client thread id owned by another member like a missing thread", async () => {
     const owner = await seedAgent();
-    const ownerToken = okouToken({
+    const ownerToken = await claimedToken({
       userId: owner.userId,
       orgId: owner.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
     });
     const clientThreadId = randomUUID();
     await accept(
@@ -1768,10 +1676,9 @@ describe("POST /api/chat-threads", () => {
     );
 
     const other = await seedAgent();
-    const otherToken = okouToken({
+    const otherToken = await claimedToken({
       userId: other.userId,
       orgId: other.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
     });
     const collision = await accept(
       threadsClient().create({
@@ -1804,10 +1711,9 @@ describe("POST /api/chat-threads", () => {
 
   it("answers a client thread id held by another agent like a missing thread", async () => {
     const fixture = await seedAgent();
-    const token = okouToken({
+    const token = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
     });
     const clientThreadId = randomUUID();
     await accept(

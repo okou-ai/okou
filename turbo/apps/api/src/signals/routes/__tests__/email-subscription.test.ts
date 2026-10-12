@@ -1,5 +1,5 @@
-import { ClerkUserNotFoundTestError } from "./helpers/clerk-users";
 import { createHmac, randomUUID } from "node:crypto";
+import { ClerkUserNotFoundTestError } from "./helpers/clerk-users";
 
 import { emailSubscriptionContract } from "@okouai/api-contracts/contracts/email-subscription";
 import { emailUnsubscribeContract } from "@okouai/api-contracts/contracts/email-unsubscribe";
@@ -7,16 +7,16 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { env } from "../../../lib/env";
-import { now } from "../../../lib/time";
 import { emailSubscriptionRoutes } from "../email-subscription";
 import { emailUnsubscribeRoutes } from "../email-unsubscribe";
-import { createRouteMocks } from "./helpers/route-test";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const claimedToken = createClaimedRunCredentials(context).okouToken;
 const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
@@ -215,15 +215,7 @@ describe("email subscription preferences", () => {
       [401],
     );
     const owner = actor();
-    const timestamp = Math.floor(now() / 1000);
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      ...owner,
-      runId: randomUUID(),
-      capabilities: ["agent:write"],
-      iat: timestamp,
-      exp: timestamp + 60,
-    });
+    const token = await claimedToken(owner);
     const runHeaders = { authorization: `Bearer ${token}` };
     const response = await accept(client().get({ headers: runHeaders }), [403]);
     expect(response.body.error.code).toBe("FORBIDDEN");

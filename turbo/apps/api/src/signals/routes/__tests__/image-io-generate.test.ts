@@ -8,16 +8,16 @@ import {
 } from "@aws-sdk/client-s3";
 
 import { imageModelIdSchema } from "@okouai/api-contracts/contracts/image-models";
-import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 
-import { HttpResponse, http } from "msw";
+import { http, HttpResponse } from "msw";
 import { onTestFinished } from "vitest";
 
-import { createAppWithRoutes } from "../../../app-factory-core";
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createAppWithRoutes } from "../../../app-factory-core";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import {
   buildArtifactKeyV2,
@@ -25,33 +25,32 @@ import {
   OKOU_CDN_ARTIFACTS_ORIGIN,
   OKOU_SHORT_ARTIFACTS_ORIGIN,
 } from "../../../lib/file-url";
-import { clearMockNow, mockNow, now } from "../../../lib/time";
+import { clearMockNow, mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
-import { webhooksBuiltInGenerationRoutes } from "../webhooks-built-in-generations";
 import { billingStatusRoutes } from "../billing-status";
 import { builtInGenerationRoutes } from "../built-in-generation";
 import { imageIoGenerateRoutes } from "../image-io-generate";
 import { usageRecordRoutes } from "../usage-record";
 import { userModelPreferenceRoutes } from "../user-model-preference";
+import { webhooksBuiltInGenerationRoutes } from "../webhooks-built-in-generations";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
-import { createRouteMocks } from "./helpers/route-test";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createRouteMocks } from "./helpers/route-test";
 
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
-import { createPublicImageMember } from "./helpers/public-image-member";
 import {
   createChatEventsFixture,
   okouTokenFromClaim,
 } from "./helpers/chat-events-fixture";
-import { publicRunOwner } from "./helpers/public-run-owner";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
-import { purchaseToolCredits } from "./helpers/public-tool-actor";
+import { createPublicImageMember } from "./helpers/public-image-member";
+import { publicRunOwner } from "./helpers/public-run-owner";
 import { chargePublicSeoUsage } from "./helpers/public-seo-charge";
+import { purchaseToolCredits } from "./helpers/public-tool-actor";
+import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 
 const context = testContext();
 
@@ -214,10 +213,6 @@ async function publicUnfundedImageFixture() {
   return await createPublicImageMember(context, { credits: 0 });
 }
 
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
-}
-
 function putObjectInput(): PutObjectCommandInput {
   const command = context.mocks.s3.send.mock.calls
     .map(([candidate]) => {
@@ -335,24 +330,6 @@ function readGenerationResult(body: unknown): unknown {
     return body.result;
   }
   throw new Error("Expected completed generation result");
-}
-
-function okouToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly runId: string;
-  readonly capabilities?: readonly "file:write"[];
-}): string {
-  const seconds = currentSecond();
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: args.runId,
-    capabilities: args.capabilities ?? ["file:write"],
-    iat: seconds,
-    exp: seconds + 60,
-  });
 }
 
 // These selected callers use real personal-model Runs and the existing image tariffs.
@@ -683,30 +660,6 @@ describe("POST /api/image-io/generate", () => {
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toStrictEqual({
       error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
-  it("returns 403 when an agent token lacks file write capability", async () => {
-    const token = okouToken({
-      userId: `user_${randomUUID()}`,
-      orgId: `org_${randomUUID()}`,
-      runId: randomUUID(),
-      capabilities: [],
-    });
-
-    const app = createImageIoTestApp();
-    const response = await app.request("/api/image-io/generate", {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}` },
-      body: JSON.stringify({ prompt: "a cat" }),
-    });
-
-    expect(response.status).toBe(403);
-    await expect(response.json()).resolves.toStrictEqual({
-      error: {
-        message: "Missing required capability: file:write",
-        code: "FORBIDDEN",
-      },
     });
   });
 

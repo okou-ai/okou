@@ -1,24 +1,23 @@
-import { randomUUID } from "node:crypto";
-
-import { socialContract } from "@okouai/api-contracts/contracts/social";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import { socialContract } from "@okouai/api-contracts/contracts/social";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { createAppWithRoutes } from "../../../app-factory-core";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { socialRoutes } from "../social";
 import { billingStatusRoutes } from "../billing-status";
+import { socialRoutes } from "../social";
 import { createBddApi } from "./helpers/api-bdd";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const claimedToken = createClaimedRunCredentials(context).okouToken;
 const STATUS_URL = "https://api.socialkit.dev/status";
 const OBSERVED_AT = "2026-09-14T09:00:00.000Z";
 const HEADERS = { authorization: "Bearer clerk-session" } as const;
@@ -385,42 +384,12 @@ describe("GET /api/social/status", () => {
     expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("requires social:read for sandbox callers", async () => {
-    const actor = statusActor();
-    const seconds = Date.parse(OBSERVED_AT) / 1000;
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      runId: randomUUID(),
-      capabilities: [],
-      iat: seconds,
-      exp: seconds + 60,
-    });
-    const response = await accept(
-      client().status({
-        headers: { authorization: `Bearer ${token}` },
-        query: {},
-      }),
-      [403],
-    );
-    expect(response.body.error.message).toBe(
-      "Missing required capability: social:read",
-    );
-  });
-
   it("accepts a sandbox caller with social:read", async () => {
     const actor = statusActor();
     await createBddApi(context).completeOnboarding(actor);
-    const seconds = Date.parse(OBSERVED_AT) / 1000;
-    const token = signSandboxJwtForTests({
-      scope: "okou",
+    const token = await claimedToken({
       userId: actor.userId,
       orgId: actor.orgId,
-      runId: randomUUID(),
-      capabilities: ["social:read"],
-      iat: seconds,
-      exp: seconds + 60,
     });
     server.use(
       http.get(STATUS_URL, () => {

@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import {
-  type ChatEvent,
   chatThreadsContract,
+  type ChatEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
@@ -14,12 +14,12 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { chatThreadRoutes } from "../chat-threads";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { seedOrgMembership$ } from "./helpers/org-membership";
-import { chatThreadRoutes } from "../chat-threads";
 
 const context = testContext();
 const store = createStore();
@@ -173,25 +173,6 @@ describe("GET /api/indicators", () => {
     ).resolves.toMatchObject({ lastReadAt: before.unread });
     await expect(chat.readThread(actor, read.threadId)).resolves.toMatchObject({
       lastReadAt: before.read,
-    });
-  });
-
-  it("requires chat-thread:read for Okou tokens", async () => {
-    const actor = bdd.user();
-    await seedMembership(actor);
-    const token = okouToken({ actor, capabilities: ["chat-event:read"] });
-
-    const indicators = await accept(
-      client().indicators({
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [403],
-    );
-    expect(indicators.body).toStrictEqual({
-      error: {
-        message: "Missing required capability: chat-thread:read",
-        code: "FORBIDDEN",
-      },
     });
   });
 

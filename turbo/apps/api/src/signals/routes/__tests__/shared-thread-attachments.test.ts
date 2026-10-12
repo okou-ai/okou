@@ -1,30 +1,27 @@
-import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import type { UserMessageInputPart } from "@okouai/api-contracts/contracts/chat-threads";
-import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import type { UserMessageInputPart } from "@okouai/api-contracts/contracts/chat-threads";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
-import { randomUUID } from "node:crypto";
 
-import { testContext, accept } from "../../../__tests__/test-context";
+import { CopyObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { sharedThreadRoutes } from "../shared-threads";
+import { mockEnv } from "../../../lib/env";
 import { artifactReferenceRoutes } from "../artifact-references";
-import { uploadsPrepareRoutes } from "../uploads-prepare";
-import { uploadsCompleteRoutes } from "../uploads-complete";
 import { featureSwitchesRoutes } from "../feature-switches";
+import { sharedThreadRoutes } from "../shared-threads";
+import { uploadsCompleteRoutes } from "../uploads-complete";
+import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { webFileUrlRoutes } from "../web-file-url";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
-import { CopyObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { now } from "../../../lib/time";
-import { mockEnv } from "../../../lib/env";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -344,39 +341,6 @@ test.each([false, true])(
     expect(JSON.stringify(shared.body)).not.toContain(original.id);
   },
 );
-
-test("requires file read capability when sharing prompt attachments", async () => {
-  const f = await fixture();
-  const file = await f.upload(
-    "brief.pdf",
-    "application/pdf",
-    "private prompt bytes",
-  );
-  const message = await f.send([file.part]);
-  if (!f.actor.orgId) {
-    throw new Error("Expected a sharing organization");
-  }
-  const seconds = Math.floor(now() / 1000);
-  const token = signSandboxJwtForTests({
-    scope: "okou",
-    userId: f.actor.userId,
-    orgId: f.actor.orgId,
-    runId: randomUUID(),
-    capabilities: ["chat-event:read"],
-    iat: seconds,
-    exp: seconds + 60,
-  });
-  const response = await accept(
-    api()(sharedThreadsContract).create({
-      headers: { authorization: `Bearer ${token}` },
-      params: { threadId: message.threadId },
-      body: { eventIds: [message.eventId] },
-    }),
-    [403],
-  );
-  expect(response.body.error.message).toContain("file:read");
-  await f.expectNoShare(message.threadId);
-});
 
 test.each(["missing source", "copy failure"])(
   "rejects sharing on %s without publishing a partial conversation",

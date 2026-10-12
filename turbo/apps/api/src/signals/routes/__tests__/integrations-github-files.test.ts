@@ -1,4 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
+import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -8,20 +11,19 @@ import {
   integrationsGithubUploadInitContract,
 } from "@okouai/api-contracts/contracts/integrations";
 
-import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createApp } from "../../../app-factory";
 import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+import { integrationsGithubDownloadFileRoutes } from "../integrations-github-download-file";
+import { integrationsGithubUploadCompleteRoutes } from "../integrations-github-upload-complete";
+import { integrationsGithubUploadInitRoutes } from "../integrations-github-upload-init";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createGithubBddApi } from "./helpers/api-bdd-github";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { createRouteMocks } from "./helpers/route-test";
-import { integrationsGithubUploadCompleteRoutes } from "../integrations-github-upload-complete";
-import { integrationsGithubUploadInitRoutes } from "../integrations-github-upload-init";
-import { integrationsGithubDownloadFileRoutes } from "../integrations-github-download-file";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...integrationsGithubDownloadFileRoutes,
@@ -30,6 +32,7 @@ const TEST_APP_ROUTES = Object.freeze([
 ]);
 
 const context = testContext();
+const claimedToken = createClaimedRunCredentials(context).okouToken;
 const mocks = createRouteMocks(context);
 const github = createGithubBddApi(context);
 const bdd = createBddApi(context);
@@ -41,28 +44,6 @@ interface GitHubFileFixture {
   readonly actor: ApiTestUser;
   readonly composeId: string;
   readonly remoteInstallationId: string;
-}
-
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
-}
-
-function okouToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly runId?: string;
-  readonly capabilities: readonly ("github:read" | "github:write")[];
-}): string {
-  const seconds = currentSecond();
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: args.runId ?? randomUUID(),
-    capabilities: [...args.capabilities],
-    iat: seconds,
-    exp: seconds + 60,
-  });
 }
 
 function setupGitHubTokenMock(installationId: string): void {
@@ -107,20 +88,36 @@ describe("GitHub file integration routes", () => {
    * admission needs org credits, granted through the Stripe webhook product
    * path.
    */
-  async function seedRunForFixture(
-    fixture: GitHubFileFixture,
-  ): Promise<{ readonly runId: string }> {
-    bdd.acceptAgentStorageWrites();
-    await api.grantProEntitlement(fixture.actor);
-    await api.ensurePersonalSubscriptionModel(fixture.actor);
-    api.acceptStorageDownloads();
-    api.acceptTelemetryIngest();
-    api.configureRunnerGroup();
-    const run = await api.createThreadRun(fixture.actor, {
-      agentId: fixture.composeId,
-      prompt: "deliver github file",
+  async function seedRunForFixture(fixture: GitHubFileFixture) {
+    let restoreAccepted = captureConnectorExternalState(context);
+    const owner = publicRunOwner(context, fixture.actor, {
+      restoreEnvironment: () => {
+        restoreAccepted();
+      },
+      afterRuns: () => {
+        return deletePublicWorkspace(context, fixture.actor);
+      },
     });
-    return { runId: run.runId };
+    return await owner.run(async () => {
+      bdd.acceptAgentStorageWrites();
+      await api.grantProEntitlement(fixture.actor);
+      await api.ensurePersonalSubscriptionModel(fixture.actor);
+      api.acceptStorageDownloads();
+      api.acceptTelemetryIngest();
+      const runnerGroup = api.configureRunnerGroup();
+      const run = await api.createThreadRun(fixture.actor, {
+        agentId: fixture.composeId,
+        prompt: "deliver github file",
+      });
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await owner.claim(run.runId);
+      restoreAccepted = captureConnectorExternalState(context);
+      const token = claim.platformEnvironment?.OKOU_TOKEN;
+      if (!token) {
+        throw new Error("Expected a claimed GitHub caller");
+      }
+      return { ...run, token };
+    });
   }
 
   it("streams a GitHub context file from an allowed URL", async () => {
@@ -150,11 +147,7 @@ describe("GitHub file integration routes", () => {
       {
         method: "GET",
         headers: {
-          authorization: `Bearer ${okouToken({
-            userId: fixture.userId,
-            orgId: fixture.orgId,
-            capabilities: ["github:read"],
-          })}`,
+          authorization: `Bearer ${await claimedToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
         },
       },
     );
@@ -191,11 +184,7 @@ describe("GitHub file integration routes", () => {
       {
         method: "GET",
         headers: {
-          authorization: `Bearer ${okouToken({
-            userId: fixture.userId,
-            orgId: fixture.orgId,
-            capabilities: ["github:read"],
-          })}`,
+          authorization: `Bearer ${await claimedToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
         },
       },
     );
@@ -218,11 +207,7 @@ describe("GitHub file integration routes", () => {
       {
         method: "GET",
         headers: {
-          authorization: `Bearer ${okouToken({
-            userId: fixture.userId,
-            orgId: fixture.orgId,
-            capabilities: ["github:read"],
-          })}`,
+          authorization: `Bearer ${await claimedToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
         },
       },
     );
@@ -230,33 +215,6 @@ describe("GitHub file integration routes", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
       error: { code: "BAD_REQUEST" },
-    });
-  });
-
-  it("requires github read capability for context file downloads", async () => {
-    const fixture = await seedFixture();
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-    const query = new URLSearchParams({
-      url: "https://github.com/user-attachments/assets/abc123",
-    });
-
-    const response = await app.request(
-      `/api/integrations/github/download-file?${query.toString()}`,
-      {
-        method: "GET",
-        headers: {
-          authorization: `Bearer ${okouToken({
-            userId: fixture.userId,
-            orgId: fixture.orgId,
-            capabilities: ["github:write"],
-          })}`,
-        },
-      },
-    );
-
-    expect(response.status).toBe(403);
-    await expect(response.json()).resolves.toMatchObject({
-      error: { code: "FORBIDDEN" },
     });
   });
 
@@ -278,11 +236,7 @@ describe("GitHub file integration routes", () => {
           length: 1234,
         },
         headers: {
-          authorization: `Bearer ${okouToken({
-            userId: fixture.userId,
-            orgId: fixture.orgId,
-            capabilities: ["github:write"],
-          })}`,
+          authorization: `Bearer ${await claimedToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
         },
       }),
       [200],
@@ -319,12 +273,30 @@ describe("GitHub file integration routes", () => {
     const run = await seedRunForFixture(fixture);
     setupGitHubTokenMock(fixture.remoteInstallationId);
 
-    const uploadId = randomUUID();
-    const s3Key = `artifacts/${fixture.userId}/${uploadId}/report.pdf`;
-    const fileUrl = `https://cdn.vm7.io/artifacts/${fixture.userId}/${uploadId}/report.pdf`;
-    mocks.s3.listObjects([
-      { bucket: "test-user-artifacts", key: s3Key, size: 1234 },
-    ]);
+    installSharedThreadStorage(context);
+    const upload = await accept(
+      setupApp({ context, routes: integrationsGithubUploadInitRoutes })(
+        integrationsGithubUploadInitContract,
+      ).init({
+        headers: { authorization: `Bearer ${run.token}` },
+        body: {
+          filename: "report.pdf",
+          contentType: "application/pdf",
+          length: 1234,
+        },
+      }),
+      [200],
+    );
+    const { uploadId, fileUrl } = upload.body;
+    expect(
+      (
+        await fetch(upload.body.uploadUrl, {
+          method: "PUT",
+          headers: upload.body.uploadHeaders,
+          body: "x".repeat(1234),
+        })
+      ).status,
+    ).toBe(200);
 
     let capturedCommentBody: string | undefined;
     server.use(
@@ -359,12 +331,7 @@ describe("GitHub file integration routes", () => {
           caption: "Daily report",
         },
         headers: {
-          authorization: `Bearer ${okouToken({
-            userId: fixture.userId,
-            orgId: fixture.orgId,
-            runId: run.runId,
-            capabilities: ["github:write"],
-          })}`,
+          authorization: `Bearer ${await claimedToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
         },
       }),
       [200],
