@@ -1,5 +1,5 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
+import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { command, computed } from "ccstate";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/log";

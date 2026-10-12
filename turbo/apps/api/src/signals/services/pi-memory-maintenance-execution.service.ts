@@ -83,7 +83,7 @@ import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
+import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { storages } from "@okouai/db/schema/storage";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";

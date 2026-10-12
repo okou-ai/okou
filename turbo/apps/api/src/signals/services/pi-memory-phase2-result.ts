@@ -1,6 +1,9 @@
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
+import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
+import {
+  nullableDriverValueDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 
 export interface MaintenancePublicationBinding {
   readonly runId: string;
@@ -46,9 +49,7 @@ export function maintenancePublicationResultVersion() {
     WHEN ${piMemoryPhase2Jobs.lastMaintenanceOutcome} = 'no_diff'
       THEN ${piMemoryPhase2Jobs.lastMaintenanceBaseVersionId}
     ELSE NULL
-  END`.mapWith(
-    nullableDriverValueDecoder(piMemoryPhase2Jobs.lastPublishedVersionId),
-  );
+  END`.mapWith(nullableDriverValueDecoder(pgTextDecoder));
 }
 
 /** A committed result must identify its published or retained Storage version. */

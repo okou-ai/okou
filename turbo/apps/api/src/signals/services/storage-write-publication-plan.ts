@@ -5,8 +5,7 @@ import {
 } from "@okouai/core/storage-names";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
-import { piMemoryPhase2PublicationReceipts } from "@okouai/db/schema/pi-memory-phase2-publication-receipt";
+import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
@@ -513,14 +512,6 @@ function* settleStoragePublication(
   binding: MaintenancePublicationBinding,
   versionId: string,
 ): StorageSqlPlan<void> {
-  // Transitional output for outgoing API readers. Current readers use the Job result.
-  // Retire this write only in a separate deployed writer-preparation release.
-  yield writeStatement(
-    insertedStorageSql(piMemoryPhase2PublicationReceipts, {
-      ...binding,
-      versionId,
-    }),
-  );
   const [callback] = callbackRows.parse(
     yield readStatement(
       callbackSnapshotSql(binding.runId),

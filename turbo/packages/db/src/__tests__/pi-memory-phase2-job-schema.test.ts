@@ -6,8 +6,8 @@ import {
   PI_MEMORY_PHASE2_MAX_ATTEMPTS,
   PI_MEMORY_PHASE2_MAX_SELECTED_CANDIDATES,
   PI_MEMORY_PHASE2_MAX_SELECTED_UTF8_BYTES,
-  piMemoryPhase2Jobs,
-} from "../schema/pi-memory-phase2-job";
+} from "../columns/pi-memory-phase2-job";
+import { piMemoryPhase2Jobs } from "../schema/pi-memory-phase2-job";
 import { storages } from "../schema/storage";
 
 describe("Pi memory Phase 2 job schema", () => {
@@ -86,10 +86,10 @@ describe("Pi memory Phase 2 job schema", () => {
       "claimed_base_version_id",
     );
     expect(checks.pi_memory_phase2_jobs_execution_fence_check).toContain(
-      "sandbox_lease_token",
+      "maintenance_run_id",
     );
     expect(checks.pi_memory_phase2_jobs_maintenance_history_check).toContain(
-      "last_maintenance_checkpoint_version_id",
+      "last_published_version_id",
     );
     expect(checks.pi_memory_phase2_jobs_conflict_check).toContain(
       "last_conflicting_head_version_id",

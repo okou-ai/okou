@@ -1,6 +1,6 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
+import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
@@ -140,11 +140,6 @@ export function externalMemoryHeadChangeValues(args: {
         THEN ${piMemoryPhase2Jobs.claimedRevision}
         ELSE NULL
         END`,
-    sandboxLeaseToken: sql`CASE
-        WHEN ${piMemoryPhase2Jobs.status} = 'leased'
-        THEN ${piMemoryPhase2Jobs.sandboxLeaseToken}
-        ELSE NULL
-      END`,
     maintenanceRunId: sql`CASE
         WHEN ${piMemoryPhase2Jobs.status} = 'leased'
         THEN ${piMemoryPhase2Jobs.maintenanceRunId}
@@ -208,8 +203,6 @@ export function storageMaintenanceCompletionValues(
     claimedRevision: null,
     claimedBaseVersionId: null,
     leaseToken: null,
-    legacyLeaseToken: null,
-    sandboxLeaseToken: null,
     leaseExpiresAt: null,
     maintenanceRunId: null,
     retryCount: 0,
@@ -229,8 +222,6 @@ export function storageMaintenanceCompletionValues(
     lastMaintenanceRevision: payload.claimedRevision,
     lastMaintenanceBaseVersionId: payload.claimedBaseVersionId,
     lastMaintenanceSelectionDigest: payload.selectionDigest,
-    // Outgoing API readers and deployed constraints still require this compatibility output.
-    lastMaintenancePublicationVersionId: versionId,
     lastMaintenanceOutcome: published
       ? ("published" as const)
       : ("no_diff" as const),

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
+import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import type { PiMemoryPhase2OwnerScope } from "./pi-memory-phase2-job.service";
 
 export function piMemoryPhase2InputRevisionSql(
@@ -45,11 +45,6 @@ export function piMemoryPhase2InputRevisionSql(
         leaseExpiresAt: sql`CASE
           WHEN ${piMemoryPhase2Jobs.status} = 'leased'
           THEN ${piMemoryPhase2Jobs.leaseExpiresAt}
-          ELSE NULL
-        END`,
-        sandboxLeaseToken: sql`CASE
-          WHEN ${piMemoryPhase2Jobs.status} = 'leased'
-          THEN ${piMemoryPhase2Jobs.sandboxLeaseToken}
           ELSE NULL
         END`,
         maintenanceRunId: sql`CASE

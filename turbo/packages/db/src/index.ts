@@ -151,8 +151,7 @@ import * as userTemplateSchema from "./schema/user-template";
 import * as piResourceVersionIndexSchema from "./schema/pi-resource-version-index";
 import * as memorySummaryProjectionSchema from "./schema/memory-summary-projection";
 import * as piMemoryStage1CandidateSchema from "./schema/pi-memory-stage1-candidate";
-import * as piMemoryPhase2JobSchema from "./schema/pi-memory-phase2-job";
-import * as piMemoryPhase2PublicationReceiptSchema from "./schema/pi-memory-phase2-publication-receipt";
+import * as piMemoryPhase2JobSchema from "./runtime/pi-memory-phase2-job";
 import * as piMemoryPublicationProvenanceSchema from "./schema/pi-memory-publication-provenance";
 import * as sshConnectionSchema from "./schema/ssh-connection";
 import * as sshCredentialSchema from "./schema/ssh-credential";
@@ -316,7 +315,6 @@ export const schema = {
   ...memorySummaryProjectionSchema,
   ...piMemoryStage1CandidateSchema,
   ...piMemoryPhase2JobSchema,
-  ...piMemoryPhase2PublicationReceiptSchema,
   ...piMemoryPublicationProvenanceSchema,
   ...sshConnectionSchema,
   ...sshCredentialSchema,

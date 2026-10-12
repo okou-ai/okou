@@ -8,8 +8,8 @@ import {
   PI_MEMORY_PHASE2_MAX_ATTEMPTS,
   PI_MEMORY_PHASE2_MAX_SELECTED_CANDIDATES,
   PI_MEMORY_PHASE2_MAX_SELECTED_UTF8_BYTES,
-  piMemoryPhase2Jobs,
-} from "@okouai/db/schema/pi-memory-phase2-job";
+} from "@okouai/db/columns/pi-memory-phase2-job";
+import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
@@ -277,7 +277,6 @@ function expiredLeaseValues(currentTime: Date) {
     claimedRevision: null,
     claimedBaseVersionId: null,
     leaseToken: null,
-    sandboxLeaseToken: null,
     leaseExpiresAt: null,
     maintenanceRunId: null,
     retryCount: PI_MEMORY_PHASE2_MAX_ATTEMPTS,
@@ -305,9 +304,6 @@ function leasedJobValues(
     claimedRevision: job.inputRevision,
     claimedBaseVersionId: args.baseVersionId,
     leaseToken: args.leaseToken,
-    // Preserve the deployed constraints/outgoing API shape until writer preparation.
-    legacyLeaseToken: null,
-    sandboxLeaseToken: args.leaseToken,
     leaseExpiresAt: args.leaseExpiresAt,
     maintenanceRunId: null,
     retryCount: args.retryCount,
@@ -548,7 +544,6 @@ export const failPiMemoryPhase2Job$ = command(
         claimedRevision: null,
         claimedBaseVersionId: null,
         leaseToken: null,
-        sandboxLeaseToken: null,
         leaseExpiresAt: null,
         maintenanceRunId: null,
         retryCount: sql`CASE

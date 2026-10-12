@@ -1,10 +1,8 @@
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import {
-  PI_MEMORY_PHASE2_MAX_ATTEMPTS,
-  piMemoryPhase2Jobs,
-} from "@okouai/db/schema/pi-memory-phase2-job";
+import { PI_MEMORY_PHASE2_MAX_ATTEMPTS } from "@okouai/db/columns/pi-memory-phase2-job";
+import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import {
   and,
   eq,
@@ -258,9 +256,6 @@ function maintenanceFailureValues(args: {
     claimedRevision: null,
     claimedBaseVersionId: null,
     leaseToken: null,
-    // Keep outgoing writers/readers and the deployed schema compatible until contraction.
-    legacyLeaseToken: null,
-    sandboxLeaseToken: null,
     leaseExpiresAt: null,
     maintenanceRunId: null,
     retryCount: sql`CASE WHEN ${hasNewerInput} THEN 0 ELSE ${retryCount} END`,
@@ -274,7 +269,6 @@ function maintenanceFailureValues(args: {
     lastMaintenanceRevision: args.payload.claimedRevision,
     lastMaintenanceBaseVersionId: args.payload.claimedBaseVersionId,
     lastMaintenanceSelectionDigest: args.payload.selectionDigest,
-    lastMaintenancePublicationVersionId: null,
     lastMaintenanceOutcome: "failed" as const,
     updatedAt: args.currentTime,
   };
