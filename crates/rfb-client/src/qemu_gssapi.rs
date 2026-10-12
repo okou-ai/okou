@@ -62,7 +62,8 @@ where
             {
                 return Err(Error::InvalidKerberosExchange);
             }
-            let (mut native, status) = kerberos_worker::open(
+            let online = selected.credentials.is_online();
+            let (mut native, mut status) = kerberos_worker::open(
                 &selected.private_root,
                 selected.credentials,
                 selected.ticket_policy,
@@ -71,6 +72,11 @@ where
             )
             .await
             .map_err(native_error)?;
+            // One eligible pre-auth renewal only. It never extends an already
+            // established GSS/RFB context or retries uncertain delivery.
+            if online && status.renewable && status.expires_at < deadline {
+                status = native.renew(caller).await.map_err(native_error)?;
+            }
             let mut expires_at = selected
                 .expires_at
                 .min(status.expires_at)

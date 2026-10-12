@@ -24,6 +24,7 @@ const reasonSchema = z.enum([
   "invalid_credential",
   "unsafe_destination",
   "network_failure",
+  "delivery_unknown",
   "protocol",
   "timed_out",
   "cancelled",
@@ -33,6 +34,9 @@ const reasonSchema = z.enum([
   "stale_geometry",
   "disconnected",
   "authentication_failed",
+  "kerberos_expired",
+  "kerberos_non_renewable",
+  "kerberos_renewal_exhausted",
 ]);
 export type VncReason =
   | z.infer<typeof reasonSchema>

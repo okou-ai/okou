@@ -10,11 +10,11 @@ use std::{
 
 use async_trait::async_trait;
 use httpmock::{Mock, MockServer};
-use runner_rpc_proto::stream::{Frame, Reader};
+use runner_rpc_proto::stream::{Frame, Reader, Writer};
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf},
-    net::TcpStream,
+    net::{TcpStream, UnixStream},
     sync::{Semaphore, mpsc},
 };
 use tokio_util::sync::CancellationToken;
@@ -33,6 +33,23 @@ const TOKEN: &str = "vm0_official_vnc-test";
 
 fn supported_profiles() -> Value {
     crate::test_fixtures::vnc::supported_profiles(false)
+}
+
+// A successful native bootstrap adds these three exact direct-only tuples.
+// Both capability states must retain the complete legacy request unchanged.
+fn optional_kerberos_request(
+    expected: Value,
+) -> impl Fn(&httpmock::HttpMockRequest) -> bool + Send + Sync + 'static {
+    let mut capable = expected.clone();
+    capable["supportedProfiles"].as_array_mut().unwrap().extend([
+        json!({"authMethod":"qemu_kerberos_ticket","securityType":"qemu_x509_gssapi","transportType":"direct","kdcTransportType":"none"}),
+        json!({"authMethod":"qemu_kerberos_keytab","securityType":"qemu_x509_gssapi","transportType":"direct","kdcTransportType":"direct"}),
+        json!({"authMethod":"qemu_kerberos_password","securityType":"qemu_x509_gssapi","transportType":"direct","kdcTransportType":"direct"}),
+    ]);
+    move |request| {
+        serde_json::from_slice::<Value>(request.body_ref())
+            .is_ok_and(|body| body == expected || body == capable)
+    }
 }
 
 pub(super) async fn bounded<T>(future: impl Future<Output = T>) -> T {
@@ -64,8 +81,8 @@ impl Network for TestNetwork {
     }
 }
 
-struct Stream {
-    stream: DuplexStream,
+struct Stream<S> {
+    stream: S,
     fail_output: bool,
     cancel_after_data: Option<CancellationToken>,
     header: Vec<u8>,
@@ -73,7 +90,7 @@ struct Stream {
     data: bool,
 }
 
-impl Stream {
+impl<S> Stream<S> {
     fn observe(&mut self, mut bytes: &[u8]) {
         if self.cancel_after_data.is_none() {
             return;
@@ -100,8 +117,8 @@ impl Stream {
         }
     }
 }
-impl sandbox::GuestRpcStream for Stream {}
-impl AsyncRead for Stream {
+impl<S: AsyncRead + AsyncWrite + Unpin + Send> sandbox::GuestRpcStream for Stream<S> {}
+impl<S: AsyncRead + Unpin> AsyncRead for Stream<S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -110,7 +127,7 @@ impl AsyncRead for Stream {
         Pin::new(&mut self.get_mut().stream).poll_read(cx, buf)
     }
 }
-impl AsyncWrite for Stream {
+impl<S: AsyncWrite + Unpin> AsyncWrite for Stream<S> {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -201,6 +218,24 @@ impl TestRun {
         self.open_options(false, true).await
     }
 
+    pub(super) async fn accept_socket(&self, host: UnixStream) {
+        self.incoming
+            .send(sandbox::AcceptedGuestRpc {
+                sandbox_id: "vnc-assigned-sandbox".into(),
+                stream: Box::new(Stream {
+                    stream: host,
+                    fail_output: false,
+                    cancel_after_data: None,
+                    header: Vec::with_capacity(4),
+                    remaining: 0,
+                    data: false,
+                }),
+                cancelled: self.lifecycle.clone(),
+            })
+            .await
+            .unwrap();
+    }
+
     async fn open_options(&self, cancel_after_data: bool, fail_output: bool) -> DuplexStream {
         let (guest, host) = tokio::io::duplex(64 * 1024);
         self.incoming
@@ -247,6 +282,7 @@ pub(super) async fn send(guest: &mut DuplexStream, request: &str) {
         .await
         .unwrap();
     guest.write_all(request.as_bytes()).await.unwrap();
+    Writer::input(&mut *guest).send(&Frame::End).await.unwrap();
     // No half-close: production Firecracker does not forward this as host EOF.
 }
 
@@ -356,7 +392,7 @@ impl Harness {
             let when = match run { Some(run) => when.path(format!("/api/runners/runs/{run}/vnc/resolve")), None => when.path_matches(r"^/api/runners/runs/[^/]+/vnc/resolve$") };
             when
                 .header("authorization", format!("Bearer {TOKEN}"))
-                .json_body(json!({"connectionId":connection,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":supported_profiles()}));
+                .is_true(optional_kerberos_request(json!({"connectionId":connection,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":supported_profiles()})));
             then.status(200).json_body(json!({"outcome":"resolved_transport","host":"vnc.example.test","port":5900,"generation":7,
                 "serverName":"vnc.example.test","transport":{"type":"direct"},
                 "authentication":{"method":"vnc_password","password":" secret "},
@@ -369,7 +405,7 @@ impl Harness {
             when.method("POST")
                 .path_matches(r"^/api/runners/runs/[^/]+/vnc/resolve$")
                 .header("authorization", format!("Bearer {TOKEN}"))
-                .json_body(json!({"connectionId":CONNECTION,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":supported_profiles()}));
+                .is_true(optional_kerberos_request(json!({"connectionId":CONNECTION,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":supported_profiles()})));
             then.status(200).json_body(json!({"outcome":"resolved_transport","host":"vnc.example.test","port":5900,"generation":7,
                 "serverName":"vnc.example.test","transport":{"type":"direct"},
                 "authentication":{"method":"username_password","username":PLAIN_USERNAME,"password":PLAIN_PASSWORD},
@@ -382,7 +418,7 @@ impl Harness {
             when.method("POST")
                 .path_matches(r"^/api/runners/runs/[^/]+/vnc/resolve$")
                 .header("authorization", format!("Bearer {TOKEN}"))
-                .json_body(json!({"connectionId":CONNECTION,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":supported_profiles()}));
+                .is_true(optional_kerberos_request(json!({"connectionId":CONNECTION,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":supported_profiles()})));
             then.status(200).json_body(response);
         }).await
     }

@@ -979,6 +979,64 @@ test("QEMU SCRAM creates only its explicit X509SASL pair and keeps its password 
   expect(document.body.textContent).not.toContain(" secret ");
 });
 
+test("Kerberos metadata can be read and its stored password replaced without revealing it", async () => {
+  const initiator = { realm: "EXAMPLE.INVALID", components: ["Alice"] };
+  const saved: VncCredentialResponse = {
+    ...credential,
+    name: "Kerberos login",
+    authMethod: "qemu_kerberos_password",
+    initiator,
+    revision: 5,
+    hosts: [],
+  };
+  const data = mockSettings({ connections: [], credentials: [saved] });
+  const requests: unknown[] = [];
+  context.mocks.api(vncCredentialsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    const updated = { ...saved, revision: 6 };
+    data.credentials = [updated];
+    return respond(200, updated);
+  });
+  await page();
+  click(getAction("radio", "Credentials"));
+  await screen.findByText(saved.name);
+  click(getAction("button", "Edit credential"));
+  const dialog = await screen.findByRole("dialog", { name: "Edit credential" });
+  expect(within(dialog).queryByLabelText("Password")).toBeNull();
+  await userEvent.click(
+    within(dialog).getByRole("checkbox", { name: "Replace authentication" }),
+  );
+  expect(within(dialog).getByLabelText("Initiator realm")).toHaveValue(
+    initiator.realm,
+  );
+  expect(within(dialog).getByLabelText("Initiator realm")).toHaveAttribute(
+    "readonly",
+  );
+  expect(within(dialog).getByLabelText("Initiator components")).toHaveValue(
+    "Alice",
+  );
+  const password = within(dialog).getByLabelText("Password");
+  expect(password).toHaveValue("");
+  await fill(password, "new-kerberos-secret");
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      expectedRevision: 5,
+      name: saved.name,
+      authentication: {
+        method: "qemu_kerberos_password",
+        initiator,
+        password: "new-kerberos-secret",
+      },
+    },
+  ]);
+  expect(password).toHaveValue("");
+  expect(document.body.textContent).not.toContain("new-kerberos-secret");
+});
+
 test("Profile selection filters credentials and clears incompatible choices", async () => {
   mockSettings({
     connections: [],

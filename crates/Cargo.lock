@@ -4346,6 +4346,8 @@ dependencies = [
  "hyper",
  "hyper-util",
  "ipnet",
+ "kerberos-credentials",
+ "kerberos-worker",
  "libc",
  "log",
  "nix",

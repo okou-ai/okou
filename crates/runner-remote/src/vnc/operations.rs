@@ -1,7 +1,7 @@
 use rfb_client::InputOutcome;
 use runner_rpc_proto::{
     Delivery, ErrorCode, Response,
-    stream::{Frame, MAX_DATA_BYTES, Writer},
+    stream::{Frame, MAX_DATA_BYTES, Reader, Writer},
 };
 use sandbox::GuestRpcStream;
 use serde::de::DeserializeOwned;
@@ -61,7 +61,7 @@ fn session_scope(scope: &Scope, session: &Session) -> Scope {
 impl Run {
     pub(crate) async fn dispatch(&self, request: crate::guest_rpc::Request) {
         let crate::guest_rpc::Request {
-            input,
+            mut input,
             lease,
             run: _,
             started,
@@ -70,8 +70,8 @@ impl Run {
             sandbox_cancelled,
             request,
         } = request;
-        let mut writer = Writer::responses(input);
         let Some(remaining) = request.remaining_ms.filter(|ms| *ms > 1000) else {
+            let mut writer = Writer::responses(input);
             let scope = Scope {
                 cancelled,
                 sandbox: sandbox_cancelled,
@@ -93,6 +93,26 @@ impl Run {
             deadline: deadline.min(started + Duration::from_millis(remaining.min(60_000)))
                 - Duration::from_secs(1),
         };
+        // Every VNC command has an empty input stream. Consume its explicit
+        // End before a fast terminal closes the socket with unread input and
+        // turns a valid result into a reset at the bundled streaming helper.
+        let end = scope.wait(Reader::input(&mut input).next()).await;
+        let mut writer = Writer::responses(input);
+        if !matches!(end, Ok(Ok(Some(Frame::End)))) {
+            let code = match end {
+                Err(Failure::TimedOut) => ErrorCode::TimedOut,
+                Err(_) => ErrorCode::Unavailable,
+                Ok(_) => ErrorCode::InvalidRequest,
+            };
+            let _ = scope
+                .terminal()
+                .wait(writer.send(&Frame::Control(Response::error(
+                    code,
+                    Delivery::NotDispatched,
+                ))))
+                .await;
+            return;
+        }
         let raw = request.params.get();
         match request.method.as_str() {
             "vnc.session.start" => {

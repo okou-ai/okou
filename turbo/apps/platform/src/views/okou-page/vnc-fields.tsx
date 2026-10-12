@@ -64,6 +64,11 @@ import {
 } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { isVncKerberosMethod } from "@okouai/api-contracts/contracts/vnc-kerberos";
+import {
+  KerberosCredentialInputs,
+  useKerberosProfileItems,
+} from "./vnc-kerberos-fields.tsx";
 
 // Fast feedback for literal destinations; the API remains authoritative for
 // canonicalization and all other host / route validation.
@@ -318,6 +323,19 @@ function VncSecurityProfileHelp({ profile }: { readonly profile: VncProfile }) {
   if (profile === "x509_none") {
     return <VncX509NoneWarning />;
   }
+  if (isVncKerberosMethod(profile)) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        {profile === "qemu_kerberos_ticket"
+          ? t(($) => {
+              return $.vnc.kerberos.offlineHelp;
+            })
+          : t(($) => {
+              return $.vnc.kerberos.onlineHelp;
+            })}
+      </p>
+    );
+  }
   if (
     profile === "client_certificate_none" ||
     profile === "client_certificate_vnc"
@@ -357,17 +375,12 @@ function VncSecurityProfileHelp({ profile }: { readonly profile: VncProfile }) {
   );
 }
 
-export function VncSecurityProfileField({
-  profile,
-  disabled,
-}: {
-  readonly profile: VncProfile;
-  readonly disabled: boolean;
-}) {
+function useVncSecurityProfileItems() {
   const { t } = useTranslation();
-  const chooseProfile = useSet(chooseVncProfile$);
   const rsaAesLabels = useRsaAesProfileLabels();
-  const profileItems = [
+  const kerberosItems = useKerberosProfileItems();
+  return [
+    ...kerberosItems,
     ...Object.keys(RSA_AES_PROFILES)
       .filter(isRsaAesProfile)
       .map((value) => {
@@ -437,6 +450,18 @@ export function VncSecurityProfileField({
       }),
     },
   ];
+}
+
+export function VncSecurityProfileField({
+  profile,
+  disabled,
+}: {
+  readonly profile: VncProfile;
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const chooseProfile = useSet(chooseVncProfile$);
+  const profileItems = useVncSecurityProfileItems();
   return (
     <>
       <label htmlFor="vnc-profile" className="text-sm">
@@ -455,6 +480,7 @@ export function VncSecurityProfileField({
             value !== "client_certificate_vnc" &&
             value !== "x509_plain" &&
             value !== "qemu_x509_sasl" &&
+            !(value !== null && isVncKerberosMethod(value)) &&
             value !== "apple_vnc_password" &&
             value !== "apple_dh" &&
             value !== "apple_srp" &&
@@ -472,13 +498,17 @@ export function VncSecurityProfileField({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {profileItems.map((item) => {
-            return (
-              <SelectItem key={item.value} value={item.value}>
-                {item.label}
-              </SelectItem>
-            );
-          })}
+          {profileItems
+            .filter((item) => {
+              return !isVncKerberosMethod(item.value) || item.value === profile;
+            })
+            .map((item) => {
+              return (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              );
+            })}
         </SelectContent>
       </Select>
       <VncSecurityProfileHelp profile={profile} />
@@ -877,7 +907,9 @@ function VncAuthenticationMethodSelector({
 }) {
   const { t } = useTranslation();
   const chooseProfile = useSet(chooseVncProfile$);
+  const kerberosItems = useKerberosProfileItems();
   const profileItems = [
+    ...kerberosItems,
     {
       value: "rsa_aes_ra2",
       label: t(($) => {
@@ -956,6 +988,7 @@ function VncAuthenticationMethodSelector({
             value !== "client_certificate_vnc" &&
             value !== "x509_plain" &&
             value !== "qemu_x509_sasl" &&
+            !(value !== null && isVncKerberosMethod(value)) &&
             value !== "apple_dh" &&
             value !== "apple_srp" &&
             value !== "apple_rsa_srp" &&
@@ -972,13 +1005,17 @@ function VncAuthenticationMethodSelector({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {profileItems.map((item) => {
-            return (
-              <SelectItem key={item.value} value={item.value}>
-                {item.label}
-              </SelectItem>
-            );
-          })}
+          {profileItems
+            .filter((item) => {
+              return !isVncKerberosMethod(item.value) || item.value === profile;
+            })
+            .map((item) => {
+              return (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              );
+            })}
         </SelectContent>
       </Select>
     </div>
@@ -991,6 +1028,23 @@ function VncAuthenticationMethod({
   readonly method: VncCredentialResponse["authMethod"];
 }) {
   const { t } = useTranslation();
+  if (isVncKerberosMethod(method)) {
+    return (
+      <p className="text-sm">
+        {method === "qemu_kerberos_ticket"
+          ? t(($) => {
+              return $.vnc.kerberos.ticket;
+            })
+          : method === "qemu_kerberos_keytab"
+            ? t(($) => {
+                return $.vnc.kerberos.keytab;
+              })
+            : t(($) => {
+                return $.vnc.kerberos.password;
+              })}
+      </p>
+    );
+  }
   if (method === "rsa_aes_password" || method === "rsa_aes_username_password") {
     return (
       <p className="text-sm">
@@ -1214,6 +1268,16 @@ function VncAuthenticationInputs({
   const certificate =
     method === "client_certificate" ||
     method === "client_certificate_vnc_password";
+  if (isVncKerberosMethod(method)) {
+    return (
+      <div key={method} className="grid gap-4">
+        <KerberosCredentialInputs credential={credential} method={method} />
+        {method === "qemu_kerberos_password" && (
+          <VncPasswordInput method={method} />
+        )}
+      </div>
+    );
+  }
   return (
     <div key={method} className="grid gap-4">
       {certificate && <VncClientCertificateInputs />}

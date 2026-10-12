@@ -52,7 +52,14 @@ const listHosts$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const result = await set(listRunVncHosts$, auth, signal);
   signal.throwIfAborted();
-  return result ? { status: 200 as const, body: result } : unavailable;
+  return result
+    ? {
+        status: 200 as const,
+        body: {
+          hosts: result.hosts,
+        },
+      }
+    : unavailable;
 });
 
 export const vncAccessRoutes: readonly RouteEntry[] = [

@@ -12,7 +12,7 @@ import { requireVncCapability } from "./validation";
 
 async function listVncHosts() {
   const client = initClient(vncHostsContract, await getClientConfig());
-  const result = await client.list();
+  const result = await client.list({});
   if (result.status === 200) {
     return {
       ...result,
