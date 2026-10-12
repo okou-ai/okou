@@ -163,12 +163,12 @@ test("repeated thread images and their lightbox share one resolved original", as
   ).resolves.toHaveAttribute("src", FIRST_URL);
 });
 
-test("downloads obtain a fresh credential without replacing the open image", async () => {
+test("an older API without downloadUrl remains downloadable without replacing the open image", async () => {
   mockPrivateImage();
   const downloads = context.mocks.browser.blobDownload();
   context.mocks.browser.requestCacheMode();
   context.mocks.http.get(`${R2_ORIGIN}/private/photo.png`, ({ request }) => {
-    expect(request.cache).toBe("default");
+    expect(request.cache).toBe("reload");
     return new URL(request.url).searchParams.get("X-Amz-Signature") === "next"
       ? HttpResponse.text("private image bytes")
       : new HttpResponse(null, { status: 403 });

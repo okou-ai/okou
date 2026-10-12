@@ -108,6 +108,32 @@ function mockSnapshotResources({
       });
     },
   );
+  context.mocks.api(
+    artifactReferencesContract.publicUrl,
+    ({ params, request, respond }) => {
+      expect(request.headers.has("authorization")).toBeFalsy();
+      const resource = resources[params.reference];
+      if (!resource) {
+        throw new Error(`Unexpected artifact reference: ${params.reference}`);
+      }
+      if (resource.status) {
+        return respond(resource.status, {
+          error: { code: "NOT_FOUND", message: "Artifact unavailable" },
+        });
+      }
+      return respond(200, {
+        url: resource.url,
+        downloadUrl: resource.downloadUrl,
+        expiresAt: "2099-01-01T00:00:00Z",
+        sharedThreadSnapshot: true,
+        preview: {
+          filename: resource.filename,
+          contentType: resource.contentType,
+          previewImageUrl: resource.previewImageUrl,
+        },
+      });
+    },
+  );
   return { site, video };
 }
 

@@ -107,11 +107,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
-  [FeatureSwitchKey.ComposerTaskChips]: {
-    maintainer: "bingjie@okou.ai",
-    description: "Lightweight chat task chips and contextual starting ideas",
-    enabled: true,
-  },
   [FeatureSwitchKey.ChatHomeCompliance]: {
     maintainer: "tongx@okou.ai",
     displayName: "Chat home compliance",
@@ -386,12 +381,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Mute chats to suppress unread indicators, push notifications and automatic unarchiving.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ComposerAddMenu]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Collapse the composer toolbar's attach, template and create workflow buttons into a single plus menu.",
-    enabled: true,
   },
   [FeatureSwitchKey.ComposerAnchoredSuggestions]: {
     maintainer: "ethan@okou.ai",

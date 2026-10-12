@@ -241,14 +241,19 @@ function createDownloadAnchor(
 async function fetchBlobForDownload(
   url: string,
   signal: AbortSignal,
-  cache: RequestCache,
 ): Promise<Blob | null> {
   const fetchUrl = publicAttachmentUrl(url);
   // The catch branch reports network/CORS failures without falling back to
   // cross-origin anchor navigation, which would open images instead.
   // eslint-disable-next-line no-restricted-syntax -- fetch/CORS failures should surface as download failures
   try {
-    const res = await fetchResource(fetchUrl, { cache, mode: "cors" }, signal);
+    // Preview elements can cache a response without CORS headers. A download
+    // must reach the server with Origin instead of consuming that response.
+    const res = await fetchResource(
+      fetchUrl,
+      { cache: "reload", mode: "cors" },
+      signal,
+    );
     if (!res.ok) {
       throw new Error(`fetch failed: ${String(res.status)}`);
     }
@@ -265,18 +270,17 @@ export async function downloadAttachmentUrl(
   signal: AbortSignal,
   filename: string,
   mode: "blob" | "native",
-  cache: RequestCache = "reload",
 ): Promise<void> {
   if (mode === "native") {
     signal.throwIfAborted();
-    // Generic files intentionally use native browser delivery. Previewable
-    // media keeps the blob path so a download cannot replace the chat page.
+    // Signed download URLs serve Content-Disposition: attachment, including
+    // previewable media for which cross-origin <a download> alone is ignored.
     const anchor = createDownloadAnchor(publicAttachmentUrl(url), filename);
     anchor.click();
     anchor.remove();
     return;
   }
-  const blob = await fetchBlobForDownload(url, signal, cache);
+  const blob = await fetchBlobForDownload(url, signal);
   if (blob !== null) {
     triggerBlobDownload(blob, filename, signal);
     return;

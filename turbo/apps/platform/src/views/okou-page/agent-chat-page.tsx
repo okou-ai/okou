@@ -21,7 +21,6 @@ import {
 
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatComposer } from "./chat-composer.tsx";
-import { StartCards } from "./start-cards.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
 import {
   ChatHomeCompliance,
@@ -415,26 +414,17 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
 function AgentComposerPage() {
   const currentChatAgentId = useLastResolved(currentChatAgentId$);
 
-  const pageSignal = useGet(pageSignal$);
   const user = useLastResolved(user$);
   const userFirstName =
     user === undefined ? undefined : (user.firstName ?? null);
 
   const composerSignals = useGet(agentChatComposerSignals$);
-  const taskChipsEnabled = useGet(composerSignals.taskChips.enabled$);
-  const setInput = useSet(composerSignals.draft.setDraftInput$);
-  const saveDraft = useSet(composerSignals.draft.save$);
   const taglineIndex = useGet(chatPageTaglineIndex$);
   const tagline = useTagline(userFirstName, taglineIndex);
   const animateGreeting = useGet(chatGreetingShouldAnimate$);
   const finishGreetingEntrance = useSet(finishChatGreetingEntrance$);
   const greetingIdentity = `${currentChatAgentId ?? "none"}:${tagline}`;
   const complianceVisible = useChatHomeComplianceVisible();
-
-  const handleInputChange = (value: string) => {
-    setInput(value);
-    detach(saveDraft(pageSignal), Reason.DomCallback);
-  };
 
   return (
     <div className="relative flex flex-1 flex-col min-h-0">
@@ -536,19 +526,8 @@ function AgentComposerPage() {
               The ordering the wrapper carried moved onto the section itself. */}
           <HomeTaskRecommendations agentId={currentChatAgentId} />
 
-          {/* Start cards are desktop-only. `hidden` rather than skipping the
-              render: a `display: none` wrapper leaves the flex flow, so the
-              phone column does not pay a `gap` for an empty box. */}
-          <div
-            className={
-              taskChipsEnabled ? "order-2 sm:order-none" : "hidden sm:block"
-            }
-          >
-            {taskChipsEnabled ? (
-              <ComposerTaskChips signals={composerSignals} />
-            ) : (
-              <StartCards onSelectPrompt={handleInputChange} />
-            )}
+          <div className="order-2 sm:order-none">
+            <ComposerTaskChips signals={composerSignals} />
           </div>
         </div>
       </main>

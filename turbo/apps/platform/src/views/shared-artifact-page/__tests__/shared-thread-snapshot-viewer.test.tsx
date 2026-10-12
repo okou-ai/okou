@@ -1,8 +1,8 @@
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
-import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
 import {
@@ -50,6 +50,7 @@ test.each([false, true])(
     context.mocks.api(artifactReferencesContract.publicUrl, ({ respond }) => {
       return respond(200, {
         url: IMAGE_URL,
+        downloadUrl: download ? DOWNLOAD_URL : `${DOWNLOAD_URL}-stale`,
         expiresAt: EXPIRES_AT,
         sharedThreadSnapshot: true,
         preview: { filename: "photo.png", contentType: "image/png" },
@@ -57,7 +58,8 @@ test.each([false, true])(
     });
     context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
       return respond(200, {
-        url: download ? DOWNLOAD_URL : IMAGE_URL,
+        url: IMAGE_URL,
+        downloadUrl: download ? DOWNLOAD_URL : `${DOWNLOAD_URL}-stale`,
         expiresAt: EXPIRES_AT,
         sharedThreadSnapshot: true,
         filename: "photo.png",
@@ -65,17 +67,6 @@ test.each([false, true])(
         target: { kind: "file", id: FILE_ID },
       });
     });
-    context.mocks.http.get(
-      `${R2_ORIGIN}/snapshots/photo.png`,
-      ({ request }) => {
-        return new URL(request.url).searchParams.get("X-Amz-Signature") ===
-          "download"
-          ? HttpResponse.text("snapshot image bytes", {
-              headers: { "Content-Type": "image/png" },
-            })
-          : new HttpResponse(null, { status: 403 });
-      },
-    );
     await setupPage({
       context,
       path: `${IMAGE_PATH}#detail`,
@@ -107,9 +98,8 @@ test.each([false, true])(
       expect(browser.downloads).toHaveLength(1);
     });
     expect(browser.downloads[0]?.filename).toBe("photo.png");
-    await expect(browser.downloads[0]?.blob?.text()).resolves.toBe(
-      "snapshot image bytes",
-    );
+    expect(browser.downloads[0]?.url).toBe(DOWNLOAD_URL);
+    expect(browser.downloads[0]?.blob).toBeNull();
     expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
       "src",
       `${IMAGE_URL}#detail`,
@@ -119,12 +109,20 @@ test.each([false, true])(
 
 test("an anonymous HTML snapshot keeps its temporary credential and slide fragment inside the viewer", async () => {
   const url = `https://ps-${"a".repeat(48)}.okou.app/`;
+  const browser = context.mocks.browser.blobDownload();
+  const downloadUrl = `${R2_ORIGIN}/snapshots/index.html?grant=attachment`;
   context.mocks.api(artifactReferencesContract.publicUrl, ({ respond }) => {
     return respond(200, {
       url,
+      downloadUrl,
       expiresAt: EXPIRES_AT,
       sharedThreadSnapshot: true,
       preview: { filename: "index.html", contentType: "text/html" },
+    });
+  });
+  context.mocks.api(artifactDownloadsContract.files, ({ respond }) => {
+    return respond(401, {
+      error: { code: "UNAUTHORIZED", message: "Authentication required" },
     });
   });
   await setupPage({
@@ -139,6 +137,18 @@ test("an anonymous HTML snapshot keeps its temporary credential and slide fragme
   expect(frame).toHaveAttribute("src", `${url}#slide-2`);
   expect(frame).toHaveAttribute("referrerpolicy", "origin");
   expect(frame).toHaveAttribute("sandbox", "allow-same-origin allow-scripts");
+  click(action("button", "Download options"));
+  await waitFor(() => {
+    expect(action("menuitem", "Download")).toBeInTheDocument();
+  });
+  click(action("menuitem", "Download"));
+  await waitFor(() => {
+    expect(browser.downloads[0]).toMatchObject({
+      url: downloadUrl,
+      filename: "index.html",
+      blob: null,
+    });
+  });
 });
 
 test("a snapshot pasted into an ordinary thread cannot expose source permissions even to its owner", async () => {

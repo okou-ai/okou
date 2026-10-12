@@ -14,6 +14,7 @@ import { settle } from "../utils";
 import { sharedThreadHostedSnapshotFile } from "../../lib/shared-thread-artifact";
 import type { SharedThreadArtifactReference } from "./artifact-reference.service";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
+import { resolveArtifactDownloadUrl$ } from "./artifact-download-url.service";
 import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { createHostedPreviewGrant$ } from "./private-hosted-preview.service";
 import { privateArtifactsBucket } from "./private-artifact-storage.service";
@@ -121,18 +122,17 @@ export const resolveSharedThreadArtifactReference$ = command(
     const { target, previewImageUrl } = snapshot;
     if (target.kind === "file") {
       const signingDate = nowDate();
-      const [preview, download] = await Promise.all([
+      const [preview, downloadUrl] = await Promise.all([
         set(
           resolveArtifactPreviewUrl$,
           { bucket: privateArtifactsBucket(), key: target.key, signingDate },
           signal,
         ),
         set(
-          resolveArtifactPreviewUrl$,
+          resolveArtifactDownloadUrl$,
           {
             bucket: privateArtifactsBucket(),
             key: target.key,
-            signingDate,
             filename: target.filename,
           },
           signal,
@@ -141,13 +141,7 @@ export const resolveSharedThreadArtifactReference$ = command(
       signal.throwIfAborted();
       return {
         ...preview,
-        expiresAt: new Date(
-          Math.min(
-            Date.parse(preview.expiresAt),
-            Date.parse(download.expiresAt),
-          ),
-        ).toISOString(),
-        downloadUrl: download.url,
+        downloadUrl,
         filename: target.filename,
         contentType: target.contentType,
         ...(previewImageUrl ? { previewImageUrl } : {}),
@@ -174,7 +168,11 @@ export const resolveSharedThreadArtifactReference$ = command(
         sharedThreadArtifactsBucket(),
         `shared-artifacts/${reference.publicBrand}/${target.snapshotId}/${target.id}${file.path}`,
         true,
-        { signingDate: nowDate(), filename },
+        {
+          signingDate: nowDate(),
+          filename,
+          responseCacheControl: "private, no-store",
+        },
       ),
     );
     signal.throwIfAborted();

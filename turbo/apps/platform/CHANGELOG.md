@@ -12,6 +12,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1013.0](https://github.com/okou-ai/okou/compare/app-v0.1012.0...app-v0.1013.0) (2026-10-12)
+
+
+### Features
+
+* **app:** add tailscale setup and ssh rebind ui ([#39180](https://github.com/okou-ai/okou/issues/39180)) ([3c78e70](https://github.com/okou-ai/okou/commit/3c78e70bf7fb76b23929ea87821881dd7457ead0))
+
+
+### Bug Fixes
+
+* **app:** align discord connection ui and remove redundant confirmation ([#39221](https://github.com/okou-ai/okou/issues/39221)) ([06619e5](https://github.com/okou-ai/okou/commit/06619e5eeefc224cb9345c7716f5ecbd611cac5b))
+* isolate chat card styles and use container layouts ([#39205](https://github.com/okou-ai/okou/issues/39205)) ([26e03d2](https://github.com/okou-ai/okou/commit/26e03d2ed9787237c1d2c0da7aec4b4e07ec895f))
+* **platform:** catch up chat events on every realtime refresh ([#38988](https://github.com/okou-ai/okou/issues/38988)) ([89bf6bf](https://github.com/okou-ai/okou/commit/89bf6bf56c43c455c4da492b85adf7310090efd0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.552.0
+    * @okouai/core bumped to 8.745.0
+
 ## [0.1012.0](https://github.com/okou-ai/okou/compare/app-v0.1011.0...app-v0.1012.0) (2026-10-12)
 
 

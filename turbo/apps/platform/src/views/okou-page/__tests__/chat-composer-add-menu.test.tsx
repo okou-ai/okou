@@ -2,7 +2,6 @@ import { HttpResponse } from "msw";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { uploadsContract } from "@okouai/api-contracts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 
 import {
@@ -20,9 +19,7 @@ import {
 
 const UPLOAD_URL = "https://uploads.test.okou.ai/composer-add-menu";
 
-async function setupComposer(
-  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>>,
-): Promise<HTMLElement> {
+async function setupComposer(): Promise<HTMLElement> {
   mockTemplateChat();
   context.mocks.api(uploadsContract.prepare, ({ body, respond }) => {
     return respond(200, {
@@ -38,7 +35,7 @@ async function setupComposer(
   context.mocks.http.put(UPLOAD_URL, () => {
     return new HttpResponse(null, { status: 200 });
   });
-  await setupPage({ context, path: `/chats/${THREAD_ID}`, featureSwitches });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
   return await findComposerEditor();
 }
 
@@ -71,30 +68,8 @@ function menuItem(menu: HTMLElement, label: string): HTMLElement {
   return item;
 }
 
-test("keeps separate attach and template buttons while the add menu is off", async () => {
-  const editor = await setupComposer({
-    [FeatureSwitchKey.ComposerAddMenu]: false,
-  });
-  const card = composerCard(editor);
-
-  expect(within(card).getByLabelText("Attach")).toBeVisible();
-  expect(within(card).getByLabelText("Template")).toBeVisible();
-  expect(within(card).queryByLabelText("Add")).toBeNull();
-});
-
 test("groups attach, template and import skills actions in the add menu", async () => {
-  const editor = await setupComposer({
-    [FeatureSwitchKey.ComposerAddMenu]: true,
-  });
-  const card = composerCard(editor);
-
-  expect(
-    queryAllByRoleFast("button", card).find((button) => {
-      return button.getAttribute("aria-label") === "Attach";
-    }),
-  ).toBeUndefined();
-  expect(within(card).queryByLabelText("Template")).toBeNull();
-
+  const editor = await setupComposer();
   const menu = await openAddMenu(editor);
   expect(menuItemLabels(menu)).toStrictEqual([
     "Attach",
@@ -104,9 +79,7 @@ test("groups attach, template and import skills actions in the add menu", async 
 });
 
 test("opens the import skills dialog from the add menu", async () => {
-  const editor = await setupComposer({
-    [FeatureSwitchKey.ComposerAddMenu]: true,
-  });
+  const editor = await setupComposer();
 
   const menu = await openAddMenu(editor);
   expect(menuItemLabels(menu)).toStrictEqual([
@@ -143,13 +116,8 @@ test("opens the import skills dialog from the add menu", async () => {
   ).toBeNull();
 });
 
-// The dialog used to be mounted by the toolbar button that the menu replaces.
-// Reaching it from the menu row proves it survived that button's removal, which
-// is also what keeps the slash panel and inline chip editing working.
-test("still reaches the template picker with its toolbar button gone", async () => {
-  const editor = await setupComposer({
-    [FeatureSwitchKey.ComposerAddMenu]: true,
-  });
+test("opens the template picker from the add menu", async () => {
+  const editor = await setupComposer();
   const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
   if (!template) {
     throw new Error("Expected a presentation template fixture");
@@ -170,9 +138,7 @@ test("still reaches the template picker with its toolbar button gone", async () 
 // pointer/keyboard activation needs Chromium on the deployed preview.
 // Selection must still attach the file after the menu has closed.
 test("attaches the chosen file from the attach row", async () => {
-  const editor = await setupComposer({
-    [FeatureSwitchKey.ComposerAddMenu]: true,
-  });
+  const editor = await setupComposer();
   const menu = await openAddMenu(editor);
   const input = document.querySelector('input[type="file"]');
   if (!(input instanceof HTMLInputElement)) {

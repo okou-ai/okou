@@ -2206,35 +2206,6 @@
       "unread": "Não lida",
       "unreadOnly": "Não lida"
     },
-    "startCards": {
-      "kinds": {
-        "illustration": {
-          "description": "Crie um visual finalizado no estilo que você quiser",
-          "prompt": "Crie uma ilustração no estilo que eu descrever.",
-          "title": "Criar uma ilustração"
-        },
-        "slides": {
-          "description": "Transforme um tema ou documento em um deck",
-          "prompt": "Crie uma apresentação a partir de um tema ou documento que eu fornecer.",
-          "title": "Criar uma apresentação"
-        },
-        "website": {
-          "description": "Crie e publique uma página compartilhável",
-          "prompt": "Crie e publique uma página web que eu possa compartilhar.",
-          "title": "Criar um site"
-        }
-      },
-      "openTemplatesAria": "Explorar modelos",
-      "startWithPrompt": "Criar",
-      "subscription": {
-        "claude": "Claude",
-        "codex": "Codex",
-        "description": "Com seu plano Claude Max 5x/20x ou Codex",
-        "openSettingsAria": "Abrir configurações de modelos",
-        "title": "Execute tarefas de graça"
-      },
-      "templates": "Modelos"
-    },
     "subscriptionReset": {
       "account": "{{provider}} · {{account}} · {{plan}}",
       "alreadyRedeemed": "Esta solicitação de redefinição já foi resgatada.",

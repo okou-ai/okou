@@ -1,7 +1,6 @@
 node_modules
 .pnpm-store/
 dist
-apps/desktop/native/computer-use-helper/.build/
 packages/sandbox-scripts/src/dist/bundled.ts
 pnpm-lock.yaml
 coverage

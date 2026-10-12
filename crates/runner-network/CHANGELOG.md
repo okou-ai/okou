@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.27](https://github.com/okou-ai/okou/compare/runner-network-v0.2.26...runner-network-v0.2.27) (2026-10-12)
+
+
+### Bug Fixes
+
+* **runner:** parse signed procfs process groups ([#39226](https://github.com/okou-ai/okou/issues/39226)) ([0e8e339](https://github.com/okou-ai/okou/commit/0e8e339a5ecd84af0c9d9652a88374c1a719fc07))
+
 ## [0.2.26](https://github.com/okou-ai/okou/compare/runner-network-v0.2.25...runner-network-v0.2.26) (2026-10-12)
 
 ## [0.2.25](https://github.com/okou-ai/okou/compare/runner-network-v0.2.24...runner-network-v0.2.25) (2026-10-12)
