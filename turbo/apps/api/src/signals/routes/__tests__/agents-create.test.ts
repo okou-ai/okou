@@ -19,7 +19,7 @@ import {
   createAuthOrgAgentsBddApi,
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
-import { createRouteMocks } from "./helpers/route-test";
+import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { agentsRoutes } from "../agents";
 
 const context = testContext();
@@ -54,6 +54,19 @@ function agentsByIdClient() {
   return setupApp({ context, routes: agentsRoutes })(agentsByIdContract);
 }
 
+const trackCreatedAgent = createFixtureTracker(
+  async (agent: AgentsFixture & { readonly agentId: string }) => {
+    mocks.clerk.session(agent.userId, agent.orgId);
+    await accept(
+      agentsByIdClient().delete({
+        headers: authHeaders(),
+        params: { id: agent.agentId },
+      }),
+      [204],
+    );
+  },
+);
+
 describe("POST /api/agents", () => {
   it.each([
     ["displayName", 257],
@@ -73,6 +86,9 @@ describe("POST /api/agents", () => {
           body: { displayName: "Surviving agent", visibility: "public" },
         }),
         [201],
+      );
+      await trackCreatedAgent(
+        Promise.resolve({ ...fixture, agentId: existing.body.agentId }),
       );
       await expect(
         agentsClient().create({
@@ -107,6 +123,9 @@ describe("POST /api/agents", () => {
     const created = await accept(
       agentsClient().create({ headers: authHeaders(), body: {} }),
       [201],
+    );
+    await trackCreatedAgent(
+      Promise.resolve({ ...fixture, agentId: created.body.agentId }),
     );
     expect(created.body).toMatchObject({
       isDefaultAgent: false,
@@ -157,12 +176,15 @@ describe("POST /api/agents", () => {
       },
     });
     for (let index = 0; index < 6; index += 1) {
-      await accept(
+      const created = await accept(
         agentsClient().create({
           headers: authHeaders(),
           body: { visibility: "public", displayName: `Existing ${index}` },
         }),
         [201],
+      );
+      await trackCreatedAgent(
+        Promise.resolve({ ...fixture, agentId: created.body.agentId }),
       );
     }
     blockUpload = true;
@@ -183,6 +205,9 @@ describe("POST /api/agents", () => {
         body: { visibility: "public", displayName: "Last slot" },
       }),
       [201],
+    );
+    await trackCreatedAgent(
+      Promise.resolve({ ...fixture, agentId: winner.body.agentId }),
     );
     released.resolve();
     const rejected = await accept(pending, [409]);
