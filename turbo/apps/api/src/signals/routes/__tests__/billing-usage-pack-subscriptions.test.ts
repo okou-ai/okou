@@ -11730,6 +11730,67 @@ describe("usage pack allocation management", () => {
     ).not.toHaveBeenCalled();
   });
 
+  it.each(["active", "canceled", "member"] as const)(
+    "preserves ordinary invitation body validation and the %s guard",
+    async (guard) => {
+      const api = createBddApi(context);
+      const actor = api.user();
+      await api.completeOnboarding(actor);
+      if (guard === "member") {
+        mocks.clerk.session(actor.userId, actor.orgId, "org:member");
+      } else {
+        await publicPlanLifecycle(context, actor).update(guard);
+      }
+      const response = await accept(
+        setupApp({ context, routes: orgInviteRoutes })(
+          orgInviteContract,
+        ).invite({
+          headers: { authorization: "Bearer clerk-session" },
+          body: { email: "not-an-email", role: "member" },
+        }),
+        [400, 403],
+      );
+      expect(response.status).toBe(guard === "member" ? 403 : 400);
+      expect(response.body.error.code).toBe(
+        guard === "member" ? "FORBIDDEN" : "BAD_REQUEST",
+      );
+      if (guard === "member") {
+        expect(response.body.error.message).toBe("Access denied");
+      }
+    },
+  );
+
+  it("records a successful ordinary invitation as a public pending reward claim", async () => {
+    const api = createBddApi(context);
+    const actor = api.user();
+    await api.completeOnboarding(actor);
+    const before = await readGetStartedStatus(context, actor);
+    expect(
+      before.quests.find((quest) => {
+        return quest.key === "invite";
+      }),
+    ).toMatchObject({ claimedCount: 0, pendingCount: 0 });
+    context.mocks.clerk.organizations.createOrganizationInvitation.mockResolvedValueOnce(
+      { id: `inv_${randomUUID()}` },
+    );
+    const invited = await accept(
+      setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).invite({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { email: "ordinary-invite@example.test", role: "member" },
+      }),
+      [200],
+    );
+    expect(invited.body.message).toBe(
+      "Invitation sent to ordinary-invite@example.test",
+    );
+    const after = await readGetStartedStatus(context, actor);
+    expect(
+      after.quests.find((quest) => {
+        return quest.key === "invite";
+      }),
+    ).toMatchObject({ claimedCount: 0, pendingCount: 1 });
+  });
+
   it("reads the current plan before validating invitation confirmation bodies in each request", async () => {
     const api = createBddApi(context);
     const actor = api.user();
