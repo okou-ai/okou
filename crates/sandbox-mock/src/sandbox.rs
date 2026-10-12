@@ -1119,6 +1119,14 @@ impl Sandbox for MockSandbox {
                 .exec
                 .guest_state_restore_call_notify
                 .notify_waiters();
+            let gate = overrides
+                .exec
+                .guest_state_restore_gate
+                .lock_ignoring_poison()
+                .clone();
+            if let Some(gate) = gate {
+                gate.enter_and_wait().await;
+            }
         }
         let result = self
             .exec_results

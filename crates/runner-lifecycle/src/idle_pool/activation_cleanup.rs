@@ -21,8 +21,12 @@ use crate::resource_budget::BudgetLease;
 use runner_types::ids::RunId;
 
 use super::entry::IdleSandboxMetadata;
+use super::inventory_retirement::CapturedBacking;
 use super::retirement::{Allowance, IdleRetirementEnvelope};
 use super::{ReservedIdleSandbox, ReusableIdleSandbox};
+
+mod speculative;
+pub use speculative::{GuardedSpeculativeIdleOwner, SpeculativeActivationState};
 
 /// Conservative physical state, never a proof of reusable inventory.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -60,6 +64,9 @@ pub struct IdleActivationOwner {
     admission: Option<(HostMemoryOperations, IdleRetirementEnvelope)>,
     cleanup_completed: bool,
     cleanup_error: Option<String>,
+    // Preserve an already captured speculative generation across cleanup
+    // conversion; a later provider generation is never a substitute.
+    original_backing: Option<CapturedBacking>,
 }
 
 impl IdleActivationOwner {
@@ -67,7 +74,11 @@ impl IdleActivationOwner {
     /// are not ordinary parked reservations and are a separate composition.
     pub fn new(reservation: ReservedIdleSandbox) -> Result<Self, Box<ReservedIdleSandbox>> {
         let entry = reservation.into_parked_entry_preserving_owner()?;
-        Ok(Self {
+        Ok(Self::from_entry(entry))
+    }
+
+    pub(super) fn from_entry(entry: super::IdleEntry) -> Self {
+        Self {
             sandbox: Some(entry.resources.sandbox),
             factory: entry.resources.factory,
             metadata: entry.metadata,
@@ -81,7 +92,8 @@ impl IdleActivationOwner {
             admission: None,
             cleanup_completed: false,
             cleanup_error: None,
-        })
+            original_backing: entry.retirement_backing,
+        }
     }
 
     pub fn sandbox_id(&self) -> SandboxId {
@@ -172,14 +184,24 @@ impl IdleActivationOwner {
             return Err(MemoryOperationError::OwnershipInvariant);
         }
         let result = AssertUnwindSafe(async {
+            if let Some(backing) = &self.original_backing {
+                validate_backing(self.sandbox.as_deref(), &backing.process, backing.identity)?;
+            }
             if self.coverage.is_none() {
-                let backing = self
-                    .sandbox
-                    .as_ref()
-                    .ok_or(MemoryOperationError::Consumed)?
-                    .backing_process()
-                    .ok_or(MemoryOperationError::MissingBacking)?;
-                let identity = backing.identity();
+                // Coverage must share the original captured generation. A
+                // provider change after validation cannot replace that fence.
+                let (backing, identity) = if let Some(backing) = &self.original_backing {
+                    (backing.process.clone(), backing.identity)
+                } else {
+                    let backing = self
+                        .sandbox
+                        .as_ref()
+                        .ok_or(MemoryOperationError::Consumed)?
+                        .backing_process()
+                        .ok_or(MemoryOperationError::MissingBacking)?;
+                    let identity = backing.identity();
+                    (backing, identity)
+                };
                 let live = operations.request(MemoryOperationPlan::Retire {
                     growth_bytes: envelope.live_growth_bytes,
                     backing: backing.clone(),

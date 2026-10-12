@@ -72,6 +72,40 @@ impl IdlePoolIncoming {
         self.entry.as_ref().map(|entry| entry.metadata.sandbox_id)
     }
 
+    /// Validate the original incoming generation outside pool locks after
+    /// observation/lock waits. Never replace its captured proof with a new one.
+    pub fn validate_captured_backing(&self) -> Result<(), MemoryOperationError> {
+        std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let entry = self.entry.as_ref().ok_or(MemoryOperationError::Consumed)?;
+            let captured = entry
+                .retirement_backing
+                .as_ref()
+                .ok_or(MemoryOperationError::MissingBacking)?;
+            let current = entry
+                .resources
+                .sandbox
+                .backing_process()
+                .ok_or(MemoryOperationError::MissingBacking)?;
+            if entry.resources.sandbox.id() != entry.metadata.sandbox_id.to_string()
+                || current.identity() != captured.identity
+                || captured.process.identity() != captured.identity
+            {
+                return Err(MemoryOperationError::OwnershipInvariant);
+            }
+            Ok(())
+        }))
+        .unwrap_or(Err(MemoryOperationError::ProducerLost))
+    }
+
+    /// A rejected speculative repark retains this borrowed capsule until an
+    /// explicit required-cleanup decision. No provider work or await occurs.
+    pub fn take_required_cleanup_owner(
+        &mut self,
+    ) -> Result<super::IdleActivationOwner, MemoryOperationError> {
+        let entry = self.entry.take().ok_or(MemoryOperationError::Consumed)?;
+        Ok(super::IdleActivationOwner::from_entry(entry))
+    }
+
     /// Pure full-shape check for a blank replenishment owner.
     pub fn is_compatible_blank(
         &self,

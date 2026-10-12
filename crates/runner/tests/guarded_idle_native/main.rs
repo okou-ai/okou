@@ -34,6 +34,8 @@ use tokio::sync::Notify;
 
 type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
+const MISSING_GUEST_TIMEZONE: &str = "Etc/okou-test-missing-zone";
+
 #[derive(Clone, Copy, Debug)]
 enum NativeScope {
     Batch(IdleRetirementBatchScope),
@@ -42,6 +44,7 @@ enum NativeScope {
     Restore,
     Aged,
     CallerOwned,
+    SpeculativeGuestFailure,
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -77,6 +80,7 @@ async fn exercise_factories(
         NativeScope::Restore,
         NativeScope::Aged,
         NativeScope::CallerOwned,
+        NativeScope::SpeculativeGuestFailure,
     ] {
         for restored in [false, true] {
             // Never share a production Runner directory or another invocation's cache.
@@ -187,6 +191,7 @@ async fn exercise_retirement(
         .with_sandbox_id(sandbox_id)
         .with_profile_name(fixture::PROFILE)
         .with_rootfs_hash(&rootfs_hash)
+        .with_history_generation_run_id(run_id)
         .with_home_promotion(promotion)
         .build();
     if let Err(error) = candidate.capture_retirement_backing() {
@@ -211,8 +216,10 @@ async fn exercise_retirement(
     let pool = Arc::new(tokio::sync::Mutex::new(pool));
     let retirement: TestResult<_> = async {
         match scope {
-            NativeScope::CallerOwned => {
-                use runner_lifecycle::idle_pool::{ActivationCleanupOutcome, IdleActivationOwner};
+            NativeScope::CallerOwned | NativeScope::SpeculativeGuestFailure => {
+                use runner_lifecycle::idle_pool::{
+                    ActivationCleanupOutcome, GuardedSpeculativeIdleOwner, IdleActivationOwner,
+                };
                 // A successor cancelled before business activation still owns
                 // its exact parked reservation and mandatory terminal saving.
                 let reservation = pool
@@ -220,10 +227,41 @@ async fn exercise_retirement(
                     .await
                     .take_reserved(&reuse_key)
                     .ok_or_else(|| io::Error::other("native caller reservation disappeared"))?;
-                let mut owner = Some(
+                let mut owner = Some(if matches!(scope, NativeScope::SpeculativeGuestFailure) {
+                    let mut speculative =
+                        GuardedSpeculativeIdleOwner::new(reservation).map_err(|_| {
+                            io::Error::other("native speculation received running handoff")
+                        })?;
+                    // Exercise a real fixed guest restore failure after unpark,
+                    // before any business process. The deliberately absent zone
+                    // must fail required timezone verification in the Executor.
+                    let result = speculative
+                        .prepare(RunId::new_v4(), |sandbox, _, _| {
+                            Box::pin(async move {
+                                runner_executor::executor::restore_guest_state_with_timezone(
+                                    sandbox,
+                                    MISSING_GUEST_TIMEZONE,
+                                )
+                                .await
+                                .map_err(|e| e.to_string())
+                            })
+                        })
+                        .await;
+                    let expected_error = runner_executor::ExecutorError::Config(format!(
+                        "guest timezone {MISSING_GUEST_TIMEZONE:?} is unavailable: /usr/share/zoneinfo/{MISSING_GUEST_TIMEZONE} is not a file"
+                    ))
+                    .to_string();
+                    if result.as_ref().err() != Some(&expected_error) {
+                        return Err(io::Error::other(format!(
+                            "native speculative guest restore expected {expected_error:?}, got {result:?}"
+                        ))
+                        .into());
+                    }
+                    speculative.take_cleanup_owner()?
+                } else {
                     IdleActivationOwner::new(reservation)
-                        .map_err(|_| io::Error::other("native caller received running handoff"))?,
-                );
+                        .map_err(|_| io::Error::other("native caller received running handoff"))?
+                });
                 let mut task = tracker
                     .retire_activation_owner(
                         &mut owner,

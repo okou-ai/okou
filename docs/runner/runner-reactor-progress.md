@@ -80,6 +80,37 @@ a completion observer cannot release that lease. Accepting runtimes must retain
 these owners through their explicit reconciliation boundary before dependent
 teardown.
 
+The supplied-policy speculative component keeps a
+`GuardedSpeculativeAdmission` outside preparation/rollback observation futures.
+Its actual provider claim is accepted by the joined Supervisor tracker before
+guest preparation; dropping observation cannot cancel that claim or discard a
+returned completion authorization. Rollback waits for the provider's returned
+result; a lost producer is uncertainty, not rejection. The existing
+`JobProvider` contract returns `None` for both an unavailable job and a request
+error. That is no returned executable claim, not proof that the remote job was
+never claimed; production reconciliation must preserve that provider boundary.
+Unpark, fixed Executor guest
+restore and rollback repark borrow the original owner. They preserve the full
+lease, required home/private context, original history generation and parked
+timestamp. Returned failures, provider panic and cancelled waits cannot restore
+uncertain state as generic parked inventory.
+
+The committed prepared-guest marker requires a usable predicted timezone that
+matches the returned claim. A changed or unknown intent clears that marker so
+the existing Executor performs guest preparation against the actual context
+before business execution. Original idle metadata remains available to rollback.
+
+A successful rollback uses real reuse preparation against the original runtime
+directory and guarded pool insertion. The incoming original backing generation
+is validated outside the pool lock after admission/lock waits, followed by
+synchronous fenced acceptance or refusal. A replacement blank retains its
+separate physical allowance until actual cleanup; restoring the exact owner does
+not wait for the old blank's exit. Rejected incoming ownership remains caller
+owned for an explicit retry or conversion to shared required cleanup. Accepted
+replacement/required cleanup is adopted before status publication. Production
+assembly must supply the same host authority and measured preparation/cleanup
+coverage; these component APIs do not enable the P4 production policy.
+
 ## Routine GC and promotion capacity
 
 Updated runners serialize routine maintenance with

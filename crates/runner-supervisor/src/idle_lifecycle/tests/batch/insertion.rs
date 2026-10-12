@@ -52,7 +52,7 @@ impl BatchFixture {
         let id = SandboxId::new_v4();
         let (exit, backing) = MockBackingProcess::channel();
         let mut candidate = ParkedIdleCandidate::blank(
-            Box::new(MockSandbox::new("insertion-blank").with_backing_process(backing)),
+            Box::new(MockSandbox::new(id.to_string()).with_backing_process(backing)),
             Arc::new(Box::new(MockSandboxFactory::new())),
             ResourceBudget::try_reserve_lease(&self.budget, 2, 2048).unwrap(),
             id,
@@ -127,7 +127,7 @@ async fn blank_incoming_at_capacity_cannot_displace_an_exact_owner() {
     let id = SandboxId::new_v4();
     let (exit, backing) = MockBackingProcess::channel();
     let candidate = ParkedIdleCandidate::blank(
-        Box::new(MockSandbox::new("new-blank").with_backing_process(backing)),
+        Box::new(MockSandbox::new(id.to_string()).with_backing_process(backing)),
         Arc::new(Box::new(MockSandboxFactory::new())),
         ResourceBudget::try_reserve_lease(&fixture.budget, 2, 2048).unwrap(),
         id,
