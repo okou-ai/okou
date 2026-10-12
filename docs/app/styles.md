@@ -769,6 +769,27 @@ radius. Connector-action and mail-draft cards use the same token. Their content
 uses a 16px horizontal inset; vertical spacing stays with each card's layout.
 Selected and disabled states may still tint or attenuate the neutral stroke.
 
+Embedded cards own their typography. `MarkdownFrame` wraps the generated body
+in a `display: contents` scope root marked `data-slot="markdown"`; the vendored
+Markdown stylesheet and its theme adapter live in
+`@scope ([data-slot="markdown"]) to ([data-markdown-ui])`. Tailwind inlines the
+pinned vendor import inside that scope, before the adapter, without changing
+the vendor artifact.
+An action slot or media preview marks its UI root with `data-markdown-ui` and
+ends the surrounding prose scope. A paragraph containing an embedded preview
+keeps its own prose styling, including adjacent links and inline code.
+A separate Markdown frame inside a card can still start its own scope. Theme
+selectors read the frame's `data-color-mode` within that scope, rather than
+depending on ancestors outside it. Keep normal theme/font inheritance;
+do not reset every property on card descendants.
+
+Each Markdown card slot is also a query container. Action layouts measure that
+available width, including beside a sidebar, rather than the browser viewport.
+Connector/account, permission, bank access and upgrade actions switch to their
+compact horizontal frames at 640px. The browser input card retains its own
+520px breakpoint and reserved heights. At a fixed width, loading and settled
+states must keep the same mounted outer frame.
+
 Keep the component boundary with the behavior. Mail-draft cards own loading,
 error, reconnect, deleted and selected states, and actionable drafts retain a
 native `button`; connector actions have a separate state and confirmation flow.
@@ -1301,11 +1322,13 @@ The Markdown block treatment applies to elements the Markdown library renders.
 `MarkdownEventBody` takes a `chatBubble` prop and composes the whole treatment
 onto the frame it already owns:
 
-```
-[&_:is(p,[data-slot=markdown-card])]:my-2! [&>*:first-child]:mt-0!
-[&>*:last-child]:mb-0! [&_blockquote]:py-2!
-[&_blockquote>*:first-child]:mt-0! [&_blockquote>*:last-child]:mb-0!
-[&_hr]:hidden
+```text
+[&_:is(p,[data-slot=markdown-card]):not(:where([data-markdown-ui]_*))]:my-2!
+[&>*:first-child]:mt-0! [&>*:last-child]:mb-0!
+[&_blockquote:not(:where([data-markdown-ui]_*))]:py-2!
+[&_blockquote:not(:where([data-markdown-ui]_*))>*:first-child]:mt-0!
+[&_blockquote:not(:where([data-markdown-ui]_*))>*:last-child]:mb-0!
+[&_hr:not(:where([data-markdown-ui]_*))]:hidden
 ```
 
 Every margin there is important, and the four resets exist only because of it.
@@ -1320,10 +1343,8 @@ restating them at the same tier is what keeps the frame's own edge paragraphs
 flush.
 
 The vendored `blockquote > :first-child` / `:last-child` pair is a different
-case, and source order decides it: the Markdown chunk's stylesheet reaches the
-bundle through a static `router.tsx` import chain that `main.tsx` evaluates
-before its own `./css/index.css`, so Rollup emits the vendored rules first and
-the App block wins every tie.
+case, and source order decides it: the scoped vendor import precedes the App
+adapter in `index.css`, so the App block wins every tie.
 
 A blockquote here declares `padding: 0 1em` and a left border only, so a first
 or last child's block margin has no block padding or border to stop it and
@@ -1340,8 +1361,10 @@ a non-important `[&_blockquote]:py-2` compiles and matches but changes nothing.
 `[&_hr]:hidden` needs no important, because nothing unlayered declares `display`
 on a Markdown rule.
 
-The card slot is addressed through `data-slot="markdown-card"`, which carries no
-styles, and `data-slot="chat-user-message"` identifies the user bubble for the
+The card slot is addressed through `data-slot="markdown-card"`. The paragraph,
+quote and rule variants exclude descendants of `data-markdown-ui` so they
+cannot restyle the card's contents. The slot itself keeps the surrounding message spacing.
+`data-slot="chat-user-message"` identifies the user bubble for the
 attachment-preview test.
 
 Asking by name narrows the contract on purpose, the way the nav chrome above

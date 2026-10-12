@@ -198,6 +198,7 @@ function AttachmentAnchorChip({
 
   return (
     <a
+      data-markdown-ui
       href={publicUrl}
       data-testid={`attachment-preview-${kind}`}
       onClick={(event) => {
@@ -293,6 +294,7 @@ export function SitePreviewCard({
 }) {
   return (
     <a
+      data-markdown-ui
       href={href}
       data-testid={testId}
       onClick={onClick}

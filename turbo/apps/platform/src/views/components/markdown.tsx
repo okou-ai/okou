@@ -33,11 +33,13 @@ import {
  * flushes those inner margins and `py-2` puts the bubble's 8px where a quote
  * actually shows it. See vm0-ai/vm0#34278.
  *
- * The card slot is addressed through `data-slot` rather than a class, which is
- * the only handle the element has.
+ * The card slot keeps the message's block spacing. `data-markdown-ui` marks
+ * embedded UI so descendant rules leave its paragraphs, quotes, and rules to
+ * the owning component. `:where` keeps those exclusions from outranking the
+ * frame's first/last-child spacing resets.
  */
 const CHAT_BUBBLE_MARKDOWN_CLASS =
-  "[&_:is(p,[data-slot=markdown-card])]:my-2! [&>*:first-child]:mt-0! [&>*:last-child]:mb-0! [&_blockquote]:py-2! [&_blockquote>*:first-child]:mt-0! [&_blockquote>*:last-child]:mb-0! [&_hr]:hidden";
+  "[&_:is(p,[data-slot=markdown-card]):not(:where([data-markdown-ui]_*))]:my-2! [&>*:first-child]:mt-0! [&>*:last-child]:mb-0! [&_blockquote:not(:where([data-markdown-ui]_*))]:py-2! [&_blockquote:not(:where([data-markdown-ui]_*))>*:first-child]:mt-0! [&_blockquote:not(:where([data-markdown-ui]_*))>*:last-child]:mb-0! [&_hr:not(:where([data-markdown-ui]_*))]:hidden";
 
 interface MarkdownProps {
   readonly source: string;
