@@ -70,22 +70,22 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("keeps artifact previews off for staff and external users until explicitly enabled", () => {
-    for (const context of [
-      {},
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-      { orgId: "external-org" },
-    ]) {
+  it("enables artifact previews for staff and honors explicit overrides", () => {
+    for (const [context, enabled] of [
+      [{}, false],
+      [{ orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }, true],
+      [{ orgId: "external-org" }, false],
+    ] as const) {
       expect(
         getAllFeatureStates(context)[FeatureSwitchKey.ArtifactPreviews],
-      ).toBe(false);
-      for (const enabled of [true, false]) {
+      ).toBe(enabled);
+      for (const override of [true, false]) {
         expect(
           isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, {
             ...context,
-            overrides: { [FeatureSwitchKey.ArtifactPreviews]: enabled },
+            overrides: { [FeatureSwitchKey.ArtifactPreviews]: override },
           }),
-        ).toBe(enabled);
+        ).toBe(override);
       }
     }
   });
