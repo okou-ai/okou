@@ -27,6 +27,7 @@ if args[0] == "stop":
         try:
             tool_pid = json.loads(output.read_text()).get("toolPid")
         except json.JSONDecodeError:
+            # Real Pi stdout is an event stream, not this fixture's optional tool record.
             pass
     try:
         pidfd = os.pidfd_open(task["pid"])
@@ -42,6 +43,7 @@ if args[0] == "stop":
         try:
             os.killpg(tool_pid, signal.SIGKILL)
         except ProcessLookupError:
+            # Runtime cancellation may already have collected the published fixture tool.
             pass
     (root / (args[1] + ".stopped")).touch()
     if mode == "replace-on-stop":
