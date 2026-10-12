@@ -269,14 +269,20 @@ jobs:
         run: .github/scripts/check-release-please-workspace-coverage.sh
 
       - name: Run workflow static checks
+        shell: bash
         run: |
           shopt -s nullglob
           script_files=(
-            .github/actions/report-memory-peak/*.sh
+            .github/actions/*/*.sh
             .github/scripts/*.sh
+            .github/scripts/runner-binary-build/*.sh
             .github/scripts/tests/*.sh
           )
-          bash -n "${script_files[@]}"
+          for script in "${script_files[@]}"; do
+            bash -n "$script"
+          done
+          # Syntax checks cover every file in the owned directories above.
+          # ShellCheck keeps an explicit allowlist, with source-aware checks below.
           shellcheck \
             .github/scripts/build-okou-desktop-artifact.sh \
             .github/scripts/cancel-superseded-merge-group-runs.sh \
@@ -377,6 +383,7 @@ jobs:
           shellcheck crates/kerberos-worker/native/build.sh crates/kerberos-worker/native/build-dependencies.sh \
             .github/scripts/tests/kerberos-native-cache-test.sh .github/scripts/tests/kerberos-native-cache-workflow-test.sh \
             .github/scripts/tests/crates-parallel-checks-workflow-test.sh
+          shellcheck -x -P .github/scripts/runner-binary-build .github/scripts/runner-binary-build/*.sh
           shellcheck -x -P .github/scripts .github/scripts/runner-binary-github.sh .github/scripts/tests/runner-binary-github-test.sh
           shellcheck -x -P .github/scripts .github/scripts/runner-image-architecture.sh .github/scripts/tests/runner-image-architecture-test.sh
           shellcheck -x -P .github/scripts .github/scripts/wait-runner-image.sh
