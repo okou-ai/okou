@@ -24,14 +24,21 @@ pub(super) async fn bounded<T>(future: impl Future<Output = T>) -> T {
         .unwrap()
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum SocketClosure {
+    Eof,
+    Reset,
+}
+
 pub(super) struct Http {
     pub(super) address: SocketAddr,
+    peer: &'static str,
     response: CancellationToken,
     requested: Arc<tokio::sync::Notify>,
     eof: Arc<AtomicBool>,
     reset: Arc<AtomicBool>,
     body: Arc<Mutex<Option<serde_json::Value>>>,
-    task: tokio::task::JoinHandle<()>,
+    task: tokio::task::JoinHandle<Result<(), hyper::Error>>,
 }
 
 impl Http {
@@ -120,17 +127,18 @@ impl Http {
                 reset: socket_reset,
             });
             if http1 {
-                let _ = hyper::server::conn::http1::Builder::new()
+                hyper::server::conn::http1::Builder::new()
                     .serve_connection(socket, service)
-                    .await;
+                    .await
             } else {
-                let _ = http2::Builder::new(TokioExecutor::new())
+                http2::Builder::new(TokioExecutor::new())
                     .serve_connection(socket, service)
-                    .await;
+                    .await
             }
         });
         Self {
             address,
+            peer: path,
             response,
             requested,
             eof,
@@ -143,6 +151,10 @@ impl Http {
     pub(super) async fn requested(&self) {
         bounded(self.requested.notified()).await;
     }
+    pub(super) fn named(mut self, peer: &'static str) -> Self {
+        self.peer = peer;
+        self
+    }
     pub(super) fn reply(&self) {
         self.response.cancel();
     }
@@ -152,18 +164,33 @@ impl Http {
     pub(super) fn body(&self) -> serde_json::Value {
         self.body.lock().unwrap().clone().unwrap()
     }
-    pub(super) async fn finish_closed(self) {
+    pub(super) async fn finish_closed(self) -> SocketClosure {
         self.response.cancel();
-        bounded(self.task).await.unwrap();
+        let server = bounded(self.task).await.unwrap();
+        let eof = self.eof.load(Ordering::Acquire);
+        let reset = self.reset.load(Ordering::Acquire);
         assert!(
-            self.eof.load(Ordering::Acquire) || self.reset.load(Ordering::Acquire),
-            "actual peer observed native socket EOF/reset"
+            eof || reset,
+            "{} at {}: expected socket EOF/reset; eof={eof}, reset={reset}, server={server:?}",
+            self.peer,
+            self.address,
         );
+        if reset {
+            SocketClosure::Reset
+        } else {
+            SocketClosure::Eof
+        }
     }
     pub(super) async fn finish(self) {
         self.response.cancel();
-        bounded(self.task).await.unwrap();
-        assert!(self.eof.load(Ordering::Acquire));
+        let server = bounded(self.task).await.unwrap();
+        let eof = self.eof.load(Ordering::Acquire);
+        let reset = self.reset.load(Ordering::Acquire);
+        assert!(
+            eof,
+            "{} at {}: expected socket EOF; eof={eof}, reset={reset}, server={server:?}",
+            self.peer, self.address,
+        );
     }
 }
 
