@@ -2,14 +2,18 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { command } from "ccstate";
-import { and, eq, isNotNull, lte } from "drizzle-orm";
+import { and, eq, exists, isNotNull, lte } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import {
+  appendCanonicalChatEventsSql,
+  chatEventCommandResultSchema,
+  type PreparedChatEventRow,
+} from "./chat-event-append.service";
 
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { runTimeBudgetEventIdForRun } from "./assistant-event-id";
-import { chatEventInsertSql } from "./chat-event.service";
 import { notifyRunningChatRunOfPendingInput$ } from "./chat-thread-queue-drain.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 
@@ -79,15 +83,11 @@ const persistRunTimeBudgetInput$ = command(
   ): Promise<boolean> => {
     const db = set(writeDb$);
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0133; new non-billing transactions are prohibited.
-    const inserted = await db.transaction(async (tx) => {
-      // The run row lock and running recheck serialize against completion and
-      // timeout, which expire pending budget input before the run ends.
-      const [run] = await tx
-        .select({
-          chatThreadId: agentRuns.chatThreadId,
-          agentId: agents.id,
-        })
+    // Keep the existing run lock and running recheck inside the append's input.
+    // A terminal winner excludes the input before any sequence is reserved.
+    const eligibleRun = exists(
+      new QueryBuilder()
+        .select({ id: agentRuns.id })
         .from(agentRuns)
         .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
         .innerJoin(agents, eq(agents.id, chatThreads.agentId))
@@ -101,39 +101,30 @@ const persistRunTimeBudgetInput$ = command(
           ),
         )
         .for("update", { of: agentRuns })
-        .limit(1);
-      if (!run?.chatThreadId) {
-        return false;
-      }
-
-      const inserted =
-        parseRawRows(
-          chatEventCommandResultSchema,
-          await tx.execute(
-            chatEventInsertSql(
-              {
-                id: runTimeBudgetEventIdForRun(args.candidate.runId),
-                chatThreadId: run.chatThreadId,
-                eventType: "input.budget",
-                runId: null,
-                userMessage: createUserMessageDocument({
-                  text: RUN_TIME_BUDGET_MESSAGE,
-                }),
-                agentRunContext: {
-                  sourceRunId: args.candidate.runId,
-                  sourceChatThreadId: run.chatThreadId,
-                  sourceAgentId: run.agentId,
-                },
-                createdAt: args.createdAt,
-              },
-              "id",
-            ),
-          ),
-        )[0] ?? null;
-      return inserted !== null;
-    });
+        .limit(1),
+    );
+    const event: PreparedChatEventRow = {
+      id: runTimeBudgetEventIdForRun(args.candidate.runId),
+      chatThreadId: args.candidate.chatThreadId,
+      eventType: "input.budget",
+      runId: null,
+      payload: {
+        userMessage: createUserMessageDocument({
+          text: RUN_TIME_BUDGET_MESSAGE,
+        }),
+      },
+      contextType: "agent_run",
+      contextId: args.candidate.runId,
+      createdAt: args.createdAt,
+    };
+    const inserted = parseRawRows(
+      chatEventCommandResultSchema,
+      await db.execute(
+        appendCanonicalChatEventsSql([event], "id", eligibleRun),
+      ),
+    );
     signal.throwIfAborted();
-    return inserted;
+    return inserted.length !== 0;
   },
 );
 
