@@ -89,6 +89,7 @@ import type {
 } from "./official-workflow-reconciliation.types";
 import {
   buildOfficialAutomationPatch,
+  legacyResultEmailEnabled,
   officialAutomationRestorePatch,
   refreshOfficialAutomationPatch,
   resolveOfficialWorkflowBlueprintForReconciliation,
@@ -1875,7 +1876,7 @@ function createInput(
             blueprintKey: resolved.blueprint.key,
             appliedFingerprint: resolved.blueprint.fingerprint,
             parameterBindings: resolved.bindings,
-            resultEmailEnabled: resolved.blueprint.runtime.resultEmail,
+            resultEmailEnabled: legacyResultEmailEnabled(resolved.blueprint),
             automationId: options.automationId,
             installationState: "installed" as const,
             intendedEnabled: options.intendedEnabled ?? false,
@@ -2847,7 +2848,7 @@ function dormantMaterializationOwnershipArgs(
     blueprintKey: args.blueprint.key,
     fingerprint: args.blueprint.fingerprint,
     activeDefinitionOnly: args.activeDefinitionOnly,
-    resultEmailEnabled: args.blueprint.runtime.resultEmail,
+    resultEmailEnabled: legacyResultEmailEnabled(args.blueprint),
     ...materialization,
   };
 }

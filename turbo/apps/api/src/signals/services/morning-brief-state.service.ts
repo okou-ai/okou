@@ -62,8 +62,7 @@ type MorningBriefInconsistency =
   | "missing-automation"
   | "multiple-automations"
   | "unexpected-schedule"
-  | "unreconciled-installation"
-  | "missing-result-email-setting";
+  | "unreconciled-installation";
 
 interface MorningBriefStateBase {
   readonly owner: MorningBriefMemberIdentity;
@@ -249,7 +248,6 @@ const loadMorningBriefAutomationState$ = command(
         scheduleType: workflowAutomations.scheduleType,
         blueprintKey: workflowAutomations.officialBlueprintKey,
         reconciliationStatus: workflowAutomations.officialReconciliationStatus,
-        resultEmailEnabled: workflowAutomations.officialResultEmailEnabled,
       })
       .from(workflowAutomations)
       .where(
@@ -276,10 +274,6 @@ const loadMorningBriefAutomationState$ = command(
     }
     if (automation.reconciliationStatus !== "current") {
       return "unreconciled-installation";
-    }
-    // The revision may use completion mail or Agent mail; either is ready.
-    if (automation.resultEmailEnabled === null) {
-      return "missing-result-email-setting";
     }
     return {
       id: automation.id,

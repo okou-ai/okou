@@ -1,14 +1,13 @@
 import { createHash } from "node:crypto";
 
 import {
-  OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
+  OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
   officialWorkflowBlueprintKeySchema,
   officialWorkflowSourceCatalogSchema,
-  type OfficialWorkflowAcceptedBlueprint,
   type OfficialWorkflowCatalogDiagnostic,
-  type OfficialWorkflowDefinitionRevisionPayload,
   type OfficialWorkflowInstallationParameter,
   type OfficialWorkflowParameterReference,
+  type OfficialWorkflowPublishedDefinitionRevisionPayload,
   type OfficialWorkflowSourceCatalog,
   type OfficialWorkflowSourceDefinition,
   type OfficialWorkflowTemplateJsonValue,
@@ -28,7 +27,7 @@ export const OFFICIAL_WORKFLOW_DEFINITION_MANIFEST_PATH =
 
 interface ValidatedActiveDefinition {
   readonly source: ActiveSourceDefinition;
-  readonly revisionPayload: OfficialWorkflowDefinitionRevisionPayload;
+  readonly revisionPayload: OfficialWorkflowPublishedDefinitionRevisionPayload;
 }
 
 export interface ValidatedOfficialWorkflowCatalog {
@@ -51,6 +50,8 @@ type ActiveSourceDefinition = Extract<
   { readonly lifecycle: "active" }
 >;
 type SourceBlueprint = ActiveSourceDefinition["blueprints"][number];
+type PublishedBlueprint =
+  OfficialWorkflowPublishedDefinitionRevisionPayload["blueprints"][number];
 type JsonObject = Readonly<Record<string, unknown>>;
 
 function isJsonObject(value: unknown): value is JsonObject {
@@ -504,9 +505,7 @@ function scheduleConfigurationIsValid(value: unknown): boolean {
   return "ok" in next && next.ok !== null;
 }
 
-function canonicalizeBlueprint(
-  blueprint: SourceBlueprint,
-): OfficialWorkflowAcceptedBlueprint {
+function canonicalizeBlueprint(blueprint: SourceBlueprint): PublishedBlueprint {
   const parameters = [...blueprint.parameters].sort((left, right) => {
     return compareStrings(left.key, right.key);
   });
@@ -746,7 +745,7 @@ function canonicalizeActiveDefinition(
     },
   );
   const revision = officialWorkflowFingerprint({
-    schemaVersion: OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
+    schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
     name: definition.name,
     workflow,
     blueprints: definitionBlueprints,
@@ -758,7 +757,7 @@ function canonicalizeActiveDefinition(
       blueprints: definitionBlueprints,
     },
     revisionPayload: {
-      schemaVersion: OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
+      schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
       name: definition.name,
       revision,
       workflow,

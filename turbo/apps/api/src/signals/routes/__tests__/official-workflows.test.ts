@@ -21,7 +21,7 @@ import {
 import { logsListContract } from "@okouai/api-contracts/contracts/logs";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import {
-  OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
+  OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
   type OfficialWorkflowBlueprint,
   type OfficialWorkflowSourceCatalog,
   type OfficialWorkflowSourceDefinition,
@@ -145,7 +145,7 @@ function catalog(
   definitions: OfficialWorkflowSourceCatalog["definitions"],
 ): OfficialWorkflowSourceCatalog {
   return {
-    schemaVersion: OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
+    schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
     definitions,
   };
 }

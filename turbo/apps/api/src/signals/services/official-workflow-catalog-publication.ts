@@ -1,10 +1,12 @@
-import type {
-  OfficialWorkflowAcceptedDefinition,
-  OfficialWorkflowArtifactReference,
-  OfficialWorkflowCatalogDiagnostic,
-  OfficialWorkflowCatalogReleasePayload,
-  OfficialWorkflowCatalogSyncResponse,
-  OfficialWorkflowDefinitionRevisionPayload,
+import {
+  OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
+  type OfficialWorkflowAcceptedDefinition,
+  type OfficialWorkflowArtifactReference,
+  type OfficialWorkflowCatalogDiagnostic,
+  type OfficialWorkflowCatalogReleasePayload,
+  type OfficialWorkflowCatalogSyncResponse,
+  type OfficialWorkflowDefinitionRevisionPayload,
+  type OfficialWorkflowPublishedCatalogReleasePayload,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import {
@@ -47,7 +49,7 @@ export interface PreparedOfficialWorkflowDefinition {
 type CandidateReleaseResult =
   | {
       readonly kind: "valid";
-      readonly payload: OfficialWorkflowCatalogReleasePayload;
+      readonly payload: OfficialWorkflowPublishedCatalogReleasePayload;
     }
   | {
       readonly kind: "invalid";
@@ -56,7 +58,7 @@ type CandidateReleaseResult =
 
 export function releaseDiagnostics(
   catalog: ValidatedOfficialWorkflowCatalog,
-  previous: AcceptedOfficialWorkflowCatalog | null,
+  previous: OfficialWorkflowCatalogReleasePayload | null,
 ): readonly OfficialWorkflowCatalogDiagnostic[] {
   const diagnostics: OfficialWorkflowCatalogDiagnostic[] = [];
   const sourceByName = new Map(
@@ -64,7 +66,7 @@ export function releaseDiagnostics(
       return [definition.name, definition] as const;
     }),
   );
-  for (const previousDefinition of previous?.payload.definitions ?? []) {
+  for (const previousDefinition of previous?.definitions ?? []) {
     if (!sourceByName.has(previousDefinition.name)) {
       diagnostics.push({
         code: "missing-released-definition",
@@ -74,7 +76,7 @@ export function releaseDiagnostics(
     }
   }
   const previousNames = new Set(
-    previous?.payload.definitions.map((definition) => {
+    previous?.definitions.map((definition) => {
       return definition.name;
     }) ?? [],
   );
@@ -95,7 +97,7 @@ export function releaseDiagnostics(
 
 function buildCandidateRelease(
   catalog: ValidatedOfficialWorkflowCatalog,
-  previous: AcceptedOfficialWorkflowCatalog | null,
+  previous: OfficialWorkflowPublishedCatalogReleasePayload | null,
   preparedByName: ReadonlyMap<string, PreparedOfficialWorkflowDefinition>,
 ): CandidateReleaseResult {
   const diagnostics = releaseDiagnostics(catalog, previous);
@@ -103,11 +105,12 @@ function buildCandidateRelease(
     return { kind: "invalid", diagnostics };
   }
   const previousByName = new Map(
-    previous?.payload.definitions.map((definition) => {
+    previous?.definitions.map((definition) => {
       return [definition.name, definition] as const;
     }) ?? [],
   );
-  const definitions: OfficialWorkflowAcceptedDefinition[] = [];
+  const definitions: OfficialWorkflowPublishedCatalogReleasePayload["definitions"] =
+    [];
   for (const sourceDefinition of catalog.source.definitions) {
     const previousDefinition = previousByName.get(sourceDefinition.name);
     if (sourceDefinition.lifecycle === "retired") {
@@ -124,7 +127,11 @@ function buildCandidateRelease(
       continue;
     }
     const prepared = preparedByName.get(sourceDefinition.name);
-    if (!prepared) {
+    if (
+      !prepared ||
+      prepared.definition.schemaVersion !==
+        OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION
+    ) {
       throw new OfficialWorkflowCatalogRegistrationError(sourceDefinition.name);
     }
     const releasedBlueprintKeys = new Set(
@@ -223,10 +230,27 @@ export function catalogPublicationPlan(
       readonly payload: OfficialWorkflowCatalogReleasePayload;
     } {
   const currentReleaseId = current?.releaseId ?? null;
+  const previous = current?.payload ?? null;
+  if (
+    previous !== null &&
+    previous.schemaVersion !==
+      OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION
+  ) {
+    // Readers treat older catalogs as absent, so this one came from a newer
+    // writer. During a mixed deployment or rollback this writer must not
+    // replace it with its own version; supported readers keep serving it.
+    return {
+      outcome: "rejected" as const,
+      releaseId: currentReleaseId,
+      diagnostics: [
+        { code: "activation-conflict" as const, path: ["catalog"] },
+      ],
+    };
+  }
   const stale = currentReleaseId !== input.observedReleaseId;
   const candidate = buildCandidateRelease(
     input.catalog,
-    current,
+    previous,
     input.preparedByName,
   );
   if (candidate.kind === "invalid") {

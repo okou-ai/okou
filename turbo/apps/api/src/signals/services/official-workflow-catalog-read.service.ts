@@ -1,5 +1,4 @@
 import {
-  OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
   officialWorkflowAcceptedRevisionSchema,
   officialWorkflowCatalogReleasePayloadSchema,
   officialWorkflowDefinitionRevisionPayloadSchema,
@@ -19,6 +18,13 @@ import { and, asc, eq } from "drizzle-orm";
 import { db$ } from "../external/db";
 
 export const OFFICIAL_WORKFLOW_CATALOG_AUTHORITY = "official" as const;
+
+/**
+ * Schema v1 predates every supported reader: its accepted catalog reads as
+ * absent so the writer republishes, and its retired revisions are not
+ * enumerated. Supported versions parse strictly; any other version throws.
+ */
+const OLDEST_SUPPORTED_CATALOG_SCHEMA_VERSION = 2;
 
 export interface AcceptedOfficialWorkflowCatalog {
   readonly releaseId: string;
@@ -96,7 +102,7 @@ export function acceptedCatalogFromRow(
   }
   if (
     officialWorkflowPayloadSchemaVersion(row.payload) <
-    OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION
+    OLDEST_SUPPORTED_CATALOG_SCHEMA_VERSION
   ) {
     return null;
   }
@@ -181,7 +187,7 @@ export const readAcceptedOfficialWorkflowRevision$ = command(
   },
 );
 
-export const readAllCurrentSchemaOfficialWorkflowRevisions$ = command(
+export const readAllSupportedOfficialWorkflowRevisions$ = command(
   async (
     { get },
     signal: AbortSignal,
@@ -228,8 +234,8 @@ export const readAllCurrentSchemaOfficialWorkflowRevisions$ = command(
     signal.throwIfAborted();
     return rows.flatMap((row) => {
       if (
-        officialWorkflowPayloadSchemaVersion(row.payload) !==
-        OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION
+        officialWorkflowPayloadSchemaVersion(row.payload) <
+        OLDEST_SUPPORTED_CATALOG_SCHEMA_VERSION
       ) {
         return [];
       }

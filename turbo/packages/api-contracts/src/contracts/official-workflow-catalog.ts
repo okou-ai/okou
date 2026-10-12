@@ -19,7 +19,12 @@ export type {
   OfficialWorkflowBlueprintBindings,
 } from "./official-workflow-bindings";
 
-export const OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION = 2 as const;
+/**
+ * The only schema version the source catalog and publication writer emit.
+ * Persisted readers support more versions than this; publishing a newer
+ * version is a separate writer change after its readers serve.
+ */
+export const OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION = 2 as const;
 
 export const officialWorkflowLifecycleSchema = z.enum(["active", "retired"]);
 export type OfficialWorkflowLifecycle = z.infer<
@@ -171,11 +176,16 @@ export type OfficialWorkflowRuntimeSettings = z.infer<
   typeof officialWorkflowRuntimeSettingsSchema
 >;
 
+const officialWorkflowBlueprintShape = {
+  key: officialWorkflowBlueprintKeySchema,
+  parameters: z.array(officialWorkflowInstallationParameterSchema),
+  desiredState: officialWorkflowBlueprintDesiredStateSchema,
+};
+
+/** Schema v2 source Blueprint: its runtime settings are required. */
 export const officialWorkflowBlueprintSchema = z
   .object({
-    key: officialWorkflowBlueprintKeySchema,
-    parameters: z.array(officialWorkflowInstallationParameterSchema),
-    desiredState: officialWorkflowBlueprintDesiredStateSchema,
+    ...officialWorkflowBlueprintShape,
     runtime: officialWorkflowRuntimeSettingsSchema,
   })
   .strict();
@@ -245,7 +255,9 @@ export type OfficialWorkflowSourceDefinition = z.infer<
 
 export const officialWorkflowSourceCatalogSchema = z
   .object({
-    schemaVersion: z.literal(OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION),
+    schemaVersion: z.literal(
+      OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
+    ),
     definitions: z.array(officialWorkflowSourceDefinitionSchema),
   })
   .strict();
@@ -266,48 +278,118 @@ export type OfficialWorkflowArtifactReference = z.infer<
   typeof officialWorkflowArtifactReferenceSchema
 >;
 
-export const officialWorkflowAcceptedBlueprintSchema =
+// Accepted catalog and revision payloads are immutable once persisted. Each
+// supported schema version keeps its original required fields; a payload is
+// parsed only by the schema its own `schemaVersion` names.
+
+const officialWorkflowAcceptedBlueprintV2Schema =
   officialWorkflowBlueprintSchema.extend({ fingerprint: fingerprintSchema });
+
+/** Schema v3 Blueprints carry no runtime settings or platform completion mail. */
+const officialWorkflowAcceptedBlueprintV3Schema = z
+  .object({ ...officialWorkflowBlueprintShape, fingerprint: fingerprintSchema })
+  .strict();
+
+/** An accepted Blueprint read from either supported schema version. */
+export const officialWorkflowAcceptedBlueprintSchema = z.union([
+  officialWorkflowAcceptedBlueprintV2Schema,
+  officialWorkflowAcceptedBlueprintV3Schema,
+]);
 export type OfficialWorkflowAcceptedBlueprint = z.infer<
   typeof officialWorkflowAcceptedBlueprintSchema
 >;
 
-export const officialWorkflowDefinitionRevisionPayloadSchema = z
+const officialWorkflowDefinitionRevisionPayloadShape = {
+  name: workflowNameSchema,
+  revision: fingerprintSchema,
+  workflow: officialWorkflowExecutableSchema,
+};
+
+const officialWorkflowDefinitionRevisionPayloadV2Schema = z
   .object({
-    schemaVersion: z.literal(OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION),
-    name: workflowNameSchema,
-    revision: fingerprintSchema,
-    workflow: officialWorkflowExecutableSchema,
-    blueprints: z.array(officialWorkflowAcceptedBlueprintSchema),
+    schemaVersion: z.literal(2),
+    ...officialWorkflowDefinitionRevisionPayloadShape,
+    blueprints: z.array(officialWorkflowAcceptedBlueprintV2Schema),
   })
   .strict();
+
+const officialWorkflowDefinitionRevisionPayloadV3Schema = z
+  .object({
+    schemaVersion: z.literal(3),
+    ...officialWorkflowDefinitionRevisionPayloadShape,
+    blueprints: z.array(officialWorkflowAcceptedBlueprintV3Schema),
+  })
+  .strict();
+
+export const officialWorkflowDefinitionRevisionPayloadSchema =
+  z.discriminatedUnion("schemaVersion", [
+    officialWorkflowDefinitionRevisionPayloadV2Schema,
+    officialWorkflowDefinitionRevisionPayloadV3Schema,
+  ]);
 export type OfficialWorkflowDefinitionRevisionPayload = z.infer<
   typeof officialWorkflowDefinitionRevisionPayloadSchema
 >;
 
-export const officialWorkflowAcceptedDefinitionSchema = z
-  .object({
-    name: workflowNameSchema,
-    lifecycle: officialWorkflowLifecycleSchema,
-    revision: fingerprintSchema,
-    artifact: officialWorkflowArtifactReferenceSchema,
-    blueprints: z.array(officialWorkflowAcceptedBlueprintSchema),
-    releasedBlueprintKeys: z.array(officialWorkflowBlueprintKeySchema),
-    presentation: officialWorkflowPresentationSchema,
-  })
-  .strict();
-export type OfficialWorkflowAcceptedDefinition = z.infer<
-  typeof officialWorkflowAcceptedDefinitionSchema
->;
+const officialWorkflowAcceptedDefinitionShape = {
+  name: workflowNameSchema,
+  lifecycle: officialWorkflowLifecycleSchema,
+  revision: fingerprintSchema,
+  artifact: officialWorkflowArtifactReferenceSchema,
+  releasedBlueprintKeys: z.array(officialWorkflowBlueprintKeySchema),
+  presentation: officialWorkflowPresentationSchema,
+};
 
-export const officialWorkflowCatalogReleasePayloadSchema = z
+const officialWorkflowAcceptedDefinitionV2Schema = z
   .object({
-    schemaVersion: z.literal(OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION),
-    definitions: z.array(officialWorkflowAcceptedDefinitionSchema),
+    ...officialWorkflowAcceptedDefinitionShape,
+    blueprints: z.array(officialWorkflowAcceptedBlueprintV2Schema),
   })
   .strict();
+
+const officialWorkflowAcceptedDefinitionV3Schema = z
+  .object({
+    ...officialWorkflowAcceptedDefinitionShape,
+    blueprints: z.array(officialWorkflowAcceptedBlueprintV3Schema),
+  })
+  .strict();
+
+export type OfficialWorkflowAcceptedDefinition =
+  | z.infer<typeof officialWorkflowAcceptedDefinitionV2Schema>
+  | z.infer<typeof officialWorkflowAcceptedDefinitionV3Schema>;
+
+export const officialWorkflowCatalogReleasePayloadSchema = z.discriminatedUnion(
+  "schemaVersion",
+  [
+    z
+      .object({
+        schemaVersion: z.literal(2),
+        definitions: z.array(officialWorkflowAcceptedDefinitionV2Schema),
+      })
+      .strict(),
+    z
+      .object({
+        schemaVersion: z.literal(3),
+        definitions: z.array(officialWorkflowAcceptedDefinitionV3Schema),
+      })
+      .strict(),
+  ],
+);
 export type OfficialWorkflowCatalogReleasePayload = z.infer<
   typeof officialWorkflowCatalogReleasePayloadSchema
+>;
+
+/** The accepted payload shapes the publication writer emits. */
+export type OfficialWorkflowPublishedCatalogReleasePayload = Extract<
+  OfficialWorkflowCatalogReleasePayload,
+  {
+    readonly schemaVersion: typeof OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION;
+  }
+>;
+export type OfficialWorkflowPublishedDefinitionRevisionPayload = Extract<
+  OfficialWorkflowDefinitionRevisionPayload,
+  {
+    readonly schemaVersion: typeof OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION;
+  }
 >;
 
 export const officialWorkflowCatalogDiagnosticCodeSchema = z.enum([

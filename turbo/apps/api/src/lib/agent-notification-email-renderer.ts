@@ -1,11 +1,8 @@
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { escapeHtml } from "markdown-it/lib/common/utils.mjs";
 import { renderEmailLayout } from "../signals/services/email-layout";
-import {
-  markdownRenderer,
-  plainTextFromHtml,
-  renderOfficialAutomationResultEmail,
-} from "../signals/services/official-automation-result-email-renderer";
+import { markdownRenderer, plainTextFromHtml } from "./email-markdown";
+import { renderMorningBriefEmail } from "./morning-brief-email-renderer";
 
 export function renderAgentNotificationEmail(
   props: {
@@ -45,7 +42,7 @@ export function renderAgentMorningBriefEmail(
   },
   unsubscribeUrl: string,
 ) {
-  const { html, text } = renderOfficialAutomationResultEmail(
+  const { html, text } = renderMorningBriefEmail(
     {
       title: props.subject,
       resultText: props.text,

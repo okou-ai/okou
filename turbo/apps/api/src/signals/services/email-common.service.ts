@@ -41,7 +41,7 @@ import { webUrl } from "../../lib/web-url";
 import { clerk$, type ClerkClient } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { db$, writeDb$, type Db } from "../external/db";
-import { renderOfficialAutomationResultEmail } from "./official-automation-result-email-renderer";
+import { renderMorningBriefEmail } from "../../lib/morning-brief-email-renderer";
 import { renderCreditLowBalanceEmail } from "./credit-low-balance-email-renderer";
 import { renderDataExportReadyEmail } from "./data-export-ready-email-renderer";
 
@@ -352,7 +352,7 @@ function renderTemplate(
       });
     }
     case "official-automation-result": {
-      const rendered = renderOfficialAutomationResultEmail(
+      const rendered = renderMorningBriefEmail(
         template.props,
         officialAutomationResultUnsubscribeUrl(headers),
       );
