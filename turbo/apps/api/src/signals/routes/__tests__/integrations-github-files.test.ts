@@ -333,7 +333,7 @@ describe("GitHub file integration routes", () => {
           caption: "Daily report",
         },
         headers: {
-          authorization: `Bearer ${await claimedToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
+          authorization: `Bearer ${run.token}`,
         },
       }),
       [200],

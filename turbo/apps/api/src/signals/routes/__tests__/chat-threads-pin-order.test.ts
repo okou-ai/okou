@@ -167,9 +167,11 @@ describe("pinned thread ordering", () => {
     if (events.status !== 200) {
       throw new Error("Missing events");
     }
-    const order = replayChatThreadEvents([], events.body.events).sort(
-      comparePinnedThreads,
-    );
+    const order = replayChatThreadEvents([], events.body.events)
+      .filter((thread) => {
+        return thread.pinnedAt !== null;
+      })
+      .sort(comparePinnedThreads);
     expect(
       order.map((thread) => {
         return thread.id;

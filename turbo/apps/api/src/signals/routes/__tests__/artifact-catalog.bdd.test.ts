@@ -21,7 +21,11 @@ import {
 } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { hostedTextFile } from "./helpers/api-bdd-host-files";
+import {
+  hostedTextFile,
+  installHostedUploadTransport,
+  uploadHostedTextFiles,
+} from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -44,6 +48,7 @@ interface CatalogActor {
   readonly actor: ApiTestUser;
   readonly agentId: string;
   readonly runnerGroup: string;
+  readonly storage: ReturnType<typeof chatCallbacks.acceptChatObjectStorage>;
 }
 
 /**
@@ -63,7 +68,7 @@ async function catalogActor(
   actor: ApiTestUser = bdd.user(),
   options: { readonly bootstrapOrg?: boolean } = {},
 ): Promise<CatalogActor> {
-  chatCallbacks.acceptChatObjectStorage();
+  const storage = chatCallbacks.acceptChatObjectStorage();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
@@ -84,7 +89,7 @@ async function catalogActor(
     displayName,
     visibility: "private",
   });
-  return { actor, agentId: agent.agentId, runnerGroup };
+  return { actor, agentId: agent.agentId, runnerGroup, storage };
 }
 
 async function sendChatRun(
@@ -347,7 +352,11 @@ async function publishHostedSite(args: {
     files: [hostedTextFile("/index.html", `<main>${args.site}</main>`)],
   };
 
+  installHostedUploadTransport(context, args.owner.storage);
   const prepared = await chat.prepareHostedSiteWithBearer(bearer, body);
+  await uploadHostedTextFiles(prepared, {
+    "/index.html": `<main>${args.site}</main>`,
+  });
   await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
   await completeChatRunOk(run.runId, claimed.sandboxHeaders);
   return {

@@ -134,7 +134,7 @@ describe("POST /api/welcome-chat-threads", () => {
     const { actor } = await fixture();
     const member = bdd.user({ orgId: actor.orgId });
     const token = await credentials.okouToken(member);
-    await credentials.removeMember(member);
+    await credentials.removeMember(member, actor);
     const clientThreadId = randomUUID();
     await accept(
       welcomeClient().create({

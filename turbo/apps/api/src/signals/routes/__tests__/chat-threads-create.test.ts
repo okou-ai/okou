@@ -1235,13 +1235,13 @@ describe("POST /api/chat-threads", () => {
 
   it("routes thread-list invalidations only to the user-org channel", async () => {
     const fixture = await seedAgent();
-    await flushWaitUntilForTest();
-    context.mocks.ably.channelGet.mockClear();
-    context.mocks.ably.publish.mockClear();
     const token = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
+    await flushWaitUntilForTest();
+    context.mocks.ably.channelGet.mockClear();
+    context.mocks.ably.publish.mockClear();
 
     await accept(
       threadsClient().create({

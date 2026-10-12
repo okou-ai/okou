@@ -38,7 +38,11 @@ import {
   mockGoogleDriveFilesList,
   mockGoogleSlidesReadback,
 } from "./helpers/api-bdd-connectors";
-import { hostedTextFile } from "./helpers/api-bdd-host-files";
+import {
+  hostedTextFile,
+  installHostedUploadTransport,
+  uploadHostedTextFiles,
+} from "./helpers/api-bdd-host-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
@@ -1950,9 +1954,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       });
       const claimed = await owned.claimChatRun(owned.runnerGroup, run.runId);
       const objectStore = chatCallbacks.acceptChatObjectStorage();
-      context.mocks.s3.getSignedUrl.mockResolvedValue(
-        "https://r2.example.com/hosted-upload?sig=test",
-      );
+      installHostedUploadTransport(context, objectStore);
       const index =
         '<!doctype html><link rel="stylesheet" href="/assets/style-5e0c7a94.css"><h1>Private report</h1>';
       const css = "h1 { color: green }";
@@ -1966,17 +1968,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
           hostedTextFile("/assets/style-5e0c7a94.css", css),
         ],
       });
-      for (const [path, body] of [
-        ["/index.html", index],
-        ["/assets/style-5e0c7a94.css", css],
-      ] as const) {
-        objectStore.addObject({
-          bucket: "test-hosted-sites",
-          key: `sites/brands/okou/publications/${prepared.deploymentId}${path}`,
-          size: Buffer.byteLength(body),
-          body: Buffer.from(body),
-        });
-      }
+      await uploadHostedTextFiles(prepared, {
+        "/index.html": index,
+        "/assets/style-5e0c7a94.css": css,
+      });
       await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
       const artifacts = await chat.listThreadArtifacts(actor, run.threadId);
       const artifact = artifacts.runs
@@ -2044,9 +2039,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     });
     const claimed = await owned.claimChatRun(owned.runnerGroup, run.runId);
     const objectStore = chatCallbacks.acceptChatObjectStorage();
-    context.mocks.s3.getSignedUrl.mockResolvedValue(
-      "https://r2.example.com/hosted-upload?sig=test",
-    );
+    installHostedUploadTransport(context, objectStore);
     const index =
       '<!doctype html><link rel="stylesheet" href="/assets/deck-8c4a2f60.css"><h1>Deck</h1>';
     const css = "h1 { color: teal }";
@@ -2060,17 +2053,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         hostedTextFile("/assets/deck-8c4a2f60.css", css),
       ],
     });
-    for (const [path, body] of [
-      ["/index.html", index],
-      ["/assets/deck-8c4a2f60.css", css],
-    ] as const) {
-      objectStore.addObject({
-        bucket: "test-hosted-sites",
-        key: `sites/brands/okou/publications/${prepared.deploymentId}${path}`,
-        size: Buffer.byteLength(body),
-        body: Buffer.from(body),
-      });
-    }
+    await uploadHostedTextFiles(prepared, {
+      "/index.html": index,
+      "/assets/deck-8c4a2f60.css": css,
+    });
     await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
     // A public publication lists its canonical artifact URL and keeps the
     // brand host as `aliasUrl`; only an owner-private one lists the alias.
@@ -2136,9 +2122,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     });
     const claimed = await owned.claimChatRun(owned.runnerGroup, run.runId);
     const objectStore = chatCallbacks.acceptChatObjectStorage();
-    context.mocks.s3.getSignedUrl.mockResolvedValue(
-      "https://r2.example.com/hosted-upload?sig=test",
-    );
+    installHostedUploadTransport(context, objectStore);
     const index =
       "<!doctype html><style>h1{color:green}</style><h1>Report</h1>";
     const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
@@ -2148,12 +2132,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       spaFallback: false,
       files: [hostedTextFile("/index.html", index)],
     });
-    objectStore.addObject({
-      bucket: "test-hosted-sites",
-      key: `sites/brands/okou/publications/${prepared.deploymentId}/index.html`,
-      size: Buffer.byteLength(index),
-      body: Buffer.from(index),
-    });
+    await uploadHostedTextFiles(prepared, { "/index.html": index });
     await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
     const artifacts = await chat.listThreadArtifacts(actor, run.threadId);
     const artifact = artifacts.runs

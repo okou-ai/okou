@@ -1,12 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
+import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 
-import {
-  GetObjectCommand,
-  HeadObjectCommand,
-  ListObjectsV2Command,
-} from "@aws-sdk/client-s3";
 import {
   feishuConnectContract,
   larkConnectContract,
@@ -501,22 +497,22 @@ describe("POST /api/integrations/feishu/message", () => {
       await runsApi.ensurePersonalSubscriptionModel(actor);
       const runnerGroup = runsApi.configureRunnerGroup();
       await runsApi.heartbeatRunner(runnerGroup);
+      const owner = publicRunOwner(context, actor, {
+        restoreEnvironment: captureConnectorExternalState(context),
+      });
       const sent = await chatApi.sendAndLaunch(actor, {
         agentId,
         prompt: "Create a run for Feishu file upload completion",
       });
-      const owner = publicRunOwner(context, actor, {
-        restoreEnvironment: captureConnectorExternalState(context),
+      const claim = await owner.run(() => {
+        return owner.claim(sent.runId);
       });
-      const claim = await owner.claim(sent.runId);
       const token = claim.platformEnvironment?.OKOU_TOKEN;
       if (!token) {
         throw new Error("Expected the claimed Okou token");
       }
       const content = Buffer.from("feishu upload bytes");
-      context.mocks.s3.getSignedUrl.mockResolvedValue(
-        "https://storage.test/feishu-upload",
-      );
+      installSharedThreadStorage(context);
       const initClient = setupApp({
         context,
         routes: integrationsFeishuFileRoutes,
@@ -536,39 +532,12 @@ describe("POST /api/integrations/feishu/message", () => {
         }),
         [200],
       );
-      const key = `private-artifacts/${initialized.body.uploadId}/report.pdf`;
-      context.mocks.s3.send.mockImplementation((command: unknown) => {
-        if (command instanceof HeadObjectCommand) {
-          expect(command.input).toMatchObject({
-            Bucket: "test-private-artifacts",
-            Key: key,
-          });
-          return Promise.resolve({
-            ContentLength: content.length,
-            ContentType: "application/pdf",
-          });
-        }
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: [
-              {
-                Key: key,
-                Size: content.length,
-                LastModified: new Date("2026-01-01T00:00:00.000Z"),
-              },
-            ],
-          });
-        }
-        if (command instanceof GetObjectCommand) {
-          return Promise.resolve({
-            ContentLength: content.length,
-            Body: (async function* stream(): AsyncIterable<Uint8Array> {
-              yield content;
-            })(),
-          });
-        }
-        return Promise.resolve({});
+      const uploaded = await fetch(initialized.body.uploadUrl, {
+        method: "PUT",
+        headers: initialized.body.uploadHeaders,
+        body: content,
       });
+      expect(uploaded.status).toBe(200);
 
       server.use(
         http.post(
