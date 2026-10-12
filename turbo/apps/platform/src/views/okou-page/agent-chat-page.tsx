@@ -20,6 +20,7 @@ import {
 } from "../../signals/okou-page/pinned-agents.ts";
 
 import { detach, Reason } from "../../signals/utils.ts";
+import { SubscriptionLinkingHint } from "./subscription-linking.tsx";
 import { ChatComposer } from "./chat-composer.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
 import {
@@ -37,8 +38,6 @@ import {
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
 import { AgentAvatarImg, useAgentAvatarTexture } from "./sidebar-shared.tsx";
 import { Link } from "../router/link.tsx";
-import { PersonalClaudeCodeDeviceAuthDialog } from "./components/settings/claude-code-device-auth-dialog.tsx";
-import { PersonalCodexDeviceAuthDialog } from "./components/settings/codex-device-auth-dialog.tsx";
 import { pwaChatListVisible$ } from "../../signals/okou-page/pwa-navigation.ts";
 import { PwaChatListPage } from "./pwa-chat-list-page.tsx";
 
@@ -513,6 +512,7 @@ function AgentComposerPage() {
             className="order-3 pb-safe-or-2 sm:order-none sm:pb-0"
           >
             <ChatComposer signals={composerSignals} />
+            <SubscriptionLinkingHint />
           </div>
 
           {/* Above the generic starting points and below the composer: these
@@ -532,8 +532,6 @@ function AgentComposerPage() {
         </div>
       </main>
       <ChatHomeCompliance />
-      <PersonalClaudeCodeDeviceAuthDialog />
-      <PersonalCodexDeviceAuthDialog />
     </div>
   );
 }

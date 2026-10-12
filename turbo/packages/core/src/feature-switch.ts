@@ -77,6 +77,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.SubscriptionLinkingEntry]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Expose personal subscription linking below the composer and in the account menu.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.HomeTaskRecommendations]: {
     maintainer: "yuma@okou.ai",
     description:

@@ -42,8 +42,6 @@ import {
 } from "../../../../signals/okou-page/settings/personal-model-providers.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
-import { PersonalClaudeCodeDeviceAuthDialog } from "../settings/claude-code-device-auth-dialog.tsx";
-import { PersonalCodexDeviceAuthDialog } from "../settings/codex-device-auth-dialog.tsx";
 import { ConnectorEntryStatus } from "../settings/connector-entry-card.tsx";
 import { ProviderIcon } from "../settings/provider-icons.tsx";
 import {
@@ -59,8 +57,6 @@ export function PersonalProvidersTab() {
   return (
     <div className="flex flex-col gap-8">
       <OAuthAccountGroupsSection />
-      <PersonalClaudeCodeDeviceAuthDialog />
-      <PersonalCodexDeviceAuthDialog />
     </div>
   );
 }

@@ -5282,6 +5282,17 @@
     "unavailable": "該帳號無法使用SSH訪問。",
     "username": "SSH使用者名稱"
   },
+  "subscriptionLinking": {
+    "connect": "連接訂閱",
+    "description": "將現有的 ChatGPT 或 Claude 訂閱連接到 {{brandName}}。",
+    "dismiss": "關閉訂閱提示",
+    "hint": "已有 ChatGPT / Claude 訂閱？",
+    "limits": "可用功能與使用額度取決於你的訂閱。",
+    "manage": "管理 AI 訂閱",
+    "menuConnect": "連接 AI 訂閱",
+    "menuLoading": "AI 訂閱",
+    "title": "連接你的訂閱"
+  },
   "tailscale": {
     "add": "新增 Tailscale",
     "addressHelp": "使用已註冊的 Tailnet 節點 IP、完整主機名稱或簡稱。仍需 SSH 登入憑證及主機金鑰驗證。",

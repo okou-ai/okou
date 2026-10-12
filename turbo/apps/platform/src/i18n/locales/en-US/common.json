@@ -5298,6 +5298,17 @@
     "unavailable": "SSH access is not available for this account.",
     "username": "SSH username"
   },
+  "subscriptionLinking": {
+    "connect": "Connect subscription",
+    "description": "Use your existing ChatGPT or Claude subscription with {{brandName}}.",
+    "dismiss": "Dismiss subscription hint",
+    "hint": "Already have ChatGPT or Claude?",
+    "limits": "Availability and usage limits depend on your subscription.",
+    "manage": "Manage AI subscriptions",
+    "menuConnect": "Connect AI subscription",
+    "menuLoading": "AI subscriptions",
+    "title": "Connect your subscription"
+  },
   "tailscale": {
     "add": "Add Tailscale",
     "addressHelp": "Use a registered tailnet peer IP, full hostname or short name. SSH login and host-key verification are still required.",

@@ -5282,6 +5282,17 @@
     "unavailable": "Akses SSH tidak tersedia untuk akun ini.",
     "username": "Nama pengguna SSH"
   },
+  "subscriptionLinking": {
+    "connect": "Hubungkan langganan",
+    "description": "Gunakan langganan ChatGPT atau Claude Anda dengan {{brandName}}.",
+    "dismiss": "Tutup petunjuk langganan",
+    "hint": "Sudah berlangganan ChatGPT atau Claude?",
+    "limits": "Ketersediaan dan batas penggunaan bergantung pada langganan Anda.",
+    "manage": "Kelola langganan AI",
+    "menuConnect": "Hubungkan langganan AI",
+    "menuLoading": "Langganan AI",
+    "title": "Hubungkan langganan Anda"
+  },
   "tailscale": {
     "add": "Tambahkan Tailscale",
     "addressHelp": "Gunakan IP, nama host lengkap, atau nama singkat peer tailnet yang terdaftar. Login SSH dan verifikasi kunci host tetap diperlukan.",
