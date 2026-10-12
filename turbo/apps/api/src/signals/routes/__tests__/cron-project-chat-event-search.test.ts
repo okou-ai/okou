@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { cronProjectChatEventSearchContract } from "@okouai/api-contracts/contracts/cron";
+import { mcpChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -10,6 +11,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createMcpWebApi } from "./helpers/mcp-web-api";
 
 const context = testContext();
 const CRON_SECRET = "durable-chat-search-projection-secret";
@@ -30,6 +32,212 @@ describe("GET /api/cron/project-chat-event-search", () => {
       error: { code: "UNAUTHORIZED", message: "Invalid cron secret" },
     });
   });
+
+  it("publishes indexed hits with canonical MCP Agent metadata and preserves Web results", async () => {
+    // This is the operator index-publication boundary, not a user fixture that
+    // privately drives indexing. All business data and observations use APIs.
+    const app = await setupApp({
+      context,
+      routes: cronProjectChatEventSearchRoutes,
+      isolatePg: true,
+    });
+    const bdd = createBddApi(context);
+    const chat = createChatFilesBddApi(context);
+    const mcp = createMcpWebApi(context);
+    bdd.acceptAgentStorageWrites();
+    context.mocks.s3.send.mockImplementation((request: unknown) => {
+      return Promise.resolve(
+        request instanceof ListObjectsV2Command
+          ? { Contents: [], IsTruncated: false }
+          : { ContentLength: 1024 },
+      );
+    });
+    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
+    const onboarding = await bdd.readOnboardingStatus(owner);
+    if (!onboarding.defaultAgentId) {
+      throw new Error("Expected public onboarding to create the default Agent");
+    }
+    const named = await bdd.createAgent(owner, {
+      displayName: "MCP Research",
+      visibility: "private",
+    });
+    const unnamed = await bdd.createAgent(owner, { visibility: "private" });
+    const peer = bdd.user({ orgId: owner.orgId });
+    const shared = await bdd.createAgent(peer, {
+      displayName: "Shared research",
+    });
+    const otherOrg = bdd.user({
+      userId: owner.userId,
+      orgId: `org_${randomUUID()}`,
+    });
+    const foreign = await bdd.createAgent(otherOrg, {
+      displayName: "Other organization",
+      visibility: "private",
+    });
+    const keyword = `mcpidentity${randomUUID().replaceAll("-", "")}`;
+    const ownerInputs: {
+      readonly threadId: string;
+      readonly agentId: string;
+    }[] = [];
+    for (const agentId of [
+      onboarding.defaultAgentId,
+      named.agentId,
+      unnamed.agentId,
+      shared.agentId,
+    ]) {
+      const sent = await chat.requestSendEvent(
+        owner,
+        { agentId, model: null, prompt: `${keyword} owner ${agentId}` },
+        [201],
+      );
+      if (sent.status !== 201) {
+        throw new Error("Expected public input acceptance");
+      }
+      ownerInputs.push({ threadId: sent.body.threadId, agentId });
+      await flushWaitUntilForTest();
+    }
+    for (const [actor, agentId] of [
+      [peer, shared.agentId],
+      [otherOrg, foreign.agentId],
+    ] as const) {
+      await chat.requestSendEvent(
+        actor,
+        { agentId, model: null, prompt: `${keyword} isolated ${agentId}` },
+        [201],
+      );
+      await flushWaitUntilForTest();
+    }
+    mockEnv("CRON_SECRET", CRON_SECRET);
+    await accept(
+      app(cronProjectChatEventSearchContract).project({
+        headers: { authorization: `Bearer ${CRON_SECRET}` },
+      }),
+      [200],
+    );
+    const native = await chat.searchChat(owner, keyword);
+    expect(native.results.length).toBeGreaterThan(0);
+    const listed = await bdd.listAgents(owner);
+    const token = mcp.authorize(owner);
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [owner.orgId, otherOrg.orgId].map((orgId) => {
+        return {
+          id: randomUUID(),
+          role: "org:member",
+          organization: { id: orgId },
+        };
+      }),
+      totalCount: 2,
+    });
+    async function search(accessToken: string, agentId?: string) {
+      const response = await mcp.call(accessToken, "search_chat_messages", {
+        keyword,
+        ...(agentId ? { agentId } : {}),
+      });
+      expect(response.isError).not.toBeTruthy();
+      const raw: unknown =
+        response.structuredContent ??
+        JSON.parse(response.content[0]?.text ?? "null");
+      return { raw, ...mcpChatSearchContract.search.responses[200].parse(raw) };
+    }
+    const result = await search(token());
+    expect(result.raw).toStrictEqual({
+      results: native.results.map(({ agentName: _name, ...hit }) => {
+        const input = ownerInputs.find((item) => {
+          return item.threadId === hit.chatThreadId;
+        });
+        const agent = listed.find((item) => {
+          return item.agentId === input?.agentId;
+        });
+        if (!agent) {
+          throw new Error("Expected the indexed input's visible Agent");
+        }
+        return {
+          ...hit,
+          agentId: agent.agentId,
+          agentDisplayName: agent.displayName,
+        };
+      }),
+    });
+    expect(
+      new Set(
+        result.results.map((hit) => {
+          return hit.agentId;
+        }),
+      ),
+    ).toStrictEqual(
+      new Set(
+        ownerInputs.map((input) => {
+          return input.agentId;
+        }),
+      ),
+    );
+    expect(
+      result.results.find((hit) => {
+        return hit.agentId === onboarding.defaultAgentId;
+      }),
+    ).toMatchObject({ agentDisplayName: "Okou" });
+    expect(
+      result.results.find((hit) => {
+        return hit.agentId === unnamed.agentId;
+      }),
+    ).toMatchObject({ agentDisplayName: null });
+    const filtered = await search(token(), named.agentId);
+    expect(filtered.results.length).toBeGreaterThan(0);
+    expect(
+      filtered.results.every((hit) => {
+        return hit.agentId === named.agentId;
+      }),
+    ).toBeTruthy();
+    expect(
+      new Set(
+        (await search(token({ sub: peer.userId }))).results.map((hit) => {
+          return hit.agentId;
+        }),
+      ),
+    ).toStrictEqual(new Set([shared.agentId]));
+    expect(
+      new Set(
+        (await search(token({ org_id: otherOrg.orgId }))).results.map((hit) => {
+          return hit.agentId;
+        }),
+      ),
+    ).toStrictEqual(new Set([foreign.agentId]));
+
+    await bdd.updateAgentMetadata(owner, named.agentId, {
+      displayName: "Renamed research",
+    });
+    expect((await search(token(), named.agentId)).results).toContainEqual(
+      expect.objectContaining({ agentDisplayName: "Renamed research" }),
+    );
+    await expect(chat.searchChat(owner, keyword)).resolves.toStrictEqual(
+      native,
+    );
+
+    await bdd.updateAgentMetadata(peer, shared.agentId, {
+      visibility: "private",
+    });
+    expect(
+      (await search(token())).results.some((hit) => {
+        return hit.agentId === shared.agentId;
+      }),
+    ).toBeFalsy();
+    expect((await search(token({ sub: peer.userId }))).results).toContainEqual(
+      expect.objectContaining({
+        agentId: shared.agentId,
+        agentDisplayName: "Shared research",
+      }),
+    );
+    await bdd.deleteAgent(owner, unnamed.agentId);
+    const afterDelete = await search(token());
+    expect(afterDelete.results).toContainEqual(
+      expect.objectContaining({ agentId: named.agentId }),
+    );
+    expect(
+      afterDelete.results.some((hit) => {
+        return hit.agentId === unnamed.agentId;
+      }),
+    ).toBeFalsy();
+  }, 60_000);
 
   it("cleans orphaned search projections after public Agent deletion", async () => {
     const app = await setupApp({
