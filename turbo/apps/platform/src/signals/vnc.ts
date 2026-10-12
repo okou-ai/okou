@@ -108,7 +108,7 @@ export const retryVnc$ = command(({ set }) => {
   set(invalidateVnc$);
 });
 
-const vncConnectionsResult$ = computed(async (get) => {
+export const vncConnections$ = computed(async (get) => {
   get(reload$);
   if (!(await get(vncIdentity$))) {
     return null;
@@ -119,10 +119,7 @@ const vncConnectionsResult$ = computed(async (get) => {
     undefined,
     { showErrorToast: false },
   );
-  return result.status === 200 ? result : null;
-});
-export const vncConnections$ = computed(async (get) => {
-  return (await get(vncConnectionsResult$))?.body.connections ?? null;
+  return result.status === 200 ? result.body.connections : null;
 });
 
 export const vncCredentials$ = computed(async (get) => {
