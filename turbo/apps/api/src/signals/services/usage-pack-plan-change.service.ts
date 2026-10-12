@@ -18,6 +18,7 @@ import {
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   exists,
@@ -2653,37 +2654,43 @@ function applyImmediatePackageChanges(
   }
 }
 
-async function recordImmediateSubscriptionChangeInvoice(
-  db: Db,
-  stored: StoredSubscriptionChange,
-  invoice: StripeInvoice,
-  pendingUpdateExpiresAt: Date | null,
-  pendingPayment: boolean,
-): Promise<void> {
-  const updatedAt = nowDate();
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0291; new non-billing transactions are prohibited.
-  await db.transaction(async (tx) => {
-    await tx
+const recordImmediateSubscriptionChangeInvoice$ = command(
+  async (
+    { set },
+    rootId: string,
+    invoiceId: string,
+    pendingUpdateExpiresAt: Date | null,
+    pendingPayment: boolean,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const updatedAt = nowDate();
+    const parentPublication = db
       .update(usagePackSubscriptionChanges)
       .set({
         status: pendingPayment ? "pending_payment" : "applying",
-        stripeInvoiceId: invoice.id,
+        stripeInvoiceId: invoiceId,
         stripePendingUpdateExpiresAt: pendingUpdateExpiresAt,
         updatedAt,
       })
-      .where(eq(usagePackSubscriptionChanges.id, stored.root.id));
-    await tx
+      .where(eq(usagePackSubscriptionChanges.id, rootId))
+      .returning({ id: usagePackSubscriptionChanges.id });
+    const childPublication = db
       .update(usagePackAllocationChanges)
       .set({
         status: pendingPayment ? "pending_payment" : "applying",
         stripePendingUpdateExpiresAt: pendingUpdateExpiresAt,
         updatedAt,
       })
-      .where(
-        eq(usagePackAllocationChanges.subscriptionChangeId, stored.root.id),
-      );
-  });
-}
+      // Exhaust the parent write before children, including a zero-row parent.
+      // The aggregate always yields one row; it does not select a parent winner.
+      .from(sql`(SELECT ${count()} FROM published) AS parent_completion`)
+      .where(eq(usagePackAllocationChanges.subscriptionChangeId, rootId));
+    // Keep the original uninterrupted local publication and void outcome.
+    await db.execute(
+      sql`WITH published AS (${parentPublication.getSQL()}) ${childPublication.getSQL()}`,
+    );
+  },
+);
 
 function subscriptionPendingUpdateExpiresAt(
   subscription: StripeSubscription,
@@ -2698,86 +2705,93 @@ function subscriptionPendingUpdateExpiresAt(
   return new Date(expiresAt * 1000);
 }
 
-async function applyImmediateSubscriptionChange(
-  db: Db,
-  args: {
-    readonly stored: StoredSubscriptionChange;
-    readonly subscription: StripeSubscription;
-    readonly planItem: StripeSubscriptionItem;
-    readonly hasPlanUpgrade: boolean;
-    readonly immediatePackageChanges: readonly UsagePackAllocationChangeRow[];
-    readonly paymentMethod?: BillingPurchasePaymentMethod;
-  },
-  signal: AbortSignal,
-): Promise<UsagePackSubscriptionChangeConfirmResult> {
-  const packageQuantities = new Map(
-    packageQuantitiesFromAllocations(args.stored.allocations),
-  );
-  applyImmediatePackageChanges(packageQuantities, args.immediatePackageChanges);
-  const targetPlanPriceId = args.hasPlanUpgrade
-    ? activeUsagePackPlanPriceId("team")
-    : args.stored.subscription.stripePlanPriceId;
-  if (!targetPlanPriceId) {
-    throw new Error("Team usage pack plan Price is not configured");
-  }
-  const stripe = getStripeClient();
-  if (args.paymentMethod) {
-    await setStripeSubscriptionPaymentMethod(
-      stripe,
-      args.subscription.id,
-      args.paymentMethod,
-      signal,
+const applyImmediateSubscriptionChange$ = command(
+  async (
+    { set },
+    args: {
+      readonly stored: StoredSubscriptionChange;
+      readonly subscription: StripeSubscription;
+      readonly planItem: StripeSubscriptionItem;
+      readonly hasPlanUpgrade: boolean;
+      readonly immediatePackageChanges: readonly UsagePackAllocationChangeRow[];
+      readonly paymentMethod?: BillingPurchasePaymentMethod;
+    },
+    providerSignal: AbortSignal,
+  ): Promise<UsagePackSubscriptionChangeConfirmResult> => {
+    const packageQuantities = new Map(
+      packageQuantitiesFromAllocations(args.stored.allocations),
     );
-  }
-  const updatedSubscription = await stripe.subscriptions.update(
-    args.subscription.id,
-    {
-      items: subscriptionUpdateItems(
-        args.subscription,
-        args.planItem,
-        targetPlanPriceId,
-        packageQuantities,
-      ),
-      payment_behavior: "pending_if_incomplete",
-      proration_behavior: "always_invoice",
-      proration_date: args.stored.root.prorationTimestamp,
-      expand: ["latest_invoice.payment_intent"],
-    },
-    {
-      idempotencyKey: `usage-pack-subscription-change:${args.stored.root.id}:apply`,
-    },
-  );
-  signal.throwIfAborted();
-  const invoice = expandedLatestInvoice(updatedSubscription);
-  if (!invoice) {
-    throw new Error("Stripe did not create a subscription change invoice");
-  }
-  const pendingUpdateExpiresAt =
-    subscriptionPendingUpdateExpiresAt(updatedSubscription);
-  const payment = await completeBillingOperationInvoice(
-    stripe,
-    invoice,
-    `usage-pack-subscription:${args.stored.root.id}`,
-    signal,
-  );
-  const pending = payment.status === "pending_payment";
-  await recordImmediateSubscriptionChangeInvoice(
-    db,
-    args.stored,
-    invoice,
-    pendingUpdateExpiresAt,
-    pending,
-  );
-  return {
-    status: "confirmed",
-    response: {
-      status: pending ? "pending_payment" : "processing",
-      effectiveAt: args.stored.root.effectiveAt.toISOString(),
-      hostedInvoiceUrl:
-        payment.status === "pending_payment" ? payment.hostedInvoiceUrl : null,
-    },
-  };
-}
+    applyImmediatePackageChanges(
+      packageQuantities,
+      args.immediatePackageChanges,
+    );
+    const targetPlanPriceId = args.hasPlanUpgrade
+      ? activeUsagePackPlanPriceId("team")
+      : args.stored.subscription.stripePlanPriceId;
+    if (!targetPlanPriceId) {
+      throw new Error("Team usage pack plan Price is not configured");
+    }
+    const stripe = getStripeClient();
+    if (args.paymentMethod) {
+      await setStripeSubscriptionPaymentMethod(
+        stripe,
+        args.subscription.id,
+        args.paymentMethod,
+        providerSignal,
+      );
+    }
+    const updatedSubscription = await stripe.subscriptions.update(
+      args.subscription.id,
+      {
+        items: subscriptionUpdateItems(
+          args.subscription,
+          args.planItem,
+          targetPlanPriceId,
+          packageQuantities,
+        ),
+        payment_behavior: "pending_if_incomplete",
+        proration_behavior: "always_invoice",
+        proration_date: args.stored.root.prorationTimestamp,
+        expand: ["latest_invoice.payment_intent"],
+      },
+      {
+        idempotencyKey: `usage-pack-subscription-change:${args.stored.root.id}:apply`,
+      },
+    );
+    providerSignal.throwIfAborted();
+    const invoice = expandedLatestInvoice(updatedSubscription);
+    if (!invoice) {
+      throw new Error("Stripe did not create a subscription change invoice");
+    }
+    const pendingUpdateExpiresAt =
+      subscriptionPendingUpdateExpiresAt(updatedSubscription);
+    const payment = await completeBillingOperationInvoice(
+      stripe,
+      invoice,
+      `usage-pack-subscription:${args.stored.root.id}`,
+      providerSignal,
+    );
+    const pending = payment.status === "pending_payment";
+    await set(
+      recordImmediateSubscriptionChangeInvoice$,
+      args.stored.root.id,
+      invoice.id,
+      pendingUpdateExpiresAt,
+      pending,
+    );
+    return {
+      status: "confirmed",
+      response: {
+        status: pending ? "pending_payment" : "processing",
+        effectiveAt: args.stored.root.effectiveAt.toISOString(),
+        hostedInvoiceUrl:
+          payment.status === "pending_payment"
+            ? payment.hostedInvoiceUrl
+            : null,
+      },
+    };
+  },
+);
 
 function isScheduledSubscriptionRestore(
   stored: StoredSubscriptionChange,
@@ -3567,8 +3581,8 @@ const applyStoredSubscriptionChange$ = command(
         },
       };
     }
-    return await applyImmediateSubscriptionChange(
-      db,
+    return await set(
+      applyImmediateSubscriptionChange$,
       {
         stored,
         subscription: applicableSubscription,
