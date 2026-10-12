@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.229.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.228.5...runner-rs-v0.229.0) (2026-10-12)
+
+
+### Features
+
+* **runner:** execute independent guarded idle pressure waves ([#39407](https://github.com/okou-ai/okou/issues/39407)) ([5db6f8c](https://github.com/okou-ai/okou/commit/5db6f8cd8ed61ac7e2552bac808806c67ecea4e9))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.228.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.228.4...runner-rs-v0.228.5) (2026-10-12)
 
 ### Release Dependencies
