@@ -5,8 +5,6 @@ import {
   index,
   pgTable,
   primaryKey,
-  uuid,
-  varchar,
 } from "drizzle-orm/pg-core";
 
 import { storages } from "./storage";
@@ -19,16 +17,7 @@ import { piMemoryPhase2JobColumns } from "../columns/pi-memory-phase2-job";
  */
 export const piMemoryPhase2Jobs = pgTable(
   "pi_memory_phase2_jobs",
-  {
-    ...piMemoryPhase2JobColumns(),
-    // Migration ownership only; runtime statements omit these columns under #37970.
-    legacyLeaseToken: uuid("legacy_lease_token"),
-    sandboxLeaseToken: uuid("sandbox_lease_token"),
-    lastMaintenancePublicationVersionId: varchar(
-      "last_maintenance_checkpoint_version_id",
-      { length: 64 },
-    ),
-  },
+  piMemoryPhase2JobColumns(),
   (table) => {
     return [
       primaryKey({
