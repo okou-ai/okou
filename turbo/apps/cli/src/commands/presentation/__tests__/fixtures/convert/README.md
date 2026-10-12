@@ -295,3 +295,5 @@ coverage/embedding; preserve every shared table and recompute SFNT checksums.
 The binary test also checks the second face and invalid collection offsets.
 F04 includes an inline-flex badge: materialize it with its owning cell so an
 empty inline box cannot move the baseline and enlarge previously correct rows.
+Its outlined badge uses only an inset shadow, which must survive even when the
+source has no background fill or CSS border.

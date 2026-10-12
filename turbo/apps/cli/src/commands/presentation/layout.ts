@@ -306,9 +306,9 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
       // Rotated/scaled bounds are axis-aligned unions too, but require affine
       // composition, not the untransformed line-fragment contract below.
       if (transformed) continue;
-      const decorated = color(style.backgroundColor) || style.backgroundImage !== 'none' || parseFloat(style.borderTopWidth) > 0 || Array.from(owner.querySelectorAll('*')).some(child => {
+      const decorated = color(style.backgroundColor) || style.backgroundImage !== 'none' || style.boxShadow !== 'none' || parseFloat(style.borderTopWidth) > 0 || Array.from(owner.querySelectorAll('*')).some(child => {
         const s = getComputedStyle(child);
-        return s.backgroundImage !== 'none' || color(s.backgroundColor) || parseFloat(s.borderTopWidth) > 0;
+        return s.backgroundImage !== 'none' || s.boxShadow !== 'none' || color(s.backgroundColor) || parseFloat(s.borderTopWidth) > 0;
       });
       const textDecoration = nodes.some(node => getComputedStyle(node.parentElement).textDecorationLine !== 'none');
       const naturalWrap = nodes.some(node => fragment(node,false).length > 1);
@@ -333,7 +333,7 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
     if (!parts.length) continue;
     const decorations = Array.from(owner.querySelectorAll('*')).filter(child => {
       const style = getComputedStyle(child);
-      return color(style.backgroundColor) || style.backgroundImage !== 'none' || parseFloat(style.borderTopWidth) > 0;
+      return color(style.backgroundColor) || style.backgroundImage !== 'none' || style.boxShadow !== 'none' || parseFloat(style.borderTopWidth) > 0;
     }).map(child => ({source:child,style:snapshotStyle(child),opacity:relativeOpacity(child,owner),rects:Array.from(child.getClientRects())}));
     const originalChildren = Array.from(owner.childNodes);
     save(owner);
