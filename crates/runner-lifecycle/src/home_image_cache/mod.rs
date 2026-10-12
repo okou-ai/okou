@@ -21,6 +21,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 mod entry;
 mod fs;
 mod gc;
+mod gc_metadata;
 mod inspection;
 mod io_context;
 mod lifecycle;

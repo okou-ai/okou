@@ -302,10 +302,22 @@ pub(super) fn validate_current_image_identity(
     metadata: &HomeCacheMetadata,
     current: &std::fs::Metadata,
 ) -> LifecycleResult<()> {
+    validate_image_file_identity(
+        metadata.logical_image_size_bytes,
+        metadata.current_image,
+        current,
+    )
+}
+
+pub(super) fn validate_image_file_identity(
+    logical_image_size_bytes: u64,
+    expected: HomeImageFileIdentity,
+    current: &std::fs::Metadata,
+) -> LifecycleResult<()> {
     if !current.is_file()
         || current.nlink() != 1
-        || metadata.current_image != HomeImageFileIdentity::from_metadata(current)
-        || metadata.logical_image_size_bytes != current.len()
+        || expected != HomeImageFileIdentity::from_metadata(current)
+        || logical_image_size_bytes != current.len()
     {
         return Err(LifecycleError::Internal(
             "home image identity mismatch".into(),
