@@ -36,7 +36,7 @@ import { isUniqueViolation } from "../../lib/pg-errors";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   publishUserSignal,
   publishComputerUseCommandsChangedSafely,
@@ -1505,28 +1505,30 @@ export const claimNextComputerUseHostCommand$ = command(
 );
 
 /** Refresh a host's liveness from a completion only when it is getting stale. */
-async function refreshComputerUseHostLiveness(
-  db: Db,
-  host: ComputerUseHostRow,
-  now: Date,
-  signal: AbortSignal,
-): Promise<void> {
-  if (computerUseHostLivenessIsFresh(host, now)) {
-    return;
-  }
-  await db
-    .update(computerUseHosts)
-    .set({ status: "online", lastSeenAt: now, updatedAt: now })
-    .where(
-      and(
-        eq(computerUseHosts.id, host.id),
-        isNull(computerUseHosts.revokedAt),
-        eq(computerUseHosts.connectionGeneration, host.connectionGeneration),
-        eq(computerUseHosts.status, "online"),
-      ),
-    );
-  signal.throwIfAborted();
-}
+const refreshComputerUseHostLiveness$ = command(
+  async (
+    { set },
+    host: ComputerUseHostRow,
+    now: Date,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (computerUseHostLivenessIsFresh(host, now)) {
+      return;
+    }
+    await set(writeDb$)
+      .update(computerUseHosts)
+      .set({ status: "online", lastSeenAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(computerUseHosts.id, host.id),
+          isNull(computerUseHosts.revokedAt),
+          eq(computerUseHosts.connectionGeneration, host.connectionGeneration),
+          eq(computerUseHosts.status, "online"),
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
 
 /**
  * Structured per-command state metrics logged on every successful completion.
@@ -1612,20 +1614,6 @@ function logComputerUseCompletionSanitization(
   });
 }
 
-async function resolveMissedComputerUseCompletion(
-  db: Db,
-  authority: ComputerUseHostAuthority,
-  signal: AbortSignal,
-): Promise<CompleteComputerUseHostCommandResult> {
-  const [authorized] = await db
-    .select({ id: computerUseHosts.id })
-    .from(computerUseHosts)
-    .where(computerUseHostAuthorityCondition(authority))
-    .limit(1);
-  signal.throwIfAborted();
-  return { status: authorized ? "completed" : "invalid_connection" };
-}
-
 /**
  * Completion runs without a transaction or locks: plain reads of the host and
  * command, the S3 offload, then one compare-and-set on `status = 'running'`.
@@ -1644,7 +1632,7 @@ export const completeComputerUseHostCommand$ = command(
     if (!host) {
       return { status: "invalid_connection" };
     }
-    const [commandRow] = await db
+    const [commandRow] = await get(db$)
       .select({ status: computerUseCommands.status })
       .from(computerUseCommands)
       .where(
@@ -1663,7 +1651,7 @@ export const completeComputerUseHostCommand$ = command(
       return { status: "not_found" };
     }
     if (commandRow.status === "succeeded" || commandRow.status === "failed") {
-      await refreshComputerUseHostLiveness(db, host, nowDate(), signal);
+      await set(refreshComputerUseHostLiveness$, host, nowDate(), signal);
       return { status: "completed" };
     }
     if (commandRow.status !== "running") {
@@ -1728,7 +1716,13 @@ export const completeComputerUseHostCommand$ = command(
       .returning();
     signal.throwIfAborted();
     if (!updated) {
-      return await resolveMissedComputerUseCompletion(db, params, signal);
+      const [authorized] = await get(db$)
+        .select({ id: computerUseHosts.id })
+        .from(computerUseHosts)
+        .where(computerUseHostAuthorityCondition(params))
+        .limit(1);
+      signal.throwIfAborted();
+      return { status: authorized ? "completed" : "invalid_connection" };
     }
 
     await set(
@@ -1743,7 +1737,7 @@ export const completeComputerUseHostCommand$ = command(
       signal,
     );
     signal.throwIfAborted();
-    await refreshComputerUseHostLiveness(db, host, completedAt, signal);
+    await set(refreshComputerUseHostLiveness$, host, completedAt, signal);
 
     logComputerUseCompletionSanitization(
       updated,
