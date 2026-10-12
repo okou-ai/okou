@@ -159,17 +159,13 @@ function SessionStateIndicator({
   signals: SidebarChatThreadItemSignals;
   rowIndex: number;
 }) {
-  const waveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatRunningIndicatorWave] === true;
   const state = useLastResolved(signals.indicatorState$) ?? null;
   if (state === null) {
     return null;
   }
   if (state === "running") {
     return (
-      <RunningIndicator
-        phaseOffset={waveEnabled ? rowIndex / RUNNING_INDICATOR_WAVE_ROWS : 0}
-      />
+      <RunningIndicator phaseOffset={rowIndex / RUNNING_INDICATOR_WAVE_ROWS} />
     );
   }
   if (state === "muted") {
