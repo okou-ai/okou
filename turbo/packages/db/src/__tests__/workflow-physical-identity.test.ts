@@ -143,6 +143,8 @@ describe("workflow schema physical identity", () => {
       workflows: {
         indexes: [
           "idx_workflows_agent",
+          "idx_workflows_official_owner_agent_definition_unique",
+          "idx_workflows_ordinary_private_owner_agent_name_unique",
           "idx_workflows_org",
           "idx_workflows_org_owner",
           "idx_workflows_private_owner_agent_name_unique",
