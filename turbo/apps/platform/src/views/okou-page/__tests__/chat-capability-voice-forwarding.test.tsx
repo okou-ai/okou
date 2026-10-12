@@ -121,7 +121,7 @@ test.each([false, true])(
     const menu = await screen.findByTestId("slash-workflow-menu");
     const [first] = queryAllByRoleFast("button", menu);
     expect(first).toHaveTextContent(
-      composerAnchored ? "Browse all templates" : "Presentation",
+      composerAnchored ? "Website" : "Presentation",
     );
     const presentation = queryButton("Presentation", menu);
     expect(presentation).toHaveAttribute("data-active", "true");
