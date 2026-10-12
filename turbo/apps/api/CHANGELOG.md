@@ -9,6 +9,33 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.728.1](https://github.com/okou-ai/okou/compare/api-v1.728.0...api-v1.728.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* **mcp:** return canonical agent identity in chat search ([#39356](https://github.com/okou-ai/okou/issues/39356)) ([3302fb3](https://github.com/okou-ai/okou/commit/3302fb33796b29889064f4c36f22fb5e67346d4d))
+
+
+### Refactoring
+
+* **api:** atomically commit workflow metadata and publication receipt ([#39412](https://github.com/okou-ai/okou/issues/39412)) ([761426b](https://github.com/okou-ai/okou/commit/761426b8f25e358a5954439b949eb5a9b9a70963))
+* **api:** drop the unused client response transform injection option ([#39402](https://github.com/okou-ai/okou/issues/39402)) ([5205c14](https://github.com/okou-ai/okou/commit/5205c149a04e0cd8f09cdf7cb63a3cad2a4e327a))
+* **api:** own slack user binding reads in computed ([#39369](https://github.com/okou-ai/okou/issues/39369)) ([5ab733e](https://github.com/okou-ai/okou/commit/5ab733eaf1276d0a9813d306517c522c9adf70ca))
+* **api:** prepare official workflow readers for result email retirement ([#39410](https://github.com/okou-ai/okou/issues/39410)) ([a797a9f](https://github.com/okou-ai/okou/commit/a797a9f44861d14d5ca1021a36f276e5a57bd387))
+* **api:** retire automatic oauth preflight transaction ([#39409](https://github.com/okou-ai/okou/issues/39409)) ([89f71c9](https://github.com/okou-ai/okou/commit/89f71c9bf469ecb817a679feaf493cd8eabf4c9e))
+* **api:** retire stranded browser recovery transaction ([#39366](https://github.com/okou-ai/okou/issues/39366)) ([fadcae1](https://github.com/okou-ai/okou/commit/fadcae14df3e0346bc759126034c30451e0bfedf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.552.3
+    * @okouai/core bumped to 8.747.1
+    * @okouai/db bumped to 1.331.9
+    * @okouai/pi-agent-runtime bumped to 1.49.16
+
 ## [1.728.0](https://github.com/okou-ai/okou/compare/api-v1.727.8...api-v1.728.0) (2026-10-12)
 
 
