@@ -1049,6 +1049,253 @@ describe("legacy subscription usage pack migration", () => {
     });
   });
 
+  it("rejects direct confirmation at the migration preview deadline and isolates a new preview", async () => {
+    await withNowScopeForTest(async () => {
+      mockNow(now());
+      const fixture = await seedLegacyMigrationFixture({ tier: "pro" });
+      mockMigrationStripe({
+        fixture,
+        packageQuantity: 1,
+        currentRecurringAmountCents: 2000,
+        amountDueCents: 2000,
+        amountPaidCents: 2000,
+      });
+      const billingBefore = await readBillingStatus(fixture);
+      const creditsBefore = await readMigrationCredits(fixture);
+      const request = {
+        targetTier: "pro" as const,
+        memberUsagePacks: [
+          { memberId: fixture.userId, usagePackUsd: 20 as const },
+        ],
+      };
+      const preview = await accept(
+        migrationClient().preview({
+          headers: { authorization: "Bearer clerk-session" },
+          body: request,
+        }),
+        [200],
+      );
+      mockNow(Date.parse(preview.body.expiresAt));
+      const confirmation = {
+        params: { migrationId: preview.body.migrationId },
+        body: {},
+        headers: { authorization: "Bearer clerk-session" },
+      };
+      const expired = await accept(
+        migrationClient().confirm(confirmation),
+        [400],
+      );
+      expect(expired.body.error.message).toBe(
+        "Usage pack migration preview expired",
+      );
+      const replay = await accept(
+        migrationClient().confirm(confirmation),
+        [409],
+      );
+      expect(replay.body.error.message).toBe(
+        "Usage pack migration is no longer available",
+      );
+      const renewed = await accept(
+        migrationClient().preview({
+          headers: { authorization: "Bearer clerk-session" },
+          body: request,
+        }),
+        [200],
+      );
+      expect(renewed.body.migrationId).not.toBe(preview.body.migrationId);
+      await accept(migrationClient().confirm(confirmation), [409]);
+      const current = await accept(
+        migrationClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(current.body).toMatchObject({
+        status: "previewed",
+        migrationId: renewed.body.migrationId,
+        configuration: { memberUsagePacks: request.memberUsagePacks },
+      });
+      await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+        tier: billingBefore.tier,
+        subscriptionStatus: billingBefore.subscriptionStatus,
+        credits: billingBefore.credits,
+        creditGrants: billingBefore.creditGrants,
+      });
+      await expect(readMigrationCredits(fixture)).resolves.toStrictEqual(
+        creditsBefore,
+      );
+      await accept(
+        setupApp({ context, routes: billingCheckoutRoutes })(
+          billingUsagePackManagementContract,
+        ).get({ headers: { authorization: "Bearer clerk-session" } }),
+        [404],
+      );
+    });
+  });
+
+  it("prioritizes a missing paid invitation at preview expiry and preserves billing", async () => {
+    await withNowScopeForTest(async () => {
+      mockNow(now());
+      const fixture = await seedLegacyMigrationFixture({
+        tier: "pro",
+        invitation: true,
+      });
+      if (!fixture.invitation) {
+        throw new Error("Expected a pending invitation fixture");
+      }
+      mockMigrationStripe({
+        fixture,
+        packageQuantity: 2,
+        currentRecurringAmountCents: 2000,
+        amountDueCents: 4000,
+        amountPaidCents: 4000,
+      });
+      const billingBefore = await readBillingStatus(fixture);
+      const creditsBefore = await readMigrationCredits(fixture);
+      const preview = await accept(
+        migrationClient().preview({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            targetTier: "pro",
+            memberUsagePacks: [
+              { memberId: fixture.userId, usagePackUsd: 20 },
+              { memberId: fixture.invitation.id, usagePackUsd: 20 },
+            ],
+          },
+        }),
+        [200],
+      );
+      context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+        { data: [] },
+      );
+      mockNow(Date.parse(preview.body.expiresAt));
+      const confirmation = {
+        params: { migrationId: preview.body.migrationId },
+        body: {},
+        headers: { authorization: "Bearer clerk-session" },
+      };
+      const changed = await accept(
+        migrationClient().confirm(confirmation),
+        [409],
+      );
+      expect(changed.body.error.message).toBe(
+        "Organization members changed; create a new migration preview",
+      );
+      const replay = await accept(
+        migrationClient().confirm(confirmation),
+        [409],
+      );
+      expect(replay.body.error.message).toBe(
+        "Usage pack migration is no longer available",
+      );
+      await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+        tier: billingBefore.tier,
+        subscriptionStatus: billingBefore.subscriptionStatus,
+        credits: billingBefore.credits,
+        creditGrants: billingBefore.creditGrants,
+      });
+      await expect(readMigrationCredits(fixture)).resolves.toStrictEqual(
+        creditsBefore,
+      );
+    });
+  });
+
+  it("confirms a migration when an extra unpaid member joins after preview", async () => {
+    const fixture = await seedLegacyMigrationFixture({ tier: "pro" });
+    mockMigrationStripe({
+      fixture,
+      packageQuantity: 1,
+      currentRecurringAmountCents: 2000,
+      amountDueCents: 2000,
+      amountPaidCents: 2000,
+    });
+    const billingBefore = await readBillingStatus(fixture);
+    const creditsBefore = await readMigrationCredits(fixture);
+    const preview = await previewMigration(fixture);
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            role: "org:admin",
+            publicUserData: { userId: fixture.userId },
+            createdAt: now(),
+          },
+          {
+            role: "org:member",
+            publicUserData: { userId: `user_unpaid_${randomUUID()}` },
+            createdAt: now(),
+          },
+        ],
+      },
+    );
+    const confirmed = await accept(
+      migrationClient().confirm({
+        params: { migrationId: preview.migrationId },
+        body: {},
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(confirmed.body.status).toBe("scheduled");
+    const current = await accept(
+      migrationClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(current.body).toMatchObject({
+      status: "scheduled",
+      migrationId: preview.migrationId,
+      configuration: {
+        memberUsagePacks: [{ memberId: fixture.userId, usagePackUsd: 20 }],
+      },
+    });
+    await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+      tier: billingBefore.tier,
+      credits: billingBefore.credits,
+      creditGrants: billingBefore.creditGrants,
+    });
+    await expect(readMigrationCredits(fixture)).resolves.toStrictEqual(
+      creditsBefore,
+    );
+  });
+
+  it("hides a migration from another organization and preserves its preview", async () => {
+    const fixture = await seedLegacyMigrationFixture({ tier: "pro" });
+    mockMigrationStripe({
+      fixture,
+      packageQuantity: 1,
+      currentRecurringAmountCents: 2000,
+      amountDueCents: 2000,
+      amountPaidCents: 2000,
+    });
+    const preview = await previewMigration(fixture);
+    const other = createOrgFixture();
+    authenticateOrg(other);
+    mockClerkOrganization(other);
+    const rejected = await accept(
+      migrationClient().confirm({
+        params: { migrationId: preview.migrationId },
+        body: {},
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [404],
+    );
+    expect(rejected.body.error.message).toBe("Usage pack migration not found");
+    authenticateOrg(fixture);
+    mockClerkOrganization(fixture);
+    const current = await accept(
+      migrationClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(current.body).toMatchObject({
+      status: "previewed",
+      migrationId: preview.migrationId,
+    });
+  });
+
   it("rejects migration pricing prepared before the source Plan starts ending", async () => {
     const period = {
       start: currentSecond() - 15 * 86_400,
