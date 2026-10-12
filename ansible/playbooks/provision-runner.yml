@@ -9,7 +9,7 @@
 #     -e "ansible_user=ubuntu"
 #
 # Hosts with a prepared Runner namespace can opt into public WSS ingress with
-# runner_wss_caddy_enabled=true; see ansible/README.md for DNS/TLS prerequisites.
+# runner_caddy_enabled=true; see ansible/README.md for DNS/TLS prerequisites.
 
 - name: Provision runner host dependencies
   hosts: all
@@ -195,7 +195,7 @@
       when: group_change.changed
 
     - name: Provision optional Runner WSS ingress
-      ansible.builtin.import_tasks: ../tasks/provision-runner-wss-caddy.yml
+      ansible.builtin.import_tasks: ../tasks/provision-runner-caddy.yml
       become: true
-      when: runner_wss_caddy_enabled | default(false) | bool
-      tags: runner_wss_caddy
+      when: runner_caddy_enabled | default(false) | bool
+      tags: runner_caddy

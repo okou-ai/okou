@@ -37,5 +37,5 @@ def validate_namespace(directory: Path, group_id: int) -> None:
 
 if __name__ == "__main__":
     validate_namespace(
-        Path("/var/lib/vm0-runner/wss"), grp.getgrnam("okou-wss-caddy").gr_gid
+        Path("/var/lib/vm0-runner/wss"), grp.getgrnam("okou-runner-caddy").gr_gid
     )

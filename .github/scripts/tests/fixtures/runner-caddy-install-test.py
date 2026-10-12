@@ -16,14 +16,14 @@ import yaml
 def main():
     repo, archive, root = map(Path, sys.argv[1:])
     definition = yaml.safe_load(
-        (repo / "ansible/tasks/provision-runner-wss-caddy.yml").read_text()
+        (repo / "ansible/tasks/provision-runner-caddy.yml").read_text()
     )[0]
     tasks = copy.deepcopy(
         [
             task
             for task in definition["block"]
             if "ansible.builtin.unarchive" in task
-            or task.get("register") == "runner_wss_caddy_binary"
+            or task.get("register") == "runner_caddy_binary"
         ]
     )
     staged, installed = root / "staged", root / "installed"
@@ -36,9 +36,7 @@ def main():
             parameters = task["ansible.builtin.unarchive"]
             previous = parameters["dest"]
             destination = (
-                installed
-                if task.get("register") == "runner_wss_caddy_binary"
-                else staged
+                installed if task.get("register") == "runner_caddy_binary" else staged
             )
             parameters.update(src=str(archive), dest=str(destination))
             if "creates" in parameters:

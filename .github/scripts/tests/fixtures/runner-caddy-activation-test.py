@@ -32,7 +32,7 @@ def main():
     repo, caddy, ansible, task_definition = map(Path, sys.argv[1:])
     assert os.getuid() == 0, "native activation fixture requires root"
     run(["systemctl", "show", "--property=Version", "--value"])
-    account = f"wssreview-{uuid.uuid4().hex[:12]}"
+    account = f"caddyreview-{uuid.uuid4().hex[:12]}"
     unit = f"{account}.service"
     unit_path = Path("/run/systemd/system") / unit
     assert not unit_path.exists()
@@ -90,20 +90,22 @@ def main():
                 "\tbind 127.0.0.1\n\trespond {{ fixture_status }}\n}\n"
             )
             unit_template = root / "unit.service.j2"
-            source = (repo / "ansible/templates/okou-wss-caddy.service.j2").read_text()
+            source = (
+                repo / "ansible/templates/okou-runner-caddy.service.j2"
+            ).read_text()
             source = (
                 source.replace(
                     "[Service]\n",
                     "[Service]\nEnvironment=OKOU_CADDY_FIXTURE={{ fixture_marker }}\n",
                 )
-                .replace("User=okou-wss-caddy", f"User={account}")
-                .replace("Group=okou-wss-caddy", f"Group={account}")
-                .replace("/var/lib/okou-wss-caddy", str(state))
+                .replace("User=okou-runner-caddy", f"User={account}")
+                .replace("Group=okou-runner-caddy", f"Group={account}")
+                .replace("/var/lib/okou-runner-caddy", str(state))
                 .replace(
-                    "/usr/local/lib/okou-wss-caddy/{{ runner_wss_caddy_version }}/caddy",
+                    "/usr/local/lib/okou-runner-caddy/{{ runner_caddy_version }}/caddy",
                     str(binary),
                 )
-                .replace("/etc/okou-wss-caddy/Caddyfile", str(config))
+                .replace("/etc/okou-runner-caddy/Caddyfile", str(config))
             )
             unit_template.write_text(source)
             definition = json.loads(task_definition.read_text())
@@ -113,8 +115,8 @@ def main():
                     for task in definition["block"]
                     if "ansible.builtin.user" in task
                     or task.get("register")
-                    in ["runner_wss_caddy_unit", "runner_wss_caddy_config"]
-                    or task["name"] == "Recover and apply Runner WSS deployment"
+                    in ["runner_caddy_unit", "runner_caddy_config"]
+                    or task["name"] == "Recover and apply Runner Caddy deployment"
                 ]
             )
 
@@ -126,11 +128,11 @@ def main():
                     task["ansible.builtin.user"].update(
                         name=account, group=account, home=str(state)
                     )
-                if task.get("register") == "runner_wss_caddy_unit":
+                if task.get("register") == "runner_caddy_unit":
                     task["ansible.builtin.template"].update(
                         src=str(unit_template), dest=str(unit_path)
                     )
-                if task.get("register") == "runner_wss_caddy_config":
+                if task.get("register") == "runner_caddy_config":
                     task["ansible.builtin.template"].update(
                         src=str(config_template),
                         dest=str(config),
@@ -141,11 +143,12 @@ def main():
                     task["loop"] = list(map(str, [binary, config, unit_path]))
                 if "ansible.builtin.command" in task:
                     argv = task["ansible.builtin.command"]["argv"]
-                    argv[argv.index("okou-wss-caddy.service")] = unit
+                    argv[argv.index("okou-runner-caddy.service")] = unit
                 if "ansible.builtin.copy" in task:
                     parameters = task["ansible.builtin.copy"]
                     assert (
-                        parameters["dest"] == "/etc/okou-wss-caddy/applied-state.json"
+                        parameters["dest"]
+                        == "/etc/okou-runner-caddy/applied-state.json"
                     )
                     parameters["dest"] = str(applied)
                 if "ansible.builtin.systemd_service" in task:
@@ -176,7 +179,7 @@ def main():
                                 "gather_facts": False,
                                 "vars": {
                                     **definition["vars"],
-                                    "runner_wss_caddy_binary": {"changed": False},
+                                    "runner_caddy_binary": {"changed": False},
                                     "fixture_marker": marker,
                                     "fixture_status": status,
                                     "fixture_port": listen,
@@ -224,9 +227,7 @@ def main():
             unchanged("before", 404)
             initial = process_state()
             unit_publication = [
-                task
-                for task in tasks
-                if task.get("register") == "runner_wss_caddy_unit"
+                task for task in tasks if task.get("register") == "runner_caddy_unit"
             ]
             provision(unit_publication, marker="after")
             assert process_state() == initial
@@ -237,9 +238,7 @@ def main():
             cases.append("interrupted unit publication")
 
             config_publication = [
-                task
-                for task in tasks
-                if task.get("register") == "runner_wss_caddy_config"
+                task for task in tasks if task.get("register") == "runner_caddy_config"
             ]
             before = process_state()
             provision(config_publication, marker="after", status=410)

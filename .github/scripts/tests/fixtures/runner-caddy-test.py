@@ -96,12 +96,12 @@ def wait_ready(notify):
 def main():
     repo, rendered, caddy = map(Path, sys.argv[1:])
     spec = importlib.util.spec_from_file_location(
-        "namespace_validator", repo / "ansible/files/validate-runner-wss-caddy.py"
+        "namespace_validator", repo / "ansible/files/validate-runner-wss-namespace.py"
     )
     validator = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(validator)
     consumer = 65534
-    with tempfile.TemporaryDirectory(prefix="okou-wss-caddy-", dir="/run") as name:
+    with tempfile.TemporaryDirectory(prefix="okou-runner-caddy-", dir="/run") as name:
         root = Path(name)
         # Hardened, non-writable ancestors remain traversable to the consumer.
         root.chmod(0o751)

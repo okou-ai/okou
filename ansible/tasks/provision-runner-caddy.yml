@@ -1,7 +1,7 @@
-- name: Provision dedicated Caddy service for Runner WSS
+- name: Provision dedicated Runner Caddy service
   vars:
-    runner_wss_caddy_version: "2.11.7"
-    runner_wss_caddy_archives:
+    runner_caddy_version: "2.11.7"
+    runner_caddy_archives:
       x86_64:
         arch: amd64
         sha256: 727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b
@@ -28,12 +28,12 @@
       ansible.builtin.assert:
         that:
           - ansible_facts['system'] == 'Linux'
-          - ansible_facts['architecture'] in runner_wss_caddy_archives
+          - ansible_facts['architecture'] in runner_caddy_archives
         fail_msg: Caddy requires a supported Linux architecture.
 
     # Runner supplies this namespace. Inspect it before any ingress changes.
     - name: Validate existing Runner WSS namespace without changing it
-      ansible.builtin.script: ../files/validate-runner-wss-caddy.py
+      ansible.builtin.script: ../files/validate-runner-wss-namespace.py
       args:
         executable: /usr/bin/python3
       changed_when: false
@@ -48,23 +48,23 @@
         group: root
         mode: "0755"
       loop:
-        - /var/cache/okou-wss-caddy
-        - "/var/cache/okou-wss-caddy/{{ runner_wss_caddy_version }}"
-        - "/usr/local/lib/okou-wss-caddy/{{ runner_wss_caddy_version }}"
+        - /var/cache/okou-runner-caddy
+        - "/var/cache/okou-runner-caddy/{{ runner_caddy_version }}"
+        - "/usr/local/lib/okou-runner-caddy/{{ runner_caddy_version }}"
 
     - name: Download checksum-pinned Caddy archive
       ansible.builtin.get_url:
-        url: "https://github.com/caddyserver/caddy/releases/download/v{{ runner_wss_caddy_version }}/caddy_{{ runner_wss_caddy_version }}_linux_{{ runner_wss_caddy_archives[ansible_facts['architecture']]['arch'] }}.tar.gz"
-        dest: "/var/cache/okou-wss-caddy/caddy_{{ runner_wss_caddy_version }}.tar.gz"
-        checksum: "sha256:{{ runner_wss_caddy_archives[ansible_facts['architecture']]['sha256'] }}"
+        url: "https://github.com/caddyserver/caddy/releases/download/v{{ runner_caddy_version }}/caddy_{{ runner_caddy_version }}_linux_{{ runner_caddy_archives[ansible_facts['architecture']]['arch'] }}.tar.gz"
+        dest: "/var/cache/okou-runner-caddy/caddy_{{ runner_caddy_version }}.tar.gz"
+        checksum: "sha256:{{ runner_caddy_archives[ansible_facts['architecture']]['sha256'] }}"
         owner: root
         group: root
         mode: "0644"
 
     - name: Unpack verified Caddy archive
       ansible.builtin.unarchive:
-        src: "/var/cache/okou-wss-caddy/caddy_{{ runner_wss_caddy_version }}.tar.gz"
-        dest: "/var/cache/okou-wss-caddy/{{ runner_wss_caddy_version }}"
+        src: "/var/cache/okou-runner-caddy/caddy_{{ runner_caddy_version }}.tar.gz"
+        dest: "/var/cache/okou-runner-caddy/{{ runner_caddy_version }}"
         remote_src: true
         owner: root
         group: root
@@ -72,123 +72,123 @@
 
     - name: Install verified Caddy binary atomically
       ansible.builtin.copy:
-        src: "/var/cache/okou-wss-caddy/{{ runner_wss_caddy_version }}/caddy"
-        dest: "/usr/local/lib/okou-wss-caddy/{{ runner_wss_caddy_version }}/caddy"
+        src: "/var/cache/okou-runner-caddy/{{ runner_caddy_version }}/caddy"
+        dest: "/usr/local/lib/okou-runner-caddy/{{ runner_caddy_version }}/caddy"
         remote_src: true
         owner: root
         group: root
         mode: "0755"
-      register: runner_wss_caddy_binary
+      register: runner_caddy_binary
 
     - name: Create dedicated Caddy system user
       ansible.builtin.user:
-        name: okou-wss-caddy
-        group: okou-wss-caddy
+        name: okou-runner-caddy
+        group: okou-runner-caddy
         groups: ""
         system: true
         shell: /usr/sbin/nologin
-        home: /var/lib/okou-wss-caddy
+        home: /var/lib/okou-runner-caddy
         create_home: false
-      register: runner_wss_caddy_user
+      register: runner_caddy_user
 
     - name: Create private persistent Caddy certificate state
       ansible.builtin.file:
-        path: /var/lib/okou-wss-caddy
+        path: /var/lib/okou-runner-caddy
         state: directory
-        owner: okou-wss-caddy
-        group: okou-wss-caddy
+        owner: okou-runner-caddy
+        group: okou-runner-caddy
         mode: "0700"
 
     - name: Create protected Caddy configuration directory
       ansible.builtin.file:
-        path: /etc/okou-wss-caddy
+        path: /etc/okou-runner-caddy
         state: directory
         owner: root
-        group: okou-wss-caddy
+        group: okou-runner-caddy
         mode: "0710"
 
-    - name: Validate and install static Runner WSS Caddyfile
+    - name: Validate and install static Runner Caddyfile
       ansible.builtin.template:
-        src: ../templates/runner-wss.Caddyfile.j2
-        dest: /etc/okou-wss-caddy/Caddyfile
+        src: ../templates/runner-caddy.Caddyfile.j2
+        dest: /etc/okou-runner-caddy/Caddyfile
         owner: root
-        group: okou-wss-caddy
+        group: okou-runner-caddy
         mode: "0640"
-        validate: "/usr/local/lib/okou-wss-caddy/{{ runner_wss_caddy_version }}/caddy validate --config %s --adapter caddyfile"
-      register: runner_wss_caddy_config
+        validate: "/usr/local/lib/okou-runner-caddy/{{ runner_caddy_version }}/caddy validate --config %s --adapter caddyfile"
+      register: runner_caddy_config
 
-    - name: Install dedicated Runner WSS Caddy service
+    - name: Install dedicated Runner Caddy service
       ansible.builtin.template:
-        src: ../templates/okou-wss-caddy.service.j2
-        dest: /etc/systemd/system/okou-wss-caddy.service
+        src: ../templates/okou-runner-caddy.service.j2
+        dest: /etc/systemd/system/okou-runner-caddy.service
         owner: root
         group: root
         mode: "0644"
-      register: runner_wss_caddy_unit
+      register: runner_caddy_unit
 
     # A previous run can stop after publishing files but before restarting Caddy.
     # Record completion only after readiness; task.changed alone loses that state.
-    - name: Recover and apply Runner WSS deployment
+    - name: Recover and apply Runner Caddy deployment
       when: not ansible_check_mode
       vars:
-        runner_wss_caddy_activation_state:
-          binary: "{{ runner_wss_caddy_deployment_files.results[0].stat.checksum }}"
-          config: "{{ runner_wss_caddy_deployment_files.results[1].stat.checksum }}"
-          unit: "{{ runner_wss_caddy_deployment_files.results[2].stat.checksum }}"
-          uid: "{{ runner_wss_caddy_user.uid }}"
-          gid: "{{ runner_wss_caddy_user.group }}"
-          groups: "{{ runner_wss_caddy_user.groups }}"
-          invocation: "{{ runner_wss_caddy_invocation.stdout }}"
+        runner_caddy_activation_state:
+          binary: "{{ runner_caddy_deployment_files.results[0].stat.checksum }}"
+          config: "{{ runner_caddy_deployment_files.results[1].stat.checksum }}"
+          unit: "{{ runner_caddy_deployment_files.results[2].stat.checksum }}"
+          uid: "{{ runner_caddy_user.uid }}"
+          gid: "{{ runner_caddy_user.group }}"
+          groups: "{{ runner_caddy_user.groups }}"
+          invocation: "{{ runner_caddy_invocation.stdout }}"
       block:
         - name: Fingerprint published Caddy deployment files
           ansible.builtin.stat:
             path: "{{ item }}"
             checksum_algorithm: sha256
           loop:
-            - "/usr/local/lib/okou-wss-caddy/{{ runner_wss_caddy_version }}/caddy"
-            - /etc/okou-wss-caddy/Caddyfile
-            - /etc/systemd/system/okou-wss-caddy.service
-          register: runner_wss_caddy_deployment_files
+            - "/usr/local/lib/okou-runner-caddy/{{ runner_caddy_version }}/caddy"
+            - /etc/okou-runner-caddy/Caddyfile
+            - /etc/systemd/system/okou-runner-caddy.service
+          register: runner_caddy_deployment_files
 
         - name: Inspect current Caddy service invocation
           ansible.builtin.command:
             argv:
               - systemctl
               - show
-              - okou-wss-caddy.service
+              - okou-runner-caddy.service
               - --property=InvocationID
               - --value
           changed_when: false
-          register: runner_wss_caddy_invocation
+          register: runner_caddy_invocation
 
         - name: Check whether the published deployment has been applied
           ansible.builtin.copy:
-            content: "{{ runner_wss_caddy_activation_state | to_nice_json }}\n"
-            dest: /etc/okou-wss-caddy/applied-state.json
+            content: "{{ runner_caddy_activation_state | to_nice_json }}\n"
+            dest: /etc/okou-runner-caddy/applied-state.json
             owner: root
             group: root
             mode: "0600"
           check_mode: true
-          register: runner_wss_caddy_activation
+          register: runner_caddy_activation
 
         - name: Apply changed ingress configuration without touching Runner services
           ansible.builtin.systemd_service:
-            name: okou-wss-caddy.service
-            daemon_reload: "{{ runner_wss_caddy_unit.changed or runner_wss_caddy_activation.changed }}"
+            name: okou-runner-caddy.service
+            daemon_reload: "{{ runner_caddy_unit.changed or runner_caddy_activation.changed }}"
             enabled: true
-            state: "{{ 'restarted' if (runner_wss_caddy_unit.changed or runner_wss_caddy_config.changed or runner_wss_caddy_binary.changed or runner_wss_caddy_user.changed or runner_wss_caddy_activation.changed) else 'started' }}"
+            state: "{{ 'restarted' if (runner_caddy_unit.changed or runner_caddy_config.changed or runner_caddy_binary.changed or runner_caddy_user.changed or runner_caddy_activation.changed) else 'started' }}"
 
         - name: Verify the ready Caddy service invocation
           ansible.builtin.command:
             argv:
               - systemctl
               - show
-              - okou-wss-caddy.service
+              - okou-runner-caddy.service
               - --property=InvocationID
               - --value
           changed_when: false
-          register: runner_wss_caddy_invocation
-          failed_when: runner_wss_caddy_invocation.rc != 0 or runner_wss_caddy_invocation.stdout is not match('^[0-9a-f]{32}$')
+          register: runner_caddy_invocation
+          failed_when: runner_caddy_invocation.rc != 0 or runner_caddy_invocation.stdout is not match('^[0-9a-f]{32}$')
 
         # A startup failure can follow the notify acknowledgement immediately.
         - name: Verify Caddy remained active after startup
@@ -197,13 +197,13 @@
               - systemctl
               - is-active
               - --quiet
-              - okou-wss-caddy.service
+              - okou-runner-caddy.service
           changed_when: false
 
         - name: Record the successfully applied Caddy deployment
           ansible.builtin.copy:
-            content: "{{ runner_wss_caddy_activation_state | to_nice_json }}\n"
-            dest: /etc/okou-wss-caddy/applied-state.json
+            content: "{{ runner_caddy_activation_state | to_nice_json }}\n"
+            dest: /etc/okou-runner-caddy/applied-state.json
             owner: root
             group: root
             mode: "0600"

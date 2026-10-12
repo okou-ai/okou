@@ -4,16 +4,25 @@
 by Runner build/release/preview provisioning. Its cache covers the complete
 `ansible/` tree, including imported tasks and templates.
 
-## Optional WSS ingress
+## Optional Runner Caddy ingress
 
-Set `runner_wss_caddy_enabled: true` in a host's Ansible configuration to manage
-the dedicated `okou-wss-caddy.service`. Ordinary provisioning omits these tasks
+`okou-runner-caddy` names the service, dedicated user and its primary group.
+Configuration lives in `/etc/okou-runner-caddy`, private certificate/account
+state in `/var/lib/okou-runner-caddy`, versioned binaries in
+`/usr/local/lib/okou-runner-caddy/<version>`, and verified downloads in
+`/var/cache/okou-runner-caddy`. These names belong to the Caddy component;
+the current WSS backend keeps its protocol-specific `/var/lib/vm0-runner/wss`
+namespace. Future HTTPS routes can extend the same Caddy configuration while
+their backend owns its own paths and authorization.
+
+Set `runner_caddy_enabled: true` in a host's Ansible configuration to manage
+the dedicated `okou-runner-caddy.service`. Ordinary provisioning omits these tasks
 unless explicitly opted in; omission does not stop an already deployed service.
 Keep the host setting in `playbooks/host_vars/<inventory_hostname>.yml` for
 consistent cached CI provisioning. A one-off `-e` override is not persisted.
 
 First provision the normal Runner dependencies and start a Runner. Runner creates
-`/var/lib/vm0-runner/wss` as `root:okou-wss-caddy 0710`; ingress provisioning
+`/var/lib/vm0-runner/wss` as `root:okou-runner-caddy 0710`; ingress provisioning
 validates that existing namespace and its trusted ancestors without repairing or
 creating them. Missing state, symlinks, wrong metadata or ACLs stop ingress setup.
 Private Runner directories and owner/lock files remain inaccessible to Caddy.
@@ -22,8 +31,8 @@ For a separately authorized ingress deployment, use the same entry point:
 
 ```bash
 ansible-playbook -i 'runner.example.org,' playbooks/provision-runner.yml \
-  -e 'ansible_user=ubuntu' -e 'runner_wss_caddy_enabled=true' \
-  --tags runner_wss_caddy
+  -e 'ansible_user=ubuntu' -e 'runner_caddy_enabled=true' \
+  --tags runner_caddy
 ```
 
 The exact public inventory hostname must match the hostname written into Runner
@@ -37,7 +46,7 @@ The checksum-pinned Caddy binary has its own system user and service, independen
 of Runner releases. Provisioning compares cached extraction with the verified
 archive and atomically installs the binary, repairing interrupted installations.
 Its certificate/account state stays private and persistent
-under `/var/lib/okou-wss-caddy`; retain it across reprovisioning. Only canonical
+under `/var/lib/okou-runner-caddy`; retain it across reprovisioning. Only canonical
 lowercase UUID `/ws/<runner_id>` paths are forwarded to matching Unix sockets.
 The Runner's first-frame ticket admission still authorizes the Run.
 
