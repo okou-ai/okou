@@ -272,6 +272,9 @@ debootstrap_cache_locked() {
 debootstrap_build() {
   echo "bootstrapping Ubuntu 24.04 rootfs..."
   ROOTFS_DIR="$(mktemp -d)"
+  # mktemp uses 0700. The root must be searchable before build-time checks
+  # drop privileges to the sandbox user, as well as in the final ext4 image.
+  sudo chmod 755 "$ROOTFS_DIR"
 
   # Only the shared tarball cache needs fleet-wide serialization. Release the
   # lock before package installation and mkfs so distinct template builds can
@@ -607,9 +610,6 @@ create_ext4() {
   # the htree seed for directory hashing — a fixed UUID ensures identical
   # block layout for identical content, making the rootfs reproducible.
   local fs_uuid="${INPUT_HASH:0:8}-${INPUT_HASH:8:4}-${INPUT_HASH:12:4}-${INPUT_HASH:16:4}-${INPUT_HASH:20:12}"
-
-  # mktemp -d creates 0700; ext4 root inode must be 0755 for non-root access.
-  sudo chmod 755 "$ROOTFS_DIR"
 
   # Create ext4 image populated directly from directory (no loopback mount needed)
   truncate -s "$image_bytes" "$TMP_TEMPLATE_PATH"
