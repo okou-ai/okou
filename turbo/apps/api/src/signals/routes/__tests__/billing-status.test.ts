@@ -70,6 +70,42 @@ describe("GET /api/billing/status", () => {
     });
   });
 
+  it("keeps billing status isolated across successive organization requests", async () => {
+    const bdd = createBddApi(context);
+    const actorA = bdd.user();
+    const actorB = bdd.user();
+    await bdd.completeOnboarding(actorA);
+    await bdd.completeOnboarding(actorB);
+    await publicPlanLifecycle(context, actorA, "pro").update("active");
+    await publicPlanLifecycle(context, actorB, "team").update("active");
+    mockOptionalEnv("STRIPE_SECRET_KEY", undefined);
+
+    const client = setupApp({ context, routes: billingStatusRoutes })(
+      billingStatusContract,
+    );
+
+    mocks.clerk.session(actorA.userId, actorA.orgId);
+    const firstA = await accept(
+      client.get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(firstA.body).toMatchObject({ tier: "pro", status: "active" });
+
+    mocks.clerk.session(actorB.userId, actorB.orgId);
+    const responseB = await accept(
+      client.get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(responseB.body).toMatchObject({ tier: "team", status: "active" });
+
+    mocks.clerk.session(actorA.userId, actorA.orgId);
+    const secondA = await accept(
+      client.get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(secondA.body).toMatchObject({ tier: "pro", status: "active" });
+  });
+
   it("returns billing status for authenticated user", async () => {
     const fixture = await track(
       store.set(seedBillingStatusOrg$, { credits: 100_000 }, context.signal),
@@ -940,6 +976,12 @@ describe("GET /api/billing/status", () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
     mocks.clerk.session(userId, orgId);
+    mockEnv("OKOU_PRICE_CONCURRENCY", `price_concurrency_${randomUUID()}`);
+    mockOptionalEnv("STRIPE_SECRET_KEY", "sk_test_billing_status");
+    mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
+    context.mocks.stripe.prices.retrieve.mockRejectedValue(
+      new Error("Concurrency price must not be read for a missing org"),
+    );
 
     const client = setupApp({ context, routes: billingStatusRoutes })(
       billingStatusContract,
@@ -954,5 +996,7 @@ describe("GET /api/billing/status", () => {
     expect(response.body.status).toBe("suspended");
     expect(response.body.credits).toBe(0);
     expect(response.body.hasSubscription).toBeFalsy();
+    expect(response.body.canBuyConcurrency).toBeFalsy();
+    expect(response.body).not.toHaveProperty("concurrencyUnitAmountCents");
   });
 });

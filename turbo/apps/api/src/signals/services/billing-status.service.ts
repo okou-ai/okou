@@ -518,9 +518,10 @@ function billingCapabilityResponseFields(
 }
 
 export function orgBillingStatus(
-  orgId: string,
+  orgId$: Computed<string>,
 ): Computed<Promise<BillingStatusResponse>> {
   return computed(async (get): Promise<BillingStatusResponse> => {
+    const orgId = get(orgId$);
     const db = get(db$);
     const currentTime = nowDate();
     const [
