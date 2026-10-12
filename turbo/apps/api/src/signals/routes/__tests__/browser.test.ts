@@ -8127,6 +8127,119 @@ describe("okou browser route", () => {
     120_000,
   );
 
+  it("lets the signed-in viewer restart an error browser after its run completes", async () => {
+    const owned = await setupOwnedComputerBrowserScenario();
+    const { chat, actor, agentId } = owned;
+    const routeMocks = createRouteMocks(context);
+    const webhooks = createWebhookCallbackApi(context);
+    const sent = await owned.run(() => {
+      return chat.sendAndLaunch(actor, {
+        agentId,
+        prompt: "Open a browser that the viewer can restart after completion",
+        cloudBrowserEnabled: true,
+      });
+    });
+    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+    const browserHeaders = {
+      authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
+    };
+    const providerIds = [randomUUID(), randomUUID()] as const;
+    acceptBrowserUseCdpSessions(providerIds);
+    let providerCreates = 0;
+    let rejectResize = true;
+    context.mocks.browserUseCdp.command.mockImplementation((command) => {
+      return rejectResize && command.method === "Browser.setContentsSize"
+        ? new Error("test resize failure")
+        : undefined;
+    });
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        const id = providerIds[providerCreates];
+        providerCreates += 1;
+        if (!id) {
+          throw new Error("Unexpected browser provider creation");
+        }
+        return HttpResponse.json(providerBrowser(id), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+      http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(
+          providerBrowser(String(params.id), { status: "stopped" }),
+        );
+      }),
+    );
+    await owned.run(async () => {
+      const failed = await requestBrowserUse(browserHeaders);
+      expect(failed.status).toBe(502);
+      await expect(failed.json()).resolves.toMatchObject({
+        error: { code: "BROWSER_USE_RESIZE_ERROR" },
+      });
+      await flushWaitUntilForTest();
+      const current = await accept(
+        client().current({ headers: browserHeaders }),
+        [200],
+      );
+      expect(current.body.browser.status).toBe("error");
+
+      await webhooks.requestAgentComplete(
+        { runId: sent.runId, exitCode: 0 },
+        claimed.sandboxHeaders,
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const ended = await requestBrowserUse(browserHeaders);
+      expect(ended.status).toBe(409);
+      await expect(ended.json()).resolves.toMatchObject({
+        error: { code: "BROWSER_RUN_ENDED" },
+      });
+
+      rejectResize = false;
+      routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+      const reopened = await accept(
+        client().open({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId: sent.threadId },
+          body: {},
+        }),
+        [200],
+      );
+      expect(reopened.body.browser).toMatchObject({
+        threadId: sent.threadId,
+        status: "active",
+        screen: { width: 1440, height: 900, resizable: true },
+      });
+      expect(reopened.body).not.toHaveProperty("cdpUrl");
+      const observed = await accept(
+        client().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId: sent.threadId },
+        }),
+        [200],
+      );
+      expect(observed.body.browser.status).toBe("active");
+      expect(providerCreates).toBe(2);
+      await chat.deleteThread(actor, sent.threadId);
+      await flushWaitUntilForTest();
+      await accept(
+        client().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId: sent.threadId },
+        }),
+        [404],
+      );
+    });
+  });
+
   it("reclaims the earliest idle lease before starting past org concurrency", async () => {
     // Two managed browsers keep the third start past the limit, independent of
     // the Pro plan's own concurrency.
