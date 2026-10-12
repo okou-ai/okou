@@ -4,6 +4,8 @@ import { command } from "ccstate";
 import { delay } from "signal-timers";
 import { v5 as uuidv5 } from "uuid";
 import { eq } from "drizzle-orm";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { z } from "zod";
 
@@ -26,6 +28,7 @@ import {
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
 import { publishArtifactsChangedForRun$ } from "./artifact-realtime.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
 const log = logger("artifacts:preview");
 
@@ -595,8 +598,8 @@ async function renderArtifactSnapshot(
  * Render a static preview image for a single hosted-site/HTML artifact row,
  * upload it according to the artifact storage policy, and persist its stable
  * URL on the row. Returns false (no-op) when the browser-rendering
- * token is unset. Keyed by the row id so it always targets the exact artifact
- * of that run.
+ * token is unset or sandbox previews are enabled. Keyed by the row id so it
+ * always targets the exact artifact of that run.
  */
 const renderAndStoreArtifactPreview$ = command(
   async (
@@ -606,6 +609,16 @@ const renderAndStoreArtifactPreview$ = command(
   ): Promise<boolean> => {
     const token = env("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN");
     if (!token) {
+      return false;
+    }
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      args.orgId,
+      args.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, features)) {
       return false;
     }
     const wafSecret = env("ARTIFACT_PREVIEW_WAF_SECRET");
