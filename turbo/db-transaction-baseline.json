@@ -432,11 +432,6 @@
       "owner": "handleDisconnectCommand"
     },
     {
-      "id": "TX-0165",
-      "file": "turbo/apps/api/src/signals/services/gmail-automation-watch.service.ts",
-      "owner": "publishGmailWatch$"
-    },
-    {
       "id": "TX-0167",
       "file": "turbo/apps/api/src/signals/services/google-calendar-automation-watch.service.ts",
       "owner": "persistLegacyPrimaryCalendarMigration$"
