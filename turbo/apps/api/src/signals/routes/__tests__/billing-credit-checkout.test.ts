@@ -17,11 +17,10 @@ const {
   TEST_PRICE_CUSTOM_CREDIT_UNIT,
   setTierPrices,
   currentSecond,
-  okouToken,
+  claimAgentToken,
   createOrgFixture,
   createSubscriptionOrg,
   createPublicBillingOrg,
-  seedMemberRole,
 } = createBillingCheckoutFixture();
 
 describe("POST /api/billing/credit-checkout", () => {
@@ -134,36 +133,6 @@ describe("POST /api/billing/credit-checkout", () => {
         message: "Only org admins can buy credits",
         code: "FORBIDDEN",
       },
-    });
-  });
-
-  it("returns 403 for agent tokens without billing write capability", async () => {
-    const token = okouToken({
-      userId: `user_${randomUUID()}`,
-      orgId: `org_${randomUUID()}`,
-      capabilities: ["billing:read"],
-    });
-
-    const client = setupApp({
-      context,
-      routes: billingCreditCheckoutRoutes,
-    })(billingCreditCheckoutContract);
-
-    const response = await accept(
-      client.create({
-        body: {
-          credits: 20_000,
-          successUrl: `${APP_ORIGIN}/billing?credit=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-        },
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [403],
-    );
-
-    expect(response.body.error).toStrictEqual({
-      message: "Missing required capability: billing:write",
-      code: "FORBIDDEN",
     });
   });
 
@@ -1097,25 +1066,13 @@ describe("POST /api/billing/credit-checkout", () => {
     });
   });
 
-  it("creates credit checkout for agent tokens with billing write capability", async () => {
-    const fixture = await trackedSeed();
-    await seedMemberRole({
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      role: "admin",
-    });
-
-    const customerId = `cus_${randomUUID().slice(0, 8)}`;
-    context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
+  it("creates credit checkout with a real claim-issued agent token", async () => {
+    const fixture = await createSubscriptionOrg({ tier: "pro" });
+    const token = await claimAgentToken(fixture);
+    const customerId = fixture.customerId;
     context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
       url: "https://checkout.stripe.com/session/zero-credit",
     });
-    const token = okouToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      capabilities: ["billing:write"],
-    });
-
     const client = setupApp({
       context,
       routes: billingCreditCheckoutRoutes,

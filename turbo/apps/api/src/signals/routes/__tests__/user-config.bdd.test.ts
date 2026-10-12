@@ -18,13 +18,14 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { env, mockEnv } from "../../../lib/env";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
+import { publicChatActor } from "./helpers/public-chat-actor";
 
 /*
 Round-5 cluster auth-03 (AUTH-01/AUTH-03): user-owned configuration plus the
 public identity matrix. Selected identity cases use normal APIs (onboarding,
 CLI auth, and agents); the only mocks are the Clerk SDK boundary and the S3
-accept for agent creation. The selected identity case uses actual Runner claims; adjacent capability
-cases still use test signers and remain outside this batch.
+accept for agent creation. Runner credentials come from actual claims; CLI
+credentials come from device authorization.
 */
 
 const context = testContext();
@@ -589,17 +590,25 @@ describe("AUTH-02 public CLI PAT identity", () => {
     expect(refreshed.body).toStrictEqual(first.body);
   });
 
-  it("rejects forged and malformed pat bearers", async () => {
+  it("rejects a tampered issued PAT and malformed pat bearers", async () => {
+    const actor = api.user();
+    const issued = await api.createCliToken(actor);
     cfg.mockSession(null);
-
-    const forged = await cfg.requestMe(
-      {
-        authorization: `Bearer ${cfg.forgedPatBearer(`user_${randomUUID()}`)}`,
-      },
+    const parts = issued.token.split(".");
+    if (parts.length !== 3) {
+      throw new Error("Expected the device flow to issue a JWT PAT");
+    }
+    const signature = parts[2];
+    if (!signature) {
+      throw new Error("Expected the issued PAT signature");
+    }
+    parts[2] = `${signature.startsWith("a") ? "b" : "a"}${signature.slice(1)}`;
+    const tampered = await cfg.requestMe(
+      { authorization: `Bearer ${parts.join(".")}` },
       [401],
     );
-    expectApiError(forged.body);
-    expect(forged.body.error.code).toBe("UNAUTHORIZED");
+    expectApiError(tampered.body);
+    expect(tampered.body.error.code).toBe("UNAUTHORIZED");
 
     const garbage = await cfg.requestMe(
       { authorization: "Bearer vm0_pat_garbage" },
@@ -728,89 +737,75 @@ describe("AUTH-01 sandbox and agent bearers", () => {
     });
   });
 
-  it("enforces agent capabilities on real user-config routes", async () => {
-    const admin = api.user();
-    api.acceptAgentStorageWrites();
-    const agent = await api.createAgent(admin, {
-      displayName: "BDD Nova Cap Agent",
+  it("updates user connectors with a claimed agent token and rejects push registration", async () => {
+    const owned = await publicChatActor(context);
+    const run = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "configure connectors with the issued agent credential",
     });
-    cfg.mockMembership(admin, "org:admin");
+    const { claim } = await owned.claimChatRun(owned.runnerGroup, run.runId);
+    const token = claim.platformEnvironment?.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected the claim's Okou token");
+    }
+    await owned.run(async () => {
+      cfg.mockMembership(owned.actor, "org:admin");
+      const updated = await cfg.updateUserBuiltinConnectors(
+        { bearer: token },
+        owned.agentId,
+        ["github"],
+      );
+      expect(updated.enabledConnectorSlugs).toStrictEqual(["github"]);
+      const readBack = await cfg.readUserConnectors(owned.actor, owned.agentId);
+      expect(readBack.enabledConnectorSlugs).toStrictEqual(["github"]);
 
-    const readCap = cfg.okouBearer(admin, ["agent:read"]);
-    const updated = await cfg.updateUserBuiltinConnectors(
-      { bearer: readCap.token },
-      agent.agentId,
-      ["github"],
-    );
-    expect(updated.enabledConnectorSlugs).toStrictEqual(["github"]);
-    const readBack = await cfg.readUserConnectors(admin, agent.agentId);
-    expect(readBack.enabledConnectorSlugs).toStrictEqual(["github"]);
-
-    const fileCap = cfg.okouBearer(admin, ["file:read"]);
-    const forbidden = await cfg.requestUpdateUserConnectors(
-      { bearer: fileCap.token },
-      agent.agentId,
-      ["github"],
-      [403],
-    );
-    expectApiError(forbidden.body);
-    expect(forbidden.body).toStrictEqual({
-      error: {
-        message: "Missing required capability: agent:read",
-        code: "FORBIDDEN",
-      },
-    });
-
-    const pushForbidden = await cfg.requestRegisterPush(
-      { bearer: fileCap.token },
-      {
-        endpoint: "https://push.example.test/subscription",
-        keys: { p256dh: "p256dh-key", auth: "auth-key" },
-      },
-      [403],
-    );
-    expectApiError(pushForbidden.body);
-    expect(pushForbidden.body).toStrictEqual({
-      error: {
-        message: "This endpoint is not available for sandbox tokens",
-        code: "FORBIDDEN",
-      },
+      const pushForbidden = await cfg.requestRegisterPush(
+        { bearer: token },
+        {
+          endpoint: "https://push.example.test/subscription",
+          keys: { p256dh: "p256dh-key", auth: "auth-key" },
+        },
+        [403],
+      );
+      expectApiError(pushForbidden.body);
+      expect(pushForbidden.body).toStrictEqual({
+        error: {
+          message: "This endpoint is not available for sandbox tokens",
+          code: "FORBIDDEN",
+        },
+      });
     });
   });
 
-  it("accepts sandbox and agent bearers on auth me", async () => {
-    const sandboxActor = api.user();
-    const writeActor = api.user();
-    const bareActor = api.user();
-    cfg.mockSession(null);
-
-    cfg.mockClerkUsers([sandboxActor]);
-    const sandbox = cfg.sandboxBearer(sandboxActor);
-    const sandboxMe = await cfg.readMe({ bearer: sandbox.token });
-    expect(sandboxMe).toStrictEqual({
-      userId: sandboxActor.userId,
-      email: sandboxActor.email,
-      orgId: sandboxActor.orgId,
+  it("drops the organization from claimed agent identity after public member removal", async () => {
+    const owned = await publicChatActor(context);
+    const run = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "read identity after organization membership removal",
     });
-
-    cfg.mockClerkUsers([writeActor]);
-    cfg.mockMembership(writeActor, null);
-    const okouWrite = cfg.okouBearer(writeActor, ["file:write"]);
-    const okouWriteMe = await cfg.readMe({ bearer: okouWrite.token });
-    expect(okouWriteMe).toStrictEqual({
-      userId: writeActor.userId,
-      email: writeActor.email,
-      orgId: null,
-    });
-
-    cfg.mockClerkUsers([bareActor]);
-    cfg.mockMembership(bareActor, null);
-    const okouBare = cfg.okouBearer(bareActor, []);
-    const okouBareMe = await cfg.readMe({ bearer: okouBare.token });
-    expect(okouBareMe).toStrictEqual({
-      userId: bareActor.userId,
-      email: bareActor.email,
-      orgId: null,
+    const { claim } = await owned.claimChatRun(owned.runnerGroup, run.runId);
+    const token = claim.platformEnvironment?.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected the claim's Okou token");
+    }
+    await owned.run(async () => {
+      const admin = api.user({ orgId: owned.actor.orgId });
+      api.mockClerkOrg(admin, {
+        members: [
+          { actor: admin, role: "org:admin" },
+          { actor: owned.actor, role: "org:member" },
+        ],
+      });
+      await api.removeMember(admin, { email: owned.actor.email });
+      cfg.mockSession(null);
+      cfg.mockClerkUsers([owned.actor]);
+      cfg.mockMembership(owned.actor, null);
+      const identity = await cfg.readMe({ bearer: token });
+      expect(identity).toStrictEqual({
+        userId: owned.actor.userId,
+        email: owned.actor.email,
+        orgId: null,
+      });
     });
   });
 

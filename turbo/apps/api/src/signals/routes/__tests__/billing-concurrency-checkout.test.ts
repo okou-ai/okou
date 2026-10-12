@@ -31,7 +31,7 @@ const {
   TEST_PRICE_CONCURRENCY,
   setTierPrices,
   currentSecond,
-  okouToken,
+  claimAgentToken,
   readBillingStatus,
   createSubscriptionOrg,
   createOwnedBillingOrg,
@@ -4192,7 +4192,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
     ]);
   });
 
-  it("adds concurrency to the Plan subscription for an agent token with billing write capability", async () => {
+  it("adds concurrency to the Plan subscription with a real claim-issued agent token", async () => {
     context.mocks.stripe.subscriptions.list.mockResolvedValueOnce({
       data: [],
       has_more: false,
@@ -4246,11 +4246,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
         ],
       },
     });
-    const token = okouToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      capabilities: ["billing:write"],
-    });
+    const token = await claimAgentToken(fixture);
 
     const client = setupApp({
       context,

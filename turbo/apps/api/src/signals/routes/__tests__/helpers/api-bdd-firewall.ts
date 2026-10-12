@@ -7,7 +7,6 @@ import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { server } from "../../../../mocks/server";
-import { generateSandboxToken } from "../../../auth/tokens";
 import { webhooksAgentFirewallAuthRoutes } from "../../webhooks-agent-firewall-auth";
 import type { ApiTestUser } from "./api-bdd";
 import { encryptSecretForTests } from "./encrypt-secret";
@@ -81,20 +80,6 @@ export function basicTemplate(first: string, second: string): string {
 
 export function createFirewallApi(context: TestContext) {
   return {
-    sandboxHeaders(
-      actor: ApiTestUser,
-      runId: string,
-      tokenRunId?: string,
-    ): SandboxHeaders {
-      return {
-        authorization: `Bearer ${generateSandboxToken(
-          actor.userId,
-          tokenRunId ?? runId,
-          actor.orgId ?? "org_bdd_firewall",
-        )}`,
-      };
-    },
-
     encryptedSecretsBody(values: Record<string, string>): string {
       return encryptSecretForTests(JSON.stringify(values));
     },

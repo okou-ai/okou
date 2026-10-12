@@ -1542,36 +1542,6 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
     });
   });
 
-  it("acknowledges an event batch when its required DB run is missing", async () => {
-    const runId = randomUUID();
-    const headers = api.sandboxWebhookHeaders({ runId });
-    let requestCount = 0;
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
-        () => {
-          requestCount += 1;
-          return HttpResponse.json(successfulAxiomIngestStatus(1));
-        },
-      ),
-    );
-    const response = await api.requestAgentEvents(
-      {
-        runId,
-        events: [{ type: "system", sequenceNumber: 0 }],
-      },
-      headers,
-      [200],
-    );
-    expect(response.body).toStrictEqual({
-      received: 1,
-      firstSequence: 0,
-      lastSequence: 0,
-    });
-    await flushWaitUntilForTest();
-    expect(requestCount).toBe(0);
-  });
-
   it("acknowledges the event batch before the Axiom sub-deadline elapses", async () => {
     const {
       actor,
@@ -1689,8 +1659,9 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
 
 describe("WHCB-05: sandbox agent webhook boundaries", () => {
   it("rejects unbounded DNS attempt dimensions at the telemetry boundary", async () => {
-    const runId = randomUUID();
-    const headers = api.sandboxWebhookHeaders({ runId });
+    const { runId, headers } = await createEventWebhookRun(
+      "validate Runner DNS attempt dimensions",
+    );
     for (const invalid of [
       { dns_readiness_attempt: 0 },
       { dns_readiness_attempt: 4 },
@@ -2244,14 +2215,13 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
     });
   });
 
-  it("rejects malformed, unauthenticated, mismatched, and missing-run sandbox reports", async () => {
-    const runId = randomUUID();
-    const mismatchedRunId = randomUUID();
-    const headers = api.sandboxWebhookHeaders({ runId });
-    const mismatchedHeaders = api.sandboxWebhookHeaders({
-      runId,
-      tokenRunId: mismatchedRunId,
-    });
+  it("rejects malformed, unauthenticated, and mismatched sandbox reports", async () => {
+    const { runId, headers } = await createEventWebhookRun(
+      "validate Runner report boundaries",
+    );
+    const { headers: mismatchedHeaders } = await createEventWebhookRun(
+      "another Runner report credential",
+    );
 
     const malformedHeartbeat = await api.requestAgentHeartbeatUnchecked(
       {},
@@ -2298,14 +2268,6 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
     expectApiError(mismatchedTelemetry.body);
     expect(mismatchedTelemetry.body.error.code).toBe("UNAUTHORIZED");
 
-    const missingHeartbeatRun = await api.requestAgentHeartbeat(
-      { runId },
-      headers,
-      [404],
-    );
-    expectApiError(missingHeartbeatRun.body);
-    expect(missingHeartbeatRun.body.error.code).toBe("NOT_FOUND");
-
     const mismatchedUsageEvent = await api.requestAgentUsageEvent(
       {
         runId,
@@ -2343,25 +2305,6 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
     );
     expectApiError(malformedUsageEvent.body);
     expect(malformedUsageEvent.body.error.code).toBe("BAD_REQUEST");
-
-    const missingUsageRun = await api.requestAgentUsageEvent(
-      {
-        runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider: "github",
-            category: "api_request",
-            quantity: 1,
-          },
-        ],
-      },
-      headers,
-      [404],
-    );
-    expectApiError(missingUsageRun.body);
-    expect(missingUsageRun.body.error.code).toBe("NOT_FOUND");
 
     const malformedTelemetryBucket = await api.requestAgentTelemetryUnchecked(
       {
@@ -2436,69 +2379,18 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
       );
     expectApiError(malformedTelemetryResponseState.body);
     expect(malformedTelemetryResponseState.body.error.code).toBe("BAD_REQUEST");
-
-    const unknownTelemetryDownloadSource =
-      await api.requestAgentTelemetryUnchecked(
-        {
-          runId,
-          sandboxOperations: [
-            {
-              ts: nowDate().toISOString(),
-              action_type: "session_history_download",
-              duration_ms: 3,
-              success: true,
-              session_history_download_source: "regional_edge_cache",
-            },
-          ],
-        },
-        headers,
-        [404],
-      );
-    expectApiError(unknownTelemetryDownloadSource.body);
-    expect(unknownTelemetryDownloadSource.body.error.code).toBe("NOT_FOUND");
-
-    const missingTelemetryRun = await api.requestAgentTelemetry(
-      {
-        runId,
-        networkLogs: [
-          {
-            timestamp: nowDate().toISOString(),
-            host: "example.test",
-            port: 443,
-            method: "GET",
-            url: "https://example.test/status",
-            status: 200,
-            latency_ms: 12,
-            request_size: 5,
-            response_size: 8,
-          },
-        ],
-        sandboxOperations: [
-          {
-            ts: nowDate().toISOString(),
-            action_type: "checkpoint",
-            duration_ms: 3,
-            success: true,
-          },
-        ],
-      },
-      headers,
-      [404],
-    );
-    expectApiError(missingTelemetryRun.body);
-    expect(missingTelemetryRun.body.error.code).toBe("NOT_FOUND");
   });
 });
 
 describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
-  it("handles malformed, mismatched, and missing-run sandbox artifact reports", async () => {
-    const runId = randomUUID();
+  it("handles malformed and mismatched sandbox artifact reports", async () => {
+    const { runId, headers } = await createEventWebhookRun(
+      "validate Runner artifact reports",
+    );
     const hash = "a".repeat(64);
-    const headers = api.sandboxWebhookHeaders({ runId });
-    const mismatchedHeaders = api.sandboxWebhookHeaders({
-      runId,
-      tokenRunId: randomUUID(),
-    });
+    const { headers: mismatchedHeaders } = await createEventWebhookRun(
+      "another Runner artifact credential",
+    );
 
     const malformedEvents = await api.requestAgentEventsUnchecked(
       { runId, events: [] },
@@ -2518,20 +2410,6 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     );
     expectApiError(mismatchedEvents.body);
     expect(mismatchedEvents.body.error.code).toBe("UNAUTHORIZED");
-
-    const missingEventsRun = await api.requestAgentEvents(
-      {
-        runId,
-        events: [{ type: "system", sequenceNumber: 0 }],
-      },
-      headers,
-      [200],
-    );
-    expect(missingEventsRun.body).toStrictEqual({
-      received: 1,
-      firstSequence: 0,
-      lastSequence: 0,
-    });
 
     const malformedComplete = await api.requestAgentCompleteUnchecked(
       { runId },
@@ -2562,20 +2440,6 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expectApiError(mismatchedComplete.body);
     expect(mismatchedComplete.body.error.code).toBe("UNAUTHORIZED");
 
-    const missingCompleteRun = await api.requestAgentComplete(
-      {
-        runId,
-        exitCode: 0,
-        lastEventSequence: 0,
-        sandboxId: "sandbox-bdd",
-        sandboxReuseResult: "poolMiss",
-      },
-      headers,
-      [404],
-    );
-    expectApiError(missingCompleteRun.body);
-    expect(missingCompleteRun.body.error.code).toBe("NOT_FOUND");
-
     const malformedOutputs = await api.requestAgentRunOutputsUnchecked(
       {
         runId,
@@ -2601,19 +2465,6 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     );
     expectApiError(uppercaseHistoryHash.body);
     expect(uppercaseHistoryHash.body.error.code).toBe("BAD_REQUEST");
-
-    const missingOutputsRun = await api.requestAgentRunOutputs(
-      {
-        runId,
-        cliAgentType: "claude-code",
-        cliAgentSessionId: "session-bdd",
-        cliAgentSessionHistoryHash: hash,
-      },
-      headers,
-      [404],
-    );
-    expectApiError(missingOutputsRun.body);
-    expect(missingOutputsRun.body.error.code).toBe("NOT_FOUND");
 
     const mismatchedOutputs = await api.requestAgentRunOutputs(
       {

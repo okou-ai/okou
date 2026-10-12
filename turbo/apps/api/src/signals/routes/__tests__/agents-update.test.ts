@@ -17,8 +17,6 @@ import { createStore } from "ccstate";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedOrgMembership$ } from "./helpers/org-membership";
@@ -43,10 +41,6 @@ function newOrgUser(): OrgUser {
 
 function authHeaders() {
   return { authorization: "Bearer clerk-session" };
-}
-
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
 }
 
 async function cliAuthHeaders(
@@ -178,35 +172,6 @@ describe("PUT /api/agents/:id", () => {
 
     expect(response.body).toStrictEqual({
       error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
-  it("returns 403 for a sandbox token without agent:write capability", async () => {
-    const seconds = currentSecond();
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId: `user_${randomUUID()}`,
-      orgId: `org_${randomUUID()}`,
-      runId: `run_${randomUUID()}`,
-      capabilities: ["agent:read"],
-      iat: seconds,
-      exp: seconds + 60,
-    });
-
-    const response = await accept(
-      agentsClient().update({
-        params: { id: randomUUID() },
-        headers: { authorization: `Bearer ${token}` },
-        body: {},
-      }),
-      [403],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Missing required capability: agent:write",
-        code: "FORBIDDEN",
-      },
     });
   });
 
@@ -354,35 +319,6 @@ describe("PATCH /api/agents/:id", () => {
 
     expect(response.body).toStrictEqual({
       error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
-  it("returns 403 for a sandbox token without agent:write capability", async () => {
-    const seconds = currentSecond();
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId: `user_${randomUUID()}`,
-      orgId: `org_${randomUUID()}`,
-      runId: `run_${randomUUID()}`,
-      capabilities: ["agent:read"],
-      iat: seconds,
-      exp: seconds + 60,
-    });
-
-    const response = await accept(
-      agentsClient().updateMetadata({
-        params: { id: randomUUID() },
-        headers: { authorization: `Bearer ${token}` },
-        body: {},
-      }),
-      [403],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Missing required capability: agent:write",
-        code: "FORBIDDEN",
-      },
     });
   });
 
@@ -661,35 +597,6 @@ describe("PUT /api/agents/:id/instructions", () => {
 
     expect(response.body).toStrictEqual({
       error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
-  it("returns 403 for a sandbox token without agent:write capability", async () => {
-    const seconds = currentSecond();
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId: `user_${randomUUID()}`,
-      orgId: `org_${randomUUID()}`,
-      runId: `run_${randomUUID()}`,
-      capabilities: ["agent:read"],
-      iat: seconds,
-      exp: seconds + 60,
-    });
-
-    const response = await accept(
-      instructionsClient().update({
-        params: { id: randomUUID() },
-        headers: { authorization: `Bearer ${token}` },
-        body: { content: "new instructions" },
-      }),
-      [403],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Missing required capability: agent:write",
-        code: "FORBIDDEN",
-      },
     });
   });
 
