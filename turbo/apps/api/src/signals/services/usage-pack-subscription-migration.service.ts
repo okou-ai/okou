@@ -19,6 +19,7 @@ import {
 } from "@okouai/db/schema/usage-pack-subscription";
 import {
   and,
+  count,
   desc,
   eq,
   getTableColumns,
@@ -1419,64 +1420,127 @@ type PersistMigrationRevisionResult =
   | { readonly status: "not_found" }
   | { readonly status: "conflict" };
 
-const persistMigrationRevisionIntent$ = command(
+interface PersistMigrationRevisionArgs {
+  readonly orgId: string;
+  readonly migrationId: string;
+  readonly baseConfigurationHash: string;
+  readonly desiredConfigurationHash: string;
+  readonly prepared: PreparedMigrationRevision;
+}
+
+function migrationRevisionSelectionSource(
+  selections: readonly PreparedMigrationSelection[],
+) {
+  const columns = getTableColumns(usagePackSubscriptionMigrationSelections);
+  const values = selections.map((selection) => {
+    return sql`(
+      ${sql.param(selection.userId, columns.userId)}::text,
+      ${sql.param(selection.invitationId, columns.invitationId)}::text,
+      ${sql.param(selection.normalizedEmail, columns.normalizedEmail)}::text,
+      ${sql.param(selection.role, columns.role)}::text,
+      ${sql.param(selection.inviterUserId, columns.inviterUserId)}::text,
+      ${sql.param(selection.usagePackUsd, columns.usagePackUsd)}::integer,
+      ${sql.param(selection.stripePriceId, columns.stripePriceId)}::text,
+      ${sql.param(selection.unitAmountCents, columns.unitAmountCents)}::integer,
+      ${sql.param(selection.purchasedCredits, columns.purchasedCredits)}::bigint,
+      ${sql.param(selection.bonusCredits, columns.bonusCredits)}::bigint
+    )`;
+  });
+  const desired = sql`(values ${sql.join(values, sql`, `)}) as desired(
+    user_id, invitation_id, normalized_email, role, inviter_user_id,
+    usage_pack_usd, stripe_price_id, unit_amount_cents, purchased_credits,
+    bonus_credits
+  )`;
+  return {
+    desired,
+    id: sql`gen_random_uuid()`
+      .mapWith(usagePackSubscriptionMigrationSelections.id)
+      .as("id"),
+    fields: {
+      userId: sql`desired.user_id`
+        .mapWith(usagePackSubscriptionMigrationSelections.userId)
+        .as("user_id"),
+      invitationId: sql`desired.invitation_id`
+        .mapWith(usagePackSubscriptionMigrationSelections.invitationId)
+        .as("invitation_id"),
+      normalizedEmail: sql`desired.normalized_email`
+        .mapWith(usagePackSubscriptionMigrationSelections.normalizedEmail)
+        .as("normalized_email"),
+      role: sql`desired.role`
+        .mapWith(usagePackSubscriptionMigrationSelections.role)
+        .as("role"),
+      inviterUserId: sql`desired.inviter_user_id`
+        .mapWith(usagePackSubscriptionMigrationSelections.inviterUserId)
+        .as("inviter_user_id"),
+      usagePackUsd: sql`desired.usage_pack_usd`
+        .mapWith(usagePackSubscriptionMigrationSelections.usagePackUsd)
+        .as("usage_pack_usd"),
+      stripePriceId: sql`desired.stripe_price_id`
+        .mapWith(usagePackSubscriptionMigrationSelections.stripePriceId)
+        .as("stripe_price_id"),
+      unitAmountCents: sql`desired.unit_amount_cents`
+        .mapWith(usagePackSubscriptionMigrationSelections.unitAmountCents)
+        .as("unit_amount_cents"),
+      purchasedCredits: sql`desired.purchased_credits`
+        .mapWith(usagePackSubscriptionMigrationSelections.purchasedCredits)
+        .as("purchased_credits"),
+      bonusCredits: sql`desired.bonus_credits`
+        .mapWith(usagePackSubscriptionMigrationSelections.bonusCredits)
+        .as("bonus_credits"),
+      createdAt: sql`now()`
+        .mapWith(usagePackSubscriptionMigrationSelections.createdAt)
+        .as("created_at"),
+    },
+  };
+}
+
+// The entire read/hash/write phase is uninterrupted. Only the original owner
+// checks cancellation, after this stable semantic command has completed.
+const persistScheduledMigrationRevision$ = command(
   async (
     { set },
-    args: {
-      readonly orgId: string;
-      readonly migrationId: string;
-      readonly baseConfigurationHash: string;
-      readonly desiredConfigurationHash: string;
-      readonly prepared: PreparedMigrationRevision;
-    },
-    signal: AbortSignal,
+    args: PersistMigrationRevisionArgs,
   ): Promise<PersistMigrationRevisionResult> => {
     const db = set(writeDb$);
-
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0297; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const [migration] = await tx
-        .select(migrationColumnsWithRowVersion())
-        .from(usagePackSubscriptionMigrations)
-        .where(
-          and(
-            eq(usagePackSubscriptionMigrations.id, args.migrationId),
-            eq(usagePackSubscriptionMigrations.orgId, args.orgId),
-          ),
-        )
-        .limit(1);
-      if (!migration) {
-        return { status: "not_found" as const };
-      }
-      const selections = await tx
-        .select()
-        .from(usagePackSubscriptionMigrationSelections)
-        .where(
-          eq(
-            usagePackSubscriptionMigrationSelections.migrationId,
-            migration.id,
-          ),
-        );
-      const currentConfigurationHash = storedMigrationConfigurationHash(
-        migration,
-        selections,
+    const [migration] = await db
+      .select(migrationColumnsWithRowVersion())
+      .from(usagePackSubscriptionMigrations)
+      .where(
+        and(
+          eq(usagePackSubscriptionMigrations.id, args.migrationId),
+          eq(usagePackSubscriptionMigrations.orgId, args.orgId),
+        ),
+      )
+      .limit(1);
+    if (!migration) {
+      return { status: "not_found" as const };
+    }
+    const selections = await db
+      .select()
+      .from(usagePackSubscriptionMigrationSelections)
+      .where(
+        eq(usagePackSubscriptionMigrationSelections.migrationId, migration.id),
       );
-      if (currentConfigurationHash === args.desiredConfigurationHash) {
-        return migration.status === "revising" ||
-          migration.status === "scheduled"
-          ? { status: "ready" as const, migration }
-          : { status: "conflict" as const };
-      }
-      if (
-        migration.status !== "scheduled" ||
-        !migration.stripeScheduleId ||
-        migration.effectiveAt <= nowDate() ||
-        currentConfigurationHash !== args.baseConfigurationHash
-      ) {
-        return { status: "conflict" as const };
-      }
-      const updatedAt = nowDate();
-      const [revising] = await tx
+    const currentConfigurationHash = storedMigrationConfigurationHash(
+      migration,
+      selections,
+    );
+    if (currentConfigurationHash === args.desiredConfigurationHash) {
+      return migration.status === "revising" || migration.status === "scheduled"
+        ? { status: "ready" as const, migration }
+        : { status: "conflict" as const };
+    }
+    if (
+      migration.status !== "scheduled" ||
+      !migration.stripeScheduleId ||
+      migration.effectiveAt <= nowDate() ||
+      currentConfigurationHash !== args.baseConfigurationHash
+    ) {
+      return { status: "conflict" as const };
+    }
+    const updatedAt = nowDate();
+    const revising = db.$with("revising_migration").as(
+      db
         .update(usagePackSubscriptionMigrations)
         .set({
           targetTier: args.prepared.targetTier,
@@ -1501,28 +1565,64 @@ const persistMigrationRevisionIntent$ = command(
             migrationRowVersionIs(migration.rowVersion),
           ),
         )
-        .returning();
-      if (!revising) {
-        return { status: "conflict" as const };
-      }
-      await tx
+        .returning(),
+    );
+    const deleted = db.$with("deleted_revision_selections").as(
+      db
         .delete(usagePackSubscriptionMigrationSelections)
         .where(
-          eq(
+          inArray(
             usagePackSubscriptionMigrationSelections.migrationId,
-            migration.id,
+            db.select({ id: revising.id }).from(revising),
           ),
-        );
-      if (args.prepared.desiredSelections.length > 0) {
-        await tx.insert(usagePackSubscriptionMigrationSelections).values(
-          args.prepared.desiredSelections.map((selection) => {
-            return { migrationId: migration.id, ...selection };
-          }),
-        );
-      }
-      return { status: "ready" as const, migration: revising };
-    });
+        )
+        .returning({ id: usagePackSubscriptionMigrationSelections.id }),
+    );
+    let revised: MigrationRow | undefined;
+    if (args.prepared.desiredSelections.length > 0) {
+      const source = migrationRevisionSelectionSource(
+        args.prepared.desiredSelections,
+      );
+      const inserted = db.$with("inserted_revision_selections").as(
+        db
+          .insert(usagePackSubscriptionMigrationSelections)
+          .select(
+            db
+              .select({
+                id: source.id,
+                migrationId: revising.id,
+                ...source.fields,
+              })
+              .from(revising)
+              .crossJoin(source.desired)
+              // Consume the entire DELETE before checking replacement uniqueness.
+              // Its scalar aggregate still produces one row for an empty old set.
+              .where(
+                sql`(${db.select({ count: count() }).from(deleted)}) >= 0`,
+              ),
+          )
+          .returning({ id: usagePackSubscriptionMigrationSelections.id }),
+      );
+      [revised] = await db
+        .with(revising, deleted, inserted)
+        .select()
+        .from(revising);
+    } else {
+      [revised] = await db.with(revising, deleted).select().from(revising);
+    }
+    return revised
+      ? { status: "ready" as const, migration: revised }
+      : { status: "conflict" as const };
+  },
+);
 
+const persistMigrationRevisionIntent$ = command(
+  async (
+    { set },
+    args: PersistMigrationRevisionArgs,
+    signal: AbortSignal,
+  ): Promise<PersistMigrationRevisionResult> => {
+    const result = await set(persistScheduledMigrationRevision$, args);
     signal.throwIfAborted();
     return result;
   },
