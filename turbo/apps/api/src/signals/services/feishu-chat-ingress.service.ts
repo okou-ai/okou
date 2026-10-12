@@ -173,7 +173,12 @@ export const ensureFeishuChatThreadRoute$ = command(
         .from(feishuChatThreadRoutes)
         .where(routeWhere(args))
         .limit(1);
-      signal.throwIfAborted();
+      if (signal.aborted) {
+        // Preserve the original missing-winner error before cancellation.
+        if (route) {
+          signal.throwIfAborted();
+        }
+      }
       if (!route) {
         throw new Error(
           "Failed to resolve Feishu chat thread route after conflict",
@@ -191,7 +196,12 @@ export const ensureFeishuChatThreadRoute$ = command(
         .set({ chatId: args.chatId })
         .where(and(eq(feishuChatThreadRoutes.id, route.id), routeWhere(args)))
         .returning({ chatId: feishuChatThreadRoutes.chatId });
-      signal.throwIfAborted();
+      if (signal.aborted) {
+        // Preserve the original zero-update error before cancellation.
+        if (updated) {
+          signal.throwIfAborted();
+        }
+      }
       if (!updated) {
         throw new Error("Failed to update Feishu DM route destination");
       }
