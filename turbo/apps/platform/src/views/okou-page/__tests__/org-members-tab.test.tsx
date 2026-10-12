@@ -12,6 +12,7 @@ import {
   type UsagePackManagementResponse,
 } from "@okouai/api-contracts/contracts/billing";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -944,6 +945,58 @@ test("Promote a workspace member to administrator", async () => {
   click(screen.getByLabelText("Actions for bob@example.com"));
   expect(menuItemByText("Make member")).toBeInTheDocument();
 });
+
+test.each(["bob@example.com", "alice@example.com", "pending@example.com"])(
+  "Keep focus in People after dismissing actions for %s",
+  async (email) => {
+    mockMembersStory();
+    await openMembersTab();
+    const user = userEvent.setup({ delay: null });
+    const settings = screen.getByRole("dialog");
+    const trigger = screen.getByLabelText(`Actions for ${email}`);
+
+    await user.click(trigger);
+    await screen.findByRole("menu");
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => {
+      expect(trigger).toHaveFocus();
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    });
+    expect(settings).toBeInTheDocument();
+  },
+);
+
+test.each([
+  ["bob@example.com", "Remove from workspace", "Remove member?"],
+  ["alice@example.com", "Switch to member", "Switch to member?"],
+  ["pending@example.com", "Revoke invitation", "Revoke invitation?"],
+])(
+  "Return to People actions for %s after cancelling confirmation",
+  async (email, action, title) => {
+    mockMembersStory();
+    await openMembersTab();
+    const user = userEvent.setup({ delay: null });
+    const settings = screen.getByRole("dialog");
+    const trigger = screen.getByLabelText(`Actions for ${email}`);
+
+    await user.click(trigger);
+    await screen.findByRole("menu");
+    await user.click(menuItemByText(action));
+    const confirmation = await screen.findByRole("dialog", { name: title });
+    await waitFor(() => {
+      expect(confirmation.contains(document.activeElement)).toBeTruthy();
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    });
+    await user.click(buttonByText("Cancel", confirmation));
+
+    await waitFor(() => {
+      expect(trigger).toHaveFocus();
+      expect(confirmation).not.toBeInTheDocument();
+    });
+    expect(settings).toBeInTheDocument();
+  },
+);
 
 test("Remove another member from the workspace", async () => {
   mockMembersStory();
