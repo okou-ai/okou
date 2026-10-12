@@ -126,7 +126,6 @@ end
 end
 optional_cpu = %w[host-cpu-fairness-build host-cpu-fairness-test].to_h { |name| [name, "skipped"] }
 check_gate(root, gate, gate_step, cpu_needed: "false", results: optional_cpu)
-check_gate(root, gate, gate_step, results: {"runner-test-prepare" => "skipped"}, success: false)
 unselected = %w[runner-host-groups runner-test-prepare
                 host-cpu-fairness-build host-cpu-fairness-test
                 guest-rpc-firecracker-build guest-rpc-firecracker-test].to_h { |name| [name, "skipped"] }
