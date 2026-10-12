@@ -65,7 +65,8 @@ activation/session/history corpus remains P3d.
 
 Speculative saving unparks an exact reservation and invokes the real Executor
 guest restore with a deliberately absent required timezone, before any business
-process. The failed preparation retains its original promotion/private context,
+process. It verifies the specific unavailable-timezone error before cleanup.
+The failed preparation retains its original promotion/private context,
 backing generation and full lease, then enters the same required covered cleanup.
 Both fresh and snapshot modes verify saved ordinary home bytes and removal of
 the predecessor private runtime. This fixture does not wire production policy or

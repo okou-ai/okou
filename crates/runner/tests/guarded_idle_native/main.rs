@@ -34,6 +34,8 @@ use tokio::sync::Notify;
 
 type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
+const MISSING_GUEST_TIMEZONE: &str = "Etc/okou-test-missing-zone";
+
 #[derive(Clone, Copy, Debug)]
 enum NativeScope {
     Batch(IdleRetirementBatchScope),
@@ -238,17 +240,21 @@ async fn exercise_retirement(
                             Box::pin(async move {
                                 runner_executor::executor::restore_guest_state_with_timezone(
                                     sandbox,
-                                    "Etc/okou-test-missing-zone",
+                                    MISSING_GUEST_TIMEZONE,
                                 )
                                 .await
                                 .map_err(|e| e.to_string())
                             })
                         })
                         .await;
-                    if result.is_ok() {
-                        return Err(io::Error::other(
-                            "native missing timezone unexpectedly restored",
-                        )
+                    let expected_error = runner_executor::ExecutorError::Config(format!(
+                        "guest timezone {MISSING_GUEST_TIMEZONE:?} is unavailable: /usr/share/zoneinfo/{MISSING_GUEST_TIMEZONE} is not a file"
+                    ))
+                    .to_string();
+                    if result.as_ref().err() != Some(&expected_error) {
+                        return Err(io::Error::other(format!(
+                            "native speculative guest restore expected {expected_error:?}, got {result:?}"
+                        ))
                         .into());
                     }
                     speculative.take_cleanup_owner()?
