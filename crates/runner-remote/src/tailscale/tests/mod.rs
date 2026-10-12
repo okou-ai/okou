@@ -252,13 +252,23 @@ async fn one_configuration_is_deduplicated_only_inside_its_exact_registration() 
 
 #[tokio::test]
 async fn run_invalidation_cancels_owned_io_and_allows_a_fresh_authority_snapshot() {
+    run_invalidation(false).await;
+}
+
+#[tokio::test]
+async fn run_invalidation_preserves_fresh_authority_and_response_when_sockets_reset() {
+    run_invalidation(true).await;
+}
+
+async fn run_invalidation(reset_on_close: bool) {
     let cache = Cache::new();
     let run = RunId::new_v4();
     let registration = cache.register(run);
     let connection = uuid::Uuid::new_v4();
     let native_key = key(5);
-    let a = Http::new(vec![2; 1024]).await;
-    let (work, original) = http_work(a.address, None, Arc::new(Mutex::new(None)));
+    let a = Http::new(vec![2; 1024]).await.named("invalidated snapshot");
+    let (work, original) =
+        http_work_with_reset(a.address, None, Arc::new(Mutex::new(None)), reset_on_close);
     let stale = registration.lookup(connection).unwrap();
     let old = stale.native_node(native_key, work).unwrap();
     a.requested().await;
@@ -267,8 +277,9 @@ async fn run_invalidation_cancels_owned_io_and_allows_a_fresh_authority_snapshot
     bounded(old.physical()).await.unwrap();
     assert!(bounded(original).await.is_err());
     let fresh = registration.lookup(connection).unwrap();
-    let b = Http::new(vec![4; 4096]).await;
-    let (work, body) = http_work(b.address, None, Arc::new(Mutex::new(None)));
+    let b = Http::new(vec![4; 4096]).await.named("fresh snapshot");
+    let (work, body) =
+        http_work_with_reset(b.address, None, Arc::new(Mutex::new(None)), reset_on_close);
     let node = fresh.native_node(native_key, work).unwrap();
     b.requested().await;
     b.reply();
@@ -277,8 +288,13 @@ async fn run_invalidation_cancels_owned_io_and_allows_a_fresh_authority_snapshot
     registration.close();
     bounded(registration.shutdown_native()).await.unwrap();
     drop((old, node));
-    a.finish().await;
-    b.finish().await;
+    // Physical retirement may close either socket with EOF or a TCP reset.
+    let old_closure = a.finish_closed().await;
+    let fresh_closure = b.finish_closed().await;
+    if reset_on_close {
+        assert_eq!(old_closure, SocketClosure::Reset, "invalidated snapshot");
+        assert_eq!(fresh_closure, SocketClosure::Reset, "fresh snapshot");
+    }
 }
 
 #[tokio::test]
