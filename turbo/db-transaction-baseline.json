@@ -622,11 +622,6 @@
       "owner": "deleteRemovedAutomationConfiguration$"
     },
     {
-      "id": "TX-0215",
-      "file": "turbo/apps/api/src/signals/services/org-credit-grant.service.ts",
-      "owner": "grantPurchasedOrgCredits$"
-    },
-    {
       "id": "TX-0216",
       "file": "turbo/apps/api/src/signals/services/org-limited-free-bootstrap.service.ts",
       "owner": "cleanupBootstrapCandidate$"
