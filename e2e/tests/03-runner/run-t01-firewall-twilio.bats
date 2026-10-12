@@ -67,11 +67,6 @@ EOF
     assert_output --partial "TWILIO_ACCOUNT_SID=ACCoffeeSafeLocalCoffeeSafeLocalCo"
     assert_output --partial "TWILIO_AUTH_TOKEN=c0ffee5afe10ca1c0ffee5afe10ca1c0"
 
-    run runner_e2e_wait_for_run_context "$RUN_ID"
-    echo "$output"
-    assert_success
-    public_surfaces+="$output"$'\n'
-
     run runner_chat_event_rows "$THREAD_ID"
     echo "$output"
     assert_success

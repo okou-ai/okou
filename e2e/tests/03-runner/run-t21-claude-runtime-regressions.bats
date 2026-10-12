@@ -64,7 +64,12 @@ EOF
     assert_success
     run jq -e '
         .status == "completed" and
-        (.result.agentSessionId | type == "string" and length > 0)
+        (.result.agentSessionId | type == "string" and length > 0) and
+        .source.providerType == "claude-code-oauth-token" and
+        .source.runtimeProviderType == "claude-code-oauth-token" and
+        .source.model == "claude-sonnet-5-5" and
+        .source.credentialScope == "member" and
+        .source.account.status == "connected"
     ' <<<"$output"
     echo "$output"
     assert_success
@@ -73,14 +78,6 @@ EOF
     echo "$output"
     assert_success
     assert_output "$assistant_text"
-
-    run runner_e2e_wait_for_run_context "$RUN_ID"
-    assert_success
-    run jq -e '
-        .cliAgentType == "claude-code" and
-        any(.firewalls[]?; .name == "model-provider:claude-code-oauth-token")
-    ' <<<"$output"
-    assert_success
 
     run runner_chat_event_rows "$THREAD_ID"
     echo "$output"

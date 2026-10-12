@@ -142,11 +142,6 @@ EOF
     assert_output --partial "BENTOML_ENDPOINT_SHA256=${initial_endpoint_digest}"
     refute_output --partial "BENTOML_ENDPOINT_SHA256=${updated_endpoint_digest}"
 
-    run runner_e2e_wait_for_run_context "$first_run_id"
-    echo "$output"
-    assert_success
-    public_surfaces+="$output"$'\n'
-
     run runner_e2e_wait_for_firewall_log \
         "$first_run_id" \
         bentoml \
@@ -243,11 +238,6 @@ EOF
         "BENTOML_API_KEY=cur7hCoffeeSafeLocalCoffeeSafeLocalCoffeeSafe"
     assert_output --partial "BENTOML_ENDPOINT_SHA256=${updated_endpoint_digest}"
     refute_output --partial "BENTOML_ENDPOINT_SHA256=${initial_endpoint_digest}"
-
-    run runner_e2e_wait_for_run_context "$RUN_ID"
-    echo "$output"
-    assert_success
-    public_surfaces+="$output"$'\n'
 
     run runner_e2e_wait_for_firewall_log \
         "$RUN_ID" \

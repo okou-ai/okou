@@ -50,20 +50,19 @@ teardown() {
     THREAD_ID="$(jq -er '.threadId | select(type == "string" and length > 0)' <<<"$output")"
     run runner_wait_for_run "$RUN_ID" 180
     assert_success
-    run jq -e '.status == "completed" and (.result.agentSessionId | type == "string" and length > 0)' <<<"$output"
+    run jq -e '
+        .status == "completed" and
+        (.result.agentSessionId | type == "string" and length > 0) and
+        .source.providerType == "built-in" and
+        .source.runtimeProviderType == "openrouter-codex" and
+        .source.model == "auto" and
+        .source.credentialScope == "org"
+    ' <<<"$output"
     assert_success
     run _wait_for_runner_chat_output "$THREAD_ID" "$RUN_ID" "RESULT=3" 60
     assert_success
 
-    run runner_e2e_wait_for_run_context "$RUN_ID"
-    assert_success
-    run jq -e '
-        .cliAgentType == "pi" and
-        .environment.OPENAI_BASE_URL == "https://openrouter.ai/api/v1" and
-        .environment.OPENAI_MODEL == "@preset/okou-1-0" and
-        any(.firewalls[]?;
-            .kind == "builtin" and .name == "model-provider:openrouter-codex"
-        )
-    ' <<<"$output"
+    run runner_e2e_wait_for_usage_event \
+        "$THREAD_ID" "$RUN_ID" "@preset/okou-1-0"
     assert_success
 }

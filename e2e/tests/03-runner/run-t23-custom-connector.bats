@@ -308,17 +308,38 @@ EOF
     local grants_response="$output"
     public_surfaces+="$grants_response"$'\n'
 
-    local default_marker="CUSTOM_CONNECTOR_DEFAULT_ACCOUNT_${TEST_ID}"
-    local default_prompt
-    default_prompt=$(cat <<EOF
+    local account_probe_template
+    account_probe_template=$(cat <<'EOF'
 set -euo pipefail
+diagnostic=$(okou connector check \
+    --url '__REQUEST_URL__' \
+    --connector 'custom:__CUSTOM_CONNECTOR_ID__' \
+    --json)
+printf '%s\n' "$diagnostic"
+connection_id=$(jq -er --arg connectorId '__CUSTOM_CONNECTOR_ID__' '
+    select(
+        .context == "run" and
+        .diagnostic.outcome == "resolved" and
+        .diagnostic.run.status == "configured" and
+        .connector.target == {kind: "custom", customConnectorId: $connectorId} and
+        .account.state == "available" and
+        .authorization.authorized == true
+    )
+    | .account.connectionId
+    | select(type == "string" and length > 0)
+' <<<"$diagnostic")
+printf 'CUSTOM_CONNECTOR_CONNECTION_ID=%s\n' "$connection_id"
 # Leave room for connection setup around the proxy's 10-second auth deadline.
-curl --silent --show-error --max-time 15 \\
-    --output /dev/null \\
-    'https://example.com/'
-printf '${default_marker}\\n'
+curl --silent --show-error --max-time 15 \
+    --output /dev/null \
+    '__REQUEST_URL__'
+printf '__MARKER__\n'
 EOF
 )
+    account_probe_template="${account_probe_template//__CUSTOM_CONNECTOR_ID__/$CUSTOM_CONNECTOR_ID}"
+    local default_marker="CUSTOM_CONNECTOR_DEFAULT_ACCOUNT_${TEST_ID}"
+    local default_prompt="${account_probe_template//__REQUEST_URL__/https:\/\/example.com\/}"
+    default_prompt="${default_prompt//__MARKER__/$default_marker}"
     run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$default_prompt"
     echo "$output"
     assert_success
@@ -345,27 +366,8 @@ EOF
     echo "$output"
     assert_success
     public_surfaces+="$output"$'\n'
-
-    run runner_e2e_wait_for_run_context "$first_run_id"
-    echo "$output"
-    assert_success
-    local default_run_context="$output"
-    public_surfaces+="$default_run_context"$'\n'
-    run jq -e \
-        --arg customConnectorId "$CUSTOM_CONNECTOR_ID" \
-        --arg sourceId "$default_connection_id" '
-            ([
-                .firewalls[]?
-                | select(
-                    .kind == "inline" and
-                    .customConnectorId == $customConnectorId
-                )
-            ]) as $matches
-            | ($matches | length) == 1 and
-                $matches[0].sourceId == $sourceId
-        ' <<<"$default_run_context"
-    echo "$output"
-    assert_success
+    assert_output --partial "CUSTOM_CONNECTOR_CONNECTION_ID=${default_connection_id}"
+    refute_output --partial "CUSTOM_CONNECTOR_CONNECTION_ID=${selected_connection_id}"
 
     local compact_connector_id="${CUSTOM_CONNECTOR_ID//-/}"
     local firewall_name="custom_connector_${compact_connector_id}"
@@ -447,16 +449,8 @@ EOF
     assert_success
 
     local selected_marker="CUSTOM_CONNECTOR_SELECTED_ACCOUNT_${TEST_ID}"
-    local selected_prompt
-    selected_prompt=$(cat <<EOF
-set -euo pipefail
-# Leave room for connection setup around the proxy's 10-second auth deadline.
-curl --silent --show-error --max-time 15 \\
-    --output /dev/null \\
-    'https://www.google.com/robots.txt'
-printf '${selected_marker}\\n'
-EOF
-)
+    local selected_prompt="${account_probe_template//__REQUEST_URL__/https:\/\/www.google.com\/robots.txt}"
+    selected_prompt="${selected_prompt//__MARKER__/$selected_marker}"
     run runner_e2e_continue_chat_run \
         "$AGENT_ID" \
         "$THREAD_ID" \
@@ -488,27 +482,8 @@ EOF
     echo "$output"
     assert_success
     public_surfaces+="$output"$'\n'
-
-    run runner_e2e_wait_for_run_context "$RUN_ID"
-    echo "$output"
-    assert_success
-    local selected_run_context="$output"
-    public_surfaces+="$selected_run_context"$'\n'
-    run jq -e \
-        --arg customConnectorId "$CUSTOM_CONNECTOR_ID" \
-        --arg sourceId "$selected_connection_id" '
-            ([
-                .firewalls[]?
-                | select(
-                    .kind == "inline" and
-                    .customConnectorId == $customConnectorId
-                )
-            ]) as $matches
-            | ($matches | length) == 1 and
-                $matches[0].sourceId == $sourceId
-        ' <<<"$selected_run_context"
-    echo "$output"
-    assert_success
+    assert_output --partial "CUSTOM_CONNECTOR_CONNECTION_ID=${selected_connection_id}"
+    refute_output --partial "CUSTOM_CONNECTOR_CONNECTION_ID=${default_connection_id}"
 
     run runner_e2e_wait_for_firewall_log \
         "$RUN_ID" \
