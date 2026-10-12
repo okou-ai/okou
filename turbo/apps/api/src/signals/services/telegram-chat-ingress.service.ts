@@ -280,12 +280,12 @@ export const ensureTelegramChatThreadRoute$ = command(
         )
         .where(routeWhere(args))
         .limit(1);
-      signal.throwIfAborted();
       if (!route) {
         throw new Error(
           "Failed to resolve Telegram chat thread route after conflict",
         );
       }
+      signal.throwIfAborted();
     }
     // Existing and freshly read winner routes share the original conditional
     // destination adoption, pinned to the route id and exact DM predicate.
