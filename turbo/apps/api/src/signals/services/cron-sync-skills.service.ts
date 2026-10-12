@@ -25,7 +25,7 @@ import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { skills } from "@okouai/db/schema/skill";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, like } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, like } from "drizzle-orm";
 import { create as createTar, Parser } from "tar";
 
 import { env } from "../../lib/env";
@@ -730,33 +730,53 @@ const removeOrphanedSkills$ = command(
         return id !== null;
       });
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0135; new non-billing transactions are prohibited.
-    const orphanStorages = await set(writeDb$).transaction(async (tx) => {
-      const lockedStorages =
-        orphanStorageIds.length > 0
-          ? await tx
-              .select({ id: storages.id, s3Prefix: storages.s3Prefix })
-              .from(storages)
-              .where(inArray(storages.id, orphanStorageIds))
-              .orderBy(asc(storages.id))
-              .for("update")
-          : [];
-      signal.throwIfAborted();
-      await tx.delete(skills).where(inArray(skills.id, orphanIds));
-      if (lockedStorages.length > 0) {
-        await tx.delete(storages).where(
-          inArray(
-            storages.id,
-            lockedStorages.map((storage) => {
-              return storage.id;
-            }),
+    const db = set(writeDb$);
+    const lockedStorages = db
+      .$with("locked_orphan_storages")
+      .as(
+        db
+          .select({ id: storages.id, s3Prefix: storages.s3Prefix })
+          .from(storages)
+          .where(inArray(storages.id, orphanStorageIds))
+          .orderBy(asc(storages.id))
+          .for("update"),
+      );
+    // Exhaust the sorted parent locks before mutating any selected skill.
+    // COUNT preserves deletion when every selected storage is null or missing.
+    const erasedSkills = db.$with("erased_orphan_skills").as(
+      db
+        .delete(skills)
+        .where(
+          and(
+            inArray(skills.id, orphanIds),
+            gte(db.select({ count: count() }).from(lockedStorages), 0),
           ),
-        );
-      }
-      signal.throwIfAborted();
-      return lockedStorages;
-    });
+        )
+        .returning({ id: skills.id }),
+    );
+    // Exhaust child deletion before deleting only the captured locked parents.
+    const erasedStorages = db.$with("erased_orphan_storages").as(
+      db
+        .delete(storages)
+        .where(
+          and(
+            inArray(
+              storages.id,
+              db.select({ id: lockedStorages.id }).from(lockedStorages),
+            ),
+            gte(db.select({ count: count() }).from(erasedSkills), 0),
+          ),
+        )
+        .returning({ id: storages.id }),
+    );
+    const orphanStorages = await db
+      .with(lockedStorages, erasedSkills, erasedStorages)
+      .select({ id: lockedStorages.id, s3Prefix: lockedStorages.s3Prefix })
+      .from(lockedStorages)
+      .innerJoin(erasedStorages, eq(erasedStorages.id, lockedStorages.id))
+      .orderBy(asc(lockedStorages.id));
 
+    // The statement has committed; abort stops the remaining object cleanup.
     signal.throwIfAborted();
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
     for (const storage of orphanStorages) {
