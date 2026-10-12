@@ -107,6 +107,7 @@ impl HomeImageCache {
 }
 
 pub(super) fn is_cache_key_name(name: &str) -> bool {
+    let name = name.strip_prefix("home-").unwrap_or(name);
     name.len() == 64
         && name
             .bytes()
