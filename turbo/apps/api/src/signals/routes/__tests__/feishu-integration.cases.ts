@@ -7079,6 +7079,76 @@ export function registerSharedFeishuConversationTests(): void {
       return preference.body.selectedModel;
     }
 
+    it("reuses one Feishu DM thread for concurrent input and a changed chat destination", async () => {
+      const fixture = await setupFeishuRunFixture();
+      const { actor, appId, callbackUrl, defaultAgentId } = fixture;
+      await connectFixtureUser(fixture);
+      const before = await readFeishuThreadEvents(actor);
+      const previousIds = new Set(
+        before.map((event) => {
+          return event.id;
+        }),
+      );
+      const prompts = ["first same-root input", "second same-root input"];
+      const responses = await Promise.all(
+        prompts.map((prompt) => {
+          return own(() => {
+            return postEvent(callbackUrl, directMessage(appId, prompt), {
+              encrypted: true,
+            });
+          });
+        }),
+      );
+      for (const response of responses) {
+        expect(response.status).toBe(200);
+      }
+      await own(flushWaitUntilForTest);
+      const created = (await readFeishuThreadEvents(actor)).filter((event) => {
+        return event.kind === "created" && !previousIds.has(event.id);
+      });
+      expect(created).toHaveLength(1);
+      const thread = requireValue(created[0], "Expected the new DM thread");
+      expect(thread.agentId).toBe(defaultAgentId);
+
+      const movedPrompt = "continue in the changed Feishu chat";
+      const moved = await own(() => {
+        return postEvent(
+          callbackUrl,
+          directMessage(appId, movedPrompt, "ou_feishu_user", {
+            chatId: "oc_feishu_changed_dm_destination",
+          }),
+          { encrypted: true },
+        );
+      });
+      expect(moved.status).toBe(200);
+      await own(flushWaitUntilForTest);
+      expect(
+        (await readFeishuThreadEvents(actor)).filter((event) => {
+          return event.kind === "created" && !previousIds.has(event.id);
+        }),
+      ).toStrictEqual(created);
+      const events = await own(() => {
+        return readProjectedChatEvents(context, {
+          threadId: thread.chatThreadId,
+          headers: { authorization: "Bearer clerk-session" },
+        });
+      });
+      for (const prompt of [...prompts, movedPrompt]) {
+        expect(events).toContainEqual(
+          expect.objectContaining({
+            eventType: "input.prompt",
+            userMessage: expect.objectContaining({
+              parts: expect.arrayContaining([{ type: "text", text: prompt }]),
+            }),
+          }),
+        );
+      }
+      await expectConnectedFeishuMember(
+        setupApp({ context, routes: feishuConnectRoutes })(connectContract),
+      );
+      await removeFeishuInstallation(fixture);
+    });
+
     it("switches the main Feishu DM thread without changing the member default", async () => {
       const fixture = await setupFeishuRunFixture();
       const { actor, appId, callbackUrl, defaultAgentId } = fixture;
