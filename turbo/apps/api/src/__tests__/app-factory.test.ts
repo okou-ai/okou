@@ -489,6 +489,29 @@ describe("createApp", () => {
   });
 
   describe("web client compatibility", () => {
+    it.each(["GET", "POST"])(
+      "force-upgrades App bundles that gate artifact sharing before %s feature-switch responses",
+      async (method) => {
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const response = await app.request("/api/feature-switches", {
+          method,
+          headers: {
+            [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
+            [CLIENT_VERSION_HEADER]: "0.1017.2",
+          },
+        });
+
+        expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        await expect(response.json()).resolves.toStrictEqual({
+          error: "Client update required",
+        });
+      },
+    );
+
     it.each([
       { method: "POST", path: "/api/connectors/github/oauth/start" },
       { method: "PUT", path: "/api/custom-connectors/example/values" },
