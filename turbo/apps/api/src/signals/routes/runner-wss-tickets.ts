@@ -15,7 +15,6 @@ import {
 
 const unavailable = notFound("WSS connection unavailable");
 const ownerAuth = {
-  accept: ["session"],
   requireOrganization: true,
   missingOrganizationStatus: 401,
 } as const;
@@ -34,7 +33,7 @@ const bootstrapInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 const bootstrap$ = authRoute(ownerAuth, bootstrapInner$);
 
 // Set no-store even when authentication is rejected before the inner handler.
-const sessionBootstrap$ = command(async ({ set }, signal: AbortSignal) => {
+const bootstrapWithNoStore$ = command(async ({ set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
   return await set(bootstrap$, signal);
 });
@@ -70,6 +69,6 @@ const consume$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const runnerWssTicketRoutes: readonly RouteEntry[] = [
-  { route: runnerWssTicketsContract.bootstrap, handler: sessionBootstrap$ },
+  { route: runnerWssTicketsContract.bootstrap, handler: bootstrapWithNoStore$ },
   { route: runnerWssTicketsContract.consume, handler: consume$ },
 ];
