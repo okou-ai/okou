@@ -932,11 +932,6 @@
       "owner": "validatePermanentUsagePackPendingSnapshotState"
     },
     {
-      "id": "TX-0400",
-      "file": "turbo/packages/db/scripts/test-migration-consistency-schema.ts",
-      "owner": "validatePermanentUsagePackPendingSnapshotState"
-    },
-    {
       "id": "TX-0401",
       "file": "turbo/packages/db/scripts/test-migration-runner-timeouts.ts",
       "owner": "validateMigrationRunnerTimeouts"
