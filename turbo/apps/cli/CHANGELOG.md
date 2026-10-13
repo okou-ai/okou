@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.387.2](https://github.com/okou-ai/okou/compare/cli-v9.387.1...cli-v9.387.2) (2026-10-13)
+
+
+### Bug Fixes
+
+* apply artifact cover prompts to every html publication ([#39611](https://github.com/okou-ai/okou/issues/39611)) ([f8b01e9](https://github.com/okou-ai/okou/commit/f8b01e90332fd4fc9c06d85d61cfb01e0045bdf5))
+* **maps:** explain citation validation failures ([#39575](https://github.com/okou-ai/okou/issues/39575)) ([0e5a5a6](https://github.com/okou-ai/okou/commit/0e5a5a6dba9ce3fd7fb0539e3bc72e29b96f31d3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.748.3
+    * @okouai/pi-agent-runtime bumped to 1.49.20
+
 ## [9.387.1](https://github.com/okou-ai/okou/compare/cli-v9.387.0...cli-v9.387.1) (2026-10-13)
 
 
