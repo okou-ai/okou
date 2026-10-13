@@ -1,3 +1,2 @@
-// Match Slack's attachment image bounds while preserving our Block Kit layout.
-// https://docs.slack.dev/legacy/legacy-messaging/legacy-secondary-message-attachments/#legacy_fields
-export const SLACK_PREVIEW_IMAGE_SIZE = { width: 360, height: 500 } as const;
+// Compact height matching the Figma reference, with the existing Block Kit layout.
+export const SLACK_PREVIEW_IMAGE_HEIGHT = 112;
