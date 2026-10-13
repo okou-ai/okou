@@ -20,6 +20,7 @@
 mod backing_process;
 mod config;
 mod control;
+mod create_custody;
 mod dns_readiness;
 mod error;
 mod factory;
@@ -41,6 +42,7 @@ pub use config::{
 pub use control::{
     RemoteExecResult, RemoteKillResult, SandboxControl, SandboxControlError, SandboxControlTarget,
 };
+pub use create_custody::SandboxCreateCustody;
 pub use dns_readiness::{SandboxDnsReadinessAttempt, SandboxDnsReadinessOutcome};
 pub use error::{
     Result, SandboxError, SandboxGuestDnsReadinessReason, SandboxIdleTransition,

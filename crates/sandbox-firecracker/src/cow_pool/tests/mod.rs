@@ -11,6 +11,8 @@ use std::time::{Duration, Instant as StdInstant};
 
 use tokio::sync::oneshot;
 
+mod custody;
+
 fn test_config(dir: &Path) -> CowPoolConfig {
     CowPoolConfig {
         workspaces_dir: dir.to_owned(),

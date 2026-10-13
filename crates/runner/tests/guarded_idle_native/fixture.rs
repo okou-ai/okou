@@ -113,6 +113,10 @@ impl Inputs {
             },
         )
     }
+
+    pub fn preparation_bytes(&self) -> u64 {
+        self.replacement_preparation_bytes
+    }
 }
 
 pub async fn checkout(

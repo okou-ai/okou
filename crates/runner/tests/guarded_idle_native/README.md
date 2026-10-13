@@ -54,6 +54,24 @@ preparation in a supplied Fresh operation. Its final park uses guarded acceptanc
 Each scenario finishes its remaining pool inventory through the guarded batch.
 These component seams do not activate the production composition root.
 
+Optional ordinary and aged cases enter `maybe_start_optional` with mandatory
+current pressure, the original P2 authority, positive Fresh preparation coverage,
+provider creation custody and the original full logical lease. Both share their
+pressure controller and global start cadence with a real snapshot prefetch.
+The aged case must complete the original required home saving before new guest
+creation; both retire final inventory through covered required cleanup.
+Prefetch, blank preparation and pressure producers join before factory teardown.
+
+These cases additionally require `OKOU_TEST_OPTIONAL_MEMORY_POLICY` to name a
+separate JSON file with `snapshot_path`, `snapshot_memory_mb` and
+`prefetch_overhead_bytes`. Supply an actual snapshot memory file and measured
+positive bounds; the overhead must cover at least the retained read buffer.
+The existing `replacement_preparation_bytes` supplies the new guest's Fresh
+preparation envelope. This seam requires real Ready pressure and headroom,
+and rejects missing inputs, unknown pressure and incomplete reads. Ordinary
+verification compiles it; native execution and the complete combined P3d
+acceptance remain separate.
+
 Caller-owned saving removes an ordinary exact reservation from inventory and
 uses the borrowed `IdleActivationOwner`/tracked Supervisor entry after successor
 cancellation before activation. Required preparation and freeze run under both

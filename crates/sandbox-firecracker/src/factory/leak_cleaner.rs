@@ -146,7 +146,16 @@ async fn drain_leaked_resources(
         move |leaked| {
             let netns_pool = netns_pool.clone();
             async move {
-                cleanup_leaked_resource(leaked, &netns_pool).await;
+                if leaked.create_custody.is_some() {
+                    // Shutdown may abandon its observer, never accepted owned
+                    // creation rollback while its physical custody is retained.
+                    let producer = tokio::spawn(async move {
+                        cleanup_leaked_resource(leaked, &netns_pool).await;
+                    });
+                    let _ = producer.await;
+                } else {
+                    cleanup_leaked_resource(leaked, &netns_pool).await;
+                }
             }
         },
     )
@@ -277,6 +286,7 @@ mod tests {
     fn test_leaked_resource(sandbox_id: &str) -> LeakedResources {
         LeakedResources {
             sandbox_id: sandbox_id.into(),
+            create_custody: None,
             process_exit: None,
             cow_device: None,
             network: None,
@@ -299,6 +309,7 @@ mod tests {
             tmp,
             LeakedResources {
                 sandbox_id: "sandbox".into(),
+                create_custody: None,
                 process_exit: None,
                 cow_device: None,
                 network: None,

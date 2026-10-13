@@ -21,6 +21,21 @@ impl IdleDestroyTracker {
         envelope: IdleRetirementEnvelope,
         context: &'static str,
     ) -> Result<IdlePoolInsertionResult, MemoryOperationError> {
+        self.insert_pool_entry_checked(pool, incoming, operations, envelope, context, |_| Ok(()))
+            .await
+    }
+
+    /// Pure optional acceptance fences run after every outside-lock wait and
+    /// immediately before synchronous insertion, alongside existing P3b checks.
+    pub(crate) async fn insert_pool_entry_checked(
+        &self,
+        pool: &SharedIdlePool,
+        incoming: &mut IdlePoolIncoming,
+        operations: &HostMemoryOperations,
+        envelope: IdleRetirementEnvelope,
+        context: &'static str,
+        check: impl Fn(&IdlePool) -> Result<(), MemoryOperationError> + Send + Sync,
+    ) -> Result<IdlePoolInsertionResult, MemoryOperationError> {
         let candidate = pool.lock().await.insertion_candidate(incoming)?;
         let mut insertion = IdlePoolInsertion::new(candidate, operations, envelope)?;
         AssertUnwindSafe(insertion.try_grant())
@@ -35,6 +50,7 @@ impl IdleDestroyTracker {
         let mut pool = pool
             .try_lock()
             .map_err(|_| MemoryOperationError::OwnershipInvariant)?;
+        check(&pool)?;
         let token = self.tasks.token();
         if self.tasks.is_closed() {
             drop(pool);

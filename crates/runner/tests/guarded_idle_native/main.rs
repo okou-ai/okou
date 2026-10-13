@@ -4,6 +4,7 @@
 
 mod finalizing;
 mod fixture;
+mod optional;
 mod pressure;
 mod transitions;
 
@@ -45,6 +46,8 @@ enum NativeScope {
     Replacement,
     Restore,
     Aged,
+    OptionalOrdinary,
+    OptionalAged,
     CallerOwned,
     SpeculativeGuestFailure,
     FinalizingParked,
@@ -84,6 +87,8 @@ async fn exercise_factories(
         NativeScope::Replacement,
         NativeScope::Restore,
         NativeScope::Aged,
+        NativeScope::OptionalOrdinary,
+        NativeScope::OptionalAged,
         NativeScope::CallerOwned,
         NativeScope::SpeculativeGuestFailure,
         NativeScope::FinalizingParked,
@@ -157,7 +162,9 @@ async fn exercise_retirement(
     }
     let (vcpu, memory) = match scope {
         NativeScope::Replacement | NativeScope::Restore => (4, 8192),
-        NativeScope::Aged => (12, 24576),
+        NativeScope::Aged | NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {
+            (12, 24576)
+        }
         _ => (2, 4096),
     };
     let budget = Arc::new(ResourceBudget::new(vcpu, memory, 1.0, 0));
@@ -213,7 +220,13 @@ async fn exercise_retirement(
             return Err(error);
         }
     };
-    let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 1 });
+    let mut pool = IdlePool::new(IdlePoolConfig {
+        max_idle: if matches!(scope, NativeScope::OptionalOrdinary) {
+            2
+        } else {
+            1
+        },
+    });
     let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
     let mut candidate = ParkedIdleCandidateBuilder::new(&reuse_key, lease)
         .with_sandbox(sandbox)
@@ -234,7 +247,7 @@ async fn exercise_retirement(
             .await?;
         return Err(error.into());
     }
-    let parked = if matches!(scope, NativeScope::Aged) {
+    let parked = if matches!(scope, NativeScope::Aged | NativeScope::OptionalAged) {
         pool.park_at_for_test(
             candidate,
             std::time::Instant::now() - std::time::Duration::from_secs(40 * 60),
@@ -246,6 +259,14 @@ async fn exercise_retirement(
     let pool = Arc::new(tokio::sync::Mutex::new(pool));
     let retirement: TestResult<_> = async {
         match scope {
+            NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {
+                optional::exercise(transitions::Context {
+                    factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                    operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                    rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                }, inputs, matches!(scope, NativeScope::OptionalAged)).await?;
+                Ok(None)
+            }
             NativeScope::Pressure => {
                 pressure::exercise(&pool, &status, &tracker, &operations, inputs).await?;
                 Ok(None)

@@ -21,6 +21,7 @@ use crate::support::LockIgnoringPoison;
 pub struct MockSandboxFactory {
     create_results: Mutex<VecDeque<Result<()>>>,
     overrides: Option<Arc<MockSandboxOverrides>>,
+    create_backings: Mutex<VecDeque<Arc<dyn SandboxBackingProcess>>>,
 }
 
 impl MockSandboxFactory {
@@ -32,6 +33,7 @@ impl MockSandboxFactory {
         Self {
             create_results: Mutex::new(VecDeque::new()),
             overrides: None,
+            create_backings: Mutex::new(VecDeque::new()),
         }
     }
 
@@ -44,6 +46,7 @@ impl MockSandboxFactory {
         Self {
             create_results: Mutex::new(VecDeque::new()),
             overrides: Some(overrides),
+            create_backings: Mutex::new(VecDeque::new()),
         }
     }
 
@@ -52,6 +55,14 @@ impl MockSandboxFactory {
     /// Results are consumed in FIFO order before shared override results.
     pub fn push_create_result(&self, result: Result<()>) {
         self.create_results.lock_ignoring_poison().push_back(result);
+    }
+
+    /// Attach one explicit provider-owned generation to the next created mock.
+    /// Generic stop/destroy calls do not invent its terminal wait result.
+    pub fn push_create_backing(&self, backing: Arc<dyn SandboxBackingProcess>) {
+        self.create_backings
+            .lock_ignoring_poison()
+            .push_back(backing);
     }
 }
 
@@ -95,7 +106,21 @@ impl SandboxFactory for MockSandboxFactory {
             Some(o) => MockSandbox::with_overrides(config.id.to_string(), Arc::clone(o)),
             None => MockSandbox::new(config.id.to_string()),
         };
+        let sandbox = match self.create_backings.lock_ignoring_poison().pop_front() {
+            Some(backing) => sandbox.with_backing_process(backing),
+            None => sandbox,
+        };
         Ok(Box::new(sandbox))
+    }
+
+    async fn create_with_custody(
+        &self,
+        config: SandboxConfig,
+        custody: SandboxCreateCustody,
+    ) -> Result<Box<dyn Sandbox>> {
+        let _custody = custody;
+        // This provider has no detached physical allocation/rollback work.
+        self.create(config).await
     }
 
     async fn destroy(&self, _sandbox: Box<dyn Sandbox>) {

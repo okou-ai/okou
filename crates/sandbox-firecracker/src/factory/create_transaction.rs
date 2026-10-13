@@ -127,6 +127,7 @@ fn remove_create_rollback_dir_sync(id: &str, kind: &'static str, path: PathBuf) 
 pub(super) struct FactoryCreateRollbackCleanup {
     pub(super) id: String,
     pub(super) netns_pool: NetnsPoolHandle,
+    pub(super) custody: Option<sandbox::SandboxCreateCustody>,
 }
 
 #[async_trait]
@@ -165,7 +166,11 @@ impl CreateRollbackCleanup for FactoryCreateRollbackCleanup {
         // aborting the async rollback task cannot move this cleanup back into
         // transaction Drop on a Tokio worker thread.
         let id = self.id.clone();
-        let cleanup = tokio::task::spawn_blocking(move || cleanup.run_sync(&id));
+        let custody = self.custody.clone();
+        let cleanup = tokio::task::spawn_blocking(move || {
+            let _custody = custody;
+            cleanup.run_sync(&id);
+        });
         CreateRollbackFilesystemCleanupWaiter::new(async move {
             if let Err(e) = cleanup.await {
                 warn!(
@@ -258,6 +263,7 @@ pub(super) struct SandboxCreateTransaction {
     cow_device: Option<CreateTransactionCowDevice>,
     leak_tx: Option<tokio::sync::mpsc::UnboundedSender<LeakedResources>>,
     delete_workspace_on_leak_cleanup: bool,
+    custody: Option<sandbox::SandboxCreateCustody>,
 }
 
 impl SandboxCreateTransaction {
@@ -273,7 +279,12 @@ impl SandboxCreateTransaction {
             cow_device: None,
             leak_tx,
             delete_workspace_on_leak_cleanup: true,
+            custody: None,
         }
+    }
+
+    pub(super) fn retain_custody(&mut self, custody: Option<sandbox::SandboxCreateCustody>) {
+        self.custody = custody;
     }
 
     pub(super) fn track_workspace(&mut self, workspace: PathBuf) -> sandbox::Result<()> {
@@ -493,6 +504,7 @@ impl SandboxCreateTransaction {
 
         let leaked = LeakedResources {
             sandbox_id: self.id.clone(),
+            create_custody: self.custody.take(),
             process_exit: None,
             cow_device: self
                 .cow_device
@@ -507,6 +519,7 @@ impl SandboxCreateTransaction {
         match leak_tx.send(leaked) {
             Ok(()) => true,
             Err(tokio::sync::mpsc::error::SendError(mut leaked)) => {
+                self.custody = leaked.create_custody.take();
                 self.cow_device = leaked
                     .cow_device
                     .take()
@@ -577,15 +590,29 @@ pub(super) async fn rollback_create_transaction<C>(
     C: CreateRollbackCleanup + Send + Sync + 'static,
 {
     let rollback_id = tx.id.clone();
-    let rollback_waiter = cleanup_group.spawn(
-        FactoryCleanupTaskKind::Rollback,
-        rollback_id.clone(),
-        async move {
-            let mut tx = tx;
-            tx.rollback(&cleanup).await;
-        },
-    );
-    rollback_waiter.wait_logging_panic().await;
+    let owned = tx.custody.is_some();
+    let work = async move {
+        let mut tx = tx;
+        tx.rollback(&cleanup).await;
+    };
+    if owned {
+        // The factory group may abandon its shutdown observer. Caller custody
+        // still joins every entered COW/network/filesystem rollback producer.
+        let producer = tokio::spawn(work);
+        cleanup_group
+            .spawn(FactoryCleanupTaskKind::Rollback, rollback_id, async move {
+                if let Err(error) = producer.await {
+                    warn!(%error, "owned create rollback producer lost");
+                }
+            })
+            .wait_logging_panic()
+            .await;
+    } else {
+        cleanup_group
+            .spawn(FactoryCleanupTaskKind::Rollback, rollback_id, work)
+            .wait_logging_panic()
+            .await;
+    }
 }
 
 #[cfg(test)]
