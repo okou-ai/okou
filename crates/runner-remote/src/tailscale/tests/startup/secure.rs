@@ -336,6 +336,10 @@ impl Service {
         self.noise.announced_home.lock().unwrap().clone()
     }
 
+    pub(in crate::tailscale::tests) fn set_home_status(&self, status: hyper::StatusCode) {
+        *self.noise.home_status.lock().unwrap() = status;
+    }
+
     pub(in crate::tailscale::tests) async fn registration_requested(&self) {
         bounded(self.noise.requested.notified()).await;
     }

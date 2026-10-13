@@ -58,21 +58,35 @@ pub(super) enum Stage {
     Noise,
     Registration,
     Map,
+    MapResponse,
+    DerpMap,
+    LocalNode,
+    Peers,
+    HomeAnnouncement,
+    Relay,
+    Ready,
 }
 
 impl Stage {
     pub(super) fn record(self) {
-        let stage = match self {
-            Self::Provisioning => "provisioning",
-            Self::UnusedKeyCleanup => "unused_key_cleanup",
-            Self::KeyTls => "key_tls",
-            Self::ControlKey => "control_key",
-            Self::ControlTls => "control_tls",
-            Self::Noise => "noise",
-            Self::Registration => "registration",
-            Self::Map => "map",
+        let (stage, reason) = match self {
+            Self::Provisioning => ("provisioning", "starting"),
+            Self::UnusedKeyCleanup => ("unused_key_cleanup", "starting"),
+            Self::KeyTls => ("key_tls", "starting"),
+            Self::ControlKey => ("control_key", "starting"),
+            Self::ControlTls => ("control_tls", "starting"),
+            Self::Noise => ("noise", "starting"),
+            Self::Registration => ("registration", "starting"),
+            Self::Map => ("map", "starting"),
+            Self::MapResponse => ("map_response", "starting"),
+            Self::DerpMap => ("derp_map", "starting"),
+            Self::LocalNode => ("local_node", "starting"),
+            Self::Peers => ("peers", "starting"),
+            Self::HomeAnnouncement => ("home_announcement", "starting"),
+            Self::Relay => ("relay", "starting"),
+            Self::Ready => ("ready", "ready"),
         };
-        tracing::info!(target: "runner_remote::tailscale", stage, reason = "starting", "native Tailscale startup");
+        tracing::info!(target: "runner_remote::tailscale", stage, reason, "native Tailscale startup");
     }
 }
 

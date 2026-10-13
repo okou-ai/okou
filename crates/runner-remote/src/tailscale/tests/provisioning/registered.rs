@@ -105,6 +105,10 @@ async fn configured_tls_oauth_noise_error_and_auth_url_remain_private_through_ac
 
 #[tokio::test]
 async fn configured_tls_oauth_key_and_authenticated_root_share_one_physical_run_owner() {
+    use tracing_subscriber::prelude::*;
+    let captured = tracing_test_support::CapturedEvents::default();
+    let dispatch = tracing::Dispatch::new(tracing_subscriber::registry().with(captured.clone()));
+    let _parent = tracing::dispatcher::set_default(&dispatch);
     let api = Api::secure(None).await;
     // A separate loopback client abandons TLS before sending a ClientHello.
     // Observe its retirement before starting the real provisioning exchange.
@@ -151,6 +155,54 @@ async fn configured_tls_oauth_key_and_authenticated_root_share_one_physical_run_
     api.assert_contract(1, 0);
     api.finish().await;
     control.finish().await;
+    let events = captured.entries();
+    let startup = events
+        .iter()
+        .filter(|event| {
+            event.fields.get("message").map(String::as_str) == Some("native Tailscale startup")
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        startup
+            .iter()
+            .all(|event| event.level == tracing::Level::INFO)
+    );
+    assert_eq!(
+        startup
+            .iter()
+            .map(|event| (
+                event.fields["stage"].as_str(),
+                event.fields["reason"].as_str()
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("provisioning", "starting"),
+            ("key_tls", "starting"),
+            ("control_key", "starting"),
+            ("control_tls", "starting"),
+            ("noise", "starting"),
+            ("registration", "starting"),
+            ("map", "starting"),
+            ("map_response", "starting"),
+            ("derp_map", "starting"),
+            ("local_node", "starting"),
+            ("peers", "starting"),
+            ("home_announcement", "starting"),
+            ("relay", "starting"),
+            ("ready", "ready"),
+        ]
+    );
+    for private in [
+        "synthetic-secret",
+        "synthetic-access-token",
+        "tskey-auth-synthetic-one-use",
+    ] {
+        assert!(
+            events
+                .iter()
+                .all(|event| { event.fields.values().all(|value| !value.contains(private)) })
+        );
+    }
 }
 
 #[tokio::test]

@@ -55,6 +55,57 @@ async fn native_common_cleanup_rejection_reaches_guest_rpc_without_retry_or_logi
 }
 
 #[tokio::test]
+async fn native_common_rejected_home_announcement_never_sends_login_or_command() {
+    use tracing_subscriber::prelude::*;
+    let captured = tracing_test_support::CapturedEvents::default();
+    let dispatch = tracing::Dispatch::new(tracing_subscriber::registry().with(captured.clone()));
+    let _parent = tracing::dispatcher::set_default(&dispatch);
+    let mut h = Harness::new(Reply::default()).await;
+    let api = Api::secure(None).await;
+    let home = Server::secure().await;
+    let control = Control::new(ACCEPTED.to_vec(), map(&home), KeyReply::Valid, false).await;
+    control.set_home_status(hyper::StatusCode::SERVICE_UNAVAILABLE);
+    let dial = api.secure.as_ref().unwrap().clone();
+    let descriptors = Arc::new(Mutex::new(Vec::new()));
+    *h.runtime.native_services.lock().unwrap() = Some(control.test_services(
+        dial.clone(),
+        Relay::new(&home, WriteGate::new(), Arc::clone(&descriptors)),
+    ));
+    let resolve = h
+        .resolve(credential(&h, uuid::Uuid::new_v4(), Case::Exec))
+        .await;
+    control.allow_all();
+    let frames = bounded(h.request(params())).await;
+    let terminal = &frames.last().unwrap()["data"];
+    assert_eq!(terminal["failure_reason"], "network_failure", "{frames:?}");
+    assert_eq!(terminal["effects"], "not_started");
+    assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
+    assert!(h.observed.commands.lock().unwrap().is_empty());
+    assert!(h.observed.queries.lock().unwrap().is_empty());
+    assert_eq!(control.announced_home(), vec![1]);
+    resolve.assert_calls_async(1).await;
+    bounded(h.shutdown()).await;
+    assert!(descriptors.lock().unwrap().is_empty());
+    control.assert_control_closed();
+    dial.assert_closed(2);
+    api.assert_contract(1, 0);
+    home.task.abort();
+    assert!(matches!(bounded(home.task).await, Err(error) if error.is_cancelled()));
+    api.finish().await;
+    control.finish().await;
+    let events = captured.entries();
+    let stages = events
+        .iter()
+        .filter(|event| {
+            event.fields.get("message").map(String::as_str) == Some("native Tailscale startup")
+        })
+        .map(|event| event.fields["stage"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(stages.last(), Some(&"home_announcement"));
+    assert!(!stages.contains(&"relay") && !stages.contains(&"ready"));
+}
+
+#[tokio::test]
 async fn native_common_exec_reuse_and_forwarding_preserve_real_binary_bytes() {
     run_case(Case::Exec).await;
 }
