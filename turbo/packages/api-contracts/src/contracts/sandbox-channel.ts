@@ -170,7 +170,10 @@ export function decodeSandboxChannelFrame(
   }
   let value: unknown;
   try {
-    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(frame));
+    // Preserve a BOM so JSON rejects it, matching the native decoder.
+    value = JSON.parse(
+      new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(frame),
+    );
   } catch {
     throw new SandboxChannelError("invalid_request");
   }

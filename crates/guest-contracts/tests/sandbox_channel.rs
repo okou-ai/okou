@@ -117,6 +117,12 @@ fn ordered_category_and_role_gates() {
 fn integral_versions_utf8_and_depth_are_interoperable() {
     let raw = br#"{"schemaVersion":1.0,"type":"hello","id":"00000000-0000-4000-8000-000000000001","categories":{"fs":1e0}}"#;
     assert!(channel::decode_message(raw).is_ok());
+    let mut with_bom = vec![0xef, 0xbb, 0xbf];
+    with_bom.extend_from_slice(raw);
+    assert_eq!(
+        channel::decode_message(&with_bom),
+        Err(ChannelError::InvalidRequest)
+    );
     assert!(channel::decode_message(&[0xff]).is_err());
     let unpaired = br#"{"schemaVersion":1,"type":"request","id":"00000000-0000-4000-8000-000000000001","category":"fs","categoryVersion":1,"operation":"list","params":{"x":"\ud800"}}"#;
     assert!(channel::decode_message(unpaired).is_err());

@@ -109,6 +109,20 @@ it("accepts mathematically integral JSON version representations", () => {
   ).toMatchObject({ schemaVersion: 1, categories: { fs: 1 } });
 });
 
+it("rejects a UTF-8 byte-order mark without rewriting the wire frame", () => {
+  const hello = {
+    schemaVersion: 1,
+    type: "hello",
+    id: "00000000-0000-4000-8000-000000000001",
+    categories: { fs: 1 },
+  };
+  expect(() => {
+    return decodeSandboxChannelFrame(
+      new TextEncoder().encode(`\uFEFF${JSON.stringify(hello)}`),
+    );
+  }).toThrow(expect.objectContaining({ code: "invalid_request" }));
+});
+
 it("counts the entire encoded message and preserves explicit null results", () => {
   expect(() => {
     return decodeSandboxChannelFrame(

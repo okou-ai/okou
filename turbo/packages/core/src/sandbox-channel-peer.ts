@@ -407,6 +407,9 @@ export class SandboxChannelPeer {
   private current(epoch: Epoch): boolean {
     return this.epoch === epoch && !epoch.owner.signal.aborted;
   }
+  private terminal(): boolean {
+    return this.stateValue === "closed" || this.stateValue === "failed";
+  }
   private readyEpoch(): Epoch {
     if (!this.epoch?.ready || !this.current(this.epoch))
       throw new SandboxChannelError("unavailable");
@@ -425,7 +428,7 @@ export class SandboxChannelPeer {
     }
   }
   private transportState(state: RunWssState): void {
-    if (this.stateValue === "closed" || this.stateValue === "failed") return;
+    if (this.terminal()) return;
     if (state === "ready") {
       this.startEpoch();
       return;
@@ -436,6 +439,8 @@ export class SandboxChannelPeer {
     }
     if (state === "reconnecting")
       this.disposeEpoch(new SandboxChannelError("unavailable"));
+    // An epoch-abort listener may have closed the entire peer synchronously.
+    if (this.terminal()) return;
     if (state === "connecting" || state === "reconnecting")
       this.setState(state);
   }
@@ -452,6 +457,7 @@ export class SandboxChannelPeer {
   }
   private startEpoch(): void {
     this.disposeEpoch(new SandboxChannelError("unavailable"));
+    if (this.terminal()) return;
     const epoch: Epoch = {
       owner: new AbortController(),
       pending: new Map(),
@@ -635,8 +641,10 @@ export class SandboxChannelPeer {
     };
     if (
       !this.write(epoch, message, () => {
-        return this.fail(new SandboxChannelError("unavailable"));
-      })
+        if (this.current(epoch))
+          this.fail(new SandboxChannelError("unavailable"));
+      }) &&
+      this.current(epoch)
     )
       this.fail(new SandboxChannelError("unavailable"));
   }

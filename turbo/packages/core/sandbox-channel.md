@@ -14,7 +14,7 @@ adds runtime checks that DTO deserialization alone does not enforce.
 
 ## Identity and framing
 
-One binary frame carries one UTF-8 JSON object. Common message types are
+One binary frame carries one UTF-8 JSON object without a byte-order mark. Common message types are
 `hello`, `request`, `response` and `event`. Every message has its own fresh,
 canonical lowercase UUID v4 `id`, generated securely by its sender. Only a
 response has `requestId`, exactly the ID of the hello/request it answers.
@@ -83,6 +83,8 @@ saturation closes the epoch instead of growing a queue.
 Closing/Run replacement aborts pending waits, timers and handler ownership.
 Reconnect clears correlations and category state, sends a new hello and exposes
 a new ready epoch. It never replays generic calls or reuses resource handles.
+Discarded writes belong to the lost epoch; their failure callbacks cannot close
+its replacement. A consumer that closes the peer during teardown stays closed.
 UUIDs do not replace connection/Run ownership. Locally canceled or timed-out
 waits do not claim remote/kernel cancellation.
 

@@ -837,6 +837,69 @@ describe("admitted application peer", () => {
     expect(h.peer.state).toBe("closed");
   });
 
+  it("retires queued terminal responses when their socket epoch disconnects", async () => {
+    const h = harness(),
+      socket = await h.ready();
+    socket.onSend = (message) => {
+      if (message.type !== "request") return;
+      // This immediate error response queues behind the active external send.
+      socket.receive({ ...incoming(810), operation: "unknown" });
+      socket.close();
+    };
+    await expect(
+      h.peer.call(sandboxDiagnosticsEcho, { payload: "" }, h.controller.signal),
+    ).rejects.toBeInstanceOf(Error);
+    expect(h.peer.state).toBe("reconnecting");
+    const ready = h.peer.whenReady(h.controller.signal),
+      replacement = await h.sockets.next(),
+      hello = await replacement.frames.next();
+    if (hello.type !== "hello") throw new Error("fresh hello");
+    replacement.reply(hello, { categories: { fs: 1, diagnostics: 1 } });
+    await ready;
+    const next = h.peer.call(
+      sandboxDiagnosticsEcho,
+      { payload: "YQ==" },
+      h.controller.signal,
+    );
+    replacement.reply(await nextRequest(replacement), { payload: "YQ==" });
+    expect(await next).toEqual({ payload: "YQ==" });
+    expect(replacement.application[0]).toMatchObject({ type: "hello" });
+    expect(
+      socket.application.map((message) => {
+        return message.type;
+      }),
+    ).toEqual(["hello", "request"]);
+  });
+
+  it("keeps a peer closed when an epoch-abort handler closes it during disconnect", async () => {
+    const h = harness({
+      handlers: [
+        sandboxChannelHandler(sandboxDiagnosticsEcho, (params, context) => {
+          context.signal.addEventListener(
+            "abort",
+            () => {
+              context.peer.close();
+            },
+            { once: true },
+          );
+          return context.peer.call(
+            sandboxDiagnosticsEcho,
+            params,
+            context.signal,
+          );
+        }),
+      ],
+    });
+    const socket = await h.ready();
+    socket.receive(incoming(811));
+    await nextRequest(socket);
+    socket.close();
+    expect(h.peer.state).toBe("closed");
+    await expect(h.peer.whenReady(h.controller.signal)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+  });
+
   it("bounds hello silence with a stable terminal failure", async () => {
     const h = harness(),
       { connected, socket } = await h.start();
