@@ -129,7 +129,7 @@ function concurrencyUsage(orgId: string): Computed<
 function runningRunRows(orgId: string): Computed<Promise<RunningRunRow[]>> {
   return computed(async (get): Promise<RunningRunRow[]> => {
     const db = get(db$);
-    return db
+    return await db
       .select({
         id: agentRuns.id,
         runUserId: agentRuns.userId,
