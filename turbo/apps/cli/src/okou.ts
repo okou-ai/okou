@@ -1,4 +1,5 @@
 // Okou CLI entry point - standalone binary for Okou platform commands
+// (no-op CLI release marker refreshed for production delivery on 2026-10-14)
 // Sentry must be initialized before any other imports
 import "./instrument.js";
 import { Command } from "commander";
