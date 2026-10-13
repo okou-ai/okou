@@ -288,8 +288,10 @@ jobs:
             .github/scripts/runner/cleanup-pr-runner-namespace.sh \
             .github/scripts/runner/discover-runner-pr-namespaces.sh \
             .github/scripts/checks/detect-native-only.sh \
+            .github/scripts/checks/detect-workflow-script-tests.sh \
             .github/scripts/tests/native-only-ci-test.sh \
             .github/scripts/tests/native-only-gates-test.sh \
+            .github/scripts/tests/workflow-script-test-selection-test.sh \
             .github/scripts/runner/cloudflare-ssh-command.sh \
             .github/scripts/runner/cloudflare-ssh-diagnostics.sh \
             .github/scripts/runner/cloudflare-ssh-preconnect.sh \
@@ -396,11 +398,34 @@ jobs:
       - name: Run actionlint
         run: ./actionlint
 
-  workflow-script-tests:
+  detect-workflow-script-tests:
     needs: [detect-release]
-    name: Workflow Script Tests (${{ matrix.shard }}/4)
-    # Skip for release-please PRs, commits, and merge queue entries
     if: needs.detect-release.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      needed: ${{ steps.detect.outputs.needed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - name: Select retained script tests
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHECKOUT_REF: ${{ github.ref }}
+          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          selection=$(bash .github/scripts/checks/detect-workflow-script-tests.sh)
+          printf '%s\n' "$selection" | tee -a "$GITHUB_OUTPUT"
+
+  workflow-script-tests:
+    needs: [detect-release, detect-workflow-script-tests]
+    name: Workflow Script Tests (${{ matrix.shard }}/4)
+    if: needs.detect-release.outputs.skip != 'true' && needs.detect-workflow-script-tests.outputs.needed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     strategy:
@@ -487,6 +512,7 @@ jobs:
       - codeql
       - pnpm-audit
       - actionlint
+      - detect-workflow-script-tests
       - workflow-script-tests
       - release-workspace-coverage
       - gitleaks
@@ -540,7 +566,19 @@ jobs:
           fi
           check_result "pnpm-audit" "${{ needs.pnpm-audit.result }}" "$IOS_ONLY"
           check_result "actionlint" "${{ needs.actionlint.result }}"
-          check_result "workflow-script-tests" "${{ needs.workflow-script-tests.result }}"
+          check_result "detect-workflow-script-tests" "${{ needs.detect-workflow-script-tests.result }}"
+          case "${{ needs.detect-workflow-script-tests.outputs.needed }}" in
+            true)
+              check_result "workflow-script-tests" "${{ needs.workflow-script-tests.result }}"
+              ;;
+            false)
+              check_result "workflow-script-tests" "${{ needs.workflow-script-tests.result }}" "true"
+              ;;
+            *)
+              echo "::error::detect-workflow-script-tests: missing or invalid applicability output"
+              FAILED=1
+              ;;
+          esac
           check_result "gitleaks" "${{ needs.gitleaks.result }}"
 
           echo "::endgroup::"

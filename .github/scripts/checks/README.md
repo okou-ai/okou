@@ -51,6 +51,24 @@ changed-path selectors and source-input hashes together. In particular, the
 shared base selector is an input to iOS selection/archive identity and Crates
 native selection, not just a command in a workflow.
 
+`detect-workflow-script-tests.sh` selects the complete retained four-shard suite
+from the repository root. Set `EVENT_NAME` and the PR base/checkout environment
+used by `changed-base-ref.sh`, `MERGE_GROUP_BASE_SHA` for the complete queue group,
+or `PUSH_BEFORE_SHA` for every commit in a push. Required history must be available
+and ancestral. It prints exactly `needed=true` or `needed=false`; invalid event,
+base or Git operations fail rather than exempting tests.
+
+Only Markdown under `docs/` and API/Platform business source `.ts`/`.tsx` changes
+are unrelated. The entire API `src/signals/services/` subtree remains relevant
+because release rollback adapters consume service writer paths. All other paths
+and empty diffs run the existing suite, including its native-owner entries.
+Package/build/config inputs, workflows/actions, helpers, fixtures, Ansible,
+operational tools and unknown consumers are therefore conservative. New script
+consumers of an exempt path must update this selector with their caller/hash
+changes. Product tests and other required security/native pipelines keep their
+own selectors. The required Security gate admits a skipped matrix only after
+successful selection with an explicit `needed=false`.
+
 Run the existing affected fixtures in `../tests/` and the consumers' own checks;
 validate their shard manifest with
 `../run-workflow-script-test-shard.sh --validate-only`. Add coverage only for an

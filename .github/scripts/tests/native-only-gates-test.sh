@@ -39,6 +39,7 @@ def context(ios=True, ts=False, event='pull_request', release=False):
         'needs.detect-turbo-ts-checks.outputs.ios-only': str(ios).lower(),
         'needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed': str(ts).lower(),
         'needs.detect-native-only.outputs.ios-only': str(ios).lower(),
+        'needs.detect-workflow-script-tests.outputs.needed': 'true',
         'needs.prepare.outputs.turbo-runner-consumer-needed': 'false',
         'needs.prepare.outputs.playwright-runner-consumer-needed': 'false',
     }
@@ -165,6 +166,32 @@ for ios in ['false', '']:
     gate(security, 'ci-gate-security', native | {'needs.detect-native-only.outputs.ios-only': ios}, False)
 normal = context(ios=False, ts=True)
 gate(security, 'ci-gate-security', normal, True)
+
+# Execute the actual selector-dependent predicate and required gate. Only a
+# successful, explicit exemption admits a skipped retained matrix.
+for event in ['pull_request', 'merge_group', 'push']:
+    selected = context(ios=False, ts=True, event=event)
+    assert condition(security['workflow-script-tests'], selected)
+    gate(security, 'ci-gate-security', selected, True)
+    for result in ['failure', 'cancelled', 'skipped']:
+        gate(security, 'ci-gate-security', selected | {'needs.workflow-script-tests.result': result}, False)
+    unrelated = selected | {
+        'needs.detect-workflow-script-tests.outputs.needed': 'false',
+        'needs.workflow-script-tests.result': 'skipped',
+    }
+    assert not condition(security['workflow-script-tests'], unrelated)
+    gate(security, 'ci-gate-security', unrelated, True)
+    for result in ['failure', 'cancelled']:
+        gate(security, 'ci-gate-security', unrelated | {'needs.workflow-script-tests.result': result}, False)
+    for values in [selected, unrelated]:
+        for result in ['failure', 'cancelled', 'skipped']:
+            broken = values | {'needs.detect-workflow-script-tests.result': result}
+            assert not condition(security['workflow-script-tests'], broken)
+            gate(security, 'ci-gate-security', broken, False)
+        for output in ['', 'unknown']:
+            broken = values | {'needs.detect-workflow-script-tests.outputs.needed': output}
+            assert not condition(security['workflow-script-tests'], broken)
+            gate(security, 'ci-gate-security', broken, False)
 for job in ['codeql', 'pnpm-audit']:
     assert condition(security[job], normal)
     assert condition(security[job], context(ios=False, ts=True, event='push'))
@@ -175,7 +202,7 @@ queued['needs.codeql.result'] = 'skipped'
 gate(security, 'ci-gate-security', queued, True)
 released = context(ios=False, ts=True, event='merge_group', release=True)
 for job in ['detect-native-only', 'pr-title', 'semgrep', 'codeql', 'pnpm-audit', 'actionlint',
-            'workflow-script-tests', 'gitleaks']:
+            'detect-workflow-script-tests', 'workflow-script-tests', 'gitleaks']:
     released[f'needs.{job}.result'] = 'skipped'
 gate(security, 'ci-gate-security', released, True)
 assert condition(security['action-pins'], released)
