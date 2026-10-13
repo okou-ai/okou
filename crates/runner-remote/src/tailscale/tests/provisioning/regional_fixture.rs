@@ -119,7 +119,7 @@ impl Dial for Relay {
 
 pub(super) fn map(server: &Server) -> Vec<u8> {
     serde_json::to_vec(&serde_json::json!({
-        "Node":{"ID":1,"StableID":"local","Name":"native.synthetic.ts.net.","Key":"MATCH-REQUEST","HomeDERP":1,"Addresses":["100.64.0.1/32","fd7a:115c:a1e0::1/128"]},
+        "Node":{"ID":1,"StableID":"local","Name":"native.synthetic.ts.net.","Key":"MATCH-REQUEST","KeyExpiry":"0001-01-01T00:00:00Z","HomeDERP":1,"Addresses":["100.64.0.1/32","fd7a:115c:a1e0::1/128"]},
         "Peers":[],
         "DERPMap":{"Regions":{"1":{"RegionID":1,"RegionCode":"synthetic","RegionName":"Synthetic","Nodes":[{"Name":"1a","RegionID":1,"HostName":"derp.synthetic.invalid","DERPPort":server.address.port(),"IPv4":"127.0.0.1","IPv6":"none"}]}}}
     })).unwrap()
