@@ -612,10 +612,10 @@ function registerReadTools(
     server,
     access,
     {
-      name: "get_chat_thread",
+      name: "get_chat_thread_list",
       scope: "okou:chat:read",
       description:
-        "Get the organization conversation-list R2 snapshot pointer and one bounded lifecycle-event page with canonical eventId and threadId references. Omit sinceSeqId initially; continue with the last event's seqId when hasMore is true. Downloaded snapshots retain their native Web format. Does not download or reconstruct the snapshot.",
+        "Get the current user's chat thread list in the authorized organization as an R2 snapshot pointer and one bounded page of lifecycle events, with canonical eventId and threadId references. Download the snapshot and apply lifecycle events to reconstruct the list; this tool does not return one individual thread or download or reconstruct the snapshot. Omit sinceSeqId initially; when hasMore is true, continue with the last event's seqId until all pages are read. Downloaded snapshots retain their native Web format.",
       inputSchema: mcpGetChatThreadInputSchema,
       outputSchema: mcpGetChatThreadOutputSchema,
       annotations: readAnnotations,

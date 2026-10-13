@@ -676,6 +676,7 @@
       "selectWorkflow": "Selecionar modelo de fluxo de trabalho {{title}}",
       "showVariant": "Mostrar variação {{variantNumber}}",
       "singleAccent": "Uma cor de destaque",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "Visualização dos slides de {{title}}",
       "slideThumbnail": "Visualização do slide {{slideNumber}} de {{title}}",
       "template": "Modelo",

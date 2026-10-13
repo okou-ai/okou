@@ -656,6 +656,7 @@
       "selectWorkflow": "ワークフロー テンプレート {{title}} を選択します",
       "showVariant": "バリアント {{variantNumber}} を表示",
       "singleAccent": "シングルアクセント",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} スライド プレビュー",
       "slideThumbnail": "{{title}} スライド {{slideNumber}} プレビュー",
       "template": "テンプレート",

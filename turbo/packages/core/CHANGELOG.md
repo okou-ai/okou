@@ -1,5 +1,17 @@
 # Changelog
 
+## [8.751.0](https://github.com/okou-ai/okou/compare/core-v8.750.0...core-v8.751.0) (2026-10-13)
+
+
+### Features
+
+* enable vnc access for staff ([#39748](https://github.com/okou-ai/okou/issues/39748)) ([99cb991](https://github.com/okou-ai/okou/commit/99cb991fd7e35f63f479801ac25219385bbed6bd))
+
+
+### Refactoring
+
+* remove slack link unfurls feature switch ([#39745](https://github.com/okou-ai/okou/issues/39745)) ([18435fb](https://github.com/okou-ai/okou/commit/18435fb32d76f20197f1f9174529bcf0c3215287))
+
 ## [8.750.0](https://github.com/okou-ai/okou/compare/core-v8.749.0...core-v8.750.0) (2026-10-13)
 
 

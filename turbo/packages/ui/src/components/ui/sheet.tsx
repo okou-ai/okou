@@ -75,7 +75,9 @@ const SheetContent = React.forwardRef<HTMLDivElement, SheetContentProps>(
     ref,
   ) => {
     return (
-      <SheetPortal>
+      // Give the backdrop, sheet, and its nested popups one modal context so
+      // a page popover mounted later cannot paint above them.
+      <SheetPortal className="relative z-50">
         <SheetOverlay className={overlayClassName} forceRender />
         <SheetPrimitive.Popup
           ref={ref}

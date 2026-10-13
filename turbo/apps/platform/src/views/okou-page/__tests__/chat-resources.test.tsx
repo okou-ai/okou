@@ -14,6 +14,7 @@ import {
   chatThreadEventsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { createDeferredPromise } from "../../../signals/utils.ts";
+import { pathname } from "../../../signals/location.ts";
 import {
   click,
   queryAllByRoleFast,
@@ -131,7 +132,7 @@ function resourceButton() {
   return buttonNamed("Open artifacts");
 }
 function resourcePanel() {
-  return screen.queryByRole("dialog", { name: "Resources" });
+  return screen.queryByRole("region", { name: "Resources" });
 }
 function composer() {
   const editor = document.querySelector<HTMLElement>(
@@ -156,6 +157,9 @@ test("Open in the actual right gutter and preserve links while removing duplicat
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
   const panel = resourcePanel()!;
+  expect(resourceButton()).not.toHaveAttribute("aria-haspopup");
+  expect(resourceButton()).toHaveAttribute("aria-expanded", "true");
+  expect(resourceButton()).toHaveAttribute("aria-controls", panel.id);
   await within(panel).findByText("report.pdf");
   await within(panel).findByText("Current guide");
   expect(
@@ -521,7 +525,7 @@ test.each(["messages", "artifacts"] as const)(
       path: `/chats/${first.id}`,
       featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
     });
-    const previousPanel = await screen.findByRole("dialog", {
+    const previousPanel = await screen.findByRole("region", {
       name: "Resources",
     });
     await within(previousPanel).findByText("First resources guide");
@@ -674,6 +678,128 @@ test("Toggle the artifact panel with the keyboard", async () => {
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
+});
+
+test("Return focus to the resource trigger when Escape dismisses its content", async () => {
+  await setupResources();
+  const user = userEvent.setup();
+  const panel = await screen.findByRole("region", { name: "Resources" });
+  act(() => {
+    resourceButton().focus();
+  });
+  expect(resourceButton()).toHaveFocus();
+  const link = within(panel).getByText("Current guide");
+  act(() => {
+    link.focus();
+  });
+  expect(link).toHaveFocus();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+    expect(resourceButton()).toHaveFocus();
+    expect(resourceButton()).toHaveAttribute("aria-expanded", "false");
+  });
+});
+
+async function setupResourceNavigation() {
+  installResourceGeometry(480);
+  context.mocks.browser.userAgent(
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+  );
+  context.mocks.browser.matchMedia((query) => {
+    return (
+      query === "(display-mode: standalone)" || query === "(min-width: 48rem)"
+    );
+  });
+  const current = continuityThread(95, 1, "Current resources chat");
+  const newer = continuityThread(95, 2, "Newer resources chat");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 95,
+    threads: [current, newer],
+  });
+  await setupPage({
+    context,
+    path: `/chats/${current.id}`,
+    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
+    ...workspace.pageOptions,
+  });
+  await screen.findByRole("region", { name: "Resources" });
+  await screen.findByRole("textbox", { name: "Message" });
+  return { current, newer, user: userEvent.setup() };
+}
+
+test.each([
+  {
+    name: "adjacent",
+    previous: "{Meta>}{Shift>}{ArrowUp}{/Shift}{/Meta}",
+    next: "{Meta>}{Shift>}{ArrowDown}{/Shift}{/Meta}",
+  },
+  {
+    name: "numbered",
+    previous: "{Meta>}1{/Meta}",
+    next: "{Meta>}2{/Meta}",
+  },
+])(
+  "Navigate $name chats while resources stay open",
+  async ({ previous, next }) => {
+    const { current, newer, user } = await setupResourceNavigation();
+    await user.click(composer());
+    expect(resourcePanel()).toBeInTheDocument();
+    await user.keyboard(previous);
+    await waitFor(() => {
+      expect(pathname()).toBe(`/chats/${newer.id}`);
+      expect(document.title).toBe("Newer resources chat | Okou");
+    });
+    await screen.findByRole("region", { name: "Resources" });
+    await user.click(composer());
+    await user.keyboard(next);
+    await waitFor(() => {
+      expect(pathname()).toBe(`/chats/${current.id}`);
+      expect(document.title).toBe("Current resources chat | Okou");
+    });
+  },
+);
+
+test("Search and start a chat with resources open", async () => {
+  const { current, user } = await setupResourceNavigation();
+  const editor = composer();
+  await user.click(editor);
+  await user.keyboard("{Meta>}{Shift>}f{/Shift}{/Meta}");
+  const dialog = await screen.findByRole("dialog", {
+    name: "Search workspace...",
+  });
+  expect(
+    within(dialog).getByPlaceholderText("Search workspace..."),
+  ).toHaveFocus();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+    expect(editor).toHaveFocus();
+  });
+  expect(resourcePanel()).toBeInTheDocument();
+  await user.keyboard("{Meta>}{Shift>}o{/Shift}{/Meta}");
+  await waitFor(() => {
+    expect(pathname()).toBe(`/agents/${current.agentId}/chat`);
+  });
+});
+
+test("Keep chat shortcuts blocked by the rename dialog while resources are open", async () => {
+  const { current, user } = await setupResourceNavigation();
+  await user.click(composer());
+  await user.keyboard("{F2}");
+  const dialog = await screen.findByRole("dialog", { name: "Rename chat" });
+  const title = within(dialog).getByPlaceholderText("Chat title");
+  await waitFor(() => {
+    expect(title).toHaveFocus();
+  });
+  await user.keyboard("{Meta>}{Shift>}{ArrowUp}o{/Shift}1{/Meta}");
+  expect(pathname()).toBe(`/chats/${current.id}`);
+  expect(title).toHaveFocus();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+  });
+  expect(resourcePanel()).toBeInTheDocument();
 });
 
 test("Include links from older messages outside the transcript render window", async () => {

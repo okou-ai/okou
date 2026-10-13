@@ -982,7 +982,8 @@ pub trait Sandbox: Send + Sync + Any {
         request: &StorageManifestRequest<'_>,
     ) -> Result<ExecResult>;
 
-    /// Apply storage with optional, fixed Host phase observations.
+    /// Apply storage with fixed Host phases and optional content-free Guest
+    /// timing/resource observations from the terminal result.
     ///
     /// Providers without these observations retain the original operation and
     /// leave the fresh record unavailable. Timing never changes the result,

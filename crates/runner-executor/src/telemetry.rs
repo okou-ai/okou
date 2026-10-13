@@ -320,6 +320,8 @@ struct StorageBatchTelemetryFields {
     storage_batch_payload_size_bucket: &'static str,
     #[serde(flatten)]
     host: storage_batch::HostTimingFields,
+    #[serde(flatten)]
+    guest: storage_batch::GuestEvidenceFields,
 }
 
 #[derive(Serialize)]
@@ -561,6 +563,7 @@ impl JobTelemetry {
             storage_batch_timing: timing,
             storage_batch_payload_size_bucket: dimensions.payload_size_bucket,
             host: storage_batch::HostTimingFields::new(host_timing),
+            guest: storage_batch::GuestEvidenceFields::new(host_timing),
         });
         self.push_operation(op);
     }
@@ -1300,6 +1303,22 @@ mod tests {
                 frame_write: Some(Duration::from_millis(6)),
                 response_wait: Some(Duration::from_millis(7)),
                 result_decode: Some(Duration::from_millis(8)),
+                guest: sandbox::StorageManifestGuestTiming {
+                    request_ownership_us: Some(0),
+                    worker_wait_us: Some(9_007_199_254_740_991),
+                    response_prepare_us: Some(42),
+                },
+                resources: sandbox::StorageManifestResources {
+                    containment_wall_us: Some(1),
+                    collection_us: Some(0),
+                    cpu_usage_us: Some(2),
+                    cpu_throttled_us: Some(0),
+                    memory_peak_bytes: Some(9_007_199_254_740_991),
+                    memory_events_oom: Some(0),
+                    memory_events_oom_kill: Some(0),
+                    memory_events_oom_group_kill: Some(0),
+                    pids_events_max: Some(0),
+                },
             },
             resource_log: Some(Duration::from_millis(9)),
         };
@@ -1314,6 +1333,16 @@ mod tests {
             admission: Some(Duration::ZERO),
             request: StorageManifestRequestTiming {
                 setup: Some(Duration::from_nanos(1)),
+                guest: sandbox::StorageManifestGuestTiming {
+                    request_ownership_us: Some(9_007_199_254_740_992),
+                    worker_wait_us: Some(0),
+                    ..sandbox::StorageManifestGuestTiming::default()
+                },
+                resources: sandbox::StorageManifestResources {
+                    cpu_usage_us: Some(0),
+                    memory_peak_bytes: Some(u64::MAX),
+                    ..sandbox::StorageManifestResources::default()
+                },
                 result_decode: Some(Duration::from_millis(u64::from(u32::MAX) + 1)),
                 ..StorageManifestRequestTiming::default()
             },
@@ -1335,6 +1364,19 @@ mod tests {
         );
         let batches = telemetry.pending_storage_batch_payloads();
         assert_eq!(batches[0]["storage_batch_host_timing"], "complete");
+        assert_eq!(batches[0]["storage_batch_guest_timing"], "complete");
+        assert_eq!(batches[0]["storage_batch_resources"], "complete");
+        assert_eq!(batches[0]["storage_batch_guest_request_ownership_us"], 0);
+        assert_eq!(
+            batches[0]["storage_batch_guest_worker_wait_us"],
+            9_007_199_254_740_991_u64
+        );
+        assert_eq!(batches[0]["storage_batch_guest_response_prepare_us"], 42);
+        assert_eq!(batches[0]["storage_batch_resource_collection_us"], 0);
+        assert_eq!(
+            batches[0]["storage_batch_memory_peak_bytes"],
+            9_007_199_254_740_991_u64
+        );
         for (field, value) in [
             ("storage_batch_admission_ms", 1),
             ("storage_batch_request_setup_ms", 2),
@@ -1353,6 +1395,16 @@ mod tests {
             "64_to_256_kib"
         );
         assert_eq!(batches[1]["storage_batch_host_timing"], "partial");
+        assert_eq!(batches[1]["storage_batch_guest_timing"], "partial");
+        assert_eq!(batches[1]["storage_batch_resources"], "partial");
+        assert_eq!(batches[1]["storage_batch_guest_worker_wait_us"], 0);
+        assert_eq!(batches[1]["storage_batch_cpu_usage_us"], 0);
+        assert!(
+            batches[1]
+                .get("storage_batch_guest_request_ownership_us")
+                .is_none()
+        );
+        assert!(batches[1].get("storage_batch_memory_peak_bytes").is_none());
         assert_eq!(batches[1]["success"], false);
         assert_eq!(batches[1]["storage_batch_admission_ms"], 0);
         assert_eq!(batches[1]["storage_batch_request_setup_ms"], 0);
@@ -1360,6 +1412,8 @@ mod tests {
         assert!(batches[1].get("storage_batch_result_decode_ms").is_none());
         assert!(batches[1].get("storage_batch_resource_log_ms").is_none());
         assert_eq!(batches[2]["storage_batch_host_timing"], "unavailable");
+        assert_eq!(batches[2]["storage_batch_guest_timing"], "unavailable");
+        assert_eq!(batches[2]["storage_batch_resources"], "unavailable");
         assert!(batches[2].get("storage_batch_admission_ms").is_none());
     }
 

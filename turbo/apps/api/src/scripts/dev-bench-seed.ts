@@ -52,6 +52,7 @@ export interface BuiltProfileRows {
 export interface BuildProfileRowsArgs {
   readonly userId: string;
   readonly orgId: string;
+  readonly agentId: string;
   readonly threadId: string;
   readonly sessionId: string;
   readonly profile: ThreadProfile;
@@ -644,6 +645,7 @@ function appendRunEvents(
     userId: args.userId,
     orgId: args.orgId,
     sessionId: args.sessionId,
+    agentId: args.agentId,
     status: failed ? "failed" : "completed",
     prompt,
     result: failed

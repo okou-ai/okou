@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.4](https://github.com/okou-ai/okou/compare/desktop-v0.53.3...desktop-v0.53.4) (2026-10-13)
+
+
+### Bug Fixes
+
+* **desktop:** keep the computer use helper out of the dock ([#39737](https://github.com/okou-ai/okou/issues/39737)) ([f8cd694](https://github.com/okou-ai/okou/commit/f8cd69466082a71c9c18ea8390d5ea3b6e17cd27)) [#39735](https://github.com/okou-ai/okou/issues/39735)
+
 ## [0.53.3](https://github.com/okou-ai/okou/compare/desktop-v0.53.2...desktop-v0.53.3) (2026-10-12)
 
 

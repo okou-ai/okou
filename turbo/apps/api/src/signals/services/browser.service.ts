@@ -1275,23 +1275,6 @@ const loadCurrentBrowser$ = command(
   },
 );
 
-async function loadOwnedThreadBrowser(
-  db: Db,
-  chatThreadId: string,
-): Promise<BrowserSessionRow | null> {
-  const [row] = await db
-    .select(BROWSER_SESSION_SELECTION)
-    .from(browserSessions)
-    .where(
-      and(
-        eq(browserSessions.chatThreadId, chatThreadId),
-        inArray(browserSessions.status, [...OWNED_BROWSER_STATUSES]),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
-}
-
 const loadActiveInstance$ = command(
   async ({ get }, chatThreadId: string): Promise<BrowserInstanceRow | null> => {
     const db = get(db$);
@@ -2287,16 +2270,27 @@ type ReuseLiveBrowser =
 // and the logical browser has to be restarted instead.
 const reuseLiveThreadBrowser$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly context: BrowserRunContext;
       readonly current: BrowserSessionRow;
     },
     signal: AbortSignal,
   ): Promise<ReuseLiveBrowser> => {
-    const db = set(writeDb$);
-    const owned = await loadOwnedThreadBrowser(db, args.context.chatThreadId);
+    const db = get(db$);
+    const chatThreadId = args.context.chatThreadId;
+    const [row] = await db
+      .select(BROWSER_SESSION_SELECTION)
+      .from(browserSessions)
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, chatThreadId),
+          inArray(browserSessions.status, [...OWNED_BROWSER_STATUSES]),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
+    const owned = row ?? null;
     if (!owned) {
       return { kind: "resume", browser: args.current };
     }

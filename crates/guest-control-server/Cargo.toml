@@ -1,6 +1,6 @@
 [package]
 name = "guest-control-server"
-version = "0.24.6"
+version = "0.24.7"
 edition.workspace = true
 
 [dependencies]
@@ -9,6 +9,7 @@ guest-contracts.workspace = true
 process-control-ipc.workspace = true
 process-launch.workspace = true
 libc = { workspace = true, features = ["std"] }
+serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 uuid = { workspace = true, features = ["std", "v4"] }
 shell-quote.workspace = true
