@@ -14,8 +14,8 @@ if (($# > 0)); then
 fi
 
 repo_root=$(git rev-parse --show-toplevel)
-# shellcheck source=.github/scripts/runner-image-target.sh
-source "$repo_root/.github/scripts/runner-image-target.sh"
+# shellcheck source=.github/scripts/runner/runner-image-target.sh
+source "$repo_root/.github/scripts/runner/runner-image-target.sh"
 target=$(runner_image_target_for_uname_m "$(uname -m)")
 arch=$(runner_image_expected_uname_m "$target")
 deps="$repo_root/crates/runner/src/deps.rs"

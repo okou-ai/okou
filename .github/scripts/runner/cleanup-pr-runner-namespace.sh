@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
 require_env() {
   local name=$1
@@ -40,7 +40,7 @@ fi
 # the late owner acquire the lock; a later daily cleanup collects the namespace.
 RUNNER_OWNER_ASSERT_IDLE=true \
   RUNNER_OWNER_SCOPE=closed-pr-cleanup \
-  "${SCRIPT_DIR}/cancel-superseded-merge-group-runs.sh"
+  "${SCRIPT_DIR}/../cancel-superseded-merge-group-runs.sh"
 
 if ! pr_state=$(gh api --method GET \
   "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \

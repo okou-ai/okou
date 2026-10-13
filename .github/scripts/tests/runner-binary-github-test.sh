@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-. "$SCRIPT_DIR/runner-binary-github.sh"
+. "$SCRIPT_DIR/runner/runner-binary-github.sh"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 mkdir -p "$TMPDIR/bin" "$TMPDIR/scratch"

@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-CACHE="${SCRIPT_DIR}/runner-binary-cache.sh"
+CACHE="${SCRIPT_DIR}/runner/runner-binary-cache.sh"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
@@ -34,8 +34,8 @@ assert_fails() {
 
 command -v zstd >/dev/null || fail "zstd is required"
 
-. "${SCRIPT_DIR}/runner-guest-binaries.sh"
-. "${REPO_ROOT}/.github/scripts/runner-binary-build/contract.env"
+. "${SCRIPT_DIR}/runner/runner-guest-binaries.sh"
+. "${REPO_ROOT}/.github/scripts/runner/runner-binary-build/contract.env"
 runner_guest_binaries_load
 
 runner="${TMPDIR}/runner"

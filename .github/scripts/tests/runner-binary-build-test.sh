@@ -14,7 +14,7 @@ fail() {
 digest_value() {
   local repo=$1 target=$2 revision=${3:-HEAD}
   RUNNER_BINARY_GIT_REVISION="$revision" \
-    "${repo}/.github/scripts/runner-binary-build/digest.sh" "$target" \
+    "${repo}/.github/scripts/runner/runner-binary-build/digest.sh" "$target" \
     | sed -n 's/^binary-input-digest=//p'
 }
 
@@ -39,7 +39,7 @@ assert_text_change_affects_digest() {
 
 repo="${TMPDIR}/repo"
 mkdir -p \
-  "${repo}/.github/scripts" \
+  "${repo}/.github/scripts/runner" \
   "${repo}/crates/.cargo" \
   "${repo}/crates/guest-one/src" \
   "${repo}/crates/guest-one/tests" \
@@ -56,11 +56,11 @@ mkdir -p \
   "${repo}/crates/other-one/tests" \
   "${TMPDIR}/bin"
 cp -a \
-  "${REPO_ROOT}/.github/scripts/runner-binary-build" \
-  "${repo}/.github/scripts/runner-binary-build"
-mkdir -p "${repo}/.github/scripts/runner-binary-build/tests"
+  "${REPO_ROOT}/.github/scripts/runner/runner-binary-build" \
+  "${repo}/.github/scripts/runner/runner-binary-build"
+mkdir -p "${repo}/.github/scripts/runner/runner-binary-build/tests"
 printf 'build contract fixture\n' \
-  > "${repo}/.github/scripts/runner-binary-build/tests/fixture.txt"
+  > "${repo}/.github/scripts/runner/runner-binary-build/tests/fixture.txt"
 
 cat > "${repo}/crates/runner/guest-binaries.json" <<'JSON'
 [
@@ -203,9 +203,9 @@ assert_text_change_affects_digest \
 assert_text_change_affects_digest \
   "$repo" "crates/other-one/src/additional.rs" "other-package-source-change"
 assert_text_change_affects_digest \
-  "$repo" ".github/scripts/runner-binary-build/contract.env" "contract-change"
+  "$repo" ".github/scripts/runner/runner-binary-build/contract.env" "contract-change"
 assert_text_change_affects_digest \
-  "$repo" ".github/scripts/runner-binary-build/tests/fixture.txt" "contract-tests-path-change"
+  "$repo" ".github/scripts/runner/runner-binary-build/tests/fixture.txt" "contract-tests-path-change"
 
 before=$(digest_value "$repo" aarch64-unknown-linux-musl)
 jq '.[0].destination = "/usr/local/bin/guest-one-v2"' \
@@ -273,9 +273,9 @@ printf 'runner-output\n' > "${CARGO_TARGET_DIR}/${target}/${profile}/runner"
 BASH
 chmod +x "${TMPDIR}/bin/cargo"
 
-printf 'exit 99\n' > "${repo}/.github/scripts/runner-binary-build/compile.sh"
+printf 'exit 99\n' > "${repo}/.github/scripts/runner/runner-binary-build/compile.sh"
 printf 'untracked again\n' > "${repo}/crates/guest-one/src/untracked.rs"
-. "${repo}/.github/scripts/runner-binary-build/contract.env"
+. "${repo}/.github/scripts/runner/runner-binary-build/contract.env"
 context_root="${TMPDIR}/materialized/runner-binary-build-context-aarch64-unknown-linux-musl"
 build_digest=$(digest_value "$repo" aarch64-unknown-linux-musl)
 PATH="${TMPDIR}/bin:${PATH}" \
@@ -285,7 +285,7 @@ CARGO_TARGET_DIR="${TMPDIR}/target" \
 RUNNER_BINARY_CONTEXT_ROOT="$context_root" \
 RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE="$RUNNER_BINARY_TOOLCHAIN_IMAGE" \
 RUNNER_BINARY_METADATA_PATH="${TMPDIR}/metadata.json" \
-  "${repo}/.github/scripts/runner-binary-build/build.sh" build >/dev/null
+  "${repo}/.github/scripts/runner/runner-binary-build/build.sh" build >/dev/null
 
 [ "$(wc -l < "${TMPDIR}/cargo.log" | tr -d ' ')" -eq 2 ] \
   || fail "expected guest and runner Cargo entry points"
@@ -319,7 +319,7 @@ git -C "$repo" show "${valid_revision}:crates/Cargo.toml" \
   || fail "default inclusion must retain other workspace package source"
 [ ! -e "${context_root}/crates/other-one/src/feature/tests/input.txt" ] \
   || fail "materialization must exclude nested tests directories"
-[ -f "${context_root}/.github/scripts/runner-binary-build/tests/fixture.txt" ] \
+[ -f "${context_root}/.github/scripts/runner/runner-binary-build/tests/fixture.txt" ] \
   || fail "tests directories outside crates must remain in the build contract"
 [ -f "${context_root}/${weird_relative}" ] \
   || fail "expected unusual tracked filename"
@@ -347,24 +347,24 @@ historical_valid_digest=$(digest_value "$repo" aarch64-unknown-linux-musl "$vali
   || fail "historical revision selection must distinguish included changes"
 
 if TARGET_TRIPLE=powerpc-unknown-linux-musl \
-  "${repo}/.github/scripts/runner-binary-build/build.sh" materialize >/dev/null 2>&1; then
+  "${repo}/.github/scripts/runner/runner-binary-build/build.sh" materialize >/dev/null 2>&1; then
   fail "expected unsupported target to fail"
 fi
 if TARGET_TRIPLE=aarch64-unknown-linux-musl \
   RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE=unexpected-toolchain \
-  "${repo}/.github/scripts/runner-binary-build/build.sh" build >/dev/null 2>&1; then
+  "${repo}/.github/scripts/runner/runner-binary-build/build.sh" build >/dev/null 2>&1; then
   fail "expected a mismatched build toolchain to fail"
 fi
 
-"${REPO_ROOT}/.github/scripts/runner-binary-build/context.sh" \
+"${REPO_ROOT}/.github/scripts/runner/runner-binary-build/context.sh" \
   validate-workspace "$REPO_ROOT"
 
 actual_repo="${TMPDIR}/actual-repo"
-mkdir -p "${actual_repo}/.github/scripts"
+mkdir -p "${actual_repo}/.github/scripts/runner"
 git -C "$REPO_ROOT" archive HEAD crates | tar -xf - -C "$actual_repo"
 cp -a \
-  "${REPO_ROOT}/.github/scripts/runner-binary-build" \
-  "${actual_repo}/.github/scripts/runner-binary-build"
+  "${REPO_ROOT}/.github/scripts/runner/runner-binary-build" \
+  "${actual_repo}/.github/scripts/runner/runner-binary-build"
 git -C "$actual_repo" init -q
 git -C "$actual_repo" config maintenance.auto false
 git -C "$actual_repo" config user.email test@example.com
@@ -374,8 +374,8 @@ actual_context="${TMPDIR}/actual-materialized/runner-binary-build-context-aarch6
 TARGET_TRIPLE=aarch64-unknown-linux-musl \
 CARGO_TARGET_DIR="${TMPDIR}/actual-target" \
 RUNNER_BINARY_CONTEXT_ROOT="$actual_context" \
-  "${actual_repo}/.github/scripts/runner-binary-build/build.sh" materialize >/dev/null
-"${actual_context}/.github/scripts/runner-binary-build/context.sh" \
+  "${actual_repo}/.github/scripts/runner/runner-binary-build/build.sh" materialize >/dev/null
+"${actual_context}/.github/scripts/runner/runner-binary-build/context.sh" \
   validate-workspace "$actual_context"
 [ -f "${actual_context}/crates/runner/src/main.rs" ] \
   || fail "actual context must contain runner source"
@@ -396,7 +396,7 @@ workflow_toolchain=$(awk '
   /^  compile:$/ { in_compile = 1; next }
   in_compile && /^      image: / { sub(/^      image: /, ""); print; exit }
 ' "${REPO_ROOT}/.github/workflows/runner-image-architecture.yml")
-. "${REPO_ROOT}/.github/scripts/runner-binary-build/contract.env"
+. "${REPO_ROOT}/.github/scripts/runner/runner-binary-build/contract.env"
 [ "$RUNNER_BINARY_INPUT_SCHEMA_VERSION" = "6" ] \
   || fail "runner binary input schema must identify content-only CLI inputs"
 [ "$workflow_toolchain" = "ghcr.io/\${{ github.repository_owner }}/vm0-toolchain-rust:20261009" ] \
@@ -449,7 +449,7 @@ for target in aarch64-unknown-linux-musl x86_64-unknown-linux-musl; do
   expected_cli_digest=$(
     {
       printf '%s\0%s\0' "$RUNNER_BINARY_INPUT_SCHEMA_VERSION" "$target"
-      "${repo}/.github/scripts/runner-binary-build/context.sh" inventory "$repo" HEAD
+      "${repo}/.github/scripts/runner/runner-binary-build/context.sh" inventory "$repo" HEAD
       printf 'bundled-cli\0%s\0%s\0' "$cli_package_sha256" "$cli_compilation_identity"
     } | sha256sum | awk '{print $1}'
   )

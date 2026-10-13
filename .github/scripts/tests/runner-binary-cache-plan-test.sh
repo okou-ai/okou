@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-PLAN="${SCRIPT_DIR}/runner-binary-cache-plan.sh"
+PLAN="${SCRIPT_DIR}/runner/runner-binary-cache-plan.sh"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
@@ -21,8 +21,8 @@ command -v zstd >/dev/null || fail "zstd is required"
 
 arm_target=aarch64-unknown-linux-musl
 x86_target=x86_64-unknown-linux-musl
-arm_digest=$("${SCRIPT_DIR}/runner-binary-build/digest.sh" "$arm_target" | sed -n 's/^binary-input-digest=//p')
-x86_digest=$("${SCRIPT_DIR}/runner-binary-build/digest.sh" "$x86_target" | sed -n 's/^binary-input-digest=//p')
+arm_digest=$("${SCRIPT_DIR}/runner/runner-binary-build/digest.sh" "$arm_target" | sed -n 's/^binary-input-digest=//p')
+x86_digest=$("${SCRIPT_DIR}/runner/runner-binary-build/digest.sh" "$x86_target" | sed -n 's/^binary-input-digest=//p')
 arm_artifact="runner-binary-asset-${arm_target}-${arm_digest}"
 x86_artifact="runner-binary-asset-${x86_target}-${x86_digest}"
 matrix=$(jq -cn \
@@ -38,8 +38,8 @@ matrix=$(jq -cn \
     }
   ]')
 
-. "${SCRIPT_DIR}/runner-guest-binaries.sh"
-. "${REPO_ROOT}/.github/scripts/runner-binary-build/contract.env"
+. "${SCRIPT_DIR}/runner/runner-guest-binaries.sh"
+. "${REPO_ROOT}/.github/scripts/runner/runner-binary-build/contract.env"
 runner_guest_binaries_load
 guest_json='{}'
 for guest in "${RUNNER_GUEST_BINARIES[@]}"; do
@@ -232,7 +232,7 @@ run_download() {
   EXPECTED_BINARY_INPUT_DIGEST="$digest" \
   CACHE_REFERENCE="$(jq -c --arg target "$target" '.[$target]' <<<"$references")" \
   RESOLVE_OUTPUT_DIR="$output_dir" \
-    "${SCRIPT_DIR}/runner-binary-cache.sh" download-reference
+    "${SCRIPT_DIR}/runner/runner-binary-cache.sh" download-reference
 }
 
 : > "${TMPDIR}/aws.log"
@@ -249,7 +249,7 @@ FRESH_METADATA_PATH="${TMPDIR}/download-arm/metadata.json" \
 RUNNER_PATH="${TMPDIR}/download-arm/runner" \
 EXPECTED_TARGET="$arm_target" \
 EXPECTED_BINARY_INPUT_DIGEST="$arm_digest" \
-  "${SCRIPT_DIR}/runner-binary-cache.sh" fresh-validate >/dev/null
+  "${SCRIPT_DIR}/runner/runner-binary-cache.sh" fresh-validate >/dev/null
 
 mv "${TMPDIR}/objects/${arm_target}.zst" "${TMPDIR}/arm-unavailable.zst"
 unavailable=$(run_plan all-hit "${TMPDIR}/unavailable")

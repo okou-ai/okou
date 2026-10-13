@@ -19,7 +19,7 @@ mapping.
 
 ## Supported Targets
 
-`.github/scripts/runner-image-target.sh` is the implementation source of truth
+`.github/scripts/runner/runner-image-target.sh` is the implementation source of truth
 for supported runner targets and derived metadata.
 
 | Host `uname -m` | Rust target triple           | Cache suffix   | Release asset suffix | Release asset                      |
@@ -35,7 +35,7 @@ Runner release tags use `runner-rs-v${VERSION}`. Runner release assets use
 `AWS_METAL_RUNNER_HOSTS` is the single metal runner inventory for this rollout.
 There is no separate architecture-specific host secret.
 
-`.github/scripts/runner-host-architecture-groups.sh` derives architecture
+`.github/scripts/runner/runner-host-architecture-groups.sh` derives architecture
 groups by probing each host with SSH:
 
 ```bash
@@ -74,13 +74,13 @@ Host lists must not be passed through GitHub Actions job outputs or matrix JSON.
 Jobs that need concrete hosts resolve them locally for the selected group:
 
 ```bash
-.github/scripts/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID"
+.github/scripts/runner/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID"
 ```
 
 Jobs that need one representative host use the deterministic selector:
 
 ```bash
-.github/scripts/runner-host-architecture-groups.sh select-host "$RUNNER_HOST_GROUP_ID" "$JOB_REF" "$HOSTS"
+.github/scripts/runner/runner-host-architecture-groups.sh select-host "$RUNNER_HOST_GROUP_ID" "$JOB_REF" "$HOSTS"
 ```
 
 ## Workflow Consumers
@@ -423,7 +423,7 @@ the deployed product chat flow. Architecture-specific runner behavior remains
 in the host-bound crates checks instead of being duplicated in product E2E.
 
 Release publishing builds runner assets for all supported target triples. The
-asset names come from `.github/scripts/runner-image-target.sh`.
+asset names come from `.github/scripts/runner/runner-image-target.sh`.
 
 Production build, promote, and rollback resolve the deploy/rollback target
 matrix from the configured inventory. Each matrix leg downloads or uses the

@@ -283,22 +283,22 @@ jobs:
             .github/scripts/checks/check-release-please-workspace-coverage.sh \
             .github/scripts/checks/check-pr-ci-capacity.sh \
             .github/scripts/checks/check-workflow-shell-compatibility.sh \
-            .github/scripts/cleanup-pr-runner-namespace.sh \
-            .github/scripts/discover-runner-pr-namespaces.sh \
+            .github/scripts/runner/cleanup-pr-runner-namespace.sh \
+            .github/scripts/runner/discover-runner-pr-namespaces.sh \
             .github/scripts/checks/detect-native-only.sh \
             .github/scripts/tests/native-only-ci-test.sh \
             .github/scripts/tests/native-only-gates-test.sh \
-            .github/scripts/cloudflare-ssh-command.sh \
-            .github/scripts/cloudflare-ssh-diagnostics.sh \
-            .github/scripts/cloudflare-ssh-preconnect.sh \
+            .github/scripts/runner/cloudflare-ssh-command.sh \
+            .github/scripts/runner/cloudflare-ssh-diagnostics.sh \
+            .github/scripts/runner/cloudflare-ssh-preconnect.sh \
             .github/scripts/artifacts/download-okou-cli-cdn-file.sh \
             .github/scripts/download-verified.sh \
             .github/scripts/neon-preview-branch.sh \
             .github/scripts/release/pass-release-pr-ci-gates.sh \
             .github/scripts/release/publish-okou-app-assets.sh \
-            .github/scripts/reconcile-and-start-runner-groups.sh \
-            .github/scripts/prune-runner-idle.sh \
-            .github/scripts/reconcile-runner-binary-groups.sh \
+            .github/scripts/runner/reconcile-and-start-runner-groups.sh \
+            .github/scripts/runner/prune-runner-idle.sh \
+            .github/scripts/runner/reconcile-runner-binary-groups.sh \
             .github/actions/report-memory-peak/report.sh \
             .github/scripts/report-sccache-stats.sh \
             .github/scripts/release/resolve-desktop-version-change.sh \
@@ -309,7 +309,7 @@ jobs:
             .github/scripts/artifacts/smoke-okou-cli-artifact.sh \
             .github/scripts/artifacts/verify-okou-cli-artifact.sh \
             .github/scripts/artifacts/verify-okou-desktop-artifact.sh \
-            .github/scripts/with-runner-lifecycle-lock.sh \
+            .github/scripts/runner/with-runner-lifecycle-lock.sh \
             .github/scripts/tests/check-action-pins-test.sh \
             .github/scripts/tests/ansible-ssh-control-path-test.sh \
             .github/scripts/tests/cancel-superseded-merge-group-runs-test.sh \
@@ -373,14 +373,14 @@ jobs:
           shellcheck crates/kerberos-worker/native/build.sh crates/kerberos-worker/native/build-dependencies.sh \
             .github/scripts/tests/kerberos-native-cache-test.sh .github/scripts/tests/kerberos-native-cache-workflow-test.sh \
             .github/scripts/tests/crates-parallel-checks-workflow-test.sh
-          shellcheck -x -P .github/scripts/runner-binary-build .github/scripts/runner-binary-build/*.sh
+          shellcheck -x -P .github/scripts/runner/runner-binary-build .github/scripts/runner/runner-binary-build/*.sh
           shellcheck -x -P .github/scripts/artifacts \
             .github/scripts/artifacts/r2-copy.sh \
             .github/scripts/artifacts/fetch-okou-app-artifact.sh \
             .github/scripts/artifacts/fetch-okou-desktop-artifact.sh
-          shellcheck -x -P .github/scripts .github/scripts/runner-binary-github.sh .github/scripts/tests/runner-binary-github-test.sh
-          shellcheck -x -P .github/scripts .github/scripts/runner-image-architecture.sh .github/scripts/tests/runner-image-architecture-test.sh
-          shellcheck -x -P .github/scripts .github/scripts/wait-runner-image.sh
+          shellcheck -x -P .github/scripts:.github/scripts/runner .github/scripts/runner/runner-binary-github.sh .github/scripts/tests/runner-binary-github-test.sh
+          shellcheck -x -P .github/scripts:.github/scripts/runner .github/scripts/runner/runner-image-architecture.sh .github/scripts/tests/runner-image-architecture-test.sh
+          shellcheck -x -P .github/scripts/runner .github/scripts/runner/wait-runner-image.sh
           # actionlint assumes Bash when shell is omitted and does not model the
           # sh default used by container jobs.
           .github/scripts/checks/check-workflow-shell-compatibility.sh

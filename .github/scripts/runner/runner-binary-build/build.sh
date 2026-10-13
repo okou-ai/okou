@@ -162,7 +162,7 @@ build() {
   fi
 
   materialize
-  "${context_root}/.github/scripts/runner-binary-build/context.sh" \
+  "${context_root}/.github/scripts/runner/runner-binary-build/context.sh" \
     validate-workspace "$context_root"
   TARGET_TRIPLE="$target" \
   CARGO_TARGET_DIR="$cargo_target_dir" \
@@ -171,7 +171,7 @@ build() {
   RUNNER_BINARY_METADATA_PATH="$metadata_path" \
   GUEST_CLI_PATH="$cli_package" \
   GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
-    "${context_root}/.github/scripts/runner-binary-build/compile.sh"
+    "${context_root}/.github/scripts/runner/runner-binary-build/compile.sh"
 
   emit "binary-input-digest" "$binary_input_digest"
   emit "runner-path" "${cargo_target_dir}/${target}/${RUNNER_BINARY_PROFILE}/runner"

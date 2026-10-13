@@ -3,8 +3,8 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 DEV_RUNNER="${REPO_ROOT}/scripts/dev-runner.sh"
-TARGET_HELPER="${REPO_ROOT}/.github/scripts/runner-image-target.sh"
-GUEST_HELPER="${REPO_ROOT}/.github/scripts/runner-guest-binaries.sh"
+TARGET_HELPER="${REPO_ROOT}/.github/scripts/runner/runner-image-target.sh"
+GUEST_HELPER="${REPO_ROOT}/.github/scripts/runner/runner-guest-binaries.sh"
 GUEST_INVENTORY="${REPO_ROOT}/crates/runner/guest-binaries.json"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
@@ -19,14 +19,14 @@ setup_test_root() {
 
   mkdir -p \
     "${root}/scripts" \
-    "${root}/.github/scripts" \
+    "${root}/.github/scripts/runner" \
     "${root}/.certs" \
     "${root}/crates/runner" \
     "${root}/bin"
 
   ln -s "$DEV_RUNNER" "${root}/scripts/dev-runner.sh"
-  ln -s "$TARGET_HELPER" "${root}/.github/scripts/runner-image-target.sh"
-  ln -s "$GUEST_HELPER" "${root}/.github/scripts/runner-guest-binaries.sh"
+  ln -s "$TARGET_HELPER" "${root}/.github/scripts/runner/runner-image-target.sh"
+  ln -s "$GUEST_HELPER" "${root}/.github/scripts/runner/runner-guest-binaries.sh"
   ln -s "$GUEST_INVENTORY" "${root}/crates/runner/guest-binaries.json"
   touch "${root}/.certs/vm0-metal-local.pem"
 

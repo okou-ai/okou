@@ -389,7 +389,7 @@ if [[ "$STATE_DIR" != /* ]] \
   exit 2
 fi
 
-# shellcheck source=.github/scripts/cloudflare-ssh-diagnostics.sh
+# shellcheck source=.github/scripts/runner/cloudflare-ssh-diagnostics.sh
 . "${SCRIPTS_DIR}/cloudflare-ssh-diagnostics.sh"
 
 PROBE_TIMEOUT_SECONDS=20

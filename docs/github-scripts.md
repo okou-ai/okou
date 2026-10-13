@@ -23,6 +23,8 @@ the owner, and task progress belongs in the issue or PR.
 
 [Artifact tools](../.github/scripts/artifacts/) own build/fetch/verify/smoke phases;
 [release tools](../.github/scripts/release/) own promotion and publication adapters.
+[Runner tools](../.github/scripts/runner/) own CI build, image, deployment,
+lifecycle and supporting SSH adapters.
 
 ## Writing Scripts
 

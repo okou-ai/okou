@@ -2,8 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOST_GROUPS="${SCRIPT_DIR}/runner-host-architecture-groups.sh"
-TARGET="${SCRIPT_DIR}/runner-image-target.sh"
+HOST_GROUPS="${SCRIPT_DIR}/runner/runner-host-architecture-groups.sh"
+TARGET="${SCRIPT_DIR}/runner/runner-image-target.sh"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 FAKE_BIN="${TMPDIR}/bin"

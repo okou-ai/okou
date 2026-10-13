@@ -13,7 +13,7 @@ import time
 import unittest
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parents[1]
+SCRIPTS = Path(__file__).resolve().parents[1] / "runner"
 SECRET = "X-Amz-Signature=fixture-private-signature"
 AWS = r"""#!/usr/bin/env python3
 import json, os, pathlib, signal, sys, time
