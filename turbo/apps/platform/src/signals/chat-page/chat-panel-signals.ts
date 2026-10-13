@@ -32,6 +32,7 @@ import type { ChatThreadSharingSignals } from "./chat-thread-sharing.ts";
 import type { ChatThreadPinSignals } from "./chat-thread-pin.ts";
 import type { ChatForwardContext } from "./chat-forward.ts";
 import type { ChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
+import type { ChatResourceSignals } from "./chat-resources.ts";
 
 type RecommendedFollowup = ChatRecommendedFollowup;
 
@@ -198,6 +199,7 @@ export interface ChatPanelSignals {
   readonly sharing: ChatThreadSharingSignals;
   readonly pin: ChatThreadPinSignals;
   readonly locator: ChatConversationLocatorSignals;
+  readonly resources: ChatResourceSignals;
   // -- Thread-owned automation resources -----------------------------------
   readonly headerAutomations: HeaderAutomationSignals;
   // -- Thread-owned utility sidebar -----------------------------------------

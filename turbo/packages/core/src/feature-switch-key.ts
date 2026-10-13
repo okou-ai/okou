@@ -43,6 +43,7 @@ export enum FeatureSwitchKey {
   ArtifactPreviews = "artifactPreviews",
   SlackLinkUnfurls = "slackLinkUnfurls",
   ArtifactSidebarPreview = "artifactSidebarPreview",
+  ChatResourcePanel = "chatResourcePanel",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",
   FeishuIntegration = "_feishuIntegration",

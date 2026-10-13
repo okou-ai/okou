@@ -2049,6 +2049,15 @@
       "title": "リモートアクセス",
       "unavailableSsh": "利用できない SSH ホスト"
     },
+    "resources": {
+      "copyLink": "リンクをコピー",
+      "empty": "このチャットにはまだアーティファクトやリンクがありません",
+      "links": "リンク",
+      "loadFailed": "リソースを読み込めませんでした",
+      "retry": "再試行",
+      "title": "チャットのリソース",
+      "viewAll": "すべて表示"
+    },
     "run": {
       "collapseWorkHistory": "作業履歴を折りたたむ",
       "creditUsage": "クレジット使用量",

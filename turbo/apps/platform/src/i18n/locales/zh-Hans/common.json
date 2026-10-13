@@ -2049,6 +2049,15 @@
       "title": "远程访问",
       "unavailableSsh": "不可用的 SSH 主机"
     },
+    "resources": {
+      "copyLink": "复制链接",
+      "empty": "此聊天中还没有成果或链接",
+      "links": "链接",
+      "loadFailed": "无法加载聊天资源",
+      "retry": "重试",
+      "title": "聊天资源",
+      "viewAll": "查看全部"
+    },
     "run": {
       "collapseWorkHistory": "收起工作记录",
       "creditUsage": "积分用量",

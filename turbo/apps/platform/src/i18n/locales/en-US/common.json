@@ -2057,6 +2057,15 @@
       "title": "Remote access",
       "unavailableSsh": "unavailable SSH host"
     },
+    "resources": {
+      "copyLink": "Copy link",
+      "empty": "No artifacts or links in this chat yet",
+      "links": "Links",
+      "loadFailed": "Could not load resources",
+      "retry": "Try again",
+      "title": "Resources",
+      "viewAll": "View all"
+    },
     "run": {
       "collapseWorkHistory": "Collapse work history",
       "creditUsage": "Credit usage",

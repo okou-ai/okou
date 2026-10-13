@@ -2164,6 +2164,13 @@
       "when": 1791876197854,
       "tag": "1386_drop_official_result_email_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 1387,
+      "version": "7",
+      "when": 1791879327323,
+      "tag": "1387_chat_resources_preference",
+      "breakpoints": true
     }
   ]
 }

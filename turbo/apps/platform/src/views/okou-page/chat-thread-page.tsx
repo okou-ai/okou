@@ -1,3 +1,4 @@
+import { ChatResourcesButton } from "./chat-resources.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
@@ -585,9 +586,14 @@ function ChatThreadHeaderIconButton({
 
 function ArtifactsButton({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
+  const resourcesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
   const sidebarTarget = useGet(thread.sidebar.target$);
   const reloadArtifacts = useSet(thread.reloadArtifacts$);
   const openThreadArtifacts = useOpenThreadArtifacts(thread);
+  if (resourcesEnabled) {
+    return <ChatResourcesButton thread={thread} />;
+  }
   return (
     <ChatThreadHeaderIconButton
       icon={<Package size={18} />}
@@ -3816,6 +3822,9 @@ function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const threadMeta = useGet(thread.threadMeta$);
   const sharingPhase = useGet(thread.sharing.phase$);
+  const resourcesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
+  const resourceLayoutRef = useSet(thread.resources.layoutOnRef$);
   if (!threadMeta) {
     return <ChatThreadNotFound />;
   }
@@ -3824,7 +3833,10 @@ function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
     <>
       <ChatThreadHeader thread={thread} />
 
-      <div className="relative min-h-0 flex-1">
+      <div
+        className="relative min-h-0 flex-1"
+        ref={resourcesEnabled ? resourceLayoutRef : undefined}
+      >
         <div className="flex h-full min-w-0 flex-col">
           <ChatThreadEventsPane thread={thread} />
           <ChatThreadBottomBar thread={thread} />

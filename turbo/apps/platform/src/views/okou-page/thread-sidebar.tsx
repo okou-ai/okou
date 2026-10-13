@@ -4,6 +4,9 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Button, FullscreenPanel } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { ChatResourceLinks } from "./chat-resource-links.tsx";
 
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -129,6 +132,15 @@ function ThreadSidebarHeader({
 
 function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
+  const resourcesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
+  const title = resourcesEnabled
+    ? t(($) => {
+        return $.chat.resources.title;
+      })
+    : t(($) => {
+        return $.artifacts.sidebar.panelTitle;
+      });
   const sidebar = thread.sidebar;
   const catalogLoadable = useLastLoadable(sidebar.artifactCatalog.catalog$);
   const fullscreen = useGet(sidebar.fullscreen$);
@@ -174,15 +186,11 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
       className={
         fullscreen ? "h-viewport max-h-viewport min-h-viewport" : undefined
       }
-      aria-label={t(($) => {
-        return $.artifacts.sidebar.panelTitle;
-      })}
+      aria-label={title}
       data-testid="thread-sidebar-artifacts"
     >
       <ThreadSidebarHeader
-        title={t(($) => {
-          return $.artifacts.sidebar.panelTitle;
-        })}
+        title={title}
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
         onClose={close}
@@ -191,6 +199,13 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
         onScroll={handleScroll}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
       >
+        {resourcesEnabled && (
+          <h3 className="px-2 pb-2 text-xs font-medium text-muted-foreground">
+            {t(($) => {
+              return $.artifacts.sidebar.panelTitle;
+            })}
+          </h3>
+        )}
         {artifacts === null ? (
           catalogLoadable.state === "hasError" ? (
             <ArtifactCatalogError
@@ -219,6 +234,11 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
               );
             }}
           />
+        )}
+        {resourcesEnabled && (
+          <div className="mt-4">
+            <ChatResourceLinks thread={thread} />
+          </div>
         )}
       </div>
     </FullscreenPanel>

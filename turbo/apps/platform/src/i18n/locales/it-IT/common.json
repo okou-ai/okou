@@ -2098,6 +2098,15 @@
       "title": "Accesso remoto",
       "unavailableSsh": "host SSH non disponibile"
     },
+    "resources": {
+      "copyLink": "Copia link",
+      "empty": "Questa chat non contiene ancora artefatti o link",
+      "links": "Link",
+      "loadFailed": "Impossibile caricare le risorse",
+      "retry": "Riprova",
+      "title": "Risorse della chat",
+      "viewAll": "Mostra tutto"
+    },
     "run": {
       "collapseWorkHistory": "Comprimi la cronologia lavorativa",
       "creditUsage": "Utilizzo del credito",
