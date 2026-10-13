@@ -234,6 +234,25 @@ export function waitForOperation<T>(
     }
   });
 }
+
+/** Race independently owned attempts and cancel the losers when one settles. */
+export function raceWithCancellation<T>(
+  operations: readonly ((signal: AbortSignal) => Promise<T>)[],
+  signal: AbortSignal,
+): Promise<T> {
+  signal.throwIfAborted();
+  const controller = new AbortController();
+  const raceSignal = AbortSignal.any([signal, controller.signal]);
+  const attempts = operations.map(async (operation) => {
+    return await operation(raceSignal);
+  });
+  return withCleanup(
+    waitForOperation(Promise.race(attempts), raceSignal),
+    () => {
+      controller.abort();
+    },
+  );
+}
 // ---------------------------------------------------------------------------
 // Polling loop with fibonacci backoff
 // ---------------------------------------------------------------------------

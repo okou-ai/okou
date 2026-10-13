@@ -4670,6 +4670,7 @@ function launchRunValues(
     userId: args.userId,
     orgId: args.orgId,
     status: args.status,
+    agentId: args.resolved.agentId,
     creditAdmitted: args.creditAdmitted,
     prompt: args.body.prompt,
     appendSystemPrompt: args.body.appendSystemPrompt ?? null,

@@ -1,5 +1,7 @@
-use guest_contracts::storage_resources::StorageResourceUsage;
-use sandbox::StorageManifestRequestTiming;
+use guest_contracts::storage_resources::{
+    StorageControlTimingMetadata, StorageResourceAvailability, StorageResourceUsage,
+};
+use sandbox::{StorageManifestGuestTiming, StorageManifestRequestTiming, StorageManifestResources};
 use std::io;
 use std::time::{Duration, Instant};
 
@@ -21,7 +23,7 @@ pub struct GuestStorageManifestResult {
     pub resources: Option<StorageResourceUsage>,
     /// Terminal process state.
     pub termination: ExecTermination,
-    /// Guest-observed helper duration in milliseconds.
+    /// Original Guest-server execution and terminal cleanup duration in milliseconds.
     pub duration_ms: u32,
     /// Retained helper stdout bytes.
     pub stdout: Vec<u8>,
@@ -77,7 +79,8 @@ impl GuestControlClient {
         .await
     }
 
-    /// Apply the same request while retaining fixed, content-free Host phases.
+    /// Apply the same request while retaining fixed Host phases and optional
+    /// content-free Guest timing/resource observations.
     ///
     /// The record is reset at entry. Completed attempts survive returned errors;
     /// unobserved phases remain absent. Observations do not change the deadline,
@@ -133,7 +136,7 @@ impl GuestControlClient {
         .await?;
 
         let decode_started = timing.as_ref().map(|_| Instant::now());
-        let result = decode_storage_manifest_response(response, run_id);
+        let result = decode_storage_manifest_response(response, run_id, timing.as_deref_mut());
         if let (Some(timing), Some(started)) = (timing, decode_started) {
             timing.result_decode = Some(started.elapsed());
         }
@@ -144,6 +147,7 @@ impl GuestControlClient {
 fn decode_storage_manifest_response(
     response: RawMessage,
     run_id: &str,
+    timing: Option<&mut StorageManifestRequestTiming>,
 ) -> io::Result<GuestStorageManifestResult> {
     if response.msg_type == MSG_ERROR {
         let message =
@@ -162,11 +166,17 @@ fn decode_storage_manifest_response(
 
     let decoded =
         decode_guest_storage_manifest_result(&response.payload).map_err(protocol_invalid_data)?;
+    let resource_absent =
+        serde_json::from_slice::<StorageResourceAvailability>(decoded.resource_summary)
+            .ok()
+            .and_then(|metadata| metadata.storage_resource_available)
+            == Some(false);
     let resources = if decoded.resource_summary.is_empty() {
         None
     } else {
         match serde_json::from_slice::<StorageResourceUsage>(decoded.resource_summary) {
             Ok(resources) if resources.matches_request(run_id, response.seq) => Some(resources),
+            _ if resource_absent => None,
             _ => {
                 // Optional evidence cannot fail a valid core result. Never
                 // log raw peer bytes or parser errors containing those bytes.
@@ -178,6 +188,35 @@ fn decode_storage_manifest_response(
             }
         }
     };
+    if let Some(timing) = timing {
+        // Parse optional timing independently: malformed timing cannot erase a
+        // valid resource snapshot or the terminal result. No raw metadata leaves
+        // this bounded decoder. Old/absent observations stay unavailable.
+        if let Some(guest) =
+            serde_json::from_slice::<StorageControlTimingMetadata>(decoded.resource_summary)
+                .ok()
+                .and_then(|metadata| metadata.storage_control_timing)
+        {
+            timing.guest = StorageManifestGuestTiming {
+                request_ownership_us: guest.request_ownership_us,
+                worker_wait_us: guest.worker_wait_us,
+                response_prepare_us: guest.response_prepare_us,
+            };
+        }
+        if let Some(resources) = &resources {
+            timing.resources = StorageManifestResources {
+                containment_wall_us: Some(resources.containment_wall_us),
+                collection_us: Some(resources.collection_us),
+                cpu_usage_us: resources.cpu_usage_usec,
+                cpu_throttled_us: resources.cpu_throttled_usec,
+                memory_peak_bytes: resources.memory_peak_bytes,
+                memory_events_oom: resources.memory_events_oom,
+                memory_events_oom_kill: resources.memory_events_oom_kill,
+                memory_events_oom_group_kill: resources.memory_events_oom_group_kill,
+                pids_events_max: resources.pids_events_max,
+            };
+        }
+    }
     let decoded = decoded.result;
     let (stdout, stdout_truncated) = owned_capture(decoded.stdout, "stdout")?;
     let (stderr, stderr_truncated) = owned_capture(decoded.stderr, "stderr")?;

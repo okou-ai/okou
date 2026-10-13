@@ -526,6 +526,22 @@ describe("shared SDK ingestion", () => {
         storage_batch_result_decode_ms: 7,
         storage_batch_resource_log_ms: 8,
         storage_batch_host_timing: "complete",
+        storage_batch_guest_timing: "complete",
+        storage_batch_resources: "complete",
+        storage_batch_guest_request_ownership_us: 0,
+        storage_batch_guest_worker_wait_us: 1,
+        storage_batch_guest_response_prepare_us: 2,
+        storage_batch_containment_wall_us: 3,
+        storage_batch_resource_collection_us: 4,
+        storage_batch_cpu_usage_us: 5,
+        storage_batch_cpu_throttled_us: 6,
+        storage_batch_memory_peak_bytes: Number.MAX_SAFE_INTEGER,
+        storage_batch_memory_events_oom: 0,
+        storage_batch_memory_events_oom_kill: 0,
+        storage_batch_memory_events_oom_group_kill: 0,
+        storage_batch_pids_events_max: 0,
+        resources: { group: "private-cgroup", request_seq: 17 },
+        storage_control_timing: { run_id: "private-run" },
         storage_batch_payload_size_bucket: "64_to_256_kib",
         manifest_json: "must-not-reach-axiom",
       } as const;
@@ -645,6 +661,31 @@ describe("shared SDK ingestion", () => {
             storage_batch_resource_log_ms:
               storageBatch.storage_batch_resource_log_ms,
             storage_batch_host_timing: storageBatch.storage_batch_host_timing,
+            storage_batch_guest_timing: storageBatch.storage_batch_guest_timing,
+            storage_batch_resources: storageBatch.storage_batch_resources,
+            storage_batch_guest_request_ownership_us:
+              storageBatch.storage_batch_guest_request_ownership_us,
+            storage_batch_guest_worker_wait_us:
+              storageBatch.storage_batch_guest_worker_wait_us,
+            storage_batch_guest_response_prepare_us:
+              storageBatch.storage_batch_guest_response_prepare_us,
+            storage_batch_containment_wall_us:
+              storageBatch.storage_batch_containment_wall_us,
+            storage_batch_resource_collection_us:
+              storageBatch.storage_batch_resource_collection_us,
+            storage_batch_cpu_usage_us: storageBatch.storage_batch_cpu_usage_us,
+            storage_batch_cpu_throttled_us:
+              storageBatch.storage_batch_cpu_throttled_us,
+            storage_batch_memory_peak_bytes:
+              storageBatch.storage_batch_memory_peak_bytes,
+            storage_batch_memory_events_oom:
+              storageBatch.storage_batch_memory_events_oom,
+            storage_batch_memory_events_oom_kill:
+              storageBatch.storage_batch_memory_events_oom_kill,
+            storage_batch_memory_events_oom_group_kill:
+              storageBatch.storage_batch_memory_events_oom_group_kill,
+            storage_batch_pids_events_max:
+              storageBatch.storage_batch_pids_events_max,
             storage_batch_payload_size_bucket:
               storageBatch.storage_batch_payload_size_bucket,
           },

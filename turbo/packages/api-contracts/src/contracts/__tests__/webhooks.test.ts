@@ -296,6 +296,20 @@ describe("storage batch timing telemetry", () => {
       storage_batch_result_decode_ms: 7,
       storage_batch_resource_log_ms: 8,
       storage_batch_host_timing: "complete",
+      storage_batch_guest_timing: "complete",
+      storage_batch_resources: "complete",
+      storage_batch_guest_request_ownership_us: 0,
+      storage_batch_guest_worker_wait_us: 1,
+      storage_batch_guest_response_prepare_us: 2,
+      storage_batch_containment_wall_us: 3,
+      storage_batch_resource_collection_us: 4,
+      storage_batch_cpu_usage_us: 5,
+      storage_batch_cpu_throttled_us: 6,
+      storage_batch_memory_peak_bytes: Number.MAX_SAFE_INTEGER,
+      storage_batch_memory_events_oom: 0,
+      storage_batch_memory_events_oom_kill: 0,
+      storage_batch_memory_events_oom_group_kill: 0,
+      storage_batch_pids_events_max: 0,
       storage_batch_payload_size_bucket: "64_to_256_kib",
     };
     const parsed = webhookTelemetryContract.send.body.parse({
@@ -306,9 +320,70 @@ describe("storage batch timing telemetry", () => {
       ],
     });
     expect(parsed.sandboxOperations).toStrictEqual([operation, measured]);
+    // Previous API's tolerant object reader accepts the new Runner payload and
+    // preserves its own fields. Runner/Guest internal artifacts deploy together.
+    const olderOperationReader =
+      webhookTelemetryContract.send.body.shape.sandboxOperations
+        .unwrap()
+        .element.omit({
+          storage_batch_guest_timing: true,
+          storage_batch_resources: true,
+          storage_batch_guest_request_ownership_us: true,
+          storage_batch_guest_worker_wait_us: true,
+          storage_batch_guest_response_prepare_us: true,
+          storage_batch_containment_wall_us: true,
+          storage_batch_resource_collection_us: true,
+          storage_batch_cpu_usage_us: true,
+          storage_batch_cpu_throttled_us: true,
+          storage_batch_memory_peak_bytes: true,
+          storage_batch_memory_events_oom: true,
+          storage_batch_memory_events_oom_kill: true,
+          storage_batch_memory_events_oom_group_kill: true,
+          storage_batch_pids_events_max: true,
+        });
+    expect(olderOperationReader.parse(measured)).toStrictEqual({
+      ...operation,
+      storage_batch_guest_duration_ms: 0,
+      storage_batch_outer_residual_ms: 42,
+      storage_batch_timing: "paired",
+      storage_batch_admission_ms: 0,
+      storage_batch_request_setup_ms: 1,
+      storage_batch_frame_builder_wait_ms: 2,
+      storage_batch_frame_encode_ms: 3,
+      storage_batch_writer_wait_ms: 4,
+      storage_batch_frame_write_ms: 5,
+      storage_batch_response_wait_ms: 6,
+      storage_batch_result_decode_ms: 7,
+      storage_batch_resource_log_ms: 8,
+      storage_batch_host_timing: "complete",
+      storage_batch_payload_size_bucket: "64_to_256_kib",
+    });
   });
 
   it("rejects negative, oversized, and unbounded timing values", () => {
+    for (const field of [
+      "storage_batch_guest_request_ownership_us",
+      "storage_batch_guest_worker_wait_us",
+      "storage_batch_guest_response_prepare_us",
+      "storage_batch_containment_wall_us",
+      "storage_batch_resource_collection_us",
+      "storage_batch_cpu_usage_us",
+      "storage_batch_cpu_throttled_us",
+      "storage_batch_memory_peak_bytes",
+      "storage_batch_memory_events_oom",
+      "storage_batch_memory_events_oom_kill",
+      "storage_batch_memory_events_oom_group_kill",
+      "storage_batch_pids_events_max",
+    ]) {
+      for (const value of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1, "0"]) {
+        expect(
+          webhookTelemetryContract.send.body.safeParse({
+            runId: "run",
+            sandboxOperations: [{ ...operation, [field]: value }],
+          }).success,
+        ).toBe(false);
+      }
+    }
     for (const invalid of [
       { storage_batch_guest_duration_ms: -1 },
       { storage_batch_guest_duration_ms: 4_294_967_296 },
@@ -344,6 +419,8 @@ describe("storage batch timing telemetry", () => {
       { storage_batch_resource_log_ms: 4_294_967_296 },
       { storage_batch_resource_log_ms: 1.5 },
       { storage_batch_host_timing: "private diagnostic" },
+      { storage_batch_guest_timing: "private diagnostic" },
+      { storage_batch_resources: "private diagnostic" },
       { storage_batch_payload_size_bucket: "private path" },
     ]) {
       expect(

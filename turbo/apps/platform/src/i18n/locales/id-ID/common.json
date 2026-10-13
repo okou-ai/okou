@@ -656,6 +656,7 @@
       "selectWorkflow": "Pilih template alur kerja {{title}}",
       "showVariant": "Tampilkan varian {{variantNumber}}",
       "singleAccent": "Satu aksen",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "pratinjau slide {{title}}",
       "slideThumbnail": "pratinjau slide {{title}} {{slideNumber}}",
       "template": "Template",

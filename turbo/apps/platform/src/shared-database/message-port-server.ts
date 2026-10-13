@@ -30,7 +30,6 @@ import {
 import {
   closeConnection$,
   openConnection$,
-  recordConnectionHeartbeat$,
   recordTabVisibility$,
   registerConnection$,
 } from "./worker-context.ts";
@@ -376,9 +375,7 @@ export class SharedDatabaseMessagePortServer {
         return;
       }
       if (message.type === "heartbeat") {
-        this.store.set(recordConnectionHeartbeat$, this.connectionId);
-        // Token routing only considers tabs that have sent a heartbeat, so the
-        // first heartbeat must be visible before realtime setup requests one.
+        // Start realtime setup after the tab has finished registration.
         this.store.set(startSharedDatabaseWorkerDaemons$);
         return;
       }

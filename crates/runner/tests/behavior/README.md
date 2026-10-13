@@ -25,6 +25,30 @@ test binary build/transport remains in the
 [Runner CI adapter](../../../../.github/scripts/runner/runner-native-test-artifact.sh).
 Do not substitute a mutable image or retry uncertain native execution.
 
+The exec driver supplies the `exec/` entry directory to the durable supervisor.
+It stages one archive, verifies its digest, and atomically publishes immutable
+assets before launching `worker.sh`. Existing file workers keep their invocation
+contract. The same durable identity recovers a lost launch reply without replay.
+
+`exec/worker.sh` owns one service, long-running submit and sandbox for the suite.
+`network.sh` keeps idle-pool identity, live DNS/isolation and retained-lock stop
+assertions in one lifecycle; sourcing it only defines functions. Independent
+scenario commands receive `<binary-directory> <sandbox-id>`:
+
+| Command        | Contract                                                      |
+| -------------- | ------------------------------------------------------------- |
+| `commands.sh`  | Privilege, argv, exit status and one-shot descendant cleanup. |
+| `inventory.sh` | 21 runtime + 8 user + 8 root checks in three exec probes.     |
+| `postgres.sh`  | Guest PostgreSQL/pgvector with owned cluster/process cleanup. |
+| `clients.sh`   | Complete packaged Claude/Codex compatibility programs.        |
+| `https.sh`     | Runtime proxy/CA checks with separate build/request budgets.  |
+
+For an already-owned sandbox on the provisioned host, an individual scenario
+can be invoked as `bash inventory.sh "$BIN_DIR" "$SANDBOX_ID"` from its staged
+entry directory. It inherits the caller's environment and returns nonzero on
+failure; it does not create or take ownership of an unrelated sandbox. Run the
+driver for full service/network lifetime and actual native CI verification.
+
 From the repository root, run the local infrastructure regressions:
 
 ```bash

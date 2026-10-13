@@ -65,10 +65,6 @@ import {
   hostedSiteAliasConflict,
   storedObject,
 } from "./hosted-site-publication-migration.service";
-import {
-  scheduleArtifactPreviewRender$,
-  type RenderArtifactPreviewArgs,
-} from "./artifact-preview.service";
 import { recordHostedSiteArtifact$ } from "./run-uploaded-files.service";
 import {
   completeHostedPreview$,
@@ -470,26 +466,6 @@ function validateFiles(
     return "Hosted-site deployment must include /index.html";
   }
   return null;
-}
-
-function artifactPreviewArgs(
-  deployment: HostedDeploymentRow,
-  artifactRow: {
-    readonly id: string;
-    readonly previewImageUrl: string | null;
-  } | null,
-): RenderArtifactPreviewArgs | null {
-  if (!artifactRow || artifactRow.previewImageUrl || !deployment.runId) {
-    return null;
-  }
-  return {
-    id: artifactRow.id,
-    runId: deployment.runId,
-    userId: deployment.userId,
-    orgId: deployment.orgId,
-    url: deployment.artifactUrl ?? deployment.url,
-    deploymentId: deployment.id,
-  };
 }
 
 function hostedSiteArtifactArgs(deployment: HostedDeploymentRow) {
@@ -1188,7 +1164,7 @@ export const completeHostedSiteDeployment$ = command(
     const promotion = promoted.value;
     signal.throwIfAborted();
 
-    const artifactRow = await set(
+    await set(
       recordHostedSiteArtifact$,
       {
         ...hostedSiteArtifactArgs(deployment),
@@ -1197,18 +1173,6 @@ export const completeHostedSiteDeployment$ = command(
       signal,
     );
     signal.throwIfAborted();
-
-    // Render the artifact preview as soon as the deploy is recorded. Detached
-    // via waitUntil so it survives the response; failures leave the preview
-    // empty without blocking the deployment.
-    // Retain the old-client producer until the sandbox rollout drains (PR 3 of #36205).
-    // Disabled previews use ordinary hosting; enabled preview failures remain errors.
-    if (!preview || preview.status === "skipped") {
-      set(
-        scheduleArtifactPreviewRender$,
-        artifactPreviewArgs(deployment, artifactRow),
-      );
-    }
 
     return completedHostedSiteResponse(deployment, promotion, preview);
   },

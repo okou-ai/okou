@@ -240,7 +240,9 @@ test("accepts hosted PKCE consent after 20 minutes, binds the callback to the se
   expect(url.searchParams.get("redirect_uri")).toMatch(
     /\/connectors\/link\/callback$/,
   );
-  expect(url.searchParams.get("scope")).toBe("payment_methods.agentic");
+  expect(url.searchParams.get("scope")).toBe(
+    "payment_methods.agentic userinfo:read",
+  );
   expect(started.body.url).not.toContain("wallet-secret-fixture");
   const state = url.searchParams.get("state") ?? "";
   server.use(
@@ -255,7 +257,7 @@ test("accepts hosted PKCE consent after 20 minutes, binds the callback to the se
         refresh_token: "wallet-refresh-fixture",
         token_type: "Bearer",
         expires_in: 3600,
-        scope: "payment_methods.agentic",
+        scope: "payment_methods.agentic userinfo:read",
       });
     }),
   );
