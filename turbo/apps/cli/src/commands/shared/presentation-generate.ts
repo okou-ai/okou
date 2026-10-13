@@ -10,8 +10,8 @@ import {
 import {
   PRESENTATION_IMAGE_BATCH_INSTRUCTION,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
+  presentationDeliveryInstructions,
 } from "@okouai/core/presentation-generation-instructions";
-import { artifactPreviewInstructions } from "@okouai/core/artifact-preview-instructions";
 import { canonicalizeRegistryId } from "./resource-listing";
 import {
   createArtifactVisibilityOption,
@@ -102,7 +102,9 @@ Output:
 
 Notes:
   - Authenticates via OKOU_TOKEN
-  - The agent authors the HTML presentation artifact and hosts it with okou host
+  - The agent authors HTML first, then chooses delivery from the request, remembered preferences, and intended use
+  - Use okou host for HTML; follow the platform's conversion instructions only when the agent selects PPTX
+  - Deliver one format unless the user requests multiple formats
 
 Templates (presentation):
 ${formatPresentationTemplateListing(templates)}`;
@@ -124,10 +126,9 @@ ${formatPresentationTemplateListing(templates)}`;
         const deliveryInstructions = [
           options.visibility === undefined
             ? "- With privateArtifacts enabled, new artifacts default to only-me. Otherwise, hosting and upload keep their existing behavior."
-            : `- Publish the final deck with ${options.visibility} visibility. Explicit visibility requires privateArtifacts to be enabled.`,
+            : `- Deliver the final deck with ${options.visibility} visibility. Explicit visibility requires privateArtifacts to be enabled.`,
           "- Keep supporting generated media at its default visibility and bundle local copies. The selected visibility applies to the final deck; do not make supporting media public separately.",
-          `- For a requested file copy, use \`okou web upload-file -f <file>${visibilityFlag}\`.`,
-          "- Return the exact URL printed by the delivery command.",
+          `- For file delivery, use \`okou web upload-file -f <file>${visibilityFlag}\`.`,
         ];
 
         if (options.template !== undefined) {
@@ -197,9 +198,11 @@ ${formatPresentationTemplateListing(templates)}`;
             "- Check that text does not overflow or overlap at desktop and mobile viewport sizes.",
             "- Check that shapes, charts, images, or decorative graphics do not cover readable text at desktop and mobile viewport sizes.",
             "",
-            "## Publish",
-            ...(previewsEnabled ? artifactPreviewInstructions() : []),
-            `- Host the finished deck: ${hostCommand}`,
+            "## Delivery",
+            ...presentationDeliveryInstructions({
+              hostCommand,
+              artifactPreviewsEnabled: previewsEnabled,
+            }),
             ...deliveryInstructions,
           ].join("\n"),
         );

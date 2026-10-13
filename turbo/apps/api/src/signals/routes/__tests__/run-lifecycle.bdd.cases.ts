@@ -11598,7 +11598,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       );
 
       it.each([false, true])(
-        "advertises pptx presentation delivery and Run capabilities only while its feature is enabled (%s)",
+        "selects one presentation format and gates PPTX conversion guidance and capability (%s)",
         async (enabled) => {
           const api = createRunsApi(context);
           const connectors = createConnectorBddApi(context);
@@ -11622,20 +11622,25 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }
           const capabilities = verifyOkouToken(token)?.capabilities;
           expect(capabilities).toBeDefined();
+          expect(prompt).toContain("Presentation delivery:");
+          expect(prompt).toContain("first author and check the deck as HTML");
+          expect(prompt).toContain(
+            "choose HTML or PPTX from the user's request, remembered preferences, and intended use",
+          );
+          expect(prompt).toContain(
+            "Deliver one format unless the user requests multiple formats",
+          );
           if (enabled) {
             expect(capabilities).toContain("presentation-convert:write");
-            expect(prompt).toContain("Presentation delivery:");
             expect(prompt).toContain(
-              "deliver both the hosted HTML deck and a pptx of it in one reply",
+              "okou presentation convert --input <deck.html> --out <deck.pptx> --verify",
             );
-            expect(prompt).toContain("name the artifact, not a format");
             expect(prompt).toContain(
-              "okou presentation convert --input <deck.html> --verify",
+              "Only after the agent selects PPTX as the delivery format",
             );
           } else {
             expect(capabilities).not.toContain("presentation-convert:write");
             expect(prompt).not.toContain("okou presentation convert");
-            expect(prompt).not.toContain("Presentation delivery:");
           }
           await api.requestCancelRun(actor, run.runId, [200]);
           await webhooks.requestAgentComplete(

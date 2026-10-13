@@ -6,8 +6,8 @@ import {
 import {
   PRESENTATION_IMAGE_BATCH_INSTRUCTION,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
+  presentationDeliveryInstructions,
 } from "./presentation-generation-instructions";
-import { artifactPreviewInstructions } from "./artifact-preview-instructions";
 import {
   PRESENTATION_REVERSE_TEMPLATE_ARCHIVE_SHA256,
   PRESENTATION_REVERSE_TEMPLATE_RESOURCE_ID,
@@ -3585,9 +3585,6 @@ export function buildPresentationRunbookInstructionLines(args: {
 }): readonly string[] {
   const { runbookPackage: pkg, colorSystemToken } = args;
   const packageDir = `./generated/resources/${pkg.slug}`;
-  const hostCommand =
-    args.hostCommand ??
-    `okou host <output-dir> --site <slug> --artifact-kind presentation-html${args.artifactPreviewsEnabled ? " --preview ./generated/previews/cover.png --json" : ""}`;
   return [
     `Selected presentation template: ${pkg.name} (${pkg.templateId})`,
     `Color system token: ${colorSystemToken}`,
@@ -3598,9 +3595,10 @@ export function buildPresentationRunbookInstructionLines(args: {
     PRESENTATION_IMAGE_BATCH_INSTRUCTION,
     "- Use the requested slide count; default to 8.",
     PRESENTATION_STATIC_HTML_INSTRUCTION,
-    ...(args.artifactPreviewsEnabled ? artifactPreviewInstructions() : []),
-    `- Host the finished deck: ${hostCommand}`,
-    "- Return only the HTML deck.",
+    ...presentationDeliveryInstructions({
+      hostCommand: args.hostCommand,
+      artifactPreviewsEnabled: args.artifactPreviewsEnabled,
+    }),
   ];
 }
 
