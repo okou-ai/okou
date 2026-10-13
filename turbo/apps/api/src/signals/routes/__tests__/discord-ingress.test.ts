@@ -11,6 +11,7 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { http, HttpResponse } from "msw";
+import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -32,12 +33,14 @@ import {
   mockDiscordApplication,
   mockDiscordMemberships,
   createPublicDiscordBinding,
+  configureDiscordApp,
   uniqueDiscordSnowflake,
 } from "./helpers/discord";
 import {
   discordChatThreads,
   discordMessageForTest,
   DISCORD_TEST_APPLICATION_ID,
+  DISCORD_TEST_GATEWAY_SECRET,
   mockDiscordProvider,
   postDiscordGatewayEnvelope,
   postDiscordMessage,
@@ -148,7 +151,9 @@ async function launchedRun(actor: ConnectedDiscordActor, threadId: string) {
   return await runsApi.readRun(actor.actor, input.runId);
 }
 
-async function discordStatus(actor: ConnectedDiscordActor) {
+async function discordStatus(
+  actor: Pick<ConnectedDiscordActor, "userId" | "orgId">,
+) {
   createRouteMocks(context).clerk.session(
     actor.userId,
     actor.orgId,
@@ -164,6 +169,96 @@ async function discordStatus(actor: ConnectedDiscordActor) {
 }
 
 describe("canonical Discord ingress", () => {
+  it("sends one unavailable-agent notice before workspace bootstrap without admitting or replaying a chat", async () => {
+    configureDiscordApp();
+    mockEnv("DISCORD_APPLICATION_ID", DISCORD_TEST_APPLICATION_ID);
+    mockEnv("DISCORD_GATEWAY_SECRET", DISCORD_TEST_GATEWAY_SECRET);
+    const identity = {
+      userId: `user_discord_${randomUUID()}`,
+      orgId: `org_discord_${randomUUID()}`,
+      orgRole: "org:admin" as const,
+    };
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    mockDiscordMemberships(context, [identity]);
+    // Register public cleanup before either setup request can commit.
+    onTestFinished(async () => {
+      mockDiscordMemberships(context, [identity]);
+      createRouteMocks(context).clerk.session(
+        identity.userId,
+        identity.orgId,
+        identity.orgRole,
+      );
+      const client = setupApp({ context, routes: integrationsDiscordRoutes })(
+        integrationsDiscordContract,
+      );
+      for (const action of ["disconnect", "uninstall"] as const) {
+        await accept(
+          client.disconnect({
+            headers: { authorization: "Bearer clerk-session" },
+            query: { action },
+          }),
+          [200, 403, 404],
+        );
+      }
+      await deleteFeatureSwitchesForUser(context, identity);
+    });
+    await updateFeatureSwitchesForUser(context, identity, {
+      [FeatureSwitchKey.DiscordIntegration]: true,
+    });
+    // OAuth does not require onboarding or completion of Clerk's bootstrap job.
+    const actor = await createPublicDiscordBinding(context, {
+      ...identity,
+      flow: "install",
+      botUserId: DISCORD_TEST_APPLICATION_ID,
+    });
+    const provider = mockDiscordProvider(actor);
+    const status = await discordStatus(actor);
+    expect(status).toMatchObject({
+      isAvailable: true,
+      isInstalled: true,
+      isConnected: true,
+      discordUserId: actor.discordUserId,
+      defaultAgentId: null,
+      defaultAgentName: null,
+    });
+    expect(status.dmBindings).toStrictEqual([
+      {
+        connectionId: actor.connectionId,
+        guildId: actor.guildId,
+        guildName: actor.guildName,
+      },
+    ]);
+    const message = discordMessageForTest(actor, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> help before the workspace agent is ready`,
+    });
+    provider.messages.set(message.id, message);
+    expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+      "accepted",
+    );
+    await flushWaitUntilForTest();
+    expect(provider.sentMessages).toStrictEqual([
+      expect.objectContaining({
+        channel_id: provider.guildChannelId,
+        content:
+          "No accessible workspace default agent is configured. Ask a workspace admin to set one in Okou.",
+        message_reference: {
+          message_id: message.id,
+          fail_if_not_exists: true,
+        },
+      }),
+    ]);
+    await expect(discordChatThreads(context, actor)).resolves.toStrictEqual([]);
+    const delivered = [...provider.sentMessages];
+    expect(
+      (await postDiscordMessage(context, message, `agent-replay:${message.id}`))
+        .body.outcome,
+    ).toBe("duplicate");
+    await flushWaitUntilForTest();
+    expect(provider.sentMessages).toStrictEqual(delivered);
+    await expect(discordChatThreads(context, actor)).resolves.toStrictEqual([]);
+  });
+
   it.each([true, false])(
     "copies the Chat browser preference (%s) into new threads without changing existing routes",
     async (enabled) => {
