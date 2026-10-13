@@ -183,7 +183,7 @@ jobs:
           CI_MAX_OPEN_PRS: ${{ vars.CI_MAX_OPEN_PRS }}
           CI_MAX_OPEN_PRS_PER_AUTHOR: ${{ vars.CI_MAX_OPEN_PRS_PER_AUTHOR }}
           CI_PR_ADMISSION_BYPASS_LIST: ${{ vars.CI_PR_ADMISSION_BYPASS_LIST }}
-        run: bash .github/scripts/check-pr-ci-capacity.sh
+        run: bash .github/scripts/checks/check-pr-ci-capacity.sh
 
   # Detect release-please context across all event types (PR, push, merge queue).
   # github.head_ref is empty in merge_group events, so we extract the PR number
@@ -280,7 +280,7 @@ jobs:
           )
           git fetch --no-tags origin "$release_pr_head"
 
-          .github/scripts/check-release-please-component-releases.sh \
+          .github/scripts/checks/check-release-please-component-releases.sh \
             "$MERGE_GROUP_BASE_SHA" \
             "$MERGE_GROUP_HEAD_SHA" \
             "$release_pr_head"
@@ -306,7 +306,7 @@ jobs:
           PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
-          selection=$(bash .github/scripts/detect-native-only.sh)
+          selection=$(bash .github/scripts/checks/detect-native-only.sh)
           printf '%s\n' "$selection" | tee -a "$GITHUB_OUTPUT"
 
   # Prepare: detect changes and set job-ref identifier
@@ -351,7 +351,7 @@ jobs:
         run: |
           echo "Checking for changes..."
 
-          BASE_REF=$(.github/scripts/changed-base-ref.sh)
+          BASE_REF=$(.github/scripts/checks/changed-base-ref.sh)
           echo "${{ github.event_name }} mode: comparing against base $BASE_REF"
 
           echo "base-ref=$BASE_REF" >> "$GITHUB_OUTPUT"
@@ -525,7 +525,7 @@ jobs:
           PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
-          BASE_SHA=$(.github/scripts/changed-base-ref.sh)
+          BASE_SHA=$(.github/scripts/checks/changed-base-ref.sh)
 
           # Get list of added/modified files (exclude deleted)
           CHANGED_FILES=$(git diff --name-only --diff-filter=AM "$BASE_SHA" HEAD)
@@ -562,7 +562,7 @@ jobs:
           fetch-depth: 1
       - uses: ./.github/actions/toolchain-init
       - name: Check DB ownership boundary
-        run: .github/scripts/check-db-boundary.sh
+        run: .github/scripts/checks/check-db-boundary.sh
       - name: Check deletion-only database transaction inventory
         working-directory: turbo
         shell: bash
@@ -2877,7 +2877,7 @@ jobs:
           mkdir -p /tmp/runtime-api-schema
           # The main commit this candidate merges onto: HEAD^1 of the PR merge
           # ref, or the merge group base. Not the branch's own fork point.
-          base_sha=$(.github/scripts/changed-base-ref.sh)
+          base_sha=$(.github/scripts/checks/changed-base-ref.sh)
           echo "Base commit: $base_sha"
           git show "$base_sha:turbo/apps/api/src/lib/desktop-compatibility.json" \
             > /tmp/runtime-api-schema/desktop-base-floor.json

@@ -10,8 +10,8 @@ git init --quiet --initial-branch=main "$repo"
 git -C "$repo" config user.name "iOS CI Test"
 git -C "$repo" config user.email "ios-ci@example.invalid"
 git -C "$repo" config commit.gpgsign false
-mkdir -p "$repo/.github/scripts" "$repo/.github/workflows" "$repo/ios" "$repo/turbo"
-cp "$source_root/.github/scripts/changed-base-ref.sh" "$repo/.github/scripts/"
+mkdir -p "$repo/.github/scripts/checks" "$repo/.github/workflows" "$repo/ios" "$repo/turbo"
+cp "$source_root/.github/scripts/checks/changed-base-ref.sh" "$repo/.github/scripts/checks/"
 cd "$repo"
 
 commit() {
@@ -103,7 +103,7 @@ echo workflow > .github/workflows/ios.yml
 commit own-workflow
 expect true EVENT_NAME=push PUSH_BEFORE_SHA="$before_workflow"
 before_helper=$(git rev-parse HEAD)
-echo '# Shared base detection changed.' >> .github/scripts/changed-base-ref.sh
+echo '# Shared base detection changed.' >> .github/scripts/checks/changed-base-ref.sh
 commit shared-helper
 expect true EVENT_NAME=push PUSH_BEFORE_SHA="$before_helper"
 expect false EVENT_NAME=push PUSH_BEFORE_SHA="$(git rev-parse HEAD)"

@@ -19,7 +19,7 @@ INPUT_PATHS = (
     ".github/workflows/ios.yml",
     ".github/workflows/ios-archive-proof.yml",
     ".github/workflows/release-please.yml",
-    ".github/scripts/changed-base-ref.sh",
+    ".github/scripts/checks/changed-base-ref.sh",
     "release-please-config.json",
 )
 SEMVER = r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?"

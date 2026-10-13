@@ -334,6 +334,7 @@ class PromotionTest(unittest.TestCase):
             ("ios/Config/Release.xcconfig", "SWIFT_OPTIMIZATION_LEVEL = -Osize\n"),
             ("ios/Package.resolved", '{"pins": ["new dependency"]}\n'),
             (".github/workflows/ios.yml", "changed native workflow\n"),
+            (".github/scripts/checks/changed-base-ref.sh", "changed base selection\n"),
             ("ios/scripts/build.sh", "changed compiler arguments\n"),
         ]:
             with self.subTest(path=path):

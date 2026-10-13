@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CHECKER="${SCRIPT_DIR}/check-workflow-shell-compatibility.sh"
+CHECKER="${SCRIPT_DIR}/checks/check-workflow-shell-compatibility.sh"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
