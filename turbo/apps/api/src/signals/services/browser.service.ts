@@ -463,75 +463,83 @@ const loadBrowserScreenHeightForThread$ = command(
 
 // Extending the lease is unconditional and fixed-length: every toucher gets the
 // same 10 minutes from now, so leases cannot be stacked into a longer lifetime.
-async function touchInstanceLease(
-  db: Db,
-  providerSessionId: string,
-  signal: AbortSignal,
-): Promise<BrowserInstanceRow | null> {
-  const [touched] = await db
-    .update(browserSessionInstances)
-    .set({
-      lastTouchedAt: nowDate(),
-      idleExpiresAt: nextIdleDeadline(),
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(browserSessionInstances.providerSessionId, providerSessionId),
-        eq(browserSessionInstances.status, "active"),
-      ),
-    )
-    .returning();
-  signal.throwIfAborted();
-  return touched ?? null;
-}
+const touchInstanceLease$ = command(
+  async (
+    { set },
+    providerSessionId: string,
+    signal: AbortSignal,
+  ): Promise<BrowserInstanceRow | null> => {
+    const db = set(writeDb$);
+    const [touched] = await db
+      .update(browserSessionInstances)
+      .set({
+        lastTouchedAt: nowDate(),
+        idleExpiresAt: nextIdleDeadline(),
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(browserSessionInstances.providerSessionId, providerSessionId),
+          eq(browserSessionInstances.status, "active"),
+        ),
+      )
+      .returning();
+    signal.throwIfAborted();
+    return touched ?? null;
+  },
+);
 
-async function persistBrowserScreen(
-  db: Db,
-  providerSessionId: string,
-  screenHeight: number,
-  signal: AbortSignal,
-): Promise<
-  BrowserServiceResult<{
-    readonly instance: BrowserInstanceRow;
-    readonly screen: BrowserScreen;
-  }>
-> {
-  const [updatedScreen] = await db
-    .update(browserSessionResizeStates)
-    .set({
-      screenWidth: BROWSER_SCREEN_WIDTH,
-      screenHeight,
-      updatedAt: nowDate(),
-    })
-    .where(eq(browserSessionResizeStates.providerSessionId, providerSessionId))
-    .returning({ height: browserSessionResizeStates.screenHeight });
-  signal.throwIfAborted();
-  if (!updatedScreen) {
-    return conflict(
-      "This managed browser was started before window resizing was enabled; resume it before resizing it",
-      "BROWSER_RESIZE_UNSUPPORTED",
-    );
-  }
-  const instance = await touchInstanceLease(db, providerSessionId, signal);
-  if (!instance) {
-    return conflict(
-      "This managed browser is no longer live; resume it before resizing it",
-      "BROWSER_NOT_LIVE",
-    );
-  }
-  return {
-    kind: "ok",
-    value: {
-      instance,
-      screen: {
-        width: BROWSER_SCREEN_WIDTH,
-        height: updatedScreen.height,
-        resizable: true,
+const persistBrowserScreen$ = command(
+  async (
+    { set },
+    providerSessionId: string,
+    screenHeight: number,
+    signal: AbortSignal,
+  ): Promise<
+    BrowserServiceResult<{
+      readonly instance: BrowserInstanceRow;
+      readonly screen: BrowserScreen;
+    }>
+  > => {
+    const db = set(writeDb$);
+    const [updatedScreen] = await db
+      .update(browserSessionResizeStates)
+      .set({
+        screenWidth: BROWSER_SCREEN_WIDTH,
+        screenHeight,
+        updatedAt: nowDate(),
+      })
+      .where(
+        eq(browserSessionResizeStates.providerSessionId, providerSessionId),
+      )
+      .returning({ height: browserSessionResizeStates.screenHeight });
+    signal.throwIfAborted();
+    if (!updatedScreen) {
+      return conflict(
+        "This managed browser was started before window resizing was enabled; resume it before resizing it",
+        "BROWSER_RESIZE_UNSUPPORTED",
+      );
+    }
+    const instance = await set(touchInstanceLease$, providerSessionId, signal);
+    if (!instance) {
+      return conflict(
+        "This managed browser is no longer live; resume it before resizing it",
+        "BROWSER_NOT_LIVE",
+      );
+    }
+    return {
+      kind: "ok",
+      value: {
+        instance,
+        screen: {
+          width: BROWSER_SCREEN_WIDTH,
+          height: updatedScreen.height,
+          resizable: true,
+        },
       },
-    },
-  };
-}
+    };
+  },
+);
 
 interface ActiveBrowserInstance {
   readonly chatThreadId: string;
@@ -2092,8 +2100,8 @@ const inspectActiveConnection$ = command(
         )
         .returning(BROWSER_SESSION_SELECTION);
       signal.throwIfAborted();
-      const leased = await touchInstanceLease(
-        db,
+      const leased = await set(
+        touchInstanceLease$,
         instance.providerSessionId,
         signal,
       );
@@ -2504,11 +2512,10 @@ const leaseInstanceForBrowser$ = command(
     browser: BrowserSessionRow,
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
-    const db = set(writeDb$);
     const instance = await set(loadActiveInstance$, browser.chatThreadId);
     signal.throwIfAborted();
     const leased = instance
-      ? await touchInstanceLease(db, instance.providerSessionId, signal)
+      ? await set(touchInstanceLease$, instance.providerSessionId, signal)
       : null;
     if (!leased) {
       return conflict(
@@ -2617,8 +2624,8 @@ export const resizeBrowserByThread$ = command(
         "BROWSER_RESIZE_UNSUPPORTED",
       );
     }
-    const touched = await touchInstanceLease(
-      db,
+    const touched = await set(
+      touchInstanceLease$,
       instance.providerSessionId,
       signal,
     );
@@ -2654,8 +2661,8 @@ export const resizeBrowserByThread$ = command(
     if (resized.kind === "error") {
       return resized;
     }
-    const persisted = await persistBrowserScreen(
-      db,
+    const persisted = await set(
+      persistBrowserScreen$,
       instance.providerSessionId,
       screenHeight,
       signal,
