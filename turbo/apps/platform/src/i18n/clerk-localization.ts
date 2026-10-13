@@ -161,5 +161,25 @@ export function clerkLocalizationForLocale(
   localizations: ClerkLocalizationCache,
   locale: SupportedLocale,
 ): ClerkLocalization {
-  return localizations.get(locale) ?? enUS;
+  const localization = localizations.get(locale) ?? enUS;
+  return {
+    ...localization,
+    identityPreviewEditButton__identifier: localization.backButton,
+    identityPreviewEditButton__emailAddress: localization.backButton,
+    signIn: {
+      ...localization.signIn,
+      password: {
+        ...localization.signIn?.password,
+        subtitle: "",
+      },
+      emailCode: {
+        ...localization.signIn?.emailCode,
+        subtitle: "",
+      },
+      emailCodeMfa: {
+        ...localization.signIn?.emailCodeMfa,
+        subtitle: "",
+      },
+    },
+  };
 }

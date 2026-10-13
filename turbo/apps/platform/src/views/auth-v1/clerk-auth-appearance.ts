@@ -38,6 +38,13 @@ const CLERK_AUTH_APPEARANCE_BASE = {
     card: "m-0 w-full rounded-none border-0 bg-card px-[var(--okou-auth-card-padding-inline)] py-[var(--okou-auth-card-padding-block)] shadow-none",
     // Clerk owns the header rhythm; only the wordmark keeps its brand width.
     logoImage: "h-auto w-[76px]",
+    headerSubtitle: "empty:hidden",
+    // Keep account context available to assistive technology and preserve
+    // Clerk's edit action as a compact, localized back link.
+    identityPreview: "contents",
+    identityPreviewText: "sr-only",
+    identityPreviewEditButton: "self-center after:content-[attr(aria-label)]",
+    identityPreviewEditButtonIcon: "hidden",
     // Clerk shares colorPrimary between links and filled controls. Keep the
     // accessible link color at provider level, then give only the CTA the
     // application's semantic filled-action colors.
