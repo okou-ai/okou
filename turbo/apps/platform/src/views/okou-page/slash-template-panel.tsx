@@ -13,10 +13,7 @@ import {
 } from "lucide-react";
 import { Button, cn, Popover, PopoverContent, useMediaQuery } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
-import {
-  scrollSlashWorkflowIntoView,
-  SlashWorkflowName,
-} from "./slash-workflow.tsx";
+import { SlashWorkflowName } from "./slash-workflow.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { i18n } from "../../i18n/index.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
@@ -329,6 +326,22 @@ function SlashTemplateDetailFlyout({
   );
 }
 
+// Keep this ref stable: pointer previews must not re-scroll the keyboard's
+// selected row while the user browses an expanded workflow list.
+function scrollSelectedSlashOptionOnMount(
+  option: HTMLButtonElement | null,
+): (() => void) | undefined {
+  if (!option) {
+    return;
+  }
+  const frame = window.requestAnimationFrame(() => {
+    option.scrollIntoView?.({ block: "nearest" });
+  });
+  return () => {
+    window.cancelAnimationFrame(frame);
+  };
+}
+
 function SlashPanelWorkflowList({
   workflows,
   loading,
@@ -381,9 +394,7 @@ function SlashPanelWorkflowList({
               id={workflowOptionId(workflow.id)}
               ref={
                 reversed && selectedIndex === index
-                  ? () => {
-                      scrollSlashWorkflowIntoView(workflow);
-                    }
+                  ? scrollSelectedSlashOptionOnMount
                   : undefined
               }
               type="button"
@@ -507,9 +518,7 @@ function SlashPanelCategoryList({
                 id={categoryOptionId(category)}
                 ref={
                   reversed && selectedIndex === index
-                    ? () => {
-                        scrollSlashWorkflowIntoView({ id: category });
-                      }
+                    ? scrollSelectedSlashOptionOnMount
                     : undefined
                 }
                 type="button"
