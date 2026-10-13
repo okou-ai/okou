@@ -125,11 +125,11 @@ test.each([false, true])(
     );
     const presentation = queryButton("Presentation", menu);
     const user = userEvent.setup();
+    expect(presentation?.dataset.active === "true").toBe(!composerAnchored);
+    expect(
+      within(menu).queryAllByRole("region", { name: "Presentation" }),
+    ).toHaveLength(0);
     if (composerAnchored) {
-      expect(presentation).not.toHaveAttribute("data-active", "true");
-      expect(
-        within(menu).queryAllByRole("region", { name: "Presentation" }),
-      ).toHaveLength(0);
       await user.keyboard("{ArrowUp}");
     }
     expect(presentation).toHaveAttribute("data-active", "true");
