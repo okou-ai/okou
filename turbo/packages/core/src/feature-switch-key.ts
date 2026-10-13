@@ -41,7 +41,6 @@ export enum FeatureSwitchKey {
   RealAgentInPreview = "_realAgentInPreview",
   ZapierConnector = "zapierConnector",
   ArtifactPreviews = "artifactPreviews",
-  SlackLinkUnfurls = "slackLinkUnfurls",
   ArtifactSidebarPreview = "artifactSidebarPreview",
   ChatResourcePanel = "chatResourcePanel",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",

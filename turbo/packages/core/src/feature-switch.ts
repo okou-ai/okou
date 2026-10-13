@@ -70,11 +70,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Capture and publish sandbox covers for HTML artifacts.",
     enabled: true,
   },
-  [FeatureSwitchKey.SlackLinkUnfurls]: {
-    maintainer: "bingjie@okou.ai",
-    description: "Show public artifact covers in Slack link previews.",
-    enabled: true,
-  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "bingjie@okou.ai",
     description:

@@ -7,8 +7,6 @@ import type { ArtifactOgTarget } from "@okouai/api-contracts/contracts/artifact-
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { env } from "../../lib/env";
@@ -26,7 +24,6 @@ import {
   resolvePublicArtifactSource$,
 } from "./artifact-shares.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
 export const slackLinkSharedEventSchema = z.object({
   type: z.literal("link_shared"),
@@ -257,18 +254,6 @@ export const unfurlSlackArtifactLinks$ = command(
     if (!scopes.includes("links:read") || !scopes.includes("links:write")) {
       return;
     }
-    const featureContext = installation.installedByUserId
-      ? await set(
-          loadUserFeatureSwitchContext$,
-          installation.orgId,
-          installation.installedByUserId,
-          signal,
-        )
-      : { orgId: installation.orgId };
-    signal.throwIfAborted();
-    if (!isFeatureEnabled(FeatureSwitchKey.SlackLinkUnfurls, featureContext)) {
-      return;
-    }
     const unfurls: Record<string, SlackLinkUnfurl> = {};
     const urls = new Set(
       args.event.links.map((link) => {
@@ -288,7 +273,10 @@ export const unfurlSlackArtifactLinks$ = command(
     }
     const token = await decryptPersistentSecretValue(
       installation.encryptedBotToken,
-      featureContext,
+      {
+        orgId: installation.orgId,
+        userId: installation.installedByUserId ?? undefined,
+      },
     );
     signal.throwIfAborted();
     await unfurlSlackLinks(
