@@ -107,7 +107,7 @@ jobs:
           PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
-          BASE_REF=$(.github/scripts/changed-base-ref.sh)
+          BASE_REF=$(.github/scripts/checks/changed-base-ref.sh)
           echo "base-ref=${BASE_REF}" >> "$GITHUB_OUTPUT"
           echo "Base ref: ${BASE_REF}"
 

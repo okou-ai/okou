@@ -22,8 +22,8 @@ REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
   echo "current directory is not inside a Git repository" >&2
   exit 2
 }
-CHECK_COVERAGE="${REPO_ROOT}/.github/scripts/check-release-please-workspace-coverage.sh"
-CHECK_ACTION_PINS="${REPO_ROOT}/.github/scripts/tests/action-pins-test.py"
+CHECK_COVERAGE="${REPO_ROOT}/.github/scripts/checks/check-release-please-workspace-coverage.sh"
+CHECK_ACTION_PINS="${REPO_ROOT}/.github/scripts/checks/check-action-pins.py"
 
 PR_JSON=$(gh pr view release-please--branches--main --repo "$GITHUB_REPOSITORY" --json number,headRefOid,headRefName 2>/dev/null || echo "")
 if [ -z "$PR_JSON" ]; then
@@ -54,7 +54,7 @@ create_gate_check() {
 # GITHUB_TOKEN release PR updates do not trigger pull_request workflows. Dispatch
 # real iOS validation on the release branch; never synthesize a passing iOS check
 # when its inputs changed. The workflow's own check is attached to its run SHA.
-if grep -qE '^ios/|^\.github/workflows/ios\.yml$|^\.github/scripts/changed-base-ref\.sh$' <<<"$CHANGED_FILES"; then
+if grep -qE '^ios/|^\.github/workflows/ios\.yml$|^\.github/scripts/checks/changed-base-ref\.sh$' <<<"$CHANGED_FILES"; then
   release_branch=$(jq -er '.headRefName | select(type == "string" and length > 0)' <<<"$PR_JSON")
   gh workflow run ios.yml --repo "$GITHUB_REPOSITORY" --ref "$release_branch"
   echo "Dispatched iOS validation for release PR head $PR_HEAD"

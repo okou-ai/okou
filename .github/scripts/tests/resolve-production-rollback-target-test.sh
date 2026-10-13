@@ -117,7 +117,7 @@ case "${1:-}" in
     elif [ "${3:-}" = "4949494949494949494949494949494949494949" ]; then
       [ "${MOCK_OFFICIAL_RESULT_EMAIL_RUNTIME_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5050505050505050505050505050505050505050" ]; then
-      [ "${MOCK_OFFICIAL_RESULT_EMAIL_LEGACY_CONSUMER_FLOOR_VALID:-1}" = "1" ]
+      [ "${MOCK_OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5151515151515151515151515151515151515151" ]; then
       [ "${MOCK_SSH_NEEDS_REBIND_INDEPENDENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5252525252525252525252525252525252525252" ]; then
@@ -177,8 +177,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_SSH_CANONICAL_TRANSPORT_COMMIT-4848484848484848484848484848484848484848}"
     elif [[ "$*" == *1382_retire_official_result_email_runtime.sql* ]]; then
       printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_RUNTIME_COMMIT-4949494949494949494949494949494949494949}"
-    elif [[ "$*" == *official-result-email-legacy-consumer* ]]; then
-      printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_LEGACY_CONSUMER_COMMIT-5050505050505050505050505050505050505050}"
+    elif [[ "$*" == *1386_drop_official_result_email_storage.sql* ]]; then
+      printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_COMMIT-5050505050505050505050505050505050505050}"
     elif [[ "$*" == *runtime/agent-session.ts* ]]; then
       printf '%s\n' "${MOCK_SESSION_STORAGE_MOUNT_RUNTIME_COMMIT-5252525252525252525252525252525252525252}"
     elif [[ "$*" == *src/runtime/ssh-connection.ts* ]]; then
@@ -330,8 +330,8 @@ grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/m
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1365_tailscale_private_ssh.sql" "${tmp_dir}/boundaries.log" || fail "SSH transport floor must resolve the canonical main migration"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1382_retire_official_result_email_runtime.sql" "${tmp_dir}/boundaries.log" || fail "Official result-email runtime retirement floor must resolve the canonical main migration"
 grep -Fxq "git merge-base --is-ancestor 4949494949494949494949494949494949494949 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Official result-email runtime retirement floor"
-grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- .github/rollback-floors/official-result-email-legacy-consumer" "${tmp_dir}/boundaries.log" || fail "Official result-email legacy consumer floor must resolve the canonical main marker"
-grep -Fxq "git merge-base --is-ancestor 5050505050505050505050505050505050505050 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Official result-email legacy consumer floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1386_drop_official_result_email_storage.sql" "${tmp_dir}/boundaries.log" || fail "Official result-email storage contraction floor must resolve the canonical main migration"
+grep -Fxq "git merge-base --is-ancestor 5050505050505050505050505050505050505050 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Official result-email storage contraction floor"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/runtime/agent-session.ts" "${tmp_dir}/boundaries.log" || fail "Session storage-mount floor must resolve the shipped main runtime mapping"
 grep -Fxq "git merge-base --is-ancestor 5252525252525252525252525252525252525252 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Session storage-mount runtime floor"
 grep -Fxq "git merge-base --is-ancestor 4141414141414141414141414141414141414141 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Usage Allowance retirement floor"
@@ -800,22 +800,22 @@ if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Official result-email floor must fail before artifact or host access"
 fi
 
-for consumer_commit in "" invalid; do
+for contraction_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"
-  assert_failure "Cannot resolve the merged Official result-email legacy consumer" \
-    run_resolver "${tmp_dir}/official-result-email-consumer-history.output" "MOCK_OFFICIAL_RESULT_EMAIL_LEGACY_CONSUMER_COMMIT=${consumer_commit}"
-  [ ! -s "${tmp_dir}/official-result-email-consumer-history.output" ] || fail "invalid Official result-email consumer history must not publish outputs"
+  assert_failure "Cannot resolve the merged Official result-email storage contraction" \
+    run_resolver "${tmp_dir}/official-result-email-contraction-history.output" "MOCK_OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_COMMIT=${contraction_commit}"
+  [ ! -s "${tmp_dir}/official-result-email-contraction-history.output" ] || fail "invalid Official result-email contraction history must not publish outputs"
   if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-    fail "invalid Official result-email consumer history must fail before artifact or host access"
+    fail "invalid Official result-email contraction history must fail before artifact or host access"
   fi
 done
 : >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates the Official result-email legacy consumer" \
-  run_resolver "${tmp_dir}/official-result-email-consumer-floor.output" MOCK_OFFICIAL_RESULT_EMAIL_LEGACY_CONSUMER_FLOOR_VALID=0
-grep -Fq '5050505050505050505050505050505050505050' "${tmp_dir}/failure.err" || fail "Official result-email consumer rejection must identify the canonical main commit"
-[ ! -s "${tmp_dir}/official-result-email-consumer-floor.output" ] || fail "API without the Official result-email legacy consumer must not publish outputs"
+assert_failure "Rollback target predates the Official result-email storage contraction" \
+  run_resolver "${tmp_dir}/official-result-email-contraction-floor.output" MOCK_OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_FLOOR_VALID=0
+grep -Fq '5050505050505050505050505050505050505050' "${tmp_dir}/failure.err" || fail "Official result-email contraction rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/official-result-email-contraction-floor.output" ] || fail "API that names the dropped Official result-email storage must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-  fail "Official result-email consumer floor must fail before artifact or host access"
+  fail "Official result-email contraction floor must fail before artifact or host access"
 fi
 
 for preparation_commit in "" invalid; do

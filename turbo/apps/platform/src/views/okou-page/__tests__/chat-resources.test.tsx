@@ -53,34 +53,11 @@ function installResourceGeometry(initialGutter: number) {
       return original.call(this);
     },
   );
-  const measurements = new Set<() => void>();
-  const NativeResizeObserver = ResizeObserver;
-  vi.stubGlobal(
-    "ResizeObserver",
-    class extends NativeResizeObserver {
-      constructor(callback: ResizeObserverCallback) {
-        super(callback);
-        this.callback = callback;
-      }
-      private readonly callback: ResizeObserverCallback;
-      override observe(target: Element, options?: ResizeObserverOptions) {
-        super.observe(target, options);
-        if (
-          target instanceof HTMLElement &&
-          Object.hasOwn(target.dataset, "messageContainer")
-        ) {
-          measurements.add(() => {
-            this.callback([], this);
-          });
-        }
-      }
-    },
-  );
-  return (nextGutter: number) => {
+  return (nextGutter: number, notifyResize = true) => {
     act(() => {
       gutter = nextGutter;
-      for (const measure of measurements) {
-        measure();
+      if (notifyResize) {
+        fireEvent(window, new Event("resize"));
       }
     });
   };
@@ -207,7 +184,7 @@ test("Open in the actual right gutter and preserve links while removing duplicat
   ).not.toBeInTheDocument();
 });
 
-test("Recompute at 408px from the gutter even when the browser width stays fixed", async () => {
+test("Recompute at 408px from the actual gutter on native viewport resize", async () => {
   const resize = await setupResources({ gutter: 408 });
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
@@ -220,6 +197,70 @@ test("Recompute at 408px from the gutter even when the browser width stays fixed
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
+});
+
+test("Recompute the gutter after toggling the chat list at fixed browser width", async () => {
+  const setGeometry = await setupResources({ gutter: 408 });
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+  });
+  setGeometry(409, false);
+  await userEvent.click(buttonNamed("Hide chat list"));
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+  });
+  setGeometry(408, false);
+  await userEvent.click(buttonNamed("Show chat list"));
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+  });
+});
+
+test("Recompute the gutter when an artifact pane opens and its divider moves", async () => {
+  const setGeometry = await setupResources();
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+  });
+  setGeometry(408, false);
+  const panel = resourcePanel()!;
+  await within(panel).findByText("report.pdf");
+  await userEvent.click(
+    queryAllByRoleFast("button", panel).find((button) => {
+      return button.textContent?.includes("report.pdf");
+    })!,
+  );
+  const handle = await screen.findByRole("separator", {
+    name: "Resize sidebar",
+  });
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+  });
+  // Keep this element's geometry separate from the transcript prototype mock.
+  Object.defineProperty(handle.parentElement!, "getBoundingClientRect", {
+    value: () => {
+      return new DOMRect(0, 0, 1440, 900);
+    },
+    configurable: true,
+  });
+  const pointer = {
+    pointerId: 1,
+    pointerType: "touch",
+    isPrimary: true,
+    button: 0,
+    buttons: 1,
+  };
+  fireEvent.pointerDown(handle, { ...pointer, clientX: 840 });
+  setGeometry(409, false);
+  fireEvent.pointerMove(handle, { ...pointer, clientX: 1000 });
+  await waitFor(() => {
+    expect(
+      handle
+        .closest<HTMLElement>('[style*="--chat-thread-sidebar-width"]')
+        ?.style.getPropertyValue("--chat-thread-sidebar-width"),
+    ).toBe("clamp(400px, 440px, calc(100% - 600px))");
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+  });
+  fireEvent.pointerUp(handle, { ...pointer, buttons: 0 });
 });
 
 test("Temporarily dismiss a manually opened narrow panel on composer click without changing preference", async () => {
@@ -321,10 +362,12 @@ test("Roll back the visible state and explain a failed preference save", async (
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
   await userEvent.click(resourceButton());
-  await screen.findByText("Could not save your resource preference");
+  await screen.findByText("Preference update failed");
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
+    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
   });
+  expect(screen.getAllByText("Preference update failed")).toHaveLength(1);
 });
 
 test("Dismiss a narrow panel when keyboard focus moves to the composer", async () => {

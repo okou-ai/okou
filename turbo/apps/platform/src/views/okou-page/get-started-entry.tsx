@@ -429,7 +429,7 @@ function QuestRowBody({
       : copy.name;
   return (
     <>
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-nested-fill">
         {QUEST_ICONS[quest.key]}
       </span>
       <span className="min-w-0">

@@ -637,6 +637,8 @@
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slide",
       "importFile": "Impor template",
+      "importImage": "Impor gambar Anda sendiri",
+      "importImageHint": "Simpan sebagai gaya",
       "multiAccent": "Multi-aksen",
       "nextSlide": "Pratinjau slide berikutnya",
       "noMatches": "Tidak ada hasil",
@@ -2053,7 +2055,6 @@
       "links": "Tautan",
       "loadFailed": "Tidak dapat memuat sumber daya",
       "retry": "Coba lagi",
-      "saveFailed": "Tidak dapat menyimpan preferensi sumber daya",
       "title": "Sumber daya chat",
       "viewAll": "Lihat semua"
     },

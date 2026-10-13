@@ -254,8 +254,7 @@ function mergeUserPreferences(
       existing.cloudBrowserEnabledByDefault,
     chatResourcesEnabledByDefault:
       preferences.chatResourcesEnabledByDefault ??
-      existing.chatResourcesEnabledByDefault ??
-      true,
+      existing.chatResourcesEnabledByDefault,
     theme: preferences.theme ?? existing.theme ?? null,
     colorTheme: preferences.colorTheme ?? existing.colorTheme ?? null,
     captureNetworkBodiesRemaining:

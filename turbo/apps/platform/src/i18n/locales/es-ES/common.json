@@ -657,6 +657,8 @@
       "importedSlides_many": "{{count}} diapositivas",
       "importedSlides_other": "{{count}} diapositivas",
       "importFile": "Importar plantilla",
+      "importImage": "Importa tu propia imagen",
+      "importImageHint": "Guardar como estilo",
       "multiAccent": "Multiacentos",
       "nextSlide": "Vista previa de la diapositiva siguiente",
       "noMatches": "Sin coincidencias",
@@ -2102,7 +2104,6 @@
       "links": "Enlaces",
       "loadFailed": "No se pudieron cargar los recursos",
       "retry": "Reintentar",
-      "saveFailed": "No se pudo guardar tu preferencia de recursos",
       "title": "Recursos del chat",
       "viewAll": "Ver todo"
     },

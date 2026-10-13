@@ -638,6 +638,8 @@
       "importedSlides_one": "{{count}} Folie",
       "importedSlides_other": "{{count}} Folien",
       "importFile": "Vorlage importieren",
+      "importImage": "Eigenes Bild importieren",
+      "importImageHint": "Als Stil speichern",
       "multiAccent": "Multi-Akzent",
       "nextSlide": "Vorschau der nächsten Folie",
       "noMatches": "Keine Übereinstimmungen",
@@ -2061,7 +2063,6 @@
       "links": "Links",
       "loadFailed": "Ressourcen konnten nicht geladen werden",
       "retry": "Erneut versuchen",
-      "saveFailed": "Ihre Ressourceneinstellung konnte nicht gespeichert werden",
       "title": "Chat-Ressourcen",
       "viewAll": "Alle anzeigen"
     },

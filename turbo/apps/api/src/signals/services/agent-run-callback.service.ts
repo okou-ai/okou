@@ -16,11 +16,10 @@ import { handleChatInternalCallback$ } from "./internal-chat-run-callback.servic
 import { handleFeishuOrgInternalCallback$ } from "./internal-feishu-org-run-callback.service";
 import {
   internalRunCallbackKindForRecord,
-  type DispatchedInternalRunCallbackKind,
   type InternalRunCallbackDispatchResult,
   type InternalRunCallbackEnvelope,
+  type InternalRunCallbackKind,
 } from "./internal-run-callback";
-import { handleLegacyOfficialResultEmailCallback$ } from "./legacy-official-result-email.service";
 import { handlePiMemoryPhase2MaintenanceCallback$ } from "./pi-memory-phase2-maintenance.service";
 import { handleWorkflowAutomationInternalCallback$ } from "./workflow-automation-run-callback.service";
 
@@ -99,11 +98,11 @@ interface DispatchInternalRunCallbackInput {
   readonly status: TerminalCallbackStatus;
   readonly result?: Record<string, unknown>;
   readonly error?: string;
-  readonly kind: DispatchedInternalRunCallbackKind;
+  readonly kind: InternalRunCallbackKind;
 }
 
 interface DispatchInternalCallbackInput {
-  readonly kind: DispatchedInternalRunCallbackKind;
+  readonly kind: InternalRunCallbackKind;
   readonly envelope: InternalRunCallbackEnvelope;
 }
 
@@ -163,13 +162,6 @@ const dispatchInternalCallback$ = command(
         return await set(
           handleWorkflowAutomationInternalCallback$,
           { kind: input.kind, callback: input.envelope },
-          signal,
-        );
-      }
-      case "workflow-automation:result-email": {
-        return await set(
-          handleLegacyOfficialResultEmailCallback$,
-          input.envelope,
           signal,
         );
       }

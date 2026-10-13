@@ -60,8 +60,7 @@ export const userPreferencesResponseSchema = z.object({
   pinnedAgentIds: z.array(z.string()),
   sendMode: sendModeSchema,
   cloudBrowserEnabledByDefault: z.boolean(),
-  // Older API deployments omit this additive preference; the App defaults it on.
-  chatResourcesEnabledByDefault: z.boolean().optional(),
+  chatResourcesEnabledByDefault: z.boolean(),
   theme: themePreferenceSchema.nullable(),
   colorTheme: colorThemeSchema.nullable(),
   captureNetworkBodiesRemaining: z.number().int().min(0),

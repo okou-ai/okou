@@ -36,7 +36,7 @@ jobs:
           CHECKOUT_REF: ${{ github.ref }}
           PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          selection=$(bash .github/scripts/detect-native-only.sh)
+          selection=$(bash .github/scripts/checks/detect-native-only.sh)
           printf '%s\n' "$selection" | tee -a "$GITHUB_OUTPUT"
 
   bench-app:

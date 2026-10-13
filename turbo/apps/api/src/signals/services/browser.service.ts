@@ -922,7 +922,7 @@ const captureAndStoreBrowserScreenshot$ = command(
     const [result] = await Promise.allSettled([
       (async () => {
         const db = set(writeDb$);
-        const instance = await loadActiveInstance(db, browser.chatThreadId);
+        const instance = await set(loadActiveInstance$, browser.chatThreadId);
         signal.throwIfAborted();
         if (!instance) {
           return;
@@ -1230,23 +1230,26 @@ const loadOwnedBrowser$ = command(
   },
 );
 
-async function loadCurrentBrowser(
-  db: Db,
-  context: Pick<BrowserRunContext, "orgId" | "userId" | "chatThreadId">,
-): Promise<BrowserSessionRow | null> {
-  const [row] = await db
-    .select(BROWSER_SESSION_SELECTION)
-    .from(browserSessions)
-    .where(
-      and(
-        eq(browserSessions.chatThreadId, context.chatThreadId),
-        eq(browserSessions.orgId, context.orgId),
-        eq(browserSessions.userId, context.userId),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
-}
+const loadCurrentBrowser$ = command(
+  async (
+    { get },
+    context: Pick<BrowserRunContext, "orgId" | "userId" | "chatThreadId">,
+  ): Promise<BrowserSessionRow | null> => {
+    const db = get(db$);
+    const [row] = await db
+      .select(BROWSER_SESSION_SELECTION)
+      .from(browserSessions)
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, context.chatThreadId),
+          eq(browserSessions.orgId, context.orgId),
+          eq(browserSessions.userId, context.userId),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  },
+);
 
 async function loadOwnedThreadBrowser(
   db: Db,
@@ -1265,23 +1268,23 @@ async function loadOwnedThreadBrowser(
   return row ?? null;
 }
 
-async function loadActiveInstance(
-  db: Db,
-  chatThreadId: string,
-): Promise<BrowserInstanceRow | null> {
-  const [row] = await db
-    .select()
-    .from(browserSessionInstances)
-    .where(
-      and(
-        eq(browserSessionInstances.chatThreadId, chatThreadId),
-        eq(browserSessionInstances.status, "active"),
-      ),
-    )
-    .orderBy(desc(browserSessionInstances.createdAt))
-    .limit(1);
-  return row ?? null;
-}
+const loadActiveInstance$ = command(
+  async ({ get }, chatThreadId: string): Promise<BrowserInstanceRow | null> => {
+    const db = get(db$);
+    const [row] = await db
+      .select()
+      .from(browserSessionInstances)
+      .where(
+        and(
+          eq(browserSessionInstances.chatThreadId, chatThreadId),
+          eq(browserSessionInstances.status, "active"),
+        ),
+      )
+      .orderBy(desc(browserSessionInstances.createdAt))
+      .limit(1);
+    return row ?? null;
+  },
+);
 
 async function loadOwnedThreadBrowserProfile(
   db: Db,
@@ -2039,7 +2042,7 @@ const inspectActiveConnection$ = command(
   > => {
     const { browser } = args;
     const db = set(writeDb$);
-    const instance = await loadActiveInstance(db, browser.chatThreadId);
+    const instance = await set(loadActiveInstance$, browser.chatThreadId);
     signal.throwIfAborted();
     if (!instance) {
       const suspended = await suspendBrowserWithoutActiveInstance(
@@ -2369,10 +2372,9 @@ const openBrowserForContext$ = command(
     },
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserConnection>> => {
-    const db = set(writeDb$);
     const { context } = args;
 
-    const current = await loadCurrentBrowser(db, context);
+    const current = await set(loadCurrentBrowser$, context);
     signal.throwIfAborted();
     if (!current) {
       return await set(
@@ -2492,7 +2494,7 @@ const leaseInstanceForBrowser$ = command(
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
     const db = set(writeDb$);
-    const instance = await loadActiveInstance(db, browser.chatThreadId);
+    const instance = await set(loadActiveInstance$, browser.chatThreadId);
     signal.throwIfAborted();
     const leased = instance
       ? await touchInstanceLease(db, instance.providerSessionId, signal)
@@ -2532,7 +2534,7 @@ export const leaseCurrentBrowser$ = command(
     if (context.kind === "error") {
       return context;
     }
-    const browser = await loadCurrentBrowser(db, context.value);
+    const browser = await set(loadCurrentBrowser$, context.value);
     signal.throwIfAborted();
     if (!browser) {
       return notFound();
@@ -2585,7 +2587,7 @@ export const resizeBrowserByThread$ = command(
         "BROWSER_NOT_LIVE",
       );
     }
-    const instance = await loadActiveInstance(db, browser.chatThreadId);
+    const instance = await set(loadActiveInstance$, browser.chatThreadId);
     signal.throwIfAborted();
     if (!instance) {
       return conflict(
@@ -2697,7 +2699,7 @@ export const getBrowser$ = command(
     let idleExpiresAt: Date | null = null;
     let screen: BrowserScreen | null = null;
     if (row.status === "active") {
-      const instance = await loadActiveInstance(db, row.chatThreadId);
+      const instance = await set(loadActiveInstance$, row.chatThreadId);
       signal.throwIfAborted();
       if (instance) {
         idleExpiresAt = instance.idleExpiresAt;
@@ -2741,7 +2743,7 @@ export const getCurrentBrowser$ = command(
     if (context.kind === "error") {
       return context;
     }
-    const browser = await loadCurrentBrowser(db, context.value);
+    const browser = await set(loadCurrentBrowser$, context.value);
     signal.throwIfAborted();
     if (!browser) {
       return notFound();

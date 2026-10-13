@@ -106,11 +106,11 @@ def check(root):
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
-    print(f"action-pins-test: {external_count} external references in {len(files)} files passed")
+    print(f"check-action-pins: {external_count} external references in {len(files)} files passed")
     return 0
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        sys.exit("usage: action-pins-test.py <repository-root>")
+        sys.exit("usage: check-action-pins.py <repository-root>")
     sys.exit(check(Path(sys.argv[1]).resolve()))

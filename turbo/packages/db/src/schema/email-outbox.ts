@@ -1,5 +1,4 @@
-import { pgTable, uuid, index, uniqueIndex, check } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
+import { pgTable, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { emailOutboxColumns } from "../columns/email-outbox";
 
 /**
@@ -25,16 +24,7 @@ import { emailOutboxColumns } from "../columns/email-outbox";
  */
 export const emailOutbox = pgTable(
   "email_outbox",
-  {
-    ...emailOutboxColumns(),
-    // Producer identity of the retired platform completion email. The runtime
-    // mapping omits it; besides draining release-1 APIs, only the bounded
-    // legacy consumer writes it, through `runtime/legacy-official-result-email`
-    // (#39524). Release 3 of #39378 drops the pair, its index and check after
-    // outgoing APIs drain and rollback excludes them.
-    legacySourceRunId: uuid("source_run_id"),
-    legacySourceWorkflowAutomationId: uuid("source_workflow_automation_id"),
-  },
+  emailOutboxColumns(),
   (table) => {
     return [
       // Drain query: pending items ready to send, FIFO order
@@ -45,24 +35,10 @@ export const emailOutbox = pgTable(
       ),
       // TTL cleanup
       index("email_outbox_created_at_idx").on(table.createdAt),
-      uniqueIndex("email_outbox_source_run_automation_unique").on(
-        table.legacySourceRunId,
-        table.legacySourceWorkflowAutomationId,
-      ),
       // Two rows must never replay each other's provider request. Unprepared
       // rows keep a NULL key, which PostgreSQL treats as distinct.
       uniqueIndex("email_outbox_provider_idempotency_key_unique").on(
         table.providerIdempotencyKey,
-      ),
-      check(
-        "email_outbox_source_identity_check",
-        sql`(
-          ${table.legacySourceRunId} IS NULL
-          AND ${table.legacySourceWorkflowAutomationId} IS NULL
-        ) OR (
-          ${table.legacySourceRunId} IS NOT NULL
-          AND ${table.legacySourceWorkflowAutomationId} IS NOT NULL
-        )`,
       ),
     ];
   },

@@ -45,6 +45,7 @@ import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
 import { agents$ } from "../agent.ts";
 import { currentChatAgentRecordId$ } from "../agent-chat.ts";
+import { createRecentWorkflowIds } from "./recent-workflows.ts";
 import { detach, onRef, Reason, resetSignal } from "../utils.ts";
 import type { DraftInputSyncTarget, DraftSignals } from "./chat-draft.ts";
 import {
@@ -239,6 +240,7 @@ export interface WorkflowComposerSignals {
   readonly previewSuggestionIndex$: Computed<number | null>;
   readonly previewSuggestion$: Command<void, [number | null]>;
   readonly slashWorkflowsExpanded$: Computed<boolean>;
+  readonly recentWorkflowIds$: Computed<Promise<readonly string[]>>;
   readonly expandSlashWorkflows$: Command<void, []>;
   readonly closeSuggestionMenu$: Command<void, [restoreEditorFocus?: boolean]>;
   readonly setSuggestionMenuRef$: Command<
@@ -2121,7 +2123,7 @@ interface MountEditorOptions {
   caretIndex$: State<number>;
   editorInteractionActiveState$: State<boolean>;
   suggestionMenu: ReturnType<typeof createSuggestionMenuBoundary>;
-  selectedSuggestionIndexState$: State<number>;
+  selectedSuggestionIndexState$: State<number | null>;
   previewSuggestionIndexState$: State<number | null>;
   feedback: ComposerFeedbackModel;
   compositionGate: CompositionGate;
@@ -2243,7 +2245,7 @@ function createMountEditorCommand({
           draft.setEditorDocument$,
           createEditorDocumentSnapshot(updatedEditor.state.doc),
         );
-        set(selectedSuggestionIndexState$, 0);
+        set(selectedSuggestionIndexState$, null);
         set(previewSuggestionIndexState$, null);
         set(caretIndex$, updatedEditor.state.selection.head);
         compositionGate.notifySettled();
@@ -2256,7 +2258,7 @@ function createMountEditorCommand({
       };
       runtime.focus = (focusedEditor) => {
         if (get(featureSwitch$)[FeatureSwitchKey.ComposerAnchoredSuggestions]) {
-          set(selectedSuggestionIndexState$, 0);
+          set(selectedSuggestionIndexState$, null);
         }
         set(previewSuggestionIndexState$, null);
         set(editorInteractionActiveState$, true);
@@ -2959,6 +2961,24 @@ function createTemplateSignals(
   return { commands, legacy, selection };
 }
 
+function createSelectedSuggestionIndex(
+  selectedIndexState$: State<number | null>,
+  activeSlashRange$: Computed<SlashWorkflowRange | null>,
+) {
+  return computed((get) => {
+    const selectedIndex = get(selectedIndexState$);
+    if (selectedIndex !== null) {
+      return selectedIndex;
+    }
+    // Opening the overview only lists choices. A pointer or arrow key must
+    // choose a row before it becomes active or opens a template preview.
+    return get(featureSwitch$)[FeatureSwitchKey.ComposerAnchoredSuggestions] &&
+      get(activeSlashRange$)?.query === ""
+      ? -1
+      : 0;
+  });
+}
+
 function createSlashWorkflowExpansionSignals(
   editor: Editor,
   activeSlashRange$: Computed<SlashWorkflowRange | null>,
@@ -2967,6 +2987,7 @@ function createSlashWorkflowExpansionSignals(
   // editing its token produces a new range and restores the compact overview.
   const expandedSlashRange$ = state<SlashWorkflowRange | null>(null);
   return {
+    recentWorkflowIds$: createRecentWorkflowIds(activeSlashRange$),
     slashWorkflowsExpanded$: computed((get) => {
       const range = get(activeSlashRange$);
       return range !== null && range === get(expandedSlashRange$);
@@ -2992,7 +3013,7 @@ export function createWorkflowComposerSignals<
   const caretIndex$ = state(-1);
   const editorInteractionActiveState$ = state(false);
   const suggestionMenu = createSuggestionMenuBoundary();
-  const selectedSuggestionIndexState$ = state(0);
+  const selectedSuggestionIndexState$ = state<number | null>(null);
   // A pointer preview is independent of keyboard selection. Null means the
   // preview follows the keyboard again, including when the menu reopens.
   const previewSuggestionIndexState$ = state<number | null>(null);
@@ -3095,9 +3116,10 @@ export function createWorkflowComposerSignals<
     agentId$,
     workflows$,
     reloadWorkflows$: reloadMountedComposerWorkflows$,
-    selectedSuggestionIndex$: computed((get) => {
-      return get(selectedSuggestionIndexState$);
-    }),
+    selectedSuggestionIndex$: createSelectedSuggestionIndex(
+      selectedSuggestionIndexState$,
+      activeSlashRange$,
+    ),
     setSelectedSuggestionIndex$,
     previewSuggestionIndex$,
     previewSuggestion$,

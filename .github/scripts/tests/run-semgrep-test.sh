@@ -3,7 +3,7 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-run_semgrep="$script_dir/run-semgrep.sh"
+run_semgrep="$script_dir/checks/run-semgrep.sh"
 test_dir="$(mktemp -d)"
 trap 'rm -rf -- "$test_dir"' EXIT
 

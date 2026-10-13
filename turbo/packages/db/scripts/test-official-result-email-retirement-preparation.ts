@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import postgres from "postgres";
@@ -10,18 +10,14 @@ import { z } from "zod";
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
 import { schema } from "../src/index";
 import { emailOutbox } from "../src/runtime/email-outbox";
-import {
-  legacyOfficialResultEmailClaims,
-  legacyOfficialResultEmailOutbox,
-} from "../src/runtime/legacy-official-result-email";
 import { workflowAutomations } from "../src/runtime/workflow-automation";
-import { users } from "../src/schema/user";
 import {
   outgoingEmailOutbox,
   outgoingOfficialAutomationResultEmailClaims,
   outgoingWorkflowAutomations,
 } from "./fixtures/official-result-email-outgoing";
 import { applyPendingMigrations } from "./migration-runner";
+import { validateOfficialAutomationBindingSchema } from "./test-official-automation-binding-schema";
 
 // Keep through release 3 of #39378's physical contraction and its
 // drain/rollback acceptance.
@@ -36,6 +32,10 @@ const retirement = journal.entries.find((entry) => {
   return entry.tag.endsWith("_retire_official_result_email_runtime");
 });
 assert.ok(retirement);
+const contraction = journal.entries.find((entry) => {
+  return entry.tag.endsWith("_drop_official_result_email_storage");
+});
+assert.ok(contraction && contraction.when > retirement.when);
 
 const RETIRED_IDENTIFIERS = [
   "official_result_email_enabled",
@@ -111,7 +111,6 @@ const db = drizzle(client, {
     },
   },
 });
-const legacyDb = drizzle(client);
 
 try {
   await admin.connect();
@@ -659,136 +658,155 @@ try {
       },
     ],
   );
-  // (e) The bounded legacy consumer (#39524) finishes callbacks that draining
-  // release-1 APIs still capture. Its enqueue statement (the API consumer's
-  // shape) shares the permanent claim with outgoing TX-0173 in both orders.
-  const claims = legacyOfficialResultEmailClaims;
-  const legacyOutbox = legacyOfficialResultEmailOutbox;
-  const consumerEnqueue = async (args: {
-    readonly userId: string;
-    readonly runId: string;
-    readonly automationId: string;
-  }) => {
-    await legacyDb
-      .insert(users)
-      .values({ id: args.userId })
-      .onConflictDoNothing({ target: users.id });
-    const claim = legacyDb.$with("legacy_result_email_claim").as(
-      legacyDb
-        .insert(claims)
-        .select(
-          sql`SELECT ${args.runId}::uuid, ${args.automationId}::uuid, gen_random_uuid()
-          FROM ${users}
-          WHERE ${eq(users.id, args.userId)}
-            AND ${eq(users.emailUnsubscribed, false)}`,
-        )
-        .onConflictDoNothing({
-          target: [claims.runId, claims.workflowAutomationId],
-        })
-        .returning({ emailOutboxId: claims.emailOutboxId }),
-    );
-    return await legacyDb
-      .with(claim)
-      .insert(legacyOutbox)
-      .select(
-        sql`SELECT ${claim.emailOutboxId}, ${"Okou <noreply@example.com>"},
-          ${sql.param("owner@example.com", legacyOutbox.toAddresses)}::jsonb,
-          ${"Pulse"},
-          ${sql.param({ "List-Unsubscribe": "<https://example.com/u>" }, legacyOutbox.headers)}::jsonb,
-          ${sql.param({ template: "official-automation-result", props: {} }, legacyOutbox.template)}::jsonb,
-          ${args.runId}::uuid, ${args.automationId}::uuid
-          FROM ${claim}`,
-      )
-      .returning({ id: legacyOutbox.id });
+  // Release 3 replays the actual contraction over every row shape above,
+  // including retained Official true values, claims and sourced outbox rows.
+  const runtimeSnapshot = async () => {
+    return {
+      automations: await db
+        .select()
+        .from(workflowAutomations)
+        .orderBy(workflowAutomations.id),
+      emails: await db.select().from(emailOutbox).orderBy(emailOutbox.id),
+    };
   };
-  const consumerSource = {
-    userId: ownerUserId,
-    runId: randomUUID(),
-    automationId: legacyEnabled.id,
-  };
-  const [consumerQueued] = await consumerEnqueue(consumerSource);
-  assert.ok(consumerQueued);
-  assert.deepEqual(
-    (
+  const beforeContraction = await runtimeSnapshot();
+  await applyPendingMigrations(migrationSql, {
+    beforeMillis: contraction.when,
+  });
+  const appliedMigrations = async () => {
+    return (
       await client.query(
-        `SELECT o."id", o."status", o."attempts", o."to_addresses", o."template",
-          o."source_run_id", o."source_workflow_automation_id"
-        FROM "email_outbox" o
-        JOIN "official_automation_result_email_claims" c
-          ON c."email_outbox_id" = o."id"
-        WHERE c."run_id" = $1 AND c."workflow_automation_id" = $2`,
-        [consumerSource.runId, consumerSource.automationId],
+        'SELECT * FROM "drizzle"."__drizzle_migrations" ORDER BY "id"',
       )
-    ).rows,
-    [
-      {
-        id: consumerQueued.id,
-        status: "pending",
-        attempts: 0,
-        to_addresses: "owner@example.com",
-        template: { template: "official-automation-result", props: {} },
-        source_run_id: consumerSource.runId,
-        source_workflow_automation_id: consumerSource.automationId,
-      },
-    ],
+    ).rows;
+  };
+  const journalBeforeContraction = await appliedMigrations();
+  const retiredStorage = async () => {
+    return (
+      await client.query(
+        `SELECT
+          to_regclass('public.official_automation_result_email_claims')::text AS "claims",
+          to_regclass('public.email_outbox_source_run_automation_unique')::text AS "sourceIndex",
+          (
+            SELECT count(*)::int FROM "information_schema"."columns"
+            WHERE "table_schema" = 'public'
+              AND ("table_name", "column_name") IN (
+                ('workflow_automations', 'official_result_email_enabled'),
+                ('email_outbox', 'source_run_id'),
+                ('email_outbox', 'source_workflow_automation_id')
+              )
+          ) AS "columns",
+          (
+            SELECT count(*)::int FROM "pg_constraint"
+            WHERE "conrelid" = 'public.email_outbox'::regclass
+              AND "conname" = 'email_outbox_source_identity_check'
+          ) AS "sourceChecks"`,
+      )
+    ).rows;
+  };
+  // RESTRICT drops reject an unexpected dependent object, and the rejected
+  // migration rolls back without dropping anything or advancing the journal.
+  await client.query(
+    'CREATE VIEW "result_email_source_view" AS SELECT "source_run_id" FROM "email_outbox"',
   );
-  // A retry, and an outgoing handler after the consumer, both find the claim.
-  assert.deepEqual(await consumerEnqueue(consumerSource), []);
-  assert.deepEqual(
-    await outgoingDb
-      .insert(outgoingOfficialAutomationResultEmailClaims)
-      .values({
-        runId: consumerSource.runId,
-        workflowAutomationId: consumerSource.automationId,
-      })
-      .onConflictDoNothing({
-        target: [
-          outgoingOfficialAutomationResultEmailClaims.runId,
-          outgoingOfficialAutomationResultEmailClaims.workflowAutomationId,
-        ],
-      })
-      .returning({
-        emailOutboxId:
-          outgoingOfficialAutomationResultEmailClaims.emailOutboxId,
+  try {
+    await assert.rejects(
+      applyPendingMigrations(migrationSql, {
+        beforeMillis: contraction.when + 1,
       }),
-    [],
-  );
-  // The consumer after an outgoing handler's claim enqueues nothing.
-  assert.deepEqual(
-    await consumerEnqueue({
-      userId: ownerUserId,
-      runId: outgoingClaim.runId,
-      automationId: legacyEnabled.id,
-    }),
-    [],
-  );
-  // Deleting the delivered outbox row cannot reopen the source.
-  await client.query('DELETE FROM "email_outbox" WHERE "id" = $1', [
-    consumerQueued.id,
-  ]);
-  assert.deepEqual(await consumerEnqueue(consumerSource), []);
-  // An opted-out owner gets neither a claim nor an email.
-  const unsubscribedSource = {
-    userId: "result-email-unsubscribed",
-    runId: randomUUID(),
-    automationId: legacyEnabled.id,
-  };
-  await legacyDb
-    .insert(users)
-    .values({ id: unsubscribedSource.userId, emailUnsubscribed: true });
-  assert.deepEqual(await consumerEnqueue(unsubscribedSource), []);
+      (error: unknown) => {
+        return sqlState(error).code === "2BP01";
+      },
+    );
+    assert.deepEqual(await appliedMigrations(), journalBeforeContraction);
+    assert.deepEqual(await retiredStorage(), [
+      {
+        claims: "official_automation_result_email_claims",
+        sourceIndex: "email_outbox_source_run_automation_unique",
+        columns: 3,
+        sourceChecks: 1,
+      },
+    ]);
+  } finally {
+    await client.query('DROP VIEW "result_email_source_view"');
+  }
+
+  await applyPendingMigrations(migrationSql, {
+    beforeMillis: contraction.when + 1,
+  });
   assert.deepEqual(
     (
-      await client.query(
-        'SELECT 1 FROM "official_automation_result_email_claims" WHERE "run_id" = $1',
-        [unsubscribedSource.runId],
+      await client.query<{ when: string }>(
+        'SELECT max("created_at")::text AS "when" FROM "drizzle"."__drizzle_migrations"',
       )
     ).rows,
-    [],
+    [{ when: String(contraction.when) }],
+  );
+  assert.deepEqual(await retiredStorage(), [
+    { claims: null, sourceIndex: null, columns: 0, sourceChecks: 0 },
+  ]);
+  // Every retained column of every row survives, read through the runtime
+  // mappings that 1.729.1 and this release share.
+  assert.deepEqual(await runtimeSnapshot(), beforeContraction);
+  // The rebuilt binding check admits the retained Official rows and keeps every
+  // ordinary/Official invariant.
+  await validateOfficialAutomationBindingSchema(ownedUrl.toString());
+
+  // Runtime statements stay legal on the contracted storage.
+  const [contractedOfficial] = await db
+    .insert(workflowAutomations)
+    .values({ ...owner, ...schedule, ...official("contracted-official") })
+    .returning();
+  assert.ok(contractedOfficial);
+  const [contractedPlain] = await db
+    .insert(workflowAutomations)
+    .values({ ...owner, ...schedule })
+    .returning();
+  assert.ok(contractedPlain);
+  const [contractedMarked] = await db
+    .update(workflowAutomations)
+    .set(official("contracted-marked"))
+    .where(
+      and(
+        eq(workflowAutomations.id, contractedPlain.id),
+        isNull(workflowAutomations.officialBlueprintKey),
+      ),
+    )
+    .returning();
+  assert.equal(contractedMarked?.officialBlueprintKey, "contracted-marked");
+  assert.deepEqual(
+    await db.query.workflowAutomations.findMany({
+      orderBy: workflowAutomations.id,
+    }),
+    await db.select().from(workflowAutomations).orderBy(workflowAutomations.id),
+  );
+  const [contractedDeleted] = await db
+    .delete(workflowAutomations)
+    .where(eq(workflowAutomations.id, contractedOfficial.id))
+    .returning();
+  assert.deepEqual(contractedDeleted, contractedOfficial);
+
+  // Provider replay identity is untouched: a committed key stays unique.
+  const providerIdempotencyKey = `okou-email-outbox/v1/${runtimeEmail.id}`;
+  const [prepared] = await db
+    .update(emailOutbox)
+    .set({ providerIdempotencyKey })
+    .where(eq(emailOutbox.id, runtimeEmail.id))
+    .returning();
+  assert.equal(prepared?.providerIdempotencyKey, providerIdempotencyKey);
+  await assert.rejects(
+    db.insert(emailOutbox).values({
+      fromAddress: "Okou <noreply@example.com>",
+      toAddresses: "owner@example.com",
+      subject: "Credit balance is low",
+      template: { template: "credit-low-balance", props: {} },
+      providerIdempotencyKey,
+    }),
+    violates("23505", "email_outbox_provider_idempotency_key_unique"),
   );
 
   console.log(
-    "Official result-email retirement keeps outgoing SQL legal and runtime SQL free of retired storage",
+    "Official result-email retirement keeps outgoing SQL legal, runtime SQL free of retired storage, and the actual contraction lossless",
   );
 } finally {
   try {

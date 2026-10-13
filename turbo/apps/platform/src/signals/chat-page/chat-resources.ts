@@ -19,14 +19,14 @@ import type { ChatEventGroup } from "./chat-event.ts";
 const RESOURCE_PANEL_MIN_GUTTER = 408;
 const optimisticPreference$ = state<boolean | null>(null);
 const preferenceRevision$ = state(0);
-const savingPreference$ = state(false);
+const savingPreference$ = computed((get) => {
+  return get(optimisticPreference$) !== null;
+});
 
 const resourcePreference$ = computed(async (get) => {
   const optimistic = get(optimisticPreference$);
   return (
-    optimistic ??
-    (await get(userPreferences$)).chatResourcesEnabledByDefault ??
-    true
+    optimistic ?? (await get(userPreferences$)).chatResourcesEnabledByDefault
   );
 });
 
@@ -35,7 +35,6 @@ const saveResourcePreference$ = command(
     if (get(savingPreference$)) {
       return;
     }
-    set(savingPreference$, true);
     set(optimisticPreference$, enabled);
     set(preferenceRevision$, (revision) => {
       return revision + 1;
@@ -56,18 +55,10 @@ const saveResourcePreference$ = command(
           set(preferenceRevision$, (revision) => {
             return revision + 1;
           });
-          if (!signal.aborted) {
-            toast.error(
-              i18n.t(($) => {
-                return $.chat.resources.saveFailed;
-              }),
-            );
-          }
         },
       ),
       () => {
         set(optimisticPreference$, null);
-        set(savingPreference$, false);
       },
     );
   },
@@ -237,6 +228,7 @@ function createChatResourcePanelSignals() {
   const anchor = createResourceElementRef();
   const popup = createResourceElementRef();
   const boundary$ = state<HTMLElement | null>(null);
+  const messageColumn$ = state<HTMLElement | null>(null);
   const temporary$ = state<{
     readonly open: boolean;
     readonly revision: number;
@@ -269,8 +261,24 @@ function createChatResourcePanelSignals() {
       await set(saveResourcePreference$, enabled, signal);
     },
   );
+  const measure$ = command(({ get, set }) => {
+    const viewport = get(boundary$);
+    const column = get(messageColumn$);
+    if (!viewport || !column) {
+      return;
+    }
+    const width = Math.max(
+      0,
+      viewport.getBoundingClientRect().right -
+        column.getBoundingClientRect().right,
+    );
+    if (width > RESOURCE_PANEL_MIN_GUTTER !== get(wide$)) {
+      set(temporary$, null);
+    }
+    set(gutterWidth$, width);
+  });
   const layoutOnRef$ = onRef(
-    command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
       const viewport = element.querySelector<HTMLElement>(
         "[data-scroll-container]",
       );
@@ -281,27 +289,21 @@ function createChatResourcePanelSignals() {
         return;
       }
       set(boundary$, viewport);
+      set(messageColumn$, column);
       set(temporary$, null);
       const measure = () => {
-        const width = Math.max(
-          0,
-          viewport.getBoundingClientRect().right -
-            column.getBoundingClientRect().right,
-        );
-        if (width > RESOURCE_PANEL_MIN_GUTTER !== get(wide$)) {
-          set(temporary$, null);
-        }
-        set(gutterWidth$, width);
+        set(measure$);
       };
-      const observer = new ResizeObserver(measure);
-      observer.observe(viewport);
-      observer.observe(column);
+      // Shell commits and width transitions call measure$ after applying
+      // application-owned layout. Native viewport changes have their own event.
+      window.addEventListener("resize", measure, { signal });
+      window.visualViewport?.addEventListener("resize", measure, { signal });
       measure();
       signal.addEventListener(
         "abort",
         () => {
-          observer.disconnect();
           set(boundary$, null);
+          set(messageColumn$, null);
           set(temporary$, null);
         },
         { once: true },
@@ -327,6 +329,7 @@ function createChatResourcePanelSignals() {
     wide$,
     setOpen$,
     changePreference$,
+    measure$,
     layoutOnRef$,
     anchorOnRef$: anchor.onRef$,
     popupOnRef$: popup.onRef$,

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CHECK_PR_TITLE="$SCRIPT_DIR/../check-pr-title.sh"
+CHECK_PR_TITLE="$SCRIPT_DIR/../checks/check-pr-title.sh"
 
 expect_pass() {
   local title="$1"

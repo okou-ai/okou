@@ -637,6 +637,8 @@
       "importedSlides_one": "{{count}} 頁",
       "importedSlides_other": "{{count}} 頁",
       "importFile": "匯入你自己的檔案",
+      "importImage": "匯入自己的圖片",
+      "importImageHint": "儲存為可重用風格",
       "multiAccent": "多口音",
       "nextSlide": "預覽下一頁",
       "noMatches": "沒有匹配結果",
@@ -2053,7 +2055,6 @@
       "links": "連結",
       "loadFailed": "無法載入聊天資源",
       "retry": "重試",
-      "saveFailed": "無法儲存資源顯示偏好",
       "title": "聊天資源",
       "viewAll": "查看全部"
     },

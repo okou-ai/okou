@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.22.1...guest-contracts-v0.22.2) (2026-10-13)
+
+
+### Refactoring
+
+* clarify history and memory publication terminology ([#39590](https://github.com/okou-ai/okou/issues/39590)) ([f823402](https://github.com/okou-ai/okou/commit/f8234029d7e29d76cc64ea09d8210c34e1c07f28))
+
 ## [0.22.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.22.0...guest-contracts-v0.22.1) (2026-10-12)
 
 ## [0.22.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.21.1...guest-contracts-v0.22.0) (2026-10-12)
