@@ -255,17 +255,24 @@ impl CompletionPayload {
 
     /// Hold active status, budget and reuse ownership until both the provider
     /// report and finalization resolve, then settle before returning telemetry
-    /// for Runner's deferred uploads.
-    pub async fn complete_claimed_run<F: Future<Output = FinalizedJob>>(
+    /// for Runner's deferred uploads. Carry finalization inputs in the constructor
+    /// so the large future is created once, on polling the report coordinator.
+    pub async fn complete_claimed_run<C, F>(
         self,
         provider: &dyn JobProvider,
-        finalize: F,
+        make_finalization: C,
         status: &StatusTracker,
         active_run_guard: ActiveRunGuard,
         cleanup_state: &RunCleanupState,
-    ) -> JobTelemetry {
+    ) -> JobTelemetry
+    where
+        C: FnOnce() -> F,
+        F: Future<Output = FinalizedJob>,
+    {
         let run = RunSandbox::new(self.run_id, self.sandbox_id);
-        let (report, finalized) = self.report_with_finalization(provider, finalize).await;
+        let (report, finalized) = self
+            .report_with_finalization(provider, make_finalization)
+            .await;
         let FinalizedJob {
             finalization_ready,
             mut telemetry,
@@ -285,17 +292,21 @@ impl CompletionPayload {
 
     /// Report exactly once, either concurrently with sandbox finalization or
     /// after it. The caller retains the finalization result until settlement.
-    async fn report_with_finalization<F: Future>(
+    async fn report_with_finalization<C, F>(
         self,
         provider: &dyn JobProvider,
-        finalize: F,
-    ) -> (CompletionReportObservation, F::Output) {
+        make_finalization: C,
+    ) -> (CompletionReportObservation, F::Output)
+    where
+        C: FnOnce() -> F,
+        F: Future,
+    {
         match provider.completion_report_timing() {
             CompletionReportTiming::ConcurrentWithFinalization => {
-                tokio::join!(self.report(provider), finalize)
+                tokio::join!(self.report(provider), make_finalization())
             }
             CompletionReportTiming::AfterFinalization => {
-                let finalized = finalize.await;
+                let finalized = make_finalization().await;
                 let report = self.report(provider).await;
                 (report, finalized)
             }
@@ -626,6 +637,7 @@ mod tests {
         reports: Arc<AtomicUsize>,
         report_started: Arc<tokio::sync::Notify>,
         finalized: Arc<tokio::sync::Notify>,
+        report_release: Option<Arc<tokio::sync::Notify>>,
     }
 
     #[async_trait]
@@ -645,6 +657,9 @@ mod tests {
                 CompletionReportTiming::ConcurrentWithFinalization
             ) {
                 self.finalized.notified().await;
+            }
+            if let Some(release) = &self.report_release {
+                release.notified().await;
             }
             self.events.lock().unwrap().push("report_finished");
         }
@@ -671,15 +686,19 @@ mod tests {
             reports: Arc::clone(&reports),
             report_started: Arc::new(tokio::sync::Notify::new()),
             finalized: Arc::new(tokio::sync::Notify::new()),
+            report_release: None,
         };
-        let finalize = async {
-            events.lock().unwrap().push("finalize_started");
-            if matches!(timing, CompletionReportTiming::ConcurrentWithFinalization) {
-                provider.report_started.notified().await;
+        let finalize = || {
+            events.lock().unwrap().push("finalize_constructed");
+            async {
+                events.lock().unwrap().push("finalize_started");
+                if matches!(timing, CompletionReportTiming::ConcurrentWithFinalization) {
+                    provider.report_started.notified().await;
+                }
+                events.lock().unwrap().push("finalize_finished");
+                provider.finalized.notify_one();
+                FinalizationReady::new(BudgetOwnership::active(ActiveBudgetLease::new(lease)))
             }
-            events.lock().unwrap().push("finalize_finished");
-            provider.finalized.notify_one();
-            FinalizationReady::new(BudgetOwnership::active(ActiveBudgetLease::new(lease)))
         };
         let payload = CompletionPayload::new(
             run_id,
@@ -690,12 +709,13 @@ mod tests {
             SandboxReuseResult::PoolMiss,
             CompletionAuth::sandbox_token(run_id, "completion-token".to_owned()),
         );
-        let (_report, ready) = tokio::time::timeout(
-            Duration::from_secs(2),
-            payload.report_with_finalization(&provider, finalize),
-        )
-        .await
-        .expect("report/finalization ordering must not deadlock");
+        let completion = payload.report_with_finalization(&provider, finalize);
+        assert!(events.lock().unwrap().is_empty());
+        assert_eq!(budget.allocated().2, 1);
+        assert_eq!(status_active_run_count(&status_path).await, 1);
+        let (_report, ready) = tokio::time::timeout(Duration::from_secs(2), completion)
+            .await
+            .expect("report/finalization ordering must not deadlock");
         assert_eq!(reports.load(Ordering::SeqCst), 1);
         assert_eq!(status_active_run_count(&status_path).await, 1);
         assert_eq!(
@@ -704,9 +724,10 @@ mod tests {
             "report must precede active budget release"
         );
         let recorded = events.lock().unwrap().clone();
+        assert_eq!(recorded[0], "finalize_constructed");
         match timing {
             CompletionReportTiming::ConcurrentWithFinalization => {
-                assert_eq!(recorded.len(), 4);
+                assert_eq!(recorded.len(), 5);
                 let position = |event| {
                     recorded
                         .iter()
@@ -721,6 +742,7 @@ mod tests {
                 assert_eq!(
                     recorded,
                     [
+                        "finalize_constructed",
                         "finalize_started",
                         "finalize_finished",
                         "report_started",
@@ -770,6 +792,7 @@ mod tests {
             reports: Arc::clone(&reports),
             report_started: Arc::new(tokio::sync::Notify::new()),
             finalized: Arc::new(tokio::sync::Notify::new()),
+            report_release: Some(Arc::new(tokio::sync::Notify::new())),
         };
         let http = HttpClient::new(HttpClientConfig {
             api_url: "http://localhost".into(),
@@ -779,7 +802,7 @@ mod tests {
         })
         .unwrap();
         let telemetry = JobTelemetry::new(http, run_id, "completion-token".to_owned(), None);
-        let finalized = async {
+        let finalized = move || async move {
             FinalizedJob {
                 finalization_ready: FinalizationReady::new(BudgetOwnership::active(
                     ActiveBudgetLease::new(lease),
@@ -788,7 +811,7 @@ mod tests {
             }
         };
         let cleanup = RunCleanupState::new();
-        let result = CompletionPayload::new(
+        let completion = CompletionPayload::new(
             run_id,
             0,
             None,
@@ -797,8 +820,25 @@ mod tests {
             SandboxReuseResult::PoolMiss,
             CompletionAuth::sandbox_token(run_id, "completion-token".to_owned()),
         )
-        .complete_claimed_run(&provider, finalized, &status, active_run_guard, &cleanup)
-        .await;
+        .complete_claimed_run(&provider, finalized, &status, active_run_guard, &cleanup);
+        tokio::pin!(completion);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::select! {
+                _ = completion.as_mut() => panic!("completion must await provider reporting"),
+                _ = provider.report_started.notified() => {}
+            }
+        })
+        .await
+        .expect("finalization must reach provider reporting");
+        assert_eq!(budget.allocated().2, 1);
+        assert_eq!(status_active_run_count(&status_path).await, 1);
+        assert!(active_runs.contains(run_id));
+        assert_eq!(
+            cleanup.disposition(),
+            RunCleanupDisposition::ActiveOrUnknown
+        );
+        provider.report_release.as_ref().unwrap().notify_one();
+        let result = completion.await;
         assert_eq!(reports.load(Ordering::SeqCst), 1);
         assert_eq!(status_active_run_count(&status_path).await, 0);
         assert_eq!(budget.allocated().2, 0);
@@ -813,6 +853,109 @@ mod tests {
             ops.iter()
                 .any(|op| op.0 == "runner_active_reuse_key_released")
         );
+    }
+
+    async fn assert_dropped_completion_keeps_recovery_status(poll_finalization: bool) {
+        let run_id = RunId::new_v4();
+        let sandbox_id = SandboxId::new_v4();
+        let (budget, lease) = test_budget_lease();
+        let dir = tempfile::tempdir().unwrap();
+        let status_path = dir.path().join("status.json");
+        let status = StatusTracker::new(status_path.clone(), 4, None, None);
+        status.add_run(run_id, sandbox_id).await.unwrap();
+        let active_runs = ActiveRuns::new(Arc::new(tokio::sync::Notify::new()));
+        let active_run_guard =
+            active_runs.register(run_id, Some("reuse-key".to_owned()), "test".to_owned());
+        let reports = Arc::new(AtomicUsize::new(0));
+        let provider = SequencingProvider {
+            timing: CompletionReportTiming::AfterFinalization,
+            events: Arc::new(std::sync::Mutex::new(Vec::new())),
+            reports: Arc::clone(&reports),
+            report_started: Arc::new(tokio::sync::Notify::new()),
+            finalized: Arc::new(tokio::sync::Notify::new()),
+            report_release: None,
+        };
+        let http = HttpClient::new(HttpClientConfig {
+            api_url: "http://localhost".into(),
+            vercel_bypass: None,
+            client_session_id: "completion-drop-test".to_owned(),
+            runner_version: env!("CARGO_PKG_VERSION"),
+        })
+        .unwrap();
+        let telemetry = JobTelemetry::new(http, run_id, "completion-token".to_owned(), None);
+        let constructions = Arc::new(AtomicUsize::new(0));
+        let construction_count = Arc::clone(&constructions);
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let finalizer_entered = Arc::clone(&entered);
+        let make_finalization = move || {
+            construction_count.fetch_add(1, Ordering::SeqCst);
+            async move {
+                let ready =
+                    FinalizationReady::new(BudgetOwnership::active(ActiveBudgetLease::new(lease)));
+                finalizer_entered.notify_one();
+                std::future::pending::<()>().await;
+                FinalizedJob {
+                    finalization_ready: ready,
+                    telemetry,
+                }
+            }
+        };
+        let cleanup = RunCleanupState::new();
+        {
+            let completion = CompletionPayload::new(
+                run_id,
+                0,
+                None,
+                None,
+                sandbox_id,
+                SandboxReuseResult::PoolMiss,
+                CompletionAuth::sandbox_token(run_id, "completion-token".to_owned()),
+            )
+            .complete_claimed_run(
+                &provider,
+                make_finalization,
+                &status,
+                active_run_guard,
+                &cleanup,
+            );
+            tokio::pin!(completion);
+            assert_eq!(constructions.load(Ordering::SeqCst), 0);
+            if poll_finalization {
+                tokio::time::timeout(Duration::from_secs(2), async {
+                    tokio::select! {
+                        _ = completion.as_mut() => panic!("finalization must remain pending"),
+                        _ = entered.notified() => {}
+                    }
+                })
+                .await
+                .expect("finalization must start when completion is polled");
+            }
+            assert_eq!(budget.allocated().2, 1);
+            assert_eq!(status_active_run_count(&status_path).await, 1);
+            assert!(active_runs.contains(run_id));
+        }
+        assert_eq!(
+            constructions.load(Ordering::SeqCst),
+            usize::from(poll_finalization)
+        );
+        assert_eq!(reports.load(Ordering::SeqCst), 0);
+        assert_eq!(budget.allocated().2, 0);
+        assert!(!active_runs.contains(run_id));
+        assert_eq!(status_active_run_count(&status_path).await, 1);
+        assert_eq!(
+            cleanup.disposition(),
+            RunCleanupDisposition::ActiveOrUnknown
+        );
+    }
+
+    #[tokio::test]
+    async fn unpolled_completion_drops_inputs_without_finalizing_or_clearing_recovery_status() {
+        assert_dropped_completion_keeps_recovery_status(false).await;
+    }
+
+    #[tokio::test]
+    async fn pending_completion_drops_finalizer_without_clearing_recovery_status() {
+        assert_dropped_completion_keeps_recovery_status(true).await;
     }
 
     #[tokio::test]

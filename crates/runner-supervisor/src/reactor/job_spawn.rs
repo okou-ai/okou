@@ -673,7 +673,7 @@ pub(super) async fn run_job(
         let telemetry = completion_payload
             .complete_claimed_run(
                 provider.as_ref(),
-                finalization.finalize(executor_result),
+                move || finalization.finalize(executor_result),
                 status.as_ref(),
                 active_run_guard,
                 &cleanup_state_for_body,
