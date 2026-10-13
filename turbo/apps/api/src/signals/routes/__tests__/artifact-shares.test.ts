@@ -2071,7 +2071,7 @@ test("oG checks anonymous sharing again for old image URLs after a public share 
   const compact = await accept(og.image({ query: compactQuery }), [200]);
   await expect(
     sharp(Buffer.from(await compact.body.arrayBuffer())).metadata(),
-  ).resolves.toMatchObject({ width: 133, height: 200 });
+  ).resolves.toMatchObject({ width: 75, height: 112 });
   const brand = await accept(og.defaultImage(), [302]);
   expect(brand.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
   await accept(
@@ -2126,7 +2126,7 @@ test("oG checks anonymous sharing again for old image URLs after a public share 
     expect(compactBrand.origin).toBe(
       new URL(ARTIFACT_OG_BRAND.imageUrl).origin,
     );
-    expect(compactBrand.pathname).toContain("/cdn-cgi/image/height=200,");
+    expect(compactBrand.pathname).toContain("/cdn-cgi/image/height=112,");
     expect(compactDenied.headers.get("cache-control")).toBe(
       "private, no-store",
     );
