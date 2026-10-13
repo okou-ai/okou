@@ -6,7 +6,7 @@
   "scripts": {
     "check-types": "tsc --noEmit",
     "lint": "oxlint && eslint . --max-warnings 0",
-    "test": "node ../../../.github/scripts/tests/okou-app-worker-test.mjs src/worker.js ../platform/index.html ../platform/public/manifest.webmanifest assets/favicon.ico.bin"
+    "test": "node tests/worker.test.mjs"
   },
   "dependencies": {
     "@clerk/backend": "^3.13.1",

@@ -62,7 +62,7 @@
     },
     "apps/app-worker": {
       "entry": ["src/index.ts", "src/worker.js"],
-      "project": ["src/**/*.{js,ts}", "*.config.mjs"],
+      "project": ["src/**/*.{js,ts}", "tests/**/*.mjs", "*.config.mjs"],
       "ignoreDependencies": ["eslint", "oxlint", "wrangler"],
       "ignoreBinaries": ["eslint", "oxlint", "wrangler"]
     },

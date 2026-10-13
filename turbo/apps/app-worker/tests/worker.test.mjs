@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { pathToFileURL } from "node:url";
 
-const [workerPath, indexPath, manifestPath, faviconPath] =
-  process.argv.slice(2);
-if (!workerPath || !indexPath || !manifestPath || !faviconPath) {
-  throw new Error("worker, index, manifest, and favicon paths are required");
-}
+import * as workerModule from "../src/worker.js";
 
 function faviconEntries(favicon) {
   assert.equal(favicon.readUInt16LE(0), 0);
@@ -46,7 +41,11 @@ function parseAttributes(tag) {
 }
 
 function serializeAttributes(attributes) {
-  return [...attributes].map(([name, value]) => ` ${name}="${value}"`).join("");
+  return [...attributes]
+    .map(([name, value]) => {
+      return ` ${name}="${value}"`;
+    })
+    .join("");
 }
 
 function matchesSelector(tagName, attributes, selector) {
@@ -278,13 +277,14 @@ globalThis.HTMLRewriter = class HTMLRewriter {
   }
 };
 
-const [indexTemplate, manifestTemplate, favicon, workerModule] =
-  await Promise.all([
-    readFile(indexPath, "utf8"),
-    readFile(manifestPath, "utf8"),
-    readFile(faviconPath),
-    import(pathToFileURL(workerPath).href),
-  ]);
+const [indexTemplate, manifestTemplate, favicon] = await Promise.all([
+  readFile(new URL("../../platform/index.html", import.meta.url), "utf8"),
+  readFile(
+    new URL("../../platform/public/manifest.webmanifest", import.meta.url),
+    "utf8",
+  ),
+  readFile(new URL("../assets/favicon.ico.bin", import.meta.url)),
+]);
 assert.deepEqual(faviconEntries(favicon), [
   { bitDepth: 32, height: 16, width: 16 },
   { bitDepth: 32, height: 32, width: 32 },
@@ -669,9 +669,9 @@ assert.equal(
   "https://static.okou.io/platform/icons/okou-apple-touch-icon-180-af89cace7029.png",
 );
 assert.equal(
-  tagAttributeValues(okouPage.html, "link", "href").some(
-    (href) => href === "https://static.okou.io",
-  ),
+  tagAttributeValues(okouPage.html, "link", "href").some((href) => {
+    return href === "https://static.okou.io";
+  }),
   false,
 );
 assertBootstrapWordmark(okouPage.html);
@@ -811,11 +811,13 @@ assert.equal(
 assert.equal(failingClerkClientFactoryCalls, 1);
 
 function clerkClientReturning(requestState) {
-  return () => ({
-    authenticateRequest() {
-      return Promise.resolve(requestState);
-    },
-  });
+  return () => {
+    return {
+      authenticateRequest() {
+        return Promise.resolve(requestState);
+      },
+    };
+  };
 }
 
 const anonymous = await responseSnapshot(
@@ -863,11 +865,13 @@ const refresh = await responseSnapshot(
 );
 
 const thrown = await responseSnapshot(
-  workerModule.createWorker(embeddedShell, () => ({
-    authenticateRequest() {
-      return Promise.reject(new Error("Clerk network failure"));
-    },
-  })),
+  workerModule.createWorker(embeddedShell, () => {
+    return {
+      authenticateRequest() {
+        return Promise.reject(new Error("Clerk network failure"));
+      },
+    };
+  }),
   edgePreviewUrl,
   edgePreviewEnvironment,
 );
@@ -881,11 +885,13 @@ const constructorThrown = await responseSnapshot(
 );
 
 const timedOut = await responseSnapshot(
-  workerModule.createWorker(embeddedShell, () => ({
-    authenticateRequest() {
-      return new Promise(() => {});
-    },
-  })),
+  workerModule.createWorker(embeddedShell, () => {
+    return {
+      authenticateRequest() {
+        return new Promise(() => {});
+      },
+    };
+  }),
   edgePreviewUrl,
   edgePreviewEnvironment,
 );
@@ -1150,15 +1156,22 @@ const prefetchedResponse = await prefetchWorker.fetch(
   edgePreviewEnvironment,
 );
 await apiRequestsStarted.promise;
-assert.deepEqual(observedApiRequests.map(({ url }) => url.pathname).sort(), [
-  "/api/agents",
-  "/api/feature-switches",
-  "/api/onboarding/status",
-  "/api/org",
-  "/api/run-models",
-  "/api/user-model-preference",
-  "/api/user-preferences",
-]);
+assert.deepEqual(
+  observedApiRequests
+    .map(({ url }) => {
+      return url.pathname;
+    })
+    .sort(),
+  [
+    "/api/agents",
+    "/api/feature-switches",
+    "/api/onboarding/status",
+    "/api/org",
+    "/api/run-models",
+    "/api/user-model-preference",
+    "/api/user-preferences",
+  ],
+);
 for (const { headers, method, url } of observedApiRequests) {
   assert.equal(url.origin, previewOrigin);
   assert.equal(url.search, "");
