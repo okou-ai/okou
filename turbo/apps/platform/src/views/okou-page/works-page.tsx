@@ -593,7 +593,7 @@ function DiscordCardDescription({ data }: { data: DiscordOrgStatus | null }) {
       {data
         ? discordDescription(data)
         : t(($) => {
-            return $.works.discord.memberSetup;
+            return $.works.discord.description;
           })}
     </p>
   );

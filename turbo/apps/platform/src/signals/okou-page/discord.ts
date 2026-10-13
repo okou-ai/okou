@@ -7,7 +7,6 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { pageVersion$ } from "../page-signal.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { searchParams$ } from "../route.ts";
 import { resetSignal, waitLoopUntil, withCleanup } from "../utils.ts";
@@ -26,7 +25,8 @@ export const discordOrgData$ = computed(async (get) => {
   if (!get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration]) {
     return null;
   }
-  get(pageVersion$);
+  // Retain the authenticated owner's status across navigation, like Slack.
+  // The route-owned subscription refreshes it on re-entry and live changes.
   get(reloadVersion$);
   await get(runtimeAuthenticatedIdentity$);
   const client = get(apiClient$)(integrationsDiscordContract);
@@ -199,9 +199,8 @@ export const watchDiscordConnection$ = command(
     if (!get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration]) {
       return;
     }
-    await get(discordOrgData$);
-    signal.throwIfAborted();
-
+    // Attach even if the cached read failed, so returning to the page can
+    // recover through the subscription's fresh status read.
     set(
       setAblyInvalidationLoop$,
       {
@@ -211,5 +210,7 @@ export const watchDiscordConnection$ = command(
       },
       signal,
     );
+    await get(discordOrgData$);
+    signal.throwIfAborted();
   },
 );
