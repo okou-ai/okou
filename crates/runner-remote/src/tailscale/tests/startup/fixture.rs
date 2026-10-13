@@ -33,6 +33,7 @@ pub(super) struct NoiseService {
     pub(super) expected_client: Arc<Mutex<Option<MachinePublicKey>>>,
     pub(super) expected_auth: Arc<Mutex<String>>,
     pub(super) announced_home: Arc<Mutex<Vec<u32>>>,
+    pub(super) home_status: Arc<Mutex<hyper::StatusCode>>,
     pub(super) requested: Arc<tokio::sync::Notify>,
     pub(super) response: CancellationToken,
     pub(super) map_requested: Arc<tokio::sync::Notify>,
@@ -91,6 +92,8 @@ impl NoiseService {
         let auth = Arc::clone(&expected_auth);
         let announced_home = Arc::new(Mutex::new(Vec::new()));
         let home = Arc::clone(&announced_home);
+        let home_status = Arc::new(Mutex::new(hyper::StatusCode::OK));
+        let status = Arc::clone(&home_status);
         let requested = Arc::new(tokio::sync::Notify::new());
         let seen = Arc::clone(&requested);
         let response = CancellationToken::new();
@@ -143,6 +146,7 @@ impl NoiseService {
                         let expected = Arc::clone(&expected);
                         let auth = Arc::clone(&auth);
                         let home = Arc::clone(&home);
+                        let status = Arc::clone(&status);
                         let body = body.clone();
                         let seen = Arc::clone(&seen);
                         let gate = gate.clone();
@@ -239,6 +243,7 @@ impl NoiseService {
                                         let registered_key = Arc::clone(&registered_key);
                                         let auth = Arc::clone(&auth);
                                         let home = Arc::clone(&home);
+                                        let status = Arc::clone(&status);
                                         let streaming = Arc::clone(&streaming);
                                         let updates = Arc::clone(&updates);
                                         async move {
@@ -282,6 +287,11 @@ impl NoiseService {
                                                             .is_none_or(|keep| keep == false)
                                                     );
                                                     assert_eq!(request["OmitPeers"], true);
+                                                    assert!(
+                                                        request.get("ReadOnly").is_none_or(
+                                                            |read_only| read_only == false
+                                                        )
+                                                    );
                                                     assert!(request.get("Auth").is_none());
                                                     let preferred = request["HostInfo"]["NetInfo"]
                                                         ["PreferredDerp"]
@@ -290,12 +300,14 @@ impl NoiseService {
                                                     home.lock()
                                                         .unwrap()
                                                         .push(u32::try_from(preferred).unwrap());
-                                                    let mut response = 2u32.to_le_bytes().to_vec();
-                                                    response.extend_from_slice(b"{}");
-                                                    return Ok(Response::new(
-                                                        Full::new(Bytes::from(response))
-                                                            .boxed_unsync(),
-                                                    ));
+                                                    // Non-streaming OmitPeers updates may return
+                                                    // only HTTP status, without a map frame.
+                                                    return Ok(Response::builder()
+                                                        .status(*status.lock().unwrap())
+                                                        .body(
+                                                            Full::new(Bytes::new()).boxed_unsync(),
+                                                        )
+                                                        .unwrap());
                                                 }
                                                 assert_eq!(request["Stream"], true);
                                                 assert_eq!(request["KeepAlive"], true);
@@ -407,6 +419,7 @@ impl NoiseService {
             expected_client,
             expected_auth,
             announced_home,
+            home_status,
             requested,
             response,
             map_requested,

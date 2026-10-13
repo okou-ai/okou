@@ -157,22 +157,12 @@ impl Registration {
             .server_url
             .join("machine/map")
             .map_err(|_| super::Failure::DomainFailed)?;
-        let reader = ts_control::client::send_map_request(request, &url, client)
+        // A non-streaming OmitPeers update is acknowledged by HTTP status;
+        // control may omit the entire body. Authority stays with the map stream.
+        let response = ts_control::client::send_map_request(request, &url, client)
             .await
             .map_err(|_| super::Failure::DomainFailed)?;
-        let responses = ts_control::client::map_stream(super::map_reader::MapReader::new(reader));
-        futures_util::pin_mut!(responses);
-        use futures_util::StreamExt;
-        let response = responses.next().await.ok_or(super::Failure::DomainFailed)?;
-        if response.pop_browser_url.is_some()
-            || response.node.is_some()
-            || response.peer_update.is_some()
-            || response.packetfilter.is_some()
-            || response.derp.is_some()
-            || response.dial_plan.is_some()
-        {
-            return Err(super::Failure::DomainFailed);
-        }
+        drop(response);
         Ok(())
     }
 
