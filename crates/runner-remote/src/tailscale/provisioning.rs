@@ -2,7 +2,7 @@
 
 use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
 
-use api_contracts::SecretText;
+use api_contracts::{SecretText, generated::constants::runners::AGENT_EXECUTION_TIMEOUT_SECONDS};
 use serde::{Deserialize, Serialize};
 use ts_http_util::{HeaderValue, Method};
 use zeroize::Zeroizing;
@@ -92,7 +92,7 @@ impl<D: Dial> Provider<D> {
         #[derive(Serialize)]
         struct Create<'a> {
             #[serde(rename = "expirySeconds")]
-            expiry_seconds: u32,
+            expiry_seconds: u64,
             capabilities: Capabilities<'a>,
         }
         #[derive(Serialize)]
@@ -111,7 +111,7 @@ impl<D: Dial> Provider<D> {
             tags: &'a [String],
         }
         let request = Create {
-            expiry_seconds: 86400,
+            expiry_seconds: AGENT_EXECUTION_TIMEOUT_SECONDS,
             capabilities: Capabilities {
                 devices: Devices {
                     create: Permission {
@@ -169,7 +169,8 @@ impl<D: Dial> Provider<D> {
         let now = chrono::Utc::now();
         if expires <= now
             || created > now + chrono::Duration::seconds(60)
-            || (expires - created).num_seconds() != 86400
+            || u64::try_from((expires - created).num_seconds())
+                != Ok(AGENT_EXECUTION_TIMEOUT_SECONDS)
         {
             return Err(Failure::DomainFailed);
         }
