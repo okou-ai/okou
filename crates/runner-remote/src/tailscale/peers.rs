@@ -35,6 +35,9 @@ const MAX_PACKETS: usize = 64;
 const MTU: usize = 1280;
 const INVENTORY_BYTES: usize = 4 * 1024 * 1024;
 const POLICY_BYTES: usize = 1024 * 1024;
+// Tailscale's Go zero time denotes a key without expiry.
+const NO_KEY_EXPIRY: chrono::DateTime<chrono::Utc> =
+    chrono::DateTime::from_timestamp(-62_135_596_800, 0).unwrap();
 type Underlay = HashMap<(UnderlayTransportId, DynEndpoint), Vec<PacketMut>>;
 pub(super) type Incoming = (Frames, Received);
 
@@ -187,7 +190,9 @@ impl Identity {
             hostname,
             tailnet,
             addresses: node.tailnet_address.clone(),
-            expires: node.node_key_expiry,
+            expires: node
+                .node_key_expiry
+                .filter(|expiry| *expiry != NO_KEY_EXPIRY),
         })
     }
 
