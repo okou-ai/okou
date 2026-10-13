@@ -8,10 +8,12 @@ const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
 
 const client = new Client({ connectionString: databaseUrl });
-await client.connect();
 const schema = `slack_ingress_failed_retirement_${randomUUID().replaceAll("-", "")}`;
 const before = "2026-01-01 00:00:00";
 const retryAt = "2026-01-01 00:05:00";
+let schemaOwned = false;
+let originalSearchPath: string | undefined;
+const errors: unknown[] = [];
 
 async function expectCheckViolation(
   statement: string,
@@ -134,10 +136,27 @@ function insertIngress(
 }
 
 try {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0429; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
+  await client.connect();
+  const searchPathRows = (
+    await client.query<{ search_path: unknown }>("SHOW search_path")
+  ).rows;
+  assert.equal(searchPathRows.length, 1);
+  const searchPath = searchPathRows[0]?.search_path;
+  assert.ok(typeof searchPath === "string");
+  originalSearchPath = searchPath;
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT nspname FROM pg_namespace WHERE nspname = $1",
+        [schema],
+      )
+    ).rows,
+    [],
+  );
+  // Only an acknowledged CREATE owns this namespace on the disposable server.
   await client.query(`CREATE SCHEMA "${schema}"`);
-  await client.query(`SET LOCAL search_path TO "${schema}"`);
+  schemaOwned = true;
+  await client.query(`SET search_path TO "${schema}"`);
   // The shape shipped by 1162_slack_ingress_retry_policy, where `failed` is
   // still an accepted status.
   const historicalTableSql = `
@@ -200,7 +219,8 @@ try {
   ).rows;
   const sweepIndexBefore = (
     await client.query(
-      "SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_slack_chat_ingress_retry_sweep'",
+      "SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_slack_chat_ingress_retry_sweep' AND schemaname = $1",
+      [schema],
     )
   ).rows[0]?.indexdef;
   assert.ok(sweepIndexBefore);
@@ -307,7 +327,8 @@ try {
   assert.equal(
     (
       await client.query(
-        "SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_slack_chat_ingress_retry_sweep'",
+        "SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_slack_chat_ingress_retry_sweep' AND schemaname = $1",
+        [schema],
       )
     ).rows[0]?.indexdef,
     sweepIndexBefore,
@@ -359,10 +380,54 @@ try {
   console.log(
     "✅ the re-added validated status constraint rejects failed and keeps the five canonical statuses",
   );
+} catch (error) {
+  errors.push(error);
 } finally {
-  try {
-    await client.query("ROLLBACK");
-  } finally {
-    await client.end();
+  if (schemaOwned) {
+    try {
+      await client.query(`DROP SCHEMA "${schema}" CASCADE`);
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      assert.deepEqual(
+        (
+          await client.query(
+            "SELECT nspname FROM pg_namespace WHERE nspname = $1",
+            [schema],
+          )
+        ).rows,
+        [],
+      );
+    } catch (error) {
+      errors.push(error);
+    }
   }
+  if (originalSearchPath !== undefined) {
+    try {
+      await client.query("SELECT set_config('search_path', $1, false)", [
+        originalSearchPath,
+      ]);
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      assert.deepEqual((await client.query("SHOW search_path")).rows, [
+        { search_path: originalSearchPath },
+      ]);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  try {
+    await client.end();
+  } catch (error) {
+    errors.push(error);
+  }
+}
+if (errors.length === 1) {
+  throw errors[0];
+}
+if (errors.length > 1) {
+  throw new AggregateError(errors, "Slack ingress fixture and cleanup failed");
 }
