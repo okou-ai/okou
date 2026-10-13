@@ -178,11 +178,11 @@ fn native_privacy_child() {
                                 assert_eq!(head.uri.path(), "/api/v2/tailnet/-/keys");
                                 assert_eq!(head.headers["Authorization"], format!("Bearer {PRIVATE_CANARY}"));
                                 let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-                                assert_eq!(body["expirySeconds"], 86400);
+                                assert_eq!(body["expirySeconds"], 7200);
                                 assert_eq!(body["capabilities"]["devices"]["create"], serde_json::json!({"reusable": false, "ephemeral": true, "preauthorized": true, "tags": ["tag:ssh"]}));
                                 recorded.lock().unwrap().push("create");
                                 let now = chrono::Utc::now();
-                                let mut response = serde_json::json!({"id": format!("{PRIVATE_CANARY}/key"), "key": format!("tskey-auth-{PRIVATE_CANARY}"), "created": now.to_rfc3339(), "expires": (now + chrono::Duration::seconds(86400)).to_rfc3339(), "capabilities": body["capabilities"]});
+                                let mut response = serde_json::json!({"id": format!("{PRIVATE_CANARY}/key"), "key": format!("tskey-auth-{PRIVATE_CANARY}"), "created": now.to_rfc3339(), "expires": (now + chrono::Duration::hours(2)).to_rfc3339(), "capabilities": body["capabilities"]});
                                 if body_error {
                                     response["capabilities"]["devices"]["create"]["reusable"] = true.into();
                                 }
