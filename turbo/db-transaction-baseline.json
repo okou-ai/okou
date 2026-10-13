@@ -972,11 +972,6 @@
       "owner": "validatePermanentModelCatalogConstraints"
     },
     {
-      "id": "TX-0407",
-      "file": "turbo/packages/db/scripts/test-oauth-contract-hash-retirement.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0411",
       "file": "turbo/packages/db/scripts/test-pi-candidate-trigger-retirement.ts",
       "owner": "<module>"
