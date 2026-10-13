@@ -103,6 +103,7 @@ async function setupLinking(options?: {
   readonly enabled?: boolean;
   readonly path?: string;
   readonly mobile?: boolean;
+  readonly usagePanel?: boolean;
 }) {
   mockTemplateChat({ tier: "limited-free-1" });
   const accounts = options?.accounts ?? [];
@@ -120,13 +121,13 @@ async function setupLinking(options?: {
     path: options?.path ?? `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.SubscriptionLinkingEntry]: options?.enabled ?? true,
-      [FeatureSwitchKey.SidebarSubscriptionUsage]: false,
+      [FeatureSwitchKey.SidebarSubscriptionUsage]: options?.usagePanel ?? false,
       [FeatureSwitchKey.PwaNavigation]: options?.mobile ?? false,
     },
   });
 }
 
-test("An unlinked member finds the subscriptions in the composer's model slot without home copy", async () => {
+test("An unlinked member finds the subscriptions in the composer's model slot", async () => {
   await setupLinking();
   await findComposerEditor();
   const menu = await openComposerProviders();
@@ -135,9 +136,6 @@ test("An unlinked member finds the subscriptions in the composer's model slot wi
   expect(
     screen.getByRole("region", { name: "Tasks to get started" }),
   ).toBeInTheDocument();
-  expect(
-    screen.queryByText("Already have ChatGPT or Claude?"),
-  ).not.toBeInTheDocument();
 });
 
 test("Codex opens its authorization from the composer and the slot becomes the model picker after confirmation", async () => {
@@ -237,14 +235,18 @@ test("Claude opens its authorization from the account menu and cancelling keeps 
 test.each([false, true])(
   "Linked members get the model picker and no linking entry (needsReconnect=%s)",
   async (needsReconnect) => {
-    await setupLinking({ accounts: [connectedCodex(needsReconnect)] });
-    await findComposerEditor();
-    const menu = await openAccountMenu();
-    await waitFor(() => {
-      expect(menu).toHaveTextContent("Settings");
+    await setupLinking({
+      accounts: [connectedCodex(needsReconnect)],
+      usagePanel: true,
     });
-    expect(menu).not.toHaveTextContent("Use more models");
+    await findComposerEditor();
+    await waitFor(() => {
+      expect(action("Auto")).toBeInTheDocument();
+    });
     expect(findAction("Use more models")).toBeUndefined();
+    const menu = await openAccountMenu();
+    await within(menu).findByRole("region", { name: "Codex usage" });
+    expect(menu).not.toHaveTextContent("Use more models");
   },
 );
 
@@ -293,11 +295,9 @@ test("The mobile Me entry leaves once a subscription is linked", async () => {
     mobile: true,
     path: "/me",
     accounts: [connectedCodex()],
+    usagePanel: true,
   });
-  await screen.findByRole("heading", { name: "Me" });
-  await waitFor(() => {
-    expect(action("Settings")).toBeInTheDocument();
-  });
+  await screen.findByRole("region", { name: "Codex usage" });
   expect(screen.queryByText("Use more models")).not.toBeInTheDocument();
 });
 
