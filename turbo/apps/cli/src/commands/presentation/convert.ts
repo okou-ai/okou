@@ -579,10 +579,6 @@ async function convert(options: Options): Promise<void> {
     );
   }
   console.log();
-  console.log("Check how it renders:");
-  console.log(
-    chalk.cyan(`  okou presentation screenshot --input ${out} --out ./pages`),
-  );
   console.log("Deliver it to the user:");
   console.log(chalk.cyan(`  okou web upload-file -f ${out}`));
 }
@@ -646,10 +642,10 @@ Notes:
   - Table row heights and solid cell backgrounds come from browser measurements
   - HTML text and CSS effects never fall back to screenshots or generated images
   - Source images, SVG/canvas assets, and image URL backgrounds remain images
-  - Unsupported effects can be missing or inaccurate; native export is not visual acceptance
+  - Unsupported effects are reported in diagnostics and may be missing or inaccurate
   - --json lists elements whose synthetic image exports were omitted
   - --verify checks original source text; it does not grade appearance
-  - Complex effects still require rendered-page comparison
-  - Use okou presentation screenshot and compare each page before delivery`,
+  - Upload a successful conversion directly; no routine AI review or page comparison is required
+  - Use okou presentation screenshot for requested visual review or to investigate conversion diagnostics`,
   )
   .action(withErrorHandler(convert));

@@ -6,6 +6,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import { presentationTemplateSkillInstruction } from "@okouai/core/presentation-template-skill";
+import { PRESENTATION_DELIVERY_INSTRUCTION } from "@okouai/core/presentation-generation-instructions";
 import { artifactPreviewInstructions } from "@okouai/core/artifact-preview-instructions";
 
 const instructionsAndMemoryGuidance = Object.freeze([
@@ -35,7 +36,7 @@ function buildIntegrationToolsPrompt(
     ...(deliveryFormatGuidanceEnabled
       ? [
           "Hosting and file delivery are two channels and neither is the default: `okou host` publishes a view the user browses, while `upload-file` hands the user a file they keep. Choose from what the user will do with the result, not from what is easiest to produce.",
-          "Pick the delivery format before authoring, taking the first rule that matches: honor an explicitly requested format; return a file the user sent for editing in its original format; use CSV when another system will import the result; use xlsx when the content is data with calculations, several sheets, or a report read in a spreadsheet; use docx when the content is prose the recipient keeps editing; use PDF when prose is final because it is sent onward, printed, signed, or archived, and attach the docx source with it; publish a hosted HTML view when the result is meant to be browsed, interactive, shared by link, or updated in place; answer in the chat reply itself when the content is short.",
+          "For artifacts other than presentations, pick the delivery format before authoring, taking the first rule that matches: honor an explicitly requested format; return a file the user sent for editing in its original format; use CSV when another system will import the result; use xlsx when the content is data with calculations, several sheets, or a report read in a spreadsheet; use docx when the content is prose the recipient keeps editing; use PDF when prose is final because it is sent onward, printed, signed, or archived, and attach the docx source with it; publish a hosted HTML view when the result is meant to be browsed, interactive, shared by link, or updated in place; answer in the chat reply itself when the content is short.",
           "Producing docx, xlsx, or PDF requires the `office-files` skill, which carries the toolchain install and the exact command for each format.",
         ]
       : [
@@ -194,9 +195,10 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     "- Current weather, forecasts, and recent history: use `okou weather --help`.",
     "- Presentation page images: use `okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>` to render any presentation source to ordered `page-001.png` files at one fixed page size. PPT, PPTX, and PDF are rasterised through LibreOffice and Poppler; HTML pages, layout directories, and URLs are captured through a browser, one image per slide. It only writes local image files: it uploads nothing, publishes nothing, and is unrelated to `okou presentation-template publish`, so it is the right tool whenever page images are the goal, including review and analysis. Prefer it over `pdftoppm`, `soffice`, or hand-driven `agent-browser` screenshot calls, because a screenshot of a page the browser never painted looks like a successful screenshot. Run `okou presentation screenshot --help` for the current interface.",
     "- Static web artifacts can be published with `okou host <dir> --site <slug> [--spa]`; for HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help` for details.",
+    PRESENTATION_DELIVERY_INSTRUCTION,
     ...(args.presentationConvertEnabled
       ? [
-          "- Presentation delivery: when the user asks for a presentation and names no delivery format, deliver both the hosted HTML deck and a pptx of it in one reply. `PPT`, `slides`, and `deck` name the artifact, not a format. Convert the finished deck with `okou presentation convert --input <deck.html> --verify`, then send the file with this surface's `upload-file` command.",
+          "- For PPTX delivery, convert the finished HTML directly with `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, then upload the PPTX with this surface's `upload-file` command. Keep HTML as an intermediate source; do not host or deliver it unless the user also requests HTML. Successful conversion needs no additional AI review or rendered-page comparison. Use visual review only when the user requests it or to investigate conversion errors or reported unsupported content.",
         ]
       : []),
     "- Third-party services (GitHub, Slack, Notion, 100+ more) can be accessed through connectors. `okou connector search <service-name>` searches every supported service and reports which matching connectors are available to the current run. For supported services, connectors provide a smoother and safer experience: provider credentials stay outside the sandbox and are resolved at the network boundary. When a user wants to connect a third-party service, search for it first. List connected: `okou connector list`. Inspect: `okou connector status <slug>`.",

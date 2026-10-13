@@ -697,6 +697,10 @@ describe("okou presentation convert", () => {
 
   it("passes verification when every source string reaches the deck", async () => {
     await expect(convert(["--verify"])).resolves.toBeUndefined();
+    const output = vi.mocked(console.log).mock.calls.flat().join("\n");
+    expect(output).toContain("Presentation converted");
+    expect(output).toContain(`okou web upload-file -f ${outPath}`);
+    expect(output).not.toContain("okou presentation screenshot");
   });
 
   it("reports unsupported image exports and retains the native source text diagnostic", async () => {

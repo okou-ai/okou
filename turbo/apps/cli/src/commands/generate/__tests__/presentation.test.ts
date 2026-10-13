@@ -72,7 +72,7 @@ describe("okou generate presentation command", () => {
       "Check that shapes, charts, images, or decorative graphics do not cover readable text",
     );
     expect(stdout).toContain(
-      "Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html\n",
+      "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html\n",
     );
     expect(stdout).toContain(
       "With privateArtifacts enabled, new artifacts default to only-me.",
@@ -101,11 +101,21 @@ describe("okou generate presentation command", () => {
 
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
     const hostInstructions = stdout.split("\n").filter((line) => {
-      return line.startsWith("- Host the finished deck:");
+      return line.startsWith("- For HTML delivery, host the finished deck:");
     });
     expect(hostInstructions).toEqual([
-      "- Host the finished deck: okou host <output-dir> --site team-plan --artifact-kind presentation-html --visibility org",
+      "- For HTML delivery, host the finished deck: okou host <output-dir> --site team-plan --artifact-kind presentation-html --visibility org",
     ]);
+    expect(stdout).toContain(
+      "honor the current prompt's explicit format, otherwise use the user's remembered presentation-format preference, otherwise deliver HTML",
+    );
+    expect(stdout).toContain(
+      "Deliver one format unless the user requests multiple formats",
+    );
+    expect(stdout).toContain(
+      "Keep HTML as an intermediate source; publish it only if the user also requests HTML",
+    );
+    expect(stdout).not.toContain("Return only the HTML deck");
     expect(stdout).toContain("okou web upload-file -f <file> --visibility org");
     expect(stdout).toContain(
       "Keep supporting generated media at its default visibility",
@@ -211,7 +221,7 @@ describe("okou generate presentation command", () => {
     );
     expect(stdout).toContain("User request: create a 15-slide launch deck");
     expect(stdout).toContain(
-      "Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html\n",
+      "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html\n",
     );
     const imageWorkflowLines = stdout.split("\n").filter((line) => {
       return line.startsWith("- Image workflow:");
