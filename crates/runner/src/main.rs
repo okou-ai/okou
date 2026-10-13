@@ -87,7 +87,7 @@ mod addon_inventory_tests {
 }
 
 // Source-observation API shared by the current-assignment usage composer.
-// (no-op Runner release marker refreshed for production delivery on 2026-10-13)
+// (no-op Runner release marker refreshed for production delivery on 2026-10-14)
 pub use proxy::{
     CoverageReason, MitmRunUsage, MitmUsageHandle, RunUsageObservation, RunUsageSnapshot,
     TokenTotals,
