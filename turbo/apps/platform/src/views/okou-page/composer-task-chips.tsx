@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type {
   ComposerPromptRowTask,
@@ -19,7 +21,10 @@ import type {
 } from "../../signals/okou-page/composer-task-chips.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ComposerPresentationRecommendations } from "./chat-composer.tsx";
+import {
+  ComposerPresentationRecommendations,
+  TemplateImportCard,
+} from "./chat-composer.tsx";
 import {
   ComposerRail,
   RAIL_TILE,
@@ -228,6 +233,9 @@ function ComposerTemplateShelf({
   const { category, width, ratio } = TASK_TEMPLATE_SHELF[task];
   const previews = slashTemplatePreviews(category);
   const custom = useCustomTemplateRecommendations(signals, "illustration");
+  const customTemplatesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true;
+  const setMode = useSet(signals.create.setMode$);
   const insertTemplate = useSet(signals.template.insertTemplate$);
   const openTemplates = useSet(signals.template.openTemplatePicker$);
   const saveDraft = useSet(signals.draft.save$);
@@ -272,6 +280,20 @@ function ComposerTemplateShelf({
         rail={`templates:${task}`}
         gap="gap-3"
         items={[
+          ...(task === "image" && customTemplatesEnabled
+            ? [
+                <TemplateImportCard
+                  key="import"
+                  signals={signals}
+                  kind="illustration"
+                  compact
+                  className={cn("block", width)}
+                  onImported={() => {
+                    setMode(null);
+                  }}
+                />,
+              ]
+            : []),
           ...(task === "image" ? custom : []).map((template) => {
             return (
               <ComposerTemplateCover

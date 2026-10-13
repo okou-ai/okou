@@ -214,6 +214,7 @@ import { resolveDefaultModelSelection } from "../../signals/okou-page/model-defa
 import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
 import {
   PRESENTATION_TEMPLATE_IMPORT_ACCEPT,
+  IMAGE_TEMPLATE_IMPORT_ACCEPT,
   importPresentationTemplateDeck$,
 } from "../../signals/okou-page/presentation-template-import.ts";
 import type {
@@ -3569,7 +3570,7 @@ function IllustrationTemplateGrid({
 }
 
 /**
- * Hands the chosen deck to the composer, which attaches it, sends it, and
+ * Hands the chosen file to the composer, which attaches it, sends it, and
  * navigates into the new thread. Importing is the ordinary chat path with the
  * message written for the user, not a separate upload flow.
  *
@@ -3579,32 +3580,39 @@ function IllustrationTemplateGrid({
  * the in-flight thread create and the run that follows it, leaving a thread the
  * user can see but the server never recorded.
  */
-function PptImportCard({
+export function TemplateImportCard({
   signals,
   onImported,
+  kind = "presentation",
   compact = false,
   className,
 }: {
   signals: ComposerSignals;
   onImported: () => void;
+  kind?: "presentation" | "illustration";
   compact?: boolean;
   className?: string;
 }) {
   const { t } = useTranslation();
   const rootSignal = useGet(rootSignal$);
-  const importDeck = useSet(importPresentationTemplateDeck$);
+  const importTemplate = useSet(importPresentationTemplateDeck$);
   const label = t(($) => {
-    return $.artifacts.templates.importDeck;
+    return kind === "illustration"
+      ? $.artifacts.templates.importImage
+      : $.artifacts.templates.importDeck;
   });
   return (
     <label
-      data-presentation-template-import=""
+      data-presentation-template-import={
+        kind === "presentation" ? "" : undefined
+      }
       className={cn(TEMPLATE_TILE_WRAPPER, className)}
     >
       <span
         className={cn(
           TEMPLATE_TILE_MEDIA,
-          "block aspect-video bg-muted/40 transition-colors duration-150 group-hover/tile:bg-muted/60 group-active/tile:bg-muted/80 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring",
+          "block bg-muted/40 transition-colors duration-150 group-hover/tile:bg-muted/60 group-active/tile:bg-muted/80 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring",
+          kind === "illustration" ? "aspect-[4/5]" : "aspect-video",
           compact && "bg-gray-50 group-hover/tile:bg-state-hover",
         )}
       >
@@ -3616,18 +3624,22 @@ function PptImportCard({
         <input
           type="file"
           className="sr-only"
-          accept={PRESENTATION_TEMPLATE_IMPORT_ACCEPT}
+          accept={
+            kind === "illustration"
+              ? IMAGE_TEMPLATE_IMPORT_ACCEPT
+              : PRESENTATION_TEMPLATE_IMPORT_ACCEPT
+          }
           aria-label={label}
           onChange={(event) => {
             const file = event.currentTarget.files?.[0];
-            // Clear the input so choosing the same deck again still fires.
+            // Clear the input so choosing the same file again still fires.
             event.currentTarget.value = "";
             if (!file) {
               return;
             }
             onImported();
             detach(
-              importDeck({ signals, file }, rootSignal),
+              importTemplate({ signals, file }, rootSignal),
               Reason.DomCallback,
             );
           }}
@@ -3643,7 +3655,12 @@ function PptImportCard({
             : "flex-col items-stretch gap-0.5",
         )}
       >
-        <span className={compact ? RAIL_TILE_CAPTION : TEMPLATE_TILE_NAME}>
+        <span
+          className={cn(
+            compact ? RAIL_TILE_CAPTION : TEMPLATE_TILE_NAME,
+            kind === "illustration" && "whitespace-normal",
+          )}
+        >
           {label}
         </span>
         <span
@@ -3653,7 +3670,9 @@ function PptImportCard({
           )}
         >
           {t(($) => {
-            return $.artifacts.templates.importDeckHint;
+            return kind === "illustration"
+              ? $.artifacts.templates.importImageHint
+              : $.artifacts.templates.importDeckHint;
           })}
         </span>
       </span>
@@ -4932,8 +4951,7 @@ export function ComposerPresentationRecommendations({
     return $.chat.taskChips.presentationTemplates;
   });
   // The same header line, rail and cover metrics as every other type's shelf.
-  // The import tile leads the rail because uploading a deck is the one action
-  // this catalog has that the others do not.
+  // The import tile leads the rail so members can start with their own deck.
   return (
     <div
       className="flex min-w-0 flex-col gap-3"
@@ -4965,7 +4983,7 @@ export function ComposerPresentationRecommendations({
         rail="templates:presentation"
         gap="gap-3"
         items={[
-          <PptImportCard
+          <TemplateImportCard
             key="import"
             signals={signals}
             compact
@@ -5084,7 +5102,7 @@ function PptTemplateGrid({
       {customTemplates ? null : (
         <>
           <ImportedPresentationTemplateLibraryStatus signals={signals} />
-          <PptImportCard signals={signals} onImported={onImported} />
+          <TemplateImportCard signals={signals} onImported={onImported} />
         </>
       )}
       {(customTemplates ? [] : importedItems).map(

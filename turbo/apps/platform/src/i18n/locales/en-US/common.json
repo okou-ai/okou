@@ -638,6 +638,8 @@
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slides",
       "importFile": "Import template",
+      "importImage": "Import your own image",
+      "importImageHint": "Save as a style",
       "multiAccent": "Multi-accent",
       "nextSlide": "Preview next slide",
       "noMatches": "No matches",

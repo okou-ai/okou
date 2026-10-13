@@ -657,6 +657,8 @@
       "importedSlides_many": "{{count}} diapositives",
       "importedSlides_other": "{{count}} diapositives",
       "importFile": "Importer un modèle",
+      "importImage": "Importer votre image",
+      "importImageHint": "Enregistrer comme style",
       "multiAccent": "Multi-accents",
       "nextSlide": "Aperçu de la diapositive suivante",
       "noMatches": "Aucun résultat",

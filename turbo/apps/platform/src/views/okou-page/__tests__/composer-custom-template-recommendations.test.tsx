@@ -3,10 +3,12 @@ import {
   type UserTemplateCatalogEntry,
   type UserTemplateKind,
 } from "@okouai/api-contracts/contracts/user-templates";
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
   click,
@@ -179,6 +181,9 @@ test.each(SHELVES)(
     mockPresentationTemplateLibrary([legacy]);
 
     const { shelf } = await openShelf(task, label, false);
+    expect(
+      within(shelf).queryByLabelText("Import your own image"),
+    ).not.toBeInTheDocument();
     expect(within(shelf).getByText(builtInTitle)).toBeInTheDocument();
     if (kind === "presentation") {
       await within(shelf).findByText(legacy.title);
@@ -188,6 +193,73 @@ test.each(SHELVES)(
     ).not.toBeInTheDocument();
   },
 );
+
+test("The Image shelf imports a reusable style without requesting image generation", async () => {
+  const capture = mockTemplateChat();
+  context.mocks.upload.success({
+    id: "81000000-0000-4000-a000-000000000024",
+    filename: "brand.webp",
+    contentType: "image/webp",
+    size: 5,
+    url: "https://cdn.example.test/brand.webp",
+  });
+  const user = userEvent.setup({ delay: null });
+  const { editor, shelf } = await openShelf("Image", "Image styles");
+  const input = within(shelf).getByLabelText("Import your own image");
+  expect(input).toHaveAttribute("accept", ".png,.jpg,.jpeg,.webp,.bmp");
+
+  await user.upload(
+    input,
+    new File(["deck"], "brand.pdf", { type: "application/pdf" }),
+  );
+  expect(capture.sentMessages).toHaveLength(0);
+  expect(editor).toHaveTextContent("Keep my launch brief");
+  expect(button("Remove Image")).toBeInTheDocument();
+
+  await user.upload(
+    input,
+    new File(["brand"], "brand.webp", { type: "image/webp" }),
+  );
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(capture.runPrompts).toStrictEqual([
+    "Analyse this file and save it as a reusable template.",
+  ]);
+  expect(capture.sentMessages[0]?.parts).toContainEqual(
+    expect.objectContaining({ type: "file", filenameSnapshot: "brand.webp" }),
+  );
+  expect(capture.sentMessages[0]?.parts).toContainEqual(
+    expect.objectContaining({
+      type: "additional_info",
+      text: expect.stringContaining("okou user-template publish"),
+    }),
+  );
+  expect(capture.selectedTemplates).toStrictEqual([]);
+  await waitFor(() => {
+    expect(window.location.pathname).toMatch(/^\/chats\//);
+  });
+});
+
+test("A failed image import keeps the draft and does not start an analysis", async () => {
+  const capture = mockTemplateChat();
+  context.mocks.api(uploadsContract.prepare, ({ respond }) => {
+    return respond(500, {
+      error: { code: "INTERNAL_SERVER_ERROR", message: "Upload failed" },
+    });
+  });
+  const user = userEvent.setup({ delay: null });
+  const { editor, shelf } = await openShelf("Image", "Image styles");
+
+  await user.upload(
+    within(shelf).getByLabelText("Import your own image"),
+    new File(["brand"], "brand.png", { type: "image/png" }),
+  );
+  await screen.findByText("Failed to upload brand.png");
+  expect(capture.sentMessages).toHaveLength(0);
+  expect(editor).toHaveTextContent("Keep my launch brief");
+  expect(window.location.pathname).toBe(`/agents/${AGENT_ID}/chat`);
+});
 
 test.each(SHELVES)(
   "$task refreshes published and removed custom templates while the shelf stays open",

@@ -638,6 +638,8 @@
       "importedSlides_one": "{{count}} स्लाइड",
       "importedSlides_other": "{{count}} स्लाइड",
       "importFile": "टेम्पलेट आयात करें",
+      "importImage": "अपनी इमेज इंपोर्ट करें",
+      "importImageHint": "स्टाइल के रूप में सहेजें",
       "multiAccent": "बहु-उच्चारण",
       "nextSlide": "अगली स्लाइड का पूर्वावलोकन करें",
       "noMatches": "कोई मेल नहीं",
