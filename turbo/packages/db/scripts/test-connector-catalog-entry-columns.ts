@@ -33,8 +33,335 @@ const connectorCatalogEntries = pgTable(
     return [primaryKey({ columns: [table.hash, table.slug] })];
   },
 );
-const databaseUrl = process.env.DATABASE_URL;
-assert.ok(databaseUrl, "DATABASE_URL is required");
+
+function throwCollectedErrors(errors: readonly unknown[], message: string) {
+  if (errors.length === 1) {
+    throw errors[0];
+  }
+  if (errors.length > 1) {
+    throw new AggregateError(errors, message);
+  }
+}
+
+// Keep every selected catalog field; result generics do not decode pg rows.
+const physicalCatalogRows = z.tuple([
+  z.strictObject({
+    catalog: z.strictObject({
+      columns: z.array(
+        z.strictObject({
+          oid: z.string().regex(/^\d+$/u),
+          table: z.string(),
+          attnum: z.number().int().positive(),
+          name: z.string(),
+          type: z.string(),
+          notNull: z.boolean(),
+          default: z.string().nullable(),
+          identity: z.string(),
+          generated: z.string(),
+          dropped: z.boolean(),
+          collation: z.string().nullable(),
+        }),
+      ),
+      constraints: z.array(
+        z.strictObject({
+          oid: z.string().regex(/^\d+$/u),
+          name: z.string(),
+          type: z.string(),
+          validated: z.boolean(),
+          deferrable: z.boolean(),
+          deferred: z.boolean(),
+          definition: z.string(),
+        }),
+      ),
+      indexes: z.array(
+        z.strictObject({
+          table: z.string(),
+          name: z.string(),
+          definition: z.string(),
+        }),
+      ),
+      tables: z.array(
+        z.strictObject({
+          name: z.string(),
+          kind: z.string(),
+          rls: z.boolean(),
+        }),
+      ),
+      triggers: z.array(
+        z.strictObject({ name: z.string(), definition: z.string() }),
+      ),
+      routines: z.array(
+        z.strictObject({
+          name: z.string(),
+          kind: z.string(),
+          body: z.string(),
+        }),
+      ),
+    }),
+  }),
+]);
+
+const physicalCatalogSql = `SELECT jsonb_build_object(
+ 'columns', (SELECT coalesce(jsonb_agg(jsonb_build_object('oid',c.oid,'table',c.relname,'attnum',a.attnum,'name',a.attname,'type',format_type(a.atttypid,a.atttypmod),'notNull',a.attnotnull,'default',pg_get_expr(d.adbin,d.adrelid),'identity',a.attidentity,'generated',a.attgenerated,'dropped',a.attisdropped,'collation',co.collname) ORDER BY c.relname,a.attnum),'[]'::jsonb) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum>0 LEFT JOIN pg_attrdef d ON d.adrelid=c.oid AND d.adnum=a.attnum LEFT JOIN pg_collation co ON co.oid=a.attcollation WHERE n.nspname=$1 AND c.relkind='r'),
+ 'constraints',(SELECT coalesce(jsonb_agg(jsonb_build_object('oid',c.oid,'name',c.conname,'type',c.contype,'validated',c.convalidated,'deferrable',c.condeferrable,'deferred',c.condeferred,'definition',pg_get_constraintdef(c.oid)) ORDER BY c.conname),'[]'::jsonb) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname=$1),
+ 'indexes',(SELECT coalesce(jsonb_agg(jsonb_build_object('table',tablename,'name',indexname,'definition',indexdef) ORDER BY indexname),'[]'::jsonb) FROM pg_indexes WHERE schemaname=$1),
+ 'tables',(SELECT coalesce(jsonb_agg(jsonb_build_object('name',c.relname,'kind',c.relkind,'rls',c.relrowsecurity) ORDER BY c.relname),'[]'::jsonb) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1 AND c.relkind IN ('r','v','m','S','f')),
+ 'triggers',(SELECT coalesce(jsonb_agg(jsonb_build_object('name',t.tgname,'definition',pg_get_triggerdef(t.oid)) ORDER BY t.tgname),'[]'::jsonb) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1 AND NOT t.tgisinternal),
+ 'routines',(SELECT coalesce(jsonb_agg(jsonb_build_object('name',r.proname,'kind',r.prokind,'body',r.prosrc) ORDER BY r.proname),'[]'::jsonb) FROM pg_proc r JOIN pg_namespace n ON n.oid=r.pronamespace WHERE n.nspname=$1)
+ ) AS catalog`;
+
+async function validateRejectedPreparation(args: {
+  readonly databaseUrl: string;
+  readonly expansion: string;
+  readonly preparation: string;
+  readonly entries: (typeof connectorCatalogEntries.$inferSelect)[];
+  readonly pointers: (typeof connectorCatalog.$inferSelect)[];
+  readonly sourceSchema: string;
+  readonly frontier: z.infer<typeof physicalCatalogRows>[0]["catalog"];
+}) {
+  const client = new Client({ connectionString: args.databaseUrl });
+  const schema = `catalog_preparation_${randomUUID().replaceAll("-", "")}`;
+  const errors: unknown[] = [];
+  const observeError = (error: Error) => {
+    errors.push(error);
+  };
+  client.on("error", observeError);
+  const settings: {
+    name: "search_path" | "lock_timeout" | "statement_timeout";
+    value: string;
+  }[] = [];
+  let connected = false;
+  let ownsSchema = false;
+  try {
+    await client.connect();
+    connected = true;
+    const db = drizzle(client);
+    for (const name of [
+      "search_path",
+      "lock_timeout",
+      "statement_timeout",
+    ] as const) {
+      const shown = z
+        .tuple([z.record(z.string(), z.string())])
+        .parse((await client.query(`SHOW ${name}`)).rows);
+      assert.deepEqual(Object.keys(shown[0]), [name]);
+      const value = shown[0][name];
+      assert.equal(typeof value, "string");
+      assert.ok(value !== undefined);
+      settings.push({ name, value });
+    }
+    assert.deepEqual(
+      (
+        await client.query(
+          "SELECT nspname FROM pg_namespace WHERE nspname = $1",
+          [schema],
+        )
+      ).rows,
+      [],
+    );
+    const created = await client.query(`CREATE SCHEMA "${schema}"`);
+    // A collision or an uncertain response grants no right to adopt this name.
+    assert.equal(created.command, "CREATE");
+    ownsSchema = true;
+    await client.query(`SET search_path TO "${schema}"`);
+    await client.query("SET lock_timeout = '1s'");
+    await client.query("SET statement_timeout = '10s'");
+    assert.deepEqual((await client.query("SHOW search_path")).rows, [
+      { search_path: schema },
+    ]);
+    assert.deepEqual((await client.query("SHOW lock_timeout")).rows, [
+      { lock_timeout: "1s" },
+    ]);
+    assert.deepEqual((await client.query("SHOW statement_timeout")).rows, [
+      { statement_timeout: "10s" },
+    ]);
+    await client.query(`CREATE TABLE connector_catalog_entries (
+      hash text NOT NULL, slug text NOT NULL, payload jsonb NOT NULL,
+      PRIMARY KEY (hash, slug)
+    )`);
+    await client.query(`CREATE TABLE connector_catalog (
+      schema_version integer PRIMARY KEY, hash text NOT NULL
+    )`);
+    await client.query(args.expansion);
+    await db.insert(connectorCatalog).values(args.pointers);
+    await db.insert(connectorCatalogEntries).values(args.entries);
+    assert.equal(args.entries.length, 39);
+    assert.deepEqual(
+      await db
+        .select()
+        .from(connectorCatalogEntries)
+        .orderBy(connectorCatalogEntries.hash, connectorCatalogEntries.slug),
+      args.entries,
+    );
+    assert.deepEqual(
+      await db
+        .select()
+        .from(connectorCatalog)
+        .orderBy(connectorCatalog.schemaVersion),
+      args.pointers,
+    );
+    const copiedCatalog = physicalCatalogRows.parse(
+      (await client.query(physicalCatalogSql, [schema])).rows,
+    )[0].catalog;
+    // OIDs and the private namespace are the only different physical identities.
+    assert.deepEqual(
+      copiedCatalog.columns.map(({ oid: _oid, ...column }) => {
+        return column;
+      }),
+      args.frontier.columns.map(({ oid: _oid, ...column }) => {
+        return column;
+      }),
+    );
+    assert.deepEqual(
+      copiedCatalog.constraints.map(({ oid: _oid, ...constraint }) => {
+        return constraint;
+      }),
+      args.frontier.constraints.map(({ oid: _oid, ...constraint }) => {
+        return constraint;
+      }),
+    );
+    assert.deepEqual(
+      copiedCatalog.indexes,
+      args.frontier.indexes.map((index) => {
+        return {
+          ...index,
+          definition: index.definition.replace(
+            ` ${args.sourceSchema}.`,
+            ` ${schema}.`,
+          ),
+        };
+      }),
+    );
+    assert.deepEqual(copiedCatalog.tables, args.frontier.tables);
+    assert.deepEqual(copiedCatalog.triggers, args.frontier.triggers);
+    assert.deepEqual(copiedCatalog.routines, args.frontier.routines);
+    await client.query(
+      "UPDATE connector_catalog_entries SET label = NULL WHERE hash = 'historical'",
+    );
+    // pg retains SQL NULL and whole JSONB/array values, including the bad labels.
+    const beforeRows = await client.query(
+      "SELECT * FROM connector_catalog_entries ORDER BY hash, slug",
+    );
+    assert.equal(beforeRows.rows.length, args.entries.length);
+    const beforePointers = await db
+      .select()
+      .from(connectorCatalog)
+      .orderBy(connectorCatalog.schemaVersion);
+    const beforeCatalog = physicalCatalogRows.parse(
+      (await client.query(physicalCatalogSql, [schema])).rows,
+    );
+    // One original simple-query message owns the implicit DDL rollback.
+    await assert.rejects(client.query(args.preparation), (error: unknown) => {
+      return (
+        error instanceof Error && "code" in error && error.code === "23502"
+      );
+    });
+    const payloadConstraint = await client.query(
+      `SELECT is_nullable FROM information_schema.columns
+     WHERE table_schema = $1 AND table_name = 'connector_catalog_entries'
+       AND column_name = 'payload'`,
+      [schema],
+    );
+    assert.deepEqual(payloadConstraint.rows, [{ is_nullable: "NO" }]);
+    assert.deepEqual(
+      (
+        await client.query(
+          "SELECT * FROM connector_catalog_entries ORDER BY hash, slug",
+        )
+      ).rows,
+      beforeRows.rows,
+    );
+    assert.deepEqual(
+      await db
+        .select()
+        .from(connectorCatalog)
+        .orderBy(connectorCatalog.schemaVersion),
+      beforePointers,
+    );
+    assert.deepEqual(
+      physicalCatalogRows.parse(
+        (await client.query(physicalCatalogSql, [schema])).rows,
+      ),
+      beforeCatalog,
+    );
+    await client.query(
+      `UPDATE connector_catalog_entries SET label = payload ->> 'label'
+     WHERE hash = 'historical'`,
+    );
+    assert.deepEqual(
+      await db
+        .select()
+        .from(connectorCatalogEntries)
+        .orderBy(connectorCatalogEntries.hash, connectorCatalogEntries.slug),
+      args.entries,
+    );
+    assert.deepEqual(
+      await db
+        .select()
+        .from(connectorCatalog)
+        .orderBy(connectorCatalog.schemaVersion),
+      args.pointers,
+    );
+    assert.deepEqual(
+      physicalCatalogRows.parse(
+        (await client.query(physicalCatalogSql, [schema])).rows,
+      )[0].catalog,
+      copiedCatalog,
+    );
+  } catch (error: unknown) {
+    errors.push(error);
+  } finally {
+    if (ownsSchema) {
+      try {
+        await client.query(`DROP SCHEMA "${schema}" CASCADE`);
+      } catch (error: unknown) {
+        errors.push(error);
+      }
+    }
+    if (connected) {
+      // Observe even unowned residue; never DROP a collision or a lost ACK.
+      try {
+        assert.deepEqual(
+          (
+            await client.query(
+              "SELECT nspname FROM pg_namespace WHERE nspname = $1",
+              [schema],
+            )
+          ).rows,
+          [],
+        );
+      } catch (error: unknown) {
+        errors.push(error);
+      }
+    }
+    for (const { name, value } of settings) {
+      try {
+        await client.query("SELECT set_config($1, $2, false)", [name, value]);
+      } catch (error: unknown) {
+        errors.push(error);
+      }
+      try {
+        assert.deepEqual((await client.query(`SHOW ${name}`)).rows, [
+          { [name]: value },
+        ]);
+      } catch (error: unknown) {
+        errors.push(error);
+      }
+    }
+    try {
+      await client.end();
+    } catch (error: unknown) {
+      errors.push(error);
+    }
+    client.removeListener("error", observeError);
+  }
+  // A killed process can leave committed residue for exclusive job DB disposal.
+  throwCollectedErrors(
+    errors,
+    "Rejected catalog preparation or disposal failed",
+  );
+}
+
 // Compare physical contracts across namespaces without comparing allocated OIDs
 // or the private namespace prefix. Keep dropped attributes in the frontier.
 const catalogFrontierSql = `SELECT jsonb_build_object(
@@ -346,6 +673,8 @@ async function validateRetiredWriter(args: {
   }
 }
 
+const databaseUrl = process.env.DATABASE_URL;
+assert.ok(databaseUrl, "DATABASE_URL is required");
 const client = new Client({ connectionString: databaseUrl });
 const errors: unknown[] = [];
 const observeError = (error: Error) => {
@@ -697,28 +1026,24 @@ try {
     0,
     "new writer already supplies the projection",
   );
-  // Fail closed on an incomplete retained projection; DDL rollback must keep
-  // the old NOT NULL payload contract intact. No automatic data rewrite.
-  await client.query(
-    "UPDATE connector_catalog_entries SET label = NULL WHERE hash = 'historical'",
-  );
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0379; new non-billing transactions are prohibited.
-  await client.query("SAVEPOINT preparation");
-  await assert.rejects(client.query(preparation), (error: unknown) => {
-    return error instanceof Error && "code" in error && error.code === "23502";
+  // The parent frontier is uncommitted: copy ordinary complete values only.
+  await validateRejectedPreparation({
+    databaseUrl,
+    expansion,
+    preparation,
+    entries: await db
+      .select()
+      .from(connectorCatalogEntries)
+      .orderBy(connectorCatalogEntries.hash, connectorCatalogEntries.slug),
+    pointers: await db
+      .select()
+      .from(connectorCatalog)
+      .orderBy(connectorCatalog.schemaVersion),
+    sourceSchema: testSchema,
+    frontier: physicalCatalogRows.parse(
+      (await client.query(physicalCatalogSql, [testSchema])).rows,
+    )[0].catalog,
   });
-  await client.query("ROLLBACK TO SAVEPOINT preparation");
-  const payloadConstraint = await client.query(
-    `SELECT is_nullable FROM information_schema.columns
-     WHERE table_schema = $1 AND table_name = 'connector_catalog_entries'
-       AND column_name = 'payload'`,
-    [testSchema],
-  );
-  assert.deepEqual(payloadConstraint.rows, [{ is_nullable: "NO" }]);
-  await client.query(
-    `UPDATE connector_catalog_entries SET label = payload ->> 'label'
-     WHERE hash = 'historical'`,
-  );
   const before = await db.select().from(connectorCatalogEntries);
   await client.query(preparation);
   assert.deepEqual(await db.select().from(connectorCatalogEntries), before);
@@ -845,12 +1170,6 @@ try {
   }
   client.removeListener("error", observeError);
 }
-if (errors.length === 1) throw errors[0];
-if (errors.length > 1) {
-  throw new AggregateError(
-    errors,
-    "Catalog entry validation and cleanup failed",
-  );
-}
+throwCollectedErrors(errors, "Catalog entry transition or disposal failed");
 assert.ok(successMessage);
 console.log(successMessage);

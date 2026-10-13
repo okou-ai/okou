@@ -902,11 +902,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0379",
-      "file": "turbo/packages/db/scripts/test-connector-catalog-entry-columns.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0380",
       "file": "turbo/packages/db/scripts/test-connector-catalog-entry-columns.ts",
       "owner": "<module>"
@@ -938,11 +933,6 @@
     },
     {
       "id": "TX-0397",
-      "file": "turbo/packages/db/scripts/test-migration-consistency-schema.ts",
-      "owner": "validatePermanentUsagePackPendingSnapshotState"
-    },
-    {
-      "id": "TX-0398",
       "file": "turbo/packages/db/scripts/test-migration-consistency-schema.ts",
       "owner": "validatePermanentUsagePackPendingSnapshotState"
     },
