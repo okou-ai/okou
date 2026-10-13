@@ -115,6 +115,40 @@ test("both purchase approval URL formats render review actions", async () => {
   }
 });
 
+test("wallet cards preserve signed URL suffixes in Markdown, autolinks and bare links", async () => {
+  const base = "https://app.link.com/activity/approve/lsrq_fixture?token=";
+  const cases = [
+    { url: `${CONNECT_URL}_`, markdown: `[Authorize](${CONNECT_URL}_)` },
+    ...["signed_", "signed~", "signed.", "signed?", "signed;"].map((token) => {
+      const url = `${base}${token}`;
+      return { url, markdown: `[Review](${url})` };
+    }),
+    { url: `${base}angle_`, markdown: `<${base}angle_>` },
+    { url: `${base}bare_`, markdown: `${base}bare_` },
+    { url: `${base}bare~`, markdown: `${base}bare~` },
+    { url: `${base}bold_`, markdown: `**${base}bold_**` },
+    { url: `${base}sentence_`, markdown: `Review: ${base}sentence_.` },
+  ];
+  await openChat(
+    cases
+      .map(({ markdown }) => {
+        return markdown;
+      })
+      .join("\n\n") + "\n\nReview each wallet request",
+  );
+
+  await screen.findByText("Review each wallet request");
+  expect(
+    actionLinks().map((link) => {
+      return link.getAttribute("href");
+    }),
+  ).toStrictEqual(
+    cases.map(({ url }) => {
+      return url;
+    }),
+  );
+});
+
 test("ordinary provider links and untrusted wallet lookalikes stay ordinary links", async () => {
   const urls = [
     "https://link.com",

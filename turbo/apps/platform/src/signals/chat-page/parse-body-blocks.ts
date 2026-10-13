@@ -1,4 +1,4 @@
-import { getDefaults, Lexer, type Token, type Tokens } from "marked";
+import { getDefaults, Lexer, Tokenizer, type Token, type Tokens } from "marked";
 import { resolveApiBase } from "../api-base.ts";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { isArtifactPublicationFilePath } from "@okouai/api-contracts/contracts/artifact-delivery";
@@ -644,6 +644,11 @@ function stripMarkdownLineDecorations(value: string): string {
 }
 
 function trimPreviewUrl(value: string): string {
+  // A closed wallet destination may end in signature data that looks like
+  // prose punctuation. The wallet tokenizer owns bare-link boundaries.
+  if (createWalletActionBlock(value)) {
+    return value;
+  }
   let url = value.trim();
   let previous = "";
   while (url !== previous) {
@@ -724,6 +729,25 @@ function createWalletActionBlock(url: string): CardDescriptorBlock | null {
     };
   }
   return null;
+}
+
+class WalletActionTokenizer extends Tokenizer {
+  override url(source: string): Tokens.Link | undefined {
+    const candidate = new RegExp(`^${URL_TOKEN_PATTERN}`).exec(source)?.[0];
+    // Marked's GFM autolinker removes trailing underscores. Keep URL data in
+    // wallet signatures while leaving sentence punctuation outside bare links.
+    const url = candidate?.replace(/[)\]}>.,，。；;:：!！?？]+$/gu, "");
+    if (!url || !createWalletActionBlock(url)) {
+      return super.url(source);
+    }
+    return {
+      type: "link",
+      raw: url,
+      href: url,
+      text: url,
+      tokens: [{ type: "text", raw: url, text: url }],
+    };
+  }
 }
 
 function createActionBlockFromUrl(
@@ -1067,7 +1091,10 @@ function actionLinksFromMarkdown(
   // Use original defaults: Tiptap adds editor tokenizers to global Marked.
   return actionLinksFromTokens(
     source,
-    Lexer.lexInline(source, getDefaults()),
+    Lexer.lexInline(source, {
+      ...getDefaults(),
+      tokenizer: new WalletActionTokenizer(),
+    }),
     chatActionContext,
     requireUrlTerminator,
     allowMailDraftCard,
