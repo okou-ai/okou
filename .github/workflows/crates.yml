@@ -788,9 +788,30 @@ jobs:
       - name: Sync locked environment
         working-directory: crates/runner/mitm-addon
         run: uv sync --locked
+      - name: Resolve pinned mitmproxy archive
+        id: mitmproxy-archive
+        shell: bash
+        run: |
+          cache_key=$(bash .github/scripts/check-packaged-addon-control.sh --cache-key)
+          printf 'cache-key=%s\n' "$cache_key" >> "$GITHUB_OUTPUT"
+          printf 'archive-path=%s/mitmproxy-archive.tar.gz\n' "$RUNNER_TEMP" >> "$GITHUB_OUTPUT"
+      - name: Restore pinned mitmproxy archive
+        id: mitmproxy-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.mitmproxy-archive.outputs.archive-path }}
+          key: ${{ steps.mitmproxy-archive.outputs.cache-key }}
       - name: Check packaged addon control lifecycle
         shell: bash
+        env:
+          MITMPROXY_CONTROL_TEST_ARCHIVE: ${{ steps.mitmproxy-archive.outputs.archive-path }}
         run: bash .github/scripts/check-packaged-addon-control.sh
+      - name: Save pinned mitmproxy archive
+        if: steps.mitmproxy-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.mitmproxy-archive.outputs.archive-path }}
+          key: ${{ steps.mitmproxy-archive.outputs.cache-key }}
 
   # Exercise the client's real native boundary and protocol peers, not a build
   # of an external VNC server. Optional QEMU tooling is outside routine CI.
