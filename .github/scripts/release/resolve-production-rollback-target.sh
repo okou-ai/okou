@@ -67,7 +67,7 @@ readonly CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH=turbo/packages/db/src/migrations/1
 readonly STRIPE_PORTAL_PURPOSE_ONLY_PATH=.github/rollback-floors/stripe-portal-purpose-only
 readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-event-schema-header-retired
 readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
-readonly CHECKPOINT_WRITER_PREPARATION_PATH=turbo/apps/api/src/signals/services/pi-memory-phase2-input-revision.ts
+readonly PI_MEMORY_INPUT_REVISION_WRITER_PATH=turbo/apps/api/src/signals/services/pi-memory-phase2-input-revision.ts
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
 readonly OFFICIAL_RESULT_EMAIL_LEGACY_CONSUMER_PATH=.github/rollback-floors/official-result-email-legacy-consumer
 readonly DESKTOP_MIGRATION_HOP_PATH=turbo/apps/api/src/signals/services/desktop-electron-migration-release.ts
@@ -559,15 +559,15 @@ if ! git merge-base --is-ancestor "$desktop_migration_hop_commit" "$TARGET_COMMI
   fail "Rollback target predates the frozen Desktop migration-hop policy: ${desktop_migration_hop_commit}."
 fi
 
-# Generic checkpoint contraction requires the already deployed explicit-column
-# memory revision writer. Resolve its actual merged preparation commit.
-checkpoint_writer_preparation_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
-  origin/main -- "$CHECKPOINT_WRITER_PREPARATION_PATH" | sed -n '1p')
-if [[ ! "$checkpoint_writer_preparation_commit" =~ ^[0-9a-f]{40}$ ]]; then
-  fail "Cannot resolve the merged checkpoint writer preparation on main."
+# Retired Run snapshot storage requires the already deployed explicit-column
+# Pi memory input-revision writer. Resolve its actual merged preparation commit.
+pi_memory_input_revision_writer_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$PI_MEMORY_INPUT_REVISION_WRITER_PATH" | sed -n '1p')
+if [[ ! "$pi_memory_input_revision_writer_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Pi memory input-revision writer on main."
 fi
-if ! git merge-base --is-ancestor "$checkpoint_writer_preparation_commit" "$TARGET_COMMIT"; then
-  fail "Rollback target predates checkpoint writer preparation: ${checkpoint_writer_preparation_commit}."
+if ! git merge-base --is-ancestor "$pi_memory_input_revision_writer_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Pi memory input-revision writer preparation: ${pi_memory_input_revision_writer_commit}."
 fi
 
 # Migration 1282 drops the retired integration agent preference and

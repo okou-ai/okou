@@ -587,7 +587,7 @@ fn generated_commit_request_serializes_wire_shape() {
             hash: hash.clone(),
             size: 34,
         }],
-        message: Some("checkpoint".to_string()),
+        message: Some("artifact save".to_string()),
         maintenance_attestation: None,
     };
 
@@ -603,7 +603,7 @@ fn generated_commit_request_serializes_wire_shape() {
                 "hash": hash,
                 "size": 34,
             }],
-            "message": "checkpoint",
+            "message": "artifact save",
         })
     );
     assert!(value.get("parentVersionId").is_none());

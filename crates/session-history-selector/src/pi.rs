@@ -1,4 +1,4 @@
-//! Bounded, active-branch Pi history for a native compacted checkpoint.
+//! Bounded, active-branch Pi history for a native compacted history upload.
 //!
 //! Pi compaction is append-only: it changes the projected context, not the
 //! length of its JSONL file. Select only a complete, bounded active branch
@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 
 use super::{BoundedRecord, READ_BUFFER_BYTES, read_bounded_record, strip_jsonl_line_ending};
 
-/// Limit the retained decoded generation below the shared 128 MiB checkpoint cap.
+/// Limit the retained decoded generation below the shared 128 MiB history cap.
 pub const PI_COMPACT_GENERATION_MAX_BYTES: u64 = 64 * 1024 * 1024;
 /// A single native JSONL record is never loaded without a separate bound.
 pub const PI_JSONL_RECORD_MAX_BYTES: usize = 16 * 1024 * 1024;
@@ -121,7 +121,7 @@ struct RetainedRecord {
 /// pre-boundary entries and later active entries, and carries the most recent
 /// earlier model and thinking state records into the new root. The SDK/API must validate
 /// the candidate before it is committed; the Guest only replaces the live file
-/// after the checkpoint is acknowledged.
+/// after the history upload is acknowledged.
 ///
 /// # Errors
 /// Returns an I/O error when the source cannot be inspected.
