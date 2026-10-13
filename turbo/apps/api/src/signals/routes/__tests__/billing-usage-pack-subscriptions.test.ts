@@ -1912,6 +1912,122 @@ describe("legacy subscription usage pack migration", () => {
     });
   });
 
+  it.each([
+    { initialPack: 0, revisedPack: 50 },
+    { initialPack: 20, revisedPack: 0 },
+    { initialPack: 0, revisedPack: 0 },
+  ] as const)(
+    "revises scheduled member and invitation packages from $initialPack to $revisedPack",
+    async ({ initialPack, revisedPack }) => {
+      const fixture = await seedLegacyMigrationFixture({
+        tier: "pro",
+        invitation: true,
+      });
+      if (!fixture.invitation) {
+        throw new Error("Expected a pending invitation fixture");
+      }
+      mockMigrationStripe({
+        fixture,
+        packageQuantity: initialPack === 0 ? 0 : 2,
+        currentRecurringAmountCents: 2000,
+        amountDueCents: initialPack * 200,
+        amountPaidCents: initialPack * 200,
+      });
+      const ownerIds = [fixture.userId, fixture.invitation.id];
+      const headers = { authorization: "Bearer clerk-session" };
+      const initialSelections = ownerIds.map((memberId) => {
+        return { memberId, usagePackUsd: initialPack };
+      });
+      const preview = await accept(
+        migrationClient().preview({
+          headers,
+          body: { targetTier: "pro", memberUsagePacks: initialSelections },
+        }),
+        [200],
+      );
+      await accept(
+        migrationClient().confirm({
+          headers,
+          params: { migrationId: preview.body.migrationId },
+          body: {},
+        }),
+        [200],
+      );
+      const billingBefore = await readBillingStatus(fixture);
+      const creditsBefore = await readMigrationCredits(fixture);
+      const recurringAmountCents = 16_000 + revisedPack * 200;
+      context.mocks.stripe.invoices.createPreview.mockImplementation(
+        (params) => {
+          return Promise.resolve(
+            migrationRecurringPreviewInvoice(
+              params,
+              fixture.period.end,
+              recurringAmountCents,
+            ),
+          );
+        },
+      );
+      const memberUsagePacks = ownerIds.map((memberId) => {
+        return { memberId, usagePackUsd: revisedPack };
+      });
+      const body = { targetTier: "team" as const, memberUsagePacks };
+      const revision = await accept(
+        migrationClient().previewRevision({
+          headers,
+          params: { migrationId: preview.body.migrationId },
+          body,
+        }),
+        [200],
+      );
+      const confirmation = {
+        headers,
+        params: { migrationId: preview.body.migrationId },
+        body: { ...body, previewToken: revision.body.previewToken },
+      };
+      const confirmed = await accept(
+        migrationClient().confirmRevision(confirmation),
+        [200],
+      );
+      expect(confirmed.body).toMatchObject({
+        status: "scheduled",
+        effectiveAt: preview.body.effectiveAt,
+      });
+      const expectedPackages = revisedPack === 0 ? [] : memberUsagePacks;
+      const current = await accept(migrationClient().get({ headers }), [200]);
+      expect(current.body).toMatchObject({
+        migrationId: preview.body.migrationId,
+        status: "scheduled",
+        targetTier: "team",
+        configuration: {
+          tier: "team",
+          recurringAmountCents,
+          currency: "usd",
+          memberUsagePacks: expect.arrayContaining(expectedPackages),
+        },
+      });
+      expect(current.body.configuration?.memberUsagePacks).toHaveLength(
+        expectedPackages.length,
+      );
+      const scheduleUpdates =
+        context.mocks.stripe.subscriptionSchedules.update.mock.calls.length;
+      await accept(migrationClient().confirmRevision(confirmation), [200]);
+      expect(
+        context.mocks.stripe.subscriptionSchedules.update.mock.calls,
+      ).toHaveLength(scheduleUpdates);
+      const replay = await accept(migrationClient().get({ headers }), [200]);
+      expect(replay.body).toStrictEqual(current.body);
+      await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+        tier: billingBefore.tier,
+        subscriptionStatus: billingBefore.subscriptionStatus,
+        credits: billingBefore.credits,
+        creditGrants: billingBefore.creditGrants,
+      });
+      await expect(readMigrationCredits(fixture)).resolves.toStrictEqual(
+        creditsBefore,
+      );
+    },
+  );
+
   it("rejects tampered and stale migration revision previews", async () => {
     const fixture = await seedLegacyMigrationFixture({ tier: "pro" });
     mockMigrationStripe({
