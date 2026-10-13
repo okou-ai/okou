@@ -166,17 +166,6 @@ try {
     beforeAccounts.rows,
     "Do not rewrite accounts or require reconnect",
   );
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0408; new non-billing transactions are prohibited.
-  await client.query("SAVEPOINT invalid_redirect_uri");
-  await assert.rejects(
-    client.query(
-      "UPDATE connector_dcr_registrations SET redirect_uri = ' ' WHERE id = $1",
-      [registrationIds[0]],
-    ),
-    { code: "23514" },
-    "Retain the nonblank redirect URI constraint independently of hash retirement",
-  );
-  await client.query("ROLLBACK TO SAVEPOINT invalid_redirect_uri");
   const transformed = await client.query<{ oauth_context: string | null }>(
     "SELECT oauth_context FROM connector_oauth_states ORDER BY state",
   );
@@ -201,6 +190,14 @@ try {
     ).rows,
     transformed.rows,
     "Context retirement is idempotent",
+  );
+  await assert.rejects(
+    client.query(
+      "UPDATE connector_dcr_registrations SET redirect_uri = ' ' WHERE id = $1",
+      [registrationIds[0]],
+    ),
+    { code: "23514" },
+    "Retain the nonblank redirect URI constraint independently of hash retirement",
   );
 } finally {
   await client.query("ROLLBACK");
