@@ -595,6 +595,8 @@ assert_env_value "$success_env_file" MAILCHIMP_OAUTH_CLIENT_ID "doppler-MAILCHIM
 assert_env_value "$success_env_file" MAILCHIMP_OAUTH_CLIENT_SECRET "doppler-MAILCHIMP_OAUTH_CLIENT_SECRET"
 assert_env_value "$success_env_file" CAL_COM_OAUTH_CLIENT_ID "doppler-CAL_COM_OAUTH_CLIENT_ID"
 assert_env_value "$success_env_file" CAL_COM_OAUTH_CLIENT_SECRET "doppler-CAL_COM_OAUTH_CLIENT_SECRET"
+assert_env_value "$success_env_file" COPPER_OAUTH_CLIENT_ID "doppler-COPPER_OAUTH_CLIENT_ID"
+assert_env_value "$success_env_file" COPPER_OAUTH_CLIENT_SECRET "doppler-COPPER_OAUTH_CLIENT_SECRET"
 assert_env_key_absent "$success_env_file" CALCOM_OAUTH_CLIENT_ID
 assert_env_key_absent "$success_env_file" CALCOM_OAUTH_CLIENT_SECRET
 assert_env_value "$success_env_file" BOX_OAUTH_CLIENT_ID "doppler-BOX_OAUTH_CLIENT_ID"
@@ -770,6 +772,8 @@ assert_env_value "$production_api_env_file" MAILCHIMP_OAUTH_CLIENT_ID "doppler-M
 assert_env_value "$production_api_env_file" MAILCHIMP_OAUTH_CLIENT_SECRET "doppler-MAILCHIMP_OAUTH_CLIENT_SECRET"
 assert_env_value "$production_api_env_file" CAL_COM_OAUTH_CLIENT_ID "doppler-CAL_COM_OAUTH_CLIENT_ID"
 assert_env_value "$production_api_env_file" CAL_COM_OAUTH_CLIENT_SECRET "doppler-CAL_COM_OAUTH_CLIENT_SECRET"
+assert_env_value "$production_api_env_file" COPPER_OAUTH_CLIENT_ID "doppler-COPPER_OAUTH_CLIENT_ID"
+assert_env_value "$production_api_env_file" COPPER_OAUTH_CLIENT_SECRET "doppler-COPPER_OAUTH_CLIENT_SECRET"
 assert_env_value "$production_api_env_file" R2_PRIVATE_ARTIFACTS_BUCKET_NAME "user-artifact-private-prod"
 assert_env_value "$production_api_env_file" R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID "private-prod-key"
 assert_env_value "$production_api_env_file" R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY "private-prod-secret"
@@ -992,7 +996,7 @@ if [[ "$status" -eq 0 ]]; then
 fi
 assert_contains "$missing_stripe_secret_output" "::error::STRIPE_OAUTH_CLIENT_SECRET is missing from Doppler OAuth config"
 
-for oauth_key in MAILCHIMP_OAUTH_CLIENT_ID MAILCHIMP_OAUTH_CLIENT_SECRET CAL_COM_OAUTH_CLIENT_ID CAL_COM_OAUTH_CLIENT_SECRET; do
+for oauth_key in MAILCHIMP_OAUTH_CLIENT_ID MAILCHIMP_OAUTH_CLIENT_SECRET CAL_COM_OAUTH_CLIENT_ID CAL_COM_OAUTH_CLIENT_SECRET COPPER_OAUTH_CLIENT_ID COPPER_OAUTH_CLIENT_SECRET; do
   missing_oauth_dir="$(mktemp -d)"
   TEMP_DIRS+=("$missing_oauth_dir")
   status=0
