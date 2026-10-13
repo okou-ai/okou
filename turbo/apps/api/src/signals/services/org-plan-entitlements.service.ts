@@ -1,8 +1,5 @@
 import { retireMarketingMetadata } from "../../lib/marketing-metadata";
-import {
-  orgTierSchema,
-  type OrgTier,
-} from "@okouai/api-contracts/contracts/orgs";
+import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import type { OrgPlanEntitlementSourceMetadata } from "@okouai/db/jsonb-contracts/org-plan-entitlement";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { eq } from "drizzle-orm";
@@ -116,34 +113,6 @@ export function orgPlanEntitlementValues(
     sourceMetadata: stripeSubscriptionSnapshot.sourceMetadata,
     updatedAt,
   };
-}
-
-/**
- * Complete a metadata write in its transaction without replacing an existing
- * entitlement. Use the returned metadata tier, including database defaults and
- * conflict updates, rather than the attempted insert's tier.
- */
-export async function ensureOrgMetadataPlanEntitlement(
-  tx: WriteTx,
-  metadata: { readonly orgId: string; readonly tier: string },
-): Promise<void> {
-  const tier = orgTierSchema.safeParse(metadata.tier);
-  // The legacy trigger's plan lookup also leaves unknown tiers untouched.
-  if (!tier.success) {
-    return;
-  }
-  const values = orgPlanEntitlementValues(
-    {
-      orgId: metadata.orgId,
-      tier: tier.data,
-      source: "org_metadata_migration",
-    },
-    { stripeSubscriptionId: null, sourceMetadata: {} },
-  );
-  await tx
-    .insert(orgPlanEntitlements)
-    .values(values)
-    .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
 }
 
 export async function upsertOrgPlanEntitlement(
