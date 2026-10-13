@@ -47,7 +47,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { waitUntil } from "../context/wait-until";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishBrowserSessionChangedSafely } from "../external/realtime";
 import { now, nowDate } from "../../lib/time";
 import { flushAxiom, getDatasetName, ingestToAxiom } from "../external/axiom";
@@ -79,11 +79,11 @@ import {
   encryptPersistentSecretValue,
 } from "./crypto.utils";
 import {
-  activePaidConcurrencySlots,
+  loadActivePaidConcurrencySlots$,
   cappedBaseConcurrencyLimit,
   totalConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
 import {
   reconcileBrowserUserActions,
   temporaryBrowserFileKeys,
@@ -803,28 +803,30 @@ const suspendBrowserWithoutActiveInstance$ = command(
   },
 );
 
-async function browserConcurrencyLimit(db: Db, orgId: string): Promise<number> {
-  const [capabilities, paidSlots] = await Promise.all([
-    loadOrgPlanCapabilities(db, orgId),
-    activePaidConcurrencySlots(db, orgId),
-  ]);
-  if (!capabilities) {
-    return 0;
-  }
-  return totalConcurrencyLimit({
-    baseLimit: cappedBaseConcurrencyLimit(capabilities.baseConcurrencyLimit),
-    paidSlots,
-  });
-}
+const browserConcurrencyLimit$ = command(
+  async ({ set }, orgId: string): Promise<number> => {
+    const [capabilities, paidSlots] = await Promise.all([
+      set(loadOrgPlanCapabilities$, orgId),
+      set(loadActivePaidConcurrencySlots$, orgId),
+    ]);
+    if (!capabilities) {
+      return 0;
+    }
+    return totalConcurrencyLimit({
+      baseLimit: cappedBaseConcurrencyLimit(capabilities.baseConcurrencyLimit),
+      paidSlots,
+    });
+  },
+);
 
 const ensureBrowserCapacity$ = command(
   async (
-    { set },
+    { get, set },
     orgId: string,
     signal: AbortSignal,
   ): Promise<BrowserServiceError | null> => {
-    const db = set(writeDb$);
-    const limit = await browserConcurrencyLimit(db, orgId);
+    const db = get(db$);
+    const limit = await set(browserConcurrencyLimit$, orgId);
     signal.throwIfAborted();
     if (limit === 0) {
       return conflict(

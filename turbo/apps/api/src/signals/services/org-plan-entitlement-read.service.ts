@@ -1,6 +1,6 @@
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { command } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import { eq } from "drizzle-orm";
 import { db$, type Db } from "../external/db";
 
@@ -110,6 +110,31 @@ export function orgPlanCapabilitiesFromRow(
     restrictedBuiltInModels,
     status: runtimeStatusForEntitlement(capabilities.status),
   };
+}
+
+export function orgPlanCapabilities(
+  orgId: string,
+): Computed<Promise<OrgPlanCapabilities | null>> {
+  return computed(async (get): Promise<OrgPlanCapabilities | null> => {
+    const db = get(db$);
+    const [capabilities] = await db
+      .select(ORG_PLAN_CAPABILITY_SELECTION)
+      .from(orgPlanEntitlements)
+      .where(eq(orgPlanEntitlements.orgId, orgId))
+      .limit(1);
+    if (!capabilities) {
+      const [org] = await db
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, orgId))
+        .limit(1);
+      if (!org) {
+        return null;
+      }
+      throw new Error(`Missing org plan entitlement for ${orgId}`);
+    }
+    return orgPlanCapabilitiesFromRow(capabilities, orgId);
+  });
 }
 
 export const loadOrgPlanCapabilities$ = command(
