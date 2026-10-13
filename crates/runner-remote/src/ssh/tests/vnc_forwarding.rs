@@ -8,7 +8,7 @@ use super::{
 };
 use crate::test_fixtures::{
     http::{HttpClientConfig, http_client},
-    vnc::supported_profiles,
+    vnc::{optional_kerberos_request, supported_profiles},
 };
 use crate::vnc::{
     VncRuntime,
@@ -100,14 +100,17 @@ async fn vnc_uses_the_shared_generation_bound_ssh_transport_for_all_supported_pr
                 when.method("POST")
                     .path(format!("/api/runners/runs/{}/vnc/resolve", harness.run))
                     .header("authorization", format!("Bearer {TOKEN}"))
-                    .json_body(json!({
-                        "connectionId": CONNECTION,
-                        "runnerIdentity": {
-                            "runnerId": harness.identity.runner_id(),
-                            "heartbeatGeneration": 27
-                        },
-                        "supportedProfiles": supported_profiles(true)
-                    }));
+                    .is_true(optional_kerberos_request(
+                        json!({
+                            "connectionId": CONNECTION,
+                            "runnerIdentity": {
+                                "runnerId": harness.identity.runner_id(),
+                                "heartbeatGeneration": 27
+                            },
+                            "supportedProfiles": supported_profiles(true)
+                        }),
+                        true,
+                    ));
                 then.status(200).json_body(json!({
                     "outcome": "resolved_transport",
                     "host": "desktop.internal",
