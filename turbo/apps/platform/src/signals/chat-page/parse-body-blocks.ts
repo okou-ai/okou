@@ -1,4 +1,4 @@
-import { getDefaults, Lexer, type Token, type Tokens } from "marked";
+import { getDefaults, Lexer, Tokenizer, type Token, type Tokens } from "marked";
 import { resolveApiBase } from "../api-base.ts";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { isArtifactPublicationFilePath } from "@okouai/api-contracts/contracts/artifact-delivery";
@@ -22,6 +22,10 @@ import {
   parseBankingActionUrl,
   type BankingActionDescriptor,
 } from "./banking-action-block.ts";
+import {
+  parseWalletActionUrl,
+  type WalletActionDescriptor,
+} from "./wallet-action-block.ts";
 import {
   parseComputerUseAuthorizationUrl,
   type ComputerUseAuthorizationDescriptor,
@@ -92,6 +96,11 @@ export type ParsedBodyBlock =
       type: "banking-action";
       resourceKey: string;
       descriptor: BankingActionDescriptor;
+    }
+  | {
+      type: "wallet-action";
+      resourceKey: string;
+      descriptor: WalletActionDescriptor;
     }
   | {
       type: "unavailable-action";
@@ -635,6 +644,11 @@ function stripMarkdownLineDecorations(value: string): string {
 }
 
 function trimPreviewUrl(value: string): string {
+  // A closed wallet destination may end in signature data that looks like
+  // prose punctuation. The wallet tokenizer owns bare-link boundaries.
+  if (createWalletActionBlock(value)) {
+    return value;
+  }
   let url = value.trim();
   let previous = "";
   while (url !== previous) {
@@ -702,6 +716,38 @@ function createBrowserUserActionBlock(
     };
   }
   return null;
+}
+
+function createWalletActionBlock(url: string): CardDescriptorBlock | null {
+  const parsedUrl = tryParseUrl(url);
+  const walletAction = parsedUrl ? parseWalletActionUrl(parsedUrl, url) : null;
+  if (walletAction) {
+    return {
+      type: "wallet-action",
+      resourceKey: walletAction.originalUrl,
+      descriptor: walletAction,
+    };
+  }
+  return null;
+}
+
+class WalletActionTokenizer extends Tokenizer {
+  override url(source: string): Tokens.Link | undefined {
+    const candidate = new RegExp(`^${URL_TOKEN_PATTERN}`).exec(source)?.[0];
+    // Marked's GFM autolinker removes trailing underscores. Keep URL data in
+    // wallet signatures while leaving sentence punctuation outside bare links.
+    const url = candidate?.replace(/[)\]}>.,，。；;:：!！?？]+$/gu, "");
+    if (!url || !createWalletActionBlock(url)) {
+      return super.url(source);
+    }
+    return {
+      type: "link",
+      raw: url,
+      href: url,
+      text: url,
+      tokens: [{ type: "text", raw: url, text: url }],
+    };
+  }
 }
 
 function createActionBlockFromUrl(
@@ -839,7 +885,7 @@ function createActionBlockFromUrl(
     };
   }
 
-  return null;
+  return createWalletActionBlock(url);
 }
 
 interface ActionLinkMatch {
@@ -1045,7 +1091,10 @@ function actionLinksFromMarkdown(
   // Use original defaults: Tiptap adds editor tokenizers to global Marked.
   return actionLinksFromTokens(
     source,
-    Lexer.lexInline(source, getDefaults()),
+    Lexer.lexInline(source, {
+      ...getDefaults(),
+      tokenizer: new WalletActionTokenizer(),
+    }),
     chatActionContext,
     requireUrlTerminator,
     allowMailDraftCard,
@@ -1403,6 +1452,9 @@ export function cardSlotUrl(block: CardDescriptorBlock): string {
       return block.descriptor.originalUrl;
     }
     case "banking-action": {
+      return block.descriptor.originalUrl;
+    }
+    case "wallet-action": {
       return block.descriptor.originalUrl;
     }
     case "unavailable-action": {

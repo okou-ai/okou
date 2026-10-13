@@ -2798,6 +2798,14 @@
       "transcribing": "文字起こし",
       "transcriptionFailed": "音声の転写に失敗しました。もう一度やり直してください。"
     },
+    "walletAction": {
+      "approveButton": "確認",
+      "approveTitle": "購入内容を確認",
+      "connectButton": "認証",
+      "connectTitle": "Link ウォレットを認証",
+      "continueButton": "続ける",
+      "continueTitle": "Link で続ける"
+    },
     "workflows": {
       "named": "ワークフロー {{title}}",
       "open": "ワークフロー {{title}} を開く"

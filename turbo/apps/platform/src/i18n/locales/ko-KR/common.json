@@ -2798,6 +2798,14 @@
       "transcribing": "전사 중",
       "transcriptionFailed": "음성 전사 실패. 다시 시도하세요."
     },
+    "walletAction": {
+      "approveButton": "검토",
+      "approveTitle": "구매 검토",
+      "connectButton": "승인",
+      "connectTitle": "Link 지갑 승인",
+      "continueButton": "계속",
+      "continueTitle": "Link에서 계속"
+    },
     "workflows": {
       "named": "워크플로 {{title}}",
       "open": "워크플로 {{title}} 열기"

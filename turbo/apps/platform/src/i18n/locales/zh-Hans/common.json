@@ -2798,6 +2798,14 @@
       "transcribing": "正在转写",
       "transcriptionFailed": "语音转写失败，请重试。"
     },
+    "walletAction": {
+      "approveButton": "审核",
+      "approveTitle": "审核购买",
+      "connectButton": "授权",
+      "connectTitle": "授权 Link 钱包",
+      "continueButton": "继续",
+      "continueTitle": "继续 Link 钱包操作"
+    },
     "workflows": {
       "named": "工作流 {{title}}",
       "open": "打开工作流 {{title}}"

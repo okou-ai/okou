@@ -2809,6 +2809,14 @@
       "transcribing": "प्रतिलेखन",
       "transcriptionFailed": "ध्वनि प्रतिलेखन विफल रहा. पुनः प्रयास करें।"
     },
+    "walletAction": {
+      "approveButton": "समीक्षा करें",
+      "approveTitle": "खरीद की समीक्षा करें",
+      "connectButton": "अधिकृत करें",
+      "connectTitle": "Link वॉलेट अधिकृत करें",
+      "continueButton": "जारी रखें",
+      "continueTitle": "Link में जारी रखें"
+    },
     "workflows": {
       "named": "वर्कफ़्लो {{title}}",
       "open": "वर्कफ़्लो {{title}} खोलें"

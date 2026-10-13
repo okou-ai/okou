@@ -2809,6 +2809,14 @@
       "transcribing": "Transkribieren",
       "transcriptionFailed": "Die Sprachtranskription ist fehlgeschlagen. Versuchen Sie es erneut."
     },
+    "walletAction": {
+      "approveButton": "Prüfen",
+      "approveTitle": "Kauf prüfen",
+      "connectButton": "Autorisieren",
+      "connectTitle": "Link-Wallet autorisieren",
+      "continueButton": "Weiter",
+      "continueTitle": "Weiter in Link"
+    },
     "workflows": {
       "named": "Workflow {{title}}",
       "open": "Workflow öffnen {{title}}"
